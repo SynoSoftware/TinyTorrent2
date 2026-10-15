@@ -10,14 +10,30 @@ public sealed class LimitSelector : ComboBox
 {
     private readonly MainViewModel _main;
     private bool _refreshing;
-    private (string Language, bool CanEdit, bool Speed, bool Alternative, bool None, bool Schedule, int Index)? _shown;
+    private (
+        string Language,
+        bool CanEdit,
+        bool Speed,
+        bool Alternative,
+        bool None,
+        bool Schedule,
+        int Index
+    )? _shown;
 
     internal LimitSelector(MainViewModel main)
     {
         _main = main;
         Width = 260;
         HorizontalAlignment = HorizontalAlignment.Right;
-        foreach (var mode in new[] { LimitMode.None, LimitMode.Speed, LimitMode.Alternative, LimitMode.Schedule })
+        foreach (
+            var mode in new[]
+            {
+                LimitMode.None,
+                LimitMode.Speed,
+                LimitMode.Alternative,
+                LimitMode.Schedule,
+            }
+        )
             Items.Add(new ComboBoxItem { Tag = mode });
         SelectionChanged += OnSelection;
         Loaded += (_, _) =>
@@ -31,16 +47,30 @@ public sealed class LimitSelector : ComboBox
 
     private void OnChanged(object? sender, PropertyChangedEventArgs args)
     {
-        if (args.PropertyName is nameof(MainViewModel.LimitsIndex) or nameof(MainViewModel.CanEdit)
-            or nameof(MainViewModel.CanUseSpeed) or nameof(MainViewModel.CanUseAlternative)
-            or nameof(MainViewModel.CanUseNone) or nameof(MainViewModel.CanFollowSchedule) or "")
+        if (
+            args.PropertyName
+            is nameof(MainViewModel.LimitsIndex)
+                or nameof(MainViewModel.CanEdit)
+                or nameof(MainViewModel.CanUseSpeed)
+                or nameof(MainViewModel.CanUseAlternative)
+                or nameof(MainViewModel.CanUseNone)
+                or nameof(MainViewModel.CanFollowSchedule)
+                or ""
+        )
             Refresh();
     }
 
     private void Refresh()
     {
-        var current = (_main.Text.Language, _main.CanEdit, _main.CanUseSpeed, _main.CanUseAlternative,
-            _main.CanUseNone, _main.CanFollowSchedule, _main.LimitsIndex);
+        var current = (
+            _main.Text.Language,
+            _main.CanEdit,
+            _main.CanUseSpeed,
+            _main.CanUseAlternative,
+            _main.CanUseNone,
+            _main.CanFollowSchedule,
+            _main.LimitsIndex
+        );
         if (_shown == current)
             return;
         _shown = current;

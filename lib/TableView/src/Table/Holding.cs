@@ -210,10 +210,11 @@ public sealed partial class Table
     /// An empty view takes its rows at once: nothing is on screen to be moved. So does a snapshot
     /// that carries a change named by <see cref="Release"/>.
     /// </remarks>
-    private (IReadOnlyList<object> Shown, HashSet<object> Held, IReadOnlyList<object> Released) Hold(
-        IReadOnlyList<object> snapshot,
-        bool sortChanged = false
-    )
+    private (
+        IReadOnlyList<object> Shown,
+        HashSet<object> Held,
+        IReadOnlyList<object> Released
+    ) Hold(IReadOnlyList<object> snapshot, bool sortChanged = false)
     {
         HashSet<object> held = new(_identity);
         bool holds = !sortChanged && _hierarchy is null && IsPointed && _view.Count > 0;

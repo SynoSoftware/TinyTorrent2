@@ -47,8 +47,18 @@ internal sealed partial class Acquisition
             var group in associations.GroupBy(value => value.Path, StringComparer.OrdinalIgnoreCase)
         )
         {
-            var destinations = targets.Order(group.Select(source => targets.Find(source.Language,
-                SubtitleFile.Rank(source.Path, source.Language), source.Origin, source.Index)).OfType<Target>());
+            var destinations = targets.Order(
+                group
+                    .Select(source =>
+                        targets.Find(
+                            source.Language,
+                            SubtitleFile.Rank(source.Path, source.Language),
+                            source.Origin,
+                            source.Index
+                        )
+                    )
+                    .OfType<Target>()
+            );
             if (!group.Any(source => source.Created))
             {
                 changed |= await Run(
@@ -65,7 +75,10 @@ internal sealed partial class Acquisition
                                 if (
                                     video is null
                                     || !Current(connection, [video])
-                                    || StringComparer.OrdinalIgnoreCase.Equals(source.Movie, video.FinalPath)
+                                    || StringComparer.OrdinalIgnoreCase.Equals(
+                                        source.Movie,
+                                        video.FinalPath
+                                    )
                                 )
                                     continue;
                                 Execute(
@@ -101,7 +114,10 @@ internal sealed partial class Acquisition
                             group.Any(source =>
                                 source.Origin == video.Origin
                                 && source.Index == video.Index
-                                && !StringComparer.OrdinalIgnoreCase.Equals(source.Movie, video.FinalPath)
+                                && !StringComparer.OrdinalIgnoreCase.Equals(
+                                    source.Movie,
+                                    video.FinalPath
+                                )
                             )
                         )
                     )
@@ -127,16 +143,14 @@ internal sealed partial class Acquisition
                     .ConfigureAwait(false);
                 continue;
             }
-            if (
-                moved.Length != 1
-                || moved[0].IsAmbiguous
-                || targets.Contains(group.Key)
-            )
+            if (moved.Length != 1 || moved[0].IsAmbiguous || targets.Contains(group.Key))
                 continue;
             var destination = moved[0];
             if (
-                await PathAccess(group.Key, cancellation).ConfigureAwait(false) != SubtitlePathAccess.Allowed
-                || await PathAccess(destination.Path, cancellation).ConfigureAwait(false) != SubtitlePathAccess.Allowed
+                await PathAccess(group.Key, cancellation).ConfigureAwait(false)
+                    != SubtitlePathAccess.Allowed
+                || await PathAccess(destination.Path, cancellation).ConfigureAwait(false)
+                    != SubtitlePathAccess.Allowed
             )
                 continue;
             try
@@ -355,7 +369,9 @@ internal sealed partial class Acquisition
             }
             catch (OperationCanceledException)
             {
-                System.Diagnostics.Debug.WriteLine($"Subtitle file deletion cancelled ({deletion.Language}).");
+                System.Diagnostics.Debug.WriteLine(
+                    $"Subtitle file deletion cancelled ({deletion.Language})."
+                );
                 return;
             }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException)
@@ -377,4 +393,7 @@ internal sealed partial class Acquisition
     );
 }
 
-internal sealed record Deletion(IReadOnlySet<string> Origins, (string Path, string Language)[] Paths);
+internal sealed record Deletion(
+    IReadOnlySet<string> Origins,
+    (string Path, string Language)[] Paths
+);

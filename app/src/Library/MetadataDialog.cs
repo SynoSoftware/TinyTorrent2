@@ -3,10 +3,10 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
+using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Services;
 using Syno.TinyTorrent.Views;
-using Syno.TinyTorrent.Controls;
 using Windows.Globalization.NumberFormatting;
 
 namespace Syno.TinyTorrent.Library;
@@ -18,7 +18,11 @@ internal sealed class MetadataDialog : UserControl, IDraft
     private readonly IReadOnlyList<ProviderOption> _sources;
     private readonly ComboBox _source;
     private readonly HyperlinkButton _settings = new();
-    private readonly ActionButton _fetch = new() { Glyph = Lucide.Download, VerticalAlignment = VerticalAlignment.Bottom };
+    private readonly ActionButton _fetch = new()
+    {
+        Glyph = Lucide.Download,
+        VerticalAlignment = VerticalAlignment.Bottom,
+    };
     private RequestBlock? _block;
     private RequestBlock? _detailBlock;
     private readonly AutoSuggestBox _input;
@@ -32,8 +36,10 @@ internal sealed class MetadataDialog : UserControl, IDraft
     };
     private readonly ListView _results = new()
     {
-        ItemTemplate = (DataTemplate)Application.Current.Resources["TinyTorrentVideoChoiceTemplate"],
-        ItemContainerStyle = (Style)Application.Current.Resources["TinyTorrentVideoChoiceItemStyle"],
+        ItemTemplate = (DataTemplate)
+            Application.Current.Resources["TinyTorrentVideoChoiceTemplate"],
+        ItemContainerStyle = (Style)
+            Application.Current.Resources["TinyTorrentVideoChoiceItemStyle"],
         MaxHeight = 300,
         SelectionMode = ListViewSelectionMode.Single,
     };
@@ -54,11 +60,18 @@ internal sealed class MetadataDialog : UserControl, IDraft
     private bool _broadened;
     private int _revision;
     public bool IsPending { get; private set; }
-    public bool CanSubmit => !IsPending && HasDraft && (_detailBlock is null || _detailBlock.CanForce);
+    public bool CanSubmit =>
+        !IsPending && HasDraft && (_detailBlock is null || _detailBlock.CanForce);
     internal bool RequiresForce => _detailBlock?.CanForce == true;
-    internal string SubmitText => _library.Text.Get(RequiresForce ? "request_protection" : "dialog", RequiresForce ? "force_button" : "save");
-    internal string SubmitTip => _detailBlock is { CanForce: true } block
-        ? _library.Text.Protection(block) : _library.Text.Get("library", "save_metadata_tip");
+    internal string SubmitText =>
+        _library.Text.Get(
+            RequiresForce ? "request_protection" : "dialog",
+            RequiresForce ? "force_button" : "save"
+        );
+    internal string SubmitTip =>
+        _detailBlock is { CanForce: true } block
+            ? _library.Text.Protection(block)
+            : _library.Text.Get("library", "save_metadata_tip");
     public bool HasDraft => _results.SelectedItem is VideoChoice;
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -80,10 +93,7 @@ internal sealed class MetadataDialog : UserControl, IDraft
             SelectedIndex = _sources.ToList().IndexOf(source),
             HorizontalAlignment = HorizontalAlignment.Stretch,
         };
-        _input = new AutoSuggestBox
-        {
-            Text = FileName.Interpret(entry.Name).Title,
-        };
+        _input = new AutoSuggestBox { Text = FileName.Interpret(entry.Name).Title };
         _year = new NumberBox
         {
             Value = entry.Year ?? double.NaN,
@@ -174,11 +184,18 @@ internal sealed class MetadataDialog : UserControl, IDraft
         AutomationProperties.SetName(_input, _input.PlaceholderText);
         AutomationProperties.SetName(_results, _library.Text.Get("library", "matches"));
         _error.Message = _failure is null ? string.Empty : _library.Error(_failure);
-        _error.Severity = _failure is RequestBlockedException ? InfoBarSeverity.Warning : InfoBarSeverity.Error;
+        _error.Severity =
+            _failure is RequestBlockedException ? InfoBarSeverity.Warning : InfoBarSeverity.Error;
         _error.IsOpen = _failure is not null;
         var count = (_results.ItemsSource as IReadOnlyList<VideoChoice>)?.Count;
-        var state = IsPending ? _library.Text.Get("library", "saving_metadata")
-            : _request is not null ? _library.Text.Format("library", "searching_metadata", Source?.Name ?? string.Empty)
+        var state =
+            IsPending ? _library.Text.Get("library", "saving_metadata")
+            : _request is not null
+                ? _library.Text.Format(
+                    "library",
+                    "searching_metadata",
+                    Source?.Name ?? string.Empty
+                )
             : _failure is not null || count is null ? string.Empty
             : count == 0 ? _library.Text.Get("library", "no_metadata_matches")
             : _library.Text.Format("library", count == 1 ? "match_one" : "match_other", count);
@@ -193,15 +210,21 @@ internal sealed class MetadataDialog : UserControl, IDraft
         {
             _state.Text = state;
             _state.Visibility = state.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
-            FrameworkElementAutomationPeer.CreatePeerForElement(_state)
+            FrameworkElementAutomationPeer
+                .CreatePeerForElement(_state)
                 ?.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
         }
         ToolTipService.SetToolTip(_state, _broadened ? broadenedTip : state);
         AutomationProperties.SetHelpText(_state, _broadened ? broadenedTip : state);
-        _fetch.Text = _block?.CanForce == true ? _library.Text.Get("request_protection", "force_button")
-            : _library.Text.Get("library", "fetch");
-        _fetch.IsEnabled = _request is null && Source is not null
-            && !string.IsNullOrWhiteSpace(_input.Text) && (_block is null || _block.CanForce);
+        _fetch.Text =
+            _block?.CanForce == true
+                ? _library.Text.Get("request_protection", "force_button")
+                : _library.Text.Get("library", "fetch");
+        _fetch.IsEnabled =
+            _request is null
+            && Source is not null
+            && !string.IsNullOrWhiteSpace(_input.Text)
+            && (_block is null || _block.CanForce);
         var fetchTip = _block is null
             ? _library.Text.Format("library", "fetch_metadata_tip", Source?.Name ?? string.Empty)
             : _library.Text.Protection(_block);
@@ -240,7 +263,10 @@ internal sealed class MetadataDialog : UserControl, IDraft
         }
     }
 
-    private async Task ReadProtection(CancellationToken cancellation = default, bool automatic = false)
+    private async Task ReadProtection(
+        CancellationToken cancellation = default,
+        bool automatic = false
+    )
     {
         if (Source is not { } source || string.IsNullOrWhiteSpace(_input.Text))
             return;
@@ -250,11 +276,20 @@ internal sealed class MetadataDialog : UserControl, IDraft
         RequestBlock? block;
         try
         {
-            block = await _library.Protection(query, _entry.Name, source, cancellation, year, automatic);
+            block = await _library.Protection(
+                query,
+                _entry.Name,
+                source,
+                cancellation,
+                year,
+                automatic
+            );
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
-            System.Diagnostics.Debug.WriteLine($"Metadata search protection read cancelled ({source.ProviderId}).");
+            System.Diagnostics.Debug.WriteLine(
+                $"Metadata search protection read cancelled ({source.ProviderId})."
+            );
             return;
         }
         catch (Exception error)
@@ -266,7 +301,10 @@ internal sealed class MetadataDialog : UserControl, IDraft
         if (cancellation.IsCancellationRequested || revision != _revision)
             return;
         _block = block;
-        if (_failure is RequestBlockedException || block is not null && _results.ItemsSource is null)
+        if (
+            _failure is RequestBlockedException
+            || block is not null && _results.ItemsSource is null
+        )
             _failure = block is null ? null : new RequestBlockedException(block);
         RefreshText();
     }
@@ -275,8 +313,10 @@ internal sealed class MetadataDialog : UserControl, IDraft
     {
         if (Source is not { } source || string.IsNullOrWhiteSpace(_input.Text))
             return;
-        var scope = user && _block?.CanForce == true ? FetchScope.Missing
-            : user && _entry.HasMetadata ? FetchScope.All : FetchScope.New;
+        var scope =
+            user && _block?.CanForce == true ? FetchScope.Missing
+            : user && _entry.HasMetadata ? FetchScope.All
+            : FetchScope.New;
         var query = _input.Text;
         var year = Year;
         Cancel();
@@ -290,7 +330,15 @@ internal sealed class MetadataDialog : UserControl, IDraft
             if (!user)
                 await ReadProtection(request.Token, automatic: true);
             request.Token.ThrowIfCancellationRequested();
-            var answer = await _library.FindVideo(query, _entry.Name, source, request.Token, scope, year, automatic: !user);
+            var answer = await _library.FindVideo(
+                query,
+                _entry.Name,
+                source,
+                request.Token,
+                scope,
+                year,
+                automatic: !user
+            );
             if (!request.IsCancellationRequested)
             {
                 _failure = null;
@@ -336,8 +384,13 @@ internal sealed class MetadataDialog : UserControl, IDraft
         PropertyChanged?.Invoke(this, new(nameof(CanSubmit)));
         try
         {
-            await _library.SaveMetadata(_entry, choice, source, request.Token,
-                RequiresForce ? FetchScope.Missing : FetchScope.New);
+            await _library.SaveMetadata(
+                _entry,
+                choice,
+                source,
+                request.Token,
+                RequiresForce ? FetchScope.Missing : FetchScope.New
+            );
             return true;
         }
         catch (OperationCanceledException)

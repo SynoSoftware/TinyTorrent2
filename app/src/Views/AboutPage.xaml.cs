@@ -9,8 +9,16 @@ namespace Syno.TinyTorrent.Views;
 public sealed partial class AboutPage : UserControl
 {
     private readonly UISettings _display = new();
-    private readonly SettingsLink _company = new() { Glyph = Lucide.Building2, EndGlyph = Lucide.ExternalLink };
-    private readonly SettingsLink _source = new() { Glyph = Lucide.CodeXml, EndGlyph = Lucide.ExternalLink };
+    private readonly SettingsLink _company = new()
+    {
+        Glyph = Lucide.Building2,
+        EndGlyph = Lucide.ExternalLink,
+    };
+    private readonly SettingsLink _source = new()
+    {
+        Glyph = Lucide.CodeXml,
+        EndGlyph = Lucide.ExternalLink,
+    };
     private readonly SettingsLink _credits = new() { Glyph = Lucide.Users };
     public MainViewModel Main { get; }
     internal event EventHandler<Uri>? LinkRequested;
@@ -25,7 +33,8 @@ public sealed partial class AboutPage : UserControl
         AutomationProperties.SetAutomationId(_credits, "AboutCredits");
         _company.Description = "synapse.sr";
         _company.Click += (_, _) => LinkRequested?.Invoke(this, new("https://synapse.sr/"));
-        _source.Click += (_, _) => LinkRequested?.Invoke(this, new("https://github.com/SynoSoftware/TinyTorrent2"));
+        _source.Click += (_, _) =>
+            LinkRequested?.Invoke(this, new("https://github.com/SynoSoftware/TinyTorrent2"));
         _credits.Click += (_, _) => CreditsRequested?.Invoke(this, EventArgs.Empty);
         Links.Children.Add(_company);
         Links.Children.Add(_source);
@@ -62,7 +71,8 @@ public sealed partial class AboutPage : UserControl
 
     private void OnLayoutSize(object sender, SizeChangedEventArgs args) => UpdateColumns();
 
-    private void OnTextScale(UISettings sender, object args) => DispatcherQueue.TryEnqueue(UpdateColumns);
+    private void OnTextScale(UISettings sender, object args) =>
+        DispatcherQueue.TryEnqueue(UpdateColumns);
 
     private void UpdateColumns()
     {
@@ -70,10 +80,14 @@ public sealed partial class AboutPage : UserControl
         Layout.ColumnDefinitions[1].Width = stacked ? new(0) : new(1, GridUnitType.Star);
         Layout.ColumnSpacing = stacked ? 0 : 24;
         Layout.RowSpacing = stacked ? 24 : 0;
-        Identity.Padding = stacked ? new(0, 0, 0, 24)
-            : Main.Text.IsRightToLeft ? new(32, 0, 0, 0) : new(0, 0, 32, 0);
-        Identity.BorderThickness = stacked ? new(0, 0, 0, 1)
-            : Main.Text.IsRightToLeft ? new(1, 0, 0, 0) : new(0, 0, 1, 0);
+        Identity.Padding =
+            stacked ? new(0, 0, 0, 24)
+            : Main.Text.IsRightToLeft ? new(32, 0, 0, 0)
+            : new(0, 0, 32, 0);
+        Identity.BorderThickness =
+            stacked ? new(0, 0, 0, 1)
+            : Main.Text.IsRightToLeft ? new(1, 0, 0, 0)
+            : new(0, 0, 1, 0);
         Grid.SetColumn(Links, stacked ? 0 : 1);
         Grid.SetRow(Links, stacked ? 1 : 0);
     }

@@ -48,8 +48,7 @@ internal sealed partial class Store
             command.Parameters["$type"].Value = Stored(choice.Kind);
             command.Parameters["$title"].Value = choice.Title;
             command.Parameters["$name"].Value = FileName.Normalize(choice.Title);
-            command.Parameters["$original"].Value =
-                (object?)choice.Original ?? DBNull.Value;
+            command.Parameters["$original"].Value = (object?)choice.Original ?? DBNull.Value;
             command.Parameters["$original_name"].Value = choice.Original is { } original
                 ? FileName.Normalize(original)
                 : DBNull.Value;
@@ -221,7 +220,8 @@ internal sealed partial class Store
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
-    private static string WriteRatings(Ratings ratings) => JsonSerializer.Serialize(ratings, RatingsJson);
+    private static string WriteRatings(Ratings ratings) =>
+        JsonSerializer.Serialize(ratings, RatingsJson);
 
     private static Ratings ReadRatings(string stored) =>
         JsonSerializer.Deserialize<Ratings>(stored, RatingsJson) ?? new();
@@ -253,10 +253,7 @@ internal sealed partial class Store
         stored.Split(Separator, StringSplitOptions.RemoveEmptyEntries);
 
     // Choices remain reusable even when matching rejects the described video.
-    internal Task SaveChoices(
-        VideoInformation video,
-        CancellationToken cancellation
-    ) =>
+    internal Task SaveChoices(VideoInformation video, CancellationToken cancellation) =>
         database.Run(
             connection =>
             {

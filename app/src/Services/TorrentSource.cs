@@ -261,16 +261,23 @@ internal sealed class TorrentSource : IAsyncDisposable
         Dictionary<string, (Contribution Contribution, long Size)>? previous;
         lock (_gate)
             previous = _contributions;
-        var contributions = snapshot.GetProperty("torrents").EnumerateArray()
-            .Select(row => Read(row, previous)).ToDictionary(item => item.Contribution.Origin);
+        var contributions = snapshot
+            .GetProperty("torrents")
+            .EnumerateArray()
+            .Select(row => Read(row, previous))
+            .ToDictionary(item => item.Contribution.Origin);
         lock (_gate)
         {
             cancellation.ThrowIfCancellationRequested();
             if (_contributions is not null && _contributions.SequenceEqual(contributions))
                 return false;
         }
-        var changed = await _sources.Reconcile(
-            contributions.Values.Select(item => item.Contribution).ToArray(), cancellation).ConfigureAwait(false);
+        var changed = await _sources
+            .Reconcile(
+                contributions.Values.Select(item => item.Contribution).ToArray(),
+                cancellation
+            )
+            .ConfigureAwait(false);
         lock (_gate)
         {
             cancellation.ThrowIfCancellationRequested();
@@ -296,23 +303,31 @@ internal sealed class TorrentSource : IAsyncDisposable
         if (contributions is not null && contributions.TryGetValue(origin, out var previous))
         {
             var contribution = previous.Contribution;
-            if (previous.Size == size && contribution.Name == name && contribution.SavePath == path
-                && contribution.Complete == complete && contribution.Settled == settled)
+            if (
+                previous.Size == size
+                && contribution.Name == name
+                && contribution.SavePath == path
+                && contribution.Complete == complete
+                && contribution.Settled == settled
+            )
                 return previous;
         }
-        return (new Contribution(origin, name, complete, settled)
-        {
-            SavePath = path,
-            Stamp = JsonSerializer.Serialize(
-                new
-                {
-                    path,
-                    complete,
-                    settled,
-                    size,
-                }
-            ),
-        }, size);
+        return (
+            new Contribution(origin, name, complete, settled)
+            {
+                SavePath = path,
+                Stamp = JsonSerializer.Serialize(
+                    new
+                    {
+                        path,
+                        complete,
+                        settled,
+                        size,
+                    }
+                ),
+            },
+            size
+        );
     }
 
     private static IReadOnlyList<SourceFile>? Files(Contribution contribution, FileDetail detail)

@@ -122,13 +122,21 @@ public sealed partial class SettingsRow : ContentControl
     private void Update()
     {
         AutomationProperties.SetName(this, Header);
-        var hasPrimary = Header.Length > 0 || Description.Length > 0 || Error.Length > 0
-            || Caution.Length > 0 || Content is not null || StateText.Length > 0
-            || Unit.Length > 0 || UnitSelector is not null;
+        var hasPrimary =
+            Header.Length > 0
+            || Description.Length > 0
+            || Error.Length > 0
+            || Caution.Length > 0
+            || Content is not null
+            || StateText.Length > 0
+            || Unit.Length > 0
+            || UnitSelector is not null;
         if (GetTemplateChild("RowRoot") is Grid root)
         {
             root.MinHeight = Description.Length > 0 ? 64 : 52;
-            root.RowDefinitions[0].Height = hasPrimary ? new GridLength(1, GridUnitType.Star) : GridLength.Auto;
+            root.RowDefinitions[0].Height = hasPrimary
+                ? new GridLength(1, GridUnitType.Star)
+                : GridLength.Auto;
             root.RowDefinitions[0].MinHeight = hasPrimary ? 32 : 0;
         }
         if (GetTemplateChild("DetailPresenter") is ContentPresenter detail)

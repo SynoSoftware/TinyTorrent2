@@ -1,0 +1,33 @@
+{
+  "header": {
+    "accessible_name": "列标题",
+    "sorted_ascending": "已按升序排列",
+    "sorted_descending": "已按降序排列"
+  },
+  "placeholder": {
+    "loading": "正在加载",
+    "empty": "暂无内容",
+    "no_results": "没有匹配的项目"
+  },
+  "column_menu": {
+    "hide": "隐藏“{0}”列",
+    "show": "显示“{0}”列",
+    "fit": "调整“{0}”列以适应内容",
+    "fit_columns": "调整列宽以适应内容",
+    "fill_width": "填满宽度",
+    "move_left": "向左移动",
+    "move_right": "向右移动",
+    "shown": "已显示",
+    "hidden": "已隐藏"
+  },
+  "row_drag": {
+    "before_row": "插入到 {0} 之前",
+    "at_end": "插入到末尾",
+    "nothing_to_move": "没有可移动的项目",
+    "choose_position": "选择插入位置",
+    "move_one": "移动 {0} 个项目",
+    "move_many": "移动 {0} 个项目",
+    "hint": "按住并滚动 · 放到间隙中 · 退出键取消",
+    "browse": "按住并滚动 · 退出键取消"
+  }
+}

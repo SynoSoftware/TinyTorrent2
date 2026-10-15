@@ -121,7 +121,8 @@ public sealed partial class MainViewModel
     internal SubtitleAcquisition? Subtitles { get; private set; }
     internal Geolocation Geolocation { get; }
 
-    internal Task<Statistics?> ReadStatistics() => ReadDatabase(database => database.ReadStatistics());
+    internal Task<Statistics?> ReadStatistics() =>
+        ReadDatabase(database => database.ReadStatistics());
 
     internal Task<long?> ReadDatabaseSize() =>
         ReadDatabase<long?>(async database => await database.ReadSize());
@@ -209,33 +210,37 @@ public sealed partial class MainViewModel
                 ],
                 policy,
                 http
-            ) { Work = Work };
+            )
+            {
+                Work = Work,
+            };
             Library.Attach(store, videos, new FileFacts(_database, Work));
             Geolocation.Attach(directory, policy);
-            var subtitles = new SubtitleAcquisition(
-                _database,
-                _providerHttp,
-                settled,
-                policy
-            ) { Work = Work };
+            var subtitles = new SubtitleAcquisition(_database, _providerHttp, settled, policy)
+            {
+                Work = Work,
+            };
             Subtitles = subtitles;
-            subtitles.Changed += (_, _) => _dispatcher.TryEnqueue(() =>
-            {
-                if (ReferenceEquals(Subtitles, subtitles))
+            subtitles.Changed += (_, _) =>
+                _dispatcher.TryEnqueue(() =>
                 {
-                    RefreshFeedback();
-                }
-            });
-            subtitles.LanguagesChanged += (_, _) => _dispatcher.TryEnqueue(() =>
-            {
-                if (ReferenceEquals(Subtitles, subtitles))
-                    Library.StoredChanged();
-            });
-            subtitles.FileFailed += (_, failure) => _dispatcher.TryEnqueue(() =>
-            {
-                if (ReferenceEquals(Subtitles, subtitles))
-                    ShowSubtitleFailure(failure);
-            });
+                    if (ReferenceEquals(Subtitles, subtitles))
+                    {
+                        RefreshFeedback();
+                    }
+                });
+            subtitles.LanguagesChanged += (_, _) =>
+                _dispatcher.TryEnqueue(() =>
+                {
+                    if (ReferenceEquals(Subtitles, subtitles))
+                        Library.StoredChanged();
+                });
+            subtitles.FileFailed += (_, failure) =>
+                _dispatcher.TryEnqueue(() =>
+                {
+                    if (ReferenceEquals(Subtitles, subtitles))
+                        ShowSubtitleFailure(failure);
+                });
             Changed(nameof(Subtitles));
             _subtitlesStarting = Subtitles.Initialize(Text.Language);
             var sources = new FileSources(_database);
@@ -256,11 +261,12 @@ public sealed partial class MainViewModel
                         _ = RefreshSource();
                 });
             };
-            source.Failed += (_, error) => _dispatcher.TryEnqueue(() =>
-            {
-                if (ReferenceEquals(_fileSource, source))
-                    ReportFeature(error);
-            });
+            source.Failed += (_, error) =>
+                _dispatcher.TryEnqueue(() =>
+                {
+                    if (ReferenceEquals(_fileSource, source))
+                        ReportFeature(error);
+                });
             source.Observe(snapshot);
         }
     }
@@ -285,12 +291,18 @@ public sealed partial class MainViewModel
                 return;
             if (_database is not { } database || Subtitles is not { } subtitles)
                 return;
-            await Library.SuspendProtection(() => subtitles.Suspend(() => database.Run(connection =>
-            {
-                RequestPolicy.ClearBackoff(connection);
-                subtitles.ChangeRoute(connection);
-                return true;
-            })), includeDataset: true);
+            await Library.SuspendProtection(
+                () =>
+                    subtitles.Suspend(() =>
+                        database.Run(connection =>
+                        {
+                            RequestPolicy.ClearBackoff(connection);
+                            subtitles.ChangeRoute(connection);
+                            return true;
+                        })
+                    ),
+                includeDataset: true
+            );
         }
         catch (Exception error)
         {
@@ -343,7 +355,8 @@ public sealed partial class MainViewModel
                 )
                     return;
                 observing = Library.Observe(
-                    !IsConnected || _fileSource is not { IsCurrent: true } ? LibraryReadiness.Offline
+                    !IsConnected || _fileSource is not { IsCurrent: true }
+                        ? LibraryReadiness.Offline
                     : _fileSource.IsReady ? LibraryReadiness.Ready
                     : LibraryReadiness.Current
                 );
@@ -399,9 +412,15 @@ public sealed partial class MainViewModel
             await subtitles.Reconcile();
             lock (_featuresGate)
             {
-                if (_closed || _closing || _featuresClosed || _resetting
+                if (
+                    _closed
+                    || _closing
+                    || _featuresClosed
+                    || _resetting
                     || !ReferenceEquals(subtitles, Subtitles)
-                    || _fileSource is not { IsReady: true } || !IsConnected)
+                    || _fileSource is not { IsReady: true }
+                    || !IsConnected
+                )
                     return;
                 if (ReferenceEquals(_featureFailure, failure))
                     _featureFailure = null;
@@ -410,14 +429,21 @@ public sealed partial class MainViewModel
         }
         catch (OperationCanceledException) when (subtitles.IsDisposed)
         {
-            System.Diagnostics.Debug.WriteLine("Subtitle reconciliation cancelled: worker is stopping.");
+            System.Diagnostics.Debug.WriteLine(
+                "Subtitle reconciliation cancelled: worker is stopping."
+            );
         }
         catch (Exception error)
         {
             lock (_featuresGate)
             {
-                if (_closed || _closing || _featuresClosed || _resetting
-                    || !ReferenceEquals(subtitles, Subtitles))
+                if (
+                    _closed
+                    || _closing
+                    || _featuresClosed
+                    || _resetting
+                    || !ReferenceEquals(subtitles, Subtitles)
+                )
                     return;
                 subtitles.SetConnected(false);
             }
@@ -437,8 +463,13 @@ public sealed partial class MainViewModel
                 await ResetFeatures(false);
                 return;
             }
-            using var operation = Work.Begin(new(new WorkDescription.Maintenance(MaintenanceWork.Recovery),
-                new WorkProgress.Unknown(), new WorkExecution.Finishing()));
+            using var operation = Work.Begin(
+                new(
+                    new WorkDescription.Maintenance(MaintenanceWork.Recovery),
+                    new WorkProgress.Unknown(),
+                    new WorkExecution.Finishing()
+                )
+            );
             if (Library.HasFailure)
                 await Library.Recover();
             else
@@ -474,8 +505,13 @@ public sealed partial class MainViewModel
             )
                 return;
             _resetting = true;
-            using var operation = Work.Begin(new(new WorkDescription.Maintenance(MaintenanceWork.Recovery),
-                new WorkProgress.Unknown(), new WorkExecution.Finishing()));
+            using var operation = Work.Begin(
+                new(
+                    new WorkDescription.Maintenance(MaintenanceWork.Recovery),
+                    new WorkProgress.Unknown(),
+                    new WorkExecution.Finishing()
+                )
+            );
             DisconnectFeatures();
             await DetachFeatures();
             if (delete)
@@ -502,7 +538,8 @@ public sealed partial class MainViewModel
     internal Task DownloadData(IDataset dataset) => AnnounceData(dataset, dataset.Download());
 
     /// <summary>Downloads the data of the provider the person chose, which the installed data selects.</summary>
-    internal Task PrepareAutomaticDownload() => AnnounceData(Library, Library.Download(enableAutomaticDownload: true));
+    internal Task PrepareAutomaticDownload() =>
+        AnnounceData(Library, Library.Download(enableAutomaticDownload: true));
 
     private async Task AnnounceData(IDataset dataset, Task<bool> download)
     {
@@ -534,21 +571,37 @@ public sealed partial class MainViewModel
         await _featureAccess.WaitAsync();
         try
         {
-            if (_closed || _featuresClosed || _database is not { } database || Subtitles is not { } subtitles)
+            if (
+                _closed
+                || _featuresClosed
+                || _database is not { } database
+                || Subtitles is not { } subtitles
+            )
                 return;
-            using var operation = Work.Begin(new(new WorkDescription.Maintenance(MaintenanceWork.ResetProtection),
-                new WorkProgress.Unknown(), new WorkExecution.Finishing()));
+            using var operation = Work.Begin(
+                new(
+                    new WorkDescription.Maintenance(MaintenanceWork.ResetProtection),
+                    new WorkProgress.Unknown(),
+                    new WorkExecution.Finishing()
+                )
+            );
             // The reset clears what a running download writes, so the download
             // ends first, as the IMDb download does inside SuspendProtection.
             if (providerId is null)
                 await Geolocation.InterruptDownload();
-            await Library.SuspendProtection(() => subtitles.Suspend(() => database.Run(connection =>
-            {
-                Store.ResetProtection(connection, providerId);
-                subtitles.ResetProtection(connection, providerId);
-                RequestPolicy.Reset(connection, providerId);
-                return true;
-            })), providerId is null || providerId == Library.DataProvider?.ProviderId);
+            await Library.SuspendProtection(
+                () =>
+                    subtitles.Suspend(() =>
+                        database.Run(connection =>
+                        {
+                            Store.ResetProtection(connection, providerId);
+                            subtitles.ResetProtection(connection, providerId);
+                            RequestPolicy.Reset(connection, providerId);
+                            return true;
+                        })
+                    ),
+                providerId is null || providerId == Library.DataProvider?.ProviderId
+            );
         }
         finally
         {

@@ -58,6 +58,7 @@ public sealed class Languages(IList<string> codes)
 internal sealed record Query(string Text, LibraryConfiguration Configuration)
 {
     internal bool IncludesFacets { get; init; }
+
     // The selected provider's catalogue, or null when no provider is selected.
     internal string? CatalogId { get; init; }
     internal IReadOnlyDictionary<string, string> Filters =>

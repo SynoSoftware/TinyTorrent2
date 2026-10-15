@@ -19,18 +19,20 @@ public sealed class Tracker : INotifyPropertyChanged
     public long NextAnnounce { get; private set; }
     public string Message { get; private set; } = string.Empty;
     public string StatusText => _text.Get("trackers", Status.ToString().ToLowerInvariant());
-    public string StatusGlyph => Status switch
-    {
-        TrackerStatus.Waiting => Syno.Lucide.Clock,
-        TrackerStatus.Announcing => Syno.Lucide.RadioTower,
-        TrackerStatus.Working => Syno.Lucide.CircleCheck,
-        TrackerStatus.Error => Syno.Lucide.CircleAlert,
-        TrackerStatus.Disabled => Syno.Lucide.CircleOff,
-        _ => Syno.Lucide.CircleQuestionMark,
-    };
-    public string StatusHint => _endpoints.Length == 0
-        ? _text.Get("trackers", "endpoints_pending")
-        : string.Join("\n\n", _endpoints.Select(Describe));
+    public string StatusGlyph =>
+        Status switch
+        {
+            TrackerStatus.Waiting => Syno.Lucide.Clock,
+            TrackerStatus.Announcing => Syno.Lucide.RadioTower,
+            TrackerStatus.Working => Syno.Lucide.CircleCheck,
+            TrackerStatus.Error => Syno.Lucide.CircleAlert,
+            TrackerStatus.Disabled => Syno.Lucide.CircleOff,
+            _ => Syno.Lucide.CircleQuestionMark,
+        };
+    public string StatusHint =>
+        _endpoints.Length == 0
+            ? _text.Get("trackers", "endpoints_pending")
+            : string.Join("\n\n", _endpoints.Select(Describe));
     public string DownloadsHint => _text.Get("trackers", "downloads_hint");
     public string NextHint => _text.Get("trackers", "next_hint");
     public string TierText => (Tier + 1).ToString(CultureInfo.CurrentCulture);
@@ -76,7 +78,10 @@ public sealed class Tracker : INotifyPropertyChanged
             sameEndpoints = _endpoints[index].Matches(endpoints[index]);
         if (!sameEndpoints)
         {
-            _endpoints = endpoints.EnumerateArray().Select(endpoint => new Endpoint(endpoint)).ToArray();
+            _endpoints = endpoints
+                .EnumerateArray()
+                .Select(endpoint => new Endpoint(endpoint))
+                .ToArray();
             changed = true;
         }
         if (changed)
@@ -96,21 +101,27 @@ public sealed class Tracker : INotifyPropertyChanged
 
     private string Describe(Endpoint endpoint)
     {
-        var summary = _text.Format("trackers", "endpoint_hint",
-            endpoint.Address, endpoint.Version.ToUpperInvariant(),
-            _text.Get("trackers", endpoint.Status.ToString().ToLowerInvariant()), endpoint.Failures);
+        var summary = _text.Format(
+            "trackers",
+            "endpoint_hint",
+            endpoint.Address,
+            endpoint.Version.ToUpperInvariant(),
+            _text.Get("trackers", endpoint.Status.ToString().ToLowerInvariant()),
+            endpoint.Failures
+        );
         return endpoint.Message.Length == 0 ? summary : summary + "\n" + endpoint.Message;
     }
 
-    private static TrackerStatus ReadStatus(JsonElement data) => data.GetString() switch
-    {
-        "waiting" => TrackerStatus.Waiting,
-        "announcing" => TrackerStatus.Announcing,
-        "working" => TrackerStatus.Working,
-        "error" => TrackerStatus.Error,
-        "disabled" => TrackerStatus.Disabled,
-        _ => TrackerStatus.Unknown,
-    };
+    private static TrackerStatus ReadStatus(JsonElement data) =>
+        data.GetString() switch
+        {
+            "waiting" => TrackerStatus.Waiting,
+            "announcing" => TrackerStatus.Announcing,
+            "working" => TrackerStatus.Working,
+            "error" => TrackerStatus.Error,
+            "disabled" => TrackerStatus.Disabled,
+            _ => TrackerStatus.Unknown,
+        };
 
     private sealed class Endpoint(JsonElement data)
     {

@@ -21,11 +21,21 @@ internal sealed partial class SubSource(RequestPolicy policy) : Supplier(policy)
     internal override Uri Privacy { get; } = new("https://subsource.net/policy");
     internal override Uri Terms { get; } = new("https://subsource.net/terms");
     protected override IReadOnlyDictionary<string, string> Codes => LanguageCodes;
+
     internal override string Question(SubtitleLookup lookup)
     {
         var release = FileName.Interpret(lookup.FileName);
-        return JsonSerializer.Serialize(new { release.Title, release.Year, release.Season, release.Episodes });
+        return JsonSerializer.Serialize(
+            new
+            {
+                release.Title,
+                release.Year,
+                release.Season,
+                release.Episodes,
+            }
+        );
     }
+
     protected override string? BuiltInKey { get; } =
         typeof(SubSource)
             .Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
@@ -35,10 +45,7 @@ internal sealed partial class SubSource(RequestPolicy policy) : Supplier(policy)
     protected override void Authenticate(HttpRequestMessage request, Account account) =>
         request.Headers.Add("X-API-Key", ApiKey(account));
 
-    protected override async Task Check(
-        Operation operation,
-        CancellationToken cancellation
-    )
+    protected override async Task Check(Operation operation, CancellationToken cancellation)
     {
         var response = await Get(
                 operation,
@@ -129,7 +136,9 @@ internal sealed partial class SubSource(RequestPolicy policy) : Supplier(policy)
                 if (names.Length == 0)
                     continue;
                 foreach (var name in names)
-                    candidates.Add(new(lookup.Language, name, name, id.ToString(CultureInfo.InvariantCulture)));
+                    candidates.Add(
+                        new(lookup.Language, name, name, id.ToString(CultureInfo.InvariantCulture))
+                    );
             }
             if (
                 !subtitles.RootElement.TryGetProperty("pagination", out var pagination)
@@ -167,5 +176,4 @@ internal sealed partial class SubSource(RequestPolicy policy) : Supplier(policy)
             throw new SubtitleException(SubtitleFailure.Format);
         return data;
     }
-
 }

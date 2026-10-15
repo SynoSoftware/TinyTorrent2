@@ -104,9 +104,7 @@ public sealed class FileSelection(Strings strings) : INotifyPropertyChanged
             for (var i = 0; i < parts.Length; i++)
             {
                 var leaf = i == parts.Length - 1;
-                var node = leaf
-                    ? null
-                    : folders.GetValueOrDefault((parent, parts[i]));
+                var node = leaf ? null : folders.GetValueOrDefault((parent, parts[i]));
                 if (node is null)
                 {
                     var index = leaf ? item.GetProperty("index").GetInt32() : -1;
@@ -213,8 +211,7 @@ public sealed class FileSelection(Strings strings) : INotifyPropertyChanged
         _files.OrderBy(file => file.Index).Select(file => file.Priority).ToArray();
 
     private bool Matches(FileNode file) =>
-        _search.Length == 0
-        || file.SearchText.Contains(_query, StringComparison.Ordinal);
+        _search.Length == 0 || file.SearchText.Contains(_query, StringComparison.Ordinal);
 
     private void Project()
     {
@@ -267,7 +264,8 @@ public sealed class FileNode : INotifyPropertyChanged
     public string Glyph => IsFolder ? Lucide.Folder : FileName.Glyph(FileName.Kind(Name));
     public long TotalSize => _totalSize;
     public string SizeText => _owner.Text.Bytes(TotalSize);
-    public double? Progress => _downloaded is not { } downloaded ? null
+    public double? Progress =>
+        _downloaded is not { } downloaded ? null
         : _totalSize == 0 ? 1
         : Math.Clamp((double)downloaded / _totalSize, 0, 1);
     public string ProgressText => Progress?.ToString("P1", CultureInfo.CurrentCulture) ?? "—";
@@ -359,15 +357,20 @@ public sealed class FileNode : INotifyPropertyChanged
                 child.Refresh(notify);
                 if (!child._hasFiles)
                     continue;
-                _priority = !_hasFiles ? child._priority
-                    : _priority == child._priority ? _priority : -1;
+                _priority =
+                    !_hasFiles ? child._priority
+                    : _priority == child._priority ? _priority
+                    : -1;
                 _hasFiles = true;
                 _totalSize += child._totalSize;
                 _downloaded += child._downloaded;
                 wanted &= child._wanted == true;
                 skipped &= child._wanted == false;
             }
-            _wanted = wanted ? true : skipped ? false : null;
+            _wanted =
+                wanted ? true
+                : skipped ? false
+                : null;
         }
         else
         {
@@ -375,7 +378,10 @@ public sealed class FileNode : INotifyPropertyChanged
             _totalSize = IsPadding ? 0 : Size;
             _downloaded = IsPadding ? 0 : Downloaded;
             _priority = _choice;
-            _wanted = IsPadding || _priority > 0 ? true : _priority == 0 ? false : null;
+            _wanted =
+                IsPadding || _priority > 0 ? true
+                : _priority == 0 ? false
+                : null;
         }
         if (notify || previous != (_totalSize, _downloaded, _wanted, _priority))
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));

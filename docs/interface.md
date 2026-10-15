@@ -45,7 +45,7 @@ the tray menu, keep the appearance Windows gives them.
 The logo uses the canonical SVG so it remains sharp at different display scales;
 Windows shell icons use the canonical ICO. Windows owns the caption buttons.
 Application commands use native WinUI controls and their standard states.
-The title-bar Settings and theme shortcuts keep the existing custom caption-button style:
+The title-bar Settings, language and theme shortcuts keep the existing custom caption-button style:
 full caption height, square hover surface and caption-button width, so it feels
 part of the window chrome. This is the exception to standard button visuals.
 
@@ -80,7 +80,7 @@ that is empty beside the others. A menu of only on/off choices, such as View,
 uses native check-mark items with Lucide icons, because no column stands empty.
 
 The custom title bar contains one row: app-icon page switch, File/Torrent/View/Help
-MenuBar, bounded Search, Settings, the light/dark switch, and native caption
+MenuBar, bounded Search, Settings, the language switch, the light/dark switch, and native caption
 buttons. Add and the selection commands are on the toolbar, not the title bar.
 Fit columns and Fill width are only in the table's column-header menu: in the
 title bar they read as window commands, and the column header holds no buttons
@@ -93,8 +93,12 @@ WinUI TitleBar control.**
 Title-bar actions are ordinary Buttons with the existing
 TinyTorrentCaptionButtonStyle, so they share its size, spacing and states with
 each other and with the native caption buttons beside them; CommandBar's
-separate button metrics would break that consistency. Settings sits immediately
-left of the theme button, using the Lucide Settings gear icon. The theme button uses
+separate button metrics would break that consistency. Settings uses the Lucide
+Settings gear icon. The language button sits between Settings and the theme button,
+showing EN, ES, NL, 中文, PT or FR in the existing caption font. It opens the shared
+context-menu renderer's language choices, with flags, native names and the current choice
+checked. Its centred label uses the shared button dimensions and zero margin and
+padding, so the language shortcut stays the same size as its neighbours. The theme button uses
 Lucide Lightbulb for switching to light and LightbulbOff for switching to dark, so it
 remains distinct from Settings. Its tooltip names the destination theme. It sits
 immediately beside the native caption buttons, with no extra gap.
@@ -115,23 +119,19 @@ The app-icon page switch receives client input. It has no system-menu hit region
 or double-click-to-close behavior. Alt+Space and the unused caption area retain
 Windows' system-menu behavior.
 
-There is no workspace navigation pane, identity text, command overflow,
-language switch or permanent Exit button. Language and theme
-are chosen in Settings; the title-bar light/dark shortcut uses the same theme
-owner.
+There is no workspace navigation pane, identity text, command overflow or permanent
+Exit button. Language and theme are also chosen in Settings; their title-bar shortcuts
+use the same owners, so both entry points preserve immediate, in-place updates.
 
 **Owner ruling: Torrents and [Library](library.md#presentation-and-interaction)
 are peer pages.** The app-icon position is their direct switch, with no separate
-selector or extra row. At rest it shows the current page: the canonical
-TinyTorrent logo for Torrents and the existing Library colour SVG for Library.
-Hover or keyboard focus flips to the destination; clicking commits that
-destination and holds its
-face for that interaction. Pointer exit ends a mouse interaction even if keyboard
-focus remains; a fresh pointer entry or keyboard focus previews the other page.
-Its background stays transparent during hover and press; the
-flip supplies the interaction feedback. Keyboard focus remains visible.
-Reduced motion skips the animation. Its tooltip and accessible
-name identify the destination and Ctrl+1 or Ctrl+2 shortcut. The logo represents
+selector or extra row. It is an ordinary caption button that shows the current
+page's icon and name: the canonical TinyTorrent logo and Torrents, or the
+existing Library colour SVG and Library. It has the caption buttons' hover and
+pressed states and acts on the press, so the press itself shows that the click
+landed. It runs the same command as Ctrl+1 or Ctrl+2. Its width fits the longer
+page name, so the menus do not move when the page changes. Its tooltip and
+accessible name identify the destination and its shortcut. The logo represents
 the app's Torrents mode, never an individual torrent or Show in Torrents action.
 Global search also offers both pages. The second menu belongs to the
 current page: Torrent on Torrents, Library on Library. View shows the current
@@ -243,7 +243,8 @@ beside the control they concern.
 separate text.** A label, value or message takes one line. A value too long for
 its space trims with an ellipsis, and its full text is available through a
 tooltip, focus, selection, copy or the accessible description, rather than
-hover alone, so trimming is always preferred to wrapping. Spacing and grouping
+hover alone, so trimming is always preferred to wrapping. A tooltip keeps its
+text on one line too. Spacing and grouping
 separate content, not blank lines. Wrapping changes a line's height with its
 text, which shifts everything below it as the text, the language or the window
 width changes. A person scans a surface by its lines, and wrapped or empty lines
@@ -486,12 +487,14 @@ Motion expresses the
 relationship between views, so one gesture never produces competing directions.
 Torrents sits to the left of Library: their table and button bar slide as one
 surface, left when entering Library and right when returning to Torrents. The
-title bar, filters and shared inspector frame stay in place. The inspector's
-content crossfades during that workspace change, because its subject changes
-inside the same pane rather than navigating to another pane.
+filter and inspector content slide with them in the same direction, so the
+whole workspace moves as one gesture. The title bar and the filter and
+inspector frames stay in place.
 
 Ordered tabs use horizontal motion in their visible order and reverse when
-returning, so direction has an observable meaning. Changing the selected torrent
+returning, so direction has an observable meaning: the previous tab's content
+leaves while the chosen tab's content arrives from that tab's side. Torrent and
+Library inspector tabs use the same slide. Changing the selected torrent
 or Library file gently fades its new details into place once; live statistics
 and information updates never replay that entrance. These changes do not fade
 through a blank surface. Shared motion uses 250 ms with cubic ease-out, clipped

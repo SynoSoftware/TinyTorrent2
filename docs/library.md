@@ -477,16 +477,20 @@ entry uses it. Everything else a provider returned, its raw pages and every
 movie its pages listed, stays saved, so a later lookup of the same movie needs
 no request ([keep everything a provider returns](library-implementation.md#replaceable-movie-providers)).
 
-With multiple movies selected, Fetch metadata opens a scope selector with
-New, Missing data, All selected and Re-identify, showing nested movie counts. New respects
-local protection; Missing data requests fresh answers for unresolved movies;
-All selected also refreshes accepted identities. Only Re-identify includes
-movies that another provider matched automatically: the chosen provider
-searches each by its name, and a confident match replaces the old one, while no
-match keeps it. The person's own choices and clears remain untouched in every
-scope. Below the selector, the dialog counts the selected videos the chosen
-scope leaves out because another provider matched them, and those no scope can
-fetch, so a count smaller than the selection is not read as what the provider has.
+With multiple movies selected, Fetch metadata asks only about the chosen
+provider. Below the provider's name and the number of selected videos, it
+groups them by that provider's last answer, as checkboxes with their counts in
+one aligned column: Not checked yet, Not found last time and Already checked.
+Every label and note takes one line. A request that did not complete counts as not checked. Only Not
+checked yet starts checked, and it respects local protection; Not found last
+time asks again, and Already checked refreshes the provider's answer. An empty
+group is disabled. Another provider's match never moves a video between groups.
+A confident answer for a video that another provider identified adds this
+provider's ratings and title facts when both name the same IMDb ID, and keeps
+the identification; another title is no answer. The dialog says that
+information from other sources is kept, and counts the selected videos the
+provider cannot check: extras and other unsearchable names, videos whose
+information the person cleared, and videos whose match has no IMDb ID to compare.
 The [request protection contract](request-protection.md) defines recovery and reset.
 It works in the background: the status bar shows "Metadata · 3 of 7 processed"
 until it finishes, on every page, with an X that stops it and cancels the
@@ -718,13 +722,9 @@ the approved navigation and caption behavior.
   switch; keep the File/current-page/View/Help menus.
 - [ ] Use the actual `resources/tinyTorrent.svg` for Torrents and the Library
   face for Library. Do not substitute a Lucide download glyph for the brand.
-- [ ] At rest, show the current page's face. Hover or keyboard focus previews
-  the destination with the two-sided flip demonstrated by LabServer. Respect
-  reduced motion and provide a destination tooltip and accessible name.
-- [ ] Clicking commits the displayed destination and leaves that face visible
-  through the rest of the same hover/focus session. Leaving keeps the current
-  face; only the next hover/focus entry previews the other destination. Verify
-  both directions, including after rerendering, so click does not flip back.
+- [ ] Make the switch the caption button that the
+  [title-bar contract](interface.md#native-controls-and-visual-authority)
+  describes: the current page's icon and name, acting on the press.
 - [ ] Keep Ctrl+1 / Ctrl+2, search, current-page menus, focus and Settings/About
   return behavior consistent with the existing navigation owner.
 

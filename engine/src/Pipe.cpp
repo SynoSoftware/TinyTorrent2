@@ -263,7 +263,7 @@ void Pipe::Serve(HANDLE handle)
                 break;
             }
             if (request["request_id"].is_number_unsigned() &&
-                request["request_id"].get<std::uint64_t>() > std::numeric_limits<std::int64_t>::max())
+                request["request_id"].get<std::uint64_t>() > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
                 break;
             auto requestId = request["request_id"].get<std::int64_t>();
             bool occupied;

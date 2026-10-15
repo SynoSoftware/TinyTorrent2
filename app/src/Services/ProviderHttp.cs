@@ -11,6 +11,7 @@ internal sealed partial class ProviderHttp : IDisposable
 {
     internal const int JsonLimit = 2 * 1024 * 1024;
     internal const int FileLimit = 16 * 1024 * 1024;
+
     // How long a request waits for its reply; a download restarts the wait
     // with each block it receives.
     private static readonly TimeSpan WaitLimit = TimeSpan.FromSeconds(60);
@@ -38,8 +39,11 @@ internal sealed partial class ProviderHttp : IDisposable
 
     // Redirects return to the supplier, which authorizes the next origin and
     // creates fresh headers; credentials never follow a redirect implicitly.
-    internal Task<ProviderReply> Send(ProviderCall call, int maximum, CancellationToken cancellation) =>
-        Send(call.Message, maximum, cancellation, call);
+    internal Task<ProviderReply> Send(
+        ProviderCall call,
+        int maximum,
+        CancellationToken cancellation
+    ) => Send(call.Message, maximum, cancellation, call);
 
     internal async Task<ProviderReply> Send(
         HttpRequestMessage request,
@@ -51,32 +55,35 @@ internal sealed partial class ProviderHttp : IDisposable
         if (maximum <= 0 || maximum > FileLimit)
             throw new ArgumentOutOfRangeException(nameof(maximum));
         return await Exchange(
-            request,
-            async (response, deadline) =>
-            {
-                var headers = Headers(response);
-                if (call?.Observe is { } observe)
-                    await observe(new(response.StatusCode, [], headers)).ConfigureAwait(false);
-                if (response.Content.Headers.ContentLength > maximum)
-                    throw new InvalidDataException("Provider response exceeds its size limit.");
-                await using var stream = await response
-                    .Content.ReadAsStreamAsync(deadline.Token)
-                    .ConfigureAwait(false);
-                byte[] bytes;
-                try
+                request,
+                async (response, deadline) =>
                 {
-                    bytes = await Read(stream, maximum, deadline.Token).ConfigureAwait(false);
-                }
-                catch (IOException) when (call is not null)
-                {
-                    await call.Policy.Fail(call.Request.Access, new(RequestBlockKind.Backoff)).ConfigureAwait(false);
-                    throw;
-                }
-                return new ProviderReply(response.StatusCode, bytes, headers);
-            },
-            cancellation,
-            call
-        ).ConfigureAwait(false);
+                    var headers = Headers(response);
+                    if (call?.Observe is { } observe)
+                        await observe(new(response.StatusCode, [], headers)).ConfigureAwait(false);
+                    if (response.Content.Headers.ContentLength > maximum)
+                        throw new InvalidDataException("Provider response exceeds its size limit.");
+                    await using var stream = await response
+                        .Content.ReadAsStreamAsync(deadline.Token)
+                        .ConfigureAwait(false);
+                    byte[] bytes;
+                    try
+                    {
+                        bytes = await Read(stream, maximum, deadline.Token).ConfigureAwait(false);
+                    }
+                    catch (IOException) when (call is not null)
+                    {
+                        await call
+                            .Policy.Fail(call.Request.Access, new(RequestBlockKind.Backoff))
+                            .ConfigureAwait(false);
+                        throw;
+                    }
+                    return new ProviderReply(response.StatusCode, bytes, headers);
+                },
+                cancellation,
+                call
+            )
+            .ConfigureAwait(false);
     }
 
     /// <summary>
@@ -97,7 +104,8 @@ internal sealed partial class ProviderHttp : IDisposable
                 async (response, deadline) =>
                 {
                     if (call.Observe is { } observe)
-                        await observe(new(response.StatusCode, [], Headers(response))).ConfigureAwait(false);
+                        await observe(new(response.StatusCode, [], Headers(response)))
+                            .ConfigureAwait(false);
                     if (response.StatusCode != HttpStatusCode.OK)
                         throw new HttpRequestException(
                             "The download was refused.",
@@ -122,11 +130,15 @@ internal sealed partial class ProviderHttp : IDisposable
                         int count;
                         try
                         {
-                            count = await source.ReadAsync(buffer, deadline.Token).ConfigureAwait(false);
+                            count = await source
+                                .ReadAsync(buffer, deadline.Token)
+                                .ConfigureAwait(false);
                         }
                         catch (IOException)
                         {
-                            await call.Policy.Fail(call.Request.Access, new(RequestBlockKind.Backoff)).ConfigureAwait(false);
+                            await call
+                                .Policy.Fail(call.Request.Access, new(RequestBlockKind.Backoff))
+                                .ConfigureAwait(false);
                             throw;
                         }
                         if (count == 0)
@@ -213,25 +225,38 @@ internal sealed partial class ProviderHttp : IDisposable
         {
             if (route.IsCancellationRequested)
             {
-                System.Diagnostics.Debug.WriteLine($"Provider request cancelled ({request.RequestUri?.Host}): network route changed.");
+                System.Diagnostics.Debug.WriteLine(
+                    $"Provider request cancelled ({request.RequestUri?.Host}): network route changed."
+                );
                 throw new HttpRouteException("The selected network route changed.", error);
             }
-            System.Diagnostics.Debug.WriteLine($"Provider request timed out or was interrupted ({request.RequestUri?.Host}).");
+            System.Diagnostics.Debug.WriteLine(
+                $"Provider request timed out or was interrupted ({request.RequestUri?.Host})."
+            );
             if (call is not null)
-                await call.Policy.Fail(call.Request.Access, new(RequestBlockKind.Backoff)).ConfigureAwait(false);
+                await call
+                    .Policy.Fail(call.Request.Access, new(RequestBlockKind.Backoff))
+                    .ConfigureAwait(false);
             throw new HttpRequestException("Provider request was interrupted.", error);
         }
         catch (HttpRequestException error) when (error.StatusCode is null)
         {
             if (call is not null)
-                await call.Policy.Fail(call.Request.Access, new(RequestBlockKind.Backoff)).ConfigureAwait(false);
+                await call
+                    .Policy.Fail(call.Request.Access, new(RequestBlockKind.Backoff))
+                    .ConfigureAwait(false);
             throw;
         }
     }
 
     private static Dictionary<string, string> Headers(HttpResponseMessage response) =>
-        response.Headers.Concat(response.Content.Headers).ToDictionary(
-            pair => pair.Key, pair => string.Join(", ", pair.Value), StringComparer.OrdinalIgnoreCase);
+        response
+            .Headers.Concat(response.Content.Headers)
+            .ToDictionary(
+                pair => pair.Key,
+                pair => string.Join(", ", pair.Value),
+                StringComparer.OrdinalIgnoreCase
+            );
 
     internal static async Task<byte[]> Read(
         Stream stream,
@@ -418,7 +443,11 @@ internal sealed record HttpRoute
 internal sealed class HttpRouteException(string message, Exception? inner = null)
     : IOException(message, inner);
 
-internal sealed record ProviderCall(HttpRequestMessage Message, RequestPolicy Policy, OutboundRequest Request)
+internal sealed record ProviderCall(
+    HttpRequestMessage Message,
+    RequestPolicy Policy,
+    OutboundRequest Request
+)
 {
     internal FreshRequest? Fresh { get; init; }
     internal Func<ProviderReply, Task>? Observe { get; init; }

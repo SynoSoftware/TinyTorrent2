@@ -764,16 +764,25 @@
         <Setter Property="TextTrimming" Value="CharacterEllipsis" />
         <Setter Property="VerticalAlignment" Value="Center" />
       </Style>
-      <Style x:Key="TinyTorrentRatingPrimaryStyle" TargetType="TextBlock"
-        BasedOn="{StaticResource TinyTorrentBodyTextStyle}">
+      <Style
+        x:Key="TinyTorrentRatingPrimaryStyle"
+        TargetType="TextBlock"
+        BasedOn="{StaticResource TinyTorrentBodyTextStyle}"
+      >
         <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
       </Style>
-      <Style x:Key="TinyTorrentRatingSecondaryStyle" TargetType="TextBlock"
-        BasedOn="{StaticResource TinyTorrentBodyTextStyle}">
+      <Style
+        x:Key="TinyTorrentRatingSecondaryStyle"
+        TargetType="TextBlock"
+        BasedOn="{StaticResource TinyTorrentBodyTextStyle}"
+      >
         <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
       </Style>
-      <Style x:Key="TinyTorrentRatingSubduedStyle" TargetType="TextBlock"
-        BasedOn="{StaticResource TinyTorrentBodyTextStyle}">
+      <Style
+        x:Key="TinyTorrentRatingSubduedStyle"
+        TargetType="TextBlock"
+        BasedOn="{StaticResource TinyTorrentBodyTextStyle}"
+      >
         <Setter Property="Foreground" Value="{ThemeResource TextFillColorTertiaryBrush}" />
       </Style>
       <Style
@@ -783,8 +792,11 @@
       >
         <Setter Property="FontWeight" Value="SemiBold" />
       </Style>
-      <Style x:Key="TinyTorrentVideoChoiceItemStyle" TargetType="ListViewItem"
-        BasedOn="{StaticResource DefaultListViewItemStyle}">
+      <Style
+        x:Key="TinyTorrentVideoChoiceItemStyle"
+        TargetType="ListViewItem"
+        BasedOn="{StaticResource DefaultListViewItemStyle}"
+      >
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
       </Style>
       <DataTemplate x:Key="TinyTorrentVideoChoiceTemplate">
@@ -793,15 +805,24 @@
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
-          <TextBlock Text="{Binding Title}" Style="{StaticResource TinyTorrentBodyTextStyle}"
-            ToolTipService.ToolTip="{Binding Label}" />
-          <TextBlock Grid.Column="1" Text="{Binding YearText}"
+          <TextBlock
+            Text="{Binding Title}"
             Style="{StaticResource TinyTorrentBodyTextStyle}"
-            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            ToolTipService.ToolTip="{Binding Label}"
+          />
+          <TextBlock
+            Grid.Column="1"
+            Text="{Binding YearText}"
+            Style="{StaticResource TinyTorrentBodyTextStyle}"
+            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+          />
         </Grid>
       </DataTemplate>
-      <Style x:Key="TinyTorrentNavigationTextStyle" TargetType="TextBlock"
-        BasedOn="{StaticResource TinyTorrentBodyTextStyle}">
+      <Style
+        x:Key="TinyTorrentNavigationTextStyle"
+        TargetType="TextBlock"
+        BasedOn="{StaticResource TinyTorrentBodyTextStyle}"
+      >
         <Setter Property="FontSize" Value="16" />
         <Setter Property="TextLineBounds" Value="Tight" />
       </Style>
@@ -821,7 +842,8 @@
       <Style x:Key="TinyTorrentStatusIconStyle" TargetType="FontIcon">
         <Setter Property="FontSize" Value="{StaticResource TinyTorrentInlineIconSize}" />
         <Setter Property="VerticalAlignment" Value="Center" />
-      </Style>      <Style
+      </Style>
+      <Style
         x:Key="TinyTorrentTitleDetailTextStyle"
         TargetType="TextBlock"
         BasedOn="{StaticResource BodyTextBlockStyle}"
@@ -831,14 +853,20 @@
         <Setter Property="TextWrapping" Value="NoWrap" />
         <Setter Property="VerticalAlignment" Value="Center" />
       </Style>
-      <Style x:Key="TinyTorrentProgressStyle" TargetType="ProgressBar"
-        BasedOn="{StaticResource DefaultProgressBarStyle}">
+      <Style
+        x:Key="TinyTorrentProgressStyle"
+        TargetType="ProgressBar"
+        BasedOn="{StaticResource DefaultProgressBarStyle}"
+      >
         <Setter Property="Minimum" Value="0" />
         <Setter Property="Maximum" Value="1" />
         <Setter Property="Height" Value="4" />
       </Style>
-      <Style x:Key="TinyTorrentMutedProgressStyle" TargetType="ProgressBar"
-        BasedOn="{StaticResource TinyTorrentProgressStyle}">
+      <Style
+        x:Key="TinyTorrentMutedProgressStyle"
+        TargetType="ProgressBar"
+        BasedOn="{StaticResource TinyTorrentProgressStyle}"
+      >
         <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
       </Style>
       <Style x:Key="TinyTorrentSurfaceIconStyle" TargetType="FontIcon">
@@ -915,25 +943,47 @@
                       VerticalContentAlignment="Center"
                     />
                     <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
-                      <Border x:Name="ActionSeparator" Width="1" Height="16" Margin="12,0"
-                        Visibility="Collapsed" VerticalAlignment="Center"
+                      <Border
+                        x:Name="ActionSeparator"
+                        Width="1"
+                        Height="16"
+                        Margin="12,0"
+                        Visibility="Collapsed"
+                        VerticalAlignment="Center"
                         Background="{ThemeResource DividerStrokeColorDefaultBrush}"
-                        AutomationProperties.AccessibilityView="Raw" />
+                        AutomationProperties.AccessibilityView="Raw"
+                      />
                       <StackPanel Orientation="Horizontal" Spacing="4">
-                        <Button x:Name="Collapse" Style="{StaticResource TinyTorrentSubtleButtonStyle}">
-                          <FontIcon FontFamily="{ThemeResource LucideFont}"
+                        <Button
+                          x:Name="Collapse"
+                          Style="{StaticResource TinyTorrentSubtleButtonStyle}"
+                        >
+                          <FontIcon
+                            FontFamily="{ThemeResource LucideFont}"
                             FontSize="{StaticResource TinyTorrentButtonIconSize}"
-                            AutomationProperties.AccessibilityView="Raw" />
+                            AutomationProperties.AccessibilityView="Raw"
+                          />
                         </Button>
-                        <Button x:Name="Maximize" Style="{StaticResource TinyTorrentSubtleButtonStyle}">
-                          <FontIcon x:Name="MaximizeGlyph" FontFamily="{ThemeResource LucideFont}"
+                        <Button
+                          x:Name="Maximize"
+                          Style="{StaticResource TinyTorrentSubtleButtonStyle}"
+                        >
+                          <FontIcon
+                            x:Name="MaximizeGlyph"
+                            FontFamily="{ThemeResource LucideFont}"
                             FontSize="{StaticResource TinyTorrentButtonIconSize}"
-                            AutomationProperties.AccessibilityView="Raw" />
+                            AutomationProperties.AccessibilityView="Raw"
+                          />
                         </Button>
-                        <Button x:Name="Close" Style="{StaticResource TinyTorrentSubtleButtonStyle}">
-                          <FontIcon FontFamily="{ThemeResource LucideFont}"
+                        <Button
+                          x:Name="Close"
+                          Style="{StaticResource TinyTorrentSubtleButtonStyle}"
+                        >
+                          <FontIcon
+                            FontFamily="{ThemeResource LucideFont}"
                             FontSize="{StaticResource TinyTorrentButtonIconSize}"
-                            AutomationProperties.AccessibilityView="Raw" />
+                            AutomationProperties.AccessibilityView="Raw"
+                          />
                         </Button>
                       </StackPanel>
                     </StackPanel>
@@ -946,14 +996,25 @@
                     VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
                   />
                 </Grid>
-                <Button x:Name="Toggle" Visibility="Collapsed"
+                <Button
+                  x:Name="Toggle"
+                  Visibility="Collapsed"
                   Style="{StaticResource TinyTorrentSubtleButtonStyle}"
-                  MinWidth="0" MinHeight="0" Padding="0">
+                  MinWidth="0"
+                  MinHeight="0"
+                  Padding="0"
+                >
                   <Grid x:Name="ToggleClip" AutomationProperties.AccessibilityView="Raw">
-                    <FontIcon x:Name="ToggleGlyph" FontFamily="{ThemeResource LucideFont}"
-                      Width="16" Height="16" FontSize="16"
-                      HorizontalAlignment="Center" VerticalAlignment="Center"
-                      AutomationProperties.AccessibilityView="Raw" />
+                    <FontIcon
+                      x:Name="ToggleGlyph"
+                      FontFamily="{ThemeResource LucideFont}"
+                      Width="16"
+                      Height="16"
+                      FontSize="16"
+                      HorizontalAlignment="Center"
+                      VerticalAlignment="Center"
+                      AutomationProperties.AccessibilityView="Raw"
+                    />
                   </Grid>
                 </Button>
               </Grid>
@@ -981,6 +1042,11 @@
       <Style TargetType="CheckBox" BasedOn="{StaticResource DefaultCheckBoxStyle}">
         <Setter Property="Padding" Value="8,6,0,0" />
       </Style>
+      <!-- WinUI wraps tooltip text at 320 pixels; without that limit a
+           tooltip keeps one line, as the no-wrap ruling requires. -->
+      <Style TargetType="ToolTip" BasedOn="{StaticResource DefaultToolTipStyle}">
+        <Setter Property="MaxWidth" Value="Infinity" />
+      </Style>
       <Style TargetType="ToggleSwitch" BasedOn="{StaticResource DefaultToggleSwitchStyle}">
         <Setter Property="HorizontalAlignment" Value="Right" />
         <Setter Property="MinWidth" Value="0" />
@@ -1000,7 +1066,11 @@
         <Setter Property="CornerRadius" Value="{ThemeResource ControlCornerRadius}" />
         <Setter Property="Padding" Value="16,0" />
       </Style>
-      <Style x:Key="TinyTorrentSettingsLinkStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+      <Style
+        x:Key="TinyTorrentSettingsLinkStyle"
+        TargetType="Button"
+        BasedOn="{StaticResource DefaultButtonStyle}"
+      >
         <Setter Property="controls:SettingsSection.IsCard" Value="True" />
         <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
         <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
@@ -1019,15 +1089,19 @@
                   <VisualStateGroup x:Name="ExpandStates">
                     <VisualState x:Name="ExpandDown">
                       <VisualState.Setters>
-                        <Setter Target="ExpanderHeader.CornerRadius"
-                          Value="{Binding CornerRadius, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource TopCornerRadiusFilterConverter}}" />
+                        <Setter
+                          Target="ExpanderHeader.CornerRadius"
+                          Value="{Binding CornerRadius, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource TopCornerRadiusFilterConverter}}"
+                        />
                       </VisualState.Setters>
                     </VisualState>
                     <VisualState x:Name="CollapseUp" />
                     <VisualState x:Name="ExpandUp">
                       <VisualState.Setters>
-                        <Setter Target="ExpanderHeader.CornerRadius"
-                          Value="{Binding CornerRadius, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource BottomCornerRadiusFilterConverter}}" />
+                        <Setter
+                          Target="ExpanderHeader.CornerRadius"
+                          Value="{Binding CornerRadius, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource BottomCornerRadiusFilterConverter}}"
+                        />
                       </VisualState.Setters>
                     </VisualState>
                     <VisualState x:Name="CollapseDown" />
@@ -1036,10 +1110,18 @@
                     <VisualState x:Name="Down" />
                     <VisualState x:Name="Up">
                       <VisualState.Setters>
-                        <Setter Target="ExpanderHeader.Style" Value="{StaticResource ExpanderHeaderUpStyle}" />
-                        <Setter Target="ExpanderContent.BorderThickness" Value="{StaticResource ExpanderContentUpBorderThickness}" />
-                        <Setter Target="ExpanderContent.CornerRadius"
-                          Value="{Binding CornerRadius, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource TopCornerRadiusFilterConverter}}" />
+                        <Setter
+                          Target="ExpanderHeader.Style"
+                          Value="{StaticResource ExpanderHeaderUpStyle}"
+                        />
+                        <Setter
+                          Target="ExpanderContent.BorderThickness"
+                          Value="{StaticResource ExpanderContentUpBorderThickness}"
+                        />
+                        <Setter
+                          Target="ExpanderContent.CornerRadius"
+                          Value="{Binding CornerRadius, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource TopCornerRadiusFilterConverter}}"
+                        />
                         <Setter Target="ExpanderHeader.(Grid.Row)" Value="1" />
                         <Setter Target="ExpanderContentClip.(Grid.Row)" Value="0" />
                       </VisualState.Setters>
@@ -1050,7 +1132,8 @@
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
-                <ToggleButton x:Name="ExpanderHeader"
+                <ToggleButton
+                  x:Name="ExpanderHeader"
                   AutomationProperties.AutomationId="ExpanderToggleButton"
                   Style="{StaticResource ExpanderHeaderDownStyle}"
                   Background="{ThemeResource ExpanderHeaderBackground}"
@@ -1058,28 +1141,39 @@
                   BorderBrush="{ThemeResource ExpanderHeaderBorderBrush}"
                   BorderThickness="{ThemeResource ExpanderHeaderBorderThickness}"
                   CornerRadius="{TemplateBinding CornerRadius}"
-                  MinHeight="{TemplateBinding MinHeight}" IsEnabled="{TemplateBinding IsEnabled}"
-                  Padding="{ThemeResource ExpanderHeaderPadding}" HorizontalAlignment="Stretch"
+                  MinHeight="{TemplateBinding MinHeight}"
+                  IsEnabled="{TemplateBinding IsEnabled}"
+                  Padding="{ThemeResource ExpanderHeaderPadding}"
+                  HorizontalAlignment="Stretch"
                   HorizontalContentAlignment="{StaticResource ExpanderHeaderHorizontalContentAlignment}"
                   VerticalContentAlignment="{StaticResource ExpanderHeaderVerticalContentAlignment}"
-                  Content="{TemplateBinding Header}" ContentTemplate="{TemplateBinding HeaderTemplate}"
+                  Content="{TemplateBinding Header}"
+                  ContentTemplate="{TemplateBinding HeaderTemplate}"
                   ContentTemplateSelector="{TemplateBinding HeaderTemplateSelector}"
-                  IsChecked="{Binding IsExpanded, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}" />
+                  IsChecked="{Binding IsExpanded, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                />
                 <Border x:Name="ExpanderContentClip" Grid.Row="1" Height="0" Visibility="Collapsed">
                   <!-- Measure the full body independently of the animated clip height. -->
                   <StackPanel>
-                    <Border x:Name="ExpanderContent"
-                      Background="{TemplateBinding Background}" BackgroundSizing="{TemplateBinding BackgroundSizing}"
+                    <Border
+                      x:Name="ExpanderContent"
+                      Background="{TemplateBinding Background}"
+                      BackgroundSizing="{TemplateBinding BackgroundSizing}"
                       BorderBrush="{TemplateBinding BorderBrush}"
                       BorderThickness="{StaticResource ExpanderContentDownBorderThickness}"
                       CornerRadius="{Binding CornerRadius, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource BottomCornerRadiusFilterConverter}}"
-                      MinHeight="{TemplateBinding MinHeight}" Padding="{TemplateBinding Padding}"
-                      HorizontalAlignment="Stretch" VerticalAlignment="Top">
-                      <ContentPresenter Content="{TemplateBinding Content}"
+                      MinHeight="{TemplateBinding MinHeight}"
+                      Padding="{TemplateBinding Padding}"
+                      HorizontalAlignment="Stretch"
+                      VerticalAlignment="Top"
+                    >
+                      <ContentPresenter
+                        Content="{TemplateBinding Content}"
                         ContentTemplate="{TemplateBinding ContentTemplate}"
                         ContentTemplateSelector="{TemplateBinding ContentTemplateSelector}"
                         HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
-                        VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+                        VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                      />
                     </Border>
                   </StackPanel>
                 </Border>
@@ -1096,34 +1190,47 @@
         <Setter Property="Template">
           <Setter.Value>
             <ControlTemplate TargetType="controls:SettingsSection">
-              <controls:SettingsExpander x:Name="Card"
+              <controls:SettingsExpander
+                x:Name="Card"
                 controls:SettingsSection.IsCard="True"
                 HorizontalAlignment="Stretch"
                 HorizontalContentAlignment="Stretch"
                 Padding="{TemplateBinding Padding}"
                 IsExpanded="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"
-                AutomationProperties.Name="{TemplateBinding Header}">
+                AutomationProperties.Name="{TemplateBinding Header}"
+              >
                 <controls:SettingsExpander.Header>
                   <Grid x:Name="HeaderLayout" MinHeight="68" ColumnSpacing="24">
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="20" />
                       <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
-                    <FontIcon FontFamily="{ThemeResource LucideFont}" Glyph="{TemplateBinding Glyph}"
-                      FontSize="{StaticResource TinyTorrentHeaderIconSize}" AutomationProperties.AccessibilityView="Raw" />
+                    <FontIcon
+                      FontFamily="{ThemeResource LucideFont}"
+                      Glyph="{TemplateBinding Glyph}"
+                      FontSize="{StaticResource TinyTorrentHeaderIconSize}"
+                      AutomationProperties.AccessibilityView="Raw"
+                    />
                     <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
-                      <TextBlock Text="{TemplateBinding Header}"
+                      <TextBlock
+                        Text="{TemplateBinding Header}"
                         Style="{StaticResource TinyTorrentBodyTextStyle}"
                         TextTrimming="CharacterEllipsis"
                         ToolTipService.ToolTip="{TemplateBinding Header}"
-                        AutomationProperties.HeadingLevel="Level2" />
-                      <TextBlock x:Name="SummaryLabel"
+                        AutomationProperties.HeadingLevel="Level2"
+                      />
+                      <TextBlock
+                        x:Name="SummaryLabel"
                         Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
-                        TextTrimming="CharacterEllipsis" />
+                        TextTrimming="CharacterEllipsis"
+                      />
                     </StackPanel>
                   </Grid>
                 </controls:SettingsExpander.Header>
-                <ContentPresenter Content="{TemplateBinding Content}" HorizontalContentAlignment="Stretch" />
+                <ContentPresenter
+                  Content="{TemplateBinding Content}"
+                  HorizontalContentAlignment="Stretch"
+                />
               </controls:SettingsExpander>
             </ControlTemplate>
           </Setter.Value>
@@ -1142,14 +1249,29 @@
             <ControlTemplate TargetType="controls:SettingsSection">
               <StackPanel Spacing="8">
                 <StackPanel Spacing="8">
-                  <TextBlock Text="{TemplateBinding Header}" Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
-                    TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{TemplateBinding Header}"
-                    AutomationProperties.HeadingLevel="Level2" />
-                  <TextBlock x:Name="SummaryLabel" Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
-                    TextTrimming="CharacterEllipsis" Visibility="Collapsed" />
+                  <TextBlock
+                    Text="{TemplateBinding Header}"
+                    Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
+                    TextTrimming="CharacterEllipsis"
+                    ToolTipService.ToolTip="{TemplateBinding Header}"
+                    AutomationProperties.HeadingLevel="Level2"
+                  />
+                  <TextBlock
+                    x:Name="SummaryLabel"
+                    Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
+                    TextTrimming="CharacterEllipsis"
+                    Visibility="Collapsed"
+                  />
                 </StackPanel>
-                <Border x:Name="Card" Style="{StaticResource TinyTorrentSettingsCardStyle}" Padding="{TemplateBinding Padding}">
-                  <ContentPresenter Content="{TemplateBinding Content}" HorizontalContentAlignment="Stretch" />
+                <Border
+                  x:Name="Card"
+                  Style="{StaticResource TinyTorrentSettingsCardStyle}"
+                  Padding="{TemplateBinding Padding}"
+                >
+                  <ContentPresenter
+                    Content="{TemplateBinding Content}"
+                    HorizontalContentAlignment="Stretch"
+                  />
                 </Border>
               </StackPanel>
             </ControlTemplate>
@@ -1173,8 +1295,14 @@
         <Setter Property="Template">
           <Setter.Value>
             <ControlTemplate TargetType="controls:SettingsRow">
-              <Grid x:Name="RowRoot" Padding="0,10" MinHeight="52" ColumnSpacing="16"
-                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
+              <Grid
+                x:Name="RowRoot"
+                Padding="0,10"
+                MinHeight="52"
+                ColumnSpacing="16"
+                BorderBrush="{TemplateBinding BorderBrush}"
+                BorderThickness="{TemplateBinding BorderThickness}"
+              >
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="*" />
                   <ColumnDefinition Width="Auto" />
@@ -1188,16 +1316,26 @@
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                   </Grid.ColumnDefinitions>
-                  <ContentPresenter x:Name="IconPresenter" Content="{TemplateBinding Icon}"
-                    Margin="0,0,12,0" VerticalAlignment="Center" Visibility="Collapsed" />
+                  <ContentPresenter
+                    x:Name="IconPresenter"
+                    Content="{TemplateBinding Icon}"
+                    Margin="0,0,12,0"
+                    VerticalAlignment="Center"
+                    Visibility="Collapsed"
+                  />
                   <StackPanel Grid.Column="1" Spacing="4">
                     <controls:FieldHeader
                       Label="{TemplateBinding Header}"
-                      Error="{TemplateBinding Error}" Caution="{TemplateBinding Caution}" />
-                    <TextBlock x:Name="DescriptionLabel" Text="{TemplateBinding Description}"
+                      Error="{TemplateBinding Error}"
+                      Caution="{TemplateBinding Caution}"
+                    />
+                    <TextBlock
+                      x:Name="DescriptionLabel"
+                      Text="{TemplateBinding Description}"
                       Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
                       TextTrimming="CharacterEllipsis"
-                      ToolTipService.ToolTip="{TemplateBinding Description}" />
+                      ToolTipService.ToolTip="{TemplateBinding Description}"
+                    />
                   </StackPanel>
                 </Grid>
                 <Grid

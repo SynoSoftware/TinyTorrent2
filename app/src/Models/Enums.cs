@@ -449,7 +449,17 @@ internal enum FetchScope
     New,
     Missing,
     All,
-    Reidentify,
+}
+
+// What one provider last answered for a file, which groups Fetch metadata's batch.
+internal enum ProviderAnswer
+{
+    // Never asked, or the request did not complete.
+    Unasked,
+
+    // The provider has no data or no acceptable match for the file.
+    NotFound,
+    Found,
 }
 
 // Lookup policies govern eligibility and whether a match is the person's decision.
@@ -457,13 +467,13 @@ internal enum LookupKind
 {
     // The background sweep skips decisions and previous attempts.
     Automatic,
+
     // A batch retries unresolved files; matching still makes the decision.
     Batch,
+
     // Refresh preserves an existing identification from the same provider.
     Refresh,
-    // Re-identification may replace another provider's automatic
-    // identification; the person's own decisions stay.
-    Reidentify,
+
     // An individual request reports errors and saves an explicit decision.
     Explicit,
 }
@@ -473,9 +483,11 @@ internal enum LibraryReadiness
     // The engine is disconnected or its data sources are not current, so
     // Library shows the last known rows.
     Offline,
+
     // The data sources match the engine, so rows can be searched while their
     // files are still being read.
     Current,
+
     // Every file has been read, so lookups and file facts can run.
     Ready,
 }
@@ -497,6 +509,7 @@ internal enum NoticeKind
     Completion,
     SubtitleError,
     Outcome,
+    SearchLimit,
 #if CAPTURE
     // A notice a capture journey shows without the state behind it; the
     // model neither describes nor removes it.

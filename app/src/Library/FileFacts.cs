@@ -56,30 +56,40 @@ internal sealed class FileFacts(Database database, BackgroundWork work) : IAsync
         var signalling = Task.CompletedTask;
         var ended = false;
         var done = 0;
-        var observation = new WorkObservation(new WorkDescription.FileProperties(),
-            new WorkProgress.Unknown(), new WorkExecution.Running());
+        var observation = new WorkObservation(
+            new WorkDescription.FileProperties(),
+            new WorkProgress.Unknown(),
+            new WorkExecution.Running()
+        );
         try
         {
-            var pending = await database.Run(connection =>
-            {
-                using var command = connection.CreateCommand();
-                command.CommandText = """
-                    SELECT f.entry_id,f.path,f.kind,f.size FROM current_files f
-                    WHERE f.readable=1
-                    AND NOT EXISTS(SELECT 1 FROM file_facts p
-                        JOIN source_files owner USING(origin,file_index) WHERE owner.entry_id=f.entry_id)
-                    AND NOT EXISTS(SELECT 1 FROM fact_attempts a WHERE a.entry_id=f.entry_id AND a.path=f.path COLLATE PATH);
-                    """;
-                using var reader = command.ExecuteReader();
-                var targets = new List<Target>();
-                while (reader.Read())
-                    targets.Add(new(reader.GetInt64(0), reader.GetString(1))
+            var pending = await database
+                .Run(
+                    connection =>
                     {
-                        Kind = (FileKind)reader.GetInt32(2),
-                        Size = reader.GetInt64(3),
-                    });
-                return targets;
-            }, cancellation).ConfigureAwait(false);
+                        using var command = connection.CreateCommand();
+                        command.CommandText = """
+                            SELECT f.entry_id,f.path,f.kind,f.size FROM current_files f
+                            WHERE f.readable=1
+                            AND NOT EXISTS(SELECT 1 FROM file_facts p
+                                JOIN source_files owner USING(origin,file_index) WHERE owner.entry_id=f.entry_id)
+                            AND NOT EXISTS(SELECT 1 FROM fact_attempts a WHERE a.entry_id=f.entry_id AND a.path=f.path COLLATE PATH);
+                            """;
+                        using var reader = command.ExecuteReader();
+                        var targets = new List<Target>();
+                        while (reader.Read())
+                            targets.Add(
+                                new(reader.GetInt64(0), reader.GetString(1))
+                                {
+                                    Kind = (FileKind)reader.GetInt32(2),
+                                    Size = reader.GetInt64(3),
+                                }
+                            );
+                        return targets;
+                    },
+                    cancellation
+                )
+                .ConfigureAwait(false);
             Target[] accepted;
             lock (_gate)
                 accepted = pending.Where(target => !_cancelled.Contains(target)).ToArray();
@@ -91,21 +101,27 @@ internal sealed class FileFacts(Database database, BackgroundWork work) : IAsync
                 {
                     Progress = new WorkProgress.Fraction(0, accepted.Length, WorkUnit.Files),
                 };
-                operation = work.Begin(observation, () =>
-                {
-                    lock (_gate)
+                operation = work.Begin(
+                    observation,
+                    () =>
                     {
-                        if (!ended && !request.IsCancellationRequested)
+                        lock (_gate)
                         {
-                            foreach (var target in accepted.Skip(done))
-                                _cancelled.Add(target);
-                            observation = observation with { Execution = new WorkExecution.Cancelling() };
-                            operation?.Report(observation);
-                            signalling = request.CancelAsync();
+                            if (!ended && !request.IsCancellationRequested)
+                            {
+                                foreach (var target in accepted.Skip(done))
+                                    _cancelled.Add(target);
+                                observation = observation with
+                                {
+                                    Execution = new WorkExecution.Cancelling(),
+                                };
+                                operation?.Report(observation);
+                                signalling = request.CancelAsync();
+                            }
+                            return signalling;
                         }
-                        return signalling;
                     }
-                });
+                );
             }
             foreach (var target in accepted)
             {
@@ -185,7 +201,11 @@ internal sealed class FileFacts(Database database, BackgroundWork work) : IAsync
                     {
                         observation = observation with
                         {
-                            Progress = new WorkProgress.Fraction(done, accepted.Length, WorkUnit.Files),
+                            Progress = new WorkProgress.Fraction(
+                                done,
+                                accepted.Length,
+                                WorkUnit.Files
+                            ),
                         };
                         operation.Report(observation);
                     }
@@ -202,8 +222,12 @@ internal sealed class FileFacts(Database database, BackgroundWork work) : IAsync
         }
         finally
         {
-            lock (_gate) ended = true;
-            try { await signalling.ConfigureAwait(false); }
+            lock (_gate)
+                ended = true;
+            try
+            {
+                await signalling.ConfigureAwait(false);
+            }
             finally
             {
                 operation?.Dispose();

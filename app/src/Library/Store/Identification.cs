@@ -1,7 +1,7 @@
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Services;
-using System.Text.Json;
 
 namespace Syno.TinyTorrent.Library;
 
@@ -24,10 +24,17 @@ internal sealed partial class Store
                     AND (a.outcome IS NULL OR a.outcome<>'cancelled'))
             """;
 
-    internal Task<IReadOnlyList<VideoChoice>?> Search(RequestKey key, CancellationToken cancellation, long since = 0) =>
-        database.Run(connection => Search(connection, key, since), cancellation);
+    internal Task<IReadOnlyList<VideoChoice>?> Search(
+        RequestKey key,
+        CancellationToken cancellation,
+        long since = 0
+    ) => database.Run(connection => Search(connection, key, since), cancellation);
 
-    private static IReadOnlyList<VideoChoice>? Search(SqliteConnection connection, RequestKey key, long since = 0)
+    private static IReadOnlyList<VideoChoice>? Search(
+        SqliteConnection connection,
+        RequestKey key,
+        long since = 0
+    )
     {
         using var command = SearchCommand(connection, key);
         command.CommandText = """
@@ -53,18 +60,27 @@ internal sealed partial class Store
         IReadOnlyCollection<LookupRequest> requests,
         RequestPolicy policy,
         CancellationToken cancellation
-    ) => database.Run<IReadOnlyDictionary<RequestKey, VideoProtection>>(connection =>
-    {
-        var protection = new Dictionary<RequestKey, VideoProtection>();
-        foreach (var request in requests.DistinctBy(request => request.Key))
-        {
-            cancellation.ThrowIfCancellationRequested();
-            var choices = Search(connection, request.Key);
-            protection.Add(request.Key, new(choices,
-                choices is { Count: > 0 } ? null : policy.Read(connection, request)));
-        }
-        return protection;
-    }, cancellation);
+    ) =>
+        database.Run<IReadOnlyDictionary<RequestKey, VideoProtection>>(
+            connection =>
+            {
+                var protection = new Dictionary<RequestKey, VideoProtection>();
+                foreach (var request in requests.DistinctBy(request => request.Key))
+                {
+                    cancellation.ThrowIfCancellationRequested();
+                    var choices = Search(connection, request.Key);
+                    protection.Add(
+                        request.Key,
+                        new(
+                            choices,
+                            choices is { Count: > 0 } ? null : policy.Read(connection, request)
+                        )
+                    );
+                }
+                return protection;
+            },
+            cancellation
+        );
 
     internal Task SaveSearch(
         LookupRequest request,
@@ -77,24 +93,29 @@ internal sealed partial class Store
                 var choices = answer.Choices;
                 using var command = SearchCommand(connection, request.Key);
                 command.CommandText = """
-                        INSERT INTO video_searches(catalog_id,question_id,choices,checked) VALUES($catalog,$question,$choices,$checked)
-                        ON CONFLICT(catalog_id,question_id) DO UPDATE SET choices=excluded.choices,rejected=0,checked=excluded.checked;
-                        """;
+                    INSERT INTO video_searches(catalog_id,question_id,choices,checked) VALUES($catalog,$question,$choices,$checked)
+                    ON CONFLICT(catalog_id,question_id) DO UPDATE SET choices=excluded.choices,rejected=0,checked=excluded.checked;
+                    """;
                 command.Parameters.AddWithValue("$checked", DateTimeOffset.UtcNow.UtcTicks);
-                command.Parameters.AddWithValue("$choices", JsonSerializer.Serialize(choices.Select(choice => choice.VideoId)));
+                command.Parameters.AddWithValue(
+                    "$choices",
+                    JsonSerializer.Serialize(choices.Select(choice => choice.VideoId))
+                );
                 command.ExecuteNonQuery();
                 SaveChoices(connection, choices.ToArray());
-                RequestPolicy.Record(connection, request, answer.Empty ? RequestOutcome.Missing
-                    : choices.Count == 0 ? RequestOutcome.NoMatch : RequestOutcome.Answered);
+                RequestPolicy.Record(
+                    connection,
+                    request,
+                    answer.Empty ? RequestOutcome.Missing
+                        : choices.Count == 0 ? RequestOutcome.NoMatch
+                        : RequestOutcome.Answered
+                );
                 return true;
             },
             cancellation
         );
 
-    private static SqliteCommand SearchCommand(
-        SqliteConnection connection,
-        RequestKey key
-    )
+    private static SqliteCommand SearchCommand(SqliteConnection connection, RequestKey key)
     {
         var command = connection.CreateCommand();
         command.Parameters.AddWithValue("$catalog", key.ProviderId);
@@ -102,71 +123,104 @@ internal sealed partial class Store
         return command;
     }
 
-    internal Task RejectSearch(RequestKey key) => database.Run(connection =>
-    {
-        using var command = SearchCommand(connection, key);
-        command.CommandText = "UPDATE video_searches SET rejected=1 WHERE catalog_id=$catalog AND question_id=$question;";
-        return command.ExecuteNonQuery();
-    });
-
-    internal Task<IReadOnlyList<VideoFetch>> Fetchable(IReadOnlyCollection<Entry> entries, string catalog, CancellationToken cancellation) =>
-        database.Run<IReadOnlyList<VideoFetch>>(connection =>
+    internal Task RejectSearch(RequestKey key) =>
+        database.Run(connection =>
         {
-            var result = new List<VideoFetch>();
-            using var command = connection.CreateCommand();
-            // The person's own clear or choice of another provider's video is
-            // never fetched; another provider's automatic match only by Reidentify.
-            command.CommandText = """
-                SELECT EXISTS(SELECT 1 FROM source_files f JOIN identifications i USING(origin,file_index)
-                    WHERE f.entry_id=$entry AND i.explicit=1 AND (i.video_id IS NULL OR i.catalog_id<>$catalog)),
-                    EXISTS(SELECT 1 FROM source_files f JOIN identifications i USING(origin,file_index)
-                        WHERE f.entry_id=$entry AND i.catalog_id=$catalog AND i.video_id IS NOT NULL
-                            AND (i.explicit=1 OR i.evidence=f.name)),
-                    (SELECT b.reason FROM video_attempts a JOIN collected_files f USING(origin,file_index)
-                        JOIN request_blocks b ON b.provider_id=a.catalog_id AND b.question_id=a.question_id
-                        WHERE f.entry_id=$entry AND a.catalog_id=$catalog AND a.evidence=f.name LIMIT 1),
-                    EXISTS(SELECT 1 FROM source_files f JOIN identifications i USING(origin,file_index)
-                        WHERE f.entry_id=$entry AND i.explicit=0 AND i.evidence=f.name
-                            AND i.video_id IS NOT NULL AND i.catalog_id<>$catalog);
-                """;
-            command.Parameters.AddWithValue("$catalog", catalog);
-            command.Parameters.Add("$entry", SqliteType.Integer);
-            foreach (var entry in entries.Where(entry => entry.Kind == FileKind.Video).DistinctBy(entry => entry.EntryId))
+            using var command = SearchCommand(connection, key);
+            command.CommandText =
+                "UPDATE video_searches SET rejected=1 WHERE catalog_id=$catalog AND question_id=$question;";
+            return command.ExecuteNonQuery();
+        });
+
+    internal Task<IReadOnlyList<VideoFetch>> Fetchable(
+        IReadOnlyCollection<Entry> entries,
+        string catalog,
+        CancellationToken cancellation
+    ) =>
+        database.Run<IReadOnlyList<VideoFetch>>(
+            connection =>
             {
-                command.Parameters["$entry"].Value = entry.EntryId;
-                using var reader = command.ExecuteReader();
-                if (reader.Read() && !reader.GetBoolean(0))
-                    result.Add(new(entry with { HasMetadata = reader.GetBoolean(1) },
-                        reader.IsDBNull(2) ? null : new((RequestBlockKind)reader.GetInt32(2)), null)
-                    {
-                        IsIdentifiedElsewhere = reader.GetBoolean(3),
-                    });
-            }
-            return result;
-        }, cancellation);
+                var result = new List<VideoFetch>();
+                using var command = connection.CreateCommand();
+                // The file's current identification, as Library shows it, then
+                // what the provider last answered for the file.
+                command.CommandText = """
+                    SELECT i.catalog_id, i.video_id IS NULL, v.imdb_id IS NOT NULL
+                    FROM source_files f JOIN identifications i USING(origin,file_index)
+                    LEFT JOIN video_information v ON v.catalog_id=i.catalog_id AND v.video_id=i.video_id
+                    WHERE f.entry_id=$entry AND (i.explicit=1 OR i.evidence=f.name)
+                    ORDER BY i.explicit DESC, i.decided DESC LIMIT 1;
+                    SELECT a.outcome, b.reason FROM video_attempts a JOIN collected_files f USING(origin,file_index)
+                    LEFT JOIN request_blocks b ON b.provider_id=a.catalog_id AND b.question_id=a.question_id
+                    WHERE f.entry_id=$entry AND a.catalog_id=$catalog AND a.evidence=f.name LIMIT 1;
+                    """;
+                command.Parameters.AddWithValue("$catalog", catalog);
+                command.Parameters.Add("$entry", SqliteType.Integer);
+                foreach (
+                    var entry in entries
+                        .Where(entry => entry.Kind == FileKind.Video)
+                        .DistinctBy(entry => entry.EntryId)
+                )
+                {
+                    command.Parameters["$entry"].Value = entry.EntryId;
+                    using var reader = command.ExecuteReader();
+                    var identified = reader.Read();
+                    var own = identified && !reader.IsDBNull(0) && reader.GetString(0) == catalog;
+                    // The person's clear stays, and another provider's match
+                    // without an IMDb ID cannot show that this provider's
+                    // answer is the same title.
+                    if (identified && (reader.GetBoolean(1) || !own && !reader.GetBoolean(2)))
+                        continue;
+                    reader.NextResult();
+                    var outcome = reader.Read() && !reader.IsDBNull(0) ? reader.GetString(0) : null;
+                    var notFound =
+                        outcome == "no_match"
+                        || outcome == "blocked"
+                            && !reader.IsDBNull(1)
+                            && (RequestBlockKind)reader.GetInt32(1)
+                                is RequestBlockKind.NoMatch
+                                    or RequestBlockKind.Missing;
+                    var answer =
+                        own || outcome == "success" ? ProviderAnswer.Found
+                        : notFound ? ProviderAnswer.NotFound
+                        : ProviderAnswer.Unasked;
+                    result.Add(new(entry with { HasMetadata = own }, answer, null));
+                }
+                return result;
+            },
+            cancellation
+        );
 
     internal static void ResetProtection(SqliteConnection connection, string? providerId)
     {
         using var command = connection.CreateCommand();
-        command.CommandText = """
-            DELETE FROM video_searches WHERE ($provider IS NULL OR catalog_id=$provider)
-                AND (rejected=1 OR json_array_length(choices)=0);
-            DELETE FROM video_attempts WHERE $provider IS NULL OR catalog_id=$provider;
-            """ + Database.Invalidate;
+        command.CommandText =
+            """
+                DELETE FROM video_searches WHERE ($provider IS NULL OR catalog_id=$provider)
+                    AND (rejected=1 OR json_array_length(choices)=0);
+                DELETE FROM video_attempts WHERE $provider IS NULL OR catalog_id=$provider;
+                """ + Database.Invalidate;
         command.Parameters.AddWithValue("$provider", (object?)providerId ?? DBNull.Value);
         command.ExecuteNonQuery();
     }
 
     internal Task ClearAttempts(string catalogId, CancellationToken cancellation) =>
-        database.Run(connection =>
-        {
-            using var command = connection.CreateCommand();
-            command.CommandText = "DELETE FROM video_attempts WHERE catalog_id=$catalog;" + Database.Invalidate;
-            command.Parameters.AddWithValue("$catalog", catalogId);
-            return command.ExecuteNonQuery();
-        }, cancellation);
+        database.Run(
+            connection =>
+            {
+                using var command = connection.CreateCommand();
+                command.CommandText =
+                    "DELETE FROM video_attempts WHERE catalog_id=$catalog;" + Database.Invalidate;
+                command.Parameters.AddWithValue("$catalog", catalogId);
+                return command.ExecuteNonQuery();
+            },
+            cancellation
+        );
 
-    internal Task<IReadOnlyList<VideoTarget>> Pending(string catalogId, CancellationToken cancellation) =>
+    internal Task<IReadOnlyList<VideoTarget>> Pending(
+        string catalogId,
+        CancellationToken cancellation
+    ) =>
         database.Run<IReadOnlyList<VideoTarget>>(
             connection =>
             {
@@ -179,19 +233,21 @@ internal sealed partial class Store
                 using var reader = command.ExecuteReader();
                 var targets = new List<VideoTarget>();
                 while (reader.Read())
-                    targets.Add(new VideoTarget(
-                        new Entry(
-                            reader.GetInt64(0),
-                            reader.GetString(1),
-                            reader.GetString(2),
-                            reader.GetInt64(3)
+                    targets.Add(
+                        new VideoTarget(
+                            new Entry(
+                                reader.GetInt64(0),
+                                reader.GetString(1),
+                                reader.GetString(2),
+                                reader.GetInt64(3)
+                            )
+                            {
+                                Kind = FileKind.Video,
+                            },
+                            catalogId,
+                            LookupKind.Automatic
                         )
-                        {
-                            Kind = FileKind.Video,
-                        },
-                        catalogId,
-                        LookupKind.Automatic
-                    ));
+                    );
                 return targets.DistinctBy(target => target.Entry.EntryId).ToArray();
             },
             cancellation
@@ -206,8 +262,8 @@ internal sealed partial class Store
             connection =>
             {
                 using var command = TargetCommand(connection, target);
-                // A batch file can wait while the person saves a decision for it,
-                // which the batch must not replace.
+                // A batch never fetches for a file whose information the person
+                // cleared, which can happen while the file waits.
                 command.CommandText =
                     "SELECT EXISTS(SELECT 1 FROM collected_files f "
                     + "WHERE f.entry_id=$entry AND f.path=$path COLLATE PATH AND f.name=$name"
@@ -215,18 +271,35 @@ internal sealed partial class Store
                         target.Kind switch
                         {
                             LookupKind.Automatic => " AND " + Eligible,
-                            LookupKind.Batch => " AND " + Undecided,
-                            LookupKind.Refresh => " AND NOT EXISTS(SELECT 1 FROM source_files m JOIN identifications i USING(origin,file_index)"
-                                + " WHERE m.entry_id=f.entry_id AND (i.explicit=1 AND i.video_id IS NULL"
-                                + " OR i.video_id IS NOT NULL AND i.catalog_id<>$catalog))",
-                            LookupKind.Reidentify => " AND NOT EXISTS(SELECT 1 FROM source_files m JOIN identifications i USING(origin,file_index)"
-                                + " WHERE m.entry_id=f.entry_id AND i.explicit=1 AND (i.video_id IS NULL OR i.catalog_id<>$catalog))",
+                            LookupKind.Batch or LookupKind.Refresh =>
+                                " AND NOT EXISTS(SELECT 1 FROM source_files m"
+                                    + " JOIN identifications i USING(origin,file_index)"
+                                    + " WHERE m.entry_id=f.entry_id AND i.explicit=1 AND i.video_id IS NULL)",
                             _ => string.Empty,
                         }
                     )
                     + ");";
                 if (Convert.ToInt64(command.ExecuteScalar()) == 0)
                     return null;
+                // A batch answer for a file another provider identified adds
+                // to that title instead of replacing the identification.
+                long? addsTo = null;
+                if (target.Kind is LookupKind.Batch or LookupKind.Refresh)
+                {
+                    command.CommandText = """
+                        SELECT i.catalog_id,v.imdb_id FROM source_files f JOIN identifications i USING(origin,file_index)
+                        JOIN video_information v ON v.catalog_id=i.catalog_id AND v.video_id=i.video_id
+                        WHERE f.entry_id=$entry AND (i.explicit=1 OR i.evidence=f.name)
+                        ORDER BY i.explicit DESC,i.decided DESC LIMIT 1;
+                        """;
+                    using var reader = command.ExecuteReader();
+                    if (reader.Read() && reader.GetString(0) != target.CatalogId)
+                    {
+                        if (reader.IsDBNull(1))
+                            return null;
+                        addsTo = reader.GetInt64(1);
+                    }
+                }
                 command.CommandText = """
                     SELECT COALESCE(MAX(i.decided),0) FROM source_files f JOIN identifications i USING(origin,file_index)
                     WHERE f.entry_id=$entry;
@@ -267,7 +340,11 @@ internal sealed partial class Store
                     """;
                 command.Parameters.AddWithValue("$request", requestId);
                 command.ExecuteNonQuery();
-                return new VideoAttempt(target, requestId, choice, decided, language) { Explicit = explicitChoice };
+                return new VideoAttempt(target, requestId, choice, decided, language)
+                {
+                    Explicit = explicitChoice,
+                    AddsTo = addsTo,
+                };
             },
             cancellation
         );
@@ -309,18 +386,22 @@ internal sealed partial class Store
                             : "success"
                         : "cancelled"
                 );
-                command.Parameters.AddWithValue("$question",
+                command.Parameters.AddWithValue(
+                    "$question",
                     accepted && video is null && attempt.BlockedRequest is { } blocked
-                        ? blocked.QuestionId : (object)DBNull.Value);
+                        ? blocked.QuestionId
+                        : (object)DBNull.Value
+                );
                 command.ExecuteNonQuery();
                 if (accepted && video is not null)
                 {
-                    SaveIdentification(
-                        connection,
-                        attempt.Target.Entry.EntryId,
-                        video,
-                        attempt.Target.Kind == LookupKind.Explicit || attempt.Explicit
-                    );
+                    if (attempt.AddsTo is null)
+                        SaveIdentification(
+                            connection,
+                            attempt.Target.Entry.EntryId,
+                            video,
+                            attempt.Target.Kind == LookupKind.Explicit || attempt.Explicit
+                        );
                     command.CommandText = Database.PruneVideos + Database.Invalidate;
                     command.ExecuteNonQuery();
                 }
@@ -410,4 +491,11 @@ internal sealed record VideoAttempt(
 {
     internal bool Explicit { get; init; }
     internal RequestKey? BlockedRequest { get; init; }
+
+    /// <summary>
+    /// The IMDb number of another provider's identification, which the attempt
+    /// only adds to: it saves a video with this number and keeps the
+    /// identification.
+    /// </summary>
+    internal long? AddsTo { get; init; }
 }

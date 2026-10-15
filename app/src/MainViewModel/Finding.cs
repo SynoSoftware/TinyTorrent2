@@ -13,8 +13,13 @@ public sealed partial class MainViewModel
     private bool _filtersCollapsed;
     internal Navigation Navigation { get; }
     public WindowPage Page => Navigation.Page;
-    public ICommand ReturnWorkspace => Navigation.Workspace == WindowPage.Library ? ShowLibrary : ShowTorrents;
-    public string ReturnText => Text.Get("settings", Navigation.Workspace == WindowPage.Library ? "return_library" : "return_torrents");
+    public ICommand ReturnWorkspace =>
+        Navigation.Workspace == WindowPage.Library ? ShowLibrary : ShowTorrents;
+    public string ReturnText =>
+        Text.Get(
+            "settings",
+            Navigation.Workspace == WindowPage.Library ? "return_library" : "return_torrents"
+        );
 
     private void RefreshNavigation()
     {
@@ -110,8 +115,10 @@ public sealed partial class MainViewModel
                 return Library.Status;
             if (Page == WindowPage.Settings)
             {
-                var category = Navigation.Current == WindowPage.Connection ? "connection_setup"
-                    : Navigation.Settings?.Category?.ToString().ToLowerInvariant() ?? "home";
+                var category =
+                    Navigation.Current == WindowPage.Connection
+                        ? "connection_setup"
+                        : Navigation.Settings?.Category?.ToString().ToLowerInvariant() ?? "home";
                 return Text.Get("commands", "settings") + " · " + Text.Get("settings", category);
             }
             if (IsAbout)
@@ -124,14 +131,23 @@ public sealed partial class MainViewModel
                 return Text.Get("window", "torrents_unavailable");
             if (_sessionId.Length == 0 || _loading)
                 return Text.Get("window", "connecting");
-            var count = Filter == TorrentFilter.All
-                ? Text.FormatCount("window", "torrents", Torrents.Count)
-                : Text.Format("window", "filtered_torrents", VisibleTorrents.Count, Torrents.Count, FilterName);
+            var count =
+                Filter == TorrentFilter.All
+                    ? Text.FormatCount("window", "torrents", Torrents.Count)
+                    : Text.Format(
+                        "window",
+                        "filtered_torrents",
+                        VisibleTorrents.Count,
+                        Torrents.Count,
+                        FilterName
+                    );
             if (_selected.Length > 0)
                 count = Text.Format("window", "torrents_selected", count, _selected.Length);
             if (Inspector.PeerSummary is { Length: > 0 } peers)
                 count += " · " + peers;
-            return !_connected || _storageFailed ? Text.Format("window", "last_known", count) : count;
+            return !_connected || _storageFailed
+                ? Text.Format("window", "last_known", count)
+                : count;
         }
     }
     private string FilterName => Text.Get("filters", Filter.ToString().ToLowerInvariant());
@@ -224,7 +240,9 @@ public sealed partial class MainViewModel
             .Take(30)
             .ToArray();
         var torrents = Torrents
-            .Where(torrent => words.All(word => torrent.SearchText.Contains(word, StringComparison.Ordinal)))
+            .Where(torrent =>
+                words.All(word => torrent.SearchText.Contains(word, StringComparison.Ordinal))
+            )
             .Take(30 - actions.Length)
             .Select(torrent => new Suggestion(
                 torrent.Name,
@@ -441,7 +459,9 @@ public sealed partial class MainViewModel
             new(SettingsCategory.Plugins, "lookup_limit"),
             Text.Get("plugins", "lookups")
         );
-        foreach (var name in new[] { "automatic", "extras", "supplier", "languages", "batch", "scan" })
+        foreach (
+            var name in new[] { "automatic", "extras", "supplier", "languages", "batch", "scan" }
+        )
             yield return SettingSuggestion(
                 new(SettingsCategory.Plugins, "subtitle_" + name),
                 Text.Get("subtitles", name)
@@ -471,15 +491,16 @@ public sealed class FilterChoice(MainViewModel owner, TorrentFilter filter) : IN
 {
     private int _count;
     public TorrentFilter Filter { get; } = filter;
-    public string Glyph => Filter switch
-    {
-        TorrentFilter.Downloading => Lucide.ArrowDownToLine,
-        TorrentFilter.Seeding => Lucide.ArrowUpFromLine,
-        TorrentFilter.Paused => Lucide.Square,
-        TorrentFilter.Queued => Lucide.Clock,
-        TorrentFilter.Errors => Lucide.CircleAlert,
-        _ => Lucide.List,
-    };
+    public string Glyph =>
+        Filter switch
+        {
+            TorrentFilter.Downloading => Lucide.ArrowDownToLine,
+            TorrentFilter.Seeding => Lucide.ArrowUpFromLine,
+            TorrentFilter.Paused => Lucide.Square,
+            TorrentFilter.Queued => Lucide.Clock,
+            TorrentFilter.Errors => Lucide.CircleAlert,
+            _ => Lucide.List,
+        };
     public string Label => owner.Text.Get("filters", Filter.ToString().ToLowerInvariant());
     public int Count => _count;
     public bool IsCountAccent => Filter == TorrentFilter.Downloading && Count > 0;

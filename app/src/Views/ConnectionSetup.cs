@@ -101,14 +101,20 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
             : Percent(_alternativeShare);
     public string StandardRates => Rates(_standardShare);
     public string AlternativeRates => Rates(_alternativeShare);
-    public string StandardHint => Text.Get("connection_setup", "standard_hint")
+    public string StandardHint =>
+        Text.Get("connection_setup", "standard_hint")
         + (StandardFollows ? string.Empty : " " + Text.Get("connection_setup", "kept_hint"));
-    public string AlternativeHint => Text.Get("connection_setup", "alternative_hint")
+    public string AlternativeHint =>
+        Text.Get("connection_setup", "alternative_hint")
         + (AlternativeFollows ? string.Empty : " " + Text.Get("connection_setup", "kept_hint"));
-    public string StandardUse => _main.IsConnected
-        ? Text.Get("connection_setup", _main.HasStandardLimits ? "in_use" : "not_in_use") : string.Empty;
-    public string AlternativeUse => _main.IsConnected
-        ? Text.Get("connection_setup", _main.HasAlternativeLimits ? "in_use" : "not_in_use") : string.Empty;
+    public string StandardUse =>
+        _main.IsConnected
+            ? Text.Get("connection_setup", _main.HasStandardLimits ? "in_use" : "not_in_use")
+            : string.Empty;
+    public string AlternativeUse =>
+        _main.IsConnected
+            ? Text.Get("connection_setup", _main.HasAlternativeLimits ? "in_use" : "not_in_use")
+            : string.Empty;
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public string Download
@@ -216,7 +222,12 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
         var saved = SavedQueue;
         return
         [
-            Row(Text.Get("connection_setup", "active_downloads"), saved.Downloads, queue?.Downloads, Count),
+            Row(
+                Text.Get("connection_setup", "active_downloads"),
+                saved.Downloads,
+                queue?.Downloads,
+                Count
+            ),
             Row(Text.Get("connection_setup", "active_seeds"), saved.Seeds, queue?.Seeds, Count),
             Row(Text.Get("connection_setup", "active_torrents"), saved.Total, queue?.Total, Count),
         ];
@@ -366,7 +377,10 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
         var proposal = Propose();
         ModeRows = RetainRows(ModeRows, CreateModeRows(proposal));
         StandardRows = RetainRows(StandardRows, PairRows(SavedStandard, proposal?.Standard));
-        AlternativeRows = RetainRows(AlternativeRows, PairRows(SavedAlternative, proposal?.Alternative));
+        AlternativeRows = RetainRows(
+            AlternativeRows,
+            PairRows(SavedAlternative, proposal?.Alternative)
+        );
         QueueRows = RetainRows(QueueRows, CreateQueueRows(proposal?.Queue));
         PropertyChanged?.Invoke(this, new(string.Empty));
     }
@@ -480,8 +494,7 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
             next is { } changed && changed != current
         );
 
-    private string Rate(int bytes) =>
-        Text.SpeedLimit(bytes);
+    private string Rate(int bytes) => Text.SpeedLimit(bytes);
 
     private string Count(int number) =>
         number == 0

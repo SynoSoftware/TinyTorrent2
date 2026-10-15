@@ -3,34 +3,85 @@
   xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
 >
-  <ScrollViewer x:Name="Scroller" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-    HorizontalContentAlignment="Stretch">
+  <ScrollViewer
+    x:Name="Scroller"
+    VerticalScrollBarVisibility="Auto"
+    HorizontalScrollBarVisibility="Disabled"
+    HorizontalContentAlignment="Stretch"
+  >
     <Grid MinHeight="{Binding ViewportHeight, ElementName=Scroller}" Padding="24,48">
-      <Grid x:Name="Layout" MaxWidth="800" VerticalAlignment="Center" ColumnSpacing="24" SizeChanged="OnLayoutSize">
-        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-        <Border x:Name="Identity" Padding="0,0,32,0" BorderThickness="0,0,1,0"
-          BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}">
+      <Grid
+        x:Name="Layout"
+        MaxWidth="800"
+        VerticalAlignment="Center"
+        ColumnSpacing="24"
+        SizeChanged="OnLayoutSize"
+      >
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Border
+          x:Name="Identity"
+          Padding="0,0,32,0"
+          BorderThickness="0,0,1,0"
+          BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+        >
           <StackPanel>
             <Grid ColumnSpacing="16">
-              <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-              <Image Source="ms-appx:///Assets/tinyTorrent.svg" Width="72" Height="78" Stretch="Uniform"
-                AutomationProperties.AccessibilityView="Raw" />
-              <TextBlock Grid.Column="1" Text="{x:Bind Main.AboutTitle, Mode=OneWay}"
-                Style="{StaticResource TinyTorrentPageTitleTextStyle}" FontSize="34" VerticalAlignment="Bottom"
-                AutomationProperties.HeadingLevel="Level1" />
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <Image
+                Source="ms-appx:///Assets/tinyTorrent.svg"
+                Width="72"
+                Height="78"
+                Stretch="Uniform"
+                AutomationProperties.AccessibilityView="Raw"
+              />
+              <TextBlock
+                Grid.Column="1"
+                Text="{x:Bind Main.AboutTitle, Mode=OneWay}"
+                Style="{StaticResource TinyTorrentPageTitleTextStyle}"
+                FontSize="34"
+                VerticalAlignment="Bottom"
+                AutomationProperties.HeadingLevel="Level1"
+              />
             </Grid>
-            <TextBlock Text="{x:Bind Main.AboutDescription, Mode=OneWay}" TextWrapping="Wrap" Margin="0,16,0,0" />
-            <TextBlock x:Name="Promises" Text="{x:Bind Main.AboutPromises, Mode=OneWay}" TextWrapping="Wrap" Margin="0,12,0,0"
-              FontSize="13" LineHeight="21" LineStackingStrategy="BlockLineHeight"
-              Foreground="{ThemeResource TextFillColorSecondaryBrush}">
+            <TextBlock
+              Text="{x:Bind Main.AboutDescription, Mode=OneWay}"
+              TextWrapping="Wrap"
+              Margin="0,16,0,0"
+            />
+            <TextBlock
+              x:Name="Promises"
+              Text="{x:Bind Main.AboutPromises, Mode=OneWay}"
+              TextWrapping="Wrap"
+              Margin="0,12,0,0"
+              FontSize="13"
+              LineHeight="21"
+              LineStackingStrategy="BlockLineHeight"
+              Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+            >
               <ToolTipService.ToolTip>
                 <TextBlock x:Name="TelemetryHint" MaxWidth="360" TextWrapping="Wrap" />
               </ToolTipService.ToolTip>
             </TextBlock>
             <StackPanel Orientation="Horizontal" Spacing="16" Margin="0,16,0,0">
-              <TextBlock x:Name="VersionLabel" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-              <TextBlock Text="{x:Bind Main.Version}" FontWeight="SemiBold" IsTextSelectionEnabled="True" />
+              <TextBlock
+                x:Name="VersionLabel"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+              />
+              <TextBlock
+                Text="{x:Bind Main.Version}"
+                FontWeight="SemiBold"
+                IsTextSelectionEnabled="True"
+              />
             </StackPanel>
           </StackPanel>
         </Border>

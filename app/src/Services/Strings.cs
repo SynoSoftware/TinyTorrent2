@@ -10,6 +10,30 @@ namespace Syno.TinyTorrent.Services;
 
 public sealed class Strings
 {
+    internal static IReadOnlyList<CultureInfo> Languages { get; } =
+        Array.AsReadOnly<CultureInfo>([
+            new("en"),
+            new("es"),
+            new("nl"),
+            new("zh"),
+            new("pt"),
+            new("fr"),
+        ]);
+
+    // The flag beside the name shows the region, so the name leaves it out:
+    // Portuguese reads Português, not Português (Brasil).
+    internal static string NativeName(CultureInfo language) =>
+        language.TextInfo.ToTitleCase(
+            (language.IsNeutralCulture ? language : language.Parent).NativeName
+        );
+
+    // The region whose flag stands for the language. English text uses British
+    // spelling, so it shows the UK flag rather than its default region's.
+    internal static string FlagRegion(CultureInfo language) =>
+        language.Name == "en"
+            ? "GB"
+            : new RegionInfo(CultureInfo.CreateSpecificCulture(language.Name).Name).TwoLetterISORegionName;
+
     private static readonly string[] _units = ["bytes", "kib", "mib", "gib", "tib"];
     private Catalogue _current;
     private readonly HashSet<string> _languageTags;
@@ -132,8 +156,10 @@ public sealed class Strings
             CommandException => error.Message,
             DatabaseVersionException => Get("errors", "database_incompatible"),
             RequestBlockedException blocked => Protection(blocked.Block),
-            Library.ProviderException { Block: { } block } =>
-                Get("request_protection", block.Kind.ToString().ToLowerInvariant()),
+            Library.ProviderException { Block: { } block } => Get(
+                "request_protection",
+                block.Kind.ToString().ToLowerInvariant()
+            ),
             Library.VideoException video => Failure(video),
             Subtitles.SubtitleException subtitle => Get(
                 "subtitles",
@@ -152,14 +178,19 @@ public sealed class Strings
         var reason = error is { Failure: VideoFailure.Refused, Provider.Access: not Access.Key }
             ? "refused_request"
             : error.Failure.ToString().ToLowerInvariant();
-        return Format("library", "failure_" + reason, error.Provider?.Name ?? error.Subject ?? string.Empty);
+        return Format(
+            "library",
+            "failure_" + reason,
+            error.Provider?.Name ?? error.Subject ?? string.Empty
+        );
     }
 
     internal string Protection(RequestBlock block)
     {
         var reason = Get("request_protection", block.Kind.ToString().ToLowerInvariant());
         return block.RetryAt is { } retry
-            ? Format("request_protection", "retry_at", reason, Time(retry)) : reason;
+            ? Format("request_protection", "retry_at", reason, Time(retry))
+            : reason;
     }
 
     public string RateUnit(RateScale scale) =>
@@ -245,7 +276,9 @@ public sealed class Strings
         IReadOnlySet<string> LanguageTags
     )
     {
-        private readonly ConcurrentDictionary<string, string> _names = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, string> _names = new(
+            StringComparer.OrdinalIgnoreCase
+        );
 
         internal string LanguageName(string tag)
         {
@@ -265,7 +298,8 @@ public sealed class Strings
             try
             {
                 CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo(Language);
-                var supplied = LanguageTags.Contains(tag)
+                var supplied =
+                    LanguageTags.Contains(tag)
                     || string.Equals(tag, Language, StringComparison.OrdinalIgnoreCase);
                 if (tag.Length == 0 && !supplied)
                     return tag;

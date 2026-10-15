@@ -993,7 +993,11 @@ public sealed partial class Table
     private bool MoveCurrentToEdge(bool first, bool extend, bool ctrl)
     {
         SyncSelectionPolicy();
-        for (int index = first ? 0 : View.Count - 1; index >= 0 && index < View.Count; index += first ? 1 : -1)
+        for (
+            int index = first ? 0 : View.Count - 1;
+            index >= 0 && index < View.Count;
+            index += first ? 1 : -1
+        )
         {
             if (_selection.IsInteractive(View[index]))
                 return MoveCurrentTo(View[index], extend, ctrl);

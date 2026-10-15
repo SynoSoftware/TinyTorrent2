@@ -128,8 +128,7 @@ public sealed partial class MainWindow
                 VisualTreeHelper
                     .GetOpenPopupsForXamlRoot(Root.XamlRoot)
                     .Concat(
-                        CaptureElements(Root)
-                            .OfType<Microsoft.UI.Xaml.Controls.Primitives.Popup>()
+                        CaptureElements(Root).OfType<Microsoft.UI.Xaml.Controls.Primitives.Popup>()
                     )
                     .Distinct()
                     .Where(popup => popup.IsOpen)
@@ -164,7 +163,14 @@ public sealed partial class MainWindow
                 } while (!stable && rendering.ElapsedMilliseconds < 5000);
                 if (bitmap.PixelWidth == 0 || bitmap.PixelHeight == 0 || pixels.Length == 0)
                 {
-                    frames.Add(new { file = (string?)null, type = element.GetType().Name, rendered = false });
+                    frames.Add(
+                        new
+                        {
+                            file = (string?)null,
+                            type = element.GetType().Name,
+                            rendered = false,
+                        }
+                    );
                     continue;
                 }
                 var frame = frames.Count == 0 ? "window.png" : $"popup-{frames.Count}.png";
@@ -410,7 +416,7 @@ public sealed partial class MainWindow
             }
             Model.PresentedStatus = null;
             Notify("completed", string.Empty, string.Empty);
-            Model.ShowOutcome(text.Get("subtitles", "connected"), "OpenSubtitles");
+            Model.ShowOutcome("subtitles", "connected", "OpenSubtitles");
             await CapturePage(prefix + "toast-finished");
             Model.Report(new CommandException("storage_failed", null, text, "move"));
             await CapturePage(prefix + "toast-command");
@@ -895,7 +901,7 @@ public sealed partial class MainWindow
         return draft
             .Days.Select(day =>
                 days.TryGetElement(day.Index) is CheckBox control
-                    && AutomationProperties.GetAutomationId(control) == day.AutomationId
+                && AutomationProperties.GetAutomationId(control) == day.AutomationId
                     ? control
                     : throw new InvalidOperationException(
                         $"The native schedule day {day.Index} is not realized."
@@ -936,10 +942,14 @@ public sealed partial class MainWindow
                 var time = picker.SelectedTime;
                 picker.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false });
                 await CaptureLayout();
-                CaptureInvoke(CaptureElements(picker).OfType<Button>()
-                    .Single(button => button.Name == "FlyoutButton"));
+                CaptureInvoke(
+                    CaptureElements(picker)
+                        .OfType<Button>()
+                        .Single(button => button.Name == "FlyoutButton")
+                );
                 await CaptureLayout();
-                var popup = VisualTreeHelper.GetOpenPopupsForXamlRoot(Root.XamlRoot)
+                var popup = VisualTreeHelper
+                    .GetOpenPopupsForXamlRoot(Root.XamlRoot)
                     .Single(popup => popup.Child is TimePickerFlyoutPresenter);
                 try
                 {
@@ -947,15 +957,25 @@ public sealed partial class MainWindow
                 }
                 finally
                 {
-                    CaptureInvoke(CaptureElements(popup.Child).OfType<Button>()
-                        .Single(button => button.Name == "DismissButton"));
+                    CaptureInvoke(
+                        CaptureElements(popup.Child)
+                            .OfType<Button>()
+                            .Single(button => button.Name == "DismissButton")
+                    );
                     await CaptureLayout();
                 }
                 if (popup.IsOpen || picker.SelectedTime != time)
                     throw new InvalidOperationException(
                         "Dismissing the native time picker left it open or changed the period time."
                     );
-                outcomes.Add(new { journey = "dismiss schedule time picker", picker = id, timeRetained = true });
+                outcomes.Add(
+                    new
+                    {
+                        journey = "dismiss schedule time picker",
+                        picker = id,
+                        timeRetained = true,
+                    }
+                );
             }
             async Task ClearDays()
             {
@@ -1087,11 +1107,15 @@ public sealed partial class MainWindow
                         {
                             await Model.ChooseLimits(LimitMode.None);
                             if (Model.LimitsIndex != (int)LimitMode.None)
-                                throw new InvalidOperationException("The review could not choose No limits.");
+                                throw new InvalidOperationException(
+                                    "The review could not choose No limits."
+                                );
                             await CapturePage(prefix + "-fixed", page);
                             await Model.ChooseLimits(LimitMode.Schedule);
                             if (!Model.FollowsSchedule)
-                                throw new InvalidOperationException("The review could not restore the weekly schedule.");
+                                throw new InvalidOperationException(
+                                    "The review could not restore the weekly schedule."
+                                );
                         }
                         await CapturePage(prefix + "-overview", page);
                         await schedule.Open(created);
@@ -2089,8 +2113,12 @@ public sealed partial class MainWindow
                         await CapturePage(name, page);
                         if (language == "en" && theme == "light" && size.Width == 720)
                         {
-                            var startup = CaptureElements(page).OfType<ToggleSwitch>().First(control => control.Name == "Startup");
-                            var handlers = CaptureElements(page).OfType<ToggleSwitch>().First(control => control.Name == "Handlers");
+                            var startup = CaptureElements(page)
+                                .OfType<ToggleSwitch>()
+                                .First(control => control.Name == "Startup");
+                            var handlers = CaptureElements(page)
+                                .OfType<ToggleSwitch>()
+                                .First(control => control.Name == "Handlers");
                             var matches =
                                 startup.IsOn == Model.Settings.Startup
                                 && handlers.IsOn == Model.Settings.Handlers
@@ -2118,7 +2146,8 @@ public sealed partial class MainWindow
                         foreach (var section in new[] { "IntegrationSection", "LifecycleSection" })
                         {
                             var element =
-                                CaptureElements(page).FirstOrDefault(element => element.Name == section)
+                                CaptureElements(page)
+                                    .FirstOrDefault(element => element.Name == section)
                                 ?? throw new InvalidOperationException(
                                     "The registration section did not load."
                                 );
@@ -2136,7 +2165,10 @@ public sealed partial class MainWindow
                                     + section.Replace("Section", string.Empty).ToLowerInvariant()
                             );
                         }
-                        if (page.FindName("NotificationsSection") is Controls.SettingsSection notifications)
+                        if (
+                            page.FindName("NotificationsSection")
+                            is Controls.SettingsSection notifications
+                        )
                         {
                             notifications.IsExpanded = true;
                             notifications.StartBringIntoView(

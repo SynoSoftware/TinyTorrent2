@@ -18,7 +18,9 @@ internal abstract class Supplier(RequestPolicy policy)
         [new OpenSubtitles(policy), new SubDL(policy), new SubSource(policy)];
 
     internal static IEnumerable<string> AllLanguages =>
-        OpenSubtitles.LanguageCodes.Keys.Concat(SubDL.LanguageCodes.Keys).Concat(SubSource.LanguageCodes.Keys);
+        OpenSubtitles
+            .LanguageCodes.Keys.Concat(SubDL.LanguageCodes.Keys)
+            .Concat(SubSource.LanguageCodes.Keys);
 
     internal abstract SubtitleSupplier SupplierId { get; }
     internal virtual bool Available => true;
@@ -65,40 +67,52 @@ internal abstract class Supplier(RequestPolicy policy)
 
     internal async Task<Allowance> Allowance(Account account)
     {
-        var search = await policy.Read([QuotaScope(account), Scope(account, "search")], CancellationToken.None).ConfigureAwait(false);
-        var download = await policy.Read(Scope(account, "download"), CancellationToken.None).ConfigureAwait(false);
+        var search = await policy
+            .Read([QuotaScope(account), Scope(account, "search")], CancellationToken.None)
+            .ConfigureAwait(false);
+        var download = await policy
+            .Read(Scope(account, "download"), CancellationToken.None)
+            .ConfigureAwait(false);
         return new(Reset(search), Reset(download));
 
         static DateTimeOffset? Reset(RequestBlock? block) =>
-            block is { Kind: RequestBlockKind.RemoteWait or RequestBlockKind.Allowance } ? block.RetryAt : null;
+            block is { Kind: RequestBlockKind.RemoteWait or RequestBlockKind.Allowance }
+                ? block.RetryAt
+                : null;
     }
 
-    internal ProviderAccess Scope(Account account, string operation) => new(
-        SupplierId.ToString().ToLowerInvariant(),
-        RequestKey.Digest(Access == Access.Password ? account.Username : ApiKey(account)),
-        operation);
+    internal ProviderAccess Scope(Account account, string operation) =>
+        new(
+            SupplierId.ToString().ToLowerInvariant(),
+            RequestKey.Digest(Access == Access.Password ? account.Username : ApiKey(account)),
+            operation
+        );
 
     internal virtual ProviderAccess QuotaScope(Account account) => Scope(account, string.Empty);
 
-    internal async Task Check(
-        ProviderHttp http,
-        Account account,
-        CancellationToken cancellation
-    )
+    internal async Task Check(ProviderHttp http, Account account, CancellationToken cancellation)
     {
         var command = new RetryCommand(DateTimeOffset.UtcNow.UtcTicks) { Recheck = true };
-        await Check(new(http, account, _ => Task.CompletedTask)
-        {
-            Purpose = "check",
-            Fresh = new(command, RequestKey.Create(Scope(account, "check").ProviderId, "check", [])),
-        }, cancellation).ConfigureAwait(false);
+        await Check(
+                new(http, account, _ => Task.CompletedTask)
+                {
+                    Purpose = "check",
+                    Fresh = new(
+                        command,
+                        RequestKey.Create(Scope(account, "check").ProviderId, "check", [])
+                    ),
+                },
+                cancellation
+            )
+            .ConfigureAwait(false);
         await policy.Succeed(Scope(account, "check")).ConfigureAwait(false);
         await policy.Succeed(Authentication(account)).ConfigureAwait(false);
     }
 
     internal ProviderAccess Authentication(Account account) => Scope(account, string.Empty);
 
-    protected Task Authenticated(Account account) => policy.Succeed(Scope(account, "authentication"));
+    protected Task Authenticated(Account account) =>
+        policy.Succeed(Scope(account, "authentication"));
 
     protected abstract Task Check(Operation operation, CancellationToken cancellation);
 
@@ -111,6 +125,7 @@ internal abstract class Supplier(RequestPolicy policy)
         string code,
         CancellationToken cancellation
     );
+
     internal async Task<byte[]> Download(
         ProviderHttp http,
         Account account,
@@ -119,8 +134,12 @@ internal abstract class Supplier(RequestPolicy policy)
         CancellationToken cancellation
     )
     {
-        var bytes = await Download(new(http, account, lookup.Validate) { Purpose = "download", Fresh = lookup.Fresh },
-            candidate, cancellation).ConfigureAwait(false);
+        var bytes = await Download(
+                new(http, account, lookup.Validate) { Purpose = "download", Fresh = lookup.Fresh },
+                candidate,
+                cancellation
+            )
+            .ConfigureAwait(false);
         await policy.Succeed(Scope(account, "download")).ConfigureAwait(false);
         return bytes;
     }
@@ -166,18 +185,24 @@ internal abstract class Supplier(RequestPolicy policy)
         try
         {
             return await Search(
-                new(http, account, lookup.Validate) { Fresh = lookup.Fresh },
-                lookup,
-                release,
-                code,
-                deadline.Token
-            ).ConfigureAwait(false);
+                    new(http, account, lookup.Validate) { Fresh = lookup.Fresh },
+                    lookup,
+                    release,
+                    code,
+                    deadline.Token
+                )
+                .ConfigureAwait(false);
         }
-        catch (Exception error) when (
-            error is OperationCanceledException && deadline.IsCancellationRequested && !cancellation.IsCancellationRequested
-            || error is SubtitleException { Reason: SubtitleFailure.Network, RetryAt: null })
+        catch (Exception error)
+            when (error is OperationCanceledException
+                    && deadline.IsCancellationRequested
+                    && !cancellation.IsCancellationRequested
+                || error is SubtitleException { Reason: SubtitleFailure.Network, RetryAt: null }
+            )
         {
-            var hold = await policy.Fail(Scope(account, "search"), new(RequestBlockKind.Backoff)).ConfigureAwait(false);
+            var hold = await policy
+                .Fail(Scope(account, "search"), new(RequestBlockKind.Backoff))
+                .ConfigureAwait(false);
             throw new SubtitleException(SubtitleFailure.Network, hold.RetryAt);
         }
     }
@@ -235,16 +260,32 @@ internal abstract class Supplier(RequestPolicy policy)
             throw new SubtitleException(SubtitleFailure.Unconfigured);
         if (authenticate)
             Authenticate(request, account);
-        var scope = Scope(account, request.RequestUri?.AbsolutePath.EndsWith("/login", StringComparison.Ordinal) == true
-            ? "authentication" : operation.Purpose);
+        var scope = Scope(
+            account,
+            request.RequestUri?.AbsolutePath.EndsWith("/login", StringComparison.Ordinal) == true
+                ? "authentication"
+                : operation.Purpose
+        );
         if (!authenticate)
-            scope = scope with { Identity = RequestKey.Digest(request.RequestUri!.Host), Operation = "file" };
-        var call = new ProviderCall(request, policy, new(scope)
+            scope = scope with
+            {
+                Identity = RequestKey.Digest(request.RequestUri!.Host),
+                Operation = "file",
+            };
+        var call = new ProviderCall(
+            request,
+            policy,
+            new(scope)
+            {
+                Windows = authenticate ? RateWindows : [],
+                Authentication = authenticate ? Authentication(account) : null,
+                Allowance = authenticate ? QuotaScope(account) : null,
+            }
+        )
         {
-            Windows = authenticate ? RateWindows : [],
-            Authentication = authenticate ? Authentication(account) : null,
-            Allowance = authenticate ? QuotaScope(account) : null,
-        }) { Fresh = operation.Fresh, Observe = Observe };
+            Fresh = operation.Fresh,
+            Observe = Observe,
+        };
         async Task Observe(ProviderReply response)
         {
             var retry = Retry(response);
@@ -253,21 +294,32 @@ internal abstract class Supplier(RequestPolicy policy)
                 || response.Status == HttpStatusCode.TooManyRequests
             )
             {
-                await policy.Fail(authenticate ? QuotaScope(account) : scope, new(RequestBlockKind.RemoteWait, retry))
+                await policy
+                    .Fail(
+                        authenticate ? QuotaScope(account) : scope,
+                        new(RequestBlockKind.RemoteWait, retry)
+                    )
                     .ConfigureAwait(false);
             }
             if (response.Status == HttpStatusCode.PaymentRequired && retry is not null)
-                await policy.Fail(operation.Purpose == "download" ? Scope(account, "download") : scope,
-                    new(RequestBlockKind.RemoteWait, retry)).ConfigureAwait(false);
+                await policy
+                    .Fail(
+                        operation.Purpose == "download" ? Scope(account, "download") : scope,
+                        new(RequestBlockKind.RemoteWait, retry)
+                    )
+                    .ConfigureAwait(false);
             if (response.Status is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
             {
                 if (!authenticate)
                 {
-                    var hold = await policy.Fail(scope, new(RequestBlockKind.Backoff, retry)).ConfigureAwait(false);
+                    var hold = await policy
+                        .Fail(scope, new(RequestBlockKind.Backoff, retry))
+                        .ConfigureAwait(false);
                     throw new SubtitleException(SubtitleFailure.Network, hold.RetryAt);
                 }
                 if (!canRenew)
-                    await policy.Fail(Authentication(account), new(RequestBlockKind.Attention))
+                    await policy
+                        .Fail(Authentication(account), new(RequestBlockKind.Attention))
                         .ConfigureAwait(false);
                 throw new SubtitleException(SubtitleFailure.Authentication);
             }
@@ -278,18 +330,26 @@ internal abstract class Supplier(RequestPolicy policy)
                 );
             if ((int)response.Status >= 500)
             {
-                var hold = await policy.Fail(scope, new(RequestBlockKind.Backoff, retry)).ConfigureAwait(false);
+                var hold = await policy
+                    .Fail(scope, new(RequestBlockKind.Backoff, retry))
+                    .ConfigureAwait(false);
                 throw new SubtitleException(SubtitleFailure.Network, hold.RetryAt);
             }
         }
         try
         {
-            var response = await operation.Http.Send(call, maximum, cancellation).ConfigureAwait(false);
+            var response = await operation
+                .Http.Send(call, maximum, cancellation)
+                .ConfigureAwait(false);
             var reset = authenticate ? DownloadReset(request, response) : null;
             if (reset is not null || response.Status == HttpStatusCode.PaymentRequired)
             {
-                var hold = await policy.Fail(operation.Purpose == "download" ? Scope(account, "download") : scope,
-                    new(RequestBlockKind.RemoteWait, reset ?? Retry(response))).ConfigureAwait(false);
+                var hold = await policy
+                    .Fail(
+                        operation.Purpose == "download" ? Scope(account, "download") : scope,
+                        new(RequestBlockKind.RemoteWait, reset ?? Retry(response))
+                    )
+                    .ConfigureAwait(false);
                 if ((int)response.Status >= 400)
                     throw new SubtitleException(SubtitleFailure.Quota, hold.RetryAt);
             }
@@ -321,7 +381,8 @@ internal abstract class Supplier(RequestPolicy policy)
         }
         catch (IOException)
         {
-            var hold = await policy.Read(scope, CancellationToken.None).ConfigureAwait(false)
+            var hold =
+                await policy.Read(scope, CancellationToken.None).ConfigureAwait(false)
                 ?? await policy.Fail(scope, new(RequestBlockKind.Backoff)).ConfigureAwait(false);
             throw new SubtitleException(SubtitleFailure.Network, hold.RetryAt);
         }
@@ -512,7 +573,10 @@ internal sealed record SubtitleCandidate(
     public bool Exact { get; init; }
 }
 
-internal sealed record SubtitleSearch(IReadOnlyList<SubtitleCandidate> Candidates, bool Empty = false);
+internal sealed record SubtitleSearch(
+    IReadOnlyList<SubtitleCandidate> Candidates,
+    bool Empty = false
+);
 
 internal sealed record Allowance(
     DateTimeOffset? RequestReset = null,

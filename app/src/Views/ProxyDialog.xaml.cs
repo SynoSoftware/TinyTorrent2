@@ -51,7 +51,9 @@ public sealed partial class ProxyDialog : UserControl
     {
         Status.Check.Text = Model.Text.Get("settings", "check");
         ToolTipService.SetToolTip(Status.Check, Model.Text.Get("settings", "check_tip"));
-        var feedback = Proxy.IsChecking ? Model.Text.Get("settings", "proxy_checking") : string.Empty;
+        var feedback = Proxy.IsChecking
+            ? Model.Text.Get("settings", "proxy_checking")
+            : string.Empty;
         Status.Refresh(Proxy.IsChecking, null, feedback, feedback);
     }
 

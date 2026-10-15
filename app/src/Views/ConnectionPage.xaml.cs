@@ -53,7 +53,11 @@ public sealed partial class ConnectionPage : UserControl
 
     private void RefreshHierarchy()
     {
-        var labels = new[] { Model.Text.Get("settings", "limits"), Model.Text.Get("connection_setup", "title") };
+        var labels = new[]
+        {
+            Model.Text.Get("settings", "limits"),
+            Model.Text.Get("connection_setup", "title"),
+        };
         if (Hierarchy.ItemsSource is not string[] current || !current.SequenceEqual(labels))
             Hierarchy.ItemsSource = labels;
     }

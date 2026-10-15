@@ -372,10 +372,10 @@ Force fetch permits one fresh attempt for that item, not a provider-wide reset.
 A provider-imposed wait shows its deadline and has no force override; credentials
 that need correction offer Settings. Disable repeated submission while pending.
 
-For a batch, use a scope selector and one Fetch/Find button. Subtitles already
-has this surface. Library currently starts a missing-only batch directly; add
-the small scope-selection dialog through its existing dialog owner. Reuse the
-native interaction pattern, not a new generic batch framework. The three scopes
+For a subtitle batch, use a scope selector and one Find button. Library's
+batch instead groups videos by the provider's last answer, as described below.
+Reuse the native interaction pattern, not a new generic batch framework. The
+three subtitle scopes
 have nested counts, for example a selection with one request per item and 10
 eligible, 5 locally blocked and 10 already satisfied items:
 
@@ -422,15 +422,12 @@ All repeats supplier searches; it does not authorize overwriting subtitle files,
 re-downloading the same reference or replacing user choices. The existing
 publication and ownership rules still decide what can be saved.
 
-For Library All, replace both the `!HasMetadata` selection filter and
-`Store.Begin`'s batch `Undecided` restriction. Refresh the already accepted
-identification through its provider; do not rematch it or replace an explicit
-choice. When the chosen provider cannot refresh that identification, report the
-item as outside that operation instead of applying a different match silently.
-Library Re-identify is the explicit request to apply a different match: it
-treats protection like All, searches the chosen provider by file name for an
-identification another provider made automatically, and replaces it only with
-a confident match. Explicit choices and clears stay outside it.
+For Library All, refresh the already accepted identification through its
+provider; do not rematch it or replace an explicit choice. Never apply a
+different match silently. Library's batch groups videos by the chosen provider's last answer: Not checked
+yet uses New's protection, Not found last time uses Missing's, and Already
+checked uses All's. For a video another provider identified, the answer adds
+to the same IMDb title and never replaces the identification.
 
 The current subtitle `Searchable` excludes capped requests from every scope.
 Replace that check with scope-aware policy admission: New respects it; Missing

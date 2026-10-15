@@ -12,26 +12,32 @@ namespace Syno.TinyTorrent.Controls;
 
 public sealed partial class PeerMap
 {
-    private static readonly InputSystemCursor PanCursor = InputSystemCursor.Create(InputSystemCursorShape.SizeAll);
+    private static readonly InputSystemCursor PanCursor = InputSystemCursor.Create(
+        InputSystemCursorShape.SizeAll
+    );
     private const VirtualKey Plus = (VirtualKey)0xBB;
     private const VirtualKey Minus = (VirtualKey)0xBD;
     private float _zoom = 1;
+
     // Longitude and inverted latitude keep the view independent of viewport size.
     private Vector2 _center;
     private Drag? _drag;
 
-    private Matrix3x2 ViewTransform => Matrix3x2.CreateScale(_zoom)
+    private Matrix3x2 ViewTransform =>
+        Matrix3x2.CreateScale(_zoom)
         * Matrix3x2.CreateTranslation(_offset * (1 - _zoom) - _center * (_scale * _zoom));
 
     private Vector2 Screen(GeoPoint point) => Vector2.Transform(Project(point), ViewTransform);
+
     private Vector2 ToFit(Vector2 point) => (point - _offset) / _zoom + _offset + _center * _scale;
 
     private void SetView(float zoom, Vector2 center)
     {
         zoom = Math.Clamp(zoom, 1, 8);
-        var limits = _scale > 0
-            ? Vector2.Max(Vector2.Zero, new Vector2(180, 90) - _offset / (_scale * zoom))
-            : Vector2.Zero;
+        var limits =
+            _scale > 0
+                ? Vector2.Max(Vector2.Zero, new Vector2(180, 90) - _offset / (_scale * zoom))
+                : Vector2.Zero;
         center = Vector2.Clamp(center, -limits, limits);
         if (zoom == _zoom && center == _center)
             return;
@@ -81,7 +87,8 @@ public sealed partial class PeerMap
         Pan(visible - point);
     }
 
-    private Destination? Inspected => _pointed ?? _destinations.FirstOrDefault(item => item.Key == Selection);
+    private Destination? Inspected =>
+        _pointed ?? _destinations.FirstOrDefault(item => item.Key == Selection);
 
     private void ZoomInspection(float factor)
     {
@@ -110,8 +117,10 @@ public sealed partial class PeerMap
         var point = args.GetCurrentPoint(_canvas);
         if (point.Properties.IsHorizontalMouseWheel)
             return;
-        ZoomAt((float)Math.Pow(1.25, point.Properties.MouseWheelDelta / 120.0),
-            new Vector2((float)point.Position.X, (float)point.Position.Y));
+        ZoomAt(
+            (float)Math.Pow(1.25, point.Properties.MouseWheelDelta / 120.0),
+            new Vector2((float)point.Position.X, (float)point.Position.Y)
+        );
         OnPointer(sender, args);
         args.Handled = true;
     }
@@ -129,8 +138,11 @@ public sealed partial class PeerMap
         if (!point.Properties.IsLeftButtonPressed || _drag is not null)
             return;
         Focus(FocusState.Pointer);
-        _drag = new Drag(args.Pointer.PointerId,
-            new Vector2((float)point.Position.X, (float)point.Position.Y), _center);
+        _drag = new Drag(
+            args.Pointer.PointerId,
+            new Vector2((float)point.Position.X, (float)point.Position.Y),
+            _center
+        );
         args.Handled = true;
     }
 
@@ -199,29 +211,45 @@ public sealed partial class PeerMap
 
     private void OnKey(object sender, KeyRoutedEventArgs args)
     {
-        if ((!ReferenceEquals(args.OriginalSource, this) && !ReferenceEquals(args.OriginalSource, FitButton))
+        if (
+            (
+                !ReferenceEquals(args.OriginalSource, this)
+                && !ReferenceEquals(args.OriginalSource, FitButton)
+            )
             || _canvas is null
-            || InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Menu).HasFlag(CoreVirtualKeyStates.Down))
+            || InputKeyboardSource
+                .GetKeyStateForCurrentThread(VirtualKey.Menu)
+                .HasFlag(CoreVirtualKeyStates.Down)
+        )
             return;
-        var control = InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control).HasFlag(CoreVirtualKeyStates.Down);
+        var control = InputKeyboardSource
+            .GetKeyStateForCurrentThread(VirtualKey.Control)
+            .HasFlag(CoreVirtualKeyStates.Down);
         if (args.Key == VirtualKey.Escape && _drag is not null)
             EndDrag(true);
         else if (args.Key is VirtualKey.Add or Plus or VirtualKey.Subtract or Minus)
             ZoomInspection(args.Key is VirtualKey.Add or Plus ? 1.25f : .8f);
         else if (control && args.Key is VirtualKey.Number0 or VirtualKey.NumberPad0)
             Fit();
-        else if (control && args.Key is VirtualKey.Left or VirtualKey.Right or VirtualKey.Up or VirtualKey.Down)
+        else if (
+            control
+            && args.Key is VirtualKey.Left or VirtualKey.Right or VirtualKey.Up or VirtualKey.Down
+        )
         {
             EndDrag(false);
-            Pan(args.Key switch
-            {
-                VirtualKey.Left => new Vector2(_offset.X / 4, 0),
-                VirtualKey.Right => new Vector2(-_offset.X / 4, 0),
-                VirtualKey.Up => new Vector2(0, _offset.Y / 4),
-                _ => new Vector2(0, -_offset.Y / 4),
-            });
+            Pan(
+                args.Key switch
+                {
+                    VirtualKey.Left => new Vector2(_offset.X / 4, 0),
+                    VirtualKey.Right => new Vector2(-_offset.X / 4, 0),
+                    VirtualKey.Up => new Vector2(0, _offset.Y / 4),
+                    _ => new Vector2(0, -_offset.Y / 4),
+                }
+            );
         }
-        else if (args.Key is VirtualKey.Left or VirtualKey.Up or VirtualKey.Right or VirtualKey.Down)
+        else if (
+            args.Key is VirtualKey.Left or VirtualKey.Up or VirtualKey.Right or VirtualKey.Down
+        )
         {
             if (_destinations.Count == 0)
                 return;
@@ -229,8 +257,10 @@ public sealed partial class PeerMap
             var index = _pointed is null
                 ? _destinations.FindIndex(destination => destination.Key == Selection)
                 : _destinations.IndexOf(_pointed);
-            index = index < 0 ? (step > 0 ? 0 : _destinations.Count - 1)
-                : (index + step + _destinations.Count) % _destinations.Count;
+            index =
+                index < 0
+                    ? (step > 0 ? 0 : _destinations.Count - 1)
+                    : (index + step + _destinations.Count) % _destinations.Count;
             _pointed = _destinations[index];
             _selected = _pointed.Key;
             _selectedPeer = null;

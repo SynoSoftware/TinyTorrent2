@@ -15,6 +15,7 @@ namespace Syno.TinyTorrent.Services;
 internal sealed partial class PipeClient : IDisposable
 {
     private const int MaximumFrame = 16 * 1024 * 1024;
+
     // Together these fit the engine pipe's 64 outstanding requests per connection.
     private const int CommandLimit = 32;
     private const int ReadLimit = 32;
@@ -45,11 +46,19 @@ internal sealed partial class PipeClient : IDisposable
     internal string? DataDirectory => _dataDirectory;
     internal bool IsConnected
     {
-        get { lock (_gate) return _connected; }
+        get
+        {
+            lock (_gate)
+                return _connected;
+        }
     }
     internal int? ProcessId
     {
-        get { lock (_gate) return _processId; }
+        get
+        {
+            lock (_gate)
+                return _processId;
+        }
     }
 
     internal static string LogonSid { get; } = ReadLogonSid();
@@ -177,7 +186,9 @@ internal sealed partial class PipeClient : IDisposable
                 return;
             _reads.Remove(pending);
             pending.Completion.TrySetCanceled();
-            Debug.WriteLine($"Unsent engine read '{pending.Name}' cancelled ({consumer}): withdrawn.");
+            Debug.WriteLine(
+                $"Unsent engine read '{pending.Name}' cancelled ({consumer}): withdrawn."
+            );
         }
     }
 
@@ -189,8 +200,10 @@ internal sealed partial class PipeClient : IDisposable
                 return command;
             if (active.Count(consumer => consumer is not null) >= ReadLimit)
                 return null;
-            var index = _reads.FindIndex(read => read.Consumer != Consumer.Files
-                && (read.Consumer != Consumer.Summary || !active.Contains(Consumer.Summary)));
+            var index = _reads.FindIndex(read =>
+                read.Consumer != Consumer.Files
+                && (read.Consumer != Consumer.Summary || !active.Contains(Consumer.Summary))
+            );
             if (index < 0)
                 index = _reads.FindIndex(read => read.Consumer == Consumer.Files);
             if (index < 0)
@@ -228,7 +241,9 @@ internal sealed partial class PipeClient : IDisposable
                     if (launchedAt is { } started && !_hasConnected)
                         timeout = Math.Max(
                             timeout,
-                            (int)(StartGrace.TotalMilliseconds - (Environment.TickCount64 - started))
+                            (int)(
+                                StartGrace.TotalMilliseconds - (Environment.TickCount64 - started)
+                            )
                         );
                     try
                     {
@@ -262,8 +277,12 @@ internal sealed partial class PipeClient : IDisposable
                     lock (_gate)
                     {
                         token.ThrowIfCancellationRequested();
-                        _processId = GetNamedPipeServerProcessId(pipe.SafePipeHandle, out var processId)
-                            ? (int)processId : null;
+                        _processId = GetNamedPipeServerProcessId(
+                            pipe.SafePipeHandle,
+                            out var processId
+                        )
+                            ? (int)processId
+                            : null;
                         _connected = true;
                     }
                     launchFailure = null;
@@ -295,7 +314,9 @@ internal sealed partial class PipeClient : IDisposable
                     }
                     catch (OperationCanceledException)
                     {
-                        Debug.WriteLine("Engine reconnect wait cancelled: pipe client is stopping.");
+                        Debug.WriteLine(
+                            "Engine reconnect wait cancelled: pipe client is stopping."
+                        );
                     }
                 }
                 catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -337,7 +358,11 @@ internal sealed partial class PipeClient : IDisposable
         List<(Request Request, Task Task)> active = [];
         try
         {
-            await Execute(pipe, new Request("snapshot", new { subscribe = true }, Consumer.Summary), connection.Token);
+            await Execute(
+                pipe,
+                new Request("snapshot", new { subscribe = true }, Consumer.Summary),
+                connection.Token
+            );
             var queued = _queued.WaitAsync(connection.Token);
             while (!connection.IsCancellationRequested)
             {
@@ -383,7 +408,9 @@ internal sealed partial class PipeClient : IDisposable
                 if (error is null)
                 {
                     request.Completion.TrySetCanceled(_lifetime.Token);
-                    Debug.WriteLine($"Queued engine request '{request.Name}' cancelled: connection closed.");
+                    Debug.WriteLine(
+                        $"Queued engine request '{request.Name}' cancelled: connection closed."
+                    );
                 }
                 else
                     request.Completion.TrySetException(
@@ -420,8 +447,10 @@ internal sealed partial class PipeClient : IDisposable
         {
             var fields = request.Arguments is null
                 ? new Dictionary<string, JsonElement>()
-                : JsonSerializer.SerializeToElement(request.Arguments)
-                    .EnumerateObject().ToDictionary(property => property.Name, property => property.Value);
+                : JsonSerializer
+                    .SerializeToElement(request.Arguments)
+                    .EnumerateObject()
+                    .ToDictionary(property => property.Name, property => property.Value);
             long? context = fields.TryGetValue("context", out var value) ? value.GetInt64() : null;
             if (!BeginDetail(request, context))
                 return;
@@ -454,7 +483,9 @@ internal sealed partial class PipeClient : IDisposable
         }
         catch (OperationCanceledException error) when (deadline.IsCancellationRequested)
         {
-            Debug.WriteLine($"Engine request '{request.Name}' timed out after {RequestTimeout.TotalSeconds} seconds.");
+            Debug.WriteLine(
+                $"Engine request '{request.Name}' timed out after {RequestTimeout.TotalSeconds} seconds."
+            );
             var failure = new TimeoutException(_strings.Get("connection", "uncertain"), error);
             request.Completion.TrySetException(failure);
             throw failure;
@@ -487,11 +518,7 @@ internal sealed partial class PipeClient : IDisposable
                 if (message.TryGetProperty("type", out var type))
                 {
                     if (
-                        type.GetString()
-                        is "activate"
-                            or "close"
-                            or "confirm_exit"
-                            or "activations"
+                        type.GetString() is "activate" or "close" or "confirm_exit" or "activations"
                     )
                         Control?.Invoke(type.GetString()!);
                     else if (type.GetString() == "settings")
@@ -512,15 +539,25 @@ internal sealed partial class PipeClient : IDisposable
                         continue;
                     // Publish snapshots in receive order, before later save
                     // continuations can confirm newer settings on the UI thread.
-                    if (pending.Request.Name == "snapshot" && message.GetProperty("ok").GetBoolean())
+                    if (
+                        pending.Request.Name == "snapshot"
+                        && message.GetProperty("ok").GetBoolean()
+                    )
                         Publish(message.GetProperty("data"));
                     if (pending.Request.Consumer is null && pending.Request.Name != "snapshot")
                         CommandCompleted?.Invoke();
                     if (pending.ChangesFiles && message.GetProperty("ok").GetBoolean())
                     {
-                        var confirmed = message.GetProperty("data").GetProperty("snapshot_sequence").GetInt64();
-                        FilesChanged?.Invoke(snapshot is { } latest && latest.GetProperty("sequence").GetInt64() >= confirmed
-                            ? latest : null);
+                        var confirmed = message
+                            .GetProperty("data")
+                            .GetProperty("snapshot_sequence")
+                            .GetInt64();
+                        FilesChanged?.Invoke(
+                            snapshot is { } latest
+                            && latest.GetProperty("sequence").GetInt64() >= confirmed
+                                ? latest
+                                : null
+                        );
                     }
                     pending.Completion.TrySetResult(message);
                 }
@@ -546,7 +583,11 @@ internal sealed partial class PipeClient : IDisposable
 
         void Publish(JsonElement data)
         {
-            if (snapshot is { } latest && data.GetProperty("sequence").GetInt64() <= latest.GetProperty("sequence").GetInt64())
+            if (
+                snapshot is { } latest
+                && data.GetProperty("sequence").GetInt64()
+                    <= latest.GetProperty("sequence").GetInt64()
+            )
                 return;
             snapshot = data;
             Snapshot?.Invoke(data);
@@ -620,7 +661,11 @@ internal sealed partial class PipeClient : IDisposable
         {
             null => strings.Get("connection", "version_hidden"),
             { } path when IsAdjacent(path) => strings.Get("connection", "version"),
-            { } path => strings.Format("connection", "version_elsewhere", Path.GetDirectoryName(path)!),
+            { } path => strings.Format(
+                "connection",
+                "version_elsewhere",
+                Path.GetDirectoryName(path)!
+            ),
         };
         throw new VersionException(message);
     }
@@ -742,7 +787,6 @@ internal sealed partial class PipeClient : IDisposable
         }
         StopOtherEngine(pipe);
     }
-
 #endif
 
     [DllImport("kernel32.dll", SetLastError = true)]
@@ -755,11 +799,7 @@ internal sealed partial class PipeClient : IDisposable
     // handlers reported, which is the person's evidence that they remain.
     internal async Task RepairMachine(IEnumerable<string> classes)
     {
-        var start = new ProcessStartInfo(AdjacentEngine)
-        {
-            UseShellExecute = true,
-            Verb = "runas",
-        };
+        var start = new ProcessStartInfo(AdjacentEngine) { UseShellExecute = true, Verb = "runas" };
         start.ArgumentList.Add("--headless");
         foreach (var progId in classes)
         {

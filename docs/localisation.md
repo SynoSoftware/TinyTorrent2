@@ -11,15 +11,10 @@ application.
 
 ## Languages during implementation
 
-`en.json` owns canonical keys and English text. The owner requires live English
-and Spanish throughout implementation, so maintain `es.json` for each implemented
-surface alongside its settled English text. This makes the requested language
-switch useful immediately, including new dialogs, without flags.
-
-Other language files remain frozen until their translation task: they stay
-unread and unedited. A message still being reworded makes repeated translation
-wasted work. Those tasks translate the settled text once against `en.json` as it
-stands then.
+`en.json` owns canonical keys and English text. Follow the
+[translation owner ruling](../AGENTS.md#working-rules) for when other catalogues
+are updated. Between translation tasks, missing translated messages use the
+fallback below so ordinary patches remain usable while release text settles.
 
 A key that `en.json` lacks shows as its dotted name, `column_menu.hide`, where
 the text belongs. Lookup never throws for a missing key: a person sees the gap on
@@ -90,7 +85,9 @@ language against shipped catalogues, falling back to English. The engine's
 `Strings` owns its list of shipped catalogues and how a tag matches one;
 setting validation asks it instead of keeping a second list. Preserve an explicit
 selection across UI and engine restarts. Show languages by their own names so a
-user can recover from an unfamiliar selection.
+user can recover from an unfamiliar selection, each after its region's flag.
+The flag shows the region, so the name leaves it out: Português, not
+Português (Brasil).
 
 One localisation component in the UI process supplies text to both application
 views and owned controls. Selecting a language updates existing visible content

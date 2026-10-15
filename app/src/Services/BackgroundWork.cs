@@ -121,7 +121,8 @@ internal sealed class BackgroundWork : IDisposable
             {
                 if (_ended || _owner._disposed || observation == _latest)
                     return;
-                var immediate = observation.Description != _latest.Description
+                var immediate =
+                    observation.Description != _latest.Description
                     || observation.Execution != _latest.Execution;
                 _latest = observation;
                 if (immediate)
@@ -156,7 +157,10 @@ internal sealed class BackgroundWork : IDisposable
         public bool CanExecute(object? parameter)
         {
             lock (_owner._gate)
-                return !_owner._disposed && !_ended && !_requesting && _cancel is not null
+                return !_owner._disposed
+                    && !_ended
+                    && !_requesting
+                    && _cancel is not null
                     && _latest.Execution.CanCancel;
         }
 

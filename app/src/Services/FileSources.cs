@@ -135,8 +135,7 @@ internal sealed class FileSources(Database database)
                 // so a new database does not search the whole collection. A removed
                 // torrent is forgotten, so adding it again is new.
                 using var history = connection.CreateCommand();
-                history.CommandText =
-                    "SELECT initialized FROM source_state WHERE singleton=1;";
+                history.CommandText = "SELECT initialized FROM source_state WHERE singleton=1;";
                 var recorded = Convert.ToInt64(history.ExecuteScalar()) != 0;
                 history.CommandText = """
                     INSERT OR IGNORE INTO new_origins SELECT origin FROM present
@@ -149,11 +148,13 @@ internal sealed class FileSources(Database database)
                     """;
                 history.Parameters.AddWithValue("$recorded", recorded);
                 history.ExecuteNonQuery();
-                current.CommandText = Database.Reconcile + """
-                    DELETE FROM source_files WHERE origin NOT IN (SELECT origin FROM present);
-                    DELETE FROM contributions WHERE origin NOT IN (SELECT origin FROM present);
-                    DELETE FROM locations WHERE entry_id NOT IN (SELECT entry_id FROM source_files);
-                    """;
+                current.CommandText =
+                    Database.Reconcile
+                    + """
+                        DELETE FROM source_files WHERE origin NOT IN (SELECT origin FROM present);
+                        DELETE FROM contributions WHERE origin NOT IN (SELECT origin FROM present);
+                        DELETE FROM locations WHERE entry_id NOT IN (SELECT entry_id FROM source_files);
+                        """;
                 changed |= current.ExecuteNonQuery() != 0;
                 current.CommandText = Database.Cleanup;
                 current.ExecuteNonQuery();
@@ -183,7 +184,10 @@ internal sealed class FileSources(Database database)
                 if (command.ExecuteScalar() is not long collected)
                     return false;
 
-                if (collected != 0 && Unchanged(connection, contribution.Origin, files, cancellation))
+                if (
+                    collected != 0
+                    && Unchanged(connection, contribution.Origin, files, cancellation)
+                )
                 {
                     MarkChecked(connection, contribution);
                     return false;
@@ -254,7 +258,9 @@ internal sealed class FileSources(Database database)
                         : release.Season is null ? "movie"
                         : "episode";
                     write.Parameters["$year"].Value =
-                        kind != FileKind.Video ? DBNull.Value : (object?)release.Year ?? DBNull.Value;
+                        kind != FileKind.Video
+                            ? DBNull.Value
+                            : (object?)release.Year ?? DBNull.Value;
                     write.Parameters["$search"].Value = FileName.Normalize(
                         path + " " + release.Title
                     );
@@ -271,7 +277,8 @@ internal sealed class FileSources(Database database)
                 command.ExecuteNonQuery();
                 if (changed)
                 {
-                    command.CommandText = Database.Reconcile + Database.Cleanup + Database.Invalidate;
+                    command.CommandText =
+                        Database.Reconcile + Database.Cleanup + Database.Invalidate;
                     command.ExecuteNonQuery();
                 }
                 return changed;
@@ -301,10 +308,14 @@ internal sealed class FileSources(Database database)
             if (!incoming.TryGetValue(reader.GetInt32(0), out var file))
                 return false;
             var path = Path.GetFullPath(file.FinalPath);
-            if (reader.GetString(1) != file.Path || reader.GetString(2) != Path.GetFileName(path)
+            if (
+                reader.GetString(1) != file.Path
+                || reader.GetString(2) != Path.GetFileName(path)
                 || !StringComparer.OrdinalIgnoreCase.Equals(reader.GetString(3), path)
-                || reader.GetInt64(4) != file.Size || reader.GetBoolean(5) != IsComplete(file, path)
-                || reader.GetBoolean(6) != file.Wanted)
+                || reader.GetInt64(4) != file.Size
+                || reader.GetBoolean(5) != IsComplete(file, path)
+                || reader.GetBoolean(6) != file.Wanted
+            )
                 return false;
             count++;
         }

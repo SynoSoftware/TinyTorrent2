@@ -173,7 +173,9 @@ public sealed partial class MainWindow
             sections.SelectedItem = information;
             await CaptureLayout();
             if (!ReferenceEquals(sections.SelectedItem, information) || sections.ActualWidth <= 0)
-                throw new InvalidOperationException("Library information did not show its sections.");
+                throw new InvalidOperationException(
+                    "Library information did not show its sections."
+                );
             await CapturePage(name);
             completed.Add(name);
         }
@@ -563,9 +565,7 @@ public sealed partial class MainWindow
         double requestedHeight = 400;
         var sections = CaptureElements(InspectorContent)
             .OfType<SelectorBar>()
-            .Single(section =>
-                AutomationProperties.GetAutomationId(section) == "LibrarySections"
-            );
+            .Single(section => AutomationProperties.GetAutomationId(section) == "LibrarySections");
         var selected = sections.SelectedItem;
         try
         {

@@ -110,8 +110,6 @@ public sealed partial class MainViewModel
         else if (kind is "error" or "add_failed" or "delete_failed")
         {
             var detail = notice.GetProperty("detail").GetString() ?? string.Empty;
-            if (kind == "delete_failed" && detail == "recycle_failed")
-                detail = Text.Get("errors", "recycle_failed");
             var code =
                 notice.GetProperty("code").GetString() is { Length: > 0 } problem ? problem
                 : kind == "error"
@@ -121,14 +119,22 @@ public sealed partial class MainViewModel
             var error = new CommandException(code, detail, Text);
             // The title already says what failed, so the engine's reason
             // alone is the body; without one, the error code's text is.
-            var reason = detail.Length > 0 ? detail : Text.Error(error);
-            if (count > 1)
-                reason = Text.Format(
-                    "errors",
-                    "detail",
-                    reason,
-                    Text.Format("errors", "additional_problems", count - 1)
-                );
+            string Reason()
+            {
+                var reason =
+                    kind == "delete_failed" && detail == "recycle_failed"
+                        ? Text.Get("errors", "recycle_failed")
+                    : detail.Length > 0 ? detail
+                    : Text.Error(error);
+                return count > 1
+                    ? Text.Format(
+                        "errors",
+                        "detail",
+                        reason,
+                        Text.Format("errors", "additional_problems", count - 1)
+                    )
+                    : reason;
+            }
             var title = kind switch
             {
                 "add_failed" => "not_added",
@@ -136,7 +142,7 @@ public sealed partial class MainViewModel
                 _ => "torrent_stopped",
             };
             var folder = notice.GetProperty("folder").GetString();
-            Report(error, title, name, reason, folder is { Length: > 0 } ? folder : null);
+            Report(error, title, () => name, Reason, folder is { Length: > 0 } ? folder : null);
         }
     }
 
@@ -206,6 +212,19 @@ public sealed partial class MainViewModel
     {
         switch (notice.Kind)
         {
+            case NoticeKind.Outcome:
+                notice.Title = Text.Get(notice.Group, notice.Key);
+                break;
+            case NoticeKind.SearchLimit:
+                notice.Title = Text.Get("notifications", "search_limit");
+                notice.Message = Text.FormatCount(
+                    "notifications",
+                    "search_limit_files",
+                    notice.Count
+                );
+                notice.ActionText = Text.Get("notifications", "settings");
+                notice.ActionTip = Text.Get("notifications", "search_limit_tip");
+                break;
             case NoticeKind.Resume:
                 notice.Severity = InfoBarSeverity.Informational;
                 notice.Title = Text.Get("notifications", "delayed");
@@ -218,7 +237,7 @@ public sealed partial class MainViewModel
             case NoticeKind.CommandError:
                 notice.Severity = InfoBarSeverity.Error;
                 notice.Title = Text.Get("notifications", _errorTitle);
-                notice.Subject = _errorSubject;
+                notice.Subject = _errorSubject?.Invoke() ?? string.Empty;
                 notice.Message = CommandError;
                 notice.Action = _errorFolder is null ? null : OpenErrorFolder;
                 notice.ActionText = Text.Get("commands", "open_folder");
@@ -246,11 +265,7 @@ public sealed partial class MainViewModel
                             "errors",
                             "detail",
                             reason,
-                            Text.Format(
-                                "errors",
-                                "additional_problems",
-                                _subtitleFailureCount - 1
-                            )
+                            Text.Format("errors", "additional_problems", _subtitleFailureCount - 1)
                         );
                 notice.Action = ShowSubtitleSettings;
                 notice.ActionText = Text.Get("notifications", "settings");
@@ -299,12 +314,13 @@ public sealed partial class MainViewModel
 
     // A result the person asked for, such as a passed check. It closes by
     // itself like a finished download, because nothing remains to do.
-    internal void ShowOutcome(string title, string subject) =>
+    internal void ShowOutcome(string group, string key, string subject) =>
         ShowTimed(
             new Notice(NoticeKind.Outcome, lifetime: NoticeLifetime)
             {
                 Severity = InfoBarSeverity.Success,
-                Title = title,
+                Group = group,
+                Key = key,
                 Subject = subject,
             }
         );
@@ -313,13 +329,10 @@ public sealed partial class MainViewModel
     // search limit, which only raising the limit lets the batch search again.
     internal void ShowSearchLimit(int files)
     {
-        var notice = new Notice(NoticeKind.Outcome, lifetime: NoticeLifetime)
+        var notice = new Notice(NoticeKind.SearchLimit, lifetime: NoticeLifetime)
         {
             Severity = InfoBarSeverity.Warning,
-            Title = Text.Get("notifications", "search_limit"),
-            Message = Text.FormatCount("notifications", "search_limit_files", files),
-            ActionText = Text.Get("notifications", "settings"),
-            ActionTip = Text.Get("notifications", "search_limit_tip"),
+            Count = files,
             ActionGlyph = Syno.Lucide.Settings,
         };
         // Changing the limit is what the notice offers, so it closes with it.
@@ -338,6 +351,7 @@ public sealed partial class MainViewModel
     {
         if (_closed)
             return;
+        Describe(notice);
         notice.CloseText = Text.Get("commands", "close");
         Notices.Add(notice);
         if (
@@ -427,6 +441,9 @@ public sealed class Notice : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
 
     internal NoticeKind Kind { get; }
+    internal string Group { get; init; } = string.Empty;
+    internal string Key { get; init; } = string.Empty;
+    internal int Count { get; init; }
 
     // The torrent of a Completion notice; empty for every other kind.
     internal string TorrentId { get; }

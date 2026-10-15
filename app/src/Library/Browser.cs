@@ -10,7 +10,11 @@ using Selection = Syno.TableView.Selection;
 
 namespace Syno.TinyTorrent.Library;
 
-public sealed partial class Browser : INotifyPropertyChanged, IDataset, IDisposable, IAsyncDisposable
+public sealed partial class Browser
+    : INotifyPropertyChanged,
+        IDataset,
+        IDisposable,
+        IAsyncDisposable
 {
     private readonly DispatcherQueue _dispatcher;
     private readonly object _gate = new();
@@ -46,6 +50,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDataset, IDisposa
 
     public Strings Text { get; }
     public IReadOnlyList<LibraryRow> Rows { get; private set; } = [];
+
     // Results keep their configuration while a search for another one is pending.
     internal LibraryConfiguration RowsConfiguration => _rowsQuery?.Configuration ?? Configuration;
     internal LibraryConfiguration? FacetsConfiguration =>
@@ -102,12 +107,18 @@ public sealed partial class Browser : INotifyPropertyChanged, IDataset, IDisposa
         Selected?.OpeningFailure is not null ? Selected.Failure
         : _outcome is FetchOutcome.Failed fetch ? Error(fetch.Error)
         : Selected?.Entry is { Kind: FileKind.Video, HasMetadata: false }
-        && AutomaticWait is not null && _videos?.Failure is { } failure
+        && AutomaticWait is not null
+        && _videos?.Failure is { } failure
             ? Error(failure)
         : string.Empty;
     internal string RetryTip =>
         Selected?.OpeningFailure is not null ? Text.Get("library", "retry_open_tip")
-        : (_outcome is FetchOutcome.Failed fetch ? fetch.Error.Provider ?? InformationProvider : Option) is { } option
+        : (
+            _outcome is FetchOutcome.Failed fetch
+                ? fetch.Error.Provider ?? InformationProvider
+                : Option
+        )
+            is { } option
             ? Text.Format("library", "retry_provider_tip", option.Name)
         : string.Empty;
 
@@ -148,15 +159,17 @@ public sealed partial class Browser : INotifyPropertyChanged, IDataset, IDisposa
                 : count;
         }
     }
-    internal string StatusGlyph => RowsConfiguration switch
-    {
-        LibraryConfiguration.Videos => Lucide.Film,
-        LibraryConfiguration.Music => Lucide.Music,
-        _ => Lucide.Files,
-    };
-    internal string InformationStatus => _rowsQuery?.Configuration != LibraryConfiguration.Videos || !IsAvailable
-        ? string.Empty
-        : AutomaticWait ?? string.Empty;
+    internal string StatusGlyph =>
+        RowsConfiguration switch
+        {
+            LibraryConfiguration.Videos => Lucide.Film,
+            LibraryConfiguration.Music => Lucide.Music,
+            _ => Lucide.Files,
+        };
+    internal string InformationStatus =>
+        _rowsQuery?.Configuration != LibraryConfiguration.Videos || !IsAvailable
+            ? string.Empty
+            : AutomaticWait ?? string.Empty;
     public bool IsEmpty =>
         Query.Length == 0 && Filters.Count == 0 && !Counts.Values.Any(count => count > 0);
 
@@ -322,17 +335,20 @@ public sealed partial class Browser : INotifyPropertyChanged, IDataset, IDisposa
         FetchMetadata = new RelayCommand(
             () =>
             {
-                if ((Option is { IsOnline: true } current ? current : DownloadProviders.FirstOrDefault()) is { } option)
+                if (
+                    (
+                        Option is { IsOnline: true } current
+                            ? current
+                            : DownloadProviders.FirstOrDefault()
+                    ) is
+                    { } option
+                )
                     Fetch(option);
                 return Task.CompletedTask;
             },
             () =>
                 CanLookup
-                && Selection
-                    .Items.Cast<LibraryRow>()
-                    .Any(row =>
-                        row.Entry.Kind == FileKind.Video
-                    )
+                && Selection.Items.Cast<LibraryRow>().Any(row => row.Entry.Kind == FileKind.Video)
         );
         ShowSettings = new RelayCommand(
             () =>
@@ -375,7 +391,9 @@ public sealed partial class Browser : INotifyPropertyChanged, IDataset, IDisposa
                 }
             },
             () =>
-                IsAvailable && !_erasing && Selection.Items.Cast<LibraryRow>().Any(row => row.Entry.HasMetadata)
+                IsAvailable
+                && !_erasing
+                && Selection.Items.Cast<LibraryRow>().Any(row => row.Entry.HasMetadata)
         );
         RefreshMetadata = new RelayCommand(RequestInformation, () => CanRefresh);
         Retry = new RelayCommand(
@@ -396,10 +414,14 @@ public sealed partial class Browser : INotifyPropertyChanged, IDataset, IDisposa
             () =>
                 Selected?.OpeningFailure is not null ? Open.CanExecute(null)
                 : _outcome is FetchOutcome.Failed fetch
-                    ? !(fetch.Error is ProviderException { RetryAt: { } retry } && retry > DateTimeOffset.UtcNow)
-                        && RefreshMetadata.CanExecute(null)
-                : AutomaticWait is not null && _videos?.Failure is { } failure
-                    && !(failure.RetryAt > DateTimeOffset.UtcNow) && FetchMetadata.CanExecute(null)
+                    ? !(
+                        fetch.Error is ProviderException { RetryAt: { } retry }
+                        && retry > DateTimeOffset.UtcNow
+                    ) && RefreshMetadata.CanExecute(null)
+                : AutomaticWait is not null
+                    && _videos?.Failure is { } failure
+                    && !(failure.RetryAt > DateTimeOffset.UtcNow)
+                    && FetchMetadata.CanExecute(null)
         );
         ClearFilters = new RelayCommand(
             () =>
@@ -499,14 +521,58 @@ public sealed partial class Browser : INotifyPropertyChanged, IDataset, IDisposa
             ? Task.FromResult(new VideoSearch([], true))
             : _videos.Search(query, fileName, source, cancellation, scope, year, automatic);
 
-    internal Task<Services.RequestBlock?> Protection(string query, string fileName, ProviderOption source, CancellationToken cancellation, int? year = null, bool automatic = false) =>
-        _videos is null ? Task.FromResult<Services.RequestBlock?>(null) : _videos.Protection(query, fileName, source, cancellation, year, automatic);
+    internal Task<Services.RequestBlock?> Protection(
+        string query,
+        string fileName,
+        ProviderOption source,
+        CancellationToken cancellation,
+        int? year = null,
+        bool automatic = false
+    ) =>
+        _videos is null
+            ? Task.FromResult<Services.RequestBlock?>(null)
+            : _videos.Protection(query, fileName, source, cancellation, year, automatic);
 
-    internal Task<IReadOnlyList<VideoFetch>> Plan(IReadOnlyCollection<Entry> entries, ProviderOption source, CancellationToken cancellation) =>
-        _videos is null ? Task.FromResult<IReadOnlyList<VideoFetch>>([]) : _videos.Plan(entries, source, cancellation);
+    internal Task<IReadOnlyList<VideoFetch>> Plan(
+        IReadOnlyCollection<Entry> entries,
+        ProviderOption source,
+        CancellationToken cancellation
+    ) =>
+        _videos is null
+            ? Task.FromResult<IReadOnlyList<VideoFetch>>([])
+            : _videos.Plan(entries, source, cancellation);
 
-    internal void Fetch(IReadOnlyCollection<VideoFetch> entries, ProviderOption source, FetchScope scope) =>
-        _videos?.Fetch(entries.Where(entry => entry.Includes(scope)).Select(entry => entry.Entry).ToArray(), source, scope);
+    /// <summary>
+    /// Fetches the files whose answer is in <paramref name="answers"/>: files
+    /// never asked keep local protection, asking again overrides it, and files
+    /// already found are refreshed.
+    /// </summary>
+    internal void Fetch(
+        IReadOnlyCollection<VideoFetch> entries,
+        ProviderOption source,
+        IReadOnlySet<ProviderAnswer> answers
+    )
+    {
+        if (_videos is null)
+            return;
+        foreach (var answer in answers)
+        {
+            var scope = answer switch
+            {
+                ProviderAnswer.Unasked => FetchScope.New,
+                ProviderAnswer.NotFound => FetchScope.Missing,
+                _ => FetchScope.All,
+            };
+            _videos.Fetch(
+                entries
+                    .Where(entry => entry.Answer == answer)
+                    .Select(entry => entry.Entry)
+                    .ToArray(),
+                source,
+                scope
+            );
+        }
+    }
 
     internal async Task SaveMetadata(
         Entry entry,
@@ -516,13 +582,9 @@ public sealed partial class Browser : INotifyPropertyChanged, IDataset, IDisposa
         FetchScope scope = FetchScope.New
     )
     {
-        await (_videos ?? throw new InvalidOperationException("Library has no video lookup.")).Identify(
-            entry,
-            choice,
-            source,
-            cancellation,
-            scope
-        );
+        await (
+            _videos ?? throw new InvalidOperationException("Library has no video lookup.")
+        ).Identify(entry, choice, source, cancellation, scope);
         // The person's choice answers what the Inspector's last lookup reported.
         if (Selected?.Entry.EntryId == entry.EntryId)
         {
@@ -784,10 +846,17 @@ public sealed partial class Browser : INotifyPropertyChanged, IDataset, IDisposa
                 foreach (var key in _rows.Keys.Where(key => !retained.Contains(key)).ToArray())
                     _rows.Remove(key);
                 rowsChanged |= !Rows.SequenceEqual(rows);
-                var facetsChanged = query.IncludesFacets &&
-                    (FacetsConfiguration != query.Configuration || !Facets.SequenceEqual(matches.Facets));
-                var countsChanged = Counts.Count != matches.Counts.Count
-                    || Counts.Any(pair => !matches.Counts.TryGetValue(pair.Key, out var count) || count != pair.Value);
+                var facetsChanged =
+                    query.IncludesFacets
+                    && (
+                        FacetsConfiguration != query.Configuration
+                        || !Facets.SequenceEqual(matches.Facets)
+                    );
+                var countsChanged =
+                    Counts.Count != matches.Counts.Count
+                    || Counts.Any(pair =>
+                        !matches.Counts.TryGetValue(pair.Key, out var count) || count != pair.Value
+                    );
                 if (rowsChanged)
                     Rows = rows;
                 _rowsQuery = query;
@@ -1220,13 +1289,21 @@ public sealed class LibraryRow(Entry entry, Browser library) : INotifyPropertyCh
     {
         if (source.Read(Entry.Ratings) is not { } rating)
             return string.Empty;
-        var sample = Text.Get("library", "sample_" + source.Sample(Entry.Ratings).ToString().ToLowerInvariant());
+        var sample = Text.Get(
+            "library",
+            "sample_" + source.Sample(Entry.Ratings).ToString().ToLowerInvariant()
+        );
         if (rating.Kind == VideoKind.Series)
             sample += " · " + Text.Get("library", "series_rating");
         if (rating.Votes is not { } votes)
             return sample;
-        var count = Text.FormatCount("library",
-            source == RatingSource.RottenTomatoes || source == RatingSource.Metacritic ? "reviews" : "votes", votes);
+        var count = Text.FormatCount(
+            "library",
+            source == RatingSource.RottenTomatoes || source == RatingSource.Metacritic
+                ? "reviews"
+                : "votes",
+            votes
+        );
         return count + "\n" + sample;
     }
 

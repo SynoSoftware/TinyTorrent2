@@ -1,0 +1,33 @@
+{
+  "header": {
+    "accessible_name": "Kolomkoppen",
+    "sorted_ascending": "Oplopend gesorteerd",
+    "sorted_descending": "Aflopend gesorteerd"
+  },
+  "placeholder": {
+    "loading": "Laden",
+    "empty": "Niets om weer te geven",
+    "no_results": "Geen overeenkomende items"
+  },
+  "column_menu": {
+    "hide": "Kolom ‘{0}’ verbergen",
+    "show": "Kolom ‘{0}’ weergeven",
+    "fit": "Kolom ‘{0}’ passend maken",
+    "fit_columns": "Kolommen passend maken",
+    "fill_width": "Breedte vullen",
+    "move_left": "Naar links verplaatsen",
+    "move_right": "Naar rechts verplaatsen",
+    "shown": "Zichtbaar",
+    "hidden": "Verborgen"
+  },
+  "row_drag": {
+    "before_row": "Invoegen vóór {0}",
+    "at_end": "Aan het einde invoegen",
+    "nothing_to_move": "Niets om te verplaatsen",
+    "choose_position": "Kies waar je wilt invoegen",
+    "move_one": "{0} item verplaatsen",
+    "move_many": "{0} items verplaatsen",
+    "hint": "Vasthouden + scrollen · In een tussenruimte neerzetten · Esc annuleert",
+    "browse": "Vasthouden + scrollen · Esc annuleert"
+  }
+}

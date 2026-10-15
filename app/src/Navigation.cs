@@ -21,7 +21,8 @@ internal sealed class Navigation(Func<WindowPage, Task<bool>> prepare) : INotify
     internal Task<bool> Navigate(WindowPage page) =>
         IsWorkspace(page) ? Change(new(page), 0) : Open(page);
 
-    internal Task<bool> Navigate(SettingTarget target) => Open(new Destination(WindowPage.Settings, target));
+    internal Task<bool> Navigate(SettingTarget target) =>
+        Open(new Destination(WindowPage.Settings, target));
 
     internal Task<bool> SelectCategory(SettingsCategory? category)
     {

@@ -32,8 +32,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     // engine sent one instead of an error code, and the folder where the
     // person finishes a failed deletion.
     private string _errorTitle = string.Empty;
-    private string _errorSubject = string.Empty;
-    private string? _errorReason;
+    private Func<string>? _errorSubject;
+    private Func<string>? _errorReason;
     private string? _errorFolder;
     private double _downloadRate;
     private double _uploadRate;
@@ -83,6 +83,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             Changed(nameof(ShowsSettingsIndex));
         }
     }
+
     // Where Settings opens without a category: its index, or General when the
     // person hid the index.
     public SettingsCategory? SettingsHome => ShowsSettingsIndex ? null : SettingsCategory.General;
@@ -91,10 +92,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         Settings.Theme.ConfirmedText.Length > 0 ? Settings.Theme.ConfirmedText : "system";
     public bool ShowsTitleSpeeds => Settings.ShowTitleSpeeds.IsOn;
     public bool ShowsFreeSpace =>
-        _connected
-        && !_loading
-        && !_storageFailed
-        && Settings.ShowFreeSpace.IsOn;
+        _connected && !_loading && !_storageFailed && Settings.ShowFreeSpace.IsOn;
     public string FreeSpaceStatus =>
         _spacePath == Settings.Destination.ConfirmedText && _freeSpace is { } space
             ? Text.Format("window", "free_space", Text.Bytes(space))
@@ -222,7 +220,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             {
                 if (_sessionId.Length == 0 && reason.Length == 0)
                     return null;
-                var title = _disconnection is { IsOtherVersion: true } ? "other_version"
+                var title =
+                    _disconnection is { IsOtherVersion: true } ? "other_version"
                     : _sessionId.Length == 0 ? "not_started"
                     : "stopped";
                 var stopped = Text.Get("window", "disconnected");
@@ -302,7 +301,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         }
     }
     public string CommandError =>
-        _error is null ? string.Empty : _errorReason ?? Text.Error(_error);
+        _error is null ? string.Empty : _errorReason?.Invoke() ?? Text.Error(_error);
     public bool HasCommandError => _error is not null;
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -755,8 +754,22 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     {
         var previousAccess = (_connected, _loading, _storageFailed, _shuttingDown);
         var previousError = _startupError;
-        var previousLimits = (IsPaused, _limitOrigin, _appliedLimits, _pause, _downloadCap, _uploadCap, MissingAdapter, LimitsIndex);
-        var previousIncoming = (HasIncoming, MissingAdapter, Settings.Proxy.IsInUse, Settings.Proxy.Route);
+        var previousLimits = (
+            IsPaused,
+            _limitOrigin,
+            _appliedLimits,
+            _pause,
+            _downloadCap,
+            _uploadCap,
+            MissingAdapter,
+            LimitsIndex
+        );
+        var previousIncoming = (
+            HasIncoming,
+            MissingAdapter,
+            Settings.Proxy.IsInUse,
+            Settings.Proxy.Route
+        );
         var previousIp = (_externalIpv4, _externalIpv6);
         var previousRates = (_downloadRate, _uploadRate);
         var previousTotals = (SessionTotals, LifetimeTotals);
@@ -850,14 +863,17 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             rowsChanged = true;
         }
         _selected = _selected.Where(row => present.Contains(row.TorrentId)).ToArray();
-        var selectionChanged = previousSelection != _selected.Length
-            || rowsChanged && _selected.Length > 0;
+        var selectionChanged =
+            previousSelection != _selected.Length || rowsChanged && _selected.Length > 0;
         if (_current is not null && !present.Contains(_current.TorrentId))
             _current = null;
         var inspected = Inspector.Target;
         if (inspected is { } target && !Contains(target))
             Inspector.Show(null);
-        if (Inspector.Target is null && (previousSelection != _selected.Length || inspected is not null))
+        if (
+            Inspector.Target is null
+            && (previousSelection != _selected.Length || inspected is not null)
+        )
         {
             if (HasInspector && _selected.Length == 1)
                 Inspector.Show(_selected[0]);
@@ -891,7 +907,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 if (FileDraft.Torrents.Length > 0)
                     FileDraft.Refresh();
             }
-            if (published || previousCount != Torrents.Count || previousSelection != _selected.Length)
+            if (
+                published
+                || previousCount != Torrents.Count
+                || previousSelection != _selected.Length
+            )
                 Changed(nameof(CountStatus));
             if (previousCount != Torrents.Count)
             {
@@ -911,14 +931,28 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 Changed(nameof(FirstLast));
                 Changed(nameof(Limited));
             }
-            var limitsChanged = previousLimits != (IsPaused, _limitOrigin, _appliedLimits, _pause, _downloadCap, _uploadCap, MissingAdapter, LimitsIndex);
+            var limitsChanged =
+                previousLimits
+                != (
+                    IsPaused,
+                    _limitOrigin,
+                    _appliedLimits,
+                    _pause,
+                    _downloadCap,
+                    _uploadCap,
+                    MissingAdapter,
+                    LimitsIndex
+                );
             var minute = DateTime.Now.Ticks / TimeSpan.TicksPerMinute;
             if (limitsChanged || minute != _limitsMinute)
                 RefreshLimits();
             _limitsMinute = minute;
             if (limitsChanged || previousRates != (_downloadRate, _uploadRate))
                 RefreshRates();
-            if (previousIncoming != (HasIncoming, MissingAdapter, Settings.Proxy.IsInUse, Settings.Proxy.Route))
+            if (
+                previousIncoming
+                != (HasIncoming, MissingAdapter, Settings.Proxy.IsInUse, Settings.Proxy.Route)
+            )
                 RefreshIncoming();
             if (previousIp != (_externalIpv4, _externalIpv6))
                 Changed(nameof(ExternalIp));
@@ -1231,13 +1265,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         FileDraft.Cancel();
     }
 
-    public void Report(Exception error) => Report(error, ErrorTitle(error), string.Empty, null);
+    public void Report(Exception error) => Report(error, ErrorTitle(error), null, null);
 
     internal void Report(
         Exception error,
         string title,
-        string subject,
-        string? reason,
+        Func<string>? subject,
+        Func<string>? reason,
         string? folder = null
     )
     {

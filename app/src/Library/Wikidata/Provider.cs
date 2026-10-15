@@ -43,10 +43,7 @@ internal sealed class Provider : IProvider
         return string.Join(' ', words.ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries));
     }
 
-    public async Task<VideoSearch> Search(
-        VideoQuery query,
-        CancellationToken cancellation
-    )
+    public async Task<VideoSearch> Search(VideoQuery query, CancellationToken cancellation)
     {
         // Without words the search would list arbitrary movies.
         if (query.Text.Length == 0)
@@ -69,7 +66,11 @@ internal sealed class Provider : IProvider
                       OPTIONAL { ?item wdt:P1476 ?name }
                     } GROUP BY ?item
                   }
-                  {{(query.Year is { } requested ? "FILTER(?year=" + requested.ToString(CultureInfo.InvariantCulture) + ")" : string.Empty)}}
+                  {{(
+                    query.Year is { } requested
+                        ? "FILTER(?year=" + requested.ToString(CultureInfo.InvariantCulture) + ")"
+                        : string.Empty
+                )}}
                   SERVICE wikibase:label {
                     bd:serviceParam wikibase:language "{{query.Language}},mul,en". ?item rdfs:label ?title .
                   }
@@ -81,8 +82,7 @@ internal sealed class Provider : IProvider
         try
         {
             var rows = Rows(data).ToArray();
-            var choices = rows
-                .Select(row =>
+            var choices = rows.Select(row =>
                     (
                         Item: Item(Value(row, "item")),
                         Title: Value(row, "title"),
@@ -106,8 +106,7 @@ internal sealed class Provider : IProvider
                 .ToArray();
             return new(choices, rows.Length == 0);
         }
-        catch (Exception error)
-            when (error is InvalidOperationException or KeyNotFoundException)
+        catch (Exception error) when (error is InvalidOperationException or KeyNotFoundException)
         {
             throw new VideoException(VideoFailure.InvalidResult, error);
         }
@@ -123,40 +122,50 @@ internal sealed class Provider : IProvider
         if (choice.Kind != VideoKind.Movie || Item(choice.VideoId) != choice.VideoId)
             throw new VideoException(VideoFailure.InvalidResult);
         var item = choice.VideoId;
-        var record = await request.Read(item, async token =>
-        {
-            // Cast members are ordered by how many Wikimedia sites link them, a
-            // measure of prominence, because the query service does not keep
-            // Wikidata's billing order.
-            var data = await Get(
-                    request.Get,
-                    $$"""
-                    SELECT ?field ?value ?valueLabel ?valueDescription ?by ?date ?votes ?links WHERE {
-                      VALUES ?item { wd:{{item}} }
-                      { VALUES ?value { wd:{{item}} } BIND("title" AS ?field) }
-                      UNION { ?item wdt:P1476 ?value . BIND("original" AS ?field) }
-                      UNION { ?item wdt:P577 ?value . BIND("date" AS ?field) }
-                      UNION { ?item wdt:P345 ?value . BIND("imdb" AS ?field) }
-                      UNION { ?item wdt:P136 ?value . BIND("genre" AS ?field) }
-                      UNION { ?item wdt:P161 ?value . ?value wikibase:sitelinks ?links . BIND("cast" AS ?field) }
-                      UNION {
-                        ?item p:P444 ?statement . ?statement ps:P444 ?value ; pq:P447 ?by .
-                        OPTIONAL { ?statement pq:P585 ?date }
-                        OPTIONAL { ?statement pq:P7887 ?votes }
-                        BIND("score" AS ?field)
-                      }
-                      SERVICE wikibase:label {
-                        bd:serviceParam wikibase:language "{{request.Language}},mul,en".
-                      }
-                    }
-                    """,
-                    token
-                )
-                .ConfigureAwait(false);
-            var downloaded = new VideoRecord(item, data, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
-            _ = Information(item, downloaded);
-            return downloaded;
-        }, cancellation).ConfigureAwait(false);
+        var record = await request
+            .Read(
+                item,
+                async token =>
+                {
+                    // Cast members are ordered by how many Wikimedia sites link them, a
+                    // measure of prominence, because the query service does not keep
+                    // Wikidata's billing order.
+                    var data = await Get(
+                            request.Get,
+                            $$"""
+                            SELECT ?field ?value ?valueLabel ?valueDescription ?by ?date ?votes ?links WHERE {
+                              VALUES ?item { wd:{{item}} }
+                              { VALUES ?value { wd:{{item}} } BIND("title" AS ?field) }
+                              UNION { ?item wdt:P1476 ?value . BIND("original" AS ?field) }
+                              UNION { ?item wdt:P577 ?value . BIND("date" AS ?field) }
+                              UNION { ?item wdt:P345 ?value . BIND("imdb" AS ?field) }
+                              UNION { ?item wdt:P136 ?value . BIND("genre" AS ?field) }
+                              UNION { ?item wdt:P161 ?value . ?value wikibase:sitelinks ?links . BIND("cast" AS ?field) }
+                              UNION {
+                                ?item p:P444 ?statement . ?statement ps:P444 ?value ; pq:P447 ?by .
+                                OPTIONAL { ?statement pq:P585 ?date }
+                                OPTIONAL { ?statement pq:P7887 ?votes }
+                                BIND("score" AS ?field)
+                              }
+                              SERVICE wikibase:label {
+                                bd:serviceParam wikibase:language "{{request.Language}},mul,en".
+                              }
+                            }
+                            """,
+                            token
+                        )
+                        .ConfigureAwait(false);
+                    var downloaded = new VideoRecord(
+                        item,
+                        data,
+                        DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+                    );
+                    _ = Information(item, downloaded);
+                    return downloaded;
+                },
+                cancellation
+            )
+            .ConfigureAwait(false);
         return Information(item, record);
     }
 
@@ -176,7 +185,10 @@ internal sealed class Provider : IProvider
             // Editors record a score again when it changes, so the newest one applies.
             Rating? Score(string site, string suffix = "") =>
                 Field("score")
-                    .Where(row => Item(Value(row, "by")) == site && Value(row, "value").EndsWith(suffix, StringComparison.Ordinal))
+                    .Where(row =>
+                        Item(Value(row, "by")) == site
+                        && Value(row, "value").EndsWith(suffix, StringComparison.Ordinal)
+                    )
                     .OrderByDescending(row => Value(row, "date"), StringComparer.Ordinal)
                     .Select(ReadRating)
                     .FirstOrDefault(rating => rating is not null);
@@ -195,7 +207,11 @@ internal sealed class Provider : IProvider
                 Cast = Names(
                     Field("cast")
                         .OrderByDescending(row =>
-                            int.TryParse(Value(row, "links"), CultureInfo.InvariantCulture, out var links)
+                            int.TryParse(
+                                Value(row, "links"),
+                                CultureInfo.InvariantCulture,
+                                out var links
+                            )
                                 ? links
                                 : 0
                         )
@@ -216,13 +232,13 @@ internal sealed class Provider : IProvider
                     .Select(row => VideoInformation.ParseImdbId(Value(row, "value")))
                     .OfType<long>()
                     .Distinct()
-                    .ToArray() is [var id]
+                    .ToArray()
+                    is [var id]
                     ? id
                     : null,
             };
         }
-        catch (Exception error)
-            when (error is InvalidOperationException or KeyNotFoundException)
+        catch (Exception error) when (error is InvalidOperationException or KeyNotFoundException)
         {
             throw new VideoException(VideoFailure.InvalidResult, error);
         }
@@ -235,29 +251,45 @@ internal sealed class Provider : IProvider
     {
         var score = Value(row, "value");
         var parts = score.EndsWith('%') ? new[] { score[..^1], "100" } : score.Split('/');
-        return parts is [var text, var scale]
-        && double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
-        && double.TryParse(scale, NumberStyles.Float, CultureInfo.InvariantCulture, out var maximum)
-        && double.IsFinite(maximum)
-        && maximum > 0
-        && value >= 0
-        && value <= maximum
+        return
+            parts is [var text, var scale]
+            && double.TryParse(
+                text,
+                NumberStyles.Float,
+                CultureInfo.InvariantCulture,
+                out var value
+            )
+            && double.TryParse(
+                scale,
+                NumberStyles.Float,
+                CultureInfo.InvariantCulture,
+                out var maximum
+            )
+            && double.IsFinite(maximum)
+            && maximum > 0
+            && value >= 0
+            && value <= maximum
             ? new Rating(value / maximum * 10, VideoKind.Movie)
             {
-                Votes = long.TryParse(
-                    Value(row, "votes"),
-                    NumberStyles.AllowLeadingSign,
-                    CultureInfo.InvariantCulture,
-                    out var votes
-                )
-                && votes > 0
-                    ? votes
-                    : null,
+                Votes =
+                    long.TryParse(
+                        Value(row, "votes"),
+                        NumberStyles.AllowLeadingSign,
+                        CultureInfo.InvariantCulture,
+                        out var votes
+                    )
+                    && votes > 0
+                        ? votes
+                        : null,
             }
             : null;
     }
 
-    private static async Task<JsonElement> Get(ProviderGet get, string query, CancellationToken cancellation)
+    private static async Task<JsonElement> Get(
+        ProviderGet get,
+        string query,
+        CancellationToken cancellation
+    )
     {
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
@@ -289,7 +321,8 @@ internal sealed class Provider : IProvider
     private static string Item(string value)
     {
         var item = value[(value.LastIndexOf('/') + 1)..];
-        return item.Length is > 1 and <= 12
+        return
+            item.Length is > 1 and <= 12
             && item[0] == 'Q'
             && item[1] != '0'
             && item[1..].All(char.IsAsciiDigit)

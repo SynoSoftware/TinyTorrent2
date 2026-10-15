@@ -43,17 +43,23 @@ public sealed partial class MainWindow
         if (_allowClose || StatusBar.ActualWidth <= 0)
             return;
         RefreshWork();
-        try { LayoutStatus(); }
+        try
+        {
+            LayoutStatus();
+        }
         finally
         {
             var context = ContextStatus.Visibility == Visibility.Visible;
-            var activity = WorkButton.Visibility == Visibility.Visible
+            var activity =
+                WorkButton.Visibility == Visibility.Visible
                 || InformationStatus.Visibility == Visibility.Visible
                 || _workViews.Values.Any(views => views.Inline.Visibility == Visibility.Visible);
-            var transfer = TransferStatus.Children.OfType<FrameworkElement>()
+            var transfer = TransferStatus
+                .Children.OfType<FrameworkElement>()
                 .Any(control => control.Visibility == Visibility.Visible);
             ContextGap.MinWidth = context && (activity || transfer) ? 16 : 0;
-            ContextGap.Width = activity || transfer ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+            ContextGap.Width =
+                activity || transfer ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
             TransferGap.MinWidth = activity && transfer ? 16 : 0;
             TransferGap.Width = activity ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
             RecoverWorkFocus();
@@ -71,36 +77,84 @@ public sealed partial class MainWindow
         foreach (var label in new[] { CountLabel, InformationLabel, RestrictionLabel })
             label.MaxWidth = double.PositiveInfinity;
         TransferStatus.Spacing = 16;
-        ContextIcon.Glyph = about ? Syno.Lucide.Info : library ? Model.Library.StatusGlyph
-            : Model.Page == WindowPage.Settings ? Syno.Lucide.Settings : Syno.Lucide.List;
+        ContextIcon.Glyph =
+            about ? Syno.Lucide.Info
+            : library ? Model.Library.StatusGlyph
+            : Model.Page == WindowPage.Settings ? Syno.Lucide.Settings
+            : Syno.Lucide.List;
         SetStatus(CountLabel, Model.CountStatus);
         SetStatus(InformationLabel, Model.Library.InformationStatus);
-        var downloadTip = about ? Model.Text.Format("about", "downloaded_hint", Model.LifetimeDownloaded) : Model.DownloadTip;
-        var uploadTip = about ? Model.Text.Format("about", "uploaded_hint", Model.LifetimeUploaded) : Model.UploadTip;
-        SetStatus(DownloadLabel, about ? Model.Text.Format("about", "downloaded", Model.LifetimeDownloaded) : Model.DownloadStatus, downloadTip);
-        SetStatus(UploadLabel, about ? Model.Text.Format("about", "uploaded", Model.LifetimeUploaded) : Model.UploadStatus, uploadTip);
-        SetStatus(TransferLabel, about ? Model.Text.Get("settings", "lifetime_totals") : Model.Text.Get("window", "torrents"));
+        var downloadTip = about
+            ? Model.Text.Format("about", "downloaded_hint", Model.LifetimeDownloaded)
+            : Model.DownloadTip;
+        var uploadTip = about
+            ? Model.Text.Format("about", "uploaded_hint", Model.LifetimeUploaded)
+            : Model.UploadTip;
+        SetStatus(
+            DownloadLabel,
+            about
+                ? Model.Text.Format("about", "downloaded", Model.LifetimeDownloaded)
+                : Model.DownloadStatus,
+            downloadTip
+        );
+        SetStatus(
+            UploadLabel,
+            about
+                ? Model.Text.Format("about", "uploaded", Model.LifetimeUploaded)
+                : Model.UploadStatus,
+            uploadTip
+        );
+        SetStatus(
+            TransferLabel,
+            about
+                ? Model.Text.Get("settings", "lifetime_totals")
+                : Model.Text.Get("window", "torrents")
+        );
         SetStatus(MemoryCaption, Model.Text.Get("about", "memory"));
-        SetStatus(EngineMemoryLabel, Model.Text.Format("about", "engine_memory", Model.EngineMemory),
-            Model.Text.Format("about", "engine_memory_hint", Model.EngineMemory));
-        SetStatus(UiMemoryLabel, Model.Text.Format("about", "ui_memory", Model.UiMemory),
-            Model.Text.Format("about", "ui_memory_hint", Model.UiMemory));
+        SetStatus(
+            EngineMemoryLabel,
+            Model.Text.Format("about", "engine_memory", Model.EngineMemory),
+            Model.Text.Format("about", "engine_memory_hint", Model.EngineMemory)
+        );
+        SetStatus(
+            UiMemoryLabel,
+            Model.Text.Format("about", "ui_memory", Model.UiMemory),
+            Model.Text.Format("about", "ui_memory_hint", Model.UiMemory)
+        );
         SetStatus(RestrictionLabel, Model.RestrictionStatus, Model.RestrictionTip);
         SetStatus(LimitsLabel, Model.Text.Get("window", "limits_on"));
-        SetStatus(FreeSpaceLabel, Model.FreeSpaceStatus,
-            Model.Text.Format("window", "space_path", Model.Settings.Destination.ConfirmedText, Model.FreeSpaceStatus));
+        SetStatus(
+            FreeSpaceLabel,
+            Model.FreeSpaceStatus,
+            Model.Text.Format(
+                "window",
+                "space_path",
+                Model.Settings.Destination.ConfirmedText,
+                Model.FreeSpaceStatus
+            )
+        );
         SetStatus(ExternalIpLabel, Model.ExternalIp);
         SetStatus(IncomingLabel, Model.IncomingStatus, Model.Incoming);
-        SetStatus(UpdateLabel, Model.Text.Get("about", "available"), Model.Text.Get("about", "available_tip"));
+        SetStatus(
+            UpdateLabel,
+            Model.Text.Get("about", "available"),
+            Model.Text.Get("about", "available_tip")
+        );
 
         ShowStatus(ContextStatus, Model.CountStatus.Length > 0);
         ShowStatus(ContextIcon, true);
-        ShowStatus(InformationStatus, library && current && !work && Model.Library.InformationStatus.Length > 0);
+        ShowStatus(
+            InformationStatus,
+            library && current && !work && Model.Library.InformationStatus.Length > 0
+        );
         ShowStatus(MemoryStatus, about);
         ShowStatus(DownloadRate, about || transfers);
         ShowStatus(UploadRate, about || transfers);
         ShowStatus(RestrictionStatus, !about && current && Model.HasRestriction);
-        ShowStatus(TransferLabel, about || library && (transfers || current && Model.HasRestriction));
+        ShowStatus(
+            TransferLabel,
+            about || library && (transfers || current && Model.HasRestriction)
+        );
         ShowStatus(LimitsLabel, false);
         ShowStatus(FreeSpaceStatus, !about && Model.ShowsFreeSpace);
         ShowStatus(ExternalIpStatus, !about && current && Model.ShowsExternalIp);
@@ -111,16 +165,33 @@ public sealed partial class MainWindow
         if (StatusFits())
             return;
 
-        foreach (var control in new FrameworkElement[] { MemoryStatus, UpdateAvailable, FreeSpaceStatus, ExternalIpStatus, Incoming, InformationStatus })
+        foreach (
+            var control in new FrameworkElement[]
+            {
+                MemoryStatus,
+                UpdateAvailable,
+                FreeSpaceStatus,
+                ExternalIpStatus,
+                Incoming,
+                InformationStatus,
+            }
+        )
         {
             ShowStatus(control, false);
             if (StatusFits())
                 return;
         }
         FitWork();
-        SetStatus(DownloadLabel, about ? Model.LifetimeDownloaded : Model.DownloadSpeed, downloadTip);
+        SetStatus(
+            DownloadLabel,
+            about ? Model.LifetimeDownloaded : Model.DownloadSpeed,
+            downloadTip
+        );
         SetStatus(UploadLabel, about ? Model.LifetimeUploaded : Model.UploadSpeed, uploadTip);
-        ShowStatus(LimitsLabel, !about && transfers && Model.HasCaps && !Model.ShowsAlternativeLimits);
+        ShowStatus(
+            LimitsLabel,
+            !about && transfers && Model.HasCaps && !Model.ShowsAlternativeLimits
+        );
         ReserveRate(DownloadRate, DownloadLabel);
         ReserveRate(UploadRate, UploadLabel);
         if (StatusFits())
@@ -140,14 +211,21 @@ public sealed partial class MainWindow
 
         if (!work)
         {
-            CountLabel.MaxWidth = Math.Max(0, MeasureText(CountLabel, CountLabel.Text)
-                - Math.Max(0, StatusWidth() - StatusBar.ActualWidth));
+            CountLabel.MaxWidth = Math.Max(
+                0,
+                MeasureText(CountLabel, CountLabel.Text)
+                    - Math.Max(0, StatusWidth() - StatusBar.ActualWidth)
+            );
             if (StatusFits())
                 return;
         }
 
         if (selected > 0 && Model.Page is WindowPage.Library or WindowPage.Torrents)
-            SetStatus(CountLabel, Model.Text.Format("window", "selected", selected), Model.CountStatus);
+            SetStatus(
+                CountLabel,
+                Model.Text.Format("window", "selected", selected),
+                Model.CountStatus
+            );
         else
             ShowStatus(ContextStatus, false);
         if (StatusFits())
@@ -162,21 +240,34 @@ public sealed partial class MainWindow
         ShowStatus(TransferLabel, false);
         if (RestrictionStatus.Visibility == Visibility.Visible)
         {
-            var compact = Model.IsSessionPaused ? Model.Text.Get("status", "paused")
+            var compact = Model.IsSessionPaused
+                ? Model.Text.Get("status", "paused")
                 : Model.Text.Get("window", "alternative");
-            SetStatus(RestrictionLabel,
+            SetStatus(
+                RestrictionLabel,
                 library ? Model.Text.Format("window", "torrent_status", compact) : compact,
-                library ? Model.Text.Format("window", "torrent_status", Model.RestrictionTip) : Model.RestrictionTip);
+                library
+                    ? Model.Text.Format("window", "torrent_status", Model.RestrictionTip)
+                    : Model.RestrictionTip
+            );
         }
         if (StatusFits())
             return;
 
-        foreach (var views in _workViews.Values.Where(views => views.Inline.Visibility == Visibility.Visible))
+        foreach (
+            var views in _workViews.Values.Where(views =>
+                views.Inline.Visibility == Visibility.Visible
+            )
+        )
         {
             var excess = Math.Max(0, StatusWidth() - StatusBar.ActualWidth);
             views.Inline.MaxWidth = Math.Max(0, views.Inline.DesiredSize.Width - excess);
         }
-        if (!work && ContextStatus.Visibility == Visibility.Collapsed && RestrictionStatus.Visibility == Visibility.Collapsed)
+        if (
+            !work
+            && ContextStatus.Visibility == Visibility.Collapsed
+            && RestrictionStatus.Visibility == Visibility.Collapsed
+        )
         {
             ShowStatus(ContextStatus, true);
             CountLabel.MaxWidth = StatusBar.ActualWidth;
@@ -199,7 +290,9 @@ public sealed partial class MainWindow
 
     private void ReserveRate(StackPanel panel, TextBlock label)
     {
-        var text = new string(label.Text.Select(character => char.IsDigit(character) ? '8' : character).ToArray());
+        var text = new string(
+            label.Text.Select(character => char.IsDigit(character) ? '8' : character).ToArray()
+        );
         var icon = (FrameworkElement)panel.Children[0];
         icon.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
         panel.Width = MeasureText(label, text) + panel.Spacing + icon.DesiredSize.Width;
@@ -222,8 +315,14 @@ public sealed partial class MainWindow
         ContextStatus.Measure(unlimited);
         ActivityStatus.Measure(unlimited);
         TransferStatus.Measure(unlimited);
-        var groups = new[] { ContextStatus.DesiredSize.Width, ActivityStatus.DesiredSize.Width,
-            TransferStatus.DesiredSize.Width }.Where(width => width > 0).ToArray();
+        var groups = new[]
+        {
+            ContextStatus.DesiredSize.Width,
+            ActivityStatus.DesiredSize.Width,
+            TransferStatus.DesiredSize.Width,
+        }
+            .Where(width => width > 0)
+            .ToArray();
         return groups.Sum() + Math.Max(0, groups.Length - 1) * 16;
     }
 
@@ -246,6 +345,7 @@ public sealed partial class MainWindow
             - CaptionStart.ActualWidth
             - Menus.ActualWidth
             - SettingsButton.ActualWidth
+            - LanguageButton.ActualWidth
             - ThemeButton.ActualWidth
             - SearchArea.Margin.Left
             - SearchArea.Margin.Right;
@@ -308,6 +408,7 @@ public sealed partial class MainWindow
             Menus,
             Search,
             SettingsButton,
+            LanguageButton,
             ThemeButton,
         }
             .Where(control => control.Visibility == Visibility.Visible && control.ActualWidth > 0)
@@ -356,13 +457,13 @@ public sealed partial class MainWindow
             + Search.MinWidth
             + SearchArea.Margin.Right
             + SettingsButton.Width
+            + LanguageButton.Width
             + ThemeButton.Width;
         var frame = AppWindow.Size.Width - AppWindow.ClientSize.Width;
         var width =
             (int)
                 Math.Ceiling(
-                    Math.Max(720, content + LeftInset.Width.Value + RightInset.Width.Value)
-                        * scale
+                    Math.Max(720, content + LeftInset.Width.Value + RightInset.Width.Value) * scale
                 ) + frame;
         var height = (int)Math.Ceiling(560 * scale);
         if (presenter.PreferredMinimumWidth != width)
@@ -412,6 +513,11 @@ public sealed partial class MainWindow
     {
         Title = Model.Text.Get("window", "title");
         RefreshTheme();
+        LanguageLabel.Text =
+            Model.Text.Language == "zh"
+                ? "中文"
+                : Model.Text.Language.Split('-')[0].ToUpperInvariant();
+        NameButton(LanguageButton, Model.Text.Get("settings", "language"));
         NameButton(
             SettingsButton,
             Model.Text.Format(

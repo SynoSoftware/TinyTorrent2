@@ -152,7 +152,8 @@ public sealed class Torrent(string torrentId, Strings strings) : INotifyProperty
         Notify();
     }
 
-    private void Notify() => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+    private void Notify() =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
 
     internal void Disconnect()
     {
@@ -178,7 +179,10 @@ public sealed class Torrent(string torrentId, Strings strings) : INotifyProperty
         SeedCount = Set(SeedCount, row.GetProperty("seed_count").GetInt32());
         PeerCount = Set(PeerCount, row.GetProperty("peer_count").GetInt32());
         SwarmSeedCount = Set(SwarmSeedCount, row.GetProperty("swarm_seed_count").GetInt32());
-        SwarmLeecherCount = Set(SwarmLeecherCount, row.GetProperty("swarm_leecher_count").GetInt32());
+        SwarmLeecherCount = Set(
+            SwarmLeecherCount,
+            row.GetProperty("swarm_leecher_count").GetInt32()
+        );
         Queue = Set(Queue, row.GetProperty("queue").GetInt32());
         Added = Set(Added, Moment(row.GetProperty("added")));
         CompletedOn = Set(CompletedOn, Moment(row.GetProperty("completed_on")));

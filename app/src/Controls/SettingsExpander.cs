@@ -18,18 +18,27 @@ public sealed partial class SettingsExpander : Expander
     public SettingsExpander()
     {
         DefaultStyleKey = typeof(Expander);
-        RegisterPropertyChangedCallback(IsExpandedProperty, (_, _) =>
-            DispatcherQueue.TryEnqueue(Change));
-        RegisterPropertyChangedCallback(ContentProperty, (_, _) =>
-        {
-            if (!IsExpanded && Content is null)
+        RegisterPropertyChangedCallback(
+            IsExpandedProperty,
+            (_, _) => DispatcherQueue.TryEnqueue(Change)
+        );
+        RegisterPropertyChangedCallback(
+            ContentProperty,
+            (_, _) =>
             {
-                Stop();
-                Settle();
+                if (!IsExpanded && Content is null)
+                {
+                    Stop();
+                    Settle();
+                }
             }
-        });
+        );
         Loaded += (_, _) => Settle();
-        Unloaded += (_, _) => { Stop(); Settle(); };
+        Unloaded += (_, _) =>
+        {
+            Stop();
+            Settle();
+        };
     }
 
     protected override void OnApplyTemplate()
@@ -54,8 +63,7 @@ public sealed partial class SettingsExpander : Expander
 
     private void OnBodySize(object sender, SizeChangedEventArgs args)
     {
-        if (IsExpanded && _animation is not null
-            && Math.Abs(args.NewSize.Height - _target) > 0.5)
+        if (IsExpanded && _animation is not null && Math.Abs(args.NewSize.Height - _target) > 0.5)
             DispatcherQueue.TryEnqueue(Change);
     }
 

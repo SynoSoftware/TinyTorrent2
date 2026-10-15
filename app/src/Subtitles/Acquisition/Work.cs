@@ -10,23 +10,34 @@ internal sealed partial class Acquisition
 
     private async Task RefreshWork()
     {
-        var pending = await Run(connection =>
-        {
-            using var command = connection.CreateCommand();
-            command.CommandText = """
-                SELECT path,language,manual,retry_at FROM subtitle_jobs
-                WHERE outcome IN ($pending,$unavailable,$blocked);
-                """;
-            command.Parameters.AddWithValue("$pending", (int)SubtitleOutcome.Pending);
-            command.Parameters.AddWithValue("$unavailable", (int)SubtitleOutcome.Unavailable);
-            command.Parameters.AddWithValue("$blocked", (int)SubtitleOutcome.Blocked);
-            using var reader = command.ExecuteReader();
-            var jobs = new List<PendingJob>();
-            while (reader.Read())
-                jobs.Add(new(new(reader.GetString(0), reader.GetString(1), reader.GetBoolean(2)),
-                    reader.GetInt64(3)));
-            return jobs;
-        }, _lifetime.Token).ConfigureAwait(false);
+        var pending = await Run(
+                connection =>
+                {
+                    using var command = connection.CreateCommand();
+                    command.CommandText = """
+                        SELECT path,language,manual,retry_at FROM subtitle_jobs
+                        WHERE outcome IN ($pending,$unavailable,$blocked);
+                        """;
+                    command.Parameters.AddWithValue("$pending", (int)SubtitleOutcome.Pending);
+                    command.Parameters.AddWithValue(
+                        "$unavailable",
+                        (int)SubtitleOutcome.Unavailable
+                    );
+                    command.Parameters.AddWithValue("$blocked", (int)SubtitleOutcome.Blocked);
+                    using var reader = command.ExecuteReader();
+                    var jobs = new List<PendingJob>();
+                    while (reader.Read())
+                        jobs.Add(
+                            new(
+                                new(reader.GetString(0), reader.GetString(1), reader.GetBoolean(2)),
+                                reader.GetInt64(3)
+                            )
+                        );
+                    return jobs;
+                },
+                _lifetime.Token
+            )
+            .ConfigureAwait(false);
         foreach (var manual in new[] { true, false })
         {
             var run = manual ? _manualWork : _automaticWork;
@@ -41,22 +52,35 @@ internal sealed partial class Acquisition
                 run = null;
             }
             if (run is null && jobs.Length > 0 && (manual || Enabled))
-                run = new(this, manual ? SubtitleWork.Manual : SubtitleWork.Automatic,
-                    jobs.Select(job => job.Job));
+                run = new(
+                    this,
+                    manual ? SubtitleWork.Manual : SubtitleWork.Automatic,
+                    jobs.Select(job => job.Job)
+                );
             lock (_requestSync)
             {
-                if (manual) _manualWork = run;
-                else _automaticWork = run;
+                if (manual)
+                    _manualWork = run;
+                else
+                    _automaticWork = run;
                 if (run is null || run.Stopping)
                     continue;
                 run.Jobs.UnionWith(jobs.Select(job => job.Job));
                 var due = jobs.Length == 0 ? 0 : jobs.Min(job => job.RetryAt);
-                run.Report(new WorkProgress.Fraction(run.Jobs.Count - jobs.Length,
-                    run.Jobs.Count, WorkUnit.Files), new WorkExecution.Waiting
+                run.Report(
+                    new WorkProgress.Fraction(
+                        run.Jobs.Count - jobs.Length,
+                        run.Jobs.Count,
+                        WorkUnit.Files
+                    ),
+                    new WorkExecution.Waiting
                     {
-                        RetryAt = due > DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-                            ? DateTimeOffset.FromUnixTimeSeconds(due) : null,
-                    });
+                        RetryAt =
+                            due > DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+                                ? DateTimeOffset.FromUnixTimeSeconds(due)
+                                : null,
+                    }
+                );
             }
         }
     }
@@ -66,8 +90,11 @@ internal sealed partial class Acquisition
         lock (_requestSync)
         {
             var run = manual ? _manualWork : _automaticWork;
-            return run is { Stopping: false, Ended: false } && run.Jobs.Contains(new(path, language, manual))
-                ? run : null;
+            return
+                run is { Stopping: false, Ended: false }
+                && run.Jobs.Contains(new(path, language, manual))
+                ? run
+                : null;
         }
     }
 
@@ -81,36 +108,50 @@ internal sealed partial class Acquisition
         {
             await _operation.WaitAsync(_lifetime.Token).ConfigureAwait(false);
             entered = true;
-            await Run(connection =>
-            {
-                foreach (var job in run.Jobs)
-                    Cancel(connection, job.Manual, job.Language, job.Path);
-                return true;
-            }, _lifetime.Token).ConfigureAwait(false);
+            await Run(
+                    connection =>
+                    {
+                        foreach (var job in run.Jobs)
+                            Cancel(connection, job.Manual, job.Language, job.Path);
+                        return true;
+                    },
+                    _lifetime.Token
+                )
+                .ConfigureAwait(false);
             // RefreshCounts may register pending jobs as a successor to this run.
             await run.Finish().ConfigureAwait(false);
             await RefreshCounts().ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
         {
-            System.Diagnostics.Debug.WriteLine("Saving cancelled subtitle jobs interrupted: worker is stopping.");
+            System.Diagnostics.Debug.WriteLine(
+                "Saving cancelled subtitle jobs interrupted: worker is stopping."
+            );
         }
-        catch (Microsoft.Data.Sqlite.SqliteException error) { _databaseFailure = error; }
+        catch (Microsoft.Data.Sqlite.SqliteException error)
+        {
+            _databaseFailure = error;
+        }
         finally
         {
             await run.Finish().ConfigureAwait(false);
-            if (entered) _operation.Release();
+            if (entered)
+                _operation.Release();
             Notify();
             Wake();
         }
         if (run.Kind == SubtitleWork.Manual && !_disposed)
         {
-            try { await Reconcile().ConfigureAwait(false); }
+            try
+            {
+                await Reconcile().ConfigureAwait(false);
+            }
             catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
         }
     }
 
     private sealed record Job(string Path, string Language, bool Manual);
+
     private sealed record PendingJob(Job Job, long RetryAt);
 
     private sealed class WorkRun
@@ -133,8 +174,11 @@ internal sealed partial class Acquisition
             _owner = owner;
             Kind = kind;
             Jobs = jobs?.ToHashSet() ?? [];
-            Observation = new(new WorkDescription.Subtitles(kind), new WorkProgress.Unknown(),
-                new WorkExecution.Waiting());
+            Observation = new(
+                new WorkDescription.Subtitles(kind),
+                new WorkProgress.Unknown(),
+                new WorkExecution.Waiting()
+            );
             Operation = owner.Work.Begin(Observation, Stop);
         }
 
@@ -184,7 +228,10 @@ internal sealed partial class Acquisition
         private async Task FinishCore()
         {
             Ended = true;
-            try { await _signalling.ConfigureAwait(false); }
+            try
+            {
+                await _signalling.ConfigureAwait(false);
+            }
             finally
             {
                 Operation.Dispose();

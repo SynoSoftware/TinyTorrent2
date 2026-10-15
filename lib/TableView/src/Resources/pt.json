@@ -1,0 +1,33 @@
+{
+  "header": {
+    "accessible_name": "Cabeçalhos de coluna",
+    "sorted_ascending": "Ordem crescente",
+    "sorted_descending": "Ordem decrescente"
+  },
+  "placeholder": {
+    "loading": "Carregando",
+    "empty": "Nada para mostrar",
+    "no_results": "Nenhum item correspondente"
+  },
+  "column_menu": {
+    "hide": "Ocultar coluna “{0}”",
+    "show": "Mostrar coluna “{0}”",
+    "fit": "Ajustar coluna “{0}”",
+    "fit_columns": "Ajustar colunas",
+    "fill_width": "Preencher largura",
+    "move_left": "Mover para a esquerda",
+    "move_right": "Mover para a direita",
+    "shown": "Visível",
+    "hidden": "Oculta"
+  },
+  "row_drag": {
+    "before_row": "Inserir antes de {0}",
+    "at_end": "Inserir no final",
+    "nothing_to_move": "Nada para mover",
+    "choose_position": "Escolha onde inserir",
+    "move_one": "Mover {0} item",
+    "move_many": "Mover {0} itens",
+    "hint": "Segure e role · Solte entre as linhas · Esc cancela",
+    "browse": "Segure e role · Esc cancela"
+  }
+}

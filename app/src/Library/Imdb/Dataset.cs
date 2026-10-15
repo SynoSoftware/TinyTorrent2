@@ -1,7 +1,7 @@
+using System.ComponentModel;
 using System.Globalization;
 using System.IO.Compression;
 using System.Net.Http;
-using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
@@ -33,11 +33,16 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
     private const int ThreadModeBackgroundBegin = 0x10000;
     private const int ThreadModeBackgroundEnd = 0x20000;
     private static readonly Uri Basics = new("https://datasets.imdbws.com/title.basics.tsv.gz");
-    private static readonly Uri RatingsSource = new("https://datasets.imdbws.com/title.ratings.tsv.gz");
+    private static readonly Uri RatingsSource = new(
+        "https://datasets.imdbws.com/title.ratings.tsv.gz"
+    );
     private static readonly Uri Episodes = new("https://datasets.imdbws.com/title.episode.tsv.gz");
     private static readonly Uri[] Sources = [Basics, RatingsSource, Episodes];
-    private static readonly ProviderAccess Access =
-        new(Provider.CatalogId, RequestKey.Digest(string.Empty), "dataset");
+    private static readonly ProviderAccess Access = new(
+        Provider.CatalogId,
+        RequestKey.Digest(string.Empty),
+        "dataset"
+    );
     private readonly string _path = Path.Combine(directory, FileName);
 
     // Reads share the file; Install and Delete replace it alone, because
@@ -105,25 +110,42 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
             {
                 var archive = Archive(source);
                 if (!IsRecent(archive))
-                    received += await Fetch(source, archive, fresh, count => report(new(received + count, ImdbPhase.Downloading)), cancellation)
+                    received += await Fetch(
+                            source,
+                            archive,
+                            fresh,
+                            count => report(new(received + count, ImdbPhase.Downloading)),
+                            cancellation
+                        )
                         .ConfigureAwait(false);
             }
-            await Task.Factory.StartNew(() =>
-            {
-                var thread = GetCurrentThread();
-                if (!SetThreadPriority(thread, ThreadModeBackgroundBegin))
-                    throw new Win32Exception(Marshal.GetLastWin32Error());
-                try
-                {
-                    cancellation.ThrowIfCancellationRequested();
-                    Import((phase, percent) => report(new(received, phase, percent)), cancellation);
-                }
-                finally
-                {
-                    if (!SetThreadPriority(thread, ThreadModeBackgroundEnd))
-                        System.Diagnostics.Debug.WriteLine(new Win32Exception(Marshal.GetLastWin32Error()));
-                }
-            }, cancellation, TaskCreationOptions.LongRunning, TaskScheduler.Default)
+            await Task
+                .Factory.StartNew(
+                    () =>
+                    {
+                        var thread = GetCurrentThread();
+                        if (!SetThreadPriority(thread, ThreadModeBackgroundBegin))
+                            throw new Win32Exception(Marshal.GetLastWin32Error());
+                        try
+                        {
+                            cancellation.ThrowIfCancellationRequested();
+                            Import(
+                                (phase, percent) => report(new(received, phase, percent)),
+                                cancellation
+                            );
+                        }
+                        finally
+                        {
+                            if (!SetThreadPriority(thread, ThreadModeBackgroundEnd))
+                                System.Diagnostics.Debug.WriteLine(
+                                    new Win32Exception(Marshal.GetLastWin32Error())
+                                );
+                        }
+                    },
+                    cancellation,
+                    TaskCreationOptions.LongRunning,
+                    TaskScheduler.Default
+                )
                 .ConfigureAwait(false);
         }
         catch (HttpRouteException error)
@@ -143,12 +165,18 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
         }
         catch (Exception error)
             when (error is SqliteException { SqliteErrorCode: raw.SQLITE_FULL }
-                || error is IOException io && DataDownload.IsDiskFull(io))
+                || error is IOException io && DataDownload.IsDiskFull(io)
+            )
         {
             throw new VideoException(VideoFailure.DiskFull, error);
         }
         catch (Exception error)
-            when (error is HttpRequestException or IOException or UnauthorizedAccessException or SqliteException)
+            when (error
+                    is HttpRequestException
+                        or IOException
+                        or UnauthorizedAccessException
+                        or SqliteException
+            )
         {
             throw new VideoException(VideoFailure.DownloadFailed, error);
         }
@@ -179,7 +207,11 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
         try
         {
             Remove(Archives);
-            Remove([.. Directory.GetFiles(directory, "imdb*.db").Where(path => !string.Equals(path, _path, StringComparison.OrdinalIgnoreCase))]);
+            Remove([
+                .. Directory
+                    .GetFiles(directory, "imdb*.db")
+                    .Where(path => !string.Equals(path, _path, StringComparison.OrdinalIgnoreCase)),
+            ]);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
     }
@@ -239,7 +271,10 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
                             SELECT title_id,kind,rating,votes FROM titles
                             WHERE title_id IN (SELECT value FROM json_each($titles));
                             """;
-                        command.Parameters.AddWithValue("$titles", JsonSerializer.Serialize(titles));
+                        command.Parameters.AddWithValue(
+                            "$titles",
+                            JsonSerializer.Serialize(titles)
+                        );
                         var ratings = new Dictionary<long, Rating>();
                         using var reader = command.ExecuteReader();
                         while (reader.Read())
@@ -273,16 +308,23 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
     {
         var ratings = new Rating?[releases.Count];
         var names = releases
-            .Select((release, position) => new
-            {
-                Position = position,
-                Name = Key(release.Title),
-                release.Year,
-                release.Season,
-                Episode = release.Episodes.Count > 0 ? release.Episodes[0] : (int?)null,
-                release.IsExtra,
-            })
-            .Where(name => !name.IsExtra && name.Name.Length > 0 && (name.Season is not null || name.Year is not null))
+            .Select(
+                (release, position) =>
+                    new
+                    {
+                        Position = position,
+                        Name = Key(release.Title),
+                        release.Year,
+                        release.Season,
+                        Episode = release.Episodes.Count > 0 ? release.Episodes[0] : (int?)null,
+                        release.IsExtra,
+                    }
+            )
+            .Where(name =>
+                !name.IsExtra
+                && name.Name.Length > 0
+                && (name.Season is not null || name.Year is not null)
+            )
             .ToArray();
         if (names.Length == 0 || !IsInstalled)
         {
@@ -322,14 +364,20 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
                         {
                             while (reader.Read())
                             {
-                                found.Add((reader.GetInt32(0), reader.GetInt32(2), ReadRating(reader)));
+                                found.Add(
+                                    (reader.GetInt32(0), reader.GetInt32(2), ReadRating(reader))
+                                );
                             }
                         }
                         foreach (var titles in found.GroupBy(title => title.Position))
                         {
                             var release = releases[titles.Key];
                             var fits = titles.ToArray();
-                            if (fits.Length > 1 && release.Season is not null && release.Year is { } year)
+                            if (
+                                fits.Length > 1
+                                && release.Season is not null
+                                && release.Year is { } year
+                            )
                             {
                                 fits = [.. fits.Where(title => title.Year == year)];
                             }
@@ -365,7 +413,9 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
                     return read(connection);
                 }
                 catch (SqliteException error)
-                    when (error.SqliteErrorCode == raw.SQLITE_INTERRUPT && cancellation.IsCancellationRequested)
+                    when (error.SqliteErrorCode == raw.SQLITE_INTERRUPT
+                        && cancellation.IsCancellationRequested
+                    )
                 {
                     throw new OperationCanceledException(null, error, cancellation);
                 }
@@ -390,7 +440,9 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
 
     /// <summary>The kind of a title row, read from its <c>kind</c> column.</summary>
     internal static VideoKind ReadKind(SqliteDataReader reader) =>
-        reader.GetString(reader.GetOrdinal("kind")) == "series" ? VideoKind.Series : VideoKind.Movie;
+        reader.GetString(reader.GetOrdinal("kind")) == "series"
+            ? VideoKind.Series
+            : VideoKind.Movie;
 
     /// <summary>
     /// The rating of a title row, read from its <c>kind</c>, <c>rating</c> and
@@ -431,10 +483,12 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
 
     private string[] Archives => [.. Sources.Select(Archive)];
 
-    private string Archive(Uri source) => Path.Combine(directory, Path.GetFileName(source.LocalPath));
+    private string Archive(Uri source) =>
+        Path.Combine(directory, Path.GetFileName(source.LocalPath));
 
     private static bool IsRecent(string path) =>
-        new FileInfo(path) is { Exists: true } file && file.LastWriteTimeUtc > DateTime.UtcNow.AddDays(-1);
+        new FileInfo(path) is { Exists: true } file
+        && file.LastWriteTimeUtc > DateTime.UtcNow.AddDays(-1);
 
     // Downloads beside the archive and renames the file when it is complete,
     // so an archive that exists holds a whole file.
@@ -451,8 +505,15 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
         var call = new ProviderCall(request, policy, new(Access)) { Fresh = fresh };
         try
         {
-            var length = await http
-                .Download(call with { Observe = reply => ProviderJson.Observe(call, reply) }, part, received, cancellation)
+            var length = await http.Download(
+                    call with
+                    {
+                        Observe = reply => ProviderJson.Observe(call, reply),
+                    },
+                    part,
+                    received,
+                    cancellation
+                )
                 .ConfigureAwait(false);
             File.Move(part, archive, overwrite: true);
             return length;
@@ -546,13 +607,34 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
                 // Data that IMDb changed so that nothing reads would replace
                 // the installed copy with an empty one.
                 report(ImdbPhase.Episodes, 0);
-                if (ImportEpisodes(connection, Archive(Episodes), percent => report(ImdbPhase.Episodes, percent), cancellation) == 0)
+                if (
+                    ImportEpisodes(
+                        connection,
+                        Archive(Episodes),
+                        percent => report(ImdbPhase.Episodes, percent),
+                        cancellation
+                    ) == 0
+                )
                     throw new VideoException(VideoFailure.UnknownFormat);
                 report(ImdbPhase.Titles, 0);
-                if (ImportTitles(connection, Archive(Basics), percent => report(ImdbPhase.Titles, percent), cancellation) == 0)
+                if (
+                    ImportTitles(
+                        connection,
+                        Archive(Basics),
+                        percent => report(ImdbPhase.Titles, percent),
+                        cancellation
+                    ) == 0
+                )
                     throw new VideoException(VideoFailure.UnknownFormat);
                 report(ImdbPhase.Ratings, 0);
-                if (ImportRatings(connection, Archive(RatingsSource), percent => report(ImdbPhase.Ratings, percent), cancellation) == 0)
+                if (
+                    ImportRatings(
+                        connection,
+                        Archive(RatingsSource),
+                        percent => report(ImdbPhase.Ratings, percent),
+                        cancellation
+                    ) == 0
+                )
                     throw new VideoException(VideoFailure.UnknownFormat);
                 report(ImdbPhase.Committing, null);
                 Execute(connection, "COMMIT;");
@@ -612,8 +694,18 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
                 fields.Length < 4
                 || VideoInformation.ParseImdbId(fields[0]) is not { } identity
                 || VideoInformation.ParseImdbId(fields[1]) is not { } parent
-                || !int.TryParse(fields[2], NumberStyles.None, CultureInfo.InvariantCulture, out var seasonNumber)
-                || !int.TryParse(fields[3], NumberStyles.None, CultureInfo.InvariantCulture, out var episodeNumber)
+                || !int.TryParse(
+                    fields[2],
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out var seasonNumber
+                )
+                || !int.TryParse(
+                    fields[3],
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out var episodeNumber
+                )
             )
                 continue;
             id.Value = identity;
@@ -668,7 +760,12 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
             // startYear, endYear, runtimeMinutes, genres
             if (fields.Length < 9 || VideoInformation.ParseImdbId(fields[0]) is not { } identity)
                 continue;
-            int? released = int.TryParse(fields[5], NumberStyles.None, CultureInfo.InvariantCulture, out var value)
+            int? released = int.TryParse(
+                fields[5],
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var value
+            )
                 ? value
                 : null;
             if (fields[1] == "tvEpisode")
@@ -721,8 +818,18 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
             if (
                 fields.Length < 3
                 || VideoInformation.ParseImdbId(fields[0]) is not { } identity
-                || !double.TryParse(fields[1], NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value)
-                || !long.TryParse(fields[2], NumberStyles.None, CultureInfo.InvariantCulture, out var number)
+                || !double.TryParse(
+                    fields[1],
+                    NumberStyles.AllowDecimalPoint,
+                    CultureInfo.InvariantCulture,
+                    out var value
+                )
+                || !long.TryParse(
+                    fields[2],
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out var number
+                )
             )
                 continue;
             id.Value = identity;

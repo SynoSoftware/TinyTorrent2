@@ -24,6 +24,22 @@ public sealed partial class MainWindow
     private RelayCommand? _subtitlesSetup;
     private bool _menusPending;
 
+    private IReadOnlyList<MenuEntry> LanguageMenu() =>
+        [
+            .. Services.Strings.Languages.Select(language => new MenuChoice(
+                Services.Strings.NativeName(language),
+                null,
+                Model.Text.Language == language.Name,
+                new RelayCommand(
+                    () => Model.Settings.SelectLanguage(language.Name),
+                    () => Model.Settings.CanSelectLanguage
+                )
+            )
+            {
+                FlagRegion = Services.Strings.FlagRegion(language),
+            }),
+        ];
+
     private void OnQueueKey(object sender, KeyRoutedEventArgs args)
     {
         // VirtualKey omits the Windows OEM plus and minus codes.
@@ -203,11 +219,7 @@ public sealed partial class MainWindow
                     )
                 ),
                 new MenuSeparator(),
-                new MenuCommand(
-                    Model.UpdateText,
-                    Syno.Lucide.CircleFadingArrowUp,
-                    Model.OpenUpdate
-                )
+                new MenuCommand(Model.UpdateText, Syno.Lucide.CircleFadingArrowUp, Model.OpenUpdate)
                 {
                     AccessKey = MenuKey("update"),
                 },
@@ -224,15 +236,15 @@ public sealed partial class MainWindow
     {
         _selectionMenu ??= MenuItems.Flyout(
             () =>
-            [
-                new MenuHeading(
-                    Torrents.Selection.Items.Count == 1
-                        ? ((Torrent)Torrents.Selection.Items[0]).Name
-                        : Model.SelectionText,
-                    Syno.Lucide.ListChecks
-                ),
-                .. Selection(properties: !Model.HasInspector),
-            ],
+                [
+                    new MenuHeading(
+                        Torrents.Selection.Items.Count == 1
+                            ? ((Torrent)Torrents.Selection.Items[0]).Name
+                            : Model.SelectionText,
+                        Syno.Lucide.ListChecks
+                    ),
+                    .. Selection(properties: !Model.HasInspector),
+                ],
             () => Model.Text
         );
         if (position is { } point)
@@ -528,8 +540,7 @@ public sealed partial class MainWindow
         });
     }
 
-    private async void OnInspectorClose(object? sender, EventArgs args) =>
-        await HideInspector();
+    private async void OnInspectorClose(object? sender, EventArgs args) => await HideInspector();
 
     private async Task SwitchInspector()
     {

@@ -38,7 +38,8 @@ internal sealed partial class Store
             connection =>
             {
                 using var command = connection.CreateCommand();
-                command.CommandText = "UPDATE library_settings SET source=$provider WHERE singleton=1;";
+                command.CommandText =
+                    "UPDATE library_settings SET source=$provider WHERE singleton=1;";
                 command.Parameters.AddWithValue("$provider", providerId);
                 return command.ExecuteNonQuery();
             },
@@ -125,8 +126,7 @@ internal sealed partial class Store
             connection =>
             {
                 using var command = connection.CreateCommand();
-                command.CommandText =
-                    "UPDATE library_settings SET enabled=0 WHERE singleton=1;";
+                command.CommandText = "UPDATE library_settings SET enabled=0 WHERE singleton=1;";
                 return command.ExecuteNonQuery();
             },
             cancellation

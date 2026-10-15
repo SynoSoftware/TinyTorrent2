@@ -17,8 +17,17 @@ namespace Syno.TinyTorrent.Controls;
 public sealed partial class DatasetRow : UserControl
 {
     private readonly SettingsRow _row = new();
-    private readonly WorkStatus _work = new() { MaxWidth = 380, IsExpanded = true, Visibility = Visibility.Collapsed };
-    private readonly ActionButton _delete = new() { Glyph = Lucide.Trash2, Visibility = Visibility.Collapsed };
+    private readonly WorkStatus _work = new()
+    {
+        MaxWidth = 380,
+        IsExpanded = true,
+        Visibility = Visibility.Collapsed,
+    };
+    private readonly ActionButton _delete = new()
+    {
+        Glyph = Lucide.Trash2,
+        Visibility = Visibility.Collapsed,
+    };
     private readonly ActionButton _download = new() { Glyph = Lucide.Download };
     private IDataset? _dataset;
     private Strings? _text;
@@ -75,8 +84,13 @@ public sealed partial class DatasetRow : UserControl
 
     private void OnDataset(object? sender, PropertyChangedEventArgs args)
     {
-        if (args.PropertyName is nameof(IDataset.Installed) or nameof(IDataset.DataWork)
-            or nameof(IDataset.CanDownload) or "")
+        if (
+            args.PropertyName
+            is nameof(IDataset.Installed)
+                or nameof(IDataset.DataWork)
+                or nameof(IDataset.CanDownload)
+                or ""
+        )
             Refresh();
     }
 
@@ -106,7 +120,10 @@ public sealed partial class DatasetRow : UserControl
             ? Describe(section, installed, text)
             : text.Get(section, "data_hint");
         _download.Text = text.Get(section, _installed is null ? "download" : "update");
-        ToolTipService.SetToolTip(_download, text.Get(section, _installed is null ? "download_tip" : "update_tip"));
+        ToolTipService.SetToolTip(
+            _download,
+            text.Get(section, _installed is null ? "download_tip" : "update_tip")
+        );
         AutomationProperties.SetAutomationId(_download, Name + "Download");
         _download.IsEnabled = dataset.CanDownload;
         _download.Visibility = progress is null ? Visibility.Visible : Visibility.Collapsed;
@@ -114,11 +131,22 @@ public sealed partial class DatasetRow : UserControl
         ToolTipService.SetToolTip(_delete, text.Get(section, "delete_tip"));
         AutomationProperties.SetName(_delete, text.Get(section, "delete"));
         AutomationProperties.SetAutomationId(_delete, Name + "Delete");
-        _delete.Visibility = progress is null && _installed is not null ? Visibility.Visible : Visibility.Collapsed;
+        _delete.Visibility =
+            progress is null && _installed is not null ? Visibility.Visible : Visibility.Collapsed;
         _work.Show(progress, text);
-        if (focused is not null
-            && (workFocused || ReferenceEquals(focused, _download) || ReferenceEquals(focused, _delete))
-            && (focused.Visibility == Visibility.Collapsed || !focused.IsEnabled || workFocused && !_work.CanFocus))
+        if (
+            focused is not null
+            && (
+                workFocused
+                || ReferenceEquals(focused, _download)
+                || ReferenceEquals(focused, _delete)
+            )
+            && (
+                focused.Visibility == Visibility.Collapsed
+                || !focused.IsEnabled
+                || workFocused && !_work.CanFocus
+            )
+        )
         {
             if (progress is null && _download.IsEnabled)
                 _download.Focus(focus);
@@ -134,7 +162,13 @@ public sealed partial class DatasetRow : UserControl
         var days = (int)(DateTime.UtcNow - installed.LastWriteTimeUtc).TotalDays;
         var age = days == 0 ? text.Get(section, "age_new") : text.FormatCount(section, "age", days);
         return _count is { IsCompletedSuccessfully: true } count
-            ? text.Format(section, "data_counted", text.FormatCount(section, "count", count.Result), size, age)
+            ? text.Format(
+                section,
+                "data_counted",
+                text.FormatCount(section, "count", count.Result),
+                size,
+                age
+            )
             : text.Format(section, "data_summary", size, age);
     }
 

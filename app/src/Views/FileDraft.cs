@@ -42,6 +42,7 @@ public sealed class FileDraft : IDraft
     public bool CanRefresh => _owner.CanEdit && !_reading && !_submitting && _torrentIds.Length > 0;
     public bool IsMove => Action == FileAction.Move;
     public bool HasShared => _shared.Length > 0;
+
     // Move asks about the shared files. Removal names them only when it
     // deletes the downloaded files, because otherwise every file stays.
     public bool ShowsMoveShared => IsMove && HasShared;
@@ -242,7 +243,8 @@ public sealed class FileDraft : IDraft
             );
             if (torrentIds != _torrentIds)
                 return;
-            var changed = !_torrents.Select(torrent => (torrent.TorrentId, torrent.SavePath))
+            var changed = !_torrents
+                .Select(torrent => (torrent.TorrentId, torrent.SavePath))
                 .SequenceEqual(torrents.Select(torrent => (torrent.TorrentId, torrent.SavePath)));
             _torrents = torrents;
             if (changed)
@@ -394,8 +396,14 @@ public sealed class FileDraft : IDraft
             .Select(torrent =>
                 torrent.TorrentFile.Length > 0
                 && new FileInfo(torrent.TorrentFile) is { Exists: true } file
-                    ? torrent with { TorrentFileSize = file.Length }
-                    : torrent with { TorrentFile = string.Empty }
+                    ? torrent with
+                    {
+                        TorrentFileSize = file.Length,
+                    }
+                    : torrent with
+                    {
+                        TorrentFile = string.Empty,
+                    }
             )
             .ToArray();
 

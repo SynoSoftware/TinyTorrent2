@@ -19,10 +19,7 @@ internal interface IProvider
 {
     string Prepare(string query) => query.Trim();
 
-    Task<VideoSearch> Search(
-        VideoQuery query,
-        CancellationToken cancellation
-    );
+    Task<VideoSearch> Search(VideoQuery query, CancellationToken cancellation);
 
     /// <summary>
     /// Describes a choice from this provider's catalogue. A series choice
@@ -51,7 +48,10 @@ internal sealed record ProviderOption(
     Func<string, IProvider> Create
 )
 {
-    internal static readonly IReadOnlySet<VideoKind> Movies = new HashSet<VideoKind> { VideoKind.Movie };
+    internal static readonly IReadOnlySet<VideoKind> Movies = new HashSet<VideoKind>
+    {
+        VideoKind.Movie,
+    };
 
     /// <summary>
     /// <see cref="Access.Key"/> when the provider needs an API key, which the
@@ -105,7 +105,12 @@ internal sealed record VideoSearch(IReadOnlyList<VideoChoice> Choices, bool Empt
     internal bool Broadened { get; init; }
 }
 
-internal sealed record VideoRequest(Release Release, string Language, ReadRecord Read, ProviderGet Get);
+internal sealed record VideoRequest(
+    Release Release,
+    string Language,
+    ReadRecord Read,
+    ProviderGet Get
+);
 
 /// <summary>
 /// Sends a provider's request through Library, which applies request
@@ -176,7 +181,12 @@ internal sealed record VideoInformation(
     /// <summary>The number of an IMDb ID such as tt0133093, or null for another value.</summary>
     internal static long? ParseImdbId(string id) =>
         id.StartsWith("tt", StringComparison.Ordinal)
-        && long.TryParse(id.AsSpan(2), NumberStyles.None, CultureInfo.InvariantCulture, out var number)
+        && long.TryParse(
+            id.AsSpan(2),
+            NumberStyles.None,
+            CultureInfo.InvariantCulture,
+            out var number
+        )
         && number > 0
             ? number
             : null;
@@ -231,17 +241,24 @@ public sealed record Ratings
 /// scale the site itself shows, so a Rotten Tomatoes 5.9 reads as 59%.
 /// <see cref="Id"/> names its column and its text.
 /// </summary>
-public sealed record RatingSource(string Id, double Maximum, bool IsPercent, Func<Ratings, Rating?> Read)
+public sealed record RatingSource(
+    string Id,
+    double Maximum,
+    bool IsPercent,
+    Func<Ratings, Rating?> Read
+)
 {
     internal RatingSample Sample(Ratings ratings)
     {
         if (Read(ratings)?.Votes is not { } votes)
             return RatingSample.Unknown;
-        var (moderate, large) = this == RottenTomatoes ? (20, 100)
+        var (moderate, large) =
+            this == RottenTomatoes ? (20, 100)
             : this == Metacritic ? (10, 40)
             : (200, 2_000);
         return votes < moderate ? RatingSample.Small
-            : votes < large ? RatingSample.Moderate : RatingSample.Large;
+            : votes < large ? RatingSample.Moderate
+            : RatingSample.Large;
     }
 
     public static RatingSource Imdb { get; } = new("imdb", 10, false, ratings => ratings.Imdb);
@@ -252,10 +269,12 @@ public sealed record RatingSource(string Id, double Maximum, bool IsPercent, Fun
     /// <summary>Rotten Tomatoes' audience score.</summary>
     public static RatingSource Popcornmeter { get; } =
         new("popcornmeter", 100, true, ratings => ratings.Popcornmeter);
-    public static RatingSource Metacritic { get; } = new("metacritic", 100, false, ratings => ratings.Metacritic);
+    public static RatingSource Metacritic { get; } =
+        new("metacritic", 100, false, ratings => ratings.Metacritic);
 
     /// <summary>Every source, in the order Library shows them.</summary>
-    public static IReadOnlyList<RatingSource> All { get; } = [Imdb, Tmdb, RottenTomatoes, Popcornmeter, Metacritic];
+    public static IReadOnlyList<RatingSource> All { get; } =
+    [Imdb, Tmdb, RottenTomatoes, Popcornmeter, Metacritic];
 }
 
 internal sealed record Episode(int Season, int Number, string Name, string Synopsis);
@@ -274,8 +293,11 @@ internal class VideoException(VideoFailure failure, Exception? inner = null)
     internal string? Subject { get; set; }
 }
 
-internal class ProviderException(VideoFailure failure, DateTimeOffset? retryAt = null, Exception? inner = null)
-    : VideoException(failure, inner)
+internal class ProviderException(
+    VideoFailure failure,
+    DateTimeOffset? retryAt = null,
+    Exception? inner = null
+) : VideoException(failure, inner)
 {
     internal ProviderException(RequestBlock block)
         : this(VideoFailure.Blocked, block.RetryAt) => Block = block;

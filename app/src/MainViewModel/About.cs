@@ -16,15 +16,22 @@ public sealed partial class MainViewModel
     public string Version => App.Version.ToString();
     public string VersionText => Text.Format("about", "version", Version);
     internal bool IsAbout => Page is Models.WindowPage.About or Models.WindowPage.Credits;
-    internal string EngineMemory => IsConnected && _engineMemory is { } bytes ? Text.Bytes(bytes) : "—";
+    internal string EngineMemory =>
+        IsConnected && _engineMemory is { } bytes ? Text.Bytes(bytes) : "—";
     internal string UiMemory => _uiMemory is { } bytes ? Text.Bytes(bytes) : "—";
-    internal string LifetimeDownloaded => !IsLoading && !IsStorageFailed ? Text.Bytes(LifetimeTotals.Downloaded) : "—";
-    internal string LifetimeUploaded => !IsLoading && !IsStorageFailed ? Text.Bytes(LifetimeTotals.Uploaded) : "—";
+    internal string LifetimeDownloaded =>
+        !IsLoading && !IsStorageFailed ? Text.Bytes(LifetimeTotals.Downloaded) : "—";
+    internal string LifetimeUploaded =>
+        !IsLoading && !IsStorageFailed ? Text.Bytes(LifetimeTotals.Uploaded) : "—";
 
     private void ObserveMemory()
     {
-        if (!IsAbout || _closed || _memoryRead is { IsCompleted: false }
-            || _memoryChecked is { } checkedAt && Environment.TickCount64 - checkedAt < 2000)
+        if (
+            !IsAbout
+            || _closed
+            || _memoryRead is { IsCompleted: false }
+            || _memoryChecked is { } checkedAt && Environment.TickCount64 - checkedAt < 2000
+        )
             return;
         _memoryChecked = Environment.TickCount64;
         _memoryRead = ReadMemory();
@@ -33,7 +40,9 @@ public sealed partial class MainViewModel
     private async Task ReadMemory()
     {
         var engine = _client.ProcessId;
-        var sample = await Task.Run(() => (Engine: Memory(engine), UI: Memory(Environment.ProcessId)));
+        var sample = await Task.Run(() =>
+            (Engine: Memory(engine), UI: Memory(Environment.ProcessId))
+        );
         if (_closed || !IsAbout)
             return;
         _engineMemory = engine == _client.ProcessId ? sample.Engine : null;
@@ -51,7 +60,8 @@ public sealed partial class MainViewModel
             using var process = Process.GetProcessById(id.Value);
             return process.WorkingSet64;
         }
-        catch (Exception error) when (error is ArgumentException or InvalidOperationException or Win32Exception)
+        catch (Exception error)
+            when (error is ArgumentException or InvalidOperationException or Win32Exception)
         {
             return null;
         }

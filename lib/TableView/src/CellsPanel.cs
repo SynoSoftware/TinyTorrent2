@@ -244,8 +244,10 @@ public sealed partial class CellsPanel : Panel
             Header.Cell cell = new()
             {
                 Padding = padding,
-                HorizontalContentAlignment = column.CellAlignment == HorizontalAlignment.Stretch
-                    ? HorizontalAlignment.Left : column.CellAlignment,
+                HorizontalContentAlignment =
+                    column.CellAlignment == HorizontalAlignment.Stretch
+                        ? HorizontalAlignment.Left
+                        : column.CellAlignment,
             };
             cell.SetColumn(column);
             return cell;

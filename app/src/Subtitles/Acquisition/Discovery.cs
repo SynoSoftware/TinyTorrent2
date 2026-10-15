@@ -13,7 +13,10 @@ internal sealed partial class Acquisition
         CancellationToken cancellation;
         lock (_requestSync)
             cancellation = _requests.Token;
-        using var request = CancellationTokenSource.CreateLinkedTokenSource(cancellation, run.Cancellation.Token);
+        using var request = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellation,
+            run.Cancellation.Token
+        );
         cancellation = request.Token;
         var entered = false;
         try
@@ -25,7 +28,8 @@ internal sealed partial class Acquisition
                     connection =>
                     {
                         using var command = connection.CreateCommand();
-                        command.CommandText = "SELECT DISTINCT path FROM subtitle_outputs WHERE created=1;";
+                        command.CommandText =
+                            "SELECT DISTINCT path FROM subtitle_outputs WHERE created=1;";
                         using var reader = command.ExecuteReader();
                         var paths = new List<string>();
                         while (reader.Read())
@@ -48,7 +52,8 @@ internal sealed partial class Acquisition
                                 if (!SubtitleFile.Exists(path))
                                     missing.Add(path);
                             }
-                            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                            catch (Exception error)
+                                when (error is IOException or UnauthorizedAccessException)
                             {
                                 failures++;
                             }
@@ -83,13 +88,24 @@ internal sealed partial class Acquisition
         }
         finally
         {
-            try { await run.Finish().ConfigureAwait(false); }
-            finally { if (entered) _operation.Release(); }
+            try
+            {
+                await run.Finish().ConfigureAwait(false);
+            }
+            finally
+            {
+                if (entered)
+                    _operation.Release();
+            }
             Notify();
         }
     }
 
-    private async Task<ScanResult> Discover(CancellationToken cancellation, bool force = false, WorkRun? owner = null)
+    private async Task<ScanResult> Discover(
+        CancellationToken cancellation,
+        bool force = false,
+        WorkRun? owner = null
+    )
     {
         var movies = await Run(
                 connection =>
@@ -126,7 +142,11 @@ internal sealed partial class Acquisition
                     using (var reader = command.ExecuteReader())
                         while (reader.Read())
                         {
-                            var video = new Video(reader.GetString(0), reader.GetInt32(1), reader.GetString(3))
+                            var video = new Video(
+                                reader.GetString(0),
+                                reader.GetInt32(1),
+                                reader.GetString(3)
+                            )
                             {
                                 Path = reader.GetString(2),
                                 Size = reader.GetInt64(4),
@@ -160,15 +180,22 @@ internal sealed partial class Acquisition
         lock (_requestSync)
         {
             _cancelledScans.IntersectWith(movies.Where(movie => !movie.Scanned));
-            accepted = movies.Where(movie => movie.Video.Eligible && movie.Video.Readable
-                && (force || !movie.Scanned && !_cancelledScans.Contains(movie))).ToHashSet();
+            accepted = movies
+                .Where(movie =>
+                    movie.Video.Eligible
+                    && movie.Video.Readable
+                    && (force || !movie.Scanned && !_cancelledScans.Contains(movie))
+                )
+                .ToHashSet();
         }
         if (accepted.Count == 0)
             return new(0, 0);
         var run = owner ?? new WorkRun(this, SubtitleWork.Discovery);
-        lock (_requestSync) run.Scans = accepted.ToArray();
+        lock (_requestSync)
+            run.Scans = accepted.ToArray();
         using var request = owner is null
-            ? CancellationTokenSource.CreateLinkedTokenSource(cancellation, run.Cancellation.Token) : null;
+            ? CancellationTokenSource.CreateLinkedTokenSource(cancellation, run.Cancellation.Token)
+            : null;
         cancellation = request?.Token ?? cancellation;
         var changed = false;
         try
@@ -178,16 +205,26 @@ internal sealed partial class Acquisition
                 .SelectMany(supplier => supplier.Languages)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
             var failures = 0;
-            var folders = movies.GroupBy(movie => (movie.Folder, movie.Recursive))
-                .Where(folder => folder.Any(accepted.Contains)).ToArray();
-            var entries = folders.Select(folder => folder.Key.Folder)
+            var folders = movies
+                .GroupBy(movie => (movie.Folder, movie.Recursive))
+                .Where(folder => folder.Any(accepted.Contains))
+                .ToArray();
+            var entries = folders
+                .Select(folder => folder.Key.Folder)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(folder => folder, _ => new HashSet<long>(), StringComparer.OrdinalIgnoreCase);
+                .ToDictionary(
+                    folder => folder,
+                    _ => new HashSet<long>(),
+                    StringComparer.OrdinalIgnoreCase
+                );
             foreach (var movie in movies.Where(movie => movie.Video.Eligible))
             {
                 cancellation.ThrowIfCancellationRequested();
-                for (var parent = Path.GetDirectoryName(movie.Video.FinalPath); parent is not null;
-                    parent = Path.GetDirectoryName(parent))
+                for (
+                    var parent = Path.GetDirectoryName(movie.Video.FinalPath);
+                    parent is not null;
+                    parent = Path.GetDirectoryName(parent)
+                )
                     if (entries.TryGetValue(parent, out var contained) && contained.Count < 2)
                         contained.Add(movie.Video.EntryId);
             }
@@ -195,7 +232,10 @@ internal sealed partial class Acquisition
             foreach (var folder in folders)
             {
                 cancellation.ThrowIfCancellationRequested();
-                run.Report(new WorkProgress.Fraction(done++, folders.Length, WorkUnit.Folders), new WorkExecution.Running());
+                run.Report(
+                    new WorkProgress.Fraction(done++, folders.Length, WorkUnit.Folders),
+                    new WorkExecution.Running()
+                );
                 var pending = folder.Where(accepted.Contains).ToArray();
                 // Samples and unselected files are not movies, so a Sample folder
                 // leaves Subs/English.srt to the one movie beside it.
@@ -208,7 +248,10 @@ internal sealed partial class Acquisition
                             {
                                 var result = new List<(Discovery, string, string)>();
                                 foreach (
-                                    var file in SubtitleFiles(folder.Key.Folder, folder.Key.Recursive)
+                                    var file in SubtitleFiles(
+                                        folder.Key.Folder,
+                                        folder.Key.Recursive
+                                    )
                                 )
                                 {
                                     cancellation.ThrowIfCancellationRequested();
@@ -224,8 +267,10 @@ internal sealed partial class Acquisition
                                         )
                                         .ToArray();
                                     if (
-                                        matches.Select(movie => movie.Video.EntryId).Distinct().Count()
-                                        != 1
+                                        matches
+                                            .Select(movie => movie.Video.EntryId)
+                                            .Distinct()
+                                            .Count() != 1
                                     )
                                         continue;
                                     if (!matches.Any(pending.Contains))
@@ -279,7 +324,9 @@ internal sealed partial class Acquisition
                                     ("$origin", video.Origin),
                                     ("$index", video.Index)
                                 );
-                                foreach (var record in records.Where(record => record.Movie == movie))
+                                foreach (
+                                    var record in records.Where(record => record.Movie == movie)
+                                )
                                 {
                                     Execute(
                                         connection,

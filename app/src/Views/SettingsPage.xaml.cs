@@ -47,6 +47,7 @@ public sealed partial class SettingsPage : UserControl
     public event EventHandler? ProxyRequested;
     internal event EventHandler<SubtitleSupplier>? SupplierRequested;
     internal event EventHandler<ProviderSetup>? KeyRequested;
+
     /// <summary>Automatic downloading needs the selected provider's data installed.</summary>
     internal event EventHandler? AutomaticDataRequested;
     internal event EventHandler<IDataset>? UpdateRequested;
@@ -82,7 +83,9 @@ public sealed partial class SettingsPage : UserControl
         Main.Library.CoverageChanged += OnCoverage;
         RefreshSubtitles();
         _display.TextScaleFactorChanged += OnTextScale;
-        _themeSettings = ThemeSettings.CreateForWindowId(XamlRoot.ContentIslandEnvironment.AppWindowId);
+        _themeSettings = ThemeSettings.CreateForWindowId(
+            XamlRoot.ContentIslandEnvironment.AppWindowId
+        );
         _themeSettings.Changed += OnThemeChanged;
         RefreshIcons();
         RefreshText();
@@ -124,21 +127,28 @@ public sealed partial class SettingsPage : UserControl
         if (_themeSettings is not { } theme)
             return;
         var size = (double)Categories.Resources["NavigationViewItemOnLeftIconBoxHeight"];
-        foreach (var (item, glyph, asset) in new[]
-        {
-            (HomeCategory, Lucide.House, "home"),
-            (GeneralCategory, Lucide.Settings, "general"),
-            (TransfersCategory, Lucide.ArrowDownUp, "transfers"),
-            (LimitsCategory, Lucide.SlidersHorizontal, "limits"),
-            (ScheduleCategory, Lucide.CalendarClock, "schedule"),
-            (AppearanceCategory, Lucide.Palette, "appearance"),
-            (NetworkCategory, Lucide.Network, "network"),
-            (PluginsCategory, Lucide.Puzzle, "library"),
-            (AdvancedCategory, Lucide.Wrench, "advanced"),
-        })
+        foreach (
+            var (item, glyph, asset) in new[]
+            {
+                (HomeCategory, Lucide.House, "home"),
+                (GeneralCategory, Lucide.Settings, "general"),
+                (TransfersCategory, Lucide.ArrowDownUp, "transfers"),
+                (LimitsCategory, Lucide.SlidersHorizontal, "limits"),
+                (ScheduleCategory, Lucide.CalendarClock, "schedule"),
+                (AppearanceCategory, Lucide.Palette, "appearance"),
+                (NetworkCategory, Lucide.Network, "network"),
+                (PluginsCategory, Lucide.Puzzle, "library"),
+                (AdvancedCategory, Lucide.Wrench, "advanced"),
+            }
+        )
         {
             item.Icon = theme.HighContrast
-                ? new FontIcon { FontFamily = Lucide.Font, Glyph = glyph, FontSize = size }
+                ? new FontIcon
+                {
+                    FontFamily = Lucide.Font,
+                    Glyph = glyph,
+                    FontSize = size,
+                }
                 : new ImageIcon
                 {
                     Source = new SvgImageSource(new Uri($"ms-appx:///Assets/Settings/{asset}.svg")),
@@ -151,8 +161,8 @@ public sealed partial class SettingsPage : UserControl
 
     private void OnText(object? sender, EventArgs args) => RefreshText();
 
-    private int ProviderIndex => Main.Library.Option is { } option
-        ? Main.Library.Providers.ToList().IndexOf(option) : -1;
+    private int ProviderIndex =>
+        Main.Library.Option is { } option ? Main.Library.Providers.ToList().IndexOf(option) : -1;
 
     private async void OnProviderChoice(object sender, SelectionChangedEventArgs args)
     {
@@ -170,16 +180,22 @@ public sealed partial class SettingsPage : UserControl
 
     private async void OnAutomaticDownload(object sender, RoutedEventArgs args)
     {
-        if (_refreshingProviders || !AutomaticDownload.IsEnabled
-            || _providerSave.IsCompleted && AutomaticDownload.IsOn == Main.Library.IsAutomaticDownloadEnabled
-            || ProviderChoice.SelectedIndex < 0)
+        if (
+            _refreshingProviders
+            || !AutomaticDownload.IsEnabled
+            || _providerSave.IsCompleted
+                && AutomaticDownload.IsOn == Main.Library.IsAutomaticDownloadEnabled
+            || ProviderChoice.SelectedIndex < 0
+        )
             return;
         var option = Main.Library.Providers[ProviderChoice.SelectedIndex];
         if (AutomaticDownload.IsOn && !PrepareAutomaticDownload(option))
             return;
-        await SaveProvider(AutomaticDownload.IsOn
-            ? Main.Library.EnableAutomaticDownload(option.ProviderId)
-            : Main.Library.DisableAutomaticDownload());
+        await SaveProvider(
+            AutomaticDownload.IsOn
+                ? Main.Library.EnableAutomaticDownload(option.ProviderId)
+                : Main.Library.DisableAutomaticDownload()
+        );
     }
 
     private bool PrepareAutomaticDownload(ProviderOption option)
@@ -191,8 +207,10 @@ public sealed partial class SettingsPage : UserControl
                 AutomaticDataRequested?.Invoke(this, EventArgs.Empty);
             return false;
         }
-        if (option is { Access: Access.Key, HasBuiltInKey: false }
-            && !Main.Library.HasKey(option.ProviderId))
+        if (
+            option is { Access: Access.Key, HasBuiltInKey: false }
+            && !Main.Library.HasKey(option.ProviderId)
+        )
         {
             RefreshProviders();
             KeyRequested?.Invoke(this, new(option, true));
@@ -336,18 +354,27 @@ public sealed partial class SettingsPage : UserControl
             return;
         var selected = (ProtectionScope.SelectedItem as ComboBoxItem)?.Tag;
         ProtectionScope.Items.Clear();
-        ProtectionScope.Items.Add(new ComboBoxItem { Content = Model.Text.Get("request_protection", "reset_all") });
+        ProtectionScope.Items.Add(
+            new ComboBoxItem { Content = Model.Text.Get("request_protection", "reset_all") }
+        );
         foreach (var provider in Main.Library.Providers)
-            ProtectionScope.Items.Add(new ComboBoxItem { Content = provider.Name, Tag = provider.ProviderId });
+            ProtectionScope.Items.Add(
+                new ComboBoxItem { Content = provider.Name, Tag = provider.ProviderId }
+            );
         if (Main.Subtitles is { } subtitles)
             foreach (var supplier in subtitles.Suppliers)
-                ProtectionScope.Items.Add(new ComboBoxItem
-                {
-                    Content = supplier.SupplierId.ToString(),
-                    Tag = supplier.SupplierId.ToString().ToLowerInvariant(),
-                });
-        ProtectionScope.SelectedItem = ProtectionScope.Items.Cast<ComboBoxItem>()
-            .FirstOrDefault(item => Equals(item.Tag, selected)) ?? ProtectionScope.Items[0];
+                ProtectionScope.Items.Add(
+                    new ComboBoxItem
+                    {
+                        Content = supplier.SupplierId.ToString(),
+                        Tag = supplier.SupplierId.ToString().ToLowerInvariant(),
+                    }
+                );
+        ProtectionScope.SelectedItem =
+            ProtectionScope
+                .Items.Cast<ComboBoxItem>()
+                .FirstOrDefault(item => Equals(item.Tag, selected))
+            ?? ProtectionScope.Items[0];
         ProtectionRow.StateText = string.Empty;
     }
 
@@ -357,8 +384,10 @@ public sealed partial class SettingsPage : UserControl
         ProtectionRow.Error = string.Empty;
         try
         {
-            await Main.ResetProtection((ProtectionScope.SelectedItem as ComboBoxItem)?.Tag as string);
-            Main.ShowOutcome(Model.Text.Get("request_protection", "reset_done"), string.Empty);
+            await Main.ResetProtection(
+                (ProtectionScope.SelectedItem as ComboBoxItem)?.Tag as string
+            );
+            Main.ShowOutcome("request_protection", "reset_done", string.Empty);
         }
         catch (Exception error)
         {
@@ -398,25 +427,46 @@ public sealed partial class SettingsPage : UserControl
     private void OnMain(object? sender, PropertyChangedEventArgs args)
     {
         // Preserve the draft when shared settings refresh during an edit.
-        if (args.PropertyName is nameof(MainViewModel.LookupLimit)
-            && _lookupSave.IsCompleted && !_lookupEdited && LookupLimit is not null
-            && TextEditor.Find(LookupLimit)?.FocusState is null or FocusState.Unfocused)
+        if (
+            args.PropertyName is nameof(MainViewModel.LookupLimit)
+            && _lookupSave.IsCompleted
+            && !_lookupEdited
+            && LookupLimit is not null
+            && TextEditor.Find(LookupLimit)?.FocusState is null or FocusState.Unfocused
+        )
             RefreshLookupLimit();
-        if (args.PropertyName is nameof(MainViewModel.Page) or nameof(MainViewModel.Subtitles) or "")
+        if (
+            args.PropertyName is nameof(MainViewModel.Page) or nameof(MainViewModel.Subtitles) or ""
+        )
             RefreshSubtitles();
-        if (args.PropertyName is nameof(MainViewModel.CurrentStatus) or nameof(MainViewModel.Page)
-            or nameof(MainViewModel.Subtitles) or nameof(MainViewModel.FreeSpaceStatus)
-            or nameof(MainViewModel.ShowsFreeSpace) or nameof(MainViewModel.SessionTotals)
-            or nameof(MainViewModel.LifetimeTotals) or nameof(MainViewModel.Torrents)
-            or nameof(MainViewModel.LimitsSummary) or nameof(MainViewModel.ScheduleSummary)
-            or nameof(MainViewModel.LimitsNow) or nameof(MainViewModel.IncomingStatus) or "")
+        if (
+            args.PropertyName
+            is nameof(MainViewModel.CurrentStatus)
+                or nameof(MainViewModel.Page)
+                or nameof(MainViewModel.Subtitles)
+                or nameof(MainViewModel.FreeSpaceStatus)
+                or nameof(MainViewModel.ShowsFreeSpace)
+                or nameof(MainViewModel.SessionTotals)
+                or nameof(MainViewModel.LifetimeTotals)
+                or nameof(MainViewModel.Torrents)
+                or nameof(MainViewModel.LimitsSummary)
+                or nameof(MainViewModel.ScheduleSummary)
+                or nameof(MainViewModel.LimitsNow)
+                or nameof(MainViewModel.IncomingStatus)
+                or ""
+        )
             QueueHome();
     }
 
     private void OnProviders(object? sender, PropertyChangedEventArgs args)
     {
-        if (args.PropertyName is nameof(Main.Library.Status) or nameof(Main.Library.IsAutomaticDownloadEnabled)
-            or nameof(Main.Library.Providers) or "")
+        if (
+            args.PropertyName
+            is nameof(Main.Library.Status)
+                or nameof(Main.Library.IsAutomaticDownloadEnabled)
+                or nameof(Main.Library.Providers)
+                or ""
+        )
             QueueHome();
         if (args.PropertyName is nameof(Main.Library.IsAvailable) or "")
             RefreshCoverage();
@@ -440,18 +490,15 @@ public sealed partial class SettingsPage : UserControl
         if (ProviderChoice is null)
             return;
         ProviderInformation.IsEnabled = Main.Library.Option is not null;
-        ProviderKey.Visibility =
-            Main.Library.Option is { Access: Access.Key }
-                ? Visibility.Visible
-                : Visibility.Collapsed;
+        ProviderKey.Visibility = Main.Library.Option is { Access: Access.Key }
+            ? Visibility.Visible
+            : Visibility.Collapsed;
         // The row has nothing to manage until Library attaches.
         ImdbRow.Show(Main.Library.DataProvider is null ? null : Main.Library, Model.Text);
         if (!_providerSave.IsCompleted)
             return;
         _refreshingProviders = true;
-        ProviderChoice.ItemsSource = Main
-            .Library.Providers.Select(option => option.Name)
-            .ToArray();
+        ProviderChoice.ItemsSource = Main.Library.Providers.Select(option => option.Name).ToArray();
         ProviderChoice.SelectedIndex = ProviderIndex;
         AutomaticDownload.IsOn = Main.Library.IsAutomaticDownloadEnabled;
         _refreshingProviders = false;
@@ -469,7 +516,7 @@ public sealed partial class SettingsPage : UserControl
     {
         _refreshing = true;
         if (Languages is not null)
-            Languages.SelectedItem = Model.Text.Language == "es" ? Spanish : English;
+            Languages.SelectedItem = SelectedLanguage;
         if (EncryptionChoice is not null)
             EncryptionChoice.SelectedItem = SelectedEncryption;
         var unitsChanged = false;
@@ -477,7 +524,8 @@ public sealed partial class SettingsPage : UserControl
         {
             var previous = choice.SelectedItem;
             RefreshChoice(choice);
-            unitsChanged |= choice.Tag is Setting { IsDuration: true }
+            unitsChanged |=
+                choice.Tag is Setting { IsDuration: true }
                 && !ReferenceEquals(previous, choice.SelectedItem);
         }
         _refreshing = false;
@@ -485,6 +533,11 @@ public sealed partial class SettingsPage : UserControl
         if (unitsChanged)
             AlignCategory();
     }
+
+    private ComboBoxItem? SelectedLanguage =>
+        Languages
+            .Items.OfType<ComboBoxItem>()
+            .FirstOrDefault(item => item.Tag is string tag && tag == Model.Text.Language);
 
     private RadioButton SelectedEncryption =>
         Model.Encryption.Input switch
@@ -497,6 +550,9 @@ public sealed partial class SettingsPage : UserControl
 
     internal void RefreshText()
     {
+        RefreshStatistics();
+        if (LookupsRow is not null && LookupsRow.Error.Length > 0)
+            LookupsRow.Error = Model.Text.Get("plugins", "invalid_lookups");
         RefreshProviders();
         CityRow?.RefreshText();
         RefreshProtection();
@@ -564,13 +620,43 @@ public sealed partial class SettingsPage : UserControl
         }
         if (Appearance is not null)
         {
+            if (Languages.Items.Count == 0)
+                foreach (var language in Services.Strings.Languages)
+                {
+                    var name = Services.Strings.NativeName(language);
+                    var flag = new TextBlock
+                    {
+                        Text = Flags.Glyph(Services.Strings.FlagRegion(language)),
+                        FontFamily = Flags.Font,
+                    };
+                    AutomationProperties.SetAccessibilityView(flag, AccessibilityView.Raw);
+                    var item = new ComboBoxItem
+                    {
+                        Tag = language.Name,
+                        Content = new StackPanel
+                        {
+                            Orientation = Orientation.Horizontal,
+                            Spacing = 6,
+                            Children = { flag, new TextBlock { Text = name } },
+                        },
+                    };
+                    AutomationProperties.SetName(item, name);
+                    AutomationProperties.SetAutomationId(
+                        item,
+                        language.Name switch
+                        {
+                            "en" => "EnglishLanguage",
+                            "es" => "SpanishLanguage",
+                            _ => language.Name + "Language",
+                        }
+                    );
+                    Languages.Items.Add(item);
+                }
             AppearanceSection.Header = Model.Text.Get("settings", "personalization");
             LanguageRow.Header = Model.Text.Get("settings", "language");
             AutomationProperties.SetName(Languages, LanguageRow.Header);
-            Label(English, EnglishLabel, "english");
-            Label(Spanish, SpanishLabel, "spanish");
             Languages.SelectedItem = null;
-            Languages.SelectedItem = Model.Text.Language == "es" ? Spanish : English;
+            Languages.SelectedItem = SelectedLanguage;
             ThemeRow.Header = Model.Text.Get("settings", "theme");
         }
         foreach (var choice in _choices)
@@ -604,7 +690,10 @@ public sealed partial class SettingsPage : UserControl
         Label(item, label, key);
     }
 
-    private async void OnCategory(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
+    private async void OnCategory(
+        NavigationView sender,
+        NavigationViewSelectionChangedEventArgs args
+    )
     {
         if (_refreshing || args.SelectedItem is not NavigationViewItem item)
             return;
@@ -613,13 +702,19 @@ public sealed partial class SettingsPage : UserControl
         if (Main.Navigation.Current != WindowPage.Connection && item == (_category ?? HomeCategory))
             return;
         _refreshing = true;
-        Categories.SelectedItem = Main.Navigation.Current == WindowPage.Connection ? LimitsCategory : _category ?? HomeCategory;
+        Categories.SelectedItem =
+            Main.Navigation.Current == WindowPage.Connection
+                ? LimitsCategory
+                : _category ?? HomeCategory;
         _refreshing = false;
         if (await Main.Navigation.SelectCategory(target.Category))
             FocusTarget(target);
     }
 
-    private async void OnCategoryInvoked(NavigationView sender, NavigationViewItemInvokedEventArgs args)
+    private async void OnCategoryInvoked(
+        NavigationView sender,
+        NavigationViewItemInvokedEventArgs args
+    )
     {
         if (args.InvokedItemContainer == AdvancedMode)
         {
@@ -631,8 +726,11 @@ public sealed partial class SettingsPage : UserControl
             Main.ReturnWorkspace.Execute(null);
             return;
         }
-        if (Main.Navigation.Current == WindowPage.Connection && args.InvokedItemContainer == LimitsCategory
-            && await Main.Navigation.SelectCategory(SettingsCategory.Limits))
+        if (
+            Main.Navigation.Current == WindowPage.Connection
+            && args.InvokedItemContainer == LimitsCategory
+            && await Main.Navigation.SelectCategory(SettingsCategory.Limits)
+        )
             FocusTarget(new(SettingsCategory.Limits));
     }
 
@@ -656,8 +754,17 @@ public sealed partial class SettingsPage : UserControl
 
     private void ShowCategory(bool animate = true)
     {
-        var next = ReferenceEquals(Categories.SelectedItem, HomeCategory) ? null : Categories.SelectedItem as NavigationViewItem;
-        if (_category == next && (_category is null ? IndexContent is not null : CategoryPanels.Any(panel => panel.Name == (string)_category.Tag)))
+        var next = ReferenceEquals(Categories.SelectedItem, HomeCategory)
+            ? null
+            : Categories.SelectedItem as NavigationViewItem;
+        if (
+            _category == next
+            && (
+                _category is null
+                    ? IndexContent is not null
+                    : CategoryPanels.Any(panel => panel.Name == (string)_category.Tag)
+            )
+        )
         {
             RefreshSubtitles();
             RefreshHome();
@@ -693,23 +800,38 @@ public sealed partial class SettingsPage : UserControl
             }
             // Only the active category contributes to the restored scroll extent.
             foreach (var panel in CategoryPanels.Append(IndexContent).OfType<FrameworkElement>())
-                panel.Visibility = ReferenceEquals(panel, content) ? Visibility.Visible : Visibility.Collapsed;
+                panel.Visibility = ReferenceEquals(panel, content)
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
             UpdateLayout();
             RefreshCoverage();
             AlignCategory();
-            var position = _category is { } item ? _positions.GetValueOrDefault(item) : _indexPosition;
+            var position = _category is { } item
+                ? _positions.GetValueOrDefault(item)
+                : _indexPosition;
             Body.ChangeView(null, position, null, true);
         }
     }
 
     private IEnumerable<FrameworkElement> CategoryPanels =>
-        new FrameworkElement?[] { General, Transfers, Network, Limits, Appearance, Advanced, Schedule, Plugins }
-            .OfType<FrameworkElement>();
+        new FrameworkElement?[]
+        {
+            General,
+            Transfers,
+            Network,
+            Limits,
+            Appearance,
+            Advanced,
+            Schedule,
+            Plugins,
+        }.OfType<FrameworkElement>();
 
     private FrameworkElement LoadCategory(out bool loaded)
     {
         var name = _category is null ? nameof(IndexContent) : (string)_category.Tag;
-        var existing = _category is null ? IndexContent : CategoryPanels.FirstOrDefault(panel => panel.Name == name);
+        var existing = _category is null
+            ? IndexContent
+            : CategoryPanels.FirstOrDefault(panel => panel.Name == name);
         loaded = existing is null;
         if (existing is not null)
             return existing;
@@ -730,14 +852,27 @@ public sealed partial class SettingsPage : UserControl
             _speedLimits = new SpeedLimits(Main, RegisterProfile);
             _speedLimits.ConnectionRequested += OnConnection;
             SpeedContent.Content = _speedLimits;
-            AddLink(RelatedLinks, "schedule", () => Main.ScheduleSummary,
-                new(SettingsCategory.Schedule, "weekly_schedule"), Syno.Lucide.CalendarClock);
-            AddLink(RelatedLinks, "queue", () => Model.QueueSummary,
-                new(SettingsCategory.Transfers, "queue"), Syno.Lucide.ListOrdered);
+            AddLink(
+                RelatedLinks,
+                "schedule",
+                () => Main.ScheduleSummary,
+                new(SettingsCategory.Schedule, "weekly_schedule"),
+                Syno.Lucide.CalendarClock
+            );
+            AddLink(
+                RelatedLinks,
+                "queue",
+                () => Model.QueueSummary,
+                new(SettingsCategory.Transfers, "queue"),
+                Syno.Lucide.ListOrdered
+            );
         }
         else if (_category == ScheduleCategory)
         {
-            ScheduleContent.Content = _scheduler = new Scheduler(Model.Schedule, new LimitSelector(Main));
+            ScheduleContent.Content = _scheduler = new Scheduler(
+                Model.Schedule,
+                new LimitSelector(Main)
+            );
             _scheduleLimits = new SpeedLimits(Main, RegisterProfile, inline: true);
             _scheduleLimits.ConnectionRequested += OnConnection;
             ScheduleSpeedContent.Content = _scheduleLimits;
@@ -752,13 +887,15 @@ public sealed partial class SettingsPage : UserControl
             }
             CityRow.Show(Main.Geolocation, Model.Text);
             var subtitles = new SubtitleSettings(Model.Text, Main.RetrySubtitles, ReportSubtitles);
-            subtitles.SupplierRequested += (_, supplier) => SupplierRequested?.Invoke(this, supplier);
+            subtitles.SupplierRequested += (_, supplier) =>
+                SupplierRequested?.Invoke(this, supplier);
             SubtitlesContent.Content = subtitles;
         }
         return content;
     }
 
-    private void ReportSubtitles(Exception error, string title) => Main.Report(error, title, string.Empty, null);
+    private void ReportSubtitles(Exception error, string title) =>
+        Main.Report(error, title, null, null);
 
     internal void ShowAdvanced(bool show)
     {
@@ -774,19 +911,18 @@ public sealed partial class SettingsPage : UserControl
     private void RefreshAdvancedMode()
     {
         AdvancedModeIcon.Glyph = _showAdvanced ? Lucide.SquareCheck : Lucide.Square;
-        AutomationProperties.SetItemStatus(AdvancedMode, _showAdvanced ? Model.OnText : Model.OffText);
+        AutomationProperties.SetItemStatus(
+            AdvancedMode,
+            _showAdvanced ? Model.OnText : Model.OffText
+        );
     }
 
     private void UpdateDisclosure()
     {
-        AdvancedCategory.Visibility = _showAdvanced
-            ? Visibility.Visible
-            : Visibility.Collapsed;
+        AdvancedCategory.Visibility = _showAdvanced ? Visibility.Visible : Visibility.Collapsed;
         if (DatabaseSummary is not null)
         {
-            DatabaseSummary.Visibility = _showAdvanced
-                ? Visibility.Visible
-                : Visibility.Collapsed;
+            DatabaseSummary.Visibility = _showAdvanced ? Visibility.Visible : Visibility.Collapsed;
             if (!_showAdvanced)
                 DatabaseSummary.IsExpanded = false;
             else
@@ -795,9 +931,7 @@ public sealed partial class SettingsPage : UserControl
         foreach (var panel in CategoryPanels)
         foreach (var element in Elements(panel))
             if (element is SettingsRow { IsAdvanced: true } or SettingsSection { IsAdvanced: true })
-                element.Visibility = _showAdvanced
-                    ? Visibility.Visible
-                    : Visibility.Collapsed;
+                element.Visibility = _showAdvanced ? Visibility.Visible : Visibility.Collapsed;
         if (!_showAdvanced && ReferenceEquals(Categories.SelectedItem, AdvancedCategory))
             _ = Main.Navigation.SelectCategory(Main.SettingsHome);
         RefreshHome();
@@ -814,14 +948,18 @@ public sealed partial class SettingsPage : UserControl
         {
             var rows = Elements(section, visible: true).OfType<SettingsRow>().ToArray();
             var width = 0d;
-            foreach (var unit in rows.Select(row => row.Unit).Where(unit => unit.Length > 0).Distinct())
+            foreach (
+                var unit in rows.Select(row => row.Unit).Where(unit => unit.Length > 0).Distinct()
+            )
             {
                 var label = new TextBlock
                 {
                     Text = unit,
                     Style = (Style)Application.Current.Resources["TinyTorrentBodyTextStyle"],
                 };
-                label.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
+                label.Measure(
+                    new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity)
+                );
                 width = Math.Max(width, label.DesiredSize.Width);
             }
             foreach (var row in rows)
@@ -861,7 +999,8 @@ public sealed partial class SettingsPage : UserControl
     private void OnConnection(object? sender, EventArgs args) =>
         ConnectionRequested?.Invoke(this, EventArgs.Empty);
 
-    private SpeedLimits? CurrentProfiles => _category == ScheduleCategory ? _scheduleLimits : _speedLimits;
+    private SpeedLimits? CurrentProfiles =>
+        _category == ScheduleCategory ? _scheduleLimits : _speedLimits;
 
     internal void FocusConnection() => CurrentProfiles?.FocusConnection();
 
@@ -919,7 +1058,10 @@ public sealed partial class SettingsPage : UserControl
             Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
             () =>
             {
-                if (Main.Navigation.Current != WindowPage.Settings || Main.Navigation.Settings != target)
+                if (
+                    Main.Navigation.Current != WindowPage.Settings
+                    || Main.Navigation.Settings != target
+                )
                     return;
                 UpdateLayout();
                 if (target.Name == "add_period")
@@ -981,8 +1123,13 @@ public sealed partial class SettingsPage : UserControl
             "connection_encryption" => EncryptionSection,
             "bandwidth_accounting" => AccountingSection,
             "start_signin" => _integration?.Field("start_signin"),
-            "limit_mode" => _category == ScheduleCategory ? _scheduler?.Selector : _speedLimits?.Selector,
-            "download_limit" or "upload_limit" or "alternative_download_limit" or "alternative_upload_limit" => CurrentProfiles?.Field(settingName),
+            "limit_mode" => _category == ScheduleCategory
+                ? _scheduler?.Selector
+                : _speedLimits?.Selector,
+            "download_limit"
+            or "upload_limit"
+            or "alternative_download_limit"
+            or "alternative_upload_limit" => CurrentProfiles?.Field(settingName),
             "open_defaults" => _integration?.Field("open_defaults"),
             "settings_index" => IndexSwitch,
             "network_interface" => Adapters,

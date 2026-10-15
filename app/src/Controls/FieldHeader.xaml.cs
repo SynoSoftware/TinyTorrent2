@@ -69,7 +69,8 @@ public sealed partial class FieldHeader : UserControl
         ToolTipService.SetToolTip(Text, text);
         AutomationProperties.SetHelpText(this, text);
         if (IsLoaded && Error.Length > 0 && ErrorRun.Text != previousError)
-            FrameworkElementAutomationPeer.CreatePeerForElement(Text)
+            FrameworkElementAutomationPeer
+                .CreatePeerForElement(Text)
                 ?.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
     }
 }

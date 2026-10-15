@@ -18,14 +18,20 @@ public sealed partial class WorkStatus : UserControl
     internal BackgroundWork.Operation? Operation { get; private set; }
     public bool IsExpanded { get; set; }
     internal bool HasFocus => Cancel.FocusState != FocusState.Unfocused;
-    internal bool CanFocus => Visibility == Visibility.Visible && Cancel.IsEnabled
+    internal bool CanFocus =>
+        Visibility == Visibility.Visible
+        && Cancel.IsEnabled
         && Cancel.Visibility == Visibility.Visible;
     internal event EventHandler? FocusInvalidated;
 
     public WorkStatus()
     {
         InitializeComponent();
-        Loaded += (_, _) => { Subscribe(); Refresh(); };
+        Loaded += (_, _) =>
+        {
+            Subscribe();
+            Refresh();
+        };
         Unloaded += (_, _) => Unsubscribe();
     }
 
@@ -35,7 +41,8 @@ public sealed partial class WorkStatus : UserControl
         {
             Unsubscribe();
             Operation = operation;
-            if (IsLoaded) Subscribe();
+            if (IsLoaded)
+                Subscribe();
         }
         _text = text;
         _library = library;
@@ -53,7 +60,8 @@ public sealed partial class WorkStatus : UserControl
         Refresh();
     }
 
-    internal bool FocusCancel(FocusState focus = FocusState.Keyboard) => CanFocus && Cancel.Focus(focus);
+    internal bool FocusCancel(FocusState focus = FocusState.Keyboard) =>
+        CanFocus && Cancel.Focus(focus);
 
     private void Subscribe()
     {
@@ -90,11 +98,13 @@ public sealed partial class WorkStatus : UserControl
                 MetadataScope.Automatic => "automatic_metadata",
                 _ => "inspector_metadata",
             },
-            WorkDescription.Subtitles subtitles => "subtitles_" + subtitles.Work.ToString().ToLowerInvariant(),
+            WorkDescription.Subtitles subtitles => "subtitles_"
+                + subtitles.Work.ToString().ToLowerInvariant(),
             WorkDescription.FileProperties => "file_properties",
             WorkDescription.Update => "update",
             WorkDescription.Sources => "sources",
-            WorkDescription.Maintenance maintenance => "maintenance_" + maintenance.Work.ToString().ToLowerInvariant(),
+            WorkDescription.Maintenance maintenance => "maintenance_"
+                + maintenance.Work.ToString().ToLowerInvariant(),
             _ => throw new InvalidOperationException(),
         };
         return text.Get("work", key);
@@ -126,22 +136,45 @@ public sealed partial class WorkStatus : UserControl
         {
             fullCount = fraction.Unit switch
             {
-                WorkUnit.Percent => text.Format("work", fraction.Approximate ? "approximate" : "percent",
-                    Math.Floor(100 * fraction.Completed / fraction.Total)),
-                WorkUnit.Bytes => text.Format("work", "bytes_fraction", text.Bytes((long)fraction.Completed), text.Bytes((long)fraction.Total)),
-                _ => text.Format("work", fraction.Unit == WorkUnit.Folders ? "folders" : "processed", fraction.Completed, fraction.Total),
+                WorkUnit.Percent => text.Format(
+                    "work",
+                    fraction.Approximate ? "approximate" : "percent",
+                    Math.Floor(100 * fraction.Completed / fraction.Total)
+                ),
+                WorkUnit.Bytes => text.Format(
+                    "work",
+                    "bytes_fraction",
+                    text.Bytes((long)fraction.Completed),
+                    text.Bytes((long)fraction.Total)
+                ),
+                _ => text.Format(
+                    "work",
+                    fraction.Unit == WorkUnit.Folders ? "folders" : "processed",
+                    fraction.Completed,
+                    fraction.Total
+                ),
             };
             shortCount = fraction.Unit is WorkUnit.Files or WorkUnit.Folders
-                ? text.Format("work", "fraction", fraction.Completed, fraction.Total) : fullCount;
+                ? text.Format("work", "fraction", fraction.Completed, fraction.Total)
+                : fullCount;
             widest = fraction.Unit is WorkUnit.Files or WorkUnit.Folders
-                ? text.Format("work", _compact ? "fraction" : fraction.Unit == WorkUnit.Folders ? "folders" : "processed",
-                    fraction.Total, fraction.Total) : fullCount;
+                ? text.Format(
+                    "work",
+                    _compact ? "fraction"
+                        : fraction.Unit == WorkUnit.Folders ? "folders"
+                        : "processed",
+                    fraction.Total,
+                    fraction.Total
+                )
+                : fullCount;
             Progress.Maximum = fraction.Total;
             Progress.Value = fraction.Completed;
         }
         else if (observation.Progress is WorkProgress.Amount amount)
-            fullCount = shortCount = amount.Unit == WorkUnit.Bytes ? text.Bytes((long)amount.Completed)
-                : text.Format("work", "amount", amount.Completed);
+            fullCount = shortCount =
+                amount.Unit == WorkUnit.Bytes
+                    ? text.Bytes((long)amount.Completed)
+                    : text.Format("work", "amount", amount.Completed);
         var description = caption + (fullCount.Length == 0 ? string.Empty : " · " + fullCount);
         if (observation.Execution is WorkExecution.Waiting { RetryAt: { } retry })
             description = text.Format("work", "retry_at", description, retry.ToLocalTime());
@@ -149,29 +182,39 @@ public sealed partial class WorkStatus : UserControl
         Label.TextWrapping = IsExpanded ? TextWrapping.Wrap : TextWrapping.NoWrap;
         Label.TextTrimming = IsExpanded ? TextTrimming.None : TextTrimming.CharacterEllipsis;
         Count.Text = _compact ? shortCount : fullCount;
-        Count.Visibility = IsExpanded || Count.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+        Count.Visibility =
+            IsExpanded || Count.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         _probe.Style = Count.Style;
         _probe.Text = widest;
         _probe.InvalidateMeasure();
         _probe.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
         Count.MinWidth = _probe.DesiredSize.Width;
-        Icon.Glyph = observation.Execution is WorkExecution.Waiting ? Lucide.Clock : observation.Description switch
-        {
-            WorkDescription.Imdb => Lucide.Database,
-            WorkDescription.City => Lucide.MapPin,
-            WorkDescription.Metadata => Lucide.Download,
-            WorkDescription.Subtitles { Work: SubtitleWork.Discovery } => Lucide.FolderSearch,
-            WorkDescription.Subtitles => Lucide.Captions,
-            WorkDescription.FileProperties => Lucide.Files,
-            WorkDescription.Update => Lucide.RefreshCw,
-            WorkDescription.Sources => Lucide.FilePlus,
-            _ => Lucide.Wrench,
-        };
+        Icon.Glyph =
+            observation.Execution is WorkExecution.Waiting
+                ? Lucide.Clock
+                : observation.Description switch
+                {
+                    WorkDescription.Imdb => Lucide.Database,
+                    WorkDescription.City => Lucide.MapPin,
+                    WorkDescription.Metadata => Lucide.Download,
+                    WorkDescription.Subtitles { Work: SubtitleWork.Discovery } =>
+                        Lucide.FolderSearch,
+                    WorkDescription.Subtitles => Lucide.Captions,
+                    WorkDescription.FileProperties => Lucide.Files,
+                    WorkDescription.Update => Lucide.RefreshCw,
+                    WorkDescription.Sources => Lucide.FilePlus,
+                    _ => Lucide.Wrench,
+                };
         Icon.Visibility = _minimal && !IsExpanded ? Visibility.Collapsed : Visibility.Visible;
-        Progress.IsIndeterminate = observation.Progress is not WorkProgress.Fraction
+        Progress.IsIndeterminate =
+            observation.Progress is not WorkProgress.Fraction
             && observation.Execution is not WorkExecution.Waiting;
-        Progress.Visibility = observation.Execution is WorkExecution.Waiting && observation.Progress is not WorkProgress.Fraction
-            || _minimal && !IsExpanded && !Progress.IsIndeterminate ? Visibility.Collapsed : Visibility.Visible;
+        Progress.Visibility =
+            observation.Execution is WorkExecution.Waiting
+                && observation.Progress is not WorkProgress.Fraction
+            || _minimal && !IsExpanded && !Progress.IsIndeterminate
+                ? Visibility.Collapsed
+                : Visibility.Visible;
         Cancel.Visibility = operation.HasCancel ? Visibility.Visible : Visibility.Collapsed;
         Cancel.IsEnabled = operation.Cancel.CanExecute(null);
         AutomationProperties.SetName(Label, description);

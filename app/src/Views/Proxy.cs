@@ -238,7 +238,7 @@ public sealed class Proxy : IDraft
                 return;
             IsChecking = false;
             Refresh();
-            _main.Report(error, "failed_proxy_check", Label(server), null);
+            _main.Report(error, "failed_proxy_check", () => Label(server), null);
         }
     }
 
@@ -294,7 +294,7 @@ public sealed class Proxy : IDraft
             _main.Report(
                 new CommandException("unknown", null, Text),
                 "failed_proxy_check",
-                Label(server),
+                () => Label(server),
                 null
             );
             return;
@@ -302,7 +302,7 @@ public sealed class Proxy : IDraft
         var result = ParseOutcome(outcome.GetString()) ?? ProxyOutcome.WrongType;
         if (result == ProxyOutcome.Connected)
         {
-            _main.ShowOutcome(Text.Get("settings", "proxy_connected"), Label(server));
+            _main.ShowOutcome("settings", "proxy_connected", Label(server));
             return;
         }
         // The engine reports an outcome rather than an error, so the outcome's
@@ -310,8 +310,8 @@ public sealed class Proxy : IDraft
         _main.Report(
             new CommandException(Word(result), null, Text, "check_proxy"),
             "failed_proxy_check",
-            Label(server),
-            Reason(result, server)
+            () => Label(server),
+            () => Reason(result, server)
         );
     }
 

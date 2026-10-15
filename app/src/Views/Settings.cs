@@ -49,6 +49,7 @@ public sealed class Settings : INotifyPropertyChanged
     public Setting Exclude { get; }
     public Setting Patterns { get; }
     public Setting ConfirmDelete { get; }
+
     // The Remove dialog's check boxes as the person last submitted them.
     // Only that dialog shows them, so they have no row in Settings.
     public Setting DeleteDownloaded { get; }
@@ -120,21 +121,48 @@ public sealed class Settings : INotifyPropertyChanged
             if (Ratio.ConfirmedNumber > 0)
                 limits.Add(Text.Format("settings", "ratio_summary", Ratio.ConfirmedNumber));
             if (SeedingMinutes.ConfirmedNumber > 0)
-                limits.Add(Text.Format("settings", "seed_time_summary", DurationText(SeedingMinutes)));
+                limits.Add(
+                    Text.Format("settings", "seed_time_summary", DurationText(SeedingMinutes))
+                );
             if (InactiveTime.ConfirmedNumber > 0)
                 limits.Add(Text.Format("settings", "idle_summary", DurationText(InactiveTime)));
             if (limits.Count > 1)
-                limits.Add(Text.Get("settings", SeedRule.ConfirmedText == "all" ? "seed_all_summary" : "seed_any_summary"));
-            return limits.Count == 0 ? Text.Get("settings", "no_seeding_limits") : string.Join(" · ", limits);
+                limits.Add(
+                    Text.Get(
+                        "settings",
+                        SeedRule.ConfirmedText == "all" ? "seed_all_summary" : "seed_any_summary"
+                    )
+                );
+            return limits.Count == 0
+                ? Text.Get("settings", "no_seeding_limits")
+                : string.Join(" · ", limits);
         }
     }
 
-    public string StartupSummary => Text.Get("settings", StartInTray.ConfirmedOn ? "startup_tray_summary" : "startup_window_summary")
-        + (StartPaused.ConfirmedOn ? " · " + Text.Get("settings", "startup_paused_summary") : string.Empty);
-    public string AddingSummary => Text.Get("settings", StartDownload.ConfirmedOn ? "adding_start_summary" : "adding_paused_summary")
-        + " · " + Text.Get("settings", QueueTop.ConfirmedOn ? "queue_top_summary" : "queue_bottom_summary");
-    public string PowerSummary => Text.Get("settings", !PreventSleep.ConfirmedOn ? "power_off_summary"
-        : SeedingSleep.ConfirmedOn ? "power_both_summary" : "power_download_summary");
+    public string StartupSummary =>
+        Text.Get(
+            "settings",
+            StartInTray.ConfirmedOn ? "startup_tray_summary" : "startup_window_summary"
+        )
+        + (
+            StartPaused.ConfirmedOn
+                ? " · " + Text.Get("settings", "startup_paused_summary")
+                : string.Empty
+        );
+    public string AddingSummary =>
+        Text.Get(
+            "settings",
+            StartDownload.ConfirmedOn ? "adding_start_summary" : "adding_paused_summary"
+        )
+        + " · "
+        + Text.Get("settings", QueueTop.ConfirmedOn ? "queue_top_summary" : "queue_bottom_summary");
+    public string PowerSummary =>
+        Text.Get(
+            "settings",
+            !PreventSleep.ConfirmedOn ? "power_off_summary"
+                : SeedingSleep.ConfirmedOn ? "power_both_summary"
+                : "power_download_summary"
+        );
     public string ConfirmationsSummary
     {
         get
@@ -148,16 +176,37 @@ public sealed class Settings : INotifyPropertyChanged
                 disabled.Add(Text.Get("settings", "delete_confirmation_off"));
             if (!ConfirmExit.ConfirmedOn)
                 disabled.Add(Text.Get("settings", "exit_confirmation_off"));
-            return disabled.Count == 0 ? Text.Get("settings", "confirmations_on_summary") : string.Join(" · ", disabled);
+            return disabled.Count == 0
+                ? Text.Get("settings", "confirmations_on_summary")
+                : string.Join(" · ", disabled);
         }
     }
-    public string AccountingSummary => Text.Get("settings", IncludeOverhead.ConfirmedOn ? "accounting_overhead" : "accounting_payload")
-        + " · " + Text.Get("settings", LimitLan.ConfirmedOn ? "accounting_lan" : "accounting_lan_unlimited");
-    public string QueueSummary => Text.Format("settings", "queue_summary",
-        CountText(ActiveDownloads), CountText(ActiveSeeds), CountText(ActiveTotal));
-    public string PeersSummary => Text.Format("settings", "peers_summary",
-        CountText(ConnectionLimit), CountText(TorrentConnections),
-        Text.Get("settings", "transport_" + Transport.ConfirmedText));
+    public string AccountingSummary =>
+        Text.Get(
+            "settings",
+            IncludeOverhead.ConfirmedOn ? "accounting_overhead" : "accounting_payload"
+        )
+        + " · "
+        + Text.Get(
+            "settings",
+            LimitLan.ConfirmedOn ? "accounting_lan" : "accounting_lan_unlimited"
+        );
+    public string QueueSummary =>
+        Text.Format(
+            "settings",
+            "queue_summary",
+            CountText(ActiveDownloads),
+            CountText(ActiveSeeds),
+            CountText(ActiveTotal)
+        );
+    public string PeersSummary =>
+        Text.Format(
+            "settings",
+            "peers_summary",
+            CountText(ConnectionLimit),
+            CountText(TorrentConnections),
+            Text.Get("settings", "transport_" + Transport.ConfirmedText)
+        );
     public string DiscoverySummary
     {
         get
@@ -169,51 +218,85 @@ public sealed class Settings : INotifyPropertyChanged
                 enabled.Add(Text.Get("settings", "discovery_pex"));
             if (Lsd.ConfirmedOn)
                 enabled.Add(Text.Get("settings", "discovery_lsd"));
-            return enabled.Count == 0 ? Text.Get("settings", "discovery_off") : string.Join(" · ", enabled);
+            return enabled.Count == 0
+                ? Text.Get("settings", "discovery_off")
+                : string.Join(" · ", enabled);
         }
     }
 
-    public string IncomingSummary => Proxy.IsInUse ? PortHint
-        : Text.Format("settings", "incoming_summary", Port.ConfirmedNumber, PortMapping.ConfirmedOn ? OnText : OffText);
-    public string WatchedSummary => Watch.ConfirmedOn
-        ? WatchPath.ConfirmedText + (WatchRecursive.ConfirmedOn ? " · " + Text.Get("settings", "watch_children_summary") : string.Empty)
-        : Text.Get("settings", "watch_off_summary");
-    public string CheckingSummary => Text.FormatCount("settings", "checking_count", (int)ActiveChecking.ConfirmedNumber)
-        + " · " + Text.FormatCount("settings", "checking_threads", (int)HashingThreads.ConfirmedNumber);
-    public string HistorySummary => Text.Format("settings", "history_summary",
-        RecentInterval.ConfirmedNumber, HistoryInterval.ConfirmedNumber);
+    public string IncomingSummary =>
+        Proxy.IsInUse
+            ? PortHint
+            : Text.Format(
+                "settings",
+                "incoming_summary",
+                Port.ConfirmedNumber,
+                PortMapping.ConfirmedOn ? OnText : OffText
+            );
+    public string WatchedSummary =>
+        Watch.ConfirmedOn
+            ? WatchPath.ConfirmedText
+                + (
+                    WatchRecursive.ConfirmedOn
+                        ? " · " + Text.Get("settings", "watch_children_summary")
+                        : string.Empty
+                )
+            : Text.Get("settings", "watch_off_summary");
+    public string CheckingSummary =>
+        Text.FormatCount("settings", "checking_count", (int)ActiveChecking.ConfirmedNumber)
+        + " · "
+        + Text.FormatCount("settings", "checking_threads", (int)HashingThreads.ConfirmedNumber);
+    public string HistorySummary =>
+        Text.Format(
+            "settings",
+            "history_summary",
+            RecentInterval.ConfirmedNumber,
+            HistoryInterval.ConfirmedNumber
+        );
 
     public string RaiseAddHint => DependentHint(RaiseAdd, null, "enable_add_dialog");
     public string SeedingSleepHint => DependentHint(SeedingSleep, null, "enable_sleep_prevention");
-    public string IncompleteFolderHint => DependentHint(IncompleteFolder, null, "enable_incomplete_folder");
+    public string IncompleteFolderHint =>
+        DependentHint(IncompleteFolder, null, "enable_incomplete_folder");
     public string WatchRecursiveHint => DependentHint(WatchRecursive, null, "enable_watching");
-    public string WatchDestinationHint => DependentHint(WatchDestination, "watch_destination_hint", "enable_watching");
+    public string WatchDestinationHint =>
+        DependentHint(WatchDestination, "watch_destination_hint", "enable_watching");
     public string SeedRuleHint => DependentHint(SeedRule, "seed_rule_hint", "enable_seed_rule");
     public string IpFamilyHint => DependentHint(IpFamily, null, "ip_family_hint");
-    public string LayoutHint => Text.Get("settings", "layout_hint")
-        + (Layout.Input is "keep" or "create" or "strip"
-            ? " · " + Text.Get("settings", "layout_example_" + Layout.Input) : string.Empty);
+    public string LayoutHint =>
+        Text.Get("settings", "layout_hint")
+        + (
+            Layout.Input is "keep" or "create" or "strip"
+                ? " · " + Text.Get("settings", "layout_example_" + Layout.Input)
+                : string.Empty
+        );
 
     private string DependentHint(Setting setting, string? enabled, string disabled) =>
         setting.Condition?.Invoke() == false ? Text.Get("settings", disabled)
-        : enabled is null ? string.Empty : Text.Get("settings", enabled);
+        : enabled is null ? string.Empty
+        : Text.Get("settings", enabled);
 
-    private string CountText(Setting setting) => setting.ConfirmedNumber == 0
-        ? Text.Get("transfer_limits", "unlimited") : setting.ConfirmedNumber.ToString("G", CultureInfo.CurrentCulture);
+    private string CountText(Setting setting) =>
+        setting.ConfirmedNumber == 0
+            ? Text.Get("transfer_limits", "unlimited")
+            : setting.ConfirmedNumber.ToString("G", CultureInfo.CurrentCulture);
+
     private string DurationText(Setting setting) =>
         (setting.ConfirmedNumber / setting.DurationScale).ToString("G", CultureInfo.CurrentCulture)
-        + " " + Text.Get("settings", setting.DurationUnit + "_unit");
+        + " "
+        + Text.Get("settings", setting.DurationUnit + "_unit");
 
     public string StandardSummary => LimitSummary(Download, Upload);
     public string AlternativeSummary => LimitSummary(AlternativeDownload, AlternativeUpload);
-    public string EncryptionSummary => Encryption.ConfirmedText.Length == 0
-        ? "—" : Text.Get("settings", "encryption_" + Encryption.ConfirmedText);
+    public string EncryptionSummary =>
+        Encryption.ConfirmedText.Length == 0
+            ? "—"
+            : Text.Get("settings", "encryption_" + Encryption.ConfirmedText);
 
     private string LimitSummary(Setting download, Setting upload) =>
         Text.Format("settings", "caps_summary", LimitText(download), LimitText(upload));
 
-    private string LimitText(Setting setting) =>
-        Text.SpeedLimit(setting.ConfirmedNumber);
+    private string LimitText(Setting setting) => Text.SpeedLimit(setting.ConfirmedNumber);
 
     public IReadOnlyList<Setting> All { get; }
     public bool IsPending =>
@@ -224,8 +307,9 @@ public sealed class Settings : INotifyPropertyChanged
         || Proxy.IsPending;
     public bool CanEdit => _owner.CanEdit;
     internal bool CanSave => _owner.CanSave;
-    internal void Report(Exception error) =>
-        _owner.Report(error, "failed_settings", string.Empty, null);
+
+    internal void Report(Exception error) => _owner.Report(error, "failed_settings", null, null);
+
     internal LimitProfile? FixedLimits => _owner.FixedLimits;
     public bool CanRegister => CanEdit && !_registering;
     public bool HasRegistration => _registration.ValueKind == JsonValueKind.Object;
@@ -276,6 +360,7 @@ public sealed class Settings : INotifyPropertyChanged
     public bool NeedsDefaults => HasBrokenHandlers || HandlersUseOtherCopy;
     public string DefaultsAction =>
         Text.Get("settings", HasBrokenHandlers ? "repair_defaults_tip" : "handlers_use_hint");
+
     // Both copies are TinyTorrent, so "Use" alone does not identify the target.
     public string DefaultsText =>
         HasBrokenHandlers ? Text.Get("settings", "repair_defaults") : Text.Get("settings", "use");
@@ -491,8 +576,18 @@ public sealed class Settings : INotifyPropertyChanged
             Condition = () => Exclude.IsOn,
         };
         ConfirmDelete = new(this, "confirm_delete", SettingKind.Boolean, SettingsCategory.General);
-        DeleteDownloaded = new(this, "delete_downloaded", SettingKind.Boolean, SettingsCategory.General);
-        DeleteTorrentFile = new(this, "delete_torrent_file", SettingKind.Boolean, SettingsCategory.General);
+        DeleteDownloaded = new(
+            this,
+            "delete_downloaded",
+            SettingKind.Boolean,
+            SettingsCategory.General
+        );
+        DeleteTorrentFile = new(
+            this,
+            "delete_torrent_file",
+            SettingKind.Boolean,
+            SettingsCategory.General
+        );
         InactiveTime = new(
             this,
             "inactive_time",
@@ -798,8 +893,12 @@ public sealed class Settings : INotifyPropertyChanged
     {
         try
         {
-            var choices = await Task.Run(() => NetworkInterface.GetAllNetworkInterfaces()
-                .Select(adapter => new AdapterChoice(adapter.Id, adapter.Name)).ToArray());
+            var choices = await Task.Run(() =>
+                NetworkInterface
+                    .GetAllNetworkInterfaces()
+                    .Select(adapter => new AdapterChoice(adapter.Id, adapter.Name))
+                    .ToArray()
+            );
             Adapters = [new(string.Empty, Text.Get("settings", "any_adapter")), .. choices];
             _unavailableAdapter = null;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Adapters)));
@@ -907,7 +1006,7 @@ public sealed class Settings : INotifyPropertyChanged
         }
         catch (Exception error)
         {
-            _owner.Report(error, "failed_registration", string.Empty, null);
+            _owner.Report(error, "failed_registration", null, null);
         }
         finally
         {
@@ -938,7 +1037,7 @@ public sealed class Settings : INotifyPropertyChanged
         }
         catch (Exception error)
         {
-            _owner.Report(error, "failed_registration", string.Empty, null);
+            _owner.Report(error, "failed_registration", null, null);
             if (error is CommandException && action != "observe")
                 try
                 {
@@ -1013,7 +1112,7 @@ public sealed class Settings : INotifyPropertyChanged
         {
             var error = new IOException(Text.Get("connection", "unavailable"));
             setting.Reject(error);
-            _owner.Report(error, "failed_settings", setting.Label, null);
+            _owner.Report(error, "failed_settings", () => setting.Label, null);
             return;
         }
         var submitted = setting.Capture(value);
@@ -1038,7 +1137,7 @@ public sealed class Settings : INotifyPropertyChanged
                 catch (Exception error)
                 {
                     failure = error;
-                    _owner.Report(error, "failed_settings", setting.Label, null);
+                    _owner.Report(error, "failed_settings", () => setting.Label, null);
                 }
                 if (
                     _owner.CanSave
@@ -1079,7 +1178,10 @@ public sealed class Settings : INotifyPropertyChanged
         }
         if (setting.IsRate)
         {
-            if (!TryRate(setting.Input, out var bytes, setting.RateScale) || bytes > setting.Maximum)
+            if (
+                !TryRate(setting.Input, out var bytes, setting.RateScale)
+                || bytes > setting.Maximum
+            )
                 return false;
             value = bytes;
             return true;
@@ -1143,7 +1245,10 @@ public sealed class Settings : INotifyPropertyChanged
     // Small positive values retain editable precision; unchanged input never
     // changes a saved limit through display rounding.
     internal static string RateInput(int bytes, RateScale scale) =>
-        (bytes / (double)scale).ToString(bytes > 0 && bytes < (int)scale / 100.0 ? "0.##########" : "0.##", CultureInfo.CurrentCulture);
+        (bytes / (double)scale).ToString(
+            bytes > 0 && bytes < (int)scale / 100.0 ? "0.##########" : "0.##",
+            CultureInfo.CurrentCulture
+        );
 
     public Task CancelDraft() => Schedule.Close();
 
@@ -1246,7 +1351,8 @@ public sealed class Setting(
     public bool HasDraft =>
         _input != _confirmedInput
         || _choice is { } choice && choice != (_confirmed.ValueKind == JsonValueKind.True)
-        || !_cancelled && _uncertain is { } submitted
+        || !_cancelled
+            && _uncertain is { } submitted
             && (_input != submitted.Input || _choice != submitted.Choice);
     public bool IsPending => _saving is not null;
     internal bool IsCancelled => _cancelled;
@@ -1264,7 +1370,12 @@ public sealed class Setting(
             if (IsDuration)
                 return owner.Text.Get("settings", "invalid_duration");
             if (IsRate)
-                return owner.Text.Format("settings", "invalid_rate", Maximum / (double)RateScale, RateUnit);
+                return owner.Text.Format(
+                    "settings",
+                    "invalid_rate",
+                    Maximum / (double)RateScale,
+                    RateUnit
+                );
             if (Minimum > 0)
                 return owner.Text.Format("settings", "invalid_range", Minimum, Maximum);
             return owner.Text.Get(
@@ -1278,8 +1389,7 @@ public sealed class Setting(
     internal bool Confirm(JsonElement value)
     {
         var changed =
-            _confirmed.ValueKind != value.ValueKind
-            || !JsonElement.DeepEquals(_confirmed, value);
+            _confirmed.ValueKind != value.ValueKind || !JsonElement.DeepEquals(_confirmed, value);
         if (changed)
         {
             var preserve = HasDraft || IsPending || _uncertain is not null;
@@ -1387,7 +1497,8 @@ public sealed class Setting(
 
     internal void Reject(Exception error, Submission? submitted = null)
     {
-        var current = submitted is null
+        var current =
+            submitted is null
             || !_cancelled && _input == submitted.Input && _choice == submitted.Choice;
         if (_cancelled && submitted is not null && error is CommandException)
             Settle(submitted);

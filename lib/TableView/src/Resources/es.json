@@ -24,10 +24,10 @@
     "before_row": "Insertar antes de {0}",
     "at_end": "Insertar al final",
     "nothing_to_move": "No hay nada que mover",
-    "choose_position": "Elija dónde insertar",
+    "choose_position": "Elige dónde insertar",
     "move_one": "Mover {0} elemento",
     "move_many": "Mover {0} elementos",
-    "hint": "Mantenga y desplace · Suelte entre filas · Esc cancela",
-    "browse": "Mantenga y desplace · Esc cancela"
+    "hint": "Mantén y desplázate · Suelta entre filas · Esc cancela",
+    "browse": "Mantén y desplázate · Esc cancela"
   }
 }

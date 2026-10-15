@@ -2,7 +2,6 @@ using System.Windows.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
-using Microsoft.UI.Xaml.Media.Animation;
 using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Library;
 using Syno.TinyTorrent.Models;
@@ -15,11 +14,6 @@ namespace Syno.TinyTorrent;
 public sealed partial class MainWindow
 {
     private LibraryTable? _libraryTable;
-    private FocusState _navigationInput;
-    private int _navigationRevision;
-    private bool _navigationHeld;
-    private WindowPage _navigationFace = WindowPage.Torrents;
-    private Storyboard? _navigationFlip;
     private CancellationTokenSource? _associationRead;
 
     private void ConfigureLibrary()
@@ -40,8 +34,11 @@ public sealed partial class MainWindow
                 UpdateAssociation();
             if (
                 Model.Page == WindowPage.Library
-                && args.PropertyName is nameof(LibraryBrowser.Facets) or nameof(LibraryBrowser.Filters)
-                    or nameof(LibraryBrowser.Configuration) or ""
+                && args.PropertyName
+                    is nameof(LibraryBrowser.Facets)
+                        or nameof(LibraryBrowser.Filters)
+                        or nameof(LibraryBrowser.Configuration)
+                        or ""
             )
                 RefreshLibraryFilters();
             if (
@@ -139,58 +136,13 @@ public sealed partial class MainWindow
             }
             else if (args.Key == VirtualKey.Down)
             {
-            _libraryTable?.FocusRows();
+                _libraryTable?.FocusRows();
                 args.Handled = true;
             }
         };
     }
 
-    private async void OnPageSwitch(object sender, RoutedEventArgs args)
-    {
-        var revision = _navigationRevision;
-        _navigationHeld = _navigationInput != FocusState.Unfocused;
-        if (
-            !await Model.Navigation.Navigate(
-                NavigationPage == WindowPage.Library ? WindowPage.Torrents : WindowPage.Library
-            )
-            && revision == _navigationRevision
-        )
-            _navigationHeld = false;
-        RefreshNavigation();
-    }
-
     private WindowPage NavigationPage => Model.Navigation.Workspace;
-
-    private void OnNavigationEnter(object sender, PointerRoutedEventArgs args)
-    {
-        _navigationInput = FocusState.Pointer;
-        _navigationRevision++;
-        _navigationHeld = false;
-        RefreshNavigation();
-    }
-
-    private void OnNavigationLeave(object sender, PointerRoutedEventArgs args)
-    {
-        if (_navigationInput != FocusState.Pointer)
-            return;
-        _navigationInput = FocusState.Unfocused;
-        _navigationRevision++;
-        _navigationHeld = false;
-        RefreshNavigation();
-    }
-
-    private void OnNavigationInput(object sender, RoutedEventArgs args)
-    {
-        if (AppIcon.FocusState == FocusState.Keyboard)
-            _navigationInput = FocusState.Keyboard;
-        else if (_navigationInput == FocusState.Keyboard)
-            _navigationInput = FocusState.Unfocused;
-        else
-            return;
-        _navigationRevision++;
-        _navigationHeld = false;
-        RefreshNavigation();
-    }
 
     private void UpdateLibraryPage()
     {
@@ -203,21 +155,20 @@ public sealed partial class MainWindow
             if (_placement?.LibraryLayouts is { } layouts)
                 _libraryTable.RestoreLayouts(layouts);
             _libraryTable.ItemContextRequested += (_, args) =>
-                LibraryContextMenu().ShowAt(
-                    args.Target,
-                    new Microsoft.UI.Xaml.Controls.Primitives.FlyoutShowOptions
-                    {
-                        Position = args.Position,
-                    }
-                );
+                LibraryContextMenu()
+                    .ShowAt(
+                        args.Target,
+                        new Microsoft.UI.Xaml.Controls.Primitives.FlyoutShowOptions
+                        {
+                            Position = args.Position,
+                        }
+                    );
             LibraryContent.Content = _libraryTable;
         }
         if (!library)
             _associationRead?.Cancel();
         else
             UpdateAssociation();
-        Filters.Visibility = library ? Visibility.Collapsed : Visibility.Visible;
-        LibraryFilters.Visibility = library ? Visibility.Visible : Visibility.Collapsed;
         Workspace.OpenPaneLength = library ? 280 : 196;
         Search.PlaceholderText = Model.Text.Get(
             library ? "library" : "finding",
@@ -233,108 +184,34 @@ public sealed partial class MainWindow
         UpdateInspectorSize();
         UpdateChrome();
         if (Model.Page is WindowPage.Torrents or WindowPage.Library)
+        {
             _workspaces.Show(library ? LibraryContent : TorrentContent, forward: library);
+            _filters.Show(library ? LibraryFilters : Filters, forward: library);
+        }
     }
 
     private void RefreshNavigation()
     {
         var library = NavigationPage == WindowPage.Library;
-        var destination = Model.Text.Get(
-            library ? "window" : "library",
-            library ? "torrents" : "title"
-        );
+        var torrentsName = Model.Text.Get("window", "torrents");
+        var libraryName = Model.Text.Get("library", "title");
+        var command = library ? Model.ShowTorrents : Model.ShowLibrary;
+        AppIcon.Command = command;
         NameButton(
             AppIcon,
             Model.Text.Format(
                 "shortcuts",
                 "tip",
-                Model.Text.Format("chrome", "switch_page", destination),
-                ShortcutText(library ? Model.ShowTorrents : Model.ShowLibrary)
+                Model.Text.Format("chrome", "switch_page", library ? torrentsName : libraryName),
+                ShortcutText(command)
             )
         );
-        var active = _navigationInput != FocusState.Unfocused;
-        if (!active)
-            _navigationHeld = false;
-        var face =
-            active && !_navigationHeld
-                ? (library ? WindowPage.Torrents : WindowPage.Library)
-                : NavigationPage;
-        if (_navigationFace == face)
-            return;
-        _navigationFace = face;
-        var rotation = NavigationProjection.RotationY;
-        _navigationFlip?.Stop();
-        _navigationFlip = null;
-        NavigationProjection.RotationY = rotation;
-        if (!_uiSettings.AnimationsEnabled)
-        {
-            NavigationProjection.RotationY = 0;
-            ShowNavigationFace();
-            return;
-        }
-        var shown =
-            TorrentsFace.Visibility == Visibility.Visible
-                ? WindowPage.Torrents
-                : WindowPage.Library;
-        if (shown == face)
-        {
-            FlipNavigation(rotation, 0);
-            return;
-        }
-        var edge =
-            rotation == 0 ? (face == WindowPage.Library ? 90 : -90) : Math.CopySign(90, rotation);
-        FlipNavigation(
-            rotation,
-            edge,
-            () =>
-            {
-                ShowNavigationFace();
-                NavigationProjection.RotationY = -edge;
-                FlipNavigation(-edge, 0);
-            }
-        );
-    }
-
-    private void ShowNavigationFace()
-    {
-        TorrentsFace.Visibility =
-            _navigationFace == WindowPage.Torrents ? Visibility.Visible : Visibility.Collapsed;
-        LibraryFace.Visibility =
-            _navigationFace == WindowPage.Library ? Visibility.Visible : Visibility.Collapsed;
-    }
-
-    private void FlipNavigation(double from, double to, Action? completed = null)
-    {
-        if (from == to)
-        {
-            completed?.Invoke();
-            return;
-        }
-        var animation = new DoubleAnimation
-        {
-            From = from,
-            To = to,
-            Duration = new Duration(TimeSpan.FromMilliseconds(110 * Math.Abs(to - from) / 90)),
-            EasingFunction = new CubicEase
-            {
-                EasingMode = to == 0 ? EasingMode.EaseOut : EasingMode.EaseIn,
-            },
-        };
-        Storyboard.SetTarget(animation, NavigationProjection);
-        Storyboard.SetTargetProperty(animation, nameof(NavigationProjection.RotationY));
-        var flip = new Storyboard();
-        flip.Children.Add(animation);
-        flip.Completed += (_, _) =>
-        {
-            if (!ReferenceEquals(_navigationFlip, flip))
-                return;
-            flip.Stop();
-            NavigationProjection.RotationY = to;
-            _navigationFlip = null;
-            completed?.Invoke();
-        };
-        _navigationFlip = flip;
-        flip.Begin();
+        TorrentsName.Text = torrentsName;
+        LibraryName.Text = libraryName;
+        TorrentsFace.Visibility = library ? Visibility.Collapsed : Visibility.Visible;
+        LibraryFace.Visibility = library ? Visibility.Visible : Visibility.Collapsed;
+        TorrentsName.Opacity = library ? 0 : 1;
+        LibraryName.Opacity = library ? 1 : 0;
     }
 
     private async void UpdateAssociation()
@@ -378,18 +255,18 @@ public sealed partial class MainWindow
     private MenuFlyout LibraryContextMenu() =>
         MenuItems.Flyout(
             () =>
-            [
-                new MenuHeading(
-                    Model.Library.Selected?.Title
-                        ?? Model.Text.Format(
-                            "window",
-                            "selected",
-                            Model.Library.Selection.Items.Count
-                        ),
-                    Syno.Lucide.ListChecks
-                ),
-                .. LibraryMenu(),
-            ],
+                [
+                    new MenuHeading(
+                        Model.Library.Selected?.Title
+                            ?? Model.Text.Format(
+                                "window",
+                                "selected",
+                                Model.Library.Selection.Items.Count
+                            ),
+                        Syno.Lucide.ListChecks
+                    ),
+                    .. LibraryMenu(),
+                ],
             () => Model.Text
         );
 
@@ -468,19 +345,35 @@ public sealed partial class MainWindow
     {
         try
         {
-            var entries = Model.Library.Selection.Items.Cast<LibraryRow>().Select(row => row.Entry).ToArray();
+            var entries = Model
+                .Library.Selection.Items.Cast<LibraryRow>()
+                .Select(row => row.Entry)
+                .ToArray();
             var plan = await Model.Library.Plan(entries, source, CancellationToken.None);
-            var videos = entries.Where(entry => entry.Kind == FileKind.Video).DistinctBy(entry => entry.EntryId).Count();
+            var videos = entries
+                .Where(entry => entry.Kind == FileKind.Video)
+                .DistinctBy(entry => entry.EntryId)
+                .Count();
             var content = new Library.BatchDialog(Model.Library, source, plan, videos);
             await Interact(async interaction =>
             {
-                var dialog = new Controls.Dialog { Content = content, Glyph = Lucide.Film, PrimaryGlyph = Lucide.Download };
-                await ShowEditor(interaction, dialog, content, () =>
+                var dialog = new Controls.Dialog
                 {
-                    dialog.Title = Model.Text.Get("library", "fetch_metadata");
-                    dialog.PrimaryButtonText = Model.Text.Get("library", "fetch");
-                    content.RefreshText();
-                });
+                    Content = content,
+                    Glyph = Lucide.Film,
+                    PrimaryGlyph = Lucide.Download,
+                };
+                await ShowEditor(
+                    interaction,
+                    dialog,
+                    content,
+                    () =>
+                    {
+                        dialog.Title = Model.Text.Get("library", "fetch_metadata");
+                        dialog.PrimaryButtonText = Model.Text.Get("library", "fetch");
+                        content.RefreshText();
+                    }
+                );
                 return true;
             });
         }
@@ -496,7 +389,8 @@ public sealed partial class MainWindow
         await Interact(async interaction =>
         {
             interaction.Restore = () => FetchMetadata(content);
-            interaction.ResolveDraft = () => SaveOnClose(interaction, content, canSave: !content.RequiresForce);
+            interaction.ResolveDraft = () =>
+                SaveOnClose(interaction, content, canSave: !content.RequiresForce);
             var dialog = new Controls.Dialog
             {
                 Content = content,
@@ -567,7 +461,9 @@ public sealed partial class MainWindow
             LibraryFilters.Content = panel;
         }
         var rows = panel.Children.OfType<Grid>().ToDictionary(row => (string)row.Tag);
-        var headings = panel.Children.OfType<TextBlock>().ToDictionary(heading => (string)heading.Tag);
+        var headings = panel
+            .Children.OfType<TextBlock>()
+            .ToDictionary(heading => (string)heading.Tag);
         _refreshingFilters = true;
         try
         {
@@ -588,7 +484,8 @@ public sealed partial class MainWindow
                         title = new TextBlock
                         {
                             Tag = group,
-                            Style = (Style)Application.Current.Resources["TinyTorrentGroupTitleTextStyle"],
+                            Style = (Style)
+                                Application.Current.Resources["TinyTorrentGroupTitleTextStyle"],
                         };
                     title.Text = Model.Text.Get("library", group);
                     title.Margin = new Thickness(0, position == 0 ? 0 : 8, 0, 0);
@@ -618,7 +515,9 @@ public sealed partial class MainWindow
                         Style = (Style)Application.Current.Resources["TinyTorrentStatusIconStyle"],
                     };
                     Microsoft.UI.Xaml.Automation.AutomationProperties.SetAccessibilityView(
-                        icon, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+                        icon,
+                        Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw
+                    );
                     var label = new TextBlock
                     {
                         Style = (Style)Application.Current.Resources["TinyTorrentBodyTextStyle"],
@@ -675,9 +574,10 @@ public sealed partial class MainWindow
                 {
                     if (!existing.TryGetValue(facet.Value, out var item))
                         item = new ComboBoxItem { Tag = facet.Value };
-                    var label = facet.Section == "series"
-                        ? facet.Label ?? Model.Text.Get("library", "series")
-                        : Model.Library.FilterText(facet.Section, facet.Value);
+                    var label =
+                        facet.Section == "series"
+                            ? facet.Label ?? Model.Text.Get("library", "series")
+                            : Model.Library.FilterText(facet.Section, facet.Value);
                     item.Content = Model.Text.Format("filters", "count", label, facet.Count);
                     items.Add(item);
                     if (Model.Library.Filters.GetValueOrDefault(section.Key) == facet.Value)
@@ -702,11 +602,15 @@ public sealed partial class MainWindow
                 while (choices.Items.Count > items.Count)
                     choices.Items.RemoveAt(choices.Items.Count - 1);
                 choices.SelectedItem = selected;
-                var tip = section.Key == "subtitles"
-                    ? Model.Text.Format("library", "subtitle_filter_tip", selected.Content)
-                    : selected.Content;
+                var tip =
+                    section.Key == "subtitles"
+                        ? Model.Text.Format("library", "subtitle_filter_tip", selected.Content)
+                        : selected.Content;
                 ToolTipService.SetToolTip(choices, tip);
-                Microsoft.UI.Xaml.Automation.AutomationProperties.SetHelpText(choices, tip?.ToString() ?? string.Empty);
+                Microsoft.UI.Xaml.Automation.AutomationProperties.SetHelpText(
+                    choices,
+                    tip?.ToString() ?? string.Empty
+                );
                 Place(row);
             }
             while (panel.Children.Count > position)
@@ -714,7 +618,10 @@ public sealed partial class MainWindow
 
             void Place(UIElement element)
             {
-                if (position >= panel.Children.Count || !ReferenceEquals(panel.Children[position], element))
+                if (
+                    position >= panel.Children.Count
+                    || !ReferenceEquals(panel.Children[position], element)
+                )
                 {
                     panel.Children.Remove(element);
                     panel.Children.Insert(position, element);

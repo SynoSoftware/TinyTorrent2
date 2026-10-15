@@ -25,15 +25,23 @@ public sealed partial class Inspector
             return _target is null && _owner.Selected.Count == 0;
         }
     }
-    public bool HasContent => _target is not null || _section is InspectorSection.Peers or InspectorSection.Speed;
+    public bool HasContent =>
+        _target is not null || _section is InspectorSection.Peers or InspectorSection.Speed;
 
     internal bool CanShow(InspectorSection section) =>
-        section is InspectorSection.Peers or InspectorSection.Speed
-        || _target is not null;
-    internal string PeerSummary => _visible && _section == InspectorSection.Peers && HasContent && Peers is { } peers
-        ? Text.Format("peers", "summary", peers.Count,
-            peers.Count(peer => peer.State == PeerState.Connected && peer.DownloadRate + peer.UploadRate > 0))
-        : string.Empty;
+        section is InspectorSection.Peers or InspectorSection.Speed || _target is not null;
+
+    internal string PeerSummary =>
+        _visible && _section == InspectorSection.Peers && HasContent && Peers is { } peers
+            ? Text.Format(
+                "peers",
+                "summary",
+                peers.Count,
+                peers.Count(peer =>
+                    peer.State == PeerState.Connected && peer.DownloadRate + peer.UploadRate > 0
+                )
+            )
+            : string.Empty;
 
     internal Location? Origin
     {
@@ -49,7 +57,9 @@ public sealed partial class Inspector
     // IPEndPoint also parses a bare address, so the public address and a
     // peer's endpoint share this lookup.
     private Location? Locate(string address) =>
-        IPEndPoint.TryParse(address, out var endpoint) ? _owner.Geolocation.Find(endpoint.Address) : null;
+        IPEndPoint.TryParse(address, out var endpoint)
+            ? _owner.Geolocation.Find(endpoint.Address)
+            : null;
 
     private async Task LocatePeers()
     {
@@ -58,7 +68,9 @@ public sealed partial class Inspector
         _locating = true;
         try
         {
-            while (_visible && _section == InspectorSection.Peers && IsAvailable && !_owner.IsClosing)
+            while (
+                _visible && _section == InspectorSection.Peers && IsAvailable && !_owner.IsClosing
+            )
             {
                 var key = (_owner.PublicAddress, _owner.Geolocation.Version);
                 if (_locationVersion != key.Version)
@@ -73,13 +85,22 @@ public sealed partial class Inspector
                 var needsOrigin = _originKey != key;
                 if (peers.Length == 0 && !needsOrigin)
                     return;
-                var locations = await Task.Run(() => (
-                    Peers: peers.Select(peer => (Peer: peer, Location: Locate(peer.Endpoint))).ToArray(),
-                    Origin: needsOrigin ? Locate(key.PublicAddress) : origin
-                ));
+                var locations = await Task.Run(() =>
+                    (
+                        Peers: peers
+                            .Select(peer => (Peer: peer, Location: Locate(peer.Endpoint)))
+                            .ToArray(),
+                        Origin: needsOrigin ? Locate(key.PublicAddress) : origin
+                    )
+                );
                 if (_owner.Geolocation.Version != key.Version)
                     continue;
-                if (!_visible || _section != InspectorSection.Peers || !IsAvailable || _owner.IsClosing)
+                if (
+                    !_visible
+                    || _section != InspectorSection.Peers
+                    || !IsAvailable
+                    || _owner.IsClosing
+                )
                     return;
                 var current = (Peers ?? []).ToHashSet();
                 var changed = false;
@@ -111,14 +132,19 @@ public sealed partial class Inspector
     {
         var aggregate = _target is null;
         var scope = _owner.Selected.Count == 0 ? _owner.Torrents : _owner.Selected;
-        Torrent[] targets = aggregate ? scope.Where(torrent => torrent.PeerCount > 0).ToArray() : [_target!];
+        Torrent[] targets = aggregate
+            ? scope.Where(torrent => torrent.PeerCount > 0).ToArray()
+            : [_target!];
         var ids = targets.Select(torrent => torrent.TorrentId).ToHashSet();
         var present = _owner.Torrents.Select(torrent => torrent.TorrentId).ToHashSet();
         _peerCache.RemoveAll(entry => !present.Contains(entry.TorrentId));
         if (Peers is null && _peerCache.Any(entry => ids.Contains(entry.TorrentId)))
         {
-            Peers = targets.SelectMany(torrent =>
-                _peerCache.Find(entry => entry.TorrentId == torrent.TorrentId).Peers ?? []).ToArray();
+            Peers = targets
+                .SelectMany(torrent =>
+                    _peerCache.Find(entry => entry.TorrentId == torrent.TorrentId).Peers ?? []
+                )
+                .ToArray();
             Refresh();
         }
         if (Peers is { } previous && previous.Any(peer => !ids.Contains(peer.TorrentId)))
@@ -128,7 +154,8 @@ public sealed partial class Inspector
         }
         // Returning to Peers resumes lookups abandoned while it was hidden.
         _ = LocatePeers();
-        var groups = (Peers ?? []).GroupBy(peer => peer.TorrentId)
+        var groups = (Peers ?? [])
+            .GroupBy(peer => peer.TorrentId)
             .ToDictionary(group => group.Key, group => group.ToArray());
         // One torrent at a time, so Inspector demands never overlap.
         foreach (var torrent in targets)
@@ -143,16 +170,25 @@ public sealed partial class Inspector
             }
             try
             {
-                await ReadDetail(torrent, InspectorSection.Peers, context, detail =>
-                {
-                    if (detail.GetProperty("peers").ValueKind == JsonValueKind.Null)
-                        return;
-                    var changed = ApplyPeers(torrent.TorrentId, detail.GetProperty("peers"), groups);
-                    changed |= _readFailure is not null;
-                    _readFailure = null;
-                    if (changed)
-                        Refresh();
-                });
+                await ReadDetail(
+                    torrent,
+                    InspectorSection.Peers,
+                    context,
+                    detail =>
+                    {
+                        if (detail.GetProperty("peers").ValueKind == JsonValueKind.Null)
+                            return;
+                        var changed = ApplyPeers(
+                            torrent.TorrentId,
+                            detail.GetProperty("peers"),
+                            groups
+                        );
+                        changed |= _readFailure is not null;
+                        _readFailure = null;
+                        if (changed)
+                            Refresh();
+                    }
+                );
             }
             catch (CommandException error) when (aggregate && error.Code == "torrent_removed")
             {
@@ -189,7 +225,8 @@ public sealed partial class Inspector
                 }
                 changed |= peer.Update(row.Data);
                 return peer;
-            }).ToArray();
+            })
+            .ToArray();
         groups[torrentId] = received;
         _peerCache.RemoveAll(entry => entry.TorrentId == torrentId);
         _peerCache.Insert(0, (torrentId, received));

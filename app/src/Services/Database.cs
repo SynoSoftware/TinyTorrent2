@@ -25,7 +25,8 @@ internal sealed partial class Database : IAsyncDisposable
         Run(connection =>
         {
             using var command = connection.CreateCommand();
-            command.CommandText = "SELECT page_count*page_size FROM pragma_page_count(),pragma_page_size();";
+            command.CommandText =
+                "SELECT page_count*page_size FROM pragma_page_count(),pragma_page_size();";
             return Convert.ToInt64(command.ExecuteScalar());
         });
 
@@ -78,7 +79,9 @@ internal sealed partial class Database : IAsyncDisposable
                             return Transact(Open(), action, cancellation);
                         }
                         catch (SqliteException error)
-                            when (error.SqliteErrorCode == raw.SQLITE_INTERRUPT && cancellation.IsCancellationRequested)
+                            when (error.SqliteErrorCode == raw.SQLITE_INTERRUPT
+                                && cancellation.IsCancellationRequested
+                            )
                         {
                             throw new OperationCanceledException(null, error, cancellation);
                         }
@@ -228,8 +231,12 @@ internal sealed partial class Database : IAsyncDisposable
             try
             {
                 if (cancellation.CanBeCanceled)
-                    raw.sqlite3_progress_handler(connection.Handle!, 1000,
-                        _ => cancellation.IsCancellationRequested ? 1 : 0, null);
+                    raw.sqlite3_progress_handler(
+                        connection.Handle!,
+                        1000,
+                        _ => cancellation.IsCancellationRequested ? 1 : 0,
+                        null
+                    );
                 result = action(connection);
             }
             finally

@@ -42,10 +42,12 @@ public class SortingTests
                 new[] { 3, 1, 2 },
                 configure: table =>
                 {
-                    table.Schema<SortRow>().SortKey<int>(
-                        table.Columns[1],
-                        _ => throw new InvalidOperationException("Unavailable sort key")
-                    );
+                    table
+                        .Schema<SortRow>()
+                        .SortKey<int>(
+                            table.Columns[1],
+                            _ => throw new InvalidOperationException("Unavailable sort key")
+                        );
                     table.Layout = TestData.Layout(
                         visibility: new Dictionary<string, bool> { ["b"] = false },
                         sortColumnId: "a"
@@ -85,10 +87,15 @@ public class SortingTests
                 sortableColumns: 2,
                 configure: table =>
                 {
-                    table.Schema<SortRow>().SortKey(
-                        table.Columns[0],
-                        row => fails ? throw new InvalidOperationException("Unavailable sort key") : row.Rank
-                    );
+                    table
+                        .Schema<SortRow>()
+                        .SortKey(
+                            table.Columns[0],
+                            row =>
+                                fails
+                                    ? throw new InvalidOperationException("Unavailable sort key")
+                                    : row.Rank
+                        );
                     table.SortInterval = TimeSpan.Zero;
                     table.Sort = new(table.Columns[0]);
                 }
@@ -98,7 +105,9 @@ public class SortingTests
             h.Rows.Remove(removed);
             fails = true;
 
-            Expect.Throws<InvalidOperationException>(() => h.Table.Release(new object[] { removed }));
+            Expect.Throws<InvalidOperationException>(() =>
+                h.Table.Release(new object[] { removed })
+            );
 
             CollectionAssert.AreEqual(new[] { "k0", "k1", "k2" }, h.ViewKeys());
             Assert.IsTrue((bool)Proof.Call(h.Table, "IsHeld", removed)!);

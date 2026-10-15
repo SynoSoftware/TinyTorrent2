@@ -37,14 +37,21 @@ internal sealed class ChoiceDialog : UserControl, IDraft
     private Strings Text { get; }
     public bool IsPending { get; private set; }
     internal bool IsSearching => _request is not null && !IsPending;
-    internal bool HasResults => !IsSearching && !TargetChanged
+    internal bool HasResults =>
+        !IsSearching
+        && !TargetChanged
         && _results.ItemsSource is IReadOnlyList<SubtitleCandidate> { Count: > 0 };
     private bool TargetChanged => _failure is SubtitleException { Reason: SubtitleFailure.Changed };
     public bool CanSubmit => !IsPending && !IsSearching && HasDraft;
     public bool HasDraft => !TargetChanged && _results.SelectedItem is SubtitleCandidate;
-    internal bool CanSearch => !IsSearching && !IsPending && !TargetChanged
-        && _language.SelectedItem is ComboBoxItem && (_block is null || _block.CanForce);
-    internal string SearchHint => _block is null ? Text.Get("subtitles", "search_again_hint") : Text.Protection(_block);
+    internal bool CanSearch =>
+        !IsSearching
+        && !IsPending
+        && !TargetChanged
+        && _language.SelectedItem is ComboBoxItem
+        && (_block is null || _block.CanForce);
+    internal string SearchHint =>
+        _block is null ? Text.Get("subtitles", "search_again_hint") : Text.Protection(_block);
     public event PropertyChangedEventHandler? PropertyChanged;
 
     internal ChoiceDialog(Strings text, Acquisition model, long entryId)
@@ -82,24 +89,32 @@ internal sealed class ChoiceDialog : UserControl, IDraft
     internal void RefreshText()
     {
         var busy = IsSearching || IsPending;
-        var empty = !busy && _failure is null
+        var empty =
+            !busy
+            && _failure is null
             && _results.ItemsSource is IReadOnlyList<SubtitleCandidate> { Count: 0 };
         foreach (var item in _language.Items.OfType<ComboBoxItem>())
             item.Content = Text.LanguageName((string)item.Tag);
         _language.Header = Text.Get("subtitles", "language");
         AutomationProperties.SetName(_language, Text.Get("subtitles", "language"));
         AutomationProperties.SetName(_results, Text.Get("subtitles", "candidates"));
-        _state.Text = IsPending ? Text.Get("subtitles", "downloading_choice")
+        _state.Text =
+            IsPending ? Text.Get("subtitles", "downloading_choice")
             : IsSearching ? Text.Get("subtitles", "searching")
             : empty ? Text.Get("subtitles", "no_candidates")
             : HasResults ? Text.Get("subtitles", "select_candidate")
             : string.Empty;
         _state.Visibility = _state.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
-        _description.Text = !busy && _failure is null && _block is { CanForce: false }
-            ? Text.Protection(_block)
-            : empty ? Text.Get("subtitles", _language.Items.Count > 1 ? "no_candidates_languages" : "no_candidates_hint")
+        _description.Text =
+            !busy && _failure is null && _block is { CanForce: false } ? Text.Protection(_block)
+            : empty
+                ? Text.Get(
+                    "subtitles",
+                    _language.Items.Count > 1 ? "no_candidates_languages" : "no_candidates_hint"
+                )
             : string.Empty;
-        _description.Visibility = _description.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+        _description.Visibility =
+            _description.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         _progress.IsIndeterminate = busy;
         _progress.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
         AutomationProperties.SetName(_progress, _state.Text);
@@ -122,7 +137,10 @@ internal sealed class ChoiceDialog : UserControl, IDraft
             RefreshText();
             return;
         }
-        var command = user && _block?.CanForce == true ? new RetryCommand(DateTimeOffset.UtcNow.UtcTicks) : null;
+        var command =
+            user && _block?.CanForce == true
+                ? new RetryCommand(DateTimeOffset.UtcNow.UtcTicks)
+                : null;
         _command = command;
         Cancel();
         using var request = new CancellationTokenSource();

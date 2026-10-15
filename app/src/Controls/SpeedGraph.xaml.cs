@@ -10,8 +10,8 @@ using Microsoft.UI.Xaml.Media;
 using Syno.TinyTorrent.Services;
 using Syno.TinyTorrent.Views;
 using Windows.Foundation;
-using Windows.UI.Core;
 using Windows.System;
+using Windows.UI.Core;
 
 namespace Syno.TinyTorrent.Controls;
 
@@ -174,12 +174,15 @@ public sealed partial class SpeedGraph : UserControl
         var runs = Runs();
         _averages = runs.SelectMany(run => run).ToArray();
         var top = Ceiling(
-            _averages.Length == 0 ? 0
+            _averages.Length == 0
+                ? 0
                 : _averages.Max(average => Math.Max(average.Download, average.Upload))
         );
         Maximum.Text = _averages.Length == 0 ? string.Empty : Rate(text, top);
         NoHistory.Visibility =
-            Samples is not null && _averages.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+            Samples is not null && _averages.Length == 0
+                ? Visibility.Visible
+                : Visibility.Collapsed;
         _extent = new Extent(Plot.ActualWidth, Plot.ActualHeight, Start, _length, top);
         if (_extent.Width > 0 && _extent.Height > 0)
         {
@@ -199,7 +202,8 @@ public sealed partial class SpeedGraph : UserControl
         var shown = marked ?? _averages.LastOrDefault();
         double? downloadPeak =
             _averages.Length == 0 ? null : _averages.Max(average => average.Download);
-        double? uploadPeak = _averages.Length == 0 ? null : _averages.Max(average => average.Upload);
+        double? uploadPeak =
+            _averages.Length == 0 ? null : _averages.Max(average => average.Upload);
         // The legend names the time of any value that is not the present one.
         var at =
             shown is not null && (marked is not null || _end is not null)
@@ -256,7 +260,10 @@ public sealed partial class SpeedGraph : UserControl
     )
     {
         var runs = new List<List<Average>>();
-        double weight = 0, time = 0, download = 0, upload = 0;
+        double weight = 0,
+            time = 0,
+            download = 0,
+            upload = 0;
         long bucket = -1;
         SpeedSample? previous = null;
         foreach (var sample in samples)
@@ -667,9 +674,15 @@ public sealed partial class SpeedGraph : UserControl
     // Page Down pan half a view, so the keyboard reaches what the pointer does.
     private void OnKey(object sender, KeyRoutedEventArgs args)
     {
-        if (!ReferenceEquals(args.OriginalSource, this)
-            || InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control).HasFlag(CoreVirtualKeyStates.Down)
-            || InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Menu).HasFlag(CoreVirtualKeyStates.Down))
+        if (
+            !ReferenceEquals(args.OriginalSource, this)
+            || InputKeyboardSource
+                .GetKeyStateForCurrentThread(VirtualKey.Control)
+                .HasFlag(CoreVirtualKeyStates.Down)
+            || InputKeyboardSource
+                .GetKeyStateForCurrentThread(VirtualKey.Menu)
+                .HasFlag(CoreVirtualKeyStates.Down)
+        )
         {
             return;
         }

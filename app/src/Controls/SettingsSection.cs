@@ -8,12 +8,17 @@ namespace Syno.TinyTorrent.Controls;
 public sealed partial class SettingsSection : ContentControl
 {
     public static readonly DependencyProperty IsCardProperty = DependencyProperty.RegisterAttached(
-        "IsCard", typeof(bool), typeof(SettingsSection), new PropertyMetadata(false)
+        "IsCard",
+        typeof(bool),
+        typeof(SettingsSection),
+        new PropertyMetadata(false)
     );
 
-    public static bool GetIsCard(DependencyObject element) => (bool)element.GetValue(IsCardProperty);
+    public static bool GetIsCard(DependencyObject element) =>
+        (bool)element.GetValue(IsCardProperty);
 
-    public static void SetIsCard(DependencyObject element, bool value) => element.SetValue(IsCardProperty, value);
+    public static void SetIsCard(DependencyObject element, bool value) =>
+        element.SetValue(IsCardProperty, value);
 
     public bool IsAdvanced { get; set; }
     public static readonly DependencyProperty GlyphProperty = Text(nameof(Glyph));
@@ -21,7 +26,9 @@ public sealed partial class SettingsSection : ContentControl
     public static readonly DependencyProperty DescriptionProperty = Text(nameof(Description));
     public static readonly DependencyProperty SummaryProperty = Text(nameof(Summary));
     public static readonly DependencyProperty IsExpandedProperty = DependencyProperty.Register(
-        nameof(IsExpanded), typeof(bool), typeof(SettingsSection),
+        nameof(IsExpanded),
+        typeof(bool),
+        typeof(SettingsSection),
         new PropertyMetadata(false, (section, _) => ((SettingsSection)section).RefreshSummary())
     );
     public string Glyph
@@ -66,15 +73,19 @@ public sealed partial class SettingsSection : ContentControl
         if (GetTemplateChild("HeaderLayout") is Grid header)
         {
             header.ColumnDefinitions[0].Width = new GridLength(
-                Glyph.Length == 0 ? 0 : (double)Application.Current.Resources["TinyTorrentHeaderIconSize"]
+                Glyph.Length == 0
+                    ? 0
+                    : (double)Application.Current.Resources["TinyTorrentHeaderIconSize"]
             );
             header.ColumnSpacing = Glyph.Length == 0 ? 0 : 24;
         }
         if (GetTemplateChild("SummaryLabel") is TextBlock label)
         {
             label.Text = Description.Length > 0 ? Description : Summary;
-            label.Visibility = label.Text.Length > 0 && (!IsExpanded || Description.Length > 0)
-                ? Visibility.Visible : Visibility.Collapsed;
+            label.Visibility =
+                label.Text.Length > 0 && (!IsExpanded || Description.Length > 0)
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
             ToolTipService.SetToolTip(label, label.Text);
         }
     }
@@ -84,6 +95,9 @@ public sealed partial class SettingsSection : ContentControl
             name,
             typeof(string),
             typeof(SettingsSection),
-            new PropertyMetadata(string.Empty, (section, _) => ((SettingsSection)section).RefreshSummary())
+            new PropertyMetadata(
+                string.Empty,
+                (section, _) => ((SettingsSection)section).RefreshSummary()
+            )
         );
 }

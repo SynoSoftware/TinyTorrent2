@@ -20,13 +20,15 @@ public sealed partial class MainViewModel
 
     private bool HasLimits => _connected && !_loading && !_storageFailed;
     private LimitMode CurrentLimits =>
-        _limitOrigin == LimitOrigin.Schedule ? LimitMode.Schedule : _appliedLimits switch
-        {
-            LimitProfile.None => LimitMode.None,
-            LimitProfile.Speed => LimitMode.Speed,
-            LimitProfile.Alternative => LimitMode.Alternative,
-            _ => throw new InvalidOperationException(),
-        };
+        _limitOrigin == LimitOrigin.Schedule
+            ? LimitMode.Schedule
+            : _appliedLimits switch
+            {
+                LimitProfile.None => LimitMode.None,
+                LimitProfile.Speed => LimitMode.Speed,
+                LimitProfile.Alternative => LimitMode.Alternative,
+                _ => throw new InvalidOperationException(),
+            };
     private bool CanChooseLimits => CanEdit && _limitsChoice is not { Sequence: null };
     private bool HasSchedule => HasLimits && _limitOrigin != LimitOrigin.Manual;
 
@@ -84,12 +86,18 @@ public sealed partial class MainViewModel
                 LimitProfile.Alternative => Text.Get("settings", "alternative"),
                 _ => Text.Get("transfer_limits", "none"),
             };
-    public string LimitsSummary => !HasLimits ? "—"
-        : LimitsHeading + " · " + FormatCaps("settings", "caps_summary")
-            + (CurrentLimits == LimitMode.Schedule ? " · " + LimitsNow : string.Empty);
-    public string ScheduleSummary => !HasLimits ? "—"
+    public string LimitsSummary =>
+        !HasLimits
+            ? "—"
+            : LimitsHeading
+                + " · "
+                + FormatCaps("settings", "caps_summary")
+                + (CurrentLimits == LimitMode.Schedule ? " · " + LimitsNow : string.Empty);
+    public string ScheduleSummary =>
+        !HasLimits ? "—"
         : FixedLimits is { } mode ? Text.Format("settings", "schedule_unused", LimitLabel(mode))
-        : Settings.Schedule.NextChange(DateTime.Now) is { } change ? Text.Format("settings", "schedule_until", change)
+        : Settings.Schedule.NextChange(DateTime.Now) is { } change
+            ? Text.Format("settings", "schedule_until", change)
         : Text.Get("settings", "schedule_all_week");
     public string DownloadCap => Cap(_downloadCap);
     public string UploadCap => Cap(_uploadCap);
@@ -152,13 +160,14 @@ public sealed partial class MainViewModel
     private string LimitLabel(LimitProfile profile) =>
         Text.Get("transfer_limits", "state_" + EngineName(profile));
 
-    private static string EngineName(LimitProfile profile) => profile switch
-    {
-        LimitProfile.None => "none",
-        LimitProfile.Speed => "speed",
-        LimitProfile.Alternative => "alternative",
-        _ => throw new ArgumentOutOfRangeException(nameof(profile)),
-    };
+    private static string EngineName(LimitProfile profile) =>
+        profile switch
+        {
+            LimitProfile.None => "none",
+            LimitProfile.Speed => "speed",
+            LimitProfile.Alternative => "alternative",
+            _ => throw new ArgumentOutOfRangeException(nameof(profile)),
+        };
 
     // The engine's name for a mode; following the schedule is the absence of one.
     private static string? EngineName(LimitMode mode) =>
@@ -177,9 +186,7 @@ public sealed partial class MainViewModel
     internal string FormatCaps(string group, string key) =>
         Text.Format(group, key, Cap(_downloadCap), Cap(_uploadCap));
 
-    private string Cap(int value) =>
-        !HasLimits ? "—"
-        : Text.SpeedLimit(value);
+    private string Cap(int value) => !HasLimits ? "—" : Text.SpeedLimit(value);
 
     private void ApplyLimits(JsonElement limits, long sequence)
     {
@@ -249,9 +256,13 @@ public sealed partial class MainViewModel
             // A fixed choice holds until the weekly schedule is chosen again,
             // so it turns the schedule off instead of overriding it.
             var follows = mode == LimitMode.Schedule;
-            var sequence = await Settings.Save(new { schedule_enabled = follows, limit_mode = EngineName(mode) });
-            _limitsChoice = _connected && _sessionId == session && _limitsSequence < sequence
-                ? (mode, sequence) : null;
+            var sequence = await Settings.Save(
+                new { schedule_enabled = follows, limit_mode = EngineName(mode) }
+            );
+            _limitsChoice =
+                _connected && _sessionId == session && _limitsSequence < sequence
+                    ? (mode, sequence)
+                    : null;
         }
         catch (Exception error)
         {

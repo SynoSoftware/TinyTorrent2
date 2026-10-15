@@ -115,7 +115,8 @@ public sealed partial class PiecesMap : UserControl
     {
         if (_data is null && data is null && _language == text.Language)
             return;
-        var changed = !ReferenceEquals(_data, data)
+        var changed =
+            !ReferenceEquals(_data, data)
             && (_data is null || data is null || !_data.SameMap(data));
         var languageChanged = _language != text.Language;
         if (data is null || _data?.Count != data.Count)
@@ -268,7 +269,11 @@ public sealed partial class PiecesMap : UserControl
                 Bitmap.Opacity = 0;
             }
             var bitmap = Bitmap.Source as WriteableBitmap;
-            if (bitmap is null || bitmap.PixelWidth != layout.PixelWidth || bitmap.PixelHeight != layout.PixelHeight)
+            if (
+                bitmap is null
+                || bitmap.PixelWidth != layout.PixelWidth
+                || bitmap.PixelHeight != layout.PixelHeight
+            )
                 bitmap = new WriteableBitmap(layout.PixelWidth, layout.PixelHeight);
             using (var stream = bitmap.PixelBuffer.AsStream())
                 stream.Write(layout.Pixels);

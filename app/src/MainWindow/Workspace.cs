@@ -19,6 +19,7 @@ public sealed partial class MainWindow
     private readonly Motion _motion = new();
     private readonly Motion _pages = new();
     private readonly Motion _workspaces = new();
+    private readonly Motion _filters = new();
     private WindowPage _page;
     private bool _refreshingFilters;
     private bool _selecting;
@@ -29,14 +30,7 @@ public sealed partial class MainWindow
         var element = FocusManager.GetFocusedElement(Root.XamlRoot) as DependencyObject;
         while (element is not null)
         {
-            if (
-                element
-                is TextBox
-                    or RichEditBox
-                    or PasswordBox
-                    or ComboBox
-                    or AutoSuggestBox
-            )
+            if (element is TextBox or RichEditBox or PasswordBox or ComboBox or AutoSuggestBox)
                 return true;
             element = VisualTreeHelper.GetParent(element);
         }
@@ -62,7 +56,12 @@ public sealed partial class MainWindow
             Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
             () =>
             {
-                if (Model.Navigation.Current != destination || Model.Navigation.Settings != settings || HasDialog || Model.IsClosing)
+                if (
+                    Model.Navigation.Current != destination
+                    || Model.Navigation.Settings != settings
+                    || HasDialog
+                    || Model.IsClosing
+                )
                     return;
                 if (destination == WindowPage.Settings && previous == WindowPage.Connection)
                     _settingsPage?.FocusConnection();
@@ -117,7 +116,10 @@ public sealed partial class MainWindow
             return false;
         if (Model.Page == WindowPage.Settings)
         {
-            if (Model.Navigation.Current == WindowPage.Connection && !await Model.Settings.Connection.Depart())
+            if (
+                Model.Navigation.Current == WindowPage.Connection
+                && !await Model.Settings.Connection.Depart()
+            )
                 return false;
             if (_settingsPage is { } settings)
                 _ = settings.SaveFeatures();
@@ -162,6 +164,7 @@ public sealed partial class MainWindow
         _motion.Stop();
         _pages.Stop();
         _workspaces.Stop();
+        _filters.Stop();
     }
 
     private SettingsPage GetSettingsPage()
@@ -181,7 +184,8 @@ public sealed partial class MainWindow
                 await ConfirmDownload(Model.Library, Model.PrepareAutomaticDownload);
             _settingsPage.UpdateRequested += async (_, dataset) =>
                 await ConfirmDownload(dataset, () => Model.DownloadData(dataset));
-            _settingsPage.DeleteRequested += async (_, dataset) => await ConfirmDataDeletion(dataset);
+            _settingsPage.DeleteRequested += async (_, dataset) =>
+                await ConfirmDataDeletion(dataset);
             _settingsPage.ConnectionRequested += async (_, _) => await ShowConnection();
             _settingsPage.LayoutChanged += (_, _) => UpdateChrome();
         }
@@ -221,7 +225,8 @@ public sealed partial class MainWindow
                 {
                     _connectionPage = new ConnectionPage(Model.Settings.Connection);
                     _connectionPage.ReturnRequested += async (_, _) => await ReturnToSettings();
-                    _connectionPage.ParentRequested += async (_, _) => await ShowSettings(new(SettingsCategory.Limits));
+                    _connectionPage.ParentRequested += async (_, _) =>
+                        await ShowSettings(new(SettingsCategory.Limits));
                 }
                 settings.ShowConnection(_connectionPage, animate);
             }
@@ -263,9 +268,7 @@ public sealed partial class MainWindow
             var retained = Model.Selected.Where(visible.Contains).ToArray();
             Torrents.Selection = new Syno.TableView.Selection(
                 retained,
-                Model.Current is { } current && visible.Contains(current)
-                    ? current
-                    : null
+                Model.Current is { } current && visible.Contains(current) ? current : null
             );
             return accepted;
         }
@@ -453,9 +456,11 @@ public sealed partial class MainWindow
         var pane = InspectorContent.Content as InspectorPane;
         var expanded = Model.HasInspector && !Model.IsInspectorCompact;
         var maximized = expanded && pane?.Surface.IsMaximized == true;
-        var opening = InspectorSurface.Visibility != Visibility.Visible
-            || pane?.Surface.IsCompact == true;
-        InspectorSurface.Visibility = Model.HasInspector ? Visibility.Visible : Visibility.Collapsed;
+        var opening =
+            InspectorSurface.Visibility != Visibility.Visible || pane?.Surface.IsCompact == true;
+        InspectorSurface.Visibility = Model.HasInspector
+            ? Visibility.Visible
+            : Visibility.Collapsed;
         Split.Visibility = expanded && !maximized ? Visibility.Visible : Visibility.Collapsed;
         // A maximized inspector spans every workspace row on both pages. The
         // workspace content collapses, because it would show through the pane.

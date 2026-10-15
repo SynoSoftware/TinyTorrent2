@@ -12,7 +12,8 @@ namespace Syno;
 public static class Flags
 {
     /// <summary>The vendored font, for a <c>TextBlock</c> that shows one <see cref="Glyph"/>.</summary>
-    public static FontFamily Font { get; } = new("ms-appx:///Lucide/Fonts/twemoji.ttf#Twemoji Mozilla");
+    public static FontFamily Font { get; } =
+        new("ms-appx:///Lucide/Fonts/twemoji.ttf#Twemoji Mozilla");
 
     /// <summary>
     /// The regional indicator pair that <see cref="Font"/> joins into the flag of the ISO 3166-1

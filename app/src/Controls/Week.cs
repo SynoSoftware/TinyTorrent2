@@ -205,7 +205,8 @@ public sealed partial class Week : UserControl
         var index = 0;
         for (var hour = 0; hour <= 24; hour += step)
         {
-            var label = rebuild ? Text(hour.ToString("00"), "WeekSecondaryStyle")
+            var label = rebuild
+                ? Text(hour.ToString("00"), "WeekSecondaryStyle")
                 : (TextBlock)Backdrop.Children[index];
             index++;
             label.Width = 28 * _settings.TextScaleFactor;
@@ -229,23 +230,27 @@ public sealed partial class Week : UserControl
             if (rebuild)
                 label.Measure(new Size(label.Width, double.PositiveInfinity));
             Place(label, 0, Y(day) + (RowHeight - label.DesiredSize.Height) / 2);
-            var track = rebuild ? new Border
+            var track = rebuild
+                ? new Border
                 {
                     Style = (Style)Resources["WeekTrackStyle"],
                     BorderThickness = new(1),
-                } : (Border)Backdrop.Children[index];
+                }
+                : (Border)Backdrop.Children[index];
             index++;
             track.Width = TrackWidth;
             track.Height = RowHeight - 4;
             Place(track, Gutter, Y(day));
             for (var hour = step; hour < 24; hour += step)
             {
-                var line = rebuild ? new Border
+                var line = rebuild
+                    ? new Border
                     {
                         Width = 1,
                         Height = RowHeight - 4,
                         Style = (Style)Resources["WeekLineStyle"],
-                    } : (Border)Backdrop.Children[index];
+                    }
+                    : (Border)Backdrop.Children[index];
                 index++;
                 Place(line, X(hour * 60), Y(day));
             }
@@ -255,7 +260,8 @@ public sealed partial class Week : UserControl
     private void PlaceNow()
     {
         var now = DateTime.Now;
-        NowMarker.Visibility = ActualWidth > Gutter + 24 ? Visibility.Visible : Visibility.Collapsed;
+        NowMarker.Visibility =
+            ActualWidth > Gutter + 24 ? Visibility.Visible : Visibility.Collapsed;
         NowLine.Height = RowHeight - 4;
         var x = X(now.Hour * 60 + now.Minute);
         var y = Y(Schedule.Weekday(now));
@@ -516,10 +522,7 @@ public sealed partial class Week : UserControl
                 Invalidate();
             args.Handled = true;
         }
-        int? day =
-            point.X >= Gutter && point.Y >= Ruler && point.Y < Height
-                ? Day(point.Y)
-                : null;
+        int? day = point.X >= Gutter && point.Y >= Ruler && point.Y < Height ? Day(point.Y) : null;
         if (_hoverDay != day)
         {
             _hoverDay = day;
@@ -686,16 +689,16 @@ public sealed partial class Week : UserControl
             return;
         var menu = MenuItems.Flyout(
             () =>
-            [
-                new MenuCommand(
-                    _model.Text.Get("settings", "delete"),
-                    Lucide.Trash2,
-                    new RelayCommand(() => _model.Delete(period), () => true)
-                )
-                {
-                    Name = period.DeleteName,
-                },
-            ],
+                [
+                    new MenuCommand(
+                        _model.Text.Get("settings", "delete"),
+                        Lucide.Trash2,
+                        new RelayCommand(() => _model.Delete(period), () => true)
+                    )
+                    {
+                        Name = period.DeleteName,
+                    },
+                ],
             () => _model.Text
         );
         HoverTip.IsOpen = false;

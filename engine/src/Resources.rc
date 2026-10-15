@@ -9,6 +9,10 @@
 IDR_ENGLISH_TEXT RCDATA "Resources/en.json"
 IDI_TINYTORRENT ICON "../../resources/TinyTorrent.ico"
 IDR_SPANISH_TEXT RCDATA "Resources/es.json"
+IDR_DUTCH_TEXT RCDATA "Resources/nl.json"
+IDR_CHINESE_TEXT RCDATA "Resources/zh.json"
+IDR_PORTUGUESE_TEXT RCDATA "Resources/pt.json"
+IDR_FRENCH_TEXT RCDATA "Resources/fr.json"
 STRINGTABLE
 BEGIN
     IDS_PRODUCT_NAME PRODUCT_NAME

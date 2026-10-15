@@ -15,9 +15,12 @@ public sealed partial class MainViewModel
     public bool HasIncoming { get; private set; }
     private string _externalIpv4 = string.Empty;
     private string _externalIpv6 = string.Empty;
-    internal string PublicAddress => _connected
-        ? _externalIpv4.Length > 0 ? _externalIpv4 : _externalIpv6
-        : string.Empty;
+    internal string PublicAddress =>
+        _connected
+            ? _externalIpv4.Length > 0
+                ? _externalIpv4
+                : _externalIpv6
+            : string.Empty;
     public bool ShowsExternalIp => Settings.ShowExternalIp.IsOn;
     public string ExternalIp =>
         !_connected || _externalIpv4.Length + _externalIpv6.Length == 0
@@ -47,10 +50,12 @@ public sealed partial class MainViewModel
         MissingAdapter.Length > 0 ? Syno.Lucide.Unplug
         : Settings.Proxy.IsInUse ? Syno.Lucide.Route
         : Syno.Lucide.Network;
+
     // A proxy route says nothing about the port, so only a direct connection
     // reports the port as open or closed.
     public bool IsIncomingProxied => MissingAdapter.Length == 0 && Settings.Proxy.IsInUse;
-    public bool IsIncomingOpen => MissingAdapter.Length == 0 && !Settings.Proxy.IsInUse && HasIncoming;
+    public bool IsIncomingOpen =>
+        MissingAdapter.Length == 0 && !Settings.Proxy.IsInUse && HasIncoming;
     public bool IsIncomingClosed => !IsIncomingProxied && !IsIncomingOpen;
     public string SelectionText => Text.Format("window", "selected", _selected.Length);
     public bool HasSelection => _selected.Length > 0;
@@ -260,7 +265,9 @@ public sealed partial class MainViewModel
             await AddDraft.PrepareAll();
             return;
         }
-        var showDialog = AddDraft.Sources.Any(source => Settings.AddPreference(source.Source).ConfirmedOn);
+        var showDialog = AddDraft.Sources.Any(source =>
+            Settings.AddPreference(source.Source).ConfirmedOn
+        );
         var merge = false;
         await using (var addition = AddDraft.BeginAddition())
         {
@@ -488,7 +495,9 @@ public sealed partial class MainViewModel
         try
         {
             var detail = await _client.Send(
-                "torrent", new { torrent_id = _selected[0].TorrentId, view = "general" });
+                "torrent",
+                new { torrent_id = _selected[0].TorrentId, view = "general" }
+            );
             await Copy(
                 hashes
                     ? string.Join(
@@ -548,7 +557,9 @@ public sealed partial class MainViewModel
 
     private void RefreshInspector()
     {
-        Inspector.SetVisible(!IsMinimized && HasInspector && !IsInspectorCompact && Page == WindowPage.Torrents);
+        Inspector.SetVisible(
+            !IsMinimized && HasInspector && !IsInspectorCompact && Page == WindowPage.Torrents
+        );
         Library.WatchInspector(HasInspector && !IsInspectorCompact && Page == WindowPage.Library);
     }
 }

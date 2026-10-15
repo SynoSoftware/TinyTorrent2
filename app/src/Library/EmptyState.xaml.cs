@@ -50,8 +50,8 @@ public sealed partial class EmptyState : UserControl
         ToolTipService.SetToolTip(ClearFilters, _model.Text.Get("window", "clear_filters_tip"));
         if (IsLoaded)
             ActionButton.Align(
-                Actions.Children
-                    .OfType<ActionButton>()
+                Actions
+                    .Children.OfType<ActionButton>()
                     .Where(button => button.Visibility == Visibility.Visible)
             );
     }

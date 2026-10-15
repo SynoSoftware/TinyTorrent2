@@ -10,7 +10,11 @@ internal sealed partial class RequestPolicy
     private readonly SemaphoreSlim _admission = new(1);
     private readonly Dictionary<(string Provider, string Identity), long> _starts = [];
 
-    internal async Task Reserve(OutboundRequest request, FreshRequest? fresh, CancellationToken cancellation)
+    internal async Task Reserve(
+        OutboundRequest request,
+        FreshRequest? fresh,
+        CancellationToken cancellation
+    )
     {
         var access = request.Access;
         var pacing = request.Allowance ?? access;
@@ -26,62 +30,98 @@ internal sealed partial class RequestPolicy
                     : TimeSpan.Zero;
                 if (delay <= TimeSpan.Zero)
                 {
-                    delay = await database.Run(connection =>
-                    {
-                        var now = DateTimeOffset.UtcNow;
-                        var holds = Holds(connection, access);
-                        if (request.Authentication is { } authentication && authentication != access)
-                            holds.AddRange(Holds(connection, authentication));
-                        if (request.Allowance is { } allowance && allowance != access)
-                            holds.AddRange(Holds(connection, allowance));
-                        foreach (var hold in holds.Where(hold => hold.Block.Kind != RequestBlockKind.Backoff))
-                            if ((hold.Block.RetryAt is null || hold.Block.RetryAt > now)
-                                && !(hold.Block.Kind == RequestBlockKind.Attention
-                                    && fresh?.Command.Recheck == true
-                                    && fresh.Admit(hold.Access, hold.Checked)))
-                                throw new RequestBlockedException(hold.Block);
-                        using var command = AccessCommand(connection, pacing);
-                        command.CommandText = """
-                            DELETE FROM request_usage WHERE started<=$oldest;
-                            SELECT started FROM request_usage WHERE provider_id=$provider AND identity=$identity
-                                AND started>$since ORDER BY started;
-                            """;
-                        command.Parameters.AddWithValue("$oldest", now.AddDays(-1).UtcTicks);
-                        var retention = request.Windows.Count == 0
-                            ? TimeSpan.FromSeconds(1) : request.Windows.Max(window => window.Duration);
-                        command.Parameters.AddWithValue("$since", (now - retention).UtcTicks);
-                        var usage = new List<DateTimeOffset>();
-                        using (var reader = command.ExecuteReader())
-                            while (reader.Read())
-                                usage.Add(new(reader.GetInt64(0), TimeSpan.Zero));
-                        DateTimeOffset? due = null;
-                        foreach (var window in request.Windows)
-                        {
-                            var recent = usage.Where(time => time > now - window.Duration).ToArray();
-                            if (recent.Length >= window.Maximum)
+                    delay = await database
+                        .Run(
+                            connection =>
                             {
-                                var next = recent[recent.Length - window.Maximum] + window.Duration;
-                                if (due is null || next > due)
-                                    due = next;
-                            }
-                        }
-                        if (due is { } deadline)
-                            throw new RequestBlockedException(new(RequestBlockKind.Allowance, deadline));
-                        // Saved spacing also prevents reopening from admitting an immediate second start.
-                        if (usage.LastOrDefault() is var last && last > now.AddSeconds(-1))
-                            return last.AddSeconds(1) - now;
-                        foreach (var hold in holds.Where(hold => hold.Block.Kind == RequestBlockKind.Backoff))
-                            if (hold.Block.RetryAt > now
-                                && fresh?.Admit(hold.Access, hold.Checked) != true)
-                                throw new RequestBlockedException(hold.Block);
-                        command.CommandText = """
-                            DELETE FROM request_usage WHERE provider_id=$provider AND identity=$identity AND started<=$since;
-                            INSERT INTO request_usage(provider_id,identity,started) VALUES($provider,$identity,$now);
-                            """;
-                        command.Parameters.AddWithValue("$now", now.UtcTicks);
-                        command.ExecuteNonQuery();
-                        return TimeSpan.Zero;
-                    }, cancellation).ConfigureAwait(false);
+                                var now = DateTimeOffset.UtcNow;
+                                var holds = Holds(connection, access);
+                                if (
+                                    request.Authentication is { } authentication
+                                    && authentication != access
+                                )
+                                    holds.AddRange(Holds(connection, authentication));
+                                if (request.Allowance is { } allowance && allowance != access)
+                                    holds.AddRange(Holds(connection, allowance));
+                                foreach (
+                                    var hold in holds.Where(hold =>
+                                        hold.Block.Kind != RequestBlockKind.Backoff
+                                    )
+                                )
+                                    if (
+                                        (hold.Block.RetryAt is null || hold.Block.RetryAt > now)
+                                        && !(
+                                            hold.Block.Kind == RequestBlockKind.Attention
+                                            && fresh?.Command.Recheck == true
+                                            && fresh.Admit(hold.Access, hold.Checked)
+                                        )
+                                    )
+                                        throw new RequestBlockedException(hold.Block);
+                                using var command = AccessCommand(connection, pacing);
+                                command.CommandText = """
+                                    DELETE FROM request_usage WHERE started<=$oldest;
+                                    SELECT started FROM request_usage WHERE provider_id=$provider AND identity=$identity
+                                        AND started>$since ORDER BY started;
+                                    """;
+                                command.Parameters.AddWithValue(
+                                    "$oldest",
+                                    now.AddDays(-1).UtcTicks
+                                );
+                                var retention =
+                                    request.Windows.Count == 0
+                                        ? TimeSpan.FromSeconds(1)
+                                        : request.Windows.Max(window => window.Duration);
+                                command.Parameters.AddWithValue(
+                                    "$since",
+                                    (now - retention).UtcTicks
+                                );
+                                var usage = new List<DateTimeOffset>();
+                                using (var reader = command.ExecuteReader())
+                                    while (reader.Read())
+                                        usage.Add(new(reader.GetInt64(0), TimeSpan.Zero));
+                                DateTimeOffset? due = null;
+                                foreach (var window in request.Windows)
+                                {
+                                    var recent = usage
+                                        .Where(time => time > now - window.Duration)
+                                        .ToArray();
+                                    if (recent.Length >= window.Maximum)
+                                    {
+                                        var next =
+                                            recent[recent.Length - window.Maximum]
+                                            + window.Duration;
+                                        if (due is null || next > due)
+                                            due = next;
+                                    }
+                                }
+                                if (due is { } deadline)
+                                    throw new RequestBlockedException(
+                                        new(RequestBlockKind.Allowance, deadline)
+                                    );
+                                // Saved spacing also prevents reopening from admitting an immediate second start.
+                                if (usage.LastOrDefault() is var last && last > now.AddSeconds(-1))
+                                    return last.AddSeconds(1) - now;
+                                foreach (
+                                    var hold in holds.Where(hold =>
+                                        hold.Block.Kind == RequestBlockKind.Backoff
+                                    )
+                                )
+                                    if (
+                                        hold.Block.RetryAt > now
+                                        && fresh?.Admit(hold.Access, hold.Checked) != true
+                                    )
+                                        throw new RequestBlockedException(hold.Block);
+                                command.CommandText = """
+                                    DELETE FROM request_usage WHERE provider_id=$provider AND identity=$identity AND started<=$since;
+                                    INSERT INTO request_usage(provider_id,identity,started) VALUES($provider,$identity,$now);
+                                    """;
+                                command.Parameters.AddWithValue("$now", now.UtcTicks);
+                                command.ExecuteNonQuery();
+                                return TimeSpan.Zero;
+                            },
+                            cancellation
+                        )
+                        .ConfigureAwait(false);
                     if (delay <= TimeSpan.Zero)
                     {
                         _starts[scope] = Stopwatch.GetTimestamp();
@@ -100,23 +140,25 @@ internal sealed partial class RequestPolicy
     internal Task<RequestBlock?> Read(ProviderAccess access, CancellationToken cancellation) =>
         Read([access], cancellation);
 
-    internal Task<RequestBlock?> Read(IReadOnlyList<ProviderAccess> scopes, CancellationToken cancellation) =>
-        database.Run(connection => Read(connection, scopes), cancellation);
+    internal Task<RequestBlock?> Read(
+        IReadOnlyList<ProviderAccess> scopes,
+        CancellationToken cancellation
+    ) => database.Run(connection => Read(connection, scopes), cancellation);
 
     internal RequestBlock? Read(SqliteConnection connection, IReadOnlyList<ProviderAccess> scopes)
     {
         var now = DateTimeOffset.UtcNow;
         RequestBlock? backoff = null;
         foreach (var scope in scopes)
-            foreach (var hold in Holds(connection, scope))
-            {
-                var block = hold.Block;
-                if (block.RetryAt <= now)
-                    continue;
-                if (!block.CanForce)
-                    return block;
-                backoff ??= block;
-            }
+        foreach (var hold in Holds(connection, scope))
+        {
+            var block = hold.Block;
+            if (block.RetryAt <= now)
+                continue;
+            if (!block.CanForce)
+                return block;
+            backoff ??= block;
+        }
         return backoff;
     }
 
@@ -130,15 +172,21 @@ internal sealed partial class RequestPolicy
                 SELECT failures FROM request_holds WHERE provider_id=$provider AND identity=$identity
                     AND operation=$operation AND reason=$reason;
                 """;
-            var failures = block.Kind == RequestBlockKind.Backoff
-                ? Math.Min(16, Convert.ToInt32(command.ExecuteScalar()) + 1) : 0;
+            var failures =
+                block.Kind == RequestBlockKind.Backoff
+                    ? Math.Min(16, Convert.ToInt32(command.ExecuteScalar()) + 1)
+                    : 0;
             // A daily quota is the longest wait a provider has a reason to ask
             // for, so a later time is read as a damaged or hostile header.
             var asked = block.RetryAt > now + MaximumWait ? now + MaximumWait : block.RetryAt;
             DateTimeOffset? until = block.Kind switch
             {
-                RequestBlockKind.Backoff => now.AddSeconds(Math.Min(3600,
-                    30 * Math.Pow(2, failures - 1) * (1 + Random.Shared.NextDouble() * 0.1))),
+                RequestBlockKind.Backoff => now.AddSeconds(
+                    Math.Min(
+                        3600,
+                        30 * Math.Pow(2, failures - 1) * (1 + Random.Shared.NextDouble() * 0.1)
+                    )
+                ),
                 RequestBlockKind.RemoteWait => asked > now ? asked : now.AddHours(1),
                 RequestBlockKind.Attention => null,
                 _ => throw new ArgumentOutOfRangeException(nameof(block)),
@@ -160,10 +208,14 @@ internal sealed partial class RequestPolicy
             command.Parameters.AddWithValue("$checked", now.UtcTicks);
             command.Parameters.AddWithValue("$remote", (int)RequestBlockKind.RemoteWait);
             var saved = command.ExecuteScalar();
-            return new RequestBlock(block.Kind, saved is long ticks ? new(ticks, TimeSpan.Zero) : null);
+            return new RequestBlock(
+                block.Kind,
+                saved is long ticks ? new(ticks, TimeSpan.Zero) : null
+            );
         });
 
-    internal Task Succeed(ProviderAccess access) => database.Run(connection => Succeed(connection, access));
+    internal Task Succeed(ProviderAccess access) =>
+        database.Run(connection => Succeed(connection, access));
 
     internal int Succeed(SqliteConnection connection, ProviderAccess access)
     {
@@ -190,8 +242,19 @@ internal sealed partial class RequestPolicy
         var holds = new List<AccessHold>();
         using var reader = command.ExecuteReader();
         while (reader.Read())
-            holds.Add(new(new((RequestBlockKind)reader.GetInt32(0), reader.IsDBNull(1)
-                ? null : new(reader.GetInt64(1), TimeSpan.Zero)), reader.GetInt64(2), access with { Operation = reader.GetString(3) }));
+            holds.Add(
+                new(
+                    new(
+                        (RequestBlockKind)reader.GetInt32(0),
+                        reader.IsDBNull(1) ? null : new(reader.GetInt64(1), TimeSpan.Zero)
+                    ),
+                    reader.GetInt64(2),
+                    access with
+                    {
+                        Operation = reader.GetString(3),
+                    }
+                )
+            );
         return holds;
     }
 
@@ -245,8 +308,11 @@ internal sealed record FreshRequest(RetryCommand Command, RequestKey Key)
     /// tries once past a refusal or a backoff that an earlier request left.
     /// </summary>
     internal static FreshRequest Once(ProviderAccess access) =>
-        new(new RetryCommand(DateTimeOffset.UtcNow.UtcTicks) { Recheck = true },
-            RequestKey.Create(access.ProviderId, access.Operation, []));
+        new(
+            new RetryCommand(DateTimeOffset.UtcNow.UtcTicks) { Recheck = true },
+            RequestKey.Create(access.ProviderId, access.Operation, [])
+        );
 
-    internal bool Admit(ProviderAccess access, long observed) => Command.Admit(access, Key.QuestionId, observed);
+    internal bool Admit(ProviderAccess access, long observed) =>
+        Command.Admit(access, Key.QuestionId, observed);
 }

@@ -49,8 +49,12 @@ public sealed partial class MainWindow
                         {
                             dialog.Title = Model.Text.Get(section, "download_title");
                             dialog.Content = DataConfirmation(
-                                [Model.Text.Get(section, "download_body"), Model.Text.Get(section, "download_local")],
-                                [Model.Text.Get(section, "preparation_time")]);
+                                [
+                                    Model.Text.Get(section, "download_body"),
+                                    Model.Text.Get(section, "download_local"),
+                                ],
+                                [Model.Text.Get(section, "preparation_time")]
+                            );
                             dialog.PrimaryButtonText = Model.Text.Get(section, "download");
                             dialog.PrimaryToolTip = Model.Text.Get(section, "download_tip");
                             return;
@@ -65,7 +69,8 @@ public sealed partial class MainWindow
                             : Model.Text.Format(section, "update_age", days);
                         dialog.Content = DataConfirmation(
                             [body, Model.Text.Get(section, "update_frequency")],
-                            [Model.Text.Get(section, "preparation_time")]);
+                            [Model.Text.Get(section, "preparation_time")]
+                        );
                         dialog.PrimaryButtonText = Model.Text.Get(section, "update");
                         dialog.PrimaryToolTip = Model.Text.Get(section, "update_tip");
                     }
@@ -85,7 +90,11 @@ public sealed partial class MainWindow
             return;
         await Interact(async interaction =>
         {
-            var dialog = new Controls.Dialog { Glyph = Lucide.Database, PrimaryGlyph = Lucide.Trash2 };
+            var dialog = new Controls.Dialog
+            {
+                Glyph = Lucide.Database,
+                PrimaryGlyph = Lucide.Trash2,
+            };
             var choice = await ShowDialog(
                 interaction,
                 dialog,
@@ -94,10 +103,19 @@ public sealed partial class MainWindow
                     var section = dataset.Section;
                     dialog.Title = Model.Text.Get(section, "delete_title");
                     dialog.Content = DataConfirmation(
-                        [Model.Text.Format(section, "delete_body", Model.Text.Bytes(data.Length)),
-                            Model.Text.Get(section, "delete_kept")],
-                        [Model.Text.Get(section, "restore_time"),
-                            Model.Text.Get(section, "preparation_time")]);
+                        [
+                            Model.Text.Format(
+                                section,
+                                "delete_body",
+                                Model.Text.Bytes(data.Length)
+                            ),
+                            Model.Text.Get(section, "delete_kept"),
+                        ],
+                        [
+                            Model.Text.Get(section, "restore_time"),
+                            Model.Text.Get(section, "preparation_time"),
+                        ]
+                    );
                     dialog.PrimaryButtonText = Model.Text.Get("file_action", "delete");
                     dialog.PrimaryToolTip = Model.Text.Get(section, "delete_tip");
                 }
@@ -118,7 +136,9 @@ public sealed partial class MainWindow
             Style = (Style)Root.Resources["DataCautionIconStyle"],
         };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetAccessibilityView(
-            icon, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+            icon,
+            Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw
+        );
         var message = Lines(caution);
         Grid.SetColumn(message, 1);
         return new StackPanel

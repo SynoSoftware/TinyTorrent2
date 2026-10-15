@@ -93,7 +93,11 @@ public sealed partial class Column : DependencyObject
     /// no separate switch: a column given a sort key is sortable and one that was not is not, so
     /// the two cannot disagree.
     /// </summary>
-    internal Func<IEnumerable<object>, SortDirection, IOrderedEnumerable<object>>? Sort { get; set; }
+    internal Func<
+        IEnumerable<object>,
+        SortDirection,
+        IOrderedEnumerable<object>
+    >? Sort { get; set; }
 
     internal bool CanSort => Sort is not null;
 }

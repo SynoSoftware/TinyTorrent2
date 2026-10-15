@@ -11,10 +11,7 @@ internal sealed class Settings : UserControl
 {
     private Acquisition? _model;
     private readonly Func<Task> _retry;
-    private readonly ComboBox _extras = new()
-    {
-        Width = 260,
-    };
+    private readonly ComboBox _extras = new() { Width = 260 };
     private readonly Batch _batch;
     private readonly ActionButton _find = new();
     private readonly ActionButton _scan = new() { Glyph = Lucide.FolderSearch };
@@ -35,7 +32,10 @@ internal sealed class Settings : UserControl
         Style = (Style)Application.Current.Resources["TinyTorrentSubtleButtonStyle"],
     };
     private readonly ComboBox _supplier = new() { Width = 260 };
-    private readonly AutoSuggestBox _language = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
+    private readonly AutoSuggestBox _language = new()
+    {
+        HorizontalAlignment = HorizontalAlignment.Stretch,
+    };
     private readonly RadioButtons _languageMode = new() { MaxColumns = 2 };
     private readonly RadioButton _languageDefault = new();
     private readonly RadioButton _languageCustom = new();
@@ -119,7 +119,10 @@ internal sealed class Settings : UserControl
         AutomationProperties.SetAutomationId(_information, "SubtitleSupplierInformation");
         AutomationProperties.SetAutomationId(_supplier, "SubtitleSupplier");
         AutomationProperties.SetAutomationId(_language, "SubtitleLanguage");
-        AutomationProperties.SetLiveSetting(_selected, Microsoft.UI.Xaml.Automation.Peers.AutomationLiveSetting.Polite);
+        AutomationProperties.SetLiveSetting(
+            _selected,
+            Microsoft.UI.Xaml.Automation.Peers.AutomationLiveSetting.Polite
+        );
         _automatic = new Automatic(text, report);
         for (var count = 0; count <= Acquisition.MaximumExtras; count++)
             _extras.Items.Add(new ComboBoxItem { Tag = count });
@@ -137,7 +140,9 @@ internal sealed class Settings : UserControl
             ),
         };
         var status = new Grid { ColumnSpacing = 8, VerticalAlignment = VerticalAlignment.Center };
-        status.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        status.ColumnDefinitions.Add(
+            new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }
+        );
         status.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         Grid.SetColumn(_progress, 1);
         status.Children.Add(_status);
@@ -148,12 +153,7 @@ internal sealed class Settings : UserControl
         _languageChoices = new StackPanel
         {
             Spacing = 8,
-            Children =
-            {
-                _language,
-                _languages,
-                _selected,
-            },
+            Children = { _language, _languages, _selected },
         };
         _languageRow.Content = _selection;
         _wanted = new SettingsExpander
@@ -162,10 +162,17 @@ internal sealed class Settings : UserControl
             HorizontalContentAlignment = HorizontalAlignment.Stretch,
             Header = _languageRow,
             Padding = new Thickness(0, 0, 0, 16),
-            Content = new StackPanel { Spacing = 12, Children = { _languageMode, _languageChoices } },
+            Content = new StackPanel
+            {
+                Spacing = 12,
+                Children = { _languageMode, _languageChoices },
+            },
         };
-        _wanted.Resources["ExpanderHeaderBackground"] = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
-        _wanted.Resources["ExpanderContentBackground"] = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
+        _wanted.Resources["ExpanderHeaderBackground"] = new Microsoft.UI.Xaml.Media.SolidColorBrush(
+            Microsoft.UI.Colors.Transparent
+        );
+        _wanted.Resources["ExpanderContentBackground"] =
+            new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
         _wanted.Resources["ExpanderHeaderBorderThickness"] = new Thickness(0);
         _wanted.Resources["ExpanderContentDownBorderThickness"] = new Thickness(0);
         _wanted.Resources["ExpanderContentUpBorderThickness"] = new Thickness(0);
@@ -184,7 +191,11 @@ internal sealed class Settings : UserControl
         _batch.ShowSettings(_find);
         _scanStatus.Check.Visibility = Visibility.Collapsed;
         _scanStatus.MinHeight = 20;
-        _scanRow = new SettingsRow { Content = Pair(_scanStatus, _scan), BorderThickness = new Thickness(0) };
+        _scanRow = new SettingsRow
+        {
+            Content = Pair(_scanStatus, _scan),
+            BorderThickness = new Thickness(0),
+        };
         _existing = new SettingsSection
         {
             Style = (Style)Application.Current.Resources["TinyTorrentSettingsGroupStyle"],
@@ -199,20 +210,15 @@ internal sealed class Settings : UserControl
                 Children = { _supplierRow, _accessRow, _wanted, _automatic, _extrasRow },
             },
         };
-        Content = new StackPanel
-        {
-            Spacing = 24,
-            Children =
-            {
-                _section,
-                _batch,
-                _existing,
-            },
-        };
+        Content = new StackPanel { Spacing = 24, Children = { _section, _batch, _existing } };
         _check.Click += async (_, _) => await Check();
         _extras.SelectionChanged += async (_, _) =>
         {
-            if (!_refreshing && _model is { } model && _extras.SelectedItem is ComboBoxItem { Tag: int extras })
+            if (
+                !_refreshing
+                && _model is { } model
+                && _extras.SelectedItem is ComboBoxItem { Tag: int extras }
+            )
                 await Save(() => model.SetExtras(extras));
         };
         _edit.Click += (_, _) =>
@@ -228,7 +234,9 @@ internal sealed class Settings : UserControl
                 || _supplier.SelectedItem is not SubtitleSupplier chosen
             )
                 return;
-            await Save(() => chosen == model.SupplierId ? Task.CompletedTask : model.SelectSupplier(chosen));
+            await Save(() =>
+                chosen == model.SupplierId ? Task.CompletedTask : model.SelectSupplier(chosen)
+            );
         };
         _languageMode.SelectionChanged += async (_, _) =>
         {
@@ -309,7 +317,12 @@ internal sealed class Settings : UserControl
         _section.Header = T("title");
         _automatic.Refresh();
         foreach (ComboBoxItem item in _extras.Items)
-            item.Content = (int)item.Tag switch { 0 => T("extras_none"), 1 => T("extras_one"), var count => F("extras_count", count) };
+            item.Content = (int)item.Tag switch
+            {
+                0 => T("extras_none"),
+                1 => T("extras_one"),
+                var count => F("extras_count", count),
+            };
         _extrasRow.Header = T("extras");
         _extrasRow.Description = T("extras_hint");
         _supplierRow.Header = T("supplier");
@@ -349,7 +362,8 @@ internal sealed class Settings : UserControl
             return;
         _refreshing = true;
         if (_saving.IsCompleted)
-            _extras.SelectedItem = _extras.Items.Cast<ComboBoxItem>()
+            _extras.SelectedItem = _extras
+                .Items.Cast<ComboBoxItem>()
                 .FirstOrDefault(item => (int)item.Tag == _model?.Extras);
         _extras.IsEnabled = _model is not null;
         _scan.IsEnabled = _model is not null;
@@ -394,7 +408,8 @@ internal sealed class Settings : UserControl
         _languageDefault.Content = Text.LanguageName(Text.Language);
         if (_saving.IsCompleted)
             _languageMode.SelectedIndex = _model?.Languages.Length > 0 ? 1 : 0;
-        _languageChoices.Visibility = _languageMode.SelectedIndex == 1 ? Visibility.Visible : Visibility.Collapsed;
+        _languageChoices.Visibility =
+            _languageMode.SelectedIndex == 1 ? Visibility.Visible : Visibility.Collapsed;
         _selection.Text = string.Join(", ", selected.Select(Text.LanguageName));
         ToolTipService.SetToolTip(_wanted, _selection.Text);
         _selected.Text = F("selected", selected.Count);
@@ -413,7 +428,15 @@ internal sealed class Settings : UserControl
                 var name = Text.LanguageName(tag);
                 if (_model?.Supplier?.Supports(tag) != true)
                     name += " · " + F("unsupported", _model?.SupplierId ?? default);
-                var choice = new ListViewItem { Content = new TextBlock { Text = name, TextTrimming = TextTrimming.CharacterEllipsis }, Tag = tag };
+                var choice = new ListViewItem
+                {
+                    Content = new TextBlock
+                    {
+                        Text = name,
+                        TextTrimming = TextTrimming.CharacterEllipsis,
+                    },
+                    Tag = tag,
+                };
                 AutomationProperties.SetAutomationId(choice, "SubtitleLanguage-" + tag);
                 AutomationProperties.SetName(choice, name);
                 ToolTipService.SetToolTip(choice, name);
@@ -433,8 +456,12 @@ internal sealed class Settings : UserControl
                 else
                     _languages.SelectedItems.Remove(choice);
             }
-            choice.IsEnabled = _model is not null
-                && (_model.Supplier?.Supports(tag) == true || selected.Contains(tag, StringComparer.OrdinalIgnoreCase));
+            choice.IsEnabled =
+                _model is not null
+                && (
+                    _model.Supplier?.Supports(tag) == true
+                    || selected.Contains(tag, StringComparer.OrdinalIgnoreCase)
+                );
         }
         FilterLanguages();
     }
@@ -442,12 +469,22 @@ internal sealed class Settings : UserControl
     private void FilterLanguages()
     {
         foreach (var choice in _languages.Items.Cast<ListViewItem>())
-            choice.Visibility = ((TextBlock)choice.Content).Text.Contains(_language.Text.Trim(), StringComparison.CurrentCultureIgnoreCase)
-                || ((string)choice.Tag).StartsWith(_language.Text.Trim(), StringComparison.OrdinalIgnoreCase)
-                ? Visibility.Visible : Visibility.Collapsed;
-        _language.ItemsSource = _languages.Items.Cast<ListViewItem>()
+            choice.Visibility =
+                ((TextBlock)choice.Content).Text.Contains(
+                    _language.Text.Trim(),
+                    StringComparison.CurrentCultureIgnoreCase
+                )
+                || ((string)choice.Tag).StartsWith(
+                    _language.Text.Trim(),
+                    StringComparison.OrdinalIgnoreCase
+                )
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
+        _language.ItemsSource = _languages
+            .Items.Cast<ListViewItem>()
             .Where(choice => choice.Visibility == Visibility.Visible)
-            .Select(choice => ((TextBlock)choice.Content).Text).ToArray();
+            .Select(choice => ((TextBlock)choice.Content).Text)
+            .ToArray();
         AlignLanguages();
     }
 
@@ -467,12 +504,20 @@ internal sealed class Settings : UserControl
     {
         if (_refreshing || _model is not { } model)
             return;
-        var added = args.AddedItems.Cast<ListViewItem>().Select(choice => (string)choice.Tag).ToArray();
-        var removed = args.RemovedItems.Cast<ListViewItem>().Select(choice => (string)choice.Tag).ToArray();
+        var added = args
+            .AddedItems.Cast<ListViewItem>()
+            .Select(choice => (string)choice.Tag)
+            .ToArray();
+        var removed = args
+            .RemovedItems.Cast<ListViewItem>()
+            .Select(choice => (string)choice.Tag)
+            .ToArray();
         await Save(async () =>
         {
-            var wanted = model.EffectiveLanguages
-                .Where(tag => !removed.Contains(tag, StringComparer.OrdinalIgnoreCase))
+            var wanted = model
+                .EffectiveLanguages.Where(tag =>
+                    !removed.Contains(tag, StringComparer.OrdinalIgnoreCase)
+                )
                 .Concat(added)
                 .ToArray();
             // An empty list means "follow the interface language", which only
@@ -534,7 +579,9 @@ internal sealed class Settings : UserControl
         }
         catch (OperationCanceledException)
         {
-            System.Diagnostics.Debug.WriteLine($"Subtitle supplier check cancelled ({model.SupplierId}).");
+            System.Diagnostics.Debug.WriteLine(
+                $"Subtitle supplier check cancelled ({model.SupplierId})."
+            );
         }
         // The status line already says when a used-up allowance returns.
         catch (SubtitleException error)

@@ -12,7 +12,10 @@ internal sealed partial class PipeClient
     // Null when the inspector took the connection first; the caller asks again.
     internal async Task<FileDetail?> ReadFiles(string torrentId, CancellationToken cancellation)
     {
-        if (await ReadSection(torrentId, "files", cancellation).ConfigureAwait(false) is not { } files)
+        if (
+            await ReadSection(torrentId, "files", cancellation).ConfigureAwait(false)
+            is not { } files
+        )
             return null;
         JsonElement? pieces = null;
         if (
@@ -28,7 +31,10 @@ internal sealed partial class PipeClient
                 )
         )
         {
-            if (await ReadSection(torrentId, "pieces", cancellation).ConfigureAwait(false) is not { } section)
+            if (
+                await ReadSection(torrentId, "pieces", cancellation).ConfigureAwait(false)
+                is not { } section
+            )
                 return null;
             pieces = section;
         }
@@ -70,7 +76,9 @@ internal sealed partial class PipeClient
             );
             // The inspector withdraws an unsent read; a cancelled task is
             // awaited without throwing, because this happens every refresh.
-            await ((Task)read).WaitAsync(cancellation).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            await ((Task)read)
+                .WaitAsync(cancellation)
+                .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
             cancellation.ThrowIfCancellationRequested();
             if (read.IsCanceled)
                 return null;
@@ -98,7 +106,9 @@ internal sealed partial class PipeClient
                 if (_files is not null && _inspector is null)
                     return true;
                 request.Completion.TrySetCanceled();
-                System.Diagnostics.Debug.WriteLine("Background torrent file read cancelled: demand changed.");
+                System.Diagnostics.Debug.WriteLine(
+                    "Background torrent file read cancelled: demand changed."
+                );
                 return false;
             }
             if (request.Consumer != Consumer.Inspector && request.Consumer is not null)
@@ -109,8 +119,11 @@ internal sealed partial class PipeClient
                 EndInspector();
                 if (context is { } value)
                 {
-                    _inspector = (request, value,
-                        new(TaskCreationOptions.RunContinuationsAsynchronously));
+                    _inspector = (
+                        request,
+                        value,
+                        new(TaskCreationOptions.RunContinuationsAsynchronously)
+                    );
                 }
             }
             return true;
@@ -154,8 +167,10 @@ internal sealed partial class PipeClient
                 }
                 return;
             }
-            if (!message.GetProperty("ok").GetBoolean()
-                || message.GetProperty("data").GetProperty("ready").GetBoolean())
+            if (
+                !message.GetProperty("ok").GetBoolean()
+                || message.GetProperty("data").GetProperty("ready").GetBoolean()
+            )
                 EndInspector();
         }
         Detail?.Invoke(message);

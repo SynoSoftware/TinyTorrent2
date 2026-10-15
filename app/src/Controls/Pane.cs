@@ -37,20 +37,39 @@ public sealed partial class Pane : ContentControl
     public event EventHandler? MaximizeRequested;
 
     public static readonly DependencyProperty DockProperty = DependencyProperty.Register(
-        nameof(Dock), typeof(Models.Dock), typeof(Pane),
-        new PropertyMetadata(Models.Dock.None, OnChromeChanged));
+        nameof(Dock),
+        typeof(Models.Dock),
+        typeof(Pane),
+        new PropertyMetadata(Models.Dock.None, OnChromeChanged)
+    );
 
     public static readonly DependencyProperty CanCloseProperty = DependencyProperty.Register(
-        nameof(CanClose), typeof(bool), typeof(Pane), new PropertyMetadata(false, OnChromeChanged));
+        nameof(CanClose),
+        typeof(bool),
+        typeof(Pane),
+        new PropertyMetadata(false, OnChromeChanged)
+    );
 
     public static readonly DependencyProperty CanMaximizeProperty = DependencyProperty.Register(
-        nameof(CanMaximize), typeof(bool), typeof(Pane), new PropertyMetadata(false, OnChromeChanged));
+        nameof(CanMaximize),
+        typeof(bool),
+        typeof(Pane),
+        new PropertyMetadata(false, OnChromeChanged)
+    );
 
     public static readonly DependencyProperty IsCompactProperty = DependencyProperty.Register(
-        nameof(IsCompact), typeof(bool), typeof(Pane), new PropertyMetadata(false, OnChromeChanged));
+        nameof(IsCompact),
+        typeof(bool),
+        typeof(Pane),
+        new PropertyMetadata(false, OnChromeChanged)
+    );
 
     public static readonly DependencyProperty IsMaximizedProperty = DependencyProperty.Register(
-        nameof(IsMaximized), typeof(bool), typeof(Pane), new PropertyMetadata(false, OnChromeChanged));
+        nameof(IsMaximized),
+        typeof(bool),
+        typeof(Pane),
+        new PropertyMetadata(false, OnChromeChanged)
+    );
 
     public static readonly DependencyProperty HeaderProperty = DependencyProperty.Register(
         nameof(Header),
@@ -175,7 +194,11 @@ public sealed partial class Pane : ContentControl
     internal void FocusHeader(FocusState state)
     {
         ApplyTemplate();
-        var button = Dock != Models.Dock.None ? _collapse : CanMaximize ? _maximize : CanClose ? _close : null;
+        var button =
+            Dock != Models.Dock.None ? _collapse
+            : CanMaximize ? _maximize
+            : CanClose ? _close
+            : null;
         button?.Focus(state);
     }
 
@@ -212,7 +235,10 @@ public sealed partial class Pane : ContentControl
             CloseRequested?.Invoke(this, EventArgs.Empty);
     }
 
-    private static void OnChromeChanged(DependencyObject sender, DependencyPropertyChangedEventArgs args)
+    private static void OnChromeChanged(
+        DependencyObject sender,
+        DependencyPropertyChangedEventArgs args
+    )
     {
         var pane = (Pane)sender;
         pane.RefreshChrome();
@@ -224,15 +250,26 @@ public sealed partial class Pane : ContentControl
     private void RefreshSeparator()
     {
         if (_separator is not null)
-            _separator.Visibility = Actions is not null && _actions is { ActualWidth: > 0 }
+            _separator.Visibility =
+                Actions is not null
+                && _actions is { ActualWidth: > 0 }
                 && (Dock != Models.Dock.None || CanMaximize || CanClose)
-                ? Visibility.Visible : Visibility.Collapsed;
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
     }
 
     private void RefreshChrome()
     {
-        if (_expanded is null || _collapse is null || _maximize is null || _close is null
-            || _toggle is null || _toggleClip is null || _toggleGlyph is null || _maximizeGlyph is null)
+        if (
+            _expanded is null
+            || _collapse is null
+            || _maximize is null
+            || _close is null
+            || _toggle is null
+            || _toggleClip is null
+            || _toggleGlyph is null
+            || _maximizeGlyph is null
+        )
             return;
         var compact = IsCompact && Dock != Models.Dock.None;
         _expanded.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
@@ -244,10 +281,14 @@ public sealed partial class Pane : ContentControl
         var vertical = Dock is Models.Dock.Left or Models.Dock.Right;
         _toggle.Width = vertical ? 8 : double.NaN;
         _toggle.Height = vertical ? double.NaN : 8;
-        _toggle.HorizontalAlignment = Dock == Models.Dock.Right ? HorizontalAlignment.Right
-            : vertical ? HorizontalAlignment.Left : HorizontalAlignment.Stretch;
-        _toggle.VerticalAlignment = Dock == Models.Dock.Top ? VerticalAlignment.Top
-            : vertical ? VerticalAlignment.Stretch : VerticalAlignment.Bottom;
+        _toggle.HorizontalAlignment =
+            Dock == Models.Dock.Right ? HorizontalAlignment.Right
+            : vertical ? HorizontalAlignment.Left
+            : HorizontalAlignment.Stretch;
+        _toggle.VerticalAlignment =
+            Dock == Models.Dock.Top ? VerticalAlignment.Top
+            : vertical ? VerticalAlignment.Stretch
+            : VerticalAlignment.Bottom;
         _toggle.Margin = Dock switch
         {
             Models.Dock.Left => new Thickness(0, 0, 2, 0),
@@ -257,7 +298,10 @@ public sealed partial class Pane : ContentControl
         };
         _toggleClip.Width = vertical ? 8 : 16;
         _toggleClip.Height = vertical ? 16 : 8;
-        _toggleClip.Clip = new RectangleGeometry { Rect = new Rect(0, 0, _toggleClip.Width, _toggleClip.Height) };
+        _toggleClip.Clip = new RectangleGeometry
+        {
+            Rect = new Rect(0, 0, _toggleClip.Width, _toggleClip.Height),
+        };
         _toggleGlyph.Glyph = vertical ? Lucide.EllipsisVertical : Lucide.Ellipsis;
         if (_text is { } text && _section is { } section)
         {

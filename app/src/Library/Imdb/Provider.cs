@@ -21,19 +21,18 @@ internal sealed class Provider(Dataset dataset) : IProvider
             Kinds = new HashSet<VideoKind> { VideoKind.Movie, VideoKind.Series },
         };
 
-    public Task<VideoSearch> Search(
-        VideoQuery query,
-        CancellationToken cancellation
-    ) =>
+    public Task<VideoSearch> Search(VideoQuery query, CancellationToken cancellation) =>
         dataset.Read<VideoSearch>(
             connection =>
             {
                 // Each word is quoted, because full-text syntax reads a hyphen,
                 // a colon or an upper-case AND in a release name as an operator.
-                var words = query.Text
-                    .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                var words = query
+                    .Text.Split(' ', StringSplitOptions.RemoveEmptyEntries)
                     .Where(word => word.Any(char.IsLetterOrDigit))
-                    .Select(word => "\"" + word.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"")
+                    .Select(word =>
+                        "\"" + word.Replace("\"", "\"\"", StringComparison.Ordinal) + "\""
+                    )
                     .ToArray();
                 if (words.Length == 0)
                     return new([], false);
@@ -97,7 +96,12 @@ internal sealed class Provider(Dataset dataset) : IProvider
                     // An update can remove a title that a saved choice names.
                     if (!reader.Read())
                         throw new VideoException(VideoFailure.InvalidResult);
-                    video = new VideoInformation(CatalogId, choice.VideoId, reader.GetString(0), VideoKind.Movie)
+                    video = new VideoInformation(
+                        CatalogId,
+                        choice.VideoId,
+                        reader.GetString(0),
+                        VideoKind.Movie
+                    )
                     {
                         Year = reader.GetInt32(1),
                         Genres = reader.IsDBNull(2) ? [] : reader.GetString(2).Split(','),
@@ -115,13 +119,23 @@ internal sealed class Provider(Dataset dataset) : IProvider
                     ORDER BY number;
                     """;
                 command.Parameters.AddWithValue("$season", season);
-                command.Parameters.AddWithValue("$numbers", JsonSerializer.Serialize(release.Episodes));
+                command.Parameters.AddWithValue(
+                    "$numbers",
+                    JsonSerializer.Serialize(release.Episodes)
+                );
                 var episodes = new List<Episode>();
                 int? aired = null;
                 using (var reader = command.ExecuteReader())
                     while (reader.Read())
                     {
-                        episodes.Add(new Episode(season, reader.GetInt32(0), reader.GetString(1), string.Empty));
+                        episodes.Add(
+                            new Episode(
+                                season,
+                                reader.GetInt32(0),
+                                reader.GetString(1),
+                                string.Empty
+                            )
+                        );
                         aired ??= reader.IsDBNull(2) ? null : (int?)reader.GetInt32(2);
                     }
                 // The IMDb data does not list every episode of every series.

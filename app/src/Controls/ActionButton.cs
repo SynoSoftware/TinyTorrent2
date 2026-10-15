@@ -23,6 +23,7 @@ public sealed partial class ActionButton : Button
         TextLineBounds = TextLineBounds.Tight,
         VerticalAlignment = VerticalAlignment.Center,
     };
+
     // Marks a button that opens a menu, as DropDownButton's chevron does.
     private readonly FontIcon _chevron = new()
     {

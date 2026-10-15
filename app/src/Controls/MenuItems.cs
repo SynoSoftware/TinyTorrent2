@@ -2,6 +2,7 @@ using System.Windows.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using Syno.TinyTorrent.Services;
 
 namespace Syno.TinyTorrent.Controls;
@@ -38,6 +39,9 @@ internal sealed record MenuChoice(string Text, string? Glyph, bool? State, IComm
     : MenuEntry
 {
     internal string AccessKey { get; init; } = string.Empty;
+
+    /// <summary>The ISO 3166-1 alpha-2 region whose flag shows in place of the glyph.</summary>
+    internal string? FlagRegion { get; init; }
 }
 
 internal sealed record MenuSubmenu(string Text, string Glyph, IReadOnlyList<MenuEntry> Entries)
@@ -132,16 +136,19 @@ internal static class MenuItems
         switch (line, item)
         {
             case (MenuHeading heading, MenuFlyoutItem shown):
-                Show(shown, heading.Text, heading.Glyph, null, string.Empty);
+                Show(shown, heading.Text, Lucide.Font, heading.Glyph, null, string.Empty);
                 break;
             case (MenuCommand command, MenuFlyoutItem shown):
-                Show(shown, command.Text, command.Glyph, command.Command, command.AccessKey);
+                Show(shown, command.Text, Lucide.Font, command.Glyph, command.Command, command.AccessKey);
                 shown.KeyboardAcceleratorTextOverride = command.Shortcut;
                 AutomationProperties.SetName(shown, command.Name ?? string.Empty);
                 ToolTipService.SetToolTip(shown, command.ToolTip);
                 break;
             case (MenuChoice choice, ToggleMenuFlyoutItem shown):
-                Show(shown, choice.Text, choice.Glyph, choice.Command, choice.AccessKey);
+                if (choice.FlagRegion is { } region)
+                    Show(shown, choice.Text, Flags.Font, Flags.Glyph(region), choice.Command, choice.AccessKey);
+                else
+                    Show(shown, choice.Text, Lucide.Font, choice.Glyph, choice.Command, choice.AccessKey);
                 shown.IsChecked = choice.State == true;
                 break;
             case (MenuChoice choice, MenuFlyoutItem shown):
@@ -151,7 +158,7 @@ internal static class MenuItems
                     false => Lucide.Square,
                     null => Lucide.SquareMinus,
                 };
-                Show(shown, choice.Text, glyph, choice.Command, choice.AccessKey);
+                Show(shown, choice.Text, Lucide.Font, glyph, choice.Command, choice.AccessKey);
                 AutomationProperties.SetItemStatus(
                     shown,
                     text.Get(
@@ -167,7 +174,7 @@ internal static class MenuItems
                 break;
             case (MenuSubmenu submenu, MenuFlyoutSubItem shown):
                 shown.Text = submenu.Text;
-                var icon = Icon(shown.Icon, submenu.Glyph);
+                var icon = Icon(shown.Icon, Lucide.Font, submenu.Glyph);
                 if (icon != shown.Icon)
                     shown.Icon = icon;
                 shown.AccessKey = submenu.AccessKey;
@@ -180,13 +187,14 @@ internal static class MenuItems
     private static void Show(
         MenuFlyoutItem item,
         string text,
+        FontFamily font,
         string? glyph,
         ICommand? command,
         string accessKey
     )
     {
         item.Text = text;
-        var icon = Icon(item.Icon, glyph);
+        var icon = Icon(item.Icon, font, glyph);
         if (icon != item.Icon)
             item.Icon = icon;
         item.Command = command;
@@ -195,16 +203,17 @@ internal static class MenuItems
 
     // A menu bar menu refills while it is open, so a refill keeps the shown icon and
     // changes only its glyph instead of replacing the icon.
-    private static IconElement? Icon(IconElement? icon, string? glyph)
+    private static IconElement? Icon(IconElement? icon, FontFamily font, string? glyph)
     {
         if (glyph is null)
             return null;
-        if (icon is FontIcon font)
+        if (icon is FontIcon shown)
         {
-            font.Glyph = glyph;
-            return font;
+            shown.FontFamily = font;
+            shown.Glyph = glyph;
+            return shown;
         }
-        return new FontIcon { FontFamily = Lucide.Font, Glyph = glyph };
+        return new FontIcon { FontFamily = font, Glyph = glyph };
     }
 
     // Removes items one at a time: a MenuBarItem mirrors each removal into its flyout but

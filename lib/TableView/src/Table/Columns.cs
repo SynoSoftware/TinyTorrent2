@@ -179,7 +179,9 @@ public sealed partial class Table
         List<EffectiveColumn> scaled = new(columns);
 
         // What the scaled columns share: the room less the visible columns that keep theirs.
-        double room = width - EffectiveLayout.VisibleColumns.Sum(visible => visible.Width)
+        double room =
+            width
+            - EffectiveLayout.VisibleColumns.Sum(visible => visible.Width)
             + scaled.Sum(column => column.Width);
         bool changed = false;
 
@@ -280,14 +282,19 @@ public sealed partial class Table
 
     // A drag on the window frame measures at its first fill and reuses those
     // widths until it ends: the window's width does not change the content's.
-    private void OnEnteredMoveSize(InputNonClientPointerSource sender, EnteredMoveSizeEventArgs args)
+    private void OnEnteredMoveSize(
+        InputNonClientPointerSource sender,
+        EnteredMoveSizeEventArgs args
+    )
     {
         _fittedWidths.Clear();
         _windowSizing = true;
     }
 
-    private void OnExitedMoveSize(InputNonClientPointerSource sender, ExitedMoveSizeEventArgs args) =>
-        _windowSizing = false;
+    private void OnExitedMoveSize(
+        InputNonClientPointerSource sender,
+        ExitedMoveSizeEventArgs args
+    ) => _windowSizing = false;
 
     private void OnFillSizeChanged(object sender, SizeChangedEventArgs args)
     {

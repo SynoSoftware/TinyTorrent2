@@ -11,16 +11,23 @@ public sealed partial class SettingsPage
     private readonly DispatcherTimer _outlineTimer = new() { Interval = TimeSpan.FromSeconds(3) };
     private Highlight? _highlight;
 
-    private sealed record Highlight(FrameworkElement Card, Control Focus, bool TabStop, bool FocusVisuals);
+    private sealed record Highlight(
+        FrameworkElement Card,
+        Control Focus,
+        bool TabStop,
+        bool FocusVisuals
+    );
 
     private void ShowDestination(Control control)
     {
         ClearOutline();
         FrameworkElement? block = null;
         var focus = control;
-        for (DependencyObject? parent = control is SettingsSection section ? section.Card : control;
+        for (
+            DependencyObject? parent = control is SettingsSection section ? section.Card : control;
             parent is not null && parent != BodyContent;
-            parent = VisualTreeHelper.GetParent(parent))
+            parent = VisualTreeHelper.GetParent(parent)
+        )
         {
             if (parent is SettingsRow row)
                 focus = row;
@@ -52,7 +59,11 @@ public sealed partial class SettingsPage
             ClearOutline();
             return;
         }
-        for (DependencyObject? parent = block; parent != BodyContent; parent = VisualTreeHelper.GetParent(parent))
+        for (
+            DependencyObject? parent = block;
+            parent != BodyContent;
+            parent = VisualTreeHelper.GetParent(parent)
+        )
         {
             if (parent is null || parent is UIElement { Visibility: Visibility.Collapsed })
             {

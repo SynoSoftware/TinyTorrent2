@@ -315,7 +315,8 @@ internal sealed class SelectionState
 
         List<object> resolved = positions.Order().Select(index => view[index]).ToList();
         int currentIndex = currentItem is null ? -1 : _indexOf(currentItem);
-        current = currentIndex >= 0 && IsInteractive(view[currentIndex]) ? view[currentIndex] : null;
+        current =
+            currentIndex >= 0 && IsInteractive(view[currentIndex]) ? view[currentIndex] : null;
         return Limit(resolved);
     }
 

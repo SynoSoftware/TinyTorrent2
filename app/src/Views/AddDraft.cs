@@ -337,8 +337,11 @@ public sealed class AddDraft : IDraft
         private readonly AddDraft _draft;
         private readonly AddSource[] _accepted;
         private readonly BackgroundWork.Operation _operation;
-        private WorkObservation _observation = new(new WorkDescription.Sources(),
-            new WorkProgress.Unknown(), new WorkExecution.Waiting());
+        private WorkObservation _observation = new(
+            new WorkDescription.Sources(),
+            new WorkProgress.Unknown(),
+            new WorkExecution.Waiting()
+        );
         private bool _ended;
         internal bool IsCancelled => _observation.Execution is WorkExecution.Cancelling;
 
@@ -356,12 +359,18 @@ public sealed class AddDraft : IDraft
             var remaining = _accepted.Where(_draft.Sources.Contains).ToArray();
             _observation = _observation with
             {
-                Progress = _draft._phase == AdditionPhase.Preparing
-                    ? new WorkProgress.Unknown()
-                    : new WorkProgress.Fraction(_accepted.Length - remaining.Length,
-                        _accepted.Length, WorkUnit.Files),
-                Execution = submitting is not null && remaining.All(source => source == submitting)
-                    ? new WorkExecution.Finishing() : new WorkExecution.Running(),
+                Progress =
+                    _draft._phase == AdditionPhase.Preparing
+                        ? new WorkProgress.Unknown()
+                        : new WorkProgress.Fraction(
+                            _accepted.Length - remaining.Length,
+                            _accepted.Length,
+                            WorkUnit.Files
+                        ),
+                Execution =
+                    submitting is not null && remaining.All(source => source == submitting)
+                        ? new WorkExecution.Finishing()
+                        : new WorkExecution.Running(),
             };
             _operation.Report(_observation);
         }
@@ -372,7 +381,9 @@ public sealed class AddDraft : IDraft
             {
                 _observation = _observation with { Execution = new WorkExecution.Cancelling() };
                 _operation.Report(_observation);
-                System.Diagnostics.Debug.WriteLine($"Torrent addition cancelled ({_accepted.Length} sources).");
+                System.Diagnostics.Debug.WriteLine(
+                    $"Torrent addition cancelled ({_accepted.Length} sources)."
+                );
             }
             return Task.CompletedTask;
         }
@@ -386,10 +397,16 @@ public sealed class AddDraft : IDraft
                 // reply stays in the draft so cancellation cannot hide an added torrent.
                 if (IsCancelled)
                 {
-                    await _draft.Cancel(_accepted.Where(source =>
-                        _draft.Sources.Contains(source) && !source.Uncertain).ToArray());
-                    var failure = _accepted.FirstOrDefault(source =>
-                        _draft.Sources.Contains(source) && source.Uncertain)?.Failure;
+                    await _draft.Cancel(
+                        _accepted
+                            .Where(source => _draft.Sources.Contains(source) && !source.Uncertain)
+                            .ToArray()
+                    );
+                    var failure = _accepted
+                        .FirstOrDefault(source =>
+                            _draft.Sources.Contains(source) && source.Uncertain
+                        )
+                        ?.Failure;
                     if (failure is not null)
                         _draft._owner.Report(failure);
                 }
@@ -724,7 +741,9 @@ public sealed class AddDraft : IDraft
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
             {
-                System.Diagnostics.Debug.WriteLine($"Torrent addition preview read cancelled ({source.PreviewId}).");
+                System.Diagnostics.Debug.WriteLine(
+                    $"Torrent addition preview read cancelled ({source.PreviewId})."
+                );
                 return;
             }
             catch (Exception error)

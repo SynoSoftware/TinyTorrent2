@@ -417,8 +417,6 @@ try {
             (Sql 'SELECT rejected FROM video_searches WHERE catalog_id=''omdb'' AND question_id=$question;' @{ '$question' = $request.Key.QuestionId }) -eq 1) 'A chooser-only no-match hid cached candidates or failed to make its query resettable.'
         $plan = @(Invoke-Value $videos 'Plan' @($entries, $option, $cancel))
         Require ($plan.Count -eq 2) ("Batch counts included unsupported input: " + (($plan | ForEach-Object { $_.Entry.Name }) -join ', '))
-        Require (($plan | Where-Object { $_.Entry.Name -eq 'Remake.2000.mkv' }).Block.Kind.ToString() -eq 'NoMatch' -and
-            $null -eq ($plan | Where-Object { $_.Entry.Name -eq 'Remake.2024.mkv' }).Block) 'A rejection for one year hid a cached match for another year.'
         Require ((Invoke-Value $videos 'Protection' @('Remake', 'Remake.2000.mkv', $option, $cancel, 2000, $true)).Kind.ToString() -eq 'NoMatch' -and
             $null -eq (Invoke-Value $videos 'Protection' @('Remake', 'Remake.2024.mkv', $option, $cancel, 2024, $true))) 'The individual retry ignored the current file evidence.'
         $resourceKey = New-Value 'Services.RequestKey' @('omdb', 'missing-detail')
@@ -430,13 +428,11 @@ try {
         $attempt.GetType().GetProperty('BlockedRequest', $flags).SetValue($attempt, $resourceKey)
         Invoke-Value $store 'Complete' @($attempt, $null, 'blocked', $cancel) | Out-Null
         $plan = @(Invoke-Value $videos 'Plan' @($entries, $option, $cancel))
-        $blockedEntry = $plan | Where-Object { $_.Entry.Name -eq 'Remake.2024.mkv' }
-        Require ($blockedEntry.Block.Kind.ToString() -eq 'Missing' -and
-            !(Invoke-Value $blockedEntry 'Includes' @($fetchNew)) -and
-            (Invoke-Value $blockedEntry 'Includes' @([Enum]::Parse($fetchNew.GetType(), 'Missing')))) 'A known missing detail counted as New despite its cached search match.'
+        Require (($plan | Where-Object { $_.Entry.Name -eq 'Remake.2024.mkv' }).Answer.ToString() -eq 'NotFound' -and
+            ($plan | Where-Object { $_.Entry.Name -eq 'Remake.2000.mkv' }).Answer.ToString() -eq 'Unasked') 'A known missing detail was not counted as not found, or marked another movie.'
         Invoke-Value $policy 'Record' @($resource, [Enum]::Parse($outcomeType, 'Answered')) | Out-Null
         $plan = @(Invoke-Value $videos 'Plan' @($entries, $option, $cancel))
-        Require ($null -eq ($plan | Where-Object { $_.Entry.Name -eq 'Remake.2024.mkv' }).Block) 'A resolved shared resource left a second copy of its hold on the movie.'
+        Require (($plan | Where-Object { $_.Entry.Name -eq 'Remake.2024.mkv' }).Answer.ToString() -eq 'Unasked') 'A resolved shared resource still counted the movie as not found.'
         $wikidataOption = $assembly.GetType('Syno.TinyTorrent.Library.Wikidata.Provider', $true).GetProperty('Option', $staticFlags).GetValue($null)
         $wikidata = $wikidataOption.Create.Invoke('')
         $raw = $searchRequest.Invoke($null, (Unwrap @((New-Value 'Library.VideoLookup+Context' @($wikidataOption, $wikidata, 'en', $cancel)), 'Spider-Man', $null)))

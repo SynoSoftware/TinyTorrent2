@@ -10,7 +10,11 @@ namespace
 // another catalogue replaces the messages it translates.
 constexpr std::pair<std::string_view, WORD> catalogues[] = {
     {"en", IDR_ENGLISH_TEXT},
-    {"es", IDR_SPANISH_TEXT}};
+    {"es", IDR_SPANISH_TEXT},
+    {"nl", IDR_DUTCH_TEXT},
+    {"zh", IDR_CHINESE_TEXT},
+    {"pt", IDR_PORTUGUESE_TEXT},
+    {"fr", IDR_FRENCH_TEXT}};
 
 Json Catalogue(WORD resource)
 {
@@ -29,18 +33,29 @@ Json Catalogue(WORD resource)
     return Json::parse(std::string_view(bytes, SizeofResource(module, found)), nullptr, false);
 }
 
-// A language tag such as `es-MX` asks for the catalogue that its primary
-// subtag, `es`, names.
-std::string_view Primary(std::string_view tag)
+std::string_view Match(std::string_view tag)
 {
-    return tag.substr(0, tag.find('-'));
+    while (!tag.empty())
+    {
+        if (Parse(catalogues, tag))
+        {
+            return tag;
+        }
+        auto separator = tag.rfind('-');
+        if (separator == std::string_view::npos)
+        {
+            break;
+        }
+        tag = tag.substr(0, separator);
+    }
+    return "en";
 }
 }
 
 Strings::Strings(std::string language)
     : language_(std::move(language)), catalogue_(Catalogue(IDR_ENGLISH_TEXT))
 {
-    auto resource = Parse(catalogues, Primary(language_));
+    auto resource = Parse(catalogues, Match(language_));
     if (resource && *resource != IDR_ENGLISH_TEXT)
     {
         auto translated = Catalogue(*resource);
@@ -58,8 +73,7 @@ std::string Strings::DefaultLanguage()
     wchar_t name[LOCALE_NAME_MAX_LENGTH] = {};
     LCIDToLocaleName(GetUserDefaultUILanguage(), name, LOCALE_NAME_MAX_LENGTH, LOCALE_ALLOW_NEUTRAL_NAMES);
     auto tag = Utf8(name);
-    auto primary = std::string(Primary(tag));
-    return Supports(primary) ? primary : "en";
+    return std::string(Match(tag));
 }
 
 bool Strings::Supports(std::string_view language)

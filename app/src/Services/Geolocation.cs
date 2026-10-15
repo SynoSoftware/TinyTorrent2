@@ -19,9 +19,16 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
 {
     private const string CityFileName = "dbip-city-lite.mmdb";
     private const string Name = "DB-IP";
-    private static readonly string CountryPath =
-        Path.Combine(AppContext.BaseDirectory, "Assets", "dbip-country-lite.mmdb");
-    private static readonly ProviderAccess Access = new("dbip", RequestKey.Digest(string.Empty), "dataset");
+    private static readonly string CountryPath = Path.Combine(
+        AppContext.BaseDirectory,
+        "Assets",
+        "dbip-country-lite.mmdb"
+    );
+    private static readonly ProviderAccess Access = new(
+        "dbip",
+        RequestKey.Digest(string.Empty),
+        "dataset"
+    );
     private Reader? _countries = Open(CountryPath);
     private Reader? _cities;
     private string? _directory;
@@ -43,7 +50,8 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
     public string Section => "city";
 
     public FileInfo? Installed =>
-        _directory is { } directory && new FileInfo(Path.Combine(directory, CityFileName)) is { Exists: true } file
+        _directory is { } directory
+        && new FileInfo(Path.Combine(directory, CityFileName)) is { Exists: true } file
             ? file
             : null;
 
@@ -109,7 +117,9 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
             var country = _countries?.Find<Record>(address);
             var city = _cities?.Find<Record>(address);
             var place = country?.Country ?? city?.Country;
-            return place?.Code is { } code ? new Location(code, place, city?.City, city?.Coordinates?.Point) : null;
+            return place?.Code is { } code
+                ? new Location(code, place, city?.City, city?.Coordinates?.Point)
+                : null;
         }
         // A damaged file gives no locations, as a missing one does.
         catch (InvalidDatabaseException)
@@ -135,7 +145,10 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
                 () => Build(directory, policy, download),
                 () =>
                 {
-                    download.Install(new WorkDescription.City(CityPhase.Installing), () => Install(directory));
+                    download.Install(
+                        new WorkDescription.City(CityPhase.Installing),
+                        () => Install(directory)
+                    );
                     return Task.CompletedTask;
                 },
                 () => Discard(directory),
@@ -162,8 +175,13 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
     {
         if (_download is not null || _directory is not { } directory)
             return;
-        using var operation = work.Begin(new(new WorkDescription.Maintenance(MaintenanceWork.DeleteDataset),
-            new WorkProgress.Unknown(), new WorkExecution.Finishing()));
+        using var operation = work.Begin(
+            new(
+                new WorkDescription.Maintenance(MaintenanceWork.DeleteDataset),
+                new WorkProgress.Unknown(),
+                new WorkExecution.Finishing()
+            )
+        );
         try
         {
             await Task.Run(() => Replace(() => File.Delete(Path.Combine(directory, CityFileName))));
@@ -210,14 +228,31 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
         var cancellation = download.Cancellation;
         try
         {
-            await Fetch(archive, policy, fresh,
-                received => download.Report(new WorkDescription.City(CityPhase.Downloading),
-                    new WorkProgress.Amount(received, WorkUnit.Bytes)),
-                cancellation);
-            await Task.Run(() => Unpack(archive, building,
-                percent => download.Report(new WorkDescription.City(CityPhase.Unpacking),
-                    new WorkProgress.Fraction(percent, 100, WorkUnit.Percent, true)),
-                cancellation), cancellation);
+            await Fetch(
+                archive,
+                policy,
+                fresh,
+                received =>
+                    download.Report(
+                        new WorkDescription.City(CityPhase.Downloading),
+                        new WorkProgress.Amount(received, WorkUnit.Bytes)
+                    ),
+                cancellation
+            );
+            await Task.Run(
+                () =>
+                    Unpack(
+                        archive,
+                        building,
+                        percent =>
+                            download.Report(
+                                new WorkDescription.City(CityPhase.Unpacking),
+                                new WorkProgress.Fraction(percent, 100, WorkUnit.Percent, true)
+                            ),
+                        cancellation
+                    ),
+                cancellation
+            );
         }
         catch (HttpRouteException error)
         {
@@ -274,8 +309,10 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
 
         async Task Get(DateTime month)
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get,
-                new Uri($"https://download.db-ip.com/free/dbip-city-lite-{month:yyyy-MM}.mmdb.gz"));
+            using var request = new HttpRequestMessage(
+                HttpMethod.Get,
+                new Uri($"https://download.db-ip.com/free/dbip-city-lite-{month:yyyy-MM}.mmdb.gz")
+            );
             var call = new ProviderCall(request, policy, new(Access)) { Fresh = fresh };
             await http.Download(call, part, received, cancellation).ConfigureAwait(false);
         }
@@ -283,7 +320,12 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
 
     // Writes the file that Install moves into place, and checks that it is a
     // readable database before the installed copy is replaced.
-    private static void Unpack(string archive, string building, Action<int> report, CancellationToken cancellation)
+    private static void Unpack(
+        string archive,
+        string building,
+        Action<int> report,
+        CancellationToken cancellation
+    )
     {
         using (var packed = File.OpenRead(archive))
         using (var content = new GZipStream(packed, CompressionMode.Decompress))
@@ -306,7 +348,9 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
 
     private void Install(string directory)
     {
-        Replace(() => File.Move(Building(directory), Path.Combine(directory, CityFileName), overwrite: true));
+        Replace(() =>
+            File.Move(Building(directory), Path.Combine(directory, CityFileName), overwrite: true)
+        );
         Changed(nameof(Installed));
     }
 
@@ -344,7 +388,8 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
         catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
     }
 
-    private static string Building(string directory) => Path.Combine(directory, CityFileName + ".tmp");
+    private static string Building(string directory) =>
+        Path.Combine(directory, CityFileName + ".tmp");
 
     // A missing or damaged file gives no locations; a damaged city file is
     // replaced by the next download.
@@ -354,7 +399,8 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
         {
             return File.Exists(path) ? new Reader(path) : null;
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDatabaseException)
+        catch (Exception error)
+            when (error is IOException or UnauthorizedAccessException or InvalidDatabaseException)
         {
             return null;
         }
@@ -381,8 +427,11 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
     internal sealed class Record
     {
         [Constructor]
-        public Record([MapKey("country")] Place? country, [MapKey("city")] Place? city,
-            [MapKey("location")] Coordinates? coordinates)
+        public Record(
+            [MapKey("country")] Place? country,
+            [MapKey("city")] Place? city,
+            [MapKey("location")] Coordinates? coordinates
+        )
         {
             Country = country;
             City = city;
@@ -397,7 +446,10 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
     internal sealed class Coordinates
     {
         [Constructor]
-        public Coordinates([MapKey("latitude")] double? latitude, [MapKey("longitude")] double? longitude)
+        public Coordinates(
+            [MapKey("latitude")] double? latitude,
+            [MapKey("longitude")] double? longitude
+        )
         {
             if (latitude is >= -90 and <= 90 && longitude is >= -180 and <= 180)
                 Point = new GeoPoint(longitude.Value, latitude.Value);
@@ -413,7 +465,10 @@ internal sealed class Place
     private readonly IReadOnlyDictionary<string, string>? _names;
 
     [Constructor]
-    public Place([MapKey("iso_code")] string? code, [MapKey("names")] IReadOnlyDictionary<string, string>? names)
+    public Place(
+        [MapKey("iso_code")] string? code,
+        [MapKey("names")] IReadOnlyDictionary<string, string>? names
+    )
     {
         Code = code;
         _names = names;
@@ -424,7 +479,8 @@ internal sealed class Place
 
     /// <summary>The name in <paramref name="language"/>, in English when that language is missing, or null without names.</summary>
     internal string? Name(string language) =>
-        _names is not null && (_names.TryGetValue(language, out var name) || _names.TryGetValue("en", out name))
+        _names is not null
+        && (_names.TryGetValue(language, out var name) || _names.TryGetValue("en", out name))
             ? name
             : null;
 }

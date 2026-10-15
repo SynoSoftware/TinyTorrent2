@@ -30,16 +30,21 @@ internal sealed class Provider(string key) : IProvider
         };
 
     // OMDb misses Rogue Nation when the search query includes its dash.
-    public string Prepare(string query) =>
-        Regex.Replace(query, @"[^\p{L}\p{N}]+", " ").Trim();
+    public string Prepare(string query) => Regex.Replace(query, @"[^\p{L}\p{N}]+", " ").Trim();
 
-    public async Task<VideoSearch> Search(
-        VideoQuery query,
-        CancellationToken cancellation
-    )
+    public async Task<VideoSearch> Search(VideoQuery query, CancellationToken cancellation)
     {
-        var data = await Get(query.Get, "type=movie&s=" + Uri.EscapeDataString(query.Text)
-                + (query.Year is { } year ? "&y=" + year.ToString(CultureInfo.InvariantCulture) : string.Empty), cancellation)
+        var data = await Get(
+                query.Get,
+                "type=movie&s="
+                    + Uri.EscapeDataString(query.Text)
+                    + (
+                        query.Year is { } year
+                            ? "&y=" + year.ToString(CultureInfo.InvariantCulture)
+                            : string.Empty
+                    ),
+                cancellation
+            )
             .ConfigureAwait(false);
         try
         {
@@ -54,24 +59,22 @@ internal sealed class Provider(string key) : IProvider
             var choices = results
                 .EnumerateArray()
                 .Where(item =>
-                    VideoInformation.ParseImdbId(Text(item, "imdbID")) is not null && Text(item, "Title").Length is > 0 and <= 300
+                    VideoInformation.ParseImdbId(Text(item, "imdbID")) is not null
+                    && Text(item, "Title").Length is > 0 and <= 300
                 )
-                .Select(item =>
-                    new VideoChoice(
-                        CatalogId,
-                        Text(item, "imdbID"),
-                        VideoKind.Movie,
-                        Text(item, "Title")
-                    )
-                    {
-                        Year = VideoInformation.ParseYear(Text(item, "Year")),
-                    }
+                .Select(item => new VideoChoice(
+                    CatalogId,
+                    Text(item, "imdbID"),
+                    VideoKind.Movie,
+                    Text(item, "Title")
                 )
+                {
+                    Year = VideoInformation.ParseYear(Text(item, "Year")),
+                })
                 .ToArray();
             return new(choices, results.GetArrayLength() == 0);
         }
-        catch (Exception error)
-            when (error is InvalidOperationException or KeyNotFoundException)
+        catch (Exception error) when (error is InvalidOperationException or KeyNotFoundException)
         {
             throw new VideoException(VideoFailure.InvalidResult, error);
         }
@@ -86,15 +89,32 @@ internal sealed class Provider(string key) : IProvider
         // The identity is written into the request, so it must be an IMDb title.
         if (choice.Kind != VideoKind.Movie || VideoInformation.ParseImdbId(choice.VideoId) is null)
             throw new VideoException(VideoFailure.InvalidResult);
-        var record = await request.Read(choice.VideoId, async token =>
-        {
-            var content = await Get(request.Get, "plot=full&i=" + choice.VideoId, token).ConfigureAwait(false);
-            if (Text(content, "Response") == "False" && Text(content, "Error") == "Movie not found!")
-                throw new MissingVideoException();
-            if (Text(content, "Response") != "True" || Text(content, "Title").Length is 0 or > 300)
-                throw new VideoException(VideoFailure.InvalidResult);
-            return new VideoRecord(choice.VideoId, content, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
-        }, cancellation).ConfigureAwait(false);
+        var record = await request
+            .Read(
+                choice.VideoId,
+                async token =>
+                {
+                    var content = await Get(request.Get, "plot=full&i=" + choice.VideoId, token)
+                        .ConfigureAwait(false);
+                    if (
+                        Text(content, "Response") == "False"
+                        && Text(content, "Error") == "Movie not found!"
+                    )
+                        throw new MissingVideoException();
+                    if (
+                        Text(content, "Response") != "True"
+                        || Text(content, "Title").Length is 0 or > 300
+                    )
+                        throw new VideoException(VideoFailure.InvalidResult);
+                    return new VideoRecord(
+                        choice.VideoId,
+                        content,
+                        DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+                    );
+                },
+                cancellation
+            )
+            .ConfigureAwait(false);
         var movie = record.Content;
         var title = Text(movie, "Title");
         if (Text(movie, "Response") != "True" || title.Length is 0 or > 300)
@@ -115,27 +135,38 @@ internal sealed class Provider(string key) : IProvider
             },
             Directors = Names(movie, "Director"),
             // OMDb writes "Not Rated" or "Unrated" when it knows no age rating.
-            Certification = Text(movie, "Rated") is "Not Rated" or "Unrated" ? string.Empty : Text(movie, "Rated"),
+            Certification = Text(movie, "Rated") is "Not Rated" or "Unrated"
+                ? string.Empty
+                : Text(movie, "Rated"),
             // OMDb writes the takings as "$75,982,834".
-            BoxOffice = long.TryParse(
-                Text(movie, "BoxOffice"),
-                NumberStyles.AllowCurrencySymbol | NumberStyles.AllowThousands,
-                CultureInfo.GetCultureInfo("en-US"),
-                out var takings
-            )
-            && takings > 0
-                ? takings
-                : null,
+            BoxOffice =
+                long.TryParse(
+                    Text(movie, "BoxOffice"),
+                    NumberStyles.AllowCurrencySymbol | NumberStyles.AllowThousands,
+                    CultureInfo.GetCultureInfo("en-US"),
+                    out var takings
+                )
+                && takings > 0
+                    ? takings
+                    : null,
         };
     }
 
     // OMDb lists the other sites' scores as text, such as "59%" for Rotten
     // Tomatoes and "50/100" for Metacritic, without their review counts.
-    private static Rating? ReadScore(JsonElement movie, string source, string suffix, double maximum) =>
+    private static Rating? ReadScore(
+        JsonElement movie,
+        string source,
+        string suffix,
+        double maximum
+    ) =>
         movie.TryGetProperty("Ratings", out var ratings) && ratings.ValueKind == JsonValueKind.Array
             ? ratings
                 .EnumerateArray()
-                .Where(rating => Text(rating, "Source") == source && Text(rating, "Value").EndsWith(suffix, StringComparison.Ordinal))
+                .Where(rating =>
+                    Text(rating, "Source") == source
+                    && Text(rating, "Value").EndsWith(suffix, StringComparison.Ordinal)
+                )
                 .Select(rating =>
                     double.TryParse(
                         Text(rating, "Value")[..^suffix.Length],
@@ -153,23 +184,32 @@ internal sealed class Provider(string key) : IProvider
 
     // OMDb writes the vote count with thousands separators, such as "2,345,678".
     private static Rating? ReadRating(JsonElement movie) =>
-        double.TryParse(Text(movie, "imdbRating"), NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
-        && value is >= 0 and <= 10
+        double.TryParse(
+            Text(movie, "imdbRating"),
+            NumberStyles.Float,
+            CultureInfo.InvariantCulture,
+            out var value
+        ) && value is >= 0 and <= 10
             ? new Rating(value, VideoKind.Movie)
             {
-                Votes = long.TryParse(
-                    Text(movie, "imdbVotes"),
-                    NumberStyles.AllowThousands,
-                    CultureInfo.InvariantCulture,
-                    out var votes
-                )
-                && votes > 0
-                    ? votes
-                    : null,
+                Votes =
+                    long.TryParse(
+                        Text(movie, "imdbVotes"),
+                        NumberStyles.AllowThousands,
+                        CultureInfo.InvariantCulture,
+                        out var votes
+                    )
+                    && votes > 0
+                        ? votes
+                        : null,
             }
             : null;
 
-    private async Task<JsonElement> Get(ProviderGet get, string query, CancellationToken cancellation)
+    private async Task<JsonElement> Get(
+        ProviderGet get,
+        string query,
+        CancellationToken cancellation
+    )
     {
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
@@ -186,7 +226,8 @@ internal sealed class Provider(string key) : IProvider
             : Text(data, "Error") switch
             {
                 "Movie not found!" or "Too many results." => null,
-                "Request limit reached!" or "Daily request limit reached!" => VideoFailure.Exhausted,
+                "Request limit reached!" or "Daily request limit reached!" =>
+                    VideoFailure.Exhausted,
                 "Invalid API key!" => VideoFailure.Refused,
                 _ => VideoFailure.Unavailable,
             };

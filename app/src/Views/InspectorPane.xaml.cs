@@ -27,20 +27,30 @@ public sealed partial class InspectorPane : UserControl
     public Inspector Model { get; }
     internal InspectorLayout Layout
     {
-        get => new(Peers?.Layout ?? _layout.Peers, TrackerTable?.Layout ?? _layout.Trackers) { View = _layout.View };
+        get =>
+            new(Peers?.Layout ?? _layout.Peers, TrackerTable?.Layout ?? _layout.Trackers)
+            {
+                View = _layout.View,
+            };
         set
         {
             var view = value.View ?? PeerView.Default;
             view = view with
             {
                 // Saved side-by-side layouts now follow the available space.
-                Layout = (int)view.Layout == 3 ? PeerLayout.Both
-                    : Enum.IsDefined(view.Layout) ? view.Layout : PeerView.Default.Layout,
+                Layout =
+                    (int)view.Layout == 3 ? PeerLayout.Both
+                    : Enum.IsDefined(view.Layout) ? view.Layout
+                    : PeerView.Default.Layout,
                 Side = Fraction(view.Side, PeerView.Default.Side),
                 Stacked = Fraction(view.Stacked, PeerView.Default.Stacked),
             };
             var peers = value.Peers;
-            if (peers is { Order: { } order } && order.Contains("location") && !order.Contains("city"))
+            if (
+                peers is { Order: { } order }
+                && order.Contains("location")
+                && !order.Contains("city")
+            )
             {
                 var columns = order.ToList();
                 columns.Insert(columns.IndexOf("location") + 1, "city");
@@ -101,7 +111,8 @@ public sealed partial class InspectorPane : UserControl
                 library.PropertyChanged -= OnLibrary;
             ClearLibraryActions();
             StopTracking();
-            ClearLibraryContent();
+            ClearLibraryContent(_libraryContent);
+            ClearLibraryContent(_librarySpare);
         };
         RefreshText();
         Refresh();
@@ -121,12 +132,14 @@ public sealed partial class InspectorPane : UserControl
         };
         if (content is not null)
             return content;
-        content = (FrameworkElement)FindName(section switch
-        {
-            InspectorSection.Pieces => nameof(Map),
-            InspectorSection.Peers => nameof(PeerContent),
-            _ => section.ToString(),
-        });
+        content = (FrameworkElement)FindName(
+            section switch
+            {
+                InspectorSection.Pieces => nameof(Map),
+                InspectorSection.Peers => nameof(PeerContent),
+                _ => section.ToString(),
+            }
+        );
         switch (section)
         {
             case InspectorSection.General:
@@ -152,7 +165,10 @@ public sealed partial class InspectorPane : UserControl
                     );
                 break;
             case InspectorSection.Files:
-                _files = new FileBrowser(Model.Files) { ToolbarPadding = new Thickness(16, 12, 16, 0) };
+                _files = new FileBrowser(Model.Files)
+                {
+                    ToolbarPadding = new Thickness(16, 12, 16, 0),
+                };
                 FileContent.Content = _files;
                 break;
             case InspectorSection.Peers:
@@ -201,7 +217,9 @@ public sealed partial class InspectorPane : UserControl
                     await Model.CommitTrackers();
                     // Someone who moved on during the request keeps their place.
                     if (!Model.IsEditingTrackers && HasTrackerEditorFocus())
-                        DispatcherQueue.TryEnqueue(() => EditTrackers.Focus(FocusState.Programmatic));
+                        DispatcherQueue.TryEnqueue(() =>
+                            EditTrackers.Focus(FocusState.Programmatic)
+                        );
                 };
                 TrackerTable
                     .Schema<Tracker>()
@@ -338,7 +356,8 @@ public sealed partial class InspectorPane : UserControl
             if (_library is null)
                 return;
             _library.Section = ReferenceEquals(sender.SelectedItem, LibraryFile)
-                ? LibrarySection.File : LibrarySection.Information;
+                ? LibrarySection.File
+                : LibrarySection.Information;
             return;
         }
         if (_library is not null || sender.SelectedItem is not { Tag: InspectorSection section })
@@ -352,7 +371,7 @@ public sealed partial class InspectorPane : UserControl
         if (_library is not null)
         {
             _tracking = false;
-            RefreshLibrary();
+            RefreshLibrary(workspace);
             return;
         }
         if (!Model.IsVisible)
@@ -366,7 +385,9 @@ public sealed partial class InspectorPane : UserControl
         EmptyText.Text = Model.EmptyText;
         var inspecting = Model.HasContent && Model.IsVisible;
         var content = inspecting ? LoadSection(Model.Section) : EmptyState;
-        if (!workspace && inspecting && _section != Model.Section)
+        if (workspace)
+            _motion.Show(content, forward: false);
+        else if (inspecting && _section != Model.Section)
             _motion.Show(content, forward: Model.Section >= _section);
         else
             _motion.CrossFade(content);
@@ -399,20 +420,28 @@ public sealed partial class InspectorPane : UserControl
         var loading = Model.IsAvailable && Model.IsLoading;
         if (Peers is not null)
         {
-            Peers.Placeholder = Model.Peers is null && loading
-                ? Syno.TableView.Placeholder.Loading : Syno.TableView.Placeholder.Empty;
+            Peers.Placeholder =
+                Model.Peers is null && loading
+                    ? Syno.TableView.Placeholder.Loading
+                    : Syno.TableView.Placeholder.Empty;
             NoPeers.Visibility = Model.Peers is null ? Visibility.Collapsed : Visibility.Visible;
         }
         if (TrackerTable is not null)
         {
-            TrackerTable.Placeholder = Model.Trackers is null && loading
-                ? Syno.TableView.Placeholder.Loading : Syno.TableView.Placeholder.Empty;
-            NoTrackers.Visibility = Model.Trackers is null ? Visibility.Collapsed : Visibility.Visible;
+            TrackerTable.Placeholder =
+                Model.Trackers is null && loading
+                    ? Syno.TableView.Placeholder.Loading
+                    : Syno.TableView.Placeholder.Empty;
+            NoTrackers.Visibility = Model.Trackers is null
+                ? Visibility.Collapsed
+                : Visibility.Visible;
         }
         Map?.Show(Model.Pieces, Model.Text);
         if (General is not null)
         {
-            Progress.Style = Controls.Progress.SelectStyle(Model.Target is { IsProgressMuted: true });
+            Progress.Style = Controls.Progress.SelectStyle(
+                Model.Target is { IsProgressMuted: true }
+            );
             VisualStateManager.GoToState(
                 this,
                 Model.Target is { IsError: true } ? "Error" : "Transferring",

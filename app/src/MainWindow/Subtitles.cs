@@ -18,7 +18,7 @@ public sealed partial class MainWindow
             interaction.Restore = () => DownloadSubtitles(entries);
             var content = new Batch(
                 Model.Text,
-                (error, key) => Model.Report(error, key, string.Empty, null),
+                (error, key) => Model.Report(error, key, null, null),
                 entries
             )
             {
@@ -106,15 +106,17 @@ public sealed partial class MainWindow
                         {
                             await subtitles.Check(Read(input), cancellation);
                             if (!cancellation.IsCancellationRequested)
-                                Model.ShowOutcome(Model.Text.Get("subtitles", "connected"), name);
+                                Model.ShowOutcome("subtitles", "connected", name);
                         }
                         catch (OperationCanceledException)
                         {
-                            System.Diagnostics.Debug.WriteLine($"Subtitle account check cancelled ({supplier.SupplierId}).");
+                            System.Diagnostics.Debug.WriteLine(
+                                $"Subtitle account check cancelled ({supplier.SupplierId})."
+                            );
                         }
                         catch (Exception error) when (!cancellation.IsCancellationRequested)
                         {
-                            Model.Report(error, "failed_subtitle_check", name, null);
+                            Model.Report(error, "failed_subtitle_check", () => name, null);
                         }
                     }
                     : null
@@ -140,13 +142,22 @@ public sealed partial class MainWindow
             };
             void RefreshActions(object? sender, PropertyChangedEventArgs args)
             {
-                dialog.PrimaryButtonText = content.HasResults ? Model.Text.Get("subtitles", "download_choice") : string.Empty;
+                dialog.PrimaryButtonText = content.HasResults
+                    ? Model.Text.Get("subtitles", "download_choice")
+                    : string.Empty;
                 dialog.PrimaryToolTip = Model.Text.Get("subtitles", "choose_tip");
-                dialog.SecondaryButtonText = content.CanSearch ? Model.Text.Get("subtitles", "search_again") : string.Empty;
+                dialog.SecondaryButtonText = content.CanSearch
+                    ? Model.Text.Get("subtitles", "search_again")
+                    : string.Empty;
                 dialog.SecondaryToolTip = content.SearchHint;
-                dialog.CloseButtonText = Model.Text.Get(content.IsSearching ? "dialog" : "commands", content.IsSearching ? "cancel" : "close");
-                dialog.DefaultButton = content.HasResults ? ContentDialogButton.Primary
-                    : content.CanSearch ? ContentDialogButton.Secondary : ContentDialogButton.Close;
+                dialog.CloseButtonText = Model.Text.Get(
+                    content.IsSearching ? "dialog" : "commands",
+                    content.IsSearching ? "cancel" : "close"
+                );
+                dialog.DefaultButton =
+                    content.HasResults ? ContentDialogButton.Primary
+                    : content.CanSearch ? ContentDialogButton.Secondary
+                    : ContentDialogButton.Close;
             }
             content.PropertyChanged += RefreshActions;
             dialog.SecondaryButtonClick += async (_, args) =>

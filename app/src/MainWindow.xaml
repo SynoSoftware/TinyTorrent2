@@ -20,7 +20,11 @@
     Drop="OnDrop"
   >
     <Grid.Resources>
-      <Style x:Key="DataCautionIconStyle" TargetType="FontIcon" BasedOn="{StaticResource TinyTorrentStatusIconStyle}">
+      <Style
+        x:Key="DataCautionIconStyle"
+        TargetType="FontIcon"
+        BasedOn="{StaticResource TinyTorrentStatusIconStyle}"
+      >
         <Setter Property="Foreground" Value="{ThemeResource SystemFillColorCautionBrush}" />
       </Style>
       <Style x:Key="TinyTorrentWorkDividerStyle" TargetType="Border">
@@ -43,6 +47,7 @@
         <ColumnDefinition Width="*" />
         <ColumnDefinition Width="Auto" />
         <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto" />
         <ColumnDefinition x:Name="RightInset" Width="0" />
       </Grid.ColumnDefinitions>
       <StackPanel x:Name="CaptionStart" Grid.Column="1" Orientation="Horizontal">
@@ -61,47 +66,54 @@
         <Button
           x:Name="AppIcon"
           Style="{StaticResource TinyTorrentCaptionButtonStyle}"
+          Width="Auto"
           Margin="8,0,0,0"
-          Click="OnPageSwitch"
-          PointerEntered="OnNavigationEnter"
-          PointerExited="OnNavigationLeave"
-          PointerCanceled="OnNavigationLeave"
-          GotFocus="OnNavigationInput"
-          LostFocus="OnNavigationInput"
+          ClickMode="Press"
           AutomationProperties.AutomationId="PageSwitch"
         >
-          <Button.Resources>
-            <SolidColorBrush x:Key="TinyTorrentCaptionHoverBrush" Color="Transparent" />
-            <SolidColorBrush x:Key="TinyTorrentCaptionPressedBrush" Color="Transparent" />
-          </Button.Resources>
-          <Grid
-            Width="{StaticResource TinyTorrentSurfaceIconSize}"
-            Height="{StaticResource TinyTorrentSurfaceIconSize}"
+          <StackPanel
+            Margin="11,0"
+            Orientation="Horizontal"
+            Spacing="8"
             IsHitTestVisible="False"
             AutomationProperties.AccessibilityView="Raw"
           >
-            <Grid.Projection>
-              <PlaneProjection x:Name="NavigationProjection" />
-            </Grid.Projection>
-            <Image
-              x:Name="TorrentsFace"
-              Width="{StaticResource TinyTorrentSurfaceIconSize}"
-              Height="{StaticResource TinyTorrentSurfaceIconSize}"
-              AutomationProperties.AccessibilityView="Raw"
-            >
-              <Image.Source>
-                <SvgImageSource UriSource="ms-appx:///Assets/tinyTorrent.svg" />
-              </Image.Source>
-            </Image>
-            <Image
-              x:Name="LibraryFace"
-              Source="ms-appx:///Assets/Settings/library.svg"
-              Width="{StaticResource TinyTorrentSurfaceIconSize}"
-              Height="{StaticResource TinyTorrentSurfaceIconSize}"
-              Visibility="Collapsed"
-              AutomationProperties.AccessibilityView="Raw"
-            />
-          </Grid>
+            <Grid>
+              <Image
+                x:Name="TorrentsFace"
+                Width="{StaticResource TinyTorrentSurfaceIconSize}"
+                Height="{StaticResource TinyTorrentSurfaceIconSize}"
+                AutomationProperties.AccessibilityView="Raw"
+              >
+                <Image.Source>
+                  <SvgImageSource UriSource="ms-appx:///Assets/tinyTorrent.svg" />
+                </Image.Source>
+              </Image>
+              <Image
+                x:Name="LibraryFace"
+                Source="ms-appx:///Assets/Settings/library.svg"
+                Width="{StaticResource TinyTorrentSurfaceIconSize}"
+                Height="{StaticResource TinyTorrentSurfaceIconSize}"
+                Visibility="Collapsed"
+                AutomationProperties.AccessibilityView="Raw"
+              />
+            </Grid>
+            <!-- Both names stay in the layout, so the button keeps the width of
+                 the longer one and the menus never move when the page changes. -->
+            <Grid VerticalAlignment="Center">
+              <TextBlock
+                x:Name="TorrentsName"
+                TextTrimming="CharacterEllipsis"
+                AutomationProperties.AccessibilityView="Raw"
+              />
+              <TextBlock
+                x:Name="LibraryName"
+                Opacity="0"
+                TextTrimming="CharacterEllipsis"
+                AutomationProperties.AccessibilityView="Raw"
+              />
+            </Grid>
+          </StackPanel>
         </Button>
       </StackPanel>
       <MenuBar x:Name="Menus" Grid.Column="2" Padding="0" VerticalAlignment="Center">
@@ -218,12 +230,25 @@
         />
       </Button>
       <Button
-        x:Name="ThemeButton"
+        x:Name="LanguageButton"
         Grid.Column="5"
+        Style="{StaticResource TinyTorrentCaptionButtonStyle}"
+        IsEnabled="{x:Bind Model.Settings.CanSelectLanguage, Mode=OneWay}"
+        AutomationProperties.AutomationId="LanguageSwitcher"
+      >
+        <TextBlock x:Name="LanguageLabel" Style="{StaticResource CaptionTextBlockStyle}" />
+      </Button>
+      <Button
+        x:Name="ThemeButton"
+        Grid.Column="6"
         Style="{StaticResource TinyTorrentCaptionButtonStyle}"
         Command="{x:Bind Model.SwitchTheme}"
       >
-        <FontIcon x:Name="ThemeIcon" FontFamily="{x:Bind icons:Lucide.Font}" FontSize="{StaticResource TinyTorrentInlineIconSize}" />
+        <FontIcon
+          x:Name="ThemeIcon"
+          FontFamily="{x:Bind icons:Lucide.Font}"
+          FontSize="{StaticResource TinyTorrentInlineIconSize}"
+        />
       </Button>
     </Grid>
     <Grid x:Name="PageContent" Grid.Row="1">
@@ -237,76 +262,89 @@
         Background="Transparent"
       >
         <SplitView.Pane>
-            <controls:Pane x:Name="FiltersPane" Dock="Left" CanClose="True" Padding="4,0,4,4"
-              KeyDown="OnFiltersKey" AutomationProperties.AutomationId="Filters">
-              <controls:Pane.Header>
-                  <TextBlock
-                    x:Name="FiltersTitle"
-                    Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
-                  />
-              </controls:Pane.Header>
-              <Grid RowSpacing="8" Padding="8,8,8,0">
-                <Grid.RowDefinitions>
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="*" />
-                </Grid.RowDefinitions>
-                <controls:ActionButton
-                  x:Name="ClearFiltersButton"
-                  Glyph="{x:Bind icons:Lucide.FunnelX}"
-                  Padding="8,4"
-                  Command="{x:Bind Model.ClearFilters}"
-                  HorizontalAlignment="Stretch"
-                />
-                <!-- WinUI's rounded item backgrounds add a four-pixel side
+          <controls:Pane
+            x:Name="FiltersPane"
+            Dock="Left"
+            CanClose="True"
+            Padding="4,0,4,4"
+            KeyDown="OnFiltersKey"
+            AutomationProperties.AutomationId="Filters"
+          >
+            <controls:Pane.Header>
+              <TextBlock
+                x:Name="FiltersTitle"
+                Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
+              />
+            </controls:Pane.Header>
+            <Grid x:Name="FilterContent" RowSpacing="8" Padding="8,8,8,0">
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+              </Grid.RowDefinitions>
+              <controls:ActionButton
+                x:Name="ClearFiltersButton"
+                Glyph="{x:Bind icons:Lucide.FunnelX}"
+                Padding="8,4"
+                Command="{x:Bind Model.ClearFilters}"
+                HorizontalAlignment="Stretch"
+              />
+              <!-- WinUI's rounded item backgrounds add a four-pixel side
                      inset; offset it so their edges align with Clear. -->
-                <ListView
-                  x:Name="Filters"
-                  Grid.Row="1"
-                  Margin="-4,0"
-                  SelectionMode="Single"
-                  SelectionChanged="OnFilterChanged"
-                >
-                  <ListView.ItemTemplate>
-                    <DataTemplate x:DataType="local:FilterChoice">
-                      <Grid ColumnSpacing="8">
-                        <Grid.ColumnDefinitions>
-                          <ColumnDefinition Width="Auto" />
-                          <ColumnDefinition Width="*" />
-                          <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind Glyph}"
-                          Style="{StaticResource TinyTorrentStatusIconStyle}"
-                          AutomationProperties.AccessibilityView="Raw" />
-                        <TextBlock Grid.Column="1" Text="{x:Bind Label, Mode=OneWay}" TextWrapping="Wrap"
-                          Style="{StaticResource TinyTorrentStatusTextStyle}" />
-                        <TextBlock
-                          Grid.Column="2"
-                          Text="{x:Bind Count, Mode=OneWay}"
-                          Style="{StaticResource TinyTorrentStatusTextStyle}"
-                          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                          Visibility="{x:Bind IsCountNeutral, Mode=OneWay}"
-                        />
-                        <TextBlock
-                          Grid.Column="2"
-                          Text="{x:Bind Count, Mode=OneWay}"
-                          Style="{StaticResource TinyTorrentStatusTextStyle}"
-                          Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
-                          Visibility="{x:Bind IsCountAccent, Mode=OneWay}"
-                        />
-                        <TextBlock
-                          Grid.Column="2"
-                          Text="{x:Bind Count, Mode=OneWay}"
-                          Style="{StaticResource TinyTorrentStatusTextStyle}"
-                          Foreground="{ThemeResource SystemFillColorCriticalBrush}"
-                          Visibility="{x:Bind IsCountCritical, Mode=OneWay}"
-                        />
-                      </Grid>
-                    </DataTemplate>
-                  </ListView.ItemTemplate>
-                </ListView>
-                <ScrollViewer x:Name="LibraryFilters" Grid.Row="1" Visibility="Collapsed" />
-              </Grid>
-            </controls:Pane>
+              <ListView
+                x:Name="Filters"
+                Grid.Row="1"
+                Margin="-4,0"
+                SelectionMode="Single"
+                SelectionChanged="OnFilterChanged"
+              >
+                <ListView.ItemTemplate>
+                  <DataTemplate x:DataType="local:FilterChoice">
+                    <Grid ColumnSpacing="8">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                      </Grid.ColumnDefinitions>
+                      <FontIcon
+                        FontFamily="{x:Bind icons:Lucide.Font}"
+                        Glyph="{x:Bind Glyph}"
+                        Style="{StaticResource TinyTorrentStatusIconStyle}"
+                        AutomationProperties.AccessibilityView="Raw"
+                      />
+                      <TextBlock
+                        Grid.Column="1"
+                        Text="{x:Bind Label, Mode=OneWay}"
+                        TextWrapping="Wrap"
+                        Style="{StaticResource TinyTorrentStatusTextStyle}"
+                      />
+                      <TextBlock
+                        Grid.Column="2"
+                        Text="{x:Bind Count, Mode=OneWay}"
+                        Style="{StaticResource TinyTorrentStatusTextStyle}"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Visibility="{x:Bind IsCountNeutral, Mode=OneWay}"
+                      />
+                      <TextBlock
+                        Grid.Column="2"
+                        Text="{x:Bind Count, Mode=OneWay}"
+                        Style="{StaticResource TinyTorrentStatusTextStyle}"
+                        Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                        Visibility="{x:Bind IsCountAccent, Mode=OneWay}"
+                      />
+                      <TextBlock
+                        Grid.Column="2"
+                        Text="{x:Bind Count, Mode=OneWay}"
+                        Style="{StaticResource TinyTorrentStatusTextStyle}"
+                        Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                        Visibility="{x:Bind IsCountCritical, Mode=OneWay}"
+                      />
+                    </Grid>
+                  </DataTemplate>
+                </ListView.ItemTemplate>
+              </ListView>
+              <ScrollViewer x:Name="LibraryFilters" Grid.Row="1" Visibility="Collapsed" />
+            </Grid>
+          </controls:Pane>
         </SplitView.Pane>
         <Grid x:Name="TorrentWorkspace" Background="Transparent">
           <Grid.RowDefinitions>
@@ -333,10 +371,16 @@
                      and is 68 wide by default. The margin centres the toolbar
                      icon in the bar's compact height, on a square button. -->
                 <CommandBar.Resources>
-                  <StaticResource x:Key="AppBarButtonContentHeight" ResourceKey="TinyTorrentToolbarIconSize" />
+                  <StaticResource
+                    x:Key="AppBarButtonContentHeight"
+                    ResourceKey="TinyTorrentToolbarIconSize"
+                  />
                   <Thickness x:Key="AppBarButtonContentViewboxCollapsedMargin">0,12,0,12</Thickness>
                   <Thickness x:Key="AppBarButtonInnerBorderMargin">2</Thickness>
-                  <Style TargetType="AppBarButton" BasedOn="{StaticResource DefaultAppBarButtonStyle}">
+                  <Style
+                    TargetType="AppBarButton"
+                    BasedOn="{StaticResource DefaultAppBarButtonStyle}"
+                  >
                     <Setter Property="Width" Value="48" />
                   </Style>
                 </CommandBar.Resources>
@@ -461,12 +505,7 @@
                       </DataTemplate>
                     </table:Column.CellTemplate>
                   </table:Column>
-                  <table:Column
-                    x:Name="NameColumn"
-                    Id="name"
-                    Width="280"
-                    MinWidth="160"
-                  >
+                  <table:Column x:Name="NameColumn" Id="name" Width="280" MinWidth="160">
                     <table:Column.CellTemplate>
                       <DataTemplate x:DataType="models:Torrent">
                         <TextBlock
@@ -784,7 +823,11 @@
               </Grid.RowDefinitions>
               <!-- One icon per severity, because a theme brush cannot be
                        chosen from code without losing the window's theme. -->
-              <Grid Grid.RowSpan="3" VerticalAlignment="Center" AutomationProperties.AccessibilityView="Raw">
+              <Grid
+                Grid.RowSpan="3"
+                VerticalAlignment="Center"
+                AutomationProperties.AccessibilityView="Raw"
+              >
                 <FontIcon
                   FontFamily="{x:Bind icons:Lucide.Font}"
                   Glyph="{x:Bind icons:Lucide.CircleCheck}"
@@ -897,26 +940,64 @@
         <ColumnDefinition x:Name="TransferGap" Width="*" />
         <ColumnDefinition Width="Auto" />
       </Grid.ColumnDefinitions>
-      <StackPanel x:Name="ContextStatus" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-          <FontIcon x:Name="ContextIcon" Style="{StaticResource TinyTorrentStatusIconStyle}"
-            FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.List}"
-            AutomationProperties.AccessibilityView="Raw" />
-          <TextBlock x:Name="CountLabel" Style="{StaticResource TinyTorrentStatusTextStyle}"
-            TextTrimming="CharacterEllipsis" />
-        </StackPanel>
-      <StackPanel x:Name="ActivityStatus" Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+      <StackPanel
+        x:Name="ContextStatus"
+        Orientation="Horizontal"
+        Spacing="6"
+        VerticalAlignment="Center"
+      >
+        <FontIcon
+          x:Name="ContextIcon"
+          Style="{StaticResource TinyTorrentStatusIconStyle}"
+          FontFamily="{x:Bind icons:Lucide.Font}"
+          Glyph="{x:Bind icons:Lucide.List}"
+          AutomationProperties.AccessibilityView="Raw"
+        />
+        <TextBlock
+          x:Name="CountLabel"
+          Style="{StaticResource TinyTorrentStatusTextStyle}"
+          TextTrimming="CharacterEllipsis"
+        />
+      </StackPanel>
+      <StackPanel
+        x:Name="ActivityStatus"
+        Grid.Column="2"
+        Orientation="Horizontal"
+        VerticalAlignment="Center"
+      >
         <StackPanel x:Name="WorkItems" Orientation="Horizontal" VerticalAlignment="Center" />
-        <Border x:Name="WorkSeparator" Width="1" Height="16" Margin="10,0"
-          Background="{ThemeResource DividerStrokeColorDefaultBrush}" Visibility="Collapsed"
-          AutomationProperties.AccessibilityView="Raw" />
-        <controls:ActionButton x:Name="WorkButton" Glyph="{x:Bind icons:Lucide.ListTodo}"
-          Padding="6,0" MinHeight="32" Visibility="Collapsed">
+        <Border
+          x:Name="WorkSeparator"
+          Width="1"
+          Height="16"
+          Margin="10,0"
+          Background="{ThemeResource DividerStrokeColorDefaultBrush}"
+          Visibility="Collapsed"
+          AutomationProperties.AccessibilityView="Raw"
+        />
+        <controls:ActionButton
+          x:Name="WorkButton"
+          Glyph="{x:Bind icons:Lucide.ListTodo}"
+          Padding="6,0"
+          MinHeight="32"
+          Visibility="Collapsed"
+        >
           <controls:ActionButton.Flyout>
-            <Flyout x:Name="WorkFlyout" Placement="Top" Opening="OnWorkOpening" Closed="OnWorkClosed">
+            <Flyout
+              x:Name="WorkFlyout"
+              Placement="Top"
+              Opening="OnWorkOpening"
+              Closed="OnWorkClosed"
+            >
               <StackPanel x:Name="WorkContent" Spacing="12" Width="420">
                 <TextBlock x:Name="WorkTitle" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                <ListView x:Name="WorkList" MaxHeight="360" SelectionMode="None"
-                  HorizontalContentAlignment="Stretch" IsItemClickEnabled="False">
+                <ListView
+                  x:Name="WorkList"
+                  MaxHeight="360"
+                  SelectionMode="None"
+                  HorizontalContentAlignment="Stretch"
+                  IsItemClickEnabled="False"
+                >
                   <ListView.ItemContainerStyle>
                     <Style TargetType="ListViewItem">
                       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -929,102 +1010,247 @@
             </Flyout>
           </controls:ActionButton.Flyout>
         </controls:ActionButton>
-        <StackPanel x:Name="InformationStatus" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-          <FontIcon x:Name="InformationIcon" Style="{StaticResource TinyTorrentStatusIconStyle}"
-            FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Info}"
-            AutomationProperties.AccessibilityView="Raw" />
-          <TextBlock x:Name="InformationLabel" Style="{StaticResource TinyTorrentStatusTextStyle}"
-            TextTrimming="CharacterEllipsis" />
+        <StackPanel
+          x:Name="InformationStatus"
+          Orientation="Horizontal"
+          Spacing="6"
+          VerticalAlignment="Center"
+        >
+          <FontIcon
+            x:Name="InformationIcon"
+            Style="{StaticResource TinyTorrentStatusIconStyle}"
+            FontFamily="{x:Bind icons:Lucide.Font}"
+            Glyph="{x:Bind icons:Lucide.Info}"
+            AutomationProperties.AccessibilityView="Raw"
+          />
+          <TextBlock
+            x:Name="InformationLabel"
+            Style="{StaticResource TinyTorrentStatusTextStyle}"
+            TextTrimming="CharacterEllipsis"
+          />
         </StackPanel>
       </StackPanel>
-      <StackPanel x:Name="TransferStatus" Grid.Column="4" Orientation="Horizontal" Spacing="16"
-        HorizontalAlignment="Right" VerticalAlignment="Center">
-        <StackPanel x:Name="MemoryStatus" Orientation="Horizontal" Spacing="12" Visibility="Collapsed">
-          <TextBlock x:Name="MemoryCaption" Style="{StaticResource TinyTorrentStatusTextStyle}"
-            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+      <StackPanel
+        x:Name="TransferStatus"
+        Grid.Column="4"
+        Orientation="Horizontal"
+        Spacing="16"
+        HorizontalAlignment="Right"
+        VerticalAlignment="Center"
+      >
+        <StackPanel
+          x:Name="MemoryStatus"
+          Orientation="Horizontal"
+          Spacing="12"
+          Visibility="Collapsed"
+        >
+          <TextBlock
+            x:Name="MemoryCaption"
+            Style="{StaticResource TinyTorrentStatusTextStyle}"
+            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+          />
           <StackPanel Orientation="Horizontal" Spacing="6">
-            <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}"
-              FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Cpu}"
-              AutomationProperties.AccessibilityView="Raw" />
-            <TextBlock x:Name="EngineMemoryLabel" Style="{StaticResource TinyTorrentStatusTextStyle}" />
+            <FontIcon
+              Style="{StaticResource TinyTorrentStatusIconStyle}"
+              FontFamily="{x:Bind icons:Lucide.Font}"
+              Glyph="{x:Bind icons:Lucide.Cpu}"
+              AutomationProperties.AccessibilityView="Raw"
+            />
+            <TextBlock
+              x:Name="EngineMemoryLabel"
+              Style="{StaticResource TinyTorrentStatusTextStyle}"
+            />
           </StackPanel>
           <StackPanel Orientation="Horizontal" Spacing="6">
-            <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}"
-              FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.AppWindow}"
-              AutomationProperties.AccessibilityView="Raw" />
+            <FontIcon
+              Style="{StaticResource TinyTorrentStatusIconStyle}"
+              FontFamily="{x:Bind icons:Lucide.Font}"
+              Glyph="{x:Bind icons:Lucide.AppWindow}"
+              AutomationProperties.AccessibilityView="Raw"
+            />
             <TextBlock x:Name="UiMemoryLabel" Style="{StaticResource TinyTorrentStatusTextStyle}" />
           </StackPanel>
-          <Border Width="1" Height="16" Background="{ThemeResource DividerStrokeColorDefaultBrush}"
-            AutomationProperties.AccessibilityView="Raw" />
+          <Border
+            Width="1"
+            Height="16"
+            Background="{ThemeResource DividerStrokeColorDefaultBrush}"
+            AutomationProperties.AccessibilityView="Raw"
+          />
         </StackPanel>
-        <TextBlock x:Name="TransferLabel" Style="{StaticResource TinyTorrentStatusTextStyle}"
-            TextTrimming="CharacterEllipsis" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-        <StackPanel x:Name="DownloadRate" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-          <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}"
-            FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.ArrowDown}"
-            Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" AutomationProperties.AccessibilityView="Raw" />
-          <TextBlock x:Name="DownloadLabel" Style="{StaticResource TinyTorrentStatusTextStyle}"
-            TextTrimming="CharacterEllipsis" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+        <TextBlock
+          x:Name="TransferLabel"
+          Style="{StaticResource TinyTorrentStatusTextStyle}"
+          TextTrimming="CharacterEllipsis"
+          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+        />
+        <StackPanel
+          x:Name="DownloadRate"
+          Orientation="Horizontal"
+          Spacing="6"
+          VerticalAlignment="Center"
+        >
+          <FontIcon
+            Style="{StaticResource TinyTorrentStatusIconStyle}"
+            FontFamily="{x:Bind icons:Lucide.Font}"
+            Glyph="{x:Bind icons:Lucide.ArrowDown}"
+            Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+            AutomationProperties.AccessibilityView="Raw"
+          />
+          <TextBlock
+            x:Name="DownloadLabel"
+            Style="{StaticResource TinyTorrentStatusTextStyle}"
+            TextTrimming="CharacterEllipsis"
+            Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+          />
         </StackPanel>
-        <StackPanel x:Name="UploadRate" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-          <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}"
-            FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.ArrowUp}"
-            Foreground="{ThemeResource TinyTorrentUploadBrush}" AutomationProperties.AccessibilityView="Raw" />
-          <TextBlock x:Name="UploadLabel" Style="{StaticResource TinyTorrentStatusTextStyle}"
-            TextTrimming="CharacterEllipsis" Foreground="{ThemeResource TinyTorrentUploadBrush}" />
+        <StackPanel
+          x:Name="UploadRate"
+          Orientation="Horizontal"
+          Spacing="6"
+          VerticalAlignment="Center"
+        >
+          <FontIcon
+            Style="{StaticResource TinyTorrentStatusIconStyle}"
+            FontFamily="{x:Bind icons:Lucide.Font}"
+            Glyph="{x:Bind icons:Lucide.ArrowUp}"
+            Foreground="{ThemeResource TinyTorrentUploadBrush}"
+            AutomationProperties.AccessibilityView="Raw"
+          />
+          <TextBlock
+            x:Name="UploadLabel"
+            Style="{StaticResource TinyTorrentStatusTextStyle}"
+            TextTrimming="CharacterEllipsis"
+            Foreground="{ThemeResource TinyTorrentUploadBrush}"
+          />
         </StackPanel>
-        <StackPanel x:Name="RestrictionStatus" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+        <StackPanel
+          x:Name="RestrictionStatus"
+          Orientation="Horizontal"
+          Spacing="6"
+          VerticalAlignment="Center"
+        >
           <Grid>
-            <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}"
-              FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Pause}"
-              Visibility="{x:Bind Model.IsSessionPaused, Mode=OneWay}" AutomationProperties.AccessibilityView="Raw" />
-            <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}"
-              FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Turtle}"
+            <FontIcon
+              Style="{StaticResource TinyTorrentStatusIconStyle}"
+              FontFamily="{x:Bind icons:Lucide.Font}"
+              Glyph="{x:Bind icons:Lucide.Pause}"
+              Visibility="{x:Bind Model.IsSessionPaused, Mode=OneWay}"
+              AutomationProperties.AccessibilityView="Raw"
+            />
+            <FontIcon
+              Style="{StaticResource TinyTorrentStatusIconStyle}"
+              FontFamily="{x:Bind icons:Lucide.Font}"
+              Glyph="{x:Bind icons:Lucide.Turtle}"
               Foreground="{ThemeResource SystemFillColorCautionBrush}"
-              Visibility="{x:Bind Model.ShowsAlternativeLimits, Mode=OneWay}" AutomationProperties.AccessibilityView="Raw" />
+              Visibility="{x:Bind Model.ShowsAlternativeLimits, Mode=OneWay}"
+              AutomationProperties.AccessibilityView="Raw"
+            />
           </Grid>
-          <TextBlock x:Name="RestrictionLabel" Style="{StaticResource TinyTorrentStatusTextStyle}"
-            TextTrimming="CharacterEllipsis" />
+          <TextBlock
+            x:Name="RestrictionLabel"
+            Style="{StaticResource TinyTorrentStatusTextStyle}"
+            TextTrimming="CharacterEllipsis"
+          />
         </StackPanel>
-        <TextBlock x:Name="LimitsLabel" Style="{StaticResource TinyTorrentStatusTextStyle}"
-            TextTrimming="CharacterEllipsis" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-        <StackPanel x:Name="FreeSpaceStatus" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-          <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}"
-            FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.HardDrive}"
-            AutomationProperties.AccessibilityView="Raw" />
-          <TextBlock x:Name="FreeSpaceLabel" Style="{StaticResource TinyTorrentStatusTextStyle}"
-            TextTrimming="CharacterEllipsis" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        <TextBlock
+          x:Name="LimitsLabel"
+          Style="{StaticResource TinyTorrentStatusTextStyle}"
+          TextTrimming="CharacterEllipsis"
+          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+        />
+        <StackPanel
+          x:Name="FreeSpaceStatus"
+          Orientation="Horizontal"
+          Spacing="6"
+          VerticalAlignment="Center"
+        >
+          <FontIcon
+            Style="{StaticResource TinyTorrentStatusIconStyle}"
+            FontFamily="{x:Bind icons:Lucide.Font}"
+            Glyph="{x:Bind icons:Lucide.HardDrive}"
+            AutomationProperties.AccessibilityView="Raw"
+          />
+          <TextBlock
+            x:Name="FreeSpaceLabel"
+            Style="{StaticResource TinyTorrentStatusTextStyle}"
+            TextTrimming="CharacterEllipsis"
+            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+          />
         </StackPanel>
-        <StackPanel x:Name="ExternalIpStatus" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-          <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}"
-            FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Globe}"
-            AutomationProperties.AccessibilityView="Raw" />
-          <TextBlock x:Name="ExternalIpLabel" Style="{StaticResource TinyTorrentStatusTextStyle}"
-            TextTrimming="CharacterEllipsis" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        <StackPanel
+          x:Name="ExternalIpStatus"
+          Orientation="Horizontal"
+          Spacing="6"
+          VerticalAlignment="Center"
+        >
+          <FontIcon
+            Style="{StaticResource TinyTorrentStatusIconStyle}"
+            FontFamily="{x:Bind icons:Lucide.Font}"
+            Glyph="{x:Bind icons:Lucide.Globe}"
+            AutomationProperties.AccessibilityView="Raw"
+          />
+          <TextBlock
+            x:Name="ExternalIpLabel"
+            Style="{StaticResource TinyTorrentStatusTextStyle}"
+            TextTrimming="CharacterEllipsis"
+            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+          />
         </StackPanel>
-        <StackPanel x:Name="Incoming" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+        <StackPanel
+          x:Name="Incoming"
+          Orientation="Horizontal"
+          Spacing="6"
+          VerticalAlignment="Center"
+        >
           <Grid>
-            <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}"
-              FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind Model.IncomingGlyph, Mode=OneWay}"
-              Visibility="{x:Bind Model.IsIncomingProxied, Mode=OneWay}" AutomationProperties.AccessibilityView="Raw" />
-            <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}"
-              FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind Model.IncomingGlyph, Mode=OneWay}"
+            <FontIcon
+              Style="{StaticResource TinyTorrentStatusIconStyle}"
+              FontFamily="{x:Bind icons:Lucide.Font}"
+              Glyph="{x:Bind Model.IncomingGlyph, Mode=OneWay}"
+              Visibility="{x:Bind Model.IsIncomingProxied, Mode=OneWay}"
+              AutomationProperties.AccessibilityView="Raw"
+            />
+            <FontIcon
+              Style="{StaticResource TinyTorrentStatusIconStyle}"
+              FontFamily="{x:Bind icons:Lucide.Font}"
+              Glyph="{x:Bind Model.IncomingGlyph, Mode=OneWay}"
               Foreground="{ThemeResource SystemFillColorSuccessBrush}"
-              Visibility="{x:Bind Model.IsIncomingOpen, Mode=OneWay}" AutomationProperties.AccessibilityView="Raw" />
-            <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}"
-              FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind Model.IncomingGlyph, Mode=OneWay}"
+              Visibility="{x:Bind Model.IsIncomingOpen, Mode=OneWay}"
+              AutomationProperties.AccessibilityView="Raw"
+            />
+            <FontIcon
+              Style="{StaticResource TinyTorrentStatusIconStyle}"
+              FontFamily="{x:Bind icons:Lucide.Font}"
+              Glyph="{x:Bind Model.IncomingGlyph, Mode=OneWay}"
               Foreground="{ThemeResource SystemFillColorCautionBrush}"
-              Visibility="{x:Bind Model.IsIncomingClosed, Mode=OneWay}" AutomationProperties.AccessibilityView="Raw" />
+              Visibility="{x:Bind Model.IsIncomingClosed, Mode=OneWay}"
+              AutomationProperties.AccessibilityView="Raw"
+            />
           </Grid>
-          <TextBlock x:Name="IncomingLabel" Style="{StaticResource TinyTorrentStatusTextStyle}"
-            TextTrimming="CharacterEllipsis" />
+          <TextBlock
+            x:Name="IncomingLabel"
+            Style="{StaticResource TinyTorrentStatusTextStyle}"
+            TextTrimming="CharacterEllipsis"
+          />
         </StackPanel>
-        <StackPanel x:Name="UpdateAvailable" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-          <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}"
-            FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.CircleFadingArrowUp}"
-            AutomationProperties.AccessibilityView="Raw" />
-          <TextBlock x:Name="UpdateLabel" Style="{StaticResource TinyTorrentStatusTextStyle}"
-            TextTrimming="CharacterEllipsis" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        <StackPanel
+          x:Name="UpdateAvailable"
+          Orientation="Horizontal"
+          Spacing="6"
+          VerticalAlignment="Center"
+        >
+          <FontIcon
+            Style="{StaticResource TinyTorrentStatusIconStyle}"
+            FontFamily="{x:Bind icons:Lucide.Font}"
+            Glyph="{x:Bind icons:Lucide.CircleFadingArrowUp}"
+            AutomationProperties.AccessibilityView="Raw"
+          />
+          <TextBlock
+            x:Name="UpdateLabel"
+            Style="{StaticResource TinyTorrentStatusTextStyle}"
+            TextTrimming="CharacterEllipsis"
+            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+          />
         </StackPanel>
       </StackPanel>
     </Grid>

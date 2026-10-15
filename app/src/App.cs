@@ -19,7 +19,8 @@ public partial class App : Application
 
     internal static Version Version { get; } =
         typeof(App).Assembly.GetName().Version ?? new Version(0, 0, 0, 0);
-    internal static string UserAgent { get; } = "TinyTorrent/" + Version + " (+https://github.com/SynoSoftware/TinyTorrent2)";
+    internal static string UserAgent { get; } =
+        "TinyTorrent/" + Version + " (+https://github.com/SynoSoftware/TinyTorrent2)";
     private Mutex? _instance;
     private MainWindow? _window;
 
@@ -73,7 +74,12 @@ public partial class App : Application
             }
             catch (Exception error) when (error is FileNotFoundException or Win32Exception)
             {
-                MessageBoxW(IntPtr.Zero, text.Error("unknown", error.Message), text.Get("window", "title"), 0x10);
+                MessageBoxW(
+                    IntPtr.Zero,
+                    text.Error("unknown", error.Message),
+                    text.Get("window", "title"),
+                    0x10
+                );
             }
             Exit();
             return;
@@ -120,9 +126,7 @@ public partial class App : Application
             return;
         }
 
-        _strings = await Task.Run(() =>
-            new Strings(Supplier.AllLanguages)
-        );
+        _strings = await Task.Run(() => new Strings(Supplier.AllLanguages));
         _window = new MainWindow(_strings);
         _windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(_window);
         _window.Closed += (_, _) =>

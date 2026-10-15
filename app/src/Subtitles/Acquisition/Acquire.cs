@@ -1,7 +1,7 @@
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Services;
-using System.Text.Json;
 using SupplierType = Syno.TinyTorrent.Subtitles.Supplier;
 
 namespace Syno.TinyTorrent.Subtitles;
@@ -75,10 +75,19 @@ internal sealed partial class Acquisition
                                     using var reader = command.ExecuteReader();
                                     long? earliest = null;
                                     while (reader.Read())
-                                        if (Accepted(reader.GetString(0), reader.GetString(1), reader.GetBoolean(2)) is not null)
+                                        if (
+                                            Accepted(
+                                                reader.GetString(0),
+                                                reader.GetString(1),
+                                                reader.GetBoolean(2)
+                                            )
+                                            is not null
+                                        )
                                         {
                                             var value = reader.GetInt64(3);
-                                            earliest = earliest is null ? value : Math.Min(earliest.Value, value);
+                                            earliest = earliest is null
+                                                ? value
+                                                : Math.Min(earliest.Value, value);
                                         }
                                     return earliest;
                                 },
@@ -93,9 +102,11 @@ internal sealed partial class Acquisition
                             delay = TimeSpan.FromSeconds(Math.Min(remaining, int.MaxValue / 1000));
                             break;
                         }
-                        var targets = new TargetIndex((await Targets(cancellation).ConfigureAwait(false))
-                            .Where(Eligible)
-                            .ToArray());
+                        var targets = new TargetIndex(
+                            (await Targets(cancellation).ConfigureAwait(false))
+                                .Where(Eligible)
+                                .ToArray()
+                        );
                         var target = await Run(
                                 connection =>
                                 {
@@ -123,7 +134,11 @@ internal sealed partial class Acquisition
                                         var path = reader.GetString(0);
                                         var language = reader.GetString(1);
                                         var found = targets.Find(language, path);
-                                        if (found is not null && Accepted(path, language, reader.GetBoolean(2)) is not null)
+                                        if (
+                                            found is not null
+                                            && Accepted(path, language, reader.GetBoolean(2))
+                                                is not null
+                                        )
                                             due.Add(
                                                 found with
                                                 {
@@ -135,8 +150,11 @@ internal sealed partial class Acquisition
                                                     Match = reader.IsDBNull(5)
                                                         ? null
                                                         : (SubtitleMatch)reader.GetInt32(5),
-                                                    Fresh = reader.IsDBNull(6) ? null
-                                                        : JsonSerializer.Deserialize<SearchIntent>(reader.GetString(6)),
+                                                    Fresh = reader.IsDBNull(6)
+                                                        ? null
+                                                        : JsonSerializer.Deserialize<SearchIntent>(
+                                                            reader.GetString(6)
+                                                        ),
                                                 }
                                             );
                                     }
@@ -151,7 +169,12 @@ internal sealed partial class Acquisition
                             break;
                         if (Accepted(target.Path, target.Language, target.Manual) is not { } run)
                             continue;
-                        using (var request = CancellationTokenSource.CreateLinkedTokenSource(cancellation, run.Cancellation.Token))
+                        using (
+                            var request = CancellationTokenSource.CreateLinkedTokenSource(
+                                cancellation,
+                                run.Cancellation.Token
+                            )
+                        )
                         {
                             run.Report(run.Observation.Progress, new WorkExecution.Running());
                             await Acquire(target, request.Token).ConfigureAwait(false);
@@ -182,7 +205,9 @@ internal sealed partial class Acquisition
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
         {
-            System.Diagnostics.Debug.WriteLine("Subtitle worker wait cancelled: worker is stopping.");
+            System.Diagnostics.Debug.WriteLine(
+                "Subtitle worker wait cancelled: worker is stopping."
+            );
         }
     }
 
@@ -347,8 +372,7 @@ internal sealed partial class Acquisition
             Answered(SubtitleFailure.None);
             if (matches.Count == 0)
             {
-                await RecordNoMatch(target, cancellation)
-                    .ConfigureAwait(false);
+                await RecordNoMatch(target, cancellation).ConfigureAwait(false);
                 return;
             }
             await Run(
@@ -388,8 +412,8 @@ internal sealed partial class Acquisition
                             if (_batch.TryGetValue(target.Path, out var entry))
                                 _batch[pending.Path] = entry;
                             lock (_requestSync)
-                                Accepted(target.Path, target.Language, target.Manual)?.Jobs.Add(
-                                    new(pending.Path, pending.Language, pending.Manual));
+                                Accepted(target.Path, target.Language, target.Manual)
+                                    ?.Jobs.Add(new(pending.Path, pending.Language, pending.Manual));
                         }
                         return true;
                     },
@@ -402,9 +426,15 @@ internal sealed partial class Acquisition
         {
             if (error.Block.Kind == RequestBlockKind.Attention)
                 Answered(SubtitleFailure.Authentication);
-            await SetOutcome(target, error.Block.Kind == RequestBlockKind.Attention ? SubtitleOutcome.Unavailable
-                    : error.Block.RetryAt is null ? SubtitleOutcome.Blocked : SubtitleOutcome.Pending,
-                error.Block.RetryAt, cancellation).ConfigureAwait(false);
+            await SetOutcome(
+                    target,
+                    error.Block.Kind == RequestBlockKind.Attention ? SubtitleOutcome.Unavailable
+                        : error.Block.RetryAt is null ? SubtitleOutcome.Blocked
+                        : SubtitleOutcome.Pending,
+                    error.Block.RetryAt,
+                    cancellation
+                )
+                .ConfigureAwait(false);
         }
         catch (SubtitleException error)
         {
@@ -415,18 +445,15 @@ internal sealed partial class Acquisition
                 error.Reason == SubtitleFailure.Format ? SubtitleOutcome.Failed
                 : NeedsSetup(error.Reason) ? SubtitleOutcome.Unavailable
                 : SubtitleOutcome.Pending;
-            await SetOutcome(
-                    target,
-                    outcome,
-                    error.RetryAt,
-                    cancellation
-                )
-                .ConfigureAwait(false);
+            await SetOutcome(target, outcome, error.RetryAt, cancellation).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (!cancellation.IsCancellationRequested)
         {
-            System.Diagnostics.Debug.WriteLine($"Subtitle lookup cancelled ({target.Language}): target changed.");
-            await SetOutcome(target, SubtitleOutcome.Pending, null, cancellation).ConfigureAwait(false);
+            System.Diagnostics.Debug.WriteLine(
+                $"Subtitle lookup cancelled ({target.Language}): target changed."
+            );
+            await SetOutcome(target, SubtitleOutcome.Pending, null, cancellation)
+                .ConfigureAwait(false);
         }
         catch (Exception error)
             when (error
@@ -456,8 +483,7 @@ internal sealed partial class Acquisition
         }
         finally
         {
-            await RefreshAllowance()
-                .ConfigureAwait(false);
+            await RefreshAllowance().ConfigureAwait(false);
         }
     }
 
@@ -476,36 +502,64 @@ internal sealed partial class Acquisition
         {
             var key = SearchKey(question);
             questions.Add(key);
-            var saved = await Run(connection => SavedSearch(connection, key, question.Fresh?.Command.Accepted ?? 0), cancellation).ConfigureAwait(false);
+            var saved = await Run(
+                    connection =>
+                        SavedSearch(connection, key, question.Fresh?.Command.Accepted ?? 0),
+                    cancellation
+                )
+                .ConfigureAwait(false);
             if (saved is not null)
                 return saved.Candidates;
             if (question.Fresh is null)
             {
-                if (await policy.Read(new LookupRequest(key, counter), cancellation).ConfigureAwait(false) is { } block)
+                if (
+                    await policy
+                        .Read(new LookupRequest(key, counter), cancellation)
+                        .ConfigureAwait(false) is
+                    { } block
+                )
                     throw new RequestBlockedException(block);
             }
             SubtitleSearch answer;
             try
             {
-                answer = await supplier.Candidates(http, _account, question, cancellation).ConfigureAwait(false);
+                answer = await supplier
+                    .Candidates(http, _account, question, cancellation)
+                    .ConfigureAwait(false);
             }
             catch (SubtitleException error) when (error.Reason == SubtitleFailure.Format)
             {
-                var hold = await policy.Fail(supplier.Scope(_account, "search"), new(RequestBlockKind.Backoff)).ConfigureAwait(false);
+                var hold = await policy
+                    .Fail(supplier.Scope(_account, "search"), new(RequestBlockKind.Backoff))
+                    .ConfigureAwait(false);
                 throw new SubtitleException(SubtitleFailure.Network, hold.RetryAt);
             }
-            await Run(connection =>
-            {
-                Execute(connection, """
-                    INSERT INTO subtitle_searches(provider_id,question_id,answer,checked) VALUES($provider,$question,$answer,$checked)
-                    ON CONFLICT(provider_id,question_id) DO UPDATE SET answer=excluded.answer,reusable=1,rejected=0,checked=excluded.checked;
-                    """, ("$provider", key.ProviderId), ("$question", key.QuestionId),
-                    ("$checked", DateTimeOffset.UtcNow.UtcTicks),
-                    ("$answer", JsonSerializer.Serialize(answer)));
-                RequestPolicy.Record(connection, new(key), answer.Empty ? RequestOutcome.Missing
-                    : answer.Candidates.Count == 0 ? RequestOutcome.NoMatch : RequestOutcome.Answered);
-                return true;
-            }, CancellationToken.None).ConfigureAwait(false);
+            await Run(
+                    connection =>
+                    {
+                        Execute(
+                            connection,
+                            """
+                            INSERT INTO subtitle_searches(provider_id,question_id,answer,checked) VALUES($provider,$question,$answer,$checked)
+                            ON CONFLICT(provider_id,question_id) DO UPDATE SET answer=excluded.answer,reusable=1,rejected=0,checked=excluded.checked;
+                            """,
+                            ("$provider", key.ProviderId),
+                            ("$question", key.QuestionId),
+                            ("$checked", DateTimeOffset.UtcNow.UtcTicks),
+                            ("$answer", JsonSerializer.Serialize(answer))
+                        );
+                        RequestPolicy.Record(
+                            connection,
+                            new(key),
+                            answer.Empty ? RequestOutcome.Missing
+                                : answer.Candidates.Count == 0 ? RequestOutcome.NoMatch
+                                : RequestOutcome.Answered
+                        );
+                        return true;
+                    },
+                    CancellationToken.None
+                )
+                .ConfigureAwait(false);
             await policy.Succeed(supplier.Scope(_account, "search")).ConfigureAwait(false);
             downloaded = true;
             return answer.Candidates;
@@ -521,59 +575,107 @@ internal sealed partial class Acquisition
             exact = Exact(release, candidates);
         }
         if (downloaded)
-            await policy.Record(new(counter, counter), RequestOutcome.Answered).ConfigureAwait(false);
+            await policy
+                .Record(new(counter, counter), RequestOutcome.Answered)
+                .ConfigureAwait(false);
         if (exact is null)
-            await Run(connection =>
-            {
-                foreach (var key in questions)
-                    Execute(connection, "UPDATE subtitle_searches SET rejected=1 WHERE provider_id=$provider AND question_id=$question;",
-                        ("$provider", key.ProviderId), ("$question", key.QuestionId));
-                return true;
-            }, CancellationToken.None).ConfigureAwait(false);
+            await Run(
+                    connection =>
+                    {
+                        foreach (var key in questions)
+                            Execute(
+                                connection,
+                                "UPDATE subtitle_searches SET rejected=1 WHERE provider_id=$provider AND question_id=$question;",
+                                ("$provider", key.ProviderId),
+                                ("$question", key.QuestionId)
+                            );
+                        return true;
+                    },
+                    CancellationToken.None
+                )
+                .ConfigureAwait(false);
         if (choices)
             return candidates;
         if (exact is not null)
             return [exact with { Exact = true }];
         if (supplier.SupportsHash && lookup.Hash is null)
             return [];
-        return candidates.OrderByDescending(candidate => SupplierType.Likeness(release, candidate.Release))
+        return candidates
+            .OrderByDescending(candidate => SupplierType.Likeness(release, candidate.Release))
             .DistinctBy(candidate => candidate.Reference)
-            .DistinctBy(candidate => FileName.Normalize(candidate.Release)).Take(lookup.Guesses).ToArray();
+            .DistinctBy(candidate => FileName.Normalize(candidate.Release))
+            .Take(lookup.Guesses)
+            .ToArray();
     }
 
-    private static SubtitleCandidate? Exact(Release release, IEnumerable<SubtitleCandidate> candidates) =>
-        candidates.FirstOrDefault(candidate => candidate.HashMatch || SupplierType.SameRelease(release, candidate.Release));
+    private static SubtitleCandidate? Exact(
+        Release release,
+        IEnumerable<SubtitleCandidate> candidates
+    ) =>
+        candidates.FirstOrDefault(candidate =>
+            candidate.HashMatch || SupplierType.SameRelease(release, candidate.Release)
+        );
 
     private RequestKey SearchCount(string fileName, string language) =>
-        RequestKey.Create(SupplierId.ToString().ToLowerInvariant(), "search-count", [Query(fileName), language]);
+        RequestKey.Create(
+            SupplierId.ToString().ToLowerInvariant(),
+            "search-count",
+            [Query(fileName), language]
+        );
 
-    private RequestKey SearchKey(SubtitleLookup lookup) => RequestKey.Create(
-        SupplierId.ToString().ToLowerInvariant(), "search",
-        [RequireSupplier(SupplierId).Question(lookup), lookup.Language, lookup.Hash ?? string.Empty,
-            lookup.Hash is null ? string.Empty : lookup.Size.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            RequireSupplier(SupplierId).Scope(_account, "search").Identity, lookup.Stage.ToString()]);
+    private RequestKey SearchKey(SubtitleLookup lookup) =>
+        RequestKey.Create(
+            SupplierId.ToString().ToLowerInvariant(),
+            "search",
+            [
+                RequireSupplier(SupplierId).Question(lookup),
+                lookup.Language,
+                lookup.Hash ?? string.Empty,
+                lookup.Hash is null
+                    ? string.Empty
+                    : lookup.Size.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                RequireSupplier(SupplierId).Scope(_account, "search").Identity,
+                lookup.Stage.ToString(),
+            ]
+        );
 
-    private static SubtitleSearch? SavedSearch(SqliteConnection connection, RequestKey key, long since = 0)
+    private static SubtitleSearch? SavedSearch(
+        SqliteConnection connection,
+        RequestKey key,
+        long since = 0
+    )
     {
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT answer FROM subtitle_searches WHERE provider_id=$provider AND question_id=$question AND reusable=1 AND checked>=$since;";
+        command.CommandText =
+            "SELECT answer FROM subtitle_searches WHERE provider_id=$provider AND question_id=$question AND reusable=1 AND checked>=$since;";
         command.Parameters.AddWithValue("$since", since);
         command.Parameters.AddWithValue("$provider", key.ProviderId);
         command.Parameters.AddWithValue("$question", key.QuestionId);
-        return command.ExecuteScalar() is string json ? JsonSerializer.Deserialize<SubtitleSearch>(json) : null;
+        return command.ExecuteScalar() is string json
+            ? JsonSerializer.Deserialize<SubtitleSearch>(json)
+            : null;
     }
 
     private Task RecordNoMatch(Target target, CancellationToken cancellation) =>
-        Run(connection =>
-        {
-            Execute(connection, """
-                UPDATE subtitle_jobs SET outcome=$outcome,retry_at=0,attempts=attempts+1,
-                    fresh=NULL,match=$none WHERE path=$path AND language=$language;
-                """, ("$outcome", (int)SubtitleOutcome.NoMatch), ("$none", (int)SubtitleMatch.None),
-                ("$path", target.Path), ("$language", target.Language));
-            Advance(connection, target);
-            return true;
-        }, cancellation);
+        Run(
+            connection =>
+            {
+                Execute(
+                    connection,
+                    """
+                    UPDATE subtitle_jobs SET outcome=$outcome,retry_at=0,attempts=attempts+1,
+                        fresh=NULL,match=$none WHERE path=$path AND language=$language;
+                    """,
+                    ("$outcome", (int)SubtitleOutcome.NoMatch),
+                    ("$none", (int)SubtitleMatch.None),
+                    ("$path", target.Path),
+                    ("$language", target.Language)
+                );
+                Advance(connection, target);
+                return true;
+            },
+            cancellation
+        );
 
     private Task SetOutcome(
         Target target,
@@ -586,8 +688,12 @@ internal sealed partial class Acquisition
             {
                 if (outcome == SubtitleOutcome.Pending && retry is null)
                     retry = DateTimeOffset.UtcNow.AddMinutes(1);
-                var intent = outcome is SubtitleOutcome.Pending or SubtitleOutcome.Unavailable or SubtitleOutcome.Blocked
-                    ? target.Fresh : null;
+                var intent = outcome
+                    is SubtitleOutcome.Pending
+                        or SubtitleOutcome.Unavailable
+                        or SubtitleOutcome.Blocked
+                    ? target.Fresh
+                    : null;
                 Execute(
                     connection,
                     """
@@ -670,13 +776,26 @@ internal sealed partial class Acquisition
         // A folder that refuses the file fails here, before the download
         // spends the supplier's allowance.
         SubtitleFile.Probe(target.Path);
-        var request = new LookupRequest(RequestKey.Create(SupplierId.ToString().ToLowerInvariant(), "download", [candidate.Reference]));
-        if (await policy.Read(request, cancellation, lookup.Fresh?.Command.Accepted ?? 0).ConfigureAwait(false) is { } block)
+        var request = new LookupRequest(
+            RequestKey.Create(
+                SupplierId.ToString().ToLowerInvariant(),
+                "download",
+                [candidate.Reference]
+            )
+        );
+        if (
+            await policy
+                .Read(request, cancellation, lookup.Fresh?.Command.Accepted ?? 0)
+                .ConfigureAwait(false) is
+            { } block
+        )
             throw new RequestBlockedException(block);
         byte[] bytes;
         try
         {
-            bytes = await RequireSupplier(SupplierId).Download(http, _account, lookup, candidate, cancellation).ConfigureAwait(false);
+            bytes = await RequireSupplier(SupplierId)
+                .Download(http, _account, lookup, candidate, cancellation)
+                .ConfigureAwait(false);
         }
         catch (SubtitleException error) when (error.Reason == SubtitleFailure.Format)
         {
@@ -737,11 +856,26 @@ internal sealed partial class Acquisition
                     {
                         var paths = new HashSet<string>(StringComparer.Ordinal);
                         foreach (var first in Searchable(connection, targets, scope, entries))
-                            if (Accept(connection, first with
-                            {
-                                Fresh = scope == SubtitleScope.New ? null
-                                    : new(SearchCount(first.Videos[0].FinalPath, first.Language), command),
-                            }, true, guesses))
+                            if (
+                                Accept(
+                                    connection,
+                                    first with
+                                    {
+                                        Fresh =
+                                            scope == SubtitleScope.New
+                                                ? null
+                                                : new(
+                                                    SearchCount(
+                                                        first.Videos[0].FinalPath,
+                                                        first.Language
+                                                    ),
+                                                    command
+                                                ),
+                                    },
+                                    true,
+                                    guesses
+                                )
+                            )
                                 paths.Add(first.Path);
                         return paths;
                     },
@@ -771,8 +905,10 @@ internal sealed partial class Acquisition
 
     private FreshRequest? Fresh(Target target)
     {
-        if (target.Fresh is not { } intent
-            || intent.Key != SearchCount(target.Videos[0].FinalPath, target.Language))
+        if (
+            target.Fresh is not { } intent
+            || intent.Key != SearchCount(target.Videos[0].FinalPath, target.Language)
+        )
             return null;
         if (!_retryCommands.TryGetValue(intent.Accepted, out var command))
             _retryCommands.Add(intent.Accepted, command = new(intent.Accepted));

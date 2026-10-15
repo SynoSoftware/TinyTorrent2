@@ -21,18 +21,18 @@ internal static class MetadataActions
             Text = browser.Text.Get("library", "fetch"),
             Flyout = MenuItems.Flyout(
                 () =>
-                [
-                    .. Providers(browser),
-                    new MenuSeparator(),
-                    new MenuCommand(
-                        browser.Text.Get("commands", "settings"),
-                        Lucide.Settings,
-                        browser.ShowSettings
-                    )
-                    {
-                        ToolTip = browser.Text.Get("library", "settings_tip"),
-                    },
-                ],
+                    [
+                        .. Providers(browser),
+                        new MenuSeparator(),
+                        new MenuCommand(
+                            browser.Text.Get("commands", "settings"),
+                            Lucide.Settings,
+                            browser.ShowSettings
+                        )
+                        {
+                            ToolTip = browser.Text.Get("library", "settings_tip"),
+                        },
+                    ],
                 () => browser.Text
             ),
         };

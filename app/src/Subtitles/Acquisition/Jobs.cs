@@ -35,7 +35,8 @@ internal sealed partial class Acquisition
                     using var command = connection.CreateCommand();
                     command.CommandText =
                         "SELECT path,language,origin,file_index FROM subtitle_job_sources;";
-                    var sources = new List<(string Path, string Language, string Origin, int Index)>();
+                    var sources =
+                        new List<(string Path, string Language, string Origin, int Index)>();
                     using (var reader = command.ExecuteReader())
                         while (reader.Read())
                             sources.Add(
@@ -46,12 +47,21 @@ internal sealed partial class Acquisition
                                     reader.GetInt32(3)
                                 )
                             );
-                    var moved = new List<(string Previous, string Path, string Language, long EntryId)>();
+                    var moved =
+                        new List<(string Previous, string Path, string Language, long EntryId)>();
                     foreach (var source in sources)
                     {
-                        var target = targets.Find(source.Language,
-                            SubtitleFile.Rank(source.Path, source.Language), source.Origin, source.Index);
-                        if (target is null || target.IsAmbiguous || !Current(connection, target.Videos))
+                        var target = targets.Find(
+                            source.Language,
+                            SubtitleFile.Rank(source.Path, source.Language),
+                            source.Origin,
+                            source.Index
+                        );
+                        if (
+                            target is null
+                            || target.IsAmbiguous
+                            || !Current(connection, target.Videos)
+                        )
                             continue;
                         if (StringComparer.OrdinalIgnoreCase.Equals(source.Path, target.Path))
                             continue;
@@ -95,7 +105,9 @@ internal sealed partial class Acquisition
                             ("$origin", source.Origin),
                             ("$index", source.Index)
                         );
-                        moved.Add((source.Path, target.Path, source.Language, target.Videos[0].EntryId));
+                        moved.Add(
+                            (source.Path, target.Path, source.Language, target.Videos[0].EntryId)
+                        );
                     }
                     if (moved.Count > 0)
                         Execute(connection, Database.Cleanup);
@@ -111,8 +123,12 @@ internal sealed partial class Acquisition
                     continue;
                 foreach (var job in run.Jobs.ToArray())
                 {
-                    var destinations = transfers.Where(transfer => transfer.Language == job.Language
-                        && StringComparer.OrdinalIgnoreCase.Equals(transfer.Previous, job.Path)).ToArray();
+                    var destinations = transfers
+                        .Where(transfer =>
+                            transfer.Language == job.Language
+                            && StringComparer.OrdinalIgnoreCase.Equals(transfer.Previous, job.Path)
+                        )
+                        .ToArray();
                     if (destinations.Length == 0)
                         continue;
                     foreach (var destination in destinations)

@@ -3,8 +3,8 @@ using System.Net;
 using System.Net.Http;
 using System.Text.Json;
 using System.Windows.Input;
-using Syno.TinyTorrent.Services;
 using Syno.TinyTorrent.Models;
+using Syno.TinyTorrent.Services;
 
 namespace Syno.TinyTorrent;
 
@@ -80,19 +80,30 @@ public sealed partial class MainViewModel
             return;
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(8));
         _updateRequest = cancellation;
-        var observation = new WorkObservation(new WorkDescription.Update(),
-            new WorkProgress.Unknown(), new WorkExecution.Running());
+        var observation = new WorkObservation(
+            new WorkDescription.Update(),
+            new WorkProgress.Unknown(),
+            new WorkExecution.Running()
+        );
         BackgroundWork.Operation? operation = null;
         var signalling = Task.CompletedTask;
-        operation = Work.Begin(observation, () =>
-        {
-            if (ReferenceEquals(_updateRequest, cancellation))
+        operation = Work.Begin(
+            observation,
+            () =>
             {
-                operation?.Report(observation with { Execution = new WorkExecution.Cancelling() });
-                signalling = cancellation.CancelAsync();
+                if (ReferenceEquals(_updateRequest, cancellation))
+                {
+                    operation?.Report(
+                        observation with
+                        {
+                            Execution = new WorkExecution.Cancelling(),
+                        }
+                    );
+                    signalling = cancellation.CancelAsync();
+                }
+                return signalling;
             }
-            return signalling;
-        });
+        );
         try
         {
             using var request = new HttpRequestMessage(
@@ -150,8 +161,14 @@ public sealed partial class MainViewModel
         finally
         {
             _updateRequest = null;
-            try { await signalling; }
-            finally { operation.Dispose(); }
+            try
+            {
+                await signalling;
+            }
+            finally
+            {
+                operation.Dispose();
+            }
         }
     }
 

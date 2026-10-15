@@ -58,7 +58,11 @@
         Grid.Column="2"
         Click="OnChoices"
       >
-        <FontIcon x:Name="ChoicesIcon" FontFamily="{x:Bind icons:Lucide.Font}" FontSize="{StaticResource TinyTorrentButtonIconSize}" />
+        <FontIcon
+          x:Name="ChoicesIcon"
+          FontFamily="{x:Bind icons:Lucide.Font}"
+          FontSize="{StaticResource TinyTorrentButtonIconSize}"
+        />
       </Button>
       <Button
         Style="{StaticResource TinyTorrentSubtleButtonStyle}"
@@ -66,7 +70,11 @@
         Grid.Column="3"
         Click="OnResize"
       >
-        <FontIcon x:Name="ResizeIcon" FontFamily="{x:Bind icons:Lucide.Font}" FontSize="{StaticResource TinyTorrentButtonIconSize}" />
+        <FontIcon
+          x:Name="ResizeIcon"
+          FontFamily="{x:Bind icons:Lucide.Font}"
+          FontSize="{StaticResource TinyTorrentButtonIconSize}"
+        />
       </Button>
       <Button
         Style="{StaticResource TinyTorrentSubtleButtonStyle}"

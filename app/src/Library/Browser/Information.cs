@@ -9,12 +9,14 @@ public sealed partial class Browser
     // A file without Information does not replace the person's section choice.
     private LibrarySection _section = LibrarySection.Information;
     private InformationRequest? _informationRequest;
+
     // What the last Inspector lookup for the selected file left to show.
     private FetchOutcome? _outcome;
     private IProvider? _viewProvider;
     private bool _automaticDownload;
     private string? _automaticWait;
     private DataDownload? _download;
+
     // Installation starts automatic downloads only while the person's
     // provider choice still applies.
     private bool _automaticOnInstall;
@@ -23,7 +25,9 @@ public sealed partial class Browser
     private abstract record FetchOutcome
     {
         private FetchOutcome() { }
+
         internal sealed record NoMatch : FetchOutcome;
+
         internal sealed record Failed(VideoException Error) : FetchOutcome;
     }
 
@@ -49,7 +53,8 @@ public sealed partial class Browser
         Providers.Where(option => option.IsOnline).ToArray();
 
     /// <summary>The provider whose data the person downloads, or null before Library attaches.</summary>
-    internal ProviderOption? DataProvider => Providers.FirstOrDefault(option => option.Dataset is not null);
+    internal ProviderOption? DataProvider =>
+        Providers.FirstOrDefault(option => option.Dataset is not null);
     internal ProviderOption? Option => _videos?.Option;
     internal IProvider? Provider => _videos?.Provider;
     public string FetchMessage =>
@@ -61,12 +66,17 @@ public sealed partial class Browser
     // commands that ask it wait for the same readiness. Explicit requests
     // remain available while automatic downloading is off.
     private bool CanLookup => IsAvailable && _readiness == LibraryReadiness.Ready;
-    private ProviderOption? InformationProvider => Selected?.Entry.CatalogId is { } catalog
-        ? Providers.FirstOrDefault(option => option.ProviderId == catalog) : null;
+    private ProviderOption? InformationProvider =>
+        Selected?.Entry.CatalogId is { } catalog
+            ? Providers.FirstOrDefault(option => option.ProviderId == catalog)
+            : null;
     private bool CanRefresh =>
-        CanLookup && InformationProvider is { IsOnline: true }
-        && !IsFetching && Selection.Items.Count == 1
-        && SupportsMetadata && Selected?.Entry.HasMetadata == true;
+        CanLookup
+        && InformationProvider is { IsOnline: true }
+        && !IsFetching
+        && Selection.Items.Count == 1
+        && SupportsMetadata
+        && Selected?.Entry.HasMetadata == true;
 
     /// <summary>
     /// Fetches metadata for the selection from <paramref name="source"/>: one
@@ -114,11 +124,14 @@ public sealed partial class Browser
     bool IDataset.IsCurrent => DataProvider?.Dataset?.IsCurrent == true;
     Task<long>? IDataset.Count => DataProvider?.Dataset?.CountTitles();
     BackgroundWork.Operation? IDataset.DataWork => DataWork;
+
     Task<bool> IDataset.Download() => Download();
+
     Task IDataset.Delete() => DeleteData();
 
     /// <summary>Whether a data download can start; a protection reset or a running download holds it back.</summary>
-    public bool CanDownload => !_resettingProtection && _download is null && DataProvider is not null;
+    public bool CanDownload =>
+        !_resettingProtection && _download is null && DataProvider is not null;
 
     /// <summary>
     /// Downloads <see cref="DataProvider"/>'s data and replaces the installed
@@ -132,7 +145,11 @@ public sealed partial class Browser
     /// </summary>
     internal async Task<bool> Download(bool enableAutomaticDownload = false)
     {
-        if (!CanDownload || DataProvider is not { Dataset: { } dataset } option || _videos is not { } videos)
+        if (
+            !CanDownload
+            || DataProvider is not { Dataset: { } dataset } option
+            || _videos is not { } videos
+        )
             return false;
         var download = new DataDownload(_work, new WorkDescription.Imdb(ImdbPhase.Downloading));
         _download = download;
@@ -141,15 +158,28 @@ public sealed partial class Browser
         try
         {
             return await download.Run(
-                () => dataset.Build(
-                    progress => download.Report(new WorkDescription.Imdb(progress.Phase), Progress(progress)),
-                    download.Cancellation),
+                () =>
+                    dataset.Build(
+                        progress =>
+                            download.Report(
+                                new WorkDescription.Imdb(progress.Phase),
+                                Progress(progress)
+                            ),
+                        download.Cancellation
+                    ),
                 () =>
                 {
                     CancelInformation();
-                    return ReplaceData(videos, option,
-                        () => download.Install(new WorkDescription.Imdb(ImdbPhase.Installing), dataset.Install),
-                        () => _automaticOnInstall);
+                    return ReplaceData(
+                        videos,
+                        option,
+                        () =>
+                            download.Install(
+                                new WorkDescription.Imdb(ImdbPhase.Installing),
+                                dataset.Install
+                            ),
+                        () => _automaticOnInstall
+                    );
                 },
                 dataset.Discard,
                 error =>
@@ -157,7 +187,8 @@ public sealed partial class Browser
                     if (error is VideoException failure)
                         failure.Provider ??= option;
                     ReportCommand(error);
-                });
+                }
+            );
         }
         finally
         {
@@ -167,8 +198,10 @@ public sealed partial class Browser
     }
 
     private static WorkProgress Progress(Imdb.Dataset.Progress progress) =>
-        progress.Phase == ImdbPhase.Downloading ? new WorkProgress.Amount(progress.Received, WorkUnit.Bytes)
-        : progress.Percent is { } percent ? new WorkProgress.Fraction(percent, 100, WorkUnit.Percent, true)
+        progress.Phase == ImdbPhase.Downloading
+            ? new WorkProgress.Amount(progress.Received, WorkUnit.Bytes)
+        : progress.Percent is { } percent
+            ? new WorkProgress.Fraction(percent, 100, WorkUnit.Percent, true)
         : new WorkProgress.Unknown();
 
     /// <summary>Stops the running data download at the person's request, and completes when it has ended.</summary>
@@ -214,11 +247,20 @@ public sealed partial class Browser
     /// </summary>
     internal async Task DeleteData()
     {
-        if (_download is not null || DataProvider is not { Dataset: { } dataset } option || _videos is not { } videos)
+        if (
+            _download is not null
+            || DataProvider is not { Dataset: { } dataset } option
+            || _videos is not { } videos
+        )
             return;
         CancelInformation();
-        using var operation = _work.Begin(new(new WorkDescription.Maintenance(MaintenanceWork.DeleteDataset),
-            new WorkProgress.Unknown(), new WorkExecution.Finishing()));
+        using var operation = _work.Begin(
+            new(
+                new WorkDescription.Maintenance(MaintenanceWork.DeleteDataset),
+                new WorkProgress.Unknown(),
+                new WorkExecution.Finishing()
+            )
+        );
         try
         {
             await ReplaceData(videos, option, dataset.Delete);
@@ -233,7 +275,12 @@ public sealed partial class Browser
 
     // Every provider's movies show ratings from the data, not only IMDb's, so
     // the rows refresh, and Settings shows the data's new state.
-    private async Task ReplaceData(VideoLookup videos, ProviderOption option, Action replace, Func<bool>? enableAutomaticDownload = null)
+    private async Task ReplaceData(
+        VideoLookup videos,
+        ProviderOption option,
+        Action replace,
+        Func<bool>? enableAutomaticDownload = null
+    )
     {
         try
         {
@@ -304,7 +351,9 @@ public sealed partial class Browser
     {
         private static readonly WorkObservation Started = new(
             new WorkDescription.Metadata(MetadataScope.Inspector),
-            new WorkProgress.Unknown(), new WorkExecution.Running());
+            new WorkProgress.Unknown(),
+            new WorkExecution.Running()
+        );
         private readonly CancellationTokenSource _cancellation = new();
         private readonly BackgroundWork.Operation _operation;
         private readonly object _gate = new();
@@ -362,7 +411,11 @@ public sealed partial class Browser
 
     private async Task RequestInformation()
     {
-        if (_videos is not { } videos || Selected is not { } row || InformationProvider is not { } source)
+        if (
+            _videos is not { } videos
+            || Selected is not { } row
+            || InformationProvider is not { } source
+        )
             return;
         var entry = row.Entry;
         await using var request = new InformationRequest(_work);
@@ -371,8 +424,15 @@ public sealed partial class Browser
         ShowInformation();
         try
         {
-            if (await videos.Protection(FileName.Interpret(entry.Name).Title,
-                    entry.Name, source, request.Token) is not null)
+            if (
+                await videos.Protection(
+                    FileName.Interpret(entry.Name).Title,
+                    entry.Name,
+                    source,
+                    request.Token
+                )
+                is not null
+            )
             {
                 request.Token.ThrowIfCancellationRequested();
                 Fetch(source);
@@ -383,9 +443,12 @@ public sealed partial class Browser
             if (!found)
                 _outcome = new FetchOutcome.NoMatch();
         }
-        catch (Exception error) when (request.Token.IsCancellationRequested || error is OperationCanceledException)
+        catch (Exception error)
+            when (request.Token.IsCancellationRequested || error is OperationCanceledException)
         {
-            System.Diagnostics.Debug.WriteLine($"Library metadata refresh cancelled ({source.ProviderId}).");
+            System.Diagnostics.Debug.WriteLine(
+                $"Library metadata refresh cancelled ({source.ProviderId})."
+            );
         }
         catch (RequestBlockedException)
         {

@@ -167,31 +167,67 @@ public sealed partial class LibraryTable : UserControl
                     schema.SortKey(column, row => row, ArtistOrder.Instance);
                     break;
                 case "name":
-                    schema.SortKey(column, row => row.Name, StringComparer.CurrentCultureIgnoreCase);
+                    schema.SortKey(
+                        column,
+                        row => row.Name,
+                        StringComparer.CurrentCultureIgnoreCase
+                    );
                     break;
                 case "folder":
-                    schema.SortKey(column, row => row.Folder, StringComparer.CurrentCultureIgnoreCase);
+                    schema.SortKey(
+                        column,
+                        row => row.Folder,
+                        StringComparer.CurrentCultureIgnoreCase
+                    );
                     break;
                 case "title":
-                    schema.SortKey(column, row => row.Title, StringComparer.CurrentCultureIgnoreCase);
+                    schema.SortKey(
+                        column,
+                        row => row.Title,
+                        StringComparer.CurrentCultureIgnoreCase
+                    );
                     break;
                 case "type":
-                    schema.SortKey(column, row => row.Type, StringComparer.CurrentCultureIgnoreCase);
+                    schema.SortKey(
+                        column,
+                        row => row.Type,
+                        StringComparer.CurrentCultureIgnoreCase
+                    );
                     break;
                 case "genres":
-                    schema.SortKey(column, row => row.Genres, StringComparer.CurrentCultureIgnoreCase);
+                    schema.SortKey(
+                        column,
+                        row => row.Genres,
+                        StringComparer.CurrentCultureIgnoreCase
+                    );
                     break;
                 case "cast":
-                    schema.SortKey(column, row => row.Cast, StringComparer.CurrentCultureIgnoreCase);
+                    schema.SortKey(
+                        column,
+                        row => row.Cast,
+                        StringComparer.CurrentCultureIgnoreCase
+                    );
                     break;
                 case "album":
-                    schema.SortKey(column, row => row.Album, StringComparer.CurrentCultureIgnoreCase);
+                    schema.SortKey(
+                        column,
+                        row => row.Album,
+                        StringComparer.CurrentCultureIgnoreCase
+                    );
                     break;
                 case "subtitles":
-                    schema.SortKey(column, row => row.Subtitles, StringComparer.CurrentCultureIgnoreCase);
+                    schema.SortKey(
+                        column,
+                        row => row.Subtitles,
+                        StringComparer.CurrentCultureIgnoreCase
+                    );
                     break;
                 case "kind":
-                    schema.SortKey(column, row => row.Kind, StringComparer.CurrentCultureIgnoreCase);
+                    schema.SortKey(
+                        column,
+                        row => row.Kind,
+                        StringComparer.CurrentCultureIgnoreCase
+                    );
                     break;
                 default:
                     throw new InvalidOperationException($"Unknown Library column: {column.Id}");
@@ -232,7 +268,11 @@ public sealed partial class LibraryTable : UserControl
             );
             if (artist != 0)
                 return artist;
-            var album = string.Compare(left?.Album, right?.Album, StringComparison.CurrentCultureIgnoreCase);
+            var album = string.Compare(
+                left?.Album,
+                right?.Album,
+                StringComparison.CurrentCultureIgnoreCase
+            );
             return album != 0 ? album : Nullable.Compare(left?.Entry.Track, right?.Entry.Track);
         }
     }

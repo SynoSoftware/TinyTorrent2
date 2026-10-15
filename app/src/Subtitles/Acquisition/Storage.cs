@@ -39,7 +39,9 @@ internal sealed partial class Acquisition
                         return null;
                     var enabled = reader[0] is long flag && flag == 1;
                     var repairEnabled = !Equals(reader[0], enabled ? 1L : 0L);
-                    var extras = reader[5] is long count ? (int)Math.Clamp(count, 0, MaximumExtras) : 1;
+                    var extras = reader[5] is long count
+                        ? (int)Math.Clamp(count, 0, MaximumExtras)
+                        : 1;
                     var repairExtras = !Equals(reader[5], (long)extras);
                     var secret = string.Empty;
                     var repairSecret = false;
@@ -118,8 +120,10 @@ internal sealed partial class Acquisition
         await RefreshAllowance().ConfigureAwait(false);
     }
 
-    private async Task RefreshAllowance() => _allowance = Supplier is { } supplier
-        ? await supplier.Allowance(_account).ConfigureAwait(false) : new();
+    private async Task RefreshAllowance() =>
+        _allowance = Supplier is { } supplier
+            ? await supplier.Allowance(_account).ConfigureAwait(false)
+            : new();
 
     private Task<Target[]> Targets(CancellationToken cancellation) =>
         Run(
@@ -136,7 +140,8 @@ internal sealed partial class Acquisition
                 var ranks = 1 + MaximumExtras;
                 var files = new List<Video>();
                 using var command = connection.CreateCommand();
-                command.CommandText = "SELECT path,language FROM subtitle_output_sources UNION SELECT path,language FROM subtitle_jobs;";
+                command.CommandText =
+                    "SELECT path,language FROM subtitle_output_sources UNION SELECT path,language FROM subtitle_jobs;";
                 using (var reader = command.ExecuteReader())
                     while (reader.Read())
                     {
@@ -157,7 +162,11 @@ internal sealed partial class Acquisition
                 using (var reader = command.ExecuteReader())
                     while (reader.Read())
                     {
-                        var video = new Video(reader.GetString(0), reader.GetInt32(1), reader.GetString(3))
+                        var video = new Video(
+                            reader.GetString(0),
+                            reader.GetInt32(1),
+                            reader.GetString(3)
+                        )
                         {
                             Path = reader.GetString(2),
                             Size = reader.GetInt64(4),
@@ -243,14 +252,20 @@ internal sealed partial class Acquisition
             var index = new TargetIndex(targets);
             await ReconcileJobs(index, cancellation).ConfigureAwait(false);
             await ReconcileFiles(index, cancellation).ConfigureAwait(false);
-            try { await Discover(cancellation).ConfigureAwait(false); }
+            try
+            {
+                await Discover(cancellation).ConfigureAwait(false);
+            }
             catch (OperationCanceledException) when (!cancellation.IsCancellationRequested)
             {
                 System.Diagnostics.Debug.WriteLine("Automatic subtitle file discovery cancelled.");
             }
-            var eligible = targets.Where(Eligible)
-                .SelectMany(target => target.Videos.Select(video =>
-                    (target.Language, video.Origin, video.Index))).ToHashSet();
+            var eligible = targets
+                .Where(Eligible)
+                .SelectMany(target =>
+                    target.Videos.Select(video => (target.Language, video.Origin, video.Index))
+                )
+                .ToHashSet();
             var reconciled = await Run(
                     connection =>
                     {
@@ -281,12 +296,8 @@ internal sealed partial class Acquisition
                                 SELECT 1 FROM subtitle_job_sources s JOIN pending_origins p USING(origin)
                                 WHERE s.path=j.path AND s.language=j.language);
                             """;
-                        var associations = new List<(
-                            string Path,
-                            string Language,
-                            string Origin,
-                            int Index
-                        )>();
+                        var associations =
+                            new List<(string Path, string Language, string Origin, int Index)>();
                         using (var reader = jobs.ExecuteReader())
                             while (reader.Read())
                                 associations.Add(
@@ -297,12 +308,21 @@ internal sealed partial class Acquisition
                                         reader.GetInt32(3)
                                     )
                                 );
-                        foreach (var group in associations.GroupBy(item => (item.Path, item.Language)))
+                        foreach (
+                            var group in associations.GroupBy(item => (item.Path, item.Language))
+                        )
                             if (
-                                !group.Any(source => eligible.Contains(
-                                    (source.Language, source.Origin, source.Index)))
+                                !group.Any(source =>
+                                    eligible.Contains(
+                                        (source.Language, source.Origin, source.Index)
+                                    )
+                                )
                             )
-                                Cancel(connection, language: group.Key.Language, path: group.Key.Path);
+                                Cancel(
+                                    connection,
+                                    language: group.Key.Language,
+                                    path: group.Key.Path
+                                );
                         return true;
                     },
                     cancellation
@@ -355,9 +375,12 @@ internal sealed partial class Acquisition
     }
 
     private static void Unblock(SqliteConnection connection) =>
-        Execute(connection,
+        Execute(
+            connection,
             "UPDATE subtitle_jobs SET outcome=$pending,retry_at=0 WHERE outcome=$blocked;",
-            ("$pending", (int)SubtitleOutcome.Pending), ("$blocked", (int)SubtitleOutcome.Blocked));
+            ("$pending", (int)SubtitleOutcome.Pending),
+            ("$blocked", (int)SubtitleOutcome.Blocked)
+        );
 
     private static void Resume(SqliteConnection connection) =>
         Execute(
@@ -593,7 +616,10 @@ internal sealed partial class Acquisition
             if (SubtitleFile.Rank(path, language) != 1)
                 continue;
             var current = SubtitleFile.Destination(reader.GetString(3), language);
-            if (!history.ContainsKey(current) || StringComparer.OrdinalIgnoreCase.Equals(path, current))
+            if (
+                !history.ContainsKey(current)
+                || StringComparer.OrdinalIgnoreCase.Equals(path, current)
+            )
                 history[current] = (SubtitleMatch)reader.GetInt32(2);
         }
         return history;
@@ -631,21 +657,30 @@ internal sealed partial class Acquisition
 
     private bool CanLookup(SqliteConnection connection, Target target)
     {
-        var lookup = new SubtitleLookup(Path.GetFileName(target.Videos[0].FinalPath), target.Language, _ => Task.CompletedTask) { Stage = Stage(target) };
+        var lookup = new SubtitleLookup(
+            Path.GetFileName(target.Videos[0].FinalPath),
+            target.Language,
+            _ => Task.CompletedTask
+        )
+        {
+            Stage = Stage(target),
+        };
         var counter = SearchCount(lookup.FileName, lookup.Language);
         if (SearchProtection(connection, lookup) is null)
             return true;
         if (Supplier?.SupportsHash == true && lookup.Stage == SubtitleStage.Complete)
         {
             using var command = connection.CreateCommand();
-            command.CommandText = "SELECT EXISTS(SELECT 1 FROM subtitle_jobs WHERE path=$path AND language=$language AND stage=$stage AND outcome IN ($nomatch,$complete));";
+            command.CommandText =
+                "SELECT EXISTS(SELECT 1 FROM subtitle_jobs WHERE path=$path AND language=$language AND stage=$stage AND outcome IN ($nomatch,$complete));";
             command.Parameters.AddWithValue("$path", target.Path);
             command.Parameters.AddWithValue("$language", target.Language);
             command.Parameters.AddWithValue("$stage", (int)SubtitleStage.Complete);
             command.Parameters.AddWithValue("$nomatch", (int)SubtitleOutcome.NoMatch);
             command.Parameters.AddWithValue("$complete", (int)SubtitleOutcome.Complete);
             if (Convert.ToInt32(command.ExecuteScalar()) == 0)
-                return policy.Read(connection, new LookupRequest(counter, counter))?.CanForce != true;
+                return policy.Read(connection, new LookupRequest(counter, counter))?.CanForce
+                    != true;
         }
         return false;
     }
@@ -655,16 +690,26 @@ internal sealed partial class Acquisition
         var key = SearchKey(lookup);
         var saved = SavedSearch(connection, key);
         if (saved is null || saved.Candidates.Count == 0)
-            return policy.Read(connection, new LookupRequest(key, SearchCount(lookup.FileName, lookup.Language)));
-        return Exact(FileName.Interpret(lookup.FileName), saved.Candidates) is null ? new(RequestBlockKind.NoMatch) : null;
+            return policy.Read(
+                connection,
+                new LookupRequest(key, SearchCount(lookup.FileName, lookup.Language))
+            );
+        return Exact(FileName.Interpret(lookup.FileName), saved.Candidates) is null
+            ? new(RequestBlockKind.NoMatch)
+            : null;
     }
 
     private RequestBlock? Protection(SqliteConnection connection, SubtitleLookup lookup)
     {
         var supplier = RequireSupplier(SupplierId);
-        return policy.Read(connection,
-            [supplier.QuotaScope(_account), supplier.Scope(_account, "search"), supplier.Authentication(_account)])
-            ?? SearchProtection(connection, lookup);
+        return policy.Read(
+                connection,
+                [
+                    supplier.QuotaScope(_account),
+                    supplier.Scope(_account, "search"),
+                    supplier.Authentication(_account),
+                ]
+            ) ?? SearchProtection(connection, lookup);
     }
 
     // What the search limit counts for a video: its title and year, with the
@@ -697,7 +742,12 @@ internal sealed partial class Acquisition
                         while (reader.Read())
                         {
                             var outcome = (SubtitleOutcome)reader.GetInt32(1);
-                            if (outcome is SubtitleOutcome.Pending or SubtitleOutcome.Unavailable or SubtitleOutcome.Blocked)
+                            if (
+                                outcome
+                                is SubtitleOutcome.Pending
+                                    or SubtitleOutcome.Unavailable
+                                    or SubtitleOutcome.Blocked
+                            )
                                 finding |= reader.GetBoolean(2);
                             else if (outcome == SubtitleOutcome.Complete)
                                 completed.Add(reader.GetString(0));
@@ -760,8 +810,13 @@ internal sealed partial class Acquisition
 
     private sealed class TargetIndex
     {
-        private readonly Dictionary<(string Language, int Rank, string Origin, int Index), Target> _sources = [];
-        private readonly Dictionary<string, Dictionary<string, Target>> _languages = new(StringComparer.Ordinal);
+        private readonly Dictionary<
+            (string Language, int Rank, string Origin, int Index),
+            Target
+        > _sources = [];
+        private readonly Dictionary<string, Dictionary<string, Target>> _languages = new(
+            StringComparer.Ordinal
+        );
         private readonly HashSet<string> _paths = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<Target, int> _order = [];
 
@@ -775,7 +830,10 @@ internal sealed partial class Acquisition
                     _languages.Add(target.Language, paths = new(StringComparer.OrdinalIgnoreCase));
                 paths.TryAdd(target.Path, target);
                 foreach (var video in target.Videos)
-                    _sources.TryAdd((target.Language, target.Rank, video.Origin, video.Index), target);
+                    _sources.TryAdd(
+                        (target.Language, target.Rank, video.Origin, video.Index),
+                        target
+                    );
             }
         }
 

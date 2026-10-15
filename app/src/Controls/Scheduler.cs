@@ -49,18 +49,25 @@ public sealed partial class Scheduler : UserControl
     {
         if (Timeline.Content is not Week week)
             return;
-        var bounds = WeekCard.TransformToVisual(week).TransformBounds(
-            new Windows.Foundation.Rect(0, 0, WeekCard.ActualWidth, WeekCard.ActualHeight)
-        );
+        var bounds = WeekCard
+            .TransformToVisual(week)
+            .TransformBounds(
+                new Windows.Foundation.Rect(0, 0, WeekCard.ActualWidth, WeekCard.ActualHeight)
+            );
         week.FocusVisualMargin = new Thickness(
-            bounds.Left, bounds.Top, week.ActualWidth - bounds.Right, week.ActualHeight - bounds.Bottom
+            bounds.Left,
+            bounds.Top,
+            week.ActualWidth - bounds.Right,
+            week.ActualHeight - bounds.Bottom
         );
     }
 
     private void OnTime(object? sender, DateTime time)
     {
         var position = Model.Text.Format(
-            "transfer_limits", "day_time", Model.ShortDay(Schedule.Weekday(time)),
+            "transfer_limits",
+            "day_time",
+            Model.ShortDay(Schedule.Weekday(time)),
             Schedule.Time(time.Hour * 60 + time.Minute)
         );
         Now.Text = Model.Text.Format("transfer_limits", "now", position);
@@ -163,7 +170,8 @@ public sealed partial class Scheduler : UserControl
     {
         if (!IsLoaded || Model.IsPending)
             return;
-        var selected = Periods.Children.Cast<Expander>()
+        var selected = Periods
+            .Children.Cast<Expander>()
             .FirstOrDefault(row => row.Tag == Model.OpenPeriod);
         foreach (Expander row in Periods.Children)
         {
@@ -189,8 +197,7 @@ public sealed partial class Scheduler : UserControl
 
     private sealed class PeriodHeader : Grid
     {
-        internal TextBlock When { get; } =
-            new() { TextTrimming = TextTrimming.CharacterEllipsis };
+        internal TextBlock When { get; } = new() { TextTrimming = TextTrimming.CharacterEllipsis };
         internal TextBlock Behavior { get; } =
             new()
             {
@@ -203,8 +210,17 @@ public sealed partial class Scheduler : UserControl
             MinHeight = 68;
             ColumnSpacing = 24;
             ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(20) });
-            ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            Children.Add(new FontIcon { FontFamily = Syno.Lucide.Font, Glyph = Syno.Lucide.Clock, FontSize = (double)Application.Current.Resources["TinyTorrentHeaderIconSize"] });
+            ColumnDefinitions.Add(
+                new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }
+            );
+            Children.Add(
+                new FontIcon
+                {
+                    FontFamily = Syno.Lucide.Font,
+                    Glyph = Syno.Lucide.Clock,
+                    FontSize = (double)Application.Current.Resources["TinyTorrentHeaderIconSize"],
+                }
+            );
             var labels = new StackPanel
             {
                 Spacing = 4,

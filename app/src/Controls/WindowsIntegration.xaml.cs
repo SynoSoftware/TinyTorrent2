@@ -15,11 +15,16 @@ public sealed partial class WindowsIntegration : UserControl
     {
         Model = model;
         InitializeComponent();
-        Loaded += (_, _) => { Model.PropertyChanged += OnModel; Refresh(); };
+        Loaded += (_, _) =>
+        {
+            Model.PropertyChanged += OnModel;
+            Refresh();
+        };
         Unloaded += (_, _) => Model.PropertyChanged -= OnModel;
     }
 
-    public static Visibility HasText(string text) => text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+    public static Visibility HasText(string text) =>
+        text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
 
     private void OnModel(object? sender, PropertyChangedEventArgs args)
     {
@@ -34,12 +39,13 @@ public sealed partial class WindowsIntegration : UserControl
         _refreshing = false;
     }
 
-    internal Control? Field(string name) => name switch
-    {
-        "start_signin" => Startup,
-        "open_defaults" => Handlers,
-        _ => null,
-    };
+    internal Control? Field(string name) =>
+        name switch
+        {
+            "start_signin" => Startup,
+            "open_defaults" => Handlers,
+            _ => null,
+        };
 
     private async void OnStartup(object sender, RoutedEventArgs args)
     {

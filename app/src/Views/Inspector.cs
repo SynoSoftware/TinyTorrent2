@@ -20,7 +20,11 @@ public sealed partial class Inspector : INotifyPropertyChanged
     private string _session = string.Empty;
     private int _context;
     private bool _fetching;
-    private (string TorrentId, TaskCompletionSource Completion, Action<JsonElement> Apply)? _awaitedPush;
+    private (
+        string TorrentId,
+        TaskCompletionSource Completion,
+        Action<JsonElement> Apply
+    )? _awaitedPush;
     private bool _loading;
     private (bool Available, bool Editable) _access;
     private TaskCompletionSource? _pending;
@@ -36,7 +40,8 @@ public sealed partial class Inspector : INotifyPropertyChanged
 
     public Strings Text => _owner.Text;
     public Torrent? Target => _target;
-    public string Name => _target?.Name ?? (IsGlobal ? Text.Get("peers", "all_torrents") : EmptyText);
+    public string Name =>
+        _target?.Name ?? (IsGlobal ? Text.Get("peers", "all_torrents") : EmptyText);
     public string SizeText => IsGlobal ? string.Empty : _target?.SizeText ?? string.Empty;
 
     internal bool IsVisible => _visible;
@@ -46,10 +51,12 @@ public sealed partial class Inspector : INotifyPropertyChanged
             : Text.FormatCount("inspector", "selection", _owner.Selected.Count);
     public bool IsAvailable =>
         _owner.IsConnected && HasContent && (_target is null || _owner.Contains(_target));
+
     private bool IsCurrent(int context) => context == _context && _visible && IsAvailable;
 
     // A save keeps its controls enabled so later input keeps focus.
-    private bool CanSave => _target is not null && _owner.Contains(_target) && IsAvailable && _owner.CanSave;
+    private bool CanSave =>
+        _target is not null && _owner.Contains(_target) && IsAvailable && _owner.CanSave;
     public bool CanEdit => _visible && CanSave && !_owner.IsClosing;
     public bool IsPending => _pending is not null;
     public bool IsLoading => _fetching;
@@ -199,7 +206,8 @@ public sealed partial class Inspector : INotifyPropertyChanged
         MoveFiles = owner.MoveCommand(() => _target is { } target ? [target] : []);
         OpenFolder = new RelayCommand(
             () => _owner.OpenTorrent(_target!, true),
-            () => _target is not null && _owner.Contains(_target) && IsAvailable && !_owner.IsClosing
+            () =>
+                _target is not null && _owner.Contains(_target) && IsAvailable && !_owner.IsClosing
         );
         CopyV1 = new RelayCommand(() => _owner.Copy(HashV1), () => HashV1.Length > 0);
         CopyV2 = new RelayCommand(() => _owner.Copy(HashV2), () => HashV2.Length > 0);
@@ -362,12 +370,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
 
     private async Task Read()
     {
-        if (
-            !_visible
-            || !IsAvailable
-            || _fetching
-            || IsPending
-        )
+        if (!_visible || !IsAvailable || _fetching || IsPending)
             return;
         _fetching = true;
         var context = ++_context;
@@ -394,13 +397,18 @@ public sealed partial class Inspector : INotifyPropertyChanged
                 changed = await ReadPeers(context);
                 return;
             }
-            await ReadDetail(target, section, context, detail =>
-            {
-                if (ApplyDetail(detail))
+            await ReadDetail(
+                target,
+                section,
+                context,
+                detail =>
                 {
-                    Refresh();
+                    if (ApplyDetail(detail))
+                    {
+                        Refresh();
+                    }
                 }
-            });
+            );
         }
         catch (Exception error)
         {
@@ -456,13 +464,19 @@ public sealed partial class Inspector : INotifyPropertyChanged
         Action<JsonElement> apply
     )
     {
-        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var completion = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
         var receivedPush = false;
-        _awaitedPush = (torrent.TorrentId, completion, data =>
-        {
-            receivedPush = true;
-            Apply(data);
-        });
+        _awaitedPush = (
+            torrent.TorrentId,
+            completion,
+            data =>
+            {
+                receivedPush = true;
+                Apply(data);
+            }
+        );
         try
         {
             var read = _client.Read(
@@ -480,7 +494,9 @@ public sealed partial class Inspector : INotifyPropertyChanged
             // Invalidate withdraws an unsent read; a cancelled task is awaited
             // without throwing, because every refresh can abandon one.
             await ((Task)read).ConfigureAwait(
-                ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
+                ConfigureAwaitOptions.ContinueOnCapturedContext
+                    | ConfigureAwaitOptions.SuppressThrowing
+            );
             if (read.IsCanceled)
             {
                 return;
@@ -543,14 +559,35 @@ public sealed partial class Inspector : INotifyPropertyChanged
         switch (_section)
         {
             case InspectorSection.General:
-                var general = (Folder, Magnet, Comment, Creator, Created, PieceSize, PieceCount, IsPrivate);
+                var general = (
+                    Folder,
+                    Magnet,
+                    Comment,
+                    Creator,
+                    Created,
+                    PieceSize,
+                    PieceCount,
+                    IsPrivate
+                );
                 ApplyGeneral(reply);
-                changed |= general != (Folder, Magnet, Comment, Creator, Created, PieceSize, PieceCount, IsPrivate);
+                changed |=
+                    general
+                    != (
+                        Folder,
+                        Magnet,
+                        Comment,
+                        Creator,
+                        Created,
+                        PieceSize,
+                        PieceCount,
+                        IsPrivate
+                    );
                 break;
             case InspectorSection.Files:
                 var files = (HasFiles, HasFileChanges, _confirmedFiles is not null, _editFailure);
                 ApplyFiles(reply);
-                changed |= files != (HasFiles, HasFileChanges, _confirmedFiles is not null, _editFailure);
+                changed |=
+                    files != (HasFiles, HasFileChanges, _confirmedFiles is not null, _editFailure);
                 break;
             case InspectorSection.Trackers:
                 if (reply.GetProperty("trackers").ValueKind == JsonValueKind.Null)
@@ -599,11 +636,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
         var target = _target;
         var ids = _owner.Selected.Select(torrent => torrent.TorrentId).ToArray();
         var day = Samples(
-            await _client.Read(
-                Consumer.Inspector,
-                "history",
-                HistoryArguments("day")
-            )
+            await _client.Read(Consumer.Inspector, "history", HistoryArguments("day"))
         );
         if (!IsCurrent(context))
             return [];
@@ -613,22 +646,26 @@ public sealed partial class Inspector : INotifyPropertyChanged
             Refresh();
         }
         var recent = Samples(
-            await _client.Read(
-                Consumer.Inspector,
-                "history",
-                HistoryArguments("five_minutes")
-            )
+            await _client.Read(Consumer.Inspector, "history", HistoryArguments("five_minutes"))
         );
         if (recent.Length == 0)
             return day;
         var ends = recent.Select(sample => sample.Time).ToHashSet();
-        var cut = day.FirstOrDefault(sample => ends.Contains(sample.Time))?.Time
-            ?? recent[0].Start - 1;
-        return [.. day.Where(sample => sample.Time <= cut), .. recent.Where(sample => sample.Start > cut)];
+        var cut =
+            day.FirstOrDefault(sample => ends.Contains(sample.Time))?.Time ?? recent[0].Start - 1;
+        return
+        [
+            .. day.Where(sample => sample.Time <= cut),
+            .. recent.Where(sample => sample.Start > cut),
+        ];
 
         Dictionary<string, object> HistoryArguments(string range)
         {
-            var arguments = new Dictionary<string, object> { ["range"] = range, ["release_detail"] = true };
+            var arguments = new Dictionary<string, object>
+            {
+                ["range"] = range,
+                ["release_detail"] = true,
+            };
             if (target is not null)
                 arguments["torrent_id"] = target.TorrentId;
             else if (ids.Length > 0)
@@ -665,8 +702,9 @@ public sealed partial class Inspector : INotifyPropertyChanged
     // The outcome does not matter, and a later Invalidate often withdraws
     // this read, so it is awaited without throwing.
     private async Task Release() =>
-        await ((Task)_client.Read(Consumer.Inspector, "torrent", new { release = true }))
-            .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        await (
+            (Task)_client.Read(Consumer.Inspector, "torrent", new { release = true })
+        ).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
 
     private void ApplyGeneral(JsonElement reply)
     {
@@ -708,9 +746,11 @@ public sealed partial class Inspector : INotifyPropertyChanged
                     file => file.GetProperty("index").GetInt32(),
                     file => file.GetProperty("priority").GetInt32()
                 );
-            if (_fileChanges.All(change =>
-                priorities.TryGetValue(change.Key, out var priority) && priority == change.Value
-            ))
+            if (
+                _fileChanges.All(change =>
+                    priorities.TryGetValue(change.Key, out var priority) && priority == change.Value
+                )
+            )
             {
                 _fileChanges.Clear();
                 _editFailure = null;

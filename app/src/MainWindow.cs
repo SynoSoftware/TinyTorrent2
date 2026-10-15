@@ -45,14 +45,17 @@ public sealed partial class MainWindow : Window
 #endif
         Back = new RelayCommand(GoBack, () => Model.Navigation.CanGoBack);
         InitializeComponent();
+        LanguageButton.Flyout = MenuItems.Flyout(LanguageMenu, () => Model.Text);
         ConfigureWork();
         Model.Navigation.PropertyChanged += (_, _) => UpdateBack();
         ConfigureLibrary();
         PageContent.SizeChanged += Motion.Clip;
         WorkspaceContent.SizeChanged += Motion.Clip;
         SettingsContent.SizeChanged += Motion.Clip;
+        FilterContent.SizeChanged += Motion.Clip;
         _pages.Show(Workspace);
         _workspaces.Show(TorrentContent);
+        _filters.Show(Filters);
         Root.Unloaded += (_, _) => StopMotion();
         ConfigureCapture();
         ConfigureNotifications();
@@ -80,6 +83,8 @@ public sealed partial class MainWindow : Window
         Menus.SizeChanged += (_, _) => UpdateChrome();
         SettingsButton.Loaded += (_, _) => UpdateChrome();
         SettingsButton.SizeChanged += (_, _) => UpdateChrome();
+        LanguageButton.Loaded += (_, _) => UpdateChrome();
+        LanguageButton.SizeChanged += (_, _) => UpdateChrome();
         ThemeButton.Loaded += (_, _) => UpdateChrome();
         ThemeButton.SizeChanged += (_, _) => UpdateChrome();
         SearchArea.SizeChanged += (_, _) => UpdateChrome();
@@ -104,8 +109,15 @@ public sealed partial class MainWindow : Window
         Model.SnapshotApplied += (_, change) =>
         {
             // Project already publishes changes to the ascending queue order.
-            if (!change.Published && change.RowsChanged && Torrents.Sort is { } sort
-                && (sort.Column != QueueColumn || sort.Direction != Syno.TableView.SortDirection.Ascending))
+            if (
+                !change.Published
+                && change.RowsChanged
+                && Torrents.Sort is { } sort
+                && (
+                    sort.Column != QueueColumn
+                    || sort.Direction != Syno.TableView.SortDirection.Ascending
+                )
+            )
                 Torrents.RefreshView();
         };
         Model.RevealRequested += async (_, torrents) =>
@@ -428,7 +440,8 @@ public sealed partial class MainWindow : Window
                     ? SplitViewDisplayMode.CompactInline
                     : SplitViewDisplayMode.Inline;
             FiltersPane.IsCompact = Model.FilterPane == FilterPane.Compact;
-            FiltersPane.Visibility = Model.FilterPane == FilterPane.Hidden ? Visibility.Collapsed : Visibility.Visible;
+            FiltersPane.Visibility =
+                Model.FilterPane == FilterPane.Hidden ? Visibility.Collapsed : Visibility.Visible;
             if (
                 args.PropertyName == nameof(MainViewModel.FilterPane)
                 && Model.IsFilterOpen
@@ -735,11 +748,7 @@ public sealed partial class MainWindow : Window
             // Close and Exit hide the window before any waiting, so closing never
             // leaves a frozen window on screen. Only a decision the person must
             // make keeps it visible, and a failed close shows it again.
-            if (
-                !HasDialog
-                && !Model.HasDraft
-                && !Model.IsPicking
-            )
+            if (!HasDialog && !Model.HasDraft && !Model.IsPicking)
                 AppWindow.Hide();
             if (_exiting)
                 await Model.DeferClose();

@@ -12,9 +12,12 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>..\..\resources\TinyTorrent.ico</ApplicationIcon>
     <Platforms>x64;ARM64</Platforms>
-    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' and '$(Platform)' != '' and '$(Platform)' != 'AnyCPU'">win-$([System.String]::Copy('$(Platform)').ToLowerInvariant())</RuntimeIdentifier>
+    <RuntimeIdentifier
+      Condition="'$(RuntimeIdentifier)' == '' and '$(Platform)' != '' and '$(Platform)' != 'AnyCPU'"
+      >win-$([System.String]::Copy('$(Platform)').ToLowerInvariant())</RuntimeIdentifier>
     <!-- The OS, not the build process, so a 32-bit MSBuild still builds x64. -->
-    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant())</RuntimeIdentifier>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''"
+      >win-$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant())</RuntimeIdentifier>
     <UseWinUI>true</UseWinUI>
     <WinUISDKReferences>false</WinUISDKReferences>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -38,12 +41,18 @@
        MSBuild would otherwise read as an argument delimiter. -->
   <PropertyGroup Condition="Exists('$(MSBuildThisFileDirectory)..\..\secrets\keys.json')">
     <SecretsJson>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)..\..\secrets\keys.json'))</SecretsJson>
-    <TmdbToken Condition="'$(TmdbToken)' == ''">$([System.Text.RegularExpressions.Regex]::Replace('$(SecretsJson)', '(?s)^(?:.*\x22tmdb\x22\s*:\s*\{[^}]*\x22readAccessToken\x22\s*:\s*\x22([^\x22]*)\x22.*|.*)$', '$1'))</TmdbToken>
-    <OmdbKey Condition="'$(OmdbKey)' == ''">$([System.Text.RegularExpressions.Regex]::Replace('$(SecretsJson)', '(?s)^(?:.*\x22omdb\x22\s*:\s*\{[^}]*\x22apiKey\x22\s*:\s*\x22([^\x22]*)\x22.*|.*)$', '$1'))</OmdbKey>
-    <MdbListKey Condition="'$(MdbListKey)' == ''">$([System.Text.RegularExpressions.Regex]::Replace('$(SecretsJson)', '(?s)^(?:.*\x22mdblist\x22\s*:\s*\{[^}]*\x22apiKey\x22\s*:\s*\x22([^\x22]*)\x22.*|.*)$', '$1'))</MdbListKey>
-    <SubDLKey Condition="'$(SubDLKey)' == ''">$([System.Text.RegularExpressions.Regex]::Replace('$(SecretsJson)', '(?s)^(?:.*\x22subdl\x22\s*:\s*\{[^}]*\x22apiKey\x22\s*:\s*\x22([^\x22]*)\x22.*|.*)$', '$1'))</SubDLKey>
-    <SubSourceKey Condition="'$(SubSourceKey)' == ''">$([System.Text.RegularExpressions.Regex]::Replace('$(SecretsJson)', '(?s)^(?:.*\x22subsource\x22\s*:\s*\{[^}]*\x22apiKey\x22\s*:\s*\x22([^\x22]*)\x22.*|.*)$', '$1'))</SubSourceKey>
-    <OpenSubtitlesKey Condition="'$(OpenSubtitlesKey)' == ''">$([System.Text.RegularExpressions.Regex]::Replace('$(SecretsJson)', '(?s)^(?:.*\x22opensubtitles\x22\s*:\s*\{[^}]*\x22apiKey\x22\s*:\s*\x22([^\x22]*)\x22.*|.*)$', '$1'))</OpenSubtitlesKey>
+    <TmdbToken Condition="'$(TmdbToken)' == ''"
+      >$([System.Text.RegularExpressions.Regex]::Replace('$(SecretsJson)', '(?s)^(?:.*\x22tmdb\x22\s*:\s*\{[^}]*\x22readAccessToken\x22\s*:\s*\x22([^\x22]*)\x22.*|.*)$', '$1'))</TmdbToken>
+    <OmdbKey Condition="'$(OmdbKey)' == ''"
+      >$([System.Text.RegularExpressions.Regex]::Replace('$(SecretsJson)', '(?s)^(?:.*\x22omdb\x22\s*:\s*\{[^}]*\x22apiKey\x22\s*:\s*\x22([^\x22]*)\x22.*|.*)$', '$1'))</OmdbKey>
+    <MdbListKey Condition="'$(MdbListKey)' == ''"
+      >$([System.Text.RegularExpressions.Regex]::Replace('$(SecretsJson)', '(?s)^(?:.*\x22mdblist\x22\s*:\s*\{[^}]*\x22apiKey\x22\s*:\s*\x22([^\x22]*)\x22.*|.*)$', '$1'))</MdbListKey>
+    <SubDLKey Condition="'$(SubDLKey)' == ''"
+      >$([System.Text.RegularExpressions.Regex]::Replace('$(SecretsJson)', '(?s)^(?:.*\x22subdl\x22\s*:\s*\{[^}]*\x22apiKey\x22\s*:\s*\x22([^\x22]*)\x22.*|.*)$', '$1'))</SubDLKey>
+    <SubSourceKey Condition="'$(SubSourceKey)' == ''"
+      >$([System.Text.RegularExpressions.Regex]::Replace('$(SecretsJson)', '(?s)^(?:.*\x22subsource\x22\s*:\s*\{[^}]*\x22apiKey\x22\s*:\s*\x22([^\x22]*)\x22.*|.*)$', '$1'))</SubSourceKey>
+    <OpenSubtitlesKey Condition="'$(OpenSubtitlesKey)' == ''"
+      >$([System.Text.RegularExpressions.Regex]::Replace('$(SecretsJson)', '(?s)^(?:.*\x22opensubtitles\x22\s*:\s*\{[^}]*\x22apiKey\x22\s*:\s*\x22([^\x22]*)\x22.*|.*)$', '$1'))</OpenSubtitlesKey>
   </PropertyGroup>
   <PropertyGroup Condition="'$(EnableCapture)' == 'true'">
     <DefineConstants>$(DefineConstants);CAPTURE</DefineConstants>
@@ -64,13 +73,30 @@
     <EmbeddedResource Include="Resources\*.json" LogicalName="%(Filename)%(Extension)" />
     <EmbeddedResource Include="Assets\world.json" LogicalName="world.json" />
     <Content Include="Assets\tmdb.svg" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="Assets\*.jpg;Assets\Settings\*.svg;Assets\Settings\*.png;Assets\Settings\LICENSE" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="..\..\resources\TinyTorrent.ico" Link="Assets\TinyTorrent.ico" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="..\..\resources\tinyTorrent.svg" Link="Assets\tinyTorrent.svg" CopyToOutputDirectory="PreserveNewest" />
+    <Content
+      Include="Assets\*.jpg;Assets\Settings\*.svg;Assets\Settings\*.png;Assets\Settings\LICENSE"
+      CopyToOutputDirectory="PreserveNewest"
+    />
+    <Content
+      Include="..\..\resources\TinyTorrent.ico"
+      Link="Assets\TinyTorrent.ico"
+      CopyToOutputDirectory="PreserveNewest"
+    />
+    <Content
+      Include="..\..\resources\tinyTorrent.svg"
+      Link="Assets\tinyTorrent.svg"
+      CopyToOutputDirectory="PreserveNewest"
+    />
     <!-- The window and the engine each start only the other executable beside
          them, so the window's output holds the engine from the same configuration.
          TinyTorrent.slnx builds the engine first. -->
-    <None Include="$(ArtifactsPath)\bin\Engine\$(Configuration)\$(EngineTargetName).exe" Link="$(EngineTargetName).exe" CopyToOutputDirectory="Never" CopyToPublishDirectory="PreserveNewest" Visible="false" />
+    <None
+      Include="$(ArtifactsPath)\bin\Engine\$(Configuration)\$(EngineTargetName).exe"
+      Link="$(EngineTargetName).exe"
+      CopyToOutputDirectory="Never"
+      CopyToPublishDirectory="PreserveNewest"
+      Visible="false"
+    />
     <UpToDateCheckInput Include="$(ArtifactsPath)\bin\Engine\$(Configuration)\$(EngineTargetName).exe" />
     <UpToDateCheckInput Include="..\CopyEngine.ps1" />
     <UpToDateCheckInput Include="..\CountryData.ps1" />
@@ -79,12 +105,27 @@
     <AssemblyMetadata Include="EngineFile" Value="$(EngineTargetName).exe" />
     <AssemblyMetadata Include="TmdbToken" Value="$(TmdbToken)" Condition="'$(TmdbToken)' != ''" />
     <AssemblyMetadata Include="OmdbKey" Value="$(OmdbKey)" Condition="'$(OmdbKey)' != ''" />
-    <AssemblyMetadata Include="MdbListKey" Value="$(MdbListKey)" Condition="'$(MdbListKey)' != ''" />
+    <AssemblyMetadata
+      Include="MdbListKey"
+      Value="$(MdbListKey)"
+      Condition="'$(MdbListKey)' != ''"
+    />
     <AssemblyMetadata Include="SubDLKey" Value="$(SubDLKey)" Condition="'$(SubDLKey)' != ''" />
-    <AssemblyMetadata Include="SubSourceKey" Value="$(SubSourceKey)" Condition="'$(SubSourceKey)' != ''" />
-    <AssemblyMetadata Include="OpenSubtitlesKey" Value="$(OpenSubtitlesKey)" Condition="'$(OpenSubtitlesKey)' != ''" />
+    <AssemblyMetadata
+      Include="SubSourceKey"
+      Value="$(SubSourceKey)"
+      Condition="'$(SubSourceKey)' != ''"
+    />
+    <AssemblyMetadata
+      Include="OpenSubtitlesKey"
+      Value="$(OpenSubtitlesKey)"
+      Condition="'$(OpenSubtitlesKey)' != ''"
+    />
   </ItemGroup>
-  <Target Name="CopyEngine" BeforeTargets="_CopyOutOfDateSourceItemsToOutputDirectory;CopyFilesToOutputDirectory">
+  <Target
+    Name="CopyEngine"
+    BeforeTargets="_CopyOutOfDateSourceItemsToOutputDirectory;CopyFilesToOutputDirectory"
+  >
     <Exec Command="pwsh -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\CopyEngine.ps1&quot; -Source &quot;$(ArtifactsPath)\bin\Engine\$(Configuration)\$(EngineTargetName).exe&quot; -Destination &quot;$(TargetDir)$(EngineTargetName).exe&quot;" />
     <ItemGroup>
       <FileWrites Include="$(TargetDir)$(EngineTargetName).exe" />
@@ -92,14 +133,21 @@
   </Target>
   <!-- Peer countries resolve from DB-IP's country data, which the build fetches
        once a month, so a release ships the current month's file. -->
-  <Target Name="CountryData" BeforeTargets="_CopyOutOfDateSourceItemsToOutputDirectory;CopyFilesToOutputDirectory">
+  <Target
+    Name="CountryData"
+    BeforeTargets="_CopyOutOfDateSourceItemsToOutputDirectory;CopyFilesToOutputDirectory"
+  >
     <Exec Command="pwsh -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\CountryData.ps1&quot; -Cache &quot;$(ArtifactsPath)\data&quot; -Destination &quot;$(TargetDir)Assets\dbip-country-lite.mmdb&quot;" />
     <ItemGroup>
       <FileWrites Include="$(TargetDir)Assets\dbip-country-lite.mmdb" />
     </ItemGroup>
   </Target>
   <!-- .NET Publish does not collect all the resources WinUI adds to build output. -->
-  <Target Name="PublishXamlResources" AfterTargets="ComputeFilesToPublish" DependsOnTargets="_GenerateProjectPriFile;CustomOutputGroupForPackaging">
+  <Target
+    Name="PublishXamlResources"
+    AfterTargets="ComputeFilesToPublish"
+    DependsOnTargets="_GenerateProjectPriFile;CustomOutputGroupForPackaging"
+  >
     <ItemGroup>
       <ResolvedFileToPublish Include="$(ProjectPriFullPath)">
         <RelativePath>$(ProjectPriFileName)</RelativePath>
@@ -117,7 +165,10 @@
         <RelativePath>Assets\dbip-country-lite.mmdb</RelativePath>
         <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
       </ResolvedFileToPublish>
-      <ResolvedFileToPublish Include="@(CustomOutputGroupForPackagingOutput)" Condition="'$(DisableEmbeddedXbf)' == 'true'">
+      <ResolvedFileToPublish
+        Include="@(CustomOutputGroupForPackagingOutput)"
+        Condition="'$(DisableEmbeddedXbf)' == 'true'"
+      >
         <RelativePath>%(CustomOutputGroupForPackagingOutput.TargetPath)</RelativePath>
         <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
       </ResolvedFileToPublish>

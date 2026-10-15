@@ -23,7 +23,8 @@ public sealed partial class SpeedLimits : UserControl
         InitializeComponent();
         Selector = new(main);
         ModeRow.Content = Selector;
-        _rows = [
+        _rows =
+        [
             AddRate(StandardRows, Model.Download, "DownloadLimit"),
             AddRate(StandardRows, Model.Upload, "UploadLimit"),
             AddRate(AlternativeRows, Model.AlternativeDownload, "AlternativeDownload"),
@@ -64,22 +65,30 @@ public sealed partial class SpeedLimits : UserControl
         {
             Width = 100,
             Tag = setting,
-            InputScope = new InputScope { Names = { new InputScopeName(InputScopeNameValue.Number) } },
+            InputScope = new InputScope
+            {
+                Names = { new InputScopeName(InputScopeNameValue.Number) },
+            },
         };
-        editor.SetBinding(TextBox.TextProperty, new Binding
-        {
-            Source = setting, Path = new PropertyPath(nameof(Setting.Input)),
-            Mode = BindingMode.TwoWay, UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged,
-        });
-        editor.SetBinding(IsEnabledProperty, new Binding
-        {
-            Source = setting, Path = new PropertyPath(nameof(Setting.CanEdit)),
-        });
+        editor.SetBinding(
+            TextBox.TextProperty,
+            new Binding
+            {
+                Source = setting,
+                Path = new PropertyPath(nameof(Setting.Input)),
+                Mode = BindingMode.TwoWay,
+                UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged,
+            }
+        );
+        editor.SetBinding(
+            IsEnabledProperty,
+            new Binding { Source = setting, Path = new PropertyPath(nameof(Setting.CanEdit)) }
+        );
         var row = new SettingsRow { Content = editor };
-        row.SetBinding(SettingsRow.ErrorProperty, new Binding
-        {
-            Source = setting, Path = new PropertyPath(nameof(Setting.Message)),
-        });
+        row.SetBinding(
+            SettingsRow.ErrorProperty,
+            new Binding { Source = setting, Path = new PropertyPath(nameof(Setting.Message)) }
+        );
         panel.Children.Add(row);
         AutomationProperties.SetAutomationId(editor, automationId);
         RefreshRate(row);
@@ -98,19 +107,23 @@ public sealed partial class SpeedLimits : UserControl
         var editor = (TextBox)row.Content;
         var setting = (Setting)editor.Tag;
         row.Unit = setting.RateUnit;
-        row.Header = setting == Model.Download || setting == Model.AlternativeDownload
-            ? Model.Text.Get("settings", "download_speed") : Model.Text.Get("settings", "upload_speed");
+        row.Header =
+            setting == Model.Download || setting == Model.AlternativeDownload
+                ? Model.Text.Get("settings", "download_speed")
+                : Model.Text.Get("settings", "upload_speed");
         editor.PlaceholderText = Model.Text.Get("transfer_limits", "unlimited");
         AutomationProperties.SetName(editor, row.Header);
     }
 
-    internal Control? Field(string name) => name switch
-    {
-        "limit_mode" => Selector,
-        "connection_setup" => Connection,
-        _ => _rows.Select(row => (TextBox)row.Content)
-            .FirstOrDefault(editor => ((Setting)editor.Tag).Name == name),
-    };
+    internal Control? Field(string name) =>
+        name switch
+        {
+            "limit_mode" => Selector,
+            "connection_setup" => Connection,
+            _ => _rows
+                .Select(row => (TextBox)row.Content)
+                .FirstOrDefault(editor => ((Setting)editor.Tag).Name == name),
+        };
 
     internal void FocusConnection() => Connection.Focus(FocusState.Programmatic);
 
@@ -124,7 +137,9 @@ public sealed partial class SpeedLimits : UserControl
         var stacked = Profiles.ActualWidth < 640 * _display.TextScaleFactor;
         Profiles.ColumnSpacing = stacked ? 0 : 8;
         Profiles.RowSpacing = stacked ? 8 : 0;
-        Profiles.ColumnDefinitions[1].Width = stacked ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
+        Profiles.ColumnDefinitions[1].Width = stacked
+            ? new GridLength(0)
+            : new GridLength(1, GridUnitType.Star);
         Grid.SetColumn(AlternativeProfile, stacked ? 0 : 1);
         Grid.SetRow(AlternativeProfile, stacked ? 1 : 0);
     }

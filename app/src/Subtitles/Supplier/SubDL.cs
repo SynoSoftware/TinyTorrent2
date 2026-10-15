@@ -26,10 +26,7 @@ internal sealed partial class SubDL(RequestPolicy policy) : Supplier(policy)
     protected override void Authenticate(HttpRequestMessage request, Account account) =>
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ApiKey(account));
 
-    protected override async Task Check(
-        Operation operation,
-        CancellationToken cancellation
-    )
+    protected override async Task Check(Operation operation, CancellationToken cancellation)
     {
         var response = await Get(operation, new Uri(Origin, "/api/v2/me"), cancellation)
             .ConfigureAwait(false);
@@ -65,7 +62,9 @@ internal sealed partial class SubDL(RequestPolicy policy) : Supplier(policy)
             if (!root.TryGetProperty("match", out var match))
                 throw new SubtitleException(SubtitleFailure.Format);
             if (match.ValueKind == JsonValueKind.Null)
-                return page == 1 ? new(candidates, true) : throw new SubtitleException(SubtitleFailure.Format);
+                return page == 1
+                    ? new(candidates, true)
+                    : throw new SubtitleException(SubtitleFailure.Format);
             if (
                 Text(match, "type") != (release.Season is null ? "movie" : "tv")
                 || release.Season is not null && Number(match, "season") is null
@@ -78,7 +77,9 @@ internal sealed partial class SubDL(RequestPolicy policy) : Supplier(policy)
                     release.Episodes.Count == 1 ? Number(match, "episode") : null
                 )
             )
-                return page == 1 ? new(candidates) : throw new SubtitleException(SubtitleFailure.Format);
+                return page == 1
+                    ? new(candidates)
+                    : throw new SubtitleException(SubtitleFailure.Format);
             if (
                 !root.TryGetProperty("subtitles", out var subtitles)
                 || subtitles.ValueKind != JsonValueKind.Array

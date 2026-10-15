@@ -1,0 +1,33 @@
+{
+  "header": {
+    "accessible_name": "En-têtes de colonnes",
+    "sorted_ascending": "Tri croissant",
+    "sorted_descending": "Tri décroissant"
+  },
+  "placeholder": {
+    "loading": "Chargement",
+    "empty": "Rien à afficher",
+    "no_results": "Aucun élément correspondant"
+  },
+  "column_menu": {
+    "hide": "Masquer la colonne « {0} »",
+    "show": "Afficher la colonne « {0} »",
+    "fit": "Ajuster la colonne « {0} »",
+    "fit_columns": "Ajuster les colonnes",
+    "fill_width": "Remplir la largeur",
+    "move_left": "Déplacer à gauche",
+    "move_right": "Déplacer à droite",
+    "shown": "Affichée",
+    "hidden": "Masquée"
+  },
+  "row_drag": {
+    "before_row": "Insérer avant {0}",
+    "at_end": "Insérer à la fin",
+    "nothing_to_move": "Rien à déplacer",
+    "choose_position": "Choisissez où insérer",
+    "move_one": "Déplacer {0} élément",
+    "move_many": "Déplacer {0} éléments",
+    "hint": "Maintenir et faire défiler · Déposer entre les lignes · Échap pour annuler",
+    "browse": "Maintenir et faire défiler · Échap pour annuler"
+  }
+}

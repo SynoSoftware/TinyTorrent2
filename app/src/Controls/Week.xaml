@@ -16,54 +16,65 @@
           <Thickness x:Key="WeekPeriodThickness">1</Thickness>
         </ResourceDictionary>
       </ResourceDictionary.ThemeDictionaries>
-    <Style
-      x:Key="WeekTextStyle"
-      TargetType="TextBlock"
-      BasedOn="{StaticResource TinyTorrentStatusTextStyle}"
-    >
-      <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
-    </Style>
-    <Style
-      x:Key="WeekSecondaryStyle"
-      TargetType="TextBlock"
-      BasedOn="{StaticResource WeekTextStyle}"
-    >
-      <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
-    </Style>
-    <Style x:Key="WeekTrackStyle" TargetType="Border">
-      <Setter Property="Background" Value="{ThemeResource ControlFillColorSecondaryBrush}" />
-      <Setter Property="BorderBrush" Value="{ThemeResource ControlStrokeColorDefaultBrush}" />
-    </Style>
-    <Style x:Key="WeekLineStyle" TargetType="Border">
-      <Setter Property="Background" Value="{ThemeResource ControlStrokeColorDefaultBrush}" />
-    </Style>
-    <Style x:Key="WeekPeriodStyle" TargetType="Border">
-      <Setter Property="BorderThickness" Value="{ThemeResource WeekPeriodThickness}" />
-    </Style>
-    <Style x:Key="WeekStandardStyle" TargetType="Border" BasedOn="{StaticResource WeekPeriodStyle}">
-      <Setter Property="BorderBrush" Value="Transparent" />
-    </Style>
-    <Style x:Key="WeekAlternativeStyle" TargetType="Border" BasedOn="{StaticResource WeekPeriodStyle}">
-      <Setter Property="Background" Value="{ThemeResource TinyTorrentAlternativeBrush}" />
-      <Setter Property="BorderBrush" Value="{ThemeResource AccentFillColorDefaultBrush}" />
-    </Style>
-    <Style x:Key="WeekPausedStyle" TargetType="Border" BasedOn="{StaticResource WeekPeriodStyle}">
-      <Setter Property="Background" Value="{ThemeResource SystemFillColorCautionBackgroundBrush}" />
-      <Setter Property="BorderBrush" Value="{ThemeResource SystemFillColorCautionBrush}" />
-    </Style>
-    <Style x:Key="WeekOutlineStyle" TargetType="Border">
-      <Setter Property="BorderBrush" Value="{ThemeResource AccentFillColorDefaultBrush}" />
-    </Style>
-    <Style x:Key="WeekHandleStyle" TargetType="Border">
-      <Setter Property="Background" Value="{ThemeResource TextFillColorPrimaryBrush}" />
-    </Style>
-    <Style x:Key="WeekNowStyle" TargetType="Border">
-      <Setter Property="Background" Value="{ThemeResource AccentFillColorDefaultBrush}" />
-    </Style>
-    <Style x:Key="WeekTipStyle" TargetType="Border">
-      <Setter Property="Background" Value="{ThemeResource SolidBackgroundFillColorBaseBrush}" />
-      <Setter Property="BorderBrush" Value="{ThemeResource ControlStrokeColorDefaultBrush}" />
-    </Style>
+      <Style
+        x:Key="WeekTextStyle"
+        TargetType="TextBlock"
+        BasedOn="{StaticResource TinyTorrentStatusTextStyle}"
+      >
+        <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
+      </Style>
+      <Style
+        x:Key="WeekSecondaryStyle"
+        TargetType="TextBlock"
+        BasedOn="{StaticResource WeekTextStyle}"
+      >
+        <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+      </Style>
+      <Style x:Key="WeekTrackStyle" TargetType="Border">
+        <Setter Property="Background" Value="{ThemeResource ControlFillColorSecondaryBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource ControlStrokeColorDefaultBrush}" />
+      </Style>
+      <Style x:Key="WeekLineStyle" TargetType="Border">
+        <Setter Property="Background" Value="{ThemeResource ControlStrokeColorDefaultBrush}" />
+      </Style>
+      <Style x:Key="WeekPeriodStyle" TargetType="Border">
+        <Setter Property="BorderThickness" Value="{ThemeResource WeekPeriodThickness}" />
+      </Style>
+      <Style
+        x:Key="WeekStandardStyle"
+        TargetType="Border"
+        BasedOn="{StaticResource WeekPeriodStyle}"
+      >
+        <Setter Property="BorderBrush" Value="Transparent" />
+      </Style>
+      <Style
+        x:Key="WeekAlternativeStyle"
+        TargetType="Border"
+        BasedOn="{StaticResource WeekPeriodStyle}"
+      >
+        <Setter Property="Background" Value="{ThemeResource TinyTorrentAlternativeBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource AccentFillColorDefaultBrush}" />
+      </Style>
+      <Style x:Key="WeekPausedStyle" TargetType="Border" BasedOn="{StaticResource WeekPeriodStyle}">
+        <Setter
+          Property="Background"
+          Value="{ThemeResource SystemFillColorCautionBackgroundBrush}"
+        />
+        <Setter Property="BorderBrush" Value="{ThemeResource SystemFillColorCautionBrush}" />
+      </Style>
+      <Style x:Key="WeekOutlineStyle" TargetType="Border">
+        <Setter Property="BorderBrush" Value="{ThemeResource AccentFillColorDefaultBrush}" />
+      </Style>
+      <Style x:Key="WeekHandleStyle" TargetType="Border">
+        <Setter Property="Background" Value="{ThemeResource TextFillColorPrimaryBrush}" />
+      </Style>
+      <Style x:Key="WeekNowStyle" TargetType="Border">
+        <Setter Property="Background" Value="{ThemeResource AccentFillColorDefaultBrush}" />
+      </Style>
+      <Style x:Key="WeekTipStyle" TargetType="Border">
+        <Setter Property="Background" Value="{ThemeResource SolidBackgroundFillColorBaseBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource ControlStrokeColorDefaultBrush}" />
+      </Style>
     </ResourceDictionary>
   </UserControl.Resources>
   <ToolTipService.ToolTip>
@@ -80,8 +91,14 @@
         Style="{StaticResource WeekNowStyle}"
         AutomationProperties.AccessibilityView="Raw"
       />
-      <Border x:Name="NowDot" Width="8" Height="8" CornerRadius="4"
-        Style="{StaticResource WeekNowStyle}" AutomationProperties.AccessibilityView="Raw" />
+      <Border
+        x:Name="NowDot"
+        Width="8"
+        Height="8"
+        CornerRadius="4"
+        Style="{StaticResource WeekNowStyle}"
+        AutomationProperties.AccessibilityView="Raw"
+      />
     </Canvas>
     <Canvas x:Name="Feedback" IsHitTestVisible="False">
       <Border

@@ -49,7 +49,14 @@ public sealed partial class InspectorPane
         [
             new MenuHeading(text.Get("peer_map", "view"), Lucide.Columns2),
             Choice("map", view.Layout == PeerLayout.Map, view with { Layout = PeerLayout.Map }),
-            Choice("table", view.Layout == PeerLayout.Table, view with { Layout = PeerLayout.Table }),
+            Choice(
+                "table",
+                view.Layout == PeerLayout.Table,
+                view with
+                {
+                    Layout = PeerLayout.Table,
+                }
+            ),
             Choice("both", view.Layout == PeerLayout.Both, view with { Layout = PeerLayout.Both }),
             new MenuSeparator(),
             new MenuHeading(text.Get("peer_map", "geography"), Lucide.Globe2),
@@ -57,12 +64,22 @@ public sealed partial class InspectorPane
             Choice("cities", view.Cities && installed, view with { Cities = true }, installed),
         ];
         if (!installed)
-            menu.Add(new MenuCommand(text.Get("peer_map", "download"), Lucide.Download, Model.DownloadCities));
+            menu.Add(
+                new MenuCommand(
+                    text.Get("peer_map", "download"),
+                    Lucide.Download,
+                    Model.DownloadCities
+                )
+            );
         return menu;
 
         MenuChoice Choice(string key, bool selected, PeerView choice, bool enabled = true) =>
-            new(text.Get("peer_map", key), null, selected,
-                new RelayCommand(() => SetPeerView(choice), () => enabled));
+            new(
+                text.Get("peer_map", key),
+                null,
+                selected,
+                new RelayCommand(() => SetPeerView(choice), () => enabled)
+            );
     }
 
     private void SetPeerView(PeerView view)
@@ -98,17 +115,26 @@ public sealed partial class InspectorPane
             {
                 var width = PeerContent.ActualWidth;
                 var height = PeerContent.ActualHeight;
-                var side = PeerMap.FitScale(new Size(Math.Max(0, width - 16) * (1 - view.Side), height));
-                var below = PeerMap.FitScale(new Size(width, Math.Max(0, height - 16) * (1 - view.Stacked)));
+                var side = PeerMap.FitScale(
+                    new Size(Math.Max(0, width - 16) * (1 - view.Side), height)
+                );
+                var below = PeerMap.FitScale(
+                    new Size(width, Math.Max(0, height - 16) * (1 - view.Stacked))
+                );
                 if (side != below)
                     _peersStacked = below > side;
             }
             var stacked = combined && _peersStacked;
-            var showsMap = view.Layout != PeerLayout.Table && Model.Section == InspectorSection.Peers
-                && Model.IsVisible && Model.HasContent && _library is null;
+            var showsMap =
+                view.Layout != PeerLayout.Table
+                && Model.Section == InspectorSection.Peers
+                && Model.IsVisible
+                && Model.HasContent
+                && _library is null;
             if (Peers.Visibility == Visibility.Collapsed && view.Layout != PeerLayout.Map)
                 Peers.RefreshView();
-            Peers.Visibility = view.Layout == PeerLayout.Map ? Visibility.Collapsed : Visibility.Visible;
+            Peers.Visibility =
+                view.Layout == PeerLayout.Map ? Visibility.Collapsed : Visibility.Visible;
             PeerDrawing.Visibility = showsMap ? Visibility.Visible : Visibility.Collapsed;
             PeerSplit.Visibility = combined ? Visibility.Visible : Visibility.Collapsed;
             Grid.SetRow(Peers, stacked ? 2 : 0);
@@ -119,10 +145,21 @@ public sealed partial class InspectorPane
             var fraction = stacked ? view.Stacked : view.Side;
             for (var index = 0; index < 3; index++)
             {
-                PeerContent.RowDefinitions[index].Height = Length(index, combined && stacked, fraction);
-                PeerContent.ColumnDefinitions[index].Width = Length(index, combined && !stacked, fraction);
+                PeerContent.RowDefinitions[index].Height = Length(
+                    index,
+                    combined && stacked,
+                    fraction
+                );
+                PeerContent.ColumnDefinitions[index].Width = Length(
+                    index,
+                    combined && !stacked,
+                    fraction
+                );
             }
-            var extent = Math.Max(0, (stacked ? PeerContent.ActualHeight : PeerContent.ActualWidth) - 16);
+            var extent = Math.Max(
+                0,
+                (stacked ? PeerContent.ActualHeight : PeerContent.ActualWidth) - 16
+            );
             PeerSplit.SetBounds(extent * .15, extent * .85, extent * fraction);
             if (showsMap)
             {
@@ -141,14 +178,18 @@ public sealed partial class InspectorPane
                     _peerMap = null;
             }
         }
-        finally { _arrangingPeers = false; }
-
-        static GridLength Length(int index, bool split, double fraction) => index switch
+        finally
         {
-            0 => new GridLength(split ? 1 - fraction : 1, GridUnitType.Star),
-            1 => new GridLength(split ? 16 : 0),
-            _ => split ? new GridLength(fraction, GridUnitType.Star) : new GridLength(0),
-        };
+            _arrangingPeers = false;
+        }
+
+        static GridLength Length(int index, bool split, double fraction) =>
+            index switch
+            {
+                0 => new GridLength(split ? 1 - fraction : 1, GridUnitType.Star),
+                1 => new GridLength(split ? 16 : 0),
+                _ => split ? new GridLength(fraction, GridUnitType.Star) : new GridLength(0),
+            };
     }
 
     private void RefreshMap()
@@ -158,11 +199,21 @@ public sealed partial class InspectorPane
         _mapQueued = DispatcherQueue.TryEnqueue(() =>
         {
             _mapQueued = false;
-            if (!IsLoaded || _peerMap is null || _library is not null || Model.Section != InspectorSection.Peers
-                || !Model.IsVisible || !ReferenceEquals(PeerDrawing.Content, _peerMap))
+            if (
+                !IsLoaded
+                || _peerMap is null
+                || _library is not null
+                || Model.Section != InspectorSection.Peers
+                || !Model.IsVisible
+                || !ReferenceEquals(PeerDrawing.Content, _peerMap)
+            )
                 return;
-            _peerMap.Show(Model.IsAvailable ? Model.Peers : null, Model.Origin, Model.Text,
-                _layout.View.Cities && Model.HasCities);
+            _peerMap.Show(
+                Model.IsAvailable ? Model.Peers : null,
+                Model.Origin,
+                Model.Text,
+                _layout.View.Cities && Model.HasCities
+            );
         });
     }
 }

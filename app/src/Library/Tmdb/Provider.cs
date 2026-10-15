@@ -31,10 +31,7 @@ internal sealed class Provider(string key) : IProvider
             IsLocalized = true,
         };
 
-    public async Task<VideoSearch> Search(
-        VideoQuery query,
-        CancellationToken cancellation
-    )
+    public async Task<VideoSearch> Search(VideoQuery query, CancellationToken cancellation)
     {
         if (query.Year is { } year)
         {
@@ -43,17 +40,30 @@ internal sealed class Provider(string key) : IProvider
             foreach (var kind in new[] { VideoKind.Movie, VideoKind.Series })
             {
                 var path = kind == VideoKind.Movie ? "search/movie" : "search/tv";
-                var response = await Get(query.Get,
-                    path + "?query=" + Uri.EscapeDataString(query.Text)
-                    + "&year=" + year.ToString(CultureInfo.InvariantCulture)
-                    + "&language=" + Uri.EscapeDataString(query.Language), cancellation).ConfigureAwait(false);
+                var response = await Get(
+                        query.Get,
+                        path
+                            + "?query="
+                            + Uri.EscapeDataString(query.Text)
+                            + "&year="
+                            + year.ToString(CultureInfo.InvariantCulture)
+                            + "&language="
+                            + Uri.EscapeDataString(query.Language),
+                        cancellation
+                    )
+                    .ConfigureAwait(false);
                 try
                 {
                     var results = response.GetProperty("results");
                     empty &= results.GetArrayLength() == 0;
                     choices.AddRange(results.EnumerateArray().Select(item => Choice(item, kind)));
                 }
-                catch (Exception error) when (error is InvalidOperationException or KeyNotFoundException or FormatException)
+                catch (Exception error)
+                    when (error
+                            is InvalidOperationException
+                                or KeyNotFoundException
+                                or FormatException
+                    )
                 {
                     throw new VideoException(VideoFailure.InvalidResult, error);
                 }
@@ -116,11 +126,12 @@ internal sealed class Provider(string key) : IProvider
         foreach (var episode in release.Episodes)
         {
             var detail = await Read(
-                $"{root}/season/{season}/episode/{episode}",
-                request,
-                value => ReadEpisode(value, season, episode),
-                cancellation
-            ).ConfigureAwait(false);
+                    $"{root}/season/{season}/episode/{episode}",
+                    request,
+                    value => ReadEpisode(value, season, episode),
+                    cancellation
+                )
+                .ConfigureAwait(false);
             records.Add(detail);
             episodes.Add(ReadEpisode(detail, season, episode));
         }
@@ -130,7 +141,8 @@ internal sealed class Provider(string key) : IProvider
             Kind = VideoKind.Episode,
             Series = choice,
             Episodes = episodes,
-            Year = records.Skip(1)
+            Year = records
+                .Skip(1)
                 .Select(value => VideoInformation.ParseYear(Text(value.Content, "air_date")))
                 .FirstOrDefault(year => year is not null),
             Records = records,
@@ -174,25 +186,29 @@ internal sealed class Provider(string key) : IProvider
                 Keywords = keywords,
                 Records = [record],
                 Ratings = new() { Tmdb = ReadRating(data, choice.Kind) },
-                Directors = data.TryGetProperty("credits", out var team)
+                Directors =
+                    data.TryGetProperty("credits", out var team)
                     && team.TryGetProperty("crew", out var crew)
                     && crew.ValueKind == JsonValueKind.Array
-                    ? crew.EnumerateArray()
-                        .Where(member => Text(member, "job") == "Director")
-                        .Select(member => Text(member, "name"))
-                        .Where(name => name.Length > 0)
-                        .Distinct()
-                        .ToArray()
-                    : [],
+                        ? crew.EnumerateArray()
+                            .Where(member => Text(member, "job") == "Director")
+                            .Select(member => Text(member, "name"))
+                            .Where(name => name.Length > 0)
+                            .Distinct()
+                            .ToArray()
+                        : [],
                 // TMDB writes 0 for takings it does not know.
-                BoxOffice = data.TryGetProperty("revenue", out var revenue)
+                BoxOffice =
+                    data.TryGetProperty("revenue", out var revenue)
                     && revenue.ValueKind == JsonValueKind.Number
                     && revenue.TryGetInt64(out var takings)
                     && takings > 0
-                    ? takings
-                    : null,
-                ImdbId = choice.Kind == VideoKind.Movie
-                    ? VideoInformation.ParseImdbId(Text(data, "imdb_id")) : null,
+                        ? takings
+                        : null,
+                ImdbId =
+                    choice.Kind == VideoKind.Movie
+                        ? VideoInformation.ParseImdbId(Text(data, "imdb_id"))
+                        : null,
                 Related = related,
             };
         }
@@ -233,7 +249,11 @@ internal sealed class Provider(string key) : IProvider
             ? new Rating(value, kind) { Votes = votes }
             : null;
 
-    private async Task<JsonElement> Get(ProviderGet get, string path, CancellationToken cancellation)
+    private async Task<JsonElement> Get(
+        ProviderGet get,
+        string path,
+        CancellationToken cancellation
+    )
     {
         // A TMDB account shows both an API read access token, a JWT that
         // contains dots, and a shorter API key, which TMDB accepts only as a
@@ -256,25 +276,34 @@ internal sealed class Provider(string key) : IProvider
         VideoRequest request,
         Action<VideoRecord> decode,
         CancellationToken cancellation
-    ) => request.Read(path, async token =>
-    {
-        var content = await Get(
-                request.Get,
-                path
-                    + (
-                        path.Contains("/season/", StringComparison.Ordinal)
-                            ? "?language="
-                            : "?append_to_response=credits,keywords,recommendations&language="
+    ) =>
+        request.Read(
+            path,
+            async token =>
+            {
+                var content = await Get(
+                        request.Get,
+                        path
+                            + (
+                                path.Contains("/season/", StringComparison.Ordinal)
+                                    ? "?language="
+                                    : "?append_to_response=credits,keywords,recommendations&language="
+                            )
+                            + Uri.EscapeDataString(request.Language),
+                        token
                     )
-                    + Uri.EscapeDataString(request.Language),
-                token
-            )
-            .ConfigureAwait(false);
-        var record = new VideoRecord(path, content, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
-        // The shared reader saves a successful callback before reading another resource.
-        decode(record);
-        return record;
-    }, cancellation);
+                    .ConfigureAwait(false);
+                var record = new VideoRecord(
+                    path,
+                    content,
+                    DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+                );
+                // The shared reader saves a successful callback before reading another resource.
+                decode(record);
+                return record;
+            },
+            cancellation
+        );
 
     private VideoChoice Choice(JsonElement item, VideoKind kind) =>
         kind == VideoKind.Movie

@@ -103,7 +103,8 @@ public sealed partial class MainWindow
     {
         if (_allowClose)
             return;
-        Model.IsMinimized = sender.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Minimized };
+        Model.IsMinimized =
+            sender.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Minimized };
         RememberBounds();
         if (args.DidSizeChange || args.DidPresenterChange)
             UpdateChrome();

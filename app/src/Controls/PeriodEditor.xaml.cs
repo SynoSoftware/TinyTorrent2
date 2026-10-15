@@ -14,7 +14,11 @@ public sealed partial class PeriodEditor : UserControl
     {
         Model = model;
         InitializeComponent();
-        Loaded += (_, _) => { _display.TextScaleFactorChanged += OnTextScale; UpdateTimes(); };
+        Loaded += (_, _) =>
+        {
+            _display.TextScaleFactorChanged += OnTextScale;
+            UpdateTimes();
+        };
         Unloaded += (_, _) => _display.TextScaleFactorChanged -= OnTextScale;
     }
 
@@ -27,7 +31,10 @@ public sealed partial class PeriodEditor : UserControl
 
     private void UpdateTimes()
     {
-        var available = new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity);
+        var available = new Windows.Foundation.Size(
+            double.PositiveInfinity,
+            double.PositiveInfinity
+        );
         StartPair.Measure(available);
         EndPair.Measure(available);
         Delete.Measure(available);
@@ -36,8 +43,14 @@ public sealed partial class PeriodEditor : UserControl
         var deleteBelow = Times.ActualWidth < pairWidth * 2 + Delete.DesiredSize.Width + 32;
         Times.ColumnSpacing = stacked ? 0 : 16;
         Times.RowSpacing = deleteBelow ? 16 : 0;
-        var rows = stacked ? 3 : deleteBelow ? 2 : 1;
-        var columns = stacked ? 1 : deleteBelow ? 2 : 3;
+        var rows =
+            stacked ? 3
+            : deleteBelow ? 2
+            : 1;
+        var columns =
+            stacked ? 1
+            : deleteBelow ? 2
+            : 3;
         while (Times.RowDefinitions.Count > rows)
             Times.RowDefinitions.RemoveAt(Times.RowDefinitions.Count - 1);
         while (Times.RowDefinitions.Count < rows)
@@ -45,14 +58,23 @@ public sealed partial class PeriodEditor : UserControl
         while (Times.ColumnDefinitions.Count > columns)
             Times.ColumnDefinitions.RemoveAt(Times.ColumnDefinitions.Count - 1);
         while (Times.ColumnDefinitions.Count < columns)
-            Times.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            Times.ColumnDefinitions.Add(
+                new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }
+            );
         for (var index = 0; index < Times.ColumnDefinitions.Count; index++)
-            Times.ColumnDefinitions[index].Width = index == Times.ColumnDefinitions.Count - 1
-                ? new GridLength(1, GridUnitType.Star) : GridLength.Auto;
+            Times.ColumnDefinitions[index].Width =
+                index == Times.ColumnDefinitions.Count - 1
+                    ? new GridLength(1, GridUnitType.Star)
+                    : GridLength.Auto;
         Grid.SetColumn(EndPair, stacked ? 0 : 1);
         Grid.SetRow(EndPair, stacked ? 1 : 0);
         Grid.SetColumn(Delete, deleteBelow ? 0 : 2);
-        Grid.SetRow(Delete, stacked ? 2 : deleteBelow ? 1 : 0);
+        Grid.SetRow(
+            Delete,
+            stacked ? 2
+                : deleteBelow ? 1
+                : 0
+        );
         Grid.SetColumnSpan(Delete, !stacked && deleteBelow ? 2 : 1);
     }
 

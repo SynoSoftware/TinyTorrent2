@@ -115,11 +115,13 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
     {
         if (Interlocked.Exchange(ref _queued, 1) != 0)
             return;
-        if (!DispatcherQueue.TryEnqueue(() =>
-        {
-            Interlocked.Exchange(ref _queued, 0);
-            Refresh();
-        }))
+        if (
+            !DispatcherQueue.TryEnqueue(() =>
+            {
+                Interlocked.Exchange(ref _queued, 0);
+                Refresh();
+            })
+        )
             Interlocked.Exchange(ref _queued, 0);
     }
 
@@ -218,8 +220,12 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
         }
         var keys = new[] { "new", "missing_data", "all" };
         for (var index = 0; index < keys.Length; index++)
-            ((ComboBoxItem)_scope.Items[index]).Content =
-                _text.Format("filters", "count", _text.Get("request_protection", keys[index]), _counts[index]);
+            ((ComboBoxItem)_scope.Items[index]).Content = _text.Format(
+                "filters",
+                "count",
+                _text.Get("request_protection", keys[index]),
+                _counts[index]
+            );
         AutomationProperties.SetName(_scope, T("movies_to_search"));
         AutomationProperties.SetName(_download, T("matches_to_download"));
         _scope.IsEnabled = _download.IsEnabled = !_busy && _model?.Finding != true;

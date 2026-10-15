@@ -175,8 +175,11 @@ internal sealed partial class Acquisition(
     // Called while acquisition is suspended; admission rechecks remote waits.
     internal void ChangeRoute(SqliteConnection connection)
     {
-        Execute(connection, "UPDATE subtitle_jobs SET retry_at=0 WHERE outcome=$pending;",
-            ("$pending", (int)SubtitleOutcome.Pending));
+        Execute(
+            connection,
+            "UPDATE subtitle_jobs SET retry_at=0 WHERE outcome=$pending;",
+            ("$pending", (int)SubtitleOutcome.Pending)
+        );
         Checked = false;
         _checkedAccount = null;
         if (_supplierFailure is SubtitleFailure.Route or SubtitleFailure.Network)
@@ -205,18 +208,26 @@ internal sealed partial class Acquisition(
 
     internal void ResetProtection(SqliteConnection connection, string? providerId)
     {
-        Execute(connection, """
+        Execute(
+            connection,
+            """
             UPDATE subtitle_searches SET reusable=0
             WHERE ($provider IS NULL OR provider_id=$provider)
                 AND (rejected=1 OR EXISTS(SELECT 1 FROM request_blocks b
                     WHERE b.provider_id=subtitle_searches.provider_id AND b.question_id=subtitle_searches.question_id));
-            """, ("$provider", providerId));
+            """,
+            ("$provider", providerId)
+        );
         if (providerId is not null && providerId != SupplierId.ToString().ToLowerInvariant())
             return;
         Unblock(connection);
-        Execute(connection, """
+        Execute(
+            connection,
+            """
             UPDATE subtitle_jobs SET retry_at=0 WHERE outcome=$pending;
-            """, ("$pending", (int)SubtitleOutcome.Pending));
+            """,
+            ("$pending", (int)SubtitleOutcome.Pending)
+        );
     }
 
     internal async Task SetEnabled(bool enabled)
@@ -401,11 +412,17 @@ internal sealed partial class Acquisition(
                             ("$secret", secret)
                         );
                         if (changed)
-                            policy.Succeed(connection, RequireSupplier(account.SupplierId).Authentication(account));
+                            policy.Succeed(
+                                connection,
+                                RequireSupplier(account.SupplierId).Authentication(account)
+                            );
                         if (changed || verified)
                             Resume(connection);
                         if (changed)
-                            Execute(connection, "UPDATE subtitle_jobs SET fresh=NULL WHERE fresh IS NOT NULL;");
+                            Execute(
+                                connection,
+                                "UPDATE subtitle_jobs SET fresh=NULL WHERE fresh IS NOT NULL;"
+                            );
                         // References cannot cross suppliers; extra jobs only
                         // download their reference, while the first job can search again.
                         if (account.SupplierId != SupplierId)
@@ -575,9 +592,15 @@ internal sealed partial class Acquisition(
             await _worker.ConfigureAwait(false);
         if (reconciling is not null)
         {
-            try { await reconciling.ConfigureAwait(false); }
+            try
+            {
+                await reconciling.ConfigureAwait(false);
+            }
             catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
-            catch (Exception error) { System.Diagnostics.Debug.WriteLine(error); }
+            catch (Exception error)
+            {
+                System.Diagnostics.Debug.WriteLine(error);
+            }
         }
         foreach (var run in new[] { _manualWork, _automaticWork })
             if (run is not null)

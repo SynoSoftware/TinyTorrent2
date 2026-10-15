@@ -13,7 +13,9 @@ internal sealed class DataDownload
 {
     private readonly object _gate = new();
     private readonly CancellationTokenSource _cancellation = new();
-    private readonly TaskCompletionSource _finished = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _finished = new(
+        TaskCreationOptions.RunContinuationsAsynchronously
+    );
     private WorkObservation _observation;
     private Task _signalling = Task.CompletedTask;
     private bool _ended;
@@ -44,7 +46,12 @@ internal sealed class DataDownload
     /// as an interruption, because they did not cause it; their own cancel
     /// is silent.
     /// </summary>
-    internal async Task<bool> Run(Func<Task> build, Func<Task> install, Action discard, Action<Exception> report)
+    internal async Task<bool> Run(
+        Func<Task> build,
+        Func<Task> install,
+        Action discard,
+        Action<Exception> report
+    )
     {
         var cancellation = _cancellation.Token;
         try
@@ -57,12 +64,16 @@ internal sealed class DataDownload
         // network route causes.
         catch (Exception) when (_interrupted && !_installed)
         {
-            System.Diagnostics.Debug.WriteLine($"Data download interrupted: {_observation.Description}.");
+            System.Diagnostics.Debug.WriteLine(
+                $"Data download interrupted: {_observation.Description}."
+            );
             report(new Library.VideoException(VideoFailure.Interrupted));
         }
         catch (Exception) when (cancellation.IsCancellationRequested && !_installed)
         {
-            System.Diagnostics.Debug.WriteLine($"Data download cancelled: {_observation.Description}.");
+            System.Diagnostics.Debug.WriteLine(
+                $"Data download cancelled: {_observation.Description}."
+            );
         }
         catch (Exception error)
         {
@@ -97,7 +108,11 @@ internal sealed class DataDownload
         lock (_gate)
         {
             _cancellation.Token.ThrowIfCancellationRequested();
-            _observation = new(description, new WorkProgress.Unknown(), new WorkExecution.Finishing());
+            _observation = new(
+                description,
+                new WorkProgress.Unknown(),
+                new WorkExecution.Finishing()
+            );
             Operation.Report(_observation);
         }
         install();

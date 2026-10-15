@@ -11,7 +11,10 @@ namespace Syno.TinyTorrent;
 
 public sealed partial class MainWindow
 {
-    private readonly Dictionary<BackgroundWork.Operation, (WorkStatus Inline, WorkStatus Expanded, Border Divider, WorkObservation Observation)> _workViews = [];
+    private readonly Dictionary<
+        BackgroundWork.Operation,
+        (WorkStatus Inline, WorkStatus Expanded, Border Divider, WorkObservation Observation)
+    > _workViews = [];
     private bool _workOpen;
     private bool _recoverWorkFocus;
 
@@ -43,8 +46,14 @@ public sealed partial class MainWindow
                 continue;
             var inline = new WorkStatus();
             var expanded = new WorkStatus { IsExpanded = true };
-            var divider = new Border { Style = (Style)Root.Resources["TinyTorrentWorkDividerStyle"] };
-            AutomationProperties.SetAccessibilityView(divider, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+            var divider = new Border
+            {
+                Style = (Style)Root.Resources["TinyTorrentWorkDividerStyle"],
+            };
+            AutomationProperties.SetAccessibilityView(
+                divider,
+                Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw
+            );
             inline.FocusInvalidated += OnWorkFocus;
             expanded.FocusInvalidated += OnWorkFocus;
             inline.Show(operation, Model.Text, Model.Page == WindowPage.Library);
@@ -54,7 +63,9 @@ public sealed partial class MainWindow
             WorkItems.Children.Add(divider);
             WorkItems.Children.Add(inline);
             WorkList.Items.Add(expanded);
-            Model.Announce(WorkStatus.Describe(operation.Current, Model.Text, Model.Page == WindowPage.Library));
+            Model.Announce(
+                WorkStatus.Describe(operation.Current, Model.Text, Model.Page == WindowPage.Library)
+            );
         }
         if (_workViews.Count == 0)
         {
@@ -66,12 +77,19 @@ public sealed partial class MainWindow
 
     private void OnWorkObservation(object? sender, PropertyChangedEventArgs args)
     {
-        if (_allowClose || sender is not BackgroundWork.Operation operation || !_workViews.TryGetValue(operation, out var views))
+        if (
+            _allowClose
+            || sender is not BackgroundWork.Operation operation
+            || !_workViews.TryGetValue(operation, out var views)
+        )
             return;
         var previous = views.Observation;
         views.Observation = operation.Current;
         _workViews[operation] = views;
-        if (previous.Description != operation.Current.Description || previous.Execution != operation.Current.Execution)
+        if (
+            previous.Description != operation.Current.Description
+            || previous.Execution != operation.Current.Execution
+        )
         {
             var library = Model.Page == WindowPage.Library;
             var description = WorkStatus.Describe(operation.Current, Model.Text, library);
@@ -104,8 +122,10 @@ public sealed partial class MainWindow
 
     private void ShowWork(bool overflow)
     {
-        var batch = Model.Work.Items.FirstOrDefault(operation => IsBatch(operation) && operation.Cancel.CanExecute(null))
-            ?? Model.Work.Items.FirstOrDefault(IsBatch);
+        var batch =
+            Model.Work.Items.FirstOrDefault(operation =>
+                IsBatch(operation) && operation.Cancel.CanExecute(null)
+            ) ?? Model.Work.Items.FirstOrDefault(IsBatch);
         var previous = false;
         foreach (var operation in Model.Work.Items)
         {

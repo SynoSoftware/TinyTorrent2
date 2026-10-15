@@ -42,13 +42,15 @@ public sealed class Schedule : INotifyPropertyChanged
             : FormatMode(mode);
 
     public bool FollowsSchedule => FixedMode is null;
-    public string TimelineHint => FixedMode is { } mode
-        ? Text.Format("settings", "fixed_schedule_hint", FormatFixedLimits(mode))
-        : Text.Get("settings", "timeline_hint");
+    public string TimelineHint =>
+        FixedMode is { } mode
+            ? Text.Format("settings", "fixed_schedule_hint", FormatFixedLimits(mode))
+            : Text.Get("settings", "timeline_hint");
     public bool CanSchedule => CanEdit && !IsPending && FollowsSchedule;
     public bool IsOpen => _open is not null;
     public bool HasAlternative => Periods.Any(period => period.Mode == ScheduleMode.Alternative);
-    public bool HasError => _refusal is RefusalReason.InvalidPeriod or RefusalReason.DuplicatePeriod;
+    public bool HasError =>
+        _refusal is RefusalReason.InvalidPeriod or RefusalReason.DuplicatePeriod;
     public string DaysMessage =>
         _refusal == RefusalReason.InvalidPeriod
             ? Text.Get("settings", "invalid_period")
@@ -229,9 +231,13 @@ public sealed class Schedule : INotifyPropertyChanged
         while (_changing is { } changing)
             await changing;
         await Settle();
-        if (period is not null && ReferenceEquals(Draft, draft)
-            && draft?.Period is { } current && current.Matches(period)
-            && _refusal == RefusalReason.DuplicatePeriod)
+        if (
+            period is not null
+            && ReferenceEquals(Draft, draft)
+            && draft?.Period is { } current
+            && current.Matches(period)
+            && _refusal == RefusalReason.DuplicatePeriod
+        )
             ClearDraft();
     }
 
@@ -465,9 +471,9 @@ public sealed class Schedule : INotifyPropertyChanged
         );
 
     internal string Behavior(ScheduleMode mode) =>
-        mode == ScheduleMode.Alternative
-            ? FormatMode(mode) + " · " + _owner.AlternativeSummary
-            : mode == ScheduleMode.Paused ? Text.Get("settings", "pause_transfers") : FormatMode(mode);
+        mode == ScheduleMode.Alternative ? FormatMode(mode) + " · " + _owner.AlternativeSummary
+        : mode == ScheduleMode.Paused ? Text.Get("settings", "pause_transfers")
+        : FormatMode(mode);
 
     internal string DescribeDays(IReadOnlyList<int> days)
     {

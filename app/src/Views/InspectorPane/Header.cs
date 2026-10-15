@@ -28,7 +28,10 @@ public sealed partial class InspectorPane
 
     private void ShowActions(Button? more, params Button[] primary)
     {
-        if (ReferenceEquals(MoreAction.Child, more) && PrimaryActions.Children.SequenceEqual(primary))
+        if (
+            ReferenceEquals(MoreAction.Child, more)
+            && PrimaryActions.Children.SequenceEqual(primary)
+        )
             return;
         foreach (var button in PrimaryActions.Children.OfType<Button>())
             button.Flyout?.Hide();
@@ -49,8 +52,10 @@ public sealed partial class InspectorPane
     {
         if (PrimaryActions is null)
             return;
-        var visibility = !ActionsOverflow && PrimaryActions.Children.Count > 0
-            ? Visibility.Visible : Visibility.Collapsed;
+        var visibility =
+            !ActionsOverflow && PrimaryActions.Children.Count > 0
+                ? Visibility.Visible
+                : Visibility.Collapsed;
         if (PrimaryActions.Visibility == visibility)
             return;
         var focused = false;
@@ -58,7 +63,8 @@ public sealed partial class InspectorPane
         {
             foreach (var button in PrimaryActions.Children.OfType<Button>())
             {
-                focused |= button.FocusState != FocusState.Unfocused || button.Flyout?.IsOpen == true;
+                focused |=
+                    button.FocusState != FocusState.Unfocused || button.Flyout?.IsOpen == true;
                 button.Flyout?.Hide();
             }
         }

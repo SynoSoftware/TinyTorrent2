@@ -16,14 +16,28 @@
     </Style>
   </UserControl.Resources>
   <Grid Margin="0,16,0,0">
-    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
     <StackPanel Margin="24,12,24,24" MaxWidth="900" Spacing="12">
-      <BreadcrumbBar x:Name="Hierarchy" ItemClicked="OnHierarchy" FontSize="{StaticResource TitleTextBlockFontSize}" />
-      <TextBlock x:Name="Introduction" TextWrapping="Wrap"
-        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+      <BreadcrumbBar
+        x:Name="Hierarchy"
+        ItemClicked="OnHierarchy"
+        FontSize="{StaticResource TitleTextBlockFontSize}"
+      />
+      <TextBlock
+        x:Name="Introduction"
+        TextWrapping="Wrap"
+        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+      />
     </StackPanel>
-    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-      HorizontalContentAlignment="Stretch">
+    <ScrollViewer
+      Grid.Row="1"
+      VerticalScrollBarVisibility="Auto"
+      HorizontalScrollBarVisibility="Disabled"
+      HorizontalContentAlignment="Stretch"
+    >
       <Grid Margin="24,8,24,32">
         <StackPanel x:Name="Groups" MaxWidth="900" Spacing="8" />
       </Grid>

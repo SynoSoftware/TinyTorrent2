@@ -77,7 +77,10 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
     internal async Task<Matches> Search(Query query, CancellationToken cancellation)
     {
         var matches = await Find(query, cancellation).ConfigureAwait(false);
-        return matches with { Entries = await Rate(matches.Entries, cancellation).ConfigureAwait(false) };
+        return matches with
+        {
+            Entries = await Rate(matches.Entries, cancellation).ConfigureAwait(false),
+        };
     }
 
     // An IMDb rating comes from the downloaded IMDb data when that has it,
@@ -96,9 +99,13 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
                 cancellation
             )
             .ConfigureAwait(false);
-        var withoutId = entries.Where(entry => entry.ImdbId is null && entry.Kind == FileKind.Video).ToArray();
-        var fileNameRatings = await imdb
-            .RatingsByName([.. withoutId.Select(entry => FileName.Interpret(entry.Name))], cancellation)
+        var withoutId = entries
+            .Where(entry => entry.ImdbId is null && entry.Kind == FileKind.Video)
+            .ToArray();
+        var fileNameRatings = await imdb.RatingsByName(
+                [.. withoutId.Select(entry => FileName.Interpret(entry.Name))],
+                cancellation
+            )
             .ConfigureAwait(false);
         var byName = new Dictionary<long, Rating>();
         for (var index = 0; index < withoutId.Length; index++)
@@ -114,7 +121,10 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
                 .Select(entry =>
                     entry.ImdbId is { } id && ratings.TryGetValue(id, out var rating)
                     || byName.TryGetValue(entry.EntryId, out rating)
-                        ? entry with { Ratings = entry.Ratings with { Imdb = rating } }
+                        ? entry with
+                        {
+                            Ratings = entry.Ratings with { Imdb = rating },
+                        }
                         : entry
                 )
                 .ToArray();
@@ -168,7 +178,10 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
                 {
                     command.CommandText =
                         $"SELECT r.*,{Unmatched} FROM {matches} WHERE " + Match(command, query);
-                    command.Parameters.AddWithValue("$catalog", (object?)query.CatalogId ?? DBNull.Value);
+                    command.Parameters.AddWithValue(
+                        "$catalog",
+                        (object?)query.CatalogId ?? DBNull.Value
+                    );
                     using var reader = command.ExecuteReader();
                     while (reader.Read())
                     {
@@ -179,11 +192,23 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
                 var facets = new List<Facet>();
                 var sections = query.Configuration switch
                 {
-                    LibraryConfiguration.Videos => new[] { "type", "series", "genres", "year", "resolution", "subtitles", "metadata" },
+                    LibraryConfiguration.Videos => new[]
+                    {
+                        "type",
+                        "series",
+                        "genres",
+                        "year",
+                        "resolution",
+                        "subtitles",
+                        "metadata",
+                    },
                     LibraryConfiguration.Music => new[] { "artist", "album", "genres", "year" },
                     _ => new[] { "kind", "size", "modified" }
-                        .Concat(new[] { "series", "season", "artist", "album", "genres", "year" }
-                            .Where(query.Filters.ContainsKey))
+                        .Concat(
+                            new[] { "series", "season", "artist", "album", "genres", "year" }.Where(
+                                query.Filters.ContainsKey
+                            )
+                        )
                         .ToArray(),
                 };
                 if (query.Filters.ContainsKey("series"))
@@ -198,13 +223,23 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
                     cancellation.ThrowIfCancellationRequested();
                     using var command = connection.CreateCommand();
                     var predicate = Match(command, query, section);
-                    if (section is "modified" or "size" or "resolution" or "subtitles" or "metadata")
+                    if (
+                        section is "modified" or "size" or "resolution" or "subtitles" or "metadata"
+                    )
                     {
                         var values = section switch
                         {
                             "modified" => Dates,
                             "size" => Sizes,
-                            "resolution" => new[] { "uhd", "qhd", "fhd", "hd", "sd", "unknown_resolution" },
+                            "resolution" => new[]
+                            {
+                                "uhd",
+                                "qhd",
+                                "fhd",
+                                "hd",
+                                "sd",
+                                "unknown_resolution",
+                            },
                             "metadata" => new[] { "identified", "unidentified" },
                             _ => new[] { "with_subtitles", "without_subtitles" },
                         };
@@ -367,7 +402,11 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
                 AND x.outcome='no_match') AS unmatched
         """;
 
-    internal Task<Detail?> Detail(long entryId, string? catalogId, CancellationToken cancellation) =>
+    internal Task<Detail?> Detail(
+        long entryId,
+        string? catalogId,
+        CancellationToken cancellation
+    ) =>
         database.Run(
             connection =>
             {
@@ -435,7 +474,10 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
             cancellation
         );
 
-    internal Task<VideoFailure?> EraseMetadata(IReadOnlyCollection<Entry> entries, CancellationToken cancellation) =>
+    internal Task<VideoFailure?> EraseMetadata(
+        IReadOnlyCollection<Entry> entries,
+        CancellationToken cancellation
+    ) =>
         database.Run<VideoFailure?>(
             connection =>
             {
@@ -487,11 +529,10 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
         command.Parameters.AddWithValue("$explicit", isExplicit);
         command.Parameters.AddWithValue("$time", DateTime.UtcNow.Ticks);
         command.ExecuteNonQuery();
-        command.CommandText =
-            """
-                UPDATE video_attempts SET request='',outcome=COALESCE(outcome,'cancelled')
-                WHERE (origin,file_index) IN (SELECT origin,file_index FROM source_files WHERE entry_id=$entry);
-                """;
+        command.CommandText = """
+            UPDATE video_attempts SET request='',outcome=COALESCE(outcome,'cancelled')
+            WHERE (origin,file_index) IN (SELECT origin,file_index FROM source_files WHERE entry_id=$entry);
+            """;
         command.ExecuteNonQuery();
     }
 
@@ -505,7 +546,9 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
         using var command = connection.CreateCommand();
         command.CommandText = "SELECT ratings FROM title_facts WHERE imdb_id=$imdbId;";
         command.Parameters.AddWithValue("$imdbId", (object?)video.ImdbId ?? DBNull.Value);
-        var shared = command.ExecuteScalar() is string saved ? ReadRatings(saved).Merge(video.Ratings) : video.Ratings;
+        var shared = command.ExecuteScalar() is string saved
+            ? ReadRatings(saved).Merge(video.Ratings)
+            : video.Ratings;
         // The larger box office stays: TMDB and MDBList report worldwide
         // takings and OMDb only US takings, and a total only grows.
         command.CommandText = """
@@ -597,7 +640,10 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
     // are left out, because every episode of a series shares its IMDb ID.
     private static VideoInformation Filled(SqliteConnection connection, VideoInformation video)
     {
-        if (video.Kind != VideoKind.Movie || video.Synopsis.Length > 0 && video.Cast.Count > 0 && video.Genres.Count > 0)
+        if (
+            video.Kind != VideoKind.Movie
+            || video.Synopsis.Length > 0 && video.Cast.Count > 0 && video.Genres.Count > 0
+        )
             return video;
         using var command = connection.CreateCommand();
         command.CommandText = """
@@ -787,7 +833,8 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
             Year = (int?)Number(7),
             HasMetadata = !reader.IsDBNull(reader.GetOrdinal("video_id")),
             CatalogId = reader.IsDBNull(reader.GetOrdinal("catalog_id"))
-                ? null : reader.GetString(reader.GetOrdinal("catalog_id")),
+                ? null
+                : reader.GetString(reader.GetOrdinal("catalog_id")),
             IsUnmatched = reader.GetBoolean(reader.GetOrdinal("unmatched")),
             Genres = reader.GetString(8),
             Cast = reader.GetString(9),

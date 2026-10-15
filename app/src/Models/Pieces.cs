@@ -28,7 +28,10 @@ public sealed class Pieces
             .EnumerateArray()
             .Select(value => value.GetBoolean())
             .ToArray();
-        Wanted = data.GetProperty("wanted").EnumerateArray().Select(value => value.GetBoolean()).ToArray();
+        Wanted = data.GetProperty("wanted")
+            .EnumerateArray()
+            .Select(value => value.GetBoolean())
+            .ToArray();
         Availability = data.GetProperty("availability")
             .EnumerateArray()
             .Select(value => value.GetInt32())
@@ -117,7 +120,8 @@ public sealed class Pieces
         var unavailable = new int[Count + 1];
         for (var index = 0; index < Count; index++)
             unavailable[index + 1] =
-                unavailable[index] + (Wanted[index] && States[index] == PieceKind.Unavailable ? 1 : 0);
+                unavailable[index]
+                + (Wanted[index] && States[index] == PieceKind.Unavailable ? 1 : 0);
         if (unavailable[Count] == 0)
             return Known(text, "available", InfoBarSeverity.Success);
         var names = Names(

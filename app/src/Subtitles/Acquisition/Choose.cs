@@ -38,7 +38,9 @@ internal sealed partial class Acquisition
             )
             {
                 Stage = Stage(target),
-                Fresh = command is null ? null : new(command, SearchCount(chosen.Video.FinalPath, language)),
+                Fresh = command is null
+                    ? null
+                    : new(command, SearchCount(chosen.Video.FinalPath, language)),
             };
             return await Lookup(lookup, pending.Token, choices: true).ConfigureAwait(false);
         }
@@ -46,8 +48,7 @@ internal sealed partial class Acquisition
         {
             try
             {
-                await RefreshAllowance()
-                    .ConfigureAwait(false);
+                await RefreshAllowance().ConfigureAwait(false);
             }
             finally
             {
@@ -57,12 +58,24 @@ internal sealed partial class Acquisition
         }
     }
 
-    internal async Task<RequestBlock?> Protection(long entryId, string language, CancellationToken cancellation)
+    internal async Task<RequestBlock?> Protection(
+        long entryId,
+        string language,
+        CancellationToken cancellation
+    )
     {
         if (await Chosen(entryId, language, cancellation).ConfigureAwait(false) is not { } chosen)
             throw new SubtitleException(SubtitleFailure.Changed);
-        var lookup = new SubtitleLookup(Path.GetFileName(chosen.Video.FinalPath), language, _ => Task.CompletedTask) { Stage = Stage(chosen.Target) };
-        return await Run(connection => Protection(connection, lookup), cancellation).ConfigureAwait(false);
+        var lookup = new SubtitleLookup(
+            Path.GetFileName(chosen.Video.FinalPath),
+            language,
+            _ => Task.CompletedTask
+        )
+        {
+            Stage = Stage(chosen.Target),
+        };
+        return await Run(connection => Protection(connection, lookup), cancellation)
+            .ConfigureAwait(false);
     }
 
     // Downloads the chosen subtitle beside the video, after any subtitles
@@ -98,7 +111,9 @@ internal sealed partial class Acquisition
                 token => Validate(target, token)
             )
             {
-                Fresh = command is null ? null : new(command, SearchCount(chosen.Video.FinalPath, candidate.Language)),
+                Fresh = command is null
+                    ? null
+                    : new(command, SearchCount(chosen.Video.FinalPath, candidate.Language)),
             };
             if (
                 !await Download(Vacant(target), candidate, lookup, pending.Token)
@@ -136,8 +151,7 @@ internal sealed partial class Acquisition
         {
             try
             {
-                await RefreshAllowance()
-                    .ConfigureAwait(false);
+                await RefreshAllowance().ConfigureAwait(false);
             }
             finally
             {

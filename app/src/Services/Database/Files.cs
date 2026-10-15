@@ -14,36 +14,35 @@ internal sealed partial class Database
 
     internal const string Cleanup =
         """
-        DELETE FROM video_attempts WHERE NOT EXISTS (
-            SELECT 1 FROM pending_origins p WHERE p.origin=video_attempts.origin)
-        AND NOT EXISTS (SELECT 1 FROM collected_files f
-            WHERE f.origin=video_attempts.origin AND f.file_index=video_attempts.file_index);
-        DELETE FROM identifications WHERE NOT EXISTS (
-            SELECT 1 FROM pending_origins p WHERE p.origin=identifications.origin)
-        AND NOT EXISTS (SELECT 1 FROM collected_files f
-            WHERE f.origin=identifications.origin AND f.file_index=identifications.file_index);
-        DELETE FROM file_facts WHERE NOT EXISTS (
-            SELECT 1 FROM pending_origins p WHERE p.origin=file_facts.origin)
-        AND NOT EXISTS (SELECT 1 FROM collected_files f
-            WHERE f.origin=file_facts.origin AND f.file_index=file_facts.file_index);
-        DELETE FROM fact_attempts WHERE entry_id NOT IN (SELECT entry_id FROM locations);
-        DELETE FROM subtitle_output_sources WHERE NOT EXISTS (
-            SELECT 1 FROM pending_origins p WHERE p.origin=subtitle_output_sources.origin)
-        AND NOT EXISTS (SELECT 1 FROM collected_files f
-            WHERE f.origin=subtitle_output_sources.origin AND f.file_index=subtitle_output_sources.file_index);
-        DELETE FROM subtitle_outputs WHERE NOT EXISTS (SELECT 1 FROM subtitle_output_sources s
-            WHERE s.path=subtitle_outputs.path AND s.language=subtitle_outputs.language);
-        DELETE FROM subtitle_job_sources WHERE NOT EXISTS (
-            SELECT 1 FROM pending_origins p WHERE p.origin=subtitle_job_sources.origin)
-        AND NOT EXISTS (SELECT 1 FROM collected_files f
-            WHERE f.origin=subtitle_job_sources.origin AND f.file_index=subtitle_job_sources.file_index);
-        DELETE FROM subtitle_jobs WHERE NOT EXISTS (SELECT 1 FROM subtitle_job_sources s
-            WHERE s.path=subtitle_jobs.path AND s.language=subtitle_jobs.language);
-        DELETE FROM subtitle_scans WHERE NOT EXISTS (SELECT 1 FROM pending_origins p
-            WHERE p.origin=subtitle_scans.origin) AND NOT EXISTS (SELECT 1 FROM collected_files f
-            WHERE f.origin=subtitle_scans.origin AND f.file_index=subtitle_scans.file_index);
-        """
-        + PruneVideos;
+            DELETE FROM video_attempts WHERE NOT EXISTS (
+                SELECT 1 FROM pending_origins p WHERE p.origin=video_attempts.origin)
+            AND NOT EXISTS (SELECT 1 FROM collected_files f
+                WHERE f.origin=video_attempts.origin AND f.file_index=video_attempts.file_index);
+            DELETE FROM identifications WHERE NOT EXISTS (
+                SELECT 1 FROM pending_origins p WHERE p.origin=identifications.origin)
+            AND NOT EXISTS (SELECT 1 FROM collected_files f
+                WHERE f.origin=identifications.origin AND f.file_index=identifications.file_index);
+            DELETE FROM file_facts WHERE NOT EXISTS (
+                SELECT 1 FROM pending_origins p WHERE p.origin=file_facts.origin)
+            AND NOT EXISTS (SELECT 1 FROM collected_files f
+                WHERE f.origin=file_facts.origin AND f.file_index=file_facts.file_index);
+            DELETE FROM fact_attempts WHERE entry_id NOT IN (SELECT entry_id FROM locations);
+            DELETE FROM subtitle_output_sources WHERE NOT EXISTS (
+                SELECT 1 FROM pending_origins p WHERE p.origin=subtitle_output_sources.origin)
+            AND NOT EXISTS (SELECT 1 FROM collected_files f
+                WHERE f.origin=subtitle_output_sources.origin AND f.file_index=subtitle_output_sources.file_index);
+            DELETE FROM subtitle_outputs WHERE NOT EXISTS (SELECT 1 FROM subtitle_output_sources s
+                WHERE s.path=subtitle_outputs.path AND s.language=subtitle_outputs.language);
+            DELETE FROM subtitle_job_sources WHERE NOT EXISTS (
+                SELECT 1 FROM pending_origins p WHERE p.origin=subtitle_job_sources.origin)
+            AND NOT EXISTS (SELECT 1 FROM collected_files f
+                WHERE f.origin=subtitle_job_sources.origin AND f.file_index=subtitle_job_sources.file_index);
+            DELETE FROM subtitle_jobs WHERE NOT EXISTS (SELECT 1 FROM subtitle_job_sources s
+                WHERE s.path=subtitle_jobs.path AND s.language=subtitle_jobs.language);
+            DELETE FROM subtitle_scans WHERE NOT EXISTS (SELECT 1 FROM pending_origins p
+                WHERE p.origin=subtitle_scans.origin) AND NOT EXISTS (SELECT 1 FROM collected_files f
+                WHERE f.origin=subtitle_scans.origin AND f.file_index=subtitle_scans.file_index);
+            """ + PruneVideos;
 
     internal const string Reconcile = """
         WITH choices AS (

@@ -70,8 +70,14 @@ public sealed partial class SettingsLink : Button
         var text = new StackPanel { Spacing = 4, Children = { _header, _description } };
         Grid.SetColumn(text, 1);
         Grid.SetColumn(_ending, 2);
-        AutomationProperties.SetAccessibilityView(_icon, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
-        AutomationProperties.SetAccessibilityView(_ending, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+        AutomationProperties.SetAccessibilityView(
+            _icon,
+            Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw
+        );
+        AutomationProperties.SetAccessibilityView(
+            _ending,
+            Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw
+        );
         content.Children.Add(_icon);
         content.Children.Add(text);
         content.Children.Add(_ending);

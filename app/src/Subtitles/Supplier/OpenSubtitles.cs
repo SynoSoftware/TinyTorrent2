@@ -22,16 +22,27 @@ internal sealed partial class OpenSubtitles(RequestPolicy policy) : Supplier(pol
     internal override bool Available => !string.IsNullOrWhiteSpace(Key);
     internal override Access Access => Access.Password;
     internal override bool SupportsHash => true;
+
     internal override ProviderAccess QuotaScope(Account account) =>
         new("opensubtitles", RequestKey.Digest(Key ?? string.Empty), string.Empty);
+
     internal override Uri Privacy { get; } = new("https://www.opensubtitles.com/en/privacy");
     internal override Uri Terms { get; } = new("https://www.opensubtitles.com/en/tos");
     protected override IReadOnlyDictionary<string, string> Codes => LanguageCodes;
+
     internal override string Question(SubtitleLookup lookup)
     {
         var release = FileName.Interpret(lookup.FileName);
         var query = (release.Season is null ? release.Name : release.Title).ToLowerInvariant();
-        return JsonSerializer.Serialize(new { query, release.Year, release.Season, release.Episodes });
+        return JsonSerializer.Serialize(
+            new
+            {
+                query,
+                release.Year,
+                release.Season,
+                release.Episodes,
+            }
+        );
     }
 
     protected override void Authenticate(HttpRequestMessage request, Account account) =>
@@ -45,10 +56,7 @@ internal sealed partial class OpenSubtitles(RequestPolicy policy) : Supplier(pol
         ProviderReply response
     ) => request.RequestUri?.AbsolutePath == "/api/v1/download" ? Quota(response) : null;
 
-    protected override async Task Check(
-        Operation operation,
-        CancellationToken cancellation
-    )
+    protected override async Task Check(Operation operation, CancellationToken cancellation)
     {
         var personal = operation.Account.Username.Length > 0;
         var response = await Request(
@@ -197,13 +205,7 @@ internal sealed partial class OpenSubtitles(RequestPolicy policy) : Supplier(pol
         for (var redirect = 0; ; redirect++)
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-            response = await Send(
-                    operation,
-                    request,
-                    cancellation,
-                    ProviderHttp.FileLimit,
-                    false
-                )
+            response = await Send(operation, request, cancellation, ProviderHttp.FileLimit, false)
                 .ConfigureAwait(false);
             if ((int)response.Status is >= 300 and < 400)
             {
@@ -396,8 +398,12 @@ internal sealed partial class OpenSubtitles(RequestPolicy policy) : Supplier(pol
                             Encoding.UTF8,
                             "application/json"
                         );
-                    var response = await Send(operation, request, cancellation,
-                            canRenew: session.Token.Length > 0 && attempt == 0)
+                    var response = await Send(
+                            operation,
+                            request,
+                            cancellation,
+                            canRenew: session.Token.Length > 0 && attempt == 0
+                        )
                         .ConfigureAwait(false);
                     if ((int)response.Status is < 300 or >= 400)
                         return response;
@@ -425,10 +431,7 @@ internal sealed partial class OpenSubtitles(RequestPolicy policy) : Supplier(pol
         }
     }
 
-    private async Task<Session> Login(
-        Operation operation,
-        CancellationToken cancellation
-    )
+    private async Task<Session> Login(Operation operation, CancellationToken cancellation)
     {
         var account = operation.Account;
         if (!Configured(account))

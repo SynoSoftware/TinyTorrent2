@@ -32,13 +32,19 @@ internal sealed class Provider(string key) : IProvider
         };
 
     // A movie is named by its TMDB identity, because some results lack an IMDb one.
-    public async Task<VideoSearch> Search(
-        VideoQuery query,
-        CancellationToken cancellation
-    )
+    public async Task<VideoSearch> Search(VideoQuery query, CancellationToken cancellation)
     {
-        var data = await Get(query.Get, "search/movie?query=" + Uri.EscapeDataString(query.Text)
-                + (query.Year is { } year ? "&year=" + year.ToString(CultureInfo.InvariantCulture) : string.Empty), cancellation)
+        var data = await Get(
+                query.Get,
+                "search/movie?query="
+                    + Uri.EscapeDataString(query.Text)
+                    + (
+                        query.Year is { } year
+                            ? "&year=" + year.ToString(CultureInfo.InvariantCulture)
+                            : string.Empty
+                    ),
+                cancellation
+            )
             .ConfigureAwait(false);
         try
         {
@@ -46,7 +52,8 @@ internal sealed class Provider(string key) : IProvider
             var choices = results
                 .EnumerateArray()
                 .Select(item =>
-                    TmdbId(item) is { } id && Text(item, "title") is { Length: > 0 and <= 300 } title
+                    TmdbId(item) is { } id
+                    && Text(item, "title") is { Length: > 0 and <= 300 } title
                         ? new VideoChoice(CatalogId, id, VideoKind.Movie, title)
                         {
                             Year = ReadYear(item),
@@ -57,8 +64,7 @@ internal sealed class Provider(string key) : IProvider
                 .ToArray();
             return new(choices, results.GetArrayLength() == 0);
         }
-        catch (Exception error)
-            when (error is InvalidOperationException or KeyNotFoundException)
+        catch (Exception error) when (error is InvalidOperationException or KeyNotFoundException)
         {
             throw new VideoException(VideoFailure.InvalidResult, error);
         }
@@ -73,18 +79,33 @@ internal sealed class Provider(string key) : IProvider
         // The identity is written into the request, so it must be a TMDB number.
         if (
             choice.Kind != VideoKind.Movie
-            || !int.TryParse(choice.VideoId, NumberStyles.None, CultureInfo.InvariantCulture, out var number)
+            || !int.TryParse(
+                choice.VideoId,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var number
+            )
             || number <= 0
         )
             throw new VideoException(VideoFailure.InvalidResult);
         var path = "tmdb/movie/" + choice.VideoId;
-        var record = await request.Read(path, async token =>
-        {
-            var content = await Get(request.Get, path, token).ConfigureAwait(false);
-            if (Text(content, "title").Length is 0 or > 300)
-                throw new VideoException(VideoFailure.InvalidResult);
-            return new VideoRecord(path, content, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
-        }, cancellation).ConfigureAwait(false);
+        var record = await request
+            .Read(
+                path,
+                async token =>
+                {
+                    var content = await Get(request.Get, path, token).ConfigureAwait(false);
+                    if (Text(content, "title").Length is 0 or > 300)
+                        throw new VideoException(VideoFailure.InvalidResult);
+                    return new VideoRecord(
+                        path,
+                        content,
+                        DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+                    );
+                },
+                cancellation
+            )
+            .ConfigureAwait(false);
         var movie = record.Content;
         var title = Text(movie, "title");
         if (title.Length is 0 or > 300)
@@ -113,11 +134,12 @@ internal sealed class Provider(string key) : IProvider
             },
             Certification = Text(movie, "certification"),
             // MDBList writes 0 for takings it does not know.
-            BoxOffice = Child(movie, "revenue") is { ValueKind: JsonValueKind.Number } revenue
+            BoxOffice =
+                Child(movie, "revenue") is { ValueKind: JsonValueKind.Number } revenue
                 && revenue.TryGetInt64(out var takings)
                 && takings > 0
-                ? takings
-                : null,
+                    ? takings
+                    : null,
             ImdbId = VideoInformation.ParseImdbId(Text(Child(movie, "ids"), "imdb")),
         };
     }
@@ -136,7 +158,8 @@ internal sealed class Provider(string key) : IProvider
                     && value is > 0 and <= 100
                         ? new Rating(value / 10, VideoKind.Movie)
                         {
-                            Votes = Child(rating, "votes") is { ValueKind: JsonValueKind.Number } count
+                            Votes =
+                                Child(rating, "votes") is { ValueKind: JsonValueKind.Number } count
                                 && count.TryGetInt64(out var votes)
                                 && votes > 0
                                     ? votes
@@ -146,7 +169,11 @@ internal sealed class Provider(string key) : IProvider
                 )
                 .FirstOrDefault(rating => rating is not null);
 
-    private async Task<JsonElement> Get(ProviderGet get, string path, CancellationToken cancellation)
+    private async Task<JsonElement> Get(
+        ProviderGet get,
+        string path,
+        CancellationToken cancellation
+    )
     {
         using var request = new HttpRequestMessage(
             HttpMethod.Get,

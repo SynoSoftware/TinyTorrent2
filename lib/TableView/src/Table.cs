@@ -515,8 +515,8 @@ public sealed partial class Table : Control
             column.IsHierarchy || (visibility[column] ?? column.IsBaselineVisible);
         if (ordered.Count > 0 && !ordered.Any(IsVisible))
         {
-            EffectiveColumn fallback = ordered.FirstOrDefault(column => column.IsBaselineVisible)
-                ?? ordered[0];
+            EffectiveColumn fallback =
+                ordered.FirstOrDefault(column => column.IsBaselineVisible) ?? ordered[0];
             visibility[fallback] = true;
         }
 
@@ -535,12 +535,12 @@ public sealed partial class Table : Control
             direction = state.SortDirection;
         }
 
-        bool moved = !ReferenceEquals(sortColumn, _sortColumn)
+        bool moved =
+            !ReferenceEquals(sortColumn, _sortColumn)
             || (sortColumn is not null && direction != _sortDirection);
         // Initial capture resolves any later pending Sort before evaluating host comparisons.
-        IReadOnlyList<object>? order = rebuild && moved
-            ? SortedSnapshot(_source.Snapshot, sortColumn, direction)
-            : null;
+        IReadOnlyList<object>? order =
+            rebuild && moved ? SortedSnapshot(_source.Snapshot, sortColumn, direction) : null;
 
         foreach (EffectiveColumn column in ordered)
         {

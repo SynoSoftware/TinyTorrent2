@@ -124,7 +124,10 @@ public sealed partial class FileBrowser : UserControl
     private void OnChanged(object? sender, EventArgs args)
     {
         RefreshActions();
-        if (Files.Sort is { } sort && (sort.Column == ProgressColumn || sort.Column == PriorityColumn))
+        if (
+            Files.Sort is { } sort
+            && (sort.Column == ProgressColumn || sort.Column == PriorityColumn)
+        )
             Files.RefreshView();
     }
 
@@ -161,12 +164,12 @@ public sealed partial class FileBrowser : UserControl
             return;
         var menu = MenuItems.Flyout(
             () =>
-            [
-                Choice("skip", 0, Lucide.CircleSlash),
-                Choice("low", 1, Lucide.ArrowDown),
-                Choice("normal", 4, Lucide.Minus),
-                Choice("high", 7, Lucide.ArrowUp),
-            ],
+                [
+                    Choice("skip", 0, Lucide.CircleSlash),
+                    Choice("low", 1, Lucide.ArrowDown),
+                    Choice("normal", 4, Lucide.Minus),
+                    Choice("high", 7, Lucide.ArrowUp),
+                ],
             () => Model.Text
         );
         FlyoutShowOptions options = new();

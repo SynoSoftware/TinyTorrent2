@@ -34,11 +34,17 @@ public sealed partial class ThemePicker : UserControl
     }
 
     private void OnModel(object? sender, PropertyChangedEventArgs args) => Refresh();
+
     private void OnText(object? sender, EventArgs args) => Bindings.Update();
 
     private void Refresh()
     {
-        var index = Model.Theme.Input switch { "light" => 1, "dark" => 2, _ => 0 };
+        var index = Model.Theme.Input switch
+        {
+            "light" => 1,
+            "dark" => 2,
+            _ => 0,
+        };
         if (Theme.SelectedIndex == index)
             return;
         _refreshing = true;
@@ -66,7 +72,13 @@ public sealed partial class ThemePicker : UserControl
         var preview = (FrameworkElement)sender;
         preview.Height = preview.ActualWidth * 3 / 7;
         var visual = ElementCompositionPreview.GetElementVisual(preview);
-        if (visual.Clip is not CompositionGeometricClip { Geometry: CompositionRoundedRectangleGeometry geometry })
+        if (
+            visual.Clip
+            is not CompositionGeometricClip
+            {
+                Geometry: CompositionRoundedRectangleGeometry geometry
+            }
+        )
         {
             geometry = visual.Compositor.CreateRoundedRectangleGeometry();
             geometry.CornerRadius = new Vector2(8);

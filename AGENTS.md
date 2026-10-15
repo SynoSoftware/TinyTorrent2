@@ -77,6 +77,10 @@ do not define this product.
 - **Owner ruling: user steers are cumulative.** Keep earlier requirements and
   unfinished work in scope unless the user explicitly cancels or replaces them,
   so a follow-up adds to the task without silently dropping prior requests.
+- **Owner ruling: update only `en.json` during normal work.** Refresh all other
+  language catalogues from English at release, or for an explicit translation
+  request, because translating unsettled text for every patch wastes work.
+  [Localisation](docs/localisation.md) owns catalogue structure and fallback.
 - State assumptions and verifiable success criteria before implementing. Resolve
   material ambiguity before dependent changes.
 - Inspect the existing owner, data flow, and adjacent patterns before editing.

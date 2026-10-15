@@ -112,10 +112,13 @@ internal sealed partial class Details : UserControl, IDisposable
             _refresh.Add(() =>
             {
                 SetValue(fileType, library.FileType);
-                name.Text = library.Application.Length > 0 ? library.Application
-                    : library.FileType.Length > 0 ? text.Get("library", "no_application") : string.Empty;
+                name.Text =
+                    library.Application.Length > 0 ? library.Application
+                    : library.FileType.Length > 0 ? text.Get("library", "no_application")
+                    : string.Empty;
                 ToolTipService.SetToolTip(name, name.Text);
-                application.Visibility = name.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+                application.Visibility =
+                    name.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
                 icon.Source = library.ApplicationIcon;
                 icon.Visibility = icon.Source is null ? Visibility.Collapsed : Visibility.Visible;
             });
@@ -134,14 +137,16 @@ internal sealed partial class Details : UserControl, IDisposable
                 SecondaryWidth = new GridLength(384),
                 SeparateSecondary = true,
             };
-            var kind =
-                row.Entry.Kind == FileKind.Video ? row.Type : row.Kind;
+            var kind = row.Entry.Kind == FileKind.Video ? row.Type : row.Kind;
             IReadOnlyList<Episode>? shownEpisodes = null;
             VideoChoice? shownSeries = null;
             _refresh.Add(() =>
             {
-                if (shownEpisodes is not null && shownEpisodes.SequenceEqual(library.Episodes)
-                    && shownSeries == library.Series)
+                if (
+                    shownEpisodes is not null
+                    && shownEpisodes.SequenceEqual(library.Episodes)
+                    && shownSeries == library.Series
+                )
                     return;
                 shownEpisodes = library.Episodes.ToArray();
                 shownSeries = library.Series;
@@ -163,7 +168,11 @@ internal sealed partial class Details : UserControl, IDisposable
                         context.Inlines.Add(new Run { Text = Store.Separator });
                         var label = text.Format("library", "season_number", season.Key);
                         context.Inlines.Add(
-                            FilterLink("season", label, () => library.FilterSeries(series, season.Key))
+                            FilterLink(
+                                "season",
+                                label,
+                                () => library.FilterSeries(series, season.Key)
+                            )
                         );
                         context.Inlines.Add(
                             new Run
@@ -184,7 +193,9 @@ internal sealed partial class Details : UserControl, IDisposable
                             + Store.Separator
                             + string.Join(
                                 Store.Separator,
-                                episodes.Select(episode => $"S{episode.Season:00}E{episode.Number:00}")
+                                episodes.Select(episode =>
+                                    $"S{episode.Season:00}E{episode.Number:00}"
+                                )
                             )
                     );
                     group.Detail = context;
@@ -240,7 +251,8 @@ internal sealed partial class Details : UserControl, IDisposable
                         Glyph = Lucide.AlignLeft,
                         Content = new TextBlock
                         {
-                            Style = (Style)Application.Current.Resources["TinyTorrentBodyTextStyle"],
+                            Style = (Style)
+                                Application.Current.Resources["TinyTorrentBodyTextStyle"],
                             TextWrapping = TextWrapping.Wrap,
                             IsTextSelectionEnabled = true,
                         },
@@ -266,13 +278,20 @@ internal sealed partial class Details : UserControl, IDisposable
                         var description = (TextBlock)synopsis.Content;
                         if (description.Text != library.Synopsis)
                             description.Text = library.Synopsis;
-                        synopsis.Visibility = library.Synopsis.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
-                        castSection.Visibility = library.Cast.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+                        synopsis.Visibility =
+                            library.Synopsis.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+                        castSection.Visibility =
+                            library.Cast.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
                         if (previousCast == library.Cast)
                             return;
                         previousCast = library.Cast;
                         castNames.Children.Clear();
-                        foreach (var name in library.Cast.Split(Store.Separator, StringSplitOptions.RemoveEmptyEntries))
+                        foreach (
+                            var name in library.Cast.Split(
+                                Store.Separator,
+                                StringSplitOptions.RemoveEmptyEntries
+                            )
+                        )
                             castNames.Children.Add(Listed(Value(name)));
                     });
                     var boxOffice = AddFact("box_office", Lucide.Ticket);
@@ -286,11 +305,20 @@ internal sealed partial class Details : UserControl, IDisposable
                         directors.Label = text.FormatCount(
                             "library",
                             "directors",
-                            library.Directors.Split(Store.Separator, StringSplitOptions.RemoveEmptyEntries).Length
+                            library
+                                .Directors.Split(
+                                    Store.Separator,
+                                    StringSplitOptions.RemoveEmptyEntries
+                                )
+                                .Length
                         );
                         // The facts wait hidden for the detail read, so the
                         // column shows only once one of its fields has a value.
-                        var secondary = right.Children.Any(child => child.Visibility == Visibility.Visible) ? right : null;
+                        var secondary = right.Children.Any(child =>
+                            child.Visibility == Visibility.Visible
+                        )
+                            ? right
+                            : null;
                         if (!ReferenceEquals(fields.Secondary, secondary))
                             fields.Secondary = secondary;
                     });
@@ -325,8 +353,10 @@ internal sealed partial class Details : UserControl, IDisposable
                 {
                     var primary = first?.Visibility == Visibility.Visible ? first : null;
                     var secondary = second?.Visibility == Visibility.Visible ? second : null;
-                    if (!ReferenceEquals(sections.Primary, primary ?? secondary)
-                        || !ReferenceEquals(sections.Secondary, primary is null ? null : secondary))
+                    if (
+                        !ReferenceEquals(sections.Primary, primary ?? secondary)
+                        || !ReferenceEquals(sections.Secondary, primary is null ? null : secondary)
+                    )
                     {
                         sections.Primary = sections.Secondary = null;
                         sections.Primary = primary ?? secondary;
@@ -400,7 +430,16 @@ internal sealed partial class Details : UserControl, IDisposable
                 var rating = row.RatingText(source);
                 if (rating.Length == 0)
                     continue;
-                var block = Listed(Value(text.Format("library", "site_rating", text.Get("library", source.Id), rating)));
+                var block = Listed(
+                    Value(
+                        text.Format(
+                            "library",
+                            "site_rating",
+                            text.Get("library", source.Id),
+                            rating
+                        )
+                    )
+                );
                 ToolTipService.SetToolTip(block, row.RatingTip(source));
                 ratings.Children.Add(block);
             }

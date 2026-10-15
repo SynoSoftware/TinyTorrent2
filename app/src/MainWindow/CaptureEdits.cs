@@ -70,7 +70,9 @@ public sealed partial class MainWindow
                 .OfType<TextBox>()
                 .Single(control => ReferenceEquals(control.Tag, setting));
             if (!editor.IsEnabled || !editor.Focus(FocusState.Programmatic))
-                throw new InvalidOperationException("The native numeric editor cannot receive input.");
+                throw new InvalidOperationException(
+                    "The native numeric editor cannot receive input."
+                );
             editor.Text = input;
             await CaptureLayout();
             if (setting.Input != input)
@@ -198,21 +200,33 @@ public sealed partial class MainWindow
             await settings.Toggle(settings.IgnoreSlow, true);
             await Edit(threshold, "1.5");
             if (!await Leave())
-                throw new InvalidOperationException("Leaving the KiB/s threshold did not navigate.");
+                throw new InvalidOperationException(
+                    "Leaving the KiB/s threshold did not navigate."
+                );
             await threshold.Saving;
             if (threshold.ConfirmedNumber != 1536 || threshold.Input != "1.5")
-                throw new InvalidOperationException("The KiB/s threshold did not retain its byte value.");
+                throw new InvalidOperationException(
+                    "The KiB/s threshold did not retain its byte value."
+                );
             await ShowSettings(new(threshold.Category, threshold.Name));
             await CaptureLayout();
-            var thresholdEditor = CaptureElements(_settingsPage!).OfType<TextBox>()
+            var thresholdEditor = CaptureElements(_settingsPage!)
+                .OfType<TextBox>()
                 .Single(control => ReferenceEquals(control.Tag, threshold));
             if (thresholdEditor.Text != "1.5")
-                throw new InvalidOperationException("The saved KiB/s threshold changed when reopened.");
+                throw new InvalidOperationException(
+                    "The saved KiB/s threshold changed when reopened."
+                );
             await Edit(threshold, "1048577");
             await settings.Commit(threshold);
-            if (threshold.Message.Length == 0 || threshold.ConfirmedNumber != 1536
-                || !threshold.Message.Contains("KiB/s", StringComparison.Ordinal))
-                throw new InvalidOperationException("The threshold refusal used the wrong unit or saved invalid input.");
+            if (
+                threshold.Message.Length == 0
+                || threshold.ConfirmedNumber != 1536
+                || !threshold.Message.Contains("KiB/s", StringComparison.Ordinal)
+            )
+                throw new InvalidOperationException(
+                    "The threshold refusal used the wrong unit or saved invalid input."
+                );
             threshold.Cancel();
             completed.Add("edits-kib-threshold");
 
@@ -228,10 +242,7 @@ public sealed partial class MainWindow
             if (_settingsPage?.Category != SettingsCategory.Network)
                 throw new InvalidOperationException("The named setting did not open Network.");
             await rate.Saving;
-            if (
-                rate.HasDraft
-                || rate.ConfirmedNumber != 112000000
-            )
+            if (rate.HasDraft || rate.ConfirmedNumber != 112000000)
                 throw new InvalidOperationException(
                     "Navigating to a named setting lost the pending rate edit."
                 );
@@ -263,14 +274,11 @@ public sealed partial class MainWindow
             await Edit(rate, valid);
             await CapturePage("edits-valid-rate-before-leaving");
             if (!await Leave() || Model.Page != WindowPage.Torrents)
-                throw new InvalidOperationException("Leaving a valid native rate edit did not navigate.");
+                throw new InvalidOperationException(
+                    "Leaving a valid native rate edit did not navigate."
+                );
             await rate.Saving;
-            if (
-                rate.Input != valid
-                || rate.HasDraft
-                || rate.IsPending
-                || rate.Message.Length != 0
-            )
+            if (rate.Input != valid || rate.HasDraft || rate.IsPending || rate.Message.Length != 0)
                 throw new InvalidOperationException(
                     "Leaving a valid native rate edit did not apply it and navigate."
                 );
@@ -343,7 +351,9 @@ public sealed partial class MainWindow
                 .OfType<ToggleSwitch>()
                 .Single(control => ReferenceEquals(control.Tag, settings.PortMapping));
             if (!mapping.Focus(FocusState.Programmatic))
-                throw new InvalidOperationException("The native port mapping field cannot receive focus.");
+                throw new InvalidOperationException(
+                    "The native port mapping field cannot receive focus."
+                );
             await CaptureReady(port, () => port.Input == originalPort && !port.HasDraft);
             await CaptureLayout();
             if (invalidEditor.Text != originalPort || port.Message.Length != 0)

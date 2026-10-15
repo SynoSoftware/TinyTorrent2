@@ -109,10 +109,9 @@ internal sealed class AccountDialog : UserControl, IDraft
     private bool Own => UsesPassword || !_builtIn || _own.IsChecked == true;
 
     private AccountInput Input =>
-        UsesPassword
-            ? new(_username.Text.Trim(), _secret.Password, _saved.KeepSecret)
-            : Own ? new(string.Empty, _secret.Password.Trim(), _saved.KeepSecret)
-            : new(string.Empty, string.Empty, false);
+        UsesPassword ? new(_username.Text.Trim(), _secret.Password, _saved.KeepSecret)
+        : Own ? new(string.Empty, _secret.Password.Trim(), _saved.KeepSecret)
+        : new(string.Empty, string.Empty, false);
 
     // A user name needs a password and a password needs a user name; with
     // neither, the supplier is used without signing in. The person's own key
