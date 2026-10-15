@@ -716,9 +716,13 @@ internal sealed class VideoLookup(
                             continue;
                         }
                         var identified = await Execute(context, current => Collect(current,
-                            new VideoTarget(item.Entry, current.Option.ProviderId,
-                                item.Scope == FetchScope.All ? LookupKind.Refresh : LookupKind.Batch),
-                            null, item.Scope == FetchScope.All), execution =>
+                            new VideoTarget(item.Entry, current.Option.ProviderId, item.Scope switch
+                            {
+                                FetchScope.All => LookupKind.Refresh,
+                                FetchScope.Reidentify => LookupKind.Reidentify,
+                                _ => LookupKind.Batch,
+                            }),
+                            null, item.Scope is FetchScope.All or FetchScope.Reidentify), execution =>
                             {
                                 lock (_gate)
                                     ReportBatch(run, execution);
@@ -1447,6 +1451,10 @@ internal sealed class VideoLookup(
 
 internal sealed record VideoFetch(Entry Entry, RequestBlock? Block, RequestBlock? Wait)
 {
-    internal bool Includes(FetchScope scope) => scope == FetchScope.All
-        || !Entry.HasMetadata && (scope == FetchScope.Missing || Block?.CanForce != true);
+    /// <summary>Whether another provider's automatic match identifies the file.</summary>
+    internal bool IsIdentifiedElsewhere { get; init; }
+
+    internal bool Includes(FetchScope scope) => scope == FetchScope.Reidentify
+        || !IsIdentifiedElsewhere && (scope == FetchScope.All
+            || !Entry.HasMetadata && (scope == FetchScope.Missing || Block?.CanForce != true));
 }

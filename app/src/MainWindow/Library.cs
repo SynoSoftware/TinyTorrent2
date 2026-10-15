@@ -470,7 +470,8 @@ public sealed partial class MainWindow
         {
             var entries = Model.Library.Selection.Items.Cast<LibraryRow>().Select(row => row.Entry).ToArray();
             var plan = await Model.Library.Plan(entries, source, CancellationToken.None);
-            var content = new Library.BatchDialog(Model.Library, source, plan);
+            var videos = entries.Where(entry => entry.Kind == FileKind.Video).DistinctBy(entry => entry.EntryId).Count();
+            var content = new Library.BatchDialog(Model.Library, source, plan, videos);
             await Interact(async interaction =>
             {
                 var dialog = new Controls.Dialog { Content = content, Glyph = Lucide.Film, PrimaryGlyph = Lucide.Download };

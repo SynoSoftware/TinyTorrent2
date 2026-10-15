@@ -114,16 +114,20 @@ internal sealed partial class Store
         {
             var result = new List<VideoFetch>();
             using var command = connection.CreateCommand();
+            // The person's own clear or choice of another provider's video is
+            // never fetched; another provider's automatic match only by Reidentify.
             command.CommandText = """
                 SELECT EXISTS(SELECT 1 FROM source_files f JOIN identifications i USING(origin,file_index)
-                    WHERE f.entry_id=$entry AND (i.explicit=1 OR i.evidence=f.name)
-                        AND (i.explicit=1 AND i.video_id IS NULL OR i.video_id IS NOT NULL AND i.catalog_id<>$catalog)),
+                    WHERE f.entry_id=$entry AND i.explicit=1 AND (i.video_id IS NULL OR i.catalog_id<>$catalog)),
                     EXISTS(SELECT 1 FROM source_files f JOIN identifications i USING(origin,file_index)
                         WHERE f.entry_id=$entry AND i.catalog_id=$catalog AND i.video_id IS NOT NULL
                             AND (i.explicit=1 OR i.evidence=f.name)),
                     (SELECT b.reason FROM video_attempts a JOIN collected_files f USING(origin,file_index)
                         JOIN request_blocks b ON b.provider_id=a.catalog_id AND b.question_id=a.question_id
-                        WHERE f.entry_id=$entry AND a.catalog_id=$catalog AND a.evidence=f.name LIMIT 1);
+                        WHERE f.entry_id=$entry AND a.catalog_id=$catalog AND a.evidence=f.name LIMIT 1),
+                    EXISTS(SELECT 1 FROM source_files f JOIN identifications i USING(origin,file_index)
+                        WHERE f.entry_id=$entry AND i.explicit=0 AND i.evidence=f.name
+                            AND i.video_id IS NOT NULL AND i.catalog_id<>$catalog);
                 """;
             command.Parameters.AddWithValue("$catalog", catalog);
             command.Parameters.Add("$entry", SqliteType.Integer);
@@ -133,7 +137,10 @@ internal sealed partial class Store
                 using var reader = command.ExecuteReader();
                 if (reader.Read() && !reader.GetBoolean(0))
                     result.Add(new(entry with { HasMetadata = reader.GetBoolean(1) },
-                        reader.IsDBNull(2) ? null : new((RequestBlockKind)reader.GetInt32(2)), null));
+                        reader.IsDBNull(2) ? null : new((RequestBlockKind)reader.GetInt32(2)), null)
+                    {
+                        IsIdentifiedElsewhere = reader.GetBoolean(3),
+                    });
             }
             return result;
         }, cancellation);
@@ -212,6 +219,8 @@ internal sealed partial class Store
                             LookupKind.Refresh => " AND NOT EXISTS(SELECT 1 FROM source_files m JOIN identifications i USING(origin,file_index)"
                                 + " WHERE m.entry_id=f.entry_id AND (i.explicit=1 AND i.video_id IS NULL"
                                 + " OR i.video_id IS NOT NULL AND i.catalog_id<>$catalog))",
+                            LookupKind.Reidentify => " AND NOT EXISTS(SELECT 1 FROM source_files m JOIN identifications i USING(origin,file_index)"
+                                + " WHERE m.entry_id=f.entry_id AND i.explicit=1 AND (i.video_id IS NULL OR i.catalog_id<>$catalog))",
                             _ => string.Empty,
                         }
                     )

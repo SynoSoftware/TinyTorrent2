@@ -1585,7 +1585,12 @@
     "new": "New",
     "missing_data": "Missing data",
     "all": "All selected",
-    "scope_hint": "New skips locally blocked searches. Missing data retries them. All selected also refreshes existing information. Provider limits still apply."
+    "reidentify": "Re-identify",
+    "scope_hint": "New skips locally blocked searches. Missing data retries them. All selected also refreshes existing information. Re-identify also replaces another provider's match when this one finds a match. Provider limits still apply.",
+    "elsewhere_one": "{0} selected video has another provider's match. Re-identify includes it.",
+    "elsewhere_other": "{0} selected videos have another provider's match. Re-identify includes them.",
+    "outside_one": "{0} selected video can't be fetched from {1}: its name can't be searched, or you chose or cleared its information yourself.",
+    "outside_other": "{0} selected videos can't be fetched from {1}: their names can't be searched, or you chose or cleared their information yourself."
   },
   "plugins": {
     "video_provider": "Video information provider",

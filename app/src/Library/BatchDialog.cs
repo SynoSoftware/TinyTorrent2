@@ -13,43 +13,63 @@ internal sealed class BatchDialog : UserControl, IDraft
     private readonly Browser _library;
     private readonly ProviderOption _source;
     private readonly IReadOnlyList<VideoFetch> _entries;
+    private readonly int _videos;
     private readonly ComboBox _scope = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly TextBlock _hint = new() { TextWrapping = TextWrapping.Wrap };
 
-    internal BatchDialog(Browser library, ProviderOption source, IReadOnlyList<VideoFetch> entries)
+    /// <param name="videos">The number of selected videos, including those <paramref name="entries"/> leaves out.</param>
+    internal BatchDialog(Browser library, ProviderOption source, IReadOnlyList<VideoFetch> entries, int videos)
     {
         _library = library;
         _source = source;
         _entries = entries;
+        _videos = videos;
         Content = new StackPanel { Spacing = 12, MinWidth = 380, Children = { _scope, _hint } };
         AutomationProperties.SetAutomationId(_scope, "MetadataScope");
-        _scope.SelectionChanged += (_, _) => PropertyChanged?.Invoke(this, new(nameof(CanSubmit)));
+        _scope.SelectionChanged += (_, _) =>
+        {
+            ShowHint();
+            PropertyChanged?.Invoke(this, new(nameof(CanSubmit)));
+        };
         RefreshText();
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
     public bool IsPending => false;
     public bool HasDraft => false;
-    public bool CanSubmit => _entries.Any(entry => entry.Includes((FetchScope)Math.Max(0, _scope.SelectedIndex)));
+    public bool CanSubmit => _entries.Any(entry => entry.Includes(Scope));
+    private FetchScope Scope => (FetchScope)Math.Max(0, _scope.SelectedIndex);
 
     internal void RefreshText()
     {
         var selected = Math.Max(0, _scope.SelectedIndex);
-        var keys = new[] { "new", "missing_data", "all" };
+        var keys = new[] { "new", "missing_data", "all", "reidentify" };
         _scope.ItemsSource = keys.Select((key, index) => _library.Text.Format("filters", "count",
             _library.Text.Get("request_protection", key), _entries.Count(entry => entry.Includes((FetchScope)index)))).ToArray();
         _scope.SelectedIndex = selected;
         _scope.Header = _source.Name;
         AutomationProperties.SetName(_scope, _source.Name);
-        _hint.Text = _library.Text.Get("request_protection", "scope_hint");
-        var waits = _entries.Select(entry => entry.Wait).OfType<RequestBlock>().Distinct();
-        foreach (var block in waits)
-            _hint.Text += "\n" + _library.Text.Protection(block);
+        ShowHint();
+    }
+
+    // Says why selected videos are missing from the chosen count, so a count
+    // smaller than the selection is not mistaken for what the provider has.
+    private void ShowHint()
+    {
+        var text = _library.Text;
+        var lines = new List<string> { text.Get("request_protection", "scope_hint") };
+        var elsewhere = _entries.Count(entry => entry.IsIdentifiedElsewhere);
+        if (Scope != FetchScope.Reidentify && elsewhere > 0)
+            lines.Add(text.FormatCount("request_protection", "elsewhere", elsewhere));
+        if (_videos > _entries.Count)
+            lines.Add(text.FormatCount("request_protection", "outside", _videos - _entries.Count, _source.Name));
+        lines.AddRange(_entries.Select(entry => entry.Wait).OfType<RequestBlock>().Distinct().Select(text.Protection));
+        _hint.Text = string.Join("\n", lines);
     }
 
     public Task<bool> Submit()
     {
-        _library.Fetch(_entries, _source, (FetchScope)Math.Max(0, _scope.SelectedIndex));
+        _library.Fetch(_entries, _source, Scope);
         return Task.FromResult(true);
     }
 }

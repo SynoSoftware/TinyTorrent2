@@ -427,6 +427,10 @@ For Library All, replace both the `!HasMetadata` selection filter and
 identification through its provider; do not rematch it or replace an explicit
 choice. When the chosen provider cannot refresh that identification, report the
 item as outside that operation instead of applying a different match silently.
+Library Re-identify is the explicit request to apply a different match: it
+treats protection like All, searches the chosen provider by file name for an
+identification another provider made automatically, and replaces it only with
+a confident match. Explicit choices and clears stay outside it.
 
 The current subtitle `Searchable` excludes capped requests from every scope.
 Replace that check with scope-aware policy admission: New respects it; Missing

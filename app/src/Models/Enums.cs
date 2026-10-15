@@ -449,6 +449,7 @@ internal enum FetchScope
     New,
     Missing,
     All,
+    Reidentify,
 }
 
 // Lookup policies govern eligibility and whether a match is the person's decision.
@@ -460,6 +461,9 @@ internal enum LookupKind
     Batch,
     // Refresh preserves an existing identification from the same provider.
     Refresh,
+    // Re-identification may replace another provider's automatic
+    // identification; the person's own decisions stay.
+    Reidentify,
     // An individual request reports errors and saves an explicit decision.
     Explicit,
 }

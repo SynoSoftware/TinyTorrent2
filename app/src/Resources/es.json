@@ -1584,7 +1584,12 @@
     "new": "Nuevas",
     "missing_data": "Datos pendientes",
     "all": "Toda la selección",
-    "scope_hint": "Nuevas omite las búsquedas bloqueadas localmente. Datos pendientes las reintenta. Toda la selección también actualiza la información existente. Se respetan los límites del proveedor."
+    "reidentify": "Volver a identificar",
+    "scope_hint": "Nuevas omite las búsquedas bloqueadas localmente. Datos pendientes las reintenta. Toda la selección también actualiza la información existente. Volver a identificar también sustituye la coincidencia de otro proveedor cuando este encuentra una. Se respetan los límites del proveedor.",
+    "elsewhere_one": "{0} vídeo seleccionado tiene una coincidencia de otro proveedor. Volver a identificar lo incluye.",
+    "elsewhere_other": "{0} vídeos seleccionados tienen una coincidencia de otro proveedor. Volver a identificar los incluye.",
+    "outside_one": "{0} vídeo seleccionado no se puede obtener de {1}: su nombre no se puede buscar, o tú elegiste o borraste su información.",
+    "outside_other": "{0} vídeos seleccionados no se pueden obtener de {1}: sus nombres no se pueden buscar, o tú elegiste o borraste su información."
   },
   "plugins": {
     "video_provider": "Proveedor de información de vídeo",

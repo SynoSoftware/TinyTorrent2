@@ -478,9 +478,15 @@ movie its pages listed, stays saved, so a later lookup of the same movie needs
 no request ([keep everything a provider returns](library-implementation.md#replaceable-movie-providers)).
 
 With multiple movies selected, Fetch metadata opens a scope selector with
-New, Missing data and All selected, showing nested movie counts. New respects
+New, Missing data, All selected and Re-identify, showing nested movie counts. New respects
 local protection; Missing data requests fresh answers for unresolved movies;
-All selected also refreshes accepted identities. Explicit clears remain untouched.
+All selected also refreshes accepted identities. Only Re-identify includes
+movies that another provider matched automatically: the chosen provider
+searches each by its name, and a confident match replaces the old one, while no
+match keeps it. The person's own choices and clears remain untouched in every
+scope. Below the selector, the dialog counts the selected videos the chosen
+scope leaves out because another provider matched them, and those no scope can
+fetch, so a count smaller than the selection is not read as what the provider has.
 The [request protection contract](request-protection.md) defines recovery and reset.
 It works in the background: the status bar shows "Metadata · 3 of 7 processed"
 until it finishes, on every page, with an X that stops it and cancels the
