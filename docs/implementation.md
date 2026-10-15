@@ -1265,12 +1265,12 @@ records the ruling and the arrangement that replaced vcpkg.
 
 ## Wire representation
 
-Protocol version 17 uses a four-byte little-endian UTF-8 JSON frame length,
+Protocol version 18 uses a four-byte little-endian UTF-8 JSON frame length,
 bounded to 16 MiB. The endpoint is `TinyTorrent.<logon SID>`; each connecting
-client first receives `{type:"hello",version:17,session_id:"...",data_directory:"..."}`. The absolute data directory
+client first receives `{type:"hello",version:18,session_id:"...",data_directory:"..."}`. The absolute data directory
 keeps the same store for explicit Restart, which starts the engine beside the
 window rather than a path a pipe peer reports. Requests are
-`{request_id:integer,command:string,...}`. Replies repeat `request_id` and have
+`{request_id:signed-64-bit-integer,command:string,...}`. Replies repeat `request_id` and have
 `ok:boolean`, either `data` or `error:{code:string,detail:string}`. Native control
 notifications are `{type:"activate"}`, `{type:"close"}`, `{type:"confirm_exit"}`, and `{type:"sources"}`.
 `{type:"settings",setting}` opens Settings at that card of the General page and
@@ -1660,12 +1660,17 @@ these source and compilation checks, and Move and delete files remains next.
 
 Protocol version 11 adds an optional integer `context` to a `torrent` request
 with `view`. This display request replies immediately with `context` and `ready`
-in its data, then sends one fresh result as
+in its data, then sends fresh results as
 `{type:"detail",session_id,torrent_id,context,ok,data}` (or `error` on failure).
 The usual reply wrapper also supplies the originating `request_id`; the window
 routes `type` first, so this update cannot complete another request. A warm
 reply can be ready while its refresh is still being collected. The pushed
 result arrives as soon as the needed answers arrive, without another poll.
+Version 18 also pushes partial results with `ready:false` after the current
+alert batch has applied its facts;
+`ready:true` on the push completes the demand. The initial reply includes all
+retained facts, even when their age requires a fresh collection. Replies to
+independent requests may arrive out of order on the same connection.
 Missing peers, trackers, magnet, file priorities, progress and disk paths are
 null; Pieces omits its map until the complete set exists. A `torrent` request
 with `release:true` withdraws that connection's display demand. Requests without

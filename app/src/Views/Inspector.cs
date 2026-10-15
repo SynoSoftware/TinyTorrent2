@@ -20,8 +20,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
     private string _session = string.Empty;
     private int _context;
     private bool _fetching;
-    private (string TorrentId, TaskCompletionSource<JsonElement?> Push)? _awaitedPush;
-    private bool _complete;
+    private (string TorrentId, TaskCompletionSource Completion, Action<JsonElement> Apply)? _awaitedPush;
     private bool _loading;
     private (bool Available, bool Editable) _access;
     private TaskCompletionSource? _pending;
@@ -258,7 +257,11 @@ public sealed partial class Inspector : INotifyPropertyChanged
             MoveFiles,
             DownloadCities,
         ];
-        owner.Geolocation.PropertyChanged += (_, _) => Refresh();
+        owner.Geolocation.PropertyChanged += (_, _) =>
+        {
+            Refresh();
+            _ = LocatePeers();
+        };
     }
 
     // Another target starts at the given section, so the previous section is
@@ -322,6 +325,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
         if (_session != session)
         {
             _session = session;
+            _peerCache.Clear();
             Peers = null;
             Trackers = null;
             Pieces = null;
@@ -338,6 +342,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
     internal void Disconnect()
     {
         Invalidate();
+        _peerCache.Clear();
         History = null;
         Refresh();
     }
@@ -389,40 +394,32 @@ public sealed partial class Inspector : INotifyPropertyChanged
                 changed = await ReadPeers(context);
                 return;
             }
-            // Until the first complete answer, the facts the engine already
-            // holds show while it collects the fresh answer.
-            var reply = await ReadDetail(target, section, context, held =>
+            await ReadDetail(target, section, context, detail =>
             {
-                if (IsCurrent(context) && !_complete && ApplyDetail(held))
+                if (ApplyDetail(detail))
                 {
                     Refresh();
                 }
             });
-            if (reply is { } detail && IsCurrent(context))
-            {
-                changed = ApplyDetail(detail);
-            }
         }
         catch (Exception error)
         {
             if (context == _context)
             {
-                _complete = false;
                 _readFailure = error;
                 changed = true;
             }
         }
         finally
         {
-            _fetching = false;
-            // Start the current section's read before notifying, so observers do
-            // not mistake the end of this stale read for that section loading.
-            if (context != _context)
-                _ = Read();
-            if (changed)
-                Refresh();
-            else
-                RefreshLoading();
+            if (context == _context)
+            {
+                _fetching = false;
+                if (changed)
+                    Refresh();
+                else
+                    RefreshLoading();
+            }
         }
     }
 
@@ -439,27 +436,33 @@ public sealed partial class Inspector : INotifyPropertyChanged
         }
         try
         {
-            awaited.Push.TrySetResult(PipeClient.ReadOutcome(message, Text, "torrent"));
+            var data = PipeClient.ReadOutcome(message, Text, "torrent");
+            awaited.Apply(data);
+            if (data.GetProperty("ready").GetBoolean())
+                awaited.Completion.TrySetResult();
         }
         catch (Exception error)
         {
-            awaited.Push.TrySetException(error);
+            awaited.Completion.TrySetException(error);
         }
     }
 
-    // A detail read answers at once with the facts the engine already holds,
-    // which go to held, and the engine later pushes the fresh answer, which
-    // this returns. Awaiting the push leaves the command pipe free while
-    // libtorrent answers. Null when Invalidate abandoned the read.
-    private async Task<JsonElement?> ReadDetail(
+    // Every answer uses the same application path while this view is current;
+    // completion only ends the wait for fresh detail.
+    private async Task ReadDetail(
         Torrent torrent,
         InspectorSection section,
         int context,
-        Action<JsonElement>? held = null
+        Action<JsonElement> apply
     )
     {
-        var push = new TaskCompletionSource<JsonElement?>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _awaitedPush = (torrent.TorrentId, push);
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var receivedPush = false;
+        _awaitedPush = (torrent.TorrentId, completion, data =>
+        {
+            receivedPush = true;
+            Apply(data);
+        });
         try
         {
             var read = _client.Read(
@@ -480,16 +483,16 @@ public sealed partial class Inspector : INotifyPropertyChanged
                 ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
             if (read.IsCanceled)
             {
-                return null;
+                return;
             }
             var reply = await read;
             // The push can reach the dispatcher before this await resumes, and
             // is then newer than the held facts.
-            if (!push.Task.IsCompleted)
+            if (!completion.Task.IsCompleted && !receivedPush)
             {
-                held?.Invoke(reply);
+                Apply(reply);
             }
-            return await push.Task.WaitAsync(PipeClient.RequestTimeout);
+            await completion.Task.WaitAsync(PipeClient.RequestTimeout);
         }
         catch (TimeoutException)
         {
@@ -502,10 +505,16 @@ public sealed partial class Inspector : INotifyPropertyChanged
         }
         finally
         {
-            if (ReferenceEquals(_awaitedPush?.Push, push))
+            if (ReferenceEquals(_awaitedPush?.Completion, completion))
             {
                 _awaitedPush = null;
             }
+        }
+
+        void Apply(JsonElement data)
+        {
+            if (IsCurrent(context) && _owner.Contains(torrent))
+                apply(data);
         }
     }
 
@@ -530,7 +539,6 @@ public sealed partial class Inspector : INotifyPropertyChanged
 
     private bool ApplyDetail(JsonElement reply)
     {
-        var ready = reply.GetProperty("ready").GetBoolean();
         var changed = _readFailure is not null;
         switch (_section)
         {
@@ -573,14 +581,13 @@ public sealed partial class Inspector : INotifyPropertyChanged
                     RowsUpdated?.Invoke(this, InspectorSection.Trackers);
                 break;
             case InspectorSection.Pieces:
-                if (ready)
+                if (reply.TryGetProperty("verified", out _))
                 {
                     Pieces = new Pieces(reply, Pieces?.Files ?? []);
                     changed = true;
                 }
                 break;
         }
-        _complete = ready;
         _readFailure = null;
         return changed;
     }
@@ -598,8 +605,13 @@ public sealed partial class Inspector : INotifyPropertyChanged
                 HistoryArguments("day")
             )
         );
-        if (context != _context)
+        if (!IsCurrent(context))
             return [];
+        if (History is null)
+        {
+            History = day;
+            Refresh();
+        }
         var recent = Samples(
             await _client.Read(
                 Consumer.Inspector,
@@ -642,9 +654,9 @@ public sealed partial class Inspector : INotifyPropertyChanged
     private void Invalidate()
     {
         _context++;
-        _awaitedPush?.Push.TrySetResult(null);
+        _fetching = false;
+        _awaitedPush?.Completion.TrySetResult();
         _awaitedPush = null;
-        _complete = false;
         _client.Withdraw(Consumer.Inspector);
         if (!_visible || IsGlobal || _section == InspectorSection.Speed || _target is null)
             _ = Release();
@@ -676,8 +688,6 @@ public sealed partial class Inspector : INotifyPropertyChanged
             return;
         var files = reply.GetProperty("files");
         var ready = reply.GetProperty("ready").GetBoolean();
-        if (!ready && _confirmedFiles is not null)
-            return;
         if (ready)
             _confirmedFiles = files.Clone();
         if (!_filesLoaded)
@@ -900,6 +910,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
         _filesLoaded = false;
         _confirmedFiles = null;
         Peers = null;
+        _located.Clear();
         Trackers = null;
         Pieces = null;
         History = null;

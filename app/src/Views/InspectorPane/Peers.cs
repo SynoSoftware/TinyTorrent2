@@ -10,6 +10,7 @@ namespace Syno.TinyTorrent.Views;
 public sealed partial class InspectorPane
 {
     private PeerMap? _peerMap;
+    private bool _mapQueued;
     private bool _arrangingPeers;
     private bool _peersStacked;
     private readonly Button _peerMore = CreateAction(Lucide.Ellipsis, "PeerMore");
@@ -152,10 +153,16 @@ public sealed partial class InspectorPane
 
     private void RefreshMap()
     {
-        if (_peerMap is null || _library is not null || Model.Section != InspectorSection.Peers
-            || !Model.IsVisible || !ReferenceEquals(PeerDrawing.Content, _peerMap))
+        if (_mapQueued)
             return;
-        _peerMap.Show(Model.IsAvailable ? Model.Peers : null, Model.Origin, Model.Text,
-            _layout.View.Cities && Model.HasCities);
+        _mapQueued = DispatcherQueue.TryEnqueue(() =>
+        {
+            _mapQueued = false;
+            if (!IsLoaded || _peerMap is null || _library is not null || Model.Section != InspectorSection.Peers
+                || !Model.IsVisible || !ReferenceEquals(PeerDrawing.Content, _peerMap))
+                return;
+            _peerMap.Show(Model.IsAvailable ? Model.Peers : null, Model.Origin, Model.Text,
+                _layout.View.Cities && Model.HasCities);
+        });
     }
 }

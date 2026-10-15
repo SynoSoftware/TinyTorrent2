@@ -6,6 +6,7 @@
 #include <libtorrent/settings_pack.hpp>
 #include <libtorrent/fingerprint.hpp>
 #include <algorithm>
+#include <utility>
 
 namespace tt
 {
@@ -140,7 +141,7 @@ void Engine::State::Start(Document const& saved, Resumes& resumes)
     {
         session->set_alert_notify(wake);
     }
-    RefreshPolicy(true);
+    RefreshPolicy();
     for (auto [id, facts] : saved.torrents)
     {
         lt::add_torrent_params params;
@@ -657,6 +658,8 @@ void Engine::State::Tick()
         {
             Handle(alert);
         }
+        if (reading && !alerts.empty())
+            ContinueReading(std::exchange(reading->changed, false));
         ContinueRename();
         ContinueDeletion();
         RemoveDeferred();

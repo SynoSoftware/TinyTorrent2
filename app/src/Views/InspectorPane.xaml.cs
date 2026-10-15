@@ -19,6 +19,7 @@ public sealed partial class InspectorPane : UserControl
     private Torrent? _target;
     private InspectorSection _section;
     private bool _refreshing;
+    private bool _rowsQueued;
     private bool _tracking;
     private bool _awaitingArrival;
     private bool _composing;
@@ -262,16 +263,22 @@ public sealed partial class InspectorPane : UserControl
 
     private void OnRows(object? sender, InspectorSection section)
     {
-        if (_library is not null || !Model.IsVisible || section != Model.Section)
+        if (_library is not null || !Model.IsVisible || section != Model.Section || _rowsQueued)
             return;
-        if (section == InspectorSection.Peers)
+        _rowsQueued = DispatcherQueue.TryEnqueue(() =>
         {
-            if (_layout.View.Layout != PeerLayout.Map)
-                Peers?.RefreshView();
-            RefreshMap();
-        }
-        else if (section == InspectorSection.Trackers)
-            TrackerTable?.RefreshView();
+            _rowsQueued = false;
+            if (!IsLoaded || _library is not null || !Model.IsVisible)
+                return;
+            if (Model.Section == InspectorSection.Peers)
+            {
+                if (_layout.View.Layout != PeerLayout.Map)
+                    Peers?.RefreshView();
+                RefreshMap();
+            }
+            else if (Model.Section == InspectorSection.Trackers)
+                TrackerTable?.RefreshView();
+        });
     }
 
     private void OnModel(object? sender, PropertyChangedEventArgs args)

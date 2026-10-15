@@ -170,14 +170,13 @@ public sealed class FileSelection(Strings strings) : INotifyPropertyChanged
             if (!known.TryGetValue(item.GetProperty("index").GetInt32(), out var file))
                 continue;
             var downloaded = item.GetProperty("downloaded");
-            file.Downloaded =
-                downloaded.ValueKind == JsonValueKind.Null ? null : downloaded.GetInt64();
+            if (downloaded.ValueKind != JsonValueKind.Null)
+                file.Downloaded = downloaded.GetInt64();
             if (!preserveChoices)
             {
                 var priority = item.GetProperty("priority");
-                file.SetPriority(
-                    priority.ValueKind == JsonValueKind.Null ? -1 : priority.GetInt32()
-                );
+                if (priority.ValueKind != JsonValueKind.Null)
+                    file.SetPriority(priority.GetInt32());
             }
         }
         Refresh(notify: false);

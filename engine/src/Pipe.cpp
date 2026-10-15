@@ -1,4 +1,5 @@
 #include "Pipe.h"
+#include <limits>
 #include <stdexcept>
 
 namespace tt
@@ -9,9 +10,11 @@ constexpr DWORD messageLimit = 16 * 1024 * 1024;
 // Each instance serves one connection at a time.
 constexpr DWORD instances = 8;
 constexpr DWORD bufferSize = 64 * 1024;
+// PipeClient admits at most 32 commands plus 32 reads; this bound must cover both.
+constexpr std::size_t requestLimit = 64;
 // One engine turn can forward every notice while a reply is being written.
-// Leave room for the reply and control messages, then disconnect a slow client.
-constexpr std::size_t outputLimit = Notice::limit + 8;
+// Leave room for outstanding replies and control messages, then disconnect a slow client.
+constexpr std::size_t outputLimit = Notice::limit + requestLimit + 8;
 
 // Durations in milliseconds, as GetTickCount64 counts.
 constexpr ULONGLONG forwardTimeout = 5000;
@@ -135,10 +138,8 @@ void Pipe::Connection::Send(Json message)
         closed = true;
         SetEvent(cancel);
     }
-    if (message.contains("request_id") && message["request_id"] == requestId)
-    {
-        requestId = nullptr;
-    }
+    if (message.contains("request_id"))
+        requests.erase(message["request_id"].get<std::int64_t>());
     if (!closed)
     {
         output.push_back(std::move(message));
@@ -255,20 +256,21 @@ void Pipe::Serve(HANDLE handle)
             {
                 break;
             }
+            if (request["request_id"].is_number_unsigned() &&
+                request["request_id"].get<std::uint64_t>() > std::numeric_limits<std::int64_t>::max())
+                break;
+            auto requestId = request["request_id"].get<std::int64_t>();
             bool occupied;
             {
                 std::lock_guard lock(client->mutex);
-                occupied = !client->requestId.is_null();
-                if (!occupied)
-                {
-                    client->requestId = request["request_id"];
-                }
+                occupied = client->requests.size() >= requestLimit ||
+                    !client->requests.insert(requestId).second;
             }
             if (occupied)
             {
                 break;
             }
-            auto reply = [client, requestId = request["request_id"]](Json response)
+            auto reply = [client, requestId](Json response)
             {
                 response["request_id"] = requestId;
                 client->Send(std::move(response));

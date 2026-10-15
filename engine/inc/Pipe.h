@@ -4,8 +4,10 @@
 #include <windows.h>
 #include <atomic>
 #include <condition_variable>
+#include <cstdint>
 #include <deque>
 #include <mutex>
+#include <set>
 #include <sddl.h>
 #include <stdexcept>
 #include <thread>
@@ -52,12 +54,12 @@ public:
         std::optional<Json> detail;
         bool closed = false;
         bool dispatched = false;
-        Json requestId;
+        std::set<std::int64_t> requests;
         ~Connection() { CloseHandle(cancel); }
         void Send(Json message);
     };
     // The protocol version that the hello message announces.
-    static constexpr int version = 17;
+    static constexpr int version = 18;
     // Receives each request with the reply that answers it, and a null request
     // with no reply when the client disconnects.
     using Dispatch = std::function<void(std::shared_ptr<Connection>, Json, Reply)>;

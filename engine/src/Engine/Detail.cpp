@@ -87,8 +87,7 @@ void Engine::State::ReadDetail(Reading::Read read)
                 });
             Detail empty;
             auto const& detail = current ? reading->detail : empty;
-            auto data = torrent.Describe(*read.view, read.includeFiles, detail, metadata,
-                read.started - Reading::answerAge);
+            auto data = torrent.Describe(*read.view, read.includeFiles, detail, metadata);
             data["session_id"] = sessionId;
             data["context"] = *read.context;
             data["ready"] = ready;
@@ -188,9 +187,9 @@ void Engine::State::Query(Torrent& torrent, DetailKind kind)
     }
 }
 
-// Sends the queries that the held reads still need, answers the reads whose
-// detail is complete, and starts the waiting reads once no read is held.
-void Engine::State::ContinueReading()
+// Contextual reads receive available facts while collection continues;
+// action reads wait for complete detail before using it.
+void Engine::State::ContinueReading(bool changed)
 {
     if (!reading)
     {
@@ -204,41 +203,33 @@ void Engine::State::ContinueReading()
     }
     auto const& detail = reading->detail;
     auto metadata = torrent.handle.torrent_file();
-    std::vector<Reading::Read> ready;
     for (auto& read : std::exchange(reading->held, {}))
     {
         auto since = read.context ? read.started : read.started - Reading::answerAge;
-        auto answered = [this, since](DetailKind kind) { return reading->detail.Has(kind, since); };
-        auto kinds = Kinds(read.view, bool(metadata));
-        if (std::all_of(kinds.begin(), kinds.end(), answered))
+        bool complete = true;
+        for (auto kind : Kinds(read.view, bool(metadata)))
         {
-            ready.push_back(std::move(read));
-            continue;
-        }
-        for (auto kind : kinds)
-        {
-            if (!answered(kind))
+            if (!detail.Has(kind, since))
             {
+                complete = false;
                 Query(torrent, kind);
             }
         }
-        reading->held.push_back(std::move(read));
-    }
-    for (auto& read : ready)
-    {
-        if (!read.view)
+        if (complete || (changed && read.context))
         {
-            read.reply(Success(torrent.Describe(detail, metadata)));
-            continue;
+            auto data = read.view ? torrent.Describe(*read.view, read.includeFiles, detail, metadata)
+                                  : torrent.Describe(detail, metadata);
+            if (read.view)
+                data["session_id"] = sessionId;
+            if (read.context)
+            {
+                data["context"] = *read.context;
+                data["ready"] = complete;
+            }
+            read.reply(Success(std::move(data)));
         }
-        auto data = torrent.Describe(*read.view, read.includeFiles, detail, metadata);
-        data["session_id"] = sessionId;
-        if (read.context)
-        {
-            data["context"] = *read.context;
-            data["ready"] = true;
-        }
-        read.reply(Success(std::move(data)));
+        if (!complete)
+            reading->held.push_back(std::move(read));
     }
     if (reading->held.empty() && !reading->waiting.empty())
     {
@@ -257,6 +248,7 @@ void Engine::State::Invalidate(std::string const& torrentId)
     if (reading && reading->torrentId == torrentId)
     {
         reading->detail = {};
+        reading->changed = false;
         ContinueReading();
     }
 }
@@ -286,9 +278,8 @@ bool Engine::State::Receive(lt::torrent_handle const& handle, DetailKind kind,
     {
         store(reading->detail);
         reading->detail.received[kind] = std::chrono::steady_clock::now();
+        reading->changed = true;
     }
-    // An obsolete answer leaves its held reads waiting, so they ask again.
-    ContinueReading();
     return current;
 }
 
@@ -305,13 +296,16 @@ void Engine::State::FailReading(Json const& failure)
     EndReading();
 }
 
-void Engine::State::ReleaseReading(std::string const& connectionId)
+void Engine::State::ReleaseReading(std::string const& connectionId, bool disconnected)
 {
     if (!reading)
     {
         return;
     }
-    auto client = [&connectionId](Reading::Read const& read) { return read.connectionId == connectionId; };
+    auto client = [&connectionId, disconnected](Reading::Read const& read)
+    {
+        return read.connectionId == connectionId && (disconnected || read.context.has_value());
+    };
     std::erase_if(reading->held, client);
     std::erase_if(reading->waiting, client);
     if (reading->held.empty())

@@ -13,10 +13,20 @@ listening TCP port or web server. It still requires serialization, validation,
 and explicit disconnect handling; the transport does not make commands atomic.
 See Microsoft's [named-pipe overview](https://learn.microsoft.com/en-us/dotnet/standard/io/how-to-use-named-pipes-for-network-interprocess-communication).
 
-Start with one duplex window connection, asynchronous I/O, and one request awaiting
-its reply. Queue long-running engine work and return promptly; a move must not
-hold the request slot until all files have moved. Launch forwarding uses bounded
-short-lived pipe instances at the same endpoint and contract, so an attached window
+Use one duplex window connection and asynchronous I/O. Send commands without
+waiting for earlier replies, so a slow preview, save or action cannot hold up
+independent work. Request IDs correlate replies, which may arrive out of order;
+one writer serializes complete frames in send order. The engine's existing change
+queue preserves the order of persisted changes. The window bounds accepted commands
+to 32 and in-flight reads to 32; newer unsent refreshes replace older ones.
+Only summary polling waits for its previous reply. A changed inspector or preview
+can send its new request while an obsolete read finishes. The engine bounds each
+connection to 64 outstanding requests, covering both window limits together.
+Request IDs are signed 64-bit integers and remain unique while outstanding;
+duplicate IDs or exceeding the connection bound close that connection.
+Queue long-running engine work and return promptly; a move must not wait until
+all files have moved. Launch forwarding uses bounded short-lived pipe instances
+at the same endpoint and contract, so an attached window
 cannot prevent another launch from forwarding its request.
 
 The engine also sends bounded control notifications for activation, close
@@ -36,6 +46,11 @@ another transport or event bus.
 Commands take priority over optional refreshes. Bound the command queue and
 report overload. A slow or absent window cannot block transfers or create an
 unlimited notification backlog.
+
+A request timeout currently closes the connection and settles all outstanding
+requests. Partial frame writes also invalidate the connection. A future change
+to isolate read timeouts must retain outstanding capacity and dispose of late
+stateful replies; simply abandoning a timed-out task would lose that ownership.
 
 ## Encoding and validation
 
@@ -134,17 +149,21 @@ The window owns those presentation states, not another torrent database.
 A detail reply also belongs to the engine session, torrent, and inspector context
 that requested it. Apply it on the UI dispatcher only while that same consumer
 and context remain current. If selection, section, or consumer lifetime changed,
-consume and discard the obsolete reply, then request current visible detail.
+request current visible detail without waiting for the obsolete read; discard
+that read's eventual reply.
 Correct transport correlation alone does not make a reply current for the view.
 
 Inspector reads return immediately with available facts and a readiness flag;
-they never hold the request slot for libtorrent. Missing values remain unknown,
-not zero or empty sets. The existing detail collector sends a complete fresh
-result on the same connection when its queries finish. Both messages carry the
+they never hold the request slot for libtorrent. Retained facts remain available
+for display regardless of age, until their torrent or generation is invalidated;
+readiness still requires recent, complete facts. Missing values remain unknown,
+not zero or empty sets. The existing detail collector pushes partial updates as
+queries answer, then a complete fresh result when all have answered. All messages carry the
 inspector context, and the pushed result also identifies its session and torrent.
 The immediate reply's readiness describes available facts, not completion of the
-fresh demand. PipeClient keeps background file reads behind that demand until
-its matching push arrives or the demand ends through failure, replacement,
+fresh demand. Views apply those facts immediately and retain known values while
+missing ones arrive. PipeClient keeps background file reads behind that demand until
+its matching complete push arrives or the demand ends through failure, replacement,
 release or disconnect, so a Library read cannot replace Inspector's awaited update.
 PipeClient forwards only the current Inspector push to the window's coalesced
 detail update; background file results settle their own wait inside PipeClient,

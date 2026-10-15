@@ -283,7 +283,7 @@ void Engine::State::Discard(std::function<bool(Preview const&)> const& matches)
 void Engine::State::Disconnect(std::string const& connectionId)
 {
     ReleaseConnectionTest(connectionId, ConnectionPhase::Cancelled);
-    ReleaseReading(connectionId);
+    ReleaseReading(connectionId, true);
     for (auto const& preview : parsing)
     {
         if (preview->connectionId == connectionId)

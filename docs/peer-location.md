@@ -58,7 +58,9 @@ download would most likely transfer the same file.
 the city file. The Inspector looks a peer's address up when the peer appears
 and again only when the city data changes, because the address never changes
 and the names come in every language DB-IP ships, so a language switch needs
-no new lookup. An address the
+no new lookup. Rows appear before those lookups: one background worker resolves
+peer and map-origin locations, then updates only the peers still displayed and
+only from the current dataset version. An address the
 data lacks, a web seed's host name or an I2P destination has no location.
 
 ## Flags
@@ -229,8 +231,14 @@ and the existing asynchronous detail collector, one torrent at a time. Without a
 torrent selection, the scope is all torrents; otherwise it is the selected group.
 Torrent identity remains
 part of every row key, so shared endpoints across torrents are not deduplicated.
-The complete collection replaces the previous one only in the same visible
-inspector context. Speed reads the same scope from the engine's retained histories.
+Each torrent's available peers appear immediately, and its fresh result replaces
+only that torrent's rows in the same visible inspector context. Other torrents'
+rows remain visible while their reads continue. The Inspector retains the last
+peer rows for eight recently read torrents, so returning to one displays them
+before the pipe reply. A new engine session or disconnect clears those rows.
+Changing selection abandons the old read without waiting for its completion.
+Speed reads the same scope from
+the engine's retained histories and displays its day range before fetching finer recent samples.
 
 ## Native map validation
 

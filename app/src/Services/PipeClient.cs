@@ -15,7 +15,9 @@ namespace Syno.TinyTorrent.Services;
 internal sealed partial class PipeClient : IDisposable
 {
     private const int MaximumFrame = 16 * 1024 * 1024;
+    // Together these fit the engine pipe's 64 outstanding requests per connection.
     private const int CommandLimit = 32;
+    private const int ReadLimit = 32;
     internal static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(15);
 
     // TinyTorrent.csproj records the engine's file name from the shared build properties.
@@ -26,20 +28,18 @@ internal sealed partial class PipeClient : IDisposable
     private readonly Strings _strings;
     private readonly object _gate = new();
     private readonly CancellationTokenSource _lifetime = new();
-    private readonly Queue<Command> _commands = new();
+    private readonly Queue<Request> _commands = new();
 
     // At most one unsent read per consumer, oldest first, so consumers take turns.
-    private readonly List<Command> _reads = [];
+    private readonly List<Request> _reads = [];
     private readonly SemaphoreSlim _queued = new(0);
+    private readonly Dictionary<long, PendingReply> _replies = [];
     private readonly PeriodicTimer _refreshTimer = new(TimeSpan.FromMilliseconds(1000));
     private int _refreshInterval = 1000;
     private bool _connectionTestActive;
     private Task? _pump;
-    private TaskCompletionSource<JsonElement>? _reply;
+    private int _commandCount;
     private long _requestId;
-    private long _awaitingId;
-    private bool _awaitingCommand;
-    private bool _changesFiles;
     private bool _connected;
     private int? _processId;
     private bool _disposed;
@@ -135,14 +135,15 @@ internal sealed partial class PipeClient : IDisposable
                 return Task.FromException<JsonElement>(
                     new IOException(_strings.Get("connection", "unavailable"))
                 );
-            if (_commands.Count >= CommandLimit)
+            if (_commandCount >= CommandLimit)
                 return Task.FromException<JsonElement>(
                     new IOException(_strings.Get("connection", "overload"))
                 );
-            var command = new Command(name, arguments);
-            _commands.Enqueue(command);
+            var request = new Request(name, arguments);
+            _commands.Enqueue(request);
+            _commandCount++;
             _queued.Release();
-            return command.Completion.Task;
+            return request.Completion.Task;
         }
     }
 
@@ -162,10 +163,10 @@ internal sealed partial class PipeClient : IDisposable
                 pending.Replace(name, arguments);
                 return pending.Completion.Task;
             }
-            var command = new Command(name, arguments, consumer);
-            _reads.Add(command);
+            var request = new Request(name, arguments, consumer);
+            _reads.Add(request);
             _queued.Release();
-            return command.Completion.Task;
+            return request.Completion.Task;
         }
     }
 
@@ -182,17 +183,20 @@ internal sealed partial class PipeClient : IDisposable
         }
     }
 
-    private Command? Next()
+    private Request? Next(IEnumerable<Consumer?> active)
     {
         lock (_gate)
         {
             if (_commands.TryDequeue(out var command))
                 return command;
-            if (_reads.Count == 0)
+            if (active.Count(consumer => consumer is not null) >= ReadLimit)
                 return null;
-            var index = _reads.FindIndex(read => read.Consumer != Consumer.Files);
+            var index = _reads.FindIndex(read => read.Consumer != Consumer.Files
+                && (read.Consumer != Consumer.Summary || !active.Contains(Consumer.Summary)));
             if (index < 0)
-                index = 0;
+                index = _reads.FindIndex(read => read.Consumer == Consumer.Files);
+            if (index < 0)
+                return null;
             var read = _reads[index];
             _reads.RemoveAt(index);
             return read;
@@ -323,28 +327,41 @@ internal sealed partial class PipeClient : IDisposable
     {
         using var connection = CancellationTokenSource.CreateLinkedTokenSource(token);
         var receive = Receive(pipe, connection.Token);
+        List<(Request Request, Task Task)> active = [];
         try
         {
-            await Execute(pipe, new Command("snapshot", null), connection.Token);
-            while (true)
+            await Execute(pipe, new Request("snapshot", null, Consumer.Summary), connection.Token);
+            var queued = _queued.WaitAsync(connection.Token);
+            while (!connection.IsCancellationRequested)
             {
-                while (Next() is { } command)
-                    await Execute(pipe, command, connection.Token);
-                var queued = _queued.WaitAsync(connection.Token);
-                if (await Task.WhenAny(queued, receive) == receive)
+                if (receive.IsCompleted)
                     await receive;
-                await queued;
+                foreach (var completed in active.Where(item => item.Task.IsCompleted).ToArray())
+                {
+                    await completed.Task;
+                    active.Remove(completed);
+                }
+                if (queued.IsCompleted)
+                {
+                    await queued;
+                    queued = _queued.WaitAsync(connection.Token);
+                }
+                var request = Next(active.Select(item => item.Request.Consumer));
+                if (request is not null)
+                {
+                    active.Add((request, Execute(pipe, request, connection.Token)));
+                    await request.Written.Task;
+                    continue;
+                }
+                await Task.WhenAny(active.Select(item => item.Task).Append(queued).Append(receive));
             }
         }
         finally
         {
             connection.Cancel();
             pipe.Dispose();
-            try
-            {
-                await receive;
-            }
-            catch (Exception) when (connection.IsCancellationRequested) { }
+            await Task.WhenAll(active.Select(item => item.Task).Append(receive))
+                .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         }
     }
 
@@ -354,15 +371,16 @@ internal sealed partial class PipeClient : IDisposable
         {
             _connected = false;
             _processId = null;
-            foreach (var command in _commands.Concat(_reads))
+            foreach (var request in _commands.Concat(_reads))
             {
                 if (error is null)
-                    command.Completion.TrySetCanceled(_lifetime.Token);
+                    request.Completion.TrySetCanceled(_lifetime.Token);
                 else
-                    command.Completion.TrySetException(
+                    request.Completion.TrySetException(
                         new IOException(_strings.Get("connection", "unavailable"), error)
                     );
             }
+            _commandCount -= _commands.Count;
             _commands.Clear();
             _reads.Clear();
             EndFiles();
@@ -417,64 +435,66 @@ internal sealed partial class PipeClient : IDisposable
         catch (Exception) { }
     }
 
-    private async Task Execute(NamedPipeClientStream pipe, Command command, CancellationToken token)
+    private async Task Execute(NamedPipeClientStream pipe, Request request, CancellationToken token)
     {
-        if (!BeginDetail(command))
-            return;
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
         deadline.CancelAfter(RequestTimeout);
+        var requestId = Interlocked.Increment(ref _requestId);
         try
         {
-            var requestId = Interlocked.Increment(ref _requestId);
-            var fields = command.Arguments is null
+            var fields = request.Arguments is null
                 ? new Dictionary<string, JsonElement>()
-                : JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
-                    JsonSerializer.Serialize(command.Arguments)
-                )!;
+                : JsonSerializer.SerializeToElement(request.Arguments)
+                    .EnumerateObject().ToDictionary(property => property.Name, property => property.Value);
+            long? context = fields.TryGetValue("context", out var value) ? value.GetInt64() : null;
+            if (!BeginDetail(request, context))
+                return;
             fields["request_id"] = JsonSerializer.SerializeToElement(requestId);
-            fields["command"] = JsonSerializer.SerializeToElement(command.Name);
-            _reply = new TaskCompletionSource<JsonElement>(
-                TaskCreationOptions.RunContinuationsAsynchronously
-            );
-            _awaitingId = requestId;
-            _awaitingCommand = command.Consumer is null && command.Name != "snapshot";
-            _changesFiles =
-                command.Name is "add" or "remove" or "delete_files" or "move" or "verify"
-                || command.Name == "edit"
+            fields["command"] = JsonSerializer.SerializeToElement(request.Name);
+            var changesFiles =
+                request.Name is "add" or "remove" or "delete_files" or "move" or "verify"
+                || request.Name == "edit"
                     && fields.TryGetValue("changes", out var changes)
                     && changes.TryGetProperty("priorities", out _);
+            var pending = new PendingReply(request, changesFiles);
+            lock (_gate)
+                _replies.Add(requestId, pending);
             await Write(pipe, fields, deadline.Token);
-            var reply = await _reply.Task.WaitAsync(deadline.Token);
-            var data = ReadOutcome(reply, _strings, command.Name);
-            CompleteDetail(command, data);
-            if (command.Name == "snapshot")
-                Snapshot?.Invoke(data);
-            command.Completion.TrySetResult(data);
+            request.Written.TrySetResult();
+            var reply = await pending.Completion.Task.WaitAsync(deadline.Token);
+            var data = ReadOutcome(reply, _strings, request.Name);
+            CompleteDetail(request, data);
+            request.Completion.TrySetResult(data);
         }
         catch (CommandException error)
         {
-            CompleteDetail(command, default);
-            command.Completion.TrySetException(error);
+            CompleteDetail(request, default);
+            request.Completion.TrySetException(error);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
-            command.Completion.TrySetCanceled(token);
-            throw;
+            request.Completion.TrySetCanceled(token);
         }
         catch (OperationCanceledException error) when (deadline.IsCancellationRequested)
         {
             var failure = new TimeoutException(_strings.Get("connection", "uncertain"), error);
-            command.Completion.TrySetException(failure);
+            request.Completion.TrySetException(failure);
             throw failure;
         }
         catch (Exception error)
         {
-            command.Completion.TrySetException(error);
+            request.Completion.TrySetException(error);
             throw;
         }
         finally
         {
-            _reply = null;
+            request.Written.TrySetResult();
+            lock (_gate)
+            {
+                _replies.Remove(requestId);
+                if (request.Consumer is null)
+                    _commandCount--;
+            }
         }
     }
 
@@ -502,16 +522,22 @@ internal sealed partial class PipeClient : IDisposable
                     else if (type.GetString() == "detail")
                         ReceiveDetail(message);
                 }
-                else if (
-                    message.TryGetProperty("request_id", out var id)
-                    && id.GetInt64() == _awaitingId
-                )
+                else if (message.TryGetProperty("request_id", out var id))
                 {
-                    if (_awaitingCommand)
+                    PendingReply? pending;
+                    lock (_gate)
+                        _replies.TryGetValue(id.GetInt64(), out pending);
+                    if (pending is null)
+                        continue;
+                    // Publish snapshots in receive order, before later save
+                    // continuations can confirm newer settings on the UI thread.
+                    if (pending.Request.Name == "snapshot" && message.GetProperty("ok").GetBoolean())
+                        Snapshot?.Invoke(message.GetProperty("data"));
+                    if (pending.Request.Consumer is null && pending.Request.Name != "snapshot")
                         CommandCompleted?.Invoke();
-                    if (_changesFiles && message.GetProperty("ok").GetBoolean())
+                    if (pending.ChangesFiles && message.GetProperty("ok").GetBoolean())
                         FilesChanged?.Invoke();
-                    _reply?.TrySetResult(message);
+                    pending.Completion.TrySetResult(message);
                 }
             }
         }
@@ -520,11 +546,15 @@ internal sealed partial class PipeClient : IDisposable
                 && error is OperationCanceledException or IOException or ObjectDisposedException
             )
         {
-            _reply?.TrySetCanceled(token);
+            lock (_gate)
+                foreach (var pending in _replies.Values)
+                    pending.Completion.TrySetCanceled(token);
         }
         catch (Exception error)
         {
-            _reply?.TrySetException(error);
+            lock (_gate)
+                foreach (var pending in _replies.Values)
+                    pending.Completion.TrySetException(error);
             throw;
         }
     }
@@ -576,7 +606,7 @@ internal sealed partial class PipeClient : IDisposable
             var hello = await Read(pipe, deadline.Token);
             if (
                 hello.GetProperty("type").GetString() != "hello"
-                || hello.GetProperty("version").GetInt32() != 17
+                || hello.GetProperty("version").GetInt32() != 18
             )
                 throw new InvalidDataException(strings.Get("connection", "version"));
             return hello;
@@ -786,11 +816,19 @@ internal sealed partial class PipeClient : IDisposable
         }
     }
 
-    private sealed class Command(string name, object? arguments, Consumer? consumer = null)
+    private sealed record PendingReply(Request Request, bool ChangesFiles)
+    {
+        internal TaskCompletionSource<JsonElement> Completion { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    private sealed class Request(string name, object? arguments, Consumer? consumer = null)
     {
         internal string Name { get; private set; } = name;
         internal object? Arguments { get; private set; } = arguments;
         internal Consumer? Consumer { get; } = consumer;
+        internal TaskCompletionSource Written { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource<JsonElement> Completion { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 

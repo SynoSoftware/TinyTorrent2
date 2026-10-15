@@ -90,6 +90,8 @@ public:
         {
             int download = 0;
             int upload = 0;
+
+            bool operator==(Limits const&) const = default;
         };
 
         struct Period
@@ -99,6 +101,7 @@ public:
             int end = 0;
             ScheduleMode mode = ScheduleMode::Alternative;
 
+            bool operator==(Period const&) const = default;
             bool Contains(int day, int minute) const;
             Json ToJson() const;
             static std::optional<Period> Read(Json const& value);
@@ -445,14 +448,14 @@ public:
             std::chrono::steady_clock::time_point started{};
             std::optional<std::int64_t> context;
         };
-        // A read shows an answer at most this much older than itself, so a
-        // section shown again after a while does not open on old peers and
-        // speeds. Answers that arrive while it is held count until it is
-        // answered, however long its other queries take.
+        // Cached readiness and action reads accept facts this much older than
+        // the request. Display can use older facts while fresh queries finish.
+        // Answers received during a read count until its other queries finish.
         static constexpr auto answerAge = std::chrono::seconds(3);
 
         std::string torrentId;
         Detail detail;
+        bool changed = false;
         // Reads that wait for answers to the torrent's detail queries.
         std::vector<Read> held;
         // Reads of another torrent, which start once no read is held, because
@@ -495,7 +498,7 @@ public:
     void RecordHashes(Torrent& torrent);
     void RecordHashes(Torrent& torrent, lt::info_hash_t const& hashes);
 
-    void RefreshPolicy(bool configure = false);
+    void RefreshPolicy(Settings const* previous = nullptr);
     static std::optional<NetworkAdapter> FindAdapter(std::string const& name);
     void ApplyPolicy(lt::torrent_handle const& handle);
     ScheduleMode ScheduledMode() const;
@@ -641,7 +644,7 @@ public:
     // Asks libtorrent for that part of the torrent's detail, unless a query of
     // that kind is outstanding.
     void Query(Torrent& torrent, DetailKind kind);
-    void ContinueReading();
+    void ContinueReading(bool changed = false);
     // Makes the torrent's detail queried until now obsolete, so the window,
     // which reads again after a command's reply, never sees the torrent as it
     // was before the change.
@@ -652,9 +655,9 @@ public:
         std::function<void(Detail&)> const& store, std::function<void(Torrent&)> const& observe = {});
     // Answers each held read with the failure, then ends the reading.
     void FailReading(Json const& failure);
-    // Drops the client's reads, and ends the reading once no read is held, so
-    // the detail never outlasts the clients that read it.
-    void ReleaseReading(std::string const& connectionId);
+    // Display release preserves actions awaiting complete detail; disconnect
+    // drops both because their replies can no longer reach the client.
+    void ReleaseReading(std::string const& connectionId, bool disconnected = false);
     // Forgets the detail, which holds no read, and starts the waiting reads.
     void EndReading();
     void RecoverDetail(lt::alerts_dropped_alert const& alert);

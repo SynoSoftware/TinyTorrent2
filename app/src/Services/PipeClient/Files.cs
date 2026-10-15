@@ -7,8 +7,7 @@ internal sealed partial class PipeClient
 {
     private long _fileContext;
     private PendingFiles? _files;
-    private long? _inspectorContext;
-    private TaskCompletionSource? _inspector;
+    private (Request Request, long Context, TaskCompletionSource Completion)? _inspector;
 
     // Null when the inspector took the connection first; the caller asks again.
     internal async Task<FileDetail?> ReadFiles(string torrentId, CancellationToken cancellation)
@@ -44,7 +43,7 @@ internal sealed partial class PipeClient
     {
         Task? inspector;
         lock (_gate)
-            inspector = _inspector?.Task;
+            inspector = _inspector?.Completion.Task;
         if (inspector is not null)
             await inspector.WaitAsync(cancellation).ConfigureAwait(false);
 
@@ -90,47 +89,42 @@ internal sealed partial class PipeClient
         }
     }
 
-    private bool BeginDetail(Command command)
+    private bool BeginDetail(Request request, long? context)
     {
         lock (_gate)
         {
-            if (command.Consumer == Consumer.Files)
+            if (request.Consumer == Consumer.Files)
             {
                 if (_files is not null && _inspector is null)
                     return true;
-                command.Completion.TrySetCanceled();
+                request.Completion.TrySetCanceled();
                 return false;
             }
-            if (command.Consumer != Consumer.Inspector && command.Consumer is not null)
+            if (request.Consumer != Consumer.Inspector && request.Consumer is not null)
                 return true;
             EndFiles();
-            if (command.Consumer == Consumer.Inspector)
+            if (request.Consumer == Consumer.Inspector)
             {
                 EndInspector();
-                var arguments = JsonSerializer.SerializeToElement(command.Arguments);
-                if (
-                    arguments.ValueKind == JsonValueKind.Object
-                    && arguments.TryGetProperty("context", out var context)
-                )
+                if (context is { } value)
                 {
-                    _inspectorContext = context.GetInt64();
-                    _inspector = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                    _inspector = (request, value,
+                        new(TaskCreationOptions.RunContinuationsAsynchronously));
                 }
             }
             return true;
         }
     }
 
-    private void CompleteDetail(Command command, JsonElement data)
+    private void CompleteDetail(Request request, JsonElement data)
     {
-        if (command.Consumer != Consumer.Inspector)
+        if (request.Consumer != Consumer.Inspector)
             return;
         // Readiness describes cached facts; the fresh push ends the demand.
+        if (data.ValueKind == JsonValueKind.Object && data.TryGetProperty("ready", out _))
+            return;
         lock (_gate)
-            if (
-                data.ValueKind != JsonValueKind.Object
-                || !data.TryGetProperty("ready", out _)
-            )
+            if (ReferenceEquals(_inspector?.Request, request))
                 EndInspector();
     }
 
@@ -139,7 +133,7 @@ internal sealed partial class PipeClient
         var context = message.GetProperty("context").GetInt64();
         lock (_gate)
         {
-            if (_inspectorContext != context)
+            if (_inspector?.Context != context)
             {
                 if (
                     _files is not { } pending
@@ -149,7 +143,9 @@ internal sealed partial class PipeClient
                     return;
                 try
                 {
-                    pending.Completion.TrySetResult(ReadOutcome(message, _strings, "torrent"));
+                    var data = ReadOutcome(message, _strings, "torrent");
+                    if (data.GetProperty("ready").GetBoolean())
+                        pending.Completion.TrySetResult(data);
                 }
                 catch (CommandException error)
                 {
@@ -157,7 +153,9 @@ internal sealed partial class PipeClient
                 }
                 return;
             }
-            EndInspector();
+            if (!message.GetProperty("ok").GetBoolean()
+                || message.GetProperty("data").GetProperty("ready").GetBoolean())
+                EndInspector();
         }
         Detail?.Invoke(message);
     }
@@ -171,9 +169,8 @@ internal sealed partial class PipeClient
 
     private void EndInspector()
     {
-        _inspector?.TrySetResult();
+        _inspector?.Completion.TrySetResult();
         _inspector = null;
-        _inspectorContext = null;
     }
 
     private sealed record PendingFiles(string TorrentId, long Context)

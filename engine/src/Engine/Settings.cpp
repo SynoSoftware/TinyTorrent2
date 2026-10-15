@@ -7,6 +7,7 @@
 #include <climits>
 #include <cmath>
 #include <expected>
+#include <utility>
 
 namespace tt
 {
@@ -1043,8 +1044,8 @@ void Engine::State::Configure(Json const& choices, std::function<void(Outcome)> 
             {
                 limitOverride.reset();
             }
-            settings = next;
-            RefreshPolicy(true);
+            auto previous = std::exchange(settings, next);
+            RefreshPolicy(&previous);
             finish();
         });
     }))

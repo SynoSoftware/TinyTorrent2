@@ -23,7 +23,7 @@ function Receive-Detail($frame) {
     if (-not $pending.ContainsKey($key)) { return }
     $sample = $pending[$key]
     Assert $frame.ok 'Complete detail failed'
-    Assert $frame.data.ready 'Pushed detail is incomplete'
+    if (-not $frame.data.ready) { return }
     $measurements.Add([pscustomobject]@{
         phase = $sample.Phase; kind = 'complete'; operation = $sample.View
         milliseconds = $sample.Watch.Elapsed.TotalMilliseconds
