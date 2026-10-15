@@ -48,7 +48,21 @@ internal sealed partial class Acquisition
                 continue;
             if (run is not null && !jobs.Any(job => run.Jobs.Contains(job.Job)))
             {
-                await run.Finish().ConfigureAwait(false);
+                try
+                {
+                    await CompleteWork(run).ConfigureAwait(false);
+                }
+                catch (Exception error)
+                {
+                    run.Operation.Outcome = error is OperationCanceledException
+                        ? WorkOutcome.Cancelled : WorkOutcome.Failed;
+                    run.Operation.Error = error;
+                    throw;
+                }
+                finally
+                {
+                    await run.Finish().ConfigureAwait(false);
+                }
                 run = null;
             }
             if (run is null && jobs.Length > 0 && (manual || Enabled))
@@ -98,6 +112,51 @@ internal sealed partial class Acquisition
         }
     }
 
+    private async Task CompleteWork(WorkRun run)
+    {
+        Job[] jobs;
+        lock (_requestSync)
+            jobs = run.Jobs.ToArray();
+        var result = await Run(connection =>
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT outcome FROM subtitle_jobs WHERE path=$path AND language=$language AND manual=$manual;";
+            var path = command.Parameters.AddWithValue("$path", string.Empty);
+            var language = command.Parameters.AddWithValue("$language", string.Empty);
+            var manual = command.Parameters.AddWithValue("$manual", false);
+            var saved = 0;
+            var missing = 0;
+            var failed = 0;
+            var cancelled = 0;
+            foreach (var job in jobs)
+            {
+                path.Value = job.Path;
+                language.Value = job.Language;
+                manual.Value = job.Manual;
+                var value = command.ExecuteScalar();
+                switch (value is long outcome ? (SubtitleOutcome)outcome : SubtitleOutcome.Cancelled)
+                {
+                    case SubtitleOutcome.Complete:
+                        saved++;
+                        break;
+                    case SubtitleOutcome.NoMatch:
+                        missing++;
+                        break;
+                    case SubtitleOutcome.Cancelled:
+                        cancelled++;
+                        break;
+                    default:
+                        failed++;
+                        break;
+                }
+            }
+            return (saved, missing, failed, cancelled);
+        }, _lifetime.Token).ConfigureAwait(false);
+        run.Operation.Summarize("subtitles_result", result.saved, result.missing, result.failed);
+        run.Operation.Outcome = result.failed > 0 ? WorkOutcome.Failed
+            : result.cancelled > 0 ? WorkOutcome.Cancelled : WorkOutcome.Completed;
+    }
+
     private async Task StopWork(WorkRun run)
     {
         await run.Signal().ConfigureAwait(false);
@@ -130,6 +189,8 @@ internal sealed partial class Acquisition
         }
         catch (Microsoft.Data.Sqlite.SqliteException error)
         {
+            run.Operation.Outcome = WorkOutcome.Failed;
+            run.Operation.Error = error;
             _databaseFailure = error;
         }
         finally
@@ -227,6 +288,8 @@ internal sealed partial class Acquisition
 
         private async Task FinishCore()
         {
+            if (Operation.Error is null && (Stopping || _owner._disposed))
+                Operation.Outcome = WorkOutcome.Cancelled;
             Ended = true;
             try
             {

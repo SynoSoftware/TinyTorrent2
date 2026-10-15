@@ -84,7 +84,20 @@ internal sealed partial class Acquisition
             }
             var result = await Discover(cancellation, true, run).ConfigureAwait(false);
             await RefreshCounts().ConfigureAwait(false);
+            run.Operation.Summarize("scan_result", result.Found, result.Unreadable + unreadable);
+            run.Operation.Outcome = result.Unreadable + unreadable > 0
+                ? WorkOutcome.Failed : WorkOutcome.Completed;
             return result with { Unreadable = result.Unreadable + unreadable };
+        }
+        catch (OperationCanceledException)
+        {
+            run.Operation.Outcome = WorkOutcome.Cancelled;
+            throw;
+        }
+        catch (Exception error)
+        {
+            run.Operation.Error = error;
+            throw;
         }
         finally
         {
@@ -366,7 +379,22 @@ internal sealed partial class Acquisition
                     )
                     .ConfigureAwait(false);
             }
+            if (owner is null)
+            {
+                run.Operation.Summarize("scan_result", found.Count, failures);
+                run.Operation.Outcome = failures > 0 ? WorkOutcome.Failed : WorkOutcome.Completed;
+            }
             return new(found.Count, failures);
+        }
+        catch (OperationCanceledException)
+        {
+            run.Operation.Outcome = WorkOutcome.Cancelled;
+            throw;
+        }
+        catch (Exception error)
+        {
+            run.Operation.Error = error;
+            throw;
         }
         finally
         {

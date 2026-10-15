@@ -56,6 +56,7 @@ internal sealed class FileFacts(Database database, BackgroundWork work) : IAsync
         var signalling = Task.CompletedTask;
         var ended = false;
         var done = 0;
+        var unreadable = 0;
         var observation = new WorkObservation(
             new WorkDescription.FileProperties(),
             new WorkProgress.Unknown(),
@@ -181,6 +182,8 @@ internal sealed class FileFacts(Database database, BackgroundWork work) : IAsync
                 }
                 catch (Exception error) when (error is not OperationCanceledException)
                 {
+                    unreadable++;
+                    operation.Error ??= error;
                     facts = null;
                     System.Diagnostics.Debug.WriteLine(
                         "Library file properties: " + error.GetType().Name
@@ -211,13 +214,18 @@ internal sealed class FileFacts(Database database, BackgroundWork work) : IAsync
                     }
                 }
             }
+            operation.Outcome = unreadable > 0 ? WorkOutcome.Failed : WorkOutcome.Completed;
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
+            if (operation is not null)
+                operation.Outcome = WorkOutcome.Cancelled;
             System.Diagnostics.Debug.WriteLine("Library file properties read cancelled.");
         }
         catch (Exception error)
         {
+            if (operation is not null)
+                operation.Error = error;
             Failed?.Invoke(this, error);
         }
         finally
@@ -230,6 +238,12 @@ internal sealed class FileFacts(Database database, BackgroundWork work) : IAsync
             }
             finally
             {
+                operation?.Summarize(
+                    "properties_result",
+                    done,
+                    observation.Progress is WorkProgress.Fraction fraction ? fraction.Total : done,
+                    unreadable
+                );
                 operation?.Dispose();
                 request.Dispose();
             }

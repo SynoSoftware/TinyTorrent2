@@ -475,6 +475,7 @@ public sealed partial class MainViewModel
             else
                 RequestSnapshot();
             await RetrySubtitles();
+            operation.Outcome = Library.HasFailure ? WorkOutcome.Failed : WorkOutcome.Completed;
         }
         catch (Exception error)
         {
@@ -521,6 +522,7 @@ public sealed partial class MainViewModel
             _requestPolicy = null;
             _featureFailure = null;
             RefreshFeedback();
+            operation.Outcome = WorkOutcome.Completed;
         }
         catch (Exception error)
         {
@@ -602,6 +604,7 @@ public sealed partial class MainViewModel
                     ),
                 providerId is null || providerId == Library.DataProvider?.ProviderId
             );
+            operation.Outcome = WorkOutcome.Completed;
         }
         finally
         {

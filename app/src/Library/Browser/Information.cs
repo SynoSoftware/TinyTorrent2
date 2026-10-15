@@ -264,11 +264,13 @@ public sealed partial class Browser
         try
         {
             await ReplaceData(videos, option, dataset.Delete);
+            operation.Outcome = WorkOutcome.Completed;
         }
         catch (Exception error)
         {
             if (error is VideoException failure)
                 failure.Provider ??= option;
+            operation.Error = error;
             ReportCommand(error);
         }
     }
@@ -366,6 +368,7 @@ public sealed partial class Browser
         }
 
         internal CancellationToken Token => _cancellation.Token;
+        internal BackgroundWork.Operation Operation => _operation;
 
         internal void Report(WorkExecution execution)
         {
@@ -403,6 +406,8 @@ public sealed partial class Browser
             }
             finally
             {
+                if (_cancellation.IsCancellationRequested)
+                    _operation.Outcome = WorkOutcome.Cancelled;
                 _operation.Dispose();
                 _cancellation.Dispose();
             }
@@ -431,10 +436,11 @@ public sealed partial class Browser
                     source,
                     request.Token
                 )
-                is not null
+                is { } block
             )
             {
                 request.Token.ThrowIfCancellationRequested();
+                request.Operation.Error = new RequestBlockedException(block);
                 Fetch(source);
                 return;
             }
@@ -442,24 +448,30 @@ public sealed partial class Browser
             request.Token.ThrowIfCancellationRequested();
             if (!found)
                 _outcome = new FetchOutcome.NoMatch();
+            request.Operation.Outcome = WorkOutcome.Completed;
+            request.Operation.Summarize("metadata_result", found ? 1 : 0, 1, 1);
         }
         catch (Exception error)
             when (request.Token.IsCancellationRequested || error is OperationCanceledException)
         {
+            request.Operation.Outcome = WorkOutcome.Cancelled;
             System.Diagnostics.Debug.WriteLine(
                 $"Library metadata refresh cancelled ({source.ProviderId})."
             );
         }
-        catch (RequestBlockedException)
+        catch (RequestBlockedException error)
         {
+            request.Operation.Error = error;
             Fetch(source);
         }
         catch (VideoException error)
         {
+            request.Operation.Error = error;
             _outcome = new FetchOutcome.Failed(error);
         }
         catch (Exception error)
         {
+            request.Operation.Error = error;
             if (ReferenceEquals(videos, _videos))
                 ReportCommand(error);
         }

@@ -91,17 +91,6 @@
       />
     </Grid>
     <StackPanel Spacing="4">
-      <Grid ColumnSpacing="8">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="16" />
-          <ColumnDefinition Width="*" />
-        </Grid.ColumnDefinitions>
-        <FontIcon
-          Glyph="{x:Bind icons:Lucide.Info}"
-          Style="{StaticResource BatchDialogNoteIconStyle}"
-        />
-        <TextBlock x:Name="Kept" Grid.Column="1" Style="{StaticResource BatchDialogLabelStyle}" />
-      </Grid>
       <Grid x:Name="Outside" ColumnSpacing="8">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="16" />

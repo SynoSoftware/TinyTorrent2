@@ -128,8 +128,10 @@ are peer pages.** The app-icon position is their direct switch, with no separate
 selector or extra row. It is an ordinary caption button that shows the current
 page's icon and name: the canonical TinyTorrent logo and Torrents, or the
 existing Library colour SVG and Library. It has the caption buttons' hover and
-pressed states and acts on the press, so the press itself shows that the click
-landed. It runs the same command as Ctrl+1 or Ctrl+2. Its width fits the longer
+pressed states. While it is pressed, its icon shrinks to 80% and its icon and
+name dim, because its colour icons do not follow the pressed text colour; on
+release they spring back and the page changes, as taskbar icons do. Reduced
+motion keeps only the dimming. It runs the same command as Ctrl+1 or Ctrl+2. Its width fits the longer
 page name, so the menus do not move when the page changes. Its tooltip and
 accessible name identify the destination and its shortcut. The logo represents
 the app's Torrents mode, never an individual torrent or Show in Torrents action.
@@ -943,8 +945,10 @@ than rotating messages. Each X has its own accessible name and tooltip,
 requests cancellation from its operation owner, disables while cancelling and
 remains visible until cleanup finishes. Recover focus to the next usable task
 control, the work-list button or the page when a focused control becomes
-disabled or disappears. Completion and failure retain the
-existing notification owner.
+disabled or disappears. Every operation reports its result through the existing
+toast notification owner after cleanup, including failures and cancellations,
+so a disappearing progress bar never leaves its outcome unexplained. Results
+include available counts or error details and follow later language changes.
 
 Use the stock WinUI 3 ProgressBar template, brushes and animation. Metadata
 shows completed attempts over the accepted total, including unmatched files;

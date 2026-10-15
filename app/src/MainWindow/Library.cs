@@ -2,6 +2,8 @@ using System.Windows.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Library;
 using Syno.TinyTorrent.Models;
@@ -15,9 +17,11 @@ public sealed partial class MainWindow
 {
     private LibraryTable? _libraryTable;
     private CancellationTokenSource? _associationRead;
+    private Storyboard? _navigationRelease;
 
     private void ConfigureLibrary()
     {
+        AppIcon.Loaded += WatchNavigationPress;
         Model.Library.ShowsFacets = Model.IsFilterOpen;
         Model.Library.CommandFailed += (_, error) => Model.Report(error);
         Model.Library.BatchLimited += (_, files) => Model.ShowSearchLimit(files);
@@ -143,6 +147,52 @@ public sealed partial class MainWindow
     }
 
     private WindowPage NavigationPage => Model.Navigation.Workspace;
+
+    // The switch's own Pressed visual state drives this feedback, so it starts
+    // and ends exactly when the button shows itself pressed. Its colour icons
+    // ignore the template's pressed foreground, so the content dims instead.
+    private void WatchNavigationPress(object sender, RoutedEventArgs args)
+    {
+        AppIcon.Loaded -= WatchNavigationPress;
+        if (VisualTreeHelper.GetChild(AppIcon, 0) is not FrameworkElement root)
+            return;
+        var states = VisualStateManager
+            .GetVisualStateGroups(root)
+            .FirstOrDefault(group => group.Name == "CommonStates");
+        if (states is not null)
+            states.CurrentStateChanged += (_, change) =>
+                ShowNavigationPress(change.NewState?.Name == "Pressed");
+    }
+
+    private void ShowNavigationPress(bool pressed)
+    {
+        _navigationRelease?.Stop();
+        _navigationRelease = null;
+        NavigationContent.Opacity = pressed ? 0.55 : 1;
+        var from = NavigationPress.ScaleX;
+        var to = pressed && _uiSettings.AnimationsEnabled ? 0.8 : 1;
+        NavigationPress.ScaleX = to;
+        NavigationPress.ScaleY = to;
+        if (pressed || from == to || !_uiSettings.AnimationsEnabled)
+            return;
+        var release = new Storyboard();
+        string[] properties = [nameof(ScaleTransform.ScaleX), nameof(ScaleTransform.ScaleY)];
+        foreach (var property in properties)
+        {
+            var animation = new DoubleAnimation
+            {
+                From = from,
+                To = to,
+                Duration = new Duration(TimeSpan.FromMilliseconds(250)),
+                EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.5 },
+            };
+            Storyboard.SetTarget(animation, NavigationPress);
+            Storyboard.SetTargetProperty(animation, property);
+            release.Children.Add(animation);
+        }
+        _navigationRelease = release;
+        release.Begin();
+    }
 
     private void UpdateLibraryPage()
     {

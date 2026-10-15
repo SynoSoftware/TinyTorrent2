@@ -12,12 +12,14 @@ internal sealed class BackgroundWork : IDisposable
     private readonly object _gate = new();
     private readonly List<Operation> _active = [];
     private readonly ObservableCollection<Operation> _items = [];
+    private readonly List<WorkResult> _completed = [];
     private readonly Timer _timer;
     private bool _queued;
     private bool _scheduled;
     private bool _disposed;
 
     internal ReadOnlyObservableCollection<Operation> Items { get; }
+    internal event EventHandler<WorkResult>? Completed;
 
     internal BackgroundWork(DispatcherQueue dispatcher)
     {
@@ -57,12 +59,15 @@ internal sealed class BackgroundWork : IDisposable
     private void Flush()
     {
         Operation[] active;
+        WorkResult[] completed;
         lock (_gate)
         {
             _queued = false;
             if (_disposed)
                 return;
             active = [.. _active];
+            completed = [.. _completed];
+            _completed.Clear();
         }
         foreach (var removed in _items.Except(active).ToArray())
             _items.Remove(removed);
@@ -79,6 +84,8 @@ internal sealed class BackgroundWork : IDisposable
             if (!_items.Contains(operation))
                 _items.Add(operation);
         }
+        foreach (var result in completed)
+            Completed?.Invoke(this, result);
     }
 
     public void Dispose()
@@ -88,6 +95,7 @@ internal sealed class BackgroundWork : IDisposable
             _disposed = true;
             _timer.Dispose();
             _active.Clear();
+            _completed.Clear();
         }
         _items.Clear();
     }
@@ -100,6 +108,8 @@ internal sealed class BackgroundWork : IDisposable
         internal bool _ended;
         private bool _requesting;
         private bool _canCancel;
+        private string? _summaryKey;
+        private object[] _arguments = [];
 
         internal Operation(BackgroundWork owner, WorkObservation initial, Func<Task>? cancel)
         {
@@ -112,8 +122,17 @@ internal sealed class BackgroundWork : IDisposable
         internal WorkObservation Current { get; private set; }
         internal ICommand Cancel => this;
         internal bool HasCancel => _cancel is not null;
+        // Disposal also runs during exception unwinding, so success must be explicit.
+        internal WorkOutcome Outcome { get; set; } = WorkOutcome.Failed;
+        internal Exception? Error { get; set; }
         public event PropertyChangedEventHandler? PropertyChanged;
         public event EventHandler? CanExecuteChanged;
+
+        internal void Summarize(string key, params object[] arguments)
+        {
+            _summaryKey = key;
+            _arguments = arguments;
+        }
 
         internal void Report(WorkObservation observation)
         {
@@ -195,6 +214,8 @@ internal sealed class BackgroundWork : IDisposable
                     return;
                 _ended = true;
                 _owner._active.Remove(this);
+                if (!_owner._disposed)
+                    _owner._completed.Add(new(_latest, Outcome, Error, _summaryKey, _arguments));
                 _owner.Queue();
             }
         }

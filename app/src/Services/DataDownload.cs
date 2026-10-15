@@ -43,8 +43,8 @@ internal sealed class DataDownload
     /// Failure or cancellation before installation keeps the previous copy
     /// and runs <paramref name="discard"/>; a later failure leaves the
     /// replacement installed. A stop the person did not ask for is reported
-    /// as an interruption, because they did not cause it; their own cancel
-    /// is silent.
+    /// as an interruption, because they did not cause it. Completion and the
+    /// person's own cancellation are reported through the background-work owner.
     /// </summary>
     internal async Task<bool> Run(
         Func<Task> build,
@@ -59,6 +59,7 @@ internal sealed class DataDownload
             await build();
             cancellation.ThrowIfCancellationRequested();
             await install();
+            Operation.Outcome = WorkOutcome.Completed;
         }
         // A stop can end the build with any error, such as the one a changed
         // network route causes.
@@ -67,23 +68,39 @@ internal sealed class DataDownload
             System.Diagnostics.Debug.WriteLine(
                 $"Data download interrupted: {_observation.Description}."
             );
-            report(new Library.VideoException(VideoFailure.Interrupted));
+            var error = new Library.VideoException(VideoFailure.Interrupted);
+            Operation.Error = error;
+            report(error);
         }
         catch (Exception) when (cancellation.IsCancellationRequested && !_installed)
         {
+            Operation.Outcome = WorkOutcome.Cancelled;
             System.Diagnostics.Debug.WriteLine(
                 $"Data download cancelled: {_observation.Description}."
             );
         }
         catch (Exception error)
         {
+            Operation.Error = error;
             report(error);
         }
         finally
         {
-            if (!_installed)
-                await Task.Run(discard);
-            await Finish();
+            try
+            {
+                if (!_installed)
+                    await Task.Run(discard);
+            }
+            catch (Exception error)
+            {
+                Operation.Outcome = WorkOutcome.Failed;
+                Operation.Error = error;
+                report(error);
+            }
+            finally
+            {
+                await Finish();
+            }
         }
         return _installed;
     }

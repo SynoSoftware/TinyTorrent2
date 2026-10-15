@@ -6,6 +6,14 @@ internal sealed record WorkObservation(
     WorkExecution Execution
 );
 
+internal sealed record WorkResult(
+    WorkObservation Observation,
+    WorkOutcome Outcome,
+    Exception? Error,
+    string? SummaryKey,
+    object[] Arguments
+);
+
 internal abstract record WorkDescription
 {
     private WorkDescription() { }

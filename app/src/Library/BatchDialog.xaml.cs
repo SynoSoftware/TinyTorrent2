@@ -82,8 +82,6 @@ public sealed partial class BatchDialog : UserControl, IDraft
             // carries it for screen readers.
             AutomationProperties.SetName(box, text.Format("filters", "count", label.Text, number));
         }
-        Kept.Text = text.Get("request_protection", "kept");
-        ToolTipService.SetToolTip(Kept, Kept.Text);
         // A count smaller than the selection says why, so it is not read as
         // what the provider has.
         Outside.Visibility = _videos > _entries.Count ? Visibility.Visible : Visibility.Collapsed;

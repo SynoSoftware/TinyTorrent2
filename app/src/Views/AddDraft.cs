@@ -391,6 +391,14 @@ public sealed class AddDraft : IDraft
         public async ValueTask DisposeAsync()
         {
             _ended = true;
+            var remaining = _accepted.Where(_draft.Sources.Contains).ToArray();
+            _operation.Outcome =
+                IsCancelled ? WorkOutcome.Cancelled
+                : remaining.Length == 0 ? WorkOutcome.Completed : WorkOutcome.Failed;
+            _operation.Error = remaining
+                .Select(source => source.Failure)
+                .FirstOrDefault(error => error is not null);
+            _operation.Summarize("sources_result", _accepted.Length - remaining.Length, _accepted.Length);
             try
             {
                 // An in-flight add is reconciled before this cleanup. An uncertain
@@ -413,6 +421,8 @@ public sealed class AddDraft : IDraft
             }
             catch (Exception error)
             {
+                _operation.Outcome = WorkOutcome.Failed;
+                _operation.Error = error;
                 _draft._owner.Report(error);
             }
             finally

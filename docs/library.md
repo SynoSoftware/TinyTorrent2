@@ -724,7 +724,7 @@ the approved navigation and caption behavior.
   face for Library. Do not substitute a Lucide download glyph for the brand.
 - [ ] Make the switch the caption button that the
   [title-bar contract](interface.md#native-controls-and-visual-authority)
-  describes: the current page's icon and name, acting on the press.
+  describes: the current page's icon and name, with its press feedback.
 - [ ] Keep Ctrl+1 / Ctrl+2, search, current-page menus, focus and Settings/About
   return behavior consistent with the existing navigation owner.
 

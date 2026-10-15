@@ -338,6 +338,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         Text = strings;
         _dispatcher = dispatcher;
         Work = new(dispatcher);
+        Work.Completed += (_, result) => ShowWorkResult(result);
         _client = new PipeClient(strings);
         Settings = new Settings(this, _client);
         AddDraft = new AddDraft(this, _client, strings);

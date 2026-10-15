@@ -669,7 +669,10 @@ internal sealed class VideoLookup(
                 scope == FetchScope.New ? null : new RetryCommand(DateTimeOffset.UtcNow.UtcTicks);
             foreach (var entry in entries)
                 if (run.Entries.Add(entry.EntryId))
+                {
                     run.Queue.Enqueue(new(entry, source, scope, command));
+                    run.Total++;
+                }
             ReportBatch(run, run.Observation.Execution);
             if (_batchWake.CurrentCount == 0)
                 _batchWake.Release();
@@ -752,6 +755,9 @@ internal sealed class VideoLookup(
         }
         finally
         {
+            if (run.Cancellation.IsCancellationRequested)
+                run.Operation.Outcome = WorkOutcome.Cancelled;
+            run.Operation.Summarize("metadata_result", run.Found, run.Done, run.Total);
             run.Operation.Dispose();
             run.Cancellation.Dispose();
         }
@@ -779,6 +785,9 @@ internal sealed class VideoLookup(
                     )
                     {
                         run.Ended = true;
+                        if (run.Queue.Count == 0 && !run.Cancellation.IsCancellationRequested)
+                            run.Operation.Outcome = run.Operation.Error is null
+                                ? WorkOutcome.Completed : WorkOutcome.Failed;
                         if (ReferenceEquals(_batch, run))
                             _batch = null;
                         break;
@@ -861,9 +870,14 @@ internal sealed class VideoLookup(
                             run.Queue.Dequeue();
                             run.Entries.Remove(item.Entry.EntryId);
                             run.Done++;
+                            if (identified)
+                                run.Found++;
                             ReportBatch(run, new WorkExecution.Running());
-                            if (!identified && context.Block?.Kind == RequestBlockKind.Limit)
+                            if (!identified && context.Block is { Kind: RequestBlockKind.Limit } block)
+                            {
+                                run.Operation.Error = new RequestBlockedException(block);
                                 limited++;
+                            }
                         }
                         Stored?.Invoke(this, EventArgs.Empty);
                     }
@@ -910,6 +924,7 @@ internal sealed class VideoLookup(
         }
         catch (Exception error)
         {
+            run.Operation.Error = error;
             BatchFailed?.Invoke(this, error);
         }
         finally
@@ -945,6 +960,8 @@ internal sealed class VideoLookup(
             );
         internal Task Signalling { get; set; } = Task.CompletedTask;
         internal int Done;
+        internal int Found;
+        internal int Total;
         internal bool Running;
         internal bool Ended;
 
@@ -1548,6 +1565,9 @@ internal sealed class VideoLookup(
         BackgroundWork.Operation? operation = null;
         var signalling = Task.CompletedTask;
         var ended = false;
+        var done = 0;
+        var found = 0;
+        var total = 0;
         var observation = new WorkObservation(
             new WorkDescription.Metadata(MetadataScope.Automatic),
             new WorkProgress.Unknown(),
@@ -1568,7 +1588,7 @@ internal sealed class VideoLookup(
             }
             if (accepted.Length == 0)
                 return;
-            var done = 0;
+            total = accepted.Length;
             lock (_gate)
             {
                 operation = Work.Begin(
@@ -1622,7 +1642,7 @@ internal sealed class VideoLookup(
                     DateTimeOffset? retry;
                     try
                     {
-                        await Execute(
+                        var identified = await Execute(
                                 context,
                                 current => Collect(current, target, null, false),
                                 execution =>
@@ -1638,7 +1658,13 @@ internal sealed class VideoLookup(
                             )
                             .ConfigureAwait(false);
                         lock (_gate)
+                        {
                             done++;
+                            if (identified)
+                                found++;
+                            else if (context.Block is { Kind: RequestBlockKind.Limit } block)
+                                operation.Error = new RequestBlockedException(block);
+                        }
                         break;
                     }
                     catch (ProviderException error) when (error.RetryAt is not null)
@@ -1669,17 +1695,30 @@ internal sealed class VideoLookup(
                             .ConfigureAwait(false);
                 }
             }
+            operation.Outcome = operation.Error is null ? WorkOutcome.Completed : WorkOutcome.Failed;
         }
         catch (OperationCanceledException)
         {
+            if (operation is not null)
+                operation.Outcome = WorkOutcome.Cancelled;
             System.Diagnostics.Debug.WriteLine(
                 $"Automatic metadata lookup cancelled ({context.Option.ProviderId})."
             );
         }
-        catch (ProviderException) { }
-        catch (RequestBlockedException) { }
+        catch (ProviderException error)
+        {
+            if (operation is not null)
+                operation.Error = error;
+        }
+        catch (RequestBlockedException error)
+        {
+            if (operation is not null)
+                operation.Error = error;
+        }
         catch (Exception error)
         {
+            if (operation is not null)
+                operation.Error = error;
             Failed?.Invoke(this, error);
         }
         finally
@@ -1697,6 +1736,7 @@ internal sealed class VideoLookup(
             finally
             {
                 cancellation.Dispose();
+                operation?.Summarize("metadata_result", found, done, total);
                 operation?.Dispose();
                 lock (_gate)
                     if (_again)

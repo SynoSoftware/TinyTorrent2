@@ -387,7 +387,6 @@ public sealed partial class SettingsPage : UserControl
             await Main.ResetProtection(
                 (ProtectionScope.SelectedItem as ComboBoxItem)?.Tag as string
             );
-            Main.ShowOutcome("request_protection", "reset_done", string.Empty);
         }
         catch (Exception error)
         {

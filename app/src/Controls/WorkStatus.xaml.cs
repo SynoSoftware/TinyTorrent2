@@ -86,33 +86,9 @@ public sealed partial class WorkStatus : UserControl
 
     private void OnCommand(object? sender, EventArgs args) => Refresh();
 
-    private static string Title(WorkDescription description, Strings text, bool library)
-    {
-        var key = description switch
-        {
-            WorkDescription.Imdb imdb => "imdb_" + imdb.Phase.ToString().ToLowerInvariant(),
-            WorkDescription.City city => "city_" + city.Phase.ToString().ToLowerInvariant(),
-            WorkDescription.Metadata metadata => metadata.Scope switch
-            {
-                MetadataScope.Batch => library ? "metadata" : "library_metadata",
-                MetadataScope.Automatic => "automatic_metadata",
-                _ => "inspector_metadata",
-            },
-            WorkDescription.Subtitles subtitles => "subtitles_"
-                + subtitles.Work.ToString().ToLowerInvariant(),
-            WorkDescription.FileProperties => "file_properties",
-            WorkDescription.Update => "update",
-            WorkDescription.Sources => "sources",
-            WorkDescription.Maintenance maintenance => "maintenance_"
-                + maintenance.Work.ToString().ToLowerInvariant(),
-            _ => throw new InvalidOperationException(),
-        };
-        return text.Get("work", key);
-    }
-
     internal static string Describe(WorkObservation observation, Strings text, bool library)
     {
-        var title = Title(observation.Description, text, library);
+        var title = text.Get(observation.Description, library);
         return observation.Execution switch
         {
             WorkExecution.Cancelling => text.Format("work", "cancelling", title),
@@ -127,7 +103,7 @@ public sealed partial class WorkStatus : UserControl
             FocusInvalidated?.Invoke(this, EventArgs.Empty);
         if (Operation is not { Current: var observation } operation || _text is not { } text)
             return;
-        var identity = Title(observation.Description, text, _library);
+        var identity = text.Get(observation.Description, _library);
         var caption = Describe(observation, text, _library);
         var fullCount = string.Empty;
         var shortCount = string.Empty;

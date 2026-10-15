@@ -68,17 +68,20 @@
           Style="{StaticResource TinyTorrentCaptionButtonStyle}"
           Width="Auto"
           Margin="8,0,0,0"
-          ClickMode="Press"
           AutomationProperties.AutomationId="PageSwitch"
         >
           <StackPanel
+            x:Name="NavigationContent"
             Margin="11,0"
             Orientation="Horizontal"
             Spacing="8"
             IsHitTestVisible="False"
             AutomationProperties.AccessibilityView="Raw"
           >
-            <Grid>
+            <Grid RenderTransformOrigin="0.5,0.5">
+              <Grid.RenderTransform>
+                <ScaleTransform x:Name="NavigationPress" />
+              </Grid.RenderTransform>
               <Image
                 x:Name="TorrentsFace"
                 Width="{StaticResource TinyTorrentSurfaceIconSize}"

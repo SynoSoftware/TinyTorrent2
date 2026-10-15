@@ -87,12 +87,14 @@ public sealed partial class MainViewModel
         );
         BackgroundWork.Operation? operation = null;
         var signalling = Task.CompletedTask;
+        var cancelled = false;
         operation = Work.Begin(
             observation,
             () =>
             {
                 if (ReferenceEquals(_updateRequest, cancellation))
                 {
+                    cancelled = true;
                     operation?.Report(
                         observation with
                         {
@@ -125,7 +127,10 @@ public sealed partial class MainViewModel
                 cancellationToken: cancellation.Token
             );
             if (!CanCheckUpdates)
+            {
+                operation.Outcome = WorkOutcome.Cancelled;
                 return;
+            }
             if (
                 !release.RootElement.TryGetProperty("tag_name", out var tag)
                 || tag.ValueKind != JsonValueKind.String
@@ -143,9 +148,12 @@ public sealed partial class MainViewModel
             Changed(nameof(HasUpdate));
             ((RelayCommand)OpenUpdate).Refresh();
             await SaveCheck();
+            operation.Summarize(HasUpdate ? "update_available" : "up_to_date", version);
+            operation.Outcome = WorkOutcome.Completed;
         }
         catch (OperationCanceledException)
         {
+            operation.Outcome = cancelled ? WorkOutcome.Cancelled : WorkOutcome.Failed;
             Debug.WriteLine("Update check cancelled.");
         }
         catch (Exception error)
@@ -156,6 +164,7 @@ public sealed partial class MainViewModel
                         or InvalidOperationException
             )
         {
+            operation.Error = error;
             Debug.WriteLine($"Update check did not complete: {error.Message}");
         }
         finally

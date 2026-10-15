@@ -212,6 +212,32 @@ public sealed partial class MainViewModel
     {
         switch (notice.Kind)
         {
+            case NoticeKind.WorkResult:
+            {
+                var result = notice.Result!;
+                notice.Title = Text.Get(
+                    "work",
+                    "result_" + result.Outcome.ToString().ToLowerInvariant()
+                );
+                notice.Subject = Text.Get(result.Observation.Description);
+                var progress = result.Observation.Progress;
+                var summary = result.SummaryKey is { } key
+                    ? Text.Format("work", key, result.Arguments)
+                    : progress is WorkProgress.Fraction { Unit: WorkUnit.Files or WorkUnit.Folders } fraction
+                        ? Text.Format(
+                            "work",
+                            fraction.Unit == WorkUnit.Folders ? "folders" : "processed",
+                            fraction.Completed,
+                            fraction.Total
+                        )
+                        : string.Empty;
+                var detail = result.Error is { } error ? Text.Error(error) : string.Empty;
+                notice.Message =
+                    detail.Length == 0 ? summary
+                    : summary.Length == 0 ? detail
+                    : Text.Format("errors", "detail", summary, detail);
+                break;
+            }
             case NoticeKind.Outcome:
                 notice.Title = Text.Get(notice.Group, notice.Key);
                 break;
@@ -325,6 +351,24 @@ public sealed partial class MainViewModel
             }
         );
 
+    private void ShowWorkResult(WorkResult result)
+    {
+        if (_closed || _closing || _featuresClosed)
+            return;
+        ShowTimed(
+            new Notice(NoticeKind.WorkResult, lifetime: NoticeLifetime)
+            {
+                Result = result,
+                Severity = result.Outcome switch
+                {
+                    WorkOutcome.Completed => InfoBarSeverity.Success,
+                    WorkOutcome.Cancelled => InfoBarSeverity.Informational,
+                    _ => InfoBarSeverity.Error,
+                },
+            }
+        );
+    }
+
     // Fetch metadata leaves a file unidentified when its title reached the
     // search limit, which only raising the limit lets the batch search again.
     internal void ShowSearchLimit(int files)
@@ -359,7 +403,14 @@ public sealed partial class MainViewModel
             { Length: > MaxTimedNotices } timed
         )
             Notices.Remove(timed[0]);
-        Announce(notice.Title);
+        Announce(
+            notice.Kind == NoticeKind.WorkResult
+                ? string.Join(
+                    Environment.NewLine,
+                    new[] { notice.Title, notice.Subject, notice.Message }.Where(value => value.Length > 0)
+                )
+                : notice.Title
+        );
     }
 
     // Subtitle work fails in the background, often for several movies at
@@ -444,6 +495,7 @@ public sealed class Notice : INotifyPropertyChanged
     internal string Group { get; init; } = string.Empty;
     internal string Key { get; init; } = string.Empty;
     internal int Count { get; init; }
+    internal WorkResult? Result { get; init; }
 
     // The torrent of a Completion notice; empty for every other kind.
     internal string TorrentId { get; }

@@ -132,6 +132,30 @@ public sealed class Strings
 
     public string Get(string group, string key) => Find(group, key) ?? group + "." + key;
 
+    internal string Get(WorkDescription description, bool library = false) =>
+        Get(
+            "work",
+            description switch
+            {
+                WorkDescription.Imdb imdb => "imdb_" + imdb.Phase.ToString().ToLowerInvariant(),
+                WorkDescription.City city => "city_" + city.Phase.ToString().ToLowerInvariant(),
+                WorkDescription.Metadata metadata => metadata.Scope switch
+                {
+                    MetadataScope.Batch => library ? "metadata" : "library_metadata",
+                    MetadataScope.Automatic => "automatic_metadata",
+                    _ => "inspector_metadata",
+                },
+                WorkDescription.Subtitles subtitles => "subtitles_"
+                    + subtitles.Work.ToString().ToLowerInvariant(),
+                WorkDescription.FileProperties => "file_properties",
+                WorkDescription.Update => "update",
+                WorkDescription.Sources => "sources",
+                WorkDescription.Maintenance maintenance => "maintenance_"
+                    + maintenance.Work.ToString().ToLowerInvariant(),
+                _ => throw new InvalidOperationException(),
+            }
+        );
+
     public string Format(string group, string key, params object[] values) =>
         FindFormat(group, key) is { } format
             ? string.Format(CultureInfo.CurrentCulture, format, values)

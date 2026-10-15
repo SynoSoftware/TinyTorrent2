@@ -50,6 +50,13 @@ internal enum WorkUnit
     Percent,
 }
 
+internal enum WorkOutcome
+{
+    Completed,
+    Cancelled,
+    Failed,
+}
+
 internal enum MaintenanceWork
 {
     Recovery,
@@ -510,6 +517,7 @@ internal enum NoticeKind
     SubtitleError,
     Outcome,
     SearchLimit,
+    WorkResult,
 #if CAPTURE
     // A notice a capture journey shows without the state behind it; the
     // model neither describes nor removes it.

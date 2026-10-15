@@ -7,7 +7,7 @@
 <!-- PROTOTYPE, throw away. The Torrents/Library switch as a plain caption button, after the title bar in
      app/src/MainWindow.xaml and the switch in app/src/MainWindow/Library.cs. Sample data in memory only.
      A to G use the same button and differ only in the feedback after the press. H replaces the button with the
-     WinUI SelectorBar. Variants: ?variant=A (no extra feedback) through H. -->
+     WinUI SelectorBar. I to L are G with feedback while the button is held. Variants: ?variant=A through L. -->
 <style>
 @font-face { font-family:Lucide; src:url('../lib/Lucide/src/Fonts/lucide.ttf') format('truetype'); }
 * { box-sizing:border-box; }
@@ -51,6 +51,12 @@ body.mark .pg { outline:2px dashed #ffb000; outline-offset:-2px; }
 #swb { margin-left:8px; }
 #swb .nm { width:60px; text-align:left; }
 #swb .flash { position:absolute; left:50%; bottom:6px; width:16px; height:3px; margin-left:-8px; border-radius:2px; background:var(--accent); opacity:0; }
+/* Press feedback while the switch is held: the press shows at once (no transition in), the release eases back */
+body[data-press~="dim"] #swb.down img, body[data-press~="dim"] #swb.down .nm { opacity:.55; }
+body[data-press~="squish"] #swb img, body[data-press~="nudge"] #swb img { transition:transform 250ms cubic-bezier(.3,1.6,.5,1); }
+body[data-press~="squish"] #swb.down img { transform:scale(.8); transition:none; }
+body[data-press~="nudge"] #swb.down img { transform:translateX(var(--nudge)); transition:none; }
+body.still #swb img { transition:none !important; transform:none !important; }
 /* SelectorBar, after the WinUI control: secondary text, primary when selected, accent pill under the selected item */
 .logo { width:24px; height:24px; flex:none; margin:0 12px 0 19px; }
 .sbar { display:flex; gap:2px; margin-right:4px; }
@@ -165,6 +171,14 @@ const VARIANTS = {
     idea:'<b>F · a short accent mark.</b> An accent pill appears under the icon on the press and fades out over 600 ms, the same pill Windows uses for a selected navigation item. The page changes instantly.' },
   G:{ title:'Icon and page name', content:'slide', button:'none', label:true,
     idea:'<b>G · the button names the current page</b> in words beside its icon, like a labelled caption button. The page slides as in B. Costs about 70 px of title bar and a translated label.' },
+  I:{ title:'G + Fluent pressed foreground', content:'slide', button:'none', label:true, commit:'release', press:'dim',
+    idea:'<b>I · G with the full Fluent pressed state.</b> Fluent\'s pressed fill is lighter than its hover fill, so the fill alone reads as the hover going away. WinUI buttons also change their foreground while pressed; here the icon and name dim while the button is held. The page changes on release.' },
+  J:{ title:'G + taskbar squish', content:'slide', button:'none', label:true, commit:'release', press:'squish',
+    idea:'<b>J · G with the Windows 11 taskbar press.</b> The icon shrinks to 80% the moment it is pressed and springs back on release, as taskbar and Start icons do. The page changes on release.' },
+  K:{ title:'G + direction nudge', content:'slide', button:'none', label:true, commit:'release', press:'nudge',
+    idea:'<b>K · G with a WinUI animated-icon press.</b> While pressed, the icon moves 3 px toward the destination page, as WinUI\'s animated Back arrow moves on press. It points the way the page will slide: right towards Library, left towards Torrents. The page changes on release.' },
+  L:{ title:'G + dim and squish', content:'slide', button:'none', label:true, commit:'release', press:'dim squish',
+    idea:'<b>L · I and J together.</b> The icon shrinks and the icon and name dim while pressed; both spring back on release, when the page changes.' },
   H:{ title:'Fluent SelectorBar', content:'slide', button:'none', label:false, selector:true, commit:'release',
     idea:'<b>H · the WinUI SelectorBar,</b> the control Microsoft prescribes for switching between a small number of views. Both pages are always visible. The item shades on press, and on click the accent pill moves to it in the same frame, before the page has arrived (try "slow page"). The page slides in from the chosen item\'s side, as in Microsoft\'s own SelectorBar example. Clicking the selected item again does nothing, so extra clicks never send you back. The app logo becomes a plain logo. Costs about 200 px of title bar.' },
 };
@@ -215,9 +229,14 @@ const variant = () => VARIANTS[S.variant];
 
 function renderSwitch() {
   const b = $('swb'), dest = other(S.page), tip = `Switch to ${PAGES[dest].name} (${PAGES[dest].key})`;
-  b.innerHTML = `<img src="${PAGES[S.page].icon}" alt="">${variant().label ? `<span class="nm trim">${PAGES[S.page].name}</span>` : ''}<span class="flash"></span>`;
+  // Keep the same icon element, so a press transform eases back after the page changes.
+  if (!b.querySelector('img') || !!b.querySelector('.nm') !== variant().label)
+    b.innerHTML = `<img alt="">${variant().label ? '<span class="nm trim"></span>' : ''}<span class="flash"></span>`;
+  b.querySelector('img').src = PAGES[S.page].icon;
+  if (variant().label) b.querySelector('.nm').textContent = PAGES[S.page].name;
   b.title = tip;
   b.setAttribute('aria-label', tip);
+  b.style.setProperty('--nudge', dest === 'library' ? '3px' : '-3px');
   $('sb').innerHTML = ['torrents', 'library'].map(p => `<button class="sbi" role="tab" data-dest="${p}" aria-selected="${p === S.page}" title="${PAGES[p].name} (${PAGES[p].key})"><img src="${PAGES[p].icon}" alt="">${PAGES[p].name}</button>`).join('');
 }
 
@@ -321,6 +340,7 @@ function move(incoming, outgoing, forward) {
 function setVariant(v) {
   S.variant = v;
   S.commit = variant().commit ?? 'press';
+  document.body.dataset.press = variant().press ?? '';
   $('swb').hidden = !!variant().selector;
   $('logo').hidden = $('sb').hidden = !variant().selector;
   renderSwitch();
@@ -341,7 +361,7 @@ function syncProto() {
 function readout() {
   $('readout').textContent = JSON.stringify({
     variant:`${S.variant} · ${variant().title}`, page:S.page, commitOn:S.commit,
-    contentMotion:variant().content, buttonFeedback:variant().button, label:variant().label,
+    contentMotion:variant().content, buttonFeedback:variant().button, pressFeedback:variant().press ?? 'fill only', label:variant().label,
     slowPage:$('late').checked, slowMotion:$('slow').checked, reducedMotion:reduced(),
     clicksOnSelectedItemIgnored:S.ignored,
     changesOnSwitch:['switch icon','second menu (Torrent / Library)','search placeholder','button bar','filter content and width','table','status bar'],
@@ -360,7 +380,9 @@ const toggleDark = () => { S.dark = !S.dark; document.body.classList.toggle('dar
 $('dark').onclick = toggleDark;
 $('themeCap').onclick = toggleDark;
 $('mark').onchange = () => document.body.classList.toggle('mark', $('mark').checked);
-$('slow').onchange = $('reduce').onchange = readout;
+$('slow').onchange = readout;
+$('reduce').onchange = () => { document.body.classList.toggle('still', reduced()); readout(); };
+document.body.classList.toggle('still', reduced());
 document.addEventListener('keydown', e => {
   if (!(e.ctrlKey || e.altKey) || !['1','2'].includes(e.key)) return;
   e.preventDefault();

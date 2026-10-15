@@ -1,6 +1,16 @@
 {
   "work": {
     "title": "Background work",
+    "result_completed": "Task completed",
+    "result_cancelled": "Task cancelled",
+    "result_failed": "Task failed",
+    "metadata_result": "Matched: {0:N0} · Processed: {1:N0} of {2:N0}",
+    "subtitles_result": "Saved: {0:N0} · Not found: {1:N0} · Failed: {2:N0}",
+    "scan_result": "Subtitle files found: {0:N0} · Unreadable locations: {1:N0}",
+    "sources_result": "Sources added: {0:N0} of {1:N0}",
+    "properties_result": "Processed: {0:N0} of {1:N0} · Unreadable: {2:N0}",
+    "update_available": "Version {0} is available.",
+    "up_to_date": "TinyTorrent is up to date.",
     "button": "Work · {0}",
     "tip": "Show all {0} background operations",
     "cancel": "Cancel {0}",
