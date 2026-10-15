@@ -4,8 +4,17 @@ This is the delivery record. [Peer location](peer-location.md#map) owns map
 behavior and precision; [Interface](interface.md#inspector-and-edits) owns its placement.
 The existing protocol and window-layout owners retain their responsibilities.
 
-The Peers inspector follows `app/peers-prototype.html`: two Lucide toggles in its
-existing header show Map, Table or both. The combined arrangement automatically
+The native baseline is recorded below. The [zoom and pan extension](#zoom-and-pan-extension)
+is implemented in source; build and native interaction verification are pending.
+[Arc dimming](peer-location.md#arc-dimming) now implements the
+approved D treatment, Less glow; native visual verification remains pending.
+
+The Peers inspector follows `app/peers-prototype.html`: one Lucide ellipsis menu in its
+existing header selects Map, Table or both, and Countries or Cities. The inspector
+header owns the separator before its common actions. Missing city data downloads
+directly through the existing dataset owner and status bar. This revision is
+implemented in source; build and native verification remain pending.
+The combined arrangement automatically
 fits the larger map and reuses Splitter; the existing inspector height adjustment
 stays. Coordinates use shared-location rendering; country-only records use the
 approved estimated distribution. Selection determines the torrent scope.
@@ -34,10 +43,13 @@ those regions' population weights. These locations and allocated rates are
 explicitly estimates. Cities group identical coordinates and retain idle markers.
 Country fills are restrained activity shading. Arcs use the existing transfer
 colours, fixed logarithmic scaling, gentle globe curvature and restrained glow.
-The combined arc layer fades near the origin only above eight rendered arcs,
-reaching its full adjustment at twenty. Location marks remain outside the mask.
+The combined arc layer uses adaptive origin fading. Location marks remain
+outside the mask.
 Hover and keyboard inspection expose counts, precision and both measured rates;
 the table remains available for individual endpoints.
+The dimming implementation adds the combined opacity cap and destination fade;
+the [rendering contract](peer-location.md#arc-dimming) specifies
+their values, composition order, origin formula and theme exceptions in one place.
 
 ## Delivery and verification
 
@@ -48,7 +60,222 @@ the table remains available for individual endpoints.
 3. Review the final source and diff. Do not compile, launch or run tests without
    the owner's request. Record runtime and performance gaps explicitly.
 
+## Zoom and pan extension
+
+Updated 2026-10-14 from the supplied zoom plan and the subsequent prototype review.
+[Peer location](peer-location.md#zoom-and-pan) owns the input,
+appearance and view-lifetime behavior. The single maintained prototype is
+[app/peers-prototype.html](../app/peers-prototype.html); retain its Map/Table
+header toggles, automatic arrangement, splitter and inspector-height adjustment.
+
+### Implementation approach
+
+- Keep aggregation, fit-space projection, drawing, view state and hit testing
+  in `PeerMap`, following the codebase-design principle of one deep module with
+  a small interface. No new view service, persistence owner, browser host or map
+  dependency is needed.
+- Build country and arc geometry in fitted-map space. Zoom and pan update only
+  the view transform and invalidate the canvas; they must not rebuild geometry,
+  regroup peers, rerun populated-region allocation or recreate the drawing
+  control. Peer updates rebuild destination counts and rates through `Arrange`,
+  retaining active arc geometry when its origin and destination are unchanged.
+  Removed or inactive routes release their geometry; resize, device recreation
+  and unload release all geometry.
+- Coalesce input redraws through the existing rendering mechanism, not the
+  33-ms activity interpolation timer. The HTML prototype uses one scheduled
+  animation-frame update; native code should use `CanvasControl.Invalidate`
+  directly and let the rendering loop combine invalidations. Do not transplant
+  the prototype's DOM machinery or add a separate gesture timer.
+- Transform vector geometry with fixed-width strokes. Draw markers in screen
+  space. Convert pointer positions through the inverse transform for geometry
+  hit testing, keeping tolerances in screen DIPs. Keep brush coordinates aligned
+  with the geometry; glow and origin/destination fades must not grow with zoom.
+  Bound effect work to the visible canvas, including blur padding, so an 8× view
+  does not allocate an eight-times-larger off-screen effect surface per axis.
+- Apply each halo's destination fade inside the shared halo command list,
+  before a single blur. Keep sharp cores above that result. This avoids one
+  blur effect per active arc; native review must check the softened fade.
+- Prefer this view transform over wrapping the canvas in a zooming
+  `ScrollViewer`: ordinary whole-surface scaling would also enlarge strokes and
+  markers, while hit testing and redraw coordination would still need custom
+  handling. The custom interaction stays inside the existing map control.
+- Route wheel, double-click, keyboard, menu and Fit through the same zoom, pan
+  and fit operations. Use pointer capture after the drag threshold; releasing
+  a drag must not activate the location beneath it. Escape and capture loss
+  cancel the drag cleanly. Follow `Week`: use `InputSystemCursorShape.SizeAll`
+  only during an active drag after the threshold, then restore the normal cursor.
+- `PeerMap.OnKey` remains the keyboard owner. Mark handled map shortcuts so
+  Ctrl+Plus/Minus cannot also reach the torrent queue handler. Menu shortcuts
+  are display text, not a second set of registered accelerators. Format them
+  from the existing shortcut strings. Follow `SpeedGraph`'s marker-anchored
+  keyboard zoom: use the inspected destination when present, otherwise the
+  view centre, so zooming does not lose the location being inspected.
+- Add the compact Fit control inside `PeerMap.xaml`, using the normal button
+  style, Lucide icon, tooltip and accessible name. It restores map focus when
+  hidden. Update the existing keyboard help and add translated Zoom in, Zoom
+  out and Fit labels in the English and Spanish catalogues; the menu and tooltip
+  reuse those labels. Use a native `Button` and `MenuFlyout`, with theme resources
+  and standard interaction states. Preserve system focus visuals and High
+  Contrast behavior. Keep the existing inspector header and status bar layout.
+- Keep lifetime in the existing `InspectorPane` owner: `ArrangePeers` discards
+  `_peerMap` only for explicit Map-off; temporary hiding and `StopTracking` detach
+  its content while retaining the control and view state. Unloading still
+  stops animation and releases drawing resources; retaining view state must not
+  keep hidden rendering or peer collection running. Do not add zoom to the
+  saved window-layout snapshot.
+
+### Dimming delivery and prototype comparisons
+
+D is the approved native treatment, with values owned by the
+[dimming contract](peer-location.md#arc-dimming).
+`PeerMap.Draw` fades halos before one shared blur and masks each sharp core,
+then applies the origin mask and opacity cap to the combined layer. Markers and
+selection remain outside those layers; High Contrast bypasses dimming and glow.
+Keep A–D in the prototype for comparison. The product gets one treatment, not a
+rendering selector. This source change has not been built or visually reviewed;
+verify it with live rates at fitted and zoomed views.
+
+| Treatment | Difference from the existing rendering |
+| --- | --- |
+| A — Current | Existing activity styling and adaptive origin fade |
+| B — Layer cap | Cap the combined arcs and glow after compositing |
+| C — Soft landings | B plus destination fading for cores and halos |
+| D — Less glow | C with reduced halo strength; selected for native delivery |
+
+The contract defines fade multipliers and composition order. Markers remain
+outside these fades; selected paths render in a separate highlight layer. Existing sparse-map origin
+fading remains independent. No density detector was added. The comparison controls,
+Cayenne/London illustrative origins, artificial peers and pause/time controls stay
+in the prototype; they are not product settings. The native app retains its local
+lookup origin and per-record coordinate/country precision without a mode selector.
+
+### Evidence and native acceptance
+
+The owner approved the updated prototype after the faster zoom/pan change. The
+startup failure from a local `location` helper shadowing the browser URL was fixed
+in both URL-handling paths. Execution checks exercised startup, map modes,
+rendering treatments, zoom, Fit, wheel, drag and Escape. They confirmed that
+gesture input no longer replaces the SVG and that marker/fade radii compensate
+for zoom. These checks used a lightweight DOM harness: they do not establish
+browser frame rate, raster appearance, WinUI behavior or live swarm performance.
+The subsequent native implementation keeps zoom, geographic centre and drag state
+inside `PeerMap`, in its Navigation partial. Wheel, double-click, keyboard and
+menu commands share the same view operations. Navigation changes the drawing
+transform without marking peer geometry dirty. Borders and strokes compensate
+for zoom, markers and core masks draw in screen space, and the shared halo blur
+is cropped to the viewport with padding. Inspector lifetime retains the view
+while hidden and releases drawing resources on unload. English and Spanish
+labels cover the native Fit button, menu and keyboard help.
+
+Source review traced the input, transform, hit-test, resize, language and hide/show
+paths. No native build, tests or capture review have been run for this extension;
+the following acceptance checks remain unverified.
+
+The rendering optimization reuses existing arc geometry across rate updates.
+For an unchanged set of active destinations and origin, an update now creates
+no arc paths instead of recreating every path. Counts, allocation and activity
+interpolation still update normally. Origin changes replace the routes, and
+inactive or removed destinations release them. This reduction is established
+from source; frame time, allocations and native appearance remain unmeasured.
+
+The demand-driven refresh pass skips unchanged clamped view transforms and
+starts activity ticks only for visible interpolation. Keyboard inspection requests
+its own redraw even when revealing a location does not move the viewport. Identical
+peer samples no longer refresh the table; an origin change still updates the map.
+Map-only presentation defers table sorting until the table is shown again.
+These paths were source-reviewed; build, interaction and timing checks remain pending.
+
+Pane arrangement no longer resnapshots peers during splitter or inspector resizing.
+`ArrangePeers` handles layout and attachment; its data-changing callers invoke
+`RefreshMap` explicitly. Row updates and language changes retain their existing
+refresh paths, and a detached map receives no snapshots. Resize still invalidates
+the canvas and rebuilds size-dependent geometry as required. This removes a full
+peer snapshot/comparison from each layout-only update without adding cached state.
+
+The subsequent plan and ownership review found and corrected shortcut routing
+from the Fit button, viewport movement when opening the keyboard context menu,
+tooltips reappearing during a drag after live updates, and stale hover state
+after panning or wheel zoom. Inspection lookup now
+has one implementation shared by navigation and descriptions. The Fit button
+returns focus to the map before zooming out hides it, including wheel zoom.
+
+For the authorized native implementation review:
+
+- Capture fitted, zoomed and edge-panned views, resize while zoomed, and Fit in
+  Light, Dark and High Contrast. Check the Fit control, focus restoration,
+  fixed screen-space sizes, effect clipping and country detail at 8×.
+- Review dimming with a crowded European destination scene and sparse scenes
+  with 1, 8, 9 and 20 active destination arcs. Check that the origin adjustment
+  uses aggregated arcs, its transition is continuous, and destination fading
+  does not hide markers or inspection highlights. Verify the combined layer cap
+  includes glow, leaves country shading intact and survives overlapping arcs.
+  Repeat while zooming and panning to check fixed fade distances and stable
+  brightness when arcs leave the viewport. Check High Contrast without dimming.
+- Exercise a real mouse wheel, precision touchpad, drag threshold, Escape,
+  capture loss, double-click, context menu and main/numpad shortcuts. Confirm
+  map shortcuts do not operate the torrent queue with either map or Fit-button
+  focus, and a drag does not select. Open the keyboard menu with an off-screen
+  inspected location and confirm the viewport stays still. Keep live rates
+  updating during a drag and confirm location tooltips remain suppressed.
+  After releasing a drag or using the wheel, check that hover describes the
+  location now under the pointer without changing the selected peer.
+- Verify plain-arrow inspection reveals off-screen locations and preserves
+  table selection ownership. Zoom by keyboard while inspecting a location near
+  the viewport edge and check that it remains visible. Check unknown origins
+  and mixed-precision peers.
+- Check resize, live rate updates, section changes, minimising, Map-off/on and
+  restart against the view-lifetime contract. Fit-space destination allocation
+  must remain unchanged by zoom alone.
+- Measure interaction with sparse and crowded scenes while rates update. Check
+  frame responsiveness and effect allocations at high zoom, not just handler
+  duration. Do not claim parity with Google Maps from the script-only check.
+
 ## Implementation status
+
+### Refresh audit — 2026-10-14
+
+The source audit found two corrections: **P2**, view changes left transient hover
+inspection attached to a location after Fit or keyboard pan moved it away from
+the pointer; **P3**, choosing the already-selected peer view repeated arrangement
+and refresh work. `SetView` now clears transient inspection while preserving
+selection; `SetPeerView` skips equal choices. Wheel and drag release re-hit-test
+the new view, and keyboard inspection retains its selected destination through
+reveal. Neither correction changes the approved appearance.
+
+Provisional source assessment: **14/20**. These scores describe implementation
+coverage, not measured performance or an accessibility certification.
+
+| Dimension | Score | Evidence and remaining limit |
+| --- | --- | --- |
+| Accessibility | 2/4 | Named controls, keyboard inspection, system focus, reduced motion and High Contrast paths exist. Narrator announcements of changing canvas inspection and larger-text usability remain unverified. |
+| Performance | 3/4 | Arc reuse, unchanged-sample suppression, conditional animation and direct navigation invalidation exist. Native frame cost remains unmeasured. |
+| Appearance and theming | 3/4 | Theme brushes, opaque alpha masks and High Contrast exceptions preserve the intended hierarchy. Rendered contrast and theme transitions need native review. |
+| Platform conformance | 3/4 | Native menus, buttons, splitter and TableView retain their owners. Mouse, touchpad and assistive-technology behavior need execution checks. |
+| Adaptivity | 3/4 | Automatic split orientation, retained proportions and fixed screen-space drawing exist. Extreme sizes, DPI changes and larger text need capture review. |
+
+No additional P0/P1 defect was established in the inspected paths. Geometry
+release, conditional activity ticks and the shared viewport-bounded blur remain
+intact. TableView owns a sort-settle timer, so skipping identical peer samples
+does not strand deferred sorting. Map-only presentation reconciles sorting when
+the table returns.
+
+Profiling with the map visible later showed that creating brushes and layers
+for every arc in every `Draw` forced full garbage collections, and that
+stroking the country borders took half of `Draw`. At 4–8× zoom, Direct2D's
+per-draw rasterization of the arcs took a median of 124 ms per frame and up to
+1.1 s. Each arc now keeps one radial brush that carries both its route
+brightness and its landing fade. Countries and arcs are drawn from geometry
+realizations made for the current zoom, so a pan rebuilds nothing. Rebuilding
+all of them took about 170 ms, so a zoom step spreads the rebuild over the
+following frames, a few milliseconds each. The
+per-frame `ComputeArea` call for idle countries is not a demonstrated
+bottleneck. Verify Narrator's response to changed
+inspection: updating HelpText alone does not establish what it announces.
+
+Validation was source tracing and `git diff --check`. No build, tests, launch,
+profiling or new captures were run. A subsequent authorized native optimization
+review, followed by visual polish of its findings, supplies the missing evidence;
+repeated source audits cannot establish frame responsiveness or contrast.
 
 Implemented in `Inspector`, its Peers partial, `InspectorPane`, `PeerMap`, and
 the existing local `Geolocation` owner. The world geometry and populated-place
@@ -71,6 +298,58 @@ status-bar context. Its capture journey now uses the header toggles, different
 window proportions, and country-only, coordinate and mixed records. The feature
 review and screenshots below describe the preceding revision; they are historical
 evidence, not verification of these changes.
+
+### Adaptive inspector verification — 2026-10-14
+
+Debug x64 engine, product and capture builds passed with zero warnings and errors
+in `artifacts/lanes/2`. The initial default-output build could not copy its
+executable over the running development window. The isolated engine build exposed
+an unrelated duplicate local name in startup; renaming its two-character buffer
+unblocked compilation without changing behavior. The stale lane rebuilt its
+dependencies; the retry recompiled the corrected startup and concurrently updated
+engine files. All generated output remained under `artifacts/`.
+
+`Capture.ps1 -Review peers` passed 49 scenes, covering both header toggles, map-only,
+table-only and automatic combined views, both splitter orientations, country-only,
+coordinate and mixed records, and an unknown origin. The same journey verified
+global peer reads and empty-selection Speed against its disposable engine. The
+launcher now recognizes the repository's redirected default output when a review
+runs from a lane. No review processes remained afterward.
+
+Representative Light and Dark frames were inspected: header icons and counts
+are visible, the panes rearrange at the tested sizes, resizing grows the map,
+and active arcs retain their glow. Evidence is in
+`artifacts/lanes/2/evidence/Capture-peers-83b5a344-fd3a-4de1-8692-0518a76c5e8b/`.
+The populated scenes use synthetic peers. This review does not establish city-MMDB
+decoding, public-swarm timing, OS High Contrast or persistence across a restart.
+
+### Path review — 2026-10-14
+
+Traced scope changes, asynchronous replies and cancellation, saved layout
+restoration, toggles and both splitters, coordinate decoding, aggregation,
+projection, animation, selection, status updates and canvas disposal.
+
+Selection now uses the same destination identity as animation: country,
+coordinate and estimated precision. A database coordinate coinciding with an
+estimated anchor no longer selects both groups or describes the wrong rates.
+Arrow navigation resumes from the selection after the pointer leaves. A timed-out
+peer read releases the existing Inspector demand so background file reads can
+continue. These corrections remain inside PeerMap and Inspector.
+
+The mixed capture fixture now includes active country-only peers; previously
+its country-only rows were all idle. A coincident-location scene selects the
+coordinate-backed table row and records its map description for review.
+
+Debug x64 engine, product and capture builds passed with zero warnings and errors
+in the default output. Only the engine startup source needed recompilation there;
+both app builds reused Lucide and TableView. The 50-scene peer review passed,
+including the selected coordinate's own connection count and rates at the
+coincident anchor. Mixed-data Light/Dark and landscape/portrait screenshots were
+inspected. Evidence is in
+`artifacts/evidence/Capture-peers-275914c9-984e-4577-985e-a8bb799383ab/`.
+No review processes remained, and generated output stayed under `artifacts/`.
+Timeout cleanup and keyboard continuation were source-traced, not fault-injected
+or driven with native keyboard input; the earlier live-data validation gaps remain.
 
 ## Prototype comparison
 
@@ -122,7 +401,7 @@ The references identify implementation evidence, not additional authorities.
 | Selected and all-torrent peers | Present; scope toggle corrected | `ReadPeers` is the single sequential collection path. Row identity includes torrent and endpoint. The View menu now allows an explicit All torrents choice to be cleared after a multiple selection. |
 | Empty-selection Speed | Present | `IsGlobal` selects all peers or session Speed with no selected torrent; `ReadHistory` omits `torrent_id` for session history. The global header suppresses the selected torrent's size. |
 | Stale and hidden reads | Present | Inspector context/session/torrent guards reject stale pushes; invalidation cancels the pending reply and withdraws demand. Removed torrents are excluded when the complete batch is applied. Minimize, hide and section changes release the map. |
-| Hover and selection | Present | `OnPointer` checks generous marker targets, arcs and populated country shapes; `Describe` shows counts, both rates and precision. Table selection highlights the map. Map inspection does not filter or replace table selection. Individual IP diagnostics stay in the table. |
+| Hover and selection | Present | `OnPointer` checks generous marker targets and arcs; `Describe` shows counts, both rates and precision. Table selection highlights matching coordinates without selecting a country. Map inspection does not filter or replace table selection. Individual IP diagnostics stay in the table. |
 | Keyboard, themes and language | Present, native review pending | Arrow keys inspect destinations; Escape clears highlighting. The control has an accessible name/help text, uses theme brushes and translated strings, and bypasses glow/fading and interpolation in High Contrast. Reduced motion bypasses interpolation. |
 | Resource lifetime and offline assets | Present, runtime review pending | `Stop` stops animation and releases canvas geometry and the CanvasControl. World geometry is embedded and loaded once; Win2D and Natural Earth attribution are included. No browser, runtime map API or population-ranking dependency. |
 

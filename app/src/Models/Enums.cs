@@ -84,6 +84,12 @@ public enum LibraryConfiguration
     Files,
 }
 
+internal enum LibrarySection
+{
+    Information,
+    File,
+}
+
 public enum TransferPreset
 {
     Reduced,
@@ -106,6 +112,15 @@ public enum FilterPane
     Open,
 }
 
+public enum Dock
+{
+    None,
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+
 public enum Consumer
 {
     Summary,
@@ -123,7 +138,7 @@ public enum PieceOrder
 public enum FileAction
 {
     Move,
-    Delete,
+    Remove,
 }
 
 internal enum AdditionPhase

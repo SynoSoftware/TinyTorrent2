@@ -27,6 +27,12 @@ public class ColumnFitTests
         </DataTemplate>
         """;
 
+    private const string EmptyXaml = """
+        <DataTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
+            <Border Height="24" />
+        </DataTemplate>
+        """;
+
     /// <summary>
     /// The control's own cell inset, which every cell and header cell now carries. A fit measures
     /// the cell as it is drawn, so the fitted width is the content plus this: a fit that left it
@@ -441,6 +447,55 @@ public class ColumnFitTests
         });
 
     [TestMethod]
+    public Task FillingGivesSpareWidthOnlyToColumnsWithContent() =>
+        TestHost.RunAsync(async () =>
+        {
+            Column empty = Column("empty", 300);
+            empty.Header = new Border { Width = 100, Height = 20 };
+            empty.CellTemplate = EmptyTemplate;
+            Table table = await LoadAsync(Rows(20, 100), Column("a", 300), empty);
+
+            table.FillWidth();
+
+            double edge = Descendants<Header.Strip>(table).First().ActualWidth;
+            Assert.AreEqual(
+                100 + Inset(table),
+                TableHarness.EffectiveWidth(table, "empty"),
+                0.001,
+                "the empty column keeps its header width"
+            );
+            Assert.AreEqual(
+                edge - 100 - Inset(table),
+                TableHarness.EffectiveWidth(table, "a"),
+                0.001
+            );
+        });
+
+    /// <summary>
+    /// A shortfall the empty columns can absorb leaves the columns with content at their fit, and
+    /// the empty columns give up only the missing width rather than collapsing to MinWidth.
+    /// </summary>
+    [TestMethod]
+    public Task FillingTakesAShortfallFromEmptyColumnsFirst() =>
+        TestHost.RunAsync(async () =>
+        {
+            Column empty = Column("empty", 300);
+            empty.Header = new Border { Width = 400, Height = 20 };
+            empty.CellTemplate = EmptyTemplate;
+            Table table = await LoadAsync(Rows(20, 400), Column("a", 300), empty);
+
+            table.FillWidth();
+
+            double edge = Descendants<Header.Strip>(table).First().ActualWidth;
+            Assert.AreEqual(400 + Inset(table), TableHarness.EffectiveWidth(table, "a"), 0.001);
+            Assert.AreEqual(
+                edge - 400 - Inset(table),
+                TableHarness.EffectiveWidth(table, "empty"),
+                0.001
+            );
+        });
+
+    [TestMethod]
     public Task AFitThatChangesAWidthReportsAResizedLayout() =>
         TestHost.RunAsync(async () =>
         {
@@ -498,6 +553,7 @@ public class ColumnFitTests
     // ------------------------------------------------------------------ helpers
 
     private static readonly DataTemplate CellTemplate = (DataTemplate)XamlReader.Load(CellXaml);
+    private static readonly DataTemplate EmptyTemplate = (DataTemplate)XamlReader.Load(EmptyXaml);
 
     private static Column Column(string id, double defaultWidth)
     {

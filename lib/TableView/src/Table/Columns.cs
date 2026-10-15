@@ -20,6 +20,7 @@ public sealed partial class Table
 
     private readonly List<(UIElement Element, long Token)> _visibilityObservers = [];
     private readonly Dictionary<EffectiveColumn, double> _fittedWidths = [];
+    private readonly HashSet<EffectiveColumn> _emptyColumns = [];
     private InputNonClientPointerSource? _windowFrame;
     private bool _windowSizing;
 
@@ -58,7 +59,8 @@ public sealed partial class Table
     }
 
     /// <summary>
-    /// Fit one column to the header and cells the current visual layout has already realized.
+    /// Fit one column to its header, visible rows, and one realized row above
+    /// and below.
     /// A hidden or non-resizable column is a no-op; a column this table does not hold is an
     /// argument error.
     /// </summary>
@@ -115,15 +117,15 @@ public sealed partial class Table
     }
 
     /// <summary>
-    /// Scale the visible resizable columns by one factor so the visible columns end at the
-    /// header strip's right edge: wider when there is space left, narrower when they run past it.
+    /// Scale the visible resizable columns so the visible columns end at the header strip's right
+    /// edge. Spare width goes to the columns with content; a shortfall comes from the empty
+    /// columns first, and from the others only once the empty ones are at their minimum.
     /// </summary>
     /// <remarks>
-    /// One factor keeps the fitted proportions, so the columns a fit found widest, which are the
-    /// most likely to hold longer values in rows not yet shown, keep the most room. A column the
-    /// factor would take below its <see cref="Column.MinWidth"/> stays there and the others share
-    /// what is left; when even the minimums do not fit, the columns run past the edge as section 8
-    /// allows.
+    /// An empty column has nothing to show in more width, and cutting its header hides less than
+    /// cutting a value. Each step takes only the missing width, so the widths follow a window
+    /// resize continuously instead of jumping when the empty columns run out of room. With no
+    /// empty column, or only empty ones, every column scales together.
     /// </remarks>
     private bool ScaleToWidth()
     {
@@ -137,6 +139,44 @@ public sealed partial class Table
             .VisibleColumns.Select(visible => visible.Column)
             .Where(CanFitColumn)
             .ToList();
+        List<EffectiveColumn> empty = scaled.Where(_emptyColumns.Contains).ToList();
+        List<EffectiveColumn> filled = scaled.Except(empty).ToList();
+
+        if (empty.Count == 0 || filled.Count == 0)
+        {
+            return ScaleToWidth(scaled, width);
+        }
+
+        double shortfall = EffectiveLayout.VisibleColumns.Sum(visible => visible.Width) - width;
+        if (shortfall <= 0)
+        {
+            return ScaleToWidth(filled, width);
+        }
+
+        double slack = empty.Sum(column => column.Width - column.Column.MinWidth);
+        bool changed = ScaleToWidth(empty, width);
+        if (shortfall > slack)
+        {
+            changed |= ScaleToWidth(filled, width);
+        }
+
+        return changed;
+    }
+
+    /// <summary>
+    /// Scale these columns by one factor so the visible columns end at <paramref name="width"/>,
+    /// while every other visible column keeps its width.
+    /// </summary>
+    /// <remarks>
+    /// One factor keeps the fitted proportions, so the columns a fit found widest, which are the
+    /// most likely to hold longer values in rows not yet shown, keep the most room. A column the
+    /// factor would take below its <see cref="Column.MinWidth"/> stays there and the others share
+    /// what is left; when even the minimums do not fit, the columns run past the edge as section 8
+    /// allows.
+    /// </remarks>
+    private bool ScaleToWidth(List<EffectiveColumn> columns, double width)
+    {
+        List<EffectiveColumn> scaled = new(columns);
 
         // What the scaled columns share: the room less the visible columns that keep theirs.
         double room = width - EffectiveLayout.VisibleColumns.Sum(visible => visible.Width)
@@ -526,10 +566,6 @@ public sealed partial class Table
         );
     }
 
-    /// <summary>
-    /// Section 10's bounded fit: the widest realized header cell or row cell for this column,
-    /// raised to the column's minimum. Nothing realized means nothing to fit.
-    /// </summary>
     private bool FitColumn(EffectiveColumn column, bool publish = true, bool reuse = false)
     {
         if (!CanFitColumn(column))
@@ -545,8 +581,9 @@ public sealed partial class Table
         int index = EffectiveLayout.IndexOfVisible(column);
         double widest = 0;
         bool measured = false;
+        bool filled = false;
 
-        foreach (CellsPanel panel in RealizedPanels())
+        foreach (CellsPanel panel in RealizedPanels(fitting: true))
         {
             // A realized panel is already synced to the current visible columns: a column-set
             // change reconciles every attached panel's cells synchronously, and CellsPanel's
@@ -557,7 +594,9 @@ public sealed partial class Table
                 continue;
             }
 
-            widest = Math.Max(widest, UnboundedWidth(panel.Children[index]));
+            UIElement cell = panel.Children[index];
+            widest = Math.Max(widest, UnboundedWidth(cell));
+            filled |= cell is not Header.Cell && HoldsContent(cell);
             measured = true;
 
             // An unbounded desired size is not the one the panel arranges with, and the panel is
@@ -568,8 +607,24 @@ public sealed partial class Table
         if (!measured)
             return false;
         _fittedWidths[column] = column.Clamp(widest);
+        if (filled)
+            _emptyColumns.Remove(column);
+        else
+            _emptyColumns.Add(column);
         return SetColumnWidth(column, widest, publish);
     }
+
+    /// <summary>
+    /// A row cell holds content when what its template shows has width. The cell's padding does
+    /// not count: an empty cell measures as its padding alone. A hierarchy cell always counts as
+    /// content, so the hierarchy column never gives up width as an empty one.
+    /// </summary>
+    private static bool HoldsContent(UIElement cell) =>
+        cell is not ContentPresenter presenter
+        || (
+            VisualTreeHelper.GetChildrenCount(presenter) > 0
+            && VisualTreeHelper.GetChild(presenter, 0) is UIElement { DesiredSize.Width: > 0 }
+        );
 
     /// <summary>
     /// Section 10: the fit includes the sort glyph, so a fitted column still shows its whole header
@@ -587,15 +642,16 @@ public sealed partial class Table
     }
 
     /// <summary>
-    /// The panels a fit may measure: the header strip's, and one for each row container the list
-    /// has already realized. Section 10 forbids realizing anything here to widen the search.
+    /// Fitting includes only visible rows and one cached row above and below,
+    /// so longer values farther off-screen do not take space from visible values.
+    /// Column motion uses the whole cache to animate rows entering the viewport.
     /// </summary>
     /// <remarks>
     /// The panel's cache range, not its <c>Children</c>: a container left over from before a scroll
     /// stays in <c>Children</c>, still holding the content of the row it last showed. Measuring one
     /// would fit the column to a row the current visual layout does not contain.
     /// </remarks>
-    internal IEnumerable<CellsPanel> RealizedPanels()
+    internal IEnumerable<CellsPanel> RealizedPanels(bool fitting = false)
     {
         if (_headerStrip?.Panel is CellsPanel header)
         {
@@ -612,6 +668,15 @@ public sealed partial class Table
         if (first < 0 || last < first)
         {
             yield break;
+        }
+
+        if (fitting)
+        {
+            if (rows.FirstVisibleIndex < 0 || rows.LastVisibleIndex < rows.FirstVisibleIndex)
+                yield break;
+
+            first = Math.Max(first, rows.FirstVisibleIndex - 1);
+            last = Math.Min(last, rows.LastVisibleIndex + 1);
         }
 
         for (int index = first; index <= last; index++)

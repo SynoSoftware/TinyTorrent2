@@ -30,8 +30,9 @@ and then `ShowDialog`, or `ShowEditor` when the primary button saves a draft.
 These owners hold what every dialog shares, so a dialog states only its title,
 content, buttons and outcome:
 
-- `Dialog` places the buttons, makes the primary button the default, sets
-  focus when the dialog opens, and lifts the size limit through `SizeToContent`.
+- `Dialog` places the buttons and the one `DialogFooter` item, makes the
+  primary button the default, sets focus when the dialog opens, and lifts the
+  size limit through `SizeToContent`.
 - `Interact` opens one dialog at a time and none while the window closes,
   except the question about an unfinished draft. WinUI throws when a second
   dialog opens, for example when Exit arrives from the tray.

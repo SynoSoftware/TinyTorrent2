@@ -123,7 +123,6 @@ public sealed partial class MainViewModel
     public ICommand Verify { get; }
     public ICommand Remove { get; }
     public ICommand MoveFiles { get; }
-    public ICommand DeleteFiles { get; }
     public FileDraft FileDraft { get; }
     public ICommand Up { get; }
     public ICommand Down { get; }
@@ -142,7 +141,6 @@ public sealed partial class MainViewModel
     public event EventHandler? MergeRequested;
     public event EventHandler<Torrent[]>? MoveRequested;
     public event EventHandler<Torrent[]>? SpeedLimitRequested;
-    public event EventHandler<Torrent[]>? DeleteRequested;
     public event EventHandler<OpenRequestedEventArgs>? OpenRequested;
     public event EventHandler<string>? CopyRequested;
 
@@ -177,8 +175,8 @@ public sealed partial class MainViewModel
     // Dropped or pasted sources.
     public Task AddSources(IEnumerable<string> sources) => AddSources(sources.ToArray(), false);
 
-    // Picked sources: choosing Add torrent file opens the Add dialog, however
-    // many files the person picks.
+    // Picked sources: Add torrent file opens one Add dialog however many files
+    // the person picks, unless they turned the dialog off.
     public Task AddPicked(IEnumerable<string> sources) => AddSources(sources.ToArray(), true);
 
     // Later arrivals stay outside the draft until the preceding batch has
@@ -198,7 +196,7 @@ public sealed partial class MainViewModel
             await previous;
             AddDraft.Own(sources);
             if (picked)
-                await AddOwnedSources(true);
+                await AddOwnedSources();
             else
                 await AddArrived();
         }
@@ -253,7 +251,7 @@ public sealed partial class MainViewModel
             Report(failure);
     }
 
-    private async Task AddOwnedSources(bool showDialog = false)
+    private async Task AddOwnedSources()
     {
         if (AddDraft.Sources.Count == 0)
             return;
@@ -262,7 +260,7 @@ public sealed partial class MainViewModel
             await AddDraft.PrepareAll();
             return;
         }
-        showDialog |= AddDraft.Sources.Any(source => Settings.AddPreference(source.Source).ConfirmedOn);
+        var showDialog = AddDraft.Sources.Any(source => Settings.AddPreference(source.Source).ConfirmedOn);
         var merge = false;
         await using (var addition = AddDraft.BeginAddition())
         {
@@ -440,24 +438,6 @@ public sealed partial class MainViewModel
                 Announce(ResumeNotice);
             else
                 AnnounceAccepted("commands", paused ? "pause_all" : "resume_all");
-            ClearError();
-            RequestSnapshot();
-        }
-        catch (Exception error)
-        {
-            Report(error);
-        }
-    }
-
-    public async Task RemoveTorrents(IEnumerable<Torrent> torrents)
-    {
-        if (!CanEdit)
-            return;
-        var torrentIds = torrents.Select(torrent => torrent.TorrentId).ToArray();
-        try
-        {
-            await _client.Send("remove", new { torrent_ids = torrentIds });
-            AnnounceAccepted("commands", "remove");
             ClearError();
             RequestSnapshot();
         }

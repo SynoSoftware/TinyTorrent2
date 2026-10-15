@@ -28,11 +28,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     private Exception? _error;
 
     // How the error notice describes _error: a title key from the
-    // notifications text, the torrent it names, and the reason when the
-    // engine sent one instead of an error code.
+    // notifications text, the torrent it names, the reason when the
+    // engine sent one instead of an error code, and the folder where the
+    // person finishes a failed deletion.
     private string _errorTitle = string.Empty;
     private string _errorSubject = string.Empty;
     private string? _errorReason;
+    private string? _errorFolder;
     private double _downloadRate;
     private double _uploadRate;
     private long? _freeSpace;
@@ -319,6 +321,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     private ICommand DeleteDatabase { get; }
     private ICommand RepairDatabase { get; }
     private ICommand ShowSubtitleSettings { get; }
+    private ICommand OpenErrorFolder { get; }
     private ICommand RetrySubtitleWork { get; }
     public ICommand OpenDataFolder { get; }
 
@@ -489,14 +492,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             () => CanEdit && _selected.Length > 0
         );
         MoveFiles = MoveCommand(() => _selected);
-        DeleteFiles = new RelayCommand(
-            () =>
-            {
-                DeleteRequested?.Invoke(this, _selected.ToArray());
-                return Task.CompletedTask;
-            },
-            () => CanEdit && _selected.Length > 0 && _selected.All(torrent => !torrent.IsMoving)
-        );
         Up = new RelayCommand(() => Queue("up"), () => CanMove);
         Down = new RelayCommand(() => Queue("down"), () => CanMove);
         Top = new RelayCommand(() => Queue("top"), () => CanMove);
@@ -546,6 +541,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         ShowSettings = new RelayCommand(() => RequestSettings(new()), () => true);
         ShowSubtitleSettings = new RelayCommand(
             () => RequestSettings(new(SettingsCategory.Plugins)),
+            () => true
+        );
+        OpenErrorFolder = new RelayCommand(
+            () =>
+            {
+                if (_errorFolder is { } folder)
+                    OpenRequested?.Invoke(this, new(folder));
+                return Task.CompletedTask;
+            },
             () => true
         );
         RetrySubtitleWork = new RelayCommand(
@@ -637,7 +641,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             Verify,
             Remove,
             MoveFiles,
-            DeleteFiles,
             Up,
             Down,
             Top,
@@ -847,8 +850,16 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             || rowsChanged && _selected.Length > 0;
         if (_current is not null && !present.Contains(_current.TorrentId))
             _current = null;
-        if (Inspector.Target is { } target && !Contains(target))
+        var inspected = Inspector.Target;
+        if (inspected is { } target && !Contains(target))
             Inspector.Show(null);
+        if (Inspector.Target is null && (previousSelection != _selected.Length || inspected is not null))
+        {
+            if (HasInspector && _selected.Length == 1)
+                Inspector.Show(_selected[0]);
+            else
+                Inspector.RefreshScope();
+        }
         var languageSaved = snapshot.GetProperty("language_saved").GetBoolean();
         _languageSaved = languageSaved;
         AddDraft.ApplyDefaults(
@@ -1225,7 +1236,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public void Report(Exception error) => Report(error, ErrorTitle(error), string.Empty, null);
 
-    internal void Report(Exception error, string title, string subject, string? reason)
+    internal void Report(
+        Exception error,
+        string title,
+        string subject,
+        string? reason,
+        string? folder = null
+    )
     {
         if (_closed)
             return;
@@ -1233,6 +1250,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         _errorTitle = title;
         _errorSubject = subject;
         _errorReason = reason;
+        _errorFolder = folder;
         Refresh();
         Announce(CommandError);
     }
@@ -1445,6 +1463,16 @@ internal readonly record struct TransferTotals(long Downloaded, long Uploaded);
 
 internal sealed class RelayCommand(Func<Task> execute, Func<bool> enabled) : ICommand
 {
+    internal RelayCommand(Action execute, Func<bool> enabled)
+        : this(
+            () =>
+            {
+                execute();
+                return Task.CompletedTask;
+            },
+            enabled
+        ) { }
+
     public bool CanExecute(object? parameter) => enabled();
 
     public async void Execute(object? parameter)

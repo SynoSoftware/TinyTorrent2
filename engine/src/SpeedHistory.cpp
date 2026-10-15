@@ -1,4 +1,5 @@
 #include "SpeedHistory.h"
+#include <map>
 
 namespace tt
 {
@@ -125,6 +126,38 @@ Json SpeedHistory::Read(bool day) const
     if (range.bucket.count)
     {
         append(range.Average());
+    }
+    return samples;
+}
+
+Json SpeedHistory::Sum(bool day, std::span<SpeedHistory const* const> sources) const
+{
+    std::map<std::uint32_t, Bucket> totals;
+    auto add = [&totals](Point const& sample)
+    {
+        if (sample.download == 0 && sample.upload == 0)
+            return;
+        auto& total = totals[sample.time];
+        total.download += double(sample.download) * sample.count;
+        total.upload += double(sample.upload) * sample.count;
+    };
+    for (auto const* source : sources)
+    {
+        auto const& range = day ? source->day : source->recent;
+        for (auto const& sample : range.points)
+            add(sample);
+        if (range.bucket.count)
+            add(range.Average());
+    }
+    // Only zero runs compress. Nonzero buckets end with the session's bucket,
+    // whose count also includes observations before a torrent was added.
+    auto samples = Read(day);
+    for (auto& sample : samples)
+    {
+        auto found = totals.find(sample.at("time").get<std::uint32_t>());
+        auto count = sample.at("count").get<int>();
+        sample["download_rate"] = found == totals.end() ? 0 : found->second.download / count;
+        sample["upload_rate"] = found == totals.end() ? 0 : found->second.upload / count;
     }
     return samples;
 }

@@ -52,6 +52,32 @@ public partial class App : Application
         Resources["LucideFont"] = Syno.Lucide.Font;
         Resources["FlagsFont"] = Syno.Flags.Font;
         Marshal.ThrowExceptionForHR(SetCurrentProcessExplicitAppUserModelID("Syno.TinyTorrent"));
+        // The engine owns startup isolation; only its window starts here.
+        var fromEngine = Environment.GetCommandLineArgs().Contains("--engine");
+#if CAPTURE
+        // The review script waits for the window it started.
+        fromEngine |= MainWindow.IsCaptureReview;
+#endif
+        if (!fromEngine)
+        {
+            var text = await Task.Run(() => new Strings());
+#if DEBUG
+            // The engine started here would pass the window to another build's
+            // engine, so that build stops first, as for a window started here.
+            await Task.Run(StopOtherWindow);
+            await PipeClient.StopOtherEngine();
+#endif
+            try
+            {
+                PipeClient.StartEngine(text);
+            }
+            catch (Exception error) when (error is FileNotFoundException or Win32Exception)
+            {
+                MessageBoxW(IntPtr.Zero, text.Error("unknown", error.Message), text.Get("window", "title"), 0x10);
+            }
+            Exit();
+            return;
+        }
         _instance = new Mutex(false, "Local\\TinyTorrent.Window." + PipeClient.LogonSid);
         var owned = Acquire(_instance, 0);
 #if CAPTURE
@@ -129,9 +155,7 @@ public partial class App : Application
     }
 
 #if DEBUG
-    // Returns whether it stopped a window started from another path. Its child
-    // processes stop too, because the Library's website browsers must not
-    // outlive it.
+    // Returns whether it stopped a window started from another path.
     private static bool StopOtherWindow()
     {
         using var current = Process.GetCurrentProcess();

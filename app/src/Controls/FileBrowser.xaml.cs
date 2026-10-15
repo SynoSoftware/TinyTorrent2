@@ -159,35 +159,31 @@ public sealed partial class FileBrowser : UserControl
     {
         if (!Model.IsEnabled || nodes.Length == 0)
             return;
-        MenuFlyout menu = new();
-        foreach (
-            var (key, priority) in new[] { ("skip", 0), ("low", 1), ("normal", 4), ("high", 7) }
-        )
-        {
-            ToggleMenuFlyoutItem item = new()
-            {
-                Text = Model.Text.Get("files", key),
-                AccessKey = Model.Text.Get("files", key + "_key"),
-                IsChecked = nodes.All(node => node.Priority == priority),
-                Icon = new FontIcon
-                {
-                    FontFamily = Lucide.Font,
-                    Glyph = priority switch
-                    {
-                        0 => Lucide.CircleSlash,
-                        1 => Lucide.ArrowDown,
-                        7 => Lucide.ArrowUp,
-                        _ => Lucide.Minus,
-                    },
-                },
-            };
-            item.Click += (_, _) => Model.Change(nodes, priority);
-            menu.Items.Add(item);
-        }
+        var menu = MenuItems.Flyout(
+            () =>
+            [
+                Choice("skip", 0, Lucide.CircleSlash),
+                Choice("low", 1, Lucide.ArrowDown),
+                Choice("normal", 4, Lucide.Minus),
+                Choice("high", 7, Lucide.ArrowUp),
+            ],
+            () => Model.Text
+        );
         FlyoutShowOptions options = new();
         if (position is { } point)
             options.Position = point;
         menu.ShowAt(target, options);
+
+        MenuChoice Choice(string key, int priority, string glyph) =>
+            new(
+                Model.Text.Get("files", key),
+                glyph,
+                nodes.All(node => node.Priority == priority),
+                new RelayCommand(() => Model.Change(nodes, priority), () => true)
+            )
+            {
+                AccessKey = Model.Text.Get("files", key + "_key"),
+            };
     }
 
     private void OnFilesKey(object sender, KeyRoutedEventArgs args)

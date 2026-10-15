@@ -24,7 +24,6 @@ public sealed partial class CreditsPage : UserControl
             new("OpenSSL", "openssl", "https://openssl.org/", new("Apache-2.0", "https://www.apache.org/licenses/LICENSE-2.0")),
             new("Boost", "boost", "https://boost.org/", new("Boost Software License 1.0", "https://www.boost.org/LICENSE_1_0.txt")),
             new("nlohmann/json", "json", "https://github.com/nlohmann/json", new("MIT", "https://github.com/nlohmann/json/blob/develop/LICENSE.MIT")),
-            new("WebView2 SDK", "webview", "https://github.com/MicrosoftEdge/WebView2Feedback", new("BSD-3-Clause", "https://www.nuget.org/packages/Microsoft.Web.WebView2/1.0.3719.77/License")),
             new("Windows SDK .NET projections", "windows_sdk", "https://learn.microsoft.com/windows/apps/desktop/modernize/desktop-to-uwp-enhance", new("Microsoft", "https://aka.ms/WinSDKLicenseURL")),
             new("MaxMind.Db", "maxmind_db", "https://github.com/maxmind/MaxMind-DB-Reader-dotnet", new("Apache-2.0", "https://www.apache.org/licenses/LICENSE-2.0")),
             new("Win2D", "win2d", "https://github.com/microsoft/Win2D", new("MIT", "https://github.com/microsoft/Win2D/blob/master/LICENSE.txt")),

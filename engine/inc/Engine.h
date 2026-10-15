@@ -73,6 +73,9 @@ struct Notice
     // empty when the notice carries no problem code.
     std::string code;
     std::string torrentId;
+    // The folder that Open folder shows, where the person fixes a failed
+    // deletion in File Explorer; empty when the notice offers no folder.
+    std::string folder;
     unsigned count = 1;
 };
 
@@ -136,7 +139,9 @@ public:
     void Tick();
     void Disconnect(std::string const& connectionId);
     // The completion receives nothing when the final save succeeded, and
-    // otherwise its cause, which is empty when the cause is unknown.
+    // otherwise its cause, which is empty when the cause is unknown. It runs
+    // before libtorrent's teardown, which waits seconds for trackers to
+    // acknowledge the stop.
     void Shutdown(std::function<void(std::optional<std::string> failure)> completion);
     void PauseSession(bool paused, std::function<void(Outcome)> completion);
     // Saves the switches that turn `notices` off, in one settings change.

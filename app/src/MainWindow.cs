@@ -68,12 +68,9 @@ public sealed partial class MainWindow : Window
         Toolbar.SizeChanged += (_, _) => UpdateInspectorSize();
         StatusBar.SizeChanged += (_, _) => UpdateStatus();
         _uiSettings.TextScaleFactorChanged += OnTextScaling;
-        FiltersClose.Content = new FontIcon
-        {
-            FontFamily = Syno.Lucide.Font,
-            Glyph = Syno.Lucide.X,
-            FontSize = (double)Application.Current.Resources["TinyTorrentButtonIconSize"],
-        };
+        FiltersPane.OpenRequested += OnFiltersOpen;
+        FiltersPane.CloseRequested += OnFiltersClose;
+        FiltersPane.CollapseRequested += OnFiltersCollapse;
         ExtendsContentIntoTitleBar = true;
         AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
         SetTitleBar(Caption);
@@ -136,12 +133,21 @@ public sealed partial class MainWindow : Window
             }
         };
         Model.FilesRequested += async (_, _) => await PickSources();
-        Model.RemoveRequested += async (_, torrents) => await ConfirmRemove(torrents);
+        // As in File Explorer, Shift with Remove's key, button or menu item
+        // deletes permanently instead of through the Recycle Bin.
+        Model.RemoveRequested += async (_, torrents) =>
+            await ShowFiles(
+                torrents,
+                FileAction.Remove,
+                Microsoft
+                    .UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Shift)
+                    .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down)
+                    ? DeletionMode.Permanent
+                    : DeletionMode.Recycle
+            );
         Model.MergeRequested += async (_, _) => await ConfirmMerge();
         Model.DatabaseDeletionRequested += async (_, _) => await ConfirmDatabaseDeletion();
         Model.MoveRequested += async (_, torrents) => await ShowFiles(torrents, FileAction.Move);
-        Model.DeleteRequested += async (_, torrents) =>
-            await ShowFiles(torrents, FileAction.Delete);
         Model.SpeedLimitRequested += async (_, torrents) => await ShowSpeedLimit(torrents);
         Model.OpenRequested += (_, args) => Open(args);
         Model.CopyRequested += (_, text) =>
@@ -328,6 +334,7 @@ public sealed partial class MainWindow : Window
             Model.ResumeAll
         );
         AddShortcut(new() { Key = VirtualKey.Delete, ScopeOwner = Torrents }, Model.Remove);
+        // Remove reads Shift itself, so this shortcut is not Remove's shown one.
         AddShortcut(
             new()
             {
@@ -335,7 +342,7 @@ public sealed partial class MainWindow : Window
                 Modifiers = VirtualKeyModifiers.Shift,
                 ScopeOwner = Torrents,
             },
-            Model.DeleteFiles
+            () => Run(Model.Remove)
         );
         AddShortcut(
             new()
@@ -403,6 +410,7 @@ public sealed partial class MainWindow : Window
     private void OnModelChanged(object? sender, PropertyChangedEventArgs args)
     {
         QueueStatus();
+        QueueMenus();
         if (
             string.IsNullOrEmpty(args.PropertyName)
             || args.PropertyName == nameof(MainViewModel.ShowsTitleSpeeds)
@@ -419,8 +427,8 @@ public sealed partial class MainWindow : Window
                 Model.FilterPane == FilterPane.Compact
                     ? SplitViewDisplayMode.CompactInline
                     : SplitViewDisplayMode.Inline;
-            FiltersToggle.Visibility =
-                Model.FilterPane == FilterPane.Compact ? Visibility.Visible : Visibility.Collapsed;
+            FiltersPane.IsCompact = Model.FilterPane == FilterPane.Compact;
+            FiltersPane.Visibility = Model.FilterPane == FilterPane.Hidden ? Visibility.Collapsed : Visibility.Visible;
             if (
                 args.PropertyName == nameof(MainViewModel.FilterPane)
                 && Model.IsFilterOpen
@@ -522,9 +530,12 @@ public sealed partial class MainWindow : Window
             _addDialog.AllowDrop = true;
             _addDialog.DragOver += OnDragOver;
             _addDialog.Drop += OnDrop;
-            var dialog = new Dialog { Content = _addDialog, PrimaryGlyph = Syno.Lucide.CirclePlus };
-            var neverShow = dialog.AddOptOut(Model.AddDraft.Confirmation);
-            BindAddDraft(neverShow, Control.IsEnabledProperty, nameof(AddDraft.CanEdit));
+            var dialog = new Dialog
+            {
+                Content = _addDialog,
+                PrimaryGlyph = Syno.Lucide.CirclePlus,
+                Footer = new DialogFooter.OptOut(Model.AddDraft.Confirmation),
+            };
             dialog.SizeToContent();
             _addDialog.CloseRequested += (_, _) => dialog.Hide();
             Model.IsAddOpen = true;
@@ -679,9 +690,13 @@ public sealed partial class MainWindow : Window
         var answer = ExitAnswer.Cancelled;
         await Interact(async interaction =>
         {
-            var dialog = new Dialog { Glyph = Syno.Lucide.Power, PrimaryGlyph = Syno.Lucide.Power };
             var preference = new DialogPreference(Model.Settings);
-            dialog.AddOptOut(preference);
+            var dialog = new Dialog
+            {
+                Glyph = Syno.Lucide.Power,
+                PrimaryGlyph = Syno.Lucide.Power,
+                Footer = new DialogFooter.OptOut(preference),
+            };
             await Model.DeferClose();
             var choice = await ShowDialog(
                 interaction,

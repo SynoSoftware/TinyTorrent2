@@ -263,6 +263,18 @@ try {
             $null = Read-History $second 'day'
             $reply = Send-Command @{ command = 'history'; range = 'five_minutes' }
             Assert ($reply.ok -and $reply.data.samples.Count -gt 0) 'Session speed history stopped recording'
+            $reply = Send-Command @{ command = 'history'; torrent_ids = @($first, $second, $first); range = 'day' }
+            Assert ($reply.ok -and $reply.data.torrent_ids.Count -eq 2 -and
+                $reply.data.torrent_ids -contains $first -and $reply.data.torrent_ids -contains $second -and
+                $reply.data.samples.Count -gt 0 -and
+                @($reply.data.samples | Where-Object { $_.download_rate -ne 0 -or $_.upload_rate -ne 0 }).Count -eq 0) `
+                'Selected paused torrents did not return their combined history'
+            $reply = Send-Command @{ command = 'history'; torrent_ids = @($first, 'missing'); range = 'day' }
+            Assert (-not $reply.ok -and $reply.error.code -eq 'torrent_removed') 'An unknown group member received partial or global history'
+            $reply = Send-Command @{ command = 'history'; torrent_ids = @(); range = 'day' }
+            Assert (-not $reply.ok -and $reply.error.code -eq 'invalid_request') 'An empty group received global history'
+            $reply = Send-Command @{ command = 'history'; torrent_id = $first; torrent_ids = @($second); range = 'day' }
+            Assert (-not $reply.ok -and $reply.error.code -eq 'invalid_request') 'Conflicting history selectors were accepted'
             $reply = Send-Command @{ command = 'remove'; torrent_ids = @($first) }
             Assert $reply.ok 'The history fixture could not be removed'
             $reply = Send-Command @{ command = 'history'; torrent_id = $first; range = 'five_minutes' }

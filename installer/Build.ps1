@@ -223,6 +223,9 @@ try {
         (Test-Path -LiteralPath (Join-Path $publish 'Engine.exe'))) {
         throw 'The release must contain TinyTorrent.exe and TinyTorrentUI.exe, without Engine.exe.'
     }
+    if (Get-ChildItem -LiteralPath $publish -Recurse -File -Filter '*WebView2*') {
+        throw 'The published application contains WebView2 components. The installer was not generated.'
+    }
     foreach ($resource in $metadata.ProjectPriFileName, 'TableView.pri', 'Lucide.pri', 'Lucide/Fonts/lucide.ttf',
         'Lucide/Fonts/twemoji.ttf', 'Assets/dbip-country-lite.mmdb') {
         if (-not (Test-Path -LiteralPath (Join-Path $publish $resource) -PathType Leaf)) {

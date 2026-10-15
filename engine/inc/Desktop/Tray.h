@@ -4,6 +4,7 @@
 #include "Desktop/Popup.h"
 #include <windows.h>
 #include <oleacc.h>
+#include <filesystem>
 #include <map>
 #include <optional>
 
@@ -25,6 +26,8 @@ public:
     Tray(Tray const&) = delete;
     Tray& operator=(Tray const&) = delete;
     void Add();
+    // Takes the icon and its popup off the screen before the process ends.
+    void Remove();
     void Update(Activity activity, bool loading, bool pausable);
     void Translate();
     std::optional<TrayItem> ShowMenu(POINT point);
@@ -34,6 +37,9 @@ public:
     void Notify();
     // The notice whose popup was selected, unless selecting it only dismisses it.
     std::optional<Notice> TakeNotice();
+    // The folder that the shown popup's Open folder opens; empty for the
+    // program's folder.
+    std::filesystem::path Folder() const;
     // The switch that the shown popup's Turn off command turns off.
     std::optional<NoticeSwitch> TakeSwitch();
 #ifdef _DEBUG

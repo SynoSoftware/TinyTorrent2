@@ -41,6 +41,10 @@ constexpr std::pair<std::string_view, QueueMove> moves[] = {
     {"bottom", QueueMove::Bottom},
     {"before", QueueMove::Before}};
 
+constexpr std::pair<std::string_view, DeletionMode> deletionModes[] = {
+    {"recycle", DeletionMode::Recycle},
+    {"permanent", DeletionMode::Permanent}};
+
 constexpr std::pair<std::string_view, TorrentView> views[] = {
     {"general", TorrentView::General},
     {"files", TorrentView::Files},
@@ -286,7 +290,8 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
         if (request.value("release_detail", false))
             ReleaseReading(connectionId);
         auto range = request.at("range").get<std::string>();
-        if (range != "five_minutes" && range != "day")
+        if ((range != "five_minutes" && range != "day") ||
+            (request.contains("torrent_id") && request.contains("torrent_ids")))
         {
             reply(Failure(ErrorCode::InvalidRequest));
             return;
@@ -305,7 +310,32 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
             history = &found->second.history;
             data["torrent_id"] = id;
         }
-        data["samples"] = history->Read(range == "day");
+        if (request.contains("torrent_ids"))
+        {
+            auto ids = request.at("torrent_ids").get<std::vector<std::string>>();
+            if (ids.empty())
+            {
+                reply(Failure(ErrorCode::InvalidRequest));
+                return;
+            }
+            std::sort(ids.begin(), ids.end());
+            ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+            std::vector<SpeedHistory const*> sources;
+            for (auto const& id : ids)
+            {
+                auto found = torrents.find(id);
+                if (found == torrents.end() || found->second.deleted)
+                {
+                    reply(Failure(ErrorCode::TorrentRemoved));
+                    return;
+                }
+                sources.push_back(&found->second.history);
+            }
+            data["torrent_ids"] = ids;
+            data["samples"] = this->history.Sum(range == "day", sources);
+        }
+        else
+            data["samples"] = history->Read(range == "day");
         reply(Success(std::move(data)));
         break;
     }
@@ -334,11 +364,23 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
         });
         break;
     case Command::Remove:
-        Act(TorrentIds(request), reply, [this](auto const& ids, Reply reply)
+    case Command::DeleteFiles:
+    {
+        // One deletion mode serves the downloaded files and the .torrent files.
+        auto mode = Parse(deletionModes, request.value("deletion", std::string("recycle")));
+        if (!mode)
         {
-            Remove(ids, reply);
-        });
+            reply(Failure(ErrorCode::InvalidRequest));
+            return;
+        }
+        auto files = *command == Command::DeleteFiles ? mode : std::nullopt;
+        auto torrentFiles = request.value("torrent_files", false) ? mode : std::nullopt;
+        Act(TorrentIds(request), reply, [this, files, torrentFiles](auto const& ids, Reply reply)
+        {
+            Remove(ids, reply, files, torrentFiles);
+        }, files ? BusyFiles::Accepted : BusyFiles::Refused);
         break;
+    }
     case Command::FileScope:
         Act(TorrentIds(request), reply, [this](auto const& ids, Reply reply)
         {
@@ -358,20 +400,6 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
             });
         });
         break;
-    case Command::DeleteFiles:
-    {
-        auto mode = request.value("deletion", settings.deletion == DeletionMode::Recycle ? "recycle" : "permanent");
-        if (mode != "recycle" && mode != "permanent")
-        {
-            reply(Failure(ErrorCode::InvalidRequest));
-            return;
-        }
-        Act(TorrentIds(request), reply, [this, mode](auto const& ids, Reply reply)
-        {
-            Remove(ids, reply, mode == "recycle" ? DeletionMode::Recycle : DeletionMode::Permanent);
-        }, BusyFiles::Accepted);
-        break;
-    }
     case Command::Queue:
     {
         // A queue command names either a direction or the torrent to move
@@ -539,8 +567,10 @@ void Engine::State::Verify(std::vector<std::string> const& ids, Reply reply)
 
 // Removes the torrents from the list. With a mode it also deletes their
 // files; a torrent that CanRemove refuses leaves the list at once and is
-// removed when CanRemove allows it.
-void Engine::State::Remove(std::vector<std::string> const& ids, Reply reply, std::optional<DeletionMode> mode)
+// removed when CanRemove allows it. With a torrentFiles mode it deletes the
+// .torrent files they were added from once the list no longer holds them.
+void Engine::State::Remove(std::vector<std::string> const& ids, Reply reply, std::optional<DeletionMode> mode,
+    std::optional<DeletionMode> torrentFiles)
 {
     auto namesReady = !mode || NamesReady();
     std::vector<std::string> ready;
@@ -556,13 +586,27 @@ void Engine::State::Remove(std::vector<std::string> const& ids, Reply reply, std
         kept = namesReady ? Json(later.empty() ? scope.kept.size() : FileScope(ids).kept.size()) : Json();
     }
     auto deletion = PrepareDeletion(ready, mode, std::move(scope));
+    std::vector<std::filesystem::path> sources;
+    std::string sourceNames;
+    if (torrentFiles)
+    {
+        for (auto const& id : ids)
+        {
+            auto const& torrent = torrents.at(id);
+            if (torrent.facts.torrentFile.empty())
+                continue;
+            sources.push_back(Wide(torrent.facts.torrentFile));
+            sourceNames += (sourceNames.empty() ? "" : ", ") + torrent.Name();
+        }
+    }
     auto removed = [&ids](std::string const& id) { return Contains(ids, id); };
     auto document = Saved();
     std::erase_if(document.torrents, [&removed](auto const& entry) { return removed(entry.first); });
     std::erase_if(document.queueOrder, removed);
     auto order = document.queueOrder;
     changes.Commit([document = std::move(document)] { return document.ToJson(); },
-        [this, ready, later, order = std::move(order), deletion, kept, reply, mode](Outcome outcome)
+        [this, ready, later, order = std::move(order), deletion, kept, reply, mode, torrentFiles,
+            sources = std::move(sources), sourceNames = std::move(sourceNames)](Outcome outcome)
     {
         if (outcome.error)
         {
@@ -583,6 +627,8 @@ void Engine::State::Remove(std::vector<std::string> const& ids, Reply reply, std
             torrent.deletionMode = *mode;
             torrent.ApplyIntent();
         }
+        if (!sources.empty())
+            DeleteTorrentFiles(sources, *torrentFiles, sourceNames);
         ContinueMove();
         reply(Success({{"kept_files", kept}}));
     });

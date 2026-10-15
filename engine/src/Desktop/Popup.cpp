@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <sstream>
 #include <windowsx.h>
+#include <commctrl.h>
 #include <oleacc.h>
 #include <oleauto.h>
 #include <wrl.h>
@@ -41,6 +42,13 @@ constexpr int iconGap = 8;
 constexpr int titleGap = 12;
 constexpr int bodyGap = 8;
 constexpr int detailGap = 12;
+constexpr int actionGap = 16;
+constexpr int actionHeight = 32;
+constexpr int actionSpacing = 8;
+constexpr int actionInset = 12;
+// The window's buttons: a 16-pixel icon, 8 pixels before the word.
+constexpr int actionIconSize = 16;
+constexpr int actionIconGap = 8;
 constexpr int lineGap = 4;
 constexpr int fontSize = 14;
 constexpr int captionSize = 12;
@@ -62,6 +70,8 @@ constexpr int textLimit = 160;
 
 // The fill of the foreground colour over the backdrop under the pointer, out of 255.
 constexpr BYTE hoverOpacity = 0x1A;
+// The fill of a button at rest, Fluent's subtle control fill, out of 255.
+constexpr BYTE buttonOpacity = 0x0F;
 // Fluent's divider stroke, out of 255.
 constexpr BYTE dividerOpacity = 0x14;
 
@@ -350,6 +360,10 @@ void Popup::Show(Content content)
         {
             return;
         }
+        // The popup is never active, so the tooltip shows without that.
+        tooltip_ = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr, WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX,
+            CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, window_, nullptr, GetModuleHandleW(nullptr),
+            nullptr);
     }
     auto shown = IsWindowVisible(window_) != FALSE;
     // New content stops a slide out, so the popup stays for its full time.
@@ -482,6 +496,21 @@ void Popup::Layout()
             bottom + Scale(detailGap, dpi) + height};
         bottom = detail_.bottom;
     }
+    actions_.clear();
+    if (!content_.actions.empty())
+    {
+        auto count = static_cast<LONG>(content_.actions.size());
+        auto spacing = Scale(actionSpacing, dpi);
+        auto each = (width - 2 * inset - spacing * (count - 1)) / count;
+        auto top = bottom + Scale(actionGap, dpi);
+        for (LONG index = 0; index < count; ++index)
+        {
+            auto left = inset + index * (each + spacing);
+            actions_.push_back({left, top, left + each, top + Scale(actionHeight, dpi)});
+        }
+        bottom = actions_.back().bottom;
+    }
+    SetTooltips();
     ReleaseDC(window_, device);
     auto height = bottom + inset;
     auto work = Taskbar().rcWork;
@@ -593,13 +622,37 @@ void Popup::Paint(HWND window)
         canvas.Text(line, bounds, detailFormat | ellipsis, caption_);
         bounds.top = bounds.bottom + Scale(lineGap, dpi);
     }
+    auto iconWidth = hasIcons_ ? Scale(actionIconSize, dpi) + Scale(actionIconGap, dpi) : 0;
+    previous = SelectObject(canvas.Device(), font_);
+    for (std::size_t index = 0; index < actions_.size(); ++index)
+    {
+        auto const& action = content_.actions[index];
+        auto button = actions_[index];
+        canvas.Fill(button, foreground, actionHover_ == index ? hoverOpacity : buttonOpacity, corner);
+        SIZE label{};
+        GetTextExtentPoint32W(canvas.Device(), action.label.c_str(), static_cast<int>(action.label.size()), &label);
+        // The icon and word are centred together, and a word too long for the
+        // button ends in an ellipsis.
+        auto inner = Scale(actionInset, dpi);
+        auto left = std::max<LONG>(button.left + inner,
+            (button.left + button.right - iconWidth - label.cx) / 2);
+        if (hasIcons_)
+        {
+            RECT glyph{left, button.top, left + Scale(actionIconSize, dpi), button.bottom};
+            canvas.Text(std::wstring(1, action.glyph), glyph, DT_SINGLELINE | DT_CENTER | DT_VCENTER, icons_);
+        }
+        RECT text{left + iconWidth, button.top, button.right - inner, button.bottom};
+        canvas.Text(action.label, text, labelFormat, font_);
+    }
+    SelectObject(canvas.Device(), previous);
 }
 
-void Popup::Hover(std::optional<PopupPart> part)
+void Popup::Hover(std::optional<PopupPart> part, std::optional<std::size_t> action)
 {
-    if (part != hover_)
+    if (part != hover_ || action != actionHover_)
     {
         hover_ = part;
+        actionHover_ = action;
         InvalidateRect(window_, nullptr, FALSE);
     }
 }
@@ -614,7 +667,47 @@ PopupPart Popup::Part(POINT point) const
     {
         return PopupPart::More;
     }
+    if (ActionAt(point))
+    {
+        return PopupPart::Action;
+    }
     return PopupPart::Body;
+}
+
+std::optional<std::size_t> Popup::ActionAt(POINT point) const
+{
+    for (std::size_t index = 0; index < actions_.size(); ++index)
+    {
+        if (PtInRect(&actions_[index], point))
+        {
+            return index;
+        }
+    }
+    return std::nullopt;
+}
+
+void Popup::SetTooltips()
+{
+    if (!tooltip_)
+    {
+        return;
+    }
+    TOOLINFOW tool{sizeof(tool)};
+    tool.hwnd = window_;
+    // Each button's tool id is its index, so the earlier ids are known.
+    for (auto count = SendMessageW(tooltip_, TTM_GETTOOLCOUNT, 0, 0); count > 0; --count)
+    {
+        tool.uId = static_cast<UINT_PTR>(count - 1);
+        SendMessageW(tooltip_, TTM_DELTOOLW, 0, reinterpret_cast<LPARAM>(&tool));
+    }
+    tool.uFlags = TTF_SUBCLASS;
+    for (std::size_t index = 0; index < actions_.size(); ++index)
+    {
+        tool.uId = index;
+        tool.rect = actions_[index];
+        tool.lpszText = const_cast<LPWSTR>(content_.actions[index].tooltip.c_str());
+        SendMessageW(tooltip_, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&tool));
+    }
 }
 
 LRESULT CALLBACK Popup::Procedure(HWND window, UINT message, WPARAM first, LPARAM second)
@@ -671,16 +764,20 @@ LRESULT Popup::Handle(HWND window, UINT message, WPARAM first, LPARAM second)
             StopSlide();
             SetWindowPos(window, nullptr, place_.x, place_.y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
         }
-        Hover(Part({GET_X_LPARAM(second), GET_Y_LPARAM(second)}));
+    {
+        POINT point{GET_X_LPARAM(second), GET_Y_LPARAM(second)};
+        Hover(Part(point), ActionAt(point));
         return 0;
+    }
     case WM_MOUSELEAVE:
         tracking_ = false;
-        Hover(std::nullopt);
+        Hover(std::nullopt, std::nullopt);
         ScheduleClose();
         return 0;
     case WM_LBUTTONUP:
     {
-        auto part = Part({GET_X_LPARAM(second), GET_Y_LPARAM(second)});
+        POINT point{GET_X_LPARAM(second), GET_Y_LPARAM(second)};
+        auto part = Part(point);
         // The More button toggles its menu, which a click on this popup does
         // not close, because the popup never takes the focus.
         if (part == PopupPart::More)
@@ -695,7 +792,16 @@ LRESULT Popup::Handle(HWND window, UINT message, WPARAM first, LPARAM second)
             }
             return 0;
         }
-        if (part == PopupPart::Body)
+        if (part == PopupPart::Action)
+        {
+            auto const& action = content_.actions[*ActionAt(point)];
+            PostMessageW(owner_, selected_, static_cast<WPARAM>(part), action.id);
+            if (!action.closes)
+            {
+                return 0;
+            }
+        }
+        else if (part == PopupPart::Body)
         {
             PostMessageW(owner_, selected_, static_cast<WPARAM>(part), 0);
         }
@@ -722,9 +828,12 @@ LRESULT Popup::Handle(HWND window, UINT message, WPARAM first, LPARAM second)
         acrylic_.Apply(window, theme_);
         return 0;
     case WM_NCDESTROY:
+        // The tooltip is owned by the popup, so Windows has destroyed it.
         window_ = nullptr;
+        tooltip_ = nullptr;
         tracking_ = false;
         hover_.reset();
+        actionHover_.reset();
         slideStart_ = 0;
         leaving_ = false;
         break;

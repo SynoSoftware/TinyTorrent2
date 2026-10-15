@@ -45,8 +45,12 @@ if (-not (Test-Path -LiteralPath $window)) {
 $session = (Get-Process -Id $PID).SessionId
 $running = @(Get-Process -Name $engineName, $windowName, 'Transfer' -ErrorAction SilentlyContinue |
     Where-Object { $_.SessionId -eq $session })
+$outputs = Join-Path $repository 'artifacts'
+$target = (Get-Item -LiteralPath $outputs).Target
+if ($target) { $outputs = [IO.Path]::GetFullPath($target) }
 foreach ($instance in $running) {
     if (-not ($instance.Path.StartsWith($repository + '\', [StringComparison]::OrdinalIgnoreCase) -or
+        $instance.Path.StartsWith($outputs + '\', [StringComparison]::OrdinalIgnoreCase) -or
         $instance.Path.StartsWith($ArtifactsPath + '\', [StringComparison]::OrdinalIgnoreCase))) {
         throw "The capture review cannot replace an installed copy outside this checkout: $($instance.Path)"
     }

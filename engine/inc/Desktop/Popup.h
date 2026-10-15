@@ -25,12 +25,29 @@ public:
         UINT id;
     };
 
+    // A button under the message: a Lucide glyph before one word, as the
+    // window's buttons are, with a tooltip for what the word does not say.
+    struct Action
+    {
+        wchar_t glyph;
+        std::wstring label;
+        std::wstring tooltip;
+        // The LPARAM sent when the person chooses the button.
+        UINT id;
+        // A button that only shows something, such as a folder, leaves the
+        // notice open, so its message and other buttons stay available.
+        bool closes = true;
+    };
+
     struct Content
     {
         std::wstring title;
         std::wstring body;
         // Diagnostic lines stay on one line each, with paths shortened to fit.
         std::wstring detail;
+        // Buttons share one row under the message in equal widths, as on
+        // Windows' own notifications.
+        std::vector<Action> actions;
         // The More menu, under its title and a separator. With any items, the
         // More button that opens it shows in the header while the pointer is
         // over the popup.
@@ -42,8 +59,9 @@ public:
     };
 
     // Selecting the body posts `selected` to `window` with PopupPart::Body as
-    // its WPARAM; choosing an item of the More menu sends PopupPart::More with
-    // the item's id as its LPARAM. Either closes the popup.
+    // its WPARAM; choosing a button posts PopupPart::Action, and an item of the
+    // More menu sends PopupPart::More, each with its id as the LPARAM. Any of
+    // them closes the popup, except a button that does not close it.
     Popup(HWND window, UINT selected);
     ~Popup();
     Popup(Popup const&) = delete;
@@ -81,8 +99,11 @@ private:
     // the pointer, or under its open More menu.
     void ScheduleClose();
     void Paint(HWND window);
-    void Hover(std::optional<PopupPart> part);
+    void Hover(std::optional<PopupPart> part, std::optional<std::size_t> action);
     PopupPart Part(POINT point) const;
+    std::optional<std::size_t> ActionAt(POINT point) const;
+    // Gives each button its tooltip, over the bounds Layout gave it.
+    void SetTooltips();
     void DeleteFonts();
     HWND owner_;
     UINT selected_;
@@ -103,7 +124,9 @@ private:
     RECT title_{};
     RECT body_{};
     RECT detail_{};
+    std::vector<RECT> actions_;
     RECT more_{};
+    HWND tooltip_ = nullptr;
     // Where Layout places the popup, and when its current slide began; zero
     // when it is not sliding.
     POINT place_{};
@@ -118,5 +141,6 @@ private:
     int menuRow_ = 0;
     std::optional<std::size_t> menuHover_;
     std::optional<PopupPart> hover_;
+    std::optional<std::size_t> actionHover_;
 };
 }

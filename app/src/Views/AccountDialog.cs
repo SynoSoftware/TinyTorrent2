@@ -50,8 +50,7 @@ internal sealed class AccountDialog : UserControl, IDraft
     internal string Title { get; }
 
     /// <summary>The check button and its progress, or null when the opener cannot check.</summary>
-    internal FrameworkElement? Status => _check is null ? null : _status;
-    internal ActionButton? CheckAction => _check is null ? null : _status.Check;
+    internal CheckStatus? Status => _check is null ? null : _status;
     public bool IsPending { get; private set; }
     public bool CanSubmit => !IsPending;
     public bool HasDraft => Input != _saved;

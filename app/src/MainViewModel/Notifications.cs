@@ -135,7 +135,8 @@ public sealed partial class MainViewModel
                 "delete_failed" => "not_deleted",
                 _ => "torrent_stopped",
             };
-            Report(error, title, name, reason);
+            var folder = notice.GetProperty("folder").GetString();
+            Report(error, title, name, reason, folder is { Length: > 0 } ? folder : null);
         }
     }
 
@@ -219,6 +220,10 @@ public sealed partial class MainViewModel
                 notice.Title = Text.Get("notifications", _errorTitle);
                 notice.Subject = _errorSubject;
                 notice.Message = CommandError;
+                notice.Action = _errorFolder is null ? null : OpenErrorFolder;
+                notice.ActionText = Text.Get("commands", "open_folder");
+                notice.ActionTip = Text.Get("notifications", "files_folder_tip");
+                notice.ActionGlyph = Syno.Lucide.FolderOpen;
                 break;
             case NoticeKind.SubtitleError:
                 var latest = _subtitleFailure!;

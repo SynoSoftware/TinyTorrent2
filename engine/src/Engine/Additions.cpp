@@ -97,6 +97,7 @@ void Engine::State::Add(Preview& preview, Addition::Choices choices, std::functi
     addition.facts.appendsSuffix = settings.appendsSuffix;
     addition.facts.layout = settings.layout;
     addition.facts.skipPatterns = std::move(patterns);
+    addition.facts.torrentFile = preview.torrentFile;
     addition.facts.savePath = settings.SavePath(choices.destination);
     if (addition.facts.savePath != choices.destination)
     {
@@ -320,6 +321,7 @@ void Engine::State::CommitAddition(std::string const& id)
         }
         auto found = additions.find(id);
         auto& torrent = Install(id, found->second.handle, found->second.facts, found->second.params);
+        torrent.queueReport = QueueReport::AwaitingFiles;
         queueOrder = order;
         settings.lastFolder = folder;
         watchedSources = watched;

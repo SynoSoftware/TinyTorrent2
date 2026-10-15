@@ -11,7 +11,6 @@ public sealed partial class ProxyDialog : UserControl
 {
     public MainViewModel Model { get; }
     public Proxy Proxy => Model.Settings.Proxy;
-    internal ActionButton CheckAction => Status.Check;
 
     public ProxyDialog(MainViewModel model)
     {

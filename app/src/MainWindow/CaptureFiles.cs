@@ -129,8 +129,8 @@ public sealed partial class MainWindow
         {
             Torrents.Selection = new Syno.TableView.Selection(torrents, torrents[0]);
             await SelectTorrent();
-            Run(action == FileAction.Move ? Model.MoveFiles : Model.DeleteFiles);
-            // Delete opens its dialog only after the scope arrives.
+            Run(action == FileAction.Move ? Model.MoveFiles : Model.Remove);
+            // The dialog opens only after the scope arrives.
             await CaptureReady(Model.FileDraft, () => Model.FileDraft.CanRefresh);
             await CaptureLayout();
             var dialog =
@@ -350,9 +350,10 @@ public sealed partial class MainWindow
         );
         await CapturePage("files-moved");
 
-        (dialog, closed) = await Open([group[0]], FileAction.Delete);
+        (dialog, closed) = await Open([group[0]], FileAction.Remove);
         try
         {
+            Model.FileDraft.DeleteDownloaded = true;
             if (!Model.FileDraft.HasShared || dialog.DefaultButton != ContentDialogButton.Primary)
                 throw new InvalidOperationException(
                     "The partial deletion omitted shared-file protection or Delete as default."
@@ -389,9 +390,10 @@ public sealed partial class MainWindow
             }
         );
 
-        (dialog, closed) = await Open(group.Skip(1).ToArray(), FileAction.Delete);
+        (dialog, closed) = await Open(group.Skip(1).ToArray(), FileAction.Remove);
         try
         {
+            Model.FileDraft.DeleteDownloaded = true;
             if (Model.FileDraft.HasShared || dialog.DefaultButton != ContentDialogButton.Primary)
                 throw new InvalidOperationException(
                     "The full deletion scope or Delete as default is incorrect."

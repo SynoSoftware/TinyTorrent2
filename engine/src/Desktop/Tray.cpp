@@ -145,6 +145,12 @@ void Tray::Add()
     Apply(NIM_ADD);
 }
 
+void Tray::Remove()
+{
+    popup_.Close();
+    Apply(NIM_DELETE);
+}
+
 void Tray::Apply(DWORD action)
 {
     if (headless_)
@@ -379,6 +385,14 @@ std::wstring Tray::PauseText() const
     return strings_.Text("tray", activity_.pausedByChoice ? "resume" : "pause");
 }
 
+// The codes Application::Open and its readiness wait report when the window
+// does not start.
+static bool IsWindowStart(std::string const& code)
+{
+    return code == "startup" || code == "launch" || code == "window_missing" || code == "window_denied" ||
+        code == "window_invalid" || code == "window_dependency";
+}
+
 static bool IsFailure(NoticeKind kind)
 {
     return kind == NoticeKind::Error || kind == NoticeKind::AddFailed || kind == NoticeKind::DeleteFailed ||
@@ -500,6 +514,24 @@ Popup::Content Tray::Message(Notice const& notice, unsigned count) const
             }
             content.body += problem;
         }
+        if (IsWindowStart(notice.code) && count == 1)
+        {
+            // Lucide's rotate-ccw and folder-open glyphs, as the window's Retry
+            // and Open folder buttons show. Open alone would read as opening
+            // the window, so that button names the folder.
+            content.actions = {
+                {L'\uE148', strings_.Text("notification", "retry"), strings_.Text("notification", "retry_tip"),
+                    static_cast<UINT>(NoticeAction::Retry)},
+                {L'\uE247', strings_.Text("notification", "open_folder"),
+                    strings_.Text("notification", "open_folder_tip"), static_cast<UINT>(NoticeAction::OpenFolder),
+                    false}};
+        }
+        else if (!notice.folder.empty() && count == 1)
+        {
+            content.actions = {{L'\uE247', strings_.Text("notification", "open_folder"),
+                strings_.Text("notification", "files_folder_tip"), static_cast<UINT>(NoticeAction::OpenFolder),
+                false}};
+        }
     }
     return content;
 }
@@ -568,6 +600,11 @@ void Tray::Show(Popup::Content content, std::optional<NoticeSwitch> notices)
 std::optional<Notice> Tray::TakeNotice()
 {
     return std::exchange(notice_, std::nullopt);
+}
+
+std::filesystem::path Tray::Folder() const
+{
+    return notice_ ? std::filesystem::path(Wide(notice_->folder)) : std::filesystem::path();
 }
 
 #ifdef _DEBUG

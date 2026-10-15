@@ -18,29 +18,49 @@ body{margin:12px}
     <button type="button" class="simulation" aria-pressed="true">Pause simulation</button>
     <label>Time <select data-setting="speed"><option value="1">1×</option><option value="2">2×</option><option value="5">5×</option><option value="10">10×</option></select></label>
     <label>Rendering <select data-setting="rendering"><option value="plain">Original</option><option value="glow">Globe curves + glow</option></select></label>
+    <label>Illustrative origin <select data-setting="origin"><option value="cayenne">Cayenne</option><option value="london">London</option></select></label>
     <label data-tooltip="Illustrative turnover. Each replacement is one departure and one arrival; total connection count stays fixed.">Peer churn <select data-setting="churn"><option value="0">Off</option><option value="3">3 replacements/min</option><option value="10">10 replacements/min</option><option value="30">30 replacements/min</option><option value="60">60 replacements/min</option></select></label>
     <label data-tooltip="Ordinary per-second rate variation. Occasional larger changes occur separately every 15–30 simulated seconds across the swarm.">Transfer volatility <select data-setting="volatility"><option value="gentle">±10%</option><option value="variable">±25%</option><option value="bursty">±60%</option></select></label>
     <label class="map-control">Map comparison <select data-setting="geography"><option value="country">Countries · quiet shading</option><option value="heatmap">Countries · activity shading</option><option value="restrained">Countries · restrained activity</option><option value="distribution">Countries · estimated distribution</option><option value="city">Cities</option></select></label>
+    <label>Arc treatment <select data-setting="variant"><option value="current">A · Current</option><option value="cap">B · 80% layer cap</option><option value="landing">C · Soft landings</option><option value="quiet">D · Soft landings + less glow</option></select></label>
     <span class="transfer-summary"></span>
     <span class="fade-summary" aria-live="polite"></span>
   </div>
   <div class="inspector">
     <button type="button" class="resize" aria-label="Resize inspector. Up arrow increases height; Down arrow decreases height." data-tooltip="Drag upward to increase height; downward to decrease it. Arrow keys also resize."><span></span></button>
     <div class="heading"><div class="tabs"><span>General</span><span>Files</span><strong>Peers</strong><span>Trackers</span><span>Speed</span><span>Pieces</span></div>
-      <div class="view-buttons" role="group" aria-label="Visible peer views">
-        <button type="button" data-view="map" aria-label="Show map" aria-pressed="true" data-tooltip="Show map"><i data-lucide="map" aria-hidden="true"></i></button>
-        <button type="button" data-view="table" aria-label="Show table" aria-pressed="true" data-tooltip="Show table"><i data-lucide="table-2" aria-hidden="true"></i></button>
+      <div class="view-control">
+        <button type="button" class="view-trigger" aria-label="Peer view" aria-expanded="false" aria-controls="peer-views" title="Peer view: Map, Table or Both"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+        <div id="peer-views" class="view-buttons" role="group" aria-label="Peer view">
+          <button type="button" data-view="map" aria-label="Map only" aria-pressed="false" title="Map only"><i data-lucide="map" aria-hidden="true"></i><span>Map only</span></button>
+          <button type="button" data-view="table" aria-label="Table only" aria-pressed="false" title="Table only"><i data-lucide="table-2" aria-hidden="true"></i><span>Table only</span></button>
+          <button type="button" data-view="both" aria-label="Map and table" aria-pressed="true" title="Map and table — layout adapts to available space"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg><span>Map and table</span></button>
+        </div>
       </div>
     </div>
     <div class="workspace" data-layout="side">
-      <div class="map-pane"><svg class="map" role="img" aria-label="Peer locations and transfer activity"></svg></div>
+      <div class="map-pane">
+        <svg class="map" role="img" tabindex="0" aria-label="Peer locations and transfer activity" aria-description="Wheel or plus and minus to zoom. Drag or Control and arrow keys to pan. Arrow keys select locations. Control zero fits the world. Shift F10 opens the menu. Escape cancels a drag."></svg>
+        <div class="zoom-tools" hidden><span class="zoom-level"></span><button type="button" class="fit" aria-label="Fit to window" title="Fit to window (Ctrl+0)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3m8 0h3a2 2 0 0 0 2-2v-3"/></svg></button></div>
+        <div class="map-menu" role="menu" aria-label="Map view" hidden>
+          <button type="button" role="menuitem" data-zoom="in"><span>Zoom in</span><kbd>Ctrl +</kbd></button>
+          <button type="button" role="menuitem" data-zoom="out"><span>Zoom out</span><kbd>Ctrl −</kbd></button>
+          <button type="button" role="menuitem" data-zoom="fit"><span>Fit to window</span><kbd>Ctrl 0</kbd></button>
+        </div>
+      </div>
       <button type="button" class="split" aria-label="Resize map and table. Use arrow keys or drag the divider."><span></span></button>
       <div class="table-pane"><table><thead><tr><th>Endpoint</th><th>Location</th><th class="numeric">Download</th><th class="numeric">Upload</th></tr></thead><tbody></tbody></table></div>
     </div>
     <div class="detail" aria-live="polite"><span>Select a peer to highlight its location.</span><button type="button" class="clear" hidden>Clear highlight</button></div>
   </div>
   <div class="app-status" role="status" aria-label="Application status bar"><span class="counts"></span></div>
-  <div class="source">Approximate IP locations · illustrative origin: London · <a href="https://www.naturalearthdata.com/" target="_blank" rel="noreferrer">Natural Earth geometry</a><span class="distribution-note" hidden> · Estimated allocation using <a href="https://www.naturalearthdata.com/downloads/10m-cultural-vectors/10m-populated-places/" target="_blank" rel="noreferrer">populated-place weights</a>, not a population raster or observed peer cities</span></div>
+  <div class="source">Approximate IP locations · artificial transfers and illustrative origin · <a href="https://www.naturalearthdata.com/" target="_blank" rel="noreferrer">Natural Earth geometry</a><span class="distribution-note" hidden> · Estimated allocation using <a href="https://www.naturalearthdata.com/downloads/10m-cultural-vectors/10m-populated-places/" target="_blank" rel="noreferrer">populated-place weights</a>, not a population raster or observed peer cities</span></div>
+  <div class="comparison" aria-label="Peer view control placement comparison">
+    <button type="button" data-step="-1" aria-label="Previous comparison">←</button>
+    <label>View controls <select class="placement"><option value="tab">A · Beside Peers — menu</option><option value="canvas">B · Inside content — three choices</option><option value="status">C · Status bar — three choices</option></select></label>
+    <button type="button" data-step="1" aria-label="Next comparison">→</button>
+    <span class="comparison-note" aria-live="polite"></span>
+  </div>
 </div>
 <style>
 #peer-layout-study{font:13px/1.45 'Segoe UI',sans-serif;color:light-dark(#242424,#eee);background:light-dark(#f3f3f3,#1b1b1b)}
@@ -63,6 +83,23 @@ body{margin:12px}
 #peer-layout-study .heading,#peer-layout-study .toolbar,#peer-layout-study .detail{flex-shrink:0}
 #peer-layout-study .workspace{display:grid;grid-template-columns:minmax(0,var(--map-width,44fr)) 7px minmax(0,var(--table-width,56fr));grid-template-rows:minmax(0,1fr);flex:1;min-height:0}
 #peer-layout-study .map-pane{min-width:0;min-height:0;display:flex;flex-direction:column}
+#peer-layout-study .map-pane{position:relative;overflow:hidden}
+#peer-layout-study .map{outline-offset:-3px;user-select:none}
+#peer-layout-study .map path,#peer-layout-study .map circle{vector-effect:non-scaling-stroke}
+#peer-layout-study .map:focus-visible{outline:2px solid var(--outline)}
+#peer-layout-study .map[data-zoomed="true"]{cursor:grab}
+#peer-layout-study .map[data-dragging="true"]{cursor:grabbing}
+#peer-layout-study .zoom-tools{position:absolute;right:12px;top:12px;display:flex;align-items:center;gap:8px;padding:3px 3px 3px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);box-shadow:0 2px 8px #0002}
+#peer-layout-study .zoom-level{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+#peer-layout-study .fit{display:grid;place-items:center;width:30px;height:28px;padding:0;background:transparent;border-color:transparent}
+#peer-layout-study .fit:hover{background:var(--row)}
+#peer-layout-study .map-menu{position:absolute;z-index:5;width:210px;padding:4px;background:var(--surface);border:1px solid var(--border);border-radius:7px;box-shadow:0 5px 20px #0004}
+#peer-layout-study .map-menu button{display:flex;justify-content:space-between;width:100%;border:0;background:transparent;padding:8px;text-align:left}
+#peer-layout-study .map-menu button:hover,#peer-layout-study .map-menu button:focus-visible{background:var(--row)}
+#peer-layout-study .map-menu button:disabled{opacity:.4}
+#peer-layout-study .map-menu kbd{font:inherit;color:var(--muted);font-size:11px}
+#peer-layout-study .zoom-tools[hidden],#peer-layout-study .map-menu[hidden]{display:none}
+@media(forced-colors:active){#peer-layout-study .land,#peer-layout-study .arc{stroke:CanvasText}#peer-layout-study .endpoint,#peer-layout-study .origin{fill:Highlight}#peer-layout-study .arc-halo{display:none}}
 #peer-layout-study .split{display:flex;align-items:center;justify-content:center;border:0;border-radius:0;padding:0;min-width:0;min-height:0;background:var(--border);cursor:ew-resize;touch-action:none}
 #peer-layout-study .split span{width:2px;height:28px;border-radius:2px;background:var(--muted)}
 #peer-layout-study .split:hover{background:var(--chosen)}
@@ -95,7 +132,6 @@ body{margin:12px}
 #peer-layout-study .arc{transition:opacity var(--rate-transition,1.6s) linear,stroke-width var(--rate-transition,1.6s) linear,stroke var(--rate-transition,1.6s) linear}
 #peer-layout-study .land{transition:fill var(--rate-transition,1.6s) linear}
 @media(prefers-reduced-motion:reduce){#peer-layout-study .arc,#peer-layout-study .land,#peer-layout-study .arc-halo,#peer-layout-study .transfer-gradient stop,#peer-layout-study .endpoint{transition:none}}
-#peer-layout-study .arc.selected{stroke:var(--outline)!important;opacity:1!important;stroke-width:2.2!important}
 #peer-layout-study .dot{fill:var(--surface);stroke:var(--arc);stroke-width:1;stroke-opacity:var(--density)}
 #peer-layout-study .dot.active{fill:var(--arc);fill-opacity:var(--density)}
 #peer-layout-study .dot.selected{fill:var(--outline);fill-opacity:1;stroke:var(--text);stroke-opacity:1;stroke-width:1.3}
@@ -107,6 +143,10 @@ body{margin:12px}
 #peer-layout-study .detail{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-height:29px;padding:7px 12px;border-top:1px solid var(--border);font-size:12px;color:var(--muted)}
 #peer-layout-study .clear{margin-left:auto;padding:3px 8px;font-size:12px}
 #peer-layout-study .source{padding-top:10px;font-size:12px;color:light-dark(#666,#aaa)}
+#peer-layout-study{padding-bottom:110px}
+#peer-layout-study .comparison{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:10;display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;width:max-content;max-width:calc(100% - 48px);padding:12px;background:light-dark(#fff,#292929);border:1px solid light-dark(#ccc,#555);border-radius:10px;box-shadow:0 4px 20px #0004}
+#peer-layout-study .comparison-note{flex-basis:100%;text-align:center;font-size:12px;max-width:650px}
+#peer-layout-study .selection-arc{fill:none;stroke:var(--outline);stroke-width:2.2;stroke-linecap:round;pointer-events:none}
 #peer-layout-study a{color:inherit}
 #peer-layout-study [data-layout="stacked"],#peer-layout-study [data-layout="map"],#peer-layout-study [data-layout="table"]{grid-template-columns:minmax(0,1fr)}
 #peer-layout-study [data-layout="stacked"]{grid-template-rows:minmax(0,var(--map-height,55fr)) 7px minmax(0,var(--table-height,45fr))}
@@ -123,6 +163,24 @@ body{margin:12px}
 #peer-layout-study .view-buttons button[aria-pressed="true"]::after{content:'';position:absolute;bottom:0;width:14px;height:2px;background:var(--outline)}
 #peer-layout-study .view-buttons button:hover{background:var(--border)}
 #peer-layout-study .view-buttons svg{width:16px;height:16px}
+#peer-layout-study .view-control{position:relative;flex-shrink:0;color:light-dark(#242424,#eee)}
+#peer-layout-study .view-trigger{display:none;padding:2px;background:transparent;border-color:transparent}
+#peer-layout-study .view-buttons span{display:none}
+#peer-layout-study .view-buttons button:focus-visible,#peer-layout-study .view-trigger:focus-visible{outline:2px solid light-dark(#007a94,#54cee8);outline-offset:1px}
+#peer-layout-study .view-buttons button[aria-pressed="true"]{background:light-dark(#e6f0f2,#35464b)}
+#peer-layout-study .view-buttons button[aria-pressed="true"]::after{background:light-dark(#007a94,#54cee8)}
+#peer-layout-study .view-buttons button:hover{background:light-dark(#ddd,#414141)}
+#peer-layout-study[data-controls="tab"] .tabs{overflow:visible;gap:12px}
+#peer-layout-study[data-controls="tab"] .view-control{margin-left:-10px}
+#peer-layout-study[data-controls="tab"] .view-trigger{display:flex;align-items:center;justify-content:center;width:22px;height:28px}
+#peer-layout-study[data-controls="tab"] .view-buttons{display:none;position:absolute;top:34px;left:-42px;z-index:8;width:180px;padding:4px;border:1px solid light-dark(#ccc,#505050);border-radius:6px;background:light-dark(#fafafa,#292929);box-shadow:0 5px 20px #0003}
+#peer-layout-study[data-controls="tab"] .view-control[data-open="true"] .view-buttons{display:flex;flex-direction:column}
+#peer-layout-study[data-controls="tab"] .view-buttons button{justify-content:flex-start;gap:10px;height:34px}
+#peer-layout-study[data-controls="tab"] .view-buttons span{display:inline}
+#peer-layout-study[data-controls="tab"] .view-buttons button[aria-pressed="true"]::after{right:10px;bottom:auto;width:5px;height:5px;border-radius:50%}
+#peer-layout-study .workspace{position:relative}
+#peer-layout-study[data-controls="canvas"] .view-control{position:absolute;top:10px;left:10px;z-index:6;padding:3px;border:1px solid light-dark(#ccc,#505050);border-radius:6px;background:light-dark(#fafafa,#292929);box-shadow:0 2px 8px #0002}
+#peer-layout-study[data-controls="status"] .view-control{margin-left:auto;padding:3px 0}
 #peer-layout-study .app-status{display:flex;align-items:center;min-height:26px;padding:0 10px;background:light-dark(#f3f3f3,#202020);color:light-dark(#666,#aaa)}
 #peer-layout-study .app-status .counts{margin:0;color:inherit;font-size:12px}
 #peer-layout-study .detail{display:none}
@@ -246,10 +304,50 @@ const Table2 = [
   const root=document.getElementById('peer-layout-study');
   const data=JSON.parse(document.getElementById('layout-geography').textContent);
   const population={"RUS":[{"name":"Moscow","population":10452000,"position":[37.6136,55.7541]},{"name":"St.  Petersburg","population":4553000,"position":[30.3141,59.941]},{"name":"Novosibirsk","population":1389000,"position":[82.9581,55.0319]},{"name":"Yekaterinburg","population":1313000,"position":[60.598,56.852]},{"name":"Nizhny Novgorod","population":1278000,"position":[43.9981,56.335]},{"name":"Samara","population":1137000,"position":[50.1493,53.197]},{"name":"Omsk","population":1135000,"position":[73.398,54.9919]},{"name":"Kazan","population":1115000,"position":[49.1244,55.7519]},{"name":"Chelyabinsk","population":1091000,"position":[61.4367,55.1569]},{"name":"Rostov","population":1052000,"position":[39.7107,47.2366]},{"name":"Ufa","population":1018000,"position":[56.0381,54.7919]},{"name":"Perm","population":997000,"position":[56.248,58.0019]},{"name":"Volgograd","population":984000,"position":[44.498,48.712]},{"name":"Krasnoyarsk","population":925000,"position":[92.8641,56.0159]},{"name":"Voronezh","population":844000,"position":[39.1868,51.6654]},{"name":"Saratov","population":843000,"position":[46.028,51.5819]},{"name":"Tolyatti","population":702879,"position":[49.4201,53.5081]},{"name":"Krasnodar","population":649851,"position":[39,45.02]},{"name":"Ulyanovsk","population":640680,"position":[48.41,54.33]},{"name":"Izhevsk","population":631038,"position":[53.23,56.85]},{"name":"Yaroslavl","population":606730,"position":[39.87,57.62]},{"name":"Barnaul","population":599579,"position":[83.745,53.355]},{"name":"Vladivostok","population":587022,"position":[131.91,43.13]},{"name":"Irkutsk","population":586695,"position":[104.2839,52.2846]},{"name":"Khabarovsk","population":579000,"position":[135.12,48.455]},{"name":"Makhachkala","population":554981,"position":[47.5,42.98]},{"name":"Orenburg","population":550204,"position":[55.11,51.78]},{"name":"Novokuznetsk","population":539616,"position":[87.115,53.75]},{"name":"Tomsk","population":535479,"position":[84.975,56.495]},{"name":"Ryazan","population":520173,"position":[39.72,54.62]},{"name":"Tyumen","population":519119,"position":[65.53,57.14]},{"name":"Lipetsk","population":515655,"position":[39.64,52.62]}],"CAN":[{"name":"Toronto","population":5213000,"position":[-79.3895,43.6646]},{"name":"Montréal","population":3678000,"position":[-73.5852,45.5019]},{"name":"Vancouver","population":2313328,"position":[-123.1236,49.2754]},{"name":"Ottawa","population":1145000,"position":[-75.702,45.4186]},{"name":"Calgary","population":1110000,"position":[-114.0819,51.0849]},{"name":"Edmonton","population":1058000,"position":[-113.5019,53.552]},{"name":"Hamilton","population":721053,"position":[-79.83,43.25]},{"name":"Winnipeg","population":632063,"position":[-97.166,49.883]},{"name":"Québec","population":624177,"position":[-71.2456,46.84]},{"name":"Oshawa","population":450963,"position":[-78.85,43.88]},{"name":"Kitchener","population":417001,"position":[-80.5,43.45]},{"name":"Halifax","population":359111,"position":[-63.6,44.65]},{"name":"London","population":346765,"position":[-81.25,42.97]},{"name":"Windsor","population":319246,"position":[-83.0369,42.3155]},{"name":"Victoria","population":289625,"position":[-123.35,48.4333]},{"name":"Saskatoon","population":198958,"position":[-106.67,52.17]},{"name":"Barrie","population":182041,"position":[-79.7,44.3838]},{"name":"Regina","population":176183,"position":[-104.617,50.45]},{"name":"Sudbury","population":157857,"position":[-80.9666,46.5]},{"name":"Abbotsford","population":151683,"position":[-122.3,49.0504]},{"name":"Sarnia","population":144172,"position":[-82.4,42.9666]},{"name":"Sherbrooke","population":139652,"position":[-71.9,45.4]},{"name":"St. John's","population":131469,"position":[-52.681,47.585]},{"name":"Kelowna","population":125109,"position":[-119.4833,49.9]},{"name":"Trois-Rivières","population":119693,"position":[-72.5499,46.35]},{"name":"Kingston","population":114195,"position":[-76.4833,44.2337]},{"name":"Thunder Bay","population":99334,"position":[-89.275,48.4462]},{"name":"Moncton","population":90635,"position":[-64.7667,46.0833]},{"name":"Saint John","population":87857,"position":[-66.0767,45.267]},{"name":"Nanaimo","population":84905,"position":[-123.9343,49.146]},{"name":"Peterborough","population":83627,"position":[-78.3333,44.3]},{"name":"St.-Jerome","population":78439,"position":[-74,45.7666]}],"USA":[{"name":"New York","population":19040000,"position":[-73.9957,40.7216]},{"name":"Los Angeles","population":12500000,"position":[-118.232,34.0492]},{"name":"Chicago","population":8990000,"position":[-87.6352,41.848]},{"name":"Miami","population":5585000,"position":[-80.2261,25.7896]},{"name":"Philadelphia","population":5492000,"position":[-75.1798,39.9459]},{"name":"Dallas","population":4798000,"position":[-96.7947,32.772]},{"name":"Atlanta","population":4506000,"position":[-84.3676,33.7395]},{"name":"Boston","population":4467000,"position":[-71.072,42.3319]},{"name":"Houston","population":4459000,"position":[-95.3484,29.7413]},{"name":"Washington,  D.C.","population":4338000,"position":[-77.0114,38.9015]},{"name":"Detroit","population":4101000,"position":[-83.0513,42.3336]},{"name":"Phoenix","population":3551000,"position":[-112.0674,33.4483]},{"name":"San Francisco","population":3450000,"position":[-122.3996,37.7843]},{"name":"Seattle","population":3074000,"position":[-122.3153,47.6004]},{"name":"Irvine","population":3010232,"position":[-117.83,33.6804]},{"name":"San Diego","population":2916000,"position":[-117.1509,32.7189]},{"name":"Minneapolis","population":2616000,"position":[-93.2537,44.9819]},{"name":"Tampa","population":2314000,"position":[-82.4606,27.9489]},{"name":"Denver","population":2313000,"position":[-104.986,39.7411]},{"name":"Baltimore","population":2255000,"position":[-76.6146,39.2815]},{"name":"St. Louis","population":2199000,"position":[-90.2419,38.637]},{"name":"Fort Lauderdale","population":2042042,"position":[-80.1418,26.1361]},{"name":"Long Beach","population":2036134,"position":[-118.2003,33.777]},{"name":"Cleveland","population":1890000,"position":[-81.6969,41.4719]},{"name":"Portland","population":1875000,"position":[-122.6819,45.522]},{"name":"Pittsburgh","population":1838000,"position":[-80.0019,40.4319]},{"name":"Las Vegas","population":1823000,"position":[-115.1514,36.1648]},{"name":"San Bernardino","population":1745000,"position":[-117.302,34.1223]},{"name":"San Jose","population":1668000,"position":[-121.8882,37.3309]},{"name":"Cincinnati","population":1636000,"position":[-84.4589,39.1638]},{"name":"Sacramento","population":1604000,"position":[-121.472,38.577]},{"name":"Oakland","population":1510271,"position":[-122.278,37.8047]}],"CHN":[{"name":"Shanghai","population":14987000,"position":[121.4346,31.2184]},{"name":"Beijing","population":11106000,"position":[116.3942,39.9017]},{"name":"Guangzhou","population":8829000,"position":[113.2618,23.1247]},{"name":"Shenzhen","population":7581000,"position":[114.0612,22.5481]},{"name":"Wuhan","population":7243000,"position":[114.2681,30.582]},{"name":"Tianjin","population":7180000,"position":[117.1966,39.0828]},{"name":"Chongqing","population":6461000,"position":[106.593,29.5669]},{"name":"Shenyeng","population":4787000,"position":[123.448,41.8069]},{"name":"Dongguan","population":4528000,"position":[113.7505,23.0215]},{"name":"Chengdu","population":4123000,"position":[104.0681,30.6719]},{"name":"Xian","population":4009000,"position":[108.893,34.277]},{"name":"Hechi","population":3830000,"position":[108.083,24.6953]},{"name":"Nanjing","population":3679000,"position":[118.778,32.052]},{"name":"Guiyang","population":3662000,"position":[106.7181,26.582]},{"name":"Harbin","population":3621000,"position":[126.648,45.7519]},{"name":"Ürümqi","population":3575000,"position":[87.5731,43.807]},{"name":"Zhangzhou","population":3531147,"position":[117.67,24.5204]},{"name":"Changchun","population":3183000,"position":[125.338,43.867]},{"name":"Dalian","population":3167000,"position":[121.6279,38.9248]},{"name":"Zibo","population":3061000,"position":[117.9965,36.8214]},{"name":"Hangzhou","population":3007000,"position":[120.1681,30.2519]},{"name":"Kunming","population":2931000,"position":[102.6974,25.0429]},{"name":"Taiyuan","population":2913000,"position":[112.5431,37.877]},{"name":"Qingdao","population":2866000,"position":[120.3281,36.0919]},{"name":"Jinan","population":2798000,"position":[116.9931,36.6769]},{"name":"Zhengzhou","population":2636000,"position":[113.6631,34.7569]},{"name":"Fuzhou","population":2606000,"position":[119.2981,26.0819]},{"name":"Changsha","population":2604000,"position":[112.968,28.2019]},{"name":"Xiangtan","population":2586948,"position":[112.9,27.8504]},{"name":"Lanzhou","population":2561000,"position":[103.7901,36.058]},{"name":"Xiamen","population":2519000,"position":[118.0781,24.4519]},{"name":"Jinxi","population":2426000,"position":[120.828,40.7523]}],"BRA":[{"name":"São Paulo","population":18845000,"position":[-46.627,-23.5567]},{"name":"Rio de Janeiro","population":11748000,"position":[-43.2121,-22.9073]},{"name":"Belo Horizonte","population":5575000,"position":[-43.917,-19.9131]},{"name":"Porto Alegre","population":3917000,"position":[-51.202,-30.0481]},{"name":"Brasília","population":3716996,"position":[-47.918,-15.7814]},{"name":"Recife","population":3651000,"position":[-34.9088,-8.0605]},{"name":"Fortaleza","population":3602319,"position":[-38.5819,-3.7481]},{"name":"Salvador","population":3484000,"position":[-38.4819,-12.968]},{"name":"Curitiba","population":3084000,"position":[-49.3219,-25.4181]},{"name":"Campinas","population":2791000,"position":[-47.0559,-22.9079]},{"name":"Belém","population":2167000,"position":[-48.482,-1.4481]},{"name":"Goiânia","population":2022000,"position":[-49.302,-16.7181]},{"name":"Manaus","population":1753000,"position":[-60.002,-3.0981]},{"name":"Santos","population":1709000,"position":[-46.3285,-23.9618]},{"name":"Vitória","population":1704000,"position":[-40.3539,-20.332]},{"name":"Niterói","population":1500513,"position":[-43.1058,-22.8825]},{"name":"Vila Velha","population":1209091,"position":[-40.2902,-20.338]},{"name":"Vila Velha","population":1209091,"position":[-51.2167,3.2167]},{"name":"Maceió","population":1186000,"position":[-35.7319,-9.618]},{"name":"Natal","population":1088000,"position":[-35.242,-5.7781]},{"name":"São Luís","population":1038000,"position":[-44.2679,-2.514]},{"name":"Florianópolis","population":1023000,"position":[-48.522,-27.578]},{"name":"Joinville","population":988000,"position":[-48.8419,-26.318]},{"name":"Natal","population":980588,"position":[-60.2699,-6.9838]},{"name":"João Pessoa","population":956000,"position":[-34.878,-7.0992]},{"name":"Olinda","population":921840,"position":[-34.85,-8]},{"name":"Teresina","population":907000,"position":[-42.782,-5.0931]},{"name":"Novo Hamburgo","population":876990,"position":[-51.14,-29.7096]},{"name":"Nova Iguaçu","population":844583,"position":[-43.4452,-22.7551]},{"name":"Duque de Caxias","population":842890,"position":[-43.3056,-22.7964]},{"name":"Cuiabá","population":806000,"position":[-56.0869,-15.5677]},{"name":"Campo Grande","population":778000,"position":[-54.6186,-20.4481]}],"AUS":[{"name":"Sydney","population":4630000,"position":[151.2125,-33.8714]},{"name":"Melbourne","population":4170000,"position":[144.9731,-37.8181]},{"name":"Brisbane","population":1860000,"position":[153.0331,-27.4531]},{"name":"Perth","population":1532000,"position":[115.8381,-31.9531]},{"name":"Adelaide","population":1145000,"position":[138.5981,-34.933]},{"name":"Newcastle","population":540796,"position":[151.7702,-32.9295]},{"name":"Gold Coast","population":527660,"position":[153.4482,-28.0815]},{"name":"Cranbourne","population":460491,"position":[145.2834,-38.0996]},{"name":"Canberra","population":327700,"position":[149.129,-35.283]},{"name":"Wollongong","population":260914,"position":[150.89,-34.4154]},{"name":"Geelong","population":160991,"position":[144.3956,-38.1675]},{"name":"Cairns","population":154225,"position":[145.7633,-16.8878]},{"name":"Townsville","population":138954,"position":[146.77,-19.2499]},{"name":"Albury","population":104258,"position":[146.92,-36.06]},{"name":"Nowra","population":94781,"position":[150.6,-34.8828]},{"name":"Darwin","population":93080,"position":[130.85,-12.4254]},{"name":"Toowoomba","population":92800,"position":[151.9555,-27.5645]},{"name":"Ballarat","population":85109,"position":[143.84,-37.5596]},{"name":"Bendigo","population":81657,"position":[144.28,-36.76]},{"name":"Hobart","population":80870,"position":[147.295,-42.85]},{"name":"Mackay","population":75922,"position":[149.15,-21.1439]},{"name":"Mandurah","population":73356,"position":[115.7471,-32.5235]},{"name":"Launceston","population":72458,"position":[147.1302,-41.4498]},{"name":"Sunshine Coast","population":71043,"position":[153.05,-26.68]},{"name":"Rockhampton","population":65850,"position":[150.52,-23.3639]},{"name":"Coffs Harbour","population":62978,"position":[153.1123,-30.3071]},{"name":"Wagga Wagga","population":55381,"position":[147.34,-35.1222]},{"name":"Bundaberg","population":52472,"position":[152.3509,-24.8791]},{"name":"Port Macquarie","population":48547,"position":[152.9187,-31.445]},{"name":"Mildura","population":47867,"position":[142.1514,-34.185]},{"name":"Taree","population":44182,"position":[152.4618,-31.8976]},{"name":"Orange","population":39329,"position":[149.1,-33.28]}],"IND":[{"name":"Mumbai","population":18978000,"position":[72.8758,19.0684]},{"name":"Delhi","population":15926000,"position":[77.2281,28.6719]},{"name":"Kolkata","population":14787000,"position":[88.3691,22.5696]},{"name":"Chennai","population":7163000,"position":[80.2781,13.0919]},{"name":"Bengaluru","population":6787000,"position":[77.5581,12.9719]},{"name":"Hyderabad","population":6376000,"position":[78.478,17.4019]},{"name":"Amaravati","population":5800000,"position":[80.5243,16.5337]},{"name":"Ahmedabad","population":5375000,"position":[72.5781,23.032]},{"name":"Haora","population":4841638,"position":[88.3185,22.5847]},{"name":"Pune","population":4672000,"position":[73.8519,18.5164]},{"name":"Surat","population":3842000,"position":[72.8381,21.2019]},{"name":"Kanpur","population":3162000,"position":[80.318,26.4619]},{"name":"Jaipur","population":2917000,"position":[75.808,26.9231]},{"name":"Lucknow","population":2695000,"position":[80.9131,26.857]},{"name":"Nagpur","population":2454000,"position":[79.088,21.1719]},{"name":"Patna","population":2158000,"position":[85.1281,25.6269]},{"name":"Indore","population":2026000,"position":[75.8631,22.717]},{"name":"Vadodara","population":1756000,"position":[73.1781,22.312]},{"name":"Bhopal","population":1727000,"position":[77.408,23.2519]},{"name":"Coimbatore","population":1696000,"position":[76.9481,11.0019]},{"name":"Ludhiana","population":1649000,"position":[75.8703,30.9297]},{"name":"Agra","population":1592000,"position":[78.0131,27.1724]},{"name":"Kalyan","population":1576614,"position":[73.1602,19.2502]},{"name":"Vishakhapatnam","population":1529000,"position":[83.2198,17.6829]},{"name":"Kochi","population":1519000,"position":[76.222,10.017]},{"name":"Nasik","population":1473000,"position":[73.778,20.0024]},{"name":"Meerut","population":1398000,"position":[77.6981,29.0024]},{"name":"Faridabad","population":1394000,"position":[77.3147,28.4353]},{"name":"Varanasi","population":1352000,"position":[82.9981,25.3319]},{"name":"Ghaziabad","population":1341000,"position":[77.4064,28.6623]},{"name":"Asansol","population":1328000,"position":[86.9814,23.6853]},{"name":"Jamshedpur","population":1300000,"position":[86.1956,22.7895]}],"ARG":[{"name":"Buenos Aires","population":12795000,"position":[-58.4325,-34.6107]},{"name":"Córdoba","population":1452000,"position":[-64.1842,-31.398]},{"name":"Rosario","population":1203000,"position":[-60.6683,-32.9492]},{"name":"Mendoza","population":893000,"position":[-68.8186,-32.8814]},{"name":"Tucumán","population":830000,"position":[-65.2186,-26.8141]},{"name":"La Plata","population":694253,"position":[-57.9544,-34.9233]},{"name":"Mar del Plata","population":555897,"position":[-57.58,-38]},{"name":"Salta","population":512686,"position":[-65.4166,-24.7834]},{"name":"Santa Fe","population":489505,"position":[-60.69,-31.6239]},{"name":"San Juan","population":447048,"position":[-68.52,-31.55]},{"name":"San Luis","population":432310,"position":[-66.35,-33.3]},{"name":"Resistencia","population":387158,"position":[-58.99,-27.46]},{"name":"Posadas","population":357119,"position":[-55.8851,-27.3578]},{"name":"Santiago del Estero","population":354692,"position":[-64.2667,-27.7833]},{"name":"Corrientes","population":340823,"position":[-58.81,-27.49]},{"name":"San Salvador de Jujuy","population":305891,"position":[-65.3,-24.1833]},{"name":"Bahía Blanca","population":281536,"position":[-62.265,-38.74]},{"name":"Paraná","population":262295,"position":[-60.5333,-31.7333]},{"name":"Neuquén","population":242092,"position":[-68.06,-38.95]},{"name":"Formosa","population":221383,"position":[-58.1828,-26.1728]},{"name":"Catamarca","population":188812,"position":[-65.78,-28.47]},{"name":"La Rioja","population":162620,"position":[-66.85,-29.41]},{"name":"Río Cuarto","population":153757,"position":[-64.35,-33.13]},{"name":"Concordia","population":145210,"position":[-58.03,-31.3896]},{"name":"Comodoro Rivadavia","population":140850,"position":[-67.5,-45.87]},{"name":"San Nicolas","population":127742,"position":[-60.24,-33.33]},{"name":"San Martín","population":117399,"position":[-68.49,-33.07]},{"name":"Santa Rosa","population":111424,"position":[-64.3,-36.62]},{"name":"San Rafael","population":109163,"position":[-68.3333,-34.6]},{"name":"Tandil","population":104325,"position":[-59.15,-37.32]},{"name":"Bariloche","population":95394,"position":[-71.3,-41.15]},{"name":"Trelew","population":93442,"position":[-65.33,-43.25]}],"MEX":[{"name":"Mexico City","population":19028000,"position":[-99.1329,19.4444]},{"name":"Guadalajara","population":4198000,"position":[-103.332,20.672]},{"name":"Monterrey","population":3712000,"position":[-100.3319,25.6719]},{"name":"Puebla","population":2195000,"position":[-98.2037,19.0326]},{"name":"Tijuana","population":1553000,"position":[-117.0819,32.502]},{"name":"Toluca","population":1531000,"position":[-99.6532,19.2893]},{"name":"León","population":1488000,"position":[-101.702,21.1519]},{"name":"Ciudad Juárez","population":1343000,"position":[-106.492,31.6923]},{"name":"Torreón","population":1144000,"position":[-103.4219,25.572]},{"name":"Nezahualcoyotl","population":1109363,"position":[-99.03,19.41]},{"name":"San Luis Potosí","population":992000,"position":[-101.0019,22.1719]},{"name":"Mérida","population":965000,"position":[-89.6186,20.9686]},{"name":"Querétaro","population":961000,"position":[-100.3867,20.5777]},{"name":"Mexicali","population":885000,"position":[-115.482,32.6519]},{"name":"Aguascalientes","population":869000,"position":[-102.2924,21.8814]},{"name":"Tampico","population":859419,"position":[-97.87,22.3]},{"name":"Cuernavaca","population":834001,"position":[-99.24,18.9211]},{"name":"Culiacán","population":809000,"position":[-107.3819,24.8319]},{"name":"Chihuahua","population":793000,"position":[-106.0869,28.6469]},{"name":"Saltillo","population":754000,"position":[-101.0069,25.4219]},{"name":"Acapulco","population":715584,"position":[-99.916,16.85]},{"name":"Morelia","population":644306,"position":[-101.1895,19.7334]},{"name":"Hermosillo","population":595811,"position":[-110.9541,29.0989]},{"name":"Veracruz","population":578963,"position":[-96.16,19.1773]},{"name":"Cancún","population":542043,"position":[-86.83,21.17]},{"name":"Matamoros","population":538785,"position":[-97.5,25.88]},{"name":"Oaxaca","population":530728,"position":[-96.67,17.0827]},{"name":"Tlaxcala","population":503878,"position":[-98.23,19.32]},{"name":"Mazatlán","population":500000,"position":[-110.1333,29.0171]},{"name":"Reynosa","population":498654,"position":[-98.3,26.08]},{"name":"Tuxtla Gutiérrez","population":481128,"position":[-93.15,16.75]},{"name":"Durango","population":457140,"position":[-104.67,24.0311]}],"IDN":[{"name":"Jakarta","population":9125000,"position":[106.8275,-6.1725]},{"name":"Surabaya","population":2845000,"position":[112.7489,-7.2473]},{"name":"Bandung","population":2394000,"position":[107.5681,-6.9481]},{"name":"Bekasi","population":2378211,"position":[106.9723,-6.2173]},{"name":"Medan","population":2115000,"position":[98.6481,3.5819]},{"name":"Palembang","population":1749000,"position":[104.7481,-2.9781]},{"name":"Semarang","population":1396000,"position":[110.4181,-6.9647]},{"name":"Makassar","population":1262000,"position":[119.4301,-5.138]},{"name":"Cilacap","population":1174964,"position":[109.0154,-7.7188]},{"name":"Bogor","population":918000,"position":[106.7481,-6.5681]},{"name":"Bandar Lampung","population":881801,"position":[105.3,-5.4496]},{"name":"Bandar Lampung","population":865000,"position":[105.2681,-5.4281]},{"name":"Padang","population":855000,"position":[100.3581,-0.9581]},{"name":"Malang","population":805000,"position":[112.6081,-7.978]},{"name":"Pekanbaru","population":799000,"position":[101.4231,0.5669]},{"name":"Denpasar","population":732344,"position":[115.22,-8.65]},{"name":"Yogyakarta","population":636660,"position":[110.375,-7.78]},{"name":"Palu","population":612445,"position":[119.833,-0.907]},{"name":"Pontianak","population":607311,"position":[109.32,-0.03]},{"name":"Bandjarmasin","population":603576,"position":[114.5801,-3.33]},{"name":"Samarinda","population":592228,"position":[117.15,-0.5]},{"name":"Binjai","population":564979,"position":[98.5001,3.6204]},{"name":"Surakarta","population":555308,"position":[110.825,-7.565]},{"name":"Banda Aceh","population":513698,"position":[95.32,5.55]},{"name":"Bukittinggi","population":506964,"position":[100.3615,-0.3031]},{"name":"Pasuruan","population":500000,"position":[112.9,-7.6296]},{"name":"Mataram","population":499409,"position":[116.135,-8.5795]},{"name":"Jambi","population":457090,"position":[103.61,-1.59]},{"name":"Manado","population":451893,"position":[124.85,1.48]},{"name":"Balikpapan","population":445905,"position":[116.83,-1.25]},{"name":"Bengkulu","population":426673,"position":[102.27,-3.8]},{"name":"Gorontalo","population":365497,"position":[123.07,0.55]}]};
-  const state={count:'100',theme:'auto',layout:'side',view:'both',geography:'distribution',scope:'all',running:true,speed:'1',rendering:'glow',churn:'3',volatility:'variable',height:460,sideSplit:44,stackedSplit:45};
+  const state={count:'500',theme:'auto',layout:'side',view:'both',geography:'city',scope:'all',running:false,speed:'1',rendering:'glow',churn:'3',volatility:'variable',height:620,sideSplit:44,stackedSplit:45,origin:'cayenne',variant:'quiet'};
+  const treatments={
+    current:{opacity:1,landing:1,glow:1,note:'Current prototype: no combined opacity cap or destination mask.'},
+    cap:{opacity:.8,landing:1,glow:1,note:'Combined lines + glow capped at 80% opacity. Markers stay unchanged.'},
+    landing:{opacity:.8,landing:.3,glow:1,note:'80% layer cap · fade lines + glow to 30% of their strength within 30 px of each destination.'},
+    quiet:{opacity:.8,landing:.3,glow:.35,note:'Same soft landings, with glow reduced to 35%. Compare whether less glow keeps Europe clearer.'}
+  };
   const saved=window.openai?.widgetState?.modelContent;
   if(saved?.layout) Object.assign(state,saved);
+  const requested=new URL(window.location.href).searchParams.get('variant');
+  if(Object.hasOwn(treatments,requested))state.variant=requested;
+  const placements={
+    tab:'A · One menu beside Peers. Clear scope, no content covered; changing view takes two clicks.',
+    canvas:'B · Three direct choices inside the content. Easy to reach, but covers a small part of the view.',
+    status:'C · Three direct choices at the right of the status bar. No content covered, but farther from Peers.'
+  };
+  const controls=root.querySelector('.view-control'),trigger=root.querySelector('.view-trigger');
+  function closeViews(){controls.dataset.open='false';trigger.setAttribute('aria-expanded','false');}
+  function placeControls(value){
+    closeViews();
+    root.dataset.controls=value;
+    root.querySelector('.placement').value=value;
+    if(value==='tab')root.querySelector('.tabs strong').after(controls);
+    else root.querySelector(value==='canvas'?'.workspace':'.app-status').append(controls);
+    root.querySelector('.comparison-note').textContent=placements[value];
+    const url=new URL(window.location.href);url.searchParams.set('controls',value);history.replaceState(null,'',url);
+  }
+  trigger.onclick=()=>{
+    const open=controls.dataset.open!=='true';
+    controls.dataset.open=String(open);trigger.setAttribute('aria-expanded',String(open));
+    if(open)controls.querySelector('[aria-pressed="true"]').focus();
+  };
+  document.addEventListener('pointerdown',event=>{if(!controls.contains(event.target))closeViews();});
+  controls.addEventListener('keydown',event=>{
+    if(event.key==='Escape'&&controls.dataset.open==='true'){closeViews();trigger.focus();event.stopPropagation();}
+  });
+  controls.addEventListener('focusout',event=>{if(!controls.contains(event.relatedTarget))closeViews();});
+  root.querySelector('.placement').onchange=event=>placeControls(event.target.value);
+  const placement=new URL(window.location.href).searchParams.get('controls');
+  placeControls(Object.hasOwn(placements,placement)?placement:'tab');
   const svg=root.querySelector('.map'), body=root.querySelector('tbody'), detail=root.querySelector('.detail span');
+  const view={zoom:1,center:[0,0]};
+  let projection,pan=null,navigation=null,suppressClick=false;
+  let frame=0,scene=null,circles=[],fades=[],glow=null,blur=null,paintedZoom=0;
   let seed=9137, selected=null, country=null, selectedArea=null, sample=[], groups=new Map(), countries=new Map(), destinations=null, activeArcs=[], elapsed=0, simulationTimer, churnBudget=0, churnEvents=0, sequence=500,nextActivityChange=23;
   const random=()=>((seed=(seed*1664525+1013904223)>>>0)/4294967296);
   function createPeer(index,identity=index){
@@ -262,8 +360,9 @@ const Table2 = [
   const rate=n=>n>=1048576?(n/1048576).toFixed(1)+' MiB/s':n>=1024?(n/1024).toFixed(1)+' KiB/s':Math.round(n)+' B/s';
   const mapScale=(width,height)=>Math.max(0,Math.min((width-22)/(2*Math.PI),(height-24)/(Math.PI*145/180)));
   const activity=g=>Math.min(1,Math.log1p((g.down+g.up)/1024)/Math.log1p(5120));
-  const arcStyle=(g,index)=>`opacity:${.18+(state.rendering==='glow'?.82:.72)*activity(g)};stroke-width:${1+activity(g)}${state.rendering==='glow'?`;stroke:url(#peer-color-${index})`:''}`;
-  const haloStyle=g=>`opacity:${.5*Math.pow(activity(g),2)};stroke-width:${2+3*activity(g)}`;
+  const destinationKey=g=>`${g.id}-${g.key}-${g.position.join('-')}`;
+  const arcStyle=g=>`opacity:${.18+(state.rendering==='glow'?.82:.72)*activity(g)};stroke-width:${1+activity(g)}${state.rendering==='glow'?`;stroke:url(#peer-color-${destinationKey(g)})`:''}`;
+  const haloStyle=g=>`opacity:${.5*Math.pow(activity(g),2)*treatments[state.variant].glow};stroke-width:${2+3*activity(g)}`;
   const fillIntensity=g=>(14+51*activity(g))*(['restrained','distribution'].includes(state.geography)?.7:1);
   function sumRates(){
     for(const map of [groups,countries])for(const g of map.values()){
@@ -323,7 +422,7 @@ const Table2 = [
     if(state.layout!=='table'){
       for(const [index,shape] of [...svg.querySelectorAll('.arc')].entries()){
         const g=activeArcs[index];
-        shape.style.cssText=arcStyle(g,index);
+        shape.style.cssText=arcStyle(g);
         shape.classList.toggle('download',g.down>=g.up);shape.classList.toggle('upload',g.down<g.up);
         shape.dataset.down=g.down;shape.dataset.up=g.up;
       }
@@ -331,7 +430,10 @@ const Table2 = [
         const g=activeArcs[Number(shape.dataset.transfer)];
         shape.classList.toggle('download',g.down>=g.up);shape.classList.toggle('upload',g.down<g.up);
         if(shape.classList.contains('arc-halo'))shape.style.cssText=haloStyle(g);
-        if(shape.classList.contains('endpoint'))shape.setAttribute('r',1.7+1.1*activity(g));
+        if(shape.classList.contains('endpoint')){
+          shape.dataset.radius=1.7+1.1*activity(g);
+          shape.setAttribute('r',Number(shape.dataset.radius)/view.zoom);
+        }
       }
       for(const shape of svg.querySelectorAll('.land')){
         const g=countries.get(shape.dataset.country);if(!g)continue;
@@ -345,7 +447,6 @@ const Table2 = [
   }
   function scheduleSimulation(){
     clearInterval(simulationTimer);
-    root.querySelector('.inspector').style.setProperty('--rate-transition',1.6/Number(state.speed)+'s');
     simulationTimer=setInterval(tick,1000/Number(state.speed));
   }
   const anchorCities={RUS:'Moscow',AUS:'Sydney',CAN:'Toronto',BRA:'Sao Paulo',USA:'New York',IND:'New Delhi'};
@@ -382,6 +483,11 @@ const Table2 = [
     detail.parentElement.setAttribute('aria-live',announce?'polite':'off');
     for(const row of body.rows){const peer=sample.find(p=>p.index===Number(row.dataset.peer));row.classList.toggle('highlight',selected!==null?peer.index===selected:country!==null&&peer.place.id===country);}
     for(const shape of svg.querySelectorAll('[data-country]')) shape.classList.toggle('selected',country!==null&&shape.dataset.country===country);
+    const overlay=svg.querySelector('.selection');
+    if(overlay){
+      const markup=[...svg.querySelectorAll('.arc.selected')].map(shape=>`<path class="selection-arc" d="${shape.getAttribute('d')}"/>`).join('');
+      if(overlay.innerHTML!==markup)overlay.innerHTML=markup;
+    }
     const peer=sample.find(p=>p.index===selected);
     const destination=state.geography==='distribution'&&destinations?.find(g=>g.id===country&&g.area===selectedArea);
     detail.textContent=destination?estimateText(destination):peer?`${peer.endpoint} · ${location(peer)} · ${peer.city?'Approximate city':'Country only'} · ↓ ${rate(peer.down)} · ↑ ${rate(peer.up)}`:countries.has(country)?groupText(countries.get(country)):'Select a peer or country to highlight its location. The table keeps all connections.';
@@ -392,12 +498,18 @@ const Table2 = [
     const width=svg.clientWidth, height=svg.clientHeight;
     if(!width)return;
     const luminous=state.rendering==='glow';
+    const treatment=treatments[state.variant];
+    const start=state.origin==='cayenne'?[-52.33,4.94]:data.origin;
     svg.dataset.rendering=state.rendering;
-    const projection=d3.geoEquirectangular().precision(.1).scale(mapScale(width,height)).translate([width/2,height/2+10]);
-    const path=d3.geoPath(projection),origin=projection(data.origin);
+    const fitted=d3.geoEquirectangular().precision(.1).scale(mapScale(width,height)).translate([width/2,height/2+10]);
+    constrain();
+    projection=fitted;
+    const scale=mapScale(width,height);
+    const extent=`x="${width/2-Math.PI*scale-20}" y="${height/2+10-Math.PI/2*scale-20}" width="${2*Math.PI*scale+40}" height="${Math.PI*scale+40}"`;
+    const path=d3.geoPath(projection),origin=projection(start);
     const estimated=state.geography==='distribution';
     const countryMode=state.geography!=='city',restrained=state.geography==='restrained'||estimated,heatmap=state.geography==='heatmap'||restrained;
-    const active=estimated?(destinations??=distribute(projection)):[...groups.values()].filter(g=>g.down+g.up>0);
+    const active=estimated?(destinations??=distribute(fitted)):[...groups.values()].filter(g=>g.down+g.up>0);
     activeArcs=active;
     const n=Math.max(1,active.length);
     const target=Math.max(.1,Math.min(.8,.8*Math.sqrt(5/n)));
@@ -406,64 +518,108 @@ const Table2 = [
     root.querySelector('.fade-summary').textContent=`${active.length} active arcs · ${Math.round(opacity*100)}% origin opacity`;
     const stops=[0,.25,.5,.75,1].map(t=>`<stop offset="${t*100}%" stop-color="white" stop-opacity="${opacity+(1-opacity)*t*t*(3-2*t)}"/>`).join('');
     let markup='<desc>Artificial transfer rates update every simulated second. Peer turnover replaces connections independently of ordinary speed fluctuations. Estimated distribution splits each country total by population weights; these are not observed peer cities. Globe curves are geographic guides, not measured network routes. Arc color shows the dominant direction, cyan for download and purple for upload. Adaptive fading affects the combined arcs only within 40 pixels of the endpoint.</desc>';
-    markup+=`<defs><radialGradient id="peer-arc-fade" gradientUnits="userSpaceOnUse" cx="${origin[0]}" cy="${origin[1]}" r="40">${stops}</radialGradient><mask id="peer-arc-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="${width}" height="${height}" style="mask-type:alpha"><rect width="${width}" height="${height}" fill="url(#peer-arc-fade)"/></mask></defs>`;
+    markup+='<g class="scene">';
+    markup+=`<defs><radialGradient id="peer-arc-fade" data-radius="40" gradientUnits="userSpaceOnUse" cx="${origin[0]}" cy="${origin[1]}" r="40">${stops}</radialGradient><mask id="peer-arc-mask" maskUnits="userSpaceOnUse" ${extent} style="mask-type:alpha"><rect ${extent} fill="url(#peer-arc-fade)"/></mask></defs>`;
     const paths=active.map(g=>{
-      if(luminous)return path({type:'LineString',coordinates:[data.origin,g.position]});
+      if(luminous)return path({type:'LineString',coordinates:[start,g.position]});
       const end=projection(g.position),distance=Math.hypot(end[0]-origin[0],end[1]-origin[1]);
       return `M${origin} Q${[(origin[0]+end[0])/2,(origin[1]+end[1])/2-Math.min(30,distance*.13)*2]} ${end}`;
     });
+    if(treatment.landing<1){
+      markup+='<defs>';
+      for(const g of active){
+        const end=projection(g.position);
+        const key=destinationKey(g);
+        markup+=`<radialGradient id="landing-${key}" data-radius="30" gradientUnits="userSpaceOnUse" cx="${end[0]}" cy="${end[1]}" r="30"><stop offset="0" stop-color="white" stop-opacity="${treatment.landing}"/><stop offset=".5" stop-color="white" stop-opacity="${(1+treatment.landing)/2}"/><stop offset="1" stop-color="white"/></radialGradient><mask id="landing-mask-${key}" maskUnits="userSpaceOnUse" ${extent} style="mask-type:alpha"><rect ${extent} fill="url(#landing-${key})"/></mask>`;
+      }
+      markup+='</defs>';
+    }
     if(luminous){
-      markup+=`<defs><filter id="peer-glow" filterUnits="userSpaceOnUse" x="0" y="0" width="${width}" height="${height}" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="1.5"/></filter>`;
+      markup+=`<defs><filter id="peer-glow" filterUnits="userSpaceOnUse" ${extent} color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="1.5"/></filter>`;
       for(const [index,g] of active.entries()){
         const end=projection(g.position);
-        markup+=`<linearGradient id="peer-color-${index}" class="transfer-gradient ${g.down>=g.up?'download':'upload'}" data-transfer="${index}" gradientUnits="userSpaceOnUse" x1="${origin[0]}" y1="${origin[1]}" x2="${end[0]}" y2="${end[1]}"><stop offset="0" stop-opacity=".55"/><stop offset=".35" stop-opacity="1"/><stop offset=".8" stop-opacity=".9"/><stop offset="1" stop-opacity=".65"/></linearGradient>`;
+        markup+=`<linearGradient id="peer-color-${destinationKey(g)}" class="transfer-gradient ${g.down>=g.up?'download':'upload'}" data-transfer="${index}" gradientUnits="userSpaceOnUse" x1="${origin[0]}" y1="${origin[1]}" x2="${end[0]}" y2="${end[1]}"><stop offset="0" stop-opacity=".55"/><stop offset=".35" stop-opacity="1"/><stop offset=".8" stop-opacity=".9"/><stop offset="1" stop-opacity=".65"/></linearGradient>`;
       }
       markup+='</defs>';
     }
     for(const feature of data.countries){
       const id=feature.properties.id,g=countries.get(id);
-      markup+=`<path class="land ${countryMode&&g?'populated':''} ${countryMode&&g&&g.down+g.up>0?'active':''} ${heatmap?'heat':''} ${restrained?'restrained':''}" data-country="${id}" d="${path(feature)}" ${g?`style="--activity:${fillIntensity(g)}%" data-tooltip="${escape(groupText(g))} · Country-level location"`:''}/>`;
+      markup+=`<path data-key="land-${id}" class="land ${countryMode&&g?'populated':''} ${countryMode&&g&&g.down+g.up>0?'active':''} ${heatmap?'heat':''} ${restrained?'restrained':''}" data-country="${id}" d="${path(feature)}" ${g?`style="--activity:${fillIntensity(g)}%" data-tooltip="${escape(groupText(g))} · Country-level location"`:''}/>`;
     }
-    markup+='<g class="arcs" mask="url(#peer-arc-mask)">';
+    markup+=`<g class="arcs" opacity="${treatment.opacity}" mask="url(#peer-arc-mask)">`;
     if(luminous){
-      markup+='<g filter="url(#peer-glow)">';
-      for(const [index,g] of active.entries())markup+=`<path class="arc-halo ${g.down>=g.up?'download':'upload'}" data-transfer="${index}" d="${paths[index]}" style="${haloStyle(g)}"/>`;
-      markup+='</g>';
+      if(treatment.landing===1)markup+='<g filter="url(#peer-glow)">';
+      for(const [index,g] of active.entries()){
+        const key=destinationKey(g);
+        if(treatment.landing<1)markup+=`<g data-key="halo-${key}" mask="url(#landing-mask-${key})">`;
+        markup+=`<path data-key="halo-${key}" class="arc-halo ${g.down>=g.up?'download':'upload'}" data-transfer="${index}" d="${paths[index]}" ${treatment.landing<1?'filter="url(#peer-glow)"':''} style="${haloStyle(g)}"/>`;
+        if(treatment.landing<1)markup+='</g>';
+      }
+      if(treatment.landing===1)markup+='</g>';
     }
     for(const [index,g] of active.entries()){
-      markup+=`<path class="arc ${g.down>=g.up?'download':'upload'}" data-country="${g.id}" data-down="${g.down}" data-up="${g.up}" data-area="${escape(g.area??'')}" d="${paths[index]}" style="${arcStyle(g,index)}"/>`;
+      const key=destinationKey(g);
+      markup+=`<path data-key="arc-${key}" class="arc ${g.down>=g.up?'download':'upload'}" data-country="${g.id}" data-down="${g.down}" data-up="${g.up}" data-area="${escape(g.area??'')}" d="${paths[index]}" ${treatment.landing<1?`mask="url(#landing-mask-${key})"`:''} style="${arcStyle(g)}"/>`;
     }
     markup+='</g>';
+    markup+='<g class="selection"></g>';
     if(luminous)for(const [index,g] of active.entries()){
       const p=projection(g.position);
-      markup+=`<circle class="endpoint ${g.down>=g.up?'download':'upload'}" data-country="${g.id}" data-transfer="${index}" cx="${p[0]}" cy="${p[1]}" r="${1.7+1.1*activity(g)}"/>`;
+      markup+=`<circle data-key="endpoint-${destinationKey(g)}" class="endpoint ${g.down>=g.up?'download':'upload'}" data-country="${g.id}" data-transfer="${index}" cx="${p[0]}" cy="${p[1]}" r="${1.7+1.1*activity(g)}"/>`;
     }
     if(estimated)for(const [index,g] of active.entries()){
       if(!g.area)continue;
       const p=projection(g.position);
-      markup+=`<circle class="country-marker active" data-country="${g.id}" cx="${p[0]}" cy="${p[1]}" r="2.4"/><circle class="hit" data-estimate="${index}" data-tooltip="${escape(estimateText(g))}" cx="${p[0]}" cy="${p[1]}" r="7"/>`;
+      markup+=`<circle data-key="marker-${destinationKey(g)}" class="country-marker active" data-country="${g.id}" cx="${p[0]}" cy="${p[1]}" r="2.4"/><circle data-key="hit-${destinationKey(g)}" class="hit" data-estimate="${index}" data-tooltip="${escape(estimateText(g))}" cx="${p[0]}" cy="${p[1]}" r="7"/>`;
     }
     if(restrained)for(const [key,g] of groups){
       if(estimated&&population[g.id]&&g.down+g.up>0)continue;
       const feature=data.countries.find(f=>f.properties.id===g.id);
       if(feature&&path.area(feature)>=25)continue;
       const p=projection(g.position);
-      markup+=`<circle class="country-marker ${g.down+g.up>0?'active':''}" data-country="${g.id}" cx="${p[0]}" cy="${p[1]}" r="2.4"/><circle class="hit" data-location="${escape(key)}" data-tooltip="${escape(groupText(g))} · Country-level location" cx="${p[0]}" cy="${p[1]}" r="7"/>`;
+      markup+=`<circle data-key="marker-${destinationKey(g)}" class="country-marker ${g.down+g.up>0?'active':''}" data-country="${g.id}" cx="${p[0]}" cy="${p[1]}" r="2.4"/><circle data-key="hit-${destinationKey(g)}" class="hit" data-location="${escape(key)}" data-tooltip="${escape(groupText(g))} · Country-level location" cx="${p[0]}" cy="${p[1]}" r="7"/>`;
     }
     if(!countryMode)for(const [key,g] of groups){
       const p=projection(g.position);
       const density=.45+.55*Math.min(1,Math.log2(g.peers.length)/4);
-      markup+=`<circle class="dot ${g.down+g.up>0?'active':'idle'}" data-country="${g.id}" cx="${p[0]}" cy="${p[1]}" r="2.4" style="--density:${density}" data-count="${g.peers.length}" data-speed="${g.down+g.up}"/><circle class="hit" data-location="${escape(key)}" data-tooltip="${escape(groupText(g))}" cx="${p[0]}" cy="${p[1]}" r="7"/>`;
+      markup+=`<circle data-key="dot-${destinationKey(g)}" class="dot ${g.down+g.up>0?'active':'idle'}" data-country="${g.id}" cx="${p[0]}" cy="${p[1]}" r="2.4" style="--density:${density}" data-count="${g.peers.length}" data-speed="${g.down+g.up}"/><circle data-key="hit-${destinationKey(g)}" class="hit" data-location="${escape(key)}" data-tooltip="${escape(groupText(g))}" cx="${p[0]}" cy="${p[1]}" r="7"/>`;
     }
-    markup+=`<circle class="origin" cx="${origin[0]}" cy="${origin[1]}" r="3.5"/>`;
-    svg.innerHTML=markup;
+    markup+=`<circle data-key="origin" class="origin" cx="${origin[0]}" cy="${origin[1]}" r="3.5"/></g>`;
+    const next=document.createElementNS('http://www.w3.org/2000/svg','svg');
+    next.innerHTML=markup;
+    reconcile(svg,next);
+    scene=svg.querySelector('.scene');
+    circles=[...svg.querySelectorAll('circle')];
+    for(const circle of circles)circle.dataset.radius=circle.getAttribute('r');
+    fades=[...svg.querySelectorAll('radialGradient[data-radius]')];
+    glow=svg.querySelector('#peer-glow');
+    blur=svg.querySelector('feGaussianBlur');
+    paintedZoom=0;positionView();
     for(const shape of svg.querySelectorAll('.land[data-country]'))shape.onclick=()=>{if(countries.has(shape.dataset.country)){country=shape.dataset.country;selected=null;selectedArea=null;updateHighlight();}};
     for(const hit of svg.querySelectorAll('[data-location]'))hit.onclick=()=>{country=groups.get(hit.dataset.location).id;selected=null;selectedArea=null;updateHighlight();};
     for(const hit of svg.querySelectorAll('[data-estimate]'))hit.onclick=()=>{const g=active[Number(hit.dataset.estimate)];country=g.id;selected=null;selectedArea=g.area;updateHighlight();};
     updateHighlight();
   }
+  function reconcile(current,next){
+    const key=(node,index)=>node.tagName+':'+(node.id||node.getAttribute('data-key')||index);
+    const previous=new Map([...current.children].map((node,index)=>[key(node,index),node]));
+    for(const [index,wanted] of [...next.children].entries()){
+      const identity=key(wanted,index);
+      let node=previous.get(identity);
+      if(node){
+        previous.delete(identity);
+        for(const attribute of [...node.attributes])if(!wanted.hasAttribute(attribute.name))node.removeAttribute(attribute.name);
+        for(const attribute of wanted.attributes)if(node.getAttribute(attribute.name)!==attribute.value)node.setAttribute(attribute.name,attribute.value);
+        reconcile(node,wanted);
+      }else node=wanted.cloneNode(true);
+      if(current.children[index]!==node)current.insertBefore(node,current.children[index]??null);
+    }
+    for(const node of previous.values())node.remove();
+    if(!next.children.length&&current.textContent!==next.textContent)current.textContent=next.textContent;
+  }
   function render(){
     scheduleSimulation();
+    root.querySelector('[data-setting="variant"]').title=treatments[state.variant].note;
     destinations=null;
     root.querySelector('.distribution-note').hidden=state.geography!=='distribution';
     root.style.colorScheme=state.theme==='auto'?'light dark':state.theme;
@@ -477,7 +633,7 @@ const Table2 = [
       const city=state.geography==='city'&&peer.city;
       const position=city?peer.place.point:state.geography!=='city'?(anchors.get(peer.place.id)??peer.place.countryPoint):peer.place.countryPoint;
       for(const [map,key,name] of [[groups,city?position.join(','):peer.place.id,city?peer.place.city+', '+peer.place.country:peer.place.country],[countries,peer.place.id,peer.place.country]]){
-        if(!map.has(key))map.set(key,{id:peer.place.id,name,position,peers:[],down:0,up:0});
+        if(!map.has(key))map.set(key,{id:peer.place.id,key,name,position,peers:[],down:0,up:0});
         map.get(key).peers.push(peer);
       }
     }
@@ -489,6 +645,142 @@ const Table2 = [
     draw();updateHighlight();
   }
   function sync(){for(const control of root.querySelectorAll('[data-setting]'))control.value=state[control.dataset.setting];render();}
+  function positionView(){
+    if(!scene)return;
+    const scale=mapScale(svg.clientWidth,svg.clientHeight)*view.zoom;
+    const x=(1-view.zoom)*svg.clientWidth/2-view.center[0]*scale;
+    const y=(1-view.zoom)*(svg.clientHeight/2+10)-view.center[1]*scale;
+    scene.setAttribute('transform',`translate(${x} ${y}) scale(${view.zoom})`);
+    if(glow){
+      glow.setAttribute('x',(-x-6)/view.zoom);
+      glow.setAttribute('y',(-y-6)/view.zoom);
+      glow.setAttribute('width',(svg.clientWidth+12)/view.zoom);
+      glow.setAttribute('height',(svg.clientHeight+12)/view.zoom);
+    }
+    if(paintedZoom===view.zoom)return;
+    for(const circle of circles)circle.setAttribute('r',Number(circle.dataset.radius)/view.zoom);
+    for(const fade of fades)fade.setAttribute('r',Number(fade.dataset.radius)/view.zoom);
+    blur?.setAttribute('stdDeviation',1.5/view.zoom);
+    svg.dataset.zoomed=String(view.zoom>1);
+    root.querySelector('.zoom-tools').hidden=view.zoom===1;
+    root.querySelector('.zoom-level').textContent=`${Math.round(view.zoom*100)}%`;
+    paintedZoom=view.zoom;
+  }
+  function moveView(){
+    constrain();
+    if(!frame)frame=requestAnimationFrame(()=>{frame=0;positionView();});
+  }
+  function constrain(){
+    const scale=mapScale(svg.clientWidth,svg.clientHeight)*view.zoom;
+    if(!scale)return;
+    const bounds=[[-Math.PI,Math.PI],[-85*Math.PI/180,60*Math.PI/180]];
+    const half=[svg.clientWidth/(2*scale),svg.clientHeight/(2*scale)];
+    for(let axis=0;axis<2;axis++){
+      const [min,max]=bounds[axis];
+      const offset=axis===1?10/scale:0;
+      view.center[axis]=view.zoom===1||max-min<=half[axis]*2?0:Math.max(min+half[axis]+offset,Math.min(max-half[axis]+offset,view.center[axis]));
+    }
+  }
+  function zoom(factor,point=[svg.clientWidth/2,svg.clientHeight/2]){
+    const previous=view.zoom;
+    const next=Math.max(1,Math.min(8,previous*factor));
+    if(next===previous)return;
+    const scale=mapScale(svg.clientWidth,svg.clientHeight);
+    if(!scale)return;
+    const offset=[point[0]-svg.clientWidth/2,point[1]-svg.clientHeight/2-10];
+    view.center=view.center.map((value,axis)=>value+offset[axis]/scale*(1/previous-1/next));
+    view.zoom=next;moveView();
+  }
+  function fit(){view.zoom=1;view.center=[0,0];moveView();svg.focus({preventScroll:true});}
+  root.querySelector('.fit').onclick=fit;
+  const menu=root.querySelector('.map-menu');
+  function closeMenu(){menu.hidden=true;}
+  function openMenu(point){
+    menu.hidden=false;
+    menu.style.left=Math.max(0,Math.min(point[0],svg.clientWidth-menu.offsetWidth))+'px';
+    menu.style.top=Math.max(0,Math.min(point[1],svg.clientHeight-menu.offsetHeight))+'px';
+    menu.querySelector('[data-zoom="in"]').disabled=view.zoom===8;
+    menu.querySelector('[data-zoom="out"]').disabled=view.zoom===1;
+    menu.querySelector('button:not(:disabled)').focus();
+  }
+  for(const button of menu.querySelectorAll('button'))button.onclick=()=>{
+    closeMenu();
+    if(button.dataset.zoom==='fit')fit();else{zoom(button.dataset.zoom==='in'?1.25:1/1.25);svg.focus({preventScroll:true});}
+  };
+  menu.onkeydown=event=>{
+    const buttons=[...menu.querySelectorAll('button:not(:disabled)')];
+    if(event.key==='Escape'){closeMenu();svg.focus();event.preventDefault();}
+    if(event.key==='ArrowDown'||event.key==='ArrowUp'){
+      const next=buttons.indexOf(document.activeElement)+(event.key==='ArrowDown'?1:-1);
+      buttons[(next+buttons.length)%buttons.length].focus();event.preventDefault();
+    }
+  };
+  menu.addEventListener('focusout',event=>{if(!menu.contains(event.relatedTarget))closeMenu();});
+  document.addEventListener('pointerdown',event=>{if(!menu.contains(event.target))closeMenu();});
+  function pointer(event){const bounds=svg.getBoundingClientRect();return [event.clientX-bounds.left,event.clientY-bounds.top];}
+  svg.addEventListener('wheel',event=>{
+    event.preventDefault();closeMenu();svg.focus({preventScroll:true});
+    const delta=event.deltaY*(event.deltaMode===1?16:event.deltaMode===2?svg.clientHeight:1);
+    zoom(Math.pow(1.25,-delta/100),pointer(event));
+  },{passive:false});
+  svg.ondblclick=event=>{event.preventDefault();zoom(1.25,pointer(event));};
+  svg.oncontextmenu=event=>{event.preventDefault();openMenu(pointer(event));};
+  svg.onpointerdown=event=>{
+    if(event.button!==0)return;
+    svg.focus({preventScroll:true});suppressClick=false;navigation=null;
+    pan={point:pointer(event),center:[...view.center],pointerId:event.pointerId,moved:false};
+  };
+  svg.onpointermove=event=>{
+    if(!pan||view.zoom===1)return;
+    const point=pointer(event),dx=point[0]-pan.point[0],dy=point[1]-pan.point[1];
+    if(!pan.moved&&Math.hypot(dx,dy)<4)return;
+    pan.moved=true;suppressClick=true;svg.setPointerCapture(event.pointerId);svg.dataset.dragging='true';
+    const scale=mapScale(svg.clientWidth,svg.clientHeight)*view.zoom;
+    view.center=[pan.center[0]-dx/scale,pan.center[1]-dy/scale];moveView();
+  };
+  function endPan(cancel=false){
+    if(!pan)return;
+    const previous=pan;pan=null;delete svg.dataset.dragging;
+    if(cancel&&previous.moved){view.center=previous.center;moveView();}
+    if(svg.hasPointerCapture(previous.pointerId))svg.releasePointerCapture(previous.pointerId);
+  }
+  svg.onpointerup=()=>endPan();
+  svg.onpointercancel=()=>endPan(true);
+  svg.onlostpointercapture=()=>endPan(true);
+  svg.onpointerleave=()=>{if(pan&&!pan.moved)endPan();};
+  svg.addEventListener('click',event=>{if(suppressClick){event.preventDefault();event.stopPropagation();}},{capture:true});
+  svg.onkeydown=event=>{
+    const key=event.key;
+    if(event.altKey||event.metaKey)return;
+    if(key==='+'||key==='='||key==='-'){zoom(key==='-'?1/1.25:1.25);}
+    else if(event.ctrlKey&&key==='0')fit();
+    else if(key==='Escape'){endPan(true);closeMenu();}
+    else if(key==='ContextMenu'||event.shiftKey&&key==='F10')openMenu([svg.clientWidth/2,svg.clientHeight/2]);
+    else if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(key)){
+      const axis=key==='ArrowLeft'||key==='ArrowRight'?0:1,direction=key==='ArrowLeft'||key==='ArrowUp'?-1:1;
+      if(event.ctrlKey){
+        view.center[axis]+=direction*(axis===0?svg.clientWidth:svg.clientHeight)/(8*mapScale(svg.clientWidth,svg.clientHeight)*view.zoom);moveView();
+      }else{
+        const locations=destinations??[...groups.values()];
+        const current=navigation?locations.indexOf(navigation):locations.findIndex(g=>g.id===country&&(selectedArea===null||g.area===selectedArea));
+        const index=current<0?(direction>0?0:locations.length-1):(current+direction+locations.length)%locations.length;
+        const next=locations[index];
+        if(next){
+          navigation=next;
+          country=next.id;selected=null;selectedArea=next.area??null;
+          const point=projection(next.position),scale=mapScale(svg.clientWidth,svg.clientHeight)*view.zoom;
+          const size=[svg.clientWidth,svg.clientHeight];
+          for(let i=0;i<2;i++){
+            const center=size[i]/2+(i===1?10:0);
+            const screen=center+(point[i]-center)*view.zoom-view.center[i]*scale;
+            view.center[i]+=(screen-Math.max(16,Math.min(size[i]-16,screen)))/scale;
+          }
+          moveView();updateHighlight();
+        }
+      }
+    }else return;
+    event.preventDefault();event.stopPropagation();
+  };
   function save(){window.openai?.setWidgetState({modelContent:state}).catch(()=>{});}
   const workspace=root.querySelector('.workspace'),divider=root.querySelector('.split');
   const vertical=()=>state.layout==='stacked';
@@ -503,9 +795,7 @@ const Table2 = [
     }
     workspace.dataset.layout=state.layout;
     for(const button of root.querySelectorAll('[data-view]')){
-      const visible=state.view==='both'||state.view===button.dataset.view;
-      button.setAttribute('aria-pressed',String(visible));
-      button.setAttribute('aria-disabled',String(visible&&state.view!=='both'));
+      button.setAttribute('aria-pressed',String(state.view===button.dataset.view));
     }
     split();
   }
@@ -546,13 +836,31 @@ const Table2 = [
   handle.onpointerup=event=>{if(drag){drag=null;handle.releasePointerCapture(event.pointerId);destinations=null;draw();save();}};
   handle.onlostpointercapture=()=>{drag=null;destinations=null;draw();};
   handle.onkeydown=event=>{if(event.key==='ArrowUp'||event.key==='ArrowDown'){event.preventDefault();resize(state.height+(event.key==='ArrowUp'?20:-20));save();}};
-  for(const control of root.querySelectorAll('[data-setting]'))control.onchange=()=>{state[control.dataset.setting]=control.value;render();window.openai?.setWidgetState({modelContent:state}).catch(()=>{});};
+  function compare(variant){
+    state.variant=variant;
+    const url=new URL(window.location.href);url.searchParams.set('variant',variant);history.replaceState(null,'',url);
+    root.querySelector('[data-setting="variant"]').value=variant;
+    render();save();
+  }
+  for(const control of root.querySelectorAll('[data-setting]'))control.onchange=()=>{
+    if(control.dataset.setting==='variant'){compare(control.value);return;}
+    state[control.dataset.setting]=control.value;render();save();
+  };
+  function cycle(step){const keys=Object.keys(placements);placeControls(keys[(keys.indexOf(root.dataset.controls)+step+keys.length)%keys.length]);}
+  for(const button of root.querySelectorAll('[data-step]'))button.onclick=()=>cycle(Number(button.dataset.step));
+  document.addEventListener('keydown',event=>{
+    if(event.target.closest('input,textarea,select,button,[contenteditable]')||event.altKey||event.ctrlKey||event.metaKey)return;
+    if(event.key==='ArrowLeft'||event.key==='ArrowRight'){event.preventDefault();cycle(event.key==='ArrowLeft'?-1:1);}
+  });
   root.querySelector('.clear').onclick=()=>{country=null;selected=null;selectedArea=null;updateHighlight();};
   root.querySelector('.simulation').onclick=()=>{state.running=!state.running;simulationStatus();save();};
   for(const button of root.querySelectorAll('[data-view]'))button.onclick=()=>{
     const view=button.dataset.view;
-    if(state.view===view)return;
-    state.view=state.view==='both'?(view==='map'?'table':'map'):'both';
+    if(state.view===view){closeViews();if(root.dataset.controls==='tab')trigger.focus();return;}
+    if(state.view==='table')fit();
+    state.view=view;
+    closeViews();
+    if(root.dataset.controls==='tab')trigger.focus();
     render();save();
   };
   window.addEventListener('openai:set_globals',event=>{const incoming=event.detail?.globals?.widgetState?.modelContent;if(incoming?.layout){Object.assign(state,incoming);sync();}});

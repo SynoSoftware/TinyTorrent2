@@ -113,13 +113,17 @@ with startup. Only an explicit fresh request overrides local protection.
 
 ### Product boundaries
 
+**Owner ruling: do not bundle or launch an embedded browser engine.** Native
+controls and HTTP requests serve the product without its memory cost.
+Explicit website links open in the person's default browser.
+
 Design the interface around these tasks and libtorrent's capabilities. Remote
 servers, browser access, interchangeable engines, other platforms, online torrent
 discovery, and torrent creation are outside scope. Blocklists and running a
 program when a download finishes need an identified user requirement before
 they become implementation work. The approved Settings scope includes one
 watched torrent folder, configurable speed-history intervals, addition and
-seeding defaults, protocol and storage choices, and a Recycle Bin preference.
+seeding defaults, and protocol and storage choices.
 These serve the workflows in [Settings](interface.md#settings); they do not
 authorize a general automation system or arbitrary engine tuning.
 The initial release includes automatic port mapping (UPnP/NAT-PMP), an

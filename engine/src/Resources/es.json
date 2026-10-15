@@ -48,7 +48,12 @@
     "off_problems": "No notificar los problemas",
     "off_background": "No notificar al cerrar la ventana",
     "off_all": "Desactivar todas las notificaciones",
-    "settings": "Ir a los ajustes de notificaciones"
+    "settings": "Ir a los ajustes de notificaciones",
+    "retry": "Reintentar",
+    "retry_tip": "Intentar abrir la ventana de nuevo",
+    "open_folder": "Abrir carpeta",
+    "open_folder_tip": "Abrir la carpeta con los archivos del programa TinyTorrent",
+    "files_folder_tip": "Abrir la carpeta que contiene los archivos"
   },
   "power": {
     "transfers": "TinyTorrent está transfiriendo archivos."
@@ -83,6 +88,7 @@
     "start": "TinyTorrent no pudo iniciarse.",
     "version": "Ya se está ejecutando otra versión de TinyTorrent. Selecciona Salir en la bandeja y vuelve a iniciar TinyTorrent.",
     "package": "Windows guarda una copia aparte de los datos de la aplicación que inició TinyTorrent, así que TinyTorrent no puede acceder a tus torrents. Inicia TinyTorrent desde el menú Inicio.",
+    "sandbox": "TinyTorrent no puede acceder a tus torrents desde este entorno aislado. Ejecuta TinyTorrent fuera de él o inícialo desde el menú Inicio.",
     "source": "No se pudo añadir el torrent.",
     "ownership": "TinyTorrent no puede abrir sus datos guardados. Otra sesión de Windows puede estar utilizando esta carpeta:",
     "launch": "Windows no pudo iniciar la ventana. Las transferencias continúan. El error de Windows que aparece debajo explica el motivo.",
@@ -90,7 +96,7 @@
     "window_denied": "Windows denegó el permiso para iniciar la ventana. Las transferencias continúan.\n\nComprueba los permisos del archivo del programa de la ventana antes de reintentar.",
     "window_invalid": "Windows no puede ejecutar el programa de la ventana en este PC. Las transferencias continúan.\n\nReinstala la versión de TinyTorrent compatible con tu PC.",
     "window_dependency": "Falta un archivo necesario para el programa de la ventana. Las transferencias continúan.\n\nReinstala TinyTorrent para restaurar los archivos necesarios.",
-    "startup": "La ventana no se abrió. Las descargas continúan. Selecciona Mostrar ventana en la bandeja para reintentar.",
+    "startup": "La ventana no se abrió. Las descargas continúan.",
     "save": "TinyTorrent no pudo guardar y sigue abierto. Selecciona Salir en la bandeja para reintentar.",
     "pause": "No se pudo guardar el ajuste de pausa de las transferencias.",
     "notification": "No se pudo guardar el ajuste de notificaciones.",

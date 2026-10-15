@@ -10,6 +10,18 @@ bool Engine::State::IsQueued(lt::queue_position_t position)
     return static_cast<int>(position) >= 0;
 }
 
+// libtorrent has applied the addition's files, or failed to, so it has queued
+// it last or left it unqueued. The next status batch shows which.
+void Engine::State::AwaitQueueStatus(Torrent& torrent)
+{
+    if (torrent.queueReport != QueueReport::AwaitingFiles)
+    {
+        return;
+    }
+    torrent.queueReport = QueueReport::AwaitingStatus;
+    statusPending = true;
+}
+
 // The queued torrents in the accepted order. Status positions can still
 // precede the last accepted queue move, so they place only the torrents that
 // queueOrder does not list yet.
@@ -17,7 +29,8 @@ std::vector<std::string> Engine::State::CurrentQueue() const
 {
     auto queued = [](Torrent const& torrent)
     {
-        return !torrent.restore && !torrent.deleted && IsQueued(torrent.status.queue_position);
+        return !torrent.restore && !torrent.deleted &&
+            (torrent.queueReport != QueueReport::Reported || IsQueued(torrent.status.queue_position));
     };
     std::vector<std::string> order;
     std::set<std::string> listed;

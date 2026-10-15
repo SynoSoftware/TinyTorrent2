@@ -9,24 +9,19 @@ using Windows.UI.ViewManagement;
 
 namespace Syno.TinyTorrent.Controls;
 
-// A ContentDialog with natural button widths unless a FooterAction joins them.
-// Buttons sit at the right with Footer at their left, or centred in a narrow
-// dialog without one. The implicit style in App.xaml draws it, because
-// ContentDialog's own template always splits the row into equal buttons.
+// A ContentDialog with natural button widths, unless a Check footer's button
+// joins them. Buttons sit at the right with Footer at their left, or centred
+// in a narrow dialog without one. The implicit style in App.xaml draws it,
+// because ContentDialog's own template always splits the row into equal
+// buttons.
 public sealed partial class Dialog : ContentDialog
 {
     private readonly UISettings _display = new();
-
-    // WinUI's generated XAML assigns this property after construction.
-    public ActionButton? FooterAction { get; set; }
-    public CheckBox? OptOut { get; private set; }
-    private long _footerText;
-    public static readonly DependencyProperty FooterProperty = DependencyProperty.Register(
-        nameof(Footer),
-        typeof(object),
-        typeof(Dialog),
-        new PropertyMetadata(null, (dialog, _) => ((Dialog)dialog).ShowFooter())
-    );
+    private DialogFooter? _footer;
+    private FrameworkElement? _footerElement;
+    private CheckBox? _optOut;
+    private string _optOutText = string.Empty;
+    private long _checkText;
 
     public static readonly DependencyProperty GlyphProperty = DependencyProperty.Register(
         nameof(Glyph),
@@ -62,10 +57,60 @@ public sealed partial class Dialog : ContentDialog
         null
     );
 
-    public object? Footer
+    // The opt-out is the footer for the dialog's whole life, so a dialog that
+    // offers it shows its other facts in its content.
+    public DialogFooter? Footer
     {
-        get => GetValue(FooterProperty);
-        set => SetValue(FooterProperty, value);
+        get => _footer;
+        set
+        {
+            if (_footer == value)
+                return;
+            if (_footer is DialogFooter.OptOut)
+                throw new InvalidOperationException("The opt-out check box is the whole footer.");
+            if (_footer is DialogFooter.Check previous)
+                previous.Status.Check.UnregisterPropertyChangedCallback(
+                    ActionButton.TextProperty,
+                    _checkText
+                );
+            _footer = value;
+            if (value is DialogFooter.OptOut optOut)
+                _optOut = NewOptOut(optOut.Preference);
+            _footerElement = value switch
+            {
+                DialogFooter.OptOut => _optOut,
+                DialogFooter.Detail detail => new TextBlock
+                {
+                    Text = detail.Text,
+                    Style = (Style)Application.Current.Resources["TinyTorrentTitleDetailTextStyle"],
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                },
+                DialogFooter.Check check => check.Status,
+                _ => null,
+            };
+            // The check button belongs to content that can outlive the
+            // dialog, so the dialog listens to it only while it is the footer.
+            if (value is DialogFooter.Check current)
+                _checkText = current.Status.Check.RegisterPropertyChangedCallback(
+                    ActionButton.TextProperty,
+                    (_, _) => AlignActions()
+                );
+            ShowFooter();
+            AlignActions();
+        }
+    }
+
+    // The opt-out's label. ShowDialog sets it with the dialog's other shared
+    // text, before or after Footer.
+    public string OptOutText
+    {
+        get => _optOutText;
+        set
+        {
+            _optOutText = value;
+            if (_optOut is not null)
+                _optOut.Content = value;
+        }
     }
 
     // The Lucide icon before the title.
@@ -123,23 +168,8 @@ public sealed partial class Dialog : ContentDialog
             AlignActions();
             FocusOnOpen();
         };
-        // The footer button belongs to the content, which can outlive the
-        // dialog, so the dialog listens to it only while shown.
-        Loaded += (_, _) =>
-        {
-            _display.TextScaleFactorChanged += OnTextScale;
-            _footerText =
-                FooterAction?.RegisterPropertyChangedCallback(
-                    ActionButton.TextProperty,
-                    (_, _) => AlignActions()
-                )
-                ?? 0;
-        };
-        Unloaded += (_, _) =>
-        {
-            _display.TextScaleFactorChanged -= OnTextScale;
-            FooterAction?.UnregisterPropertyChangedCallback(ActionButton.TextProperty, _footerText);
-        };
+        Loaded += (_, _) => _display.TextScaleFactorChanged += OnTextScale;
+        Unloaded += (_, _) => _display.TextScaleFactorChanged -= OnTextScale;
         RegisterPropertyChangedCallback(TitleProperty, (_, _) => ShowTitle());
     }
 
@@ -151,11 +181,13 @@ public sealed partial class Dialog : ContentDialog
         Resources["ContentDialogMaxHeight"] = double.PositiveInfinity;
     }
 
-    public CheckBox AddOptOut(DialogPreference preference)
+    // The opt-out is enabled with the primary button, because only a submit
+    // saves it.
+    private CheckBox NewOptOut(DialogPreference preference)
     {
-        OptOut = new CheckBox();
-        AutomationProperties.SetAutomationId(OptOut, "NeverShow");
-        OptOut.SetBinding(
+        var optOut = new CheckBox { Content = _optOutText };
+        AutomationProperties.SetAutomationId(optOut, "NeverShow");
+        optOut.SetBinding(
             ToggleButton.IsCheckedProperty,
             new Binding
             {
@@ -164,7 +196,7 @@ public sealed partial class Dialog : ContentDialog
                 Mode = BindingMode.TwoWay,
             }
         );
-        OptOut.SetBinding(
+        optOut.SetBinding(
             IsEnabledProperty,
             new Binding
             {
@@ -173,16 +205,7 @@ public sealed partial class Dialog : ContentDialog
                 Mode = BindingMode.OneWay,
             }
         );
-        if (Footer is null)
-            Footer = OptOut;
-        else
-        {
-            var footer = new StackPanel { Spacing = 4 };
-            footer.Children.Add(new ContentControl { Content = Footer, IsTabStop = false });
-            footer.Children.Add(OptOut);
-            Footer = footer;
-        }
-        return OptOut;
+        return optOut;
     }
 
     protected override void OnApplyTemplate()
@@ -211,8 +234,9 @@ public sealed partial class Dialog : ContentDialog
 
     private void AlignActions()
     {
-        if (FooterAction is not { } action)
+        if (Footer is not DialogFooter.Check check)
             return;
+        var action = check.Status.Check;
         var buttons = new[] { "PrimaryButton", "SecondaryButton", "CloseButton" }
             .Select(GetTemplateChild)
             .OfType<ActionButton>()
@@ -222,8 +246,11 @@ public sealed partial class Dialog : ContentDialog
 
     private void ShowFooter()
     {
-        if (GetTemplateChild("FooterHost") is UIElement host)
-            host.Visibility = Footer is null ? Visibility.Collapsed : Visibility.Visible;
+        if (GetTemplateChild("FooterHost") is ContentControl host)
+        {
+            host.Content = _footerElement;
+            host.Visibility = _footerElement is null ? Visibility.Collapsed : Visibility.Visible;
+        }
         PlaceButtons();
     }
 

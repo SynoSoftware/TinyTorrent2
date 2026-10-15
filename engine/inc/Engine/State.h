@@ -44,6 +44,8 @@ public:
         std::string previewId;
         std::string connectionId;
         lt::add_torrent_params params;
+        // The .torrent file the preview read; empty for a magnet.
+        std::string torrentFile;
         lt::torrent_handle handle;
         std::string error;
         bool cancelled = false;
@@ -124,7 +126,6 @@ public:
         DuplicatePolicy duplicates = DuplicatePolicy::Keep;
         bool excludes = false;
         std::string patterns = "*.tmp\nThumbs.db";
-        DeletionMode deletion = DeletionMode::Recycle;
         int inactiveMinutes = 0;
         SeedRule seedRule = SeedRule::Any;
         bool watches = false;
@@ -186,6 +187,9 @@ public:
         bool showsTorrentDialog = true;
         bool showsMagnetDialog = true;
         bool confirmsDelete = true;
+        // The Remove dialog's check boxes as the person last submitted them.
+        bool deletesDownloaded = false;
+        bool deletesTorrentFile = false;
         bool showsSplash = true;
         bool startsInTray = false;
         bool allPaused = false;
@@ -483,7 +487,7 @@ public:
         lt::add_torrent_params const& params);
     void Notify(NoticeKind kind, Torrent const& torrent, std::string detail = {}, std::string code = {});
     void Notify(NoticeKind kind, std::string name, std::string detail, std::string torrentId = {},
-        std::string code = {});
+        std::string code = {}, std::string folder = {});
     tt::Activity Activity() const;
     Json Snapshot() const;
     std::string FindDuplicate(lt::info_hash_t const& hashes, std::string const& excluded = {}) const;
@@ -551,8 +555,8 @@ public:
     void MergeTrackers(Preview& preview, std::string const& torrentId, Reply reply);
     void Act(std::vector<std::string> ids, Reply reply, Action action, BusyFiles busy = BusyFiles::Refused);
     void Verify(std::vector<std::string> const& ids, Reply reply);
-    void Remove(std::vector<std::string> const& ids, Reply reply,
-        std::optional<DeletionMode> mode = std::nullopt);
+    void Remove(std::vector<std::string> const& ids, Reply reply, std::optional<DeletionMode> mode,
+        std::optional<DeletionMode> torrentFiles);
     std::list<Deletion>::iterator PrepareDeletion(std::vector<std::string> const& ids,
         std::optional<DeletionMode> mode, Scope scope);
     void RemoveHandles(std::vector<std::string> const& ids, std::list<Deletion>::iterator deletion);
@@ -578,6 +582,8 @@ public:
     void RecoverMove();
     void ContinueDeletion();
     void Delete(std::list<Deletion>::iterator deletion);
+    void DeleteTorrentFiles(std::vector<std::filesystem::path> files, DeletionMode mode, std::string names);
+    void ReportDeletion(StorageOutcome const& outcome, std::string names, std::filesystem::path const& folder);
     void On(lt::torrent_deleted_alert const& alert);
     void On(lt::torrent_removed_alert const& alert);
     void On(lt::torrent_delete_failed_alert const& alert);
@@ -609,6 +615,7 @@ public:
     void QueryPriorities(Torrent& torrent);
 
     static bool IsQueued(lt::queue_position_t position);
+    void AwaitQueueStatus(Torrent& torrent);
     std::vector<std::string> CurrentQueue() const;
     void ApplyQueue();
     void Queue(std::vector<std::string> const& ids, QueueMove move, std::string const& before, Reply reply);

@@ -1318,23 +1318,6 @@
                     </controls:SettingsRow>
                   </StackPanel>
                 </controls:SettingsSection>
-                <Border Style="{StaticResource TinyTorrentSettingsCardStyle}">
-                    <controls:SettingsRow
-                      x:Name="DeletionRow"
-                      Header="{x:Bind Model.Deletion.Label, Mode=OneWay}"
-                      Error="{x:Bind Model.Deletion.Message, Mode=OneWay}"
-                      BorderThickness="0"
-                    >
-                      <ToggleSwitch
-                        Tag="{x:Bind Model.Deletion}"
-                        IsOn="{x:Bind local:SettingsPage.Recycles(Model.Deletion.Input), Mode=OneWay}"
-                        Toggled="OnRecycling"
-                        IsEnabled="{x:Bind Model.Deletion.CanEdit, Mode=OneWay}"
-                        AutomationProperties.Name="{x:Bind Model.Deletion.Label, Mode=OneWay}"
-                        AutomationProperties.AutomationId="Deletion"
-                      />
-                    </controls:SettingsRow>
-                </Border>
               </StackPanel>
               <StackPanel x:Name="Limits" x:Load="False" Spacing="24" Visibility="Collapsed">
                 <ContentControl x:Name="SpeedContent" HorizontalContentAlignment="Stretch" IsTabStop="False" />

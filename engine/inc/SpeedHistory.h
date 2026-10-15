@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Engine.h"
+#include <span>
 #include <vector>
 
 namespace tt
@@ -12,6 +13,8 @@ public:
     void Configure(int recentInterval, int dayInterval);
     void Sample(std::int64_t time, double download, double upload);
     Json Read(bool day) const;
+    // Uses this history's timeline; sources share its sampling clock and intervals.
+    Json Sum(bool day, std::span<SpeedHistory const* const> sources) const;
 
 private:
     // Every torrent keeps up to a day of these, so they stay small: times are

@@ -82,7 +82,12 @@ in its add parameters, then joins the routine grouped status updates. Startup
 does not post one status query per torrent, because the restore loop cannot
 drain their replies until it finishes. Installations and the routine timer request
 one grouped update at the end of the current engine turn, so a new torrent's
-queue eligibility does not wait for the next timer interval.
+queue eligibility does not wait for the next timer interval. A new addition is
+added with no file wanted, so libtorrent queues it only once its chosen files
+apply. Until the first grouped update after that, it counts as queued at its
+accepted place, so the list shows it where it will stay instead of moving it
+twice. That update settles whether libtorrent queued it, and the accepted order
+is applied again, so libtorrent's queue matches the list.
 
 Completed means that received payload is ready on disk. After libtorrent reports
 the download finished, keep its completion pending until `cache_flushed_alert`;
@@ -439,6 +444,12 @@ row as soon as membership commits. A later Delete of shared payload waits for
 that hold in the existing deletion owner, without delaying the UI. If the release
 alert is lost, the same recovery path waits for handle destruction.
 
+Add records the .torrent file a torrent came from, so Removal can delete it
+when the person asks. The file holds none of the torrent's data, so its deletion
+waits only for the membership commit and uses the payload's deletion mode. A
+recorded file that has moved or gone counts as deleted, because the person
+wanted it gone.
+
 A move takes only the torrent's own files, as libtorrent's
 [`move_storage`](https://github.com/arvidn/libtorrent/blob/v2.1.2/include/libtorrent/torrent_handle.hpp)
 does: other files in its folder, such as added subtitles, stay where they are,
@@ -599,11 +610,27 @@ for the cooperating processes, window, and engine-targeting shortcut. Without a
 shortcut, set the window's [relaunch command and display-name resource](https://learn.microsoft.com/en-us/windows/win32/properties/props-system-appusermodel-relaunchcommand)
 together. Verify pin/close/relaunch with the selected unpackaged installer.
 
-A WinUI executable started directly, for example from the debugger, starts the
-engine if none is running and then connects like any other window. It needs no
-launch token or process check, because [protocol isolation](protocol.md#isolation)
-already admits only the same user and logon. A window already running when the
-engine restarts reconnects through the same pipe.
+A WinUI executable started directly enters through the engine and exits. The
+engine starts its window with `--engine`, which selects ordinary window startup
+without repeating the hand-off. This is a launch mode, not authentication;
+[protocol isolation](protocol.md#isolation) admits only the same user and logon.
+The debugger's launch profile passes `--engine`, so the debugger stays attached
+to the window, and capture reviews with an explicit disposable store retain
+their direct window start. A window already running when the engine restarts
+reconnects through the same pipe.
+
+Every default-store engine uses the person's real AppData. A launcher can
+redirect files into its private copy without giving its child a package
+identity or changing the known-folder path, so startup checks AppContainer
+isolation and the resolved location of a disposable write before claiming
+instance ownership or reading settings. An AppContainer start reports that it
+cannot reach the person's torrents and exits. A redirected desktop start
+restarts once with Windows Explorer as its
+[parent process](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute),
+from which the restarted engine takes its token. A still-redirected restart
+reports an error; it never opens an empty private store. `--exit` needs only
+the pipe and instance locks and does not open a store. Explicit `--data` stores
+remain available for isolated checks.
 
 WinUI acquires one logon-scoped [mutex](https://learn.microsoft.com/en-us/windows/win32/sync/using-mutex-objects)
 without waiting and holds it on its main thread from before window/draft creation
@@ -702,7 +729,11 @@ moments later. Sign-in with WinUI closed shows no splash.
 
 On process-creation failure or unexpected exit before window readiness, close
 the splash and report the reason through the existing tray notification path.
-The tray's Show window retries opening; there is no second recovery dialog.
+That notice has two buttons of equal width: Retry opens the window again, as
+the tray's Show window does, and Open folder shows the program folder in File
+Explorer, where a missing or blocked file can be checked. Open folder leaves
+the notice open, so Retry stays available after the person checks the folder.
+There is no second recovery dialog.
 A launched WinUI that hands off to an existing window and exits is not a launch
 failure. If readiness times out while the process is still alive, report that it
 has not opened; a timeout does not authorize another launch.
@@ -849,7 +880,8 @@ before it waits for anything, unless a draft, dialog or picker needs the person,
 because a window that stays on screen while it closes looks frozen and holds the
 screen for no one. Show it again only if an edit decision or failed close needs
 the person's attention. Waiting for accepted work, saving and shutdown happen
-with the window hidden; the tray icon stays until the engine exits.
+with the window hidden; the tray icon stays until the final save succeeds,
+because a failed save is reported there.
 Accepted operations and transfers continue in the engine. Window-only snapshots and
 detail collection stop or are released with their last consumer; tray status,
 queue policy, swarm activity, [speed history](#state-and-work), and persistence
@@ -874,8 +906,10 @@ files in two places. Then:
 3. Settle outstanding resume requests, including success, not-modified, and
    failure outcomes. Obtain final resume data and await application storage
    commit; a resume-data alert alone does not prove payload writes have flushed.
-4. Destroy/join libtorrent, close the pipe and tray, then release data-directory
-   ownership last.
+4. Remove the tray icon and its popup, then destroy/join libtorrent, close the
+   pipe, and release data-directory ownership last. The join waits seconds for
+   trackers to acknowledge the stop, and an icon left on screen during it looks
+   like an exit that did nothing.
 
 An active draft prompt is not an unresponsive window. WinUI acknowledges when
 Exit is waiting for that choice; the window timeout pauses for the person and
@@ -1129,7 +1163,8 @@ window:
   folder, with its name and the reason; a direct addition that could not be
   added, with the reason, because the person believes it is downloading; and a
   file deletion that fails, fully or in part, which is also written to the log,
-  because the torrent has already left the list.
+  because the torrent has already left the list. Its notification offers Open
+  folder, where the person deletes the rest.
 
 Coalesce a burst instead of flooding the desktop. Never execute a downloaded
 file. Keep only bounded pending notification context, identified by durable

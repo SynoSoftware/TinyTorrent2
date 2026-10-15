@@ -58,7 +58,6 @@ links and does not embed licence texts.
 | Natural Earth | Public-domain world boundaries and populated-place data. [Terms](https://www.naturalearthdata.com/about/terms-of-use/). | Voluntary Credits row and provenance in `app/src/Assets/Attribution.md`. |
 | DB-IP country and city data | CC BY 4.0 attribution: "IP Geolocation by DB-IP" with a link. [Licence](https://creativecommons.org/licenses/by/4.0/). | Credits row and licence table; `installer/notices/DB-IP.txt`, copied by the installer. |
 | Twemoji country-flag font | CC BY 4.0 attribution for the artwork, and the MIT notice of the subset that cut it from Mozilla's Twemoji font. [Upstream licence](https://github.com/talkjs/country-flag-emoji-polyfill/blob/master/LICENSE.md). | Credits row; installer reads `lib/Lucide/LICENSE.Twemoji`, which names the source and the change. |
-| WebView2 SDK | BSD licence and supplied third-party notices. Core, Core.Projection and Loader binaries are present in the existing output. [Exact package licence](https://www.nuget.org/packages/Microsoft.Web.WebView2/1.0.3719.77/License). | Installer copies the restored runtime dependency's `LICENSE.txt` and `NOTICE.txt`. |
 | Windows App SDK projections | Microsoft package terms and supplied notices. [Exact WinUI package licence](https://www.nuget.org/packages/Microsoft.WindowsAppSDK.WinUI/2.3.6/License). | Installer copies licence/notice files for the packages represented in the published dependency graph. The separately installed Microsoft runtime retains its vendor distribution. |
 
 SQLite is [public domain](https://sqlite.org/copyright.html), so its package's
@@ -68,6 +67,13 @@ code from notice inclusion. Both still receive voluntary credits and links.
 The app uses a separately installed, framework-dependent .NET runtime
 (`SelfContained=false`); the entire runtime's notice tree is not an application
 payload. Perl, NASM, CMake and Ninja are build tools and are not shipped.
+
+WinUI declares a WebView2 SDK dependency, but `Directory.Build.props` excludes
+its assets, including the targets that copy browser components. The XAML
+compiler needs its projection to inspect WinUI's type signatures; the build
+references that metadata without copying it to output. No WebView2 binaries
+are shipped.
+The installer rejects a publish directory containing WebView2 components.
 
 The root [LICENSE](../LICENSE) now contains Mozilla's
 [official MPL 2.0 plain text](https://www.mozilla.org/media/MPL/2.0/index.txt),

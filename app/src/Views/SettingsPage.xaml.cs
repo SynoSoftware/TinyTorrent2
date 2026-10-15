@@ -975,7 +975,6 @@ public sealed partial class SettingsPage : UserControl
             "dialogs" => ConfirmationsSection,
             "startup_closing" => LifecycleSection,
             "watched_folder" => WatchedSection,
-            "deleting_files" => DeletionRow,
             "peer_connections" => PeersSection,
             "peer_discovery" => DiscoverySection,
             "incoming_connections" => IncomingSection,
@@ -1016,19 +1015,8 @@ public sealed partial class SettingsPage : UserControl
             await Model.Toggle(setting, control.IsOn);
     }
 
-    public static bool Recycles(string value) => value == "recycle";
-
     private string SlowDescription(bool enabled, string key) =>
         Model.Text.Get("settings", enabled ? key : "enable_slow");
-
-    private async void OnRecycling(object sender, RoutedEventArgs args)
-    {
-        var value = ((ToggleSwitch)sender).IsOn ? "recycle" : "permanent";
-        if (!Model.Deletion.CanEdit || value == Model.Deletion.Input)
-            return;
-        Model.Deletion.Input = value;
-        await Model.Commit(Model.Deletion);
-    }
 
     private void OnChoiceLoaded(object sender, RoutedEventArgs args)
     {

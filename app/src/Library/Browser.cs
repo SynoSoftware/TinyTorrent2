@@ -861,6 +861,9 @@ public sealed partial class Browser : INotifyPropertyChanged, IDataset, IDisposa
             if (Selected is not null)
                 _ = ReadDetail();
             Changed(nameof(Selected));
+            Changed(nameof(Section));
+            Changed(nameof(CanShowInformation));
+            Changed(nameof(SupportsMetadata));
             Changed(nameof(Message));
         }
         Changed(nameof(Selection));

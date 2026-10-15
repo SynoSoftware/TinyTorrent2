@@ -41,6 +41,9 @@ struct Facts
     Layout layout = Layout::Keep;
     std::string skipPatterns;
     std::string moveDestination;
+    // The .torrent file it was added from, which Removal can delete; empty
+    // for a magnet. The file may have moved or gone since.
+    std::string torrentFile;
     bool verifyFiles = false;
     Intent intent = Intent::Resumed;
     bool ignoresSeedLimits = false;
@@ -108,6 +111,7 @@ struct Torrent
     // The add/resume list applies until the person chooses a replacement.
     std::vector<lt::announce_entry> sourceTrackers;
     lt::torrent_status status;
+    QueueReport queueReport = QueueReport::Reported;
     SpeedHistory history;
     CheckpointPhase checkpointPhase = CheckpointPhase::Idle;
     std::optional<lt::add_torrent_params> pendingCheckpoint;

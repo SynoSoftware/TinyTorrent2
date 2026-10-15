@@ -396,6 +396,7 @@ public sealed partial class MainWindow
                         name = torrent.Name,
                         code,
                         detail,
+                        folder = kind == "delete_failed" ? torrent.SavePath : string.Empty,
                         count = 1,
                     }
                 )
@@ -558,7 +559,7 @@ public sealed partial class MainWindow
         );
         Run(Model.Inspector.EditTrackers);
         Model.Inspector.TrackerInput = "https://example.invalid/announce";
-        closed = ConfirmRemove([target]);
+        closed = ShowFiles([target], FileAction.Remove);
         await CaptureLayout();
         dialog =
             _interaction?.Dialog
@@ -2812,7 +2813,7 @@ public sealed partial class MainWindow
                     await ShowTorrents();
                     await CaptureDialog(
                         prefix + "remove",
-                        () => ConfirmRemove([target]),
+                        () => ShowFiles([target], FileAction.Remove),
                         () => _interaction?.Dialog
                     );
                     await CaptureDialog(
@@ -2822,7 +2823,7 @@ public sealed partial class MainWindow
                     );
                     await CaptureDialog(
                         prefix + "delete",
-                        () => ShowFiles([target], FileAction.Delete),
+                        () => ShowFiles([target], FileAction.Remove, DeletionMode.Permanent),
                         () => _interaction?.Dialog
                     );
                     Model.AddDraft.EditingMagnet = true;

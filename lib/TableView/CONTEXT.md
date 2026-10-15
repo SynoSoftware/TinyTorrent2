@@ -71,12 +71,16 @@ its minimum width.
 **Width override**: a width that takes precedence over the baseline after user
 resizing, explicit fit, or restored layout.
 
-**Fit**: a width override taken from the widest header or cell the table has
-realized for a column.
+**Fit**: a width override taken from a column's widest header or cell among
+visible rows and one already-realized row above and below the viewport.
 _Avoid_: autofit, auto-size.
 
-**Fill**: a fit of the visible columns followed by one proportional scale that
-makes them end at the table's right edge, wider or narrower.
+**Empty column**: a visible column in which no row a fit measured shows
+anything, so its fit is its header.
+
+**Fill**: a fit of the visible columns followed by a proportional scale that
+makes them end at the table's right edge, wider or narrower. Spare width goes
+to the columns with content; a shortfall comes from empty columns first.
 _Avoid_: stretch.
 
 **Automatic fill**: the same fit and proportional scale performed after a table

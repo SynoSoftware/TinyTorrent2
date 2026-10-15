@@ -315,7 +315,6 @@ public sealed partial class MainViewModel
                 ("verify", Verify),
                 ("remove", Remove),
                 ("move", MoveFiles),
-                ("delete_files", DeleteFiles),
                 ("speed_limit", LimitSpeed),
                 ("open", Open),
                 ("open_folder", OpenFolder),
@@ -404,7 +403,12 @@ public sealed partial class MainViewModel
             );
         foreach (var setting in Settings.All)
         {
-            if (setting == Settings.CapacityDownload || setting == Settings.CapacityUpload)
+            if (
+                setting == Settings.CapacityDownload
+                || setting == Settings.CapacityUpload
+                || setting == Settings.DeleteDownloaded
+                || setting == Settings.DeleteTorrentFile
+            )
                 continue;
             yield return SettingSuggestion(new(setting.Category, setting.Name), setting.Label);
         }

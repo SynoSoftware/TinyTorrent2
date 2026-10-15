@@ -94,8 +94,7 @@ public sealed partial class MainWindow
         void ShowText()
         {
             dialog.CloseButtonText = Model.Text.Get("dialog", "cancel");
-            if (dialog.OptOut is { } optOut)
-                optOut.Content = Model.Text.Get("dialog", "never_show");
+            dialog.OptOutText = Model.Text.Get("dialog", "never_show");
             refreshText();
         }
         dialog.XamlRoot = Root.XamlRoot;
@@ -167,8 +166,7 @@ public sealed partial class MainWindow
             var dialog = new Dialog
             {
                 Content = content,
-                Footer = content.Status,
-                FooterAction = content.CheckAction,
+                Footer = content.Status is { } status ? new DialogFooter.Check(status) : null,
                 Glyph = Lucide.KeyRound,
                 PrimaryGlyph = Lucide.Check,
             };

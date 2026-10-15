@@ -60,7 +60,6 @@ constexpr char layout[] = "layout";
 constexpr char duplicates[] = "duplicates";
 constexpr char excludes[] = "exclude";
 constexpr char patterns[] = "patterns";
-constexpr char deletion[] = "deletion";
 constexpr Number inactiveMinutes{"inactive_time", 0, 525600};
 constexpr char seedRule[] = "seed_rule";
 constexpr char watches[] = "watch";
@@ -121,6 +120,8 @@ constexpr char schedule[] = "schedule";
 constexpr char showsTorrentDialog[] = "torrent_dialog";
 constexpr char showsMagnetDialog[] = "magnet_dialog";
 constexpr char confirmsDelete[] = "confirm_delete";
+constexpr char deletesDownloaded[] = "delete_downloaded";
+constexpr char deletesTorrentFile[] = "delete_torrent_file";
 constexpr char showsSplash[] = "show_splash";
 constexpr char startsInTray[] = "start_in_tray";
 constexpr char allPaused[] = "all_paused";
@@ -170,8 +171,6 @@ constexpr std::pair<std::string_view, Layout> layouts[] = {
     {"keep", Layout::Keep}, {"create", Layout::Create}, {"strip", Layout::Strip}};
 constexpr std::pair<std::string_view, DuplicatePolicy> duplicatePolicies[] = {
     {"keep", DuplicatePolicy::Keep}, {"merge", DuplicatePolicy::Merge}};
-constexpr std::pair<std::string_view, DeletionMode> deletionModes[] = {
-    {"recycle", DeletionMode::Recycle}, {"permanent", DeletionMode::Permanent}};
 constexpr std::pair<std::string_view, SeedRule> seedRules[] = {
     {"any", SeedRule::Any}, {"all", SeedRule::All}};
 
@@ -325,7 +324,6 @@ Json Engine::State::Settings::ToJson() const
         {setting::duplicates, Word(duplicatePolicies, duplicates)},
         {setting::excludes, excludes},
         {setting::patterns, patterns},
-        {setting::deletion, Word(deletionModes, deletion)},
         {setting::inactiveMinutes.key, inactiveMinutes},
         {setting::seedRule, Word(seedRules, seedRule)},
         {setting::watches, watches},
@@ -386,6 +384,8 @@ Json Engine::State::Settings::ToJson() const
         {setting::showsTorrentDialog, showsTorrentDialog},
         {setting::showsMagnetDialog, showsMagnetDialog},
         {setting::confirmsDelete, confirmsDelete},
+        {setting::deletesDownloaded, deletesDownloaded},
+        {setting::deletesTorrentFile, deletesTorrentFile},
         {setting::showsSplash, showsSplash},
         {setting::startsInTray, startsInTray},
         {setting::allPaused, allPaused},
@@ -435,8 +435,6 @@ void Engine::State::Settings::Read(Json const& saved)
     excludes = ReadSaved(saved, setting::excludes, excludes);
     if (auto chosen = ReadSaved(saved, setting::patterns, patterns); chosen.size() <= 4096)
         patterns = std::move(chosen);
-    if (auto chosen = Parse(deletionModes, ReadSaved(saved, setting::deletion, std::string())))
-        deletion = *chosen;
     inactiveMinutes = setting::inactiveMinutes.Read(saved, inactiveMinutes);
     if (auto chosen = Parse(seedRules, ReadSaved(saved, setting::seedRule, std::string())))
         seedRule = *chosen;
@@ -570,6 +568,8 @@ void Engine::State::Settings::Read(Json const& saved)
     showsTorrentDialog = ReadSaved(saved, setting::showsTorrentDialog, showsAdd);
     showsMagnetDialog = ReadSaved(saved, setting::showsMagnetDialog, showsAdd);
     confirmsDelete = ReadSaved(saved, setting::confirmsDelete, confirmsDelete);
+    deletesDownloaded = ReadSaved(saved, setting::deletesDownloaded, deletesDownloaded);
+    deletesTorrentFile = ReadSaved(saved, setting::deletesTorrentFile, deletesTorrentFile);
     showsSplash = ReadSaved(saved, setting::showsSplash, showsSplash);
     startsInTray = ReadSaved(saved, setting::startsInTray, startsInTray);
     allPaused = ReadSaved(saved, setting::allPaused, allPaused);
@@ -642,8 +642,6 @@ std::optional<Engine::State::Settings> Engine::State::Settings::With(Json const&
             next.excludes = value;
         else if (key == setting::patterns && value.is_string() && value.get_ref<std::string const&>().size() <= 4096)
             next.patterns = value.get<std::string>();
-        else if (key == setting::deletion && value.is_string() && Parse(deletionModes, value.get<std::string>()))
-            next.deletion = *Parse(deletionModes, value.get<std::string>());
         else if (key == setting::inactiveMinutes.key && setting::inactiveMinutes.Accepts(value))
             next.inactiveMinutes = value;
         else if (key == setting::seedRule && value.is_string() && Parse(seedRules, value.get<std::string>()))
@@ -669,6 +667,14 @@ std::optional<Engine::State::Settings> Engine::State::Settings::With(Json const&
         else if (key == setting::confirmsDelete && value.is_boolean())
         {
             next.confirmsDelete = value;
+        }
+        else if (key == setting::deletesDownloaded && value.is_boolean())
+        {
+            next.deletesDownloaded = value;
+        }
+        else if (key == setting::deletesTorrentFile && value.is_boolean())
+        {
+            next.deletesTorrentFile = value;
         }
         else if (key == setting::incompleteFolder && value.is_string() && IsAbsolute(value.get<std::string>()))
         {

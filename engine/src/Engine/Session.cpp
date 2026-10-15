@@ -566,7 +566,7 @@ void Engine::State::Notify(NoticeKind kind, Torrent const& torrent, std::string 
 }
 
 void Engine::State::Notify(NoticeKind kind, std::string name, std::string detail, std::string torrentId,
-    std::string code)
+    std::string code, std::string folder)
 {
     log.Write("notification", torrentId, ToString(kind));
     if (notices.size() == Notice::limit)
@@ -575,7 +575,7 @@ void Engine::State::Notify(NoticeKind kind, std::string name, std::string detail
     }
     notices.push_back(
         {.kind = kind, .name = std::move(name), .detail = std::move(detail), .code = std::move(code),
-            .torrentId = std::move(torrentId)});
+            .torrentId = std::move(torrentId), .folder = std::move(folder)});
 }
 
 void Engine::State::RecordHashes(Torrent& torrent, lt::info_hash_t const& hashes)

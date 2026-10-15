@@ -10,9 +10,11 @@ internal sealed partial class PipeClient
     private long? _inspectorContext;
     private TaskCompletionSource? _inspector;
 
-    internal async Task<FileDetail> ReadFiles(string torrentId, CancellationToken cancellation)
+    // Null when the inspector took the connection first; the caller asks again.
+    internal async Task<FileDetail?> ReadFiles(string torrentId, CancellationToken cancellation)
     {
-        var files = await ReadSection(torrentId, "files", cancellation).ConfigureAwait(false);
+        if (await ReadSection(torrentId, "files", cancellation).ConfigureAwait(false) is not { } files)
+            return null;
         JsonElement? pieces = null;
         if (
             files.GetProperty("metadata_ready").GetBoolean()
@@ -26,11 +28,15 @@ internal sealed partial class PipeClient
                         >= file.GetProperty("size").GetInt64()
                 )
         )
-            pieces = await ReadSection(torrentId, "pieces", cancellation).ConfigureAwait(false);
+        {
+            if (await ReadSection(torrentId, "pieces", cancellation).ConfigureAwait(false) is not { } section)
+                return null;
+            pieces = section;
+        }
         return new FileDetail(files, pieces);
     }
 
-    private async Task<JsonElement> ReadSection(
+    private async Task<JsonElement?> ReadSection(
         string torrentId,
         string view,
         CancellationToken cancellation
@@ -52,19 +58,24 @@ internal sealed partial class PipeClient
         }
         try
         {
-            var reply = await Read(
-                    Consumer.Files,
-                    "torrent",
-                    new
-                    {
-                        torrent_id = torrentId,
-                        context = pending.Context,
-                        view,
-                        include_files = view == "pieces",
-                    }
-                )
-                .WaitAsync(cancellation)
-                .ConfigureAwait(false);
+            var read = Read(
+                Consumer.Files,
+                "torrent",
+                new
+                {
+                    torrent_id = torrentId,
+                    context = pending.Context,
+                    view,
+                    include_files = view == "pieces",
+                }
+            );
+            // The inspector withdraws an unsent read; a cancelled task is
+            // awaited without throwing, because this happens every refresh.
+            await ((Task)read).WaitAsync(cancellation).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            cancellation.ThrowIfCancellationRequested();
+            if (read.IsCanceled)
+                return null;
+            var reply = await read.ConfigureAwait(false);
             if (reply.GetProperty("ready").GetBoolean())
                 pending.Completion.TrySetResult(reply);
             return await pending
@@ -153,7 +164,7 @@ internal sealed partial class PipeClient
 
     private void EndFiles()
     {
-        _files?.Completion.TrySetCanceled();
+        _files?.Completion.TrySetResult(null);
         _files = null;
         Withdraw(Consumer.Files);
     }
@@ -167,7 +178,8 @@ internal sealed partial class PipeClient
 
     private sealed record PendingFiles(string TorrentId, long Context)
     {
-        internal TaskCompletionSource<JsonElement> Completion { get; } =
+        // Null when the inspector took the connection.
+        internal TaskCompletionSource<JsonElement?> Completion { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 }

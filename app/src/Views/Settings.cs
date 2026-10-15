@@ -48,8 +48,11 @@ public sealed class Settings : INotifyPropertyChanged
     public Setting Duplicates { get; }
     public Setting Exclude { get; }
     public Setting Patterns { get; }
-    public Setting Deletion { get; }
     public Setting ConfirmDelete { get; }
+    // The Remove dialog's check boxes as the person last submitted them.
+    // Only that dialog shows them, so they have no row in Settings.
+    public Setting DeleteDownloaded { get; }
+    public Setting DeleteTorrentFile { get; }
     public Setting InactiveTime { get; }
     public Setting SeedRule { get; }
     public Setting Watch { get; }
@@ -487,8 +490,9 @@ public sealed class Settings : INotifyPropertyChanged
         {
             Condition = () => Exclude.IsOn,
         };
-        Deletion = new(this, "deletion", SettingKind.Text, SettingsCategory.Transfers);
         ConfirmDelete = new(this, "confirm_delete", SettingKind.Boolean, SettingsCategory.General);
+        DeleteDownloaded = new(this, "delete_downloaded", SettingKind.Boolean, SettingsCategory.General);
+        DeleteTorrentFile = new(this, "delete_torrent_file", SettingKind.Boolean, SettingsCategory.General);
         InactiveTime = new(
             this,
             "inactive_time",
@@ -716,8 +720,9 @@ public sealed class Settings : INotifyPropertyChanged
             Duplicates,
             Exclude,
             Patterns,
-            Deletion,
             ConfirmDelete,
+            DeleteDownloaded,
+            DeleteTorrentFile,
             InactiveTime,
             SeedRule,
             Watch,

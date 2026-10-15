@@ -34,6 +34,7 @@ private:
     void OnTray(WPARAM first, LPARAM second);
     void OnNotice();
     void OnNoticeCommand(NoticeCommand command);
+    void OnNoticeAction(NoticeAction action);
     void ShowMenu(POINT point);
     void OnTimer();
     void Dispatch(std::shared_ptr<Pipe::Connection> client, Json request, Reply reply);

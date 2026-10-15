@@ -21,6 +21,8 @@ public sealed class FileDraft : IDraft
     private string _originalDestination = string.Empty;
     private bool _includeShared;
     private DeletionMode _deletion;
+    private bool _deleteDownloaded;
+    private bool _deleteTorrentFiles;
     public FileAction Action { get; private set; }
     public bool IsPending => _submitting || IsMove && _reading;
     public bool HasDraft =>
@@ -28,42 +30,97 @@ public sealed class FileDraft : IDraft
         && !string.IsNullOrWhiteSpace(Destination)
         && (Destination != _originalDestination || IncludeShared);
 
-    // Delete does not need the scope, so a failed scope neither blocks it nor
+    // Removal does not need the scope, so a failed scope neither blocks it nor
     // shows an error: the dialog lists the save folders, and the engine still
     // keeps files that other torrents use.
     private bool CanSave =>
         _owner.CanSave
         && !IsPending
         && _torrentIds.Length > 0
-        && (
-            Action == FileAction.Delete
-            || _loaded && HasDestination && (!HasShared || IncludeShared)
-        );
+        && (IsRemoval || _loaded && HasDestination && (!HasShared || IncludeShared));
     public bool CanSubmit => CanSave && !_owner.IsClosing;
     public bool CanRefresh => _owner.CanEdit && !_reading && !_submitting && _torrentIds.Length > 0;
     public bool IsMove => Action == FileAction.Move;
     public bool HasShared => _shared.Length > 0;
+    // Move asks about the shared files. Removal names them only when it
+    // deletes the downloaded files, because otherwise every file stays.
+    public bool ShowsMoveShared => IsMove && HasShared;
+    public bool ShowsKeptShared => DeleteDownloaded && HasShared;
     public bool HasDestination => !string.IsNullOrWhiteSpace(Destination);
     public string Title =>
         IsMove
             ? _owner.Text.FormatCount("file_action", "move_title", _torrents.Length)
-            : _owner.Text.Get("file_action", "delete_title");
-    public bool IsDelete => !IsMove;
+            : _owner.Text.FormatCount("remove", "title", _torrents.Length);
+    public string Glyph => IsMove ? Lucide.FolderInput : Lucide.Trash2;
+    public bool IsRemoval => !IsMove;
+
+    // Removal's check boxes. The key that opened the dialog chose the
+    // deletion mode, so the labels state it instead of asking.
+    public bool DeleteDownloaded
+    {
+        get => _deleteDownloaded;
+        set
+        {
+            if (_deleteDownloaded == value)
+                return;
+            _deleteDownloaded = value;
+            _failure = null;
+            Refresh();
+        }
+    }
+    public bool DeleteTorrentFiles
+    {
+        get => _deleteTorrentFiles;
+        set
+        {
+            if (_deleteTorrentFiles == value)
+                return;
+            _deleteTorrentFiles = value;
+            Refresh();
+        }
+    }
+
+    // A magnet has no .torrent file, so that check box shows only when a
+    // selected torrent has one.
+    public bool HasTorrentFiles => TorrentFileCount > 0;
+    private int TorrentFileCount => _torrents.Count(torrent => torrent.TorrentFile.Length > 0);
+    private bool Recycles => _deletion == DeletionMode.Recycle;
+    public string DownloadedText =>
+        _owner.Text.Format(
+            "remove",
+            Recycles ? "recycle_downloaded" : "delete_downloaded",
+            _owner.Text.Bytes(_torrents.Sum(torrent => Selected(torrent).Size))
+        );
+    public string TorrentFilesText
+    {
+        get
+        {
+            var size = _owner.Text.Bytes(_torrents.Sum(torrent => torrent.TorrentFileSize));
+            return TorrentFileCount == _torrents.Length
+                ? _owner.Text.FormatCount(
+                    "remove",
+                    Recycles ? "recycle_torrent_files" : "delete_torrent_files",
+                    TorrentFileCount,
+                    size
+                )
+                : _owner.Text.Format(
+                    "remove",
+                    Recycles ? "recycle_some_torrent_files" : "delete_some_torrent_files",
+                    TorrentFileCount,
+                    size,
+                    _torrents.Length
+                );
+        }
+    }
     public DialogPreference Confirmation { get; }
-    public string SubmitText => _owner.Text.Get("file_action", IsMove ? "move" : "delete");
-    public string SubmitGlyph => IsMove ? Lucide.FolderInput : Lucide.Trash2;
+    public string SubmitText =>
+        IsMove ? _owner.Text.Get("file_action", "move") : _owner.Text.Get("commands", "remove");
+    public string SubmitGlyph => IsMove ? Lucide.FolderInput : Lucide.ListX;
     public string SubmitToolTip =>
-        _owner.Text.Get(
-            "file_action",
-            IsMove ? "move_tip"
-                : _deletion == DeletionMode.Recycle ? "recycle_tip"
-                : "delete_tip"
-        );
-    public string Warning =>
-        _owner.Text.Get(
-            "file_action",
-            _deletion == DeletionMode.Recycle ? "recycle_warning" : "delete_warning"
-        );
+        IsMove ? _owner.Text.Get("file_action", "move_tip")
+        : DeleteDownloaded || DeleteTorrentFiles && HasTorrentFiles
+            ? _owner.Text.Get("remove", Recycles ? "recycle_tip" : "delete_tip")
+        : _owner.Text.Get("remove", "tip");
     public string Locations =>
         _torrents
             .Select(torrent => torrent.SavePath)
@@ -74,7 +131,7 @@ public sealed class FileDraft : IDraft
     public Torrent[] Torrents { get; private set; } = [];
     public FolderGroup[] Folders { get; private set; } = [];
     public string Total =>
-        IsMove && _torrents.Length == 1
+        _torrents.Length == 1
             ? string.Empty
             : _owner.Text.Format(
                 "units",
@@ -135,18 +192,24 @@ public sealed class FileDraft : IDraft
         Confirmation = new(owner.Settings);
     }
 
-    internal void Begin(Torrent[] torrents, FileAction action)
+    // Removal deletes the ticked files in the deletion mode, and its check
+    // boxes start as the person last submitted them.
+    internal void Begin(Torrent[] torrents, FileAction action, DeletionMode deletion)
     {
         Action = action;
         Confirmation.NeverShow = false;
-        _deletion =
-            _owner.Settings.Deletion.ConfirmedText == "permanent"
-                ? DeletionMode.Permanent
-                : DeletionMode.Recycle;
+        _deletion = deletion;
+        _deleteDownloaded = _owner.Settings.DeleteDownloaded.ConfirmedOn;
+        _deleteTorrentFiles = _owner.Settings.DeleteTorrentFile.ConfirmedOn;
         _torrentIds = torrents.Select(torrent => torrent.TorrentId).ToArray();
         _selection = torrents.ToDictionary(torrent => torrent.TorrentId);
         _torrents = torrents
-            .Select(torrent => new FileLocation(torrent.TorrentId, torrent.Name, torrent.SavePath))
+            .Select(torrent => new FileLocation(
+                torrent.TorrentId,
+                torrent.Name,
+                torrent.SavePath,
+                string.Empty
+            ))
             .ToArray();
         RefreshItems();
         _shared = [];
@@ -174,9 +237,11 @@ public sealed class FileDraft : IDraft
         try
         {
             var scope = await _client.Send("file_scope", new { torrent_ids = torrentIds });
+            var torrents = await Task.Run(() =>
+                MeasureTorrentFiles(ReadLocations(scope.GetProperty("torrents")))
+            );
             if (torrentIds != _torrentIds)
                 return;
-            var torrents = ReadLocations(scope.GetProperty("torrents"));
             var changed = !_torrents.Select(torrent => (torrent.TorrentId, torrent.SavePath))
                 .SequenceEqual(torrents.Select(torrent => (torrent.TorrentId, torrent.SavePath)));
             _torrents = torrents;
@@ -218,11 +283,15 @@ public sealed class FileDraft : IDraft
                 IsMove && IncludeShared
                     ? _torrentIds.Concat(_shared.Select(torrent => torrent.TorrentId)).ToArray()
                     : _torrentIds;
-            if (IsDelete)
+            var deletesDownloaded = IsRemoval && DeleteDownloaded;
+            if (IsRemoval)
+            {
                 await Confirmation.Save(_owner.Settings.ConfirmDelete);
+                await SaveChoices();
+            }
             var subtitles = _owner.Subtitles;
             var subtitleDeletion =
-                !IsMove && subtitles is not null
+                deletesDownloaded && subtitles is not null
                     ? await subtitles.CaptureDeletion(torrentIds)
                     : null;
             var outcome = IsMove
@@ -231,17 +300,18 @@ public sealed class FileDraft : IDraft
                     new { torrent_ids = torrentIds, destination = Destination }
                 )
                 : await _client.Send(
-                    "delete_files",
+                    deletesDownloaded ? "delete_files" : "remove",
                     new
                     {
                         torrent_ids = torrentIds,
-                        deletion = _deletion == DeletionMode.Recycle ? "recycle" : "permanent",
+                        deletion = Recycles ? "recycle" : "permanent",
+                        torrent_files = DeleteTorrentFiles,
                     }
                 );
-            _owner.AnnounceAccepted("commands", IsMove ? "move" : "delete_files");
+            _owner.AnnounceAccepted("commands", IsMove ? "move" : "remove");
             if (subtitleDeletion is not null && subtitles is not null)
                 subtitles.Delete(subtitleDeletion, _deletion);
-            if (!IsMove)
+            if (deletesDownloaded)
             {
                 var count = outcome.GetProperty("kept_files");
                 if (
@@ -266,6 +336,18 @@ public sealed class FileDraft : IDraft
             _submitting = false;
             Refresh();
         }
+    }
+
+    // Remove remembers the check boxes for the next removal; Cancel does not.
+    private Task SaveChoices()
+    {
+        var settings = _owner.Settings;
+        var choices = new Dictionary<string, bool>();
+        if (DeleteDownloaded != settings.DeleteDownloaded.ConfirmedOn)
+            choices[settings.DeleteDownloaded.Name] = DeleteDownloaded;
+        if (DeleteTorrentFiles != settings.DeleteTorrentFile.ConfirmedOn)
+            choices[settings.DeleteTorrentFile.Name] = DeleteTorrentFiles;
+        return choices.Count > 0 ? settings.Save(choices) : Task.CompletedTask;
     }
 
     internal void Cancel()
@@ -301,14 +383,36 @@ public sealed class FileDraft : IDraft
             .Select(row => new FileLocation(
                 row.GetProperty("torrent_id").GetString()!,
                 row.GetProperty("name").GetString()!,
-                row.GetProperty("save_path").GetString()!
+                row.GetProperty("save_path").GetString()!,
+                row.GetProperty("torrent_file").GetString()!
             ))
+            .ToArray();
+
+    // The engine records each .torrent path without reading the disk. A file
+    // that has gone since leaves nothing to delete, so it does not count.
+    private static FileLocation[] MeasureTorrentFiles(FileLocation[] torrents) =>
+        torrents
+            .Select(torrent =>
+                torrent.TorrentFile.Length > 0
+                && new FileInfo(torrent.TorrentFile) is { Exists: true } file
+                    ? torrent with { TorrentFileSize = file.Length }
+                    : torrent with { TorrentFile = string.Empty }
+            )
             .ToArray();
 
     private Torrent Selected(FileLocation torrent) => _selection[torrent.TorrentId];
 
-    private sealed record FileLocation(string TorrentId, string Name, string SavePath);
+    // TorrentFile is the .torrent file the torrent was added from, with its
+    // size; empty for a magnet, for a file that has gone, and until the scope
+    // is read.
+    private sealed record FileLocation(
+        string TorrentId,
+        string Name,
+        string SavePath,
+        string TorrentFile,
+        long TorrentFileSize = 0
+    );
 }
 
-// The selected torrents saved in one folder, as Delete files lists them.
+// The selected torrents saved in one folder, as Remove torrents lists them.
 public sealed record FolderGroup(string Folder, Torrent[] Torrents);

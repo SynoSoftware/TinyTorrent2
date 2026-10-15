@@ -164,6 +164,16 @@ enum class CompletionPhase
     Checked
 };
 
+// libtorrent queues a new addition only once its chosen files apply, because
+// it is added with none wanted. Until a status after that, the addition
+// counts as queued at its accepted place.
+enum class QueueReport
+{
+    Reported,
+    AwaitingFiles,
+    AwaitingStatus
+};
+
 // A deletion saves the list without its torrents, waits for libtorrent to
 // release their files, and then deletes them.
 enum class DeletionPhase
@@ -426,6 +436,13 @@ enum class NoticeCommand
     Settings
 };
 
+// The buttons of a notice that says the window did not start.
+enum class NoticeAction
+{
+    Retry,
+    OpenFolder
+};
+
 // How a second launch's request to the running engine ended. A different
 // version is its own outcome, because the person must exit that engine first.
 enum class Forwarding
@@ -456,6 +473,7 @@ enum class TrayClick
 enum class PopupPart
 {
     Body,
+    Action,
     More,
     Close
 };

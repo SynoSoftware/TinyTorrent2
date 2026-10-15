@@ -914,7 +914,8 @@ Json Engine::State::Describe(std::vector<std::string> const& ids, Scope const& s
         {
             auto const& torrent = torrents.at(id);
             list.push_back(Json{{"torrent_id", torrent.torrentId}, {"name", torrent.Name()},
-                {"save_path", torrent.facts.savePath}, {"folder", torrent.Folder()}});
+                {"save_path", torrent.facts.savePath}, {"folder", torrent.Folder()},
+                {"torrent_file", torrent.facts.torrentFile}});
         }
         return list;
     };
@@ -997,67 +998,88 @@ void Engine::State::ContinueDeletion()
     }
 }
 
+namespace
+{
+// Deletes the files in the mode and throws the first failure. A file that is
+// already gone counts as deleted.
+void Erase(std::vector<std::filesystem::path> const& files, DeletionMode mode)
+{
+    if (mode == DeletionMode::Recycle)
+    {
+        auto initialized = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+        IFileOperation* operation = nullptr;
+        auto result = FAILED(initialized) ? initialized : CoCreateInstance(CLSID_FileOperation, nullptr,
+            CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&operation));
+        if (SUCCEEDED(result))
+            result = operation->SetOperationFlags(FOFX_RECYCLEONDELETE | FOFX_EARLYFAILURE |
+                FOF_NOERRORUI | FOF_SILENT | FOF_NOCONFIRMATION | FOF_NO_CONNECTED_ELEMENTS);
+        for (auto const& file : files)
+        {
+            if (FAILED(result))
+                break;
+            std::error_code error;
+            auto type = std::filesystem::symlink_status(file, error).type();
+            if (type == std::filesystem::file_type::not_found)
+                continue;
+            if (error || type == std::filesystem::file_type::directory)
+            {
+                result = E_FAIL;
+                break;
+            }
+            IShellItem* item = nullptr;
+            result = SHCreateItemFromParsingName(file.c_str(), nullptr, IID_PPV_ARGS(&item));
+            if (SUCCEEDED(result))
+                result = operation->DeleteItem(item, nullptr);
+            if (item)
+                item->Release();
+        }
+        if (SUCCEEDED(result))
+            result = operation->PerformOperations();
+        BOOL aborted = FALSE;
+        if (SUCCEEDED(result))
+            result = operation->GetAnyOperationsAborted(&aborted);
+        if (operation)
+            operation->Release();
+        if (SUCCEEDED(initialized))
+            CoUninitialize();
+        if (FAILED(result))
+            throw std::system_error(
+                HRESULT_FACILITY(result) == FACILITY_WIN32 ? HRESULT_CODE(result) : result,
+                std::system_category(), "HRESULT " + std::to_string(result));
+        if (aborted)
+            throw std::runtime_error("recycle_failed");
+    }
+    else
+    {
+        std::string failure;
+        for (auto const& file : files)
+        {
+            std::error_code error;
+            std::filesystem::remove(file, error);
+            if (error && failure.empty())
+                failure = Utf8(file.wstring()) + ": " + error.message();
+        }
+        if (!failure.empty())
+            throw std::runtime_error(failure);
+    }
+}
+}
+
 void Engine::State::Delete(std::list<Deletion>::iterator deletion)
 {
     auto deleting = *deletion;
     deletion->phase = DeletionPhase::Deleting;
     payload.Run([deleting]
     {
-        std::string failure;
-        if (deleting.mode == DeletionMode::Recycle)
+        // Folders the deletion emptied go too, even after a failure.
+        std::exception_ptr failure;
+        try
         {
-            auto initialized = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-            IFileOperation* operation = nullptr;
-            auto result = FAILED(initialized) ? initialized : CoCreateInstance(CLSID_FileOperation, nullptr,
-                CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&operation));
-            if (SUCCEEDED(result))
-                result = operation->SetOperationFlags(FOFX_RECYCLEONDELETE | FOFX_EARLYFAILURE |
-                    FOF_NOERRORUI | FOF_SILENT | FOF_NOCONFIRMATION | FOF_NO_CONNECTED_ELEMENTS);
-            for (auto const& file : deleting.files)
-            {
-                if (FAILED(result))
-                    break;
-                std::error_code error;
-                auto type = std::filesystem::symlink_status(file, error).type();
-                if (type == std::filesystem::file_type::not_found)
-                    continue;
-                if (error || type == std::filesystem::file_type::directory)
-                {
-                    result = E_FAIL;
-                    break;
-                }
-                IShellItem* item = nullptr;
-                result = SHCreateItemFromParsingName(file.c_str(), nullptr, IID_PPV_ARGS(&item));
-                if (SUCCEEDED(result))
-                    result = operation->DeleteItem(item, nullptr);
-                if (item)
-                    item->Release();
-            }
-            if (SUCCEEDED(result))
-                result = operation->PerformOperations();
-            BOOL aborted = FALSE;
-            if (SUCCEEDED(result))
-                result = operation->GetAnyOperationsAborted(&aborted);
-            if (operation)
-                operation->Release();
-            if (SUCCEEDED(initialized))
-                CoUninitialize();
-            if (FAILED(result))
-                throw std::system_error(
-                    HRESULT_FACILITY(result) == FACILITY_WIN32 ? HRESULT_CODE(result) : result,
-                    std::system_category(), "HRESULT " + std::to_string(result));
-            if (aborted)
-                throw std::runtime_error("recycle_failed");
+            Erase(deleting.files, *deleting.mode);
         }
-        else
+        catch (...)
         {
-            for (auto const& file : deleting.files)
-            {
-                std::error_code error;
-                std::filesystem::remove(file, error);
-                if (error && failure.empty())
-                    failure = Utf8(file.wstring()) + ": " + error.message();
-            }
+            failure = std::current_exception();
         }
         for (auto const& file : deleting.files)
         {
@@ -1079,21 +1101,46 @@ void Engine::State::Delete(std::list<Deletion>::iterator deletion)
                 }
             }
         }
-        if (!failure.empty())
+        if (failure)
         {
-            throw std::runtime_error(failure);
+            std::rethrow_exception(failure);
         }
     }, [this, deletion](StorageOutcome outcome)
     {
         if (outcome.failure)
         {
-            // A busy store refused the deletion before it began, so it has no detail.
-            std::string code = outcome.failure == StorageFailure::Overloaded ? ToString(ErrorCode::Overloaded) : "";
-            log.Write("delete", "", code.empty() ? outcome.detail : code);
-            Notify(NoticeKind::DeleteFailed, deletion->names, outcome.detail, {}, code);
+            ReportDeletion(outcome, deletion->names, deletion->roots.front());
         }
         deletions.erase(deletion);
     });
+}
+
+// The .torrent files hold no torrent's data, so they need not wait for
+// libtorrent to release anything.
+void Engine::State::DeleteTorrentFiles(std::vector<std::filesystem::path> files, DeletionMode mode, std::string names)
+{
+    auto folder = files.front().parent_path();
+    payload.Run([files = std::move(files), mode]
+    {
+        Erase(files, mode);
+    }, [this, names = std::move(names), folder = std::move(folder)](StorageOutcome outcome)
+    {
+        if (outcome.failure)
+        {
+            ReportDeletion(outcome, names, folder);
+        }
+    });
+}
+
+// The notice offers the folder, where the person deletes the rest in File
+// Explorer.
+void Engine::State::ReportDeletion(StorageOutcome const& outcome, std::string names,
+    std::filesystem::path const& folder)
+{
+    // A busy store refused the deletion before it began, so it has no detail.
+    std::string code = outcome.failure == StorageFailure::Overloaded ? ToString(ErrorCode::Overloaded) : "";
+    log.Write("delete", "", code.empty() ? outcome.detail : code);
+    Notify(NoticeKind::DeleteFailed, std::move(names), outcome.detail, {}, code, Utf8(folder.wstring()));
 }
 
 void Engine::State::On(lt::torrent_deleted_alert const& alert)
@@ -1124,7 +1171,8 @@ void Engine::State::On(lt::torrent_delete_failed_alert const& alert)
         if (std::erase(deletion.waiting, alert.handle))
         {
             log.Write("delete", "", "partfile_delete_failed");
-            Notify(NoticeKind::DeleteFailed, deletion.names, alert.error.message());
+            Notify(NoticeKind::DeleteFailed, deletion.names, alert.error.message(), {}, {},
+                Utf8(deletion.roots.front().wstring()));
         }
     }
     ContinueDeletion();

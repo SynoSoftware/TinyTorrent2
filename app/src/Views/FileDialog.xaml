@@ -59,7 +59,7 @@
         />
         <ItemsControl
           ItemsSource="{x:Bind Model.FileDraft.Folders, Mode=OneWay}"
-          Visibility="{x:Bind Model.FileDraft.IsDelete, Mode=OneWay}"
+          Visibility="{x:Bind Model.FileDraft.IsRemoval, Mode=OneWay}"
           IsTabStop="False"
         >
           <ItemsControl.ItemsPanel>
@@ -103,7 +103,7 @@
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>
-        <StackPanel Spacing="8" Visibility="{x:Bind Model.FileDraft.HasShared, Mode=OneWay}">
+        <StackPanel Spacing="8" Visibility="{x:Bind Model.FileDraft.ShowsMoveShared, Mode=OneWay}">
           <TextBlock
             Text="{x:Bind Model.FileDraft.SharedText, Mode=OneWay}"
             Style="{StaticResource TinyTorrentBodyTextStyle}"
@@ -115,19 +115,43 @@
             Content="{x:Bind Model.Text.Get('file_action', 'include_shared'), Mode=OneWay}"
             AutomationProperties.AutomationId="IncludeShared"
             IsChecked="{x:Bind Model.FileDraft.IncludeShared, Mode=TwoWay}"
-            Visibility="{x:Bind Model.FileDraft.IsMove, Mode=OneWay}"
             IsEnabled="{x:Bind Model.FileDraft.CanRefresh, Mode=OneWay}"
           />
         </StackPanel>
-        <TextBlock
-          Text="{x:Bind Model.FileDraft.Warning, Mode=OneWay}"
-          Visibility="{x:Bind Model.FileDraft.IsDelete, Mode=OneWay}"
-          Style="{StaticResource TinyTorrentBodyTextStyle}"
-          IsTextSelectionEnabled="True"
-          ToolTipService.ToolTip="{x:Bind Model.FileDraft.Warning, Mode=OneWay}"
-        />
       </StackPanel>
     </ScrollViewer>
+    <!-- The list scrolls while the deletion choice and its consequence stay
+         visible, as Move's From and To rows do. -->
+    <StackPanel
+      Grid.Row="1"
+      Spacing="12"
+      Padding="0,16,0,0"
+      Margin="0,16,0,0"
+      BorderThickness="0,1,0,0"
+      BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+      Visibility="{x:Bind Model.FileDraft.IsRemoval, Mode=OneWay}"
+    >
+      <CheckBox
+        Content="{x:Bind Model.FileDraft.DownloadedText, Mode=OneWay}"
+        AutomationProperties.AutomationId="DeleteDownloaded"
+        IsChecked="{x:Bind Model.FileDraft.DeleteDownloaded, Mode=TwoWay}"
+        IsEnabled="{x:Bind Model.FileDraft.CanSubmit, Mode=OneWay}"
+      />
+      <CheckBox
+        Content="{x:Bind Model.FileDraft.TorrentFilesText, Mode=OneWay}"
+        AutomationProperties.AutomationId="DeleteTorrentFiles"
+        IsChecked="{x:Bind Model.FileDraft.DeleteTorrentFiles, Mode=TwoWay}"
+        IsEnabled="{x:Bind Model.FileDraft.CanSubmit, Mode=OneWay}"
+        Visibility="{x:Bind Model.FileDraft.HasTorrentFiles, Mode=OneWay}"
+      />
+      <TextBlock
+        Text="{x:Bind Model.FileDraft.SharedText, Mode=OneWay}"
+        Visibility="{x:Bind Model.FileDraft.ShowsKeptShared, Mode=OneWay}"
+        Style="{StaticResource TinyTorrentBodyTextStyle}"
+        IsTextSelectionEnabled="True"
+        ToolTipService.ToolTip="{x:Bind Model.FileDraft.SharedText, Mode=OneWay}"
+      />
+    </StackPanel>
     <Border
       Grid.Row="1"
       BorderThickness="0,1,0,0"

@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "TinyTorrent": {
+      "commandName": "Project",
+      "commandLineArgs": "--engine"
+    }
+  }
+}

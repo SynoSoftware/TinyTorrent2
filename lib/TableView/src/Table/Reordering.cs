@@ -35,8 +35,15 @@ public sealed partial class Table
         _order = order;
     }
 
-    internal bool CanStartDrag(object item) =>
-        _hierarchy is null && _order is not null && CanReorder && IsInteractive(item);
+    internal bool CanStartDrag(object item)
+    {
+        var order = _order;
+        if (_hierarchy is not null || order is null || !CanReorder || !IsInteractive(item))
+            return false;
+        return _selection.IsSelected(item)
+            ? SelectedItems.Any(selected => IsInteractive(selected) && order.Contains(selected))
+            : order.Contains(item);
+    }
 
     private Point ToRoot(Point point) => _surface!.TransformToVisual(null).TransformPoint(point);
 

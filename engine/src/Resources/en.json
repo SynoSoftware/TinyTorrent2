@@ -48,7 +48,12 @@
     "off_problems": "Don't notify about problems",
     "off_background": "Don't notify when the window closes",
     "off_all": "Turn off all notifications",
-    "settings": "Go to notification settings"
+    "settings": "Go to notification settings",
+    "retry": "Retry",
+    "retry_tip": "Try to open the window again",
+    "open_folder": "Open folder",
+    "open_folder_tip": "Open the folder that holds TinyTorrent's program files",
+    "files_folder_tip": "Open the folder that holds the files"
   },
   "power": {
     "transfers": "TinyTorrent is transferring files."
@@ -83,6 +88,7 @@
     "start": "TinyTorrent could not start.",
     "version": "A different version of TinyTorrent is already running. Choose Exit in the tray, then start TinyTorrent again.",
     "package": "Windows keeps a separate copy of data for the app that started TinyTorrent, so TinyTorrent can't reach your torrents. Start TinyTorrent from the Start menu.",
+    "sandbox": "TinyTorrent cannot access your torrents from this sandbox. Run TinyTorrent outside the sandbox or start it from the Start menu.",
     "source": "The torrent could not be added.",
     "ownership": "TinyTorrent cannot open its saved data. Another Windows logon may already be using this folder:",
     "launch": "Windows could not start the window. Transfers continue. The Windows error below explains why.",
@@ -90,7 +96,7 @@
     "window_denied": "Windows denied permission to start the window. Transfers continue.\n\nCheck the window program's file permissions before trying again.",
     "window_invalid": "Windows cannot run the window program on this PC. Transfers continue.\n\nReinstall the version of TinyTorrent that matches your PC.",
     "window_dependency": "A file required by the window program is missing. Transfers continue.\n\nReinstall TinyTorrent to restore the required files.",
-    "startup": "The window did not open. Downloads continue. Choose Show window in the tray to try again.",
+    "startup": "The window did not open. Downloads continue.",
     "save": "TinyTorrent could not save and remains running. Choose Exit in the tray to retry.",
     "pause": "The transfer pause setting could not be saved.",
     "notification": "The notification setting could not be saved.",

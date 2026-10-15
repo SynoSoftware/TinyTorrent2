@@ -455,10 +455,7 @@ public sealed partial class MainWindow
         Search.ItemsSource = Model.FindSuggestions(Search.Text);
         FiltersTitle.Text = Model.Text.Get("filters", "title");
         AutomationProperties.SetName(Filters, Model.Text.Get("filters", "title"));
-        NameButton(FiltersClose, Model.Text.Get("filters", "close"));
-        NameButton(FiltersMinimize, Model.Text.Get("filters", "minimize"));
-        NameButton(FiltersToggle, Model.Text.Get("filters", "title"));
-        NameButton(InspectorToggle, Model.Text.Get("inspector", "expand"));
+        FiltersPane.RefreshText(Model.Text, "filters");
         AutomationProperties.SetName(Split, Model.Text.Get("inspector", "resize"));
         Torrents.Strings = Model.Text.Table;
         Root.FlowDirection = Model.Text.IsRightToLeft

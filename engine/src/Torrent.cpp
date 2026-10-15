@@ -226,6 +226,7 @@ Json Facts::ToJson() const
         {"layout", static_cast<int>(layout)},
         {"skip_patterns", skipPatterns},
         {"move_destination", moveDestination},
+        {"torrent_file", torrentFile},
         {"verify_files", verifyFiles},
         {"paused", intent == Intent::Paused},
         {"forced", intent == Intent::Forced},
@@ -262,6 +263,7 @@ Facts Facts::Read(Json const& saved)
     if (auto patterns = ReadSaved(saved, "skip_patterns", std::string()); patterns.size() <= 4096)
         facts.skipPatterns = std::move(patterns);
     facts.moveDestination = ReadSaved(saved, "move_destination", std::string());
+    facts.torrentFile = ReadSaved(saved, "torrent_file", std::string());
     facts.verifyFiles = ReadSaved(saved, "verify_files", false);
     if (ReadSaved(saved, "paused", false))
     {

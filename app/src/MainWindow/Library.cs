@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media.Animation;
+using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Library;
 using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Views;
@@ -20,20 +21,17 @@ public sealed partial class MainWindow
     private WindowPage _navigationFace = WindowPage.Torrents;
     private Storyboard? _navigationFlip;
     private CancellationTokenSource? _associationRead;
-    private MenuFlyoutSubItem? _libraryFetch;
-    private bool _menuPending;
 
     private void ConfigureLibrary()
     {
         Model.Library.ShowsFacets = Model.IsFilterOpen;
         Model.Library.CommandFailed += (_, error) => Model.Report(error);
         Model.Library.BatchLimited += (_, files) => Model.ShowSearchLimit(files);
-        // A submenu has no command, so the menu bar's Fetch metadata follows
-        // the command in place rather than by rebuilding, which would close it.
+        // A submenu has no command, so the menu bar's Fetch metadata follows it here.
         Model.Library.FetchMetadata.CanExecuteChanged += (_, _) =>
         {
-            if (_libraryFetch is { } fetch)
-                fetch.IsEnabled = Model.Library.FetchMetadata.CanExecute(null);
+            if (Model.Page == WindowPage.Library)
+                QueueMenus();
         };
         Model.Library.PropertyChanged += (_, args) =>
         {
@@ -48,30 +46,15 @@ public sealed partial class MainWindow
                 RefreshLibraryFilters();
             if (
                 Model.Page == WindowPage.Library
-                && !_menuPending && !_allowClose
                 && args.PropertyName
                     is nameof(LibraryBrowser.Origins)
                         or nameof(LibraryBrowser.Selection)
                         or nameof(LibraryBrowser.Selected)
                         or nameof(LibraryBrowser.IsAvailable)
                         or nameof(LibraryBrowser.Providers)
+                        or nameof(LibraryBrowser.Configuration)
             )
-            {
-                // Selection raises both Selected and Selection in the same turn.
-                _menuPending = DispatcherQueue.TryEnqueue(() =>
-                {
-                    if (!_menuPending)
-                        return;
-                    _menuPending = false;
-                    if (!_allowClose && Model.Page == WindowPage.Library)
-                        RefreshLibraryMenu();
-                });
-            }
-            if (
-                Model.Page == WindowPage.Library
-                && args.PropertyName == nameof(LibraryBrowser.Configuration)
-            )
-                RefreshMenus();
+                QueueMenus();
         };
         Model.PropertyChanged += (_, args) =>
         {
@@ -389,85 +372,68 @@ public sealed partial class MainWindow
         }
     }
 
-    private MenuFlyout LibraryContextMenu()
-    {
-        var menu = new MenuFlyout();
-        menu.Closed += (_, _) => ClearMenu(menu.Items);
-        menu.Items.Add(MenuHeader(
-            Model.Library.Selected?.Title
-                ?? Model.Text.Format("window", "selected", Model.Library.Selection.Items.Count)
-        ));
-        menu.Items.Add(new MenuFlyoutSeparator());
-        foreach (var item in LibraryMenu(MetadataActions.Create(Model.Library)))
-            menu.Items.Add(item);
-        return menu;
-    }
+    private MenuFlyout LibraryContextMenu() =>
+        MenuItems.Flyout(
+            () =>
+            [
+                new MenuHeading(
+                    Model.Library.Selected?.Title
+                        ?? Model.Text.Format(
+                            "window",
+                            "selected",
+                            Model.Library.Selection.Items.Count
+                        ),
+                    Syno.Lucide.ListChecks
+                ),
+                .. LibraryMenu(),
+            ],
+            () => Model.Text
+        );
 
-    private IEnumerable<MenuFlyoutItemBase> LibraryMenu(MenuFlyoutSubItem fetch)
+    private IEnumerable<MenuEntry> LibraryMenu()
     {
-        yield return Menu("open", Model.Library.Open, Syno.Lucide.Play);
-        yield return Menu("open_folder", Model.Library.OpenFolder, Syno.Lucide.FolderOpen);
-        yield return Menu("properties", Model.Library.Properties, Syno.Lucide.Info);
+        yield return Command("open", Model.Library.Open, Syno.Lucide.Play);
+        yield return Command("open_folder", Model.Library.OpenFolder, Syno.Lucide.FolderOpen);
+        yield return Command("properties", Model.Library.Properties, Syno.Lucide.Info);
         yield return OriginActions.Create(Model.Library);
-        yield return new MenuFlyoutSeparator();
-        yield return fetch;
-        yield return new MenuFlyoutItem
-        {
-            Text = Model.Text.Get("library", "refresh_metadata"),
-            Command = Model.Library.RefreshMetadata,
-            Icon = Icon(Lucide.RefreshCw),
-        };
-        yield return new MenuFlyoutItem
-        {
-            Text = Model.Text.Get(
+        yield return new MenuSeparator();
+        yield return MetadataActions.Create(Model.Library);
+        yield return new MenuCommand(
+            Model.Text.Get("library", "refresh_metadata"),
+            Lucide.RefreshCw,
+            Model.Library.RefreshMetadata
+        );
+        yield return new MenuCommand(
+            Model.Text.Get(
                 "subtitles",
                 Model.Library.Selection.Items.Count == 1 ? "choose" : "download_title"
             ),
-            Command = Model.DownloadSubtitles,
-            Icon = Icon(Lucide.Download),
-        };
-        yield return new MenuFlyoutSeparator();
-        yield return new MenuFlyoutItem
-        {
-            Text = Model.Text.Get("library", "erase_metadata"),
-            Command = Model.Library.EraseMetadata,
-            Icon = Icon(Lucide.Eraser),
-        };
+            Lucide.Download,
+            Model.DownloadSubtitles
+        );
+        yield return new MenuSeparator();
+        yield return new MenuCommand(
+            Model.Text.Get("library", "erase_metadata"),
+            Lucide.Eraser,
+            Model.Library.EraseMetadata
+        );
     }
 
-    private void RefreshLibraryMenu()
+    private IEnumerable<MenuEntry> LibraryViewMenu()
     {
-        _menuPending = false;
-        TorrentMenu.Title = Model.Text.Get("library", "title");
-        TorrentMenu.AccessKey = MenuKey("library");
-        ClearMenu(TorrentMenu.Items);
-        _libraryFetch = MetadataActions.Create(Model.Library);
-        foreach (var item in LibraryMenu(_libraryFetch))
-            TorrentMenu.Items.Add(item);
-    }
-
-    private void RefreshLibraryViewMenu()
-    {
-        ViewMenu.Items.Add(new MenuFlyoutSeparator());
+        yield return new MenuSeparator();
         foreach (var configuration in Enum.GetValues<LibraryConfiguration>())
-        {
-            var choice = new RadioMenuFlyoutItem
-            {
-                Text = Model.Text.Get("library", configuration.ToString().ToLowerInvariant()),
-                GroupName = "Library",
-                IsChecked = Model.Library.Configuration == configuration,
-                Icon = Icon(
-                    configuration switch
-                    {
-                        LibraryConfiguration.Videos => Syno.Lucide.Film,
-                        LibraryConfiguration.Music => Syno.Lucide.Music,
-                        _ => Syno.Lucide.Files,
-                    }
-                ),
-            };
-            choice.Click += (_, _) => Model.Library.Configuration = configuration;
-            ViewMenu.Items.Add(choice);
-        }
+            yield return new MenuChoice(
+                Model.Text.Get("library", configuration.ToString().ToLowerInvariant()),
+                configuration switch
+                {
+                    LibraryConfiguration.Videos => Syno.Lucide.Film,
+                    LibraryConfiguration.Music => Syno.Lucide.Music,
+                    _ => Syno.Lucide.Files,
+                },
+                Model.Library.Configuration == configuration,
+                new RelayCommand(() => Model.Library.Configuration = configuration, () => true)
+            );
     }
 
     private Task ShowKey(ProviderOption option, bool enableAutomaticDownload = false)

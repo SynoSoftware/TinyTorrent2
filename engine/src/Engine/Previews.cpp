@@ -95,6 +95,10 @@ void Engine::State::Merge(Preview& existing, Preview const& source)
     {
         existing.params.tracker_tiers.resize(existing.params.trackers.size(), 0);
     }
+    if (existing.torrentFile.empty())
+    {
+        existing.torrentFile = source.torrentFile;
+    }
     if (!existing.params.ti && source.params.ti)
     {
         existing.params.ti = source.params.ti;
@@ -172,6 +176,7 @@ void Engine::State::Inspect(std::string source, std::string connectionId,
             auto bytes = Store::Read(std::filesystem::path(Wide(source)));
             preview->params = lt::load_torrent_buffer(
                 lt::span<char const>(bytes.data(), bytes.size()));
+            preview->torrentFile = source;
         }
     }, [this, preview, completion](StorageOutcome outcome)
     {

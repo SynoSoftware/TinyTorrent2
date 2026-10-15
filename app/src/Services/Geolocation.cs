@@ -430,4 +430,8 @@ internal sealed class Place
 }
 
 /// <summary>Where an address is: its country, whose <paramref name="Code"/> also names the flag, and with city data its city.</summary>
-internal sealed record Location(string Code, Place Country, Place? City, GeoPoint? Point);
+internal sealed record Location(string Code, Place Country, Place? City, GeoPoint? Point)
+{
+    /// <summary>The country's name in <paramref name="language"/>, or its code when the data names it in no language.</summary>
+    internal string CountryName(string language) => Country.Name(language) ?? Code;
+}

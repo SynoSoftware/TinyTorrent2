@@ -1265,9 +1265,9 @@ records the ruling and the arrangement that replaced vcpkg.
 
 ## Wire representation
 
-Protocol version 16 uses a four-byte little-endian UTF-8 JSON frame length,
+Protocol version 17 uses a four-byte little-endian UTF-8 JSON frame length,
 bounded to 16 MiB. The endpoint is `TinyTorrent.<logon SID>`; each connecting
-client first receives `{type:"hello",version:16,session_id:"...",data_directory:"..."}`. The absolute data directory
+client first receives `{type:"hello",version:17,session_id:"...",data_directory:"..."}`. The absolute data directory
 keeps the same store for explicit Restart, which starts the engine beside the
 window rather than a path a pipe peer reports. Requests are
 `{request_id:integer,command:string,...}`. Replies repeat `request_id` and have
@@ -1766,6 +1766,10 @@ paused-state rules.
 
 `history` accepts `range`: `five_minutes` or `day`, returning `session_id` and
 `samples` with Unix `time` and payload download/upload rates in bytes per second.
+An optional `torrent_id` reads one torrent; `torrent_ids` reads the selected
+group's sum on the session sampling timeline. Omitting both reads session totals.
+Version 17 requires group support so an older engine cannot silently return
+session totals for a selected group.
 The state owner's existing one-second maintenance records all accepted torrents
 while the window is closed. It retains at most 300 second samples and 1,440
 averaged minute samples, including the current minute. Gaps discard an unfinished

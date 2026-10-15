@@ -65,10 +65,15 @@ code are not production architecture.
 **Owner's decision: keep the native WinUI MenuBar.** It is the discoverable home
 for commands and replaces the application navigation pane. Its dropdown commands
 use Lucide icons and separators between distinct action groups. Every expanded
-menu item, including choices and submenu parents, has an icon; menu headings
-retain native text presentation. Choice checkmarks do not replace their content
-icons in View.
-In a menu that mixes choices with commands, a choice shows its state as its
+menu item, including headings, choices and submenu parents, has an icon. Every
+menu, MenuBar menus and context menus alike, is a list of entries that its owner
+describes: headings, commands, choices, submenus and separators. MenuItems
+renders all of them, so two menus cannot differ in appearance. It puts a
+separator under each heading and keeps native menu fonts and theme colors;
+owners do not create menu items or style headings.
+Choice checkmarks do not replace their content icons in View.
+MenuItems decides how a choice shows its state. In a menu that mixes choices
+with commands or headings, a choice shows its state as its
 icon: a checked, empty or mixed square. It is not a check-mark item there,
 because one check-mark item gives every item in its menu a second icon column
 that is empty beside the others. A menu of only on/off choices, such as View,
@@ -356,7 +361,11 @@ more reads as a deliberate division; a smaller one reads as leftover beside
 right-aligned buttons, so the buttons are centred with equal margins instead.
 Every dialog therefore uses the shared Dialog control, which draws the row this
 way from its Footer and the space its buttons leave free, with less padding
-above and below. The buttons keep the Windows order: the action first, then Cancel. A
+above and below. The footer is one item: the Don't show this dialog again check
+box, one fact such as a count and total size, or a check's result with the
+button that runs it. Dialog's footer type has only these kinds and refuses to
+replace the check box, because two stacked items crowd the row. A dialog with
+the check box shows its other facts in the body. The buttons keep the Windows order: the action first, then Cancel. A
 dialog opens with focus on its first text box that leaves Enter and Escape to
 the dialog, or otherwise on its default button, so the person can type or press
 Enter at once.
@@ -781,12 +790,12 @@ Dragging a selection opens the numbered queue wheel under any table sort.
 The wheel starts at the average of the selected queue positions. While holding
 the button, scroll to a destination and drop between numbers. Selected torrents
 without a queue position remain untouched; a selection containing only those
-torrents still opens the scrollable wheel and says “Nothing to move.”
+torrents does not open the wheel, because there is nothing it can move.
 Destinations include the complete queue even when the table is filtered.
 Queue menu and keyboard actions use the same engine operation as dragging.
 
 Torrent commands are Stop, Start, Force start, Open, Open folder, Copy magnet
-link, Copy info hash, Move files, Verify, Remove, and Delete files. Download in
+link, Copy info hash, Move files, Verify, and Remove. Download in
 sequential order and Download first and last pieces first are menu choices
 beside them. An item is checked when every selected torrent
 has that choice and mixed when only some do. Choosing a checked item turns the
@@ -1018,7 +1027,7 @@ editor keeps its own keys.
 | Ctrl++ / Ctrl+- | Move up / down in the queue |
 | Ctrl+Shift++ / Ctrl+Shift+- | Move to the top / bottom of the queue |
 | Delete | Remove |
-| Shift+Delete | Delete files |
+| Shift+Delete | Remove, deleting files permanently |
 | Ctrl+, | Settings |
 | Alt+F4 | Close |
 | Ctrl+Q | Exit |
@@ -1029,17 +1038,22 @@ Ctrl+Q is how desktop applications quit, so the menu names keys people already
 use. Ctrl+W does nothing, because in Windows it closes a document or a tab, not
 the application.
 
-Remove keeps data; delete-data is an explicit, distinct decision. Each confirms
-by default with the affected torrent names or count, a specific action button,
-Remove or Delete, and a safe Cancel action. Remove confirms because a removed
-torrent cannot be restored without its torrent file or magnet link. Delete files
-also states the file scope, whether files go to the Recycle Bin or are deleted
-permanently, and that files other torrents use are kept. The deletion setting
-chooses the deletion mode. Add, Delete and the window's Exit confirmation use
-the shared dialog footer's Don't show this dialog again checkbox; only
-submitting saves that preference.
-Delete then uses the selected deletion mode directly, and a refused operation
-opens the dialog with its error. Settings can restore confirmation. The dialog's default,
+Remove keeps data unless the person ticks a check box. One Remove torrents
+dialog confirms every removal, by default, with the affected torrents, a Remove
+button and a safe Cancel action. Remove confirms because a removed torrent
+cannot be restored without its torrent file or magnet link. Two check boxes say
+what else goes: the downloaded files, with their total size, and the .torrent
+files the torrents were added from, with their size, shown only when a selected
+torrent's .torrent file still exists, with n of m when only some do. As in File Explorer, the key chooses the
+deletion mode and the dialog never asks it: Delete, or a click on Remove, sends
+ticked files to the Recycle Bin, and Shift with either deletes them permanently.
+The check box labels state that mode, so the button stays Remove. Only Remove
+saves the check boxes for the next removal. Add, Remove torrents and the
+window's Exit confirmation use the shared dialog footer's Don't show this
+dialog again checkbox; only submitting saves that preference. Delete and
+Shift+Delete then remove directly with the saved check boxes, and a refused
+operation opens the dialog with its error.
+Settings can restore confirmation. The dialog's default,
 focus and buttons follow the ruling in [Buttons](#buttons).
 Routine stop, start, and applied settings need no confirmation.
 
@@ -1060,7 +1074,7 @@ and failures remain visible without exposing internal protocol machinery.
 Reconnection preserves presentation state according to the protocol contract.
 After reconnecting, show the confirmed list; do not leave a permanent busy state.
 A missing row means the torrent was removed, not that its files were deleted; a
-deletion failure arrives as a notification.
+deletion failure arrives as a notification with Open folder.
 
 ### Feedback placement
 
@@ -1206,7 +1220,9 @@ question. A source that fails is reported in the window's error notice and
 dropped. File choices for each torrent are made later in the Files view. One
 drop of thirty torrents opens nothing, because a cascade of dialogs is the
 failure this protects against. Several files chosen through Add torrent file
-open one Add dialog, because choosing that command asks for it. Sources that arrive
+open one Add dialog, unless the person turned that dialog off; then they are added
+with the default options, and a source the engine refuses opens the dialog with
+its error. Sources that arrive
 while the Add dialog is open join it, so a second dialog never opens. The dialog has a
 Don't show this dialog again check box, which turns off only the dialog preference
 for the source kinds submitted: torrent files, magnet links, or both in a mixed
@@ -1430,7 +1446,7 @@ The native proxy dialog keeps its existing transaction, validation, feedback
 slot and button placement.
 
 Transfers contains Download locations, Adding torrents, Queue, Seeding limits,
-Watched folder, Skip files, and a Delete through Recycle Bin switch. Skip files
+Watched folder, and Skip files. Skip files
 hides its pattern editor while off, retaining the saved patterns. Network begins with adapter
 and proxy cards; advanced groups contain encryption, peer connections,
 discovery and incoming connections. Plugins places video
@@ -1726,6 +1742,16 @@ neither a confirmation dialog nor a technical explanation.
 
 ### Inspector and edits
 
+Filters and Inspector use the same Pane control for their surface, header,
+pane buttons and compact strip, so presentation and focus behavior have one
+owner. Dock is None, Top, Bottom, Left or Right; None hides Pin and keeps the
+expanded presentation. An edge orients the compact strip, with Filters docked
+left and Inspector docked bottom. CanClose and CanMaximize show the respective
+buttons. IsCompact and IsMaximized describe the presentation accepted by the
+workspace; clicking a pane button only requests a change. The workspace retains
+visibility, placement, saved dimensions and departure guards, so shared drawing
+cannot bypass an unfinished edit or move another pane.
+
 General, Files, Peers, Trackers, Speed, and Pieces answer different questions;
 request data only for the visible view. Preserve useful data coverage and choose
 each layout for its task. The Pieces view is the [Pieces map](#pieces-map).
@@ -1751,18 +1777,36 @@ tooltips show interest, choke and observed bandwidth, network or disk waits.
 These facts explain the current sample without claiming one cause for a slow
 transfer.
 
-Peers has a Location column after Client: the country's flag at the cell's
-text size, followed by the country name, or by the city and country once the
-person downloads the city data. The flag is decorative and stays out of
-automation; the text carries the location, and a tooltip shows it in full
-when the column is narrow. An address the data lacks, such as a private
-address, a web seed or an I2P destination, shows a dash. There is no switch:
-the column shows what the installed data can resolve
+Peers has separate Country and City columns after Client, each sortable.
+Country shows the country's flag at the cell's text size followed by its name;
+City shows the city name when the installed data provides one. The flag is
+decorative and stays out of automation. Tooltips show each value in full when
+its column is narrow. A missing country or city shows a dash. There is no switch:
+the columns show what the installed data can resolve
 ([peer location](peer-location.md)).
 
-The Peers header has two icon-only Lucide toggle buttons, Map and Table, beside
-the existing pane actions. Either or both remain visible; the last visible view
-cannot be switched off. There is no additional toolbar or footer row. When both
+The Peers header has one icon-only Lucide ellipsis button beside the existing
+pane actions. Its flyout groups Map only, Table only and Map and table under View,
+and Countries and Cities under Map detail. Cities is disabled without city data;
+Get city data starts the download directly and disappears once installed. Download
+progress uses the existing status bar, without a Settings detour or an additional
+subtitle. The active tab supplies native buttons, commands, icons, translated
+labels and menu descriptions with their enabled or checked states to one header
+action slot.
+The inspector owns button presentation, spacing, focus order and compact layout,
+so tabs do not style header groups or manipulate another tab's actions. At narrow
+pane widths, primary actions remain available in the tab's More menu; its opening
+handler uses the header's compact state. Pane owns the vertical separator between
+visible tab actions and its pane buttons, and presents pin, maximize/restore and
+close consistently in both cards. These controls request the existing window
+layout operations and draft guards.
+Tab menus are built when opened from the current selection, language and provider
+availability, so a menu cannot depend on the last content refresh.
+The Library model owns section availability, the accepted section and cancellation
+when leaving Information. A file without Information temporarily shows File while
+retaining the person's section choice. Inspector exposes city-data availability
+and its download command; views consume these decisions without inspecting datasets.
+There is no additional toolbar or footer row. When both
 are visible, the inspector chooses the arrangement that fits the larger map in
 the available space, rather than a fixed portrait/landscape breakpoint. The
 shared Splitter adjusts their proportions without switching arrangement during
@@ -1772,9 +1816,11 @@ in the table. Connection and active counts join the existing status-bar context;
 map hover details describe the location, rates and precision.
 [Peer location](peer-location.md#map) owns aggregation, precision and rendering.
 With no torrent selected, Peers shows all torrents and Speed shows session
-history; the other sections still require a selected torrent. A multiple
-selection does not silently choose one torrent. Scope follows the selection;
-there is no separate All torrents control or map-precision selector.
+history. With multiple torrents selected, both sections combine only that
+selection. General, Files, Trackers and Pieces require one torrent and are
+disabled otherwise; leaving one of them for an aggregate scope selects Peers.
+Scope follows the selection;
+there is no separate All torrents control.
 
 Tracker headers stay short: Downloads and Next. Header and value tooltips explain
 completed downloads reported by the tracker and the next announce or retry;
@@ -1857,7 +1903,7 @@ least one wanted file, because a new download otherwise has no useful work.
 
 Move torrent moves the torrent's own files; other files in its folder stay.
 Its title is Move torrents for multiple selections. List each torrent's name
-and size once in a bounded scroll area, using the same row as Delete files.
+and size once in a bounded scroll area, using the same row as Remove torrents.
 A separator divides the list from two aligned rows: From and To, the paths in
 a flexible middle column, and Browse beside To. From shows the common save
 folder or Multiple locations; each torrent's tooltip reveals its location.
@@ -1866,15 +1912,15 @@ visible. Multiple selections show count and total size in the existing footer.
 Preserve choices when submission is refused. When other torrents use the files,
 name them and offer to move them together.
 
-Move files and Delete files are available from selection actions, the row context
-menu and command search. Shift+Delete opens Delete files; Delete still opens
-Remove, which keeps downloaded files. Delete files groups the torrents by
-folder with each torrent's size, shows the torrent count and total size beside
-its buttons, states the selected Recycle Bin or permanent-deletion action, and
-lists outside torrents whose shared files will be kept. It opens at once with nothing to wait for, and
-Delete is always available, following
-[the deletion ruling](engine.md#removal-and-moves). Its default follows
-[Buttons](#buttons).
+Move files and Remove are available from selection actions, the row context
+menu and command search; Remove has the bin icon. Remove torrents names the
+torrent count in its title and groups the torrents by folder with each
+torrent's size. A separator divides the list from the check boxes, and the
+list scrolls while they stay visible. When the downloaded files are ticked, the
+dialog lists outside torrents whose shared files will be kept. It opens once
+the file scope arrives, which the engine answers from memory, and Remove is
+always available, following [the deletion ruling](engine.md#removal-and-moves).
+Its default follows [Buttons](#buttons).
 
 Include shared torrents is an explicit choice; the engine rechecks the scope
 when the command executes. The engine detects files already at the destination
@@ -1885,7 +1931,7 @@ work appears as Moving files without a file-copy percentage; row errors direct
 the person to reopen Move files and choose the folder holding the files.
 
 The Speed view shows the [selected torrent's speed history](engine.md#state-and-work),
-or session history when nothing is selected,
+combined history for multiple selected torrents, or session history when nothing is selected,
 and replaces its graph when the selected torrent changes. It continues while WinUI
 is closed, so reopening shows what happened meanwhile. Unknown gaps, such as the
 time before an engine restart, are not interpolated into invented history.

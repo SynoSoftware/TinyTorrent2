@@ -8,17 +8,9 @@
   xmlns:table="using:Syno.TableView"
   xmlns:icons="using:Syno"
 >
-  <UserControl.Resources>
-    <Style x:Key="PeerToggleStyle" TargetType="ToggleButton" BasedOn="{StaticResource DefaultToggleButtonStyle}">
-      <Setter Property="Width" Value="32" />
-      <Setter Property="Height" Value="32" />
-      <Setter Property="MinWidth" Value="0" />
-      <Setter Property="Padding" Value="0" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Background" Value="Transparent" />
-    </Style>
-  </UserControl.Resources>
-  <controls:Pane x:Name="Surface">
+  <controls:Pane x:Name="Surface" x:FieldModifier="internal" SizeChanged="OnHeaderSize"
+    Dock="Bottom" CanClose="True" CanMaximize="True" Padding="0,0,4,4"
+    AutomationProperties.AutomationId="Inspector">
     <VisualStateManager.VisualStateGroups>
       <VisualStateGroup x:Name="TransferStates">
         <VisualState x:Name="Transferring" />
@@ -28,14 +20,6 @@
               Target="Summary.Foreground"
               Value="{ThemeResource SystemFillColorCriticalBrush}"
             />
-          </VisualState.Setters>
-        </VisualState>
-      </VisualStateGroup>
-      <VisualStateGroup x:Name="WidthStates">
-        <VisualState x:Name="Wide" />
-        <VisualState x:Name="Narrow">
-          <VisualState.Setters>
-            <Setter Target="LibraryPrimaryActions.Visibility" Value="Collapsed" />
           </VisualState.Setters>
         </VisualState>
       </VisualStateGroup>
@@ -107,113 +91,10 @@
       </Grid>
     </controls:Pane.Navigation>
     <controls:Pane.Actions>
-      <StackPanel Orientation="Horizontal" Spacing="12">
-        <StackPanel x:Name="PeerActions" Orientation="Horizontal" Spacing="4"
-          VerticalAlignment="Center" Visibility="Collapsed">
-          <ToggleButton x:Name="ShowPeerMap" Checked="OnPeerView" Unchecked="OnPeerView"
-            Style="{StaticResource PeerToggleStyle}"
-            AutomationProperties.AutomationId="ShowPeerMap">
-            <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Map}"
-              FontSize="{StaticResource TinyTorrentButtonIconSize}" />
-          </ToggleButton>
-          <ToggleButton x:Name="ShowPeerTable" Checked="OnPeerView" Unchecked="OnPeerView"
-            Style="{StaticResource PeerToggleStyle}"
-            AutomationProperties.AutomationId="ShowPeerTable">
-            <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Table2}"
-              FontSize="{StaticResource TinyTorrentButtonIconSize}" />
-          </ToggleButton>
-        </StackPanel>
-        <StackPanel
-          x:Name="LibraryActions"
-          Orientation="Horizontal"
-          HorizontalAlignment="Right"
-          VerticalAlignment="Center"
-          Spacing="4"
-          Visibility="Collapsed"
-        >
-          <StackPanel x:Name="LibraryPrimaryActions" Orientation="Horizontal" Spacing="4">
-            <Button
-              x:Name="LibraryOpen"
-              Style="{StaticResource TinyTorrentSubtleButtonStyle}"
-              AutomationProperties.AutomationId="LibraryOpen"
-            >
-              <FontIcon
-                FontFamily="{x:Bind icons:Lucide.Font}"
-                Glyph="{x:Bind icons:Lucide.Play}"
-                FontSize="{StaticResource TinyTorrentButtonIconSize}"
-              />
-            </Button>
-            <Button
-              x:Name="LibraryTorrents"
-              Style="{StaticResource TinyTorrentSubtleButtonStyle}"
-              AutomationProperties.AutomationId="LibraryTorrents"
-            >
-              <FontIcon
-                FontFamily="{x:Bind icons:Lucide.Font}"
-                Glyph="{x:Bind icons:Lucide.LocateFixed}"
-                FontSize="{StaticResource TinyTorrentButtonIconSize}"
-              />
-            </Button>
-          </StackPanel>
-          <Button
-            x:Name="LibraryMore"
-            Style="{StaticResource TinyTorrentSubtleButtonStyle}"
-            AutomationProperties.AutomationId="LibraryMore"
-          >
-            <FontIcon
-              FontFamily="{x:Bind icons:Lucide.Font}"
-              Glyph="{x:Bind icons:Lucide.Ellipsis}"
-              FontSize="{StaticResource TinyTorrentButtonIconSize}"
-            />
-          </Button>
-          <Border
-            Width="1"
-            Height="16"
-            Margin="8,0,0,0"
-            VerticalAlignment="Center"
-            Background="{ThemeResource DividerStrokeColorDefaultBrush}"
-            AutomationProperties.AccessibilityView="Raw"
-          />
-        </StackPanel>
-        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="4">
-          <Button
-            x:Name="Minimize"
-            x:FieldModifier="internal"
-            Style="{StaticResource TinyTorrentSubtleButtonStyle}"
-            AutomationProperties.AutomationId="InspectorMinimize"
-          >
-            <FontIcon
-              FontFamily="{x:Bind icons:Lucide.Font}"
-              Glyph="{x:Bind icons:Lucide.Pin}"
-              FontSize="{StaticResource TinyTorrentButtonIconSize}"
-            />
-          </Button>
-          <Button
-            x:Name="Maximize"
-            x:FieldModifier="internal"
-            Style="{StaticResource TinyTorrentSubtleButtonStyle}"
-            AutomationProperties.AutomationId="InspectorMaximize"
-          >
-            <!-- RefreshMaximize sets the glyph, because Bindings.Update would reset a bound one. -->
-            <FontIcon
-              x:Name="MaximizeGlyph"
-              FontFamily="{x:Bind icons:Lucide.Font}"
-              FontSize="{StaticResource TinyTorrentButtonIconSize}"
-            />
-          </Button>
-          <Button
-            x:Name="Close"
-            x:FieldModifier="internal"
-            Style="{StaticResource TinyTorrentSubtleButtonStyle}"
-            VerticalAlignment="Center"
-          >
-            <FontIcon
-              FontSize="{StaticResource TinyTorrentButtonIconSize}"
-              FontFamily="{x:Bind icons:Lucide.Font}"
-              Glyph="{x:Bind icons:Lucide.X}"
-            />
-          </Button>
-        </StackPanel>
+      <StackPanel x:Name="TabActions" Orientation="Horizontal" Spacing="4"
+        VerticalAlignment="Center" Visibility="Collapsed">
+        <StackPanel x:Name="PrimaryActions" Orientation="Horizontal" Spacing="4" Visibility="Collapsed" />
+        <Border x:Name="MoreAction" />
       </StackPanel>
     </controls:Pane.Actions>
     <Grid x:Name="SectionContent">
@@ -225,7 +106,7 @@
           HorizontalScrollMode="Disabled"
           HorizontalScrollBarVisibility="Disabled"
         >
-          <StackPanel x:Name="GeneralContent" Spacing="16" SizeChanged="OnGeneralSize">
+          <StackPanel x:Name="GeneralContent" Spacing="16">
             <controls:Section
               Header="{x:Bind Model.Text.Get('inspector', 'transfer')}"
               Glyph="{x:Bind icons:Lucide.ArrowDownUp}"
@@ -636,11 +517,12 @@
                 </DataTemplate>
               </table:Column.CellTemplate>
             </table:Column>
-            <table:Column x:Name="LocationColumn" Id="location" Width="180" MinWidth="140">
+            <!-- Keep the saved location column's identity for Country. -->
+            <table:Column x:Name="CountryColumn" Id="location" Width="180" MinWidth="140">
               <table:Column.CellTemplate>
                 <DataTemplate x:DataType="models:Peer">
                   <Grid ColumnSpacing="6" Background="Transparent"
-                    ToolTipService.ToolTip="{x:Bind LocationText, Mode=OneWay}">
+                    ToolTipService.ToolTip="{x:Bind CountryText, Mode=OneWay}">
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="Auto" />
                       <ColumnDefinition Width="*" />
@@ -649,9 +531,18 @@
                       FontFamily="{StaticResource FlagsFont}" VerticalAlignment="Center"
                       Visibility="{x:Bind local:InspectorPane.Shown(CountryCode), Mode=OneWay}"
                       AutomationProperties.AccessibilityView="Raw" />
-                    <TextBlock Grid.Column="1" Text="{x:Bind LocationText, Mode=OneWay}"
+                    <TextBlock Grid.Column="1" Text="{x:Bind CountryText, Mode=OneWay}"
                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                   </Grid>
+                </DataTemplate>
+              </table:Column.CellTemplate>
+            </table:Column>
+            <table:Column x:Name="CityColumn" Id="city" Width="160" MinWidth="112">
+              <table:Column.CellTemplate>
+                <DataTemplate x:DataType="models:Peer">
+                  <TextBlock Text="{x:Bind CityText, Mode=OneWay}"
+                    ToolTipService.ToolTip="{x:Bind CityText, Mode=OneWay}"
+                    VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                 </DataTemplate>
               </table:Column.CellTemplate>
             </table:Column>

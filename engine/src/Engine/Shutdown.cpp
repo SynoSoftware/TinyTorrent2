@@ -179,11 +179,13 @@ void Engine::State::ContinueShutdown()
     {
         return;
     }
+    // Reporting first lets the desktop leave the screen before the teardown
+    // waits on trackers.
+    Finish();
     if (!saveFailure)
     {
         session.reset();
     }
-    Finish();
 }
 
 void Engine::State::Finish()

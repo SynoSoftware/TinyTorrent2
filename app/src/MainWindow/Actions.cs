@@ -20,7 +20,9 @@ public sealed partial class MainWindow
 {
     private FileDialog? _fileDialog;
     private MenuFlyout? _selectionMenu;
-    private string? _selectionLanguage;
+    private RelayCommand? _switchInspector;
+    private RelayCommand? _subtitlesSetup;
+    private bool _menusPending;
 
     private void OnQueueKey(object sender, KeyRoutedEventArgs args)
     {
@@ -64,110 +66,23 @@ public sealed partial class MainWindow
 
     private void RefreshMenus()
     {
+        var library = Model.Page == WindowPage.Library;
         FileMenu.Title = Model.Text.Get("menus", "file");
         FileMenu.AccessKey = MenuKey("file");
-        TorrentMenu.Title = Model.Text.Get("menus", "torrent");
-        TorrentMenu.AccessKey = MenuKey("torrent");
+        TorrentMenu.Title = library
+            ? Model.Text.Get("library", "title")
+            : Model.Text.Get("menus", "torrent");
+        TorrentMenu.AccessKey = MenuKey(library ? "library" : "torrent");
         ViewMenu.Title = Model.Text.Get("menus", "view");
         ViewMenu.AccessKey = MenuKey("view");
         HelpMenu.Title = Model.Text.Get("menus", "help");
         HelpMenu.AccessKey = MenuKey("help");
         AutomationProperties.SetName(Menus, Model.Text.Get("commands", "menu"));
-        foreach (var menu in new[] { FileMenu, TorrentMenu, ViewMenu, HelpMenu })
-            ClearMenu(menu.Items);
-        FileMenu.Items.Add(Menu("add_file", Model.Add, Syno.Lucide.FilePlus));
-        FileMenu.Items.Add(Menu("add_magnet", Model.AddMagnet, Syno.Lucide.Link));
-        FileMenu.Items.Add(new MenuFlyoutSeparator());
-        FileMenu.Items.Add(Menu("settings", Model.ShowSettings, Syno.Lucide.Wrench));
-        FileMenu.Items.Add(new MenuFlyoutSeparator());
-        FileMenu.Items.Add(Menu("close", Model.CloseWindow, Syno.Lucide.X));
-        FileMenu.Items.Add(Menu("exit", Model.Exit, Syno.Lucide.Power));
-        ViewMenu.Items.Add(
-            Toggle(
-                () => Model.Text.Get("filters", "title"),
-                "filters",
-                Model.SwitchFilters,
-                () => Model.ShowsFilters,
-                Syno.Lucide.Funnel
-            )
-        );
-        ViewMenu.Items.Add(
-            Toggle(
-                () => Model.Text.Get("inspector", "title"),
-                "inspector",
-                new RelayCommand(SwitchInspector, () => true),
-                () => Model.HasInspector,
-                Syno.Lucide.PanelBottom
-            )
-        );
-        if (Model.Page == WindowPage.Library)
-        {
-            RefreshLibraryMenu();
-            RefreshLibraryViewMenu();
-        }
-        else
-        {
-            var selection = new MenuFlyoutItem
-            {
-                IsEnabled = false,
-                Icon = Icon(Syno.Lucide.ListChecks),
-            };
-            selection.SetBinding(
-                MenuFlyoutItem.TextProperty,
-                new Binding
-                {
-                    Source = Model,
-                    Path = new PropertyPath(nameof(MainViewModel.SelectionText)),
-                    Mode = BindingMode.OneWay,
-                }
-            );
-            TorrentMenu.Items.Add(selection);
-            TorrentMenu.Items.Add(new MenuFlyoutSeparator());
-            AddSelection(TorrentMenu.Items, true);
-            TorrentMenu.Items.Add(new MenuFlyoutSeparator());
-            TorrentMenu.Items.Add(Menu("pause_all", Model.PauseAll, Syno.Lucide.Pause));
-            TorrentMenu.Items.Add(Menu("resume_all", Model.ResumeAll, Syno.Lucide.Play));
-            TorrentMenu.Items.Add(Menu("limits", Model.Limits, Syno.Lucide.Gauge));
-            ViewMenu.Items.Add(
-                Toggle(
-                    () => Model.Text.Get("menus", "toolbar"),
-                    "toolbar",
-                    Model.SwitchToolbar,
-                    () => Model.IsToolbarOpen,
-                    Syno.Lucide.PanelTop
-                )
-            );
-        }
+        FillMenus();
         ClearFiltersButton.Text = Model.Text.Get("window", "clear_filters");
         ToolTipService.SetToolTip(
             ClearFiltersButton,
             Model.Text.Get("window", "clear_filters_tip")
-        );
-        var subtitles = new MenuFlyoutItem
-        {
-            Text = Model.Text.Get("subtitles", "setup"),
-            Icon = Icon(Syno.Lucide.Captions),
-        };
-        subtitles.Click += async (_, _) => await ShowSettings(new(SettingsCategory.Plugins));
-        HelpMenu.Items.Add(subtitles);
-        HelpMenu.Items.Add(new MenuFlyoutSeparator());
-        HelpMenu.Items.Add(
-            new MenuFlyoutItem
-            {
-                Text = Model.UpdateText,
-                Command = Model.OpenUpdate,
-                Icon = Icon(Syno.Lucide.CircleFadingArrowUp),
-                AccessKey = MenuKey("update"),
-            }
-        );
-        HelpMenu.Items.Add(
-            new MenuFlyoutItem
-            {
-                Text = Model.Text.Get("about", "title"),
-                Command = Model.ShowAbout,
-                Icon = Icon(Syno.Lucide.Info),
-                AccessKey = MenuKey("about"),
-            }
         );
         AutomationProperties.SetName(Toolbar, Model.Text.Get("menus", "toolbar"));
         foreach (
@@ -181,7 +96,6 @@ public sealed partial class MainWindow
                 (PropertiesButton, "properties", Model.Properties),
                 (VerifyButton, "verify", Model.Verify),
                 (RemoveButton, "remove", Model.Remove),
-                (DeleteButton, "delete_files", Model.DeleteFiles),
             }
         )
         {
@@ -195,124 +109,183 @@ public sealed partial class MainWindow
         }
     }
 
-    private static void ClearMenu(IList<MenuFlyoutItemBase> items)
+    // One update raises several changes in the same turn, so the menus refill once
+    // after it.
+    private void QueueMenus()
     {
-        // MenuBarItem mirrors individual removals into its flyout, but ignores
-        // Clear's reset, leaving old entries behind after a language change.
-        while (items.Count > 0)
+        if (_menusPending || _allowClose)
+            return;
+        _menusPending = DispatcherQueue.TryEnqueue(() =>
         {
-            var item = items[items.Count - 1];
-            if (item is MenuFlyoutItem command)
-                command.Command = null;
-            else if (item is MenuFlyoutSubItem submenu)
-                ClearMenu(submenu.Items);
-            items.RemoveAt(items.Count - 1);
-        }
+            _menusPending = false;
+            if (!_allowClose)
+                FillMenus();
+        });
+    }
+
+    // The menus stay built, so each model change refreshes them in place.
+    private void FillMenus()
+    {
+        var library = Model.Page == WindowPage.Library;
+        MenuItems.Fill(
+            FileMenu.Items,
+            [
+                Command("add_file", Model.Add, Syno.Lucide.FilePlus),
+                Command("add_magnet", Model.AddMagnet, Syno.Lucide.Link),
+                new MenuSeparator(),
+                Command("settings", Model.ShowSettings, Syno.Lucide.Wrench),
+                new MenuSeparator(),
+                Command("close", Model.CloseWindow, Syno.Lucide.X),
+                Command("exit", Model.Exit, Syno.Lucide.Power),
+            ],
+            Model.Text
+        );
+        MenuItems.Fill(
+            TorrentMenu.Items,
+            library
+                ? [.. LibraryMenu()]
+                :
+                [
+                    new MenuHeading(Model.SelectionText, Syno.Lucide.ListChecks),
+                    .. Selection(properties: true),
+                    new MenuSeparator(),
+                    Command("pause_all", Model.PauseAll, Syno.Lucide.Pause),
+                    Command("resume_all", Model.ResumeAll, Syno.Lucide.Play),
+                    Command("limits", Model.Limits, Syno.Lucide.Gauge),
+                ],
+            Model.Text
+        );
+        List<MenuEntry> view =
+        [
+            new MenuChoice(
+                Model.Text.Get("filters", "title"),
+                Syno.Lucide.Funnel,
+                Model.ShowsFilters,
+                Model.SwitchFilters
+            )
+            {
+                AccessKey = MenuKey("filters"),
+            },
+            new MenuChoice(
+                Model.Text.Get("inspector", "title"),
+                Syno.Lucide.PanelBottom,
+                Model.HasInspector,
+                _switchInspector ??= new RelayCommand(SwitchInspector, () => true)
+            )
+            {
+                AccessKey = MenuKey("inspector"),
+            },
+        ];
+        if (library)
+            view.AddRange(LibraryViewMenu());
+        else
+            view.Add(
+                new MenuChoice(
+                    Model.Text.Get("menus", "toolbar"),
+                    Syno.Lucide.PanelTop,
+                    Model.IsToolbarOpen,
+                    Model.SwitchToolbar
+                )
+                {
+                    AccessKey = MenuKey("toolbar"),
+                }
+            );
+        MenuItems.Fill(ViewMenu.Items, view, Model.Text);
+        MenuItems.Fill(
+            HelpMenu.Items,
+            [
+                new MenuCommand(
+                    Model.Text.Get("subtitles", "setup"),
+                    Syno.Lucide.Captions,
+                    _subtitlesSetup ??= new RelayCommand(
+                        () => ShowSettings(new(SettingsCategory.Plugins)),
+                        () => true
+                    )
+                ),
+                new MenuSeparator(),
+                new MenuCommand(
+                    Model.UpdateText,
+                    Syno.Lucide.CircleFadingArrowUp,
+                    Model.OpenUpdate
+                )
+                {
+                    AccessKey = MenuKey("update"),
+                },
+                new MenuCommand(Model.Text.Get("about", "title"), Syno.Lucide.Info, Model.ShowAbout)
+                {
+                    AccessKey = MenuKey("about"),
+                },
+            ],
+            Model.Text
+        );
     }
 
     private void ShowSelectionMenu(FrameworkElement target, Point? position)
     {
-        if (_selectionMenu is null || _selectionLanguage != Model.Text.Language)
-        {
-            if (_selectionMenu is not null)
-                ClearMenu(_selectionMenu.Items);
-            _selectionMenu = new MenuFlyout();
-            _selectionLanguage = Model.Text.Language;
-            _selectionMenu.Items.Add(MenuHeader(string.Empty));
-            _selectionMenu.Items.Add(new MenuFlyoutSeparator());
-            AddSelection(_selectionMenu.Items, properties: true);
-        }
-        var menu = _selectionMenu;
-        ((MenuFlyoutItem)menu.Items[0]).Text = Torrents.Selection.Items.Count == 1
-                ? ((Torrent)Torrents.Selection.Items[0]).Name
-                : Model.SelectionText;
-        foreach (var item in menu.Items.OfType<MenuFlyoutItem>())
-            if (ReferenceEquals(item.Command, Model.Properties))
-                item.Visibility = Model.HasInspector ? Visibility.Collapsed : Visibility.Visible;
+        _selectionMenu ??= MenuItems.Flyout(
+            () =>
+            [
+                new MenuHeading(
+                    Torrents.Selection.Items.Count == 1
+                        ? ((Torrent)Torrents.Selection.Items[0]).Name
+                        : Model.SelectionText,
+                    Syno.Lucide.ListChecks
+                ),
+                .. Selection(properties: !Model.HasInspector),
+            ],
+            () => Model.Text
+        );
         if (position is { } point)
-            menu.ShowAt(target, point);
+            _selectionMenu.ShowAt(target, point);
         else
-            menu.ShowAt(target);
+            _selectionMenu.ShowAt(target);
     }
 
-    private static MenuFlyoutItem MenuHeader(string text)
+    private IEnumerable<MenuEntry> Selection(bool properties)
     {
-        var item = new MenuFlyoutItem
-        {
-            Text = text,
-            Icon = Icon(Syno.Lucide.ListChecks),
-            IsEnabled = false,
-            MaxWidth = 320,
-        };
-        item.Resources["MenuFlyoutItemTextTrimming"] = TextTrimming.CharacterEllipsis;
-        return item;
-    }
-
-    private void AddSelection(IList<MenuFlyoutItemBase> items, bool properties)
-    {
-        items.Add(Menu("pause", Model.Pause, Syno.Lucide.Square));
-        items.Add(Menu("resume", Model.Resume, Syno.Lucide.Play));
-        items.Add(Menu("force", Model.Force, Syno.Lucide.Zap));
-        items.Add(new MenuFlyoutSeparator());
-        items.Add(Menu("open", Model.Open, Syno.Lucide.File));
-        items.Add(Menu("open_folder", Model.OpenFolder, Syno.Lucide.FolderOpen));
-        items.Add(Menu("copy_magnet", Model.CopyMagnet, Syno.Lucide.Link));
-        items.Add(Menu("copy_hash", Model.CopyHash, Syno.Lucide.Hash));
+        yield return Command("pause", Model.Pause, Syno.Lucide.Square);
+        yield return Command("resume", Model.Resume, Syno.Lucide.Play);
+        yield return Command("force", Model.Force, Syno.Lucide.Zap);
+        yield return new MenuSeparator();
+        yield return Command("open", Model.Open, Syno.Lucide.File);
+        yield return Command("open_folder", Model.OpenFolder, Syno.Lucide.FolderOpen);
+        yield return Command("copy_magnet", Model.CopyMagnet, Syno.Lucide.Link);
+        yield return Command("copy_hash", Model.CopyHash, Syno.Lucide.Hash);
         if (properties)
-            items.Add(Menu("properties", Model.Properties, Syno.Lucide.Info));
-        items.Add(new MenuFlyoutSeparator());
-        items.Add(Menu("verify", Model.Verify, Syno.Lucide.RefreshCw));
-        items.Add(Menu("move", Model.MoveFiles, Syno.Lucide.FolderInput));
-        var queue = new MenuFlyoutSubItem
+            yield return Command("properties", Model.Properties, Syno.Lucide.Info);
+        yield return new MenuSeparator();
+        yield return Command("verify", Model.Verify, Syno.Lucide.RefreshCw);
+        yield return Command("move", Model.MoveFiles, Syno.Lucide.FolderInput);
+        yield return new MenuSubmenu(
+            Model.Text.Get("menus", "queue"),
+            Syno.Lucide.ListOrdered,
+            [
+                Command("up", Model.Up, Syno.Lucide.ArrowUp),
+                Command("down", Model.Down, Syno.Lucide.ArrowDown),
+                Command("top", Model.Top, Syno.Lucide.ArrowUpToLine),
+                Command("bottom", Model.Bottom, Syno.Lucide.ArrowDownToLine),
+            ]
+        )
         {
-            Text = Model.Text.Get("menus", "queue"),
-            Icon = Icon(Syno.Lucide.ListOrdered),
             AccessKey = MenuKey("queue"),
         };
-        queue.Items.Add(Menu("up", Model.Up, Syno.Lucide.ArrowUp));
-        queue.Items.Add(Menu("down", Model.Down, Syno.Lucide.ArrowDown));
-        queue.Items.Add(Menu("top", Model.Top, Syno.Lucide.ArrowUpToLine));
-        queue.Items.Add(Menu("bottom", Model.Bottom, Syno.Lucide.ArrowDownToLine));
-        items.Add(queue);
-        items.Add(new MenuFlyoutSeparator());
-        items.Add(
-            Choice(
-                () => Model.Text.Get("commands", "sequential"),
-                "sequential",
-                Model.SwitchSequential,
-                () => Model.Sequential
-            )
-        );
-        items.Add(
-            Choice(
-                () => Model.Text.Get("commands", "first_last"),
-                "first_last",
-                Model.SwitchFirstLast,
-                () => Model.FirstLast
-            )
-        );
-        items.Add(
-            Choice(
-                () => Model.Text.Get("commands", "speed_limit"),
-                "speed_limit",
-                Model.LimitSpeed,
-                () => Model.Limited
-            )
-        );
-        items.Add(new MenuFlyoutSeparator());
-        items.Add(Menu("remove", Model.Remove, Syno.Lucide.ListX));
-        items.Add(Menu("delete_files", Model.DeleteFiles, Syno.Lucide.Trash2));
+        yield return new MenuSeparator();
+        yield return Choice("sequential", Model.SwitchSequential, Model.Sequential);
+        yield return Choice("first_last", Model.SwitchFirstLast, Model.FirstLast);
+        yield return Choice("speed_limit", Model.LimitSpeed, Model.Limited);
+        yield return new MenuSeparator();
+        yield return Command("remove", Model.Remove, Syno.Lucide.Trash2);
     }
 
-    private MenuFlyoutItem Menu(string name, ICommand command, string glyph) =>
-        new()
+    private MenuCommand Command(string name, ICommand command, string glyph) =>
+        new(Model.Text.Get("commands", name), glyph, command)
         {
-            Text = Model.Text.Get("commands", name),
-            Command = command,
-            Icon = Icon(glyph),
             AccessKey = MenuKey(name),
-            KeyboardAcceleratorTextOverride = ShortcutText(command),
+            Shortcut = ShortcutText(command),
         };
+
+    private MenuChoice Choice(string name, ICommand command, bool? state) =>
+        new(Model.Text.Get("commands", name), null, state, command) { AccessKey = MenuKey(name) };
 
     private string MenuKey(string name) => Model.Text.Get("menus", name + "_key");
 
@@ -337,93 +310,6 @@ public sealed partial class MainWindow
         parts.Add(Model.Text.Get("shortcuts", name));
         return string.Join("+", parts);
     }
-
-    // A plain item showing its state as its icon, not a ToggleMenuFlyoutItem:
-    // a toggle gives every item in its menu an empty check column.
-    private MenuFlyoutItem Choice(
-        Func<string> text,
-        string name,
-        ICommand command,
-        Func<bool?> state
-    )
-    {
-        var icon = new FontIcon { FontFamily = Syno.Lucide.Font };
-        var item = new MenuFlyoutItem
-        {
-            Command = command,
-            Icon = icon,
-            AccessKey = MenuKey(name),
-        };
-        Follow(
-            item,
-            () =>
-            {
-                var current = state();
-                item.Text = text();
-                icon.Glyph = current switch
-                {
-                    true => Syno.Lucide.SquareCheck,
-                    false => Syno.Lucide.Square,
-                    null => Syno.Lucide.SquareMinus,
-                };
-                AutomationProperties.SetItemStatus(
-                    item,
-                    Model.Text.Get(
-                        "menus",
-                        current switch
-                        {
-                            true => "on",
-                            false => "off",
-                            null => "mixed",
-                        }
-                    )
-                );
-            }
-        );
-        return item;
-    }
-
-    // For a menu whose items are all toggles, so no check column stands empty.
-    private ToggleMenuFlyoutItem Toggle(
-        Func<string> text,
-        string name,
-        ICommand command,
-        Func<bool> state,
-        string glyph
-    )
-    {
-        var item = new ToggleMenuFlyoutItem
-        {
-            Command = command,
-            Icon = Icon(glyph),
-            AccessKey = MenuKey(name),
-        };
-        Follow(
-            item,
-            () =>
-            {
-                item.Text = text();
-                item.IsChecked = state();
-            }
-        );
-        return item;
-    }
-
-    // Shows an item's state when its menu opens and while the menu stays open.
-    private void Follow(MenuFlyoutItem item, Action show)
-    {
-        void Show(object? sender, PropertyChangedEventArgs args) => show();
-        show();
-        item.Loaded += (_, _) =>
-        {
-            show();
-            Model.PropertyChanged += Show;
-        };
-        item.Unloaded += (_, _) => Model.PropertyChanged -= Show;
-    }
-
-    private static FontIcon Icon(string glyph) =>
-        new() { FontFamily = Syno.Lucide.Font, Glyph = glyph };
 
     private async Task ConfirmMerge()
     {
@@ -462,48 +348,26 @@ public sealed partial class MainWindow
         });
     }
 
-    private async Task ConfirmRemove(Torrent[] torrents)
-    {
-        await Interact(async interaction =>
-        {
-            var dialog = new Dialog { Glyph = Syno.Lucide.ListX, PrimaryGlyph = Syno.Lucide.ListX };
-            var choice = await ShowDialog(
-                interaction,
-                dialog,
-                () =>
-                {
-                    dialog.Title = Model.Text.Get("remove", "title");
-                    dialog.PrimaryButtonText = Model.Text.Get("commands", "remove");
-                    dialog.PrimaryToolTip = Model.Text.Get("remove", "tip");
-                    dialog.Content = Lines(
-                        torrents.Select(torrent =>
-                            Model.Text.Format("units", "detail", torrent.Name, torrent.SizeText)
-                        )
-                    );
-                }
-            );
-            if (choice != ContentDialogResult.Primary)
-                return true;
-            Torrents.Release(torrents);
-            await Model.RemoveTorrents(torrents);
-            return true;
-        });
-    }
-
-    private async Task ShowFiles(Torrent[] torrents, FileAction action, bool initialize = true)
+    // Removal deletes the ticked files in the deletion mode; Move ignores it.
+    private async Task ShowFiles(
+        Torrent[] torrents,
+        FileAction action,
+        DeletionMode deletion = DeletionMode.Recycle,
+        bool initialize = true
+    )
     {
         await Interact(async interaction =>
         {
             if (initialize)
-                Model.FileDraft.Begin(torrents, action);
+                Model.FileDraft.Begin(torrents, action, deletion);
             Task<bool> Submit()
             {
-                if (action == FileAction.Delete)
+                if (Model.FileDraft.IsRemoval)
                     Torrents.Release(torrents);
                 return Model.FileDraft.Submit();
             }
             if (
-                action == FileAction.Delete
+                action != FileAction.Move
                 && !Model.Settings.ConfirmDelete.ConfirmedOn
                 && Model.FileDraft.CanSubmit
                 && await Submit()
@@ -512,7 +376,7 @@ public sealed partial class MainWindow
             if (action == FileAction.Move)
                 interaction.Restore = () =>
                     torrents.All(Model.Contains)
-                        ? ShowFiles(torrents, action, false)
+                        ? ShowFiles(torrents, action, initialize: false)
                         : Task.CompletedTask;
             interaction.ResolveDraft = async () =>
                 !Model.FileDraft.HasDraft || (interaction.IsResolved = await ResolveDraft("move"));
@@ -532,35 +396,25 @@ public sealed partial class MainWindow
             Root.SizeChanged += Resize;
             var dialog = new Dialog { Content = content };
             dialog.SizeToContent();
-            var total = new TextBlock
+            if (action != FileAction.Move)
+                dialog.Footer = new DialogFooter.OptOut(Model.FileDraft.Confirmation);
+            // Removal's check boxes change what the button deletes, so its
+            // tooltip follows them.
+            void ShowAct(object? sender = null, PropertyChangedEventArgs? args = null)
             {
-                Style = (Style)Application.Current.Resources["TinyTorrentTitleDetailTextStyle"],
-                TextTrimming = TextTrimming.CharacterEllipsis,
-            };
-            total.SetBinding(
-                TextBlock.TextProperty,
-                new Binding
-                {
-                    Source = Model.FileDraft,
-                    Path = new PropertyPath(nameof(FileDraft.Total)),
-                    Mode = BindingMode.OneWay,
-                }
-            );
-            dialog.Footer = total;
-            if (action == FileAction.Delete)
-            {
-                dialog.AddOptOut(Model.FileDraft.Confirmation);
+                dialog.Title = Model.FileDraft.Title;
+                dialog.Glyph = Model.FileDraft.Glyph;
+                dialog.PrimaryGlyph = Model.FileDraft.SubmitGlyph;
+                dialog.PrimaryButtonText = Model.FileDraft.SubmitText;
+                dialog.PrimaryToolTip = Model.FileDraft.SubmitToolTip;
             }
+            if (action != FileAction.Move)
+                Model.FileDraft.PropertyChanged += ShowAct;
             _fileDialog = content;
+            // The scope holds Move's shared-file choices and Removal's
+            // .torrent files, so the dialog opens with every row it shows.
             if (initialize)
-            {
-                // Move needs the shared-file choices before it opens. Delete
-                // already has its selection and does not depend on this read.
-                if (action == FileAction.Move)
-                    await Model.FileDraft.RefreshScope();
-                else
-                    _ = Model.FileDraft.RefreshScope();
-            }
+                await Model.FileDraft.RefreshScope();
             try
             {
                 await ShowEditor(
@@ -569,10 +423,11 @@ public sealed partial class MainWindow
                     Model.FileDraft,
                     () =>
                     {
-                        dialog.Title = Model.FileDraft.Title;
-                        dialog.Glyph = dialog.PrimaryGlyph = Model.FileDraft.SubmitGlyph;
-                        dialog.PrimaryButtonText = Model.FileDraft.SubmitText;
-                        dialog.PrimaryToolTip = Model.FileDraft.SubmitToolTip;
+                        ShowAct();
+                        // Removal's footer is its opt-out, so its title and
+                        // check box carry the count and size instead.
+                        if (action == FileAction.Move && Model.FileDraft.Total.Length > 0)
+                            dialog.Footer = new DialogFooter.Detail(Model.FileDraft.Total);
                         content.RefreshText();
                     },
                     submit: Submit
@@ -581,8 +436,9 @@ public sealed partial class MainWindow
             finally
             {
                 Root.SizeChanged -= Resize;
+                Model.FileDraft.PropertyChanged -= ShowAct;
                 _fileDialog = null;
-                if (!Model.IsClosing || action == FileAction.Delete)
+                if (!Model.IsClosing || action != FileAction.Move)
                     Model.FileDraft.Cancel();
             }
             return true;
@@ -643,8 +499,7 @@ public sealed partial class MainWindow
             var dialog = new Dialog
             {
                 Content = content,
-                Footer = content.Status,
-                FooterAction = content.CheckAction,
+                Footer = new DialogFooter.Check(content.Status),
                 Glyph = Syno.Lucide.Route,
                 PrimaryGlyph = Syno.Lucide.Check,
             };
@@ -673,7 +528,7 @@ public sealed partial class MainWindow
         });
     }
 
-    private async void OnInspectorClose(object sender, RoutedEventArgs args) =>
+    private async void OnInspectorClose(object? sender, EventArgs args) =>
         await HideInspector();
 
     private async Task SwitchInspector()

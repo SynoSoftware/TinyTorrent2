@@ -522,9 +522,9 @@ public class FeatureProofTests
             List<ReorderRequestedEventArgs> requests = [];
             h.Table.ReorderRequested += (_, e) => requests.Add(e);
 
-            Gesture.Press(h, row: h[3], item: h[3], originY: 120);
+            Gesture.Press(h, row: h[6], item: h[6], originY: 120);
             Assert.AreEqual("RowDrag", Proof.Call(h.Table, "GestureAtThreshold")!.ToString());
-            Proof.Call(h.Table, "BeginDrag", h[3]);
+            Proof.Call(h.Table, "BeginDrag", h[6]);
             CollectionAssert.AreEqual(
                 new object[] { h[1], h[3] },
                 Proof.Field<IReadOnlyList<object>>(h.Table, "_dragPacket").ToArray()
@@ -557,25 +557,29 @@ public class FeatureProofTests
         });
 
     [TestMethod]
-    public Task F11_AnUnorderedSelectionStillOpensAScrollableWheel() =>
+    public Task F11_AnUnorderedSelectionCannotStartRowDrag() =>
         TestHost.RunAsync(async () =>
         {
             SelectionHarness h = await SelectionHarness.LoadAsync(8, t => t.CanReorder = true);
             h[1].Position = null;
+            h[2].Position = null;
             h.Table.Selection = new([h[1]], h[1]);
             int requests = 0;
             h.Table.ReorderRequested += (_, _) => requests++;
             Gesture.Press(h, row: h[1], item: h[1], originY: 80);
-            Assert.IsTrue((bool)Proof.Call(h.Table, "CanStartDrag", h[1])!);
-            Proof.Call(h.Table, "BeginDrag", h[1]);
-            var wheel = Proof.Field<Body.Wheel>(h.Table, "_wheel");
-            Assert.IsTrue(Proof.Field<Popup>(wheel, "_popup").IsOpen);
-            Assert.AreEqual(0, Proof.Field<IReadOnlyList<object>>(h.Table, "_dragPacket").Count);
-            Proof.Call(wheel, "Scroll", -240, new Point(-1, -1));
-            Assert.AreEqual(2d, Proof.Field<double>(wheel, "_center"));
-            Proof.Call(h.Table, "CompleteDrag", h.WheelPoint(2));
+            Assert.IsFalse((bool)Proof.Call(h.Table, "CanStartDrag", h[1])!);
+            Assert.AreNotEqual("RowDrag", Proof.Call(h.Table, "GestureAtThreshold")!.ToString());
+            Assert.IsNull(Proof.Field<Body.Wheel?>(h.Table, "_wheel"));
+            CollectionAssert.AreEqual(new[] { "k1" }, h.SelectedKeys());
+
+            h.Table.Selection = new([h[1], h[2]], h[1]);
+            Gesture.Press(h, row: h[1], item: h[1], originY: 80);
+            Assert.IsFalse((bool)Proof.Call(h.Table, "CanStartDrag", h[1])!);
+            Assert.AreNotEqual("RowDrag", Proof.Call(h.Table, "GestureAtThreshold")!.ToString());
+            Assert.IsNull(Proof.Field<Body.Wheel?>(h.Table, "_wheel"));
+            Assert.IsTrue((bool)Proof.Call(h.Table, "CanStartDrag", h[3])!);
+            CollectionAssert.AreEqual(new[] { "k1", "k2" }, h.SelectedKeys());
             Assert.AreEqual(0, requests);
-            Assert.IsFalse(Proof.Field<Popup>(wheel, "_popup").IsOpen);
         });
 
     [TestMethod]

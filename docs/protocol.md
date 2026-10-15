@@ -167,10 +167,14 @@ commands run between pages, and complete while transfers continue.
 
 Stop refresh work when its window consumer exits. Details and old snapshots do not
 accumulate behind a disconnected client. The `history` request accepts
-`torrent_id` to read that torrent's samples; an unknown or removed torrent is
-refused with `torrent_removed`. Without `torrent_id` it reads session totals for
-the global Speed inspector and diagnostics. Both accept `range` as `five_minutes` or `day`; torrent replies
-include `torrent_id`. Each sample carries its first and last observation times
+`torrent_id` to read one torrent's samples, or a nonempty `torrent_ids` set to
+sum selected torrents; an unknown or removed torrent is refused with
+`torrent_removed`. The two selectors are mutually exclusive. Without either it
+reads session totals for the global Speed inspector and diagnostics. All accept
+`range` as `five_minutes` or `day`; replies echo the torrent selector when present.
+Selected totals use the session's sampling timeline and observation counts,
+including zero contributions before a selected torrent was added.
+Each sample carries its first and last observation times
 as `start` and `time`, and the observation `count` represented by its average.
 Consumers use those bounds to distinguish coarse samples from missing time and
 weight combined averages by represented observations. Speed history is engine state with its
@@ -197,10 +201,12 @@ test, because testing consumes network traffic. Results do not commit settings.
 
 `file_scope` reads `torrent_ids` and returns `torrents`, the transitive outside
 `shared` group, and `kept_files`. Each entry carries its durable `torrent_id`,
-`name`, `save_path`, and actual content `folder`. It answers from engine state
-without reading the disk and accepts torrents whose files are busy, so the
-Delete files dialog opens at once. This is a review aid; Move and Delete
-recheck their scope when they execute.
+`name`, `save_path`, actual content `folder`, and `torrent_file`: the .torrent
+file the torrent was added from, empty for a magnet. It answers from engine
+state without reading the disk and accepts torrents whose files are busy, so the
+Remove torrents dialog opens at once; a recorded .torrent file may have moved or
+gone since. This is a review aid; Move and Delete recheck their scope when they
+execute.
 If physical names are still being observed, the reply describes the known
 scope and `kept_files` is null. Unknown names cannot authorize payload deletion.
 
@@ -216,10 +222,18 @@ through Move; the engine checks that location before resuming.
 commands, so file-specific instructions cannot misdirect an Add or priority
 edit.
 
-`delete_files` reads `torrent_ids`, commits removal, and replies with
+`remove` and `delete_files` read `torrent_ids`, an optional `deletion`
+(`recycle`, the default, or `permanent`) and an optional `torrent_files`
+boolean. `remove` keeps the downloaded files. With `torrent_files`, both delete
+the recorded .torrent files in that mode once removal commits; a .torrent file
+that is already gone counts as deleted, and a failure is notified as a payload
+deletion failure is.
+
+`delete_files` commits removal and replies with
 `kept_files`, or null while physical names are still being observed. Payload
 deletion then continues without the removed rows; failures
-are notified and logged. It never refuses because files are busy, following
+are notified and logged, and the notice carries the `folder` that Open folder
+shows. It never refuses because files are busy, following
 [the deletion ruling](engine.md#removal-and-moves): a torrent whose own
 files are moving or being renamed, or that is deleted while an addition runs,
 leaves the snapshot at once and is removed when that work ends. Cancellation or disconnect cannot undo

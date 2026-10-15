@@ -6,6 +6,8 @@ namespace Syno.TinyTorrent.Library;
 
 public sealed partial class Browser
 {
+    // A file without Information does not replace the person's section choice.
+    private LibrarySection _section = LibrarySection.Information;
     private InformationRequest? _informationRequest;
     // What the last Inspector lookup for the selected file left to show.
     private FetchOutcome? _outcome;
@@ -23,6 +25,22 @@ public sealed partial class Browser
         private FetchOutcome() { }
         internal sealed record NoMatch : FetchOutcome;
         internal sealed record Failed(VideoException Error) : FetchOutcome;
+    }
+
+    internal bool CanShowInformation => Selected?.Entry.Kind is FileKind.Video or FileKind.Audio;
+    internal bool SupportsMetadata => Selected?.Entry.Kind == FileKind.Video;
+    internal LibrarySection Section
+    {
+        get => CanShowInformation ? _section : LibrarySection.File;
+        set
+        {
+            if (_section == value)
+                return;
+            _section = value;
+            if (Section == LibrarySection.File)
+                CancelInformation();
+            Changed(nameof(Section));
+        }
     }
 
     public bool IsFetching => _informationRequest is not null;
@@ -48,7 +66,7 @@ public sealed partial class Browser
     private bool CanRefresh =>
         CanLookup && InformationProvider is { IsOnline: true }
         && !IsFetching && Selection.Items.Count == 1
-        && Selected?.Entry is { Kind: FileKind.Video, HasMetadata: true };
+        && SupportsMetadata && Selected?.Entry.HasMetadata == true;
 
     /// <summary>
     /// Fetches metadata for the selection from <paramref name="source"/>: one

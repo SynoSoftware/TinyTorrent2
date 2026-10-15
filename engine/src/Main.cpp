@@ -1,7 +1,6 @@
 #include "Desktop/Application.h"
 #include "Registration.h"
 #include "Strings.h"
-#include <appmodel.h>
 #include <sddl.h>
 #include <shlobj.h>
 #include <shobjidl.h>
@@ -48,47 +47,105 @@ std::wstring LogonSid()
     throw std::runtime_error("No logon SID is available.");
 }
 
-// Counts the starts that left a package, so an engine that Windows keeps
-// inside one stops with an error instead of starting itself forever.
+// A failed desktop restart reports the inaccessible store instead of looping.
 constexpr wchar_t breakaway[] = L"TINYTORRENT_BREAKAWAY";
 
-// TinyTorrent is never packaged, so any package identity belongs to the app
-// that started it.
-bool IsPackaged()
+bool IsAppContainer()
 {
-    UINT32 length = 0;
-    return GetCurrentPackageFullName(&length, nullptr) != APPMODEL_ERROR_NO_PACKAGE;
+    HANDLE handle = nullptr;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &handle))
+    {
+        throw std::runtime_error("Cannot read the current process token.");
+    }
+    tt::OwnedHandle token(handle);
+    DWORD container = 0;
+    DWORD size = 0;
+    if (!GetTokenInformation(token.get(), TokenIsAppContainer, &container, sizeof(container), &size))
+    {
+        throw std::runtime_error("Cannot check application sandbox isolation.");
+    }
+    return container != 0;
 }
 
-// Starts this engine again with the same command line. The new process still
-// runs in the package, but it creates its own children outside it.
-void LeavePackage(int starts)
+std::filesystem::path FinalPath(HANDLE handle)
 {
+    std::wstring path(32768, L'\0');
+    auto length = GetFinalPathNameByHandleW(handle, path.data(), static_cast<DWORD>(path.size()), 0);
+    if (!length || length >= path.size())
+    {
+        throw std::runtime_error("Cannot resolve the application data location.");
+    }
+    path.resize(length);
+    return path;
+}
+
+// A launcher can redirect new AppData files into its private copy without
+// giving its child a package identity or changing the known-folder path, so a
+// disposable file shows where a write really lands. Windows keeps that copy
+// inside the same AppData folder, while a data folder the person moved with a
+// link resolves elsewhere and is not redirected.
+bool IsRedirected(std::filesystem::path const& directory)
+{
+    std::filesystem::create_directories(directory);
+    auto folder = CreateFileW(directory.parent_path().c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+    if (folder == INVALID_HANDLE_VALUE)
+    {
+        throw std::runtime_error("Cannot open the application data folder.");
+    }
+    tt::OwnedHandle parent(folder);
+    auto name = L"startup-" + std::to_wstring(GetCurrentProcessId()) + L".tmp";
+    auto probe = CreateFileW((directory / name).c_str(), GENERIC_WRITE | DELETE, 0,
+        nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE, nullptr);
+    if (probe == INVALID_HANDLE_VALUE)
+    {
+        throw std::runtime_error("Cannot access the application data folder.");
+    }
+    tt::OwnedHandle file(probe);
+    auto root = FinalPath(parent.get()).wstring();
+    auto expected = (std::filesystem::path(root) / directory.filename() / name).wstring();
+    auto actual = FinalPath(file.get()).wstring();
+    auto inside = root + L"\\";
+    return _wcsicmp(expected.c_str(), actual.c_str()) != 0 &&
+        _wcsnicmp(actual.c_str(), inside.c_str(), inside.size()) == 0;
+}
+
+// Starts this engine again with Explorer as its parent, so it runs in the
+// person's desktop context instead of the launcher's.
+void Restart()
+{
+    DWORD shellId = 0;
+    GetWindowThreadProcessId(GetShellWindow(), &shellId);
+    tt::OwnedHandle shell(OpenProcess(PROCESS_CREATE_PROCESS, FALSE, shellId));
+    if (!shell)
+    {
+        throw std::runtime_error("Cannot start TinyTorrent from the Windows desktop.");
+    }
     SIZE_T size = 0;
     InitializeProcThreadAttributeList(nullptr, 1, 0, &size);
     std::vector<char> storage(size);
     auto attributes = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(storage.data());
     if (!InitializeProcThreadAttributeList(attributes, 1, 0, &size))
     {
-        throw std::runtime_error("Cannot prepare the start outside the package.");
+        throw std::runtime_error("Cannot prepare the desktop start.");
     }
-    DWORD policy = PROCESS_CREATION_DESKTOP_APP_BREAKAWAY_ENABLE_PROCESS_TREE;
+    HANDLE parent = shell.get();
     STARTUPINFOEXW startup{};
     startup.StartupInfo.cb = sizeof(startup);
     startup.lpAttributeList = attributes;
     auto executable = tt::Executable();
     std::wstring command = GetCommandLineW();
     PROCESS_INFORMATION process{};
-    bool started = UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_DESKTOP_APP_POLICY, &policy,
-            sizeof(policy), nullptr, nullptr) &&
-        SetEnvironmentVariableW(breakaway, std::to_wstring(starts).c_str()) &&
+    bool started = UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_PARENT_PROCESS, &parent,
+            sizeof(parent), nullptr, nullptr) &&
+        SetEnvironmentVariableW(breakaway, L"1") &&
         CreateProcessW(executable.c_str(), command.data(), nullptr, nullptr, FALSE, EXTENDED_STARTUPINFO_PRESENT,
             nullptr, nullptr, &startup.StartupInfo, &process);
     auto error = GetLastError();
     DeleteProcThreadAttributeList(attributes);
     if (!started)
     {
-        throw std::runtime_error("Cannot start outside the package: Windows error " + std::to_string(error));
+        throw std::runtime_error("Cannot start from the Windows desktop: Windows error " + std::to_string(error));
     }
     CloseHandle(process.hThread);
     CloseHandle(process.hProcess);
@@ -214,7 +271,7 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
         }
         std::filesystem::path standard;
         PWSTR local = nullptr;
-        if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &local)))
+        if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_NO_PACKAGE_REDIRECTION, nullptr, &local)))
         {
             standard = std::filesystem::path(local) / tt::productName;
         }
@@ -232,21 +289,22 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
         // restart names the default store explicitly, so compare the folders.
         std::error_code error;
         bool personal = directory == standard || std::filesystem::equivalent(directory, standard, error);
-        // A packaged process opens AppData files from its package's private
-        // copy first and writes HKCU into that copy, so an engine started by a
-        // packaged app would use a second store and registration. Only a
-        // process's children can leave its package, so leaving takes two
-        // starts.
-        wchar_t buffer[2]{};
-        int starts = GetEnvironmentVariableW(breakaway, buffer, 2) == 1 ? buffer[0] - L'0' : 0;
-        if (personal && IsPackaged())
+        if (personal && !exiting)
         {
-            if (starts >= 2)
+            if (IsAppContainer())
             {
-                throw std::runtime_error(tt::Utf8(strings.Text("error", "package")));
+                throw std::runtime_error(tt::Utf8(strings.Text("error", "sandbox")));
             }
-            LeavePackage(starts + 1);
-            return 0;
+            if (IsRedirected(standard))
+            {
+                wchar_t buffer[2]{};
+                if (GetEnvironmentVariableW(breakaway, buffer, 2))
+                {
+                    throw std::runtime_error(tt::Utf8(strings.Text("error", "package")));
+                }
+                Restart();
+                return 0;
+            }
         }
         SetEnvironmentVariableW(breakaway, nullptr);
         auto sid = LogonSid();
@@ -366,13 +424,20 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
     }
     catch (std::exception const& error)
     {
+        auto message = tt::Strings().Text("error", "start") + L"\n\n" + tt::Wide(error.what());
+        auto output = GetStdHandle(STD_ERROR_HANDLE);
+        if (output && output != INVALID_HANDLE_VALUE)
+        {
+            auto bytes = tt::Utf8(message) + "\n";
+            DWORD written = 0;
+            WriteFile(output, bytes.data(), static_cast<DWORD>(bytes.size()), &written, nullptr);
+        }
         if (headless)
         {
             OutputDebugStringA(error.what());
         }
         else
         {
-            auto message = tt::Strings().Text("error", "start") + L"\n\n" + tt::Wide(error.what());
             MessageBoxW(nullptr, message.c_str(), tt::productName, MB_OK | MB_ICONERROR);
         }
         return 1;

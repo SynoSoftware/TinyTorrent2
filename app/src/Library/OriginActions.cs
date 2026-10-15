@@ -1,39 +1,33 @@
 using Microsoft.UI.Xaml.Controls;
+using Syno.TinyTorrent.Controls;
 
 namespace Syno.TinyTorrent.Library;
 
 internal static class OriginActions
 {
-    internal static MenuFlyoutItemBase Create(Browser browser)
+    internal static MenuEntry Create(Browser browser)
     {
         var text = browser.Text.Get("library", "show_torrents");
         if (browser.Origins.Count <= 1)
+            return new MenuCommand(
+                text,
+                Lucide.LocateFixed,
+                Command(browser, browser.Origins.FirstOrDefault())
+            );
+        return new MenuSubmenu(
+            text,
+            Lucide.LocateFixed,
+            [
+                .. browser.Origins.Select(origin => new MenuCommand(
+                    origin.Name,
+                    Lucide.LocateFixed,
+                    Command(browser, origin)
+                )),
+            ]
+        )
         {
-            var origin = browser.Origins.FirstOrDefault();
-            return new MenuFlyoutItem
-            {
-                Text = text,
-                Icon = Icon(),
-                IsEnabled = browser.IsAvailable && origin is not null,
-                Command = origin is null ? null : Command(browser, origin),
-            };
-        }
-        var menu = new MenuFlyoutSubItem
-        {
-            Text = text,
-            Icon = Icon(),
             IsEnabled = browser.IsAvailable,
         };
-        foreach (var origin in browser.Origins)
-            menu.Items.Add(
-                new MenuFlyoutItem
-                {
-                    Text = origin.Name,
-                    Icon = Icon(),
-                    Command = Command(browser, origin),
-                }
-            );
-        return menu;
     }
 
     internal static void Bind(Button button, Browser browser)
@@ -42,32 +36,20 @@ internal static class OriginActions
         button.Flyout?.Hide();
         button.Flyout = null;
         var action = Create(browser);
-        button.IsEnabled = action.IsEnabled;
-        if (action is MenuFlyoutItem command)
+        button.IsEnabled = action is not MenuSubmenu { IsEnabled: false };
+        if (action is MenuCommand command)
             button.Command = command.Command;
-        else if (action is MenuFlyoutSubItem choices)
-        {
-            var menu = new MenuFlyout();
-            while (choices.Items.Count > 0)
-            {
-                var item = choices.Items[0];
-                choices.Items.RemoveAt(0);
-                menu.Items.Add(item);
-            }
-            button.Flyout = menu;
-        }
+        else if (action is MenuSubmenu choices)
+            button.Flyout = MenuItems.Flyout(() => choices.Entries, () => browser.Text);
     }
 
-    private static FontIcon Icon() =>
-        new() { FontFamily = Lucide.Font, Glyph = Lucide.LocateFixed };
-
-    private static RelayCommand Command(Browser browser, Origin origin) =>
+    private static RelayCommand Command(Browser browser, Origin? origin) =>
         new(
             () =>
             {
-                browser.ShowTorrent(origin.OriginId);
-                return Task.CompletedTask;
+                if (origin is not null)
+                    browser.ShowTorrent(origin.OriginId);
             },
-            () => browser.IsAvailable
+            () => browser.IsAvailable && origin is not null
         );
 }

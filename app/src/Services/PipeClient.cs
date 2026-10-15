@@ -576,7 +576,7 @@ internal sealed partial class PipeClient : IDisposable
             var hello = await Read(pipe, deadline.Token);
             if (
                 hello.GetProperty("type").GetString() != "hello"
-                || hello.GetProperty("version").GetInt32() != 16
+                || hello.GetProperty("version").GetInt32() != 17
             )
                 throw new InvalidDataException(strings.Get("connection", "version"));
             return hello;
@@ -611,25 +611,29 @@ internal sealed partial class PipeClient : IDisposable
         }
     }
 
-    // Starts the engine from the same build, which is always beside the window,
-    // rather than a path a pipe peer reported. A restart keeps the store the
-    // engine last reported.
+    // A restart keeps the store the engine last reported.
     internal void LaunchEngine()
+    {
+        if (_dataDirectory is null)
+            StartEngine(_strings, "--background");
+        else
+            StartEngine(_strings, "--background", "--data", _dataDirectory);
+    }
+
+    // Starts the engine from the same build, which is always beside the window,
+    // rather than a path a pipe peer reported.
+    internal static void StartEngine(Strings strings, params string[] arguments)
     {
         var adjacent = Path.Combine(AppContext.BaseDirectory, EngineFile);
         if (!File.Exists(adjacent))
-            throw new FileNotFoundException(_strings.Format("connection", "missing", EngineFile));
+            throw new FileNotFoundException(strings.Format("connection", "missing", EngineFile));
         var start = new ProcessStartInfo(adjacent)
         {
             UseShellExecute = false,
             CreateNoWindow = true,
         };
-        start.ArgumentList.Add("--background");
-        if (_dataDirectory is not null)
-        {
-            start.ArgumentList.Add("--data");
-            start.ArgumentList.Add(_dataDirectory);
-        }
+        foreach (var argument in arguments)
+            start.ArgumentList.Add(argument);
         Process.Start(start);
     }
 
@@ -668,6 +672,21 @@ internal sealed partial class PipeClient : IDisposable
         {
             return false;
         }
+    }
+
+    // For a window that hands off to the engine and never connects itself.
+    internal static async Task StopOtherEngine()
+    {
+        using var pipe = CreatePipe();
+        try
+        {
+            await pipe.ConnectAsync(1000);
+        }
+        catch (TimeoutException)
+        {
+            return;
+        }
+        StopOtherEngine(pipe);
     }
 
 #endif

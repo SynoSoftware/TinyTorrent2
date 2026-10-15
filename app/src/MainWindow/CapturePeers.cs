@@ -2,10 +2,10 @@ using System.Globalization;
 using System.Net;
 using System.Reflection;
 using System.Text.Json;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Automation.Provider;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Controls.Primitives;
 using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Services;
@@ -45,21 +45,17 @@ public sealed partial class MainWindow
             var area = country.Areas.Length == 0 ? null : country.Areas[index / codes.Length % country.Areas.Length];
             var place = new Place(code, new Dictionary<string, string> { ["en"] = new RegionInfo(code).EnglishName });
             var city = area is null ? null : new Place(null, new Dictionary<string, string> { ["en"] = area.Name });
-            var peer = new Peer(Model.Text, Model.Geolocation, JsonSerializer.SerializeToElement(new
+            return new Peer(Model.Text, target.TorrentId, $"192.0.2.{index + 1}:51413",
+                new Location(code, place, city, area?.Point ?? country.Anchor), JsonSerializer.SerializeToElement(new
             {
-                endpoint = $"192.0.2.{index + 1}:51413", client = "Capture fixture", transport = "tcp",
+                client = "Capture fixture", transport = "tcp",
                 incoming = false, state = "connected", encryption = "rc4", sources = new[] { "tracker" },
                 interested = true, choked = false, remote_interested = true, remote_choked = false,
                 read_wait = Array.Empty<string>(), write_wait = Array.Empty<string>(), progress = .65,
                 download_rate = index % 3 == 0 ? 0 : (index % 7 + 1) * 32768,
                 upload_rate = index % 3 == 0 ? 0 : (index % 5 + 1) * 24576,
                 downloaded = 1048576, uploaded = 524288,
-            }), target.TorrentId);
-            typeof(Peer).GetField("_location", BindingFlags.Instance | BindingFlags.NonPublic)!
-                .SetValue(peer, new Location(code, place, city, area?.Point ?? country.Anchor));
-            typeof(Peer).GetField("_locationVersion", BindingFlags.Instance | BindingFlags.NonPublic)!
-                .SetValue(peer, Model.Geolocation.Version);
-            return peer;
+            }));
         }).ToArray();
         var origin = new Location("GB", new Place("GB", null), null, new GeoPoint(-.12, 51.5));
         var fetching = typeof(Inspector).GetField("_fetching", BindingFlags.Instance | BindingFlags.NonPublic)!;
@@ -86,12 +82,11 @@ public sealed partial class MainWindow
                     for (var index = 0; index < peers.Length; index++)
                     {
                         var location = locations[index];
-                        if (precision == "countries" || precision == "mixed" && index % 3 == 0)
+                        if (precision == "countries" || precision == "mixed" && index % 4 == 0)
                             location = new Location(location.Code, location.Country, null, null);
                         else if (index == 0)
                             location = new Location(location.Code, location.Country, null, location.Point);
-                        typeof(Peer).GetField("_location", BindingFlags.Instance | BindingFlags.NonPublic)!
-                            .SetValue(peers[index], location);
+                        peers[index].Location = location;
                     }
                     foreach (var portrait in new[] { false, true })
                     {
@@ -102,16 +97,28 @@ public sealed partial class MainWindow
                         pane.Layout = pane.Layout with { View = PeerView.Default };
                         foreach (var layout in new[] { PeerLayout.Map, PeerLayout.Both, PeerLayout.Table })
                         {
-                            var showMap = (ToggleButton)pane.FindName("ShowPeerMap");
-                            var showTable = (ToggleButton)pane.FindName("ShowPeerTable");
-                            SetToggle(showMap, true);
-                            SetToggle(showTable, layout != PeerLayout.Map);
-                            SetToggle(showMap, layout != PeerLayout.Table);
+                            var more = CaptureElements(pane).OfType<Button>()
+                                .Single(button => AutomationProperties.GetAutomationId(button) == "PeerMore");
+                            var menu = (MenuFlyout)more.Flyout;
+                            menu.ShowAt(more);
+                            await CaptureLayout();
+                            var key = layout switch
+                            {
+                                PeerLayout.Map => "map",
+                                PeerLayout.Table => "table",
+                                _ => "both",
+                            };
+                            var choice = menu.Items.OfType<MenuFlyoutItem>()
+                                .Single(item => item.Text == Model.Text.Get("peer_map", key));
+                            if (pane.Layout.View.Layout != layout)
+                            {
+                                var automation = FrameworkElementAutomationPeer.CreatePeerForElement(choice);
+                                ((IInvokeProvider)automation.GetPattern(PatternInterface.Invoke)).Invoke();
+                            }
+                            menu.Hide();
                             await CaptureLayout();
                             if (pane.Layout.View.Layout != layout)
-                                throw new InvalidOperationException("The peer visibility buttons did not apply their choice.");
-                            if (layout == PeerLayout.Map && showMap.IsEnabled || layout == PeerLayout.Table && showTable.IsEnabled)
-                                throw new InvalidOperationException("The last peer view must remain visible.");
+                                throw new InvalidOperationException("The peer view menu did not apply its choice.");
                             var map = CaptureElements(pane).OfType<PeerMap>().SingleOrDefault();
                             map?.Show(peers, origin, Model.Text);
                             var name = $"peers-{theme}-{precision}-{(portrait ? "portrait" : "landscape")}-{layout}";
@@ -143,8 +150,22 @@ public sealed partial class MainWindow
             CaptureElements(pane).OfType<PeerMap>().Single().Show(peers, null, Model.Text);
             await CaptureUi("peers-small-unknown-origin");
             completed.Add("peers-small-unknown-origin");
+            var estimated = peers[14];
+            var located = peers[28];
+            var country = locations[28];
+            estimated.Location = new Location(country.Code, country.Country, null, null);
+            located.Location = new Location(country.Code, country.Country, null, countries["USA"].Areas[0].Point);
+            typeof(Inspector).GetProperty(nameof(Inspector.Peers))!.SetValue(inspector, new[] { estimated, located });
+            inspector.Refresh();
+            var table = (Syno.TableView.Table)pane.FindName("Peers");
+            table.Selection = new Syno.TableView.Selection([located], located);
+            await CaptureUi("peers-coincident-selection");
+            completed.Add("peers-coincident-selection");
+            var selected = CaptureElements(pane).OfType<PeerMap>().Single();
+            outcomes.Add(new { journey = "coordinate selection at an estimated destination",
+                detail = AutomationProperties.GetHelpText(selected) });
             outcomes.Add(new { journey = "native peer map and layout review", peers = peers.Length,
-                scope = "Synthetic country-only, coordinate and mixed records in the real inspector; real country database lookup, header toggles and splitter owner; no public transfers." });
+                scope = "Synthetic country-only, coordinate and mixed records in the real inspector; real country database lookup, header menu and splitter owner; no public transfers." });
         }
         finally
         {
@@ -154,14 +175,6 @@ public sealed partial class MainWindow
             fetching.SetValue(inspector, false);
             inspector.Refresh();
             Model.CloseInspector();
-        }
-
-        static void SetToggle(ToggleButton button, bool value)
-        {
-            if (button.IsChecked == value)
-                return;
-            var automation = FrameworkElementAutomationPeer.CreatePeerForElement(button);
-            ((IToggleProvider)automation.GetPattern(PatternInterface.Toggle)).Toggle();
         }
     }
 }

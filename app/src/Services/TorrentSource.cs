@@ -184,37 +184,35 @@ internal sealed class TorrentSource : IAsyncDisposable
                         Changed?.Invoke(this, EventArgs.Empty);
                     return;
                 }
-                try
-                {
-                    var detail = await _client
-                        .ReadFiles(next.Origin, cancellation)
-                        .ConfigureAwait(false);
-                    lock (_gate)
-                    {
-                        if (!_connected || revision != _revision)
-                            continue;
-                        snapshot = _latest;
-                        _latest = null;
-                    }
-                    if (snapshot is { } latest)
-                        changed |= await Reconcile(latest, cancellation).ConfigureAwait(false);
-                    if (Files(next, detail) is { } files)
-                        changed |= await _sources
-                            .Replace(next, files, cancellation)
-                            .ConfigureAwait(false);
-                    else
-                        await _sources.MarkChecked(next, cancellation).ConfigureAwait(false);
-                    if (changed)
-                    {
-                        Changed?.Invoke(this, EventArgs.Empty);
-                        changed = false;
-                    }
-                }
-                catch (OperationCanceledException) when (!cancellation.IsCancellationRequested)
+                var detail = await _client
+                    .ReadFiles(next.Origin, cancellation)
+                    .ConfigureAwait(false);
+                if (detail is null)
                 {
                     // Foreground demand yields the connection without ending collection.
                     if (!_client.IsConnected)
                         return;
+                    continue;
+                }
+                lock (_gate)
+                {
+                    if (!_connected || revision != _revision)
+                        continue;
+                    snapshot = _latest;
+                    _latest = null;
+                }
+                if (snapshot is { } latest)
+                    changed |= await Reconcile(latest, cancellation).ConfigureAwait(false);
+                if (Files(next, detail) is { } files)
+                    changed |= await _sources
+                        .Replace(next, files, cancellation)
+                        .ConfigureAwait(false);
+                else
+                    await _sources.MarkChecked(next, cancellation).ConfigureAwait(false);
+                if (changed)
+                {
+                    Changed?.Invoke(this, EventArgs.Empty);
+                    changed = false;
                 }
             }
         }

@@ -85,8 +85,9 @@ one fill after visible layout, then detaches its layout listener. It uses the
 same fit and scale as `FillWidth`, without raising a persistence notification.
 `Table/Columns.cs` learns when the window frame drag starts and ends from the
 window's `InputNonClientPointerSource` (`EnteredMoveSize`, `ExitedMoveSize`).
-It discards the fitted widths when a drag starts and reuses them for every fill
-until it ends. Outside a drag every fill measures.
+It discards the fitted widths when a drag starts and reuses them, with the
+empty columns that measurement found, for every fill until it ends. Outside a
+drag every fill measures.
 Collapsed ancestors defer the fill until the table is shown. Visibility callbacks
 are registered while loaded and removed on unload; ordinary row updates and
 scrolling do not request a fill.
@@ -94,7 +95,9 @@ Widths stay in the table's effective layout for its lifetime. `ColumnLayout`
 contains only order, visibility and sorting, so neither disk persistence nor a
 host's in-memory layout cache carries widths into another table instance.
 
-Keep virtualized work on realized rows. Fit and fill own measurement; routine
+Keep virtualized work on realized rows. Fit and fill measure the header, visible
+rows, and one already-realized row above and below the viewport; column motion
+uses the whole cache. Fit and fill own measurement; routine
 sorting, scrolling, and gesture feedback do not create a hidden measurement tree.
 Rich cell templates receive row items directly. Live values use live bindings;
 formatting can stay lazy so invisible cells do not allocate display strings.

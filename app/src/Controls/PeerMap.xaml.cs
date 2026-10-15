@@ -16,7 +16,6 @@ using Syno.TinyTorrent.Services;
 using Windows.Foundation;
 using Windows.UI;
 using Windows.UI.ViewManagement;
-using VirtualKey = Windows.System.VirtualKey;
 
 namespace Syno.TinyTorrent.Controls;
 
@@ -33,13 +32,20 @@ public sealed partial class PeerMap : UserControl
     private Dictionary<string, Geography.Country> _world = [];
     private Observation[] _observations = [];
     private Location? _origin;
+    private GeoPoint? _arcOrigin;
+    private CanvasRadialGradientBrush? _originMask;
+    private double _originStrength;
+    private static readonly CanvasStrokeStyle Plain = new();
+    private readonly Dictionary<string, (CanvasCachedGeometry Fill, CanvasCachedGeometry Border, float Zoom)> _realized = [];
+    private long _rebuildUntil;
+    private bool _rebuildPending;
     private Strings? _text;
     private string _language = string.Empty;
-    private (string Code, GeoPoint? Point)? _selected;
+    private (string Code, GeoPoint? Point, bool Estimated)? _selected;
     private Models.Peer? _selectedPeer;
-    private string? _hovered;
     private Destination? _pointed;
     private bool _dirty = true;
+    private bool _cities;
     private Size _size;
     private float _scale;
     private Vector2 _offset;
@@ -53,7 +59,7 @@ public sealed partial class PeerMap : UserControl
         _animation.Tick += (_, _) =>
         {
             _canvas?.Invalidate();
-            if (AnimationProgress >= 1)
+            if (AnimationProgress >= 1 || !_settings.AnimationsEnabled || _accessibility.HighContrast)
                 _animation.Stop();
         };
         Loaded += OnLoaded;
@@ -63,43 +69,57 @@ public sealed partial class PeerMap : UserControl
             swatch.RegisterPropertyChangedCallback(Border.BackgroundProperty, (_, _) => _canvas?.Invalidate());
         Ink.RegisterPropertyChangedCallback(TextBlock.ForegroundProperty, (_, _) => _canvas?.Invalidate());
         KeyDown += OnKey;
+        ContextRequested += (_, _) => EndDrag(true);
+        FitGlyph.FontFamily = Syno.Lucide.Font;
+        FitGlyph.Glyph = Syno.Lucide.Maximize;
     }
 
-    internal void Show(IReadOnlyList<Models.Peer>? peers, Location? origin, Strings text)
+    internal void Show(IReadOnlyList<Models.Peer>? peers, Location? origin, Strings text, bool cities = true)
     {
         var observations = (peers ?? []).Select(peer =>
             new Observation(peer, peer.DownloadRate, peer.UploadRate, peer.Location)).ToArray();
-        if (_observations.SequenceEqual(observations) && _origin == origin && _language == text.Language)
+        if (_observations.SequenceEqual(observations) && _origin == origin && _language == text.Language && _cities == cities)
             return;
+        if (_cities != cities)
+        {
+            _selected = null;
+            _pointed = null;
+        }
+        _cities = cities;
         _observations = observations;
         if (_selectedPeer is not null && !observations.Any(observation => observation.Peer == _selectedPeer))
             _selectedPeer = null;
         _origin = origin;
         _text = text;
-        _language = text.Language;
-        AutomationProperties.SetName(this, text.Get("peer_map", "name"));
-        AutomationProperties.SetHelpText(this, text.Get("peer_map", "keyboard"));
+        if (_language != text.Language)
+        {
+            _language = text.Language;
+            AutomationProperties.SetName(this, text.Get("peer_map", "name"));
+            RefreshNavigation();
+        }
         _dirty = true;
         _canvas?.Invalidate();
     }
 
     internal void Select(Models.Peer? peer)
     {
+        if (ReferenceEquals(_selectedPeer, peer) && _selected is null && _pointed is null)
+            return;
         _selectedPeer = peer;
         _selected = null;
         _pointed = null;
-        _hovered = null;
         Describe();
         _canvas?.Invalidate();
     }
 
-    private (string Code, GeoPoint? Point)? Selection
+    private (string Code, GeoPoint? Point, bool Estimated)? Selection
     {
         get
         {
             if (_selectedPeer is null)
                 return _selected;
-            return _selectedPeer.Location is { } location ? (Geography.Code(location.Code), location.Point) : null;
+            return _cities && _selectedPeer.Location is { Point: { } point } location
+                ? (Geography.Code(location.Code), point, false) : null;
         }
     }
 
@@ -121,25 +141,21 @@ public sealed partial class PeerMap : UserControl
             canvas.PointerMoved += OnPointer;
             canvas.PointerExited += (_, _) =>
             {
+                if (_drag is { IsActive: true })
+                    return;
+                EndDrag(false);
+                if (_pointed is null)
+                    return;
                 _pointed = null;
-                _hovered = null;
                 Describe();
                 canvas.Invalidate();
             };
-            canvas.PointerPressed += (_, args) =>
-            {
-                Focus(FocusState.Pointer);
-                OnPointer(canvas, args);
-                _selectedPeer = null;
-                if (_pointed is not null)
-                    _selected = (_pointed.Group.Code, _pointed.Point);
-                else if (_hovered is { } code)
-                    _selected = (code, null);
-                else
-                    _selected = null;
-                Describe();
-                canvas.Invalidate();
-            };
+            canvas.PointerPressed += OnPressed;
+            canvas.PointerReleased += OnReleased;
+            canvas.PointerCaptureLost += (_, _) => EndDrag(true);
+            canvas.PointerCanceled += (_, _) => EndDrag(true);
+            canvas.PointerWheelChanged += OnWheel;
+            canvas.DoubleTapped += OnDoubleTapped;
             Drawing.Children.Add(canvas);
         }
         catch (Exception error) when (error is InvalidDataException or System.Text.Json.JsonException or InvalidOperationException)
@@ -154,6 +170,8 @@ public sealed partial class PeerMap : UserControl
 
     private void Stop()
     {
+        EndDrag(true);
+        ContextFlyout?.Hide();
         _animation.Stop();
         ReleaseGeometry();
         _canvas?.RemoveFromVisualTree();
@@ -168,8 +186,17 @@ public sealed partial class PeerMap : UserControl
             shape.Dispose();
         _land.Clear();
         foreach (var destination in _destinations)
-            destination.Arc?.Dispose();
+            destination.Release();
         _destinations.Clear();
+        _originMask?.Dispose();
+        _originMask = null;
+        foreach (var (fill, border, _) in _realized.Values)
+        {
+            fill.Dispose();
+            border.Dispose();
+        }
+        _realized.Clear();
+        _arcOrigin = null;
         _pointed = null;
     }
 
@@ -186,10 +213,12 @@ public sealed partial class PeerMap : UserControl
     {
         if (_size != canvas.Size || _land.Count == 0)
         {
+            EndDrag(true);
             ReleaseGeometry();
             _size = canvas.Size;
             _scale = FitScale(_size);
             _offset = new Vector2((float)_size.Width / 2, (float)_size.Height / 2);
+            SetView(_zoom, _center);
             foreach (var country in _world.Values)
             {
                 using var path = new CanvasPathBuilder(canvas);
@@ -209,8 +238,7 @@ public sealed partial class PeerMap : UserControl
             return;
         _dirty = false;
         var pointed = _pointed?.Key;
-        foreach (var destination in _destinations)
-            destination.Arc?.Dispose();
+        var previous = _destinations.ToDictionary(destination => destination.Key);
         _destinations.Clear();
         _countries.Clear();
         Dictionary<(string Code, GeoPoint? Point), Group> locations = [];
@@ -223,11 +251,12 @@ public sealed partial class PeerMap : UserControl
             var country = _world.GetValueOrDefault(code);
             if (!_countries.TryGetValue(code, out var group))
             {
-                var name = location.Country.Name(_text!.Language) ?? location.Code;
-                group = new Group(code, name, country?.Anchor ?? point);
+                group = new Group(code, location.CountryName(_text!.Language), country?.Anchor ?? point, estimated: !_cities);
                 _countries.Add(code, group);
             }
             group.Add(observation);
+            if (!_cities)
+                continue;
             if (!locations.TryGetValue((code, location.Point), out var destination))
             {
                 destination = new Group(code, observation.Peer.LocationText, point);
@@ -238,7 +267,8 @@ public sealed partial class PeerMap : UserControl
         foreach (var group in _countries.Values)
             group.Start = _displayed.GetValueOrDefault((group.Code, null, true), Strength(group.Down + group.Up));
         var origin = Locate(_origin);
-        foreach (var group in locations.Values)
+        IEnumerable<Group> destinations = _cities ? locations.Values : _countries.Values;
+        foreach (var group in destinations)
         {
             if (!group.Estimated || group.Active == 0
                 || !_world.TryGetValue(group.Code, out var country) || country.Areas.Length == 0)
@@ -250,7 +280,7 @@ public sealed partial class PeerMap : UserControl
             List<Geography.Area> areas = [];
             foreach (var area in candidates)
             {
-                var nearby = areas.FindIndex(previous => Vector2.Distance(Project(previous.Point), Project(area.Point)) < 25);
+                var nearby = areas.FindIndex(placed => Vector2.Distance(Project(placed.Point), Project(area.Point)) < 25);
                 if (nearby < 0)
                     areas.Add(area);
                 else
@@ -262,21 +292,41 @@ public sealed partial class PeerMap : UserControl
             foreach (var area in chosen)
                 Add(group, area.Point, area.Population / total, area.Name);
         }
+        foreach (var destination in previous.Values)
+            destination.Release();
+        _arcOrigin = origin;
         var keys = _destinations.Select(destination => destination.Key)
             .Concat(_countries.Keys.Select(code => (code, (GeoPoint?)null, true))).ToHashSet();
         foreach (var key in _displayed.Keys.Where(key => !keys.Contains(key)).ToArray())
             _displayed.Remove(key);
         _pointed = _destinations.FirstOrDefault(destination => destination.Key == pointed);
         _started = Stopwatch.GetTimestamp();
-        if (_settings.AnimationsEnabled && !_accessibility.HighContrast)
+        var animates = _destinations.Any(destination => destination.Start != destination.Strength
+                && (destination.Arc is not null || destination.Group.Estimated && destination.Group.Active > 0))
+            || _countries.Values.Any(group => group.Estimated && group.Active > 0
+                && group.Start != Strength(group.Down + group.Up));
+        if (animates && _settings.AnimationsEnabled && !_accessibility.HighContrast)
             _animation.Start();
+        else
+            _animation.Stop();
         Describe();
 
         void Add(Group group, GeoPoint point, double share, string? area)
         {
             var strength = Strength((group.Down + group.Up) * share);
-            var arc = origin is { } source && group.Active > 0 ? Arc(canvas, source, point) : null;
-            var destination = new Destination(group, point, share, area) { Strength = strength, Arc = arc };
+            var destination = new Destination(group, point, share, area) { Strength = strength };
+            if (previous.Remove(destination.Key, out var existing))
+            {
+                if (origin == _arcOrigin && group.Active > 0)
+                {
+                    destination.Arc = existing.Arc;
+                    destination.Paint = existing.Paint;
+                }
+                else
+                    existing.Release();
+            }
+            if (destination.Arc is null && origin is { } source && group.Active > 0)
+                destination.Arc = Arc(canvas, source, point);
             destination.Start = _displayed.GetValueOrDefault(destination.Key, strength);
             _destinations.Add(destination);
         }
@@ -343,6 +393,12 @@ public sealed partial class PeerMap : UserControl
         (byte)(from.R + (to.R - from.R) * amount), (byte)(from.G + (to.G - from.G) * amount),
         (byte)(from.B + (to.B - from.B) * amount));
 
+    private static CanvasRadialGradientBrush CreateLanding(CanvasControl canvas, Color colour) =>
+        new(canvas,
+            [new CanvasGradientStop { Position = 0, Color = Alpha(colour, .3) },
+             new CanvasGradientStop { Position = 1, Color = colour }])
+            { RadiusX = 30, RadiusY = 30 };
+
     private void Draw(CanvasControl canvas, CanvasDrawEventArgs args)
     {
         if (_text is null || canvas.Size.Width < 1 || canvas.Size.Height < 1)
@@ -357,6 +413,9 @@ public sealed partial class PeerMap : UserControl
         var contrast = _accessibility.HighContrast;
         var selection = Selection;
         var progress = _settings.AnimationsEnabled && !contrast ? AnimationProgress : 1;
+        _rebuildUntil = Stopwatch.GetTimestamp() + Stopwatch.Frequency * 6 / 1000;
+        _rebuildPending = false;
+        draw.Transform = ViewTransform;
         foreach (var (code, geometry) in _land)
         {
             var fill = land;
@@ -366,70 +425,111 @@ public sealed partial class PeerMap : UserControl
                 _displayed[(code, null, true)] = strength;
                 fill = Blend(land, down, group.Active > 0 ? .1 + .35 * strength : .08);
             }
-            if (code == selection?.Code)
-                fill = Blend(fill, down, .35);
-            draw.FillGeometry(geometry, fill);
-            draw.DrawGeometry(geometry, contrast || code == _hovered ? ink : edge,
-                code == selection?.Code || code == _hovered ? 1.3f : .5f);
+            if (Realized(canvas, code, geometry) is { } shape)
+                draw.DrawCachedGeometry(shape.Fill, fill);
+            else
+                draw.FillGeometry(geometry, fill);
         }
+        foreach (var (code, geometry) in _land)
+        {
+            if (_realized.TryGetValue(code, out var shape))
+                draw.DrawCachedGeometry(shape.Border, contrast ? ink : edge);
+            else
+                draw.DrawGeometry(geometry, contrast ? ink : edge, .5f / _zoom);
+        }
+        draw.Transform = Matrix3x2.Identity;
         foreach (var destination in _destinations)
             _displayed[destination.Key] = destination.Start + (destination.Strength - destination.Start) * (float)progress;
         var arcs = _destinations.Where(destination => destination.Arc is not null).ToArray();
         if (arcs.Length > 0 && Locate(_origin) is { } home)
         {
-            var origin = Project(home);
+            var origin = Screen(home);
             var target = Math.Clamp(.8 * Math.Sqrt(5.0 / arcs.Length), .1, .8);
             var amount = Math.Clamp((arcs.Length - 8) / 12.0, 0, 1);
             var opacity = contrast ? 1 : 1 - (1 - target) * amount * amount * (3 - 2 * amount);
-            using var mask = new CanvasRadialGradientBrush(canvas,
-                [new CanvasGradientStop { Position = 0, Color = Alpha(ink, opacity) },
-                 new CanvasGradientStop { Position = .25f, Color = Alpha(ink, opacity + (1 - opacity) * .15625) },
-                 new CanvasGradientStop { Position = .5f, Color = Alpha(ink, (1 + opacity) / 2) },
-                 new CanvasGradientStop { Position = .75f, Color = Alpha(ink, opacity + (1 - opacity) * .84375) },
-                 new CanvasGradientStop { Position = 1, Color = ink }])
-                { Center = origin, RadiusX = 40, RadiusY = 40 };
-            using (draw.CreateLayer(mask))
+            if (_originMask is null || _originStrength != opacity)
+            {
+                // Masks use only alpha; theme text colours can be translucent.
+                var opaque = Microsoft.UI.Colors.White;
+                _originMask?.Dispose();
+                _originMask = new CanvasRadialGradientBrush(canvas,
+                    [new CanvasGradientStop { Position = 0, Color = Alpha(opaque, opacity) },
+                     new CanvasGradientStop { Position = .25f, Color = Alpha(opaque, opacity + (1 - opacity) * .15625) },
+                     new CanvasGradientStop { Position = .5f, Color = Alpha(opaque, (1 + opacity) / 2) },
+                     new CanvasGradientStop { Position = .75f, Color = Alpha(opaque, opacity + (1 - opacity) * .84375) },
+                     new CanvasGradientStop { Position = 1, Color = opaque }])
+                    { RadiusX = 40, RadiusY = 40 };
+                _originStrength = opacity;
+            }
+            _originMask.Center = origin;
+            _originMask.Opacity = contrast ? 1 : .8f;
+            var view = ViewTransform;
+            using (draw.CreateLayer(_originMask))
             {
                 if (!contrast)
                 {
                     using var glow = new CanvasCommandList(canvas);
                     using (var halo = glow.CreateDrawingSession())
+                    {
+                        halo.Transform = view;
                         foreach (var destination in arcs)
                         {
                             var strength = _displayed[destination.Key];
-                            halo.DrawGeometry(destination.Arc, Alpha(destination.Group.Down >= destination.Group.Up ? down : up,
-                                .5 * strength * strength), 2 + 3 * strength);
+                            var colour = destination.Group.Down >= destination.Group.Up ? down : up;
+                            var paint = PaintOf(canvas, destination, home);
+                            var brush = paint.Halo(colour);
+                            brush.Center = Project(destination.Point);
+                            brush.RadiusX = brush.RadiusY = 30 / _zoom;
+                            brush.Opacity = .5f * .35f * strength * strength;
+                            if (paint.Glow(Step(2 + 3 * strength, 2)) is { } stroke)
+                                halo.DrawCachedGeometry(stroke, brush);
+                            else
+                                halo.DrawGeometry(destination.Arc, brush, (2 + 3 * strength) / _zoom);
                         }
-                    using var blur = new GaussianBlurEffect { Source = glow, BlurAmount = 1.5f };
+                    }
+                    using var crop = new CropEffect
+                    {
+                        Source = glow,
+                        SourceRectangle = new Rect(-6, -6, canvas.Size.Width + 12, canvas.Size.Height + 12),
+                    };
+                    using var blur = new GaussianBlurEffect { Source = crop, BlurAmount = 1.5f };
                     draw.DrawImage(blur);
                 }
+                draw.Transform = view;
                 foreach (var destination in arcs)
                 {
                     var strength = _displayed[destination.Key];
-                    var colour = Blend(destination.Group.Down >= destination.Group.Up ? down : up, ink, .2);
+                    var paint = PaintOf(canvas, destination, home);
+                    var line = paint.Line(Step(1 + strength, 4));
+                    var width = (1 + strength) / _zoom;
                     if (contrast)
                     {
-                        draw.DrawGeometry(destination.Arc, ink, 1 + strength);
+                        if (line is not null)
+                            draw.DrawCachedGeometry(line, ink);
+                        else
+                            draw.DrawGeometry(destination.Arc, ink, width);
                         continue;
                     }
-                    using var brush = new CanvasLinearGradientBrush(canvas,
-                        [new CanvasGradientStop { Position = 0, Color = Alpha(colour, .55) },
-                         new CanvasGradientStop { Position = .35f, Color = colour },
-                         new CanvasGradientStop { Position = .8f, Color = Alpha(colour, .9) },
-                         new CanvasGradientStop { Position = 1, Color = Alpha(colour, .65) }])
-                        { StartPoint = origin, EndPoint = Project(destination.Point), Opacity = .18f + .82f * strength };
-                    draw.DrawGeometry(destination.Arc, brush, 1 + strength);
+                    var brush = paint.Core(Blend(destination.Group.Down >= destination.Group.Up ? down : up, ink, .2));
+                    brush.Opacity = .18f + .82f * strength;
+                    if (line is not null)
+                        draw.DrawCachedGeometry(line, brush);
+                    else
+                        draw.DrawGeometry(destination.Arc, brush, width);
                 }
+                draw.Transform = Matrix3x2.Identity;
             }
             // Selection stays readable even inside the fading hub.
+            draw.Transform = ViewTransform;
             foreach (var destination in arcs.Where(IsSelected))
-                draw.DrawGeometry(destination.Arc, ink, 2);
+                draw.DrawGeometry(destination.Arc, ink, 2 / _zoom);
+            draw.Transform = Matrix3x2.Identity;
             draw.FillCircle(origin, 3, ink);
         }
         foreach (var destination in _destinations)
         {
             var group = destination.Group;
-            var point = Project(destination.Point);
+            var point = Screen(destination.Point);
             var city = !group.Estimated;
             var density = city ? .4 + .6 * Math.Min(1, Math.Log2(1 + group.Count) / 4) : .5;
             if (group.Active > 0)
@@ -445,82 +545,87 @@ public sealed partial class PeerMap : UserControl
             if (IsSelected(destination) || ReferenceEquals(destination, _pointed))
                 draw.DrawCircle(point, 5, ink, 1.2f);
         }
+        if (_rebuildPending)
+            canvas.Invalidate();
 
-        bool IsSelected(Destination destination) => selection is { } location
-            && location.Code == destination.Group.Code
-            && (location.Point is null || location.Point == destination.Point);
+        bool IsSelected(Destination destination) => selection == destination.Key;
     }
+
+    // Direct2D rasterizes a plain geometry on the CPU at every draw, at a cost
+    // that grows with its size on screen, so zoomed arcs took most of a second.
+    // A realization is tessellated once for a zoom and then drawn by the GPU,
+    // but making one is slow, and a zoom step makes one for every country and
+    // arc. Each frame therefore rebuilds only until _rebuildUntil. Within 5% of
+    // its zoom a realization looks the same; one further off still draws, a
+    // little too wide or narrow, until its turn. A shape with none yet draws
+    // plainly.
+    private bool IsCurrent(float zoom) => Math.Abs(_zoom / zoom - 1) <= .05f;
+
+    private bool MayRebuild()
+    {
+        if (Stopwatch.GetTimestamp() < _rebuildUntil)
+            return true;
+        _rebuildPending = true;
+        return false;
+    }
+
+    private (CanvasCachedGeometry Fill, CanvasCachedGeometry Border, float Zoom)? Realized(
+        CanvasControl canvas, string code, CanvasGeometry geometry)
+    {
+        var found = _realized.TryGetValue(code, out var shape);
+        if ((found && IsCurrent(shape.Zoom)) || !MayRebuild())
+            return found ? shape : null;
+        if (found)
+        {
+            shape.Fill.Dispose();
+            shape.Border.Dispose();
+        }
+        var tolerance = CanvasGeometry.ComputeFlatteningTolerance(canvas.Dpi, _zoom);
+        shape = (CanvasCachedGeometry.CreateFill(geometry, tolerance),
+            CanvasCachedGeometry.CreateStroke(geometry, .5f / _zoom, Plain, tolerance), _zoom);
+        _realized[code] = shape;
+        return shape;
+    }
+
+    // Widths move in steps, so animated activity rebuilds an arc's
+    // realization only when it reaches the next step.
+    private static float Step(float width, float steps) => MathF.Round(width * steps) / steps;
 
     private void OnPointer(object sender, PointerRoutedEventArgs args)
     {
-        if (_canvas is null)
+        if (_canvas is null || MoveDrag(args))
             return;
         var position = args.GetCurrentPoint(_canvas).Position;
         var point = new Vector2((float)position.X, (float)position.Y);
         Destination? nearest = null;
-        var distance = 12f;
-        foreach (var destination in _destinations)
+        if (point.X >= 0 && point.Y >= 0 && point.X <= _size.Width && point.Y <= _size.Height)
         {
-            var current = Vector2.Distance(point, Project(destination.Point));
-            if (current < distance)
+            var distance = 12f;
+            foreach (var destination in _destinations)
             {
-                nearest = destination;
-                distance = current;
+                var current = Vector2.Distance(point, Screen(destination.Point));
+                if (current < distance)
+                {
+                    nearest = destination;
+                    distance = current;
+                }
             }
+            var fitted = ToFit(point);
+            nearest ??= _destinations.FirstOrDefault(destination => destination.Arc?.StrokeContainsPoint(fitted, 8 / _zoom) == true);
         }
-        if (nearest is null)
-            nearest = _destinations.FirstOrDefault(destination => destination.Arc?.StrokeContainsPoint(point, 8) == true);
-        var country = nearest is null
-            ? _land.FirstOrDefault(country => _countries.ContainsKey(country.Key) && country.Value.FillContainsPoint(point)).Key
-            : null;
-        if (ReferenceEquals(_pointed, nearest) && _hovered == country)
+        if (ReferenceEquals(_pointed, nearest))
             return;
         _pointed = nearest;
-        _hovered = country;
         Describe();
         _canvas.Invalidate();
-    }
-
-    private void OnKey(object sender, KeyRoutedEventArgs args)
-    {
-        if (args.Key is VirtualKey.Left or VirtualKey.Up or VirtualKey.Right or VirtualKey.Down)
-        {
-            if (_destinations.Count == 0)
-                return;
-            var step = args.Key is VirtualKey.Left or VirtualKey.Up ? -1 : 1;
-            var index = _pointed is null ? -1 : _destinations.IndexOf(_pointed);
-            if (index < 0)
-                index = step > 0 ? 0 : _destinations.Count - 1;
-            else
-                index = (index + step + _destinations.Count) % _destinations.Count;
-            _pointed = _destinations[index];
-            _selected = (_pointed.Group.Code, _pointed.Point);
-            _hovered = null;
-        }
-        else if (args.Key == VirtualKey.Escape)
-        {
-            _selected = null;
-            _hovered = null;
-            _pointed = null;
-        }
-        else
-            return;
-        _selectedPeer = null;
-        Describe();
-        _canvas?.Invalidate();
-        args.Handled = true;
     }
 
     private void Describe()
     {
         if (_text is not { } text)
             return;
-        var destination = _pointed;
-        if (destination is null && _hovered is null && Selection is { Point: not null } selection)
-            destination = _destinations.FirstOrDefault(candidate =>
-                candidate.Group.Code == selection.Code && candidate.Point == selection.Point);
-        var code = _hovered ?? Selection?.Code;
-        var group = destination?.Group ?? (code is not null ? _countries.GetValueOrDefault(code) : null);
+        var destination = Inspected;
+        var group = destination?.Group;
         string value;
         if (group is null)
         {
@@ -538,21 +643,20 @@ public sealed partial class PeerMap : UserControl
             }
             else
             {
-                var precision = destination is null || group.Estimated
-                    ? "country_only" : "location_approximate";
+                var precision = group.Estimated ? "country_only" : "location_approximate";
                 value += " · " + text.Get("peer_map", precision);
             }
         }
-        ToolTipService.SetToolTip(this, value);
+        ToolTipService.SetToolTip(this, group is null || _drag is { IsActive: true } ? null : value);
         AutomationProperties.SetHelpText(this, value + " " + text.Get("peer_map", "keyboard"));
     }
 
-    private sealed class Group(string code, string name, GeoPoint point)
+    private sealed class Group(string code, string name, GeoPoint point, bool estimated = false)
     {
         internal string Code { get; } = code;
         internal string Name { get; } = name;
         internal GeoPoint Point { get; } = point;
-        internal bool Estimated { get; private set; }
+        internal bool Estimated { get; private set; } = estimated;
         internal float Start { get; set; }
         internal int Count { get; private set; }
         internal int Active { get; private set; }
@@ -574,7 +678,109 @@ public sealed partial class PeerMap : UserControl
         internal (string Code, GeoPoint? Point, bool Estimated) Key => (Group.Code, Point, Group.Estimated);
         internal float Start { get; set; }
         internal float Strength { get; init; }
-        internal CanvasGeometry? Arc { get; init; }
+        internal CanvasGeometry? Arc { get; set; }
+
+        /// <summary>The brushes for <see cref="Arc"/>; it shares the arc's lifetime.</summary>
+        internal Paint? Paint { get; set; }
+
+        internal void Release()
+        {
+            Arc?.Dispose();
+            Paint?.Dispose();
+        }
+    }
+
+    private Paint PaintOf(CanvasControl canvas, Destination destination, GeoPoint origin) =>
+        destination.Paint ??= new Paint(this, canvas, destination.Arc!, Project(origin), Project(destination.Point));
+
+    // Gradient brushes and realizations are expensive to create, and each one
+    // adds native memory pressure that can force a full garbage collection.
+    // Each arc therefore keeps them, and a frame only sets their size and
+    // opacity. They follow the map's zoom under its rebuild limit. The arc
+    // stays owned by its destination; start and end are in fitted-map space.
+    private sealed class Paint(PeerMap map, CanvasControl canvas, CanvasGeometry arc, Vector2 start, Vector2 end)
+        : IDisposable
+    {
+        private readonly float _length = Math.Max(1, Vector2.Distance(start, end));
+        private CanvasRadialGradientBrush? _halo;
+        private CanvasRadialGradientBrush? _core;
+        private Color _haloColour;
+        private Color _coreColour;
+        private float _coreZoom;
+        private CanvasCachedGeometry? _glow;
+        private CanvasCachedGeometry? _line;
+        private (float Width, float Zoom) _glowMade;
+        private (float Width, float Zoom) _lineMade;
+
+        /// <summary>The halo's stroke for a width in DIPs on screen, or null before the first one is made.</summary>
+        internal CanvasCachedGeometry? Glow(float width) => Stroke(ref _glow, ref _glowMade, width);
+
+        /// <summary>The core's stroke for a width in DIPs on screen, or null before the first one is made.</summary>
+        internal CanvasCachedGeometry? Line(float width) => Stroke(ref _line, ref _lineMade, width);
+
+        private CanvasCachedGeometry? Stroke(ref CanvasCachedGeometry? stroke, ref (float Width, float Zoom) made,
+            float width)
+        {
+            if ((stroke is not null && made.Width == width && map.IsCurrent(made.Zoom)) || !map.MayRebuild())
+                return stroke;
+            stroke?.Dispose();
+            stroke = CanvasCachedGeometry.CreateStroke(arc, width / map._zoom, Plain,
+                CanvasGeometry.ComputeFlatteningTolerance(canvas.Dpi, map._zoom));
+            made = (width, map._zoom);
+            return stroke;
+        }
+
+        internal CanvasRadialGradientBrush Halo(Color colour)
+        {
+            if (_halo is null || _haloColour != colour)
+            {
+                _halo?.Dispose();
+                _halo = CreateLanding(canvas, colour);
+                _haloColour = colour;
+            }
+            return _halo;
+        }
+
+        // One radial brush around the destination carries both the brightness
+        // along the route and the landing fade, so an arc needs no layer of its
+        // own. The fade is measured on screen, so a zoom change rebuilds it.
+        internal CanvasRadialGradientBrush Core(Color colour)
+        {
+            if (_core is null || _coreColour != colour || (!map.IsCurrent(_coreZoom) && map.MayRebuild()))
+            {
+                var zoom = map._zoom;
+                _core?.Dispose();
+                var landed = 30 / (_length * zoom);
+                var stops = new[] { 0, landed / 4, landed / 2, landed * 3 / 4, landed, .2f, .65f, 1 }
+                    .Where(position => position <= 1).Order()
+                    .Select(position => new CanvasGradientStop
+                    {
+                        Position = position,
+                        Color = Alpha(colour, Route(1 - position) * Landing(position * _length * zoom)),
+                    }).ToArray();
+                _core = new CanvasRadialGradientBrush(canvas, stops)
+                    { Center = end, RadiusX = _length, RadiusY = _length };
+                _coreColour = colour;
+                _coreZoom = zoom;
+            }
+            return _core;
+        }
+
+        /// <summary>Brightness at a fraction of the way from origin to destination.</summary>
+        private static double Route(double along) => along < .35 ? .55 + .45 * along / .35
+            : along < .8 ? 1 - .1 * (along - .35) / .45
+            : .9 - .25 * (along - .8) / .2;
+
+        /// <summary>Strength at a screen distance in DIPs from the destination.</summary>
+        private static double Landing(double distance) => .3 + .7 * Math.Min(1, distance / 30);
+
+        public void Dispose()
+        {
+            _halo?.Dispose();
+            _core?.Dispose();
+            _glow?.Dispose();
+            _line?.Dispose();
+        }
     }
 
     // Peer instances update in place; retain the last observation to avoid

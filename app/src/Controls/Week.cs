@@ -684,15 +684,20 @@ public sealed partial class Week : UserControl
         }
         if (period is null)
             return;
-        var delete = new MenuFlyoutItem
-        {
-            Text = _model.Text.Get("settings", "delete"),
-            Icon = new FontIcon { FontFamily = Lucide.Font, Glyph = Lucide.Trash2 },
-        };
-        AutomationProperties.SetName(delete, period.DeleteName);
-        delete.Click += async (_, _) => await _model.Delete(period);
-        var menu = new MenuFlyout();
-        menu.Items.Add(delete);
+        var menu = MenuItems.Flyout(
+            () =>
+            [
+                new MenuCommand(
+                    _model.Text.Get("settings", "delete"),
+                    Lucide.Trash2,
+                    new RelayCommand(() => _model.Delete(period), () => true)
+                )
+                {
+                    Name = period.DeleteName,
+                },
+            ],
+            () => _model.Text
+        );
         HoverTip.IsOpen = false;
         args.Handled = true;
         menu.ShowAt(this, position);

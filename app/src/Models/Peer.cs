@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using System.Globalization;
-using System.Net;
 using System.Text.Json;
 using Syno.TinyTorrent.Services;
 
@@ -9,10 +8,6 @@ namespace Syno.TinyTorrent.Models;
 public sealed class Peer : INotifyPropertyChanged
 {
     private readonly Strings _text;
-    private readonly Geolocation _geolocation;
-    private Location? _location;
-    private int _locationVersion = -1;
-    private int _notifiedVersion;
     private PeerTransport _transport;
     private PeerEncryption _encryption;
     private PeerSource _sources;
@@ -43,31 +38,18 @@ public sealed class Peer : INotifyPropertyChanged
 
     /// <summary>The ISO country code that names the peer's flag, or empty without a location.</summary>
     public string CountryCode => Location?.Code ?? string.Empty;
-    public string LocationText
-    {
-        get
-        {
-            if (Location is not { } location)
-                return "—";
-            var country = location.Country.Name(_text.Language) ?? location.Code;
-            return location.City?.Name(_text.Language) is { } city
-                ? _text.Format("peers", "location_city", city, country)
-                : country;
-        }
-    }
+    public string CountryText => Location?.CountryName(_text.Language) ?? "—";
+    public string CityText => Location?.City?.Name(_text.Language) ?? "—";
+    public string LocationText => Location?.City?.Name(_text.Language) is { } city
+        ? _text.Format("peers", "location_city", city, CountryText) : CountryText;
 
-    // The address never changes, so its location is looked up once, and again
-    // only when the city data changes.
     internal Location? Location
     {
-        get
+        get;
+        set
         {
-            if (_locationVersion != _geolocation.Version)
-            {
-                _locationVersion = _geolocation.Version;
-                _location = IPEndPoint.TryParse(Endpoint, out var endpoint) ? _geolocation.Find(endpoint.Address) : null;
-            }
-            return _location;
+            field = value;
+            RefreshText();
         }
     }
 
@@ -139,26 +121,27 @@ public sealed class Peer : INotifyPropertyChanged
     }
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    internal Peer(Strings text, Geolocation geolocation, JsonElement data, string torrentId)
+    internal Peer(Strings text, string torrentId, string endpoint, Location? location, JsonElement data)
     {
         _text = text;
-        _geolocation = geolocation;
-        _notifiedVersion = geolocation.Version;
-        Endpoint = data.GetProperty("endpoint").GetString()!;
         TorrentId = torrentId;
+        Endpoint = endpoint;
+        Location = location;
         Update(data);
     }
 
-    internal void Update(JsonElement data)
+    /// <summary>
+    /// Applies the engine's latest record and raises PropertyChanged for the
+    /// properties whose values changed; returns whether any did.
+    /// </summary>
+    internal bool Update(JsonElement data)
     {
-        var version = _geolocation.Version;
-        var changed = _notifiedVersion != version;
-        _notifiedVersion = version;
+        HashSet<string>? changed = null;
         var client = data.GetProperty("client");
         if (!client.ValueEquals(Client))
         {
             Client = client.GetString()!;
-            changed = true;
+            Mark(nameof(Client), nameof(ClientText), nameof(ClientHint));
         }
         _transport = Set(_transport, data.GetProperty("transport").GetString() switch
         {
@@ -167,15 +150,16 @@ public sealed class Peer : INotifyPropertyChanged
             "i2p" => PeerTransport.I2p,
             "http" => PeerTransport.Http,
             _ => PeerTransport.Unknown,
-        });
-        Incoming = Set(Incoming, data.GetProperty("incoming").GetBoolean());
+        }, nameof(ClientHint), nameof(DownloadHint), nameof(UploadHint), nameof(ConnectionText));
+        Incoming = Set(Incoming, data.GetProperty("incoming").GetBoolean(), nameof(Incoming), nameof(ConnectionText));
         State = Set(State, data.GetProperty("state").GetString() switch
         {
             "connecting" => PeerState.Connecting,
             "handshake" => PeerState.Handshake,
             "connected" => PeerState.Connected,
             _ => PeerState.Unknown,
-        });
+        }, nameof(State), nameof(StateText), nameof(StateGlyph), nameof(StateHint), nameof(DownloadHint),
+            nameof(UploadHint));
         _encryption = Set(_encryption, data.GetProperty("encryption").GetString() switch
         {
             "plain" => PeerEncryption.Plain,
@@ -183,7 +167,7 @@ public sealed class Peer : INotifyPropertyChanged
             "rc4" => PeerEncryption.Rc4,
             "tls" => PeerEncryption.Tls,
             _ => PeerEncryption.Unknown,
-        });
+        }, nameof(ConnectionHint), nameof(ConnectionText));
         var sources = PeerSource.None;
         foreach (var source in data.GetProperty("sources").EnumerateArray())
             sources |= source.GetString() switch
@@ -196,25 +180,42 @@ public sealed class Peer : INotifyPropertyChanged
                 "incoming" => PeerSource.Incoming,
                 _ => PeerSource.None,
             };
-        _sources = Set(_sources, sources);
-        _interested = Set(_interested, data.GetProperty("interested").GetBoolean());
-        _choked = Set(_choked, data.GetProperty("choked").GetBoolean());
-        _remoteInterested = Set(_remoteInterested, data.GetProperty("remote_interested").GetBoolean());
-        _remoteChoked = Set(_remoteChoked, data.GetProperty("remote_choked").GetBoolean());
-        _readWait = Set(_readWait, ReadWaits(data.GetProperty("read_wait")));
-        _writeWait = Set(_writeWait, ReadWaits(data.GetProperty("write_wait")));
-        Progress = Set(Progress, data.GetProperty("progress").GetDouble());
-        DownloadRate = Set(DownloadRate, data.GetProperty("download_rate").GetDouble());
-        UploadRate = Set(UploadRate, data.GetProperty("upload_rate").GetDouble());
-        Downloaded = Set(Downloaded, data.GetProperty("downloaded").GetInt64());
-        Uploaded = Set(Uploaded, data.GetProperty("uploaded").GetInt64());
-        if (changed)
-            RefreshText();
+        _sources = Set(_sources, sources, nameof(StateHint));
+        _interested = Set(_interested, data.GetProperty("interested").GetBoolean(), nameof(DownloadHint));
+        _choked = Set(_choked, data.GetProperty("choked").GetBoolean(), nameof(UploadHint));
+        _remoteInterested = Set(_remoteInterested, data.GetProperty("remote_interested").GetBoolean(),
+            nameof(UploadHint));
+        _remoteChoked = Set(_remoteChoked, data.GetProperty("remote_choked").GetBoolean(), nameof(DownloadHint));
+        _readWait = Set(_readWait, ReadWaits(data.GetProperty("read_wait")), nameof(DownloadHint));
+        _writeWait = Set(_writeWait, ReadWaits(data.GetProperty("write_wait")), nameof(UploadHint));
+        Progress = Set(Progress, data.GetProperty("progress").GetDouble(), nameof(Progress), nameof(ProgressText));
+        DownloadRate = Set(DownloadRate, data.GetProperty("download_rate").GetDouble(),
+            nameof(DownloadRate), nameof(DownloadText));
+        UploadRate = Set(UploadRate, data.GetProperty("upload_rate").GetDouble(),
+            nameof(UploadRate), nameof(UploadText));
+        Downloaded = Set(Downloaded, data.GetProperty("downloaded").GetInt64(),
+            nameof(Downloaded), nameof(DownloadedText));
+        Uploaded = Set(Uploaded, data.GetProperty("uploaded").GetInt64(), nameof(Uploaded), nameof(UploadedText));
+        if (changed is null)
+            return false;
+        foreach (var name in changed)
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+        return true;
 
-        T Set<T>(T previous, T value)
+        // Each value names the properties that read it, so a row rebinds only
+        // what changed.
+        T Set<T>(T previous, T value, params ReadOnlySpan<string> names)
         {
-            changed |= !EqualityComparer<T>.Default.Equals(previous, value);
+            if (!EqualityComparer<T>.Default.Equals(previous, value))
+                Mark(names);
             return value;
+        }
+
+        void Mark(params ReadOnlySpan<string> names)
+        {
+            changed ??= [];
+            foreach (var name in names)
+                changed.Add(name);
         }
     }
 

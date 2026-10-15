@@ -671,9 +671,11 @@ public sealed class AddDraft : IDraft
         using var _ = stop;
         await previous;
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        // Stopping disposes the timer, which ends its wait without throwing.
+        using var stopping = stop.Token.Register(timer.Dispose);
         try
         {
-            while (await timer.WaitForNextTickAsync(stop.Token))
+            while (await timer.WaitForNextTickAsync())
             {
                 if (!CanEdit)
                     continue;

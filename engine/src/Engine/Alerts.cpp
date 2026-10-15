@@ -174,6 +174,7 @@ void Engine::State::On(lt::file_prio_alert const& alert)
     {
         return;
     }
+    AwaitQueueStatus(*torrent);
     torrent->piecesPending |= torrent->facts.firstLast;
     if (torrent->priorityReply || torrent->piecesPending)
     {
@@ -245,7 +246,7 @@ void Engine::State::On(lt::state_update_alert const& alert)
         }
         if (auto torrent = Find(status.handle))
         {
-            changed |= !torrent->deleted &&
+            changed |= !torrent->deleted && torrent->queueReport == QueueReport::Reported &&
                 IsQueued(torrent->status.queue_position) != IsQueued(status.queue_position);
             torrent->Update(status);
             auto problem = torrent->Error();
@@ -255,6 +256,17 @@ void Engine::State::On(lt::state_update_alert const& alert)
                 Notify(NoticeKind::Error, *torrent, error, problem->Code());
             }
             torrent->notifiedError = std::move(error);
+        }
+    }
+    // A batch after an addition's files apply settles its queue state; a batch
+    // that leaves it out found no change since its last report. A queued
+    // addition is last in libtorrent's queue, so the accepted order applies again.
+    for (auto& [id, torrent] : torrents)
+    {
+        if (torrent.queueReport == QueueReport::AwaitingStatus)
+        {
+            torrent.queueReport = QueueReport::Reported;
+            changed |= !torrent.deleted;
         }
     }
     if (changed)
@@ -407,6 +419,8 @@ void Engine::State::On(lt::file_error_alert const& alert)
     if (auto torrent = Find(alert.handle))
     {
         torrent->diskError = alert.error.message();
+        // A failed file priority job raises this instead of file_prio_alert.
+        AwaitQueueStatus(*torrent);
         if (torrent->priorityReply)
         {
             std::exchange(torrent->priorityReply, nullptr)(Failure(ProblemKind::TorrentError, torrent->diskError));
@@ -446,6 +460,11 @@ void Engine::State::On(lt::alerts_dropped_alert const& alert)
             std::exchange(torrent.priorityReply, nullptr)(Failure(ErrorCode::RecoveryRequired));
         }
         QueryPriorities(torrent);
+        if (alert.dropped_alerts[lt::file_prio_alert::alert_type] ||
+            alert.dropped_alerts[lt::file_error_alert::alert_type])
+        {
+            AwaitQueueStatus(torrent);
+        }
         if (torrent.checkpointPhase == CheckpointPhase::Requested)
         {
             torrent.Checkpoint(true);

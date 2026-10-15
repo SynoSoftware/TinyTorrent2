@@ -298,7 +298,8 @@ is on; most tables have no domain order, so the reorder is off.
 
 The host registers a numbered order with `Schema.Order(column, position, items)`
 and sets `CanReorder` when domain moves are available. A null position excludes
-an item from moves, while keeping it selectable and able to open the wheel.
+an item from moves while keeping it selectable. The wheel requires at least one
+participating item, so an unavailable move does not open an empty reorder area.
 The item supplier returns the complete order, including filtered-out items.
 Positions and identities are unique. The column supplies the wheel's title and
 identifies the sort that follows domain moves immediately; sorting still needs
@@ -1097,30 +1098,44 @@ keyboard resizing be wanted, it belongs on the focused header as a held key,
 where auto-repeat does the work, and not as a menu item invoked once per step.
 
 `Fit(Column)` and `FitColumns()` are explicit fit commands, not an
-automatic sizing mode. A fit considers only the header and cells available to
-the current normal visual layout, includes normal padding and the sort glyph,
+automatic sizing mode. A fit considers only the header, visible rows, and one
+already-realized row above and below the viewport. This keeps longer off-screen
+values from taking space from the values the person is reading while allowing
+for a small scroll. It includes normal padding and the sort glyph,
 and raises the result to that column's `MinWidth`. It MUST NOT enumerate source data
 solely to size columns, instantiate off-screen row templates, or maintain a
 hidden measurement table. A per-column fit changes only that column; it MUST
 NOT fall back to a fit of other columns when its result is unchanged.
 
 `FillWidth()` runs the same fit as `FitColumns()` and then scales the
-visible resizable columns by one factor so the visible columns end at the
-table's right edge: wider when space is left, narrower when they run past it.
-One factor keeps the fitted
-proportions, so the widest fitted columns, which a fit that sees only realized
-rows marks as the most likely to hold longer values, keep the most room. A column the factor would take below its `MinWidth` stays
-at `MinWidth` and the others share what is left; when even the minimums do not
-fit, the columns run past the edge as section 8 describes. It produces at most
-one `LayoutChanged` event, of kind `Fit`, and like any fit creates width
-overrides.
+visible resizable columns so the visible columns end at the table's right
+edge: wider when space is left, narrower when they run past it. A column is
+empty when no row the fit measured shows anything in it, so its fit is its
+header.
+
+- Spare width goes only to the columns with content. An empty column keeps
+  its header width, because it has nothing to show in more.
+- A shortfall comes from the empty columns first, because cutting an empty
+  column's header hides less than cutting a value. Only once they reach their
+  `MinWidth` do the columns with content give up width.
+- When no column is empty, or every column is, all of them scale together.
+
+Each step scales its columns by one factor and takes only the width that is
+missing. One factor keeps the fitted proportions, so the widest fitted columns
+keep the most room. Taking only the missing width keeps a window resize from
+making a column jump. A column the factor would take below its `MinWidth`
+stays at `MinWidth` and the others in its step share what is left; when even
+the minimums do not fit, the columns run past the edge as section 8
+describes. It produces at most one `LayoutChanged` event, of kind `Fit`, and
+like any fit creates width overrides.
 
 `FitColumns` fits each currently visible, resizable column independently
 and produces at most one `LayoutChanged` event. Hidden columns retain their
 effective width and are not fitted; a direct fit request for a hidden or
 non-resizable column is a no-op, while a column this table does not hold, or
-any column before the first `Loaded` captures the schema, is an argument error. A value that has not entered the current visual layout may require a
-later fit after scrolling. This is an intentional limitation of a virtualized
+any column before the first `Loaded` captures the schema, is an argument error.
+A value outside the fitting range may require a later fit after scrolling.
+This is an intentional limitation of a virtualized
 convenience action, not a promise to discover the widest value in the source.
 
 Hiding or showing a column does not discard, recompute, or fit its width.
@@ -1485,13 +1500,15 @@ first and last insertion gaps. Dropping into a gap requests insertion before
 the next remaining item; the last gap appends. The packet is never reversed
 by the table's display sort.
 
-An entirely excluded selection opens the same scrollable wheel with
-“Nothing to move” and produces no request. A packet containing the complete
-order likewise cannot change that order. The wheel shows the moving count in
+An entirely excluded selection cannot start a row drag or open the wheel. A
+mixed selection moves only its participating items, even when the press is on
+an excluded selected item. A packet containing the complete order cannot change
+that order. The wheel shows the moving count in
 its heading, item labels from `ToString` beside their positions, and an accented
 insertion marker. Its footer holds destination feedback and a brief gesture hint,
-with no implementation-detail subtitle or warning. An empty order keeps the same
-flyout shape and shows an ellipsis in place of the rail.
+with no implementation-detail subtitle or warning. When the packet leaves no
+remaining destinations, the wheel keeps the same flyout shape and shows an
+ellipsis in place of the rail.
 
 The table changes no source data. It returns to idle before raising
 `ReorderRequested`. Outside drops, unchanged placements, Escape, capture
@@ -1742,10 +1759,11 @@ throughput target.
 - Column layout changes affect only headers and realized rows.
 - Source updates, property updates, sorting, and scrolling MUST NOT measure
   content or change widths. Showing a table or changing its available width
-  schedules one bounded fill after layout, never off-screen measurement.
+  schedules one bounded fill after layout, without realizing rows for measurement.
 - Active sorting is `O(n log n)` and occurs only on source, sort, or explicit
   `RefreshView()` changes.
-- Explicit fit commands measure only the header and currently realized cells;
+- Explicit fit commands measure only the header, visible rows, and one
+  already-realized row above and below the viewport;
   they never create a second measurement surface or force off-screen
   realization.
 - Pointer movement does not produce layout-persistence events.

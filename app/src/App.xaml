@@ -868,54 +868,92 @@
         <Setter Property="Template">
           <Setter.Value>
             <ControlTemplate TargetType="controls:Pane">
-              <Grid
-                Background="{TemplateBinding Background}"
-                CornerRadius="{TemplateBinding CornerRadius}"
-                BorderBrush="{TemplateBinding BorderBrush}"
-                BorderThickness="{TemplateBinding BorderThickness}"
-              >
-                <Grid.RowDefinitions>
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="*" />
-                </Grid.RowDefinitions>
+              <Grid>
                 <Grid
-                  x:Name="Heading"
-                  MinHeight="40"
-                  Padding="16,0,8,0"
-                  BorderThickness="0,0,0,1"
-                  BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+                  x:Name="Expanded"
+                  Margin="{TemplateBinding Padding}"
+                  Background="{TemplateBinding Background}"
+                  CornerRadius="{TemplateBinding CornerRadius}"
+                  BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="{TemplateBinding BorderThickness}"
                 >
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                  </Grid.ColumnDefinitions>
+                  <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                  </Grid.RowDefinitions>
+                  <Grid
+                    x:Name="Heading"
+                    MinHeight="40"
+                    Padding="16,0,8,0"
+                    BorderThickness="0,0,0,1"
+                    BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+                  >
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ContentPresenter
+                      x:Name="Navigation"
+                      Content="{TemplateBinding Navigation}"
+                      VerticalContentAlignment="Center"
+                    />
+                    <ContentPresenter
+                      x:Name="Identity"
+                      Grid.Column="1"
+                      Content="{TemplateBinding Header}"
+                      HorizontalContentAlignment="Stretch"
+                      VerticalContentAlignment="Center"
+                    />
+                    <ContentPresenter
+                      x:Name="Actions"
+                      Grid.Column="2"
+                      Content="{TemplateBinding Actions}"
+                      VerticalContentAlignment="Center"
+                    />
+                    <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
+                      <Border x:Name="ActionSeparator" Width="1" Height="16" Margin="12,0"
+                        Visibility="Collapsed" VerticalAlignment="Center"
+                        Background="{ThemeResource DividerStrokeColorDefaultBrush}"
+                        AutomationProperties.AccessibilityView="Raw" />
+                      <StackPanel Orientation="Horizontal" Spacing="4">
+                        <Button x:Name="Collapse" Style="{StaticResource TinyTorrentSubtleButtonStyle}">
+                          <FontIcon FontFamily="{ThemeResource LucideFont}"
+                            FontSize="{StaticResource TinyTorrentButtonIconSize}"
+                            AutomationProperties.AccessibilityView="Raw" />
+                        </Button>
+                        <Button x:Name="Maximize" Style="{StaticResource TinyTorrentSubtleButtonStyle}">
+                          <FontIcon x:Name="MaximizeGlyph" FontFamily="{ThemeResource LucideFont}"
+                            FontSize="{StaticResource TinyTorrentButtonIconSize}"
+                            AutomationProperties.AccessibilityView="Raw" />
+                        </Button>
+                        <Button x:Name="Close" Style="{StaticResource TinyTorrentSubtleButtonStyle}">
+                          <FontIcon FontFamily="{ThemeResource LucideFont}"
+                            FontSize="{StaticResource TinyTorrentButtonIconSize}"
+                            AutomationProperties.AccessibilityView="Raw" />
+                        </Button>
+                      </StackPanel>
+                    </StackPanel>
+                  </Grid>
                   <ContentPresenter
-                    x:Name="Navigation"
-                    Content="{TemplateBinding Navigation}"
-                    VerticalContentAlignment="Center"
-                  />
-                  <ContentPresenter
-                    x:Name="Identity"
-                    Grid.Column="1"
-                    Content="{TemplateBinding Header}"
-                    HorizontalContentAlignment="Stretch"
-                    VerticalContentAlignment="Center"
-                  />
-                  <ContentPresenter
-                    x:Name="Actions"
-                    Grid.Column="2"
-                    Content="{TemplateBinding Actions}"
-                    VerticalContentAlignment="Center"
+                    Grid.Row="1"
+                    Content="{TemplateBinding Content}"
+                    ContentTemplate="{TemplateBinding ContentTemplate}"
+                    HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                    VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
                   />
                 </Grid>
-                <ContentPresenter
-                  Grid.Row="1"
-                  Content="{TemplateBinding Content}"
-                  ContentTemplate="{TemplateBinding ContentTemplate}"
-                  HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
-                  VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
-                />
+                <Button x:Name="Toggle" Visibility="Collapsed"
+                  Style="{StaticResource TinyTorrentSubtleButtonStyle}"
+                  MinWidth="0" MinHeight="0" Padding="0">
+                  <Grid x:Name="ToggleClip" AutomationProperties.AccessibilityView="Raw">
+                    <FontIcon x:Name="ToggleGlyph" FontFamily="{ThemeResource LucideFont}"
+                      Width="16" Height="16" FontSize="16"
+                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                      AutomationProperties.AccessibilityView="Raw" />
+                  </Grid>
+                </Button>
               </Grid>
             </ControlTemplate>
           </Setter.Value>
@@ -1773,10 +1811,9 @@
                           <ColumnDefinition x:Name="CloseColumn" Width="Auto" />
                           <ColumnDefinition x:Name="EndColumn" Width="0" />
                         </Grid.ColumnDefinitions>
-                        <!-- A ContentPresenter would show the dialog's Content when Footer is null. -->
+                        <!-- Dialog places its Footer here. A ContentPresenter would show the dialog's Content when Footer is null. -->
                         <ContentControl
                           x:Name="FooterHost"
-                          Content="{TemplateBinding Footer}"
                           IsTabStop="False"
                           Margin="0,0,24,0"
                           VerticalAlignment="Center"

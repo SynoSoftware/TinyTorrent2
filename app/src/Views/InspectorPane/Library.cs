@@ -14,9 +14,11 @@ public sealed partial class InspectorPane
 {
     private LibraryBrowser? _library;
     private ScrollViewer? _libraryContent;
-    private SelectorBarItem? _librarySection;
     private ICommand? _downloadSubtitles;
     private (LibraryBrowser Browser, Entry? Entry, bool File, string Language)? _libraryView;
+    private readonly Button _libraryOpen = CreateAction(Lucide.Play, "LibraryOpen");
+    private readonly Button _libraryTorrents = CreateAction(Lucide.LocateFixed, "LibraryTorrents");
+    private readonly Button _libraryMore = CreateAction(Lucide.Ellipsis, "LibraryMore");
 
     internal void ShowLibrary(LibraryBrowser? library, ICommand? downloadSubtitles)
     {
@@ -27,16 +29,14 @@ public sealed partial class InspectorPane
         {
             _library.PropertyChanged -= OnLibrary;
             ClearLibraryActions();
-            LibraryOpen.Command = null;
-            _library.CancelInformation();
         }
         _library = library;
-        PeerActions.Visibility = Visibility.Collapsed;
         ArrangePeers();
         if (library is not null)
         {
             Bindings.StopTracking();
-            library.PropertyChanged += OnLibrary;
+            if (IsLoaded)
+                library.PropertyChanged += OnLibrary;
             if (_libraryContent is null)
             {
                 _libraryContent = new ScrollViewer
@@ -44,13 +44,11 @@ public sealed partial class InspectorPane
                     HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                     Margin = new Thickness(16, 12, 16, 12),
                 };
-                _libraryContent.SizeChanged += OnGeneralSize;
                 SectionViews.Children.Add(_libraryContent);
             }
         }
         Sections.Visibility = library is null ? Visibility.Visible : Visibility.Collapsed;
         LibrarySections.Visibility = library is null ? Visibility.Collapsed : Visibility.Visible;
-        LibraryActions.Visibility = library is null ? Visibility.Collapsed : Visibility.Visible;
         if (library is null)
         {
             Retry.Command = Model.Retry;
@@ -71,18 +69,30 @@ public sealed partial class InspectorPane
             if (library.IsInspectorVisible)
                 RefreshLibrary();
             else
+            {
                 ClearLibraryActions();
+                ShowActions(null);
+            }
             return;
         }
         if (!library.IsInspectorVisible)
             return;
+        if (args.PropertyName == nameof(LibraryBrowser.Section))
+        {
+            var showsFile = library.Section == LibrarySection.File;
+            if (_libraryContent is not null && _libraryView is { } view && view.File != showsFile)
+                _arrival.Enter(_libraryContent, forward: showsFile, update: RefreshLibrary);
+            else
+                RefreshLibrary();
+            return;
+        }
         if (args.PropertyName == nameof(LibraryBrowser.Rows) && _libraryView?.Entry == library.Selected?.Entry)
             return;
         if (args.PropertyName == nameof(LibraryBrowser.IsAvailable))
         {
             (_libraryContent?.Content as Details)?.RefreshCommands();
             RefreshLibraryOrigins();
-            LibraryMore.IsEnabled = library.IsAvailable;
+            _libraryMore.IsEnabled = library.IsAvailable;
             return;
         }
         if (args.PropertyName == nameof(LibraryBrowser.Origins))
@@ -103,7 +113,7 @@ public sealed partial class InspectorPane
         if (args.PropertyName == nameof(LibraryBrowser.FileType))
         {
             RefreshLibraryOpenTip();
-            if (ReferenceEquals(LibrarySections.SelectedItem, LibraryFile))
+            if (library.Section == LibrarySection.File)
                 RefreshLibrary();
             return;
         }
@@ -133,10 +143,16 @@ public sealed partial class InspectorPane
     private void RefreshLibrary()
     {
         if (_library is not { IsInspectorVisible: true } library || _libraryContent is null)
+        {
+            ShowActions(null);
             return;
+        }
         var text = library.Text;
         var row = library.Selected;
-        LibraryActions.Visibility = row is null ? Visibility.Collapsed : Visibility.Visible;
+        if (row is null)
+            ShowActions(null);
+        else
+            ShowActions(_libraryMore, _libraryOpen, _libraryTorrents);
         RefreshLibraryEmpty();
         HeadingName.Text = row?.Name ?? string.Empty;
         ToolTipService.SetToolTip(HeadingName, row?.Name ?? string.Empty);
@@ -145,19 +161,15 @@ public sealed partial class InspectorPane
         LibrarySections.IsEnabled = row is not null;
         LibraryInformation.Text = text.Get("library", "info");
         LibraryFile.Text = text.Get("library", "file");
-        LibraryInformation.IsEnabled =
-            row is null || row.Entry.Kind is FileKind.Video or FileKind.Audio;
-        LibrarySections.SelectedItem = LibraryInformation.IsEnabled
-            ? _librarySection ?? LibraryInformation
-            : LibraryFile;
+        LibraryInformation.IsEnabled = library.CanShowInformation;
+        LibrarySections.SelectedItem = library.Section == LibrarySection.File
+            ? LibraryFile : LibraryInformation;
         _refreshing = false;
-        if (row is null || !ReferenceEquals(LibrarySections.SelectedItem, LibraryInformation))
-            library.CancelInformation();
         RefreshLibraryFailure();
         Retry.Command = library.Retry;
-        var showsFile = ReferenceEquals(LibrarySections.SelectedItem, LibraryFile);
+        var showsFile = library.Section == LibrarySection.File;
         var targetChanged = _libraryView?.Entry?.EntryId != row?.Entry.EntryId;
-        if (_libraryView?.Language != text.Language || targetChanged || LibraryMore.Flyout is null)
+        if (_libraryView?.Language != text.Language || targetChanged || _libraryMore.Flyout is null)
             RefreshLibraryActions();
         var view = (library, row?.Entry, showsFile, text.Language);
         if (_libraryView == view && _libraryContent.Content is Details details)
@@ -177,94 +189,66 @@ public sealed partial class InspectorPane
             return;
         var text = library.Text;
         ClearLibraryActions();
-        AutomationProperties.SetName(LibraryOpen, text.Get("commands", "open"));
-        LibraryOpen.Command = library.Open;
+        AutomationProperties.SetName(_libraryOpen, text.Get("commands", "open"));
+        _libraryOpen.Command = library.Open;
         RefreshLibraryOpenTip();
-        AutomationProperties.SetName(LibraryTorrents, text.Get("library", "show_torrents"));
-        ToolTipService.SetToolTip(LibraryTorrents, text.Get("library", "show_torrents"));
+        AutomationProperties.SetName(_libraryTorrents, text.Get("library", "show_torrents"));
+        ToolTipService.SetToolTip(_libraryTorrents, text.Get("library", "show_torrents"));
         RefreshLibraryOrigins();
-        AutomationProperties.SetName(LibraryMore, text.Get("library", "more"));
-        ToolTipService.SetToolTip(LibraryMore, text.Get("library", "more"));
-        var more = new MenuFlyout();
-        var open = new MenuFlyoutItem
-        {
-            Text = text.Get("commands", "open"),
-            Command = library.Open,
-            Icon = new FontIcon { FontFamily = Syno.Lucide.Font, Glyph = Syno.Lucide.Play },
-        };
-        var fetch = MetadataActions.Create(library);
-        var refresh = new MenuFlyoutItem
-        {
-            Text = text.Get("library", "refresh_metadata"),
-            Command = library.RefreshMetadata,
-            Icon = new FontIcon { FontFamily = Syno.Lucide.Font, Glyph = Syno.Lucide.RefreshCw },
-        };
-        var subtitle = new MenuFlyoutItem
-        {
-            Text = text.Get("subtitles", "choose"),
-            Command = _downloadSubtitles,
-            Icon = new FontIcon { FontFamily = Syno.Lucide.Font, Glyph = Syno.Lucide.Download },
-        };
-        var torrents = OriginActions.Create(library);
-        var information = new MenuFlyoutSeparator();
-        var removal = new MenuFlyoutSeparator();
-        var erase = new MenuFlyoutItem
-        {
-            Text = text.Get("library", "erase_metadata"),
-            Command = library.EraseMetadata,
-            Icon = new FontIcon { FontFamily = Syno.Lucide.Font, Glyph = Syno.Lucide.Eraser },
-        };
-        more.Items.Add(open);
-        more.Opening += (_, _) =>
-        {
-            var narrow = _libraryContent.ActualWidth < FieldColumns.WideMinimum;
-            open.Visibility = narrow ? Visibility.Visible : Visibility.Collapsed;
-            var originIndex = more.Items.IndexOf(torrents);
-            more.Items[originIndex] = torrents = OriginActions.Create(library);
-            torrents.Visibility = narrow ? Visibility.Visible : Visibility.Collapsed;
-            // Providers and their availability can change after the menu is
-            // built, so the submenu is built again each time it opens.
-            var index = more.Items.IndexOf(fetch);
-            more.Items[index] = fetch = MetadataActions.Create(library);
-            fetch.Visibility =
-                library.Selected?.Entry.Kind == FileKind.Video
-                    ? Visibility.Visible
-                    : Visibility.Collapsed;
-            refresh.Visibility = subtitle.Visibility = fetch.Visibility;
-            information.Visibility = removal.Visibility = erase.Visibility = fetch.Visibility;
-        };
-        more.Items.Add(
-            new MenuFlyoutItem
-            {
-                Text = text.Get("commands", "open_folder"),
-                Command = library.OpenFolder,
-                Icon = new FontIcon
-                {
-                    FontFamily = Syno.Lucide.Font,
-                    Glyph = Syno.Lucide.FolderOpen,
-                },
-            }
+        AutomationProperties.SetName(_libraryMore, text.Get("library", "more"));
+        ToolTipService.SetToolTip(_libraryMore, text.Get("library", "more"));
+        _libraryMore.Flyout = MenuItems.Flyout(LibraryMenu, () => Model.Text);
+        _libraryMore.IsEnabled = library.IsAvailable;
+    }
+
+    // Providers and their availability can change while the inspector stays open.
+    private List<MenuEntry> LibraryMenu()
+    {
+        if (
+            _library is not { IsInspectorVisible: true } library
+            || _downloadSubtitles is not { } subtitles
+        )
+            return [];
+        var text = library.Text;
+        List<MenuEntry> menu = [];
+        if (ActionsOverflow)
+            menu.Add(new MenuCommand(text.Get("commands", "open"), Lucide.Play, library.Open));
+        menu.Add(
+            new MenuCommand(text.Get("commands", "open_folder"), Lucide.FolderOpen, library.OpenFolder)
         );
-        more.Items.Add(torrents);
-        more.Items.Add(information);
-        more.Items.Add(fetch);
-        more.Items.Add(refresh);
-        more.Items.Add(subtitle);
-        more.Items.Add(removal);
-        more.Items.Add(erase);
-        LibraryMore.Flyout = more;
-        LibraryMore.IsEnabled = library.IsAvailable;
+        if (ActionsOverflow)
+            menu.Add(OriginActions.Create(library));
+        if (!library.SupportsMetadata)
+            return menu;
+        menu.AddRange(
+        [
+            new MenuSeparator(),
+            MetadataActions.Create(library),
+            new MenuCommand(
+                text.Get("library", "refresh_metadata"),
+                Lucide.RefreshCw,
+                library.RefreshMetadata
+            ),
+            new MenuCommand(text.Get("subtitles", "choose"), Lucide.Download, subtitles),
+            new MenuSeparator(),
+            new MenuCommand(
+                text.Get("library", "erase_metadata"),
+                Lucide.Eraser,
+                library.EraseMetadata
+            ),
+        ]);
+        return menu;
     }
 
     private void RefreshLibraryOrigins()
     {
-        if (_library is not { IsInspectorVisible: true } library || LibraryTorrents.Flyout?.IsOpen == true)
+        if (_library is not { IsInspectorVisible: true } library || _libraryTorrents.Flyout?.IsOpen == true)
             return;
-        OriginActions.Bind(LibraryTorrents, library);
-        if (LibraryTorrents.Flyout is { } flyout)
+        OriginActions.Bind(_libraryTorrents, library);
+        if (_libraryTorrents.Flyout is { } flyout)
             flyout.Closed += (_, _) =>
             {
-                if (ReferenceEquals(LibraryTorrents.Flyout, flyout))
+                if (ReferenceEquals(_libraryTorrents.Flyout, flyout))
                     RefreshLibraryOrigins();
             };
     }
@@ -305,32 +289,21 @@ public sealed partial class InspectorPane
                 }
             );
         tooltip.Children.Add(new TextBlock { Text = library.OpenTip });
-        ToolTipService.SetToolTip(LibraryOpen, tooltip);
+        ToolTipService.SetToolTip(_libraryOpen, tooltip);
     }
 
+    // Hiding a menu releases its items.
     private void ClearLibraryActions()
     {
-        LibraryMore.Flyout?.Hide();
-        if (LibraryMore.Flyout is MenuFlyout menu)
-            ClearLibraryMenu(menu.Items);
-        LibraryMore.Flyout = null;
-        LibraryTorrents.Command = null;
-        LibraryTorrents.Flyout?.Hide();
-        if (LibraryTorrents.Flyout is MenuFlyout origins)
-            ClearLibraryMenu(origins.Items);
-        LibraryTorrents.Flyout = null;
-    }
-
-    private static void ClearLibraryMenu(IList<MenuFlyoutItemBase> items)
-    {
-        foreach (var item in items)
-        {
-            if (item is MenuFlyoutItem command)
-                command.Command = null;
-            else if (item is MenuFlyoutSubItem submenu)
-                ClearLibraryMenu(submenu.Items);
-        }
-        items.Clear();
+        _libraryOpen.Command = null;
+        var more = _libraryMore.Flyout;
+        _libraryMore.Flyout = null;
+        more?.Hide();
+        _libraryTorrents.Command = null;
+        var origins = _libraryTorrents.Flyout;
+        // Detach first so Closed cannot rebind the origins menu during cleanup.
+        _libraryTorrents.Flyout = null;
+        origins?.Hide();
     }
 
     private void ClearLibraryContent()

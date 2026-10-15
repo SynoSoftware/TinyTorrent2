@@ -237,67 +237,13 @@
         Background="Transparent"
       >
         <SplitView.Pane>
-          <Grid KeyDown="OnFiltersKey">
-            <Button
-              x:Name="FiltersToggle"
-              Style="{StaticResource TinyTorrentSubtleButtonStyle}"
-              Width="8"
-              Margin="0,0,2,0"
-              MinWidth="0"
-              Height="Auto"
-              MinHeight="0"
-              HorizontalAlignment="Left"
-              VerticalAlignment="Stretch"
-              Click="OnFiltersOpen"
-              Visibility="Collapsed"
-              AutomationProperties.AutomationId="FiltersToggle"
-            >
-              <Grid Width="8" Height="16" AutomationProperties.AccessibilityView="Raw">
-                <Grid.Clip>
-                  <RectangleGeometry Rect="0,0,8,16" />
-                </Grid.Clip>
-                <FontIcon
-                  FontFamily="{x:Bind icons:Lucide.Font}"
-                  Glyph="{x:Bind icons:Lucide.EllipsisVertical}"
-                  Width="16"
-                  Height="16"
-                  FontSize="16"
-                  HorizontalAlignment="Center"
-                  AutomationProperties.AccessibilityView="Raw"
-                />
-              </Grid>
-            </Button>
-            <controls:Pane Visibility="{x:Bind Model.IsFilterOpen, Mode=OneWay}" Margin="4,0,4,4">
+            <controls:Pane x:Name="FiltersPane" Dock="Left" CanClose="True" Padding="4,0,4,4"
+              KeyDown="OnFiltersKey" AutomationProperties.AutomationId="Filters">
               <controls:Pane.Header>
-                <Grid ColumnSpacing="8">
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                  </Grid.ColumnDefinitions>
                   <TextBlock
                     x:Name="FiltersTitle"
                     Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
                   />
-                  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
-                    <Button
-                      x:Name="FiltersMinimize"
-                      Style="{StaticResource TinyTorrentSubtleButtonStyle}"
-                      Click="OnFiltersMinimize"
-                      AutomationProperties.AutomationId="FiltersMinimize"
-                    >
-                      <FontIcon
-                        FontFamily="{x:Bind icons:Lucide.Font}"
-                        Glyph="{x:Bind icons:Lucide.Pin}"
-                        FontSize="{StaticResource TinyTorrentButtonIconSize}"
-                      />
-                    </Button>
-                    <Button
-                      Style="{StaticResource TinyTorrentSubtleButtonStyle}"
-                      x:Name="FiltersClose"
-                      Click="OnFiltersClose"
-                    />
-                  </StackPanel>
-                </Grid>
               </controls:Pane.Header>
               <Grid RowSpacing="8" Padding="8,8,8,0">
                 <Grid.RowDefinitions>
@@ -361,7 +307,6 @@
                 <ScrollViewer x:Name="LibraryFilters" Grid.Row="1" Visibility="Collapsed" />
               </Grid>
             </controls:Pane>
-          </Grid>
         </SplitView.Pane>
         <Grid x:Name="TorrentWorkspace" Background="Transparent">
           <Grid.RowDefinitions>
@@ -456,14 +401,6 @@
                 </AppBarButton>
                 <AppBarSeparator />
                 <AppBarButton x:Name="RemoveButton" Command="{x:Bind Model.Remove}">
-                  <AppBarButton.Icon>
-                    <FontIcon
-                      FontFamily="{x:Bind icons:Lucide.Font}"
-                      Glyph="{x:Bind icons:Lucide.ListX}"
-                    />
-                  </AppBarButton.Icon>
-                </AppBarButton>
-                <AppBarButton x:Name="DeleteButton" Command="{x:Bind Model.DeleteFiles}">
                   <AppBarButton.Icon>
                     <FontIcon
                       FontFamily="{x:Bind icons:Lucide.Font}"
@@ -736,43 +673,13 @@
             />
           </Grid>
           <controls:Splitter x:Name="Split" Grid.Row="1" Visibility="Collapsed" />
-          <Grid x:Name="InspectorSurface" Grid.Row="2" Visibility="Collapsed" Margin="0,0,4,4">
+          <Grid x:Name="InspectorSurface" Grid.Row="2" Visibility="Collapsed">
             <ContentControl
               x:Name="InspectorContent"
               HorizontalContentAlignment="Stretch"
               VerticalContentAlignment="Stretch"
             />
           </Grid>
-          <Button
-            x:Name="InspectorToggle"
-            Grid.Row="2"
-            Visibility="Collapsed"
-            Style="{StaticResource TinyTorrentSubtleButtonStyle}"
-            Height="8"
-            Margin="0,2,0,0"
-            MinHeight="0"
-            Width="Auto"
-            MinWidth="0"
-            HorizontalAlignment="Stretch"
-            Padding="0"
-            Click="OnInspectorOpen"
-            AutomationProperties.AutomationId="InspectorToggle"
-          >
-            <Grid Width="16" Height="8">
-              <Grid.Clip>
-                <RectangleGeometry Rect="0,0,16,8" />
-              </Grid.Clip>
-              <FontIcon
-                FontFamily="{x:Bind icons:Lucide.Font}"
-                Glyph="{x:Bind icons:Lucide.Ellipsis}"
-                Width="16"
-                Height="16"
-                FontSize="16"
-                VerticalAlignment="Center"
-                AutomationProperties.AccessibilityView="Raw"
-              />
-            </Grid>
-          </Button>
         </Grid>
       </SplitView>
       <Grid x:Name="SettingsContent" Visibility="Collapsed" />

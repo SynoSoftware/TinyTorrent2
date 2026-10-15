@@ -309,6 +309,10 @@ LRESULT Application::Handle(UINT message, WPARAM first, LPARAM second)
         {
             OnNoticeCommand(static_cast<NoticeCommand>(second));
         }
+        else if (static_cast<PopupPart>(first) == PopupPart::Action)
+        {
+            OnNoticeAction(static_cast<NoticeAction>(second));
+        }
         else
         {
             OnNotice();
@@ -448,6 +452,25 @@ void Application::OnNotice()
     else
     {
         ShellExecuteW(nullptr, L"open", Wide(folder).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    }
+}
+
+// Open folder leaves the notice open, so only Retry consumes it.
+void Application::OnNoticeAction(NoticeAction action)
+{
+    if (action == NoticeAction::Retry)
+    {
+        tray_->TakeNotice();
+        Open();
+    }
+    else
+    {
+        auto folder = tray_->Folder();
+        if (folder.empty())
+        {
+            folder = std::filesystem::path(Executable()).parent_path();
+        }
+        ShellExecuteW(nullptr, L"open", folder.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
     }
 }
 
@@ -867,7 +890,7 @@ bool Application::Open()
     launch_ = engine_->IsLoading() ? Launch::Cold : Launch::Warm;
     ShowSplash();
     auto executable = WindowExecutable();
-    std::wstring arguments = L"\"" + executable.wstring() + L"\"";
+    std::wstring arguments = L"\"" + executable.wstring() + L"\" --engine";
     STARTUPINFOW startup{sizeof(startup)};
     PROCESS_INFORMATION process{};
     // Only a warm launch times the window alone; a cold one also waits for the
@@ -1048,6 +1071,7 @@ void Application::Shutdown()
         }
         if (!failure)
         {
+            tray_->Remove();
             PostQuitMessage(0);
         }
         else if (headless_)
@@ -1374,7 +1398,7 @@ void Application::Notify(Notice notice)
     {
         windowClient_->Send(Json{{"type", "notice"}, {"kind", ToString(notice.kind)},
             {"torrent_id", notice.torrentId}, {"name", notice.name}, {"detail", notice.detail}, {"code", notice.code},
-            {"count", notice.count}});
+            {"folder", notice.folder}, {"count", notice.count}});
         return;
     }
     tray_->Queue(std::move(notice));
