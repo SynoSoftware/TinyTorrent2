@@ -1,69 +1,37 @@
 #pragma once
 #include "Enums.h"
 #include "Strings.h"
-#include "Desktop/Popup.h"
 #include <windows.h>
 #include <oleacc.h>
-#include <filesystem>
-#include <map>
 #include <optional>
 
 namespace tt::desktop
 {
-// Whether a notice goes to the open window instead of the tray. Problems and
-// completions do; additions and the background notice always use the tray, so
-// they do not raise the window.
-bool UsesWindow(NoticeKind kind);
-
-// The notification-area icon: its tooltip, its menu and its notifications.
+// The notification-area icon: its tooltip and its menu.
 class Tray
 {
 public:
-    // `selected` is posted to `window` when the person selects a notice's
-    // popup, with the PopupPart as its WPARAM.
-    Tray(HWND window, UINT callback, UINT selected, HWND broadcast, Strings const& strings, bool headless);
+    // The icon shows `errorIcon`, which the caller keeps alive, while
+    // transfers have problems.
+    Tray(HWND window, UINT callback, HWND broadcast, Strings const& strings, bool headless, HICON errorIcon);
     ~Tray();
     Tray(Tray const&) = delete;
     Tray& operator=(Tray const&) = delete;
     void Add();
-    // Takes the icon and its popup off the screen before the process ends.
+    // Takes the icon off the screen before the process ends.
     void Remove();
     void Update(Activity activity, bool loading, bool pausable);
     void Translate();
     std::optional<TrayItem> ShowMenu(POINT point);
     BOOL Measure(MEASUREITEMSTRUCT& item);
     BOOL Draw(DRAWITEMSTRUCT const& item);
-    void Queue(Notice notice);
-    void Notify();
-    // The notice whose popup was selected, unless selecting it only dismisses it.
-    std::optional<Notice> TakeNotice();
-    // The folder that the shown popup's Open folder opens; empty for the
-    // program's folder.
-    std::filesystem::path Folder() const;
-    // The switch that the shown popup's Turn off command turns off.
-    std::optional<NoticeSwitch> TakeSwitch();
-#ifdef _DEBUG
-    // Shows an Added notice for a sample torrent, whatever the switches say.
-    void ShowSample();
-#endif
 private:
     struct Row
     {
         std::wstring text;
         MSAAMENUINFO name{};
     };
-    // The notices that wait to share the next popup.
-    struct Batch
-    {
-        Notice first;
-        unsigned count;
-        ULONGLONG due;
-    };
     void Apply(DWORD action);
-    bool Accepts(NoticeKind kind) const;
-    void ShowBackground();
-    // Offers the More menu when there is a switch that turns `notices` off.
-    void Show(Popup::Content content, std::optional<NoticeSwitch> notices);
     Row* Find(UINT id);
     Row& Fill(TrayItem item);
     void Rename(TrayItem item, std::wstring text);
@@ -73,9 +41,6 @@ private:
     std::wstring Counts() const;
     std::wstring Tooltip() const;
     std::wstring PauseText() const;
-    Popup::Content Message(Notice const& notice, unsigned count) const;
-    Popup::Content Failures(Notice const& first, unsigned count) const;
-    std::wstring Problem(std::string const& code) const;
     HWND window_;
     UINT callback_;
     HWND broadcast_;
@@ -84,15 +49,11 @@ private:
     Activity activity_;
     bool loading_ = false;
     bool pausable_ = false;
-    HICON errorIcon_ = nullptr;
+    HICON errorIcon_;
     std::wstring tooltip_;
     HMENU menu_ = nullptr;
     HFONT font_ = nullptr;
     Row rates_;
     Row counts_;
-    std::map<NoticeKind, Batch> batches_;
-    std::optional<Notice> notice_;
-    std::optional<NoticeSwitch> switch_;
-    Popup popup_;
 };
 }

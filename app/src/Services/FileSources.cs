@@ -10,20 +10,19 @@ internal sealed class FileSources(Database database)
             connection =>
             {
                 using var command = connection.CreateCommand();
-                command.CommandText =
-                    "UPDATE contributions SET collected=0, checked=0;" + Database.Invalidate;
+                command.CommandText = "UPDATE file_reads SET collected=0, checked=0;";
                 return command.ExecuteNonQuery();
             },
             cancellation
         );
 
-    // Collected files stay current until each new read replaces them.
+    // Confirmed files stay confirmed until each new read replaces them.
     internal Task Reread(CancellationToken cancellation) =>
         database.Run(
             connection =>
             {
                 using var command = connection.CreateCommand();
-                command.CommandText = "UPDATE contributions SET checked=0;";
+                command.CommandText = "UPDATE file_reads SET checked=0;";
                 return command.ExecuteNonQuery();
             },
             cancellation
@@ -35,9 +34,11 @@ internal sealed class FileSources(Database database)
             {
                 using var command = connection.CreateCommand();
                 command.CommandText = """
-                    SELECT origin, name, complete, settled, save_path, stamp FROM contributions
-                    WHERE checked=0 OR (complete=0 AND checked<$active) OR checked<$idle
-                    ORDER BY collected, checked LIMIT 1;
+                    SELECT r.origin, r.name, r.complete, r.settled, r.save_path, r.stamp
+                    FROM file_reads r LEFT JOIN contributions c USING(origin)
+                    WHERE r.checked=0 OR (r.complete=0 AND r.checked<$active) OR r.checked<$idle
+                    ORDER BY r.checked<>0, c.origin IS NOT NULL AND c.stamp=r.stamp,
+                        r.collected, r.checked LIMIT 1;
                     """;
                 command.Parameters.AddWithValue("$active", Environment.TickCount64 - 5000);
                 command.Parameters.AddWithValue("$idle", Environment.TickCount64 - 60000);
@@ -64,7 +65,7 @@ internal sealed class FileSources(Database database)
             {
                 using var command = connection.CreateCommand();
                 command.CommandText =
-                    "SELECT NOT EXISTS(SELECT 1 FROM contributions WHERE checked=0);";
+                    "SELECT NOT EXISTS(SELECT 1 FROM file_reads WHERE checked=0);";
                 return Convert.ToInt64(command.ExecuteScalar()) != 0;
             },
             cancellation
@@ -77,7 +78,7 @@ internal sealed class FileSources(Database database)
     {
         using var command = connection.CreateCommand();
         command.CommandText =
-            "UPDATE contributions SET checked=$checked WHERE origin=$origin AND stamp=$stamp;";
+            "UPDATE file_reads SET checked=$checked WHERE origin=$origin AND stamp=$stamp;";
         command.Parameters.AddWithValue("$checked", Environment.TickCount64);
         command.Parameters.AddWithValue("$origin", contribution.Origin);
         command.Parameters.AddWithValue("$stamp", contribution.Stamp);
@@ -99,7 +100,7 @@ internal sealed class FileSources(Database database)
                 var origin = insert.Parameters.Add("$origin", SqliteType.Text);
                 using var update = connection.CreateCommand();
                 update.CommandText = """
-                    INSERT INTO contributions (origin, name, complete, settled, save_path, stamp)
+                    INSERT INTO file_reads (origin, name, complete, settled, save_path, stamp)
                     VALUES ($origin, $name, $complete, $settled, $path, $stamp)
                     ON CONFLICT(origin) DO UPDATE SET name=excluded.name,
                         complete=excluded.complete, settled=excluded.settled, save_path=excluded.save_path,
@@ -114,7 +115,6 @@ internal sealed class FileSources(Database database)
                 update.Parameters.Add("$settled", SqliteType.Integer);
                 update.Parameters.Add("$path", SqliteType.Text);
                 update.Parameters.Add("$stamp", SqliteType.Text);
-                var changed = false;
                 foreach (var contribution in contributions)
                 {
                     cancellation.ThrowIfCancellationRequested();
@@ -126,7 +126,7 @@ internal sealed class FileSources(Database database)
                     update.Parameters["$settled"].Value = contribution.Settled;
                     update.Parameters["$path"].Value = contribution.SavePath;
                     update.Parameters["$stamp"].Value = contribution.Stamp;
-                    changed |= update.ExecuteNonQuery() != 0;
+                    update.ExecuteNonQuery();
                 }
                 // known_torrents lists every torrent the window has seen finished,
                 // and only a torrent missing from it gets automatic subtitle
@@ -142,20 +142,23 @@ internal sealed class FileSources(Database database)
                     WHERE $recorded AND origin NOT IN (SELECT origin FROM known_torrents);
                     DELETE FROM new_origins WHERE origin NOT IN (SELECT origin FROM present);
                     DELETE FROM known_torrents WHERE origin NOT IN (SELECT origin FROM present);
-                    INSERT OR IGNORE INTO known_torrents SELECT origin FROM contributions
+                    INSERT OR IGNORE INTO known_torrents SELECT origin FROM file_reads
                     WHERE origin IN (SELECT origin FROM present) AND (complete=1 OR NOT $recorded);
                     UPDATE source_state SET initialized=1 WHERE singleton=1 AND initialized=0;
                     """;
                 history.Parameters.AddWithValue("$recorded", recorded);
                 history.ExecuteNonQuery();
+                current.CommandText = Database.Reconcile;
+                current.ExecuteNonQuery();
+                current.CommandText = """
+                    DELETE FROM source_files WHERE origin NOT IN (SELECT origin FROM present);
+                    DELETE FROM contributions WHERE origin NOT IN (SELECT origin FROM present);
+                    DELETE FROM locations WHERE entry_id NOT IN (SELECT entry_id FROM source_files);
+                    """;
+                var changed = current.ExecuteNonQuery() != 0;
                 current.CommandText =
-                    Database.Reconcile
-                    + """
-                        DELETE FROM source_files WHERE origin NOT IN (SELECT origin FROM present);
-                        DELETE FROM contributions WHERE origin NOT IN (SELECT origin FROM present);
-                        DELETE FROM locations WHERE entry_id NOT IN (SELECT entry_id FROM source_files);
-                        """;
-                changed |= current.ExecuteNonQuery() != 0;
+                    "DELETE FROM file_reads WHERE origin NOT IN (SELECT origin FROM present);";
+                current.ExecuteNonQuery();
                 current.CommandText = Database.Cleanup;
                 current.ExecuteNonQuery();
                 if (changed)
@@ -177,20 +180,28 @@ internal sealed class FileSources(Database database)
             connection =>
             {
                 using var command = connection.CreateCommand();
-                command.CommandText =
-                    "SELECT collected FROM contributions WHERE origin=$origin AND stamp=$stamp;";
+                command.CommandText = """
+                    SELECT c.stamp FROM file_reads r LEFT JOIN contributions c USING(origin)
+                    WHERE r.origin=$origin AND r.stamp=$stamp;
+                    """;
                 command.Parameters.AddWithValue("$origin", contribution.Origin);
                 command.Parameters.AddWithValue("$stamp", contribution.Stamp);
-                if (command.ExecuteScalar() is not long collected)
+                var stamp = command.ExecuteScalar();
+                if (stamp is null)
                     return false;
 
                 if (
-                    collected != 0
+                    stamp is string
                     && Unchanged(connection, contribution.Origin, files, cancellation)
                 )
                 {
-                    MarkChecked(connection, contribution);
-                    return false;
+                    var updated = Confirm(connection, contribution);
+                    if (updated)
+                    {
+                        command.CommandText = Database.Invalidate;
+                        command.ExecuteNonQuery();
+                    }
+                    return updated;
                 }
 
                 // Share saved choices and subtitle ownership before changed
@@ -230,7 +241,7 @@ internal sealed class FileSources(Database database)
                     }
                 )
                     write.Parameters.Add("$" + name, SqliteType.Integer);
-                changed |= collected == 0;
+                changed |= stamp is not string;
                 foreach (var file in files)
                 {
                     cancellation.ThrowIfCancellationRequested();
@@ -271,10 +282,7 @@ internal sealed class FileSources(Database database)
                     DELETE FROM locations WHERE entry_id NOT IN (SELECT entry_id FROM source_files);
                     """;
                 changed |= command.ExecuteNonQuery() != 0;
-                command.CommandText =
-                    "UPDATE contributions SET collected=1, checked=$checked WHERE origin=$origin;";
-                command.Parameters.AddWithValue("$checked", Environment.TickCount64);
-                command.ExecuteNonQuery();
+                changed |= Confirm(connection, contribution);
                 if (changed)
                 {
                     command.CommandText =
@@ -282,6 +290,36 @@ internal sealed class FileSources(Database database)
                     command.ExecuteNonQuery();
                 }
                 return changed;
+            },
+            cancellation
+        );
+
+    private static bool Confirm(SqliteConnection connection, Contribution contribution)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO contributions(origin,name,stamp) VALUES($origin,$name,$stamp)
+            ON CONFLICT(origin) DO UPDATE SET name=excluded.name, stamp=excluded.stamp
+            WHERE name<>excluded.name OR stamp<>excluded.stamp;
+            """;
+        command.Parameters.AddWithValue("$origin", contribution.Origin);
+        command.Parameters.AddWithValue("$name", contribution.Name);
+        command.Parameters.AddWithValue("$stamp", contribution.Stamp);
+        var changed = command.ExecuteNonQuery() != 0;
+        command.CommandText =
+            "UPDATE file_reads SET collected=1, checked=$checked WHERE origin=$origin AND stamp=$stamp;";
+        command.Parameters.AddWithValue("$checked", Environment.TickCount64);
+        command.ExecuteNonQuery();
+        return changed;
+    }
+
+    internal Task<bool> HasCache(CancellationToken cancellation) =>
+        database.Run(
+            connection =>
+            {
+                using var command = connection.CreateCommand();
+                command.CommandText = "SELECT EXISTS(SELECT 1 FROM contributions);";
+                return Convert.ToInt64(command.ExecuteScalar()) != 0;
             },
             cancellation
         );

@@ -2,17 +2,26 @@ namespace Syno.TinyTorrent.Services;
 
 internal sealed partial class Database
 {
-    private const int Version = 8;
+    private const int Version = 9;
 
-    // The person's own API key for a Library provider, protected by
-    // Credentials, which replaces the key built into the release.
-    private const string ProviderKeys = """
-        CREATE TABLE provider_keys (provider_id TEXT NOT NULL PRIMARY KEY, secret BLOB NOT NULL);
-        """;
-
-    private const string Schema =
-        ProviderKeys
-        + """
+    private const string Schema = """
+            -- The person's own API key, protected by Credentials, replaces
+            -- the key built into the release.
+            CREATE TABLE provider_keys (provider_id TEXT NOT NULL PRIMARY KEY, secret BLOB NOT NULL);
+            CREATE TABLE contributions (
+                origin TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, stamp TEXT NOT NULL
+            );
+            CREATE TABLE locations (
+                entry_id INTEGER PRIMARY KEY AUTOINCREMENT, path TEXT COLLATE PATH NOT NULL UNIQUE
+            );
+            CREATE TABLE source_files (
+                origin TEXT NOT NULL, file_index INTEGER NOT NULL, entry_id INTEGER NOT NULL,
+                name TEXT NOT NULL, path TEXT NOT NULL, size INTEGER NOT NULL,
+                complete INTEGER NOT NULL, wanted INTEGER NOT NULL, kind INTEGER NOT NULL,
+                title TEXT NOT NULL, type TEXT NOT NULL, year INTEGER, search TEXT NOT NULL,
+                PRIMARY KEY (origin, file_index)
+            );
+            CREATE INDEX source_locations ON source_files(entry_id);
             CREATE TABLE request_settings (
                 singleton INTEGER PRIMARY KEY CHECK(singleton=1), lookups INTEGER NOT NULL DEFAULT 5
             );
@@ -145,33 +154,22 @@ internal sealed partial class Database
 
     private const string Projection = """
         CREATE TEMP TABLE new_origins (origin TEXT NOT NULL PRIMARY KEY);
-        CREATE TEMP TABLE contributions (
+        CREATE TEMP TABLE file_reads (
             origin TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, complete INTEGER NOT NULL,
             settled INTEGER NOT NULL, collected INTEGER NOT NULL DEFAULT 0,
             save_path TEXT NOT NULL, stamp TEXT NOT NULL, checked INTEGER NOT NULL DEFAULT 0
         );
-        CREATE TEMP TABLE locations (
-            entry_id INTEGER PRIMARY KEY AUTOINCREMENT, path TEXT COLLATE PATH NOT NULL UNIQUE
-        );
-        CREATE TEMP TABLE source_files (
-            origin TEXT NOT NULL, file_index INTEGER NOT NULL, entry_id INTEGER NOT NULL,
-            name TEXT NOT NULL, path TEXT NOT NULL, size INTEGER NOT NULL,
-            complete INTEGER NOT NULL, wanted INTEGER NOT NULL, kind INTEGER NOT NULL,
-            title TEXT NOT NULL, type TEXT NOT NULL, year INTEGER, search TEXT NOT NULL,
-            PRIMARY KEY (origin, file_index)
-        );
-        CREATE INDEX source_locations ON source_files(entry_id);
         CREATE TEMP VIEW collected_files AS
-        SELECT f.* FROM source_files f JOIN contributions c USING (origin)
+        SELECT f.* FROM source_files f JOIN file_reads c USING (origin)
         WHERE c.collected=1;
         CREATE TEMP VIEW pending_origins AS
-        SELECT origin FROM contributions WHERE collected=0;
+        SELECT origin FROM file_reads WHERE collected=0;
         CREATE TEMP VIEW current_files AS
         SELECT l.entry_id, l.path, f.name, f.size, f.kind, f.title, f.type, f.year, f.search,
-            MAX(f.complete AND c.collected) AS complete,
-            MAX(f.complete AND c.complete AND c.settled AND c.collected) AS readable
+            MAX(f.complete) AS complete,
+            MAX(f.complete AND COALESCE(c.complete AND c.settled AND c.collected,0)) AS readable
         FROM locations l JOIN source_files f USING (entry_id)
-        JOIN contributions c USING (origin)
+        LEFT JOIN file_reads c USING (origin)
         GROUP BY l.entry_id;
         CREATE TEMP TABLE present (origin TEXT NOT NULL PRIMARY KEY);
         CREATE TEMP TABLE received (file_index INTEGER PRIMARY KEY);
@@ -185,7 +183,7 @@ internal sealed partial class Database
         CREATE TEMP VIEW subtitle_languages AS
         SELECT DISTINCT s.origin,s.file_index,s.language FROM subtitle_output_sources s
         JOIN subtitle_outputs o USING(path,language)
-        JOIN collected_files f ON f.origin=s.origin AND f.file_index=s.file_index
+        JOIN source_files f ON f.origin=s.origin AND f.file_index=s.file_index
         JOIN locations l ON l.entry_id=f.entry_id
         WHERE s.movie_path=l.path COLLATE PATH;
         CREATE TEMP VIEW library_entries AS

@@ -22,6 +22,7 @@ public sealed class Torrent(string torrentId, Strings strings) : INotifyProperty
     public long Uploaded { get; private set; }
     public int SeedCount { get; private set; }
     public int PeerCount { get; private set; }
+    public int KnownPeerCount { get; private set; }
     public int LeecherCount => PeerCount - SeedCount;
     public int SwarmSeedCount { get; private set; }
     public int SwarmLeecherCount { get; private set; }
@@ -178,6 +179,7 @@ public sealed class Torrent(string torrentId, Strings strings) : INotifyProperty
         Uploaded = Set(Uploaded, row.GetProperty("uploaded").GetInt64());
         SeedCount = Set(SeedCount, row.GetProperty("seed_count").GetInt32());
         PeerCount = Set(PeerCount, row.GetProperty("peer_count").GetInt32());
+        KnownPeerCount = Set(KnownPeerCount, row.GetProperty("known_peer_count").GetInt32());
         SwarmSeedCount = Set(SwarmSeedCount, row.GetProperty("swarm_seed_count").GetInt32());
         SwarmLeecherCount = Set(
             SwarmLeecherCount,

@@ -18,17 +18,18 @@ transaction as its schema. Version 0 initializes only an empty schema; existing 
 is incompatible. The temporary projection is recreated for every connection.
 Unsupported versions fail without changing their data.
 
-**Owner ruling: before V1 release, edit this one initial schema and remove
-obsolete migrations and upgrade routines. After V1 release, add sequential,
-versioned migrations that preserve existing user data.** Database owns their
-execution and `PRAGMA user_version`; domain owners define their required schema
-changes. Migrations run transactionally during this same initialization path,
-before Library or Subtitles can access the database. There is no second upgrade
+**Owner ruling: changes to released schemas use sequential, versioned migrations
+that preserve existing user data.** Database owns their execution and
+`PRAGMA user_version`; domain owners define their required schema changes.
+Migrations run transactionally during this same initialization path, before
+Library or Subtitles can access the database. There is no second upgrade
 mechanism in a domain or in startup wiring.
 
-Before release, increment `Database.Version` whenever the initial schema changes,
-so an obsolete development database reaches incompatible-storage recovery
-instead of failing later in feature SQL. The current schema revision is 8.
+The first release uses the complete initial schema at revision 9, including the
+file catalogue. Schema revision is independent of the application version;
+retaining it prevents an obsolete development database from being mistaken for
+the release schema. Older development databases remain intact until the owner
+resets them; that reset loses saved metadata and choices.
 
 Library owns identification, provider reuse, file facts and search queries.
 Subtitles owns accepted work, supplier policy and subtitle-file operations.
@@ -57,6 +58,7 @@ seconds. No performance claims are implied without measurement.
 
 | Tables | Reason to persist and lifetime |
 | --- | --- |
+| `contributions`, `source_files`, `locations` | Last accepted file lists and one identity per shared location let Library reopen without collecting every torrent again. A contribution records its accepted name and stamp, including a successfully empty list. Confirmed withdrawal prunes it. |
 | `source_state`, `known_torrents` | Distinguish first connection from a genuinely empty collection and remember which additions are already known for automatic subtitle eligibility. Confirmed withdrawal removes an origin. They contain no saved file catalogue. |
 | `identifications` | Accepted provider matches and explicit user decisions, including an explicit clear. They belong to source-file identity, survive moves, and end with confirmed withdrawal. Ordinary unsuccessful attempts are not decisions. |
 | `video_information`, `video_references` | Parsed metadata used by current identifications and links to its provider responses. Unreferenced metadata is pruned; deleting it cascades its response links. |
@@ -86,13 +88,22 @@ never recreates an association after its last source leaves.
 
 | Temporary tables and views | Reason to exist |
 | --- | --- |
-| `contributions`, `source_files`, `locations` | Current engine facts and one identity per shared location. Rebuilt from source replies; they are never another durable torrent catalogue. |
+| `file_reads` | Current engine summary, file-list confirmation and scheduling. A reconnect clears confirmation; a command only schedules every list for another read while confirmed lists stay in use. Process-relative retry times never survive the connection. |
 | `present`, `received` | Transaction scratch sets for replacing complete origin and file lists without treating partial reads as deletion. |
 | `new_origins` | Current-session subtitle eligibility, derived while reconciling durable known-origin history. |
 | `collected_files`, `pending_origins`, `current_files` | Shared membership and file-read readiness rules, including path settlement. |
 | `video_attempts`, `fact_attempts` | In-flight work and session failures/misses. A blocked video attempt names its required request; batch projection joins the current RequestPolicy hold instead of copying it. Reopening clears attempts; durable remote history belongs to RequestPolicy. Withdrawn locations are pruned. |
 | `subtitle_languages` | Languages actually associated with a movie's current location, derived from ownership and current source facts. |
-| `library_entries`, `library_rows`, `library_state`, `library_matches` | Joined display/search data, a rebuildable row snapshot, its validity and the current match set. Changes invalidate this snapshot in the same transaction as their writes. There is no parallel C# cache to survive a rollback incorrectly. |
+| `library_entries`, `library_rows`, `library_state`, `library_matches` | Joined display/search data, a rebuildable row snapshot, its validity and the current match set. Actual changes invalidate it in the same transaction as their writes; confirming an unchanged list does not. |
+
+The former TEMP-only catalogue structurally excluded rows not supplied by the
+current connection. Retaining last-known lists deliberately replaces that
+guarantee: `collected_files` admits only current confirmation, `pending_origins`
+protects unconfirmed associations during cleanup, and `current_files.readable`
+requires current confirmation, completion and settled paths. Choices and
+ownership shared across a location join only confirmed files, because a cached
+file can still name a path its torrent has left. Display completion and
+subtitle languages use cached files; they do not authorize file work.
 
 Media bytes, transfer progress history, selection, scroll position, network
 clients and active cancellation tokens do not belong in this database. Search
@@ -107,9 +118,12 @@ before feature work becomes actionable. The first source list is a baseline,
 even if empty, so a new database does not automatically search an old collection.
 Subsequent unfinished additions remain eligible across a window restart.
 
-Disconnect makes feature views non-actionable. Reconnection invalidates old file
-lists, and successful reads replace them; failed database operations retain the
-need to reconcile. Confirmed source removal and domain cleanup are one
+Disconnect pauses engine-dependent work while cached search, inspection and local
+Open remain available. Reconnection reconciles the complete summary before
+publishing surviving cached rows. Successful reads replace one entire torrent
+list per transaction; failed reads retain its cache without confirming it.
+Unchanged confirmation only updates TEMP state and does not invalidate search.
+Confirmed source removal and domain cleanup are one
 transaction, whether enrichment and automatic subtitles are enabled or not.
 
 Closing, deletion and connection replacement first stop and drain source,

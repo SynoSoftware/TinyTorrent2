@@ -17,7 +17,7 @@ public sealed partial class Splitter : UserControl
     private double _value = 360;
     private double _minimum = 300;
     private double _maximum = 500;
-    private Orientation _orientation;
+    private Orientation _orientation = Orientation.Horizontal;
     private bool _pointed;
     private double _startValue;
     public double Value => _value;
@@ -32,24 +32,31 @@ public sealed partial class Splitter : UserControl
         get => _orientation;
         set
         {
+            if (_orientation == value)
+                return;
             _orientation = value;
-            var horizontal = value == Orientation.Horizontal;
-            Width = horizontal ? double.NaN : 16;
-            Height = horizontal ? 16 : double.NaN;
-            Grip.Width = horizontal ? 32 : 4;
-            Grip.Height = horizontal ? 4 : 32;
-            ProtectedCursor = InputSystemCursor.Create(
-                horizontal
-                    ? InputSystemCursorShape.SizeNorthSouth
-                    : InputSystemCursorShape.SizeWestEast
-            );
+            ApplyOrientation();
         }
+    }
+
+    private void ApplyOrientation()
+    {
+        var horizontal = _orientation == Orientation.Horizontal;
+        Width = horizontal ? double.NaN : 16;
+        Height = horizontal ? 16 : double.NaN;
+        Grip.Width = horizontal ? 32 : 4;
+        Grip.Height = horizontal ? 4 : 32;
+        ProtectedCursor = InputSystemCursor.Create(
+            horizontal
+                ? InputSystemCursorShape.SizeNorthSouth
+                : InputSystemCursorShape.SizeWestEast
+        );
     }
 
     public Splitter()
     {
         InitializeComponent();
-        Orientation = Orientation.Horizontal;
+        ApplyOrientation();
         Handle.DragStarted += (_, _) =>
         {
             _startValue = _value;

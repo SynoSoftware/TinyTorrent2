@@ -642,7 +642,7 @@ owns launch policy.
 Activation follows the interface's [Add policy](interface.md#add). Several
 sources are added directly; a single source opens or activates the Add dialog
 when its torrent-file or magnet dialog preference is on. The two choices are
-saved independently; an older shared preference initializes both on upgrade.
+saved independently.
 Direct additions use the same
 guarded workflow at the default destination without opening or raising the
 window, even if it is already running. Duplicate sources report the existing
@@ -822,12 +822,7 @@ found, so a problem the person leaves alone, or a check that timed out once,
 does not return at every start. Selecting the notification opens Settings at
 the Windows integration card, highlighted, where the handlers are repaired.
 
-Every start on the default store also moves what only the product before this
-one wrote: a per-user
-command on the `.torrent` or `magnet` key that starts a `TinyTorrent.exe`
-becomes this copy's command while the handlers are registered and is removed
-while they are not, and a `.torrent` default naming TinyTorrent's class is
-removed while they are not. It points the installer's Start menu shortcut and
+Every start on the default store points the installer's Start menu shortcut and
 any taskbar pin to this copy when they start a missing TinyTorrent executable,
 because the window sets its pins to start whichever copy was running. Shortcut
 folders on a network share are skipped, because an unreachable share would
@@ -847,9 +842,7 @@ when they start a missing one, so a moved copy keeps working and no entry
 points to a deleted folder. Entries that start another existing copy stay
 with it, because running a test copy, a build output or a second download
 must not take them from the installed copy and leave them broken when that
-copy is deleted. Only entries in this product's command form count as another
-copy's: the product before this one used the same names with other commands,
-and its entries move to this copy. Use this copy in Settings moves an entry to
+copy is deleted. Use this copy in Settings moves an entry to
 this copy. A copy that is not on a fixed local drive counts as existing,
 because checking a network path can stall the engine and a removable drive
 can return. Handler entries without the recorded request are the remains of a
@@ -923,9 +916,20 @@ acknowledged and discarded. Reopening a disconnected but living window retains i
 process and starts the same bounded readiness wait used for a new window; a
 window already on screen is raised instead.
 
-If the final save fails, report it through the tray and keep the engine alive.
-Choosing Exit again retries the same shutdown operation. Do not discard unsaved
-state automatically or offer recovery buttons on the splash.
+If the final save fails, report it once in a notice and keep the engine alive:
+
+- The engine saves again after the checkpoint retry delay, and exits once a
+  save succeeds. The person does not have to retry.
+- Each attempt waits again for torrents that never confirmed their pause,
+  because a save while their disk work runs can record pieces that are not on
+  disk. The engine log names each torrent whose pause wait timed out.
+- The notice offers Force exit, which ends the process at once without the
+  final save, because a stalled torrent may never let a save succeed.
+- Choosing Exit again shows the notice again. The notice never keeps the
+  engine running.
+
+Do not discard unsaved state automatically or offer recovery buttons on the
+splash.
 
 Keep the owner pumping messages while asynchronous shutdown work settles. Never
 join a worker that still needs the owner to process its completion; final joins
@@ -1018,7 +1022,9 @@ the window and the tray tooltip say why, so traffic never leaks onto another
 adapter.
 
 Speed limits and a second pair, alternative limits, use libtorrent's session
-rate limits. The interface owns the [speed-mode choices](interface.md#main-window).
+rate limits. Both pairs start unlimited, so selecting either before configuring
+it does not unexpectedly throttle transfers. The interface owns the
+[speed-mode choices](interface.md#main-window).
 A fixed choice saves `schedule_enabled: false` with `limit_mode`; Weekly schedule
 enables the saved periods. Turning limits off keeps the caps the person typed.
 Outside scheduled periods, the schedule applies standard limits. Both pairs include LAN and loopback peers: global means all torrent

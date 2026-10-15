@@ -1,8 +1,8 @@
 # IMDb datasets plan
 
-**Phases 1 and 2: implementation done.** Dataset download/import measurements
-and live-data validation remain outstanding. **Phase 3: not implemented; design
-for review.** The [Library master plan](library.md) stays the authority
+**Phases 1 and 2: implementation done.** The import was timed on 2026-10-15
+([measured result](#download-and-import)); live-data validation remains
+outstanding. **Phase 3: not implemented; design for review.** The [Library master plan](library.md) stays the authority
 for Library behavior.
 
 ## Summary
@@ -82,8 +82,8 @@ Reasons for the separate file:
    manual matches, which the app cannot rebuild.
 2. **A failed update leaves the old data.** The import writes `imdb.db.tmp`.
    Only a complete import replaces `imdb.db`.
-3. **The schema needs no migrations.** The file name carries the schema
-   version: `imdb-1.db`. A schema change uses a new name, so a file with
+3. **Replaceable schema.** The file name carries the schema
+   version: `imdb-2.db`. A schema change uses a new name, so a file with
    another version counts as missing, and the person downloads again. The
    install deletes data that an earlier version built, because nothing reads
    it again. The name
@@ -138,27 +138,38 @@ Phase 1 downloads `title.basics`, `title.ratings` and `title.episode`: about
      stay.
    - A `tvEpisode` has a series, a season and an episode number in
      `title.episode`, because a file names an episode only by those. The
-     import reads `title.episode` first into a temporary table, so the one
-     pass over `title.basics` stores each episode under its numbers.
+     import reads `title.episode` first, into memory, and writes the
+     episodes under their numbers; the one pass over `title.basics` then
+     keeps the title of each episode that has numbers.
 
    An import that keeps no title, no rating or no episode fails, so data that
    IMDb changed never replaces the installed copy with an empty one.
 5. The rows go in one transaction, with prepared commands and with
    `journal_mode=OFF` and `synchronous=OFF`. These settings are safe because
-   the file is temporary until step 7.
-6. After the insert, the import fills the full-text index with its `rebuild`
-   command, then immediately runs `optimize`. Each command has its own named,
-   indeterminate, cancellable phase in the shared reporting owner. The
+   the file is temporary until step 7. The episodes go in primary-key order,
+   sorted in memory, because inserting millions of rows in file order into a
+   `WITHOUT ROWID` table touches a random page for every row, while sorted
+   rows extend the table at its end. The phase counts the rows it writes.
+6. After the rows, the import builds the two key indexes and fills the
+   full-text index one title at a time, so that phase counts titles; the
+   index's `rebuild` command does the same work and reports nothing. It then
+   runs `optimize`, which has its own indeterminate, cancellable phase,
+   because SQLite reports no progress for it. The
    [background-work plan](background-work.md#imdb-execution-and-sql-design)
-   owns scheduling and cancellation. Both index commands are implemented;
-   runtime cancellation and performance remain unverified.
+   owns scheduling and cancellation. Runtime cancellation remains
+   unverified; the phase durations are measured below.
 7. The import closes its connection, flushes the file to disk, and moves it over
    `imdb.db` with `File.Move` and overwrite. `File.Replace` fails when
    `imdb.db` does not exist yet. The flush prevents a power cut from leaving a
    renamed file with missing data.
 
-Estimated result: about a million movies and series, up to 9 million episodes,
-and a file of several hundred MB. Step 1 of the work measures this.
+Measured result, 2026-10-15, Release build on the owner's machine, driven
+through `Dataset.Build` outside the window: 1,208,696 titles, 7,861,478
+episodes and a 560 MB file. The three downloads took 2 min 16 s on that
+connection. The import took 1 min 46 s after them: episodes 4 s, linking 28 s,
+titles 49 s, ratings 7 s, indexing 16 s, optimize 2 s, flush under a second.
+The importing process grew by about 270 MB at its peak, for the episode
+numbers held in memory.
 
 ### Schema
 
@@ -179,10 +190,14 @@ CREATE TABLE episodes (
     series_id INTEGER NOT NULL,     -- the series' title_id
     season INTEGER NOT NULL,
     number INTEGER NOT NULL,
-    title TEXT NOT NULL,
-    year INTEGER,
+    episode_id INTEGER NOT NULL,    -- the episode's own tconst number
     PRIMARY KEY(series_id,season,number)
 ) WITHOUT ROWID;
+CREATE TABLE episode_titles (
+    episode_id INTEGER PRIMARY KEY,
+    title TEXT NOT NULL,
+    year INTEGER
+);
 CREATE VIRTUAL TABLE title_search USING fts5(
     title, original, content='titles', content_rowid='title_id',
     tokenize='unicode61 remove_diacritics 2'
@@ -251,7 +266,7 @@ goes in the same change, so no type shares the name of the namespace.
   deletion. It replaces or deletes the file inside `VideoLookup`'s change, so
   no lookup has the file open at that moment.
 - Cancel interrupts the import's connection, as the Library connection's
-  progress handler already does, so a cancel during the long full-text `rebuild`
+  progress handler already does, so a cancel during the full-text `optimize`
   statement does not wait for it to finish.
 - Installing new data goes through `VideoLookup.Reload`, which replaces the
   file off the window thread and, when IMDb is the selected provider,
@@ -290,14 +305,16 @@ the data setup or key setup that the chosen provider needs:
    stating the download size, about 290 MB, and asks **Download** or **Cancel**.
    Cancel leaves automatic downloads off. The size is
    fixed text, because it changes slowly and reading it would cost a request.
-2. The **IMDb data** row under Video information (phase 2, point 5) shows the
-   download progress in MB, then the current preparation stage and approximate
-   percentage while parsing each source. Search-index construction, optimization
-   and final disk flush stay indeterminate. Each stage restarts the percentage,
-   so the row names the current stage, for example "Reading titles · approximately
-   45%"; it leaves out "IMDb", which the row's name already says. The shared
-   observation supplies Settings and the status bar with the same phase and
-   cancellation command. The status bar names IMDb on every page. Narrator hears each new
+2. The **IMDb data** row under Video information (phase 2, point 5) shows each
+   file's download as received over declared bytes, then the current
+   preparation stage: an approximate percentage while parsing each source,
+   and an exact one while the episodes and the search index are written.
+   Optimization and the final disk flush stay indeterminate, because SQLite
+   and Windows report no progress for them. Each stage restarts the
+   percentage, so the row names the current stage, for example "IMDb titles ·
+   ≈45%". The shared observation supplies Settings and the status bar with
+   the same phase and cancellation command. The status bar names IMDb on
+   every page. Narrator hears each new
    stage. When the import is complete, automatic downloads start, unless the
    person chose another setting meanwhile, because that choice is newer. Only
    this setup flow turns automatic downloads on; the row's own Download and
@@ -446,10 +463,9 @@ row snapshot. The C# read needs none of them:
    refuses to replace an open file.
 3. **Refresh.** After an install or a deletion, Library refreshes its rows and
    Settings shows the data's new state.
-4. **Existing matches.** Before V1, the [database contract](database.md)'s
-   owner ruling edits the initial schema instead of migrating it. The new
-   column raised `Database.Version` to 6, so an older `library.db` is
-   recreated, and matches made after that carry their IMDb IDs.
+4. **Saved matches.** The complete initial schema includes each match's IMDb
+   ID when available. The [database contract](database.md) owns initialization
+   and versioned upgrades of released schemas.
 5. **Managing the data.** A TMDB user also uses `imdb.db`, so the data has its
    own row, **IMDb data**, under Video information. It shows the title count,
    size and age, or what the data is for and its size, and has **Download** or

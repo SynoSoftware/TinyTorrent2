@@ -13,8 +13,60 @@ public sealed partial class Inspector
     private readonly List<(string TorrentId, IReadOnlyList<Peer> Peers)> _peerCache = [];
     private (string Address, int Version)? _originKey;
     private Location? _origin;
+    private IReadOnlyList<Peer>? _peers;
+    private PeerPlace? _place;
+
+    /// <summary>
+    /// The peer map place whose peers the table shows, in every connection
+    /// state, or null for every peer.
+    /// </summary>
+    internal PeerPlace? Place
+    {
+        get => _place;
+        set
+        {
+            if (_place == value)
+                return;
+            _place = value;
+            Filter();
+            Refresh();
+        }
+    }
+
+    /// <summary>The table's rows: <see cref="Peers"/>, or those at <see cref="Place"/>.</summary>
+    public IReadOnlyList<Peer>? ShownPeers { get; private set; }
+
+    // Rows that did not change keep their list, so the table keeps its scroll
+    // position and selection. Returns whether the rows changed.
+    private bool Filter()
+    {
+        if (_place is not { } place || _peers is null)
+        {
+            var changed = !ReferenceEquals(ShownPeers, _peers);
+            ShownPeers = _peers;
+            return changed;
+        }
+        var shown = _peers.Where(peer => place.Contains(peer.Location)).ToArray();
+        if (ShownPeers is not null && shown.SequenceEqual(ShownPeers))
+            return false;
+        ShownPeers = shown;
+        return true;
+    }
 
     internal bool HasCities => _owner.Geolocation.Installed is not null;
+
+    private IEnumerable<Torrent> Scope =>
+        _target is not null ? [_target]
+        : _owner.Selected.Count == 0 ? _owner.Torrents
+        : _owner.Selected;
+
+    public string DownloadText =>
+        IsAvailable ? Text.Format("units", "rate", Text.Bytes(Scope.Sum(torrent => torrent.DownloadRate)))
+        : "—";
+
+    public string UploadText =>
+        IsAvailable ? Text.Format("units", "rate", Text.Bytes(Scope.Sum(torrent => torrent.UploadRate)))
+        : "—";
 
     public bool IsGlobal
     {
@@ -37,6 +89,7 @@ public sealed partial class Inspector
                 "peers",
                 "summary",
                 peers.Count,
+                peers.Count(peer => peer.State != PeerState.Known),
                 peers.Count(peer =>
                     peer.State == PeerState.Connected && peer.DownloadRate + peer.UploadRate > 0
                 )
@@ -119,7 +172,12 @@ public sealed partial class Inspector
                     changed = true;
                 }
                 if (changed)
+                {
                     RowsUpdated?.Invoke(this, InspectorSection.Peers);
+                    // A peer located just now can belong to the chosen place.
+                    if (Filter())
+                        Refresh();
+                }
             }
         }
         finally
@@ -131,9 +189,8 @@ public sealed partial class Inspector
     private async Task<bool> ReadPeers(int context)
     {
         var aggregate = _target is null;
-        var scope = _owner.Selected.Count == 0 ? _owner.Torrents : _owner.Selected;
         Torrent[] targets = aggregate
-            ? scope.Where(torrent => torrent.PeerCount > 0).ToArray()
+            ? Scope.Where(torrent => torrent.PeerCount > 0 || torrent.KnownPeerCount > 0).ToArray()
             : [_target!];
         var ids = targets.Select(torrent => torrent.TorrentId).ToHashSet();
         var present = _owner.Torrents.Select(torrent => torrent.TorrentId).ToHashSet();

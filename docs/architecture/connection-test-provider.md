@@ -17,13 +17,38 @@ the person selects Test.
 [WinHttpOpen automatic proxy](https://learn.microsoft.com/en-us/windows/win32/api/winhttp/nf-winhttp-winhttpopen)
 
 Download and upload run sequentially, using completed HTTPS requests and a
-monotonic clock. Sample payload starts at 64 KiB and grows to 10 MB per
-request, with at most 128 MiB per direction and ten seconds of requests per
-direction. Incomplete requests produce no saved result. The engine also
-bounds stopping to ten seconds and measurement to 45 seconds. Cancellation
-closes the active WinHTTP request. These are payload bounds, so protocol
-overhead can increase billed traffic. Results estimate HTTP capacity; they
-are neither torrent speed nor Cloudflare's browser SDK statistics.
+monotonic clock. The owner selected Cloudflare's bandwidth aggregation: linearly
+interpolated 90th percentile of completed request speeds, excluding requests
+shorter than 10 ms. The live display and final result use that same calculation,
+so there is no separate instantaneous or cumulative-average estimate.
+[Cloudflare calculation](https://github.com/cloudflare/speedtest/blob/main/src/Results/MeasurementCalculations.ts)
+
+The native sequence follows Cloudflare's 100 KB, 1 MB and 10 MB repeated
+transfers, bounded by the chosen budget. Quick permits 4 MiB and six seconds
+per direction; Longer permits 32 MiB and eight seconds per direction. The first
+limit stops that direction, including an active request. Larger sizes stop
+after a completed size group whose shortest request exceeds one second, as in
+Cloudflare's ramp-up rule. Incomplete requests count towards traffic but never
+enter the speed samples. A direction without an eligible sample fails visibly.
+[Cloudflare sequence and defaults](https://github.com/cloudflare/speedtest/blob/main/README.md)
+
+Native request timing includes the HTTP exchange; download subtracts reported
+Cloudflare processing time, while upload ends at the successful server response.
+Rates use measured payload bytes without the browser SDK's estimated header
+allowance. This is a bounded HTTP estimate using Cloudflare's aggregation, not
+an exact reproduction of the browser's timing or full measurement sequence.
+The engine also bounds stopping to ten seconds and measurement to 45 seconds.
+Requests use WinHTTP's asynchronous mode so cancellation and the direction
+deadline close a pending request after its initiating function returns. The
+worker retains its buffers and callback context until WinHTTP reports handle
+closure, preventing cancellation from racing an in-progress synchronous call
+or freeing memory still used by a callback.
+[WinHTTP concurrency](https://learn.microsoft.com/en-us/windows/win32/winhttp/concurrency-in-winhttp)
+
+Elapsed time freezes when each direction ends, including cancellation and
+failure, so snapshot timing does not continue during restoration or the hold.
+Payload bounds exclude protocol overhead, so billed traffic can be higher.
+Results do not promise torrent speed.
 
 Before HTTP traffic starts, libtorrent session statistics must show no
 connected or half-open peers and unchanged sent/received peer payload bytes

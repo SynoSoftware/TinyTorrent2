@@ -75,7 +75,15 @@ public sealed partial class Inspector : INotifyPropertyChanged
     // Section data stays until another torrent is shown or the engine session
     // ends, so returning to a section or to the torrent shows it at once. A
     // null list is unread, not empty.
-    public IReadOnlyList<Peer>? Peers { get; private set; }
+    public IReadOnlyList<Peer>? Peers
+    {
+        get => _peers;
+        private set
+        {
+            _peers = value;
+            Filter();
+        }
+    }
     public IReadOnlyList<Tracker>? Trackers { get; private set; }
     public IReadOnlyList<SpeedSample>? History { get; private set; }
     public Pieces? Pieces { get; private set; }

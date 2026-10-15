@@ -74,20 +74,12 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
         });
 #endif
 
-    internal async Task<Matches> Search(Query query, CancellationToken cancellation)
-    {
-        var matches = await Find(query, cancellation).ConfigureAwait(false);
-        return matches with
-        {
-            Entries = await Rate(matches.Entries, cancellation).ConfigureAwait(false),
-        };
-    }
-
     // An IMDb rating comes from the downloaded IMDb data when that has it,
     // because the data is newer than the provider's saved rating. A video
     // without an IMDb ID is found in the data by its file name, so every
-    // video the data can name has a rating, matched or not.
-    private async Task<IReadOnlyList<Entry>> Rate(
+    // video the data can name has a rating, matched or not. Search returns
+    // before this lookup; Browser applies it to the rows it has shown.
+    internal async Task<IReadOnlyList<Entry>> Rate(
         IReadOnlyList<Entry> entries,
         CancellationToken cancellation
     )
@@ -130,7 +122,7 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
                 .ToArray();
     }
 
-    private Task<Matches> Find(Query query, CancellationToken cancellation) =>
+    internal Task<Matches> Search(Query query, CancellationToken cancellation) =>
         database.Run(
             connection =>
             {

@@ -123,8 +123,10 @@ torrents. It never discovers them by enumerating the filesystem.
 
 An accepted torrent seeds its known files into SQLite. Library's query includes
 each file once synchronized facts show it finished and under its final name.
-Show those files as their torrent facts arrive, so a pending torrent does not
-hold back the files already collected. The torrent source reads a torrent's
+With a saved catalogue, publish the surviving rows once after reconciling the
+complete engine summary; background reads then confirm or replace each list.
+Without one, show files as their torrent facts arrive, so a pending torrent does
+not hold back the files already collected. The torrent source reads a torrent's
 files again whenever the engine reports a change and at most a minute after
 its last read, so Library needs no refresh command.
 A finished file stays even when the person later
@@ -206,11 +208,11 @@ settings implementation.
 
 **Owner ruling: torrents establish membership; C# owns SQLite.** Managed torrents
 decide which files belong. SQLite saves reusable facts and user decisions and
-executes local searches over a derived current-entry projection. It is never an
-independent file inventory. Library removes a torrent's stored facts when it
-observes removal or next reconciles, including video information no remaining
-entry uses. This keeps Library useful without adding permanent search or
-database work to the resident engine.
+executes local searches over the retained catalogue, whose membership the
+torrent summary decides. It is never an independent file inventory. Library
+removes a torrent's stored facts when it observes removal or next reconciles,
+including video information no remaining entry uses. This keeps Library useful
+without adding permanent search or database work to the resident engine.
 
 SQLite stores current torrent/file facts and these feature facts:
 
@@ -225,19 +227,21 @@ SQLite stores current torrent/file facts and these feature facts:
 
 The governing invariant is:
 
-> Every Library result has a current data-source entry. Cached video information
+> Every Library result has a retained data-source file entry. Cached video information
 > or an identification association alone can never produce a result.
 
-The single C# database owner keeps current contributions, entries and paths in
-temporary SQLite tables populated from source facts. They disappear with its
-connection and are rebuilt on reconnect from confirmed source state. Persistent
-tables hold enrichment and decisions, not a second saved torrent/file catalogue.
-Queries join the current projection to those facts. C# subtitle work uses this
+The single C# database owner retains accepted contributions, entries and paths
+alongside enrichment and decisions. Temporary state holds the current summary,
+confirmation and retry timing. The former temporary-only catalogue made stale
+membership structurally impossible; saved-list browsing replaces that guarantee
+with shared confirmation predicates for work and cleanup. The engine remains
+authoritative. Queries join the saved catalogue to its metadata. C# subtitle work uses this
 same connection, schema and transaction owner; the native engine never opens
 the database. Subtitle records are independent of automatic video information downloads.
 
 The current-source SQL projection derives file-read readiness once for both
-features: the file is complete, at least one current contributing torrent
+features: the file list is confirmed in the current connection, the file is
+complete, at least one current contributing torrent
 reports its existing `complete` fact, and its paths are settled with no move
 in progress. Byte counts and an unsuffixed name alone do not prove that pending
 writes have ended. Library's one-time file facts reader and subtitle hashing
@@ -819,7 +823,7 @@ Videos is the default, and the window remembers the last choice.
 
 | Configuration | Rows | Default columns and sort | Hidden columns, available from the column menu |
 | --- | --- | --- | --- |
-| Videos | Video files | Title, Type, Released, Duration, Resolution, Bitrate, Subtitles, IMDb, TMDB, Genres; sorted by Title | Cast, Size, Name, Folder, Date modified |
+| Videos | Video files | Title, Type, Released, Duration, Subtitles, IMDb, TMDB, Rotten Tomatoes, Popcornmeter, Genres; sorted by Title | Resolution, Bitrate, Metacritic, Cast, Size, Name, Folder, Date modified |
 | Music | Audio files | Title, Artist, Album, Track, Duration, Year; sorted by Artist, then Album, then Track | Bitrate, Genre, Name, Folder, Size, Date modified |
 | Files | Every file | Name, Folder, Size, Date modified; sorted by Name | Kind, Title, Duration, Resolution, Bitrate |
 
@@ -985,7 +989,7 @@ The page has no loading state; see the owner ruling under
 | --- | --- |
 | No files | "No files yet", with a button that opens Torrents. |
 | No matches | "No videos match" and the query (or music, or files), with one button for each other configuration that has matches, and its count, plus Clear search. The action buttons share the widest button's natural width through the shared ActionButton alignment. |
-| Engine disconnected | The window's [message bar](interface.md#message-bar). Open and Identify are disabled. |
+| Engine disconnected | The window's [message bar](interface.md#message-bar). Cached search, filters, saved Inspector details, Properties, Open and Open folder remain available. Metadata changes and engine commands are disabled; automatic file reads and subtitle work pause. A database failure still makes the last view non-actionable. |
 | Database unavailable | The window's [message bar](interface.md#message-bar) reports the failure and offers Retry. Any last view stays non-actionable; normal torrent work remains available. |
 | Automatic downloads off | Saved video information and lookup outcomes stay visible. Fetch metadata works with an explicitly chosen provider; Refresh metadata works with the saved online provider. Neither enables automatic downloading. A file without information shows "No metadata". Its Fetch button lists every provider, then Settings. The automatic download choice stays in Settings · Plugins, without an inspector or status-bar notice, because it is a preference like automatic subtitles. |
 | Provider failure | A file without metadata shows "Waiting for TMDB", naming the default provider, and the status bar shows the same wait. A manual refresh reports its own provider's failure in the existing inspector message, preserving saved information. |
@@ -1113,10 +1117,19 @@ the inputs; total disk capacity and unrelated folders do not affect the work.
   reconciles current contributions, including those with no finished files,
   before deleting stale facts or admitting enrichment. A disconnect or partial
   read is never evidence that missing contributions were removed.
-- Populate temporary membership and search tables on the database worker.
-  Reconcile source changes received during initialization before publishing the
-  collection. Read stored facts in sets, not once per row. No payload read or
-  provider request is a prerequisite for filename search.
+- Reconcile the initial summary before querying the retained catalogue. Closing
+  the window normally leaves the engine running, so reopening uses its existing
+  summary. A cold engine start already holds the window in its engine-loading
+  state; using the same path avoids briefly showing withdrawn origins.
+- Publish cached rows once, then each committed change as its read lands;
+  Browser paces those refreshes. Confirming an identical list updates only
+  temporary confirmation and publishes nothing. Without a cache, files appear
+  as each torrent is read. Read stored facts in sets, not once per row. No
+  payload read or provider request is a prerequisite for filename search.
+- Publish search results before the local IMDb rating lookup. A row keeps the
+  rating its unchanged entry already received, so a later search neither blanks
+  nor re-sorts it; only rows whose rating differs change, and the table settles
+  its sort once for that batch under TableView's existing pointed-row hold.
 - C# synchronization compares source snapshots and updates affected torrents and
   files through existing coherent reads; do not ask for every torrent's file
   progress on each summary tick. Source retrieval stays bounded and allows
@@ -1161,7 +1174,7 @@ must be paid at the indicated time, rather than repeatedly while typing.
 
 | Work | Cost and why it is needed | Limit on that cost |
 | --- | --- | --- |
-| Keep current file entries | A temporary SQLite projection while the window is open; required to search across torrents. | Build during window initialization from existing facts; update affected entries, with no folder access or per-keystroke engine enumeration. |
+| Keep file entries | Saved accepted file lists and temporary confirmation; required for immediate saved-list browsing and safe file work. | Reconcile the summary before publication, then confirm or replace lists in the background, with no folder access or per-keystroke engine enumeration. |
 | SQLite cache and identification writes | C# dependency size and local disk I/O; prevents repeated downloads and preserves corrections. | Read in sets, save coherent changes, reconcile removal when connected, and keep maintenance off the first-table path. |
 | Early provider enrichment | Network traffic, parsing and small database writes; enables genre, actor and subject search before download completion. | Enabled explicitly, one request in flight initially, cached records reused, shared requests deduplicated, no unused-series harvesting. |
 | Cast, synopsis and keyword search | More text to store and match; directly required by actor and subject searches. | Keep only useful fields, normalize on change and match distinct shared records once per query rather than once per file. |

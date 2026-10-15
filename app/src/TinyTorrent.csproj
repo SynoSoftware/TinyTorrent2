@@ -71,7 +71,7 @@
     <PackageReference Include="Microsoft.Graphics.Win2D" Version="1.4.0" />
     <ProjectReference Include="..\..\lib\TableView\src\TableView.csproj" />
     <EmbeddedResource Include="Resources\*.json" LogicalName="%(Filename)%(Extension)" />
-    <EmbeddedResource Include="Assets\world.json" LogicalName="world.json" />
+    <EmbeddedResource Include="Assets\world.bin" LogicalName="world.bin" />
     <Content Include="Assets\tmdb.svg" CopyToOutputDirectory="PreserveNewest" />
     <Content
       Include="Assets\*.jpg;Assets\Settings\*.svg;Assets\Settings\*.png;Assets\Settings\LICENSE"

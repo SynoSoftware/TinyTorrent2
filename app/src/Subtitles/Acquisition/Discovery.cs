@@ -147,7 +147,7 @@ internal sealed partial class Acquisition
                             c.save_path,c.stamp,EXISTS(SELECT 1 FROM subtitle_scans a WHERE a.origin=s.origin
                                 AND a.file_index=s.file_index AND a.path=l.path COLLATE PATH AND a.stamp=c.stamp)
                         FROM collected_files s JOIN locations l USING(entry_id)
-                        JOIN current_files f USING(entry_id) JOIN contributions c USING(origin)
+                        JOIN current_files f USING(entry_id) JOIN file_reads c USING(origin)
                         WHERE s.kind=$kind;
                         """;
                     command.Parameters.AddWithValue("$kind", (int)FileKind.Video);
@@ -323,7 +323,7 @@ internal sealed partial class Acquisition
                                     continue;
                                 using var stamp = connection.CreateCommand();
                                 stamp.CommandText =
-                                    "SELECT stamp FROM contributions WHERE origin=$origin;";
+                                    "SELECT stamp FROM file_reads WHERE origin=$origin;";
                                 stamp.Parameters.AddWithValue("$origin", video.Origin);
                                 if (!Equals(stamp.ExecuteScalar(), movie.Stamp))
                                     continue;

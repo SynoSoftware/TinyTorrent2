@@ -340,12 +340,6 @@ outside transactions within the existing Library drain; it must retain these
 protection and file-preservation rules. A changed local rating never clears an
 OMDb/TMDB search hold or grants permission to contact those providers.
 
-The pre-V1 initial-schema ruling applies to this implementation: increment the
-Library schema revision and remove obsolete development migrations. The phase 2
-plan's proposed saved-ID backfill does not authorize a migration here; its
-owner decision is resolved when that phase starts. No future-only attachment
-or version protocol is added for it now.
-
 ## Retry and reset
 
 **Owner ruling: an individual item has one Fetch entry, labelled Force fetch
@@ -582,8 +576,7 @@ access recovery; it is not a second implementation of either.
 
 Implement as one coherent feature change after approval. Each step moves direct
 callers and removes their old implementation; the final result has one protection
-authority. Follow the pre-V1 schema ruling rather than adding migrations or
-compatibility scaffolding.
+authority. Schema changes follow the [database contract](database.md).
 
 Use these skills during implementation and review:
 
@@ -598,7 +591,7 @@ Use these skills during implementation and review:
   replaced paths without adding unnecessary layers.
 
 Apply their guidance within the app's authoritative contracts and this feature's
-scope. Preserve the single SQLite owner, pre-V1 schema policy and the owner's
+scope. Preserve the single SQLite owner, schema versioning and the owner's
 build/test authorization rules; generic skill defaults do not override them.
 
 | Step | Change and deletions | Complete when |

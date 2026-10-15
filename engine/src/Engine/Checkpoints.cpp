@@ -9,7 +9,6 @@ namespace
 // Store refuses work past its job limit, so at most this many checkpoints
 // run at once.
 constexpr std::ptrdiff_t checkpointLimit = 8;
-constexpr auto checkpointRetry = std::chrono::seconds(30);
 }
 
 void Engine::State::WriteResume(std::string const& id, lt::add_torrent_params params,

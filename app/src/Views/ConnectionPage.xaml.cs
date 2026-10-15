@@ -2,6 +2,8 @@ using System.ComponentModel;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Syno.TinyTorrent.Controls;
+using Windows.Networking.Connectivity;
 using Windows.System;
 using Windows.UI.Text;
 using Windows.UI.ViewManagement;
@@ -12,6 +14,9 @@ public sealed partial class ConnectionPage : UserControl
 {
     private readonly UISettings _display = new();
     private bool _composing;
+    private readonly Speedometer _downloadMeter = new(Syno.Lucide.Download);
+    private readonly Speedometer _uploadMeter = new(Syno.Lucide.Upload);
+    private string? _meterId;
     public ConnectionSetup Model { get; }
     public event EventHandler? ReturnRequested;
     internal event EventHandler? ParentRequested;
@@ -20,24 +25,29 @@ public sealed partial class ConnectionPage : UserControl
     {
         Model = model;
         InitializeComponent();
+        DownloadMeter.Content = _downloadMeter;
+        UploadMeter.Content = _uploadMeter;
         foreach (var editor in new[] { Download, Upload })
         {
             editor.TextCompositionStarted += (_, _) => _composing = true;
             editor.TextCompositionEnded += (_, _) => _composing = false;
             editor.PreviewKeyDown += OnApplyKey;
         }
-        KeyDown += OnApplyKey;
-        Loaded += (_, _) =>
+        Loaded += async (_, _) =>
         {
             Model.PropertyChanged += OnModel;
             RefreshHierarchy();
+            RefreshMeters();
             _display.TextScaleFactorChanged += OnTextScale;
+            NetworkInformation.NetworkStatusChanged += OnNetwork;
             UpdateColumns();
+            await Model.RefreshLink();
         };
         Unloaded += (_, _) =>
         {
             Model.PropertyChanged -= OnModel;
             _display.TextScaleFactorChanged -= OnTextScale;
+            NetworkInformation.NetworkStatusChanged -= OnNetwork;
         };
     }
 
@@ -49,7 +59,25 @@ public sealed partial class ConnectionPage : UserControl
 
     internal void FocusHeading() => Hierarchy.Focus(FocusState.Programmatic);
 
-    private void OnModel(object? sender, PropertyChangedEventArgs args) => RefreshHierarchy();
+    private void OnModel(object? sender, PropertyChangedEventArgs args)
+    {
+        RefreshHierarchy();
+        RefreshMeters();
+    }
+
+    private void RefreshMeters()
+    {
+        if (_meterId != Model.TestId || Model.TestId.Length == 0)
+        {
+            _meterId = Model.TestId;
+            _downloadMeter.Reset(Model.DownloadCapacity);
+            _uploadMeter.Reset(Model.UploadCapacity);
+        }
+        _downloadMeter.Show(Model.DownloadRate, Model.Text.Get("connection_setup", "download_limit"), Model.Text);
+        _uploadMeter.Show(Model.UploadRate, Model.Text.Get("connection_setup", "upload_limit"), Model.Text);
+    }
+
+    private void OnNetwork(object sender) => DispatcherQueue.TryEnqueue(async () => await Model.RefreshLink());
 
     private void RefreshHierarchy()
     {
@@ -73,6 +101,12 @@ public sealed partial class ConnectionPage : UserControl
     private async void OnCancelTest(object sender, RoutedEventArgs args) =>
         await Model.CancelTest();
 
+    private async void OnResume(object sender, RoutedEventArgs args) => await Model.Resume();
+
+    private void OnQuick(object sender, RoutedEventArgs args) => Model.LongerTest = false;
+
+    private void OnLonger(object sender, RoutedEventArgs args) => Model.LongerTest = true;
+
     private void OnBodySize(object sender, SizeChangedEventArgs args) => UpdateColumns();
 
     private void OnTextScale(UISettings sender, object args) =>
@@ -82,8 +116,15 @@ public sealed partial class ConnectionPage : UserControl
     {
         var scale = _display.TextScaleFactor;
         TestActions.Width = 120 * scale;
-        StatusArea.Height = 24 * scale;
+        StatusArea.MinHeight = 112 * scale;
         var stacked = Body.ActualWidth < 880 * scale;
+        MeasurementBody.ColumnSpacing = stacked ? 0 : 24;
+        StatusColumn.Width = stacked ? new GridLength(0) : new GridLength(240 * scale);
+        Grid.SetColumn(StatusArea, stacked ? 0 : 1);
+        Grid.SetRow(StatusArea, stacked ? 1 : 0);
+        Grid.SetColumn(TestOptions, stacked ? 0 : 1);
+        Grid.SetColumnSpan(TestOptions, stacked ? 3 : 1);
+        Grid.SetRow(TestOptions, stacked ? 1 : 0);
         InputColumn.Width = stacked
             ? new GridLength(1, GridUnitType.Star)
             : new GridLength(320 * scale);

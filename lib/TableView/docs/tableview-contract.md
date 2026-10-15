@@ -298,8 +298,9 @@ is on; most tables have no domain order, so the reorder is off.
 
 The host registers a numbered order with `Schema.Order(column, position, items)`
 and sets `CanReorder` when domain moves are available. A null position excludes
-an item from moves while keeping it selectable. The wheel requires at least one
-participating item, so an unavailable move does not open an empty reorder area.
+an item from moves while keeping it selectable. The wheel requires at least two
+numbered items in the complete order and at least one participating item, so an
+unavailable move does not open an empty reorder area.
 The item supplier returns the complete order, including filtered-out items.
 Positions and identities are unique. The column supplies the wheel's title and
 identifies the sort that follows domain moves immediately; sorting still needs
@@ -1138,6 +1139,13 @@ A value outside the fitting range may require a later fit after scrolling.
 This is an intentional limitation of a virtualized
 convenience action, not a promise to discover the widest value in the source.
 
+Automatic fills reuse one content fit across successive available-width changes,
+whether caused by the window, a splitter or another host layout. This keeps each
+pointer movement from fitting every visible cell again. Once size changes settle,
+the table requests a fresh fit at the final bounds. This behavior needs no host
+notifications; explicit fit commands still measure content immediately. Native
+measure and arrange continue normally as column widths change.
+
 Hiding or showing a column does not discard, recompute, or fit its width.
 `ResetLayout()` discards width overrides and restores the captured
 baseline widths; it neither fits the current data nor fills the width again.
@@ -1500,7 +1508,9 @@ first and last insertion gaps. Dropping into a gap requests insertion before
 the next remaining item; the last gap appends. The packet is never reversed
 by the table's display sort.
 
-An entirely excluded selection cannot start a row drag or open the wheel. A
+An order with fewer than two numbered items cannot start a row drag or open the
+wheel, because it has no other position to move to. An entirely excluded
+selection cannot start a row drag or open the wheel. A
 mixed selection moves only its participating items, even when the press is on
 an excluded selected item. A packet containing the complete order cannot change
 that order. The wheel shows the moving count in

@@ -49,6 +49,7 @@ BEGIN;
 UPDATE library_state SET valid=0 WHERE singleton=1;
 DELETE FROM source_files;
 DELETE FROM contributions;
+DELETE FROM file_reads;
 DELETE FROM locations;
 DELETE FROM identifications;
 DELETE FROM file_facts;
@@ -56,8 +57,9 @@ DELETE FROM video_information;
 WITH RECURSIVE n(i) AS (VALUES(1) UNION ALL SELECT i+1 FROM n WHERE i<$count)
 INSERT INTO locations(entry_id,path) SELECT i,$root || '\Collection with a long folder name\Pack ' || ((i-1)/100) || '\Example.' || i ||
     CASE i%4 WHEN 0 THEN '.mkv' WHEN 1 THEN '.mp3' ELSE '.txt' END FROM n;
-INSERT INTO contributions(origin,name,complete,settled,collected,save_path,stamp,checked)
+INSERT INTO file_reads(origin,name,complete,settled,collected,save_path,stamp,checked)
 SELECT DISTINCT 'torrent-' || ((entry_id-1)/100),'Pack ' || ((entry_id-1)/100),1,1,1,$root,'fixture',1 FROM locations;
+INSERT INTO contributions(origin,name,stamp) SELECT origin,name,stamp FROM file_reads;
 INSERT INTO source_files
 SELECT 'torrent-' || ((entry_id-1)/100),(entry_id-1)%100,entry_id,'Example.' || entry_id,path,entry_id*1024,1,1,
     CASE entry_id%4 WHEN 0 THEN 0 WHEN 1 THEN 1 ELSE 3 END,'Example ' || entry_id,

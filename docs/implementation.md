@@ -1265,9 +1265,9 @@ records the ruling and the arrangement that replaced vcpkg.
 
 ## Wire representation
 
-Protocol version 19 uses a four-byte little-endian UTF-8 JSON frame length,
+Protocol version 20 uses a four-byte little-endian UTF-8 JSON frame length,
 bounded to 16 MiB. The endpoint is `TinyTorrent.<logon SID>`; each connecting
-client first receives `{type:"hello",version:19,session_id:"...",data_directory:"..."}`. The absolute data directory
+client first receives `{type:"hello",version:20,session_id:"...",data_directory:"..."}`. The absolute data directory
 keeps the same store for explicit Restart, which starts the engine beside the
 window rather than a path a pipe peer reports. Requests are
 `{request_id:signed-64-bit-integer,command:string,...}`. Replies repeat `request_id` and have
@@ -1325,9 +1325,7 @@ old window's close path without losing the request. Current settings changes acc
 and theme (`system`, `light`, `dark`); unknown fields or values are refused. A
 settings acknowledgement confirms the same durable replacement as membership.
 Settings also accept `default_destination` (absolute path), `torrent_dialog` and
-`magnet_dialog` (independent booleans, default true). An older saved `show_add`
-initializes both when their own saved values are absent; snapshots and new saves
-contain only the separate choices. Settings also accept
+`magnet_dialog` (independent booleans, default true). Settings also accept
 `confirm_delete` (boolean, default true, added in protocol version 12) and
 `limit_mode` (`none`, `speed` or `alternative` for a manual choice, default
 `none`, or null to clear its temporary override while scheduling is enabled).
@@ -1709,7 +1707,10 @@ actual `disk_path`, byte `size`, `padding`, effective `priority`, and actual byt
 `downloaded` values. Resolve `disk_path` against `save_path` for file operations;
 display `path`. This preserves the torrent's name while unfinished payload uses
 the engine-owned `.!tt` name. The legacy combined detail includes both paths too.
-Peers supplies `peers`: `endpoint`, `client`, `transport`, `incoming`,
+Peers supplies the union of retained addresses and live connections, keyed by
+`endpoint`. Every row has `role` (`seed`, `leecher`, `unknown`) and `sources`.
+Disconnected records have `state: known` and omit connection-only fields.
+Live records supply `endpoint`, `client`, `transport`, `incoming`,
 `state` (`connecting`, `handshake`, `connected`), and `encryption` (`unknown`,
 `plain`, `handshake`, `rc4`, `tls`). Encryption stays `unknown` until the peer is
 connected. Encryption `handshake` means an obfuscated handshake
@@ -1727,6 +1728,8 @@ not inferred causes of slow transfers. `sources` lists all discovery flags in
 stable order: `tracker`, `dht`, `pex`, `lsd`, `resume`, `incoming`.
 Rows also contain progress from 0 to 1, payload `download_rate`/`upload_rate` in
 bytes per second, and payload `downloaded`/`uploaded` byte counters.
+Torrent summaries also supply `known_peer_count` from libtorrent's retained list,
+so global peer inspection includes torrents with addresses but no connections.
 
 Trackers supplies `url`/`tier` rows with `status`, scrape `seed_count`,
 `leecher_count`, and `download_count` (-1 when unknown), `next_announce` in Unix

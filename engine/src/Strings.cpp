@@ -124,4 +124,32 @@ std::wstring Strings::Format(std::string const& group, std::string const& key,
     }
     return result;
 }
+
+std::wstring Strings::Number(double value, unsigned digits)
+{
+    wchar_t number[64];
+    swprintf_s(number, L"%.*f", static_cast<int>(digits), value);
+    wchar_t decimal[16] = L".";
+    wchar_t thousand[16] = L",";
+    wchar_t grouping[16] = L"3;0";
+    LPCWSTR locale = LOCALE_NAME_USER_DEFAULT;
+    GetLocaleInfoEx(locale, LOCALE_SDECIMAL, decimal, static_cast<int>(std::size(decimal)));
+    GetLocaleInfoEx(locale, LOCALE_STHOUSAND, thousand, static_cast<int>(std::size(thousand)));
+    GetLocaleInfoEx(locale, LOCALE_SGROUPING, grouping, static_cast<int>(std::size(grouping)));
+    UINT groups = 0;
+    for (auto character : std::wstring_view(grouping))
+    {
+        if (character == L'0') break;
+        if (character != L';') groups = groups * 10 + character - L'0';
+    }
+    if (grouping[wcslen(grouping) - 1] != L'0') groups *= 10;
+    NUMBERFMTW format{.NumDigits = digits, .LeadingZero = 1, .Grouping = groups,
+        .lpDecimalSep = decimal, .lpThousandSep = thousand, .NegativeOrder = 1};
+    wchar_t formatted[64];
+    if (GetNumberFormatEx(locale, 0, number, &format, formatted, static_cast<int>(std::size(formatted))))
+    {
+        return formatted;
+    }
+    return number;
+}
 }

@@ -1,6 +1,5 @@
 using System.Collections.ObjectModel;
-using Microsoft.UI;
-using Microsoft.UI.Input;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
@@ -21,8 +20,7 @@ public sealed partial class Table
     private readonly List<(UIElement Element, long Token)> _visibilityObservers = [];
     private readonly Dictionary<EffectiveColumn, double> _fittedWidths = [];
     private readonly HashSet<EffectiveColumn> _emptyColumns = [];
-    private InputNonClientPointerSource? _windowFrame;
-    private bool _windowSizing;
+    private DispatcherQueueTimer? _resizeDue;
 
     private static readonly Thickness DefaultCellPadding = new(12, 6, 12, 6);
 
@@ -100,7 +98,7 @@ public sealed partial class Table
             ? EffectiveLayout.VisibleColumns.Select(visible => visible.Width).ToArray()
             : [];
 
-        bool changed = FitVisible(publish: false, reuse: !notify && _windowSizing);
+        bool changed = FitVisible(publish: false, reuse: !notify && _resizeDue?.IsRunning == true);
         changed |= ScaleToWidth();
         if (changed)
             EffectiveLayout.Rebuild();
@@ -259,50 +257,36 @@ public sealed partial class Table
     private void OnFillVisibilityChanged(DependencyObject sender, DependencyProperty property) =>
         QueueFill();
 
-    private void WatchWindowSizing()
-    {
-        StopWatchingWindowSizing();
-        WindowId window = XamlRoot?.ContentIslandEnvironment?.AppWindowId ?? default;
-        if (window.Value == 0)
-            return;
-        _windowFrame = InputNonClientPointerSource.GetForWindowId(window);
-        _windowFrame.EnteredMoveSize += OnEnteredMoveSize;
-        _windowFrame.ExitedMoveSize += OnExitedMoveSize;
-    }
-
-    private void StopWatchingWindowSizing()
-    {
-        if (_windowFrame is null)
-            return;
-        _windowFrame.EnteredMoveSize -= OnEnteredMoveSize;
-        _windowFrame.ExitedMoveSize -= OnExitedMoveSize;
-        _windowFrame = null;
-        _windowSizing = false;
-    }
-
-    // A drag on the window frame measures at its first fill and reuses those
-    // widths until it ends: the window's width does not change the content's.
-    private void OnEnteredMoveSize(
-        InputNonClientPointerSource sender,
-        EnteredMoveSizeEventArgs args
-    )
-    {
-        _fittedWidths.Clear();
-        _windowSizing = true;
-    }
-
-    private void OnExitedMoveSize(
-        InputNonClientPointerSource sender,
-        ExitedMoveSizeEventArgs args
-    ) => _windowSizing = false;
-
     private void OnFillSizeChanged(object sender, SizeChangedEventArgs args)
     {
-        if (
-            args.NewSize.Width != args.PreviousSize.Width
-            || args.PreviousSize.Height <= 0 && args.NewSize.Height > 0
-        )
-            QueueFill();
+        if (!IsLoaded)
+            return;
+        var widthChanged = args.NewSize.Width != args.PreviousSize.Width;
+        var appeared = args.PreviousSize.Height <= 0 && args.NewSize.Height > 0;
+        if (!widthChanged && !appeared)
+            return;
+
+        if (_resizeDue is null)
+        {
+            _resizeDue = DispatcherQueue.CreateTimer();
+            _resizeDue.IsRepeating = false;
+            _resizeDue.Interval = TimeSpan.FromMilliseconds(150);
+            _resizeDue.Tick += (_, _) =>
+            {
+                if (_detached)
+                    return;
+                _fittedWidths.Clear();
+                FillViewport();
+            };
+        }
+
+        // Unbounded fitting changes WinUI's cached measure constraint. Reuse
+        // that fit until size changes settle, then measure the final viewport.
+        if (!_resizeDue.IsRunning)
+            _fittedWidths.Clear();
+        _resizeDue.Stop();
+        _resizeDue.Start();
+        QueueFill();
     }
 
     private void QueueFill()
@@ -315,7 +299,9 @@ public sealed partial class Table
         LayoutUpdated += OnFillLayout;
     }
 
-    private void OnFillLayout(object? sender, object args)
+    private void OnFillLayout(object? sender, object args) => FillViewport();
+
+    private void FillViewport()
     {
         LayoutUpdated -= OnFillLayout;
         if (

@@ -265,7 +265,20 @@ public sealed partial class MainViewModel
                 _dispatcher.TryEnqueue(() =>
                 {
                     if (ReferenceEquals(_fileSource, source))
+                    {
                         ReportFeature(error);
+                        if (error is SqliteException or DatabaseVersionException)
+                            Library.Report(error);
+                    }
+                });
+            source.Published += (_, _) =>
+                _dispatcher.TryEnqueue(() =>
+                {
+                    if (ReferenceEquals(_fileSource, source))
+                    {
+                        Library.StoredChanged();
+                        _ = RefreshSource();
+                    }
                 });
             source.Observe(snapshot);
         }

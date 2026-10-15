@@ -564,10 +564,8 @@ void Engine::State::Settings::Read(Json const& saved)
             }
         }
     }
-    // The old shared preference initializes both choices until each is saved separately.
-    auto showsAdd = ReadSaved(saved, "show_add", true);
-    showsTorrentDialog = ReadSaved(saved, setting::showsTorrentDialog, showsAdd);
-    showsMagnetDialog = ReadSaved(saved, setting::showsMagnetDialog, showsAdd);
+    showsTorrentDialog = ReadSaved(saved, setting::showsTorrentDialog, showsTorrentDialog);
+    showsMagnetDialog = ReadSaved(saved, setting::showsMagnetDialog, showsMagnetDialog);
     confirmsDelete = ReadSaved(saved, setting::confirmsDelete, confirmsDelete);
     deletesDownloaded = ReadSaved(saved, setting::deletesDownloaded, deletesDownloaded);
     deletesTorrentFile = ReadSaved(saved, setting::deletesTorrentFile, deletesTorrentFile);

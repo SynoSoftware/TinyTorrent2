@@ -52,6 +52,7 @@ public sealed partial class MainWindow
                         or nameof(LibraryBrowser.Selection)
                         or nameof(LibraryBrowser.Selected)
                         or nameof(LibraryBrowser.IsAvailable)
+                        or nameof(LibraryBrowser.CanShowTorrent)
                         or nameof(LibraryBrowser.Providers)
                         or nameof(LibraryBrowser.Configuration)
             )

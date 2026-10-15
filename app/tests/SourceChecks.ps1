@@ -169,7 +169,12 @@ try {
     $store = New-Value 'Library.Store' @($database, $imdb)
     Invoke-Value $sources 'Reconcile' @((New-Values 'Services.Contribution' @($second)), $cancel) | Out-Null
     Require ((Sql 'SELECT COUNT(*) FROM new_origins;') -eq 0) 'Reopening treated a known torrent as new.'
-    Invoke-Value $sources 'Replace' @($second, $files, $cancel) | Out-Null
+    $matches = Invoke-Value $store 'Search' @($query, $cancel)
+    Require ($matches.Entries.Count -eq 1 -and $matches.Entries[0].EntryId -eq $entry.EntryId) 'Reopening lost the cached list or changed its row identity before engine file replies.'
+    Require ((Sql 'SELECT COUNT(*) FROM collected_files;') -eq 0 -and (Sql 'SELECT readable FROM current_files;') -eq 0) 'A saved file list authorized work before current confirmation.'
+    Require (!(Invoke-Value $sources 'Replace' @($second, $files, $cancel))) 'Confirming an identical saved list reported a content change.'
+    Require ((Sql 'SELECT valid FROM library_state;') -eq 1) 'Unchanged confirmation invalidated the published search snapshot.'
+    Require ((Sql 'SELECT readable FROM current_files;') -eq 1) 'Current confirmation did not permit file work.'
     $matches = Invoke-Value $store 'Search' @($query, $cancel)
     Require ($matches.Entries[0].Title -eq 'Chosen title' -and $matches.Entries[0].Created -eq 1700000000) 'Saved identification or properties did not survive reopening.'
     Require ($matches.Entries[0].Ratings.Tmdb.Value -eq 8.25 -and $matches.Entries[0].Ratings.Tmdb.Kind -eq $movieKind -and
@@ -178,7 +183,8 @@ try {
     $pending = New-Value 'Services.Contribution' @('second', 'Second', $true, $false) @{ SavePath = $directory; Stamp = 'moving' }
     Invoke-Value $sources 'Reconcile' @((New-Values 'Services.Contribution' @($pending)), $cancel) | Out-Null
     $matches = Invoke-Value $store 'Search' @($query, $cancel)
-    Require ($matches.Entries.Count -eq 0) 'A pending path was still presented as confirmed.'
+    Require ($matches.Entries.Count -eq 1 -and (Sql 'SELECT readable FROM current_files;') -eq 0) 'A pending path discarded the cache or remained readable.'
+    Require ((Sql "SELECT stamp FROM contributions WHERE origin='second';") -eq 'one') 'An incoming summary overwrote the stamp belonging to the accepted files.'
     Invoke-Value $sources 'Reconcile' @((New-Values 'Services.Contribution' @($second)), $cancel) | Out-Null
     Invoke-Value $sources 'Replace' @($second, $files, $cancel) | Out-Null
     $matches = Invoke-Value $store 'Search' @($query, $cancel)
@@ -1043,11 +1049,11 @@ public sealed class SubtitleSearchReply : HttpMessageHandler {
     $permanent = [Enum]::Parse($assembly.GetType('Syno.TinyTorrent.Models.DeletionMode'), 'Permanent')
     Invoke-Value $subtitles 'Delete' @($deletion, $permanent) | Out-Null
     Require ([IO.File]::Exists($caption)) 'A deletion ran before the refreshed source was ready.'
-    Sql 'UPDATE contributions SET collected=0;' | Out-Null
+    Sql 'UPDATE file_reads SET collected=0;' | Out-Null
     Invoke-Value $subtitles 'SetConnected' @($true) | Out-Null
     Invoke-Value $subtitles 'Reconcile' @() | Out-Null
     Require ([IO.File]::Exists($caption)) 'An unknown current payload mapping permitted deletion.'
-    Sql 'UPDATE contributions SET collected=1;' | Out-Null
+    Sql 'UPDATE file_reads SET collected=1;' | Out-Null
     Add-Type @'
 using System;
 using System.Threading;
@@ -1084,7 +1090,7 @@ public static class DeletionGate {
     }
     Require (![IO.File]::Exists($caption)) ('The accepted deletion was lost during source invalidation. Queued={0}; pending={1}; sources={2}.' -f
         $subtitles.GetType().GetField('_deletions', $flags).GetValue($subtitles).Count,
-        (Sql 'SELECT COUNT(*) FROM pending_origins;'), (Sql 'SELECT COUNT(*) FROM contributions;'))
+        (Sql 'SELECT COUNT(*) FROM pending_origins;'), (Sql 'SELECT COUNT(*) FROM file_reads;'))
     Invoke-Value $subtitles 'Initialize' @('en') | Out-Null
 
     Invoke-Value $sources 'Reconcile' @((New-Values 'Services.Contribution' @($first)), $cancel) | Out-Null
@@ -1148,7 +1154,7 @@ INSERT INTO subtitle_output_sources(path,language,origin,file_index,movie_path) 
     $targets = Invoke-Value $subtitles 'Targets' @($cancel)
     $target = $targets | Where-Object { $_.Path -eq $caption } | Select-Object -First 1
     Sql 'DELETE FROM subtitle_outputs WHERE path=$path;' @{ '$path' = $caption } | Out-Null
-    Sql 'UPDATE contributions SET collected=0;' | Out-Null
+    Sql 'UPDATE file_reads SET collected=0;' | Out-Null
     Invoke-Value $subtitles 'Record' @($target, $true, $cancel, 'fixture:chosen') | Out-Null
     Require ((Sql 'SELECT created FROM subtitle_outputs WHERE path=$path;' @{ '$path' = $caption }) -eq 1) 'A committed creation lost its ownership during recollection.'
     Invoke-Value $sources 'Replace' @($first, $files, $cancel) | Out-Null

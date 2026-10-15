@@ -80,6 +80,7 @@ struct Detail
     std::map<DetailKind, std::chrono::steady_clock::time_point> received;
     std::vector<lt::announce_entry> trackers;
     std::vector<lt::peer_info> peers;
+    std::vector<lt::known_peer> knownPeers;
     std::vector<std::int64_t> progress;
     std::vector<lt::download_priority_t> priorities;
     lt::torrent_status status;

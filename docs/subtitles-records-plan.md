@@ -226,8 +226,8 @@ is automatic work's job.
 
 ## Database schema
 
-The app is unreleased, so `Acquisition.Schema` creates the current tables and
-view directly, without upgrades for earlier development databases:
+The implementation added the following tables and view directly to the initial
+schema. The [database contract](database.md) owns the current schema and upgrades:
 
 - `subtitle_lookups` stores search counts;
 - the shared lookup limit lives in `library_settings`, and

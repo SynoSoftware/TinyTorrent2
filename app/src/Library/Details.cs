@@ -72,7 +72,7 @@ internal sealed partial class Details : UserControl, IDisposable
                                 library.ShowTorrent(origin.OriginId);
                                 return Task.CompletedTask;
                             },
-                            () => library.IsAvailable
+                            () => library.CanShowTorrent
                         )
                     );
                     origins.Children.Add(

@@ -352,7 +352,6 @@ try {
         $compilerArgs += @('/DSigned', "/STinyTorrent=$signCommand")
     }
     else {
-        $installerName += '-unsigned'
         Write-Host 'No signing certificate configured. Generating an unsigned installer.' -ForegroundColor Yellow
     }
     Write-Host 'Compiling the installer...'

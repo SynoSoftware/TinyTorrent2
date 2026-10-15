@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <stdexcept>
 #include <sstream>
+#include <unordered_set>
 
 namespace tt
 {
@@ -564,11 +565,24 @@ Json DescribeWait(lt::bandwidth_state_flags_t state)
     return waits;
 }
 
-Json DescribePeers(std::vector<lt::peer_info> const& peers)
+Json DescribeSources(lt::peer_source_flags_t source)
+{
+    auto sources = Json::array();
+    if (bool(source & lt::peer_info::tracker)) sources.push_back("tracker");
+    if (bool(source & lt::peer_info::dht)) sources.push_back("dht");
+    if (bool(source & lt::peer_info::pex)) sources.push_back("pex");
+    if (bool(source & lt::peer_info::lsd)) sources.push_back("lsd");
+    if (bool(source & lt::peer_info::resume_data)) sources.push_back("resume");
+    if (bool(source & lt::peer_info::incoming)) sources.push_back("incoming");
+    return sources;
+}
+
+Json DescribePeers(Detail const& detail)
 {
     Json data;
     data["peers"] = Json::array();
-    for (auto const& peer : peers)
+    std::unordered_set<std::string> endpoints;
+    for (auto const& peer : detail.peers)
     {
         std::string address;
         auto transport = bool(peer.flags & lt::peer_info::utp_socket) ? "utp" : "tcp";
@@ -609,14 +623,10 @@ Json DescribePeers(std::vector<lt::peer_info> const& peers)
             else
                 encryption = PeerEncryption::Plain;
         }
-        auto sources = Json::array();
-        if (bool(peer.source & lt::peer_info::tracker)) sources.push_back("tracker");
-        if (bool(peer.source & lt::peer_info::dht)) sources.push_back("dht");
-        if (bool(peer.source & lt::peer_info::pex)) sources.push_back("pex");
-        if (bool(peer.source & lt::peer_info::lsd)) sources.push_back("lsd");
-        if (bool(peer.source & lt::peer_info::resume_data)) sources.push_back("resume");
-        if (bool(peer.source & lt::peer_info::incoming)) sources.push_back("incoming");
+        endpoints.insert(address);
         data["peers"].push_back({{"endpoint", address}, {"client", peer.client},
+            {"role", bool(peer.flags & lt::peer_info::seed) ? "seed" :
+                state == PeerState::Connected && !webSeed ? "leecher" : "unknown"},
             {"transport", transport},
             {"incoming", !bool(peer.flags & lt::peer_info::outgoing_connection)},
             {"state", ToString(state)}, {"encryption", ToString(encryption)},
@@ -625,10 +635,17 @@ Json DescribePeers(std::vector<lt::peer_info> const& peers)
             {"remote_interested", bool(peer.flags & lt::peer_info::remote_interested)},
             {"remote_choked", bool(peer.flags & lt::peer_info::remote_choked)},
             {"read_wait", DescribeWait(peer.read_state)}, {"write_wait", DescribeWait(peer.write_state)},
-            {"sources", std::move(sources)},
+            {"sources", DescribeSources(peer.source)},
             {"progress", peer.progress_ppm / 1'000'000.0},
             {"download_rate", peer.payload_down_speed}, {"upload_rate", peer.payload_up_speed},
             {"downloaded", peer.total_download}, {"uploaded", peer.total_upload}});
+    }
+    for (auto const& peer : detail.knownPeers)
+    {
+        auto address = DescribeEndpoint(peer.endpoint);
+        if (endpoints.contains(address)) continue;
+        data["peers"].push_back({{"endpoint", std::move(address)}, {"state", "known"},
+            {"role", peer.seed ? "seed" : "unknown"}, {"sources", DescribeSources(peer.source)}});
     }
     return data;
 }
@@ -853,7 +870,7 @@ Json Torrent::Describe(TorrentView view, bool includeFiles, Detail const& detail
     {
     case TorrentView::Peers:
         if (detail.Has(DetailKind::Peers, since))
-            data.update(DescribePeers(detail.peers));
+            data.update(DescribePeers(detail));
         else
             data["peers"] = nullptr;
         break;
@@ -898,6 +915,7 @@ Json Torrent::Row(bool sessionPaused, int queue) const
         {"error", !problem ? "" : problem->Code()},
         {"detail", problem ? problem->detail : ""},
         {"seed_count", status.num_seeds}, {"peer_count", status.num_peers},
+        {"known_peer_count", status.list_peers},
         // The tracker's scrape counts the whole swarm; without one, the peers this session has heard of
         // are the best estimate.
         {"swarm_seed_count", status.num_complete >= 0 ? status.num_complete : status.list_seeds},

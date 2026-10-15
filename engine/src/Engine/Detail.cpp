@@ -164,7 +164,7 @@ void Engine::State::Query(Torrent& torrent, DetailKind kind)
         handle.post_trackers();
         break;
     case DetailKind::Peers:
-        handle.post_peer_info();
+        handle.post_peer_info(true);
         break;
     case DetailKind::Progress:
         handle.post_file_progress({});
@@ -367,6 +367,7 @@ void Engine::State::On(lt::peer_info_alert& alert)
     Receive(alert.handle, DetailKind::Peers, [&alert](Detail& detail)
     {
         detail.peers = std::move(alert.peer_info);
+        detail.knownPeers = std::move(alert.known_peers);
         for (auto& peer : detail.peers)
             peer.pieces.clear();
     });

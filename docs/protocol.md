@@ -234,8 +234,24 @@ state appears in summary snapshots. The engine pushes snapshots
 once per second while the operation is active so phase feedback and the hold
 countdown remain usable even with a slower configured refresh interval.
 
-State includes the operation identity, phase, measured download/upload capacity
-in Mbps, remaining hold seconds and a stable failure code. The engine owns the
+Start accepts `profile`: `quick` (the default) or `longer`. Quick permits 4 MiB
+and six seconds per direction; Longer permits 32 MiB and eight seconds per
+direction. The first limit reached ends that direction, keeping traffic bounded
+on both slow and fast connections. Payload ceilings exclude protocol overhead.
+
+State includes `session_id` and `sequence`, even when idle. A command reply
+receives a fresh sequence before the following summary, so a queued older
+summary cannot replace it. A client ignores a delayed command reply after a newer
+snapshot or an engine-session change, so old feedback cannot replace current test state.
+State also includes the operation identity, phase, measured download/upload capacity
+in Mbps, remaining hold seconds and a stable failure code. Live `download` and
+`upload` are the 90th percentile of completed eligible request measurements.
+`download_bytes` and `upload_bytes` count payload transferred, including an
+unfinished request; they do not establish an upload result. The matching
+`download_seconds` and `upload_seconds` count elapsed measurement time.
+`byte_limit` and `time_limit` give each direction's budget. `complete` becomes
+true only after both directions finish successfully, so a cancelled live reading
+never populates the capacity fields. The engine owns the
 [lifecycle and restoration](engine.md#connection-measurement); losing the
 connection releases its temporary restriction. A start whose reply was lost is
 not automatically replayed: observe the next snapshot before offering another

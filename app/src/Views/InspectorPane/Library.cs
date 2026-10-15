@@ -99,7 +99,10 @@ public sealed partial class InspectorPane
             && _libraryView?.Entry == library.Selected?.Entry
         )
             return;
-        if (args.PropertyName == nameof(LibraryBrowser.IsAvailable))
+        if (
+            args.PropertyName
+            is nameof(LibraryBrowser.IsAvailable) or nameof(LibraryBrowser.CanShowTorrent)
+        )
         {
             (_libraryContent?.Content as Details)?.RefreshCommands();
             RefreshLibraryOrigins();

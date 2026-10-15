@@ -945,19 +945,25 @@ than rotating messages. Each X has its own accessible name and tooltip,
 requests cancellation from its operation owner, disables while cancelling and
 remains visible until cleanup finishes. Recover focus to the next usable task
 control, the work-list button or the page when a focused control becomes
-disabled or disappears. Every operation reports its result through the existing
+disabled or disappears. Operations report their result through the existing
 toast notification owner after cleanup, including failures and cancellations,
-so a disappearing progress bar never leaves its outcome unexplained. Results
-include available counts or error details and follow later language changes.
+so a disappearing progress bar never leaves its outcome unexplained. Successful
+torrent additions use the changed list and accessible announcement instead of
+a completion toast; background additions retain the engine's notification
+policy. Results include available counts or error details and follow later
+language changes.
 
 Use the stock WinUI 3 ProgressBar template, brushes and animation. Metadata
 shows completed attempts over the accepted total, including unmatched files;
 never count the file currently being processed as completed. Its precise
 fraction remains readable when the redundant graphical bar yields. IMDb
-names its current phase: parsing reports approximate progress through that
-source; downloading uses a fraction only with a trustworthy byte total.
-Indexing, optimization and finalization are indeterminate.
-Per-phase percentages are never presented as one overall percentage. A
+names its current phase, and every phase that counts something shows a
+fraction: downloading uses the length the response declares, parsing reports
+approximate progress through that source, and the episode and search-index
+phases count the rows they write. Only optimization, the final flush and
+installation are indeterminate, because SQLite and Windows report nothing to
+count for them. Per-phase percentages are never presented as one overall
+percentage. A
 confirmed wait is named as such; accepted subtitle work alone does not prove
 active network searching. A video-provider wait appears on Library's Videos view
 only when explicit work does not occupy the space. Automatic download preferences
@@ -1537,14 +1543,25 @@ starts with No limits and limits that never apply look broken. That row appears
 only while limits are off. Any other choice belongs to the person and stays.
 Preset identity comes from confirmed settings, not a separate profile. Test measures
 real download and upload capacity through the engine's
-[temporary suspension](engine.md#connection-measurement). Test and Cancel use
-the same fixed-width action slot beside the capacity heading. The status and
-progress bar share a reserved-height area, so testing never shifts the inputs.
-Both reservations scale with the system text size. Inline phase feedback includes
-the resumption countdown.
+[temporary suspension](engine.md#connection-measurement). The full-width test
+card uses the approved C original sweep, large segmented numbers and Lucide
+download/upload captions. Each direction seeds its 1/2/5 scale from entered
+capacity, or its first measured value when capacity is unknown; it expands
+without shrinking during the test, keeping the reading within range without
+continuous scale changes. Motion follows Windows animation preferences.
+Quick defaults to at most 8 MiB total and six seconds each way; Longer permits
+64 MiB total and eight seconds each way. Test and Cancel use the same fixed-width
+slot beside those choices. Phase, percentage, determinate progress and payload
+usage share reserved space, so testing never shifts the inputs. These
+reservations scale with system text size. Inline feedback includes the resumption
+countdown and a Resume action, so the person need not wait for its expiry.
+The Ethernet warning sits below Apply/Cancel. It appears when the negotiated
+link is below entered capacity or the adapter's reported maximum, including a
+100 Mbps link on a gigabit adapter, and suggests checking the cable and ports
+without claiming which component caused the limit.
 Announce phase changes through the window's existing accessibility path, not
 each countdown tick. Measurements populate the proposal; only Apply changes
-settings. An information button beside the capacity heading opens a native flyout
+settings. An information button beside the test heading opens a native flyout
 with the provider, traffic cost, route details and privacy link, keeping these
 details available without permanent extra lines in the form.
 Files holds the default folder, the incomplete-filename suffix, and an optional
@@ -1772,8 +1789,9 @@ hierarchy. Torrent-specific file commands stay in the application. Tracker error
 status text uses the critical brush; other tracker states remain neutral, so
 failed trackers stand out without colouring every healthy row.
 
-Peers has one compact State column: Connecting, Handshake, or Connected, with
-a leading Lucide icon. Tracker Status likewise has a leading state icon. Icons
+Peers has one compact State column: Known, Connecting, Handshake, or Connected, with
+a leading Lucide icon. Known means a retained address without a current connection;
+its connection statistics show a dash. Tracker Status likewise has a leading state icon. Icons
 are static, use the existing inline size, and stay out of automation; the text
 still names every state. An unidentified client shows a dash. Connection uses
 Plain, RC4, or TLS, with unknown encryption until the handshake finishes. Its
@@ -1785,7 +1803,10 @@ tooltips show interest, choke and observed bandwidth, network or disk waits.
 These facts explain the current sample without claiming one cause for a slow
 transfer.
 
-Peers has separate Country and City columns after Client, each sortable.
+Peers starts with Address, Download speed, Upload speed, Progress and State,
+so current transfer activity stays visible before secondary connection details.
+Client, Country, City, Connection, Downloaded and Uploaded follow.
+Country and City are separate sortable columns after Client.
 Country shows the country's flag at the cell's text size followed by its name;
 City shows the city name when the installed data provides one. The flag is
 decorative and stays out of automation. Tooltips show each value in full when
@@ -1793,6 +1814,8 @@ its column is narrow. A missing country or city shows a dash. There is no switch
 the columns show what the installed data can resolve
 ([peer location](peer-location.md)).
 
+Peers shows the map and table by default, so a fresh install exposes both peer
+locations and connection details. A saved view choice takes precedence.
 The Peers header has one icon-only Lucide ellipsis button beside the existing
 pane actions. Its flyout groups Map only, Table only and Map and table under View,
 and Countries and Cities under Map detail. Cities is disabled without city data;
@@ -1822,6 +1845,12 @@ the gesture. Each orientation retains its proportion in the saved layout.
 The map and table share live peer observations and keep individual connections
 in the table. Connection and active counts join the existing status-bar context;
 map hover details describe the location, rates and precision.
+The map area shows total download and upload rates for the inspector's selection
+in a quiet bottom-left readout, without a scope label. These totals come from
+torrent summaries, including transfers with no mapped location, and use the
+existing rate formatting and download/upload theme brushes. The shared peer-view
+menu offers Speed position: Top-left, Bottom-left or Bottom-right, saved with
+the peer layout. Top-right stays reserved for the map's zoom and Fit controls.
 [Peer location](peer-location.md#map) owns aggregation, precision and rendering.
 With no torrent selected, Peers shows all torrents and Speed shows session
 history. With multiple torrents selected, both sections combine only that

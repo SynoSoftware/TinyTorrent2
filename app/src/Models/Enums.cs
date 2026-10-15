@@ -4,9 +4,9 @@ internal enum ImdbPhase
 {
     Downloading,
     Episodes,
+    Linking,
     Titles,
     Ratings,
-    Committing,
     Indexing,
     Optimizing,
     Flushing,
@@ -284,6 +284,13 @@ public enum PeerLayout
     Both,
 }
 
+public enum MapCorner
+{
+    BottomLeft,
+    TopLeft,
+    BottomRight,
+}
+
 public enum PieceKind
 {
     Unavailable,
@@ -306,9 +313,17 @@ internal enum PeerTransport
 public enum PeerState
 {
     Unknown,
+    Known,
     Connecting,
     Handshake,
     Connected,
+}
+
+internal enum PeerRole
+{
+    Unknown,
+    Seed,
+    Leecher,
 }
 
 internal enum PeerEncryption
@@ -491,11 +506,10 @@ internal enum LibraryReadiness
     // Library shows the last known rows.
     Offline,
 
-    // The data sources match the engine, so rows can be searched while their
-    // files are still being read.
+    // The summary is reconciled and cached rows can be browsed.
     Current,
 
-    // Every file has been read, so lookups and file facts can run.
+    // Every current origin has had a read attempt; workers check file confirmation.
     Ready,
 }
 

@@ -16,6 +16,8 @@ public:
     std::wstring Text(std::string const& group, std::string const& key) const;
     std::wstring Format(std::string const& group, std::string const& key,
         std::vector<std::wstring> const& values) const;
+    // `value` with the person's regional decimal and thousands separators.
+    static std::wstring Number(double value, unsigned digits = 0);
 private:
     std::string language_;
     Json catalogue_;

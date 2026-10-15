@@ -26,7 +26,7 @@ internal static class OriginActions
             ]
         )
         {
-            IsEnabled = browser.IsAvailable,
+            IsEnabled = browser.CanShowTorrent,
         };
     }
 
@@ -50,6 +50,6 @@ internal static class OriginActions
                 if (origin is not null)
                     browser.ShowTorrent(origin.OriginId);
             },
-            () => browser.IsAvailable && origin is not null
+            () => browser.CanShowTorrent && origin is not null
         );
 }

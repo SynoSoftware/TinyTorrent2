@@ -21,6 +21,11 @@ struct Notification
 {
     void operator()(HPOWERNOTIFY notification) const { UnregisterPowerSettingNotification(notification); }
 };
+
+struct Icon
+{
+    void operator()(HICON icon) const { DestroyIcon(icon); }
+};
 }
 
 // Owners of Windows resources. A member releases its resource when its object
@@ -30,4 +35,5 @@ struct Notification
 using OwnedHandle = std::unique_ptr<void, release::Handle>;
 using OwnedWindow = std::unique_ptr<std::remove_pointer_t<HWND>, release::Window>;
 using OwnedNotification = std::unique_ptr<void, release::Notification>;
+using OwnedIcon = std::unique_ptr<std::remove_pointer_t<HICON>, release::Icon>;
 }

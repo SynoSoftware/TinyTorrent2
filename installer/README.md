@@ -57,10 +57,10 @@ files remain under `artifacts/installer/` if something needs investigating.
 
 ## Signing
 
-Signing is optional. Without a signing certificate the filename ends in
-`-unsigned.exe`. To sign the application, installer, and uninstaller, supply the
-thumbprint of a code signing certificate in your Windows Current User
-certificate store:
+Signing is optional. The filename is `TinyTorrent-<version>-x64-Setup.exe`
+with or without a signing certificate. To sign the application, installer, and
+uninstaller, supply the thumbprint of a code signing certificate in your Windows
+Current User certificate store:
 
 ```powershell
 .\Release.cmd -Certificate YOUR_40_CHARACTER_CERTIFICATE_THUMBPRINT

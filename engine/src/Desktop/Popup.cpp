@@ -315,7 +315,7 @@ private:
     Microsoft::WRL::ComPtr<IAccessible> standard_;
 };
 
-Popup::Popup(HWND window, UINT selected) : owner_(window), selected_(selected)
+Popup::Popup()
 {
     WNDCLASSW type{};
     type.lpfnWndProc = Procedure;
@@ -792,18 +792,23 @@ LRESULT Popup::Handle(HWND window, UINT message, WPARAM first, LPARAM second)
             }
             return 0;
         }
+        // Copies, because the code they run may replace the content.
         if (part == PopupPart::Action)
         {
-            auto const& action = content_.actions[*ActionAt(point)];
-            PostMessageW(owner_, selected_, static_cast<WPARAM>(part), action.id);
-            if (!action.closes)
+            auto action = content_.actions[*ActionAt(point)];
+            if (action.closes)
             {
-                return 0;
+                Close();
             }
+            action.run();
+            return 0;
         }
-        else if (part == PopupPart::Body)
+        if (part == PopupPart::Body && content_.select)
         {
-            PostMessageW(owner_, selected_, static_cast<WPARAM>(part), 0);
+            auto select = content_.select;
+            Close();
+            select();
+            return 0;
         }
         Close();
         return 0;
@@ -974,10 +979,10 @@ void Popup::HoverMenu(std::optional<std::size_t> item)
 
 void Popup::Choose(std::size_t item)
 {
-    auto command = content_.menu[item].id;
+    // A copy, because the code it runs may replace the content.
+    auto run = content_.menu[item].run;
     Close();
-    // Consume the shown switch before another queued notice can replace it.
-    SendMessageW(owner_, selected_, static_cast<WPARAM>(PopupPart::More), command);
+    run();
 }
 
 LRESULT CALLBACK Popup::MenuProcedure(HWND window, UINT message, WPARAM first, LPARAM second)

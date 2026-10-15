@@ -505,17 +505,57 @@
             <ColumnDefinition Width="0" />
             <ColumnDefinition Width="0" />
           </Grid.ColumnDefinitions>
-          <ContentControl
-            x:Name="PeerDrawing"
-            HorizontalContentAlignment="Stretch"
-            VerticalContentAlignment="Stretch"
-            Visibility="Collapsed"
-          />
+          <Grid x:Name="PeerSurface" Visibility="Collapsed">
+            <ContentControl
+              x:Name="PeerDrawing"
+              HorizontalContentAlignment="Stretch"
+              VerticalContentAlignment="Stretch"
+            />
+            <controls:Strip
+              x:Name="PeerRates"
+              ColumnSpacing="16"
+              RowSpacing="4"
+              Margin="16"
+              HorizontalAlignment="Left"
+              VerticalAlignment="Bottom"
+              Background="{ThemeResource LayerFillColorDefaultBrush}"
+              FlowDirection="LeftToRight"
+            >
+              <StackPanel Orientation="Horizontal" Spacing="4">
+                <FontIcon
+                  Style="{StaticResource TinyTorrentStatusIconStyle}"
+                  FontFamily="{x:Bind icons:Lucide.Font}"
+                  Glyph="{x:Bind icons:Lucide.ArrowDown}"
+                  Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                  AutomationProperties.AccessibilityView="Raw"
+                />
+                <TextBlock
+                  x:Name="PeerDownload"
+                  Style="{StaticResource SubtitleTextBlockStyle}"
+                  Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                />
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Spacing="4">
+                <FontIcon
+                  Style="{StaticResource TinyTorrentStatusIconStyle}"
+                  FontFamily="{x:Bind icons:Lucide.Font}"
+                  Glyph="{x:Bind icons:Lucide.ArrowUp}"
+                  Foreground="{ThemeResource TinyTorrentUploadBrush}"
+                  AutomationProperties.AccessibilityView="Raw"
+                />
+                <TextBlock
+                  x:Name="PeerUpload"
+                  Style="{StaticResource SubtitleTextBlockStyle}"
+                  Foreground="{ThemeResource TinyTorrentUploadBrush}"
+                />
+              </StackPanel>
+            </controls:Strip>
+          </Grid>
           <controls:Splitter x:Name="PeerSplit" Visibility="Collapsed" />
           <table:Table
             x:Name="Peers"
             Margin="0,8,0,0"
-            ItemsSource="{x:Bind Model.Peers, Mode=OneWay}"
+            ItemsSource="{x:Bind Model.ShownPeers, Mode=OneWay}"
           >
             <table:Table.EmptyContent>
               <TextBlock
@@ -541,6 +581,89 @@
                       VerticalAlignment="Center"
                       FlowDirection="LeftToRight"
                     />
+                  </DataTemplate>
+                </table:Column.CellTemplate>
+              </table:Column>
+              <table:Column
+                x:Name="PeerDownColumn"
+                Id="down"
+                Width="120"
+                MinWidth="96"
+                CellAlignment="Right"
+              >
+                <table:Column.CellTemplate>
+                  <DataTemplate x:DataType="models:Peer">
+                    <TextBlock
+                      Text="{x:Bind DownloadText, Mode=OneWay}"
+                      ToolTipService.ToolTip="{x:Bind DownloadHint, Mode=OneWay}"
+                      AutomationProperties.HelpText="{x:Bind DownloadHint, Mode=OneWay}"
+                      Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                      VerticalAlignment="Center"
+                    />
+                  </DataTemplate>
+                </table:Column.CellTemplate>
+              </table:Column>
+              <table:Column
+                x:Name="PeerUpColumn"
+                Id="up"
+                Width="120"
+                MinWidth="96"
+                CellAlignment="Right"
+              >
+                <table:Column.CellTemplate>
+                  <DataTemplate x:DataType="models:Peer">
+                    <TextBlock
+                      Text="{x:Bind UploadText, Mode=OneWay}"
+                      ToolTipService.ToolTip="{x:Bind UploadHint, Mode=OneWay}"
+                      AutomationProperties.HelpText="{x:Bind UploadHint, Mode=OneWay}"
+                      Foreground="{ThemeResource TinyTorrentUploadBrush}"
+                      VerticalAlignment="Center"
+                    />
+                  </DataTemplate>
+                </table:Column.CellTemplate>
+              </table:Column>
+              <table:Column
+                x:Name="PeerProgressColumn"
+                Id="progress"
+                Width="100"
+                MinWidth="80"
+                CellAlignment="Right"
+              >
+                <table:Column.CellTemplate>
+                  <DataTemplate x:DataType="models:Peer">
+                    <TextBlock
+                      Text="{x:Bind ProgressText, Mode=OneWay}"
+                      VerticalAlignment="Center"
+                    />
+                  </DataTemplate>
+                </table:Column.CellTemplate>
+              </table:Column>
+              <table:Column x:Name="PeerStateColumn" Id="state" Width="120" MinWidth="112">
+                <table:Column.CellTemplate>
+                  <DataTemplate x:DataType="models:Peer">
+                    <Grid
+                      ColumnSpacing="6"
+                      Background="Transparent"
+                      ToolTipService.ToolTip="{x:Bind StateHint, Mode=OneWay}"
+                    >
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                      </Grid.ColumnDefinitions>
+                      <FontIcon
+                        FontFamily="{StaticResource LucideFont}"
+                        Glyph="{x:Bind StateGlyph, Mode=OneWay}"
+                        Style="{StaticResource TinyTorrentStatusIconStyle}"
+                        AutomationProperties.AccessibilityView="Raw"
+                      />
+                      <TextBlock
+                        Grid.Column="1"
+                        Text="{x:Bind StateText, Mode=OneWay}"
+                        AutomationProperties.HelpText="{x:Bind StateHint, Mode=OneWay}"
+                        VerticalAlignment="Center"
+                        TextTrimming="CharacterEllipsis"
+                      />
+                    </Grid>
                   </DataTemplate>
                 </table:Column.CellTemplate>
               </table:Column>
@@ -599,35 +722,6 @@
                   </DataTemplate>
                 </table:Column.CellTemplate>
               </table:Column>
-              <table:Column x:Name="PeerStateColumn" Id="state" Width="120" MinWidth="112">
-                <table:Column.CellTemplate>
-                  <DataTemplate x:DataType="models:Peer">
-                    <Grid
-                      ColumnSpacing="6"
-                      Background="Transparent"
-                      ToolTipService.ToolTip="{x:Bind StateHint, Mode=OneWay}"
-                    >
-                      <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                      </Grid.ColumnDefinitions>
-                      <FontIcon
-                        FontFamily="{StaticResource LucideFont}"
-                        Glyph="{x:Bind StateGlyph, Mode=OneWay}"
-                        Style="{StaticResource TinyTorrentStatusIconStyle}"
-                        AutomationProperties.AccessibilityView="Raw"
-                      />
-                      <TextBlock
-                        Grid.Column="1"
-                        Text="{x:Bind StateText, Mode=OneWay}"
-                        AutomationProperties.HelpText="{x:Bind StateHint, Mode=OneWay}"
-                        VerticalAlignment="Center"
-                        TextTrimming="CharacterEllipsis"
-                      />
-                    </Grid>
-                  </DataTemplate>
-                </table:Column.CellTemplate>
-              </table:Column>
               <table:Column x:Name="ConnectionColumn" Id="connection" Width="220" MinWidth="120">
                 <table:Column.CellTemplate>
                   <DataTemplate x:DataType="models:Peer">
@@ -635,60 +729,6 @@
                       Text="{x:Bind ConnectionText, Mode=OneWay}"
                       ToolTipService.ToolTip="{x:Bind ConnectionHint, Mode=OneWay}"
                       AutomationProperties.HelpText="{x:Bind ConnectionHint, Mode=OneWay}"
-                      VerticalAlignment="Center"
-                    />
-                  </DataTemplate>
-                </table:Column.CellTemplate>
-              </table:Column>
-              <table:Column
-                x:Name="PeerProgressColumn"
-                Id="progress"
-                Width="100"
-                MinWidth="80"
-                CellAlignment="Right"
-              >
-                <table:Column.CellTemplate>
-                  <DataTemplate x:DataType="models:Peer">
-                    <TextBlock
-                      Text="{x:Bind ProgressText, Mode=OneWay}"
-                      VerticalAlignment="Center"
-                    />
-                  </DataTemplate>
-                </table:Column.CellTemplate>
-              </table:Column>
-              <table:Column
-                x:Name="PeerDownColumn"
-                Id="down"
-                Width="120"
-                MinWidth="96"
-                CellAlignment="Right"
-              >
-                <table:Column.CellTemplate>
-                  <DataTemplate x:DataType="models:Peer">
-                    <TextBlock
-                      Text="{x:Bind DownloadText, Mode=OneWay}"
-                      ToolTipService.ToolTip="{x:Bind DownloadHint, Mode=OneWay}"
-                      AutomationProperties.HelpText="{x:Bind DownloadHint, Mode=OneWay}"
-                      Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
-                      VerticalAlignment="Center"
-                    />
-                  </DataTemplate>
-                </table:Column.CellTemplate>
-              </table:Column>
-              <table:Column
-                x:Name="PeerUpColumn"
-                Id="up"
-                Width="120"
-                MinWidth="96"
-                CellAlignment="Right"
-              >
-                <table:Column.CellTemplate>
-                  <DataTemplate x:DataType="models:Peer">
-                    <TextBlock
-                      Text="{x:Bind UploadText, Mode=OneWay}"
-                      ToolTipService.ToolTip="{x:Bind UploadHint, Mode=OneWay}"
-                      AutomationProperties.HelpText="{x:Bind UploadHint, Mode=OneWay}"
-                      Foreground="{ThemeResource TinyTorrentUploadBrush}"
                       VerticalAlignment="Center"
                     />
                   </DataTemplate>

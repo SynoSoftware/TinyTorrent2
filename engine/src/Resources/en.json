@@ -53,6 +53,8 @@
     "retry_tip": "Try to open the window again",
     "open_folder": "Open folder",
     "open_folder_tip": "Open the folder that holds TinyTorrent's program files",
+    "force_exit": "Force exit",
+    "force_exit_tip": "Exit now without saving the latest changes",
     "files_folder_tip": "Open the folder that holds the files"
   },
   "power": {
@@ -97,7 +99,7 @@
     "window_invalid": "Windows cannot run the window program on this PC. TinyTorrent keeps running.\n\nReinstall the version of TinyTorrent that matches your PC.",
     "window_dependency": "A file required by the window program is missing. TinyTorrent keeps running.\n\nReinstall TinyTorrent to restore the required files.",
     "startup": "The window did not open. TinyTorrent keeps running.",
-    "save": "TinyTorrent could not save and remains running. Choose Exit in the tray to retry.",
+    "save": "TinyTorrent could not save yet. It keeps trying and exits once saving succeeds.",
     "pause": "The transfer pause setting could not be saved.",
     "notification": "The notification setting could not be saved.",
     "window_open": "The TinyTorrent window is still open. Close it, then retry.",

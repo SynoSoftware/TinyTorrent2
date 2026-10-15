@@ -44,6 +44,7 @@ public sealed partial class InspectorPane : UserControl
                     : PeerView.Default.Layout,
                 Side = Fraction(view.Side, PeerView.Default.Side),
                 Stacked = Fraction(view.Stacked, PeerView.Default.Stacked),
+                SpeedCorner = Enum.IsDefined(view.SpeedCorner) ? view.SpeedCorner : MapCorner.BottomLeft,
             };
             var peers = value.Peers;
             if (
@@ -534,5 +535,6 @@ public sealed record InspectorLayout(
 public sealed record PeerView(PeerLayout Layout, double Side, double Stacked)
 {
     public bool Cities { get; init; }
-    internal static PeerView Default { get; } = new(PeerLayout.Table, .55, .5);
+    public MapCorner SpeedCorner { get; init; }
+    internal static PeerView Default { get; } = new(PeerLayout.Both, .55, .5);
 }

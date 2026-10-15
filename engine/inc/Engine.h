@@ -138,11 +138,12 @@ public:
     void Execute(Json const& request, std::string const& connectionId, Reply reply);
     void Tick();
     void Disconnect(std::string const& connectionId);
-    // The completion receives nothing when the final save succeeded, and
-    // otherwise its cause, which is empty when the cause is unknown. It runs
-    // before libtorrent's teardown, which waits seconds for trackers to
-    // acknowledge the stop.
-    void Shutdown(std::function<void(std::optional<std::string> failure)> completion);
+    // A failed final save runs again until it succeeds, and `report` receives
+    // each failure's cause, which is empty when the cause is unknown. Once a
+    // save succeeds, `report` receives nothing, before libtorrent's teardown,
+    // which waits seconds for trackers to acknowledge the stop. A second call
+    // while saving changes nothing.
+    void Shutdown(std::function<void(std::optional<std::string> failure)> report);
     void PauseSession(bool paused, std::function<void(Outcome)> completion);
     // Saves the switches that turn `notices` off, in one settings change.
     void TurnOff(std::vector<NoticeSwitch> const& notices, std::function<void(Outcome)> completion);

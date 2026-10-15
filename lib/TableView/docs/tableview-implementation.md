@@ -89,11 +89,14 @@ still use the platform resources required by the contract.
 `Table.QueueFill` coalesces load, width and ancestor-visibility notifications into
 one fill after visible layout, then detaches its layout listener. It uses the
 same fit and scale as `FillWidth`, without raising a persistence notification.
-`Table/Columns.cs` learns when the window frame drag starts and ends from the
-window's `InputNonClientPointerSource` (`EnteredMoveSize`, `ExitedMoveSize`).
-It discards the fitted widths when a drag starts and reuses them, with the
-empty columns that measurement found, for every fill until it ends. Outside a
-drag every fill measures.
+`Table/Columns.cs` handles successive size changes with a one-shot 150-ms timer.
+The first change discards the fitted widths; following changes reuse them and
+the empty columns that measurement found, restarting the timer each time.
+When the size settles, the timer performs a fresh fit at the final bounds. Explicit
+fit commands still measure immediately. This applies to every source of width
+changes without window or host gesture tracking. It avoids repeated unbounded
+content fits, leaving WinUI's normal measure and arrange intact. Unloading stops
+the timer.
 Collapsed ancestors defer the fill until the table is shown. Visibility callbacks
 are registered while loaded and removed on unload; ordinary row updates and
 scrolling do not request a fill.

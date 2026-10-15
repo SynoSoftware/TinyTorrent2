@@ -149,6 +149,12 @@ resets, nested Connection navigation, and refused or overlapping departures.
 These checks cover history and command availability, not native button input,
 focus, animation, or the editor guards themselves.
 
+`app/tests/DistributionChecks.ps1 -BinaryDirectory <built-app-folder>` checks
+the peer map's estimated distribution without starting WinUI. It watches the
+most probable placement, where a second connection stays in a 90% region
+instead of spreading to a 10% one, and checks that the regions used take all of
+a country's traffic. It does not cover merging places into regions or drawing.
+
 Use this machine and the targeted checks below for the
 [architecture](architecture.md).
 Lifecycle behavior needs a real process check when it changes; a cache-policy
@@ -201,7 +207,9 @@ peer coordinates and rates to the real inspector for visual review. A country
 database lookup uses the bundled MMDB; the synthetic city points do not establish
 city-database accuracy or live transfer timing. The unknown-origin scene retains
 markers without arcs. This journey also renders the country flags whose deferred
-font binding previously failed when table cells were created.
+font binding previously failed when table cells were created. Its review report
+records the map's draw times for 100, 1,000 and 10,000 known peers and for each
+wheel step of a zoom from 100% to 3200%.
 Use `TINYTORRENT_CAPTURE_REVIEW=add-layout` for the workspace headers and empty/long-link
 magnet Add dialog in English and Spanish, Light and Dark, at the three review sizes.
 It also captures the engine-stopped message bar with its Restart action and records

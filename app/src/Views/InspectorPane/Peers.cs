@@ -18,7 +18,9 @@ public sealed partial class InspectorPane
     private void SetupPeers()
     {
         _peerMore.Flyout = MenuItems.Flyout(PeerMenu, () => Model.Text);
-        Peers.SelectionChanged += (_, selection) => _peerMap?.Select(selection.Current as Peer);
+        PeerRates.ContextFlyout = _peerMore.Flyout;
+        Peers.SelectionChanged += (_, selection) =>
+            _peerMap?.Select(selection.Items.OfType<Peer>().ToArray());
         PeerSplit.ValueChanged += (_, value) =>
         {
             if (_arrangingPeers)
@@ -71,6 +73,33 @@ public sealed partial class InspectorPane
                     Model.DownloadCities
                 )
             );
+        menu.Add(new MenuSeparator());
+        menu.Add(
+            new MenuSubmenu(
+                text.Get("peer_map", "speed_position"),
+                Lucide.Move,
+                [
+                    Choice(
+                        "top_left",
+                        view.SpeedCorner == MapCorner.TopLeft,
+                        view with { SpeedCorner = MapCorner.TopLeft }
+                    ),
+                    Choice(
+                        "bottom_left",
+                        view.SpeedCorner == MapCorner.BottomLeft,
+                        view with { SpeedCorner = MapCorner.BottomLeft }
+                    ),
+                    Choice(
+                        "bottom_right",
+                        view.SpeedCorner == MapCorner.BottomRight,
+                        view with { SpeedCorner = MapCorner.BottomRight }
+                    ),
+                ]
+            )
+            {
+                IsEnabled = view.Layout != PeerLayout.Table,
+            }
+        );
         return menu;
 
         MenuChoice Choice(string key, bool selected, PeerView choice, bool enabled = true) =>
@@ -135,7 +164,11 @@ public sealed partial class InspectorPane
                 Peers.RefreshView();
             Peers.Visibility =
                 view.Layout == PeerLayout.Map ? Visibility.Collapsed : Visibility.Visible;
-            PeerDrawing.Visibility = showsMap ? Visibility.Visible : Visibility.Collapsed;
+            PeerSurface.Visibility = showsMap ? Visibility.Visible : Visibility.Collapsed;
+            PeerRates.HorizontalAlignment = view.SpeedCorner == MapCorner.BottomRight
+                ? HorizontalAlignment.Right : HorizontalAlignment.Left;
+            PeerRates.VerticalAlignment = view.SpeedCorner == MapCorner.TopLeft
+                ? VerticalAlignment.Top : VerticalAlignment.Bottom;
             PeerSplit.Visibility = combined ? Visibility.Visible : Visibility.Collapsed;
             Grid.SetRow(Peers, stacked ? 2 : 0);
             Grid.SetColumn(Peers, combined && !stacked ? 2 : 0);
@@ -166,7 +199,8 @@ public sealed partial class InspectorPane
                 if (_peerMap is null)
                 {
                     _peerMap = new PeerMap { ContextFlyout = _peerMore.Flyout };
-                    _peerMap.Select(Peers.Selection.Current as Peer);
+                    _peerMap.Select(Peers.Selection.Items.OfType<Peer>().ToArray());
+                    _peerMap.PlaceChanged += (_, place) => Model.Place = place;
                 }
                 if (!ReferenceEquals(PeerDrawing.Content, _peerMap))
                     PeerDrawing.Content = _peerMap;
@@ -175,7 +209,11 @@ public sealed partial class InspectorPane
             {
                 PeerDrawing.Content = null;
                 if (view.Layout == PeerLayout.Table)
+                {
+                    // Without the map nothing shows or clears its chosen place.
                     _peerMap = null;
+                    Model.Place = null;
+                }
             }
         }
         finally
@@ -208,6 +246,10 @@ public sealed partial class InspectorPane
                 || !ReferenceEquals(PeerDrawing.Content, _peerMap)
             )
                 return;
+            PeerDownload.Text = Model.DownloadText;
+            PeerUpload.Text = Model.UploadText;
+            DescribeRate(PeerDownload, "down");
+            DescribeRate(PeerUpload, "up");
             _peerMap.Show(
                 Model.IsAvailable ? Model.Peers : null,
                 Model.Origin,
@@ -215,5 +257,12 @@ public sealed partial class InspectorPane
                 _layout.View.Cities && Model.HasCities
             );
         });
+
+        void DescribeRate(TextBlock rate, string key)
+        {
+            var name = Model.Text.Format("units", "detail", Model.Text.Get("columns", key), rate.Text);
+            AutomationProperties.SetName(rate, name);
+            ToolTipService.SetToolTip(rate, name);
+        }
     }
 }

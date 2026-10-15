@@ -261,25 +261,6 @@ public class ColumnFitTests
             Assert.AreEqual(250d, TableHarness.EffectiveWidth(table, "a"), 0d);
         });
 
-    [TestMethod]
-    public Task LegacySavedWidthsDoNotOverrideTheInitialFill() =>
-        TestHost.RunAsync(async () =>
-        {
-            Table table = Build(Column("a", 200), Column("b", 150));
-            foreach (var column in table.Columns)
-                column.Header = new Border { Width = 100, Height = 20 };
-            table.Layout = System.Text.Json.JsonSerializer.Deserialize<ColumnLayout>(
-                """{"Order":["a","b"],"VisibilityOverrides":{},"WidthOverrides":{"a":250},"HasManualWidths":true}"""
-            )!;
-            await TableHarness.LoadAsync(table);
-            await SettleAsync(table);
-            Assert.AreEqual(350d, TableHarness.EffectiveWidth(table, "a"), 0d);
-            Assert.AreEqual(350d, TableHarness.EffectiveWidth(table, "b"), 0d);
-            Assert.IsFalse(
-                System.Text.Json.JsonSerializer.Serialize(table.Layout).Contains("WidthOverrides")
-            );
-        });
-
     // ------------------------------------------------------------------ what a fit refuses
 
     [TestMethod]

@@ -40,9 +40,10 @@ public sealed partial class Table
         var order = _order;
         if (_hierarchy is not null || order is null || !CanReorder || !IsInteractive(item))
             return false;
-        return _selection.IsSelected(item)
+        var participates = _selection.IsSelected(item)
             ? SelectedItems.Any(selected => IsInteractive(selected) && order.Contains(selected))
             : order.Contains(item);
+        return participates && order.CanReorder;
     }
 
     private Point ToRoot(Point point) => _surface!.TransformToVisual(null).TransformPoint(point);

@@ -47,6 +47,9 @@ The completed [Library implementation plan](library-implementation.md) records t
 Library and subtitles share one window-lifetime SQLite owner. The
 [database contract](database.md) owns schema initialization, versioning,
 connection lifetime and the rationale for durable and reconstructed state.
+The [Library catalogue cache](library-cache-plan.md) records why the file
+catalogue is retained, how the summary reconciles it before publication, and
+what confirmation still protects.
 
 The completed [native Settings implementation](settings-implementation.md) records
 the sidebar, page composition, shared controls and ownership corrections, with

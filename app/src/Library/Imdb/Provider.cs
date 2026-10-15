@@ -114,9 +114,9 @@ internal sealed class Provider(Dataset dataset) : IProvider
                 var release = request.Release;
                 var season = release.Season!.Value;
                 command.CommandText = """
-                    SELECT number,title,year FROM episodes
-                    WHERE series_id=$id AND season=$season AND number IN (SELECT value FROM json_each($numbers))
-                    ORDER BY number;
+                    SELECT e.number,t.title,t.year FROM episodes e JOIN episode_titles t ON t.episode_id=e.episode_id
+                    WHERE e.series_id=$id AND e.season=$season AND e.number IN (SELECT value FROM json_each($numbers))
+                    ORDER BY e.number;
                     """;
                 command.Parameters.AddWithValue("$season", season);
                 command.Parameters.AddWithValue(

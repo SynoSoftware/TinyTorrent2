@@ -975,7 +975,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         if (first)
             ShowRequested?.Invoke(this, EventArgs.Empty);
         ObserveFiles(snapshot);
-        Inspector.Observe(sessionId, inspectedChanged || previousSelection != _selected.Length);
+        Inspector.Observe(
+            sessionId,
+            inspectedChanged
+                || (Inspector.Target is null && rowsChanged)
+                || previousSelection != _selected.Length
+        );
         SnapshotApplied?.Invoke(this, new SnapshotAppliedEventArgs(published, rowsChanged));
         RevealPending();
     }

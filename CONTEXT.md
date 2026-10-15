@@ -201,6 +201,13 @@ data-source contributions.
 one torrent. Library removes its stored facts when it observes that contribution's
 withdrawal or reconciles after reconnecting.
 
+**Library catalogue**: the last reported file lists retained for browsing, including
+files whose current location or completion has not yet been confirmed.
+
+**File confirmation**: a current data source's confirmation of a file list and its
+locations. It permits file work; a retained catalogue alone does not.
+_Avoid_: verification, which checks payload against torrent piece hashes.
+
 **Import**: the one path by which a torrent Library does not know becomes
 known: its files are read and listed, each video is identified from its name,
 and, when the saved preferences allow, its videos get subtitles. A provider

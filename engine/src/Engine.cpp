@@ -151,7 +151,6 @@ char const* ToString(NoticeKind kind)
     case NoticeKind::Duplicate: return "duplicate";
     case NoticeKind::AddFailed: return "add_failed";
     case NoticeKind::DeleteFailed: return "delete_failed";
-    case NoticeKind::Failure: return "failure";
     case NoticeKind::Background: return "background";
     case NoticeKind::MissingProgram: return "missing_program";
     case NoticeKind::Aggregate: return "aggregate";
@@ -176,7 +175,7 @@ void Engine::Execute(Json const& request, std::string const& connectionId, Reply
 }
 void Engine::Tick() { state_->Tick(); }
 void Engine::Disconnect(std::string const& connectionId) { state_->Disconnect(connectionId); }
-void Engine::Shutdown(std::function<void(std::optional<std::string> failure)> completion) { state_->Shutdown(std::move(completion)); }
+void Engine::Shutdown(std::function<void(std::optional<std::string> failure)> report) { state_->Shutdown(std::move(report)); }
 void Engine::PauseSession(bool paused, std::function<void(Outcome)> completion)
 {
     if (auto refusal = state_->Refusal())

@@ -9,18 +9,27 @@ namespace
 constexpr auto phaseTimeout = std::chrono::seconds(30);
 }
 
-void Engine::State::Shutdown(std::function<void(std::optional<std::string> failure)> completion)
+void Engine::State::Shutdown(std::function<void(std::optional<std::string> failure)> report)
 {
     if (shutdown)
     {
         return;
     }
-    // Exit after a failed final save starts its phases again.
-    if (IsShuttingDown() && session)
-    {
-        saveFailure.reset();
-        pausing.clear();
-    }
+    if (connectionTest)
+        ReleaseConnectionTest(connectionTest->connectionId, ConnectionPhase::Cancelled);
+    StartFinalSave();
+    FailReading(Failure(ErrorCode::ShuttingDown));
+    Discard([](Preview const&) { return true; });
+    log.Write("shutdown", "", "requested");
+    shutdown = std::move(report);
+}
+
+// Starts the shutdown phases, also again after a failed final save. A new
+// attempt keeps `pausing`, so it waits again for torrents that never confirmed
+// their pause instead of saving while their disk work may still run.
+void Engine::State::StartFinalSave()
+{
+    saveFailure.reset();
     for (auto& [id, torrent] : torrents)
     {
         if (torrent.hashError)
@@ -28,14 +37,8 @@ void Engine::State::Shutdown(std::function<void(std::optional<std::string> failu
             RecordHashes(torrent);
         }
     }
-    if (connectionTest)
-        ReleaseConnectionTest(connectionTest->connectionId, ConnectionPhase::Cancelled);
     shutdownPhase = ShutdownPhase::Draining;
     phaseStarted.reset();
-    FailReading(Failure(ErrorCode::ShuttingDown));
-    Discard([](Preview const&) { return true; });
-    log.Write("shutdown", "", "requested");
-    shutdown = std::move(completion);
 }
 
 // Shutdown waits for queued changes and additions, pauses every torrent,
@@ -55,6 +58,14 @@ void Engine::State::ContinueShutdown()
         }
         return;
     }
+    if (shutdownPhase == ShutdownPhase::Retrying)
+    {
+        if (std::chrono::steady_clock::now() - *phaseStarted < checkpointRetry)
+        {
+            return;
+        }
+        StartFinalSave();
+    }
     if (!changes.IsIdle() || !additions.empty())
     {
         return;
@@ -71,7 +82,7 @@ void Engine::State::ContinueShutdown()
             {
                 saveFailure.emplace();
                 log.Write("shutdown", "", "rename_pending");
-                Finish();
+                RetryFinalSave();
                 return;
             }
         }
@@ -120,15 +131,9 @@ void Engine::State::ContinueShutdown()
     }
     if (shutdownPhase == ShutdownPhase::Pausing)
     {
-        if (!pausing.empty())
+        if (!pausing.empty() && std::chrono::steady_clock::now() - *phaseStarted < phaseTimeout)
         {
-            if (std::chrono::steady_clock::now() - *phaseStarted < phaseTimeout)
-            {
-                return;
-            }
-            pausing.clear();
-            saveFailure.emplace();
-            log.Write("shutdown", "", "recovery_required");
+            return;
         }
         for (auto const& [id, torrent] : torrents)
         {
@@ -140,6 +145,15 @@ void Engine::State::ContinueShutdown()
         if (!store.IsIdle())
         {
             return;
+        }
+        // The torrents left in `pausing` did not confirm their pause in time.
+        if (!pausing.empty())
+        {
+            saveFailure.emplace();
+            for (auto const& handle : pausing)
+            {
+                log.Write("shutdown", handles.at(handle)->torrentId, "pause_timeout");
+            }
         }
         shutdownPhase = ShutdownPhase::Sampling;
         phaseStarted = std::chrono::steady_clock::now();
@@ -179,18 +193,29 @@ void Engine::State::ContinueShutdown()
     {
         return;
     }
+    if (saveFailure)
+    {
+        RetryFinalSave();
+        return;
+    }
     // Reporting first lets the desktop leave the screen before the teardown
     // waits on trackers.
     Finish();
-    if (!saveFailure)
-    {
-        session.reset();
-    }
+    session.reset();
+}
+
+// Reports the failed attempt and starts the final save again after
+// checkpointRetry, so Exit ends once a save succeeds.
+void Engine::State::RetryFinalSave()
+{
+    shutdown(saveFailure);
+    shutdownPhase = ShutdownPhase::Retrying;
+    phaseStarted = std::chrono::steady_clock::now();
 }
 
 void Engine::State::Finish()
 {
-    auto completion = std::exchange(shutdown, nullptr);
-    completion(saveFailure);
+    auto report = std::exchange(shutdown, nullptr);
+    report(std::nullopt);
 }
 }

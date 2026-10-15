@@ -201,11 +201,16 @@
             CellTemplate="{StaticResource Duration}"
             CellAlignment="Right"
           />
-          <table:Column Id="resolution" CellTemplate="{StaticResource Resolution}" />
+          <table:Column
+            Id="resolution"
+            CellTemplate="{StaticResource Resolution}"
+            IsVisible="False"
+          />
           <table:Column
             Id="bitrate"
             CellTemplate="{StaticResource Bitrate}"
             CellAlignment="Right"
+            IsVisible="False"
           />
           <table:Column Id="subtitles" CellTemplate="{StaticResource Subtitles}" />
           <table:Column

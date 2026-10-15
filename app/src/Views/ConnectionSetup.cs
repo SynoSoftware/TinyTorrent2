@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Globalization;
+using System.Net.NetworkInformation;
 using System.Text.Json;
 using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Services;
@@ -17,7 +18,18 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
     private string _measuredId = string.Empty;
     private string _testFailure = string.Empty;
     private int _remaining;
-    private (LimitProfile? Fixed, bool Standard, bool Alternative)? _limits;
+    private double _downloadBytes;
+    private double _uploadBytes;
+    private double _downloadSeconds;
+    private double _uploadSeconds;
+    private double _byteLimit;
+    private double _timeLimit;
+    private bool _complete;
+    private bool _longerTest;
+    private ConnectionLink? _link;
+    private int _linkRevision;
+    private string _sessionId = string.Empty;
+    private long _sequence = -1;
 
     internal ConnectionSetup(Settings settings, MainViewModel main, PipeClient client)
     {
@@ -62,6 +74,48 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
         _settings.Proxy.IsInUse || _settings.Adapter.ConfirmedText.Length > 0;
     public bool CanTest => CanEdit && !_settings.IsPending && !HasCustomRoute;
     public bool CanCancelTest => _main.IsConnected && IsTesting && !IsPending;
+    public bool IsHolding => _phase == ConnectionPhase.Holding;
+    public string TestId { get; private set; } = string.Empty;
+    public double DownloadRate { get; private set; }
+    public double UploadRate { get; private set; }
+    public double DownloadCapacity => Parse(Download);
+    public double UploadCapacity => Parse(Upload);
+    public bool QuickTest => !LongerTest;
+    public bool LongerTest
+    {
+        get => _longerTest;
+        set
+        {
+            if (_longerTest == value || !CanTest)
+                return;
+            _longerTest = value;
+            Refresh();
+        }
+    }
+    public string TestAllowance => Text.Get("connection_setup", LongerTest ? "longer_allowance" : "quick_allowance");
+    public double TestProgress
+    {
+        get
+        {
+            if (_complete)
+                return 100;
+            if (_byteLimit <= 0 || _timeLimit <= 0)
+                return 0;
+            return _uploadSeconds > 0 || _phase == ConnectionPhase.Uploading
+                ? 50 + Progress(_uploadBytes, _uploadSeconds) * 50
+                : Progress(_downloadBytes, _downloadSeconds) * 50;
+        }
+    }
+    public string ProgressText => Text.Format("units", "percent", TestProgress / 100);
+    public string TestDetail => TestId.Length == 0 ? TestAllowance
+        : Text.Format("connection_setup", "test_usage", Text.Bytes(_downloadBytes + _uploadBytes), _downloadSeconds + _uploadSeconds);
+    public string TestHint => Text.Get("connection_setup",
+        _complete && Math.Min(_downloadSeconds, _uploadSeconds) < 1 ? "short_sample" : "test_hint");
+    public bool HasLinkWarning => !HasCustomRoute && _link is { } link
+        && (link.Mbps < DownloadCapacity || link.Mbps < UploadCapacity || link.AdapterMbps > link.Mbps);
+    public string LinkTitle => _link is { } link
+        ? Text.Format("connection_setup", "link_warning", link.Mbps) : string.Empty;
+    public string LinkDetail => Text.Get("connection_setup", "link_check");
     public string TestLabel =>
         Text.Get(
             "connection_setup",
@@ -116,6 +170,36 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
             ? Text.Get("connection_setup", _main.HasAlternativeLimits ? "in_use" : "not_in_use")
             : string.Empty;
     public event PropertyChangedEventHandler? PropertyChanged;
+
+    private double Progress(double bytes, double seconds) => Math.Clamp(Math.Max(bytes / _byteLimit, seconds / _timeLimit), 0, 1);
+
+    internal async Task RefreshLink()
+    {
+        var revision = ++_linkRevision;
+        var link = await Task.Run(() =>
+        {
+            try
+            {
+                var profile = Windows.Networking.Connectivity.NetworkInformation.GetInternetConnectionProfile();
+                if (profile?.NetworkAdapter is not { IanaInterfaceType: 6 } adapter)
+                    return null;
+                var network = NetworkInterface.GetAllNetworkInterfaces().FirstOrDefault(
+                    item => Guid.TryParse(item.Id, out var id) && id == adapter.NetworkAdapterId);
+                if (network is null || network.Speed <= 0)
+                    return null;
+                return new ConnectionLink(network.Speed / 1_000_000.0,
+                    Math.Max(adapter.InboundMaxBitsPerSecond, adapter.OutboundMaxBitsPerSecond) / 1_000_000.0);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        });
+        if (revision != _linkRevision)
+            return;
+        _link = link;
+        Refresh();
+    }
 
     public string Download
     {
@@ -241,13 +325,19 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
         _alternativeShare = SavedShare(SavedAlternative, AlternativeDefault);
         _standardMoved = false;
         _alternativeMoved = false;
+        _measuredId = TestId;
         _failure = null;
         Refresh();
     }
 
     internal void Observe(JsonElement value)
     {
-        var previous = (_phase, _remaining, _testFailure, _download, _upload);
+        var sessionId = value.GetProperty("session_id").GetString() ?? string.Empty;
+        var sequence = value.GetProperty("sequence").GetInt64();
+        if (_sessionId == sessionId && sequence < _sequence)
+            return;
+        _sessionId = sessionId;
+        _sequence = sequence;
         var previousPhase = _phase;
         _phase = value.GetProperty("phase").GetString() switch
         {
@@ -263,7 +353,16 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
         };
         if (value.TryGetProperty("id", out var id))
         {
-            var testId = id.GetString() ?? string.Empty;
+            TestId = id.GetString() ?? string.Empty;
+            DownloadRate = value.GetProperty("download").GetDouble();
+            UploadRate = value.GetProperty("upload").GetDouble();
+            _downloadBytes = value.GetProperty("download_bytes").GetDouble();
+            _uploadBytes = value.GetProperty("upload_bytes").GetDouble();
+            _downloadSeconds = value.GetProperty("download_seconds").GetDouble();
+            _uploadSeconds = value.GetProperty("upload_seconds").GetDouble();
+            _byteLimit = value.GetProperty("byte_limit").GetDouble();
+            _timeLimit = value.GetProperty("time_limit").GetDouble();
+            _complete = value.GetProperty("complete").GetBoolean();
             _remaining = value.GetProperty("remaining").GetInt32();
             var previousFailure = _testFailure;
             _testFailure = value.GetProperty("failure").GetString() ?? string.Empty;
@@ -271,30 +370,24 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
                 _main.Report(new IOException(Text.Get("connection_setup", _testFailure)));
             if (
                 (_phase is ConnectionPhase.Holding or ConnectionPhase.Completed)
-                && testId != _measuredId
-                && value.GetProperty("download").GetDouble() > 0
-                && value.GetProperty("upload").GetDouble() > 0
+                && _complete
+                && TestId != _measuredId
             )
             {
-                _measuredId = testId;
-                _download = value
-                    .GetProperty("download")
-                    .GetDouble()
-                    .ToString("0.##", CultureInfo.CurrentCulture);
-                _upload = value
-                    .GetProperty("upload")
-                    .GetDouble()
-                    .ToString("0.##", CultureInfo.CurrentCulture);
+                _measuredId = TestId;
+                _download = DownloadRate.ToString("0.##", CultureInfo.CurrentCulture);
+                _upload = UploadRate.ToString("0.##", CultureInfo.CurrentCulture);
             }
         }
         else
-            _testFailure = string.Empty;
-        var limits = (_main.FixedLimits, _main.HasStandardLimits, _main.HasAlternativeLimits);
-        if (previous != (_phase, _remaining, _testFailure, _download, _upload) || _limits != limits)
         {
-            _limits = limits;
-            Refresh();
+            TestId = string.Empty;
+            DownloadRate = UploadRate = 0;
+            _downloadBytes = _uploadBytes = _downloadSeconds = _uploadSeconds = 0;
+            _complete = false;
+            _testFailure = string.Empty;
         }
+        Refresh();
         if (
             _phase != previousPhase
             && _phase != ConnectionPhase.Idle
@@ -317,6 +410,12 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
             await Execute(() => SendTest("cancel"));
     }
 
+    public async Task Resume()
+    {
+        if (IsHolding && !IsPending)
+            await Execute(() => SendTest("release"));
+    }
+
     internal async Task<bool> Depart()
     {
         if (IsPending)
@@ -326,8 +425,13 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
         return true;
     }
 
-    private async Task SendTest(string action) =>
-        Observe(await _client.Send("connection_test", new { action }));
+    private async Task SendTest(string action)
+    {
+        var session = _sessionId;
+        var reply = await _client.Send("connection_test", new { action, profile = LongerTest ? "longer" : "quick" });
+        if (session == _sessionId)
+            Observe(reply);
+    }
 
     private async Task<bool> Execute(Func<Task> operation)
     {
@@ -579,6 +683,8 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
     }
 
     private readonly record struct Caps(int Download, int Upload);
+
+    private sealed record ConnectionLink(double Mbps, double AdapterMbps);
 
     private readonly record struct QueueLimits(int Downloads, int Seeds, int Total);
 

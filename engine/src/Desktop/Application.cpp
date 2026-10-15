@@ -17,7 +17,6 @@ namespace
 constexpr UINT dispatch = WM_APP + 1;
 constexpr UINT tray = WM_APP + 2;
 constexpr UINT wake = WM_APP + 3;
-constexpr UINT notice = WM_APP + 4;
 constexpr UINT_PTR tickTimer = 1;
 constexpr UINT_PTR trayTimer = 2;
 
@@ -86,6 +85,36 @@ LRESULT CALLBACK Broadcast(HWND window, UINT message, WPARAM first, LPARAM secon
         PostMessageW(owner, message, first, second);
     }
     return DefWindowProcW(window, message, first, second);
+}
+
+// The product icon with Windows' error mark, which the tray and the popups
+// show for problems.
+HICON ErrorIcon()
+{
+    ICONINFO icon{};
+    if (!GetIconInfo(LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_TINYTORRENT)), &icon))
+    {
+        return nullptr;
+    }
+    HICON result = nullptr;
+    auto target = CreateCompatibleDC(nullptr);
+    BITMAP color{};
+    if (target && icon.hbmColor && GetObjectW(icon.hbmColor, static_cast<int>(sizeof(color)), &color))
+    {
+        auto previous = SelectObject(target, icon.hbmColor);
+        auto width = static_cast<int>(color.bmWidth / 2);
+        auto height = static_cast<int>(color.bmHeight / 2);
+        auto drawn = DrawIconEx(target, width, height, LoadIconW(nullptr, IDI_ERROR), width, height, 0, nullptr, DI_NORMAL);
+        SelectObject(target, previous);
+        if (drawn)
+        {
+            result = CreateIconIndirect(&icon);
+        }
+    }
+    if (target) DeleteDC(target);
+    DeleteObject(icon.hbmColor);
+    DeleteObject(icon.hbmMask);
+    return result;
 }
 
 // The window from the same build, which is always beside the engine.
@@ -219,7 +248,16 @@ Application::Application(std::filesystem::path directory, std::wstring sid, bool
     {
         throw std::runtime_error("Cannot create the broadcast window.");
     }
-    tray_ = std::make_unique<Tray>(owner_.get(), tray, notice, broadcast_.get(), strings_, headless_);
+    if (!headless_)
+    {
+        errorIcon_.reset(ErrorIcon());
+    }
+    tray_ = std::make_unique<Tray>(owner_.get(), tray, broadcast_.get(), strings_, headless_, errorIcon_.get());
+    notices_ = std::make_unique<Notices>(strings_, headless_, errorIcon_.get(), Notices::Commands{
+        .open = [this] { Open(); },
+        .openSettings = [this](std::string card) { OpenSettings(std::move(card)); },
+        .folder = [this](std::string const& torrentId) { return engine_->Folder(torrentId); },
+        .turnOff = [this](std::vector<NoticeSwitch> notices) { TurnOff(std::move(notices)); }});
     auto data = directory.wstring();
     engine_ = std::make_unique<Engine>(std::move(directory),
         [this] { PostMessageW(owner_.get(), wake, 0, 0); });
@@ -313,20 +351,6 @@ LRESULT Application::Handle(UINT message, WPARAM first, LPARAM second)
     case tray:
         OnTray(first, second);
         return 0;
-    case notice:
-        if (static_cast<PopupPart>(first) == PopupPart::More)
-        {
-            OnNoticeCommand(static_cast<NoticeCommand>(second));
-        }
-        else if (static_cast<PopupPart>(first) == PopupPart::Action)
-        {
-            OnNoticeAction(static_cast<NoticeAction>(second));
-        }
-        else
-        {
-            OnNotice();
-        }
-        return 0;
     case WM_TIMER:
         if (first == tickTimer)
         {
@@ -408,79 +432,16 @@ void Application::OnTray(WPARAM first, LPARAM second)
     }
 }
 
-void Application::OnNoticeCommand(NoticeCommand command)
+void Application::TurnOff(std::vector<NoticeSwitch> notices)
 {
-    if (command == NoticeCommand::Settings)
-    {
-        OpenSettings("notifications");
-        return;
-    }
-    std::vector<NoticeSwitch> notices;
-    if (command == NoticeCommand::TurnOffAll)
-    {
-        notices = {NoticeSwitch::Finished, NoticeSwitch::Added, NoticeSwitch::Problems, NoticeSwitch::Background};
-    }
-    else
-    {
-        auto shown = tray_->TakeSwitch();
-        if (!shown)
-        {
-            return;
-        }
-        notices = {*shown};
-    }
     engine_->TurnOff(notices, [this](Outcome outcome)
     {
         if (outcome.error)
         {
-            Notify({.kind = NoticeKind::Failure, .name = Utf8(productName),
-                .detail = outcome.detail, .code = "notification"});
+            ShowError("notification", Wide(outcome.detail));
         }
         Refresh();
     });
-}
-
-void Application::OnNotice()
-{
-    auto shown = tray_->TakeNotice();
-    if (!shown)
-    {
-        return;
-    }
-    if (shown->kind == NoticeKind::MissingProgram)
-    {
-        OpenSettings("windows_integration");
-        return;
-    }
-    // A completed torrent opens its folder; any other notice opens the window.
-    auto folder = shown->kind == NoticeKind::Completed ? engine_->Folder(shown->torrentId) : std::string();
-    if (folder.empty())
-    {
-        Open();
-    }
-    else
-    {
-        ShellExecuteW(nullptr, L"open", Wide(folder).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-    }
-}
-
-// Open folder leaves the notice open, so only Retry consumes it.
-void Application::OnNoticeAction(NoticeAction action)
-{
-    if (action == NoticeAction::Retry)
-    {
-        tray_->TakeNotice();
-        Open();
-    }
-    else
-    {
-        auto folder = tray_->Folder();
-        if (folder.empty())
-        {
-            folder = std::filesystem::path(Executable()).parent_path();
-        }
-        ShellExecuteW(nullptr, L"open", folder.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-    }
 }
 
 void Application::ShowMenu(POINT point)
@@ -520,7 +481,7 @@ void Application::OnTimer()
                 reopen_ = false;
                 settingsCard_.reset();
                 splash_.Close();
-                ShowError("startup", std::to_wstring(code));
+                ShowStartError("startup", std::to_wstring(code));
             }
             else if (reopen_)
             {
@@ -545,7 +506,7 @@ void Application::OnTimer()
         if (!IsExiting() && exit_ != ExitPhase::WindowConfirming)
         {
             splash_.Close();
-            ShowError("startup");
+            ShowStartError("startup");
         }
         else if (headless_)
         {
@@ -964,7 +925,7 @@ bool Application::Open()
         {
             detail += L" \u00B7 " + std::wstring(reason);
         }
-        ShowError(key, executable.wstring() + L"\n" + detail);
+        ShowStartError(key, executable.wstring() + L"\n" + detail);
         return true;
     }
     CloseHandle(process.hThread);
@@ -990,13 +951,14 @@ HWND Application::ShownWindow() const
 
 void Application::Exit()
 {
-    if (saving_)
-    {
-        return;
-    }
+    // The engine saves again by itself, so Exit shows again why it has not
+    // ended, which brings back Force exit after the person closed the notice.
     if (engine_->IsShuttingDown())
     {
-        Shutdown();
+        if (saveFailure_)
+        {
+            ShowSaveFailure();
+        }
         return;
     }
     if (exit_ != ExitPhase::Idle)
@@ -1094,15 +1056,9 @@ void Application::BeginExit()
 
 void Application::Shutdown()
 {
-    if (saving_)
-    {
-        return;
-    }
-    saving_ = true;
     waitingSince_ = 0;
     engine_->Shutdown([this](std::optional<std::string> failure)
     {
-        saving_ = false;
         if (exit_ == ExitPhase::SessionEnding)
         {
             endSaved_ = !failure;
@@ -1110,6 +1066,7 @@ void Application::Shutdown()
         }
         if (!failure)
         {
+            notices_->Close();
             tray_->Remove();
             PostQuitMessage(0);
         }
@@ -1119,7 +1076,14 @@ void Application::Shutdown()
         }
         else
         {
-            ShowError("save", Wide(*failure));
+            // The engine saves again by itself, so only its first failure
+            // interrupts the person.
+            bool first = !saveFailure_;
+            saveFailure_ = Wide(*failure);
+            if (first)
+            {
+                ShowSaveFailure();
+            }
         }
     });
 }
@@ -1176,7 +1140,7 @@ void Application::Tick()
     if (showsSample_ && !engine_->IsLoading())
     {
         showsSample_ = false;
-        tray_->ShowSample();
+        notices_->ShowSample();
     }
 #endif
     if (pendingStart_ && engine_->HasSettings())
@@ -1201,7 +1165,7 @@ void Application::Tick()
     {
         Notify(std::move(notice));
     }
-    tray_->Notify();
+    notices_->Notify();
     ticking_ = false;
 }
 
@@ -1221,13 +1185,14 @@ void Application::CancelExit()
     Refresh();
 }
 
-// Brings the tray, the power request, the splash theme and the text language
-// in line with the engine and with Exit.
+// Brings the tray, the notices, the power request, the splash theme and the
+// text language in line with the engine and with Exit.
 void Application::Refresh()
 {
     activity_ = engine_->Activity();
     bool loading = engine_->IsLoading();
     tray_->Update(activity_, loading, !loading && !engine_->HasStorageFailure() && !IsExiting());
+    notices_->Update(activity_);
     power_.Update(activity_, IsExiting() || engine_->IsShuttingDown());
     splash_.SetTheme(activity_.theme);
     ShowSplash();
@@ -1261,8 +1226,7 @@ void Application::Pause()
     {
         if (outcome.error)
         {
-            Notify({.kind = NoticeKind::Failure, .name = Utf8(productName),
-                .detail = outcome.detail, .code = "pause"});
+            ShowError("pause", Wide(outcome.detail));
         }
         Refresh();
     });
@@ -1440,10 +1404,10 @@ void Application::Notify(Notice notice)
             {"folder", notice.folder}, {"count", notice.count}});
         return;
     }
-    tray_->Queue(std::move(notice));
+    notices_->Queue(std::move(notice));
 }
 
-void Application::ShowError(std::string const& key, std::wstring detail)
+void Application::ShowError(std::string const& key, std::wstring detail, std::vector<Popup::Action> actions)
 {
     if (headless_)
     {
@@ -1456,7 +1420,26 @@ void Application::ShowError(std::string const& key, std::wstring detail)
         return;
     }
     // The window may be the one that stopped responding.
-    tray_->Queue({.kind = NoticeKind::Failure, .name = Utf8(productName),
-        .detail = Utf8(detail), .code = key});
+    notices_->Report({.code = key, .detail = std::move(detail), .actions = std::move(actions)});
+}
+
+// The window did not start: Retry opens it again, and Open folder shows the
+// folder that holds the window program.
+void Application::ShowStartError(std::string const& key, std::wstring detail)
+{
+    ShowError(key, std::move(detail), {notices_->Retry(),
+        notices_->OpenFolder(WindowExecutable().parent_path(), strings_.Text("notification", "open_folder_tip"))});
+}
+
+// A stalled torrent may never let the save succeed, so Force exit ends the
+// process at once, without the final save. Changes since the last checkpoint
+// are lost, as after any abrupt end.
+void Application::ShowSaveFailure()
+{
+    ShowError("save", *saveFailure_, {notices_->ForceExit([this]
+    {
+        tray_->Remove();
+        TerminateProcess(GetCurrentProcess(), 1);
+    })});
 }
 }

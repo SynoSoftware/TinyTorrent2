@@ -20,6 +20,7 @@ internal sealed class TorrentSource : IAsyncDisposable
     private CancellationTokenSource _generation = new();
 
     internal event EventHandler? Changed;
+    internal event EventHandler? Published;
     internal event EventHandler<Exception>? Failed;
     internal bool IsCurrent { get; private set; }
     internal bool IsReady { get; private set; }
@@ -69,11 +70,12 @@ internal sealed class TorrentSource : IAsyncDisposable
     }
 
     // A successful torrent command can change the files of any torrent. The
-    // listed files stay while every torrent is read again from a snapshot
-    // taken after the command. Changed lets Library show what the read that
-    // Restart ended saved but did not report.
+    // listed files stay confirmed while every torrent is read again from a
+    // snapshot taken after the command. Published lets Library show what the
+    // read that Restart ended saved but did not report.
     private void Reread(JsonElement? snapshot)
     {
+        bool current;
         lock (_gate)
         {
             if (_lifetime.IsCancellationRequested)
@@ -81,10 +83,12 @@ internal sealed class TorrentSource : IAsyncDisposable
             Restart();
             _reread = true;
             _latest = snapshot;
+            current = IsCurrent;
             if (snapshot is not null && (_work is null || _work.IsCompleted))
                 _work = Task.Run(Run);
         }
-        Changed?.Invoke(this, EventArgs.Empty);
+        if (current)
+            Published?.Invoke(this, EventArgs.Empty);
     }
 
     // Ends the current read, which then saves nothing more. The next read
@@ -120,7 +124,6 @@ internal sealed class TorrentSource : IAsyncDisposable
         CancellationToken cancellation;
         lock (_gate)
             cancellation = _generation.Token;
-        var changed = false;
         try
         {
             while (!cancellation.IsCancellationRequested)
@@ -141,14 +144,17 @@ internal sealed class TorrentSource : IAsyncDisposable
                         return;
                     }
                 }
+                var changed = false;
                 if (snapshot is { } current)
                 {
-                    changed |= await Reconcile(current, cancellation).ConfigureAwait(false);
+                    // Withdrawals are reconciled before cached rows become visible.
                     if (invalidated)
                         await _sources.Invalidate(cancellation).ConfigureAwait(false);
                     else if (reread)
                         await _sources.Reread(cancellation).ConfigureAwait(false);
-                    bool synchronized;
+                    changed = await Reconcile(current, cancellation).ConfigureAwait(false);
+                    var cached =
+                        invalidated && await _sources.HasCache(cancellation).ConfigureAwait(false);
                     lock (_gate)
                     {
                         if (
@@ -159,37 +165,51 @@ internal sealed class TorrentSource : IAsyncDisposable
                             continue;
                         _invalidated = false;
                         _reread = false;
-                        synchronized = !IsCurrent;
-                        IsCurrent = true;
                     }
-                    if (synchronized)
-                        Changed?.Invoke(this, EventArgs.Empty);
+                    if (cached || changed)
+                        Publish(cancellation);
+                    changed = false;
                 }
 
                 var next = await _sources.Next(cancellation).ConfigureAwait(false);
                 if (next is null)
                 {
                     var ready = await _sources.IsReady(cancellation).ConfigureAwait(false);
+                    bool publish;
                     lock (_gate)
                     {
-                        // A read that Restart ended leaves readiness to the
-                        // next read, because Reread keeps it.
                         if (_latest is not null || revision != _revision)
                             continue;
                         ready = ready && _connected && !cancellation.IsCancellationRequested;
-                        changed |= IsReady != ready;
+                        changed = IsReady != ready;
                         IsReady = ready;
                         if (ready)
                             _failureReported = false;
+                        // Nothing is left to read, so an empty collection is published.
+                        publish = !IsCurrent;
                     }
-                    if (changed)
+                    if (publish)
+                        Publish(cancellation);
+                    else if (changed)
                         Changed?.Invoke(this, EventArgs.Empty);
                     return;
                 }
-                var detail = await _client
-                    .ReadFiles(next.Origin, cancellation)
-                    .ConfigureAwait(false);
-                if (detail is null)
+                FileDetail? detail = null;
+                var failed = false;
+                try
+                {
+                    detail = await _client
+                        .ReadFiles(next.Origin, cancellation)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception error)
+                    when (error is TimeoutException
+                        || error is CommandException { Code: not "storage_failed" })
+                {
+                    failed = true;
+                    System.Diagnostics.Debug.WriteLine(error);
+                }
+                if (detail is null && !failed)
                 {
                     // Foreground demand yields the connection without ending collection.
                     if (!_client.IsConnected)
@@ -205,17 +225,14 @@ internal sealed class TorrentSource : IAsyncDisposable
                 }
                 if (snapshot is { } latest)
                     changed |= await Reconcile(latest, cancellation).ConfigureAwait(false);
-                if (Files(next, detail) is { } files)
+                if (detail is not null && Files(next, detail) is { } files)
                     changed |= await _sources
                         .Replace(next, files, cancellation)
                         .ConfigureAwait(false);
                 else
                     await _sources.MarkChecked(next, cancellation).ConfigureAwait(false);
                 if (changed)
-                {
-                    Changed?.Invoke(this, EventArgs.Empty);
-                    changed = false;
-                }
+                    Publish(cancellation);
             }
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
@@ -254,6 +271,23 @@ internal sealed class TorrentSource : IAsyncDisposable
                     _work = Task.Run(Run);
             }
         }
+    }
+
+    // The first publication makes the cached or collected rows available.
+    // Every publication reports committed catalogue changes, including the
+    // withdrawals a reconnect reconciles while the last rows stay visible.
+    private void Publish(CancellationToken cancellation)
+    {
+        bool first;
+        lock (_gate)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            first = !IsCurrent;
+            IsCurrent = true;
+        }
+        if (first)
+            Changed?.Invoke(this, EventArgs.Empty);
+        Published?.Invoke(this, EventArgs.Empty);
     }
 
     private async Task<bool> Reconcile(JsonElement snapshot, CancellationToken cancellation)

@@ -28,12 +28,17 @@ public sealed partial class Browser
     private Task? _closing;
     private CancellationTokenSource? _search;
     private CancellationTokenSource? _detail;
+    private CancellationTokenSource? _rating;
     private Task? _searching;
+    private Task? _ratings;
+    private readonly Dictionary<long, (Entry Source, Entry Rated)> _imdb = new();
     private int _revision;
     private bool _refresh;
     private bool _stored;
     private bool _pacing;
     private bool _available;
+    private bool _canShowTorrent;
+    private bool _hasCatalogue;
     private string _emptyText = string.Empty;
     private bool _visible;
     private bool _typing;
@@ -79,7 +84,7 @@ public sealed partial class Browser
 
 #if CAPTURE
     internal Task SearchCompletion => _searching ?? Task.CompletedTask;
-    internal bool IsReady => CanLookup;
+    internal bool IsReady => IsAvailable;
 
     internal Task<int> PrepareTiming() =>
         (
@@ -95,12 +100,13 @@ public sealed partial class Browser
         Selection.Items.Count == 1 ? Selection.Items[0] as LibraryRow : null;
     public bool IsAvailable =>
         !_disposed
-        && _readiness != LibraryReadiness.Offline
+        && _hasCatalogue
         && _failure is null
         && _starting is { IsCompletedSuccessfully: true };
     public string Failure => _failure is null ? string.Empty : Text.Error(_failure);
     internal bool HasFailure => _failure is not null;
     internal Exception? FailureCause => _failure;
+    internal bool CanShowTorrent => IsAvailable && _readiness != LibraryReadiness.Offline;
 
     // Retry and RetryTip act on the failure that Message shows.
     public string Message =>
@@ -391,7 +397,7 @@ public sealed partial class Browser
                 }
             },
             () =>
-                IsAvailable
+                CanLookup
                 && !_erasing
                 && Selection.Items.Cast<LibraryRow>().Any(row => row.Entry.HasMetadata)
         );
@@ -617,6 +623,7 @@ public sealed partial class Browser
             if (_disposed)
                 return Task.CompletedTask;
             _readiness = readiness;
+            _hasCatalogue |= readiness != LibraryReadiness.Offline;
         }
         return Observe();
     }
@@ -668,7 +675,7 @@ public sealed partial class Browser
     {
         lock (_gate)
         {
-            if (_readiness == LibraryReadiness.Ready && IsAvailable)
+            if (CanLookup)
             {
                 _facts?.SetConnected(true);
                 _videos?.Refresh(true, Text.Language);
@@ -678,7 +685,14 @@ public sealed partial class Browser
         }
         if (!IsAvailable)
             CancelRequests();
-        Refresh();
+        if (IsAvailable && !_available)
+            Refresh();
+        else
+        {
+            RefreshState();
+            RefreshCommands();
+            Changed(nameof(Status));
+        }
     }
 
     private void CancelRequests()
@@ -686,6 +700,7 @@ public sealed partial class Browser
         _typing = false;
         _revision++;
         _search?.Cancel();
+        _rating?.Cancel();
         _detail?.Cancel();
         CancelInformation();
     }
@@ -694,6 +709,11 @@ public sealed partial class Browser
     // the person has open, so these notify only when they change.
     private void RefreshState()
     {
+        if (_canShowTorrent != CanShowTorrent)
+        {
+            _canShowTorrent = CanShowTorrent;
+            Changed(nameof(CanShowTorrent));
+        }
         if (_available != IsAvailable)
         {
             _available = IsAvailable;
@@ -803,6 +823,7 @@ public sealed partial class Browser
         {
             var revision = _revision;
             _refresh = false;
+            _rating?.Cancel();
             using var cancellation = new CancellationTokenSource();
             _search = cancellation;
             try
@@ -834,12 +855,18 @@ public sealed partial class Browser
                 foreach (var entry in matches.Entries)
                 {
                     retained.Add(entry.EntryId);
+                    // An unchanged entry keeps the IMDb rating it already
+                    // received, so a search neither blanks nor re-sorts it.
+                    var shown =
+                        _imdb.TryGetValue(entry.EntryId, out var known) && known.Source == entry
+                            ? known.Rated
+                            : entry;
                     if (!_rows.TryGetValue(entry.EntryId, out var row))
-                        _rows[entry.EntryId] = row = new LibraryRow(entry, this);
+                        _rows[entry.EntryId] = row = new LibraryRow(shown, this);
                     else
                     {
-                        rowsChanged |= row.Entry != entry;
-                        row.Update(entry);
+                        rowsChanged |= row.Entry != shown;
+                        row.Update(shown);
                     }
                     rows.Add(row);
                 }
@@ -896,6 +923,7 @@ public sealed partial class Browser
                 Changed(nameof(Status));
                 RefreshState();
                 RefreshCommands();
+                _ratings = Rate(matches.Entries, query, revision);
             }
             catch (OperationCanceledException)
             {
@@ -913,6 +941,65 @@ public sealed partial class Browser
             }
             if (revision == _revision && !_refresh)
                 return;
+        }
+    }
+
+    // The IMDb lookup runs after the rows are shown, so it never delays them.
+    // A row changes only when its rating differs from the one it shows, and
+    // the table then settles its sort once for the batch.
+    private async Task Rate(IReadOnlyList<Entry> entries, Query query, int revision)
+    {
+        using var cancellation = new CancellationTokenSource();
+        _rating = cancellation;
+        var store = _store!;
+        var previous = _ratings;
+        try
+        {
+            if (previous is not null)
+                await previous;
+            // Return to the dispatcher before starting optional enrichment.
+            await Task.Yield();
+            cancellation.Token.ThrowIfCancellationRequested();
+            var rated = await store.Rate(entries, cancellation.Token);
+            if (
+                cancellation.IsCancellationRequested
+                || revision != _revision
+                || !ReferenceEquals(_rowsQuery, query)
+                || !ReferenceEquals(store, _store)
+                || !IsAvailable
+                || !_visible
+            )
+                return;
+            var changed = false;
+            for (var index = 0; index < entries.Count; index++)
+            {
+                var entry = entries[index];
+                _imdb[entry.EntryId] = (entry, rated[index]);
+                if (_rows.TryGetValue(entry.EntryId, out var row) && row.Entry != rated[index])
+                {
+                    row.Update(rated[index]);
+                    changed = true;
+                }
+            }
+            if (changed)
+            {
+                Changed(nameof(Rows));
+                _ = ReadDetail();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            System.Diagnostics.Debug.WriteLine("Library ratings cancelled.");
+        }
+        catch (Exception error)
+        {
+            if (!cancellation.IsCancellationRequested && ReferenceEquals(store, _store))
+                ReportCommand(error);
+        }
+        finally
+        {
+            if (ReferenceEquals(_rating, cancellation))
+                _rating = null;
         }
     }
 
@@ -1004,7 +1091,7 @@ public sealed partial class Browser
 
     internal void ShowTorrent(string origin)
     {
-        if (IsAvailable && Origins.FirstOrDefault(item => item.OriginId == origin) is { } source)
+        if (CanShowTorrent && Origins.FirstOrDefault(item => item.OriginId == origin) is { } source)
             TorrentRequested?.Invoke(this, source);
     }
 
@@ -1143,14 +1230,17 @@ public sealed partial class Browser
         Stop();
         var starting = _starting;
         var searching = _searching;
+        var ratings = _ratings;
         var facts = _facts;
         var videos = _videos;
         _starting = null;
+        _hasCatalogue = false;
         _store = null;
         _facts = null;
         _videos = null;
         await CancelDownload();
         _rows.Clear();
+        _imdb.Clear();
         _selections.Clear();
         Select(Selection.Empty);
         Rows = [];
@@ -1177,6 +1267,8 @@ public sealed partial class Browser
             await videos.DisposeAsync();
         if (searching is not null)
             await searching;
+        if (ratings is not null)
+            await ratings;
     }
 }
 

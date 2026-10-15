@@ -224,7 +224,7 @@ public sealed partial class Table : Control
         _detached = true;
         LayoutUpdated -= OnFillLayout;
         StopWatchingVisibility();
-        StopWatchingWindowSizing();
+        _resizeDue?.Stop();
 
         // A table taken out of the tree sees no exit, and nothing points at rows it no longer shows.
         _pointerOver = false;
@@ -245,7 +245,6 @@ public sealed partial class Table : Control
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         WatchVisibility();
-        WatchWindowSizing();
         QueueFill();
         _source.Resume();
         _detached = false;

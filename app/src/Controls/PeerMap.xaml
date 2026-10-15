@@ -36,9 +36,9 @@
     />
     <StackPanel Visibility="Collapsed">
       <TextBlock x:Name="Ink" Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
-      <Border x:Name="Land" Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}" />
-      <Border x:Name="Edge" Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
-      <Border x:Name="Download" Background="{ThemeResource AccentFillColorDefaultBrush}" />
+      <Border x:Name="Land" Background="{ThemeResource ControlAltFillColorSecondaryBrush}" />
+      <Border x:Name="Edge" Background="{ThemeResource ControlStrongStrokeColorDefaultBrush}" />
+      <Border x:Name="Download" Background="{ThemeResource AccentTextFillColorPrimaryBrush}" />
       <Border x:Name="Upload" Background="{ThemeResource TinyTorrentUploadBrush}" />
     </StackPanel>
   </Grid>

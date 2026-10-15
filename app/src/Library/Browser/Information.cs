@@ -160,11 +160,8 @@ public sealed partial class Browser
             return await download.Run(
                 () =>
                     dataset.Build(
-                        progress =>
-                            download.Report(
-                                new WorkDescription.Imdb(progress.Phase),
-                                Progress(progress)
-                            ),
+                        (phase, progress) =>
+                            download.Report(new WorkDescription.Imdb(phase), progress),
                         download.Cancellation
                     ),
                 () =>
@@ -196,13 +193,6 @@ public sealed partial class Browser
             ShowDownload();
         }
     }
-
-    private static WorkProgress Progress(Imdb.Dataset.Progress progress) =>
-        progress.Phase == ImdbPhase.Downloading
-            ? new WorkProgress.Amount(progress.Received, WorkUnit.Bytes)
-        : progress.Percent is { } percent
-            ? new WorkProgress.Fraction(percent, 100, WorkUnit.Percent, true)
-        : new WorkProgress.Unknown();
 
     /// <summary>Stops the running data download at the person's request, and completes when it has ended.</summary>
     internal Task CancelDownload() => StopDownload(interrupted: false);

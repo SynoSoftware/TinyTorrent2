@@ -25,6 +25,16 @@
 
 namespace tt
 {
+struct ConnectionMeasurement
+{
+    std::size_t byteLimit = 4 * 1024 * 1024;
+    std::chrono::seconds timeLimit{6};
+    std::atomic<std::chrono::steady_clock::time_point> started{};
+    std::atomic<std::chrono::steady_clock::time_point> finished{};
+    std::atomic<std::uint64_t> bytes{0};
+    std::atomic<double> rate{0};
+};
+
 struct NetworkAdapter
 {
     unsigned ipv4Index = 0;
@@ -38,6 +48,8 @@ class Engine::State
 {
 public:
     static constexpr std::size_t torrentLimit = 10'000;
+    // How long a failed save waits before it runs again.
+    static constexpr auto checkpointRetry = std::chrono::seconds(30);
 
     struct Preview
     {
@@ -197,7 +209,7 @@ public:
         bool startsInTray = false;
         bool allPaused = false;
         Limits limits;
-        Limits alternative{10 * 1024, 10 * 1024};
+        Limits alternative;
         // The choice while no schedule applies.
         LimitMode limitMode = LimitMode::None;
         bool notificationsEnabled = false;
@@ -306,8 +318,9 @@ public:
         std::optional<std::chrono::steady_clock::time_point> quietSince;
         std::int64_t sent = -1;
         std::int64_t received = -1;
-        double download = 0;
-        double upload = 0;
+        ConnectionMeasurement download;
+        ConnectionMeasurement upload;
+        bool complete = false;
         std::string failure;
     };
     std::shared_ptr<ConnectionTest> connectionTest;
@@ -486,7 +499,7 @@ public:
     void Maintain();
     bool SuspendsForConnectionTest() const;
     Json ConnectionTestSnapshot() const;
-    bool StartConnectionTest(std::string const& connectionId);
+    bool StartConnectionTest(std::string const& connectionId, bool longer);
     void ReleaseConnectionTest(std::string const& connectionId, ConnectionPhase outcome = ConnectionPhase::Completed);
     void MaintainConnectionTest();
     void ObserveConnectionTest(lt::session_stats_alert const& alert);
@@ -677,8 +690,10 @@ public:
     void On(lt::piece_info_alert const& alert);
 
     bool IsShuttingDown() const { return shutdownPhase != ShutdownPhase::Idle; }
-    void Shutdown(std::function<void(std::optional<std::string> failure)> completion);
+    void Shutdown(std::function<void(std::optional<std::string> failure)> report);
+    void StartFinalSave();
     void ContinueShutdown();
+    void RetryFinalSave();
     void Finish();
 
     void Handle(lt::alert* alert);

@@ -338,7 +338,7 @@ internal sealed partial class Acquisition
                         connection =>
                         {
                             using var command = connection.CreateCommand();
-                            command.CommandText = "SELECT origin FROM contributions;";
+                            command.CommandText = "SELECT origin FROM file_reads;";
                             using var reader = command.ExecuteReader();
                             while (reader.Read())
                                 if (deletion.Origins.Contains(reader.GetString(0)))

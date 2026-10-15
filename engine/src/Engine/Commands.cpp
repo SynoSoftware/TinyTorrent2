@@ -143,7 +143,8 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
         auto action = request.at("action").get<std::string>();
         if (action == "start")
         {
-            if (!StartConnectionTest(connectionId))
+            auto profile = request.value("profile", std::string("quick"));
+            if ((profile != "quick" && profile != "longer") || !StartConnectionTest(connectionId, profile == "longer"))
             {
                 reply(Failure(ErrorCode::InvalidRequest));
                 break;
@@ -156,6 +157,7 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
             reply(Failure(ErrorCode::InvalidRequest));
             break;
         }
+        ++snapshotSequence;
         reply(Success(ConnectionTestSnapshot()));
         break;
     }

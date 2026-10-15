@@ -3,6 +3,7 @@
 #include "Pipe.h"
 #include "Registration.h"
 #include "Strings.h"
+#include "Desktop/Notices.h"
 #include "Desktop/PowerRequest.h"
 #include "Desktop/Splash.h"
 #include "Desktop/Tray.h"
@@ -32,9 +33,7 @@ private:
     static LRESULT CALLBACK Procedure(HWND window, UINT message, WPARAM first, LPARAM second);
     LRESULT Handle(UINT message, WPARAM first, LPARAM second);
     void OnTray(WPARAM first, LPARAM second);
-    void OnNotice();
-    void OnNoticeCommand(NoticeCommand command);
-    void OnNoticeAction(NoticeAction action);
+    void TurnOff(std::vector<NoticeSwitch> notices);
     void ShowMenu(POINT point);
     void OnTimer();
     void Dispatch(std::shared_ptr<Pipe::Connection> client, Json request, Reply reply);
@@ -74,7 +73,9 @@ private:
     void OpenSettings(std::string card);
     void ShowSettings();
     void Notify(Notice notice);
-    void ShowError(std::string const& key, std::wstring detail = {});
+    void ShowError(std::string const& key, std::wstring detail = {}, std::vector<Popup::Action> actions = {});
+    void ShowStartError(std::string const& key, std::wstring detail = {});
+    void ShowSaveFailure();
     bool headless_;
     ExitPhase exit_ = ExitPhase::Idle;
     bool ticking_ = false;
@@ -84,9 +85,9 @@ private:
     // chose to start in the tray.
     bool pendingStart_ = false;
     std::optional<bool> endSaved_;
-    // The final save runs during Exiting and during Ending, so it is not a
-    // stage of its own.
-    bool saving_ = false;
+    // Why the final save failed most recently, which Exit shows again while
+    // the engine keeps saving.
+    std::optional<std::wstring> saveFailure_;
     bool programsChecked_ = false;
 #ifdef _DEBUG
     bool showsSample_ = false;
@@ -114,11 +115,13 @@ private:
     std::deque<std::function<void()>> requests_;
     // Members are released in reverse order, so the last one goes first: the
     // pipe, whose dispatch uses mutex_ and requests_, then the engine, then the
-    // tray and the windows that they use.
+    // notices, the tray and the windows that they use.
     OwnedHandle ownership_;
     OwnedWindow owner_;
     OwnedWindow broadcast_;
+    OwnedIcon errorIcon_;
     std::unique_ptr<Tray> tray_;
+    std::unique_ptr<Notices> notices_;
     OwnedHandle process_;
     std::unique_ptr<Engine> engine_;
     std::unique_ptr<Pipe> pipe_;

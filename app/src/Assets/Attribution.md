@@ -16,12 +16,15 @@ The installer owns distribution notices; their provenance is in
 
 ## Peer map
 
-`world.json` contains Natural Earth country boundaries from the approved peer-map
-prototype (the 110m country geometry distributed by `@d3-maps/atlas` 1.0.0),
-representative country anchors, and the 32 largest populated-place records for
-each of Russia, Canada, the United States, China, Brazil, Australia, India,
-Argentina, Mexico and Indonesia. These records come from Natural Earth's
-[10m populated places](https://www.naturalearthdata.com/downloads/10m-cultural-vectors/10m-populated-places/).
-Coordinates are rounded to five decimal places. Population weights are a visual
-proxy, not a density raster or evidence of individual peers' locations.
+`world.bin` comes from Natural Earth 5.1
+[1:50m admin-0 countries](https://www.naturalearthdata.com/downloads/50m-cultural-vectors/50m-admin-0-countries-2/)
+without Antarctica, and
+[10m populated places](https://www.naturalearthdata.com/downloads/10m-cultural-vectors/10m-populated-places/)
+with their `POP_MAX` populations. Each outline point stores its
+Douglas-Peucker tolerance, computed once per shared border so both sides
+match; points below 1/128° are left out. Anchors are Natural Earth label points;
+Bonaire, Bouvet Island and the US Minor Outlying Islands have neither an
+outline nor a place, so their anchors are Kralendijk, the island, and Wake
+Island. Population weights are a visual proxy, not a density raster or evidence
+of individual peers' locations.
 Natural Earth makes the data [public domain](https://www.naturalearthdata.com/about/terms-of-use/).

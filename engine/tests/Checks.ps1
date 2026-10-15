@@ -88,7 +88,7 @@ try {
             [IO.File]::WriteAllBytes($file, [Text.Encoding]::UTF8.GetBytes(($document | ConvertTo-Json -Depth 20)))
             $snapshot = Start-Engine
             Assert ($snapshot.transfers.all_time.downloaded -eq 0 -and $snapshot.transfers.all_time.uploaded -eq 0 -and
-                $snapshot.settings.theme -eq 'light') 'Legacy accounting defaults lost the existing settings'
+                $snapshot.settings.theme -eq 'light') 'Missing transfer totals lost the existing settings'
         }
         'Exit' {
             function Exit-Code {

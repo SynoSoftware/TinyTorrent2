@@ -206,13 +206,15 @@ enum class CheckpointPhase
     Writing
 };
 
+// Retrying waits before a failed final save starts again.
 enum class ShutdownPhase
 {
     Idle,
     Draining,
     Pausing,
     Sampling,
-    Saving
+    Saving,
+    Retrying
 };
 
 enum class WatchPhase
@@ -398,9 +400,6 @@ enum class NoticeKind
     Duplicate,
     AddFailed,
     DeleteFailed,
-    // The application could not do what the person asked, such as saving on
-    // Exit. Unlike torrent problems, it shows even when those are turned off.
-    Failure,
     Background,
     // A torrent or magnet handler starts a program that is missing.
     MissingProgram,
@@ -426,21 +425,6 @@ enum class TrayItem
     Exit,
     Rates,
     Counts
-};
-
-// The commands in a notice popup's More menu, in Windows' order.
-enum class NoticeCommand
-{
-    TurnOff,
-    TurnOffAll,
-    Settings
-};
-
-// The buttons of a notice that says the window did not start.
-enum class NoticeAction
-{
-    Retry,
-    OpenFolder
 };
 
 // How a second launch's request to the running engine ended. A different

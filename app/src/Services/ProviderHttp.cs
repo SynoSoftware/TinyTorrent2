@@ -88,14 +88,15 @@ internal sealed partial class ProviderHttp : IDisposable
 
     /// <summary>
     /// Downloads a large file to <paramref name="path"/>, reports the bytes
-    /// received so far and returns the file's length. Unlike
+    /// received so far, as a fraction of the length the response declares
+    /// when it declares one, and returns the file's length. Unlike
     /// <see cref="Send"/>, it fails only when no bytes arrive for a minute, so
     /// a slow line can finish a large file.
     /// </summary>
     internal async Task<long> Download(
         ProviderCall call,
         string path,
-        Action<long> received,
+        Action<WorkProgress> progress,
         CancellationToken cancellation
     )
     {
@@ -112,6 +113,7 @@ internal sealed partial class ProviderHttp : IDisposable
                             null,
                             response.StatusCode
                         );
+                    var length = response.Content.Headers.ContentLength;
                     await using var source = await response
                         .Content.ReadAsStreamAsync(deadline.Token)
                         .ConfigureAwait(false);
@@ -148,7 +150,13 @@ internal sealed partial class ProviderHttp : IDisposable
                             .WriteAsync(buffer.AsMemory(0, count), deadline.Token)
                             .ConfigureAwait(false);
                         total += count;
-                        received(total);
+                        // A server that sends more than it declared gets the
+                        // count alone.
+                        progress(
+                            length is { } declared && total <= declared
+                                ? new WorkProgress.Fraction(total, declared, WorkUnit.Bytes)
+                                : new WorkProgress.Amount(total, WorkUnit.Bytes)
+                        );
                     }
                     await call.Policy.Succeed(call.Request.Access).ConfigureAwait(false);
                     return total;

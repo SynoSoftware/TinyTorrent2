@@ -1,6 +1,7 @@
 #pragma once
 #include "Enums.h"
 #include "Desktop/Acrylic.h"
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -21,19 +22,17 @@ public:
         // the engine.
         wchar_t glyph;
         std::wstring text;
-        // The LPARAM sent when the person chooses the item.
-        UINT id;
+        std::function<void()> run;
     };
 
-    // A button under the message: a Lucide glyph before one word, as the
-    // window's buttons are, with a tooltip for what the word does not say.
+    // A button under the message: a Lucide glyph before a short label, as the
+    // window's buttons are, with a tooltip for what the label does not say.
     struct Action
     {
         wchar_t glyph;
         std::wstring label;
         std::wstring tooltip;
-        // The LPARAM sent when the person chooses the button.
-        UINT id;
+        std::function<void()> run;
         // A button that only shows something, such as a folder, leaves the
         // notice open, so its message and other buttons stay available.
         bool closes = true;
@@ -43,6 +42,9 @@ public:
     {
         std::wstring title;
         std::wstring body;
+        // Runs when the person selects the message; without it, selecting the
+        // message only closes the popup.
+        std::function<void()> select;
         // Diagnostic lines stay on one line each, with paths shortened to fit.
         std::wstring detail;
         // Buttons share one row under the message in equal widths, as on
@@ -58,11 +60,10 @@ public:
         bool persistent = false;
     };
 
-    // Selecting the body posts `selected` to `window` with PopupPart::Body as
-    // its WPARAM; choosing a button posts PopupPart::Action, and an item of the
-    // More menu sends PopupPart::More, each with its id as the LPARAM. Any of
-    // them closes the popup, except a button that does not close it.
-    Popup(HWND window, UINT selected);
+    // Selecting the message, a button or a More menu item closes the popup,
+    // except a button that does not close it, and then runs what the content
+    // gave that part. That code may show new content.
+    Popup();
     ~Popup();
     Popup(Popup const&) = delete;
     Popup& operator=(Popup const&) = delete;
@@ -105,8 +106,6 @@ private:
     // Gives each button its tooltip, over the bounds Layout gave it.
     void SetTooltips();
     void DeleteFonts();
-    HWND owner_;
-    UINT selected_;
     Acrylic acrylic_;
     std::string theme_ = "system";
     HWND window_ = nullptr;

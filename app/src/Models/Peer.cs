@@ -24,16 +24,20 @@ public sealed class Peer : INotifyPropertyChanged
     public string Client { get; private set; } = string.Empty;
     public bool Incoming { get; private set; }
     public PeerState State { get; private set; }
+    internal PeerRole Role { get; private set; }
     public double Progress { get; private set; }
     public double DownloadRate { get; private set; }
     public double UploadRate { get; private set; }
     public long Downloaded { get; private set; }
     public long Uploaded { get; private set; }
-    public string ProgressText => Progress.ToString("P1", CultureInfo.CurrentCulture);
-    public string DownloadText => _text.Format("units", "rate", _text.Bytes(DownloadRate));
-    public string UploadText => _text.Format("units", "rate", _text.Bytes(UploadRate));
-    public string DownloadedText => _text.Bytes(Downloaded);
-    public string UploadedText => _text.Bytes(Uploaded);
+    public string ProgressText =>
+        State == PeerState.Known ? "—" : Progress.ToString("P1", CultureInfo.CurrentCulture);
+    public string DownloadText =>
+        State == PeerState.Known ? "—" : _text.Format("units", "rate", _text.Bytes(DownloadRate));
+    public string UploadText =>
+        State == PeerState.Known ? "—" : _text.Format("units", "rate", _text.Bytes(UploadRate));
+    public string DownloadedText => State == PeerState.Known ? "—" : _text.Bytes(Downloaded);
+    public string UploadedText => State == PeerState.Known ? "—" : _text.Bytes(Uploaded);
     public string ClientText => string.IsNullOrEmpty(Client) ? "—" : Client;
 
     /// <summary>The ISO country code that names the peer's flag, or empty without a location.</summary>
@@ -125,6 +129,8 @@ public sealed class Peer : INotifyPropertyChanged
     {
         get
         {
+            if (State == PeerState.Known)
+                return "—";
             var transport =
                 _transport == PeerTransport.Unknown
                     ? _text.Get("peers", "unknown")
@@ -167,15 +173,28 @@ public sealed class Peer : INotifyPropertyChanged
     internal bool Update(JsonElement data)
     {
         HashSet<string>? changed = null;
-        var client = data.GetProperty("client");
-        if (!client.ValueEquals(Client))
+        var known = data.GetProperty("state").ValueEquals("known");
+        Role = Set(
+            Role,
+            data.TryGetProperty("role", out var role)
+                ? role.GetString() switch
+                {
+                    "seed" => PeerRole.Seed,
+                    "leecher" => PeerRole.Leecher,
+                    _ => PeerRole.Unknown,
+                }
+                : PeerRole.Unknown,
+            nameof(Role)
+        );
+        var client = known ? string.Empty : data.GetProperty("client").GetString()!;
+        if (client != Client)
         {
-            Client = client.GetString()!;
+            Client = client;
             Mark(nameof(Client), nameof(ClientText), nameof(ClientHint));
         }
         _transport = Set(
             _transport,
-            data.GetProperty("transport").GetString() switch
+            (known ? null : data.GetProperty("transport").GetString()) switch
             {
                 "tcp" => PeerTransport.Tcp,
                 "utp" => PeerTransport.Utp,
@@ -190,7 +209,7 @@ public sealed class Peer : INotifyPropertyChanged
         );
         Incoming = Set(
             Incoming,
-            data.GetProperty("incoming").GetBoolean(),
+            !known && data.GetProperty("incoming").GetBoolean(),
             nameof(Incoming),
             nameof(ConnectionText)
         );
@@ -198,6 +217,7 @@ public sealed class Peer : INotifyPropertyChanged
             State,
             data.GetProperty("state").GetString() switch
             {
+                "known" => PeerState.Known,
                 "connecting" => PeerState.Connecting,
                 "handshake" => PeerState.Handshake,
                 "connected" => PeerState.Connected,
@@ -207,12 +227,18 @@ public sealed class Peer : INotifyPropertyChanged
             nameof(StateText),
             nameof(StateGlyph),
             nameof(StateHint),
+            nameof(ProgressText),
+            nameof(DownloadText),
+            nameof(UploadText),
+            nameof(DownloadedText),
+            nameof(UploadedText),
+            nameof(ConnectionText),
             nameof(DownloadHint),
             nameof(UploadHint)
         );
         _encryption = Set(
             _encryption,
-            data.GetProperty("encryption").GetString() switch
+            (known ? null : data.GetProperty("encryption").GetString()) switch
             {
                 "plain" => PeerEncryption.Plain,
                 "handshake" => PeerEncryption.Handshake,
@@ -238,49 +264,61 @@ public sealed class Peer : INotifyPropertyChanged
         _sources = Set(_sources, sources, nameof(StateHint));
         _interested = Set(
             _interested,
-            data.GetProperty("interested").GetBoolean(),
+            !known && data.GetProperty("interested").GetBoolean(),
             nameof(DownloadHint)
         );
-        _choked = Set(_choked, data.GetProperty("choked").GetBoolean(), nameof(UploadHint));
+        _choked = Set(
+            _choked,
+            !known && data.GetProperty("choked").GetBoolean(),
+            nameof(UploadHint)
+        );
         _remoteInterested = Set(
             _remoteInterested,
-            data.GetProperty("remote_interested").GetBoolean(),
+            !known && data.GetProperty("remote_interested").GetBoolean(),
             nameof(UploadHint)
         );
         _remoteChoked = Set(
             _remoteChoked,
-            data.GetProperty("remote_choked").GetBoolean(),
+            !known && data.GetProperty("remote_choked").GetBoolean(),
             nameof(DownloadHint)
         );
-        _readWait = Set(_readWait, ReadWaits(data.GetProperty("read_wait")), nameof(DownloadHint));
-        _writeWait = Set(_writeWait, ReadWaits(data.GetProperty("write_wait")), nameof(UploadHint));
+        _readWait = Set(
+            _readWait,
+            known ? TransferWait.None : ReadWaits(data.GetProperty("read_wait")),
+            nameof(DownloadHint)
+        );
+        _writeWait = Set(
+            _writeWait,
+            known ? TransferWait.None : ReadWaits(data.GetProperty("write_wait")),
+            nameof(UploadHint)
+        );
         Progress = Set(
             Progress,
-            data.GetProperty("progress").GetDouble(),
+            known ? 0 : data.GetProperty("progress").GetDouble(),
             nameof(Progress),
             nameof(ProgressText)
         );
         DownloadRate = Set(
             DownloadRate,
-            data.GetProperty("download_rate").GetDouble(),
+            known ? 0 : data.GetProperty("download_rate").GetDouble(),
             nameof(DownloadRate),
             nameof(DownloadText)
         );
         UploadRate = Set(
             UploadRate,
-            data.GetProperty("upload_rate").GetDouble(),
+            known ? 0 : data.GetProperty("upload_rate").GetDouble(),
             nameof(UploadRate),
             nameof(UploadText)
         );
         Downloaded = Set(
             Downloaded,
-            data.GetProperty("downloaded").GetInt64(),
+            known ? 0 : data.GetProperty("downloaded").GetInt64(),
             nameof(Downloaded),
             nameof(DownloadedText)
         );
         Uploaded = Set(
             Uploaded,
-            data.GetProperty("uploaded").GetInt64(),
+            known ? 0 : data.GetProperty("uploaded").GetInt64(),
             nameof(Uploaded),
             nameof(UploadedText)
         );
@@ -315,6 +353,7 @@ public sealed class Peer : INotifyPropertyChanged
             "peers",
             State switch
             {
+                PeerState.Known => "known_hint",
                 PeerState.Connecting => "connecting_hint",
                 PeerState.Handshake => "handshake_hint",
                 PeerState.Connected => "connected_hint",

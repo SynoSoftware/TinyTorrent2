@@ -179,10 +179,10 @@ internal sealed record VideoInformation(
         date.Length >= 4 && int.TryParse(date[..4], out var year) ? year : null;
 
     /// <summary>The number of an IMDb ID such as tt0133093, or null for another value.</summary>
-    internal static long? ParseImdbId(string id) =>
+    internal static long? ParseImdbId(ReadOnlySpan<char> id) =>
         id.StartsWith("tt", StringComparison.Ordinal)
         && long.TryParse(
-            id.AsSpan(2),
+            id[2..],
             NumberStyles.None,
             CultureInfo.InvariantCulture,
             out var number

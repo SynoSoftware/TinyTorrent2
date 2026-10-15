@@ -111,10 +111,11 @@ provider and optional retry time, and may be absent when only a general wait
 is established. No arbitrary object, JSON, worker-formatted text or universal
 phase enum paired with an untyped payload crosses this interface.
 
-Keep one canonical definition of an existing phase, such as `Dataset.Phase`;
+Keep one canonical definition of an existing phase, such as `ImdbPhase`;
 follow the naming contract if its shared use requires moving that definition.
-Normalize existing numeric progress once at registration/reporting: do not
-embed `Dataset.Progress` in Description and duplicate its numbers in Progress.
+Report numeric progress once, as `WorkProgress`, from the owner that has the
+numbers, such as the HTTP download and the IMDb import; a description carries
+no numbers that Progress repeats.
 Give metadata/subtitle owners a coherent observation where independent counter
 reads are currently insufficient. Workflow descriptions remain fixed-purpose
 for an operation's lifetime; a new run or unrelated task gets a new identity.
@@ -271,26 +272,26 @@ through downloading, parsing, indexing or optimization.
 
 | Phase | Progress | Cancellation |
 | --- | --- | --- |
-| Downloading each source | Received bytes; determinate only when a trustworthy response length in the same byte units is available, otherwise unknown | Cancel network/file copy through the existing token |
+| Downloading each source | Received bytes over the length the response declares; the received count alone when the response declares none or sends more than it declared | Cancel network/file copy through the existing token |
 | Reading episodes, titles, ratings | Approximate current compressed-source position/length; keep below 100% until that source is fully consumed | Check between input records and through the SQLite handler |
-| Committing rows in the disposable build | Unknown | Keep cancellation available; interrupt where SQLite permits, then discard the build after SQL unwinds |
-| Building search index | Unknown | SQLite progress handler interrupts `rebuild` |
+| Linking episodes | Episodes written over episodes read | Check between rows and through the SQLite handler |
+| Indexing titles | Titles added to the search index over titles kept; the two key indexes build first and report nothing, so the count holds at zero meanwhile | Check between rows; the SQLite progress handler interrupts the key indexes |
 | Optimizing search index | Unknown | SQLite progress handler interrupts `optimize` |
 | Flushing prepared data | Unknown | A synchronous flush must return before cancellation cleanup can finish |
 | Installing data | Unknown; short Finishing state | Existing coordinated publication finishes once committed |
 
-Committing the temporary database is not publication of the installed dataset.
-It must not make the subsequent rebuild and optimize phases noncancellable.
-The irreversible publication barrier belongs at installation; a stop during
-an uninterruptible flush remains a cancellation request awaiting that call's
-return, not a false promise of instant completion.
+The import's one transaction commits after indexing, before `optimize`. That
+commit is not publication of the installed dataset. The irreversible
+publication barrier belongs at installation; a stop during an uninterruptible
+flush remains a cancellation request awaiting that call's return, not a false
+promise of instant completion.
 
-Split the current combined COMMIT/rebuild command so each phase is reported
-before entering its expensive call. Restore
-`INSERT INTO title_search(title_search) VALUES('optimize');` immediately after
-`rebuild`, before closing/flushing/installing the build file. `optimize` merges
-FTS index structures and can itself take substantial time; SQLite exposes no
-whole-command percentage here. It gets its own indeterminate phase.
+The search index is filled one title at a time from the titles table, so the
+phase counts titles; FTS5's `rebuild` command does the same work and reports
+nothing. `INSERT INTO title_search(title_search) VALUES('optimize');` follows
+the commit, before closing/flushing/installing the build file. `optimize`
+merges FTS index structures and can itself take substantial time; SQLite
+exposes no whole-command percentage here. It keeps its own indeterminate phase.
 [SQLite FTS5 optimize](https://www.sqlite.org/fts5.html#the_optimize_command).
 
 Keep one connection-scoped SQLite progress handler through the interruptible
@@ -317,12 +318,17 @@ result; failure to establish the requested mode is surfaced through the existing
 error path. Low priority improves coexistence; it does not promise a shorter
 elapsed import time or instant interruption of an operating-system file call.
 
-Retain the current bulk transaction and reused commands. Do not change global
-WAL settings, pooling, durability, transaction sizes or schema on the strength
-of this source review. `journal_mode=OFF` and `synchronous=OFF` remain confined
-to the disposable build file. Later authorized measurement should record each
-phase's duration and resulting database size before further SQL tuning; no
-speedup is claimed here. The existing SQL/SQLite review informs this design.
+The import keeps one bulk transaction and reused commands; `journal_mode=OFF`
+and `synchronous=OFF` remain confined to the disposable build file. The
+episodes table is written in primary-key order from episode numbers sorted in
+memory, because inserting millions of rows in file order into a `WITHOUT
+ROWID` table touches a random page for every row, while sorted rows extend the
+table at its end. Each episode's title is a separate table keyed by episode,
+written in file order; the provider joins the two. Do not change global WAL
+settings, pooling or durability on the strength of a source review. The
+[IMDb plan](imdb-datasets.md#download-and-import) records each phase's
+measured duration and the resulting file size; further SQL tuning starts from
+a new measurement.
 
 ## Codebase inventory and wiring plan
 

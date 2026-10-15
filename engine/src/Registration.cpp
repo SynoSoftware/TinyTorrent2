@@ -312,9 +312,8 @@ Copy Identify(std::wstring const& command)
 }
 
 // Whether the default class `choice` opens with TinyTorrent: its own class
-// `ours`, or another class whose command starts this copy. Without the
-// person's choice, Windows names the .torrent or magnet key itself, and the
-// product before this one left its command there, which a start repoints.
+// `ours`, or another class whose command starts this copy. Windows can also
+// name the extension or protocol key itself.
 bool Opens(std::wstring const& choice, wchar_t const* ours)
 {
     auto command = Read(choice + L"\\shell\\open\\command", nullptr, HKEY_CLASSES_ROOT);
@@ -612,47 +611,6 @@ void RemoveBroken()
     }
 }
 
-// Only the product before this one wrote these per-user keys: an open command
-// on the .torrent or magnet key itself that starts a TinyTorrent executable,
-// and a .torrent default naming TinyTorrent's class. Where no choice of the
-// person's overrides them, they decide what opens torrents, so while the
-// handlers are registered they start this copy, unless they start another
-// existing copy in this product's form, and otherwise they go.
-void RepairLegacy(bool requested)
-{
-    auto name = std::filesystem::path(Executable()).filename().wstring();
-    bool changed = false;
-    for (auto const& kind : kinds)
-    {
-        auto open = Key(kind.name) + L"\\shell\\open";
-        auto command = Read(open + L"\\command");
-        if (command.empty() || !Same(std::filesystem::path(Target(command)).filename().wstring(), name))
-        {
-            continue;
-        }
-        bool current = command == OpenCommand(Target(command));
-        if (!requested)
-        {
-            Check(RegDeleteTreeW(HKEY_CURRENT_USER, open.c_str()));
-            changed = true;
-        }
-        else if (command != OpenCommand() && !(current && Identify(command) == Copy::Other))
-        {
-            Write(open + L"\\command", nullptr, OpenCommand());
-            changed = true;
-        }
-    }
-    if (!requested && Same(Read(Key(L".torrent")), torrentClass))
-    {
-        Remove(Key(L".torrent"), nullptr);
-        changed = true;
-    }
-    if (changed)
-    {
-        SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
-    }
-}
-
 // Points TinyTorrent's shortcuts that start a missing copy at this one: the
 // installer's Start menu entry, and the taskbar pins, which start the copy
 // that was running when the person pinned it.
@@ -828,8 +786,7 @@ void Registration::RepairMachine(std::vector<std::wstring> const& classes) const
 
 // Moves TinyTorrent's existing entries to this executable unless they are
 // another existing copy's entries in this product's form, so running a second
-// copy never takes them and deleting it never breaks them. An entry in another
-// form was written by the product before this one, which uses the same names.
+// copy never takes them and deleting it never breaks them.
 // An entry the person removed stays removed. The RegisteredApplications value
 // records the handler request: registering writes it last and unregistering
 // removes it first, so handler entries without it are the remains of a
@@ -853,11 +810,7 @@ void Registration::Repair() const
     {
         auto handlers = HandlerCommand();
         bool current = !handlers.empty() && handlers == OpenCommand(Target(handlers));
-        // The product before this one used the same classes in another
-        // command form without recording the request, so its handlers move to
-        // this copy like any copy's.
-        bool legacy = !handlers.empty() && !current;
-        if (Read(registered, productName) != capabilities && !legacy)
+        if (Read(registered, productName) != capabilities)
         {
             if (HandlersPresent())
             {
@@ -880,7 +833,6 @@ void Registration::Repair() const
             Write(run, productName, Launch());
         }
     });
-    attempt([] { RepairLegacy(Read(registered, productName) == capabilities); });
     attempt(RepairShortcuts);
 }
 
@@ -928,7 +880,6 @@ void Registration::UnregisterHandlers() const
         Remove(toasts, (std::wstring(kind.progId) + L"_" + kind.name).c_str());
     }
     Check(RegDeleteTreeW(HKEY_CURRENT_USER, capabilities));
-    RepairLegacy(false);
     SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
 }
 

@@ -46,7 +46,7 @@ links and does not embed licence texts.
 
 | Shipped component | Required material and source | Distribution owner |
 | --- | --- | --- |
-| libtorrent and bundled implementations | BSD and bundled-component notices in the pinned checkout's composite `LICENSE`. Its shorter `COPYING` omits those bundled notices. [Pinned source](https://github.com/SynoSoftware/libtorrent/blob/627695bf2026faebbc0c1ec8575e2a8700af7f27/LICENSE). | Installer copies the composite `LICENSE`. |
+| libtorrent and bundled implementations | BSD and bundled-component notices in the pinned checkout's composite `LICENSE`. Its shorter `COPYING` omits those bundled notices. [Pinned source](https://github.com/SynoSoftware/libtorrent/blob/464f12919bee03de42e56fe1c891a9d1772bc913/LICENSE). | Installer copies the composite `LICENSE`. |
 | OpenSSL | Apache-2.0 text in the pinned checkout's `LICENSE.txt`; no root `NOTICE` file exists there. [Licence](https://www.apache.org/licenses/LICENSE-2.0). | Installer reads the existing dependency owner. |
 | nlohmann/json | MIT permission, copyright and disclaimer. [Upstream licence](https://github.com/nlohmann/json/blob/v3.12.0/LICENSE.MIT). | Installer reads the existing dependency owner. |
 | Lucide, including Feather-derived icons | ISC and MIT copyright/permission notices. [Upstream licence](https://lucide.dev/license). | Installer reads `lib/Lucide/LICENSE`, which includes both sets of notices. |

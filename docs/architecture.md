@@ -59,8 +59,9 @@ The [Library master plan](library.md) adds local search of finished files with
 movie, TV and music information. Data sources own file membership, beginning
 with managed torrents. Library, TMDB enrichment and subtitle downloading run
 entirely in C# while the product window is open. They share one C# SQLite owner
-for saved facts and decisions; current file membership is derived from engine
-facts and reconciled when the window connects. The resident engine keeps no
+for saved facts, decisions and the last accepted file lists. The complete engine
+summary reconciles membership before cached rows are published; background reads
+confirm or replace those lists before file work trusts them. The resident engine keeps no
 Library projection, provider work or SQLite dependency. C# creates, populates
 and queries the database and owns subtitle-file handling. These features use
 existing torrent facts and commands without adding native feature code or APIs.
@@ -443,7 +444,8 @@ links with every later compiler.
 
 libtorrent uses the [SynoSoftware fork](https://github.com/SynoSoftware/libtorrent),
 pinned to an exact commit in `Dependencies.ps1`. The fork owns the pause tick-list
-correction; `3rdParty/libtorrent` is its local Git checkout and stays ignored by
+correction and the optional full IP peer snapshot on `post_peer_info`;
+`3rdParty/libtorrent` is its local Git checkout and stays ignored by
 TinyTorrent. Commit source changes in the fork, merge upstream updates there,
 verify the resulting revision, then update TinyTorrent's pin. This preserves the
 correction through updates without copied source or a separately applied patch.

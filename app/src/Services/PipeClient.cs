@@ -655,7 +655,7 @@ internal sealed partial class PipeClient : IDisposable
     // the tray, while a folder holding both versions needs reinstalling.
     private static void CheckVersion(NamedPipeClientStream pipe, JsonElement hello, Strings strings)
     {
-        if (hello.TryGetProperty("version", out var version) && version.GetInt32() == 19)
+        if (hello.TryGetProperty("version", out var version) && version.GetInt32() == 20)
             return;
         var message = EnginePath(pipe) switch
         {

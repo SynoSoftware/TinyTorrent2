@@ -234,11 +234,8 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
                 archive,
                 policy,
                 fresh,
-                received =>
-                    download.Report(
-                        new WorkDescription.City(CityPhase.Downloading),
-                        new WorkProgress.Amount(received, WorkUnit.Bytes)
-                    ),
+                progress =>
+                    download.Report(new WorkDescription.City(CityPhase.Downloading), progress),
                 cancellation
             );
             await Task.Run(
@@ -286,7 +283,7 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
         string archive,
         RequestPolicy policy,
         FreshRequest fresh,
-        Action<long> received,
+        Action<WorkProgress> progress,
         CancellationToken cancellation
     )
     {
@@ -316,7 +313,7 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
                 new Uri($"https://download.db-ip.com/free/dbip-city-lite-{month:yyyy-MM}.mmdb.gz")
             );
             var call = new ProviderCall(request, policy, new(Access)) { Fresh = fresh };
-            await http.Download(call, part, received, cancellation).ConfigureAwait(false);
+            await http.Download(call, part, progress, cancellation).ConfigureAwait(false);
         }
     }
 
@@ -492,4 +489,18 @@ internal sealed record Location(string Code, Place Country, Place? City, GeoPoin
 {
     /// <summary>The country's name in <paramref name="language"/>, or its code when the data names it in no language.</summary>
     internal string CountryName(string language) => Country.Name(language) ?? Code;
+}
+
+/// <summary>
+/// A place the peer map groups peers into. With Countries detail it is a whole
+/// country; with Cities detail it is one coordinate, or the country's peers
+/// that have none.
+/// </summary>
+internal readonly record struct PeerPlace(string Code, GeoPoint? Point, bool Cities)
+{
+    internal static PeerPlace Of(Location location, bool cities) =>
+        new(location.Code, cities ? location.Point : null, cities);
+
+    internal bool Contains(Location? location) =>
+        location is not null && Of(location, Cities) == this;
 }

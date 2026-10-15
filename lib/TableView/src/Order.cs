@@ -8,6 +8,8 @@ internal sealed class Order(
 {
     internal Column Column { get; } = column;
 
+    internal bool CanReorder => items().Where(Contains).Skip(1).Any();
+
     internal bool Contains(object item) => position(item).HasValue;
 
     internal Entry[] Capture(IEqualityComparer<object> identity)

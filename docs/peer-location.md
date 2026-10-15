@@ -78,8 +78,15 @@ text block uses the font; the name beside it stays in the app's font.
 
 The Peers inspector's ellipsis menu selects Map only, Table only or Map and table.
 Its Map detail group selects Countries or Cities. Countries aggregates every
-connection by country using estimated distribution; Cities uses supplied coordinates
+peer by country using estimated distribution; Cities uses supplied coordinates
 and falls back to estimated distribution for records without coordinates.
+Only the visible Peers inspector requests libtorrent's full retained IP peer
+list with its live connections in one asynchronous snapshot. Ordinary torrent
+updates carry counts, never peer lists. A selected torrent limits the request
+to that torrent; the existing global view aggregates only while it is open.
+Hiding the inspector or leaving Peers withdraws its demand. Disconnected
+addresses appear as Known in the table, with no connection statistics. Connecting and handshaking peers
+also keep their locations. Transfer rates alone determine activity.
 Cities is disabled without installed city data. Get city data starts the existing
 dataset download directly, with progress in the application status bar, so the
 person need not leave the inspector. It is disabled during a download and omitted
@@ -91,8 +98,10 @@ so layout and projection agree. Combined views retain separate split proportions
 using the same accessible Splitter as the inspector frame. Coordinates
 from the installed city database are grouped at identical positions. A city name or
 a bundled country polygon is not required to plot a supplied coordinate. The
-projection fits the full latitude/longitude range and wraps arcs at the date
-line. Country-only records use estimated distribution and remain labelled
+projection fits the full latitude/longitude range with the origin's longitude
+in the centre, or 0° while the origin is unknown, as map applications centre
+the person's own location. A shortest route from the centre spans less than
+180° of longitude, so it stays between the map's edges. Country-only records use estimated distribution and remain labelled
 country-only. In Cities mode both precisions can coexist, according to each record's
 available coordinates.
 The engine's public address uses the same local lookup for the origin; no
@@ -100,24 +109,64 @@ external lookup request is made, and an unknown origin produces no arcs.
 
 Estimated distribution aggregates every record in Countries mode, or each country's
 country-only records in Cities mode, and their
-measured rates, merges bundled populated-place candidates within 25 DIPs, and
-uses no more destinations than active connections. One active connection uses
-the largest populated place; larger counts use the most populous distinguishable
-regions. The selected regions divide that group's bandwidth by their population
-weights. Their locations and allocated speeds are explicitly estimates. Records
+measured rates, and merges bundled populated places within 25 DIPs into
+regions. It shows the most probable placement of the group's active
+connections, or of one connection when every peer is idle, taking each peer to
+be in a region with probability proportional
+to its population: each next connection goes to the region with the highest
+population per connection already there, counting the new one. For regions
+with 90% and 10% of the population, two connections both go to the first,
+because that is 81% likely against 18% for one in each; the second region first
+appears with the tenth connection. The regions used divide that group's
+bandwidth by their population weights. Their locations and allocated speeds are explicitly estimates.
+Every country code the bundled country lookup returns has a map entry, keyed by
+that code. Each entry holds the populated places that the most probable
+placement of 200 connections, the engine's default connection limit, would use;
+places beyond that never receive a connection. A territory that lies inside
+another country's outline, such as Réunion, has places but no outline. A
+country without populated places shows one point at its anchor. Records
 with coordinates in Cities mode keep their measured rates at those coordinates; they do not
 also contribute to the estimated arcs.
 
+The map reads the bundled `world.bin` when it shows and releases it when it
+hides. Every outline point carries the largest error, in degrees, that leaving
+it out causes, so the map draws only points that would move a border by half a
+DIP or more at the current zoom. Shared borders keep identical points on both
+sides at every zoom.
+
 Win2D draws bundled Natural Earth geometry and great-circle guides, not measured
 network paths. Active arcs use a fixed logarithmic speed scale and the app's
-transfer colours; idle city markers remain visible. Country fills stay subdued.
+transfer colours; idle markers remain visible in both detail modes. Seed markers
+use the download colour, leecher markers use the upload colour, and unclassified
+addresses use neutral ink. The snapshot identifies retained confirmed seeds;
+other disconnected addresses remain unclassified. Live connections identify
+leechers after the handshake. A shared location shows one small marker per role,
+and its tooltip gives the counts, so colour is not the only explanation.
+Land and boundaries use the platform's secondary control surface and strong
+control stroke. Transfer marks use the same accent text and upload brushes as
+the table and speed graph, without mixing in a separate map colour. Markers
+retain the brushes' full opacity so small destinations remain readable in Light
+and Dark; only activity arcs use the dimming treatment below.
+Country fills stay subdued.
 Countries have no hover or selection state; inspection targets location markers
-and arcs. A table peer with coordinates highlights its matching location;
-country-only rows do not select the country's estimated locations.
-Active country arcs keep visible endpoints; idle countries use shading, with
-an outlined marker only where the country would otherwise be too small to see.
+and arcs. Every selected table peer highlights where the map shows it. In
+Cities detail a peer with coordinates marks its location and route. A row
+without coordinates, and every row in Countries detail, marks its country's
+estimated destinations by the same placement, with the selected rows as the
+connections, up to the destinations shown. This is a best guess, like the
+distribution itself.
+Choosing a location on the map, by clicking its marker or route or with the
+arrow keys, limits the peers table to that place's peers in every connection
+state: the whole country in Countries detail, one coordinate in Cities detail,
+or the country's records without coordinates for an estimated destination.
+Any other table filter applies only while nothing is chosen. Clicking empty
+map, pressing Escape, changing the map detail or choosing Table only shows
+every peer again. Selecting rows in the limited table keeps the choice.
+Active country arcs keep visible endpoints; idle countries keep their markers.
 The composited arc layer uses the [dimming treatment](#arc-dimming);
-marks remain outside it. Drawing stops when the map leaves the visible inspector.
+selected routes use the same transparency and fades, with highlight ink and a
+two-DIP stroke. Location marks remain outside it. Drawing stops when the map
+leaves the visible inspector.
 Redraws follow changed observations, view transforms, inspection or appearance.
 An unchanged, clamped pan or zoom does not request another frame. Navigation
 requests redraw directly through Win2D so dragging does not wait for the activity
@@ -148,9 +197,12 @@ Render in this order, so overlapping glow cannot defeat the opacity limit:
    origin mask to that combined result and cap the layer at 80% opacity.
    Setting each individual line to 80% would still let overlaps approach full
    opacity. Neither operation dims the land or country activity shading.
-4. Draw location markers, the origin and the inspection highlight separately.
-   They retain their visibility and hit targets. Highlight only the inspected
-   connection/location; do not brighten the entire network during inspection.
+4. Draw location markers, the origin and marker selection rings separately.
+   They retain their visibility and hit targets. Selected route cores use
+   highlight ink inside the shared arc layer, retaining activity strength,
+   destination fade and origin dimming without an additional opaque stroke.
+   Highlight only the inspected connection/location; do not brighten the
+   entire network during inspection.
 
 Opacity means visible strength, not transparency: 80% opacity is 20%
 transparency. The 30% destination multiplier is applied before the layer cap;
@@ -200,18 +252,20 @@ reduced-motion settings bypass activity interpolation.
 The map uses the inspector's existing flyout instance, so right-click and the
 ellipsis share commands, live state and the same icon-led native menu headings.
 
-Zoom ranges from 1× to 8×, with 1.25× per wheel notch and proportional small
+Zoom ranges from 1× to 32×, with 1.25× per wheel notch and proportional small
 wheel deltas. A drag does not select a location. Show the SizeAll cursor only
 after the drag threshold is crossed, restoring the normal cursor when the drag
 ends or is cancelled. Input moves the view directly, without added easing,
 inertia or a zoom animation. A compact top-right control
-shows the zoom percentage and a Lucide Fit button only above 1×. Fit returns
+shows the zoom percentage and a Lucide Fit button whenever the view is zoomed
+or panned. Fit shows the whole world with the origin in the centre and returns
 focus to the map when its button disappears. The menu exposes Zoom in, Zoom out
 and Fit, including shortcut text. No permanent toolbar or on-map hint is added.
 
-The world stays centred on an axis where it fits; otherwise panning stops at
-its edges. The view does not wrap, although geographic arcs still split at the
-date line. Resize retains the zoom factor and geographic centre, subject to the
+Left and right panning continues without end at every zoom, as in established
+map applications; the view always shows one turn of longitude. Vertically, the
+world stays centred where it fits; otherwise panning stops at its top and
+bottom edges. Resize retains the zoom factor and geographic centre, subject to the
 new bounds. Peer updates do not move the view. Estimated destinations are merged
 in fitted-map space, so zoom does not change their number or locations. Resize
 may still merge or separate destinations under the existing spacing rule.
@@ -231,6 +285,10 @@ and the existing asynchronous detail collector, one torrent at a time. Without a
 torrent selection, the scope is all torrents; otherwise it is the selected group.
 Torrent identity remains
 part of every row key, so shared endpoints across torrents are not deduplicated.
+The all-torrent scope includes torrents with retained addresses even when they
+have no connections. Collection stops outside the Peers inspector. Only new
+addresses need a background location lookup; unchanged snapshots do not redraw.
+Non-IP addresses cannot be located, and tracker swarm totals are not address lists.
 Each torrent's available peers appear immediately, and its fresh result replaces
 only that torrent's rows in the same visible inspector context. Other torrents'
 rows remain visible while their reads continue. The Inspector retains the last
