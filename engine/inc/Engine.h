@@ -150,7 +150,7 @@ public:
     void RecordPrograms(std::vector<std::string> programs, std::function<void(Outcome)> completion);
     // Adds a source to the default destination with the default file choices.
     void Add(std::string const& source, std::function<void(Outcome, Added)> completion);
-    Json Snapshot() const;
+    Json Snapshot();
     tt::Activity Activity() const;
     std::vector<Notice> TakeNotices();
     std::string Name(std::string const& torrentId) const;

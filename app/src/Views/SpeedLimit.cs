@@ -113,7 +113,6 @@ public sealed class SpeedLimit : IDraft
             _owner.AnnounceAccepted("speed_limit", "title");
             _failure = null;
             Cancel();
-            _owner.RequestSnapshot();
             return true;
         }
         catch (Exception error)

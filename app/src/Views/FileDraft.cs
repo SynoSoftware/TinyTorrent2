@@ -323,7 +323,6 @@ public sealed class FileDraft : IDraft
             }
             _failure = null;
             Cancel();
-            _owner.RequestSnapshot();
             return true;
         }
         catch (Exception error)

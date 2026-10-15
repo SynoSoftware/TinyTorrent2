@@ -331,7 +331,7 @@ _Avoid_: observation, when it means the same copy.
 or pieces, or across torrents when no torrent is selected. It is separate from
 the torrent list's snapshot.
 
-**Refresh interval**: how often the product window requests current engine data.
+**Refresh interval**: how often the product window receives routine engine updates.
 It does not determine how often the engine records speed history.
 
 **History interval**: the period represented by an average speed sample in a

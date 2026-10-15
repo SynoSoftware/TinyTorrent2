@@ -15,7 +15,8 @@ public sealed partial class MainViewModel
     private (bool Paused, PauseReason Reason, bool Alternative)? _restriction;
     private int _downloadCap;
     private int _uploadCap;
-    private LimitMode? _limitsChoice;
+    private (LimitMode Mode, long? Sequence)? _limitsChoice;
+    private long _limitsSequence;
 
     private bool HasLimits => _connected && !_loading && !_storageFailed;
     private LimitMode CurrentLimits =>
@@ -26,7 +27,7 @@ public sealed partial class MainViewModel
             LimitProfile.Alternative => LimitMode.Alternative,
             _ => throw new InvalidOperationException(),
         };
-    private bool CanChooseLimits => CanEdit && _limitsChoice is null;
+    private bool CanChooseLimits => CanEdit && _limitsChoice is not { Sequence: null };
     private bool HasSchedule => HasLimits && _limitOrigin != LimitOrigin.Manual;
 
     // The limits chosen for the whole week, or null while the weekly schedule
@@ -41,7 +42,7 @@ public sealed partial class MainViewModel
     public bool CanFollowSchedule => CanChoose(LimitMode.Schedule);
 
     // The chooser shows a choice still being applied in place of the current one.
-    public int LimitsIndex => HasLimits ? (int)(_limitsChoice ?? CurrentLimits) : -1;
+    public int LimitsIndex => HasLimits ? (int)(_limitsChoice?.Mode ?? CurrentLimits) : -1;
 
     internal bool HasStandardLimits => HasLimits && _appliedLimits == LimitProfile.Speed;
     public bool HasAlternativeLimits => HasLimits && _appliedLimits == LimitProfile.Alternative;
@@ -170,7 +171,7 @@ public sealed partial class MainViewModel
         };
 
     private bool CanChoose(LimitMode mode) =>
-        CanEdit && (_limitsChoice is null || _limitsChoice == mode);
+        CanEdit && (CanChooseLimits || _limitsChoice?.Mode == mode);
 
     // A message naming the applied download and upload caps, in that order.
     internal string FormatCaps(string group, string key) =>
@@ -180,8 +181,11 @@ public sealed partial class MainViewModel
         !HasLimits ? "—"
         : Text.SpeedLimit(value);
 
-    private void ApplyLimits(JsonElement limits)
+    private void ApplyLimits(JsonElement limits, long sequence)
     {
+        _limitsSequence = sequence;
+        if (_limitsChoice is { Sequence: { } confirmed } && sequence >= confirmed)
+            _limitsChoice = null;
         var fixedLimits = FixedLimits;
         _limitOrigin = limits.GetProperty("origin").GetString() switch
         {
@@ -235,25 +239,27 @@ public sealed partial class MainViewModel
 
     public async Task ChooseLimits(LimitMode mode)
     {
-        if (!CanChooseLimits || mode == CurrentLimits)
+        if (!CanChooseLimits || mode == (_limitsChoice?.Mode ?? CurrentLimits))
             return;
-        _limitsChoice = mode;
+        var session = _sessionId;
+        _limitsChoice = (mode, null);
         RefreshWindow();
         try
         {
             // A fixed choice holds until the weekly schedule is chosen again,
             // so it turns the schedule off instead of overriding it.
             var follows = mode == LimitMode.Schedule;
-            await Settings.Save(new { schedule_enabled = follows, limit_mode = EngineName(mode) });
-            await _client.Read(Consumer.Summary, "snapshot");
+            var sequence = await Settings.Save(new { schedule_enabled = follows, limit_mode = EngineName(mode) });
+            _limitsChoice = _connected && _sessionId == session && _limitsSequence < sequence
+                ? (mode, sequence) : null;
         }
         catch (Exception error)
         {
+            _limitsChoice = null;
             Report(error);
         }
         finally
         {
-            _limitsChoice = null;
             RefreshWindow();
         }
     }

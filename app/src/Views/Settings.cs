@@ -854,9 +854,9 @@ public sealed class Settings : INotifyPropertyChanged
             ? MagnetDialog
             : TorrentDialog;
 
-    internal async Task Save(object changes)
+    internal async Task<long> Save(object changes)
     {
-        await _client.Send("settings", new { changes });
+        var reply = await _client.Send("settings", new { changes });
         var confirmation = JsonSerializer.SerializeToElement(changes);
         var changed = false;
         foreach (var setting in All)
@@ -864,7 +864,7 @@ public sealed class Settings : INotifyPropertyChanged
                 changed |= setting.Confirm(value);
         if (changed)
             Changed();
-        _owner.RequestSnapshot();
+        return reply.GetProperty("snapshot_sequence").GetInt64();
     }
 
     internal async Task SaveLanguage(string language)

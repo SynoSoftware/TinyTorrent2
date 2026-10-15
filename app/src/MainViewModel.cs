@@ -120,7 +120,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         && !Settings.IsPending
         && !FileDraft.IsPending
         && !SpeedLimit.IsPending
-        && _limitsChoice is null;
+        && _limitsChoice is not { Sequence: null };
     public bool CanExit => _connected && CanClose;
     public string? DataDirectory => _client.DataDirectory;
     public bool HasDraft => AddDraft.HasDraft || Inspector.HasDraft || FileDraft.HasDraft;
@@ -689,6 +689,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 if (_closed)
                     return;
                 _connected = false;
+                if (_limitsChoice is { Sequence: not null })
+                    _limitsChoice = null;
                 _waiting = null;
                 _restriction = null;
                 _connectionReason = reason;
@@ -750,7 +752,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     {
         var previousAccess = (_connected, _loading, _storageFailed, _shuttingDown);
         var previousError = _startupError;
-        var previousLimits = (IsPaused, _limitOrigin, _appliedLimits, _pause, _downloadCap, _uploadCap, MissingAdapter);
+        var previousLimits = (IsPaused, _limitOrigin, _appliedLimits, _pause, _downloadCap, _uploadCap, MissingAdapter, LimitsIndex);
         var previousIncoming = (HasIncoming, MissingAdapter, Settings.Proxy.IsInUse, Settings.Proxy.Route);
         var previousIp = (_externalIpv4, _externalIpv6);
         var previousRates = (_downloadRate, _uploadRate);
@@ -803,7 +805,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         {
             _applyingSettings = false;
         }
-        _client.SetRefreshInterval(settings.GetProperty("refresh_interval").GetInt32());
         IsPaused = snapshot.GetProperty("session_paused").GetBoolean();
         HasIncoming = snapshot.GetProperty("has_incoming").GetBoolean();
         _externalIpv4 = snapshot.GetProperty("external_ipv4").GetString() ?? string.Empty;
@@ -811,7 +812,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         MissingAdapter = snapshot.TryGetProperty("missing_adapter", out var missing)
             ? missing.GetString() ?? string.Empty
             : string.Empty;
-        ApplyLimits(snapshot.GetProperty("limits"));
+        ApplyLimits(snapshot.GetProperty("limits"), snapshot.GetProperty("sequence").GetInt64());
         Settings.Connection.Observe(snapshot.GetProperty("connection_test"));
         // A failed language save keeps the person's choice and its error until they change or cancel it.
         if (
@@ -907,7 +908,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 Changed(nameof(FirstLast));
                 Changed(nameof(Limited));
             }
-            var limitsChanged = previousLimits != (IsPaused, _limitOrigin, _appliedLimits, _pause, _downloadCap, _uploadCap, MissingAdapter);
+            var limitsChanged = previousLimits != (IsPaused, _limitOrigin, _appliedLimits, _pause, _downloadCap, _uploadCap, MissingAdapter, LimitsIndex);
             var minute = DateTime.Now.Ticks / TimeSpan.TicksPerMinute;
             if (limitsChanged || minute != _limitsMinute)
                 RefreshLimits();
@@ -938,13 +939,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         ObserveFiles(snapshot);
         Inspector.Observe(sessionId, inspectedChanged || previousSelection != _selected.Length);
         SnapshotApplied?.Invoke(this, new SnapshotAppliedEventArgs(published, rowsChanged));
-        // Torrents added together are shown together, once all of them are in the list.
-        if (_revealIds.Length > 0 && _revealIds.All(_byId.ContainsKey))
-        {
-            var revealed = _revealIds.Select(id => _byId[id]).ToArray();
-            _revealIds = [];
-            RevealRequested?.Invoke(this, revealed);
-        }
+        RevealPending();
     }
 
     private static TransferTotals ReadTotals(JsonElement totals) =>
@@ -1045,7 +1040,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 Announce(ResumeNotice);
             else
                 AnnounceAccepted("commands", command);
-            RequestSnapshot();
         }
         catch (Exception error)
         {
@@ -1297,10 +1291,20 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         Filter = TorrentFilter.All;
         _revealIds = torrentIds;
         _error = null;
-        RequestSnapshot();
+        RevealPending();
     }
 
-    // Shows a command's effect without waiting for the next periodic refresh.
+    private void RevealPending()
+    {
+        // Torrents added together are shown together, once all are in the list.
+        if (_revealIds.Length > 0 && _revealIds.All(_byId.ContainsKey))
+        {
+            var revealed = _revealIds.Select(id => _byId[id]).ToArray();
+            _revealIds = [];
+            RevealRequested?.Invoke(this, revealed);
+        }
+    }
+
     internal void RequestSnapshot() => _ = _client.RefreshSnapshot();
 
     private void ObserveSpace()

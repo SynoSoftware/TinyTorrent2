@@ -1,6 +1,7 @@
 #include "Engine/State.h"
 #include <libtorrent/torrent_info.hpp>
 #include <libtorrent/session_stats.hpp>
+#include <algorithm>
 
 namespace tt
 {
@@ -271,6 +272,24 @@ void Engine::State::On(lt::state_update_alert const& alert)
     }
     if (changed)
         queuePending = true;
+    // Seed and detail queries share this alert type, but never this shape.
+    bool routine = std::all_of(alert.status.begin(), alert.status.end(), [](auto const& status)
+    {
+        return status.save_path.empty() && status.torrent_file.expired();
+    });
+    if (routine)
+    {
+        statusOutstanding = false;
+        auto interval = std::chrono::milliseconds(settings.refreshInterval);
+        auto elapsed = statusAt - snapshotAt;
+        bool due = elapsed >= interval;
+        if (due)
+            snapshotAt += interval * (elapsed / interval);
+        if (std::exchange(snapshotPending, false) || due)
+            PublishSnapshot();
+        if (statusPending)
+            RequestStatus();
+    }
 }
 
 void Engine::State::QueryCompletion(Torrent& torrent)
@@ -440,6 +459,8 @@ void Engine::State::On(lt::alerts_dropped_alert const& alert)
     if (alert.dropped_alerts[lt::state_update_alert::alert_type])
     {
         seedQueries.clear();
+        statusOutstanding = false;
+        RequestStatus();
     }
     RecoverDetail(alert);
     RecoverFiles();

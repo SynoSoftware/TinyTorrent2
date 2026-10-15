@@ -123,6 +123,12 @@ void Pipe::Connection::Send(Json message)
         changed.notify_one();
         return;
     }
+    if (message.value("type", std::string()) == "snapshot")
+    {
+        snapshot = std::move(message);
+        changed.notify_one();
+        return;
+    }
     if (message.contains("type"))
     {
         for (auto const& queued : output)
@@ -292,23 +298,38 @@ void Pipe::Serve(HANDLE handle)
 void Pipe::Deliver(std::shared_ptr<Connection> client, HANDLE handle)
 {
     std::unique_lock lock(client->mutex);
+    bool sentReply = false;
+    bool sentSnapshot = false;
     while (!client->closed)
     {
-        client->changed.wait(lock, [&] { return client->closed || !client->output.empty() || client->detail; });
+        client->changed.wait(lock, [&]
+        {
+            return client->closed || !client->output.empty() || client->detail || client->snapshot;
+        });
         if (client->closed)
         {
             break;
         }
         Json message;
-        if (!client->output.empty())
+        if (!client->output.empty() && (!sentReply || (!client->detail && !client->snapshot)))
         {
             message = std::move(client->output.front());
             client->output.pop_front();
+            sentReply = true;
         }
-        else
+        else if (client->detail && (!client->snapshot || sentSnapshot))
         {
             message = std::move(*client->detail);
             client->detail.reset();
+            sentReply = false;
+            sentSnapshot = false;
+        }
+        else
+        {
+            message = std::move(*client->snapshot);
+            client->snapshot.reset();
+            sentReply = false;
+            sentSnapshot = true;
         }
         lock.unlock();
         auto bytes = message.dump(-1, ' ', false, Json::error_handler_t::replace);
@@ -321,6 +342,8 @@ void Pipe::Deliver(std::shared_ptr<Connection> client, HANDLE handle)
                 for (auto key : {"type", "session_id", "torrent_id", "context"})
                     refusal[key] = message.at(key);
             }
+            else if (message.value("type", std::string()) == "snapshot")
+                refusal["type"] = "snapshot";
             bytes = refusal.dump();
         }
         bool success = Write(Io{handle, stop_, client->cancel}, bytes);

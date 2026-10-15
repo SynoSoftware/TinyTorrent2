@@ -282,6 +282,7 @@ void Engine::State::Discard(std::function<bool(Preview const&)> const& matches)
 
 void Engine::State::Disconnect(std::string const& connectionId)
 {
+    snapshotSubscribers.erase(connectionId);
     ReleaseConnectionTest(connectionId, ConnectionPhase::Cancelled);
     ReleaseReading(connectionId, true);
     for (auto const& preview : parsing)

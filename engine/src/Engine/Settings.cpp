@@ -1005,6 +1005,8 @@ void Engine::State::Configure(Json const& choices, std::function<void(Outcome)> 
                     std::optional<LimitMode>(settings.limitMode) : std::nullopt;
                 RefreshPolicy();
             }
+            PublishSnapshot();
+            RequestStatus();
             completion({});
         };
         if (next.ToJson() == settings.ToJson())
@@ -1095,6 +1097,8 @@ void Engine::State::PauseSession(bool paused, std::function<void(Outcome)> compl
             {
                 Invalidate(id);
             }
+            PublishSnapshot();
+            RequestStatus();
             completion({});
         };
         if (settings.allPaused == paused)

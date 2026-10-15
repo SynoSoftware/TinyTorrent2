@@ -72,7 +72,7 @@ internal sealed class TorrentSource : IAsyncDisposable
     // listed files stay while every torrent is read again from a snapshot
     // taken after the command. Changed lets Library show what the read that
     // Restart ended saved but did not report.
-    private void Reread()
+    private void Reread(JsonElement? snapshot)
     {
         lock (_gate)
         {
@@ -80,9 +80,11 @@ internal sealed class TorrentSource : IAsyncDisposable
                 return;
             Restart();
             _reread = true;
+            _latest = snapshot;
+            if (snapshot is not null && (_work is null || _work.IsCompleted))
+                _work = Task.Run(Run);
         }
         Changed?.Invoke(this, EventArgs.Empty);
-        _ = _client.RefreshSnapshot();
     }
 
     // Ends the current read, which then saves nothing more. The next read

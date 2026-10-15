@@ -58,11 +58,13 @@ Engine::State::State(std::filesystem::path path, std::function<void()> wake) :
             startupError = outcome.detail;
             startup = Startup::Ready;
             log.Write("startup", "", "storage_failed");
+            PublishSnapshot();
             return;
         }
         settings = saved->settings;
         language = settings.language;
         startup = Startup::Transfers;
+        PublishSnapshot();
         // Queued only now, so the settings completion drains alone and the
         // desktop shows the splash before Start loads the transfers on the
         // same thread.
@@ -88,6 +90,7 @@ Engine::State::State(std::filesystem::path path, std::function<void()> wake) :
                 startupError = outcome.detail;
                 startup = Startup::Ready;
                 log.Write("startup", "", "storage_failed");
+                PublishSnapshot();
                 return;
             }
             Start(*saved, *resumes);
@@ -201,6 +204,7 @@ void Engine::State::Start(Document const& saved, Resumes& resumes)
     }
     startup = Startup::Ready;
     log.Write("startup", "", "ready");
+    PublishSnapshot();
 }
 
 void Engine::State::Restore(std::string const& id, Facts facts, lt::add_torrent_params params)
@@ -457,7 +461,7 @@ tt::Activity Engine::State::Activity() const
     return activity;
 }
 
-Json Engine::State::Snapshot() const
+Json Engine::State::Snapshot()
 {
     // The accepted order, because libtorrent's status reports a queue move
     // only after its next update, and the list would show the old order.
@@ -486,7 +490,8 @@ Json Engine::State::Snapshot() const
     // missing adapter pauses transfers and the window offers Settings instead.
     auto pause = !IsPaused() ? "" : settings.allPaused || launchPaused ? "manual" : IsPausedByChoice() ? "schedule" :
         adapterMissing ? "adapter" : "connection_test";
-    return {{"session_id", sessionId}, {"torrents", std::move(rows)}, {"settings", std::move(current)},
+    return {{"session_id", sessionId}, {"sequence", ++snapshotSequence},
+        {"torrents", std::move(rows)}, {"settings", std::move(current)},
         {"language_saved", language == settings.language},
         {"download_rate", activity.downloadRate}, {"upload_rate", activity.uploadRate},
         {"transfers", {{"session", transferred.ToJson()}, {"all_time", TotalTransfers().ToJson()}}},
@@ -672,11 +677,7 @@ void Engine::State::Tick()
         if (queuePending)
             ApplyQueue();
         if (statusPending)
-        {
-            statusPending = false;
-            // Without the save path, which marks the detail status; see Query.
-            session->post_torrent_updates(lt::torrent_handle::query_name);
-        }
+            RequestStatus();
     }
     if (IsShuttingDown())
     {
@@ -692,6 +693,9 @@ void Engine::State::Maintain()
     {
         statusAt = now;
         session->post_session_stats();
+        if (SuspendsForConnectionTest() ||
+            (connectionTest && connectionTest->phase == ConnectionPhase::Restoring))
+            snapshotPending = true;
         MaintainConnectionTest();
         RestorePending();
         WatchFolder();
@@ -710,7 +714,7 @@ void Engine::State::Maintain()
             FinishFiles(torrent);
             FinishDownload(torrent);
         }
-        statusPending = true;
+        RequestStatus(false);
     }
     if (now - checkpointAt >= checkpointInterval)
     {
@@ -726,5 +730,29 @@ void Engine::State::Maintain()
         }
     }
     CheckpointUnsaved();
+}
+
+void Engine::State::PublishSnapshot()
+{
+    if (snapshotSubscribers.empty())
+        return;
+    auto message = Success(Snapshot());
+    message["type"] = "snapshot";
+    for (auto const& [connectionId, send] : snapshotSubscribers)
+        send(message);
+}
+
+void Engine::State::RequestStatus(bool immediate)
+{
+    snapshotPending |= immediate || statusPending;
+    if (immediate)
+        // An outstanding answer may predate this command, so query once more.
+        statusPending = true;
+    if (!session || statusOutstanding)
+        return;
+    statusOutstanding = true;
+    statusPending = false;
+    // The save path and metadata pointer distinguish detail and seed queries.
+    session->post_torrent_updates(lt::torrent_handle::query_name);
 }
 }

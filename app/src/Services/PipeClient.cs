@@ -34,9 +34,6 @@ internal sealed partial class PipeClient : IDisposable
     private readonly List<Request> _reads = [];
     private readonly SemaphoreSlim _queued = new(0);
     private readonly Dictionary<long, PendingReply> _replies = [];
-    private readonly PeriodicTimer _refreshTimer = new(TimeSpan.FromMilliseconds(1000));
-    private int _refreshInterval = 1000;
-    private bool _connectionTestActive;
     private Task? _pump;
     private int _commandCount;
     private long _requestId;
@@ -113,7 +110,7 @@ internal sealed partial class PipeClient : IDisposable
     internal event Action<JsonElement>? Notice;
     internal event Action<JsonElement>? Detail;
     internal event Action? CommandCompleted;
-    internal event Action? FilesChanged;
+    internal event Action<JsonElement?>? FilesChanged;
 
     internal PipeClient(Strings strings) => _strings = strings;
 
@@ -214,7 +211,6 @@ internal sealed partial class PipeClient : IDisposable
         Exception? launchFailure = null;
         string? lastFailure = null;
         var token = _lifetime.Token;
-        var refresh = Refresh(token);
         try
         {
             while (!token.IsCancellationRequested)
@@ -310,7 +306,6 @@ internal sealed partial class PipeClient : IDisposable
         {
             _lifetime.Cancel();
             Disconnect();
-            await refresh;
         }
 
         void Launch()
@@ -335,7 +330,7 @@ internal sealed partial class PipeClient : IDisposable
         List<(Request Request, Task Task)> active = [];
         try
         {
-            await Execute(pipe, new Request("snapshot", null, Consumer.Summary), connection.Token);
+            await Execute(pipe, new Request("snapshot", new { subscribe = true }, Consumer.Summary), connection.Token);
             var queued = _queued.WaitAsync(connection.Token);
             while (!connection.IsCancellationRequested)
             {
@@ -394,45 +389,6 @@ internal sealed partial class PipeClient : IDisposable
             EndFiles();
             EndInspector();
         }
-    }
-
-    // Each refresh waits for the previous one, so a slow engine is not asked
-    // again until it has answered.
-    private async Task Refresh(CancellationToken token)
-    {
-        using var stopping = token.Register(() =>
-        {
-            lock (_gate)
-                _refreshTimer.Dispose();
-            Debug.WriteLine("Engine snapshot polling stopped: pipe client is stopping.");
-        });
-        while (await _refreshTimer.WaitForNextTickAsync())
-            await RefreshSnapshot();
-    }
-
-    internal void SetRefreshInterval(int milliseconds)
-    {
-        lock (_gate)
-        {
-            _refreshInterval = milliseconds;
-            UpdateRefreshInterval();
-        }
-    }
-
-    internal void SetConnectionTestActive(bool active)
-    {
-        lock (_gate)
-        {
-            _connectionTestActive = active;
-            UpdateRefreshInterval();
-        }
-    }
-
-    private void UpdateRefreshInterval()
-    {
-        var period = TimeSpan.FromMilliseconds(_connectionTestActive ? 1000 : _refreshInterval);
-        if (!_disposed && !_lifetime.IsCancellationRequested && _refreshTimer.Period != period)
-            _refreshTimer.Period = period;
     }
 
     internal async Task RefreshSnapshot()
@@ -515,6 +471,7 @@ internal sealed partial class PipeClient : IDisposable
 
     private async Task Receive(NamedPipeClientStream pipe, CancellationToken token)
     {
+        JsonElement? snapshot = null;
         try
         {
             while (true)
@@ -536,6 +493,8 @@ internal sealed partial class PipeClient : IDisposable
                         Notice?.Invoke(message);
                     else if (type.GetString() == "detail")
                         ReceiveDetail(message);
+                    else if (type.GetString() == "snapshot")
+                        Publish(ReadOutcome(message, _strings, "snapshot"));
                 }
                 else if (message.TryGetProperty("request_id", out var id))
                 {
@@ -547,11 +506,15 @@ internal sealed partial class PipeClient : IDisposable
                     // Publish snapshots in receive order, before later save
                     // continuations can confirm newer settings on the UI thread.
                     if (pending.Request.Name == "snapshot" && message.GetProperty("ok").GetBoolean())
-                        Snapshot?.Invoke(message.GetProperty("data"));
+                        Publish(message.GetProperty("data"));
                     if (pending.Request.Consumer is null && pending.Request.Name != "snapshot")
                         CommandCompleted?.Invoke();
                     if (pending.ChangesFiles && message.GetProperty("ok").GetBoolean())
-                        FilesChanged?.Invoke();
+                    {
+                        var confirmed = message.GetProperty("data").GetProperty("snapshot_sequence").GetInt64();
+                        FilesChanged?.Invoke(snapshot is { } latest && latest.GetProperty("sequence").GetInt64() >= confirmed
+                            ? latest : null);
+                    }
                     pending.Completion.TrySetResult(message);
                 }
             }
@@ -572,6 +535,14 @@ internal sealed partial class PipeClient : IDisposable
                 foreach (var pending in _replies.Values)
                     pending.Completion.TrySetException(error);
             throw;
+        }
+
+        void Publish(JsonElement data)
+        {
+            if (snapshot is { } latest && data.GetProperty("sequence").GetInt64() <= latest.GetProperty("sequence").GetInt64())
+                return;
+            snapshot = data;
+            Snapshot?.Invoke(data);
         }
     }
 
@@ -622,7 +593,7 @@ internal sealed partial class PipeClient : IDisposable
             var hello = await Read(pipe, deadline.Token);
             if (
                 hello.GetProperty("type").GetString() != "hello"
-                || hello.GetProperty("version").GetInt32() != 18
+                || hello.GetProperty("version").GetInt32() != 19
             )
                 throw new InvalidDataException(strings.Get("connection", "version"));
             return hello;
@@ -829,7 +800,6 @@ internal sealed partial class PipeClient : IDisposable
         }
         finally
         {
-            _refreshTimer.Dispose();
             _lifetime.Dispose();
         }
     }

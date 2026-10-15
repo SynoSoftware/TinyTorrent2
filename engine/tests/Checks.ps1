@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('Frames', 'Targets', 'Facts', 'Restore', 'Exit', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames', 'Pause', 'History', 'Accounting')]
+    [ValidateSet('Frames', 'Summaries', 'Targets', 'Facts', 'Restore', 'Exit', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames', 'Pause', 'History', 'Accounting')]
     [string] $Check,
     [Parameter(Mandatory)]
     [string] $TorrentFile,
@@ -814,6 +814,39 @@ try {
             Assert $reply.ok 'Ordinary resume failed'
             $reply = Send-Command @{ command = 'snapshot' }
             Assert (-not $reply.data.torrents[0].forced -and -not $reply.data.torrents[0].paused) 'Ordinary resume retained force intent'
+        }
+        'Summaries' {
+            $reply = Send-Command @{ command = 'settings'; changes = @{ refresh_interval = 10000 } }
+            Assert $reply.ok 'The summary fixture could not set its refresh interval'
+            foreach ($paused in $true, $false) {
+                $client = Connect-Pipe
+                try {
+                    $body = [Text.Encoding]::UTF8.GetBytes('{"request_id":101,"command":"snapshot","subscribe":true}')
+                    $client.Write([BitConverter]::GetBytes([int]$body.Length), 0, 4)
+                    $client.Write($body, 0, $body.Length)
+                    do { $reply = Read-Frame $client } while ($reply.type -eq 'snapshot')
+                    Assert ($reply.ok -and $reply.request_id -eq 101 -and $reply.data.sequence -gt 0) `
+                        'Subscribing did not return a correlated snapshot'
+                    $session = $reply.data.session_id
+                    $watch = [Diagnostics.Stopwatch]::StartNew()
+                    $reply = Send-Command @{ command = 'session_pause'; paused = $paused }
+                    Assert ($reply.ok -and $reply.data.snapshot_sequence -gt 0) 'Pause did not identify its published summary'
+                    $confirmed = $reply.data.snapshot_sequence
+                    do {
+                        $frame = Read-Frame $client
+                        Assert ($frame.type -eq 'snapshot' -and $frame.ok -and $frame.data.session_id -eq $session) `
+                            'The subscription received an invalid summary'
+                    } while ($frame.data.sequence -lt $confirmed)
+                    Assert ($frame.data.session_paused -eq $paused) 'The acknowledged summary predates the command'
+                    # A ten-second timer must not be what eventually supplies command feedback.
+                    Assert ($watch.Elapsed.TotalSeconds -lt 5) 'Command feedback waited for the refresh interval'
+                    while ($frame.data.sequence -le $confirmed) { $frame = Read-Frame $client }
+                    Assert ($frame.type -eq 'snapshot' -and $frame.ok -and $frame.data.session_paused -eq $paused) `
+                        'A subsequent status push did not preserve the accepted pause state'
+                    Assert ($watch.Elapsed.TotalSeconds -lt 5) 'The subsequent status push waited for the refresh interval'
+                }
+                finally { $client.Dispose() }
+            }
         }
         'Frames' {
             $reply = Send-Command @{ command = 'registration'; action = 42 }

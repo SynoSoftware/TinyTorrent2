@@ -84,7 +84,10 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
     auto command = Parse(commands, request.at("command").get<std::string>());
     if (command == Command::Snapshot)
     {
+        if (request.value("subscribe", false))
+            snapshotSubscribers[connectionId] = reply;
         reply(Success(Snapshot()));
+        RequestStatus();
         return;
     }
     if (auto refusal = Refusal())
@@ -96,6 +99,33 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
     {
         reply(Failure(ErrorCode::UnknownCommand));
         return;
+    }
+    switch (*command)
+    {
+    case Command::Torrent:
+    case Command::History:
+    case Command::Preview:
+    case Command::PreviewDetail:
+    case Command::CancelPreview:
+    case Command::FileScope:
+        break;
+    default:
+        reply = [this, command = *command, reply = std::move(reply)](Json response)
+        {
+            if (response.at("ok").get<bool>())
+            {
+                // These two owners also serve tray actions and publish there.
+                if (command != Command::Settings && command != Command::SessionPause)
+                {
+                    PublishSnapshot();
+                    RequestStatus();
+                }
+                if (!snapshotSubscribers.empty())
+                    response["data"]["snapshot_sequence"] = snapshotSequence;
+            }
+            reply(std::move(response));
+        };
+        break;
     }
     switch (*command)
     {

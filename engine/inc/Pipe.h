@@ -52,6 +52,7 @@ public:
         std::condition_variable changed;
         std::deque<Json> output;
         std::optional<Json> detail;
+        std::optional<Json> snapshot;
         bool closed = false;
         bool dispatched = false;
         std::set<std::int64_t> requests;
@@ -59,7 +60,7 @@ public:
         void Send(Json message);
     };
     // The protocol version that the hello message announces.
-    static constexpr int version = 18;
+    static constexpr int version = 19;
     // Receives each request with the reply that answers it, and a null request
     // with no reply when the client disconnects.
     using Dispatch = std::function<void(std::shared_ptr<Connection>, Json, Reply)>;

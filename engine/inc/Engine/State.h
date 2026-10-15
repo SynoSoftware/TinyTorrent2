@@ -360,6 +360,12 @@ public:
     std::string checkpointCursor;
     std::chrono::steady_clock::time_point statusAt{};
     bool statusPending = false;
+    bool statusOutstanding = false;
+    bool snapshotPending = false;
+    // Keep the cadence's phase when a collection tick arrives late.
+    std::chrono::steady_clock::time_point snapshotAt = std::chrono::steady_clock::now();
+    std::int64_t snapshotSequence = 0;
+    std::map<std::string, Reply> snapshotSubscribers;
     std::optional<ScheduleMode> scheduledMode;
     bool bypassesScheduledPause = false;
     std::optional<LimitMode> limitOverride;
@@ -492,7 +498,9 @@ public:
     void Notify(NoticeKind kind, std::string name, std::string detail, std::string torrentId = {},
         std::string code = {}, std::string folder = {});
     tt::Activity Activity() const;
-    Json Snapshot() const;
+    Json Snapshot();
+    void PublishSnapshot();
+    void RequestStatus(bool immediate = true);
     std::string FindDuplicate(lt::info_hash_t const& hashes, std::string const& excluded = {}) const;
     static bool Overlaps(std::vector<std::string> const& hashes, std::vector<std::string> const& others);
     void RecordHashes(Torrent& torrent);

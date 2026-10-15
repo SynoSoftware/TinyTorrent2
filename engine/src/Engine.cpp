@@ -232,7 +232,7 @@ void Engine::Add(std::string const& source, std::function<void(Outcome, Added)> 
     }
     state_->AddSource(source, std::move(completion));
 }
-Json Engine::Snapshot() const { return state_->Snapshot(); }
+Json Engine::Snapshot() { return state_->Snapshot(); }
 Activity Engine::Activity() const { return state_->Activity(); }
 std::vector<Notice> Engine::TakeNotices() { return std::exchange(state_->notices, {}); }
 std::string Engine::Name(std::string const& torrentId) const

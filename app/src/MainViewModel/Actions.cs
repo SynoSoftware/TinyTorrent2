@@ -379,7 +379,6 @@ public sealed partial class MainViewModel
             await _client.Send("queue", arguments);
             AnnounceAccepted("outcomes", "queue");
             ClearError();
-            RequestSnapshot();
         }
         catch (Exception error)
         {
@@ -416,7 +415,6 @@ public sealed partial class MainViewModel
             await _client.Send("piece_order", arguments);
             AnnounceAccepted("commands", PieceOrderKey(order, enabled));
             ClearError();
-            RequestSnapshot();
         }
         catch (Exception error)
         {
@@ -439,7 +437,6 @@ public sealed partial class MainViewModel
             else
                 AnnounceAccepted("commands", paused ? "pause_all" : "resume_all");
             ClearError();
-            RequestSnapshot();
         }
         catch (Exception error)
         {

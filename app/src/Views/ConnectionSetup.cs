@@ -250,9 +250,6 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
             "failed" => ConnectionPhase.Failed,
             _ => ConnectionPhase.Idle,
         };
-        _client.SetConnectionTestActive(
-            IsTesting || _phase is ConnectionPhase.Holding or ConnectionPhase.Restoring
-        );
         if (value.TryGetProperty("id", out var id))
         {
             var testId = id.GetString() ?? string.Empty;
@@ -300,7 +297,6 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
         if (!CanTest)
             return;
         _testFailure = string.Empty;
-        _client.SetConnectionTestActive(true);
         await Execute(() => SendTest("start"));
     }
 
@@ -339,7 +335,6 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
         }
         finally
         {
-            _main.RequestSnapshot();
             IsPending = false;
             _settings.Changed(nameof(Settings.IsPending));
         }

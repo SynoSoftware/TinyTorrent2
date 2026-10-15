@@ -1265,9 +1265,9 @@ records the ruling and the arrangement that replaced vcpkg.
 
 ## Wire representation
 
-Protocol version 18 uses a four-byte little-endian UTF-8 JSON frame length,
+Protocol version 19 uses a four-byte little-endian UTF-8 JSON frame length,
 bounded to 16 MiB. The endpoint is `TinyTorrent.<logon SID>`; each connecting
-client first receives `{type:"hello",version:18,session_id:"...",data_directory:"..."}`. The absolute data directory
+client first receives `{type:"hello",version:19,session_id:"...",data_directory:"..."}`. The absolute data directory
 keeps the same store for explicit Restart, which starts the engine beside the
 window rather than a path a pipe peer reports. Requests are
 `{request_id:signed-64-bit-integer,command:string,...}`. Replies repeat `request_id` and have
@@ -1284,6 +1284,23 @@ the tray stays there, and the window never receives a tray burst. The window
 keeps completion feedback bounded and uses the current
 torrent identity to resolve Open folder. Windows delivery is reserved for a
 closed window and obeys the corresponding notification preference.
+
+`snapshot` answers immediately with known state. With `subscribe:true`, it also
+registers that connection for `{type:"snapshot",ok:true,data:...}` pushes until
+disconnect. Pushes use the same snapshot data as replies, including `session_id`
+and a signed 64-bit `sequence` that increases whenever the engine builds a
+snapshot. The client discards a snapshot whose sequence is not newer than the
+last received on that connection. One replaceable summary slot bounds unsent
+pushes. The writer alternates ordered frames with optional updates and alternates
+summary and detail when both are pending. Routine publication follows
+`refresh_interval` on one-second engine ticks, preserving the interval's phase
+instead of rounding every interval up; a connection test publishes each second.
+Successful mutation replies include `data.snapshot_sequence` when subscribers
+exist: the sequence of the known-state summary published after that command.
+Consumers use it to recognize a qualifying summary that arrived before the reply
+or retain their optimistic state until its push arrives. Commands also post a
+status query; fresh status is pushed on arrival. The window retains explicit
+refreshes but no summary timer or post-command polls.
 
 Snapshots include `transfers: {session: {downloaded, uploaded}, all_time:
 {downloaded, uploaded}}`, with nonnegative signed 64-bit payload byte counts.

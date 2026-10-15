@@ -19,7 +19,7 @@ independent work. Request IDs correlate replies, which may arrive out of order;
 one writer serializes complete frames in send order. The engine's existing change
 queue preserves the order of persisted changes. The window bounds accepted commands
 to 32 and in-flight reads to 32; newer unsent refreshes replace older ones.
-Only summary polling waits for its previous reply. A changed inspector or preview
+Only explicit summary reads wait for their previous reply. A changed inspector or preview
 can send its new request while an obsolete read finishes. The engine bounds each
 connection to 64 outstanding requests, covering both window limits together.
 Request IDs are signed 64-bit integers and remain unique while outstanding;
@@ -136,9 +136,28 @@ copy another thread is still filling. Membership and application state form one
 consistent copy; transfer telemetry is sampled, not a promise to freeze every
 swarm at one instant.
 
-While WinUI is connected, refresh the summary at the configured window interval
-(1000–10000 milliseconds, default 1000) and after each command. The setting changes
-window demand, not engine ticks or history sampling. Allow at most one refresh in flight. Commands go before
+The window's initial summary read subscribes to pushed snapshots and replies
+immediately with known state. The engine publishes fresh summaries at the saved
+refresh interval (1000–10000 milliseconds, default 1000), sampled on the engine's
+one-second tick. Deadlines retain their phase, so tick rounding does not lengthen
+the chosen average interval. It also publishes known state after a successful
+command and requests fresh status immediately. If a
+status query was already outstanding, its answer triggers one follow-up query,
+because it may predate the command. Routine engine ticks and history sampling
+keep their own cadence. The window has no summary timer or post-command polls;
+explicit refresh and reconnect reads remain available.
+
+Each connection retains one undelivered summary, replacing it with the latest.
+The writer alternates ordered frames with optional updates, and alternates summary
+and detail updates when both are pending, so none can starve the others. Every
+snapshot, including an explicit reply, carries a sequence number assigned when
+built within its engine session. Successful mutation replies identify the summary
+published after that command when subscribers exist. The window can therefore use
+a qualifying summary already received, or wait for its push, without another read.
+It ignores an older snapshot after receiving a newer one. Disconnect releases the
+subscription.
+
+Allow at most one explicit summary read in flight. Commands go before
 refresh and detail reads, and each view keeps at most one unsent read: a newer
 read replaces it, and a closed or changed view withdraws it. Use stable torrent
 identity to preserve the window's selection, focus, and drafts across refresh/reconnect.
@@ -205,7 +224,7 @@ Measure a real payload problem before replacing this design.
 
 `connection_test` accepts `start`, `cancel`, or `release` and returns the current
 operation state without holding the request slot during measurement. The same
-state appears in summary snapshots. The window temporarily requests snapshots
+state appears in summary snapshots. The engine pushes snapshots
 once per second while the operation is active so phase feedback and the hold
 countdown remain usable even with a slower configured refresh interval.
 
