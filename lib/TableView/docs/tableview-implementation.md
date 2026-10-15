@@ -14,7 +14,7 @@ for this documentation review.
 | Public control, template lifetime, composition | [Table](../src/Table.cs) and its parts in [Table/](../src/Table/). |
 | Source subscription and coherent source capture | [Body.Source](../src/Body/Source.cs). |
 | Optional child membership, subscriptions and sibling projection | [Hierarchy](../src/Hierarchy.cs), configured by `Schema<TRow>.Hierarchy`. |
-| Displayed sequence and collection reconciliation | [Body.View](../src/Body/View.cs). |
+| Displayed sequence, collection reconciliation and the selected state the list reads | [Body.View](../src/Body/View.cs). |
 | Effective layout | [EffectiveLayout](../src/EffectiveLayout.cs). |
 | Shared header and row arrangement | [CellsPanel](../src/CellsPanel.cs). |
 | Hierarchy cell indentation and disclosure | [Body.HierarchyCell](../src/Body/HierarchyCell.cs), created only for the hierarchy column, with a `SubtleButton` as its expander. |
@@ -59,6 +59,12 @@ The private view sends native observable-vector insert, remove and replacement
 events. It avoids projecting .NET collection-event arguments and their item
 lists for every membership change, a measured cost on large Library searches.
 The reconciliation algorithm and the positions it announces remain unchanged.
+
+The private view also implements `ISelectionInfo`, answering from the table's
+selection model. The list reads a row's selected state from it when it builds
+the row's container and after every range call, and keeps no selection of its
+own, so a reconcile leaves nothing to re-apply and the list never scrolls to a
+selected row on the table's behalf.
 
 The current arbiter has `None`, `Pressed`, `Marquee`, and `RowDrag` phases. Earlier
 notes describing a `Committed` phase and calling the marquee during a row drag

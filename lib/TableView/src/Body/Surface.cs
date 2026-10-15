@@ -15,8 +15,40 @@ public sealed partial class Surface : ListView
             peer.RefreshHierarchy();
     }
 
+    /// <summary>A UIA client listens for selection events, so they are worth raising.</summary>
+    internal static bool SelectionListens =>
+        AutomationPeer.ListenerExists(AutomationEvents.SelectionPatternOnInvalidated)
+        || AutomationPeer.ListenerExists(AutomationEvents.SelectionItemPatternOnElementSelected)
+        || AutomationPeer.ListenerExists(
+            AutomationEvents.SelectionItemPatternOnElementAddedToSelection
+        )
+        || AutomationPeer.ListenerExists(
+            AutomationEvents.SelectionItemPatternOnElementRemovedFromSelection
+        );
+
+    /// <summary>
+    /// Raise the UIA selection events the list raises for a selection it keeps itself. With the
+    /// view answering selection, the list's own <c>SelectionChanged</c> carries no added or removed
+    /// rows, so it raises none.
+    /// </summary>
+    internal void RaiseSelectionEvents(
+        IReadOnlyList<object> added,
+        IReadOnlyList<object> removed,
+        int selected
+    )
+    {
+        if (
+            added.Count + removed.Count > 0
+            && FrameworkElementAutomationPeer.CreatePeerForElement(this) is Peer peer
+        )
+            peer.RaiseSelectionEvents(added, removed, selected);
+    }
+
     private sealed class Peer(Surface owner) : ListViewAutomationPeer(owner), ISelectionProvider
     {
+        /// <summary>Beyond this many changed rows the list reports the selection as invalidated.</summary>
+        private const int BulkChildrenLimit = 20;
+
         private List<WeakReference<ItemPeer>>? _itemPeers;
         internal Table? Table => Row.FindOwner(owner);
 
@@ -44,6 +76,41 @@ public sealed partial class Surface : ListView
             }
         }
 
+        /// <summary>
+        /// The list's own rules: a row that is newly the whole selection is "selected", and the
+        /// one row it replaced is "removed"; past the bulk limit the selection is reported
+        /// invalidated as a whole; otherwise each row is reported added or removed.
+        /// </summary>
+        internal void RaiseSelectionEvents(
+            IReadOnlyList<object> added,
+            IReadOnlyList<object> removed,
+            int selected
+        )
+        {
+            if (added.Count == 1 && selected == 1)
+            {
+                Raise(added[0], AutomationEvents.SelectionItemPatternOnElementSelected);
+                if (removed.Count == 1)
+                    Raise(
+                        removed[0],
+                        AutomationEvents.SelectionItemPatternOnElementRemovedFromSelection
+                    );
+                return;
+            }
+            if (added.Count + removed.Count > BulkChildrenLimit)
+            {
+                RaiseAutomationEvent(AutomationEvents.SelectionPatternOnInvalidated);
+                return;
+            }
+            foreach (object item in added)
+                Raise(item, AutomationEvents.SelectionItemPatternOnElementAddedToSelection);
+            foreach (object item in removed)
+                Raise(item, AutomationEvents.SelectionItemPatternOnElementRemovedFromSelection);
+        }
+
+        private void Raise(object item, AutomationEvents automationEvent) =>
+            CreateItemAutomationPeer(item)?.RaiseAutomationEvent(automationEvent);
+
         protected override object? GetPatternCore(PatternInterface pattern) =>
             pattern == PatternInterface.Selection
                 ? Table is { SelectionMode: not ListViewSelectionMode.None }
@@ -57,7 +124,14 @@ public sealed partial class Surface : ListView
                     or ListViewSelectionMode.Extended;
         bool ISelectionProvider.IsSelectionRequired => false;
 
-        IRawElementProviderSimple[] ISelectionProvider.GetSelection() => GetSelection();
+        // The list's own provider reports the selection the list keeps, and this list keeps none:
+        // the view answers from the table.
+        IRawElementProviderSimple[] ISelectionProvider.GetSelection() =>
+            Table is { } table
+                ? table
+                    .SelectedItems.Select(item => ProviderFromPeer(CreateItemAutomationPeer(item)))
+                    .ToArray()
+                : [];
     }
 
     private sealed class ItemPeer(object item, Peer parent)

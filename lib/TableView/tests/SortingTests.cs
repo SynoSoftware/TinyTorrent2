@@ -418,11 +418,15 @@ public class SortingTests
             Assert.AreEqual("k4", ((SortRow)h.Table.Selection.Current!).Key);
             Assert.AreEqual(0, selectionEvents, "only positions changed");
 
-            // A collection reset destroys the row surface's own selection, so this is the real check.
+            // The containers are what the person sees, so this is the real check.
             CollectionAssert.AreEquivalent(
                 new[] { "k0", "k4" },
-                h.Surface().SelectedItems.Cast<SortRow>().Select(r => r.Key).ToArray(),
-                "the table re-applied its selection to the row surface"
+                TableHarness
+                    .SelectedContainers(h.Surface())
+                    .Cast<SortRow>()
+                    .Select(r => r.Key)
+                    .ToArray(),
+                "the row surface shows the table's selection"
             );
         });
 

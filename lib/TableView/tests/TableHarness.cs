@@ -1,5 +1,6 @@
 using System.Reflection;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 
 namespace Syno.TableView.Tests;
 
@@ -18,6 +19,17 @@ internal static class TableHarness
         typeof(Table).GetProperty("EffectiveLayout", BindingFlags.Instance | BindingFlags.NonPublic)
         ?? throw new MissingMemberException("Table.EffectiveLayout");
 
+    /// <summary>
+    /// The items whose realized container draws itself selected: what the row surface shows, as
+    /// opposed to what the table reports.
+    /// </summary>
+    internal static object[] SelectedContainers(ListView list) =>
+        Enumerable
+            .Range(0, list.Items.Count)
+            .Where(index => list.ContainerFromIndex(index) is ListViewItem { IsSelected: true })
+            .Select(index => list.Items[index])
+            .ToArray();
+
     /// <summary>Put the table in the live tree and wait for its first <c>Loaded</c>.</summary>
     internal static async Task LoadAsync(Table table)
     {
@@ -35,6 +47,13 @@ internal static class TableHarness
         {
             table.Loaded -= OnLoaded;
         }
+
+        // The first fill waits for the frame after its layout before the table reveals a row;
+        // a test acts after that frame, as a person does.
+        await WaitUntilAsync(
+            () => !Proof.Field<bool>(table, "_layoutPending"),
+            "the list to lay out the rows"
+        );
     }
 
     /// <summary>

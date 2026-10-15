@@ -200,8 +200,6 @@ public sealed partial class Table
         // Deliberately not handledEventsToo: a cell control that shows its own context flyout marks
         // this handled, and section 15 leaves that control its own menu.
         _surface.ContextRequested += OnRowsContextRequested;
-
-        _surface.SelectionChanged += OnSurfaceSelectionChanged;
     }
 
     private void DetachInput()
@@ -248,8 +246,6 @@ public sealed partial class Table
         );
         _surface.RemoveHandler(UIElement.TappedEvent, new TappedEventHandler(OnRowsTapped));
         _surface.ContextRequested -= OnRowsContextRequested;
-
-        _surface.SelectionChanged -= OnSurfaceSelectionChanged;
 
         _innerScrollViewer = null;
     }
@@ -502,8 +498,8 @@ public sealed partial class Table
 
         if (_gestureDeferred)
         {
-            // Undo the container's own toggle inside the same input event.
-            ApplySelectionToContainers();
+            // The container's own toggle undoes itself: it ends in a range call on the view, and
+            // the list re-reads the state the table kept.
             return;
         }
 
@@ -1088,17 +1084,39 @@ public sealed partial class Table
     }
 
     /// <summary>
+    /// The reveal waiting for the list to lay out the view change, with the focus that goes with
+    /// it. A newer reveal replaces it; see <see cref="_layoutPending"/>.
+    /// </summary>
+    private (object Item, FocusState Focus)? _pendingReveal;
+
+    /// <summary>
     /// Reveal an item without changing selection or keyboard focus. A source arrival waiting
-    /// under the pointer is released before scrolling.
+    /// under the pointer is released before scrolling. After a view change in the same turn the
+    /// scroll runs a frame later, once the list has laid the change out.
     /// </summary>
     public void ScrollIntoView(object item)
     {
         if (IndexInView(item) < 0 && _source.Snapshot.Contains(item, _identity))
             Release([item]);
 
-        // ItemsStackPanel's first request can land one row short while estimating its extent.
+        if (_layoutPending)
+        {
+            _pendingReveal = (item, FocusState.Unfocused);
+            return;
+        }
+        _pendingReveal = null;
         _surface?.ScrollIntoView(item);
-        _surface?.ScrollIntoView(item);
+    }
+
+    /// <summary>Scroll to the waiting reveal, and focus it if keyboard navigation asked.</summary>
+    private void Reveal()
+    {
+        if (_pendingReveal is not { } reveal)
+            return;
+        _pendingReveal = null;
+        ScrollIntoView(reveal.Item);
+        if (reveal.Focus != FocusState.Unfocused)
+            FocusRow(reveal.Item, reveal.Focus);
     }
 
     /// <summary>
@@ -1183,6 +1201,13 @@ public sealed partial class Table
         {
             _surface.UpdateLayout();
             container = _surface.ContainerFromItem(item) as Control;
+        }
+
+        if (container is null && ReferenceEquals(_pendingReveal?.Item, item))
+        {
+            // The reveal that builds it is waiting for the frame; the focus goes with it.
+            _pendingReveal = (item, state);
+            return;
         }
 
         container?.Focus(state);

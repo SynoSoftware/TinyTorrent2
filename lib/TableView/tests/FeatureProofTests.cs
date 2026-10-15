@@ -736,6 +736,11 @@ public class FeatureProofTests
 
             scroller.ChangeView(null, 0, null, disableAnimation: true);
             h.Table.UpdateLayout();
+            // A jump realizes the viewport at once and the rows past it over the next frames.
+            await TableHarness.WaitUntilAsync(
+                () => list.ContainerFromItem(h[6]) is not null,
+                "the selected rows to be given containers again"
+            );
             CollectionAssert.AreEqual(new[] { "k2", "k3", "k4", "k5", "k6" }, h.SelectedKeys());
             CollectionAssert.AreEqual(
                 new[] { "k2", "k3", "k4", "k5", "k6" },

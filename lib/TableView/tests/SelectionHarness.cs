@@ -100,15 +100,13 @@ internal sealed class SelectionHarness
     internal Row this[int index] => Rows[index];
 
     /// <summary>The selection the row surface actually shows, which the table must own.</summary>
-    internal string[] ContainerSelectedKeys()
-    {
-        ListView list = Surface();
-        return list
-            .SelectedItems.Cast<Row>()
+    internal string[] ContainerSelectedKeys() =>
+        TableHarness
+            .SelectedContainers(Surface())
+            .Cast<Row>()
             .Select(r => r.Key)
             .OrderBy(k => k, StringComparer.Ordinal)
             .ToArray();
-    }
 
     internal Windows.Foundation.Point WheelPoint(int boundary)
     {

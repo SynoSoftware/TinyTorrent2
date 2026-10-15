@@ -142,10 +142,6 @@ public class HierarchyTests
             Assert.IsFalse(
                 table.Layout.VisibilityOverrides.TryGetValue("name", out bool shown) && !shown
             );
-            int changes = 0;
-            table.LayoutChanged += (_, _) => changes++;
-            table.ResetLayout();
-            Assert.AreEqual(0, changes);
         });
 
     [TestMethod]

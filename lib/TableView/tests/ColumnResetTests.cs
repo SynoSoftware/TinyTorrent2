@@ -182,7 +182,7 @@ public class ColumnResetTests
                 );
                 Assert.AreEqual(
                     2,
-                    h.Surface().SelectedItems.Count,
+                    TableHarness.SelectedContainers(h.Surface()).Length,
                     $"after {name}: the row surface agrees"
                 );
             }

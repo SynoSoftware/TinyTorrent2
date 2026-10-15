@@ -1,6 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 
 namespace Syno.TableView;
 
@@ -8,6 +9,22 @@ public sealed partial class Table
 {
     /// <summary>Set while a snapshot is being applied to the private view.</summary>
     private bool _reconcilingView;
+
+    /// <summary>
+    /// The list has not laid out this turn's view change in a frame yet. A reveal waits for the
+    /// frame after that layout; see <see cref="ScrollIntoView(object)"/>.
+    /// </summary>
+    /// <remarks>
+    /// The list counts the rows inserted and removed per layout tick, and in a tick with an insert
+    /// it plays the insert animation on every container it builds: invisible for 300 ms, then a
+    /// fade. A scroll in that tick to a row that has no container yet makes the panel recycle every
+    /// row and build them all again, and a scroll to a row off screen builds the rows it brings in,
+    /// so the rows built that way go blank for those 300 ms. The tick ends with the frame.
+    /// <c>CompositionTarget.Rendering</c> fires only inside a frame, after that frame's layout, so it
+    /// clears this. <c>LayoutUpdated</c> also fires from a synchronous <c>UpdateLayout</c> in the
+    /// same tick, which would clear it too early.
+    /// </remarks>
+    private bool _layoutPending;
     private Dictionary<object, (int Index, int Sibling)>? _positions;
 
     /// <summary>The private view, in current visual row order.</summary>
@@ -178,34 +195,14 @@ public sealed partial class Table
         if (rowFocus != FocusState.Unfocused)
             _surface?.Focus(FocusState.Pointer);
 
-        // The row surface keeps a selection of its own and revises it on every single removal and
-        // insertion. A re-sort of 2,002 rows once sent it about 3,800 of those, under the reconcile
-        // that announced every row it moved; that reconcile is gone, and the harness the figure came
-        // from has been deleted, so the 3,800 cannot be reproduced. The current reconcile raises a
-        // notification only for a realized position, 20 to 60 of them here, and none of that
-        // bookkeeping survives regardless: the table's own selection is re-applied a few lines below,
-        // over whatever the list decided. Taking the list out of selection for the duration removes
-        // that work per notification rather than once.
-        ListViewSelectionMode hosted = _surface?.SelectionMode ?? ListViewSelectionMode.None;
-
         bool viewMoved;
         _reconcilingView = true;
         try
         {
-            if (_surface is not null)
-            {
-                _surface.SelectionMode = ListViewSelectionMode.None;
-            }
-
             viewMoved = _view.Reconcile(order, RealizedIndices(), pinned);
         }
         finally
         {
-            if (_surface is not null)
-            {
-                _surface.SelectionMode = hosted;
-            }
-
             _reconcilingView = false;
         }
 
@@ -220,6 +217,11 @@ public sealed partial class Table
             // later. This is the one thing the list must be told when it has been told nothing
             // else, and it says only "look", not what changed.
             _surface?.ItemsPanelRoot?.InvalidateMeasure();
+            if (!_layoutPending)
+            {
+                _layoutPending = true;
+                CompositionTarget.Rendering += OnLaidOut;
+            }
         }
 
         UpdatePlaceholder();
@@ -230,6 +232,19 @@ public sealed partial class Table
         if (collapsing.Item is not null && rowFocus != FocusState.Unfocused)
             ScrollIntoView(collapsing.Item);
         ReconcileSelection(rowFocus, retained);
+    }
+
+    private void OnLaidOut(object? sender, object e)
+    {
+        CompositionTarget.Rendering -= OnLaidOut;
+        // The tick ends when the frame returns, so the note clears and the reveal runs past it.
+        // A view change made inside a frame, from a Loaded or a SizeChanged handler, is laid out
+        // after this event in the same frame, which is why the note cannot clear here.
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            _layoutPending = false;
+            Reveal();
+        });
     }
 
     private void ValidateRows(IReadOnlyList<object> snapshot)

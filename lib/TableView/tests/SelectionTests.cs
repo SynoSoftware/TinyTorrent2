@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Data;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Syno.TableView.Tests;
@@ -518,9 +519,9 @@ public class SelectionTests
             h.Table.Selection = new(new object[] { h[1] });
             h.Events = 0;
 
-            // Exactly what the container does to itself on a plain press in Multiple mode.
+            // Where the container's own press in Multiple mode ends up: a range call on the view.
             ListView list = h.Surface();
-            list.SelectedItems.Add(h[4]);
+            list.SelectRange(new ItemIndexRange(4, 1));
 
             Assert.AreEqual(
                 0,
@@ -528,5 +529,10 @@ public class SelectionTests
                 "SelectionChanged from the row surface must not reach the host."
             );
             CollectionAssert.AreEqual(new[] { "k1" }, h.SelectedKeys());
+            CollectionAssert.AreEqual(
+                new[] { "k1" },
+                h.ContainerSelectedKeys(),
+                "the row surface re-read the table's state"
+            );
         });
 }

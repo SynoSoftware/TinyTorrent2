@@ -40,10 +40,10 @@ public sealed partial class Table : Control
     public Table()
     {
         DefaultStyleKey = typeof(Table);
-        _view = new Body.View(_identity);
+        _selection = new SelectionState(_identity, IndexInView) { CanInteract = IsInteractive };
+        _view = new Body.View(_identity, _selection.IsSelected);
         _held = new HashSet<object>(_identity);
         _released = new Dictionary<object, bool>(_identity);
-        _selection = new SelectionState(_identity, IndexInView) { CanInteract = IsInteractive };
         _source = new Body.Source(DispatcherQueue);
         _source.SnapshotChanged += OnSnapshotChanged;
         Loaded += OnLoaded;
@@ -194,7 +194,6 @@ public sealed partial class Table : Control
         AttachInput();
 
         UpdatePlaceholder();
-        ApplySelectionToContainers();
     }
 
     private void DetachTemplateParts()

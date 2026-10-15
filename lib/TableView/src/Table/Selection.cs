@@ -6,17 +6,14 @@ namespace Syno.TableView;
 
 /// <summary>
 /// The table-owned selection surface of specification sections 5, 5.3 and 13. The table is the
-/// single interactive selection owner: the row surface's own <c>SelectionChanged</c> is never
-/// treated as truth, and the authoritative state is re-applied to it after every change.
+/// single interactive selection owner: the row surface reads each row's selected state from the
+/// private view, which answers from the model here, and keeps no selection of its own.
 /// </summary>
 public sealed partial class Table
 {
     private Selection _publishedSelection = Selection.Empty;
     private Selection? _pendingSelection;
     private ListViewSelectionMode _selectionMode = ListViewSelectionMode.Extended;
-
-    /// <summary>Set while the table is writing the row surface's selection, to stop re-entry.</summary>
-    private bool _syncingContainers;
 
     /// <summary>
     /// Raised once after any completed selection or current-item change, including the ones caused
@@ -94,9 +91,8 @@ public sealed partial class Table
         );
 
     /// <summary>
-    /// Re-apply the table-owned state after a snapshot. The row surface drops a row from its own
-    /// selection as soon as that row is removed, and a reorder is a removal, so its selection and
-    /// its focus are restored from the model here rather than trusted.
+    /// Bring the table-owned state to the view a snapshot left, and put row focus back where it
+    /// was: the framework moves it when the focused container leaves.
     /// </summary>
     private void ReconcileSelection(FocusState rowFocus, object? focusedItem = null)
     {
@@ -145,17 +141,31 @@ public sealed partial class Table
     /// </summary>
     private Selection CommitSelection()
     {
+        Selection previous = _publishedSelection;
         Selection next = new(BuildSelectedPacket(), _selection.Current);
-        bool changed = !SameSelection(_publishedSelection, next);
+        bool changed = !SameSelection(previous, next);
         _publishedSelection = next;
         if (!_detached)
         {
-            ApplySelectionToContainers();
+            RefreshContainers(previous);
             RowVisualsChanged?.Invoke(this, EventArgs.Empty);
+            if (changed && _surface is not null && Body.Surface.SelectionListens)
+                _surface.RaiseSelectionEvents(
+                    Except(next, previous),
+                    Except(previous, next),
+                    next.Items.Count
+                );
         }
         if (changed)
             SelectionChanged?.Invoke(this, next);
         return next;
+    }
+
+    /// <summary>The rows of <paramref name="selection"/> that <paramref name="other"/> lacks.</summary>
+    private object[] Except(Selection selection, Selection other)
+    {
+        HashSet<object> others = new(other.Items, _identity);
+        return selection.Items.Where(item => !others.Contains(item)).ToArray();
     }
 
     private static bool SameSelection(Selection left, Selection right)
@@ -180,82 +190,42 @@ public sealed partial class Table
     }
 
     /// <summary>
-    /// The container selects itself on a press, a tap, and Space, and removing a row drops it from
-    /// the list's selection. Every one of those arrives here, and every one of them is overwritten
-    /// with the table's own state. Measured: without this the row surface and the table disagree
-    /// after a real click.
+    /// Tell the list which rows changed selected state since the last commit, one range call per
+    /// run of rows, so it re-reads their containers from the view. A row the view no longer shows
+    /// needs nothing: its container is gone, and a container the list builds reads the view as it
+    /// is. The list's own gestures also end in a range call, and the view answers those with the
+    /// state the table has already settled, so the list corrects itself.
     /// </summary>
-    private void OnSurfaceSelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void RefreshContainers(Selection previous)
     {
-        // A reconcile raises this synchronously on each removal, with a row the table has not
-        // finished moving already gone. Reading the list there would record a selection that was
-        // never real; RebuildView re-applies the state itself once the whole snapshot is applied.
-        if (!_syncingContainers && !_reconcilingView)
-        {
-            ApplySelectionToContainers();
-        }
-    }
-
-    /// <summary>
-    /// Bring the row surface's selection to the table's. Only the rows that differ are touched, and
-    /// they are touched as index ranges: the list's <c>SelectedItems</c> is a vector, so adding rows
-    /// one at a time is a container update per row and a linear search per check, while
-    /// <c>SelectRange</c> and <c>DeselectRange</c> are one call per run of rows.
-    /// </summary>
-    private void ApplySelectionToContainers()
-    {
-        if (_detached || _surface is null || _syncingContainers)
+        if (_detached || _surface is null || View.Count == 0)
         {
             return;
         }
 
-        int count = View.Count;
-        if (count == 0)
+        var wanted = _selection.Items.Select(IndexInView).Where(index => index >= 0).ToHashSet();
+        var changed = previous.Items.Select(IndexInView).Where(index => index >= 0).ToHashSet();
+        changed.SymmetricExceptWith(wanted);
+        int start = -1;
+        int last = -1;
+        bool selecting = false;
+        foreach (int index in changed.Order())
         {
-            return;
-        }
-
-        HashSet<int> listed = new();
-        foreach (ItemIndexRange range in _surface.SelectedRanges)
-        {
-            int last = Math.Min(range.LastIndex, count - 1);
-            for (int i = Math.Max(range.FirstIndex, 0); i <= last; i++)
+            bool select = wanted.Contains(index);
+            if (start >= 0 && (index != last + 1 || select != selecting))
             {
-                listed.Add(i);
-            }
-        }
-
-        _syncingContainers = true;
-        try
-        {
-            var wanted = _selection.Items.Select(IndexInView).Where(index => index >= 0).ToHashSet();
-            var changed = new HashSet<int>(listed);
-            changed.SymmetricExceptWith(wanted);
-            int start = -1;
-            int last = -1;
-            bool selecting = false;
-            foreach (int index in changed.Order())
-            {
-                bool select = wanted.Contains(index);
-                if (start >= 0 && (index != last + 1 || select != selecting))
-                {
-                    ApplyRange(start, last - start + 1, selecting);
-                    start = -1;
-                }
-                if (start < 0)
-                {
-                    start = index;
-                    selecting = select;
-                }
-                last = index;
-            }
-            if (start >= 0)
                 ApplyRange(start, last - start + 1, selecting);
+                start = -1;
+            }
+            if (start < 0)
+            {
+                start = index;
+                selecting = select;
+            }
+            last = index;
         }
-        finally
-        {
-            _syncingContainers = false;
-        }
+        if (start >= 0)
+            ApplyRange(start, last - start + 1, selecting);
     }
 
     private void ApplyRange(int first, int length, bool select)

@@ -198,11 +198,12 @@ public class ReconcileTests
             null
         )!;
 
+        // No list and no table here, so no row is ever selected.
         object created = Activator.CreateInstance(
             view,
             BindingFlags.Instance | BindingFlags.NonPublic,
             null,
-            new[] { comparer },
+            new object[] { comparer, new Func<object, bool>(_ => false) },
             null
         )!;
 

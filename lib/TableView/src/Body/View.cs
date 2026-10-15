@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using Microsoft.UI.Xaml.Data;
 using Windows.Foundation.Collections;
 
 namespace Syno.TableView.Body;
@@ -7,13 +8,20 @@ namespace Syno.TableView.Body;
 /// The private view handed to the row surface. A source snapshot is applied in place, as
 /// removals, insertions and replacements matched by section 5 identity, so a row that did not
 /// change keeps its container and the list animates only what moved. The collection exposes no
-/// <c>Move</c> operation. Never <c>Clear</c>: see <see cref="ClearItems"/>.
+/// <c>Move</c> operation. Never <c>Clear</c>: see <see cref="ClearItems"/>. The view also answers
+/// the list's selection questions from the table's selection, so the list keeps none of its own:
+/// see <see cref="IsSelected"/>.
 /// </summary>
-internal sealed class View : Collection<object>, IObservableVector<object>
+internal sealed class View : Collection<object>, IObservableVector<object>, ISelectionInfo
 {
     private readonly ItemIdentity _identity;
+    private readonly Func<object, bool> _isSelected;
 
-    internal View(ItemIdentity identity) => _identity = identity;
+    internal View(ItemIdentity identity, Func<object, bool> isSelected)
+    {
+        _identity = identity;
+        _isSelected = isSelected;
+    }
 
     // Native vector events avoid marshaling a .NET collection event and its item lists per row.
     public event VectorChangedEventHandler<object>? VectorChanged;
@@ -40,6 +48,52 @@ internal sealed class View : Collection<object>, IObservableVector<object>
     {
         public CollectionChange CollectionChange => change;
         public uint Index => (uint)index;
+    }
+
+    // ------------------------------------------------------------------ selection
+
+    /// <summary>
+    /// The list asks this when it builds a container and after every range call, so a container is
+    /// right as built and nothing is re-applied after a reconcile.
+    /// </summary>
+    /// <remarks>
+    /// A list that keeps a selection of its own drops a row from it on the row's removal, and a
+    /// reorder is a removal, so the table had to clear the list's selection and apply its own
+    /// again after every reconcile. That re-apply made the list scroll to the first selected row
+    /// with a forced layout in the reconcile's own tick, and the rows that scroll built took the
+    /// insert animation: blank for its first 300 ms.
+    /// </remarks>
+    public bool IsSelected(int index) => index >= 0 && index < Count && _isSelected(this[index]);
+
+    /// <summary>
+    /// Called by the list for its own gestures, a press, a tap, Space or Ctrl+A on a container,
+    /// and by the table's own range calls. The table arbitrates every gesture itself and has
+    /// applied its own changes before it calls, so nothing changes here; the list then re-reads
+    /// every realized row through <see cref="IsSelected"/>.
+    /// </summary>
+    public void SelectRange(ItemIndexRange itemIndexRange) { }
+
+    /// <inheritdoc cref="SelectRange"/>
+    public void DeselectRange(ItemIndexRange itemIndexRange) { }
+
+    public IReadOnlyList<ItemIndexRange> GetSelectedRanges()
+    {
+        List<ItemIndexRange> ranges = new();
+        int start = -1;
+        for (int index = 0; index <= Count; index++)
+        {
+            bool selected = index < Count && _isSelected(this[index]);
+            if (selected && start < 0)
+            {
+                start = index;
+            }
+            else if (!selected && start >= 0)
+            {
+                ranges.Add(new ItemIndexRange(start, (uint)(index - start)));
+                start = -1;
+            }
+        }
+        return ranges;
     }
 
     /// <summary>Bring the view to <paramref name="snapshot"/>.</summary>
