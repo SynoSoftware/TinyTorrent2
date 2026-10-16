@@ -550,6 +550,20 @@
                 />
               </StackPanel>
             </controls:Strip>
+            <Button
+              x:Name="MapClose"
+              Margin="8"
+              HorizontalAlignment="Right"
+              VerticalAlignment="Top"
+              Style="{StaticResource TinyTorrentSubtleButtonStyle}"
+              Click="CloseMap"
+            >
+              <FontIcon
+                FontFamily="{x:Bind icons:Lucide.Font}"
+                Glyph="{x:Bind icons:Lucide.X}"
+                FontSize="{StaticResource TinyTorrentButtonIconSize}"
+              />
+            </Button>
           </Grid>
           <controls:Splitter x:Name="PeerSplit" Visibility="Collapsed" />
           <table:Table
@@ -768,6 +782,25 @@
               </table:Column>
             </table:Table.Columns>
           </table:Table>
+          <Border
+            x:Name="TableCloseSurface"
+            Margin="0,8,0,0"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Top"
+            Background="{ThemeResource LayerFillColorDefaultBrush}"
+          >
+            <Button
+              x:Name="TableClose"
+              Style="{StaticResource TinyTorrentSubtleButtonStyle}"
+              Click="CloseTable"
+            >
+              <FontIcon
+                FontFamily="{x:Bind icons:Lucide.Font}"
+                Glyph="{x:Bind icons:Lucide.X}"
+                FontSize="{StaticResource TinyTorrentButtonIconSize}"
+              />
+            </Button>
+          </Border>
         </Grid>
         <Grid x:Name="Trackers" x:Load="False" Visibility="Collapsed" RowSpacing="12">
           <Grid.RowDefinitions>

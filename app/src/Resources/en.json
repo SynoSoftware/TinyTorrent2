@@ -749,6 +749,8 @@
     "retry_speed_tip": "Load the speed history again"
   },
   "peer_map": {
+    "close_map": "Close map",
+    "close_table": "Close table",
     "table": "Table only",
     "map": "Map only",
     "both": "Map and table",

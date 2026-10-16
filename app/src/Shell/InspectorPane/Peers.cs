@@ -129,6 +129,25 @@ public sealed partial class InspectorPane
         ToolTipService.SetToolTip(_peerMore, text.Get("peer_map", "options"));
         if (PeerSplit is not null)
             AutomationProperties.SetName(PeerSplit, text.Get("peer_map", "resize"));
+        if (MapClose is not null)
+        {
+            AutomationProperties.SetName(MapClose, text.Get("peer_map", "close_map"));
+            ToolTipService.SetToolTip(MapClose, text.Get("peer_map", "close_map"));
+            AutomationProperties.SetName(TableClose, text.Get("peer_map", "close_table"));
+            ToolTipService.SetToolTip(TableClose, text.Get("peer_map", "close_table"));
+        }
+    }
+
+    private void CloseMap(object sender, RoutedEventArgs args)
+    {
+        SetPeerView(_layout.View with { Layout = PeerLayout.Table });
+        TableClose.Focus(FocusState.Programmatic);
+    }
+
+    private void CloseTable(object sender, RoutedEventArgs args)
+    {
+        SetPeerView(_layout.View with { Layout = PeerLayout.Map });
+        MapClose.Focus(FocusState.Programmatic);
     }
 
     private void OnPeerSize(object sender, SizeChangedEventArgs args) => ArrangePeers(fit: true);
@@ -166,6 +185,7 @@ public sealed partial class InspectorPane
                 Peers.RefreshView();
             Peers.Visibility =
                 view.Layout == PeerLayout.Map ? Visibility.Collapsed : Visibility.Visible;
+            TableCloseSurface.Visibility = Peers.Visibility;
             PeerSurface.Visibility = showsMap ? Visibility.Visible : Visibility.Collapsed;
             PeerRates.HorizontalAlignment = view.SpeedCorner == MapCorner.BottomRight
                 ? HorizontalAlignment.Right : HorizontalAlignment.Left;
@@ -174,6 +194,8 @@ public sealed partial class InspectorPane
             PeerSplit.Visibility = combined ? Visibility.Visible : Visibility.Collapsed;
             Grid.SetRow(Peers, stacked ? 2 : 0);
             Grid.SetColumn(Peers, combined && !stacked ? 2 : 0);
+            Grid.SetRow(TableCloseSurface, Grid.GetRow(Peers));
+            Grid.SetColumn(TableCloseSurface, Grid.GetColumn(Peers));
             Grid.SetRow(PeerSplit, stacked ? 1 : 0);
             Grid.SetColumn(PeerSplit, stacked ? 0 : 1);
             PeerSplit.Orientation = stacked ? Orientation.Horizontal : Orientation.Vertical;

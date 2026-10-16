@@ -11,7 +11,7 @@
       x:Name="Navigation"
       Orientation="Horizontal"
       Spacing="8"
-      Margin="8"
+      Margin="8,48,8,8"
       HorizontalAlignment="Right"
       VerticalAlignment="Top"
       Visibility="Collapsed"

@@ -272,6 +272,34 @@ public sealed partial class MainWindow
                                 map?.Show(peers, origin, Model.Text);
                                 await CaptureUi(name + "-resized");
                                 completed.Add(name + "-resized");
+                                if (precision == "countries")
+                                {
+                                    var view = pane.Layout.View;
+                                    foreach (var closeMap in new[] { true, false })
+                                    {
+                                        pane.Layout = pane.Layout with { View = view };
+                                        foreach (var mapClosed in new[] { closeMap, !closeMap })
+                                        {
+                                            var button = (Button)pane.FindName(
+                                                mapClosed ? "MapClose" : "TableClose"
+                                            );
+                                            var automation = FrameworkElementAutomationPeer.CreatePeerForElement(button);
+                                            ((IInvokeProvider)automation.GetPattern(PatternInterface.Invoke)).Invoke();
+                                            await CaptureLayout();
+                                            var remaining = mapClosed ? PeerLayout.Table : PeerLayout.Map;
+                                            if (
+                                                pane.Layout.View.Layout != remaining
+                                                || ((Splitter)pane.FindName("PeerSplit")).Visibility != Microsoft.UI.Xaml.Visibility.Collapsed
+                                                || CaptureElements(pane).OfType<PeerMap>().Any() == mapClosed
+                                            )
+                                                throw new InvalidOperationException(
+                                                    "Closing a peer pane must show the other pane alone."
+                                                );
+                                        }
+                                    }
+                                    pane.Layout = pane.Layout with { View = view };
+                                    outcomes.Add(new { journey = "peer pane close and switch", theme, portrait });
+                                }
                             }
                         }
                     }
