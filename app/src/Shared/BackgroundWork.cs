@@ -124,6 +124,10 @@ internal sealed class BackgroundWork : IDisposable
         // Disposal also runs during exception unwinding, so success must be explicit.
         internal WorkOutcome Outcome { get; set; } = WorkOutcome.Failed;
         internal Exception? Error { get; set; }
+        // False when success tells the person nothing new, such as work they
+        // did not start or a result already shown in place. Failures and
+        // cancellations are always reported.
+        internal bool ReportsSuccess { get; set; } = true;
         public event PropertyChangedEventHandler? PropertyChanged;
         public event EventHandler? CanExecuteChanged;
 
@@ -213,7 +217,7 @@ internal sealed class BackgroundWork : IDisposable
                     return;
                 _ended = true;
                 _owner._active.Remove(this);
-                if (!_owner._disposed)
+                if (!_owner._disposed && (Outcome != WorkOutcome.Completed || ReportsSuccess))
                     _owner._completed.Add(new(_latest, Outcome, Error, _summaryKey, _arguments));
                 _owner.Queue();
             }

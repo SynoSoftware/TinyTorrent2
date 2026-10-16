@@ -6,7 +6,7 @@ $ErrorActionPreference = 'Stop'
 $binary = (Resolve-Path -LiteralPath $BinaryDirectory).Path
 $assembly = [Reflection.Assembly]::LoadFrom((Join-Path $binary 'TinyTorrentUI.dll'))
 $flags = [Reflection.BindingFlags]'Static,NonPublic'
-$map = $assembly.GetType('Syno.TinyTorrent.Torrents.PeerMap', $true)
+$map = $assembly.GetType('Syno.TinyTorrent.Torrents.MapModel', $true)
 $areaType = $assembly.GetType('Syno.TinyTorrent.Shared.Geography+Area', $true)
 $pointType = $assembly.GetType('Syno.TinyTorrent.Shared.GeoPoint', $true)
 $reach = $map.GetMethod('Reach', $flags)
@@ -16,7 +16,7 @@ function Require([bool] $Condition, [string] $Failure) {
     if (!$Condition) { throw $Failure }
 }
 
-# Regions most populous first, as PeerMap.Regions returns them.
+# Regions most populous first, as MapRenderer.Regions returns them.
 function New-Regions([double[]] $Populations) {
     $regions = [Array]::CreateInstance($areaType, $Populations.Count)
     for ($index = 0; $index -lt $Populations.Count; $index++) {

@@ -353,6 +353,8 @@ public sealed class AddDraft : IDraft
             _draft = draft;
             _accepted = draft.Sources.ToArray();
             _operation = draft._owner.Work.Begin(_observation, Cancel);
+            // Added torrents appear in the list.
+            _operation.ReportsSuccess = false;
         }
 
         internal void Report(AddSource? submitting = null)

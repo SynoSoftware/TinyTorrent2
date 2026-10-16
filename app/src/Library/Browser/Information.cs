@@ -255,6 +255,8 @@ public sealed partial class Browser
         {
             await ReplaceData(videos, option, dataset.Delete);
             operation.Outcome = WorkOutcome.Completed;
+            // The Settings row shows that the data is gone.
+            operation.ReportsSuccess = false;
         }
         catch (Exception error)
         {
@@ -439,6 +441,8 @@ public sealed partial class Browser
             if (!found)
                 _outcome = new FetchOutcome.NoMatch();
             request.Operation.Outcome = WorkOutcome.Completed;
+            // The details pane shows the information or that none matched.
+            request.Operation.ReportsSuccess = false;
             request.Operation.Summarize("metadata_result", found ? 1 : 0, 1, 1);
         }
         catch (Exception error)

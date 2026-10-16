@@ -24,7 +24,6 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
     private double _uploadBytes;
     private double _downloadSeconds;
     private double _uploadSeconds;
-    private double _byteLimit;
     private double _timeLimit;
     private bool _complete;
     private bool _longerTest;
@@ -77,6 +76,8 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
     public bool CanTest => CanEdit && !_settings.IsPending && !HasCustomRoute;
     public bool CanCancelTest => _main.IsConnected && IsTesting && !IsPending;
     public bool IsHolding => _phase == ConnectionPhase.Holding;
+    /// <summary>Both directions finished, so the rates are the test's result.</summary>
+    public bool HasResult => _complete;
     public string TestId { get; private set; } = string.Empty;
     public double DownloadRate { get; private set; }
     public double UploadRate { get; private set; }
@@ -101,23 +102,49 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
         {
             if (_complete)
                 return 100;
-            if (_byteLimit <= 0 || _timeLimit <= 0)
+            if (_timeLimit <= 0)
                 return 0;
             return _uploadSeconds > 0 || _phase == ConnectionPhase.Uploading
-                ? 50 + Progress(_uploadBytes, _uploadSeconds) * 50
-                : Progress(_downloadBytes, _downloadSeconds) * 50;
+                ? 50 + Progress(_uploadSeconds) * 50
+                : Progress(_downloadSeconds) * 50;
         }
     }
-    public string ProgressText => Text.Format("units", "percent", TestProgress / 100);
+    public string ProgressText => _phase == ConnectionPhase.Idle && TestId.Length == 0
+        ? string.Empty
+        : Text.Format("units", "percent", TestProgress / 100);
     public string TestDetail => TestId.Length == 0 ? TestAllowance
-        : Text.Format("connection_setup", "test_usage", Text.Bytes(_downloadBytes + _uploadBytes), _downloadSeconds + _uploadSeconds);
-    public string TestHint => Text.Get("connection_setup",
-        _complete && Math.Min(_downloadSeconds, _uploadSeconds) < 1 ? "short_sample" : "test_hint");
-    public bool HasLinkWarning => !HasCustomRoute && _link is { } link
-        && (link.Mbps < DownloadCapacity || link.Mbps < UploadCapacity || link.AdapterMbps > link.Mbps);
-    public string LinkTitle => _link is { } link
-        ? Text.Format("connection_setup", "link_warning", link.Mbps) : string.Empty;
-    public string LinkDetail => Text.Get("connection_setup", "link_check");
+        : Text.Format("connection_setup", "test_used", Text.Bytes(_downloadBytes + _uploadBytes));
+    public string TransferStatus => _phase switch
+    {
+        ConnectionPhase.Stopping or ConnectionPhase.Downloading or ConnectionPhase.Uploading =>
+            Text.Get("connection_setup", "transfers_paused"),
+        ConnectionPhase.Holding =>
+            Text.Format("connection_setup", "transfers_held", TimeSpan.FromSeconds(_remaining)),
+        ConnectionPhase.Completed or ConnectionPhase.Cancelled =>
+            Text.Get("connection_setup", "transfers_restored"),
+        _ => string.Empty,
+    };
+
+    // The local link describes the Internet route only while no proxy or
+    // selected adapter carries torrent traffic.
+    private ConnectionLink? Link => HasCustomRoute ? null : _link;
+    public bool HasLink => Link is not null;
+    private bool LinkBelowAdapter => Link is { AdapterMbps: { } adapter } link && adapter > link.Mbps;
+    private bool LinkLimits => Link is { AdapterMbps: not null } link
+        && (link.Mbps < DownloadCapacity || link.Mbps < UploadCapacity);
+    public bool HasLinkWarning => LinkBelowAdapter || LinkLimits || Link is { Metered: true };
+    public string LinkTitle => Text.Get("connection_setup",
+        LinkBelowAdapter ? "link_below_adapter"
+        : LinkLimits ? "link_limits"
+        : Link is { Metered: true } ? "link_metered"
+        : "link");
+    public string LinkDetail =>
+        LinkBelowAdapter || LinkLimits ? Text.Get("connection_setup", "link_check")
+        : Link is { Metered: true } ? Text.Get("connection_setup", "metered_check")
+        : string.Empty;
+    public bool HasAdapterSpeed => Link is { AdapterMbps: not null };
+    public string AdapterSpeed => Link is { AdapterMbps: { } adapter } ? LinkSpeed(adapter) : string.Empty;
+    public string CurrentLinkSpeed => Link is { } link ? LinkSpeed(link.Mbps) : string.Empty;
     public string TestLabel =>
         Text.Get(
             "connection_setup",
@@ -127,15 +154,28 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
         );
     public string TestStatus =>
         _testFailure.Length > 0 ? Text.Get("connection_setup", _testFailure)
-        : _phase == ConnectionPhase.Holding ? Text.Format("connection_setup", "holding", _remaining)
+        : _phase is ConnectionPhase.Holding or ConnectionPhase.Completed
+            ? Text.Get("connection_setup", "test_complete")
         : _phase != ConnectionPhase.Idle
             ? Text.Get("connection_setup", "test_" + _phase.ToString().ToLowerInvariant())
         : HasCustomRoute ? Text.Get("connection_setup", "test_route")
         : Text.Get("connection_setup", "test_idle");
     public string DownloadError => CapacityError(Download);
     public string UploadError => CapacityError(Upload);
-    public string Message => _failure is { } failure ? Text.Error(failure) : string.Empty;
+    public string Message =>
+        _failure is { } failure ? Text.Error(failure)
+        : IsTesting ? Text.Get("connection_setup", "measuring")
+        : Changes() is { } changes
+            ? Text.Get("connection_setup", changes.Count > 0 ? "ready" : "unchanged")
+        : string.Empty;
     public string PresetName => Name(SavedPreset);
+    public string SavedCapacity =>
+        _settings.CapacityDownload.ConfirmedNumber is > 0 and var download
+        && _settings.CapacityUpload.ConfirmedNumber is > 0 and var upload
+            ? Text.Format("settings", "caps_summary", LinkSpeed(download), LinkSpeed(upload))
+            : "—";
+    public string StandardSummary => _settings.StandardSummary;
+    public string AlternativeSummary => _settings.AlternativeSummary;
     public string StandardText
     {
         get
@@ -163,17 +203,11 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
     public string AlternativeHint =>
         Text.Get("connection_setup", "alternative_hint")
         + (AlternativeFollows ? string.Empty : " " + Text.Get("connection_setup", "kept_hint"));
-    public string StandardUse =>
-        _main.IsConnected
-            ? Text.Get("connection_setup", _main.HasStandardLimits ? "in_use" : "not_in_use")
-            : string.Empty;
-    public string AlternativeUse =>
-        _main.IsConnected
-            ? Text.Get("connection_setup", _main.HasAlternativeLimits ? "in_use" : "not_in_use")
-            : string.Empty;
+    public string StandardUse => InUse(_main.HasStandardLimits);
+    public string AlternativeUse => InUse(_main.HasAlternativeLimits);
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    private double Progress(double bytes, double seconds) => Math.Clamp(Math.Max(bytes / _byteLimit, seconds / _timeLimit), 0, 1);
+    private double Progress(double seconds) => Math.Clamp(seconds / _timeLimit, 0, 1);
 
     internal async Task RefreshLink()
     {
@@ -183,14 +217,22 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
             try
             {
                 var profile = Windows.Networking.Connectivity.NetworkInformation.GetInternetConnectionProfile();
-                if (profile?.NetworkAdapter is not { IanaInterfaceType: 6 } adapter)
+                if (profile?.NetworkAdapter is not { } adapter)
                     return null;
                 var network = NetworkInterface.GetAllNetworkInterfaces().FirstOrDefault(
                     item => Guid.TryParse(item.Id, out var id) && id == adapter.NetworkAdapterId);
                 if (network is null || network.Speed <= 0)
                     return null;
+                // Only an Ethernet adapter has a fixed maximum to compare
+                // the negotiated link against.
+                var ethernet = adapter.IanaInterfaceType == 6;
                 return new ConnectionLink(network.Speed / 1_000_000.0,
-                    Math.Max(adapter.InboundMaxBitsPerSecond, adapter.OutboundMaxBitsPerSecond) / 1_000_000.0);
+                    ethernet
+                        ? Math.Max(adapter.InboundMaxBitsPerSecond, adapter.OutboundMaxBitsPerSecond) / 1_000_000.0
+                        : null,
+                    profile.GetConnectionCost().NetworkCostType
+                        is Windows.Networking.Connectivity.NetworkCostType.Fixed
+                        or Windows.Networking.Connectivity.NetworkCostType.Variable);
             }
             catch (Exception)
             {
@@ -287,21 +329,18 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
     public IReadOnlyList<ConnectionChange> AlternativeRows { get; private set; } = [];
     public IReadOnlyList<ConnectionChange> QueueRows { get; private set; } = [];
 
-    private IReadOnlyList<ConnectionChange> CreateModeRows(Proposal? proposal)
-    {
-        if (_main.FixedLimits != LimitProfile.None)
-            return [];
-        var enables = proposal?.EnablesLimits == true;
-        return
-        [
-            new(
-                Text.Get("transfer_limits", "control"),
-                Text.Get("transfer_limits", "none"),
-                enables ? Text.Get("settings", "speed") : Text.Get("transfer_limits", "none"),
-                enables
-            ),
-        ];
-    }
+    private IReadOnlyList<ConnectionChange> CreateModeRows(Proposal? proposal) =>
+        proposal?.EnablesLimits == true
+            ?
+            [
+                new(
+                    Text.Get("transfer_limits", "control"),
+                    Text.Get("transfer_limits", "none"),
+                    Text.Get("settings", "speed"),
+                    true
+                ),
+            ]
+            : [];
 
     private IReadOnlyList<ConnectionChange> CreateQueueRows(QueueLimits? queue)
     {
@@ -309,13 +348,13 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
         return
         [
             Row(
-                Text.Get("connection_setup", "active_downloads"),
+                Text.Get("settings", "active_downloads"),
                 saved.Downloads,
                 queue?.Downloads,
                 Count
             ),
-            Row(Text.Get("connection_setup", "active_seeds"), saved.Seeds, queue?.Seeds, Count),
-            Row(Text.Get("connection_setup", "active_torrents"), saved.Total, queue?.Total, Count),
+            Row(Text.Get("settings", "active_seeds"), saved.Seeds, queue?.Seeds, Count),
+            Row(Text.Get("settings", "active_total"), saved.Total, queue?.Total, Count),
         ];
     }
 
@@ -362,7 +401,6 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
             _uploadBytes = value.GetProperty("upload_bytes").GetDouble();
             _downloadSeconds = value.GetProperty("download_seconds").GetDouble();
             _uploadSeconds = value.GetProperty("upload_seconds").GetDouble();
-            _byteLimit = value.GetProperty("byte_limit").GetDouble();
             _timeLimit = value.GetProperty("time_limit").GetDouble();
             _complete = value.GetProperty("complete").GetBoolean();
             _remaining = value.GetProperty("remaining").GetInt32();
@@ -579,12 +617,13 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
     private IReadOnlyList<ConnectionChange> PairRows(Caps saved, Caps? next) =>
         [
             Row(
-                Text.Get("connection_setup", "download_limit"),
+                Text.Get("limits", "download_limit"),
                 saved.Download,
                 next?.Download,
                 Rate
-            ),
-            Row(Text.Get("connection_setup", "upload_limit"), saved.Upload, next?.Upload, Rate),
+            ) with { Glyph = Syno.Lucide.Download },
+            Row(Text.Get("limits", "upload_limit"), saved.Upload, next?.Upload, Rate)
+                with { Glyph = Syno.Lucide.Upload },
         ];
 
     private static ConnectionChange Row(
@@ -599,6 +638,14 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
             next is { } value ? display(value) : "—",
             next is { } changed && changed != current
         );
+
+    private string InUse(bool inUse) =>
+        _main.IsConnected && inUse ? " · " + Text.Get("connection_setup", "in_use") : string.Empty;
+
+    private string LinkSpeed(double mbps) =>
+        mbps >= 1000
+            ? Text.Format("units", "speed", mbps / 1000, Text.Get("units", "gbps"))
+            : Text.Format("units", "speed", mbps, Text.Get("units", "mbps"));
 
     private string Rate(int bytes) => Text.SpeedLimit(bytes);
 
@@ -686,7 +733,7 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
 
     private readonly record struct Caps(int Download, int Upload);
 
-    private sealed record ConnectionLink(double Mbps, double AdapterMbps);
+    private sealed record ConnectionLink(double Mbps, double? AdapterMbps, bool Metered);
 
     private readonly record struct QueueLimits(int Downloads, int Seeds, int Total);
 
@@ -703,4 +750,8 @@ public sealed record ConnectionChange(
     string Current,
     string Proposed,
     bool IsChanged
-);
+)
+{
+    // The direction icon of a speed limit row.
+    public string Glyph { get; init; } = string.Empty;
+}

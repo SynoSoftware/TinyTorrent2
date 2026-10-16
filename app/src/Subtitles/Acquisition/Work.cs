@@ -240,6 +240,9 @@ internal sealed partial class Acquisition
                 new WorkExecution.Waiting()
             );
             Operation = owner.Work.Begin(Observation, Stop);
+            // Only a manual search is something the person waits for; automatic
+            // downloads and file scans show their results in place.
+            Operation.ReportsSuccess = kind == SubtitleWork.Manual;
         }
 
         internal Task Stop()

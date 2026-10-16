@@ -511,7 +511,7 @@ public sealed partial class MainWindow
             return;
         }
         var toolbar = Model.ShowsToolbar
-            ? Toolbar.ActualHeight + Toolbar.Margin.Top + Toolbar.Margin.Bottom
+            ? ToolbarRow.ActualHeight + ToolbarRow.Margin.Top + ToolbarRow.Margin.Bottom
             : 0;
         var maximum = Math.Max(0, Workspace.ActualHeight - toolbar - 126);
         Split.SetBounds(0, maximum, _splitHeight);

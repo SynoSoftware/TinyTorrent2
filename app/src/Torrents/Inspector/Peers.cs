@@ -16,6 +16,11 @@ public sealed partial class Inspector
     private IReadOnlyList<Peer>? _peers;
     private PeerPlace? _place;
 
+    internal MapModel Map => field ??= new MapModel(this);
+
+    internal void UpdateMap(bool cities) =>
+        Map.Update(IsAvailable ? Peers : null, Origin, Text, cities);
+
     /// <summary>
     /// The peer map place whose peers the table shows, in every connection
     /// state, or null for every peer.
@@ -29,6 +34,7 @@ public sealed partial class Inspector
                 return;
             _place = value;
             Filter();
+            Map.RefreshPlace();
             Refresh();
         }
     }

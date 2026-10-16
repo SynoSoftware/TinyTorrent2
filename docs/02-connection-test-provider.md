@@ -12,31 +12,28 @@ or WebView. The [product network route](architecture.md#network-route)
 governs this operation. Its current WinHTTP implementation cannot enforce a
 configured proxy or adapter, so that route leaves testing unavailable. The page
 discloses the provider, IP/data use,
-privacy link, temporary torrent pause, and approximate traffic ceiling before
-the person selects Test.
+privacy link, temporary torrent pause, test length, and that data use depends
+on connection speed before the person selects Test.
 [WinHttpOpen automatic proxy](https://learn.microsoft.com/en-us/windows/win32/api/winhttp/nf-winhttp-winhttpopen)
 
-Download and upload run sequentially, using completed HTTPS requests and a
-monotonic clock. The owner selected Cloudflare's bandwidth aggregation: linearly
-interpolated 90th percentile of completed request speeds, excluding requests
-shorter than 10 ms. The live display and final result use that same calculation,
-so there is no separate instantaneous or cumulative-average estimate.
-[Cloudflare calculation](https://github.com/cloudflare/speedtest/blob/main/src/Results/MeasurementCalculations.ts)
+Download and upload run sequentially for a fixed time: five seconds each way
+for Quick and fifteen for Longer. Only time ends a direction, so traffic grows
+with the connection's speed; at 1 Gbps, Longer moves about 1.9 GB each way.
+Four HTTPS connections repeat 10 MB requests back to back, so the line is not
+idle between requests and a limit on one connection does not cap the result.
+The rate is payload bytes divided by elapsed time after a two-second warm-up,
+measured with a monotonic clock. The warm-up absorbs connection set-up and
+an ISP's short burst above the sustained speed. Upload counts the bytes the
+socket accepted; the buffer stays full while the rate is measured, so it does
+not change the average. A direction that moves no bytes after the warm-up
+fails visibly.
 
-The native sequence follows Cloudflare's 100 KB, 1 MB and 10 MB repeated
-transfers, bounded by the chosen budget. Quick permits 4 MiB and six seconds
-per direction; Longer permits 32 MiB and eight seconds per direction. The first
-limit stops that direction, including an active request. Larger sizes stop
-after a completed size group whose shortest request exceeds one second, as in
-Cloudflare's ramp-up rule. Incomplete requests count towards traffic but never
-enter the speed samples. A direction without an eligible sample fails visibly.
-[Cloudflare sequence and defaults](https://github.com/cloudflare/speedtest/blob/main/README.md)
-
-Native request timing includes the HTTP exchange; download subtracts reported
-Cloudflare processing time, while upload ends at the successful server response.
-Rates use measured payload bytes without the browser SDK's estimated header
-allowance. This is a bounded HTTP estimate using Cloudflare's aggregation, not
-an exact reproduction of the browser's timing or full measurement sequence.
+The owner chose this over Cloudflare's own aggregation, the 90th percentile of
+single request speeds within a small data budget. That method reports bursts
+above the sustained speed on download and the idle gaps between requests on
+upload: on a 400/400 Mbps line it read 458–694 Mbps down and 52–195 Mbps up,
+while Ookla's multi-connection test read 433/401. Ookla, fast.com and M-Lab
+also measure for about ten seconds rather than a fixed amount of data.
 The engine also bounds stopping to ten seconds and measurement to 45 seconds.
 Requests use WinHTTP's asynchronous mode so cancellation and the direction
 deadline close a pending request after its initiating function returns. The
@@ -47,7 +44,7 @@ or freeing memory still used by a callback.
 
 Elapsed time freezes when each direction ends, including cancellation and
 failure, so snapshot timing does not continue during restoration or the hold.
-Payload bounds exclude protocol overhead, so billed traffic can be higher.
+Payload counts exclude protocol overhead, so billed traffic is higher.
 Results do not promise torrent speed.
 
 Before HTTP traffic starts, libtorrent session statistics must show no

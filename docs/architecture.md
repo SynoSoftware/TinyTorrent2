@@ -300,6 +300,15 @@ and scrolling. View models use `INotifyPropertyChanged` and `ICommand` directly,
 without a new framework, service interface, or second torrent database. This
 keeps gestures on one command path and stops control lifetime from owning edits.
 
+The peer map follows the same ownership inside `Torrents`. `Inspector` owns
+scope, geolocation and the chosen place, and retains its plain `MapModel`.
+That model aggregates observations and distributes estimated destinations.
+`PeerMap` owns native input, focus and inspection; `MapViewport` owns the shared
+projection and navigation calculations. `MapRenderer` owns geometry, animation
+and native resource caches, released when the control unloads. Shell composition
+stays in `Shell/InspectorPane`. Supporting records live with their creator;
+these owners introduce no role folders or additional projects.
+
 WinUI presents confirmed state and pending work. File pickers, clipboard actions,
 and opening Explorer use Windows directly; changes to engine-owned files go
 through the engine.

@@ -165,10 +165,10 @@ public sealed partial class InspectorPane
             {
                 var width = PeerContent.ActualWidth;
                 var height = PeerContent.ActualHeight;
-                var side = PeerMap.FitScale(
+                var side = MapViewport.FitScale(
                     new Size(Math.Max(0, width - 16) * (1 - view.Side), height)
                 );
-                var below = PeerMap.FitScale(
+                var below = MapViewport.FitScale(
                     new Size(width, Math.Max(0, height - 16) * (1 - view.Stacked))
                 );
                 if (side != below)
@@ -222,7 +222,7 @@ public sealed partial class InspectorPane
             {
                 if (_peerMap is null)
                 {
-                    _peerMap = new PeerMap { ContextFlyout = _peerMore.Flyout };
+                    _peerMap = new PeerMap(Model.Map) { ContextFlyout = _peerMore.Flyout };
                     _peerMap.Select(Peers.Selection.Items.OfType<Peer>().ToArray());
                     _peerMap.PlaceChanged += (_, place) => Model.Place = place;
                 }
@@ -274,12 +274,7 @@ public sealed partial class InspectorPane
             PeerUpload.Text = Model.UploadText;
             DescribeRate(PeerDownload, "down");
             DescribeRate(PeerUpload, "up");
-            _peerMap.Show(
-                Model.IsAvailable ? Model.Peers : null,
-                Model.Origin,
-                Model.Text,
-                _layout.View.Cities && Model.HasCities
-            );
+            Model.UpdateMap(_layout.View.Cities && Model.HasCities);
         });
 
         void DescribeRate(TextBlock rate, string key)

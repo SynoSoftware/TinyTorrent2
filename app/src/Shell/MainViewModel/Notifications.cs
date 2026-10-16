@@ -356,8 +356,6 @@ public sealed partial class MainViewModel
     {
         if (_closed || _closing || _featuresClosed)
             return;
-        if (result.Outcome == WorkOutcome.Completed && result.Observation.Description is WorkDescription.Sources)
-            return;
         ShowTimed(
             new Notice(NoticeKind.WorkResult, lifetime: NoticeLifetime)
             {

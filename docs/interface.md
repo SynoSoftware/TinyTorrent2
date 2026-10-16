@@ -853,7 +853,8 @@ an ascending sort lists the limited torrents first.
 The toolbar, a row above the table that View shows or hides, is a CommandBar
 holding Add, Magnet, Start, Stop, Open, Properties, Verify, Remove and
 Delete as AppBarButtons in
-groups split by AppBarSeparators. **Owner ruling: the toolbar buttons are
+groups split by AppBarSeparators. Selected connections map and All connections
+map sit at the row's right end. **Owner ruling: the toolbar buttons are
 icon-only,** because text labels make the interface look cheap. Each button
 keeps its label as its accessible name and its text in the More menu, and its
 tooltip names it with its shortcut. When
@@ -947,10 +948,15 @@ remains visible until cleanup finishes. Recover focus to the next usable task
 control, the work-list button or the page when a focused control becomes
 disabled or disappears. Operations report their result through the existing
 toast notification owner after cleanup, including failures and cancellations,
-so a disappearing progress bar never leaves its outcome unexplained. Successful
-torrent additions use the changed list and accessible announcement instead of
-a completion toast; background additions retain the engine's notification
-policy. Results include available counts or error details and follow later
+so a disappearing progress bar never leaves its outcome unexplained. Each
+operation's owner reports success only when it tells the person something
+new: work they started and wait for, such as a metadata batch, a manual
+subtitle search, a data download or a protection reset, and an update check
+that found a new version. Work that runs by itself, and work whose result
+already shows in place, report only failures and cancellations: automatic
+metadata, subtitles and file properties, subtitle file scans, torrent
+additions, a details refresh, recovery and a deleted dataset. Background additions retain the
+engine's notification policy. Results include available counts or error details and follow later
 language changes.
 
 Use the stock WinUI 3 ProgressBar template, brushes and animation. Metadata
@@ -1523,8 +1529,8 @@ Connection setup retains its existing proposal and Apply/Cancel workflow.
 Its content and footer share the Settings width resource, so the proposal
 does not spread across an arbitrarily wide workspace.
 The approved constrained layout places inputs and proposed changes side by side
-when they fit and stacks them otherwise; Apply and Cancel sit in the separated
-footer below the content. Title-bar Back returns to the initiating setting. Ordinary settings
+when they fit and stacks them otherwise; Apply and Cancel follow the content,
+beside a status that says whether changes are ready to apply. Title-bar Back returns to the initiating setting. Ordinary settings
 keep their individual commit behavior. The proposal shows current and proposed
 values, emphasizes changes, and enables Apply only for a valid change.
 One slider for each pair sets the standard and the alternative limits as a
@@ -1536,31 +1542,39 @@ only after the person moves it or changes the capacity, because the slider
 shows the saved limits rounded to a step and must not propose a change nobody
 made. Before the first setup the sliders start at Balanced and 25%. Queue
 limits follow the standard slider: 2 downloads, 2 seeds and 3 torrents at 50%
-or less, otherwise 3, 5 and 8. The preview groups its rows as Speed limits does,
-under Standard limits, Alternative limits and Queue, and marks the pair in use
-now. It leaves out peer limits, which the page never changes, and the capacity,
+or less, otherwise 3, 5 and 8. The preview groups the download and upload limits
+under Standard limits and Alternative limits, marks the pair in use now, and
+lists the maximum active counts after them. It leaves out peer limits, which the page never changes, and the capacity,
 which its fields already show. Apply turns on standard limits only when Limits
 to use is No limits and the standard limits change, because a new install
-starts with No limits and limits that never apply look broken. That row appears
-only while limits are off. Any other choice belongs to the person and stays.
+starts with No limits and limits that never apply look broken. A Limits to use
+row appears only when Apply makes that change. Any other choice belongs to the person and stays.
 Preset identity comes from confirmed settings, not a separate profile. Test measures
 real download and upload capacity through the engine's
 [temporary suspension](engine.md#connection-measurement). The full-width test
 card uses the approved C original sweep, large segmented numbers and Lucide
-download/upload captions. Each direction seeds its 1/2/5 scale from entered
-capacity, or its first measured value when capacity is unknown; it expands
-without shrinking during the test, keeping the reading within range without
-continuous scale changes. Motion follows Windows animation preferences.
-Quick defaults to at most 8 MiB total and six seconds each way; Longer permits
-64 MiB total and eight seconds each way. Test and Cancel use the same fixed-width
+download/upload captions. Both directions share one 1/2/5 scale, so equal
+speeds fill equal arcs. It starts from the larger entered capacity, or the
+first measured value when capacity is unknown, and expands without shrinking
+during the test, keeping the reading within range without continuous scale
+changes. When the test completes, it fits the larger result, so a stale
+capacity does not keep the scale too large. Motion follows Windows animation preferences.
+Quick, the default, measures five seconds each way; Longer measures fifteen
+seconds each way. Test and Cancel use the same fixed-width
 slot beside those choices. Phase, percentage, determinate progress and payload
 usage share reserved space, so testing never shifts the inputs. These
 reservations scale with system text size. Inline feedback includes the resumption
 countdown and a Resume action, so the person need not wait for its expiry.
-The Ethernet warning sits below Apply/Cancel. It appears when the negotiated
-link is below entered capacity or the adapter's reported maximum, including a
-100 Mbps link on a gigabit adapter, and suggests checking the cable and ports
-without claiming which component caused the limit.
+A Local connection row at the bottom of the speed test card shows the current
+link speed and, for Ethernet, the speed the adapter supports, beside the result
+the link can cap and before Apply/Cancel. Both of its states are two lines tall,
+so a warning never moves the page. It becomes a warning when the
+negotiated Ethernet link is below entered capacity or the adapter's reported
+maximum, including a 100 Mbps link on a gigabit adapter, and suggests checking
+the cable and ports without claiming which component caused the limit. It also
+warns on a metered connection, because test traffic uses the data allowance.
+The row is hidden while a proxy or selected adapter carries torrent traffic,
+because the Internet route's link then says nothing about torrent speed.
 Announce phase changes through the window's existing accessibility path, not
 each countdown tick. Measurements populate the proposal; only Apply changes
 settings. An information button beside the test heading opens a native flyout

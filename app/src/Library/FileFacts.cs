@@ -215,6 +215,8 @@ internal sealed class FileFacts(Database database, BackgroundWork work) : IAsync
                 }
             }
             operation.Outcome = unreadable > 0 ? WorkOutcome.Failed : WorkOutcome.Completed;
+            // Library reads properties by itself; the person is not waiting.
+            operation.ReportsSuccess = false;
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {

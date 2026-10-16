@@ -494,7 +494,13 @@
             Visibility="{x:Bind local:InspectorPane.Hidden(Model.HasFiles), Mode=OneWay}"
           />
         </Grid>
-        <Grid x:Name="PeerContent" x:Load="False" Visibility="Collapsed" SizeChanged="OnPeerSize">
+        <Grid
+          x:Name="PeerContent"
+          x:Load="False"
+          Visibility="Collapsed"
+          Background="{ThemeResource SolidBackgroundFillColorQuarternaryBrush}"
+          SizeChanged="OnPeerSize"
+        >
           <Grid.RowDefinitions>
             <RowDefinition Height="*" />
             <RowDefinition Height="0" />
@@ -550,20 +556,25 @@
                 />
               </StackPanel>
             </controls:Strip>
-            <Button
-              x:Name="MapClose"
-              Margin="8"
+            <Border
+              Margin="0,8,0,0"
               HorizontalAlignment="Right"
               VerticalAlignment="Top"
-              Style="{StaticResource TinyTorrentSubtleButtonStyle}"
-              Click="CloseMap"
+              Background="{ThemeResource SolidBackgroundFillColorQuarternaryBrush}"
+              CornerRadius="0,0,0,4"
             >
-              <FontIcon
-                FontFamily="{x:Bind icons:Lucide.Font}"
-                Glyph="{x:Bind icons:Lucide.X}"
-                FontSize="{StaticResource TinyTorrentButtonIconSize}"
-              />
-            </Button>
+              <Button
+                x:Name="MapClose"
+                Style="{StaticResource TinyTorrentSubtleButtonStyle}"
+                Click="CloseMap"
+              >
+                <FontIcon
+                  FontFamily="{x:Bind icons:Lucide.Font}"
+                  Glyph="{x:Bind icons:Lucide.X}"
+                  FontSize="{StaticResource TinyTorrentButtonIconSize}"
+                />
+              </Button>
+            </Border>
           </Grid>
           <controls:Splitter x:Name="PeerSplit" Visibility="Collapsed" />
           <table:Table
@@ -787,7 +798,8 @@
             Margin="0,8,0,0"
             HorizontalAlignment="Right"
             VerticalAlignment="Top"
-            Background="{ThemeResource LayerFillColorDefaultBrush}"
+            Background="{ThemeResource SolidBackgroundFillColorQuarternaryBrush}"
+            CornerRadius="0,0,0,4"
           >
             <Button
               x:Name="TableClose"

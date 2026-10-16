@@ -27,8 +27,7 @@ namespace tt
 {
 struct ConnectionMeasurement
 {
-    std::size_t byteLimit = 4 * 1024 * 1024;
-    std::chrono::seconds timeLimit{6};
+    std::chrono::seconds duration{5};
     std::atomic<std::chrono::steady_clock::time_point> started{};
     std::atomic<std::chrono::steady_clock::time_point> finished{};
     std::atomic<std::uint64_t> bytes{0};

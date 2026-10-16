@@ -1696,6 +1696,8 @@ internal sealed class VideoLookup(
                 }
             }
             operation.Outcome = operation.Error is null ? WorkOutcome.Completed : WorkOutcome.Failed;
+            // Automatic enrichment runs by itself; matches appear in the list.
+            operation.ReportsSuccess = false;
         }
         catch (OperationCanceledException)
         {

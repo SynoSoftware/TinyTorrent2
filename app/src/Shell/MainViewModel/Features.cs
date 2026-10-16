@@ -490,6 +490,8 @@ public sealed partial class MainViewModel
                 RequestSnapshot();
             await RetrySubtitles();
             operation.Outcome = Library.HasFailure ? WorkOutcome.Failed : WorkOutcome.Completed;
+            // Recovery clears the message bar.
+            operation.ReportsSuccess = false;
         }
         catch (Exception error)
         {
@@ -537,6 +539,8 @@ public sealed partial class MainViewModel
             _featureFailure = null;
             RefreshFeedback();
             operation.Outcome = WorkOutcome.Completed;
+            // Recovery clears the message bar.
+            operation.ReportsSuccess = false;
         }
         catch (Exception error)
         {

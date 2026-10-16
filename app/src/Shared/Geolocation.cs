@@ -186,6 +186,8 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
         {
             await Task.Run(() => Replace(() => File.Delete(Path.Combine(directory, CityFileName))));
             operation.Outcome = WorkOutcome.Completed;
+            // The Settings row shows that the data is gone.
+            operation.ReportsSuccess = false;
         }
         catch (Exception error)
         {

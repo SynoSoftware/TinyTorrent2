@@ -4,13 +4,12 @@
 #include <libtorrent/session_stats.hpp>
 #include <algorithm>
 #include <array>
-#include <cmath>
 #include <condition_variable>
-#include <cwchar>
-#include <limits>
+#include <exception>
 #include <span>
 #include <stdexcept>
 #include <system_error>
+#include <thread>
 #include <utility>
 
 #pragma comment(lib, "winhttp.lib")
@@ -23,6 +22,10 @@ using Clock = std::chrono::steady_clock;
 constexpr auto stoppingTimeout = std::chrono::seconds(10);
 constexpr auto measuringTimeout = std::chrono::seconds(45);
 constexpr auto holdTimeout = std::chrono::minutes(3);
+constexpr auto warmup = std::chrono::seconds(2);
+constexpr int parallelConnections = 4;
+// The largest size the provider is known to serve in both directions.
+constexpr std::size_t requestBytes = 10'000'000;
 
 class InternetHandle
 {
@@ -166,71 +169,23 @@ private:
     DWORD error = 0;
 };
 
-double ServerSeconds(HINTERNET request)
+// Repeats full-size requests on one connection until the direction's deadline
+// closes the request in progress.
+void Transfer(HINTERNET connection, bool upload, ConnectionMeasurement& measurement, std::stop_token stop,
+    Clock::time_point deadline)
 {
-    std::array<wchar_t, 4096> header{};
-    DWORD length = DWORD(sizeof(header));
-    if (!WinHttpQueryHeaders(request, WINHTTP_QUERY_CUSTOM, L"Server-Timing",
-        header.data(), &length, WINHTTP_NO_HEADER_INDEX))
-        return 0;
-    std::wstring_view value(header.data(), length / sizeof(wchar_t));
-    double total = 0;
-    for (std::size_t offset = 0; offset < value.size();)
-    {
-        auto end = value.find(L',', offset);
-        auto metric = value.substr(offset, end == value.npos ? value.size() - offset : end - offset);
-        auto duration = metric.find(L"dur=");
-        if (duration != metric.npos)
-        {
-            auto seconds = std::wcstod(metric.data() + duration + 4, nullptr) / 1000;
-            if (std::isfinite(seconds) && seconds > 0)
-            {
-                if (metric.find(L"cfReq") != metric.npos)
-                    return seconds;
-                if (metric.find(L"cfSpeed") != metric.npos)
-                    total += seconds;
-            }
-        }
-        if (end == value.npos)
-            break;
-        offset = end + 1;
-    }
-    return total;
-}
-
-void Measure(HINTERNET connection, bool upload, ConnectionMeasurement& measurement, std::stop_token stop)
-{
-    if (stop.stop_requested())
-        throw std::runtime_error("connection_test_cancelled");
-    auto started = Clock::now();
-    measurement.started = started;
-    auto deadline = started + measurement.timeLimit;
-    std::vector<double> samples;
-    const std::array groups{
-        std::pair<std::size_t, int>{100'000, upload ? 8 : 10},
-        std::pair<std::size_t, int>{1'000'000, upload ? 6 : 8},
-        std::pair<std::size_t, int>{10'000'000, upload ? 4 : 6},
-    };
-    std::size_t group = 0;
-    int count = 0;
-    double shortest = std::numeric_limits<double>::max();
     std::array<char, 64 * 1024> buffer{};
     try
     {
-        while (measurement.bytes < measurement.byteLimit && Clock::now() < deadline)
+        for (;;)
         {
-            if (stop.stop_requested())
-                throw std::runtime_error("connection_test_cancelled");
-            auto remaining = measurement.byteLimit - measurement.bytes.load();
-            auto payload = std::min(groups[group].first, std::size_t(remaining));
-            ConnectionRequest request(connection, upload, payload, measurement);
-            auto begin = Clock::now();
+            ConnectionRequest request(connection, upload, requestBytes, measurement);
             request.Send(stop, deadline);
             if (upload)
             {
-                for (std::size_t sent = 0; sent < payload;)
+                for (std::size_t sent = 0; sent < requestBytes;)
                 {
-                    auto chunk = std::min(buffer.size(), payload - sent);
+                    auto chunk = std::min(buffer.size(), requestBytes - sent);
                     auto written = request.Write(std::span<char const>(buffer.data(), chunk), stop, deadline);
                     if (written == 0)
                         throw std::runtime_error("Incomplete connection test upload");
@@ -238,14 +193,12 @@ void Measure(HINTERNET connection, bool upload, ConnectionMeasurement& measureme
                 }
             }
             request.Receive(stop, deadline);
-            auto response = Clock::now();
             DWORD status = 0;
             DWORD length = sizeof(status);
             Check(WinHttpQueryHeaders(request.Get(), WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
                 WINHTTP_HEADER_NAME_BY_INDEX, &status, &length, WINHTTP_NO_HEADER_INDEX));
             if (status != 200)
                 throw std::runtime_error("HTTP " + std::to_string(status));
-            auto serverSeconds = ServerSeconds(request.Get());
             std::size_t received = 0;
             for (;;)
             {
@@ -253,43 +206,80 @@ void Measure(HINTERNET connection, bool upload, ConnectionMeasurement& measureme
                 if (read == 0)
                     break;
                 received += read;
-                if (received > (upload ? 1024 * 1024 : payload))
+                if (received > (upload ? 1024 * 1024 : requestBytes))
                     throw std::runtime_error("Connection test response exceeds the requested size");
             }
-            if (!upload && received != payload)
+            if (!upload && received != requestBytes)
                 throw std::runtime_error("Incomplete connection test response");
-            auto seconds = std::chrono::duration<double>((upload ? response : Clock::now()) - begin).count()
-                - (upload ? 0 : serverSeconds);
-            // Upload ends at the server response, so buffered socket writes do not count as delivered bytes.
-            if (seconds >= 0.01)
-            {
-                samples.push_back(double(payload) * 8 / seconds / 1'000'000);
-                std::sort(samples.begin(), samples.end());
-                auto position = double(samples.size() - 1) * 0.9;
-                auto lower = std::size_t(position);
-                auto upper = std::size_t(std::ceil(position));
-                measurement.rate = samples[lower] + (samples[upper] - samples[lower]) * (position - double(lower));
-            }
-            shortest = std::min(shortest, seconds);
-            if (++count >= groups[group].second)
-            {
-                if (shortest > 1 || group + 1 == groups.size())
-                    break;
-                ++group;
-                count = 0;
-                shortest = std::numeric_limits<double>::max();
-            }
         }
     }
     catch (std::exception const& failure)
     {
-        measurement.finished = Clock::now();
         if (std::string_view(failure.what()) != "connection_test_timeout")
             throw;
     }
-    if (measurement.finished.load() == Clock::time_point{})
-        measurement.finished = Clock::now();
-    if (measurement.rate <= 0)
+}
+
+// The rate is the average after the warm-up, so connection set-up and an
+// ISP's short burst above the line's sustained speed do not count. Upload
+// counts bytes the socket accepted; over the measured seconds the socket
+// buffer stays full, so it does not change the average.
+void Measure(HINTERNET connection, bool upload, ConnectionMeasurement& measurement, std::stop_token stop)
+{
+    if (stop.stop_requested())
+        throw std::runtime_error("connection_test_cancelled");
+    auto started = Clock::now();
+    measurement.started = started;
+    auto deadline = started + measurement.duration;
+    std::stop_source halt;
+    std::stop_callback forward(stop, [&halt] { halt.request_stop(); });
+    std::mutex gate;
+    std::exception_ptr failure;
+    auto from = started;
+    std::uint64_t base = 0;
+    bool warmed = false;
+    {
+        std::vector<std::jthread> workers;
+        for (int index = 0; index < parallelConnections; ++index)
+            workers.emplace_back([&]
+            {
+                try
+                {
+                    Transfer(connection, upload, measurement, halt.get_token(), deadline);
+                }
+                catch (...)
+                {
+                    std::lock_guard lock(gate);
+                    if (!failure)
+                        failure = std::current_exception();
+                    halt.request_stop();
+                }
+            });
+        for (;;)
+        {
+            auto now = std::min(Clock::now(), deadline);
+            if (!warmed && now >= started + warmup)
+            {
+                warmed = true;
+                from = now;
+                base = measurement.bytes;
+            }
+            auto seconds = std::chrono::duration<double>(now - from).count();
+            if (seconds > 0)
+                measurement.rate = double(measurement.bytes - base) * 8 / seconds / 1'000'000;
+            if (now >= deadline || halt.stop_requested())
+            {
+                measurement.finished = now;
+                break;
+            }
+            std::this_thread::sleep_until(std::min(deadline, now + std::chrono::milliseconds(250)));
+        }
+    }
+    if (stop.stop_requested())
+        throw std::runtime_error("connection_test_cancelled");
+    if (failure)
+        std::rethrow_exception(failure);
+    if (!warmed || measurement.rate <= 0)
         throw std::runtime_error("connection_test_sample");
 }
 
@@ -340,7 +330,7 @@ Json Engine::State::ConnectionTestSnapshot() const
         {"download_bytes", test.download.bytes.load()}, {"upload_bytes", test.upload.bytes.load()},
         {"download_seconds", duration(test.download)},
         {"upload_seconds", duration(test.upload)},
-        {"byte_limit", test.download.byteLimit}, {"time_limit", test.download.timeLimit.count()}, {"complete", test.complete}};
+        {"time_limit", test.download.duration.count()}, {"complete", test.complete}};
 }
 
 bool Engine::State::StartConnectionTest(std::string const& connectionId, bool longer)
@@ -354,10 +344,7 @@ bool Engine::State::StartConnectionTest(std::string const& connectionId, bool lo
     test->id = NewId();
     test->connectionId = connectionId;
     if (longer)
-    {
-        test->download.byteLimit = test->upload.byteLimit = 32 * 1024 * 1024;
-        test->download.timeLimit = test->upload.timeLimit = std::chrono::seconds(8);
-    }
+        test->download.duration = test->upload.duration = std::chrono::seconds(15);
     test->deadline = Clock::now() + stoppingTimeout;
     connectionTest = std::move(test);
     RefreshPolicy();
@@ -446,6 +433,8 @@ void Engine::State::MeasureConnection(std::shared_ptr<ConnectionTest> const& tes
         InternetHandle internet(WinHttpOpen(L"TinyTorrent connection test", WINHTTP_ACCESS_TYPE_NO_PROXY,
             WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, WINHTTP_FLAG_ASYNC));
         WinHttpSetTimeouts(internet.Get(), 5000, 5000, 5000, 5000);
+        DWORD connections = parallelConnections;
+        Check(WinHttpSetOption(internet.Get(), WINHTTP_OPTION_MAX_CONNS_PER_SERVER, &connections, sizeof(connections)));
         InternetHandle connection(WinHttpConnect(internet.Get(), L"speed.cloudflare.com", INTERNET_DEFAULT_HTTPS_PORT, 0));
         Measure(connection.Get(), false, test->download, stop);
         if (stop.stop_requested())

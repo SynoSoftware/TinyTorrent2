@@ -149,6 +149,8 @@ public sealed partial class MainViewModel
             ((RelayCommand)OpenUpdate).Refresh();
             await SaveCheck();
             operation.Summarize(HasUpdate ? "update_available" : "up_to_date", version);
+            // The check runs by itself, so only a new version is news.
+            operation.ReportsSuccess = HasUpdate;
             operation.Outcome = WorkOutcome.Completed;
         }
         catch (OperationCanceledException)

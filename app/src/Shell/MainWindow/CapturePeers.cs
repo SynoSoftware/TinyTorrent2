@@ -243,7 +243,7 @@ public sealed partial class MainWindow
                                     "The peer view menu did not apply its choice."
                                 );
                             var map = CaptureElements(pane).OfType<PeerMap>().SingleOrDefault();
-                            map?.Show(peers, origin, Model.Text);
+                            inspector.Map.Update(peers, origin, Model.Text);
                             var name =
                                 $"peers-{theme}-{precision}-{(portrait ? "portrait" : "landscape")}-{layout}";
                             await CaptureUi(name);
@@ -269,7 +269,7 @@ public sealed partial class MainWindow
                                     throw new InvalidOperationException(
                                         "The peer splitter must resize without changing orientation."
                                     );
-                                map?.Show(peers, origin, Model.Text);
+                                inspector.Map.Update(peers, origin, Model.Text);
                                 await CaptureUi(name + "-resized");
                                 completed.Add(name + "-resized");
                                 if (precision == "countries")
@@ -313,7 +313,7 @@ public sealed partial class MainWindow
                 View = pane.Layout.View with { Layout = PeerLayout.Both, Stacked = .5 },
             };
             await CaptureLayout();
-            CaptureElements(pane).OfType<PeerMap>().Single().Show(peers, null, Model.Text);
+            inspector.Map.Update(peers, null, Model.Text);
             await CaptureUi("peers-small-unknown-origin");
             completed.Add("peers-small-unknown-origin");
             var estimated = peers[14];
@@ -360,21 +360,12 @@ public sealed partial class MainWindow
             };
             await CaptureLayout();
             var centred = CaptureElements(pane).OfType<PeerMap>().Single();
-            var setView = typeof(PeerMap).GetMethod(
-                "SetView",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            )!;
-            var ratio = typeof(PeerMap).GetMethod(
-                "CalculateRatio",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            )!;
+            var viewport = (MapViewport)typeof(PeerMap)
+                .GetField("_viewport", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(centred)!;
             // The journeys use the ratio that zooming or panning to the view gives.
             void View(float zoom, Vector2 focus) =>
-                setView.Invoke(centred, [zoom, focus, ratio.Invoke(centred, [zoom, focus.Y])!]);
-            var center = typeof(PeerMap).GetField(
-                "_center",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            )!;
+                viewport.SetView(zoom, focus, viewport.CalculateRatio(zoom, focus.Y));
             List<(string Name, Location Origin)> homes =
             [
                 ("tokyo", new Location("JP", new Place("JP", null), null, new GeoPoint(139.69, 35.69))),
@@ -390,12 +381,12 @@ public sealed partial class MainWindow
                 var meridian = (float)(
                     home.Point?.Longitude ?? countries[home.Code].Anchor.Longitude
                 );
-                centred.Show(peers, home, Model.Text);
+                inspector.Map.Update(peers, home, Model.Text);
                 View(1f, Vector2.Zero);
                 await CaptureUi($"peers-meridian-{place}");
                 completed.Add($"peers-meridian-{place}");
                 View(1f, new Vector2(90, 0));
-                if (((Vector2)center.GetValue(centred)!).X != 90)
+                if (viewport.Center.X != 90)
                     throw new InvalidOperationException("The fitted map did not scroll.");
                 await CaptureUi($"peers-meridian-{place}-scrolled");
                 completed.Add($"peers-meridian-{place}-scrolled");
@@ -413,27 +404,30 @@ public sealed partial class MainWindow
                 await CaptureUi($"peers-meridian-{place}-edge");
                 completed.Add($"peers-meridian-{place}-edge");
                 View(3f, new Vector2(175 + 360, -40));
-                if (((Vector2)center.GetValue(centred)!).X != 175)
+                if (viewport.Center.X != 175)
                     throw new InvalidOperationException("Panning a whole turn did not wrap.");
                 outcomes.Add(new { journey = "peer map centred on origin", place, meridian });
             }
             // Zooming in to Europe at 600% traces finer outlines for every
             // country that has one.
-            var land = (System.Collections.IDictionary)typeof(PeerMap)
-                .GetField("_land", BindingFlags.Instance | BindingFlags.NonPublic)!
+            var renderer = typeof(PeerMap)
+                .GetField("_renderer", BindingFlags.Instance | BindingFlags.NonPublic)!
                 .GetValue(centred)!;
-            var detail = typeof(PeerMap).GetField(
+            var land = (System.Collections.IDictionary)typeof(MapRenderer)
+                .GetField("_land", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(renderer)!;
+            var detail = typeof(MapRenderer).GetField(
                 "_detail",
                 BindingFlags.Instance | BindingFlags.NonPublic
             )!;
-            centred.Show(peers, homes[0].Origin, Model.Text);
+            inspector.Map.Update(peers, homes[0].Origin, Model.Text);
             View(1f, Vector2.Zero);
             await CaptureUi("peers-detail-fitted");
-            var fitted = (float)detail.GetValue(centred)!;
+            var fitted = (float)detail.GetValue(renderer)!;
             View(6f, new Vector2(10 - 139.69f, -50));
             await CaptureUi("peers-detail-europe");
             completed.Add("peers-detail-europe");
-            var zoomed = (float)detail.GetValue(centred)!;
+            var zoomed = (float)detail.GetValue(renderer)!;
             var outlined = countries.Values.Count(country => country.Rings.Length > 0);
             if (zoomed >= fitted || land.Count != outlined)
                 throw new InvalidOperationException(
@@ -442,9 +436,7 @@ public sealed partial class MainWindow
             outcomes.Add(new { journey = "peer map outline detail", fitted, zoomed, land = land.Count });
             // Each wheel step zooms by a quarter; one in about three changes the
             // outline detail and traces the land again.
-            var maxZoom = (float)typeof(PeerMap)
-                .GetField("MaxZoom", BindingFlags.Static | BindingFlags.NonPublic)!
-                .GetValue(null)!;
+            var maxZoom = MapViewport.MaxZoom;
             foreach (var (area, focus) in new[] { ("fit", Vector2.Zero), ("europe", new Vector2(10 - 139.69f, -50)) })
             {
                 View(1f, focus);
@@ -455,12 +447,12 @@ public sealed partial class MainWindow
                 for (var zoom = 1.25f; zoom <= maxZoom; zoom *= 1.25f)
                 {
                     List<double> frames = [];
-                    var previous = (float)detail.GetValue(centred)!;
+                    var previous = (float)detail.GetValue(renderer)!;
                     centred.FrameMeasured = frames.Add;
                     View(zoom, focus);
                     await Task.Delay(500);
                     centred.FrameMeasured = null;
-                    var current = (float)detail.GetValue(centred)!;
+                    var current = (float)detail.GetValue(renderer)!;
                     steps.Add(new
                     {
                         zoom,
@@ -479,18 +471,12 @@ public sealed partial class MainWindow
                     fittedBytes,
                     zoomedBytes = after.PrivateMemorySize64,
                     steps,
-                    scope = "Map only at 1280 by 900, synthetic peers, draw CPU time including Arrange; excludes GPU execution.",
+                    scope = "Map only at 1280 by 900, synthetic peers, draw and preparation CPU time; excludes GPU execution.",
                 });
             }
             // Drags cross the fill window's edges at a steady and a fast pointer
             // speed; the vertical ones also change the ratio with the latitude.
-            var hold = typeof(PeerMap).GetMethod(
-                "Hold",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            )!;
-            var offset = (Vector2)typeof(PeerMap)
-                .GetField("_offset", BindingFlags.Instance | BindingFlags.NonPublic)!
-                .GetValue(centred)!;
+            var offset = viewport.Offset;
             foreach (
                 var (area, zoom, focus, direction, speed) in new[]
                 {
@@ -514,7 +500,7 @@ public sealed partial class MainWindow
                 const int Steps = 120;
                 for (var step = 1; step <= Steps; step++)
                 {
-                    hold.Invoke(centred, [zoom, focus, offset + direction * speed * step]);
+                    viewport.Hold(zoom, focus, offset + direction * speed * step);
                     await Task.Delay(16);
                 }
                 await Task.Delay(500);
@@ -538,8 +524,47 @@ public sealed partial class MainWindow
                     over16Ms = frames.Count(frame => frame > 16.7),
                     intervalMedianMs = intervals.Count == 0 ? 0 : intervals[intervals.Count / 2],
                     intervalMaxMs = intervals.DefaultIfEmpty().Max(),
-                    scope = "Map only, synthetic peers, draw CPU time including Arrange; excludes GPU execution.",
+                    scope = "Map only, synthetic peers, draw and preparation CPU time; excludes GPU execution.",
                 });
+            }
+            foreach (var updates in new[] { false, true })
+            {
+                var focus = new Vector2(10 - 139.69f, -50);
+                View(8f, focus);
+                await Task.Delay(1000);
+                List<double> frames = [];
+                List<double> submissions = [];
+                var rates = peers.Select(peer => peer.DownloadRate).ToArray();
+                var rate = typeof(Peer).GetProperty(nameof(Peer.DownloadRate))!;
+                var allocated = GC.GetTotalAllocatedBytes(false);
+                centred.FrameMeasured = frames.Add;
+                for (var step = 0; step < 120; step++)
+                {
+                    var started = Stopwatch.GetTimestamp();
+                    if (updates && step % 6 == 0)
+                    {
+                        for (var index = 0; index < peers.Length; index++)
+                            rate.SetValue(peers[index], rates[index] * (step % 12 == 0 ? 1.1 : 1));
+                        inspector.Map.Update(peers, homes[0].Origin, Model.Text);
+                    }
+                    viewport.Hold(8f, focus, offset + new Vector2(step * 4, step));
+                    submissions.Add(Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+                    await Task.Delay(16);
+                }
+                await Task.Delay(500);
+                centred.FrameMeasured = null;
+                outcomes.Add(new
+                {
+                    journey = "peer updates during drag",
+                    updates,
+                    drawMs = frames,
+                    submissionMs = submissions,
+                    allocatedBytes = GC.GetTotalAllocatedBytes(false) - allocated,
+                    scope = "Same 100 peers and 8x view; drawMs includes preparation. Submission overlaps preparation and must not be added to drawMs; excludes GPU execution.",
+                });
+                for (var index = 0; index < peers.Length; index++)
+                    rate.SetValue(peers[index], rates[index]);
+                inspector.Map.Update(peers, homes[0].Origin, Model.Text);
             }
             View(1f, Vector2.Zero);
             await CaptureLayout();
@@ -556,15 +581,8 @@ public sealed partial class MainWindow
                 "Choose",
                 BindingFlags.Instance | BindingFlags.NonPublic
             )!;
-            var choices = ((System.Collections.IEnumerable)typeof(PeerMap)
-                .GetField("_destinations", BindingFlags.Instance | BindingFlags.NonPublic)!
-                .GetValue(chooser)!).Cast<object>().ToArray();
-            var chosen = choices.First(choice =>
-                ((ValueTuple<string, GeoPoint?, bool>)choice
-                    .GetType()
-                    .GetProperty("Key", BindingFlags.Instance | BindingFlags.NonPublic)!
-                    .GetValue(choice)!).Item1 == "JP"
-            );
+            var choices = inspector.Map.Destinations.ToArray();
+            var chosen = choices.First(choice => choice.Key.Code == "JP");
             choose.Invoke(chooser, [chosen]);
             await CaptureUi("peers-place-japan");
             completed.Add("peers-place-japan");
@@ -579,6 +597,33 @@ public sealed partial class MainWindow
                 || !ReferenceEquals(table.ItemsSource, inspector.ShownPeers)
             )
                 throw new InvalidOperationException("The table does not show exactly the chosen place's peers.");
+            var selectedField = typeof(PeerMap).GetField("_selected", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            inspector.Place = null;
+            await CaptureLayout();
+            if (selectedField.GetValue(chooser) is not null)
+                throw new InvalidOperationException("Clearing Inspector.Place left a chosen map destination.");
+            outcomes.Add(new
+            {
+                journey = "authoritative place cleared",
+                tableCleared = inspector.Place is null && ReferenceEquals(table.ItemsSource, inspector.Peers),
+                mapCleared = selectedField.GetValue(chooser) is null,
+            });
+            choose.Invoke(chooser, [chosen]);
+            var sameCountry = choices.Where(choice => choice.Key.Code == "US").Take(2).ToArray();
+            if (sameCountry.Length == 2)
+            {
+                choose.Invoke(chooser, [sameCountry[0]]);
+                var first = selectedField.GetValue(chooser);
+                var place = inspector.Place;
+                choose.Invoke(chooser, [sameCountry[1]]);
+                var second = selectedField.GetValue(chooser);
+                var row = inspector.ShownPeers!.First();
+                table.Selection = new Syno.TableView.Selection([row], row);
+                await CaptureLayout();
+                if (Equals(first, second) || inspector.Place != place)
+                    throw new InvalidOperationException("Estimated destinations or table selection changed the country filter.");
+                outcomes.Add(new { journey = "two destinations share one place", distinct = !Equals(first, second), preserved = inspector.Place == place });
+            }
             choose.Invoke(chooser, [null]);
             await CaptureUi("peers-place-cleared");
             completed.Add("peers-place-cleared");
@@ -599,16 +644,10 @@ public sealed partial class MainWindow
                 "IsMarked",
                 BindingFlags.Instance | BindingFlags.NonPublic
             )!;
-            var marked = ((System.Collections.IEnumerable)typeof(PeerMap)
-                .GetField("_destinations", BindingFlags.Instance | BindingFlags.NonPublic)!
-                .GetValue(chooser)!)
-                .Cast<object>()
+            var ranks = inspector.Map.Destinations
                 .Where(destination => (bool)isMarked.Invoke(chooser, [destination])!)
-                .Select(destination => destination.GetType()
-                    .GetProperty("Rank", BindingFlags.Instance | BindingFlags.NonPublic)!
-                    .GetValue(destination))
+                .Select(destination => destination.Rank)
                 .ToArray();
-            var ranks = marked.Cast<int>().ToArray();
             if (ranks.Count(rank => rank == 0) != 2 || ranks.Any(rank => rank > 1))
                 throw new InvalidOperationException("Selected rows did not mark the most populous destinations.");
             outcomes.Add(new { journey = "table multi-selection marks estimated destinations", rows = several.Length, ranks });
@@ -640,6 +679,90 @@ public sealed partial class MainWindow
                     redrawMs = frames.Skip(settled).ToArray(),
                 });
             }
+            // A rate refresh must keep native routes, and redraws must not
+            // publish peer changes or redistribute the destinations.
+            var owner = inspector.Map;
+            var native = typeof(PeerMap).GetField("_renderer", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var activeRenderer = (MapRenderer)native.GetValue(chooser)!;
+            var routes = typeof(MapRenderer).GetField("_routes", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var pending = typeof(PeerMap).GetField("_queued", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            object[] Arcs() => ((System.Collections.IEnumerable)routes.GetValue(activeRenderer)!)
+                .Cast<object>().Select(route => route.GetType()
+                    .GetProperty("Arc", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(route))
+                .OfType<object>().ToArray();
+
+            async Task DrawMap(Func<bool> ready)
+            {
+                var drawn = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                chooser.FrameMeasured = _ =>
+                {
+                    if (!(bool)pending.GetValue(chooser)! && ready())
+                        drawn.TrySetResult();
+                };
+                try
+                {
+                    ((Microsoft.Graphics.Canvas.UI.Xaml.CanvasControl)mapCanvas.GetValue(chooser)!).Invalidate();
+                    await drawn.Task.WaitAsync(TimeSpan.FromSeconds(20));
+                }
+                finally
+                {
+                    chooser.FrameMeasured = null;
+                }
+            }
+
+            inspector.UpdateMap(false);
+            await DrawMap(() => true);
+            var arcs = Arcs();
+            var active = peers.First(peer => peer.DownloadRate > 0);
+            var download = active.DownloadRate;
+            typeof(Peer).GetProperty(nameof(Peer.DownloadRate))!.SetValue(active, download * 1.1);
+            inspector.UpdateMap(false);
+            await DrawMap(() => true);
+            if (arcs.Length == 0 || !arcs.SequenceEqual(Arcs()))
+                throw new InvalidOperationException("A rate-only update replaced route geometry.");
+            typeof(Peer).GetProperty(nameof(Peer.DownloadRate))!.SetValue(active, download);
+            inspector.UpdateMap(false);
+            await DrawMap(() => true);
+            var notifications = 0;
+            System.ComponentModel.PropertyChangedEventHandler changed = (_, _) => notifications++;
+            owner.PropertyChanged += changed;
+            var destinations = owner.Destinations.ToArray();
+            await DrawMap(() => true);
+            owner.PropertyChanged -= changed;
+            if (notifications != 0 || !destinations.SequenceEqual(owner.Destinations))
+                throw new InvalidOperationException("Drawing changed map presentation data.");
+            choose.Invoke(chooser, [owner.Destinations.First(destination => destination.Key.Code == "JP")]);
+            var retainedPlace = inspector.Place;
+            var retainedChoice = selectedField.GetValue(chooser);
+            typeof(Inspector).GetProperty(nameof(Inspector.Peers))!.SetValue(
+                inspector, peers.Where(peer => peer.Location?.Code != "JP").ToArray());
+            inspector.Refresh();
+            await DrawMap(() => owner.Destinations.All(destination => destination.Key.Code != "JP"));
+            if (inspector.Place != retainedPlace || inspector.ShownPeers!.Count != 0)
+                throw new InvalidOperationException("Losing the last peer cleared the chosen place.");
+            typeof(Inspector).GetProperty(nameof(Inspector.Peers))!.SetValue(inspector, peers);
+            inspector.Refresh();
+            await DrawMap(() => owner.Destinations.Any(destination => destination.Key.Code == "JP"));
+            if (!Equals(retainedChoice, selectedField.GetValue(chooser)))
+                throw new InvalidOperationException("Returning peers changed the exact chosen destination.");
+            activeRenderer.ReleaseGeometry();
+            typeof(PeerMap).GetMethod("Prepare", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(chooser, null);
+            await DrawMap(() => true);
+            if (Arcs().Length != arcs.Length || inspector.Place != retainedPlace)
+                throw new InvalidOperationException("Resource recreation changed the place or lost routes.");
+            // Detach the real control without restarting engine acquisition
+            // over the synthetic peer fixture.
+            var host = (ContentControl)pane.FindName("PeerDrawing");
+            host.Content = null;
+            await CaptureLayout();
+            if (native.GetValue(chooser) is not null || ((System.Collections.ICollection)routes.GetValue(activeRenderer)!).Count != 0)
+                throw new InvalidOperationException("Hiding the map retained native resources.");
+            host.Content = chooser;
+            await CaptureLayout();
+            if (!ReferenceEquals(owner, inspector.Map) || inspector.Place != retainedPlace)
+                throw new InvalidOperationException("Showing the map replaced its model or chosen place.");
+            outcomes.Add(new { journey = "map ownership and resources", retainedRoutes = arcs.Length, redrawNotifications = notifications, placePreserved = true });
+            inspector.Place = null;
             table.Selection = new Syno.TableView.Selection(several, several[0]);
             pane.Layout = pane.Layout with
             {
@@ -683,15 +806,15 @@ public sealed partial class MainWindow
                         ),
                     };
                 }
+                List<double> preparations = [];
+                drawing.PreparationMeasured = preparations.Add;
                 inspector.Refresh();
                 await CaptureLayout();
                 List<double> frames = [];
                 drawing.FrameMeasured = frames.Add;
-                drawing.Show(known, null, Model.Text);
+                inspector.Map.Update(known, null, Model.Text);
                 await CaptureUi($"peers-known-{count}");
-                var rendered = ((System.Collections.ICollection)typeof(PeerMap)
-                    .GetField("_destinations", BindingFlags.Instance | BindingFlags.NonPublic)!
-                    .GetValue(drawing)!).Count;
+                var rendered = inspector.Map.Destinations.Count;
                 if (!ReferenceEquals(inspector.Peers, known) || rendered != count)
                     throw new InvalidOperationException("The measured map lost its peer fixture.");
                 var managed = GC.GetTotalMemory(true);
@@ -703,10 +826,11 @@ public sealed partial class MainWindow
                 {
                     started = Stopwatch.GetTimestamp();
                     apply.Invoke(inspector, [target.TorrentId, rows, groups]);
-                    drawing.Show(known, null, Model.Text);
+                    inspector.Map.Update(known, null, Model.Text);
                     unchanged.Add(Stopwatch.GetElapsedTime(started).TotalMilliseconds);
                 }
                 drawing.FrameMeasured = null;
+                drawing.PreparationMeasured = null;
                 outcomes.Add(new
                 {
                     journey = "known peer map timing",
@@ -719,8 +843,9 @@ public sealed partial class MainWindow
                     privateBytes,
                     unchangedAllocatedBytes = (GC.GetAllocatedBytesForCurrentThread() - allocated) / unchanged.Count,
                     unchangedMedianMs = unchanged.Order().ElementAt(unchanged.Count / 2),
+                    preparationMs = preparations,
                     drawMs = frames,
-                    scope = "Native WinUI/Win2D, synthetic located peers, no active arcs; draw CPU time excludes GPU execution.",
+                    scope = "Native WinUI/Win2D, synthetic located peers, no active arcs; draw and preparation CPU time excludes GPU execution.",
                 });
                 completed.Add($"peers-known-{count}");
             }

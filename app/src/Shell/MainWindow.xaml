@@ -361,19 +361,23 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" MinHeight="110" />
               </Grid.RowDefinitions>
-              <CommandBar
-                x:Name="Toolbar"
-                HorizontalAlignment="Left"
-                Background="Transparent"
-                DefaultLabelPosition="Collapsed"
+              <!-- A CommandBar cannot place some of its buttons at the far
+                   end, so the map buttons have their own bar. The row holds
+                   the focus settings so that both bars are one Tab stop. -->
+              <Grid
+                x:Name="ToolbarRow"
                 TabFocusNavigation="Once"
                 XYFocusKeyboardNavigation="Enabled"
                 Visibility="{x:Bind Model.IsToolbarOpen, Mode=OneWay}"
               >
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
                 <!-- AppBarButton scales its icon to AppBarButtonContentHeight
                      and is 68 wide by default. The margin centres the toolbar
                      icon in the bar's compact height, on a square button. -->
-                <CommandBar.Resources>
+                <Grid.Resources>
                   <StaticResource
                     x:Key="AppBarButtonContentHeight"
                     ResourceKey="TinyTorrentToolbarIconSize"
@@ -386,93 +390,105 @@
                   >
                     <Setter Property="Width" Value="48" />
                   </Style>
-                </CommandBar.Resources>
-                <AppBarButton x:Name="AddButton" Command="{x:Bind Model.Add}">
-                  <AppBarButton.Icon>
-                    <FontIcon
-                      FontFamily="{x:Bind icons:Lucide.Font}"
-                      Glyph="{x:Bind icons:Lucide.FilePlus}"
-                    />
-                  </AppBarButton.Icon>
-                </AppBarButton>
-                <AppBarButton x:Name="MagnetButton" Command="{x:Bind Model.AddMagnet}">
-                  <AppBarButton.Icon>
-                    <FontIcon
-                      FontFamily="{x:Bind icons:Lucide.Font}"
-                      Glyph="{x:Bind icons:Lucide.Link}"
-                    />
-                  </AppBarButton.Icon>
-                </AppBarButton>
-                <AppBarSeparator />
-                <AppBarButton x:Name="ResumeButton" Command="{x:Bind Model.Resume}">
-                  <AppBarButton.Icon>
-                    <FontIcon
-                      FontFamily="{x:Bind icons:Lucide.Font}"
-                      Glyph="{x:Bind icons:Lucide.Play}"
-                    />
-                  </AppBarButton.Icon>
-                </AppBarButton>
-                <AppBarButton x:Name="PauseButton" Command="{x:Bind Model.Pause}">
-                  <AppBarButton.Icon>
-                    <FontIcon
-                      FontFamily="{x:Bind icons:Lucide.Font}"
-                      Glyph="{x:Bind icons:Lucide.Square}"
-                    />
-                  </AppBarButton.Icon>
-                </AppBarButton>
-                <AppBarSeparator />
-                <AppBarButton x:Name="FolderButton" Command="{x:Bind Model.OpenFolder}">
-                  <AppBarButton.Icon>
-                    <FontIcon
-                      FontFamily="{x:Bind icons:Lucide.Font}"
-                      Glyph="{x:Bind icons:Lucide.FolderOpen}"
-                    />
-                  </AppBarButton.Icon>
-                </AppBarButton>
-                <AppBarButton x:Name="PropertiesButton" Command="{x:Bind Model.Properties}">
-                  <AppBarButton.Icon>
-                    <FontIcon
-                      FontFamily="{x:Bind icons:Lucide.Font}"
-                      Glyph="{x:Bind icons:Lucide.Info}"
-                    />
-                  </AppBarButton.Icon>
-                </AppBarButton>
-                <AppBarSeparator />
-                <AppBarButton x:Name="VerifyButton" Command="{x:Bind Model.Verify}">
-                  <AppBarButton.Icon>
-                    <FontIcon
-                      FontFamily="{x:Bind icons:Lucide.Font}"
-                      Glyph="{x:Bind icons:Lucide.RefreshCw}"
-                    />
-                  </AppBarButton.Icon>
-                </AppBarButton>
-                <AppBarSeparator />
-                <AppBarButton x:Name="RemoveButton" Command="{x:Bind Model.Remove}">
-                  <AppBarButton.Icon>
-                    <FontIcon
-                      FontFamily="{x:Bind icons:Lucide.Font}"
-                      Glyph="{x:Bind icons:Lucide.Trash2}"
-                    />
-                  </AppBarButton.Icon>
-                </AppBarButton>
-                <AppBarSeparator />
-                <AppBarButton x:Name="SelectedMapButton" Command="{x:Bind SelectedMap}">
-                  <AppBarButton.Icon>
-                    <FontIcon
-                      FontFamily="{x:Bind icons:Lucide.Font}"
-                      Glyph="{x:Bind icons:Lucide.MapPin}"
-                    />
-                  </AppBarButton.Icon>
-                </AppBarButton>
-                <AppBarButton x:Name="AllMapButton" Command="{x:Bind AllMap}">
-                  <AppBarButton.Icon>
-                    <FontIcon
-                      FontFamily="{x:Bind icons:Lucide.Font}"
-                      Glyph="{x:Bind icons:Lucide.Globe2}"
-                    />
-                  </AppBarButton.Icon>
-                </AppBarButton>
-              </CommandBar>
+                </Grid.Resources>
+                <CommandBar
+                  x:Name="Toolbar"
+                  HorizontalAlignment="Left"
+                  Background="Transparent"
+                  DefaultLabelPosition="Collapsed"
+                >
+                  <AppBarButton x:Name="AddButton" Command="{x:Bind Model.Add}">
+                    <AppBarButton.Icon>
+                      <FontIcon
+                        FontFamily="{x:Bind icons:Lucide.Font}"
+                        Glyph="{x:Bind icons:Lucide.FilePlus}"
+                      />
+                    </AppBarButton.Icon>
+                  </AppBarButton>
+                  <AppBarButton x:Name="MagnetButton" Command="{x:Bind Model.AddMagnet}">
+                    <AppBarButton.Icon>
+                      <FontIcon
+                        FontFamily="{x:Bind icons:Lucide.Font}"
+                        Glyph="{x:Bind icons:Lucide.Link}"
+                      />
+                    </AppBarButton.Icon>
+                  </AppBarButton>
+                  <AppBarSeparator />
+                  <AppBarButton x:Name="ResumeButton" Command="{x:Bind Model.Resume}">
+                    <AppBarButton.Icon>
+                      <FontIcon
+                        FontFamily="{x:Bind icons:Lucide.Font}"
+                        Glyph="{x:Bind icons:Lucide.Play}"
+                      />
+                    </AppBarButton.Icon>
+                  </AppBarButton>
+                  <AppBarButton x:Name="PauseButton" Command="{x:Bind Model.Pause}">
+                    <AppBarButton.Icon>
+                      <FontIcon
+                        FontFamily="{x:Bind icons:Lucide.Font}"
+                        Glyph="{x:Bind icons:Lucide.Square}"
+                      />
+                    </AppBarButton.Icon>
+                  </AppBarButton>
+                  <AppBarSeparator />
+                  <AppBarButton x:Name="FolderButton" Command="{x:Bind Model.OpenFolder}">
+                    <AppBarButton.Icon>
+                      <FontIcon
+                        FontFamily="{x:Bind icons:Lucide.Font}"
+                        Glyph="{x:Bind icons:Lucide.FolderOpen}"
+                      />
+                    </AppBarButton.Icon>
+                  </AppBarButton>
+                  <AppBarButton x:Name="PropertiesButton" Command="{x:Bind Model.Properties}">
+                    <AppBarButton.Icon>
+                      <FontIcon
+                        FontFamily="{x:Bind icons:Lucide.Font}"
+                        Glyph="{x:Bind icons:Lucide.Info}"
+                      />
+                    </AppBarButton.Icon>
+                  </AppBarButton>
+                  <AppBarSeparator />
+                  <AppBarButton x:Name="VerifyButton" Command="{x:Bind Model.Verify}">
+                    <AppBarButton.Icon>
+                      <FontIcon
+                        FontFamily="{x:Bind icons:Lucide.Font}"
+                        Glyph="{x:Bind icons:Lucide.RefreshCw}"
+                      />
+                    </AppBarButton.Icon>
+                  </AppBarButton>
+                  <AppBarSeparator />
+                  <AppBarButton x:Name="RemoveButton" Command="{x:Bind Model.Remove}">
+                    <AppBarButton.Icon>
+                      <FontIcon
+                        FontFamily="{x:Bind icons:Lucide.Font}"
+                        Glyph="{x:Bind icons:Lucide.Trash2}"
+                      />
+                    </AppBarButton.Icon>
+                  </AppBarButton>
+                </CommandBar>
+                <CommandBar
+                  Grid.Column="1"
+                  Background="Transparent"
+                  DefaultLabelPosition="Collapsed"
+                >
+                  <AppBarButton x:Name="SelectedMapButton" Command="{x:Bind SelectedMap}">
+                    <AppBarButton.Icon>
+                      <FontIcon
+                        FontFamily="{x:Bind icons:Lucide.Font}"
+                        Glyph="{x:Bind icons:Lucide.MapPin}"
+                      />
+                    </AppBarButton.Icon>
+                  </AppBarButton>
+                  <AppBarButton x:Name="AllMapButton" Command="{x:Bind AllMap}">
+                    <AppBarButton.Icon>
+                      <FontIcon
+                        FontFamily="{x:Bind icons:Lucide.Font}"
+                        Glyph="{x:Bind icons:Lucide.Globe2}"
+                      />
+                    </AppBarButton.Icon>
+                  </AppBarButton>
+                </CommandBar>
+              </Grid>
               <table:Table
                 x:Name="Torrents"
                 Grid.Row="1"

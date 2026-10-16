@@ -4,42 +4,149 @@ This is the delivery record. [Peer location](peer-location.md#map) owns map
 behavior and precision; [Interface](interface.md#inspector-and-edits) owns its placement.
 The existing protocol and window-layout owners retain their responsibilities.
 
-The [deferred MVVM refactor](#deferred-mvvm-refactor) is a proposed ownership
-change to start after the current performance work has a measured, committed
-baseline. It does not authorize implementation or change current map behavior.
+The [MVVM refactor](#mvvm-refactor) separates the peer map's presentation,
+native interaction, rendering and viewport owners within the existing
+feature structure. Its implementation and comparison evidence are recorded below.
 
-The native baseline is recorded below. The [zoom and pan extension](#zoom-and-pan-extension)
-is implemented in source; build and native interaction verification are pending.
-[Arc dimming](peer-location.md#arc-dimming) now implements the
-approved D treatment, Less glow; native visual verification remains pending.
+The native baseline and comparison are recorded below. The
+[zoom and pan extension](#zoom-and-pan-extension) and
+[arc dimming](peer-location.md#arc-dimming) run in the scripted native captures;
+physical mouse/touchpad gestures and OS High Contrast remain manual checks.
 
 The Peers inspector follows `app/prototypes/peers-prototype.html`: one Lucide ellipsis menu in its
 existing header selects Map, Table or both, and Countries or Cities. The inspector
 header owns the separator before its common actions. Missing city data downloads
-directly through the existing dataset owner and status bar. This revision is
-implemented in source; build and native verification remain pending.
+directly through the existing dataset owner and status bar.
 The combined arrangement automatically
 fits the larger map and reuses Splitter; the existing inspector height adjustment
 stays. Coordinates use shared-location rendering; country-only records use the
 approved estimated distribution. Selection determines the torrent scope.
 
-## Deferred MVVM refactor
+## MVVM refactor
 
-Proposed 2026-10-15 at the owner's request. This section records a design for
-later implementation, not another active work queue. The existing delivery
-sections below describe earlier revisions; this proposal supersedes their
-single-control ownership approach only when implemented. Product behavior
-continues to belong to [Peer location](peer-location.md#map).
+Proposed 2026-10-15 and authorized for implementation on main on 2026-10-16.
+The owners below supersede the earlier single-control implementation. Product
+behavior continues to belong to [Peer location](peer-location.md#map).
+
+### Implementation evidence
+
+Baseline: `defdeb7`, incorporating the committed performance work in `ec8979d`
+and feature organization in `d16dca6`. The owners stay flat in `app/src/Torrents`:
+`MapModel`, `MapRenderer` and `MapViewport`. Native input remains in `PeerMap`
+and its `Navigation` partial; composition stays in `Shell/InspectorPane`.
+`MapModel` owns its group, observation and destination records. No role-based
+folders, interfaces or projects were introduced.
+
+The baseline build is `artifacts/compilation/builds/peer-map-ownership-baseline-1.md`.
+Its 72-scene capture passed at
+`artifacts/evidence/Capture-peers-cde3f542-1392-48f8-9fe2-6f572e4da397/captures/review.json`.
+It adds a paired 100-peer drag with and without rate updates to the existing
+zoom, pan, selection and 100/1,000/10,000-peer measurements. Configuration,
+geometry, fixtures and window sizes remain the same for the comparison.
+
+Clearing `Inspector.Place` reproduced a stale map highlight: the baseline
+reported `tableCleared: true`, `mapCleared: false`. Place notifications now feed
+the authoritative filter back into the control. Choosing two US estimated
+destinations kept distinct inspected markers and the same place filter, including
+table selection; that baseline behavior remains required. Peer disappearance
+does not introduce a new automatic filter-clearing rule.
+
+The refactor retains the renderer's cache identities, clipping, outline detail,
+fixed-width strokes and six-millisecond realization allowance. Initial outline
+tracing now shares that allowance instead of sweeping the whole world before
+the budget begins: baseline initial 100-peer render work reached 57.65 ms.
+Peer facts still update together. Preparation runs on changed inputs and resize,
+outside drawing; measured frame CPU totals include that preparation so moving
+it does not manufacture a speedup. GPU completion is not measured.
+
+Comparison exposed a large-fixture preparation regression: immediate preparation
+repeated work for input changes before one draw. Preparation now uses the app's
+one-shot `CompositionTarget.Rendering` pattern to coalesce until the next
+frame, retaining complete presentation data between updates. The handler
+detaches after preparation and on unload; it runs outside Win2D Draw.
+After resource release, drawing waits for renderer preparation to finish;
+otherwise a reloaded control could draw retained model countries before its
+new native caches have been reconciled.
+The comparison records preparation samples as well as
+combined preparation/drawing time. The ownership checks wait for real Win2D
+frames after pending data preparation; layout completion alone does not prove
+that a map update has drawn. Shared build records retain the intermediate
+findings and corrections.
+
+### Delivered verification
+
+Debug x64 with `EnableCapture=true` passed in
+`artifacts/compilation/builds/peer-map-ownership-refactor-5.md`, based on `f0b4bd2`
+plus the recorded implementation inputs. Input hashes remained unchanged through
+both captures. `app/tests/DistributionChecks.ps1` passed against that output.
+The completed comparison reports are:
+
+- `artifacts/evidence/Capture-peers-69f4a35a-d917-4b0d-9ea0-fe604f72534d/captures/review.json`
+- `artifacts/evidence/Capture-peers-43fcadd8-268e-4db6-9917-c43a2206e54e/captures/review.json`
+
+Both passed 67 scenes and every executed behavioral assertion. Five conditional
+engine-origin scenes from the 72-scene baseline were unavailable because the
+engine supplied no origin; fixed Tokyo and Buenos Aires meridian, seam and edge
+journeys still ran. Light/dark, landscape/portrait and selected-place captures
+were visually inspected. The focused source passes covered ownership, selection,
+empty inputs, preparation scheduling and native-resource lifetime.
+
+The expanded existing capture guards concrete failures: clearing the shared
+place must clear the map highlight; rate updates must retain 16 unchanged route
+geometries; drawing must publish zero model notifications; missing peers must
+not clear the chosen place; releasing resources and unloading/reloading must
+preserve that place and rebuild usable rendering resources. These paths were
+not exercised by the earlier visual and distribution checks. Both final runs
+passed them, including the reload that exposed drawing before preparation.
+
+CPU measurements below include preparation and drawing, in milliseconds.
+Ranges are the two final runs, not confidence intervals. Initial work may span
+several frames, so the table uses the largest captured sample rather than
+calling the first callback the completed initial render.
+
+| Measurement | Baseline | Final runs |
+| --- | ---: | ---: |
+| 100 located peers, peak frame CPU | 57.65 | 13.08–47.44 |
+| 1,000 located peers, peak frame CPU | 24.91 | 14.34–16.50 |
+| 10,000 located peers, peak frame CPU | 59.50 | 69.77–70.01 |
+| 10,000 located peers, median frame CPU | 14.66 | 17.23–17.95 |
+| Canada drag, median / p95 | 0.93 / 6.23 | 0.77–0.96 / 7.24–7.44 |
+| Fast Canada drag, median / p95 | 0.75 / 9.80 | 0.86–0.87 / 13.96–14.58 |
+| Northern Europe drag, median / p95 | 7.23 / 11.23 | 8.07–8.09 / 11.62–11.75 |
+| Norway drag, median / p95 | 0.82 / 6.29 | 2.88–3.19 / 7.76–8.02 |
+| 100-peer drag without updates, median | 2.08 | 6.24–6.46 |
+| 100-peer drag with updates, median | 1.38 | 3.59–5.18 |
+| Unchanged 10,000-peer update, median | 13.35 | 16.22–16.83 |
+
+The large-fixture preparation regression seen during implementation (161 ms)
+was traced to repeated preparation and corrected by frame coalescing. Final
+preparation samples were about 3.5 and 49 ms for the 10,000-peer transition.
+The remaining timing difference is not evidence of zero overhead: final drag
+callback intervals were about 31 ms versus 17–20 ms at baseline, and the
+unchanged-peer control path also ran slower. This shared-machine comparison
+does not isolate refactor overhead from that changed execution cadence.
+No per-frame regrouping or new rebuild algorithm was introduced to chase those
+numbers; the raw reports preserve slow frames and input-submission timings.
+
+Unchanged-update allocations exactly matched baseline at 28,881 / 282,407 /
+2,730,293 bytes for 100 / 1,000 / 10,000 peers. Retained managed memory for those
+fixtures was 20.76–20.86 / 22.24–22.65 / 38.95–39.00 MB, versus 21.44 / 22.94 /
+39.36 MB. Process private memory ranged from 426 to 461 MB across final fixtures,
+versus 435 to 474 MB at baseline. The updated-peer drag allocated 3.05–3.25 MB,
+versus 3.59 MB at baseline. These are whole-capture observations, not isolated
+renderer allocations or a leak proof.
+
+Remaining evidence limits are physical mouse/touchpad input, OS High Contrast,
+actual graphics-device loss and GPU completion. Resource recreation here is a
+controlled release/rebuild. Captures used disposable stores and their launched
+processes were closed. Shared output reservations were released after validation.
 
 ### Starting point and evidence
 
-Finish the current performance change, its authorized build and capture, and
-commit it before starting this refactor. Record that commit and its evidence
-paths when implementation starts. Use the same map asset, peer fixtures,
-viewport sizes, build configuration and journeys for before/after comparisons,
+Implementation started from the committed performance work and measured
+baseline above, after the owner stopped the other writer. Comparisons use the
+same map asset, peer fixtures, viewport sizes, build configuration and journeys,
 because otherwise a timing difference cannot be attributed to the refactor.
-Coordinate ownership of the affected files before editing; another writer is
-currently changing the renderer and navigation.
 
 Source review found peer aggregation, destination placement, animation and
 native resource reconciliation interleaved in `PeerMap.Arrange`. It also found
@@ -48,10 +155,9 @@ allowance begins. This establishes an ownership and scheduling concern, not a
 measured cause of slow dragging. Pan alone does not dirty peer aggregation;
 telemetry updates during a drag can still trigger it on the next draw.
 
-The chosen-place path currently sends map events to `Inspector.Place` without
-feeding that authoritative value back into the map. A visible disagreement has
-not been reproduced. Investigate concrete transitions before describing this as
-a confirmed defect or inventing reconciliation behavior.
+The original chosen-place path sent map events to `Inspector.Place` without
+feeding that authoritative value back into the map. The baseline capture above
+reproduced the disagreement before the feedback path was implemented.
 
 ### Concepts and owners
 
@@ -154,7 +260,8 @@ passing the entire control into them.
 
 Reuse existing meaningful capture checks. Add a focused regression check only
 for a reproduced failure not already covered, following [Testing](testing.md).
-This plan authorizes no builds, tests, captures or application changes now.
+The owner's implementation request authorizes the focused build and capture
+comparison under the repository's compilation and testing policies.
 
 ## Data and ownership
 
@@ -167,7 +274,8 @@ This plan authorizes no builds, tests, captures or application changes now.
   address through the same local lookup; an unknown origin means no arcs.
 - With no torrent selected, Peers shows all torrents and Speed reads the existing
   session history. Other sections retain their selection requirements.
-- PeerMap owns aggregation, projection, hit testing and drawing. Win2D supplies
+- MapModel owns aggregation and distribution; MapViewport owns projection;
+  PeerMap owns interaction and MapRenderer owns hit testing and drawing. Win2D supplies
   antialiasing, blur and a mask on the composited arc layer; no browser or online
   map service is involved. Natural Earth geometry and populated-place weights
   from the approved prototype are bundled with attribution.

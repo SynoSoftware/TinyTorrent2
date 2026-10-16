@@ -95,24 +95,24 @@ public sealed partial class Speedometer : UserControl
             brush.RegisterPropertyChangedCallback(Border.BackgroundProperty, (_, _) => _canvas?.Invalidate());
     }
 
-    internal void Reset(double capacity)
+    internal void Reset()
     {
-        _maximum = double.IsFinite(capacity) && capacity > 0 ? Ceiling(capacity) : null;
         _speed = null;
         _from = _target = 0;
         _animation.Stop();
         _canvas?.Invalidate();
     }
 
-    internal void Show(double speed, string label, Strings text)
+    /// <summary>Shows <paramref name="speed"/> on a scale ending at
+    /// <paramref name="maximum"/>, or labels the scale automatic when it is null.</summary>
+    internal void Show(double speed, double? maximum, string label, Strings text)
     {
         Label.Text = label;
         Unit.Text = text.Get("units", "mbps");
         _automatic = text.Get("connection_setup", "automatic_scale");
         _speed = speed > 0 ? speed : null;
-        if (_speed is { } value && (_maximum is null || value > _maximum))
-            _maximum = Ceiling(value);
-        var target = _speed is { } measured && _maximum is { } maximum ? measured / maximum : 0;
+        _maximum = maximum;
+        var target = _speed is { } measured && maximum is { } end ? measured / end : 0;
         if (target != _target)
         {
             _from = Displayed;
@@ -133,10 +133,15 @@ public sealed partial class Speedometer : UserControl
     private double Progress => Math.Clamp(Stopwatch.GetElapsedTime(_started).TotalMilliseconds / 550, 0, 1);
     private double Displayed => _from + (_target - _from) * (1 - Math.Pow(1 - Progress, 3));
 
-    private static double Ceiling(double value)
+    /// <summary>The smallest 1, 2 or 5 step of a power of ten that holds the
+    /// largest positive value, or null when no value is positive.</summary>
+    internal static double? Ceiling(params double[] values)
     {
-        var magnitude = Math.Pow(10, Math.Floor(Math.Log10(value)));
-        var step = value / magnitude;
+        var largest = values.Where(value => double.IsFinite(value) && value > 0).DefaultIfEmpty().Max();
+        if (largest <= 0)
+            return null;
+        var magnitude = Math.Pow(10, Math.Floor(Math.Log10(largest)));
+        var step = largest / magnitude;
         return (step <= 1 ? 1 : step <= 2 ? 2 : step <= 5 ? 5 : 10) * magnitude;
     }
 

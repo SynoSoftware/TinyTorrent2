@@ -76,6 +76,16 @@ text block uses the font; the name beside it stays in the app's font.
 
 ## Map
 
+`Inspector.Place` is the chosen filter for both views. Its `MapModel` owns
+grouped peer facts, descriptions and estimated distribution; the control keeps
+only the exact inspected destination and table-selection highlights. Renderer
+layout supplies screen-dependent regions to that distribution. `MapViewport`
+provides one transform for drawing, hit testing and navigation, and
+`MapRenderer` retains route resources by destination identity. Changed peer
+inputs and resize prepare the retained presentation; drawing and pan alone do
+not regroup peers or publish model changes. Unload disposes the renderer and
+releases its geography, while Inspector retains plain map state.
+
 The Peers inspector's ellipsis menu selects Map only, Table only or Map and table.
 Its Map detail group selects Countries or Cities. Countries aggregates every
 peer by country using estimated distribution; Cities uses supplied coordinates

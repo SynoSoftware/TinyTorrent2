@@ -18,18 +18,20 @@ transaction as its schema. Version 0 initializes only an empty schema; existing 
 is incompatible. The temporary projection is recreated for every connection.
 Unsupported versions fail without changing their data.
 
-**Owner ruling: changes to released schemas use sequential, versioned migrations
-that preserve existing user data.** Database owns their execution and
-`PRAGMA user_version`; domain owners define their required schema changes.
-Migrations run transactionally during this same initialization path, before
-Library or Subtitles can access the database. There is no second upgrade
-mechanism in a domain or in startup wiring.
+**Owner ruling: the schema at revision 9 is the baseline that saved databases
+hold. Never change it destructively.** A schema change that only edits the
+schema text and raises the version makes every saved Library database
+incompatible, and the person loses saved metadata, choices and subtitle
+records. Every change after revision 9 is instead a sequential migration from
+the schema as it stands, which upgrades a saved database and preserves its
+data. Database owns their execution and `PRAGMA user_version`; domain owners
+define their required schema changes. Migrations run transactionally during
+this same initialization path, before Library or Subtitles can access the
+database. There is no second upgrade mechanism in a domain or in startup wiring.
 
-The first release uses the complete initial schema at revision 9, including the
-file catalogue. Schema revision is independent of the application version;
-retaining it prevents an obsolete development database from being mistaken for
-the release schema. Older development databases remain intact until the owner
-resets them; that reset loses saved metadata and choices.
+Schema revision is independent of the application version. Development
+databases before revision 9 remain intact until the owner resets them; that
+reset loses saved metadata and choices.
 
 Library owns identification, provider reuse, file facts and search queries.
 Subtitles owns accepted work, supplier policy and subtitle-file operations.

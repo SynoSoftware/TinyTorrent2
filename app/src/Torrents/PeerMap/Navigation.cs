@@ -4,10 +4,9 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
-using Syno.TinyTorrent.Shared;
-using Syno.TinyTorrent.Shell;
 using Windows.System;
 using Windows.UI.Core;
+using static Syno.TinyTorrent.Torrents.MapModel;
 
 namespace Syno.TinyTorrent.Torrents;
 
@@ -18,139 +17,41 @@ public sealed partial class PeerMap
     );
     private const VirtualKey Plus = (VirtualKey)0xBB;
     private const VirtualKey Minus = (VirtualKey)0xBD;
-    private const float OverviewRatio = 1;
-    private float _zoom = 1;
-    private float _ratio = OverviewRatio;
-
-    // ZoomAt, the one way to change the zoom, keeps it from 1 to MaxZoom.
-    private const float MaxZoom = 128;
-
-    // Longitude from _meridian and inverted latitude keep the view independent
-    // of viewport size.
-    private Vector2 _center;
     private Drag? _drag;
-
-    private float ViewScale => _scale * _zoom;
-
-    private Vector2 AxisScale => new Vector2(_ratio, 1) * ViewScale;
-
-    private Matrix3x2 ViewTransform =>
-        Matrix3x2.CreateScale(AxisScale)
-        * Matrix3x2.CreateTranslation(_offset - _center * AxisScale);
-
-    // A location shows once, in the turn of longitude around the view centre.
-    private Vector2 Screen(GeoPoint point)
-    {
-        var mapped = Coordinates(point);
-        mapped.X = Wrap(mapped.X, _center.X);
-        return Vector2.Transform(mapped, ViewTransform);
-    }
-
-    private Vector2 ToMap(Vector2 point) => (point - _offset) / AxisScale + _center;
-
-    private Vector2 Constrain(float zoom, Vector2 center)
-    {
-        var limit = _scale > 0 ? Math.Max(0, 90 - _offset.Y / (_scale * zoom)) : 0;
-        // Longitude scrolls without end; latitude stops at the map's edges.
-        return new Vector2(Wrap(center.X, 0), Math.Clamp(center.Y, -limit, limit));
-    }
-
-    private void SetView(float zoom, Vector2 center, float ratio)
-    {
-        center = Constrain(zoom, center);
-        if (zoom == _zoom && center == _center && ratio == _ratio)
-            return;
-        var previous = (_zoom, IsFitted);
-        _zoom = zoom;
-        _center = center;
-        _ratio = ratio;
-        if (_pointed is not null)
-        {
-            _pointed = null;
-            Describe();
-        }
-        if (previous != (_zoom, IsFitted))
-            RefreshNavigation();
-        _canvas?.Invalidate();
-    }
 
     private void ZoomAt(float factor, Vector2 anchor)
     {
-        if (_scale <= 0)
-            return;
         EndDrag(false);
-        var zoom = Math.Clamp(_zoom * factor, 1, MaxZoom);
-        if (zoom == _zoom)
-            return;
-        Hold(zoom, ToMap(anchor), anchor);
+        _viewport.ZoomAt(factor, anchor);
     }
-
-    // Shows the map point at the screen anchor, with the ratio of the centre
-    // latitude that gives, except where vertical world bounds constrain it.
-    // Zooming and dragging both use it, so the ratio follows the view
-    // continuously and the point under the pointer stays still.
-    private void Hold(float zoom, Vector2 point, Vector2 anchor)
-    {
-        var center = Constrain(zoom, point - (anchor - _offset) / (_scale * zoom));
-        var ratio = CalculateRatio(zoom, center.Y);
-        center.X = point.X - (anchor.X - _offset.X) / (_scale * zoom * ratio);
-        SetView(zoom, center, ratio);
-    }
-
-    private float CalculateRatio(float zoom, float centerY)
-    {
-        // A finite polar view is centred below 90°, keeping its scale positive.
-        var center = Constrain(zoom, new Vector2(0, centerY));
-        return (float)Math.Cos(center.Y * Math.PI / 180);
-    }
-
-    private void Pan(Vector2 delta)
-    {
-        if (_scale > 0)
-            Hold(_zoom, _center - delta / AxisScale, _offset);
-    }
-
-    /// <summary>The whole world shows with the origin in the centre, as Fit leaves it.</summary>
-    private bool IsFitted => _zoom == 1 && _center == Vector2.Zero;
 
     private void Fit()
     {
         EndDrag(false);
-        SetView(1, Vector2.Zero, OverviewRatio);
+        _viewport.Fit();
         Focus(FocusState.Programmatic);
     }
 
     private void OnFit(object sender, RoutedEventArgs args) => Fit();
 
-    private void Reveal(Destination destination)
-    {
-        var point = Screen(destination.Point);
-        var inset = Vector2.Min(new Vector2(12), _offset);
-        var visible = Vector2.Clamp(point, inset, 2 * _offset - inset);
-        // Holding the destination itself keeps it visible when the new
-        // latitude changes the ratio; a pan of the centre would not.
-        if (visible != point)
-            Hold(_zoom, ToMap(point), visible);
-    }
-
-    private Destination? Inspected => _pointed ?? _destinations.FirstOrDefault(IsMarked);
+    private Destination? Inspected => _pointed ?? _model.Destinations.FirstOrDefault(IsMarked);
 
     private void ZoomInspection(float factor)
     {
         var destination = Inspected;
         if (destination is not null)
-            Reveal(destination);
-        ZoomAt(factor, destination is null ? _offset : Screen(destination.Point));
+            _viewport.Reveal(destination.Point);
+        ZoomAt(factor, destination is null ? _viewport.Offset : _viewport.Screen(destination.Point));
     }
 
     private void RefreshNavigation()
     {
-        if (_text is not { } text)
+        if (_model.Text is not { } text)
             return;
-        if (IsFitted && FitButton.FocusState != FocusState.Unfocused)
+        if (_viewport.IsFitted && FitButton.FocusState != FocusState.Unfocused)
             Focus(FocusState.Programmatic);
-        Navigation.Visibility = IsFitted ? Visibility.Collapsed : Visibility.Visible;
-        ZoomLabel.Text = text.Format("peer_map", "zoom", _zoom);
+        Navigation.Visibility = _viewport.IsFitted ? Visibility.Collapsed : Visibility.Visible;
+        ZoomLabel.Text = text.Format("peer_map", "zoom", _viewport.Zoom);
         var fit = text.Get("peer_map", "fit");
         var shortcut = text.Get("shortcuts", "control") + "+" + text.Get("shortcuts", "number_0");
         AutomationProperties.SetName(FitButton, fit);
@@ -184,7 +85,7 @@ public sealed partial class PeerMap
             return;
         Focus(FocusState.Pointer);
         var start = new Vector2((float)point.Position.X, (float)point.Position.Y);
-        _drag = new Drag(args.Pointer.PointerId, start, ToMap(start), _center, _ratio);
+        _drag = new Drag(args.Pointer.PointerId, start, _viewport.ToMap(start), _viewport.Center, _viewport.Ratio);
         args.Handled = true;
     }
 
@@ -210,8 +111,8 @@ public sealed partial class PeerMap
             ProtectedCursor = PanCursor;
             Describe();
         }
-        if (drag.IsActive && _scale > 0)
-            Hold(_zoom, drag.Grip, new Vector2((float)point.Position.X, (float)point.Position.Y));
+        if (drag.IsActive && _viewport.Scale > 0)
+            _viewport.Hold(_viewport.Zoom, drag.Grip, new Vector2((float)point.Position.X, (float)point.Position.Y));
         args.Handled = true;
         return true;
     }
@@ -221,10 +122,10 @@ public sealed partial class PeerMap
         if (_drag is not { } drag || drag.PointerId != args.Pointer.PointerId)
             return;
         var moved = drag.IsActive;
-        if (moved && _scale > 0)
+        if (moved && _viewport.Scale > 0)
         {
             var point = args.GetCurrentPoint(_canvas).Position;
-            Hold(_zoom, drag.Grip, new Vector2((float)point.X, (float)point.Y));
+            _viewport.Hold(_viewport.Zoom, drag.Grip, new Vector2((float)point.X, (float)point.Y));
         }
         EndDrag(false);
         OnPointer(sender, args);
@@ -246,7 +147,7 @@ public sealed partial class PeerMap
         ProtectedCursor = null;
         _canvas?.ReleasePointerCaptures();
         if (cancel && drag.IsActive)
-            SetView(_zoom, drag.Center, drag.Ratio);
+            _viewport.SetView(_viewport.Zoom, drag.Center, drag.Ratio);
         Describe();
     }
 
@@ -278,13 +179,13 @@ public sealed partial class PeerMap
         )
         {
             EndDrag(false);
-            Pan(
+            _viewport.Pan(
                 args.Key switch
                 {
-                    VirtualKey.Left => new Vector2(_offset.X / 4, 0),
-                    VirtualKey.Right => new Vector2(-_offset.X / 4, 0),
-                    VirtualKey.Up => new Vector2(0, _offset.Y / 4),
-                    _ => new Vector2(0, -_offset.Y / 4),
+                    VirtualKey.Left => new Vector2(_viewport.Offset.X / 4, 0),
+                    VirtualKey.Right => new Vector2(-_viewport.Offset.X / 4, 0),
+                    VirtualKey.Up => new Vector2(0, _viewport.Offset.Y / 4),
+                    _ => new Vector2(0, -_viewport.Offset.Y / 4),
                 }
             );
         }
@@ -292,20 +193,20 @@ public sealed partial class PeerMap
             args.Key is VirtualKey.Left or VirtualKey.Up or VirtualKey.Right or VirtualKey.Down
         )
         {
-            if (_destinations.Count == 0)
+            if (_model.Destinations.Count == 0)
                 return;
             var step = args.Key is VirtualKey.Left or VirtualKey.Up ? -1 : 1;
             var index = _pointed is null
-                ? _destinations.FindIndex(IsMarked)
-                : _destinations.IndexOf(_pointed);
+                ? _model.Destinations.FindIndex(IsMarked)
+                : _model.Destinations.IndexOf(_pointed);
             index =
                 index < 0
-                    ? (step > 0 ? 0 : _destinations.Count - 1)
-                    : (index + step + _destinations.Count) % _destinations.Count;
-            _pointed = _destinations[index];
+                    ? (step > 0 ? 0 : _model.Destinations.Count - 1)
+                    : (index + step + _model.Destinations.Count) % _model.Destinations.Count;
+            _pointed = _model.Destinations[index];
             SelectPeers([]);
             Choose(_pointed);
-            Reveal(_pointed);
+            _viewport.Reveal(_pointed.Point);
             Describe();
             _canvas.Invalidate();
         }

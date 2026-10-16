@@ -53,6 +53,10 @@ permanent design, code, and review cost that the user never sees.
 - Before changing engine state, persistence, activation, or shutdown, read the
   [engine contract](docs/engine.md).
 - Before changing communication, read the [protocol contract](docs/protocol.md).
+- Before changing the Library database schema, read the
+  [database contract](docs/database.md). Every change from the current
+  revision 9 on is a migration that keeps saved data, because editing the
+  schema and raising its version makes saved Library databases unusable.
 - Before changing text, language selection, or display formatting, read
   [localisation](docs/localisation.md).
 - Before changing the product UI, read [WinUI instructions](app/AGENTS.md).

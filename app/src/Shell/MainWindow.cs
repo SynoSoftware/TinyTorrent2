@@ -69,7 +69,7 @@ public sealed partial class MainWindow : Window
         Split.ValueCommitted += OnSplitCommitted;
         InspectorSurface.SizeChanged += Motion.Clip;
         Workspace.SizeChanged += (_, _) => UpdateInspectorSize();
-        Toolbar.SizeChanged += (_, _) => UpdateInspectorSize();
+        ToolbarRow.SizeChanged += (_, _) => UpdateInspectorSize();
         StatusBar.SizeChanged += (_, _) => UpdateStatus();
         _uiSettings.TextScaleFactorChanged += OnTextScaling;
         FiltersPane.OpenRequested += OnFiltersOpen;
