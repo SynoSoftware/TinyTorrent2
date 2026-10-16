@@ -6,9 +6,9 @@ $ErrorActionPreference = 'Stop'
 $binary = (Resolve-Path -LiteralPath $BinaryDirectory).Path
 $assembly = [Reflection.Assembly]::LoadFrom((Join-Path $binary 'TinyTorrentUI.dll'))
 $flags = [Reflection.BindingFlags]'Static,NonPublic'
-$map = $assembly.GetType('Syno.TinyTorrent.Controls.PeerMap', $true)
-$areaType = $assembly.GetType('Syno.TinyTorrent.Models.Geography+Area', $true)
-$pointType = $assembly.GetType('Syno.TinyTorrent.Models.GeoPoint', $true)
+$map = $assembly.GetType('Syno.TinyTorrent.Torrents.PeerMap', $true)
+$areaType = $assembly.GetType('Syno.TinyTorrent.Shared.Geography+Area', $true)
+$pointType = $assembly.GetType('Syno.TinyTorrent.Shared.GeoPoint', $true)
 $reach = $map.GetMethod('Reach', $flags)
 $distribute = $map.GetMethod('Distribute', $flags)
 

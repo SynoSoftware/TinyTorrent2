@@ -3,9 +3,10 @@ using System.Windows.Input;
 using Microsoft.Data.Sqlite;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml.Media;
-using Syno.TinyTorrent.Models;
-using Syno.TinyTorrent.Services;
-using Syno.TinyTorrent.Views;
+using Syno.TinyTorrent.Shared;
+using Syno.TinyTorrent.Shared.Network;
+using Syno.TinyTorrent.Shared.Storage;
+using Syno.TinyTorrent.Shell;
 using Selection = Syno.TableView.Selection;
 
 namespace Syno.TinyTorrent.Library;
@@ -527,7 +528,7 @@ public sealed partial class Browser
             ? Task.FromResult(new VideoSearch([], true))
             : _videos.Search(query, fileName, source, cancellation, scope, year, automatic);
 
-    internal Task<Services.RequestBlock?> Protection(
+    internal Task<RequestBlock?> Protection(
         string query,
         string fileName,
         ProviderOption source,
@@ -536,7 +537,7 @@ public sealed partial class Browser
         bool automatic = false
     ) =>
         _videos is null
-            ? Task.FromResult<Services.RequestBlock?>(null)
+            ? Task.FromResult<RequestBlock?>(null)
             : _videos.Protection(query, fileName, source, cancellation, year, automatic);
 
     internal Task<IReadOnlyList<VideoFetch>> Plan(

@@ -2,8 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Net.Http;
 using System.Text.Json;
-using Syno.TinyTorrent.Models;
-using Syno.TinyTorrent.Services;
+using Syno.TinyTorrent.Shared.Network;
 
 namespace Syno.TinyTorrent.Library;
 

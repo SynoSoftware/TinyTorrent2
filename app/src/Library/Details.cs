@@ -4,7 +4,7 @@ using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Documents;
 using Syno.TinyTorrent.Controls;
-using Syno.TinyTorrent.Models;
+using Syno.TinyTorrent.Shared;
 using Windows.Foundation;
 using Windows.UI.ViewManagement;
 

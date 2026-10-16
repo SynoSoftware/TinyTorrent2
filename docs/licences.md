@@ -25,10 +25,10 @@ The absence of a published logo requirement is not permission to use a trademark
 | SubSource | No prescribed logo or app credit found. [Terms](https://subsource.net/terms) reserve translators' rights and prohibit altering subtitles; permitted re-synchronization/re-upload retains translator and sponsor names. | Existing text credit/link is appropriate. Keep downloaded SRT contents unchanged. The source downloads/extracts a selected file; it does not perform subtitle text editing or re-upload. |
 | Cloudflare connection test | No required logo or attribution formula found in the reviewed [speed-test introduction](https://blog.cloudflare.com/test-your-home-network-performance/) or [official speedtest repository](https://github.com/cloudflare/speedtest). | Existing text credit is appropriate. Native code calls measurement endpoints directly; it does not ship the JavaScript module, so that module's MIT licence is not a shipped dependency merely because the service is used. |
 
-Evidence for current notices: [native Credits](../app/src/Views/CreditsPage.xaml.cs),
+Evidence for current notices: [native Credits](../app/src/Shell/CreditsPage.xaml.cs),
 [English catalogue](../app/src/Resources/en.json),
 [Spanish catalogue](../app/src/Resources/es.json), and
-[prototype Credits](../app/about-prototype.html).
+[prototype Credits](../app/prototypes/about-prototype.html).
 
 The prescribed TMDB and IMDb statements retain their English wording in both
 catalogues. Their legal quotations are source notices, not translated UI prose.
@@ -164,7 +164,7 @@ require following rate-limit responses, correct identification and applicable
 content licences. The [User-Agent policy](https://foundation.wikimedia.org/wiki/Policy:Wikimedia_Foundation_User-Agent_Policy/en)
 requires descriptive identification with contact information for automated
 clients. [App.cs](../app/src/App.cs) supplies `TinyTorrent/version` with the
-project/contact URL; [ProviderHttp.cs](../app/src/Services/ProviderHttp.cs) applies
+project/contact URL; [ProviderHttp.cs](../app/src/Shared/Network/ProviderHttp.cs) applies
 that shared value. CC0 permits commercial reuse of
 structured data, but does not exempt the API's operating rules.
 
@@ -220,7 +220,7 @@ separately authorized. Existing personal-key replacement is already supported.
 ### SubSource
 
 [API docs](https://subsource.net/api-docs) tell developers to keep keys secure
-and not share them publicly. [SubSource.cs](../app/src/Subtitles/Supplier/SubSource.cs)
+and not share them publicly. [SubSource.cs](../app/src/Subtitles/Suppliers/SubSource.cs)
 can read a built-in key from assembly metadata, which is recoverable in a
 distributed binary. The owner ruling to ship this key therefore needs an
 applicable exception/authorization from SubSource; binary embedding is not

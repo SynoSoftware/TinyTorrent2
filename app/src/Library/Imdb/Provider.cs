@@ -1,5 +1,5 @@
 using System.Text.Json;
-using Syno.TinyTorrent.Models;
+using Syno.TinyTorrent.Shared;
 
 namespace Syno.TinyTorrent.Library.Imdb;
 

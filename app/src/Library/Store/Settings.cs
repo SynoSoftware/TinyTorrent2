@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
 using Microsoft.Data.Sqlite;
-using Syno.TinyTorrent.Services;
+using Syno.TinyTorrent.Shared;
 
 namespace Syno.TinyTorrent.Library;
 

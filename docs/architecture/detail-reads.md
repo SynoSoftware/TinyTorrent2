@@ -301,7 +301,7 @@ percentiles. Q2 remains open.
   torrent and context results, including results queued before a command reply.
   It keeps its one request slot, command priority, and one unsent read per view.
 - **D10. Open torrent and Open folder** send a `torrent` request with no view
-  (`Detail()` in app/src/MainViewModel/Actions.cs). The engine answers it with
+  (`Detail()` in app/src/Shell/MainViewModel/Actions.cs). The engine answers it with
   the General and Files query sets, using copies younger than 3 s or waiting
   for the missing inputs. Explorer needs complete data and the observed physical
   file names. This uses the same collector and file-name owner as a section
@@ -477,7 +477,7 @@ and the same freshness, because the window reads once a second and
 `Maintain()` also posted once a second. Nothing is lost that I can name. The
 timestamp is needed because "drop on a read for another torrent or view" does
 not cover the same section shown again after minutes: `Inspector.SetVisible`
-(app/src/Views/Inspector.cs) reads at once, and the person would see a
+(app/src/Torrents/Inspector.cs) reads at once, and the person would see a
 minutes-old peer list with speeds for one second. The one-torrent bound is
 needed for protocol.md "Bound payload size and retained snapshots" and
 "Details and old snapshots do not accumulate behind a disconnected client":
@@ -510,7 +510,7 @@ developer tool beside the window, make every read hold. Acceptable.
   completes and then replace it. I prefer the second: it is one more second of
   memory and no new code path.
 - D9: a no-view request needs the General and Files sets together, so it holds
-  for one round trip. `OpenTorrent` (app/src/MainViewModel/Actions.cs) uses
+  for one round trip. `OpenTorrent` (app/src/Shell/MainViewModel/Actions.cs) uses
   `save_path` and the file paths, which need the renamed names, so the hold is
   unavoidable without an engine copy. Fine.
 - Evidence, Cause 2: the per-call cost "0.9–1.3 s" is derived by dividing the
@@ -827,7 +827,7 @@ If there is no held read, wait for the next read as D4 already says. This is
 completion of existing demand, not a watch timer or speculative refresh.
 It needs no new protocol or separate mechanism. The sequence follows D3–D5's
 rules; I checked the single-request wait and deadline in
-app/src/Services/PipeClient.cs, `Execute`, and engine/src/Pipe.cpp, `Serve`.
+app/src/Shared/Engine/PipeClient.cs, `Execute`, and engine/src/Pipe.cpp, `Serve`.
 I did not reproduce it in a running implementation of this proposed design.
 
 **D2: remove the extra `piece_progress` alert-mask requirement.**

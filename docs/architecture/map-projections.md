@@ -478,11 +478,11 @@ contract adds its formula, metadata and one choice; it does not require edits
 to the drawing loop. A projection with different cuts or a restricted domain
 is a larger feature, and must not be advertised as a formula-only addition.
 
-Local evidence: [PeerMap](../../app/src/Controls/PeerMap.xaml.cs),
-[navigation](../../app/src/Controls/PeerMap/Navigation.cs),
-[estimated-place spacing](../../app/src/Controls/PeerMap/Distribution.cs),
-[geographic outline format](../../app/src/Models/Geography.cs),
-[inspector arrangement](../../app/src/Views/InspectorPane/Peers.cs).
+Local evidence: [PeerMap](../../app/src/Torrents/PeerMap.xaml.cs),
+[navigation](../../app/src/Torrents/PeerMap/Navigation.cs),
+[estimated-place spacing](../../app/src/Torrents/PeerMap/Distribution.cs),
+[geographic outline format](../../app/src/Shared/Geography.cs),
+[inspector arrangement](../../app/src/Shell/InspectorPane/Peers.cs).
 
 ## Performance evidence and limits
 
@@ -526,7 +526,7 @@ Use the same geometry, DPI, viewport, theme, peer locations and activity when
 isolating interface overhead. Compare the existing Plate Carree renderer with
 Plate Carree through the proposed interface before comparing Miller or Robinson.
 Report median and tail draw CPU times separately from preparation latency. The
-existing [peer capture](../../app/src/MainWindow/CapturePeers.cs) has useful
+existing [peer capture](../../app/src/Shell/MainWindow/CapturePeers.cs) has useful
 fixtures, but its known-peer timing has no active arcs and explicitly excludes
 GPU execution. It cannot establish complete frame rate or the performance of a
 projection implementation that does not exist yet. A later focused comparison

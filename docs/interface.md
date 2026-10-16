@@ -52,7 +52,7 @@ part of the window chrome. This is the exception to standard button visuals.
 Use the native platform's expression of Fluent. Web component APIs and examples
 do not override WinUI's control semantics or require a second design system.
 
-The visual and interaction reference is `app/prototype.html`, variant
+The visual and interaction reference is `app/prototypes/prototype.html`, variant
 C, commit `8614126` on `main`. Preserve its compact table, collapsible status
 drawer, caption search and Settings composition.
 Implement them with native WinUI controls and the existing TableView and command
@@ -1379,7 +1379,7 @@ own.** The title-bar search already finds settings, including advanced settings;
 a second box duplicates the task and takes a row away from the settings. Keep
 the title-bar search's existing scope of torrents, commands and settings.
 Settings uses the approved Windows Settings composition in
-`app/settings-windows-prototype.html`, variant C, and its accompanying notes.
+`app/prototypes/settings-windows-prototype.html`, variant C, and its accompanying notes.
 Its sidebar contains Home, General, Transfers, Speed limits, Schedule,
 Appearance, Network, Plugins, and Advanced. Advanced appears while
 Advanced mode is on. The sidebar's TinyTorrent logo and name form a
@@ -1898,7 +1898,7 @@ available in both modes and uses that same guarded hide action, then restores th
 previous compact or expanded presentation when shown. Explicit Properties and
 file-reveal commands expand it so the requested content is visible.
 
-General follows `app/general-prototype.html`, variant H, in two titled groups.
+General follows `app/prototypes/general-prototype.html`, variant H, in two titled groups.
 Transfer holds the status and percentage, a native progress bar coloured as the
 same torrent's bar in the table, so completion adds no colour of its own, then
 completed content and time left beside the two live rates. Errors replace the

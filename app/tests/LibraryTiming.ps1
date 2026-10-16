@@ -6,7 +6,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot/SourceChecks.ps1" -BinaryDirectory $BinaryDirectory
-$database = New-Value 'Services.Database' @($directory)
+$database = New-Value 'Shared.Storage.Database' @($directory)
 $store = New-Value 'Library.Store' @($database, $imdb)
 $measurements = [Collections.Generic.List[object]]::new()
 $collections = [Collections.Generic.List[object]]::new()
@@ -84,7 +84,7 @@ COMMIT;
             Invoke-Value $store 'Search' @($query, $cancel) | Out-Null
             [SqlProfile]::Attach($connection)
             foreach ($name in @('Videos', 'Files')) {
-                $configuration = [Enum]::Parse($assembly.GetType('Syno.TinyTorrent.Models.LibraryConfiguration'), $name)
+                $configuration = [Enum]::Parse($assembly.GetType('Syno.TinyTorrent.LibraryConfiguration'), $name)
                 foreach ($text in @('', 'example', 'mystery')) {
                     $query = New-Value 'Library.Query' @($text, $configuration)
                     [SqlProfile]::Times.Clear()
@@ -116,7 +116,7 @@ COMMIT;
             continue
         }
         foreach ($name in @('Videos', 'Music', 'Files')) {
-            $configuration = [Enum]::Parse($assembly.GetType('Syno.TinyTorrent.Models.LibraryConfiguration'), $name)
+            $configuration = [Enum]::Parse($assembly.GetType('Syno.TinyTorrent.LibraryConfiguration'), $name)
             foreach ($text in @('', 'e', 'example', 'mystery')) {
                 $query = New-Value 'Library.Query' @($text, $configuration)
                 $times = [Collections.Generic.List[double]]::new()

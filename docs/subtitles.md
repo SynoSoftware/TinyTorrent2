@@ -130,7 +130,7 @@ Configuration and protected secrets commit together in C# SQLite. No subtitle
 secret belongs in engine settings or the pipe.
 
 The supplier dialog reuses the proxy editor's matching field presentation and
-dialog mechanics, as the [handoff](../app/settings-options-prototype.md#subtitles)
+dialog mechanics, as the [handoff](../app/prototypes/settings-options-prototype.md#subtitles)
 describes. Proxy and supplier drafts, validation, secrets and network operations
 keep their own owners: shared controls do not require a configurable editor
 workflow with mode flags or callback lists. Supplier Check and saved-access
@@ -514,9 +514,9 @@ its cancellation and network route still apply.
 
 | Responsibility | Existing owner to reuse or extend |
 | --- | --- |
-| Dialog shell, buttons, settings layout | [Dialog](../app/src/Controls/Dialog.cs), [ActionButton](../app/src/Controls/ActionButton.cs), [SettingsRow](../app/src/Controls/SettingsRow.cs), [SettingsSection](../app/src/Controls/SettingsSection.cs), and their shared App.xaml styles. Equal action sizing belongs in that shared styling, not a subtitle-only dialog template. |
-| Compound account edits and checks | [Proxy editor](../app/src/Views/Proxy.cs) and [ProxyDialog](../app/src/Views/ProxyDialog.xaml.cs) already handle drafts and obsolete check results. Reuse their common behavior while keeping supplier validation and credentials separate. |
-| Ordinary settings, search and text | [Settings](../app/src/Views/Settings.cs), [SettingsPage](../app/src/Views/SettingsPage.xaml.cs), [Strings](../app/src/Services/Strings.cs), and existing English/Spanish catalogues. Extend their inventory, navigation and save path. |
+| Dialog shell, buttons, settings layout | [Dialog](../app/src/Shared/Dialog.cs), [ActionButton](../app/src/Controls/ActionButton.cs), [SettingsRow](../app/src/Controls/SettingsRow.cs), [SettingsSection](../app/src/Controls/SettingsSection.cs), and their shared App.xaml styles. Equal action sizing belongs in that shared styling, not a subtitle-only dialog template. |
+| Compound account edits and checks | [Proxy editor](../app/src/Settings/Proxy.cs) and [ProxyDialog](../app/src/Settings/ProxyDialog.xaml.cs) already handle drafts and obsolete check results. Reuse their common behavior while keeping supplier validation and credentials separate. |
+| Ordinary settings, search and text | [Settings](../app/src/Settings/Editor.cs), [SettingsPage](../app/src/Settings/SettingsPage.xaml.cs), [Strings](../app/src/Shared/Strings.cs), and existing English/Spanish catalogues. Extend their inventory, navigation and save path. |
 | Commands and background completion | Direct C# asynchronous operations at the subtitle owner; existing PipeClient supplies torrent facts only. No supplier/job pipe protocol. |
 | Saved state and protected secrets | The C# SQLite owner shared with Library; one schema and transaction path, Windows user-scoped DPAPI for secrets. |
 | Subtitle records and pending work | The same C# database owner, with subtitle decisions at the subtitle module. Library enablement never gates subtitle work. |

@@ -1,7 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Animation;
-using Syno.TinyTorrent.Helpers;
 using Windows.Foundation;
 using Windows.UI.ViewManagement;
 

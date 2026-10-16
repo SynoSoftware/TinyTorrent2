@@ -8,7 +8,7 @@ removed IMDb and Rotten Tomatoes website readers are outside this change.
 
 ## Decision and scope
 
-Use one concrete, window-lifetime `Services.RequestPolicy` to own durable
+Use one concrete, window-lifetime `Shared.Network.RequestPolicy` to own durable
 request suppression, access waits, pacing and their reset semantics. Library
 owns identification and metadata reuse. Subtitles owns matching, acquisition
 and file publication. Adapters own endpoint parameters and response decoding.
@@ -108,8 +108,8 @@ operation participates through the current connection. There is no nested
 The policy provides eligibility and due times; feature workers own queue order
 and wakeups. Presentation reads the same policy as execution.
 
-Keep the shared [AccountDialog](../app/src/Views/AccountDialog.cs), plugin access
-declarations and `Services.Credentials` as their existing owners. The dialog
+Keep the shared [AccountDialog](../app/src/Shared/AccountDialog.cs), plugin access
+declarations and `Shared.Credentials` as their existing owners. The dialog
 edits; Library or Subtitles saves/checks; RequestPolicy owns protection. Do not
 add provider-specific editors or a new credential store. Library currently has
 no account-check operation; this feature does not require inventing one.

@@ -5,8 +5,9 @@ using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Syno.TinyTorrent.Models;
-using Syno.TinyTorrent.Services;
+using Syno.TinyTorrent.Shared;
+using Syno.TinyTorrent.Shared.Network;
+using Syno.TinyTorrent.Subtitles.Suppliers;
 
 namespace Syno.TinyTorrent.Subtitles;
 

@@ -1,16 +1,31 @@
-# Proposed organization of app/
+# Organization of app/
 
-15 October 2026 · Revised to the owner's decisions · Proposal only, awaiting reviewer
+16 October 2026 · Implemented · Owner's 15 October decisions retained · Normal Debug x64 build passed
 
 ## Decision and scope
 
 Use seven source areas: Shell, Torrents, Settings, Library, Subtitles, Shared and Controls. Each area starts flat and uses one namespace. Only the supporting folders listed below create nested namespaces; partial-type folders keep their owner's namespace.
 
-This revision adopts the owner's 15 October decisions, including withdrawal of the earlier non-flat-tree requirement. It is a proposal for the reviewer's next pass. Repository source and policy remain unchanged until the owner starts implementation.
+This revision retains the owner's 15 October decisions, including withdrawal of the earlier non-flat-tree requirement, and reconciles the proposal with the 16 October working tree at ec8979d. The owner subsequently authorized execution. Source, direct consumers and naming policy now follow this layout; the relocation map retains the pre-move paths as the implementation record.
 
 Keep one WinUI project, direct concrete dependencies and the existing behavioral owners. Add no interfaces, duplicate presentation implementations or forwarding layers. The changes are file placement, namespaces and their direct consumers, the Settings → Editor rename, and moving the existing RelayCommand declaration into its own shared file.
 
 On 5 October 2026, commit 0f3ff542 justified role folders by familiarity across the owner's other WinUI applications: the same role lived in the same place in each app. The owner now accepts the seven-area split and gives up those identical role-folder locations in exchange for locality within each area. This is a deliberate tradeoff; the other applications are outside this task.
+
+## Changes since the previous inventory
+
+Six files were added and one asset was replaced since the abb170ff snapshot. Their destinations follow the accepted owners; the seven-area design and the Settings → Editor rename are unchanged.
+
+| Current change | Destination and treatment |
+| --- | --- |
+| Controls/Speedometer.xaml and Speedometer.xaml.cs added | Settings/; ConnectionPage is their sole consumer. Keep the Speedometer name and update its XAML class and imports with its code-behind. |
+| Controls/PeerMap/Distribution.cs added | Torrents/PeerMap/Distribution.cs; keep it a PeerMap partial in Syno.TinyTorrent.Torrents, alongside Navigation.cs. |
+| MainWindow/Connections.cs added | Shell/MainWindow/Connections.cs; preserve window placement, map scope and return coordination. |
+| MainWindow/CaptureConnections.cs added | Shell/MainWindow/CaptureConnections.cs; retain the MainWindow partial and coverage by the moved Capture*.cs exclusion. |
+| tests/DistributionChecks.ps1 added | Retain its path and behavior; update its three reflected type names below. |
+| Assets/world.json replaced by Assets/world.bin | Retain world.bin and its embedded resource name. Geography reads this binary; do not restore the removed JSON asset. |
+
+Existing files also changed for connection setup, peer rendering and navigation, and Library's retained file catalogue. Move their current contents, including InspectorPane's InspectorLayout and PeerView declarations, without restoring content from the earlier snapshot. The current enum members and values, database schema, resource keys and feature behavior stay as they are.
 
 ## Areas and namespaces
 
@@ -43,13 +58,13 @@ MainWindow/, MainViewModel/, Inspector/, InspectorPane/, PeerMap/, SettingsPage/
 
 InspectorPane moves permanently to Shell with its XAML, code-behind and Header, Library and Peers partials intact. It composes the torrent and Library tabs for its one consumer, MainWindow. Its existing supporting declarations stay with it. Only namespace and direct-reference adjustments are required.
 
-Inspector.cs and Inspector/Peers.cs move to Torrents with Peer, Tracker, Pieces, PeerMap and its Navigation partial, PiecesMap and SpeedGraph. These remain the torrent-specific state, projections and visual controls. Library's existing Browser and Details retain Library selection, commands and information/file presentation.
+Inspector.cs and Inspector/Peers.cs move to Torrents with Peer, Tracker, Pieces, PeerMap and its Navigation and Distribution partials, PiecesMap and SpeedGraph. These remain the torrent-specific state, projections and visual controls. Library's existing Browser and Details retain Library selection, commands and information/file presentation.
 
 Pane remains one control in Controls. InspectorPane contains Pane; it does not inherit from it. Filters use the same Pane implementation. MainWindow retains placement, split height, collapse/maximize and focus coordination. Shell composition does not give it ownership of feature rules.
 
 | Existing authority | Destination and preserved responsibility |
 | --- | --- |
-| MainWindow and MainViewModel | Shell; retain window/native interaction, feature lifetime, selection and command coordination. Their partials move together, including MainWindow's Capture partials. |
+| MainWindow and MainViewModel | Shell; retain window/native interaction, feature lifetime, selection and command coordination. Their partials move together, including Connections and every Capture partial. |
 | Settings (renamed Editor), Schedule and Proxy | Settings; retain confirmed settings, drafts and submission rules. MainViewModel.Settings keeps its property name. |
 | VideoLookup, Store and IProvider | Library; lookup/identity/cache policy remains with Library, and providers keep only their specific behavior. |
 | Acquisition and Supplier | Subtitles; scheduling, cancellation, matching and storage remain with the existing host, with concrete suppliers under Suppliers. |
@@ -60,7 +75,7 @@ Pane remains one control in Controls. InspectorPane contains Pane; it does not i
 | RelayCommand | Shared root; move the existing declaration unchanged out of MainViewModel.cs. SnapshotAppliedEventArgs and TransferTotals stay with MainViewModel. |
 | TableView and Lucide | Their existing library projects; no copies or replacement libraries. |
 
-Feature-specific controls follow their existing consumers. PeerMap, PiecesMap and SpeedGraph go to Torrents. ThemePicker, WindowsIntegration, LimitSelector, SpeedLimits, PeriodEditor, Scheduler and Week go to Settings. DatasetRow, WorkStatus and Disclosure go to Shared. CrashDialog goes to Shared/Diagnostics. The remaining reusable controls stay flat in Controls; Motion and TextEditor join them.
+Feature-specific controls follow their existing consumers. PeerMap, PiecesMap and SpeedGraph go to Torrents. ThemePicker, WindowsIntegration, LimitSelector, SpeedLimits, Speedometer, PeriodEditor, Scheduler and Week go to Settings. DatasetRow, WorkStatus and Disclosure go to Shared. CrashDialog goes to Shared/Diagnostics. The remaining reusable controls stay flat in Controls; Motion and TextEditor join them.
 
 ## Dialog ownership
 
@@ -99,7 +114,7 @@ Rename only the settings editor type and its file from Settings to Editor. Prese
 
 ## Namespace and member-name audit
 
-The primary architect and the Astra peer checked the requested namespaces against MainViewModel, MainWindow, Supplier and Browser, including their partial files and MainWindow's XAML names. Actual hiding members exist, but ordinary type imports avoid introducing ambiguous namespace expressions. No new namespace aliases are required by this relocation.
+The 15 October review checked the requested namespaces against MainViewModel, MainWindow, Supplier and Browser, including their partial files and MainWindow's XAML names. The 16 October source refresh rechecked those names and the new partials. Actual hiding members exist, but ordinary type imports avoid introducing ambiguous namespace expressions. No new namespace aliases are required by this relocation.
 
 | New namespace name | Existing member or finding | Required treatment |
 | --- | --- | --- |
@@ -125,7 +140,9 @@ Retain the existing, specific aliases below; their targets remain as shown. Thes
 | ProviderOption | Syno.TinyTorrent.Library.ProviderOption | SettingsPage. |
 | Selection | Syno.TableView.Selection | Library/Browser. |
 
-Update existing qualified expressions as well as using directives: Services.Strings becomes imported Strings in MainWindow/Actions and SettingsPage; Services.Database becomes imported Database in MainWindow/Capture; Services.CommandException becomes imported CommandException in CaptureEdits; Browser's Services.RequestBlock becomes imported RequestBlock.
+Update existing qualified expressions as well as using directives: Services.Strings becomes imported Strings in MainWindow/Actions and SettingsPage; Services.Database becomes imported Database in MainWindow/Capture; Services.CommandException becomes imported CommandException in CaptureEdits; Browser's Services.RequestBlock becomes imported RequestBlock. Controls.Dialog becomes imported Dialog in MainWindow/Library, Datasets and CaptureSettings; Views.ConnectionPage and Views.SettingsPage in CaptureSettings become imported type names.
+
+PeerMap and its Distribution partial now use Models.Peer explicitly; replace those type references with Peer in their shared Torrents namespace. MainViewModel/About uses Models.WindowPage, which becomes WindowPage at the project root. Preserve qualification where a member hides the type: Library/Imdb/Dataset's Models.FileName.Normalize becomes Syno.TinyTorrent.Shared.FileName.Normalize because Dataset already has a FileName constant. Pane's Models.Dock references can use Syno.TinyTorrent.Dock beside its Dock property. None of these changes calls for another alias or a renamed member.
 
 The Editor rename must cover constructors, types, static calls and nameof. Source checks identified Settings.TryInteger in Proxy and SettingsPage; Settings.RateInput and Settings.TryRate in SpeedLimit; nameof(Settings.IsPending) and Settings.TryNumber in ConnectionSetup; and Settings.RateInput/TryNumber in the existing Settings.cs. Change these type references to Editor while preserving the MainViewModel.Settings property.
 
@@ -135,7 +152,7 @@ During implementation, update XAML x:Class, xmlns mappings, typed resources and 
 
 | Consumer | Required change |
 | --- | --- |
-| app/src/TinyTorrent.csproj | Change the conditional Compile Remove from MainWindow\Capture*.cs to Shell\MainWindow\Capture*.cs. Keep the project path, root namespace, project references and resource/copy/publish configuration. |
+| app/src/TinyTorrent.csproj | Change the conditional Compile Remove from MainWindow\Capture*.cs to Shell\MainWindow\Capture*.cs, including CaptureConnections.cs. Keep the project path, root namespace, project references and resource/copy/publish configuration, including Assets\world.bin with LogicalName world.bin. |
 | CopyEngine.ps1 and CountryData.ps1 | Keep both at app/. Keep their existing ..\CopyEngine.ps1 and ..\CountryData.ps1 UpToDateCheckInput paths and Exec paths unchanged. |
 | app/tests | Keep every script and Store fixture at its present path. Preserve script-relative paths and default binary locations. Update only type-name references affected by the namespace/type changes. |
 | app/prototypes | Move all 19 existing HTML/Markdown prototype files here with no subfolders. Preserve basenames and tracked/ignored status; adjust live documentation links and relative URLs as needed. |
@@ -145,7 +162,7 @@ During implementation, update XAML x:Class, xmlns mappings, typed resources and 
 | Documentation | Update current source links/maps in docs/architecture.md, docs/architecture-current.md and other live references found by searching old paths; update prototype links. Keep historical prose clearly historical. |
 | App and consumers outside moved files | Update imports and explicit type/XAML references to moved owners; no compatibility namespaces. |
 
-Both anchored .gitignore entries are accounted for. Decision 6 keeps the Store path and its ignore line fixed, so only the prototype line changes.
+Both anchored .gitignore entries are accounted for. The accepted scope keeps the Store path and its ignore line fixed, so only the prototype line changes.
 
 AddSourceChecks.ps1 contains the following reflected names. Each must follow the declaration, including supporting types that share a file:
 
@@ -160,36 +177,53 @@ AddSourceChecks.ps1 contains the following reflected names. Each must follow the
 | Syno.TinyTorrent.Models.SettingKind | Syno.TinyTorrent.SettingKind |
 | Syno.TinyTorrent.Models.SettingsCategory | Syno.TinyTorrent.SettingsCategory |
 
-Apply the same declaration-based updates to reflection consumers in the other existing scripts: NavigationChecks references Navigation and enums; ProviderChecks references network types and enums; LibraryTiming references LibraryConfiguration; SourceChecks references shared owners and enums through both full names and suffix strings passed to Get-Type/New-Value. Keep their files, fixtures and test behavior in place. Search literal type names across the repository, not only C# imports.
+DistributionChecks.ps1 adds three reflected names that must follow PeerMap and Geography, including Geography's nested Area and the GeoPoint declaration in the same file:
+
+| Existing full name | Replacement full name |
+| --- | --- |
+| Syno.TinyTorrent.Controls.PeerMap | Syno.TinyTorrent.Torrents.PeerMap |
+| Syno.TinyTorrent.Models.Geography+Area | Syno.TinyTorrent.Shared.Geography+Area |
+| Syno.TinyTorrent.Models.GeoPoint | Syno.TinyTorrent.Shared.GeoPoint |
+
+Apply the same declaration-based updates to reflection consumers in the other existing scripts: NavigationChecks references Navigation (now Shell.Navigation) and enums; ProviderChecks references network types and enums; LibraryTiming references Services.Database and LibraryConfiguration; SourceChecks references shared owners, enums and OpenSubtitles through both full names and suffix strings passed to Get-Type/New-Value. Its Subtitles.OpenSubtitles suffix must follow that declaration into Subtitles.Suppliers. Keep the scripts, fixtures and test behavior in place. Search literal type names across the repository, not only C# imports.
 
 ## Implementation sequence and bounded validation
 
-This section describes the later implementation after the reviewer checks the revised plan and the owner prepares the tree. It does not start implementation.
+The following sequence records the approved implementation scope. Execution and its bounded validation are complete; evidence is recorded below.
 
-1. Reinventory the owner-prepared working tree and reconcile any changed paths with the map. Preserve all existing work; do not stash, reset or commit it.
+1. Reinventory the owner-prepared working tree and reconcile any changed paths with the map. Preserve all existing work; do not stash, reset or commit it. Register the implementation's build inputs under docs/compilation.md before editing them.
 2. Apply the relocation map and the one RelayCommand declaration move. Update namespaces, Editor references, XAML references, reflection names, the conditional Capture exclusion, documentation, naming policy and the prototype ignore path in the same change.
 3. Before any build, run the cheap source checks below and review the complete diff for accidental behavior changes or duplicate declarations.
-4. After all edits and cheap checks, use the task's explicit authorization for one Debug x64 build of app/src/TinyTorrent.csproj. A second build is authorized only if the first fails; correct the cause before that second attempt. Do not broaden this into a solution build or separate engine/third-party rebuild. Use the repository's existing build/output rules, inspect the build summary and check output containment. Report remaining failures or unavailable prerequisites rather than spending additional builds.
-5. Return the complete move diff and verification results. The intended eventual history is one commit for the moves and their required reference/policy updates. Creating that commit is not part of this proposal revision.
+4. After all edits and cheap checks, queue the ready revision through docs/compilation.md and use a shared Debug x64 build of app/src/TinyTorrent.csproj covering that revision. Preserve this proposal's original limit of one build and a second only to correct a failure, subject to the shared interval and exclusive ownership. Do not broaden this into a solution build or separate engine/third-party rebuild. Inspect the build summary and output containment; report remaining failures or unavailable prerequisites rather than spending additional builds.
+5. Return the complete move diff and verification results. The intended eventual history is one commit for the moves and their required reference/policy updates. Creating that commit is not part of this execution.
 
 Cheap checks, before the build:
 
 - No app source declaration remains in Syno.TinyTorrent.Views, Models, Services or Helpers, including their descendants; remove stale imports and qualified references too.
 - Every XAML x:Class matches a C# partial declaration in the same namespace, including all relocated parts. Check declarations rather than assuming a .xaml.cs filename: SpeedLimitDialog is declared in SpeedLimit.cs, and Scheduler, Week and MainWindow also use existing non-.xaml.cs code-behind names.
 - Every ordinary using Syno.TinyTorrent.* resolves to an existing namespace; every type alias resolves to a declaration. Parts folders create no namespaces. Check XAML xmlns references against the same inventory.
-- The project excludes Shell\MainWindow\Capture*.cs when EnableCapture is false. All Capture partials remain MainWindow parts.
-- The eight reflected type names in AddSourceChecks.ps1 match the replacement table; all other affected reflection strings follow their moved declarations.
+- The project excludes Shell\MainWindow\Capture*.cs when EnableCapture is false, including CaptureConnections.cs. All Capture partials remain MainWindow parts.
+- The eight reflected type names in AddSourceChecks.ps1 and three in DistributionChecks.ps1 match their replacement tables; all other affected reflection strings follow their moved declarations.
+- Assets/world.bin remains the resource read by Geography under the unchanged world.bin manifest name; the removed world.json has no relocation entry.
 - The final path set matches the agreed relocation map with no duplicate destinations or old copies. Scripts and fixtures remain at their specified paths; prototype links and both ignore entries are correct.
 
-No app launch or test execution is included. The normal build excludes Capture partials; their moved references receive source checks. Compilation and runtime behavior are not claimed by the proposal's source review.
+No app launch or test execution is included. The normal build excludes Capture partials; their moved references receive source checks. The successful normal build validates the relocated production source; capture-only code received source checks. Runtime behavior was not exercised.
 
-## Proposal verification
+## Inventory and implementation verification
 
-The reviewed inventory contains 268 existing app paths, including 203 C#/XAML files, 19 prototype documents and the observed ignored local log. The map assigns every existing path exactly one destination: 154 paths change and 114 remain. One additional file receives the existing RelayCommand declaration, giving 269 final paths and 204 C#/XAML files in this snapshot.
+The refreshed inventory contains 274 existing app paths, including 208 C#/XAML files, 19 prototype documents and the observed ignored local log. The map assigns every existing path exactly one destination: 159 paths change and 115 remain. One additional file receives the existing RelayCommand declaration, giving 275 final paths and 209 C#/XAML files in this snapshot.
 
-The inventory was checked against the working checkout based on abb170ff. Other work is active in that checkout; these counts describe this proposal snapshot and do not require a clean tree or authorize changing the owner's work.
+The inventory was checked on 16 October against the working checkout at ec8979d, including ignored app paths, and compared with the previous abb170ff snapshot. Other work is active in that checkout; these counts describe this proposal snapshot and do not require a clean tree or authorize changing the owner's work.
 
-The two proposal formats use the same section text, target tree and relocation data. Checks cover inventory completeness, unique targets, allowed supporting folders, unchanged test/script paths, flat prototypes and the namespace/member audit. Neither product source nor repository policy has been edited. No build, test, app launch, stash, reset or commit was performed for this revision.
+The Markdown plan and HTML review copy use the same section text, target tree and relocation data. Checks cover inventory completeness, unique targets, allowed supporting folders, unchanged test/script paths, flat prototypes, reflected names and the namespace/member audit. Execution applied all 159 path moves, extracted the existing RelayCommand unchanged, and updated imports, XAML namespaces, reflection strings, Editor type references, the Capture exclusion, prototype URLs, ignore rules and live documentation. The final inventory contains 275 paths, 180 C# files and 29 XAML files. All 282 distinct top-level types and 17 existing aliases are accounted for, with no old copies, obsolete namespace declarations or unresolved app namespace/type references.
+
+The focused review passes checked paths and indirect consumers, preserved behavioral ownership, and re-read the corrected result. They caught an overbroad Settings replacement in two MainViewModel partials; those references retain the Settings property. C# syntax parsing included CAPTURE code. All 29 XAML documents are equivalent after normalizing the approved type/namespace changes. Reflected type literals follow their declarations. Existing source comments, string literals and file encodings were preserved; the owner’s unrelated changes remain in place.
+
+The normal Debug x64 app build succeeded on 16 October, 04:01:26–04:04:29 UTC, with exit code 0 and no reported errors or warnings. Shared record: artifacts/compilation/builds/app-reorganisation-1.md; log and runtime output hashes are recorded beside it. All 298 frozen build inputs were unchanged during compilation. Output containment and git diff --check passed. The build reused the existing native engine and compiled only the app and its managed dependencies.
+
+No test execution, app launch, stash, reset or commit was performed. The normal build excludes Capture partials; their syntax and references were checked, but capture compilation and runtime validation remain outside this plan. The separate peer-pane-close task retains its own capture validation.
+
+A second pass after execution rechecked the complete map, the Markdown/HTML match and the hashes of all compiled inputs. Normalizing only the approved namespace/type edits found no other code changes. The review corrected a prototype's moved WinUI-instructions link and remaining short source paths in the subtitle documentation. Production build inputs are unchanged, so the successful build still covers the final source.
 
 ## Complete target tree
 
@@ -244,7 +278,7 @@ The local ignored myeasylog.log is retained in the map but omitted from this sou
     │   │   ├── ThemeDark.jpg
     │   │   ├── ThemeLight.jpg
     │   │   ├── tmdb.svg
-    │   │   └── world.json
+    │   │   └── world.bin
     │   ├── Controls/
     │   │   ├── ActionButton.cs
     │   │   ├── CheckStatus.xaml
@@ -340,6 +374,8 @@ The local ignored myeasylog.log is retained in the map but omitted from this sou
     │   │   ├── SettingsPage.xaml.cs
     │   │   ├── SpeedLimits.xaml
     │   │   ├── SpeedLimits.xaml.cs
+    │   │   ├── Speedometer.xaml
+    │   │   ├── Speedometer.xaml.cs
     │   │   ├── ThemePicker.xaml
     │   │   ├── ThemePicker.xaml.cs
     │   │   ├── Week.cs
@@ -409,6 +445,7 @@ The local ignored myeasylog.log is retained in the map but omitted from this sou
     │   │   │   ├── Actions.cs
     │   │   │   ├── Associations.cs
     │   │   │   ├── Capture.cs
+    │   │   │   ├── CaptureConnections.cs
     │   │   │   ├── CaptureEdits.cs
     │   │   │   ├── CaptureFiles.cs
     │   │   │   ├── CaptureLibrary.cs
@@ -419,6 +456,7 @@ The local ignored myeasylog.log is retained in the map but omitted from this sou
     │   │   │   ├── CaptureSettings.cs
     │   │   │   ├── CaptureTraffic.cs
     │   │   │   ├── Chrome.cs
+    │   │   │   ├── Connections.cs
     │   │   │   ├── Datasets.cs
     │   │   │   ├── Dialogs.cs
     │   │   │   ├── Library.cs
@@ -469,6 +507,7 @@ The local ignored myeasylog.log is retained in the map but omitted from this sou
     │   │   ├── Inspector/
     │   │   │   └── Peers.cs
     │   │   ├── PeerMap/
+    │   │   │   ├── Distribution.cs
     │   │   │   └── Navigation.cs
     │   │   ├── AddDialog.xaml
     │   │   ├── AddDialog.xaml.cs
@@ -500,6 +539,7 @@ The local ignored myeasylog.log is retained in the map but omitted from this sou
     │   │   └── settings.json
     │   ├── AddSourceChecks.ps1
     │   ├── Capture.ps1
+    │   ├── DistributionChecks.ps1
     │   ├── LibraryTiming.ps1
     │   ├── NavigationChecks.ps1
     │   ├── ProviderChecks.ps1
@@ -569,7 +609,7 @@ Paths are relative to the repository root. A retained path is listed explicitly;
 | `app/src/Assets/ThemeDark.jpg` | `app/src/Assets/ThemeDark.jpg` | Retain path. |
 | `app/src/Assets/ThemeLight.jpg` | `app/src/Assets/ThemeLight.jpg` | Retain path. |
 | `app/src/Assets/tmdb.svg` | `app/src/Assets/tmdb.svg` | Retain path. |
-| `app/src/Assets/world.json` | `app/src/Assets/world.json` | Retain path. |
+| `app/src/Assets/world.bin` | `app/src/Assets/world.bin` | Retain path and world.bin embedded resource name; replaces the removed world.json. |
 | `app/src/Controls/ActionButton.cs` | `app/src/Controls/ActionButton.cs` | Retain path. |
 | `app/src/Controls/CheckStatus.xaml` | `app/src/Controls/CheckStatus.xaml` | Retain path. |
 | `app/src/Controls/CheckStatus.xaml.cs` | `app/src/Controls/CheckStatus.xaml.cs` | Retain path. |
@@ -592,6 +632,7 @@ Paths are relative to the repository root. A retained path is listed explicitly;
 | `app/src/Controls/Pane.cs` | `app/src/Controls/Pane.cs` | Retain path. |
 | `app/src/Controls/PeerMap.xaml` | `app/src/Torrents/PeerMap.xaml` | Move; update namespace and direct consumers where applicable. |
 | `app/src/Controls/PeerMap.xaml.cs` | `app/src/Torrents/PeerMap.xaml.cs` | Move; update namespace and direct consumers where applicable. |
+| `app/src/Controls/PeerMap/Distribution.cs` | `app/src/Torrents/PeerMap/Distribution.cs` | Move with PeerMap; keep its partial namespace and update Models.Peer references and reflected consumers. |
 | `app/src/Controls/PeerMap/Navigation.cs` | `app/src/Torrents/PeerMap/Navigation.cs` | Move; update namespace and direct consumers where applicable. |
 | `app/src/Controls/PeriodEditor.xaml` | `app/src/Settings/PeriodEditor.xaml` | Move; update namespace and direct consumers where applicable. |
 | `app/src/Controls/PeriodEditor.xaml.cs` | `app/src/Settings/PeriodEditor.xaml.cs` | Move; update namespace and direct consumers where applicable. |
@@ -609,6 +650,8 @@ Paths are relative to the repository root. A retained path is listed explicitly;
 | `app/src/Controls/SpeedGraph.xaml.cs` | `app/src/Torrents/SpeedGraph.xaml.cs` | Move; update namespace and direct consumers where applicable. |
 | `app/src/Controls/SpeedLimits.xaml` | `app/src/Settings/SpeedLimits.xaml` | Move; update namespace and direct consumers where applicable. |
 | `app/src/Controls/SpeedLimits.xaml.cs` | `app/src/Settings/SpeedLimits.xaml.cs` | Move; update namespace and direct consumers where applicable. |
+| `app/src/Controls/Speedometer.xaml` | `app/src/Settings/Speedometer.xaml` | Move with ConnectionPage; update x:Class to Syno.TinyTorrent.Settings.Speedometer. |
+| `app/src/Controls/Speedometer.xaml.cs` | `app/src/Settings/Speedometer.xaml.cs` | Move with ConnectionPage; update namespace and direct consumers where applicable. |
 | `app/src/Controls/Splitter.xaml` | `app/src/Controls/Splitter.xaml` | Retain path. |
 | `app/src/Controls/Splitter.xaml.cs` | `app/src/Controls/Splitter.xaml.cs` | Retain path. |
 | `app/src/Controls/Strip.cs` | `app/src/Controls/Strip.cs` | Retain path. |
@@ -666,6 +709,7 @@ Paths are relative to the repository root. A retained path is listed explicitly;
 | `app/src/MainWindow/Actions.cs` | `app/src/Shell/MainWindow/Actions.cs` | Move; update namespace and direct consumers where applicable. |
 | `app/src/MainWindow/Associations.cs` | `app/src/Shell/MainWindow/Associations.cs` | Move; update namespace and direct consumers where applicable. |
 | `app/src/MainWindow/Capture.cs` | `app/src/Shell/MainWindow/Capture.cs` | Move; update namespace and direct consumers where applicable. |
+| `app/src/MainWindow/CaptureConnections.cs` | `app/src/Shell/MainWindow/CaptureConnections.cs` | Move with MainWindow; remain covered by Shell\MainWindow\Capture*.cs exclusion. |
 | `app/src/MainWindow/CaptureEdits.cs` | `app/src/Shell/MainWindow/CaptureEdits.cs` | Move; update namespace and direct consumers where applicable. |
 | `app/src/MainWindow/CaptureFiles.cs` | `app/src/Shell/MainWindow/CaptureFiles.cs` | Move; update namespace and direct consumers where applicable. |
 | `app/src/MainWindow/CaptureLibrary.cs` | `app/src/Shell/MainWindow/CaptureLibrary.cs` | Move; update namespace and direct consumers where applicable. |
@@ -676,6 +720,7 @@ Paths are relative to the repository root. A retained path is listed explicitly;
 | `app/src/MainWindow/CaptureSettings.cs` | `app/src/Shell/MainWindow/CaptureSettings.cs` | Move; update namespace and direct consumers where applicable. |
 | `app/src/MainWindow/CaptureTraffic.cs` | `app/src/Shell/MainWindow/CaptureTraffic.cs` | Move; update namespace and direct consumers where applicable. |
 | `app/src/MainWindow/Chrome.cs` | `app/src/Shell/MainWindow/Chrome.cs` | Move; update namespace and direct consumers where applicable. |
+| `app/src/MainWindow/Connections.cs` | `app/src/Shell/MainWindow/Connections.cs` | Move with MainWindow; preserve map scope, placement and return coordination. |
 | `app/src/MainWindow/Datasets.cs` | `app/src/Shell/MainWindow/Datasets.cs` | Move; update namespace and direct consumers where applicable. |
 | `app/src/MainWindow/Dialogs.cs` | `app/src/Shell/MainWindow/Dialogs.cs` | Move; update namespace and direct consumers where applicable. |
 | `app/src/MainWindow/Library.cs` | `app/src/Shell/MainWindow/Library.cs` | Move; update namespace and direct consumers where applicable. |
@@ -783,6 +828,7 @@ Paths are relative to the repository root. A retained path is listed explicitly;
 | `app/status-bar-prototype.html` | `app/prototypes/status-bar-prototype.html` | Move to flat prototypes folder; preserve filename and tracked/ignored status; repair references. |
 | `app/tests/AddSourceChecks.ps1` | `app/tests/AddSourceChecks.ps1` | Retain path, fixtures and script-relative paths; update affected reflection type names only. |
 | `app/tests/Capture.ps1` | `app/tests/Capture.ps1` | Retain path, fixtures and script-relative paths; update affected reflection type names only. |
+| `app/tests/DistributionChecks.ps1` | `app/tests/DistributionChecks.ps1` | Retain path and behavior; update reflected PeerMap, Geography+Area and GeoPoint names. |
 | `app/tests/LibraryTiming.ps1` | `app/tests/LibraryTiming.ps1` | Retain path, fixtures and script-relative paths; update affected reflection type names only. |
 | `app/tests/NavigationChecks.ps1` | `app/tests/NavigationChecks.ps1` | Retain path, fixtures and script-relative paths; update affected reflection type names only. |
 | `app/tests/ProviderChecks.ps1` | `app/tests/ProviderChecks.ps1` | Retain path, fixtures and script-relative paths; update affected reflection type names only. |

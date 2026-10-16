@@ -2,7 +2,6 @@ using System.ComponentModel;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Syno.TableView;
-using Syno.TinyTorrent.Models;
 
 namespace Syno.TinyTorrent.Library;
 

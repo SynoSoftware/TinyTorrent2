@@ -1,5 +1,6 @@
-using Syno.TinyTorrent.Models;
-using Syno.TinyTorrent.Services;
+using Syno.TinyTorrent.Shared;
+using Syno.TinyTorrent.Shared.Network;
+using Syno.TinyTorrent.Shared.Storage;
 
 namespace Syno.TinyTorrent.Subtitles;
 

@@ -6,8 +6,8 @@ $ErrorActionPreference = 'Stop'
 $binary = (Resolve-Path -LiteralPath $BinaryDirectory).Path
 $assembly = [Reflection.Assembly]::LoadFrom((Join-Path $binary 'TinyTorrentUI.dll'))
 $flags = [Reflection.BindingFlags]'Instance,Public,NonPublic'
-$strings = [Activator]::CreateInstance($assembly.GetType('Syno.TinyTorrent.Services.Strings', $true))
-$type = $assembly.GetType('Syno.TinyTorrent.Views.AddSource', $true)
+$strings = [Activator]::CreateInstance($assembly.GetType('Syno.TinyTorrent.Shared.Strings', $true))
+$type = $assembly.GetType('Syno.TinyTorrent.Torrents.AddSource', $true)
 $source = $type.GetConstructors($flags)[0].Invoke([object[]]@('source.torrent', $strings, $null))
 
 function Apply-Preview([string] $TorrentId) {
@@ -47,16 +47,16 @@ if (!$source.NeedsFiles -or $source.Files.HasWanted) {
 Write-Output 'PASS: duplicate recovery initializes file choices and preserves later edits.'
 
 # Inspect queued settings commands without starting a pipe or touching the user's engine.
-$settingsType = $assembly.GetType('Syno.TinyTorrent.Views.Settings', $true)
-$settingType = $assembly.GetType('Syno.TinyTorrent.Views.Setting', $true)
-$preferenceType = $assembly.GetType('Syno.TinyTorrent.Views.DialogPreference', $true)
-$clientType = $assembly.GetType('Syno.TinyTorrent.Services.PipeClient', $true)
+$settingsType = $assembly.GetType('Syno.TinyTorrent.Settings.Editor', $true)
+$settingType = $assembly.GetType('Syno.TinyTorrent.Settings.Setting', $true)
+$preferenceType = $assembly.GetType('Syno.TinyTorrent.Shared.DialogPreference', $true)
+$clientType = $assembly.GetType('Syno.TinyTorrent.Shared.Engine.PipeClient', $true)
 $settings = [Runtime.CompilerServices.RuntimeHelpers]::GetUninitializedObject($settingsType)
 $client = $clientType.GetConstructors($flags)[0].Invoke([object[]]@($strings))
 $clientType.GetField('_connected', $flags).SetValue($client, $true)
 $settingsType.GetField('_client', $flags).SetValue($settings, $client)
-$kind = [Enum]::Parse($assembly.GetType('Syno.TinyTorrent.Models.SettingKind'), 'Boolean')
-$category = [Enum]::Parse($assembly.GetType('Syno.TinyTorrent.Models.SettingsCategory'), 'General')
+$kind = [Enum]::Parse($assembly.GetType('Syno.TinyTorrent.SettingKind'), 'Boolean')
+$category = [Enum]::Parse($assembly.GetType('Syno.TinyTorrent.SettingsCategory'), 'General')
 $document = [Text.Json.JsonDocument]::Parse('true')
 $enabled = $document.RootElement.Clone()
 $document.Dispose()

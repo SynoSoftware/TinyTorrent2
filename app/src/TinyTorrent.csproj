@@ -59,7 +59,7 @@
     <ArtifactsPivots>$(Configuration.ToLowerInvariant())_$(RuntimeIdentifier.ToLowerInvariant())_capture</ArtifactsPivots>
   </PropertyGroup>
   <ItemGroup Condition="'$(EnableCapture)' != 'true'">
-    <Compile Remove="MainWindow\Capture*.cs" />
+    <Compile Remove="Shell\MainWindow\Capture*.cs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.13" />

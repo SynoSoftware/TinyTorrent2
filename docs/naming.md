@@ -136,17 +136,17 @@ minimum. A low caller count is not proof that a cohesive asset is obsolete.
 Each project has one enum file, and every enum the project declares lives there,
 one member per line, including enums only one type uses. This gives each
 project's vocabulary one discoverable home instead of scattering declarations
-among their current consumers. Managed projects use `Enums.cs`: the product app
-keeps it in `Models/`, and a library keeps it beside its project file. The
-native engine uses `engine/inc/Enums.h`. That prescribed home may be smaller
+among their current consumers. Managed projects keep `Enums.cs` beside their
+project file, in the project's root namespace. The native engine uses
+`engine/inc/Enums.h`. That prescribed home may be smaller
 than the fragmentation minimum; keep it concise rather than padding it.
 
 Split code by authority, lifetime, thread ownership or transaction boundary, not by screen, action
 or file length: those splits scatter one decision across files that must change together. Code
 lives with its owner. Add no dumping-ground file such as `Utils.cs`, `Common.cs` or
 `TableHelper.cs`. A library adds no folder by kind such as `Helpers/`, `Models/` or
-`Converters/`, because each separates code from the decision it serves. The product app's shared
-code groups by role, as [app folders](#app-folders) describes. Apart from those, the fixed `Themes/` and
+`Converters/`, because each separates code from the decision it serves. The product app
+groups code by area ownership, as [app folders](#app-folders) describes. The fixed `Themes/` and
 `Resources/` folders below and the package folders `Assets/` and `Properties/` are the only folders
 by kind, with the native engine's `engine/inc/`, which holds its headers by the repository owner's
 ruling. Extension methods stay technical and hold no product rule.
@@ -225,33 +225,49 @@ Project names are unique in the repository, because each project writes to
 
 ### App folders
 
-The product app in `app/src` keeps its built-in Library and Subtitles features in
-`Library/` and `Subtitles/`. Each folder owns its feature's presentation, behavior,
-and persistence operations, so a feature change stays local instead of spreading
-through the torrent app. They remain in the existing project. There is no
-`Plugins/` wrapper: these features have no independent installation or loading
-mechanism for that name to describe.
+The product app in `app/src` has seven areas in one WinUI project. Each starts
+flat and owns its related presentation, behavior and state, so a feature change
+stays local. The root holds `App`, `Enums.cs`, the project and manifest;
+`Assets/`, `Resources/` and `Properties/` retain their packaging roles.
 
-Library's `Imdb/`, `Tmdb/`, `Wikidata/`, `Omdb/` and `MdbList/` folders own their respective metadata providers;
-Library owns the shared lookup, identity and cache decisions. Subtitles owns its
-supplier implementations and acquisition workflow. Shared file membership,
-database transactions, network routing and window/dialog coordination remain
-outside both features, because they serve the app and both features. Neither
-feature owns the other's lifetime or error handling.
+- `Shell/` owns MainWindow, MainViewModel, Navigation, AboutPage, CreditsPage and
+  InspectorPane. It composes the features and coordinates their lifetime and
+  native window interactions; feature rules remain with their existing owners.
+- `Torrents/` owns torrent state, Inspector, peers, trackers, pieces, torrent
+  visualizations, addition, file operations and speed-limit editing.
+- `Settings/` owns Editor, SettingsPage, connection and proxy setup, scheduling,
+  limits, theme and Windows integration. MainViewModel.Settings retains its
+  property name; Editor identifies the settings editor type without colliding
+  with its namespace.
+- `Library/` owns its presentation, lookup, identity, catalogue and cache rules.
+  `Imdb/`, `Tmdb/`, `Wikidata/`, `Omdb/` and `MdbList/` own their respective
+  provider behavior.
+- `Subtitles/` owns acquisition and its shared supplier contract. `Suppliers/`
+  holds OpenSubtitles, SubDL and SubSource; the Supplier base stays at the root.
+- `Shared/` owns common dialogs, drafts, accounts, file membership, dataset and
+  work presentation, text, geography and RelayCommand. Its `Engine/`, `Storage/`,
+  `Network/`, `Desktop/` and `Diagnostics/` folders group the engine connection,
+  database, network policy, Windows integration mechanics and failure reporting.
+- `Controls/` owns reusable UI controls and framework mechanics, including the
+  state a control owns, such as FileSelection beside FileBrowser.
 
-Shared app code remains grouped by role:
+Each area is a namespace, such as `Syno.TinyTorrent.Torrents`. Only the listed
+provider, supplier and Shared supporting folders add namespace segments. Parts
+folders retain their owner's namespace; a record created by one type stays in
+that type's file. Prototype HTML and Markdown live flat in `app/prototypes/`;
+tests, fixtures and build scripts retain their component paths.
 
-- The root holds `App`, `MainWindow` and `MainViewModel` with their parts folders. The main view
-  model owns every other view model, so the owner sits above the folders that hold what it owns.
-- `Views/` holds shared and torrent page and dialog content beside the view model it binds to. They are user
-  controls that the main window hosts; the app has no navigation frame, so the folder is not
-  `Pages/`. A `*Dialog` view is the content placed inside `Controls/Dialog`.
-- `Controls/` holds the custom controls that a view or the main window places in its layout, with
-  the state a control owns, such as `FileSelection` for `FileBrowser`.
-- `Models/` holds the data the views show, value types such as `PeriodSpan`, and `Enums.cs`.
-- `Services/` holds input and output: the engine pipe and the language catalogues.
-- `Helpers/` holds UI-framework mechanics with no product rule. A product rule, such as how a
-  torrent formats its size, stays with its owner.
+**Owner ruling:** SettingsPage retains Page because the shorter name collides
+with WinUI; LibraryTable and SubtitleFile retain their established names. These
+specific accepted repetitions do not relax the general scope-repetition rule.
 
-Each role folder is a namespace (`Syno.TinyTorrent.Views`). A record that only one type creates
-stays in that type's file.
+Feature dialog content and drafts live with their operation and use the one
+sealed `Shared.Dialog`, through MainWindow's existing coordination. Shared
+database transactions, network routing and file membership remain outside
+Library and Subtitles because they serve both features and the torrent app.
+The move changes placement, not behavioral ownership, and adds no forwarding
+layers or independently loaded plugins.
+
+The owner accepts locality within these areas in place of identical role-folder
+locations across their other WinUI applications, the tradeoff recorded in the
+[15 October organization plan](../plans/app-reorganisation-2026-10-15.md).

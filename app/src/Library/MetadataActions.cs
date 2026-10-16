@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml.Controls;
 using Syno.TinyTorrent.Controls;
+using Syno.TinyTorrent.Shared;
 
 namespace Syno.TinyTorrent.Library;
 

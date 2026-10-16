@@ -1,7 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Syno.TinyTorrent.Controls;
-using Syno.TinyTorrent.Models;
 
 namespace Syno.TinyTorrent.Library;
 

@@ -59,7 +59,7 @@ outside the permitted artifacts/dependency locations; `git diff --check` passed.
 
 1. **P2 — Old automatic column widths can still block initial fill.** [Table.cs:539](C:/SynoSoftware/TinyTorrent2/lib/TableView/src/Table.cs:539) treats every legacy saved width without `HasManualWidths` as manual. Earlier versions also saved automatic widths. Those layouts remain exempt from filling even after the visible-layout correction. New snapshots distinguish manual and automatic widths correctly. The conservative migration is documented but leaves “unless resized by hand, not by auto” incomplete for existing layouts. An old snapshot alone cannot tell us how its widths were chosen.
 
-2. **P2 — Inspector tabs still use the old centering.** [InspectorPane.xaml:42](C:/SynoSoftware/TinyTorrent2/app/src/Views/InspectorPane.xaml:42) retains balanced `*, Auto, *, Auto` columns. The selector is not centered in the actual space remaining between the identity and actions.
+2. **P2 — Inspector tabs still use the old centering.** [InspectorPane.xaml:42](C:/SynoSoftware/TinyTorrent2/app/src/Shell/InspectorPane.xaml:42) retains balanced `*, Auto, *, Auto` columns. The selector is not centered in the actual space remaining between the identity and actions.
 
 3. **Withdrawn — Side handle gap.** The owner confirmed Filters is correct and must remain unchanged. The earlier interpretation of the two-pixel gap was not a justified defect.
 

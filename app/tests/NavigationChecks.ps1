@@ -6,8 +6,8 @@ $ErrorActionPreference = 'Stop'
 $binary = (Resolve-Path -LiteralPath $BinaryDirectory).Path
 $assembly = [Reflection.Assembly]::LoadFrom((Join-Path $binary 'TinyTorrentUI.dll'))
 $flags = [Reflection.BindingFlags]'Instance,Public,NonPublic'
-$navigationType = $assembly.GetType('Syno.TinyTorrent.Navigation', $true)
-$pageType = $assembly.GetType('Syno.TinyTorrent.Models.WindowPage', $true)
+$navigationType = $assembly.GetType('Syno.TinyTorrent.Shell.Navigation', $true)
+$pageType = $assembly.GetType('Syno.TinyTorrent.WindowPage', $true)
 $guardType = [Func``2].MakeGenericType($pageType, [Threading.Tasks.Task[bool]])
 $gate = @{ Result = [Threading.Tasks.Task]::FromResult($true) }
 $guard = [Management.Automation.LanguagePrimitives]::ConvertTo(
@@ -100,7 +100,7 @@ Require-Route Library $false
 
 Invoke-Navigation Navigate Torrents
 Invoke-Navigation Navigate Settings
-$categoryType = $assembly.GetType('Syno.TinyTorrent.Models.SettingsCategory', $true)
+$categoryType = $assembly.GetType('Syno.TinyTorrent.SettingsCategory', $true)
 $select = $navigationType.GetMethod('SelectCategory', $flags)
 for ($visit = 0; $visit -lt 4; $visit++) {
     foreach ($category in 'General', 'Transfers', 'Limits', 'Network', $null) {

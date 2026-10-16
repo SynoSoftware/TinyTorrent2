@@ -2,9 +2,10 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Microsoft.UI.Xaml;
-using Syno.TinyTorrent.Controls;
-using Syno.TinyTorrent.Models;
-using Syno.TinyTorrent.Services;
+using Syno.TinyTorrent.Shared;
+using Syno.TinyTorrent.Shared.Diagnostics;
+using Syno.TinyTorrent.Shared.Engine;
+using Syno.TinyTorrent.Shell;
 using Supplier = Syno.TinyTorrent.Subtitles.Supplier;
 
 namespace Syno.TinyTorrent;

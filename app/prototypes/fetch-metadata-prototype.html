@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fetch metadata batch dialog — design prototype</title>
+<!-- PROTOTYPE, throw away. Three layouts of Library's batch Fetch metadata dialog
+     (app/src/Library/BatchDialog.xaml), switchable with ?variant=A, B or C. Every
+     layout follows the no-wrap ruling in docs/interface.md: one line per label,
+     value or message, deliberate column alignment, trimming with an ellipsis and
+     a one-line tooltip for the full text. Sample data only; nothing is fetched. -->
+<style>
+@font-face { font-family:Lucide; src:url('../../lib/Lucide/src/Fonts/lucide.ttf') format('truetype'); }
+* { box-sizing:border-box; }
+:root { color-scheme:light; --layer:#fbfbfb; --footer:#f3f3f3; --ctl:#fdfdfd; --ctlBorder:#e5e5e5; --ctlLine:#868686; --text:#1a1a1a; --muted:#5f5f5f;
+  --disabled:#a0a0a0; --accent:#005fb8; --accentText:#003e92; --onAccent:#fff; --hover:rgb(0 0 0 / .037); --line:rgb(0 0 0 / .08);
+  --stroke:rgb(117 117 117 / .35); --caution:#9d5d00; --success:#0f7b0f; --tip:#f9f9f9; --scrim:rgb(0 0 0 / .3); }
+body.dark { color-scheme:dark; --layer:#2b2b2b; --footer:#202020; --ctl:#353535; --ctlBorder:rgb(255 255 255 / .07); --ctlLine:#a1a3a5; --text:#fff;
+  --muted:#c8c8c8; --disabled:#787878; --accent:#60cdff; --accentText:#99ebff; --onAccent:#000; --hover:rgb(255 255 255 / .045);
+  --line:rgb(255 255 255 / .082); --stroke:rgb(117 117 117 / .4); --caution:#fce100; --success:#6ccb5f; --tip:#2c2c2c; --scrim:rgb(0 0 0 / .45); }
+body { margin:0; min-height:100vh; background:#d9d9d9; color:var(--text); font:14px/20px 'Segoe UI Variable Text','Segoe UI',sans-serif; }
+body.dark { background:#161616; }
+button { font:inherit; color:inherit; }
+.i { display:inline-block; width:16px; height:16px; flex:none; font:16px/1 Lucide; text-align:center; }
+.i24 { width:24px; height:24px; font-size:24px; }
+.muted { color:var(--muted); }
+/* The no-wrap ruling: every text element is one line and trims. */
+.line { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+.num { font-variant-numeric:tabular-nums; text-align:right; }
+:focus-visible { outline:2px solid var(--text); outline-offset:1px; border-radius:4px; }
+
+/* prototype chrome: deliberately not Fluent */
+.proto-top { margin:0 auto; padding:6px 12px; background:#0b0b0b; font:12px/16px Consolas,monospace; color:#ffd479; text-align:center; }
+.proto { position:fixed; left:50%; bottom:12px; transform:translateX(-50%); z-index:50; display:flex; gap:8px; align-items:center; padding:6px 10px;
+  background:#0b0b0b; color:#fff; border:1px solid #ffd479; border-radius:16px; box-shadow:0 8px 24px rgb(0 0 0 / .5); font:12px/16px Consolas,monospace; white-space:nowrap; }
+.proto button, .proto select { background:#262626; color:#fff; border:1px solid #555; border-radius:999px; padding:3px 10px; font:inherit; }
+.proto .sep { width:1px; height:18px; background:#555; }
+#readout { position:fixed; right:12px; top:40px; width:300px; margin:0; padding:10px; background:#0b0b0b; color:#d8f0c8; border:1px solid #ffd479;
+  border-radius:8px; font:11px/15px Consolas,monospace; white-space:pre; overflow:hidden; }
+
+/* ContentDialog, after Controls.Dialog */
+.stage { display:grid; place-items:center; padding:48px 16px 96px; }
+.dialog { background:var(--layer); border:1px solid var(--stroke); border-radius:8px; box-shadow:0 32px 64px rgb(0 0 0 / .28); overflow:hidden; }
+.dbody { padding:24px; display:flex; flex-direction:column; gap:12px; }
+.dtitle { display:flex; align-items:center; gap:12px; font:600 20px/28px 'Segoe UI Variable Display','Segoe UI',sans-serif; min-width:0; }
+.dfoot { display:flex; gap:8px; padding:24px; background:var(--footer); border-top:1px solid var(--line); }
+.btn { flex:1; height:32px; display:flex; align-items:center; justify-content:center; gap:8px; border-radius:4px; border:1px solid var(--ctlBorder); background:var(--ctl); }
+.btn.primary { background:var(--accent); color:var(--onAccent); border-color:transparent; }
+.btn[disabled] { opacity:.45; }
+
+/* CheckBox: platform glyph, native 20px box */
+.cb { display:flex; align-items:center; gap:8px; min-height:32px; min-width:0; cursor:default; }
+.cb .box { width:20px; height:20px; flex:none; border:1px solid var(--ctlLine); border-radius:4px; display:grid; place-items:center; font:12px/1 Lucide; color:transparent; background:var(--ctl); }
+.cb.on .box { background:var(--accent); border-color:var(--accent); color:var(--onAccent); }
+.cb.off-state { color:var(--disabled); } .cb.off-state .box { border-color:var(--disabled); }
+
+/* A: aligned checklist */
+.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); column-gap:24px; }
+.checks { display:grid; grid-template-columns:minmax(0,1fr) 4ch; column-gap:16px; align-items:center; }
+.notes { display:flex; flex-direction:column; gap:4px; }
+.note { display:flex; align-items:center; gap:8px; min-width:0; color:var(--muted); }
+
+/* B: list box */
+.list { border:1px solid var(--ctlBorder); border-radius:4px; background:var(--ctl); }
+.lrow { display:grid; grid-template-columns:20px 16px minmax(0,1fr) 4ch; column-gap:12px; align-items:center; height:40px; padding:0 12px; }
+.lrow + .lrow { border-top:1px solid var(--line); }
+.lrow.total { font-weight:600; background:var(--hover); }
+.lrow.dim { color:var(--disabled); }
+
+/* C: breakdown bar */
+.bar { display:flex; height:8px; border-radius:4px; overflow:hidden; background:var(--line); }
+.bar span { height:100%; }
+.legend { display:grid; grid-template-columns:12px minmax(0,1fr) 4ch; column-gap:12px; row-gap:0; align-items:center; }
+.sw { width:12px; height:12px; border-radius:3px; }
+.hatch { background:repeating-linear-gradient(45deg,var(--disabled) 0 2px,transparent 2px 5px); }
+
+#tip { position:fixed; z-index:60; display:none; padding:6px 8px; background:var(--tip); color:var(--text); border:1px solid var(--stroke); border-radius:4px;
+  box-shadow:0 8px 16px rgb(0 0 0 / .14); white-space:nowrap; font:12px/16px 'Segoe UI Variable Text','Segoe UI',sans-serif; }
+</style>
+</head>
+<body>
+<div class="proto-top">PROTOTYPE · throw away · Library batch Fetch metadata · no-wrap ruling</div>
+<div class="stage"><div class="dialog" id="dialog"></div></div>
+<pre id="readout"></pre>
+<div id="tip" role="tooltip"></div>
+<div class="proto">
+  <button id="prev" title="Previous variant">◀</button><span id="label"></span><button id="next" title="Next variant">▶</button>
+  <span class="sep"></span>
+  <select id="scenario"></select>
+  <button id="lang">EN</button>
+  <button id="theme">Light</button>
+  <span class="sep"></span>
+  <span>Body width</span><input id="width" type="range" min="272" max="500" value="400"><span id="widthValue"></span>
+</div>
+<script>
+const G = { film:'', download:'', x:'', check:'', info:'', ban:'', clock:'',
+  dashed:'', searchX:'', circleCheck:'' };
+const T = {
+  en: { title:'Fetch metadata', supplier:'Supplier', selected:'Selected', videos:n => `${n} ${n === 1 ? 'video' : 'videos'}`,
+    source:(s, n) => `From ${s} · ${n} ${n === 1 ? 'video' : 'videos'} selected`, unasked:'Not checked yet', notFound:'Not found last time',
+    found:'Already checked', kept:'Information from other sources is kept.', outside:(n, s) => `${n} ${n === 1 ? 'video' : 'videos'} can't be checked with ${s}.`,
+    outsideShort:"Can't be checked", fetch:'Fetch', cancel:'Cancel', willCheck:'Will check',
+    tipUnasked:s => `Ask ${s} about videos it has never answered.`, tipNotFound:s => `Ask ${s} again about videos it didn't have.`,
+    tipFound:s => `Refresh the information ${s} already gave.`, tipOutside:"Extras, cleared videos, or matches without an IMDb ID.",
+    wait:'Requests are waiting for the provider\'s allowance to renew. Retry after 14:00.' },
+  es: { title:'Obtener metadatos', supplier:'Proveedor', selected:'Selección', videos:n => `${n} ${n === 1 ? 'vídeo' : 'vídeos'}`,
+    source:(s, n) => `De ${s} · ${n} ${n === 1 ? 'vídeo seleccionado' : 'vídeos seleccionados'}`, unasked:'Sin comprobar', notFound:'No encontrado la última vez',
+    found:'Ya comprobado', kept:'Se conserva la información de otras fuentes.', outside:(n, s) => `${n} ${n === 1 ? 'vídeo no se puede' : 'vídeos no se pueden'} comprobar con ${s}.`,
+    outsideShort:'No se pueden comprobar', fetch:'Obtener', cancel:'Cancelar', willCheck:'Se comprobarán',
+    tipUnasked:s => `Preguntar a ${s} por los vídeos que nunca respondió.`, tipNotFound:s => `Volver a preguntar a ${s} por los vídeos que no tenía.`,
+    tipFound:s => `Actualizar la información que ${s} ya dio.`, tipOutside:'Extras, vídeos borrados o coincidencias sin ID de IMDb.',
+    wait:'Las solicitudes esperan a que se renueve la cuota del proveedor. Vuelve a intentarlo después de 14:00.' },
+};
+const SCENARIOS = {
+  mixed: { name:'Wikidata, mixed', supplier:'Wikidata', total:17, unasked:12, notFound:2, found:1, wait:false },
+  waiting: { name:'MDBList, allowance wait', supplier:'MDBList', total:17, unasked:4, notFound:0, found:2, wait:true },
+  done: { name:'OMDb, all checked', supplier:'OMDb', total:6, unasked:0, notFound:0, found:6, wait:false },
+};
+const VARIANTS = { A:'Aligned checklist', B:'List box with total', C:'Breakdown bar' };
+const params = new URLSearchParams(location.search);
+const state = { variant: VARIANTS[params.get('variant')] ? params.get('variant') : 'A', scenario:'mixed', lang:'en', dark:false, width:400, checked:{} };
+
+function resetChecks() {
+  const s = SCENARIOS[state.scenario];
+  state.checked = { unasked: s.unasked > 0, notFound:false, found:false };
+}
+const esc = v => String(v).replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' })[c]);
+const groups = s => [
+  { key:'unasked', count:s.unasked, glyph:G.dashed, color:'var(--accent)' },
+  { key:'notFound', count:s.notFound, glyph:G.searchX, color:'var(--caution)' },
+  { key:'found', count:s.found, glyph:G.circleCheck, color:'var(--success)' },
+];
+const tipKey = { unasked:'tipUnasked', notFound:'tipNotFound', found:'tipFound' };
+
+function checkbox(g, t, s, labelOnly) {
+  const on = state.checked[g.key] && g.count > 0, enabled = g.count > 0;
+  return `<div class="cb ${on ? 'on' : ''} ${enabled ? '' : 'off-state'}" role="checkbox" aria-checked="${on}" aria-disabled="${!enabled}"
+    tabindex="${enabled ? 0 : -1}" data-key="${g.key}" data-tip="${esc(t[tipKey[g.key]](s.supplier))}">
+    <span class="box">${on ? G.check : ''}</span><span class="line">${esc(t[g.key])}</span></div>`;
+}
+function footer(t, toFetch) {
+  return `<div class="dfoot"><button class="btn primary" ${toFetch ? '' : 'disabled'}><span class="i">${G.download}</span><span class="line">${esc(t.fetch)}</span></button>
+    <button class="btn"><span class="i">${G.x}</span><span class="line">${esc(t.cancel)}</span></button></div>`;
+}
+function title(t, text) {
+  return `<div class="dtitle"><span class="i i24">${G.film}</span><span class="line" data-tip-overflow>${esc(text ?? t.title)}</span></div>`;
+}
+function notes(t, s) {
+  const rows = [[G.info, t.kept]];
+  const outside = s.total - s.unasked - s.notFound - s.found;
+  if (outside > 0) rows.push([G.ban, t.outside(outside, s.supplier)]);
+  if (s.wait) rows.push([G.clock, t.wait]);
+  return `<div class="notes">${rows.map(([g, text]) =>
+    `<div class="note"><span class="i">${g}</span><span class="line" data-tip-overflow>${esc(text)}</span></div>`).join('')}</div>`;
+}
+
+function variantA(t, s, gs) {
+  return `<div class="dbody" style="width:${state.width + 48}px">${title(t)}
+    <div class="facts"><span class="muted">${esc(t.supplier)}</span><span class="line">${esc(s.supplier)}</span>
+      <span class="muted">${esc(t.selected)}</span><span class="line">${esc(t.videos(s.total))}</span></div>
+    <div class="checks">${gs.map(g => `${checkbox(g, t, s)}<span class="num ${g.count ? '' : 'muted'}">${g.count}</span>`).join('')}</div>
+    ${notes(t, s)}</div>`;
+}
+function variantB(t, s, gs) {
+  const toFetch = gs.reduce((sum, g) => sum + (state.checked[g.key] ? g.count : 0), 0);
+  return `<div class="dbody" style="width:${state.width + 48}px">${title(t)}
+    <div class="line muted" data-tip-overflow>${esc(t.source(s.supplier, s.total))}</div>
+    <div class="list">
+      ${gs.map(g => `<div class="lrow ${g.count ? '' : 'dim'}">${checkbox(g, t, s).replace('<span class="line">' + esc(t[g.key]) + '</span>', '')}
+        <span class="i" style="color:${g.count ? g.color : 'var(--disabled)'}">${g.glyph}</span>
+        <span class="line">${esc(t[g.key])}</span><span class="num">${g.count}</span></div>`).join('')}
+      <div class="lrow total"><span></span><span></span><span class="line">${esc(t.willCheck)}</span><span class="num">${toFetch}</span></div>
+    </div>
+    ${notes(t, s)}</div>`;
+}
+function variantC(t, s, gs) {
+  const outside = s.total - s.unasked - s.notFound - s.found;
+  const pct = n => `${100 * n / s.total}%`;
+  return `<div class="dbody" style="width:${state.width + 48}px">${title(t, `${t.title} · ${s.supplier}`)}
+    <div class="bar">${gs.map(g => `<span style="width:${pct(g.count)};background:${g.color};opacity:${state.checked[g.key] ? 1 : .35}"></span>`).join('')}
+      <span class="hatch" style="width:${pct(outside)}"></span></div>
+    <div class="legend">
+      ${gs.map(g => `<span class="sw" style="background:${g.count ? g.color : 'var(--disabled)'}"></span>${checkbox(g, t, s)}<span class="num">${g.count}</span>`).join('')}
+      ${outside ? `<span class="sw hatch"></span><span class="line muted" style="min-height:32px;line-height:32px;padding-left:28px" data-tip="${esc(t.tipOutside)}">${esc(t.outsideShort)}</span><span class="num muted">${outside}</span>` : ''}
+    </div>
+    <div class="note"><span class="i">${G.info}</span><span class="line" data-tip-overflow>${esc(t.kept)}</span></div>
+    ${s.wait ? `<div class="note"><span class="i">${G.clock}</span><span class="line" data-tip-overflow>${esc(t.wait)}</span></div>` : ''}
+  </div>`;
+}
+
+function render() {
+  const t = T[state.lang], s = SCENARIOS[state.scenario], gs = groups(s);
+  const toFetch = gs.reduce((sum, g) => sum + (state.checked[g.key] ? g.count : 0), 0);
+  document.body.classList.toggle('dark', state.dark);
+  const body = { A:variantA, B:variantB, C:variantC }[state.variant](t, s, gs);
+  document.getElementById('dialog').innerHTML = body + footer(t, toFetch);
+  document.getElementById('label').textContent = `${state.variant} (${VARIANTS[state.variant]})`;
+  document.getElementById('lang').textContent = state.lang.toUpperCase();
+  document.getElementById('theme').textContent = state.dark ? 'Dark' : 'Light';
+  document.getElementById('widthValue').textContent = `${state.width}px`;
+  // A trimmed line offers its full text in a one-line tooltip.
+  document.querySelectorAll('[data-tip-overflow]').forEach(el => {
+    if (el.scrollWidth > el.clientWidth) { el.dataset.tip = el.textContent; el.tabIndex = 0; }
+  });
+  const trimmed = [...document.querySelectorAll('#dialog .line')].filter(el => el.scrollWidth > el.clientWidth).map(el => el.textContent);
+  document.getElementById('readout').textContent = JSON.stringify({
+    variant:state.variant, scenario:state.scenario, lang:state.lang, bodyWidth:state.width,
+    checked:Object.keys(state.checked).filter(k => state.checked[k]), willFetch:toFetch, trimmedLines:trimmed,
+  }, null, 1);
+  const url = new URL(location); url.searchParams.set('variant', state.variant); history.replaceState(null, '', url);
+}
+
+const tip = document.getElementById('tip');
+function showTip(el) {
+  const text = el.closest('[data-tip]')?.dataset.tip;
+  if (!text) return;
+  tip.textContent = text; tip.style.display = 'block';
+  const r = el.getBoundingClientRect();
+  tip.style.left = `${Math.max(8, Math.min(r.left, innerWidth - tip.offsetWidth - 8))}px`;
+  tip.style.top = `${r.bottom + 6}px`;
+}
+document.addEventListener('mouseover', e => e.target.closest('[data-tip]') ? showTip(e.target.closest('[data-tip]')) : tip.style.display = 'none');
+document.addEventListener('focusin', e => e.target.closest('[data-tip]') && showTip(e.target.closest('[data-tip]')));
+document.addEventListener('focusout', () => tip.style.display = 'none');
+document.addEventListener('click', e => {
+  const cb = e.target.closest('.cb[data-key]');
+  if (cb && cb.getAttribute('aria-disabled') !== 'true') { state.checked[cb.dataset.key] = !state.checked[cb.dataset.key]; render(); }
+});
+document.addEventListener('keydown', e => {
+  const cb = e.target.closest?.('.cb[data-key]');
+  if (cb && e.key === ' ') { e.preventDefault(); cb.click(); return; }
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  if (e.target.matches('input, textarea, select, [contenteditable]')) return;
+  cycle(e.key === 'ArrowRight' ? 1 : -1);
+});
+function cycle(step) { const keys = Object.keys(VARIANTS); state.variant = keys[(keys.indexOf(state.variant) + step + keys.length) % keys.length]; render(); }
+document.getElementById('prev').onclick = () => cycle(-1);
+document.getElementById('next').onclick = () => cycle(1);
+const scenario = document.getElementById('scenario');
+scenario.innerHTML = Object.entries(SCENARIOS).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join('');
+scenario.onchange = () => { state.scenario = scenario.value; resetChecks(); render(); };
+document.getElementById('lang').onclick = () => { state.lang = state.lang === 'en' ? 'es' : 'en'; render(); };
+document.getElementById('theme').onclick = () => { state.dark = !state.dark; render(); };
+document.getElementById('width').oninput = e => { state.width = +e.target.value; render(); };
+resetChecks();
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,163 @@
+<UserControl
+  x:Class="Syno.TinyTorrent.Settings.WindowsIntegration"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:settings="using:Syno.TinyTorrent.Settings"
+  xmlns:controls="using:Syno.TinyTorrent.Controls"
+  xmlns:icons="using:Syno"
+>
+  <controls:SettingsSection
+    x:Name="IntegrationSection"
+    Header="{x:Bind Model.Text.Get('settings', 'windows_integration'), Mode=OneWay}"
+    Style="{StaticResource TinyTorrentSettingsGroupStyle}"
+    Padding="16,0"
+    Glyph="{x:Bind icons:Lucide.AppWindow}"
+  >
+    <StackPanel>
+      <controls:SettingsRow
+        x:Name="HandlersRow"
+        Header="{x:Bind Model.Text.Get('settings', 'open_defaults'), Mode=OneWay}"
+      >
+        <StackPanel Orientation="Horizontal" Spacing="12">
+          <controls:ActionButton
+            x:Name="FixHandlers"
+            Text="{x:Bind Model.DefaultsText, Mode=OneWay}"
+            Glyph="{x:Bind Model.DefaultsGlyph, Mode=OneWay}"
+            Command="{x:Bind Model.FixHandlers}"
+            Visibility="{x:Bind Model.NeedsDefaults, Mode=OneWay}"
+            AutomationProperties.Name="{x:Bind Model.DefaultsAction, Mode=OneWay}"
+            ToolTipService.ToolTip="{x:Bind Model.DefaultsAction, Mode=OneWay}"
+            AutomationProperties.AutomationId="FixHandlers"
+          />
+          <TextBlock
+            Text="{x:Bind controls:SettingsRow.State(Model.Handlers, Model.OnText, Model.OffText), Mode=OneWay}"
+            Style="{StaticResource TinyTorrentBodyTextStyle}"
+            VerticalAlignment="Center"
+            AutomationProperties.AccessibilityView="Raw"
+          />
+          <ToggleSwitch
+            x:Name="Handlers"
+            IsOn="{x:Bind Model.Handlers, Mode=OneWay}"
+            IsEnabled="{x:Bind Model.CanRegister, Mode=OneWay}"
+            Toggled="OnHandlers"
+            AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'open_defaults'), Mode=OneWay}"
+            AutomationProperties.HelpText="{x:Bind Model.HandlersCaution, Mode=OneWay}"
+            AutomationProperties.AutomationId="Handlers"
+          />
+        </StackPanel>
+        <controls:SettingsRow.Detail>
+          <StackPanel Spacing="8">
+            <Grid ColumnSpacing="16" RowSpacing="8">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" MinWidth="140" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+              </Grid.RowDefinitions>
+              <TextBlock
+                Text="{x:Bind Model.Text.Get('settings', 'torrent_files'), Mode=OneWay}"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+              />
+              <TextBlock
+                Grid.Column="1"
+                Text="{x:Bind Model.TorrentApp, Mode=OneWay}"
+                TextTrimming="CharacterEllipsis"
+                ToolTipService.ToolTip="{x:Bind Model.TorrentApp, Mode=OneWay}"
+                AutomationProperties.AutomationId="TorrentApp"
+              />
+              <TextBlock
+                Grid.Row="1"
+                Text="{x:Bind Model.Text.Get('settings', 'magnet_links'), Mode=OneWay}"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+              />
+              <TextBlock
+                Grid.Row="1"
+                Grid.Column="1"
+                Text="{x:Bind Model.MagnetApp, Mode=OneWay}"
+                TextTrimming="CharacterEllipsis"
+                ToolTipService.ToolTip="{x:Bind Model.MagnetApp, Mode=OneWay}"
+                AutomationProperties.AutomationId="MagnetApp"
+              />
+            </Grid>
+            <Grid
+              ColumnSpacing="8"
+              Visibility="{x:Bind settings:WindowsIntegration.HasText(Model.HandlersCaution), Mode=OneWay}"
+            >
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <FontIcon
+                FontFamily="{x:Bind icons:Lucide.Font}"
+                Glyph="{x:Bind icons:Lucide.TriangleAlert}"
+                FontSize="{StaticResource TinyTorrentInlineIconSize}"
+                Foreground="{ThemeResource SystemFillColorCautionBrush}"
+              />
+              <TextBlock
+                Grid.Column="1"
+                Text="{x:Bind Model.HandlersCaution, Mode=OneWay}"
+                TextTrimming="CharacterEllipsis"
+                ToolTipService.ToolTip="{x:Bind Model.HandlersCaution, Mode=OneWay}"
+                Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
+              />
+            </Grid>
+          </StackPanel>
+        </controls:SettingsRow.Detail>
+      </controls:SettingsRow>
+      <controls:SettingsRow
+        x:Name="SignInRow"
+        Header="{x:Bind Model.Text.Get('settings', 'start_signin'), Mode=OneWay}"
+      >
+        <StackPanel Orientation="Horizontal" Spacing="12">
+          <controls:ActionButton
+            Text="{x:Bind Model.Text.Get('settings', 'use'), Mode=OneWay}"
+            Glyph="{x:Bind icons:Lucide.ArrowLeftRight}"
+            Visibility="{x:Bind Model.StartupUsesOtherCopy, Mode=OneWay}"
+            AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'startup_use_hint'), Mode=OneWay}"
+            ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'startup_use_hint'), Mode=OneWay}"
+            Command="{x:Bind Model.UseStartup}"
+            AutomationProperties.AutomationId="UseStartup"
+          />
+          <TextBlock
+            Text="{x:Bind controls:SettingsRow.State(Model.Startup, Model.OnText, Model.OffText), Mode=OneWay}"
+            Style="{StaticResource TinyTorrentBodyTextStyle}"
+            VerticalAlignment="Center"
+            AutomationProperties.AccessibilityView="Raw"
+          />
+          <ToggleSwitch
+            x:Name="Startup"
+            IsOn="{x:Bind Model.Startup, Mode=OneWay}"
+            IsEnabled="{x:Bind Model.CanRegister, Mode=OneWay}"
+            Toggled="OnStartup"
+            AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'start_signin'), Mode=OneWay}"
+            AutomationProperties.HelpText="{x:Bind Model.StartupOtherMessage, Mode=OneWay}"
+            AutomationProperties.AutomationId="Startup"
+          />
+        </StackPanel>
+        <controls:SettingsRow.Detail>
+          <Grid ColumnSpacing="8" Visibility="{x:Bind Model.StartupUsesOtherCopy, Mode=OneWay}">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <FontIcon
+              FontFamily="{x:Bind icons:Lucide.Font}"
+              Glyph="{x:Bind icons:Lucide.TriangleAlert}"
+              FontSize="{StaticResource TinyTorrentInlineIconSize}"
+              Foreground="{ThemeResource SystemFillColorCautionBrush}"
+            />
+            <TextBlock
+              Grid.Column="1"
+              Text="{x:Bind Model.StartupOtherMessage, Mode=OneWay}"
+              TextTrimming="CharacterEllipsis"
+              ToolTipService.ToolTip="{x:Bind Model.StartupOtherMessage, Mode=OneWay}"
+              Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
+            />
+          </Grid>
+        </controls:SettingsRow.Detail>
+      </controls:SettingsRow>
+    </StackPanel>
+  </controls:SettingsSection>
+</UserControl>

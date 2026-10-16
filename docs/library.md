@@ -590,7 +590,7 @@ Library free of filesystem discovery and background validation work.
 
 ## Presentation and interaction
 
-The [Library prototype](../app/library-prototype.html) opens directly and reuses
+The [Library prototype](../app/prototypes/library-prototype.html) opens directly and reuses
 the canonical assets in `resources/`. Its layout selector compares A — Reading,
 B — Inspector and C — Sections. C is the owner's approved implementation target.
 The [implementation review](#prototype-implementation-review)
@@ -629,7 +629,7 @@ items forward rather than asking the owner to rediscover them.
 - [ ] Where a heading composition is missing, polish the shared composition
   and move its applicable consumers to that owner. Do not copy a Library-only
   implementation or add tokens without a distinct, demonstrated need.
-- [ ] Keep one Library prototype, `app/library-prototype.html`. The former
+- [ ] Keep one Library prototype, `app/prototypes/library-prototype.html`. The former
   `library-details-prototype.html`, wrapper, duplicate renderers and obsolete
   references must stay removed. Canonical app assets remain referenced, not
   copied into a second icon catalogue.

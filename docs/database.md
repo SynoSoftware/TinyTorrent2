@@ -1,6 +1,6 @@
 # Library and Subtitles database
 
-`Services.Database` owns `library.db` in the engine-selected data directory.
+`Shared.Storage.Database` owns `library.db` in the engine-selected data directory.
 It is a service in the product window process, with one connection and one
 serialized transaction path. Library and Subtitles share this database. SQLite
 TEMP tables are connection-local working state, not a second saved database.
@@ -9,7 +9,7 @@ this database.
 
 ## Ownership and initialization
 
-`Services/Database/Schema.cs` is the authoritative initial schema, including
+`Shared/Storage/Database/Schema.cs` is the authoritative initial schema, including
 tables, indexes, views, defaults and temporary working tables. `Database.Open`
 registers path comparison, enables foreign keys, reads `PRAGMA user_version`,
 and initializes the schema transactionally before exposing the connection to

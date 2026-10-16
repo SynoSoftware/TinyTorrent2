@@ -2,7 +2,6 @@ using System.Globalization;
 using System.Net.Http;
 using System.Reflection;
 using System.Text.Json;
-using Syno.TinyTorrent.Models;
 
 namespace Syno.TinyTorrent.Library.MdbList;
 

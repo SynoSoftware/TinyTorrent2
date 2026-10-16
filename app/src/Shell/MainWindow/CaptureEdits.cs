@@ -1,0 +1,674 @@
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Automation.Peers;
+using Microsoft.UI.Xaml.Automation.Provider;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
+using Syno.TinyTorrent.Settings;
+using Syno.TinyTorrent.Shared.Engine;
+using Syno.TinyTorrent.Torrents;
+using Windows.Graphics;
+
+namespace Syno.TinyTorrent.Shell;
+
+public sealed partial class MainWindow
+{
+    private async Task CaptureEdits(Torrent target, List<object> outcomes, List<string> completed)
+    {
+        Model.SelectLanguage("en");
+        await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == "en");
+        await Model.Settings.SelectTheme("light");
+        await CaptureReady(Model, () => Model.CanClose && Model.Theme == "light");
+        var scale = Root.XamlRoot.RasterizationScale;
+        var minimum =
+            ((Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter).PreferredMinimumWidth
+            ?? 0;
+        AppWindow.Resize(new SizeInt32(Math.Max((int)(1040 * scale), minimum), (int)(680 * scale)));
+        await ShowTorrents();
+        Model.CloseInspector();
+        Torrents.Selection = new Syno.TableView.Selection([target], target);
+        await SelectTorrent();
+
+        var settings = Model.Settings;
+        if (
+            settings.Schedule.IsOpen
+            || settings.IsPending
+            || settings.All.Any(setting => setting.HasDraft)
+        )
+            throw new InvalidOperationException(
+                "The edit review requires confirmed fixture settings."
+            );
+        var rate = settings.Download;
+        var upload = settings.Upload;
+        var port = settings.Port;
+        var originalRate = rate.Input;
+        var originalUpload = upload.Input;
+        var originalPort = port.Input;
+        var threshold = settings.SlowDownload;
+        var originalThreshold = threshold.Input;
+        var originalExclusion = settings.IgnoreSlow.IsOn;
+        var originalPeriods = settings.Schedule.Periods.ToArray();
+        var originalLimits = Model.LimitsIndex;
+        Task<bool>? departure = null;
+
+        bool PeriodsRetained() =>
+            settings.Schedule.Periods.Count == originalPeriods.Length
+            && settings
+                .Schedule.Periods.Zip(originalPeriods)
+                .All(pair => pair.First.Matches(pair.Second));
+
+        async Task<TextBox> Edit(Setting setting, string input)
+        {
+            await ShowSettings(new(setting.Category, setting.Name));
+            await CaptureLayout();
+            var page =
+                _settingsPage
+                ?? throw new InvalidOperationException(
+                    "The edit review settings page did not open."
+                );
+            var editor = CaptureElements(page)
+                .OfType<TextBox>()
+                .Single(control => ReferenceEquals(control.Tag, setting));
+            if (!editor.IsEnabled || !editor.Focus(FocusState.Programmatic))
+                throw new InvalidOperationException(
+                    "The native numeric editor cannot receive input."
+                );
+            editor.Text = input;
+            await CaptureLayout();
+            if (setting.Input != input)
+                throw new InvalidOperationException(
+                    "The native numeric edit did not reach its setting."
+                );
+            return editor;
+        }
+
+        async Task<bool> Leave()
+        {
+            departure = ShowTorrents();
+            await CaptureLayout();
+            if (_interaction?.Dialog is not null)
+                throw new InvalidOperationException(
+                    "Leaving Settings unexpectedly requested a draft decision."
+                );
+            var navigated = await departure.WaitAsync(TimeSpan.FromSeconds(20));
+            departure = null;
+            await CaptureLayout();
+            return navigated;
+        }
+
+        async Task<SchedulePeriod> AddPeriod()
+        {
+            await Model.ChooseLimits(LimitMode.Schedule);
+            if (!Model.FollowsSchedule)
+                throw new InvalidOperationException(
+                    "The edit review could not choose the weekly schedule."
+                );
+            await ShowSettings(new(SettingsCategory.Schedule));
+            await CaptureLayout();
+            var page =
+                _settingsPage
+                ?? throw new InvalidOperationException("The native schedule did not open.");
+            CaptureInvoke(
+                CaptureElements(page)
+                    .OfType<Button>()
+                    .Single(control => AutomationProperties.GetAutomationId(control) == "AddPeriod")
+            );
+            await CaptureReady(
+                settings.Schedule,
+                () => !settings.Schedule.IsPending && settings.Schedule.IsOpen
+            );
+            await CaptureLayout();
+            if (
+                settings.Schedule.OpenPeriod is not { } opened
+                || originalPeriods.Any(existing => existing.Matches(opened))
+            )
+                throw new InvalidOperationException(
+                    "The fixture schedule already holds the period that Add creates."
+                );
+            var draft =
+                settings.Schedule.Draft
+                ?? throw new InvalidOperationException(
+                    "The native Add period did not open its editor."
+                );
+            CaptureElements(page)
+                .OfType<TimePicker>()
+                .Single(control => AutomationProperties.GetAutomationId(control) == "PeriodStart")
+                .SelectedTime = TimeSpan.FromMinutes(127);
+            CaptureElements(page)
+                .OfType<TimePicker>()
+                .Single(control => AutomationProperties.GetAutomationId(control) == "PeriodEnd")
+                .SelectedTime = TimeSpan.FromMinutes(151);
+            var days = await CaptureDays(page, draft);
+            foreach (var day in draft.Days)
+            {
+                var control = days[day.Index];
+                if (control.IsChecked == (day.Index == 6))
+                    continue;
+                if (
+                    FrameworkElementAutomationPeer
+                        .CreatePeerForElement(control)
+                        .GetPattern(PatternInterface.Toggle)
+                    is not IToggleProvider toggle
+                )
+                    throw new InvalidOperationException(
+                        "The native schedule day does not expose Toggle."
+                    );
+                toggle.Toggle();
+            }
+            await CaptureLayout();
+            if (
+                draft.Start?.TotalMinutes != 127
+                || draft.End?.TotalMinutes != 151
+                || draft.Mode != ScheduleMode.Alternative
+                || !draft
+                    .Days.Where(day => day.IsChecked)
+                    .Select(day => day.Index)
+                    .SequenceEqual(new[] { 6 })
+            )
+                throw new InvalidOperationException(
+                    "The native schedule edits did not retain the chosen period."
+                );
+            var period = new SchedulePeriod(settings.Schedule, draft);
+            if (originalPeriods.Any(existing => existing.Matches(period)))
+                throw new InvalidOperationException(
+                    "The review period already exists in the fixture schedule."
+                );
+            await CaptureReady(
+                settings.Schedule,
+                () =>
+                    !settings.Schedule.IsPending
+                    && settings.Schedule.OpenPeriod?.Matches(period) == true
+            );
+            return period;
+        }
+
+        try
+        {
+            await Model.ChooseLimits(LimitMode.Speed);
+            await Edit(rate, "96");
+            BackButton.Focus(FocusState.Programmatic);
+            await GoBack();
+            if (Model.Page != WindowPage.Torrents)
+                throw new InvalidOperationException("Back did not leave Settings.");
+            await rate.Saving;
+            if (rate.HasDraft || rate.ConfirmedNumber != 96000000)
+                throw new InvalidOperationException(
+                    "Back did not leave Settings with the pending rate edit applied."
+                );
+            completed.Add("edits-back-departure");
+
+            await settings.Toggle(settings.IgnoreSlow, true);
+            await Edit(threshold, "1.5");
+            if (!await Leave())
+                throw new InvalidOperationException(
+                    "Leaving the KiB/s threshold did not navigate."
+                );
+            await threshold.Saving;
+            if (threshold.ConfirmedNumber != 1536 || threshold.Input != "1.5")
+                throw new InvalidOperationException(
+                    "The KiB/s threshold did not retain its byte value."
+                );
+            await ShowSettings(new(threshold.Category, threshold.Name));
+            await CaptureLayout();
+            var thresholdEditor = CaptureElements(_settingsPage!)
+                .OfType<TextBox>()
+                .Single(control => ReferenceEquals(control.Tag, threshold));
+            if (thresholdEditor.Text != "1.5")
+                throw new InvalidOperationException(
+                    "The saved KiB/s threshold changed when reopened."
+                );
+            await Edit(threshold, "1048577");
+            await settings.Commit(threshold);
+            if (
+                threshold.Message.Length == 0
+                || threshold.ConfirmedNumber != 1536
+                || !threshold.Message.Contains("KiB/s", StringComparison.Ordinal)
+            )
+                throw new InvalidOperationException(
+                    "The threshold refusal used the wrong unit or saved invalid input."
+                );
+            threshold.Cancel();
+            completed.Add("edits-kib-threshold");
+
+            await ShowSettings(new());
+            if (_settingsPage?.Category is not null)
+                throw new InvalidOperationException(
+                    "Opening Settings did not show its introductory cards."
+                );
+
+            await Edit(rate, "112");
+            Search.Focus(FocusState.Programmatic);
+            await ShowSettings(new(SettingsCategory.Network, port.Name));
+            if (_settingsPage?.Category != SettingsCategory.Network)
+                throw new InvalidOperationException("The named setting did not open Network.");
+            await rate.Saving;
+            if (rate.HasDraft || rate.ConfirmedNumber != 112000000)
+                throw new InvalidOperationException(
+                    "Navigating to a named setting lost the pending rate edit."
+                );
+            Search.IsSuggestionListOpen = false;
+            completed.Add("edits-search-departure");
+
+            await Edit(rate, "128");
+            var refusal = new CommandException("storage_failed", null, Model.Text);
+            rate.Reject(refusal);
+            var refusedPage = _settingsPage!;
+            var categories = (NavigationView)refusedPage.FindName("Categories");
+            var nextCategory = (NavigationViewItem)refusedPage.FindName("NetworkCategory");
+            nextCategory.Focus(FocusState.Programmatic);
+            categories.SelectedItem = nextCategory;
+            await CaptureLayout();
+            if (
+                refusedPage.Category != SettingsCategory.Network
+                || !rate.HasDraft
+                || !ReferenceEquals(rate.Failure, refusal)
+            )
+                throw new InvalidOperationException(
+                    "Selecting a category lost an already refused rate edit."
+                );
+            await CaptureUi("edits-refused-category");
+            rate.Cancel();
+            completed.Add("edits-refused-category");
+
+            var valid = originalRate == "64" ? "65" : "64";
+            await Edit(rate, valid);
+            await CapturePage("edits-valid-rate-before-leaving");
+            if (!await Leave() || Model.Page != WindowPage.Torrents)
+                throw new InvalidOperationException(
+                    "Leaving a valid native rate edit did not navigate."
+                );
+            await rate.Saving;
+            if (rate.Input != valid || rate.HasDraft || rate.IsPending || rate.Message.Length != 0)
+                throw new InvalidOperationException(
+                    "Leaving a valid native rate edit did not apply it and navigate."
+                );
+            outcomes.Add(
+                new
+                {
+                    journey = "valid rate departure",
+                    applied = true,
+                    navigated = true,
+                    prompted = false,
+                    input = rate.Input,
+                }
+            );
+            completed.Add("edits-valid-rate-departure");
+
+            var downloadEditor = await Edit(rate, "160");
+            var uploadValue = originalUpload == "32" ? "33" : "32";
+            await Edit(upload, uploadValue);
+            await CaptureReady(rate, () => !rate.IsPending && !rate.HasDraft);
+            var injected = false;
+            void OnUpload(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
+            {
+                if (injected || !upload.IsPending)
+                    return;
+                injected = true;
+                downloadEditor.Text = "161";
+            }
+            upload.PropertyChanged += OnUpload;
+            try
+            {
+                var left = await Leave();
+                await Task.WhenAll(rate.Saving, upload.Saving);
+                var retained =
+                    rate.Input == "161"
+                    && downloadEditor.Text == "161"
+                    && rate.ConfirmedNumber == 160000000
+                    && upload.Input == uploadValue
+                    && rate.HasDraft
+                    && !upload.HasDraft
+                    && !rate.IsPending
+                    && !upload.IsPending
+                    && rate.Message.Length == 0
+                    && upload.Message.Length == 0;
+                outcomes.Add(
+                    new
+                    {
+                        journey = "late earlier-field departure",
+                        injectedDuringUpload = injected,
+                        retained,
+                        navigated = left,
+                        prompted = false,
+                        download = rate.Input,
+                        upload = upload.Input,
+                    }
+                );
+                if (!injected || !left || Model.Page != WindowPage.Torrents || !retained)
+                    throw new InvalidOperationException(
+                        "Departure did not retain the newer Download input over its confirmed value."
+                    );
+                rate.Cancel();
+                completed.Add("edits-late-earlier-field-departure");
+            }
+            finally
+            {
+                upload.PropertyChanged -= OnUpload;
+            }
+
+            var invalidEditor = await Edit(port, "70000");
+            var mapping = CaptureElements(_settingsPage!)
+                .OfType<ToggleSwitch>()
+                .Single(control => ReferenceEquals(control.Tag, settings.PortMapping));
+            if (!mapping.Focus(FocusState.Programmatic))
+                throw new InvalidOperationException(
+                    "The native port mapping field cannot receive focus."
+                );
+            await CaptureReady(port, () => port.Input == originalPort && !port.HasDraft);
+            await CaptureLayout();
+            if (invalidEditor.Text != originalPort || port.Message.Length != 0)
+                throw new InvalidOperationException(
+                    "Moving to another field did not restore the invalid port's saved value."
+                );
+            outcomes.Add(
+                new
+                {
+                    journey = "invalid port field departure",
+                    restored = true,
+                    nativeTextRestored = true,
+                }
+            );
+            completed.Add("edits-invalid-port-field-departure");
+            invalidEditor = await Edit(port, "70000");
+            await CapturePage("edits-invalid-port-before-leaving");
+            if (
+                !await Leave()
+                || Model.Page != WindowPage.Torrents
+                || port.Input != originalPort
+                || invalidEditor.Text != originalPort
+                || port.HasDraft
+                || port.Message.Length != 0
+            )
+                throw new InvalidOperationException(
+                    "Leaving an invalid native port edit did not restore the saved value and navigate."
+                );
+            outcomes.Add(
+                new
+                {
+                    journey = "invalid port departure",
+                    restored = true,
+                    nativeTextRestored = true,
+                    navigated = true,
+                    prompted = false,
+                }
+            );
+            completed.Add("edits-invalid-port-departure");
+
+            var concurrent = rate.Input == "96" ? "97" : "96";
+            await Edit(rate, concurrent);
+            await CapturePage("edits-pending-rate-before-leaving");
+            var save = settings.Commit(rate);
+            var pending = rate.IsPending;
+            departure = ShowTorrents();
+            await Task.WhenAll(save, departure).WaitAsync(TimeSpan.FromSeconds(20));
+            var navigated = await departure;
+            departure = null;
+            await CaptureLayout();
+            if (
+                !pending
+                || !navigated
+                || Model.Page != WindowPage.Torrents
+                || _interaction?.Dialog is not null
+                || rate.Input != concurrent
+                || rate.HasDraft
+                || rate.IsPending
+                || rate.Message.Length != 0
+            )
+                throw new InvalidOperationException(
+                    "Departure during an active numeric save did not navigate and preserve its accepted save."
+                );
+            outcomes.Add(
+                new
+                {
+                    journey = "pending rate departure",
+                    pendingObserved = pending,
+                    applied = true,
+                    firstDepartureNavigated = true,
+                    prompted = false,
+                }
+            );
+            completed.Add("edits-pending-rate-departure");
+
+            var unsavedEditor = await Edit(rate, "128");
+            var first = settings.Commit(rate);
+            if (!rate.IsPending)
+                throw new InvalidOperationException(
+                    "The newer-input review did not start a pending save."
+                );
+            rate.Input = "129";
+            await first.WaitAsync(TimeSpan.FromSeconds(20));
+            await CaptureLayout();
+            if (
+                rate.Input != "129"
+                || unsavedEditor.Text != "129"
+                || !rate.HasDraft
+                || rate.IsPending
+                || rate.Message.Length != 0
+            )
+                throw new InvalidOperationException(
+                    $"A pending acknowledgement did not retain draft 129: input={rate.Input}, nativeText={unsavedEditor.Text}, draft={rate.HasDraft}, pending={rate.IsPending}, error={rate.Message}."
+                );
+            await CapturePage("edits-pending-newer-input-retained");
+            rate.Cancel();
+            await CaptureLayout();
+            if (rate.Input != "128" || unsavedEditor.Text != "128" || rate.HasDraft)
+                throw new InvalidOperationException(
+                    $"Cancel did not expose confirmed 128: input={rate.Input}, nativeText={unsavedEditor.Text}, draft={rate.HasDraft}."
+                );
+            outcomes.Add(
+                new
+                {
+                    journey = "pending acknowledgement with newer input",
+                    layer = "setting owner with native display",
+                    newerInputRetained = true,
+                    newerInputStayedDraft = true,
+                    confirmedInput = rate.Input,
+                }
+            );
+            completed.Add("edits-pending-newer-input");
+
+            var queuedEditor = await Edit(rate, "256");
+            var active = settings.Commit(rate);
+            if (!rate.IsPending)
+                throw new InvalidOperationException(
+                    "The queued-input review did not start a pending save."
+                );
+            rate.Input = "257";
+            var queued = settings.Commit(rate);
+            rate.Input = "258";
+            await Task.WhenAll(active, queued).WaitAsync(TimeSpan.FromSeconds(20));
+            await CaptureLayout();
+            if (
+                rate.Input != "258"
+                || queuedEditor.Text != "258"
+                || !rate.HasDraft
+                || rate.IsPending
+                || rate.Message.Length != 0
+            )
+                throw new InvalidOperationException(
+                    $"A queued explicit save did not retain draft 258: input={rate.Input}, nativeText={queuedEditor.Text}, draft={rate.HasDraft}, pending={rate.IsPending}, error={rate.Message}."
+                );
+            await CapturePage("edits-queued-save-newer-input-retained");
+            rate.Cancel();
+            await CaptureLayout();
+            if (rate.Input != "257" || queuedEditor.Text != "257" || rate.HasDraft)
+                throw new InvalidOperationException(
+                    $"Cancel did not expose explicitly confirmed 257: input={rate.Input}, nativeText={queuedEditor.Text}, draft={rate.HasDraft}."
+                );
+            outcomes.Add(
+                new
+                {
+                    journey = "explicit save during pending acknowledgement",
+                    layer = "setting owner with native display",
+                    explicitSubmissionSaved = true,
+                    laterInputRetained = true,
+                    laterInputStayedDraft = true,
+                    confirmedInput = rate.Input,
+                }
+            );
+            completed.Add("edits-pending-explicit-save");
+
+            var cancelEditor = await Edit(rate, "512");
+            var cancelledSave = settings.Commit(rate);
+            if (!rate.IsPending)
+                throw new InvalidOperationException(
+                    "The pending Cancel review did not start a save."
+                );
+            rate.Cancel();
+            await cancelledSave.WaitAsync(TimeSpan.FromSeconds(20));
+            await CaptureLayout();
+            if (
+                rate.Input != "512"
+                || cancelEditor.Text != "512"
+                || rate.HasDraft
+                || rate.IsPending
+                || rate.Message.Length != 0
+            )
+                throw new InvalidOperationException(
+                    $"Cancel during a pending save did not follow confirmed 512: input={rate.Input}, nativeText={cancelEditor.Text}, draft={rate.HasDraft}, pending={rate.IsPending}, error={rate.Message}."
+                );
+            await CapturePage("edits-pending-cancel-confirmed");
+            outcomes.Add(
+                new
+                {
+                    journey = "Cancel during pending acknowledgement",
+                    followedConfirmation = true,
+                    retainedDraft = false,
+                    confirmedInput = rate.Input,
+                }
+            );
+            completed.Add("edits-pending-cancel");
+
+            await Edit(rate, originalRate);
+            await settings.Commit(rate);
+            if (rate.Input != originalRate || rate.HasDraft)
+                throw new InvalidOperationException("The original rate was not restored.");
+
+            var added = await AddPeriod();
+            var draft = settings.Schedule.Draft!;
+            draft.Start = TimeSpan.FromMinutes(137);
+            if (!settings.Schedule.IsPending)
+                throw new InvalidOperationException("The schedule edit did not start a save.");
+            draft.End = TimeSpan.FromMinutes(167);
+            await settings.Schedule.Close();
+            added = settings.Schedule.Periods.Single(period =>
+                period.Start == 137 && period.End == 167
+            );
+            if (settings.Schedule.IsOpen || settings.Schedule.IsPending)
+                throw new InvalidOperationException(
+                    "Closing the period did not finish its pending edits."
+                );
+            outcomes.Add(
+                new
+                {
+                    journey = "close period during pending save",
+                    start = added.Start,
+                    end = added.End,
+                }
+            );
+            await CapturePage("edits-period-save-before-leaving");
+            if (
+                !await Leave()
+                || Model.Page != WindowPage.Torrents
+                || settings.Schedule.Periods.Count != originalPeriods.Length + 1
+                || !settings.Schedule.Periods.Any(period => period.Matches(added))
+                || !originalPeriods.All(existing =>
+                    settings.Schedule.Periods.Any(period => period.Matches(existing))
+                )
+            )
+                throw new InvalidOperationException(
+                    "Leaving Settings did not apply the new period and retain the original schedule."
+                );
+            outcomes.Add(
+                new
+                {
+                    journey = "schedule departure applies",
+                    saved = true,
+                    navigated = true,
+                    days = added.Days,
+                    start = added.Start,
+                    end = added.End,
+                }
+            );
+            completed.Add("edits-period-save-departure");
+            await ShowSettings(new(SettingsCategory.Schedule));
+            await settings.Schedule.Open(
+                settings.Schedule.Periods.Single(period => period.Matches(added))
+            );
+            await CapturePage("edits-period-saved");
+            await settings.Schedule.Delete(
+                settings.Schedule.Periods.Single(period => period.Matches(added))
+            );
+            if (!PeriodsRetained())
+                throw new InvalidOperationException(
+                    "Removing the created review period changed the original schedule."
+                );
+        }
+        finally
+        {
+            _interaction?.Dialog?.Hide();
+            if (departure is not null)
+                await departure.WaitAsync(TimeSpan.FromSeconds(20));
+            await CaptureReady(settings, () => !settings.IsPending);
+            await settings.Schedule.Close();
+            // Every period change saves at once, so the review period may
+            // remain in any of its intermediate forms.
+            if (
+                settings.Schedule.Periods.FirstOrDefault(period =>
+                    !originalPeriods.Any(existing => existing.Matches(period))
+                ) is
+                { } remaining
+            )
+                await settings.Schedule.Delete(remaining);
+            await Model.ChooseLimits(LimitMode.Speed);
+            port.Cancel();
+            rate.Cancel();
+            upload.Cancel();
+            threshold.Cancel();
+            if (threshold.Input != originalThreshold)
+            {
+                threshold.Input = originalThreshold;
+                await settings.Commit(threshold);
+            }
+            await settings.Toggle(settings.IgnoreSlow, originalExclusion);
+            if (rate.Input != originalRate)
+            {
+                await Edit(rate, originalRate);
+                await settings.Commit(rate);
+            }
+            if (upload.Input != originalUpload)
+            {
+                await Edit(upload, originalUpload);
+                await settings.Commit(upload);
+            }
+            if (originalLimits >= 0)
+                await Model.ChooseLimits((LimitMode)originalLimits);
+            if (
+                rate.Input != originalRate
+                || rate.HasDraft
+                || upload.Input != originalUpload
+                || upload.HasDraft
+                || port.Input != originalPort
+                || port.HasDraft
+                || threshold.Input != originalThreshold
+                || threshold.HasDraft
+                || settings.IgnoreSlow.IsOn != originalExclusion
+                || !PeriodsRetained()
+                || Model.LimitsIndex != originalLimits
+            )
+                throw new InvalidOperationException(
+                    "The edit review did not restore its fixture settings and schedule."
+                );
+        }
+        outcomes.Add(
+            new
+            {
+                journey = "restore edit review fixture",
+                rateRestored = true,
+                uploadRestored = true,
+                portRetained = true,
+                originalPeriodsRetained = true,
+            }
+        );
+    }
+}

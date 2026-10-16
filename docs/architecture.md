@@ -588,7 +588,7 @@ than wrapping it in more layers.
 work and its implementation status. This section records ownership and design
 decisions from the combined source review; it is not a second backlog.
 
-- [PipeClient.Files](../app/src/Services/PipeClient/Files.cs) holds Inspector
+- [PipeClient.Files](../app/src/Shared/Engine/PipeClient/Files.cs) holds Inspector
   arbitration through the matching fresh push, including after a cached-ready
   reply. Background file reads settle there; Inspector alone decides whether
   its current presentation accepts a result. The

@@ -1,7 +1,8 @@
 # Current architecture
 
-Source review, 2026-10-06. This describes what exists in **TinyTorrent2**, not the
-earlier application in `../TinyTorrent`. The [target architecture](architecture.md)
+Source review, 2026-10-06; source placement updated 2026-10-16. This describes
+what exists in **TinyTorrent2**, not the earlier application in `../TinyTorrent`.
+The [target architecture](architecture.md)
 owns the intended product design and its [open decisions](architecture.md#decisions-still-open).
 The first download path has Release builds, production checks and a hands-on
 review recorded in [implementation evidence](implementation.md).
@@ -59,7 +60,7 @@ The product follows MVVM. `MainViewModel` owns membership, accepted selection,
 commands and connection facts. It publishes a completed visible list only when
 membership or order changes; routine snapshots refresh window state, while
 connection and language transitions propagate to the affected child owners.
-`Settings` owns confirmed settings, ordinary field drafts, adapter choices,
+`Settings.Editor` owns confirmed settings, ordinary field drafts, adapter choices,
 conversion and submission. Its concrete `Schedule` owns period editing and whole-list saves.
 `AddDraft`, `Inspector` and `FileDraft` own their unfinished operations.
 Inspector retains peer/tracker row identity within the current session and target.
@@ -86,6 +87,18 @@ text in an embedded `en.json`. The target product's
 deployment. [Release.cmd](../Release.cmd) generates an Inno Setup installer with
 prerequisite checks and delivery; installed upgrade and uninstall journeys still
 need verification on a disposable Windows machine.
+
+## App source layout
+
+The app remains one WinUI project. `Shell/` holds the window, main view model
+and InspectorPane composition. `Torrents/`, `Settings/`, `Library/` and
+`Subtitles/` keep their related state, operations and presentation together.
+`Shared/` holds common facilities, with engine communication, storage, network,
+desktop and diagnostics in their supporting folders; `Controls/` holds reusable
+UI. `App` and `Enums.cs` stay in the project root. Partial-type folders retain
+their owner's namespace. [Naming and structure](naming.md#app-folders) owns the
+placement rules; the [organization plan](../plans/app-reorganisation-2026-10-15.md)
+records the complete move map. Prototype documents live in `app/prototypes/`.
 
 ## Build integration
 

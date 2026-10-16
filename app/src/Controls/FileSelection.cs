@@ -1,8 +1,7 @@
 using System.ComponentModel;
 using System.Globalization;
 using System.Text.Json;
-using Syno.TinyTorrent.Models;
-using Syno.TinyTorrent.Services;
+using Syno.TinyTorrent.Shared;
 
 namespace Syno.TinyTorrent.Controls;
 

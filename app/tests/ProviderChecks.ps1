@@ -6,13 +6,13 @@ $ErrorActionPreference = 'Stop'
 $binary = (Resolve-Path -LiteralPath $BinaryDirectory).Path
 $assembly = [Reflection.Assembly]::LoadFrom((Join-Path $binary 'TinyTorrentUI.dll'))
 $flags = [Reflection.BindingFlags]'Instance,Public,NonPublic'
-$httpType = $assembly.GetType('Syno.TinyTorrent.Services.ProviderHttp', $true)
-$routeType = $assembly.GetType('Syno.TinyTorrent.Services.HttpRoute', $true)
-$proxyType = $assembly.GetType('Syno.TinyTorrent.Models.ProxyType', $true)
+$httpType = $assembly.GetType('Syno.TinyTorrent.Shared.Network.ProviderHttp', $true)
+$routeType = $assembly.GetType('Syno.TinyTorrent.Shared.Network.HttpRoute', $true)
+$proxyType = $assembly.GetType('Syno.TinyTorrent.ProxyType', $true)
 $configure = $httpType.GetMethod('Configure', $flags)
 $send = $httpType.GetMethod('Send', $flags, $null, [type[]]@(
     [Net.Http.HttpRequestMessage], [int], [Threading.CancellationToken],
-    $assembly.GetType('Syno.TinyTorrent.Services.ProviderCall', $true)), $null)
+    $assembly.GetType('Syno.TinyTorrent.Shared.Network.ProviderCall', $true)), $null)
 $destination = 'provider-route.invalid'
 
 function Require([bool] $Condition, [string] $Failure) {

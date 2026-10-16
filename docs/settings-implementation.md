@@ -4,8 +4,8 @@
 below. The owner cancelled the full screenshot sweep and requested source review;
 that cancelled work is not an outstanding implementation step.
 
-The approved reference is `app/settings-windows-prototype.html`, variant C,
-with the decisions recorded in `app/settings-windows-prototype.md`. The browser
+The approved reference is `app/prototypes/settings-windows-prototype.html`, variant C,
+with the decisions recorded in `app/prototypes/settings-windows-prototype.md`. The browser
 holds sample data; native Settings continues to use its existing state, save
 paths, dialogs and engine contracts. This work changes composition rather than
 replacing those owners.

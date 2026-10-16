@@ -3,7 +3,6 @@ using System.Net.Http;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Syno.TinyTorrent.Models;
 
 namespace Syno.TinyTorrent.Library.Omdb;
 

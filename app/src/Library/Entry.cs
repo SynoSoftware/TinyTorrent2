@@ -1,4 +1,3 @@
-using Syno.TinyTorrent.Models;
 
 namespace Syno.TinyTorrent.Library;
 

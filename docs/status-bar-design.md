@@ -2,7 +2,7 @@
 
 Designed on 2026-10-13. The UI and shared-service integration are implemented
 in the working tree; native validation remains outstanding. The [interface contract](interface.md)
-owns the adopted behavior. The [interactive study](../app/status-bar-prototype.html)
+owns the adopted behavior. The [interactive study](../app/prototypes/status-bar-prototype.html)
 uses simulated data; it is not a native WinUI rendering.
 
 ## Purpose and hierarchy

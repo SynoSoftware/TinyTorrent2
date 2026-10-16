@@ -13,7 +13,7 @@ comprehensive test matrices, and repeated intermediate review/build cycles are
 cancelled.** Their cost no longer earns its place in this delivery.
 
 Keep the behavior in [Automatic subtitles](subtitles.md), the approved
-[Settings handoff](../app/settings-options-prototype.md#subtitles), and
+[Settings handoff](../app/prototypes/settings-options-prototype.md#subtitles), and
 [repository rules](../AGENTS.md). Cancelling validation work does not cancel
 safe publication, source validation, cancellation or file ownership.
 
@@ -83,7 +83,7 @@ directly. SQLite is not linked into the target engine.
 | Shared torrent adapter | Seed and synchronize accepted membership and file facts in SQLite once for both features. Feature work reads SQLite; the adapter supplies no parallel catalogue. |
 | Existing Settings and dialog owners | Drafts, focus, language entry, errors and presentation. Supplier values are saved by the C# subtitle owner, torrent settings by their existing engine owner. |
 
-Use existing app role folders and Models/Enums.cs. Do not create a separate
+Use the app areas in [naming](naming.md#app-folders) and root Enums.cs. Do not create a separate
 project, generic job framework or a C# class for each previous C++ class.
 Transfer the useful behavior, then delete the replaced native callers and code.
 The current working tree has other writers; re-read shared files before editing.

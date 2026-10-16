@@ -65,7 +65,7 @@ principle worth forcing into the design.
 
 Opus A treats connection, loading, storage health, startup readiness and
 writability as mutually exclusive phases. Current
-[MainViewModel](../../../app/src/MainViewModel.cs) shows that `_ready` is a
+[MainViewModel](../../../app/src/Shell/MainViewModel.cs) shows that `_ready` is a
 startup-presentation latch, while `_writable` is derived from engine facts.
 Local closing and the last known engine status have other lifetimes. Remove the
 derived copy and separate operation feedback, but do not compress independent
@@ -83,7 +83,7 @@ inspector draft from selectable command targets.
 ### Binding needs a real notification source
 
 Opus B's constant-argument `Text.Get(...)` binding is supported syntax.
-[Strings](../../../app/src/Services/Strings.cs) has no notification of its own,
+[Strings](../../../app/src/Shared/Strings.cs) has no notification of its own,
 but the later Opus 1 review inspected generated bindings and found that the
 existing parent publication propagates down the path. The first consolidation
 unnecessarily required a new notification source. Preserve the language Publish
@@ -130,11 +130,11 @@ solely to fit today's shorter prompt is not simplification.
 The two final source documents arrived after the first consolidation. Checking
 their claims against current source exposed concrete gaps in the proposal:
 
-- [Updates](../../../app/src/MainViewModel/Updates.cs) checks its one-day deadline
+- [Updates](../../../app/src/Shell/MainViewModel/Updates.cs) checks its one-day deadline
   only when ObserveUpdates runs. A setting-change-only trigger would prevent
   repeat checks in a long-lived window. Keep an explicit snapshot trigger and
   prompt enable/disable handling, using the existing in-flight guard.
-- [Finding](../../../app/src/MainViewModel/Finding.cs) uses stable OrderBy over
+- [Finding](../../../app/src/Shell/MainViewModel/Finding.cs) uses stable OrderBy over
   Torrents. Its list preserves the tie order for completed torrents, whose
   QueueOrder values are equal. Keep a plain ordered list and its lookup index
   under one owner; deleting the list would not remove a duplicate authority.
@@ -234,19 +234,19 @@ responsiveness claim follows from fewer lines of code.
 
 ## Source checkpoints for implementation
 
-- [MainViewModel](../../../app/src/MainViewModel.cs) and
-  [Actions](../../../app/src/MainViewModel/Actions.cs): settings cache,
+- [MainViewModel](../../../app/src/Shell/MainViewModel.cs) and
+  [Actions](../../../app/src/Shell/MainViewModel/Actions.cs): settings cache,
   connection facts, source handoff, selection and commands.
-- [Workspace](../../../app/src/MainWindow/Workspace.cs): selection rollback,
+- [Workspace](../../../app/src/Shell/MainWindow/Workspace.cs): selection rollback,
   native prompts and guarded navigation.
-- [Settings](../../../app/src/Views/Settings.cs): field acknowledgement,
+- [Settings](../../../app/src/Settings/Editor.cs): field acknowledgement,
   conversion and schedule transaction. `SpeedLimits.cs` was a duplicate editor
   at review time and is already being removed; do not recreate it from an old
   review or treat its absence as missing documentation.
-- [Finding](../../../app/src/MainViewModel/Finding.cs) and
+- [Finding](../../../app/src/Shell/MainViewModel/Finding.cs) and
   [TableView Source](../../../lib/TableView/src/Body/Source.cs): publication
   granularity and full source capture per notification.
-- [Week](../../../app/src/Controls/Week.cs): broad model subscription, schedule
+- [Week](../../../app/src/Settings/Week.cs): broad model subscription, schedule
   signals, visibility and gesture lifetime.
 - [Merge commands](../../../engine/src/Engine/Commands.cpp),
   [Edit](../../../engine/src/Engine/Edits.cpp) and

@@ -1,0 +1,851 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TinyTorrent — Windows 11 Settings prototype</title>
+<!-- Throwaway Windows Settings exploration. ?variant=A|B|C compares category,
+     expanded, and Home compositions. All values are samples held in memory. -->
+<style>
+@font-face{font-family:Lucide;src:url('../../lib/Lucide/src/Fonts/lucide.ttf') format('truetype')}
+:root{color-scheme:dark;--page:#202020;--card:#2b2b2b;--inner:#282828;--hover:#323232;--control:#373737;--line:#202020;--edge:#ffffff0c;--text:#f5f5f5;--muted:#c5c5c5;--accent:#4cc2ff;--link:#99e6ff;--on:#00354d;--stroke:#9b9b9b}
+body.light{color-scheme:light;--page:#f3f3f3;--card:#fbfbfb;--inner:#f8f8f8;--hover:#f5f5f5;--control:#ffffff;--line:#e8e8e8;--edge:#0000000b;--text:#1b1b1b;--muted:#606060;--accent:#0067c0;--link:#0067c0;--on:#ffffff;--stroke:#858585}
+*{box-sizing:border-box}body{margin:0;background:var(--page);color:var(--text);font:14px/1.43 'Segoe UI Variable Text','Segoe UI',sans-serif}button,input,select,textarea{font:inherit;color:inherit}button{cursor:pointer}button,input,select{min-height:32px;border:1px solid var(--edge);border-radius:4px;background:var(--control);padding:4px 12px}button:hover{background:var(--hover)}button:disabled,input:disabled,select:disabled{opacity:.4;cursor:default}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}input{border-bottom-color:var(--stroke)}input:focus{border-bottom:2px solid var(--accent)}input[type=checkbox],input[type=radio]{accent-color:var(--accent);min-height:0;width:18px;height:18px}a,.link{color:var(--link)}.link{background:transparent;border:0;padding:0;text-align:left}.icon{font:20px/1 Lucide;display:inline-flex;align-items:center;justify-content:center;width:24px;flex-shrink:0;font-style:normal}.icon.small{font-size:14px;width:16px}.plain{background:transparent;border:0}.caption{height:48px;display:flex;align-items:center;padding:0 12px;gap:16px}.caption .back{width:32px;padding:0}.caption-title{font-size:12px;width:240px}.window-actions{margin-left:auto;display:flex;gap:30px;font-size:12px;padding-right:12px;color:var(--muted);user-select:none}.shell{display:grid;grid-template-columns:304px minmax(0,1fr);height:calc(100dvh - 48px);min-height:440px}.sidebar{padding:8px 16px 90px;overflow:auto}.identity{display:flex;align-items:center;gap:12px;margin:0 0 26px}.avatar{width:60px;height:60px;border-radius:50%;background:#f1f1f1;display:grid;place-items:center;color:#0067c0}.avatar .icon{font-size:29px}.identity strong{display:block;font-weight:600}.nav{display:grid;gap:4px}.nav button{position:relative;min-height:36px;display:flex;align-items:center;gap:12px;background:transparent;text-align:left;border:0;border-radius:4px;padding:8px 12px}.nav button:hover,.nav button[aria-current=page]{background:var(--card)}.nav button[aria-current=page]:before{content:'';position:absolute;left:0;top:10px;bottom:10px;background:var(--accent);width:3px;border-radius:2px}.nav .icon{color:var(--accent)}.nav button:nth-child(3n) .icon{color:#67c7be}.nav button:nth-child(4n) .icon{color:#c09bfa}.main{overflow:auto;padding:8px 56px 120px;scrollbar-width:thin;scrollbar-gutter:stable}.content{max-width:1200px;margin:0}.heading{display:flex;align-items:center;gap:12px;min-height:48px;margin-bottom:var(--section-gap);flex-wrap:wrap}.heading h1,.heading button{font:600 28px/1.35 'Segoe UI Variable Display','Segoe UI',sans-serif;margin:0}.heading button{background:none;border:0;padding:0;color:var(--muted)}.heading .icon{color:var(--muted);font-size:20px}.section{margin:0 0 var(--section-gap)}.section-title{font-weight:600;margin:0 0 var(--heading-gap);font-size:14px}.card{border:1px solid var(--edge);border-radius:4px;background:var(--card);margin:0 0 var(--card-gap);overflow:hidden}.row{min-height:68px;display:flex;align-items:center;padding:12px var(--card-padding);gap:20px}.row-copy{min-width:0;flex:1}.row-title{font-size:14px;font-weight:400}.description{color:var(--muted);font-size:12px;line-height:16px;margin-top:2px}.row .control{display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-shrink:0}.row select{min-width:170px;max-width:260px}.row input[type=number]{width:100px}.row input[type=text]{width:270px}.unit{color:var(--muted);width:54px}.chevron{font-size:13px!important;width:14px!important;margin-left:2px}.navigate{width:100%;text-align:left;border:0;border-radius:0;background:transparent;font-weight:400}.navigate:hover{background:var(--hover)}.summary{color:var(--muted);font-size:14px;text-align:right}.switch{display:inline-flex;align-items:center;gap:12px;min-height:32px;padding:0;border:0;background:transparent;white-space:nowrap}.switch:hover{background:transparent}.track{position:relative;width:40px;height:20px;border:1px solid var(--stroke);border-radius:12px;display:inline-block}.track:after{content:'';position:absolute;left:3px;top:3px;width:12px;height:12px;border-radius:50%;background:var(--muted)}.switch[aria-checked=true] .track{background:var(--accent);border-color:var(--accent)}.switch[aria-checked=true] .track:after{left:23px;background:var(--on)}.children{background:var(--inner);border-top:1px solid var(--line)}.children>.row{margin-left:58px;padding-left:0;padding-right:42px;min-height:52px;border-bottom:1px solid var(--line)}.children>.row:last-child{border-bottom:0}.children>.row>.icon{display:none}.children .row-copy{padding:0}.children .row-tall{align-items:flex-start;padding-top:20px;padding-bottom:24px}.expander>summary{list-style:none;cursor:pointer}.expander>summary::-webkit-details-marker{display:none}.expander>summary:hover{background:var(--hover)}.expander>summary .chevron{transition:transform .15s}.expander[open]>summary .chevron{transform:rotate(180deg)}.radios{display:grid;gap:12px;padding-top:8px}.radio{display:flex;gap:10px;align-items:flex-start}.radio input{margin:3px 0 0}.radio strong{font-weight:600}.radio .description{max-width:720px}.radio-block{padding:20px 42px 24px 58px}.radio-block>p{margin:0 0 20px}.related{margin-top:var(--section-gap)}.intro{margin:0 0 20px;color:var(--muted)}.hero{display:flex;align-items:center;gap:18px;margin:var(--section-gap) 0}.device{width:120px;height:76px;display:grid;place-items:center;background:linear-gradient(135deg,#104361,#207daf);border-radius:6px}.device .icon{font-size:40px}.hero h2{font-size:18px;margin:0 0 3px;font-weight:600}.hero p{margin:0;color:var(--muted);font-size:12px}.hero-facts{margin-left:auto;display:flex;gap:28px}.hero-facts>div{display:flex;gap:12px;align-items:center}.hero-facts .icon{color:var(--accent)}.hero-facts strong{font-size:14px}.home-grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--card-gap);align-items:start}.home-column{display:grid;gap:var(--card-gap)}.home-card{background:var(--card);border:1px solid var(--edge);border-radius:8px;overflow:hidden}.home-head{padding:var(--card-padding)}.home-head h2{font-size:20px;font-weight:600;margin:0}.home-head p{margin:0;color:var(--muted)}.home-card .row{border-top:1px solid var(--line);padding:12px var(--card-padding)}.home-card .row .control{gap:8px}.home-card .description{max-width:280px}.home-card .summary{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.theme-picker{padding:var(--card-padding)}.theme-picker h3{font-size:14px;font-weight:400;margin:0 0 var(--heading-gap)}.themes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--card-gap)}.home-card .theme-picker{padding:0 var(--card-padding) var(--card-padding)}.theme-swatch{min-width:0;padding:4px;border:2px solid var(--edge);border-radius:8px;background:transparent;overflow:hidden;text-align:left}.theme-swatch:hover{background:var(--hover)}.theme-swatch[aria-checked=true]{border-color:var(--accent)}.theme-art{position:relative;display:block;aspect-ratio:21/9;border-radius:8px;overflow:hidden}.theme-art>img{display:block;width:100%;height:100%;object-fit:cover;border-radius:8px;image-rendering:auto}.theme-art.split>img{position:absolute;inset:0}.theme-art.split>img:first-child{clip-path:inset(0 50% 0 0)}.theme-art.split>img:last-child{clip-path:inset(0 0 0 50%)}.theme-label{display:flex;align-items:center;justify-content:space-between;gap:4px;padding:8px 6px 4px;color:var(--text)}.theme-label .icon{width:16px;font-size:16px;color:var(--accent)}.theme-swatch[aria-checked=false] .theme-label .icon{visibility:hidden}#group-personalization #row-language{padding-left:16px}@media(forced-colors:active){.theme-swatch{forced-color-adjust:auto}.theme-swatch[aria-checked=true]{border-color:Highlight}.theme-label{background:Canvas;color:CanvasText}.theme-label .icon{color:Highlight}.theme-art{forced-color-adjust:none}}.facts{display:grid;grid-template-columns:1fr 1fr;gap:22px;padding:0 24px 24px}.facts p{margin:0}.facts span{display:block;color:var(--muted);margin-top:6px}.hint-banner{border:1px solid var(--edge);background:var(--card);border-radius:4px;padding:14px 16px;display:flex;gap:12px;margin-bottom:22px}.hint-banner p{margin:0}.week{display:grid;grid-template-columns:55px repeat(24,1fr);gap:3px;padding:20px 24px;min-width:610px}.hour{height:24px;background:#ffffff10;border:0;min-height:24px;padding:0;border-radius:2px}.hour.alt{background:#4cc2ff88}.hour.pause{background:#d7ac5888}.day{font-size:12px;align-self:center}.time{grid-column:span 6;font-size:12px;color:var(--muted)}.schedule-scroll{overflow:auto}.legend{display:flex;gap:20px;padding:0 24px 20px;align-items:center}.legend button[aria-pressed=true]{border-color:var(--accent)}.accent{background:var(--accent);color:var(--on)}.accent:hover{filter:brightness(1.08);background:var(--accent)}.footer-link{margin-top:20px}.prototype-bar{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;z-index:10;padding:6px 9px;background:var(--card);border:1px solid var(--stroke);border-radius:9px;box-shadow:0 4px 20px #0005;white-space:nowrap;font-size:12px}.prototype-bar button{background:transparent;border:0;min-height:30px;font-size:12px}.prototype-bar strong{min-width:166px;text-align:center}.prototype-bar .divider{height:20px;border-left:1px solid var(--stroke);opacity:.5}.prototype-bar .tag{color:var(--muted)}dialog{color:var(--text);background:var(--card);border:1px solid var(--edge);border-radius:8px;padding:0;width:min(550px,90vw);max-height:85vh;box-shadow:0 16px 60px #0006}dialog::backdrop{background:#0007}.dialog-body{padding:24px;overflow:auto}.dialog-body h2{font-size:20px;margin:0 0 16px;font-weight:600}.dialog-body p{color:var(--muted)}.dialog-body label{display:block;margin:16px 0}.dialog-body label>input,.dialog-body label>select{display:block;width:100%;margin-top:6px}.dialog-actions{background:var(--inner);padding:24px;display:flex;justify-content:flex-end;gap:8px;border-top:1px solid var(--line)}.dialog-actions button{min-width:110px}.notes{width:min(850px,94vw)}.notes h3{font-size:15px;margin-top:24px}.notes table{border-collapse:collapse;width:100%;font-size:13px}.notes td,.notes th{padding:10px;text-align:left;vertical-align:top;border-bottom:1px solid var(--edge)}.notes code{font-size:12px}.notes pre{font-size:12px;white-space:pre-wrap}.spotlight{outline:2px solid var(--accent);outline-offset:-2px}.muted{color:var(--muted)}.inactive .row-copy{opacity:.45}.empty{padding:24px;color:var(--muted)}
+@media(min-width:1500px){.main{padding-right:80px}}@media(max-width:1100px){.shell{grid-template-columns:250px minmax(0,1fr)}.caption-title{width:195px}.main{padding:8px 28px 110px}.sidebar{padding-left:12px;padding-right:12px}.row{gap:14px}.row select{min-width:140px;max-width:190px}.row input[type=text]{width:190px}.hero-facts{gap:16px}.home-grid{grid-template-columns:1fr}.home-column{display:contents}.children>.row{margin-left:48px;padding-right:20px}}@media(max-width:760px){.shell{grid-template-columns:190px minmax(0,1fr)}.identity{gap:8px}.avatar{width:40px;height:40px}.nav button{gap:6px;padding:8px}.main{padding:8px 18px 110px}.heading h1,.heading button{font-size:24px}.row{flex-wrap:wrap}.row-copy{min-width:140px}.row .control{margin-left:auto}.hero-facts{display:none}.caption-title{width:auto}.window-actions{display:none}.search{left:auto;right:16px;transform:none;width:55%}.prototype-bar .tag{display:none}.children>.row{margin-left:24px}.prototype-bar{gap:3px;max-width:98%}.prototype-bar strong{min-width:130px}}
+@media(forced-colors:active){.card,.home-card,.track{border:1px solid CanvasText}.nav button[aria-current=page]{outline:1px solid Highlight}.nav button[aria-current=page]:before,.track:after{background:Highlight}.avatar,.device{forced-color-adjust:none}.hour{border:1px solid ButtonText}}
+.ruler{position:relative;height:24px;margin-left:62px;margin-right:24px;color:var(--muted);font-size:12px}.ruler span{position:absolute;transform:translateX(-50%)}.ruler span:first-child{transform:none}.ruler span:last-child{transform:translateX(-100%)}.week-map{padding:var(--card-padding)}.day-line{display:grid;grid-template-columns:62px minmax(0,1fr);align-items:center;margin-bottom:6px}.day-line>span{font-size:12px;color:var(--muted)}.timeline{position:relative;height:38px;border-radius:3px;background:var(--inner);outline-offset:2px;touch-action:none;user-select:none;cursor:crosshair}.timeline.fixed{cursor:default}.segment{position:absolute;top:0;height:100%;display:flex;align-items:center;justify-content:center;gap:6px;overflow:hidden;font-size:11px;border:1px solid var(--edge);background:var(--control);border-radius:2px;color:var(--text);white-space:nowrap;pointer-events:none}.segment.alternative,.key.alternative{background:#137cad77}.segment.paused,.key.paused{background:#ad781f77}.segment.none{background:var(--control)}.segment span{overflow:hidden;text-overflow:ellipsis;padding:0 6px}.segment small{font-size:10px;opacity:.8}.occurrence{position:absolute;top:1px;height:36px;outline:2px solid var(--accent);outline-offset:-2px;pointer-events:none;z-index:2}.grip{position:absolute;top:5px;bottom:5px;width:9px;pointer-events:auto;cursor:ew-resize;border:0;border-radius:2px;background:var(--text);opacity:.6}.grip.start{left:2px}.grip.end{right:2px}.now-line,.cursor-line{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--accent);z-index:3;pointer-events:none}.now-line:before{content:'';position:absolute;left:-3px;top:-1px;width:8px;height:8px;border-radius:50%;background:var(--accent)}.cursor-line{background:var(--text);border-left:1px dashed var(--page);width:2px}.map-legend{display:flex;gap:22px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--muted);padding:0 var(--card-padding) var(--card-padding) 78px}.key{display:inline-block;width:12px;height:12px;border-radius:2px;margin-right:6px;vertical-align:-1px;background:var(--control);border:1px solid var(--edge)}.map-caption{padding:0 var(--card-padding) var(--card-padding) 78px;color:var(--muted);font-size:12px;min-height:35px}.section-heading{display:flex;justify-content:space-between;align-items:center;margin:var(--section-gap) 0 var(--heading-gap)}.section-heading h2{font-size:14px;margin:0;font-weight:600}.period-fields{padding:18px 24px 22px 58px;display:grid;gap:16px}.period-fields label{display:flex;gap:8px;align-items:center}.period-days{display:flex;align-items:center;gap:14px;flex-wrap:wrap}.period-times{display:flex;gap:20px;align-items:end;flex-wrap:wrap}.period-times label{display:grid;gap:6px}.period-footer{display:flex;justify-content:space-between;gap:12px;align-items:center}.error{color:#ffb4ab;font-size:12px}.light .error{color:#a4262c}.error:empty{display:none}[aria-invalid=true]{border-color:#e87d73}.row textarea{background:var(--control);border:1px solid var(--edge);border-bottom:1px solid var(--stroke);border-radius:4px;padding:8px 12px;font:inherit;color:inherit;width:270px;height:80px;resize:vertical}.row .duration-unit{min-width:95px;width:95px}.disabled-reason{font-size:12px;color:var(--muted);margin-top:3px}.rate-pairs{display:grid;grid-template-columns:1fr 1fr;gap:var(--card-gap);margin:0}.rate-pairs .section{margin:0}.rate-pairs .setting-rows>.row{min-height:52px;padding:10px var(--card-padding);gap:12px}.setup-grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--card-gap)}.setup-grid .row{flex-wrap:wrap}.proposal{width:100%;border-collapse:collapse}.proposal th,.proposal td{padding:10px 12px;text-align:right;border-bottom:1px solid var(--line);font-size:13px}.proposal th:first-child,.proposal td:first-child{text-align:left}.proposal .changed{color:var(--link)}.setup-share{padding:var(--card-padding)}.setup-share label{display:flex;justify-content:space-between}.setup-share input{width:100%;padding:0;accent-color:var(--accent)}.setup-share p{color:var(--muted);font-size:12px;margin:8px 0 0}.setup-footer{display:flex;gap:8px;justify-content:flex-end;padding-top:20px;border-top:1px solid var(--edge);margin-top:24px}.task-actions{padding:var(--card-padding);display:flex;align-items:center;gap:12px;border-top:1px solid var(--line)}.task-actions .description{flex:1}.dialog-body .error{display:block}.dialog-check{margin-right:auto}.dialog-body input[type=checkbox]{display:inline;width:18px}.preview-fields label{display:block;margin-bottom:16px}.preview-fields label select,.preview-fields label input{margin-left:12px}.preview-fields input[type=checkbox]{width:18px;min-height:0}.inactive .row-copy{opacity:1}.home-card .description{max-width:none}.home-card .row{gap:20px}.home-card .row .row-copy{min-width:100px}.home-card select{min-width:140px;max-width:175px}.main h1:focus{outline:none}
+@media(max-width:1000px){.setup-grid{grid-template-columns:1fr}.period-fields{padding-left:24px}.map-legend{padding-left:24px}.map-caption{padding-left:24px}.rate-pairs{grid-template-columns:1fr}}@media(forced-colors:active){.segment{border:1px solid CanvasText}.segment.alternative{border-style:dashed}.segment.paused{border-style:double;border-width:3px}.occurrence{outline-color:Highlight}}
+.avatar,.device{background:transparent;border-radius:0}.brand{width:100%;height:100%;object-fit:contain}.device{width:76px;height:76px}.avatar{width:52px;height:56px}.ruler{margin-right:0}.timeline:focus-visible{outline:2px solid var(--accent)}
+.setting-rows>.row{border-bottom:1px solid var(--line);padding-left:20px;min-height:64px}.setting-rows>.row:last-child{border-bottom:0}.section+.card,.card+.section,.card+.related{margin-top:var(--section-gap)}.expander>.children>.row{min-height:64px}.expander .section{margin:var(--section-gap) var(--card-padding) var(--section-gap) var(--label-inset)}
+:root{--section-gap:24px;--card-gap:8px;--heading-gap:8px;--card-padding:16px;--label-inset:60px;--control-inset:var(--card-padding);--editor-width:260px;--action-width:148px}
+.row{padding-right:var(--control-inset)}.navigate,summary.row{padding-right:16px}.setting-rows>.row{padding-left:var(--label-inset)}.children>.row{margin-left:var(--label-inset);padding-right:var(--control-inset)}.row select{width:var(--editor-width);min-width:var(--editor-width);max-width:none}.row input[type=text],.row textarea{width:var(--editor-width)}.row .duration-unit{min-width:95px;width:95px}.number-editor{display:flex;align-items:center;gap:12px;width:var(--editor-width)}.number-editor>input[type=number]{flex:1;min-width:0;width:0}#content:is([data-page=transfers],[data-page=network]) .number-editor>.unit{flex:0 0 52px}.rate-pairs{--editor-width:166px}#content:is([data-page=transfers],[data-page=plugins]) .control[data-kind]:has(>button.command){display:grid;grid-template-columns:var(--editor-width) var(--action-width)}#content:is([data-page=transfers],[data-page=network],[data-page=plugins]) .control[data-kind]>button.command{width:var(--action-width)}
+.group-help{margin:0 0 var(--heading-gap)}.description:empty{display:none}#group-subtitles .control{display:grid;grid-template-columns:var(--editor-width) var(--action-width);gap:12px;align-items:center}#group-subtitles .control>*{min-width:0;max-width:100%}#group-subtitles .control>button:not(.switch){width:var(--action-width)}#group-subtitles .control>.switch{justify-self:end}#group-subtitles .control>.summary{text-align:right;white-space:normal}#group-subtitles .control>select{width:var(--editor-width)}.subtitle-tasks>.section-title{margin:var(--section-gap) 0 var(--heading-gap)}.subtitle-coverage{margin:0 0 12px}.subtitle-status,#help-batchScope{min-width:0;min-height:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.subtitle-status{font-size:12px;color:var(--muted)}#group-subtitles .children{border-top:0}#group-subtitles .control>.summary{text-align:left}#row-automatic .control{display:flex}#group-subtitles .row{flex-wrap:wrap}#group-subtitles .row-copy{min-width:220px}@media(max-width:1100px){#group-subtitles .row-copy{flex-basis:100%}#group-subtitles .control{margin-left:auto}}.home-card .control{flex-wrap:wrap}.home-card .control>.description{max-width:110px}
+@media(max-width:1100px){:root{--label-inset:54px;--editor-width:220px;--action-width:148px}#content:is([data-page=transfers],[data-page=network]) .row{flex-wrap:wrap}#content:is([data-page=transfers],[data-page=network]) .control{margin-left:auto}}@media(max-width:760px){:root{--label-inset:24px;--editor-width:170px;--action-width:148px}.setting-rows>.row{padding-left:24px}}@media(max-width:640px){:root{--editor-width:150px}}
+.period-fields{padding:var(--card-padding) var(--control-inset) var(--card-padding) var(--label-inset);gap:16px}.period-times{display:flex;gap:16px;align-items:end}.period-times input{width:128px}.period-times .period-remove{margin-left:auto;align-self:end}.period-times input,.period-times .period-remove{height:32px;min-height:32px;box-sizing:border-box}.period-times label{display:flex;align-items:center;gap:8px;margin:0}.period-times input{display:block}.command{display:inline-flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap}.command .icon{font-size:18px;width:20px}.period-fields>.error:empty{display:none}.period-behavior{display:flex;align-items:center;gap:16px;flex-wrap:wrap}.period-choices{display:flex;gap:24px;flex-wrap:wrap}.period-choices input{margin:0}
+.sidebar{display:flex;flex-direction:column;padding-bottom:24px}.identity,.nav{flex-shrink:0}.advanced-toggle{margin-top:auto;display:flex;align-items:center;justify-content:space-between;gap:12px;white-space:nowrap;padding:16px 8px 0;border-top:1px solid var(--edge)}.nav{margin-bottom:24px}.group-note{margin:0;padding:14px var(--control-inset) 4px var(--label-inset)}.folder-example{display:block;margin-top:6px;color:var(--muted);font-size:12px}.caption-title{flex-shrink:1}@media(max-width:760px){.advanced-toggle{gap:8px;padding-left:0;padding-right:0;font-size:12px;white-space:normal}}
+.page-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;min-height:100px;margin-bottom:var(--section-gap)}.page-heading>.heading{margin:0;flex:1}.page-art{width:150px;height:100px;object-fit:contain;flex-shrink:0}@media(max-width:760px){.page-heading{gap:12px;min-height:72px}.page-art{width:108px;height:72px}}
+.page-heading.home-heading{min-height:48px}.hero-facts p{display:flex;gap:16px;white-space:nowrap;font-variant-numeric:tabular-nums;color:var(--text)}.hero-facts h3{margin:0 0 4px;color:var(--muted);font-size:12px;font-weight:400;line-height:16px}.hero-facts strong{font-size:20px;font-weight:600;line-height:28px}.hero-facts>div{display:block}.hero-facts p>span{display:flex;align-items:baseline;gap:6px}.hero-facts p>span>span{font-size:14px;color:var(--muted)}.hero .device{width:76px;height:76px}.hero .device .brand{width:76px;height:76px}.hero h2{font-size:18px}
+.home-activity{float:right;font-weight:400;line-height:28px;margin-left:12px}
+.hero{display:grid;grid-template-columns:76px minmax(130px,1fr) auto;gap:16px;min-height:76px}.hero-facts{display:grid;grid-template-columns:repeat(2,max-content);gap:32px;margin-left:0;justify-self:end}.prototype-bar{left:calc(50% + 152px);max-width:calc(100% - 336px);flex-wrap:wrap}@media(max-width:1100px){.prototype-bar{left:calc(50% + 125px);max-width:calc(100% - 282px)}}@media(max-width:1100px){.hero{grid-template-columns:76px 1fr}.hero-facts{grid-column:1/-1}}@media(max-width:600px){.hero-facts{grid-template-columns:1fr;gap:16px}}@media(max-width:760px){.prototype-bar{left:calc(50% + 95px);max-width:calc(100% - 226px)}}
+.prototype-bar{width:max-content}
+.speed-controls{display:grid;gap:var(--card-gap);margin-bottom:var(--section-gap)}.speed-controls>.card,.speed-controls .card,.speed-controls .section,.speed-profiles{margin:0}.speed-controls .speed-profiles{padding-top:var(--card-gap)}.speed-profiles .rate-pairs{gap:var(--card-gap);margin:0}.speed-expander .speed-controls{padding:var(--card-padding);margin:0}.speed-expander{margin-bottom:var(--section-gap)}.speed-expander .speed-controls>.card,.speed-expander .setting-rows{border-color:transparent;background:transparent}.speed-expander #row-mode>.icon{display:none}
+.text-box{position:relative;display:inline-flex;width:var(--editor-width,160px);min-width:0}.row .text-box>input,.text-box>input{width:100%;min-width:0;padding-right:32px}.text-box>[data-clear]{position:absolute;right:1px;top:1px;bottom:2px;min-height:0;width:28px;padding:0;border:0;background:transparent;visibility:hidden}.text-box:has(>input:focus:enabled:not(:placeholder-shown))>[data-clear]{visibility:visible}.text-box>[data-clear]:hover{background:var(--hover)}.number-editor>.text-box{flex:1;width:0}.dialog-body label>.text-box{display:flex;width:100%;margin-top:6px}
+
+.spotlight{outline-color:var(--text);scroll-margin-block:16px;border-radius:4px}
+
+.speed-expander .speed-controls>.card:last-child{border-top-color:var(--line);border-radius:0}
+.map-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:var(--card-padding) var(--card-padding) 0;min-height:48px}.map-heading h2{font-size:14px;font-weight:600;margin:0}.map-heading select{width:var(--editor-width)}
+.row.compact,.setting-rows>.row.compact,.children>.row.compact{min-height:52px;padding-top:10px;padding-bottom:10px}.expander>summary .description{display:block}.expander[open]>summary .group-summary{visibility:hidden}
+.integration-row{display:grid;grid-template-columns:24px minmax(0,1fr) auto;column-gap:12px;row-gap:0;align-items:start}.integration-row.integration-child{grid-template-columns:minmax(0,1fr) auto}.integration-row>.icon{margin-top:6px}.integration-row .row-title{line-height:32px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.integration-row .control{padding-top:0;flex-wrap:nowrap;justify-self:end}.integration-apps{grid-column:2/-1;display:grid;grid-template-columns:120px minmax(0,1fr);gap:6px 16px;margin:8px 0 0;font-size:13px}.integration-apps dt,.integration-apps dd{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.integration-apps dt{color:var(--muted)}.integration-apps dd{margin:0}.integration-warning{grid-column:2/-1;display:flex;align-items:flex-start;gap:8px;min-width:0;margin:10px 0 0;font-size:12px;color:var(--muted)}.integration-warning .icon{color:#e9c94f;font-size:16px;width:18px;flex-shrink:0}.light .integration-warning .icon{color:#916400}.integration-warning p{min-width:0;flex:1;margin:0}.integration-message,.integration-path,.integration-status{display:block;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.integration-status{grid-column:2/-1}.integration-child>.integration-apps,.integration-child>.integration-warning,.integration-child>.integration-status{grid-column:1/-1}.integration-row>.row-copy,.home-card .integration-row>.row-copy{min-width:0}@media(forced-colors:active){.integration-warning .icon{color:CanvasText}}
+ .account-editor .dialog-actions{padding:16px 24px}.account-editor .dialog-actions>button,.account-editor #check-draft{width:120px;min-width:120px}.check-status{display:grid;grid-template-columns:auto 16px minmax(0,1fr);gap:8px;align-items:center;min-width:0;flex:1;margin-right:16px;min-height:32px}.check-status #draft-result-icon{grid-column:2;color:#6ccb5f}.light .check-status #draft-result-icon{color:#0f7b0f}.check-status #draft-result{grid-column:3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}.check-status #draft-result:focus-visible{outline:2px solid var(--accent);outline-offset:3px}.proxy-editor h2{display:flex;align-items:center;gap:12px}.proxy-editor .proxy-fields,.proxy-editor #proxy-signin{display:grid;gap:12px}.proxy-editor .proxy-fields label{margin:0}.proxy-editor .field-header{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.proxy-editor .proxy-fields input{width:100%}.proxy-editor .dialog-body .field-header .error{display:inline}@media(forced-colors:active){.check-status #draft-result-icon{color:CanvasText}}
+[hidden]{display:none!important}#editor form{display:flex;flex-direction:column;max-height:calc(85vh - 2px)}#editor .dialog-body{min-height:0;overflow:auto}#editor .dialog-actions{flex-shrink:0}.language-settings{border-bottom:1px solid var(--line)}.language-settings>summary{cursor:pointer;list-style:none;padding-left:var(--label-inset);padding-right:var(--control-inset)}.language-settings>summary::-webkit-details-marker{display:none}.language-settings>summary .summary{margin-left:auto}.language-settings[open]>summary>.chevron{transform:rotate(180deg)}.language-editor{padding:0 var(--control-inset) 16px var(--label-inset)}.language-mode{border:0;padding:0;margin:0 0 12px;display:flex;gap:24px;flex-wrap:wrap}.language-mode label,.language-choice{display:flex;align-items:center;gap:10px;margin:0;padding:8px 0}.language-mode input,.language-choice input{width:18px;height:18px;min-height:0;margin:0;accent-color:var(--accent)}#language-search{width:100%;display:block;margin:8px 0 12px}.language-choices{max-height:176px;overflow:auto;border:1px solid var(--edge);border-radius:4px;background:var(--inner);padding:4px 12px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 16px}.language-choice{min-height:40px}.language-choice:hover{background:var(--hover)}.language-selection{margin:12px 0 0;line-height:20px}@media(max-width:760px){.language-settings>summary{flex-wrap:wrap}.language-settings>summary .summary{margin-left:0}.language-choices{grid-template-columns:1fr}}
+
+.row[data-dependency] .row-copy{padding-left:24px}
+
+.row-title,.row-copy>.description,.row-copy>.error:not(:empty),.summary,.group-note,.group-help,.folder-example,.map-caption,.content>p.description,.radio .description,.expander>summary .row-copy,.intro,.setup-share p,.setup-footer>span{display:block;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.light .nav button:nth-child(3n) .icon{color:#006e66}.light .nav button:nth-child(4n) .icon{color:#6b3fa0}.light [aria-invalid=true]{border-color:#a4262c}
+@media(prefers-reduced-motion:reduce){.expander>summary .chevron{transition:none}}
+</style>
+</head>
+<body>
+<header class="caption"><button class="back plain" id="back" aria-label="Back">←</button><span class="caption-title">Settings</span><div class="window-actions" aria-hidden="true"><span>―</span><span>□</span><span>✕</span></div></header>
+<div class="shell"><aside class="sidebar"><div class="identity"><div class="avatar"><img class="brand" alt="" src="data:image/svg+xml,%3Csvg%20width%3D%22451%22%20height%3D%22489%22%20version%3D%221.1%22%20viewBox%3D%220%200%20451%20489%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20xmlns%3Axlink%3D%22http%3A%2F%2Fwww.w3.org%2F1999%2Fxlink%22%3E%3Cdefs%3E%3ClinearGradient%20id%3D%22b%22%20x1%3D%22229%22%20x2%3D%22226%22%20y1%3D%22392%22%20y2%3D%22-17.7%22%20gradientUnits%3D%22userSpaceOnUse%22%3E%3Cstop%20stop-color%3D%22%230075ff%22%20offset%3D%220%22%2F%3E%3Cstop%20stop-color%3D%22%230ff%22%20offset%3D%22.602%22%2F%3E%3C%2FlinearGradient%3E%3ClinearGradient%20id%3D%22a%22%20x1%3D%22245%22%20x2%3D%22245%22%20y1%3D%22461%22%20y2%3D%22210%22%20gradientUnits%3D%22userSpaceOnUse%22%3E%3Cstop%20stop-color%3D%22%230000b4%22%20offset%3D%220%22%2F%3E%3Cstop%20stop-color%3D%22%23008aff%22%20offset%3D%221%22%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Cpath%20d%3D%22m230-0.0195c-0.177%200.00225-0.256%200.0352-0.256%200.0352-51.5%2060.5-79.9%20109-103%20147-58%2098.1-54%20148-44.7%20177%2011%2029.5%2029.1%2038.7%2061.1%2045.1%2024.4%204.89%2029.7-2.13%2037.6-18.9%2010.7-22.6%2010.8-42.5%2010.2-58.8-0.748-20.3-21.4%2046.2-31.5-5.02-1.73-8.79%2027.3-39.6%2042.3-52.3%2044-37.5%2059.6%2030.2%20108%2056.6%2032.5%2017.8%2073.2-31.9%2051.3-87.1-17.3-43.5-114-204-131-204zm-121%20237c6.2-17.6%2025.7-61.5%2037.5-51.3%2011.9%2010.3-11.8%2033.4-20.2%2069.9-8.88%2038.4%208.48%2084.8-16.5%2069.7-16.6-10-6.64-71.7-0.799-88.3z%22%20fill%3D%22url(%23b)%22%20stroke-width%3D%220%22%2F%3E%3Cpath%20d%3D%22m122%20388c17.5%209.72%2058.9%209.62%2072-6.52%2019.3-23.8%2023-42.8%2023.3-71.9%200.258-27.8-6.69-48.7%2013.7-52.7%2013.5-2.61%2028.2%2033%2043.7%2045%2032.1%2024.8%2011.2-27.8%2019.9-23.7%2015.1%207.15%2023%2019.3%2045.5%207.79%2015.7-8.03%2031-44.6%2023.6-73.6-3.68-14.3%2023.5%2055.7%2016.1%2097-16.8%2094.6-83.3%20117-110%20124-42.6%2010.4-72.3%200.93-102-8.8-32.9-10.7-77.8-53.8-45.9-36.2z%22%20fill%3D%22url(%23a)%22%2F%3E%3Cpath%20d%3D%22m131%20427c7.67-11.7%202.9-15.7-16%200.381-18%2015.3%2046.5%2040.4%20123%2041.1%2062.6%200.61%20127-29.2%20109-40.2-21.8-13.5-30.8-12.7-15.4%202.4%2012.1%2011.9-68.6%2022.6-101%2022.2-66.4-0.828-108-13.9-99.7-26z%22%20fill%3D%22%230000b4%22%2F%3E%3Cpath%20d%3D%22m87%20411c20.5-10.9-23.2%201.32-34.9%2017.3-15.2%2020.8%2025.5%2066.8%20204%2060.5%20169-5.93%20165-56.2%20145-70.1-25.2-17.7-46.3-22.3-19-0.389%2013.1%2010.5%2011.9%2027.9-29.8%2044.3-24.6%209.69-90.8%2013.1-125%2013.2-35.2%200.0709-86.2-7.32-129-16.2-51.6-10.8-23.6-42.4-11.7-48.7z%22%20fill%3D%22%230000b4%22%2F%3E%3Cpath%20d%3D%22m57.3%20408c-16.1%204.83-32.3%2010.4-38.1%2022.4-3.24%206.76-11.3%2037.6%2072.1%2052.4%2030.6%205.43-14.9-6.7-34.3-17.9-13.8-7.91-25.5-12.9-21.7-30.9%204.51-21.2%2043.5-32.5%2022-26.1z%22%20fill%3D%22%230000b4%22%2F%3E%3Cpath%20d%3D%22m407%20412c-21.2-17.6%2026.3%203.15%2035.3%2018.8%209.99%2017.4-15%2035.3-33.4%2043.4-18.5%208.21-70.8%2013.4-61.5%2010.6%2027-8.04%2070.5-19%2078.8-45%204.38-13.6-8.48-18.8-19.3-27.8z%22%20fill%3D%22%230000b4%22%2F%3E%3C%2Fsvg%3E"></div><div><strong>TinyTorrent</strong></div></div><nav class="nav" id="nav" aria-label="Settings categories"></nav><div class="advanced-toggle"><span id="advanced-label">Show advanced settings</span><button id="advanced-toggle" class="switch" role="switch" aria-labelledby="advanced-label" aria-checked="false"><span class="track" aria-hidden="true"></span></button></div></aside><main class="main" id="main"><div class="content" id="content"></div></main></div>
+<aside class="prototype-bar" aria-label="Prototype controls"><span class="tag">PROTOTYPE · sample data</span><span class="divider"></span><button id="previous" aria-label="Previous layout">←</button><strong id="variant"></strong><button id="next" aria-label="Next layout">→</button><span class="divider"></span><button id="design">Design logic</button><button id="theme" aria-label="Change prototype theme">☀</button></aside>
+<dialog id="editor" aria-labelledby="editor-title"><form id="form"><div class="dialog-body" id="fields"></div><div class="dialog-actions"><div class="check-status" id="draft-status" hidden></div><button class="accent" type="submit">Save</button><button type="button" id="cancel">Cancel</button></div></form></dialog>
+<dialog class="notes" id="notes"><div class="dialog-body"><h2>How Windows would organize these settings</h2><p>This is an independent interpretation of Windows 11 Settings, using TinyTorrent's existing capabilities. Microsoft has not designed or endorsed it. Values are fictional, and edits last only until this page reloads.</p><h3>Choose a container by meaning</h3><table><tr><th>Meaning</th><th>Windows pattern</th><th>TinyTorrent example</th></tr><tr><td>One independent choice</td><td>Settings card with an inline control</td><td>Theme, network adapter, automatic subtitles</td></tr><tr><td>Several parts of one subject</td><td>Joined rows within one card</td><td>Default and incomplete download folders; a pair of speed limits</td></tr><tr><td>Details subordinate to one subject</td><td>Expander, with children aligned to its text</td><td>Notifications, peer discovery, seeding limits</td></tr><tr><td>A distinct workflow with a proposal</td><td>Navigation card, chevron and breadcrumb</td><td>Connection setup: capacity, proposed changes, Apply and Cancel</td></tr><tr><td>Values that must be saved together</td><td>Summary plus Edit, opening a dialog</td><td>Proxy server and subtitle supplier credentials</td></tr><tr><td>Useful status rather than a preference</td><td>Secondary text or a property list</td><td>Current limits, subtitle coverage, database size</td></tr><tr><td>Starting points across subjects</td><td>Home dashboard with curated cards</td><td>Download location, appearance, network and Library</td></tr></table><h3>Documented, rather than estimated</h3><p>Microsoft recommends SettingsCard and SettingsExpander for app settings, immediate application of ordinary changes, switches for binary choices, and radio buttons for short mutually exclusive sets. The Toolkit's current template specifies a 68-DIP minimum card height, 16-DIP padding, a 20-DIP icon, a 12-DIP description, and a separate action column. This browser prototype uses those metrics; browser rendering is not native WinUI.</p><p><a href="https://learn.microsoft.com/en-us/windows/apps/design/app-settings/guidelines-for-app-settings" target="_blank" rel="noreferrer">Microsoft: app settings guidance</a> · <a href="https://learn.microsoft.com/en-us/dotnet/communitytoolkit/windows/settingscontrols/settingscard" target="_blank" rel="noreferrer">SettingsCard</a> · <a href="https://learn.microsoft.com/en-us/dotnet/communitytoolkit/windows/settingscontrols/settingsexpander" target="_blank" rel="noreferrer">SettingsExpander</a> · <a href="https://github.com/CommunityToolkit/Windows/blob/main/components/SettingsControls/src/SettingsCard/SettingsCard.xaml" target="_blank" rel="noreferrer">Template metrics</a></p><h3>Inferred from your screenshots</h3><p>An 8-pixel gap joins sibling cards visually; a larger gap and a section heading change the subject. A right chevron means navigation, a down chevron means disclosure, and Edit means a compound transaction. Icons mark group headers or independent settings. Every setting inside a group has equal alignment; no setting doubles as a heading. Home summarizes common destinations rather than repeating every preference. The specific grouping here is a design proposal, not a published Microsoft algorithm.</p><h3>Native controls</h3><p>Use the stock WinUI 3 Expander with its default template. Its header contains the subject and summary; its content holds standard settings controls. Period headers distinguish when from what: days, time range and duration above; the shared limit preset and its current caps below. Start, End and the Remove button share one content row. Remove is outside the header. The native time controls use a 24-hour clock.</p><h3>Compare the compositions</h3><p><b>A · Windows categories</b> uses direct cards for everyday choices and expanders for optional groups. <b>B · Expanded categories</b> opens those same groups for a top-to-bottom review. <b>C · Windows Home</b> starts with a curated dashboard and opens the same category pages. All three use the complete Windows shell, not TinyTorrent's current layout.</p><h3>Prototype state</h3><pre id="state"></pre></div><div class="dialog-actions"><button id="close-notes">Close</button></div></dialog>
+<script id="settings-logic">
+const Week = {
+ adjust(period,action,delta) {
+  const snap=value=>Math.sign(value)*Math.round(Math.abs(value)/15)*15;
+  const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
+  const duration=this.duration(period),end=period.start+duration;
+  let start=period.start,length=duration;
+  if(action==='new'){const boundary=clamp(snap(start+delta),0,1440);length=Math.max(15,Math.abs(boundary-start));start=Math.min(start,boundary,1425)}
+  if(action==='move')start=clamp(snap(start+delta),0,1425);
+  if(action==='start'){start=clamp(snap(start+delta),Math.max(0,end-1440),Math.min(1439,end-Math.min(15,duration)));length=end-start}
+  if(action==='end')length=clamp(snap(end+delta)-start,Math.min(15,duration),1440);
+  return {...period,start,end:(start+length)%1440};
+ },
+ duration(period) { return (period.end-period.start+1440)%1440 || 1440; },
+ occurrences(period,day) {
+  const end=period.start+this.duration(period), spans=[];
+  if(period.days.includes(day))spans.push({start:period.start,end:Math.min(end,1440),period});
+  if(end>1440&&period.days.includes((day+6)%7))spans.push({start:0,end:end-1440,period});
+  return spans;
+ },
+ ranges(periods,day,fixed=null) {
+  if(fixed)return [{start:0,end:1440,mode:fixed,period:null}];
+  const spans=periods.flatMap(period=>this.occurrences(period,day));
+  const points=[...new Set([0,1440,...spans.flatMap(span=>[span.start,span.end])])].sort((a,b)=>a-b);
+  const ranges=[];
+  for(let index=0;index<points.length-1;index++){
+   const start=points[index], end=points[index+1];
+   const active=spans.filter(span=>span.start<=start&&span.end>start);
+   const period=(active.find(span=>span.period.mode==='paused')||active[0])?.period||null;
+   const mode=period?.mode||'standard', previous=ranges.at(-1);
+   if(previous?.period===period&&previous.mode===mode)previous.end=end;
+   else ranges.push({start,end,mode,period});
+  }
+  return ranges;
+ },
+ at(periods,day,minute) {return this.ranges(periods,day).find(range=>range.start<=minute&&range.end>minute);},
+ next(periods,day,minute) {
+  const mode=this.at(periods,day,minute).mode;
+  for(let offset=0;offset<=7;offset++)for(const range of this.ranges(periods,(day+offset)%7)){
+   const distance=offset*1440+range.start-minute;
+   if(distance>0&&distance<=10080&&range.mode!==mode)return {day:(day+offset)%7,minute:range.start,distance,mode:range.mode};
+  }
+  return null;
+ },
+ validate(period,periods) {
+  if(!period.days.length)return 'Choose at least one day';
+  if(!Number.isInteger(period.start)||!Number.isInteger(period.end)||period.start<0||period.start>=1440||period.end<0||period.end>=1440)return 'Enter a start and end time';
+  if(periods.some(other=>other.key!==period.key&&other.start===period.start&&other.end===period.end&&other.mode===period.mode&&other.days.join()===period.days.join()))return 'This period already exists';
+  return '';
+ },
+ effective(periods,choice,day,minute,holds={}) {
+  const scheduled=choice==='Weekly schedule';
+  const mode=scheduled?this.at(periods,day,minute).mode:({'No limits':'none','Standard limits':'standard','Alternative limits':'alternative'}[choice]);
+  const pause=holds.manual?'manual':mode==='paused'&&!holds.resumed?'schedule':holds.adapter?'adapter':null;
+  return {mode:mode==='paused'?'standard':mode,pause,next:scheduled?this.next(periods,day,minute):null};
+ }
+};
+const Setup = {
+ round(value) {const whole=Math.floor(value);return value-whole===.5?whole+whole%2:Math.round(value);},
+ share(rate,capacity,initial) {return capacity<=0?initial:rate<=0?100:Math.max(5,Math.min(95,this.round(rate*1048576/(capacity*125000)*20)*5));},
+ follows(saved,draft,kind) {return draft[kind+"Moved"]||+draft.down!==+saved.capacityDown||+draft.up!==+saved.capacityUp;},
+ errors(saved,draft) {
+  const required=this.follows(saved,draft,"standard")&&draft.standard<100||this.follows(saved,draft,"alternative")&&draft.alternative<100;
+  return Object.fromEntries(["down","up"].map(key=>{const value=+draft[key];return [key,!required&&value===0||Number.isFinite(value)&&value>=.01&&value<=2147483647/125000?"":draft[key].trim()===""?"Required":"Enter a number from 0.01 to 17179.869176 Mbps."]}));
+ },
+ caps(share,down,up) {
+  if(share===100)return [0,0];
+  if([down,up].some(value=>!Number.isFinite(+value)||+value<.01||+value>2147483647/125000))return null;
+  return [down,up].map(value=>this.round(+value*125000*(share/100))/1048576);
+ },
+ propose(saved,draft) {
+  if(Object.values(this.errors(saved,draft)).some(Boolean))return null;
+  const standard=this.follows(saved,draft,"standard")?this.caps(draft.standard,draft.down,draft.up):[+saved.download,+saved.upload];
+  const alternative=this.follows(saved,draft,"alternative")?this.caps(draft.alternative,draft.down,draft.up):[+saved.altDownload,+saved.altUpload];
+  if(!standard||!alternative)return null;
+  const proposal={capacityDown:+draft.down,capacityUp:+draft.up,download:standard[0],upload:standard[1],altDownload:alternative[0],altUpload:alternative[1],downloads:+saved.downloads,seeds:+saved.seeds,total:+saved.total,mode:saved.mode};
+  if(draft.standardMoved)[proposal.downloads,proposal.seeds,proposal.total]=draft.standard<=50?[2,2,3]:[3,5,8];
+  if(saved.mode==="No limits"&&(proposal.download!==+saved.download||proposal.upload!==+saved.upload)&&(proposal.download>0||proposal.upload>0))proposal.mode="Standard limits";
+  return proposal;
+ }
+};
+</script>
+<script>
+const glyphs={home:'e0f9',general:'e158',transfers:'e04a',speed:'e1bf',sliders:'e29a',appearance:'e1dd',network:'e129',schedule:'e304',plugins:'e383',advanced:'e1b1',folder:'e0db',download:'e0b6',upload:'e19e',bell:'e05d',power:'e144',window:'e42b',shield:'e15c',globe:'e0ec',languages:'e104',captions:'e3a8',film:'e0d4',clock:'e08b',queue:'e1d1',memory:'e44a',check:'e070',arrow:'e073',down:'e071',info:'e0ff',refresh:'e149',monitor:'e121',trash:'e18e',plus:'e141',edit:'e1f9',close:'e1b2',save:'e151',account:'e46d',browse:'e247',scan:'e33d',play:'e084',back:'e04c',sun:'e17c',warning:'e193',swap:'e24a',repair:'e1b1',route:'e543',plug:'e383',success:'e226'};
+const icon=(name,extra='')=>`<i class="icon ${extra}" aria-hidden="true">&#x${glyphs[name]||glyphs.general};</i>`;
+const escape=value=>String(value).replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+const categories=[['home','Home'],['general','General'],['transfers','Transfers'],['speed','Speed limits'],['schedule','Schedule'],['appearance','Appearance'],['network','Network'],['plugins','Library & subtitles'],['advanced','Advanced']];
+const groups=[
+{id:"integration",category:"general",title:"Windows integration",icon:"window",description:"Default app and sign-in",rows:[
+ ["handlers","Open torrents with TinyTorrent","","integration"],
+ ["signin","Start when I sign in","","integration"]]},
+{id:"startup",category:"general",title:"Startup and closing",icon:"power",disclose:true,rows:[
+ ["splash","Show the splash screen while opening","","toggle",true],
+ ["tray","Start in the notification area","","toggle",false],
+ ["paused","Start with transfers paused","Resume transfers from the window or notification area.","toggle",false]]},
+{id:"notifications",category:"general",title:"Notifications",icon:"bell",description:"Alerts can appear while TinyTorrent runs in the background.",disclose:true,rows:[
+ ["problems","Problems with transfers","","toggle",true],
+ ["finished","Downloads finished","","toggle",true],
+ ["added","Torrents added","Notify me when a torrent is added in the background.","toggle",false],
+ ["background","Running in the background","Show a reminder when closing the window leaves transfers running.","toggle",true]]},
+{id:"power",category:"general",title:"Power",icon:"power",disclose:true,rows:[
+ ["awake","Prevent sleep while downloading","Applies when this PC is plugged in.","toggle",true],
+ ["seedAwake","Also prevent sleep while seeding","","toggle",false,null,"awake"]]},
+{id:"confirmations",category:"general",title:"Dialogs and confirmations",icon:"window",disclose:true,rows:[
+ ["index","Open Settings on Home","When off, Settings opens on General.","toggle",true],
+ ["torrentDialog","Show the Add dialog for torrent files","Review files and destination before adding.","toggle",true],
+ ["magnetDialog","Show the Add dialog for magnet links","When off, use your download location, queue and start settings.","toggle",true],
+ ["raise","Bring the Add dialog to the front","","toggle",true],
+ ["deleteConfirm","Ask before deleting downloaded files","","toggle",true],
+ ["exitConfirm","Ask before exiting with active transfers","Closing the window keeps transfers running. Exit stops them.","toggle",true]]},
+{id:"updates",category:"general",title:"Updates",icon:"refresh",rows:[
+ ["updates","Check for updates automatically","","toggle",true]]},
+{id:"files",category:"transfers",title:"Download locations",icon:"folder",description:"Default folder and incomplete downloads",rows:[
+ ["location","Download location","Applies to new torrents. Existing files stay where they are.","select","Default folder",["Default folder","Last used folder"]],
+ ["destination","Default download folder","","path","D:\\Downloads"],
+ ["incomplete","Use a separate folder for incomplete downloads","Applies to new torrents. Finished files move to their chosen download folder.","toggle",false],
+ ["incompletePath","Incomplete downloads folder","","path","D:\\Downloads\\Incomplete",null,"incomplete"],
+ ["suffix","Add .!tt to incomplete filenames","Applies to new torrents. The extension is removed when each file finishes.","toggle",false]]},
+{id:"adding",category:"transfers",title:"Adding torrents",icon:"download",disclose:true,rows:[
+ ["start","Start downloading added torrents","New torrents still follow queue limits and scheduled pauses.","toggle",true],
+ ["queueTop","Add new torrents to the top of the queue","","toggle",false],
+ ["layout","Folder layout","Nested folders stay intact.","select","Keep folder structure",["Keep folder structure","Create a subfolder","Don’t create a subfolder"]],
+ ["duplicates","When a torrent is already added","Background additions use this choice without asking.","select","Merge trackers",["Keep existing trackers","Merge trackers"]]]},
+{id:"queue",category:"transfers",title:"Queue",icon:"queue",help:"Torrents beyond these counts wait. Forced transfers bypass the queue. Leave a count empty for no limit.",disclose:true,rows:[
+ ["downloads","Maximum active downloads","","number","3","torrents"],
+ ["seeds","Maximum active seeds","","number","5","torrents"],
+ ["total","Maximum active torrents","Downloads and seeds combined.","number","8","torrents"],
+ ["ignoreSlow","Exclude slow torrents from queue limits","Let another queued torrent start when a transfer is slow.","toggle",false],
+ ["slowDownload","Slow download threshold","Downloads below this rate do not occupy a queue slot.","number","2","KiB/s","ignoreSlow"],
+ ["slowUpload","Slow upload threshold","Uploads below this rate do not occupy a queue slot.","number","2","KiB/s","ignoreSlow"],
+ ["slowWait","Grace period for new transfers","Give new transfers time to start before counting them as slow.","number","60","seconds","ignoreSlow"]]},
+{id:"seeding",category:"transfers",title:"Seeding limits",icon:"upload",help:"Leave a limit empty for no limit. Stopping seeding keeps your files.",disclose:true,rows:[
+ ["ratio","Stop at ratio","A ratio of 2 means uploading twice the amount downloaded.","number","2","ratio"],
+ ["seedTime","Stop after seeding for","","number","","minutes"],
+ ["idle","Stop after inactivity","Stop seeding when no data has been uploaded for this long.","number","","minutes"],
+ ["seedRule","Stop when","Only limits you set are included.","select","Any limit is reached",["Any limit is reached","All limits are reached"]]]},
+{id:"watch",category:"transfers",title:"Watched folder",icon:"folder",disclose:true,rows:[
+ ["watch","Watch a folder","Add .torrent files from this folder automatically.","toggle",false],
+ ["watchPath","Folder to watch","","path","D:\\Torrents"],
+ ["watchChildren","Include subfolders","","toggle",false,null,"watch"],
+ ["watchDestination","Download folder","Leave empty to use the normal download location.","path","D:\\Downloads",null,"watch"]]},
+{id:"fileOptions",category:"transfers",title:"File selection",icon:"folder",disclose:true,rows:[
+ ["exclude","Skip files with matching names","","toggle",false],
+ ["patterns","File name patterns","One pattern per line; case is ignored. * matches any text; ? matches one character.","multiline","*.nfo\n*.url",null,"exclude"]]},
+{id:"deleting",category:"transfers",title:"Deleting files",icon:"folder",disclose:true,rows:[
+ ["deletion","When deleting downloaded files","Locations without a Recycle Bin require permanent deletion.","select","Move to Recycle Bin",["Move to Recycle Bin","Delete permanently"]]]},
+{id:"mode",category:"speed",title:"Transfer limits",icon:"sliders",rows:[
+ ["mode","Limits to use","","select","Standard limits",["No limits","Standard limits","Alternative limits","Weekly schedule"]]]},
+{id:"standard",category:"speed",title:"Standard limits",icon:"speed",description:"Limits for all torrents together",rows:[
+ ["download","Download speed","","number","20","MiB/s"],
+ ["upload","Upload speed","","number","5","MiB/s"]]},
+{id:"alternative",category:"speed",title:"Alternative limits",icon:"transfers",description:"A second pair of limits for quieter hours",rows:[
+ ["altDownload","Download speed","","number","5","MiB/s"],
+ ["altUpload","Upload speed","","number","1","MiB/s"]]},
+{id:"accounting",category:"speed",title:"Bandwidth accounting",icon:"speed",disclose:true,rows:[
+ ["overhead","Include protocol overhead","Count connection and packet overhead as well as file data.","toggle",true],
+ ["lan","Apply limits to local network peers","When off, transfers within your local network bypass speed limits.","toggle",true]]},
+{id:"personalization",category:"appearance",title:"Personalization",icon:"appearance",rows:[
+ ["theme","App theme","","select","Dark",["Use Windows setting","Light","Dark"]],
+ ["language","Display language","","select","English",["English","Español"]]]},
+{id:"window",category:"appearance",title:"Window",icon:"window",rows:[
+ ["titleSpeeds","Show speeds in the title bar","Only when the title bar has room.","toggle",false]]},
+{id:"status",category:"appearance",title:"Status bar",icon:"monitor",disclose:true,rows:[
+ ["space","Show free space","Available space on the default download folder’s drive.","toggle",true],
+ ["externalIp","Show external IP address","Addresses reported by the torrent network, when available.","toggle",false]]},
+{id:"adapter",category:"network",title:"Network adapter",icon:"network",rows:[
+ ["adapter","Network adapter","Torrent traffic pauses if the selected adapter is unavailable.","select","Any adapter",["Any adapter","Ethernet","Wi-Fi","VPN — WireGuard"]]]},
+{id:"proxy",category:"network",title:"Proxy server",icon:"globe",rows:[
+ ["proxy","Proxy server","Enabling a proxy prevents incoming peer connections.","edit","Off","proxy"]]},
+{id:"encryption",category:"network",title:"Connection encryption",icon:"shield",special:"encryption",disclose:true,rows:[
+ ["encryption","Encryption","","select","Preferred",["Preferred","Required","Allowed","Disabled"]]]},
+{id:"peers",category:"network",title:"Peer connections",icon:"network",help:"Leave either connection count empty for no limit.",disclose:true,rows:[
+ ["connections","Maximum connections","Across all torrents.","number","500","peers"],
+ ["torrentConnections","Maximum connections per torrent","","number","100","peers"],
+ ["attempts","Connection attempts per second","New outgoing attempts across all torrents; existing connections are unaffected.","number","20","/ sec"],
+ ["transport","Peer connection protocol","","select","TCP and µTP",["TCP and µTP","TCP","µTP"]]]},
+{id:"discovery",category:"network",title:"Peer discovery",icon:"globe",disclose:true,rows:[
+ ["dht","Use DHT","Find peers without relying on a tracker. Private torrents do not use DHT.","toggle",true],
+ ["pex","Use peer exchange","Discover peers through other connected peers. Not used by private torrents.","toggle",true],
+ ["lsd","Discover local peers","","toggle",false]]},
+{id:"incoming",category:"network",title:"Incoming connections",icon:"network",disclose:true,rows:[
+ ["port","Incoming port","Use this port when setting up manual router forwarding.","number","51413","port"],
+ ["mapping","Automatically configure the router","Use UPnP or NAT-PMP to forward incoming connections.","toggle",true],
+ ["ip","IP version","","select","IPv4 and IPv6",["IPv4 and IPv6","IPv4","IPv6"]]]},
+{id:"library",category:"plugins",title:"Video information",icon:"film",description:"Provider and information in your Library",rows:[
+ ["provider","Video information provider","","select","TMDB",["Off","TMDB","IMDb","Rotten Tomatoes"]],
+ ["coverage","Movies with information","","fact","186 of 240 movies"]]},
+{id:"subtitles",category:"plugins",title:"Subtitle preferences",icon:"captions",rows:[
+ ["supplier","Subtitle supplier","","select","OpenSubtitles",["OpenSubtitles","SubDL","SubSource"]],
+ ["languages","Wanted languages","Search in each selected language.","languages"],
+ ["automatic","Download automatically","For new and unfinished videos while the window is open. Existing subtitle files are kept.","toggle",false],
+ ["extras","Additional automatic matches","When no exact release matches, save this many extra subtitles per movie and language.","select","1",["0","1","2","3"]]]},
+{id:"searchLimit",category:"plugins",title:"Searches",icon:"globe",rows:[
+ ["lookups","Searches per movie and provider","Applies to automatic and batch searches.","number","3","searches"]]},
+{id:"database",category:"plugins",title:"Database",icon:"memory",disclose:true,rows:[
+ ["databaseSize","Database size","","fact","24.8 MB"],
+ ["movies","Movie information stored","","fact","186"],
+ ["subtitlesTracked","Subtitles tracked","","fact","212"],
+ ["series","Series information stored","","fact","12"],
+ ["episodes","Episodes stored","","fact","54"],
+ ["libraryFiles","Files in Library","","fact","240"],
+ ["responses","Cached provider responses","","fact","198"],
+ ["created","Downloaded subtitles","","fact","178"],
+ ["found","Existing subtitle files","","fact","34"],
+ ["trackedLanguages","Subtitle languages tracked","","fact","2"],
+ ["reusable","Reusable space","Space already reserved that the database can use again.","fact","2.1 MB"]]},
+{id:"memory",category:"advanced",title:"Memory and files",icon:"memory",description:"Disk write buffer and open files",rows:[
+ ["buffer","Disk write buffer","A target for pending disk writes, not a limit on total memory use.","number","100","MiB"],
+ ["filePool","Open-file limit","More open files can help when seeding many torrents, but use more resources.","number","40","files"]]},
+{id:"checking",category:"advanced",title:"Torrent checking",icon:"check",disclose:true,rows:[
+ ["checkMemory","Checking memory","Read-ahead target per checking torrent. Large pieces or more threads can use more.","number","4","MiB"],
+ ["threads","Checking threads","Keep 1 for hard drives. More threads can speed up SSD checks, but use more processor and memory.","number","1","threads"],
+ ["checks","Maximum simultaneous checks","More checks use more disk and memory. Forced transfers can exceed this limit.","number","1","torrents"],
+ ["verify","Verify files after downloading","Read completed files again to detect errors. This can take time.","toggle",false]]},
+{id:"refresh",category:"advanced",title:"Interface and history",icon:"clock",disclose:true,rows:[
+ ["refresh","Refresh interval","How often transfer information updates. Recorded history is unchanged.","number","1000","ms"],
+ ["recent","Recent history interval","Average speeds over this interval for the recent graph.","number","1","seconds"],
+ ["history","Day history interval","Average speeds over this interval for the day graph, including while the window is closed.","number","60","seconds"]]}
+];
+const advancedGroups=new Set(['fileOptions','peers','accounting','encryption','incoming','discovery','database']);
+const advancedRows=new Set(['ignoreSlow','slowDownload','slowUpload','slowWait','externalIp']);
+let showAdvanced=false;
+const activity={session:{downloaded:13314398618,uploaded:3435973837},allTime:{downloaded:9235897673318,uploaded:3408486046106},downloading:3,seeding:5,available:88046829568,stalled:0};
+const values=Object.fromEntries(groups.flatMap(group=>group.rows.filter(row=>row[3]!=='integration').map(row=>[row[0],row[4]])));
+const params=new URLSearchParams(location.search);
+let variant=['A','B','C'].includes(params.get('variant'))?params.get('variant'):'A';
+let page=params.get('page')||(variant==='C'?'home':'network');
+let detail=params.get('detail')||'';
+showAdvanced=page==='advanced'||advancedGroups.has(detail);
+const periods=[{key:1,days:[0,1,2,3,4],start:540,end:1020,mode:'alternative'}];
+let periodKey=1, periodDraft=null, periodError='', gesture=null, setupDraft=null;
+let cursor={day:0,minute:540};
+const preview={fixed:false,day:0,minute:720,manual:false,adapter:false,resumed:false};
+const days=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+const modeNames={none:'No limits',standard:'Standard limits',alternative:'Alternative limits',paused:'Paused'};
+const units={seedTime:'minutes',idle:'minutes'};
+const unlimited=new Set(['download','upload','altDownload','altUpload','ratio','seedTime','idle','downloads','seeds','total','connections','torrentConnections']);
+const bounds={port:[1,65535],refresh:[1000,10000],recent:[1,10],history:[10,300],buffer:[1,1024],checkMemory:[1,1024],threads:[1,64],checks:[1,64],filePool:[1,10000],attempts:[1,1000],slowWait:[1,86400],lookups:[1,1000000],seedTime:[0,2147483647],idle:[0,525600],torrentConnections:[2,10000],download:[0,2147483647/1048576],upload:[0,2147483647/1048576],altDownload:[0,2147483647/1048576],altUpload:[0,2147483647/1048576],slowDownload:[0,1048576],slowUpload:[0,1048576]};
+const credentials={proxy:{type:'Off',host:'',port:'1080',username:'',password:''},OpenSubtitles:{username:'',password:''},SubDL:{key:''},SubSource:{key:''}};
+let languages=[],languageQuery='',access='Not checked',batch=null,scan='';
+const expanded=new Set(['encryption',...(variant==='B'?['languages',...groups.filter(group=>group.disclose).map(group=>group.id)]:[])]);
+let draft;
+const names={A:'A · Windows categories',B:'B · Expanded categories',C:'C · Windows Home'};
+const main=document.querySelector('#main');
+const content=document.querySelector('#content');
+const editor=document.querySelector('#editor');
+const notes=document.querySelector('#notes');
+function toggle(id,label,on=values[id]){return `<button type="button" class="switch" role="switch" aria-label="${escape(label)}" aria-checked="${Boolean(on)}" data-toggle="${id}"><span>${on?'On':'Off'}</span><span class="track"></span></button>`}
+function clock(){
+ if(preview.fixed)return {day:preview.day,minute:preview.minute};
+ const parts=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'America/Cayenne',weekday:'long',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date()).map(part=>[part.type,part.value]));
+ return {day:days.indexOf(parts.weekday),minute:+parts.hour*60+(+parts.minute)};
+}
+function time(minute){return `${String(Math.floor(minute/60)).padStart(2,'0')}:${String(minute%60).padStart(2,'0')}`}
+function minutes(value){if(!/^\d{2}:\d{2}$/.test(value))return NaN;const [hour,minute]=value.split(':').map(Number);return hour<24&&minute<60?hour*60+minute:NaN}
+const megabyte=1000000/1048576;
+function speedValue(value){const amount=+value/megabyte;return Number(amount>0&&amount<.01?amount.toPrecision(2):amount.toFixed(2))}
+function rate(value){return +value>0?`${+value/megabyte<.01?'<0.01':speedValue(value)} MB/s`:'Unlimited'}
+function pair(alternative=false){return `↓ ${rate(values[alternative?'altDownload':'download'])} · ↑ ${rate(values[alternative?'altUpload':'upload'])}`}
+function groupSummary(group){
+ const count=(id,label)=>`${label}: ${+values[id]>0?values[id]:'Unlimited'}`;
+ const duration=id=>{const amount=+values[id]/(units[id]==='hours'?60:1);return `${amount} ${amount===1?units[id].slice(0,-1):units[id]}`};
+ switch(group.id){
+  case 'startup':return `${values.tray?'Starts in the notification area':'Shows the window at startup'}${values.paused?' · Transfers start paused':''}`;
+  case 'notifications':return group.description;
+  case 'power':return values.awake?`Prevent sleep while downloading${values.seedAwake?' and seeding':''} · Plugged in only`:'Sleep prevention off';
+  case 'confirmations':{
+   const off=[['torrentDialog','Torrent Add dialog'],['magnetDialog','Magnet Add dialog'],['deleteConfirm','File deletion confirmation'],['exitConfirm','Exit confirmation']].filter(([id])=>!values[id]);
+   return off.length?off.map(([,label])=>label+' off').join(' · '):'Add dialogs and confirmations on';
+  }
+  case 'adding':return `${values.start?'Start automatically':'Add paused'} · ${values.queueTop?'Top':'Bottom'} of queue`;
+  case 'queue':return `${count('downloads','Downloads')} · ${count('seeds','Seeds')} · ${count('total','Total')}`;
+  case 'seeding':{
+   const limits=[+values.ratio>0?`Ratio ${values.ratio}`:'',+values.seedTime>0?`Seed for ${duration('seedTime')}`:'',+values.idle>0?`Idle for ${duration('idle')}`:''].filter(Boolean);
+   return limits.length?limits.join(' · ')+(limits.length>1?(values.seedRule==='All limits are reached'?' · All limits must be reached':' · Stop at the first limit'):''):'No seeding limits';
+  }
+  case 'watch':return values.watch?values.watchPath+(values.watchChildren?' · Includes subfolders':''):'Folder watching off';
+  case 'fileOptions':return values.exclude?(values.patterns.trim().split('\n').filter(Boolean).join(', ')||'No patterns set'):'Automatic file exclusion off';
+  case 'deleting':return values.deletion;
+  case 'accounting':return `${values.overhead?'Includes protocol overhead':'File data only'} · ${values.lan?'Local peers limited':'Local peers unrestricted'}`;
+  case 'status':return [values.space?'Free space':'',values.externalIp?'External IP address':''].filter(Boolean).join(' · ')||'Free space and external IP hidden';
+  case 'encryption':return values.encryption;
+  case 'peers':return `${count('connections','Connections')} · ${count('torrentConnections','Per torrent')} · ${values.transport}`;
+  case 'discovery':return [values.dht?'DHT':'',values.pex?'Peer exchange':'',values.lsd?'Local discovery':''].filter(Boolean).join(' · ')||'Peer discovery off';
+  case 'incoming':return values.proxy!=='Off'?'Incoming connections unavailable while the proxy is on':`Port ${values.port} · Automatic router mapping ${values.mapping?'on':'off'}`;
+  case 'database':return `${values.databaseSize} · ${values.libraryFiles} Library files`;
+  case 'checking':return `${values.checks} simultaneous check${+values.checks===1?'':'s'} · ${values.threads} thread${+values.threads===1?'':'s'}`;
+  case 'refresh':return `Refresh ${values.refresh} ms · Recent history ${values.recent} s · Day history ${values.history} s`;
+  default:return '';
+ }
+}
+function languageText(){return languages.length?languages.join(', '):values.language}
+function effective(){const now=clock();return Week.effective(periods,values.mode,now.day,now.minute,preview)}
+const integration={handlers:'this',signin:'none',startupDisabled:false,torrent:{app:'TinyTorrent',managed:true},magnet:{app:'TinyTorrent',managed:true},broken:'',connected:true,pending:'',error:null,outcome:'Success'};
+function integrationOn(id){return id==='handlers'?integration.handlers!=='none'&&integration.torrent.managed&&integration.magnet.managed:integration.signin!=='none'&&!integration.startupDisabled}
+function integrationRow(row,child){
+ const [id,label]=row,handlers=id==='handlers',other=integration[id]==='other',broken=handlers&&integration.broken;
+ const warning=broken?'The default app is missing. Repair its entries to open torrents with this copy.':other?(handlers?'Torrents open with another TinyTorrent copy.':'Another TinyTorrent copy starts when you sign in.'):!handlers&&integration.startupDisabled?'Windows has disabled startup for TinyTorrent.':'';
+ const path=other?'C:\\Apps\\TinyTorrent-old\\TinyTorrent.exe':broken?'C:\\Apps\\RemovedTorrent\\client.exe':'';
+ const unavailable=!integration.connected||Boolean(integration.pending),action=broken?'Repair':other?'Use this copy':'';
+ const message=!integration.connected?'Waiting for the engine.':integration.pending===id?'Updating Windows integration…':integration.error?.id===id?integration.error.message:'';
+ return `<div class="row integration-row${child?' integration-child':''}" id="row-${id}">${child?'':icon('window')}<div class="row-copy"><div class="row-title" title="${escape(label)}">${escape(label)}</div></div><div class="control">${action?`<button class="command" data-integration="${id}" ${unavailable?'disabled':''} aria-describedby="warning-${id}">${icon(broken?(broken==='machine'?'shield':'repair'):'swap')}<span>${action}</span></button>`:''}${toggle(id,label,integrationOn(id)).replace('<button ',`<button ${unavailable?'disabled ':''}${warning?`aria-describedby="warning-${id}" `:''}`)}</div>${handlers?`<dl class="integration-apps"><dt>Torrent files</dt><dd title="${escape(integration.torrent.app)}">${escape(integration.torrent.app)}</dd><dt>Magnet links</dt><dd title="${escape(integration.magnet.app)}">${escape(integration.magnet.app)}</dd></dl>`:''}${warning?`<div class="integration-warning" id="warning-${id}" title="${escape([warning,path,broken==='machine'?'Repair requires administrator approval.':''].filter(Boolean).join('\n'))}">${icon('warning')}<p><span class="integration-message">${escape(warning)}</span>${path?`<span class="integration-path">${escape(path)}</span>`:''}${broken==='machine'?'<span class="integration-path">Repair requires administrator approval.</span>':''}</p></div>`:''}${message?`<p class="description integration-status" role="status" title="${escape(message)}">${escape(message)}</p>`:''}</div>`;
+}
+function changeIntegration(id,enabled,repair=false){
+ if(!integration.connected||integration.pending)return;
+ integration.pending=id;integration.error=null;render();
+ setTimeout(()=>{
+  if(integration.outcome==='Failure'||repair&&integration.broken==='machine'&&integration.outcome==='Approval declined'){
+   integration.error={id,message:integration.outcome==='Approval declined'?'Administrator approval was declined. The missing program’s entries remain.':'Windows integration could not be changed. Try again.'};
+  }else if(id==='signin'){integration.signin=enabled?'this':'none';integration.startupDisabled=false}
+  else{
+   integration.handlers=enabled?'this':'none';
+   if(repair||integration.broken!=='machine'){integration.broken='';integration.torrent={app:enabled?'TinyTorrent':'No default app set',managed:enabled};integration.magnet={...integration.torrent}}
+  }
+  integration.pending='';render();const target=document.querySelector(`[data-integration="${id}"]`)||document.querySelector(`[data-toggle="${id}"]`);target?.focus({preventScroll:true});
+ },600);
+}
+function integrationPreview(){
+ let dialog=document.querySelector('#integration-preview');if(!dialog){dialog=document.createElement('dialog');dialog.id='integration-preview';document.body.append(dialog)}
+ dialog.innerHTML=`<div class="dialog-body"><h2>Preview Windows integration</h2><p>Sample states only. No Windows settings will change.</p><label>Registration state<select id="integration-state">${['This copy','Another TinyTorrent copy','Missing program','Missing program · administrator required','Different default apps','Startup disabled by Windows','Engine disconnected'].map(value=>`<option>${value}</option>`).join('')}</select></label><label>Next action result<select id="integration-outcome">${['Success','Failure','Approval declined'].map(value=>`<option>${value}</option>`).join('')}</select></label></div><div class="dialog-actions"><button class="command accent" data-integration-preview>${icon('play')}<span>Preview</span></button><button class="command" data-integration-close>${icon('close')}<span>Cancel</span></button></div>`;dialog.showModal();
+}
+function previewIntegration(){
+ const state=document.querySelector('#integration-state').value;
+ integration.handlers=state==='Another TinyTorrent copy'?'other':'this';integration.signin=integration.handlers;integration.startupDisabled=state==='Startup disabled by Windows';integration.broken=state.startsWith('Missing program')?(state.includes('administrator')?'machine':'user'):'';
+ integration.connected=state!=='Engine disconnected';integration.pending='';integration.error=null;integration.outcome=document.querySelector('#integration-outcome').value;
+ integration.torrent={app:integration.broken?'RemovedTorrent (missing)':'TinyTorrent',managed:!integration.broken};
+ integration.magnet=state==='Different default apps'?{app:'Another torrent app',managed:false}:{...integration.torrent};
+ document.querySelector('#integration-preview').close();render();
+}
+
+function languageList(){
+ const query=languageQuery.trim().toLocaleLowerCase();
+ const options=[...new Set([...languageOptions,...languages])].filter(language=>language.toLocaleLowerCase().includes(query));
+ return options.length?options.map(language=>`<label class="language-choice"><input type="checkbox" data-language="${escape(language)}" ${languages.includes(language)?'checked':''}>${escape(language)}</label>`).join(''):'<p class="description">No matching languages.</p>';
+}
+function languageMarkup(row){
+ const automatic=languages.length===0;
+ return `<details class="language-settings" id="row-languages" data-group="languages" ${expanded.has('languages')?'open':''}><summary class="row"><span class="row-copy"><span class="row-title">${row[1]}</span><span class="description" style="display:block">${row[2]}</span></span><span class="summary">${escape(languageText())}</span>${icon('down','chevron')}</summary><div class="language-editor"><fieldset class="language-mode" aria-label="Subtitle language mode"><label><input type="radio" name="languageMode" data-language-mode="display" ${automatic?'checked':''}>${escape(values.language)}</label><label><input type="radio" name="languageMode" data-language-mode="custom" ${automatic?'':'checked'}>Choose languages</label></fieldset>${automatic?'':`<label for="language-search">Find a language</label><input id="language-search" type="search" value="${escape(languageQuery)}" autocomplete="off" placeholder="Search languages" aria-controls="language-choices"><div class="language-choices" id="language-choices" role="group" aria-label="Subtitle languages">${languageList()}</div><p class="description language-selection" role="status">${languages.length} selected</p>`}</div></details>`;
+}
+
+function limitSummary(){
+ const state=effective(),now=clock();
+ const next=state.next?`${state.next.day===now.day&&state.next.minute>now.minute?'':days[state.next.day].slice(0,3)+' '}${time(state.next.minute)}`:'';
+ if(state.pause)return {title:'Transfers paused',description:state.pause==='manual'?'Paused by you. Changing limits does not resume transfers.':state.pause==='adapter'?'The selected network adapter is unavailable.':next?`Scheduled pause until ${next}`:'Paused by the weekly schedule',rates:'No transfers while paused'};
+ return {title:modeNames[state.mode],description:values.mode==='Weekly schedule'?(next?`Weekly schedule · until ${next}`:'Weekly schedule · all week'):'',rates:state.mode==='none'?'Download and upload: Unlimited':pair(state.mode==='alternative')};
+}
+function limitsCard(){const group=groups.find(group=>group.id==='mode'),summary=limitSummary(),row=[...group.rows[0]];row[2]=[summary.title!==values.mode?summary.title:'',summary.rates,summary.description].filter(Boolean).join(' · ');return `<section class="card" id="group-mode">${rowMarkup(row,group)}</section>`}
+function scheduleSummary(){return values.mode==='Weekly schedule'?limitSummary().description:'Not in use · '+values.mode}
+function disabledReason(id,dependency){
+ if(id==='raise'&&!values.torrentDialog&&!values.magnetDialog)return 'Turn on an Add dialog to use this option';
+ if(id==='seedRule'&&['ratio','seedTime','idle'].filter(key=>+values[key]>0).length<2)return 'Set at least two seeding limits to choose how they combine';
+ if(id==='ip'&&values.proxy!=='Off')return 'The proxy chooses the IP version';
+ if(['port','mapping'].includes(id)&&values.proxy!=='Off')return 'Unavailable while a proxy is on: peers cannot connect in through it';
+ if(dependency&&!values[dependency])return {awake:'Turn on sleep prevention while downloading',incomplete:'Turn on the separate incomplete folder',watch:'Turn on folder watching',exclude:'Turn on file-name filtering',ignoreSlow:'Turn on slow-torrent exclusion'}[dependency]||'Turn on the parent setting';
+ return '';
+}
+function textBox(input){return `<span class="text-box">${input}<button type="button" data-clear tabindex="-1" aria-label="Clear text" title="Clear text">${icon('close','small')}</button></span>`}
+function selectMarkup(row){const [id,label,,,,options]=row;return `<select data-value="${id}" aria-label="${escape(label)}">${options.map(option=>`<option value="${escape(option)}"${option===values[id]?' selected':''}>${escape(id==='extras'?(option==='0'?'None':option+ (option==='1'?' extra':' extras')):id==='batchMatch'&&option==='Exact match'?'Exact match only':option)}</option>`).join('')}</select>`;}
+function rowMarkup(row,group,child=false){
+ if(row[3]==='languages')return languageMarkup(row);
+ if(row[3]==='integration')return integrationRow(row,child);
+ const [id,label,description,type,,options,dependency]=row;
+ if(!showAdvanced&&advancedRows.has(id))return '';
+ const reason=disabledReason(id,dependency),disabled=Boolean(reason);
+ const help=['standard','alternative'].includes(group.id)?'':reason||(id==='space'?(activity.available>0?`${bytes(activity.available)} available on the default download drive.`:'The default download drive is full. Free space before resuming downloads.'):description)||'';
+ let control='';
+ if(type==='toggle')control=toggle(id,label);
+ if(type==='select')control=selectMarkup(row);
+ if(id==='batchScope')control=control.replace('<select ','<select title="Finished Library movies, filtered by search history for each wanted language." ');
+ if(id==='batchMatch')control+=`<button class="command" id="subtitle-find" data-batch ${!batch&&!supplierReady()?'disabled':''} title="${batch?'Stop searching; subtitles already saved stay':'Search independently of automatic downloads'}">${icon(batch?'close':'captions')}<span>${batch?'Stop':'Find subtitles'}</span></button>`;
+ if(id==='supplier')control+=`<button class="command" data-edit="supplier">${icon('account')}<span>Account</span></button>`;
+ if(type==='number'){
+  const duration=units[id],speed=options==='MiB/s',factor=duration==='hours'?60:speed?megabyte:1;
+  const decimal=id==='ratio'||['download','upload','altDownload','altUpload','slowDownload','slowUpload'].includes(id)||duration==='hours';
+  const value=values[id]===''?'':speed?speedValue(values[id]):+values[id]/factor;
+  control=textBox(`<input type="text" inputmode="${decimal?'decimal':'numeric'}" data-decimal="${decimal}" ${unlimited.has(id)?'':'required'} data-value="${id}" data-factor="${factor}" aria-label="${escape(label)}" aria-describedby="help-${id}${group.help?' help-'+group.id:''} error-${id}" value="${escape(value)}" ${unlimited.has(id)?'placeholder="Unlimited"':'placeholder=" "'}>`)+`${duration?`<select class="duration-unit" data-unit="${id}" aria-label="${escape(label)} unit"><option${duration==='minutes'?' selected':''}>minutes</option><option${duration==='hours'?' selected':''}>hours</option></select>`:`<span class="unit">${speed?'MB/s':escape(options)}</span>`}`;
+ }
+ if(type==='text'||type==='path')control=`<input type="text" data-value="${id}" aria-label="${escape(label)}" value="${escape(values[id])}">${type==='path'?`<button class="command" data-edit="${id}">${icon('browse')}<span>Browse</span></button>`:''}`;
+ if(type==='multiline')control=`<textarea data-value="${id}" aria-label="${escape(label)}">${escape(values[id])}</textarea>`;
+ if(type==='edit')control=`<span class="summary">${escape(values[id])}</span><button class="command" data-edit="${id}">${icon('edit')}<span>Edit</span></button>`;
+ if(type==='fact')control=`<span class="summary">${escape(values[id])}</span>`;
+ if(type==='number')control=`<span class="number-editor">${control}</span>`;
+ control=control.replace(/<(button|input|select|textarea)\b(?![^>]*aria-describedby)/g,'<$1 aria-describedby="help-'+id+(group.help?' help-'+group.id:'')+'"');
+ if(disabled)control=control.replace(/<(button|input|select|textarea)\b/g,'<$1 disabled');
+ return `<div class="row ${!help&&id!=='layout'?'compact ':''}${disabled?'inactive':''}" id="row-${id}"${dependency?` data-dependency="${dependency}"`:''}>${!child?icon(group.icon):''}<div class="row-copy"><div class="row-title">${escape(label)}</div><div class="description" id="help-${id}"${id==='batchScope'?` role="status" title="${escape(help)}"`:''}>${escape(help)}${id==='layout'?`<span class="folder-example">Example: ${escape(values.layout==='Don’t create a subfolder'?'Downloads\\Episode.mkv':values.layout==='Create a subfolder'?'Downloads\\New folder\\Original folder\\Episode.mkv':'Downloads\\Original folder\\Episode.mkv')}</span>`:''}</div><div class="error" id="error-${id}" role="status"></div></div><div class="control" data-kind="${type}">${control}</div></div>`;
+}
+function navigation(title,description,target,glyph,summary=''){
+ return `<div class="card"><button class="row navigate" data-go="${target}">${icon(glyph)}<span class="row-copy"><span class="row-title">${escape(title)}</span>${description?`<span class="description" style="display:block">${escape(description)}</span>`:''}</span>${summary?`<span class="summary">${escape(summary)}</span>`:''}${icon('arrow','chevron')}</button></div>`;
+}
+function setupLink(){return navigation('Connection setup','Test your connection and calculate recommended speed and queue limits.','speed/setup','speed')}
+function speedProfiles(){return `<section class="speed-profiles" aria-label="Speed profiles"><div class="rate-pairs">${['standard','alternative'].map(id=>groupMarkup(groups.find(group=>group.id===id))).join('')}</div></section>`}
+function speedControls(){return `<div class="speed-controls">${limitsCard()}${speedProfiles()}${setupLink()}</div>`}
+function speedExpander(){const summary=limitSummary();return `<details class="card expander speed-expander" id="group-scheduleLimits" data-group="scheduleLimits" ${expanded.has('scheduleLimits')?'open':''}><summary class="row">${icon('sliders')}<span class="row-copy"><span class="row-title">Speed limits</span><span class="description group-summary">${escape(summary.title)} · ${escape(summary.rates)}</span></span>${icon('down','chevron')}</summary><div class="children">${speedControls()}</div></details>`}
+function children(group){
+ if(group.special==='encryption'){
+ const descriptions={Preferred:'Encrypt with every peer that supports it.',Required:'Connect only to peers that use encryption.',Allowed:'Use encryption when the other peer requests it.',Disabled:'Use unencrypted connections only.'};
+ return `<div class="children radio-block"><div class="radios">${Object.entries(descriptions).map(([value,description])=>`<label class="radio"><input type="radio" name="encryption" value="${value}" data-value="encryption" ${values.encryption===value?'checked':''}><span><strong>${value}${value==='Preferred'?' (Recommended)':''}</strong><span class="description" style="display:block">${description}</span></span></label>`).join('')}</div><p class="description" style="margin:20px 0 0">Connection encryption does not hide your IP address.</p></div>`;
+ }
+ return `<div class="children">${group.help?`<p class="description group-note" id="help-${group.id}">${escape(group.help)}</p>`:''}${group.rows.map(row=>rowMarkup(row,group,true)+(row[0]==='supplier'?`<div class="row"><div class="row-copy"><div class="row-title">Access status</div><div class="description" id="help-supplier-access">${supplierReady()?'Check account access without sending movie information.':'Add an API key in Account to check access and download subtitles.'}</div></div><div class="control"><span class="summary" role="status">${escape(access)}</span><button class="command" id="subtitle-access" data-access aria-describedby="help-supplier-access" ${supplierReady()?'':'disabled'}>${icon('check')}<span>Check access</span></button></div></div>`:'')).join('')}</div>`;
+}
+function groupMarkup(group){
+ if(!showAdvanced&&(advancedGroups.has(group.id)||group.category==='advanced'))return '';
+ if(group.id==='subtitles')return `<section class="section" id="group-subtitles"><h2 class="section-title">${group.title}</h2><div class="card">${children(group)}</div>${subtitleActions()}</section>`;
+ if(group.disclose)return `<details class="card expander" id="group-${group.id}" data-group="${group.id}" ${expanded.has(group.id)?'open':''}><summary class="row">${icon(group.icon)}<span class="row-copy"><span class="row-title">${group.title}</span><span class="description${group.description?'':' group-summary'}">${escape(groupSummary(group))}</span></span>${icon('down','chevron')}</summary>${children(group)}</details>`;
+ if(group.rows.length===1)return `<div class="card" id="group-${group.id}">${rowMarkup(group.rows[0],group)}</div>`;
+ return `<section class="section" id="group-${group.id}"><h2 class="section-title">${group.title}</h2>${group.help?`<p class="description group-help" id="help-${group.id}">${escape(group.help)}</p>`:''}<div class="card setting-rows">${group.id==='personalization'?themeChoices():''}${group.rows.filter(row=>group.id!=='personalization'||row[0]!=='theme').map(row=>rowMarkup(row,group,true)).join('')}</div></section>`;
+}
+function heading(title,parent=''){
+ return `<div class="page-heading ${page==='home'?'home-heading':''}"><div class="heading">${parent?`<button data-go="${page}">${escape(parent)}</button>${icon('arrow')}`:''}<h1>${escape(title)}</h1></div>${page==='home'?'':`<img class="page-art" src="../src/Assets/Settings/${detail==='setup'?'setup':page}.png" width="300" height="200" alt="">`}</div>`;
+}
+function themeChoices(){
+ const modes=groups.find(group=>group.id==='personalization').rows[0][5];
+ return `<div class="theme-picker" id="row-theme"><h3 id="theme-label">App theme</h3><div class="themes" role="radiogroup" aria-labelledby="theme-label">${modes.map(mode=>{const system=mode==='Use Windows setting',label=system?'System':mode;return `<button type="button" class="theme-swatch" role="radio" aria-label="${label}" aria-checked="${values.theme===mode}" tabindex="${values.theme===mode?0:-1}" data-mode="${mode}"><span class="theme-art${system?' split':''}" aria-hidden="true">${(system?['Light','Dark']:[mode]).map(theme=>`<img src="../src/Assets/Theme${theme}.jpg" width="768" height="512" decoding="async" alt="">`).join('')}</span><span class="theme-label">${label}${icon('check')}</span></button>`}).join('')}</div></div>`;
+}
+function bytes(value){const unit=value>=1024**4?'TiB':'GiB';return `${(value/(unit==='TiB'?1024**4:1024**3)).toLocaleString('en',{maximumFractionDigits:1})} ${unit}`}
+function home(){
+ const quick=(title,description,target,glyph)=>navigation(title,description,target,glyph).replace('class="card"','class="home-row"');
+ const panel=(title,body)=>`<section class="home-card"><div class="home-head"><h2>${title}</h2></div>${body}</section>`;
+ const current=limitSummary();
+ const totals=(label,counts)=>`<div><h3>${label}</h3><p><span aria-label="Downloaded ${bytes(counts.downloaded)}" title="Bytes downloaded"><span aria-hidden="true">↓</span><strong aria-hidden="true">${bytes(counts.downloaded)}</strong></span><span aria-label="Uploaded ${bytes(counts.uploaded)}" title="Bytes uploaded"><span aria-hidden="true">↑</span><strong aria-hidden="true">${bytes(counts.uploaded)}</strong></span></p></div>`;
+ const problems=[...(preview.adapter?['The selected network adapter is unavailable.']:[]),...(activity.available<=0?['The download drive is full.']:[]),...(activity.stalled>0?[`${activity.stalled} downloads are stalled.`]:[])];
+ return `${heading('Home')}<div class="hero"><div class="device"><img class="brand" alt="" src="data:image/svg+xml,%3Csvg%20width%3D%22451%22%20height%3D%22489%22%20version%3D%221.1%22%20viewBox%3D%220%200%20451%20489%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20xmlns%3Axlink%3D%22http%3A%2F%2Fwww.w3.org%2F1999%2Fxlink%22%3E%3Cdefs%3E%3ClinearGradient%20id%3D%22b%22%20x1%3D%22229%22%20x2%3D%22226%22%20y1%3D%22392%22%20y2%3D%22-17.7%22%20gradientUnits%3D%22userSpaceOnUse%22%3E%3Cstop%20stop-color%3D%22%230075ff%22%20offset%3D%220%22%2F%3E%3Cstop%20stop-color%3D%22%230ff%22%20offset%3D%22.602%22%2F%3E%3C%2FlinearGradient%3E%3ClinearGradient%20id%3D%22a%22%20x1%3D%22245%22%20x2%3D%22245%22%20y1%3D%22461%22%20y2%3D%22210%22%20gradientUnits%3D%22userSpaceOnUse%22%3E%3Cstop%20stop-color%3D%22%230000b4%22%20offset%3D%220%22%2F%3E%3Cstop%20stop-color%3D%22%23008aff%22%20offset%3D%221%22%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Cpath%20d%3D%22m230-0.0195c-0.177%200.00225-0.256%200.0352-0.256%200.0352-51.5%2060.5-79.9%20109-103%20147-58%2098.1-54%20148-44.7%20177%2011%2029.5%2029.1%2038.7%2061.1%2045.1%2024.4%204.89%2029.7-2.13%2037.6-18.9%2010.7-22.6%2010.8-42.5%2010.2-58.8-0.748-20.3-21.4%2046.2-31.5-5.02-1.73-8.79%2027.3-39.6%2042.3-52.3%2044-37.5%2059.6%2030.2%20108%2056.6%2032.5%2017.8%2073.2-31.9%2051.3-87.1-17.3-43.5-114-204-131-204zm-121%20237c6.2-17.6%2025.7-61.5%2037.5-51.3%2011.9%2010.3-11.8%2033.4-20.2%2069.9-8.88%2038.4%208.48%2084.8-16.5%2069.7-16.6-10-6.64-71.7-0.799-88.3z%22%20fill%3D%22url(%23b)%22%20stroke-width%3D%220%22%2F%3E%3Cpath%20d%3D%22m122%20388c17.5%209.72%2058.9%209.62%2072-6.52%2019.3-23.8%2023-42.8%2023.3-71.9%200.258-27.8-6.69-48.7%2013.7-52.7%2013.5-2.61%2028.2%2033%2043.7%2045%2032.1%2024.8%2011.2-27.8%2019.9-23.7%2015.1%207.15%2023%2019.3%2045.5%207.79%2015.7-8.03%2031-44.6%2023.6-73.6-3.68-14.3%2023.5%2055.7%2016.1%2097-16.8%2094.6-83.3%20117-110%20124-42.6%2010.4-72.3%200.93-102-8.8-32.9-10.7-77.8-53.8-45.9-36.2z%22%20fill%3D%22url(%23a)%22%2F%3E%3Cpath%20d%3D%22m131%20427c7.67-11.7%202.9-15.7-16%200.381-18%2015.3%2046.5%2040.4%20123%2041.1%2062.6%200.61%20127-29.2%20109-40.2-21.8-13.5-30.8-12.7-15.4%202.4%2012.1%2011.9-68.6%2022.6-101%2022.2-66.4-0.828-108-13.9-99.7-26z%22%20fill%3D%22%230000b4%22%2F%3E%3Cpath%20d%3D%22m87%20411c20.5-10.9-23.2%201.32-34.9%2017.3-15.2%2020.8%2025.5%2066.8%20204%2060.5%20169-5.93%20165-56.2%20145-70.1-25.2-17.7-46.3-22.3-19-0.389%2013.1%2010.5%2011.9%2027.9-29.8%2044.3-24.6%209.69-90.8%2013.1-125%2013.2-35.2%200.0709-86.2-7.32-129-16.2-51.6-10.8-23.6-42.4-11.7-48.7z%22%20fill%3D%22%230000b4%22%2F%3E%3Cpath%20d%3D%22m57.3%20408c-16.1%204.83-32.3%2010.4-38.1%2022.4-3.24%206.76-11.3%2037.6%2072.1%2052.4%2030.6%205.43-14.9-6.7-34.3-17.9-13.8-7.91-25.5-12.9-21.7-30.9%204.51-21.2%2043.5-32.5%2022-26.1z%22%20fill%3D%22%230000b4%22%2F%3E%3Cpath%20d%3D%22m407%20412c-21.2-17.6%2026.3%203.15%2035.3%2018.8%209.99%2017.4-15%2035.3-33.4%2043.4-18.5%208.21-70.8%2013.4-61.5%2010.6%2027-8.04%2070.5-19%2078.8-45%204.38-13.6-8.48-18.8-19.3-27.8z%22%20fill%3D%22%230000b4%22%2F%3E%3C%2Fsvg%3E"></div><div><h2>TinyTorrent</h2></div><div class="hero-facts" aria-label="Bytes transferred">${totals('This session',activity.session)}${totals('All time',activity.allTime)}</div></div>${problems.length?`<div class="hint-banner" role="status">${icon('info')}<p>${escape(problems.join(' '))}</p></div>`:''}<div class="home-grid"><div class="home-column">
+ ${panel('Downloads <span class="description home-activity">'+activity.downloading+' downloading · '+activity.seeding+' seeding</span>',quick('Download locations',(values.location==='Last used folder'?'Last used folder':values.destination)+' · '+bytes(activity.available)+' available','transfers/files','folder')+quick('Speed limits',current.title+' · '+(current.title==='Transfers paused'?current.description:current.rates),'speed/mode','speed')+quick('Seeding limits',groupSummary(groups.find(group=>group.id==='seeding')),'transfers/seeding','upload'))}
+ ${panel('Appearance',themeChoices()+quick('Language and status bar',values.language,'appearance/language','languages'))}
+ ${panel('Windows integration',groups[0].rows.map(row=>rowMarkup(row,groups[0])).join(''))}
+ </div><div class="home-column">
+ ${panel('Library & subtitles',quick('Video information',values.provider,'plugins/library','film')+rowMarkup(['automatic','Download subtitles automatically','For new and unfinished videos while the window is open.','toggle',false],{icon:'captions'})+quick('Subtitle settings',values.supplier+' · '+languageText(),'plugins/subtitles','captions'))}
+ ${panel('Network',quick('Network adapter',values.adapter,'network/adapter','network')+quick('Proxy server',values.proxy,'network/proxy','globe')+quick('Connection encryption',values.encryption,'network/encryption','shield'))}
+ ${panel('Schedule',quick('Weekly schedule',scheduleSummary(),'schedule/week','schedule'))}
+ </div></div>`;
+}
+function periodWhen(period){
+ const selected=period.days.length===7?'Every day':period.days.join()==='0,1,2,3,4'?'Mon–Fri':period.days.map(day=>days[day].slice(0,3)).join(', ');
+ const span=period.start===0&&period.end===0?'All day':`${time(period.start)}–${time(period.end)}${period.end<=period.start?' next day':''}`;
+ return `${selected} · ${span}`;
+}
+function periodLabel(period){return `${periodWhen(period)} · ${modeNames[period.mode]}`}
+function durationText(period){const duration=Week.duration(period),hours=Math.floor(duration/60);return `${hours?hours+(hours===1?' hour ':' hours '):''}${duration%60?duration%60+' min':''}`.trim()}
+function periodEffect(period){if(period.mode==='paused')return 'Pause transfers';return `Alternative limits · ${pair(true)}`}
+function mapPeriods(){return gesture?.period?gesture.original?periods.map(period=>period.key===gesture.original.key?gesture.period:period):[...periods,gesture.period]:periods}
+function timeline(day){
+ const now=clock(),fixed=values.mode==='Weekly schedule'?null:effective().mode,list=mapPeriods();
+ const ranges=Week.ranges(list,day,fixed);
+ const selected=gesture?.period||(periodDraft&&list.find(period=>period.key===periodDraft.key));
+ const active=Week.at(list,day,cursor.minute);
+ return `<div class="day-line"><span>${days[day].slice(0,3)}</span><div class="timeline ${fixed?'fixed':''}" data-day="${day}" tabindex="${day===cursor.day?0:-1}" role="group" aria-label="${days[day]}, ${fixed?modeNames[fixed]+' all day':time(cursor.minute)+', '+modeNames[active.mode]}. ${fixed?'':'Use arrow keys to choose a time; Enter to edit or add a period.'}">${ranges.map(range=>`<div class="segment ${range.mode}" role="img" aria-label="${escape(time(range.start)+'–'+time(range.end)+' · '+modeNames[range.mode])}" style="left:${range.start/14.4}%;width:${(range.end-range.start)/14.4}%" title="${escape(`${time(range.start)}–${time(range.end)} · ${modeNames[range.mode]}${range.period?' · '+periodLabel(range.period):''}`)}"><span>${range.end-range.start>=150?escape(modeNames[range.mode]):''}${range.end-range.start>=300&&!fixed?` <small>${time(range.start)}–${time(range.end)}</small>`:''}</span></div>`).join('')}${selected&&!fixed?Week.occurrences(selected,day).map(span=>`<div class="occurrence" style="left:${span.start/14.4}%;width:${(span.end-span.start)/14.4}%">${span.start===selected.start?'<span class="grip start" data-edge="start"></span>':''}${span.end===(selected.end||1440)?'<span class="grip end" data-edge="end"></span>':''}</div>`).join(''):''}${now.day===day?`<span class="now-line" style="left:${now.minute/14.4}%" title="Now ${time(now.minute)}"></span>`:''}${cursor.day===day&&!fixed?`<span class="cursor-line" style="left:${cursor.minute/14.4}%"></span>`:''}</div></div>`;
+}
+function mapMarkup(){
+ const following=values.mode==='Weekly schedule',now=clock();
+ return `<div class="map-heading"><h2 id="schedule-map-title">Weekly schedule</h2><div class="control" id="schedule-mode">${selectMarkup(groups.find(group=>group.id==='mode').rows[0])}</div></div><div class="week-map"><div class="ruler">${[0,6,12,18,24].map(hour=>`<span style="left:${hour/24*100}%">${String(hour).padStart(2,'0')}</span>`).join('')}</div>${days.map((_,day)=>timeline(day)).join('')}</div>${following?`<div class="map-legend">${['standard','alternative','paused'].map(mode=>`<span><i class="key ${mode}"></i>${modeNames[mode]}</span>`).join('')}<span>Now: ${days[now.day].slice(0,3)} ${time(now.minute)}</span></div>`:''}<div class="map-caption" id="map-caption">${gesture?.period?escape(periodLabel(gesture.period)+' · '+durationText(gesture.period)):following?`${days[cursor.day]} ${time(cursor.minute)} · Drag in 15-minute steps to add, move or resize. Changes apply to every selected day; Enter opens the period.`:`${modeNames[effective().mode]} applies all week. Your saved periods are kept.`}</div>`;
+}
+function periodMarkup(period){
+ const open=periodDraft?.key===period.key,value=open?periodDraft:period;
+ return `<details class="card expander" id="period-${period.key}" data-period="${period.key}" ${open?'open':''}><summary class="row">${icon(period.mode==='paused'?'power':'clock')}<span class="row-copy">${escape(periodWhen(period))} (${escape(durationText(period))})<span class="description" style="display:block">${escape(periodEffect(period))}</span></span>${icon('down','chevron')}</summary><div class="children period-fields"><div class="period-behavior" role="radiogroup" aria-labelledby="behavior-${period.key}"><span id="behavior-${period.key}">During this period</span><div class="period-choices">${[['alternative','Alternative limits'],['paused','Pause transfers']].map(([mode,label])=>`<label><input type="radio" name="period-mode-${period.key}" data-period-field="mode" value="${mode}" ${value.mode===mode?'checked':''}>${label}</label>`).join('')}</div></div><div class="period-days" role="group" aria-label="Days"><span class="description">Days</span>${days.map((day,index)=>`<label><input type="checkbox" data-period-day="${index}" ${value.days.includes(index)?'checked':''} aria-label="${day}">${day.slice(0,3)}</label>`).join('')}</div><div class="period-times"><label>Start <input type="text" inputmode="numeric" maxlength="5" placeholder="HH:mm" data-period-field="start" aria-label="Period start, 24-hour time" value="${Number.isFinite(value.start)?time(value.start):''}"></label><label>End <input type="text" inputmode="numeric" maxlength="5" placeholder="HH:mm" data-period-field="end" aria-label="Period end, 24-hour time" value="${Number.isFinite(value.end)?time(value.end):''}"></label><button class="command period-remove" data-remove-period="${period.key}" title="Remove this period from the weekly schedule" aria-label="Remove period">${icon('trash')}<span>Remove</span></button></div><span class="error" role="status">${open?escape(periodError):''}</span></div></details>`;
+}
+function schedule(){
+ const following=values.mode==='Weekly schedule';
+ return `${heading('Schedule')}${speedExpander()}<section class="card" id="week" aria-labelledby="schedule-map-title">${mapMarkup()}</section>${following?`<div class="section-heading"><h2>Periods</h2><button class="command" data-add-period ${periods.length>=128?'disabled':''}>${icon('plus')}<span>Add period</span></button></div><p class="description">Repeats in local time. Standard limits apply outside these periods; pauses take priority when periods overlap.</p>${periods.length?periods.map(periodMarkup).join(''):'<p class="empty">Add a period to use alternative limits or pause transfers.</p>'}`:''}`;
+}
+function openPeriod(key){periodDraft=key?structuredClone(periods.find(period=>period.key===key)):null;periodError='';render();if(key)document.querySelector(`#period-${key} summary`)?.focus({preventScroll:true})}
+function addPeriod(day=null,start=540,end=1020){
+ if(values.mode!=='Weekly schedule'||periods.length>=128)return;
+ const candidate={key:++periodKey,days:day===null?[0,1,2,3,4]:[day],start,end,mode:'alternative'};
+ const existing=periods.find(period=>Week.validate(candidate,[period])==='This period already exists');
+ if(existing){openPeriod(existing.key);return}
+ periods.push(candidate);openPeriod(candidate.key);document.querySelector(`#period-${candidate.key}`)?.scrollIntoView({block:'nearest'});
+}
+function savePeriod(){
+ const now=clock(),previous=Week.at(periods,now.day,now.minute).mode;
+ periodDraft.days.sort((a,b)=>a-b);periodError=Week.validate(periodDraft,periods);
+ if(!periodError)periods[periods.findIndex(period=>period.key===periodDraft.key)]=structuredClone(periodDraft);
+ if(previous!==Week.at(periods,now.day,now.minute).mode)preview.resumed=false;
+ render();
+}
+const connection = {
+ phase:'idle',timer:null,deadline:0,pending:false,error:'',failure:'',scenario:'Success',connected:true,
+ get testing(){return ['stopping','downloading','uploading'].includes(this.phase)},
+ get suspended(){return this.testing||this.phase==='holding'},
+ get editable(){return this.connected&&!this.pending&&!this.testing&&this.phase!=='restoring'},
+ get customRoute(){return values.proxy!=='Off'||values.adapter!=='Any adapter'},
+ get canApply(){const proposal=setupDraft&&Setup.propose(values,setupDraft);return this.editable&&proposal&&Object.entries(proposal).some(([key,value])=>key==='mode'?value!==values[key]:value!==+values[key])},
+ get status(){
+  if(!this.connected)return 'Disconnected from the engine. Reconnect to edit or test.';
+  if(this.failure)return this.failure;
+  if(this.phase==='holding')return `Transfers paused · ${Math.max(0,Math.ceil((this.deadline-Date.now())/1000))} seconds left`;
+  return {stopping:'Stopping torrent traffic…',downloading:'Measuring download speed…',uploading:'Measuring upload speed…',restoring:'Restoring torrent activity…',completed:'Test complete · Transfers restored',cancelled:'Canceled · Transfers restored',failed:'The test failed. Enter speeds manually or try again.'}[this.phase]||(this.customRoute?'Test is unavailable with a proxy or a selected adapter. Enter speeds manually.':'Not tested');
+ },
+ start(){
+  if(!this.editable||this.customRoute)return;
+  clearTimeout(this.timer);this.error='';this.failure='';this.phase='stopping';render();this.timer=setTimeout(()=>this.advance(),700);
+ },
+ advance(){
+  if(this.phase==='stopping')this.phase='downloading';
+  else if(this.phase==='downloading'){
+   if(['Network error','Timeout'].includes(this.scenario)){this.failure=this.scenario==='Timeout'?'The test timed out. Enter speeds manually or try again.':'Cloudflare could not complete the test. Check your connection or enter speeds manually.';this.restore('failed');return}
+   this.phase='uploading';
+  }else if(this.phase==='uploading'){setupDraft.down='300';setupDraft.up='75';this.phase='holding';this.deadline=Date.now()+180000}
+  else if(this.phase==='holding'){
+   if(Date.now()>=this.deadline){this.restore('completed');return}
+   const status=document.querySelector('#connection-status');if(status)status.textContent=this.status;
+   this.timer=setTimeout(()=>this.advance(),1000);return;
+  }else return;
+  render();this.timer=setTimeout(()=>this.advance(),this.phase==='holding'?1000:900);
+ },
+ restore(outcome,done){
+  clearTimeout(this.timer);
+  if(!this.suspended){done?.();return}
+  this.phase='restoring';render();
+  this.timer=setTimeout(()=>{
+   const failed=this.scenario==='Restore error';this.phase=failed?'failed':outcome;
+   if(failed)this.failure='Could not confirm that torrent activity was restored. Check your torrents before trying again.';
+   render();done?.(!failed);
+  },500);
+ },
+ depart(done){
+  if(this.pending||this.phase==='restoring')return false;
+  if(this.suspended){this.restore('completed',success=>{if(success)done()});return false}
+  return true;
+ },
+ apply(){
+  if(!this.canApply)return;
+  const proposal=Setup.propose(values,setupDraft);this.pending=true;this.error='';render();
+  setTimeout(()=>{
+   const failed=this.scenario==='Save error'||!this.connected;
+   if(failed)this.error='Could not save the settings. Your proposal is kept. Try Apply again.';else Object.assign(values,proposal);
+   const finish=restored=>{this.pending=false;render();if(!failed&&restored!==false)go('speed')};
+   if(this.suspended)this.restore('completed',finish);else finish();
+  },350);
+ }
+};
+function setup(){
+ if(!setupDraft)setupDraft={down:+values.capacityDown?String(values.capacityDown):'',up:+values.capacityUp?String(values.capacityUp):'',standard:Setup.share(+values.download,+values.capacityDown,85),alternative:Setup.share(+values.altDownload,+values.capacityDown,25),standardMoved:false,alternativeMoved:false};
+ const proposal=Setup.propose(values,setupDraft),errors=Setup.errors(values,setupDraft),disabled=!connection.editable,current=effective();
+ const count=value=>+value===0?'Unlimited':escape(value);
+ const table=(title,rows,mode)=>`<h2 class="section-title">${title}${mode&&connection.connected?` <span class="description" style="margin-left:8px">${current.mode===mode?'In use':'Not in use'}</span>`:''}</h2><div class="card"><table class="proposal"><thead><tr><th>Setting</th><th>Current</th><th>Proposed</th></tr></thead><tbody>${rows.map(([id,label,isRate])=>`<tr><td>${label}</td><td>${isRate?rate(values[id]):count(values[id])}</td><td class="${proposal&&proposal[id]!==+values[id]?'changed':''}">${proposal?(isRate?rate(proposal[id]):count(proposal[id])):'—'}</td></tr>`).join('')}</tbody></table></div>`;
+ const sliders=['standard','alternative'].map(kind=>{
+  const share=setupDraft[kind],caps=Setup.caps(share,setupDraft.down,setupDraft.up),label=kind==='standard'?({50:'Reduced · 50%',85:'Balanced · 85%',100:'Full speed'}[share]||share+'%'):share===100?'Unlimited':share+'%';
+  return `<div class="section-heading"><h2>${kind==='standard'?'Standard':'Alternative'} limits</h2></div><div class="card setup-share"><label for="share-${kind}">Share of capacity <strong>${label}</strong></label><input id="share-${kind}" type="range" min="5" max="100" step="5" value="${share}" data-share="${kind}" aria-label="${kind==='standard'?'Standard':'Alternative'} share of capacity" aria-describedby="rates-${kind} hint-${kind}" ${disabled?'disabled':''}><p id="rates-${kind}">${caps?`↓ ${rate(caps[0])} · ↑ ${rate(caps[1])}`:'Enter both connection speeds'}</p><p id="hint-${kind}">${kind==='standard'?'50% or less also reduces the active queue. 100% removes both caps. Peer counts stay unchanged.':'100% removes both caps.'}</p>${!Setup.follows(values,setupDraft,kind)?'<p>Current limits are kept until you change this slider or the capacity.</p>':''}</div>`;
+ }).join('');
+ return `${heading('Connection setup','Speed limits')}<p class="intro">A speed test temporarily pauses torrent activity.</p><div class="setup-grid"><div><div class="section-heading" style="margin-top:0"><h2>Connection capacity</h2><div style="display:flex;gap:8px"><button class="plain" data-test-info aria-label="About the speed test" title="About the speed test">${icon('info')}</button><button class="command" data-measure title="${connection.testing?'Stop the test and restore torrent activity':'Temporarily pause torrents and measure connection capacity'}" ${(!connection.connected||connection.pending||connection.phase==='restoring'||!connection.testing&&connection.customRoute)?'disabled':''}>${icon(connection.testing?'power':'speed')}<span>${connection.testing?'Cancel':connection.phase==='holding'?'Retest':connection.phase==='failed'?'Retry':'Test'}</span></button></div></div><p class="description" role="status" id="connection-status">${escape(connection.status)}</p>${connection.testing||connection.phase==='restoring'?'<progress aria-label="Connection test in progress" style="width:100%;height:4px"></progress>':''}<div class="card">${['down','up'].map(key=>`<div class="row"><div class="row-copy"><label for="capacity-${key}">${key==='down'?'Download':'Upload'}</label><div class="error" id="capacity-error-${key}">${errors[key]}</div></div><div class="control">${textBox(`<input id="capacity-${key}" type="text" inputmode="decimal" placeholder="Enter speed" data-capacity="${key}" aria-label="${key==='down'?'Download':'Upload'} capacity" aria-invalid="${Boolean(errors[key])}" aria-describedby="capacity-error-${key}" value="${escape(setupDraft[key])}" ${disabled?'disabled':''}>`)}<span class="unit">Mbps</span></div></div>`).join('')}</div>${sliders}</div><div><h2 class="section-title">Settings preview</h2>${values.mode==='No limits'?`<div class="card"><table class="proposal"><thead><tr><th>Setting</th><th>Current</th><th>Proposed</th></tr></thead><tbody><tr><td>Limits to use</td><td>No limits</td><td class="${proposal?.mode!=='No limits'?'changed':''}">${escape(proposal?.mode||'No limits')}</td></tr></tbody></table></div>`:''}${table('Standard limits',[['download','Download',true],['upload','Upload',true]],'standard')}${table('Alternative limits',[['altDownload','Download',true],['altUpload','Upload',true]],'alternative')}${table('Queue',[['downloads','Active downloads'],['seeds','Active seeds'],['total','Active torrents']])}</div></div><div class="setup-footer"><span class="${connection.error?'error':'description'}" role="status" style="margin-right:auto">${escape(connection.error||(!connection.connected?'Waiting for the engine':connection.pending?'Applying changes…':connection.testing?'Test in progress':connection.phase==='restoring'?'Restoring torrent activity…':!proposal?'Check the highlighted capacities':connection.canApply?'Changes ready to apply':'No changes to apply'))}</span><button class="command" data-go="speed" title="Return without applying the proposed settings" ${connection.pending?'disabled':''}>${icon('close')}<span>Cancel</span></button><button class="accent command" data-apply title="Apply the proposed settings and restore torrent activity" ${!connection.canApply?'disabled':''}>${icon('check')}<span>Apply</span></button></div>`;
+}
+function connectionPreview(){
+ let dialog=document.querySelector('#connection-preview');if(!dialog){dialog=document.createElement('dialog');dialog.id='connection-preview';document.body.append(dialog)}
+ dialog.innerHTML=`<div class="dialog-body preview-fields"><h2>Preview connection setup</h2><p>Simulation only. Test phases are shortened and use sample results of 300 / 75 Mbps. No network requests or engine changes are made.</p><label>Next outcome<select id="connection-outcome">${['Success','Network error','Timeout','Restore error','Save error'].map(value=>`<option${connection.scenario===value?' selected':''}>${value}</option>`).join('')}</select></label><label><input type="checkbox" id="connection-connected" ${connection.connected?'checked':''}> Engine connected</label></div><div class="dialog-actions"><button class="command" data-empty-capacity>${icon('trash')}<span>Clear saved capacity</span></button>${connection.phase==='holding'?`<button class="command" data-expire-test>${icon('clock')}<span>Expire hold</span></button>`:''}<button class="command accent" data-connection-preview>${icon('play')}<span>Preview</span></button></div>`;dialog.showModal();
+}
+function render(){
+ const active=document.activeElement,position=main.scrollTop,selection=active?.dataset.capacity?[active.selectionStart,active.selectionEnd]:null;
+ const focus=active?.dataset.mode?`[data-mode="${active.dataset.mode}"]`:active?.closest('#schedule-mode')?'#schedule-mode select':active?.dataset.language?`[data-language="${active.dataset.language}"]`:active?.dataset.languageMode?`[data-language-mode="${active.dataset.languageMode}"]`:active?.dataset.value?`[data-value="${active.dataset.value}"]`:active?.dataset.unit?`[data-unit="${active.dataset.unit}"]`:active?.dataset.capacity?`[data-capacity="${active.dataset.capacity}"]`:active?.dataset.share?`[data-share="${active.dataset.share}"]`:active?.dataset.periodField?`#${active.closest("[data-period]").id} [data-period-field="${active.dataset.periodField}"]${active.type==='radio'?`[value="${active.value}"]`:''}`:active?.dataset.periodDay!==undefined?`#${active.closest("[data-period]").id} [data-period-day="${active.dataset.periodDay}"]`:active?.dataset.day!==undefined?`.timeline[data-day="${cursor.day}"]`:active?.id?`#${active.id}`:active?.matches('summary')&&active.parentElement.id?`#${active.parentElement.id}>summary`:active?.matches('[data-measure]')?'[data-measure]':null;
+ if(!categories.some(([key])=>key===page))page='network';
+ if(page==='advanced'&&!showAdvanced){page=values.index?'home':'general';detail=''}
+ content.dataset.page=page;
+ document.querySelector('#advanced-toggle').setAttribute('aria-checked',String(showAdvanced));
+ document.querySelector('#nav').innerHTML=categories.filter(([key])=>key!=='advanced'||showAdvanced).map(([key,label])=>`<button data-go="${key}" ${key===page?'aria-current="page"':''}>${icon(key)}<span>${label}</span></button>`).join('');
+ document.querySelector('#variant').textContent=names[variant];
+ const category=categories.find(([key])=>key===page)[1];
+ 
+ if(page==='home')content.innerHTML=home();
+ else if(detail==='setup'&&page==='speed')content.innerHTML=setup();
+ else if(page==='speed')content.innerHTML=heading(category)+speedControls()+groups.filter(group=>group.category==='speed'&&!['mode','standard','alternative'].includes(group.id)).map(groupMarkup).join('')+`<section class="related"><h2 class="section-title">Related settings</h2>${navigation('Schedule',scheduleSummary(),'schedule/week','schedule')}${navigation('Queue',groupSummary(groups.find(group=>group.id==='queue')),'transfers/queue','queue')}</section>`;
+ else if(page==='schedule')content.innerHTML=schedule();
+ else {
+ const own=groups.filter(group=>group.category===page);
+ content.innerHTML=heading(category)+own.map(groupMarkup).join('');
+ }
+ content.querySelectorAll('.row-title,.description,.summary,.group-note,.folder-example,.map-caption,.expander>summary .row-copy,.intro,.setup-share p,.setup-footer>span').forEach(element=>{
+  if(!element.hasAttribute('title'))element.title=element.textContent.trim();
+ });
+ document.querySelectorAll('details[data-period]').forEach(element=>element.addEventListener('toggle',()=>{if(!element.isConnected)return;const key=+element.dataset.period;if(element.open&&periodDraft?.key!==key)openPeriod(key);else if(!element.open&&periodDraft?.key===key)openPeriod(null)}));
+ document.querySelectorAll('details[data-group]').forEach(element=>element.addEventListener('toggle',()=>{if(!element.isConnected)return;if(element.open)expanded.add(element.dataset.group);else expanded.delete(element.dataset.group)}));
+ const url=new URL(location.href);url.searchParams.set('variant',variant);url.searchParams.set('page',page);if(detail)url.searchParams.set('detail',detail);else url.searchParams.delete('detail');history.replaceState(null,'',url);
+ document.querySelector('#back').disabled=page==='home'&&!detail;
+ main.scrollTop=position;
+ if(focus){const target=document.querySelector(focus);target?.focus({preventScroll:true});if(selection&&target)target.setSelectionRange(...selection)}
+ if(batch)document.querySelectorAll('[data-value="batchScope"],[data-value="batchMatch"]').forEach(input=>input.disabled=true);
+}
+function go(target){
+ if(detail==='setup'){if(!connection.depart(()=>go(target)))return;setupDraft=null;connection.error=''}
+ if(page==='schedule'){periodDraft=null;periodError='';gesture=null}
+ [page,detail='']=target.split('/');
+ const destination=detail==='setup'?'':detail;
+ const group=groups.find(group=>group.category===page&&(group.id===destination||group.rows.some(row=>row[0]===destination)));
+ if(destination)detail='';
+ if(group)expanded.add(group.id);
+ if(page==='advanced'||group&&advancedGroups.has(group.id)||advancedRows.has(destination))showAdvanced=true;
+ render();main.scrollTop=0;
+ let surface=destination?(group?document.getElementById(`${group.id===destination?'group':'row'}-${destination}`):document.getElementById(destination)):null;
+ if(surface?.classList.contains('section'))surface=surface.querySelector(':scope > .card');
+ if(surface?.classList.contains('theme-picker'))surface=surface.querySelector('.themes');
+ if(surface){
+  surface.classList.add('spotlight');surface.scrollIntoView({block:'nearest'});
+  surface.setAttribute('tabindex','-1');surface.focus({preventScroll:true});
+  surface.addEventListener('focusout',()=>surface.classList.remove('spotlight'),{once:true});
+  setTimeout(()=>surface.classList.remove('spotlight'),3000);
+ }
+ else{document.querySelector('.heading h1')?.setAttribute('tabindex','-1');document.querySelector('.heading h1')?.focus({preventScroll:true})}
+}
+function changeTheme(mode){values.theme=mode;document.body.classList.toggle('light',mode==='Light'||mode==='Use Windows setting'&&matchMedia('(prefers-color-scheme: light)').matches);render()}
+function switchVariant(direction){if(detail==='setup'){if(!connection.depart(()=>switchVariant(direction)))return;setupDraft=null;connection.error=''}periodDraft=null;gesture=null;variant=['A','B','C'][(['A','B','C'].indexOf(variant)+direction+3)%3];if(variant==='B'){groups.filter(group=>group.disclose).forEach(group=>expanded.add(group.id));expanded.add('languages')}if(variant==='C'){page='home';detail=''}else if(page==='home')page='network';render();main.scrollTop=0;console.info('Prototype state',JSON.stringify({variant,page,detail,values,periods}))}
+function subtitleActions(){
+ const status=batch?`Searching ${batch.done} of 6 movies…`:!supplierReady()?'Add an API key in Account.':values.batchStatus||'6 finished movies to search';
+ return `<div class="subtitle-tasks"><h2 class="section-title">Library subtitle search</h2><p class="description subtitle-coverage">${escape(values.subtitleCoverage)} in Library have subtitles.</p><div class="card"><div class="children">${rowMarkup(['batchScope','Movies to search',status,'select',null,['Not searched','No exact match','All movies']],{icon:'film'},true)}${rowMarkup(['batchMatch','Matches to download','Per movie and language; exact matches first.','select',null,['Exact match','Best match','Up to 2','Up to 3','Up to 4']],{icon:'captions'},true)}</div></div><h2 class="section-title">Existing subtitle files</h2><div class="card"><div class="children"><div class="row" id="row-subtitle-scan"><div class="row-copy"><div class="row-title">Scan torrent folders</div><div class="description" id="help-subtitle-scan">Find existing subtitles and update their languages.</div></div><div class="control"><span class="subtitle-status" role="status" title="${escape(scan)}">${escape(scan)}</span><button class="command" id="subtitle-scan" data-scan aria-describedby="help-subtitle-scan" title="Find bundled subtitles in torrent folders again. No subtitles are downloaded, moved or deleted.">${icon('scan')}<span>Scan files</span></button></div></div></div></div></div>`;
+}
+function supplierReady(){const account=credentials[values.supplier];return values.supplier==='OpenSubtitles'?true:Boolean(account.key?.trim())}
+function edit(id){
+ draft={id};const row=groups.flatMap(group=>group.rows).find(row=>row[0]===id),accountEditor=['proxy','supplier'].includes(id);let fields='';
+ if(id==='proxy'){
+  fields=`<div class="proxy-fields"><label title="SOCKS5 works with every torrent feature. HTTP and SOCKS4 can't carry DHT, µTP, or UDP trackers, so those stop while the proxy is in use.">Proxy type<select name="type"><option value="Off">None</option><option>SOCKS5</option><option>SOCKS4</option><option>HTTP</option></select></label><label for="proxy-host"><span class="field-header">Address<span class="error" id="host-error" role="status"></span></span>${textBox('<input id="proxy-host" name="host" type="text" aria-label="Address" maxlength="253" placeholder=" " aria-describedby="host-error">')}</label><label for="proxy-port"><span class="field-header">Port<span class="error" id="port-error" role="status"></span></span>${textBox('<input id="proxy-port" name="port" type="text" aria-label="Port" inputmode="numeric" placeholder=" " aria-describedby="port-error">')}</label><div id="proxy-signin"><label for="proxy-username">User name${textBox('<input id="proxy-username" name="username" type="text" maxlength="255" placeholder=" " autocomplete="off">')}</label><label>Password<input name="password" type="password" maxlength="255" autocomplete="off"></label></div></div>`;
+ }else if(id==='supplier'){
+  fields=values.supplier==='OpenSubtitles'?'<p class="description">Leave both fields empty to continue without signing in, or enter both.</p><label>User name (optional)<input name="username" autocomplete="off"></label><label>Password (optional)<input name="password" type="password" autocomplete="off"></label>':'<label>API key<input name="key" type="password" required autocomplete="off"></label>';
+ }else fields=`<label>Folder path<input name="value" value="${escape(values[id])}" ${id==='watchDestination'?'':'required'}></label>`;
+ document.querySelector('#fields').innerHTML=`<h2 id="editor-title">${id==='proxy'?icon('route'):''}${escape(id==='proxy'?'Edit proxy server':id==='supplier'?values.supplier+' account':row[1])}</h2>${id==='proxy'?'':`<p>${id==='supplier'?'Use sample credentials. Check does not save changes.':'Enter a sample path. The native app opens a Windows folder picker.'}</p>`}${fields}${id==='proxy'?'':'<span class="error" id="draft-error" role="status"></span>'}`;
+ editor.classList.toggle('account-editor',accountEditor);editor.classList.toggle('proxy-editor',id==='proxy');
+ const status=document.querySelector('#draft-status');status.hidden=!accountEditor;status.innerHTML=accountEditor?`<button class="command" type="button" id="check-draft" title="${id==='proxy'?'Connect to the proxy with these values, without saving them':'Check account access without saving changes'}">${icon('plug')}<span>Check</span></button><span id="draft-result-icon" hidden>${icon('success','small')}</span><span id="draft-result" role="status" tabindex="-1"></span>`:'';
+ const account=id==='proxy'?credentials.proxy:id==='supplier'?credentials[values.supplier]:null;
+ if(account)for(const [key,value]of Object.entries(account)){const input=document.querySelector(`#fields [name="${key}"]`);if(input)input.value=value}
+ const save=document.querySelector('#form button[type=submit]');save.innerHTML=icon(accountEditor?'check':'save')+'<span>Save</span>';save.disabled=false;save.title=id==='proxy'?"Use these proxy settings for TinyTorrent's internet connections":'Save changes';document.querySelector('#cancel').hidden=false;document.querySelector('#cancel').title='Close without saving';
+ updateEditor();if(!editor.open)editor.showModal();
+ if(id==='proxy')(document.querySelector('#fields input:not(:disabled)')||save).focus();
+}
+function updateEditor(){
+ if(draft?.id!=='proxy')return;const type=document.querySelector('[name=type]').value;
+ for(const input of document.querySelectorAll('#fields input'))input.disabled=type==='Off'||type==='SOCKS4'&&['username','password'].includes(input.name);
+ document.querySelector('#proxy-signin').title=type==='SOCKS4'?"SOCKS4 doesn't use a user name or password.":'';
+ document.querySelector('#check-draft').disabled=type==='Off';
+}
+function draftResult(message='',tip=message){
+ const result=document.querySelector('#draft-result');if(!result)return;
+ result.textContent=message;result.tabIndex=message?0:-1;result.title=tip;result.setAttribute('aria-label',tip);document.querySelector('#draft-status').title=tip;document.querySelector('#draft-result-icon').hidden=!message;
+}
+function validDraft(){
+ const fields=document.querySelector('#fields');
+ if(draft.id==='proxy'){
+  draft.validated=true;const enabled=fields.querySelector('[name=type]').value!=='Off',port=fields.querySelector('[name=port]'),host=fields.querySelector('[name=host]');
+  const errors={host:enabled&&(!host.value.trim()||/[\s/\\?#]/.test(host.value.trim()))?'Enter a host name or an IP address.':'',port:enabled&&(!/^\d+$/.test(port.value)||+port.value<1||+port.value>65535)?'Enter a whole number from 1 to 65,535.':''};
+  for(const [name,message]of Object.entries(errors)){const error=document.querySelector('#'+name+'-error');error.textContent=message?' · '+message:'';error.parentElement.title=message;fields.querySelector('[name='+name+']').setAttribute('aria-invalid',String(Boolean(message)))}
+  return !errors.host&&!errors.port;
+ }
+ const error=document.querySelector('#draft-error');error.textContent='';
+ for(const input of fields.querySelectorAll('input'))if(!input.reportValidity())return false;
+ if(draft.id==='supplier'&&values.supplier==='OpenSubtitles'&&Boolean(fields.querySelector('[name=username]').value.trim())!==Boolean(fields.querySelector('[name=password]').value)){error.textContent='Enter both a user name and password, or leave both empty';return false}
+ return true;
+}
+function commitInput(input){
+ const id=input.dataset.value;if(!id)return;let value=input.value;
+ if(input.dataset.factor!==undefined){
+  const factor=+input.dataset.factor,number=+value*factor,range=bounds[id]||[0,2147483647];
+  const valid=input.checkValidity()&&(value===''||/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(value))&&Number.isFinite(number)&&number<=range[1]&&(number===0&&unlimited.has(id)||number>=range[0])&&(input.dataset.decimal==='true'||Number.isInteger(+value))&&(!units[id]||Number.isInteger(number));
+  if(!valid){input.setAttribute('aria-invalid','true');const error=document.querySelector(`#error-${id}`);error.title=error.textContent=units[id]?'Enter a duration in whole minutes':`Enter ${factor===megabyte?speedValue(range[0]):range[0]}–${factor===megabyte?speedValue(range[1]):range[1]}${factor===megabyte?' MB/s':''}${unlimited.has(id)?', or clear for Unlimited':''}`;return}
+  value=value===''?'':String(number);
+ }
+ values[id]=value;
+ if(['batchScope','batchMatch','supplier'].includes(id))values.batchStatus='';
+ if(id==='mode'){preview.resumed=false;periodDraft=null;periodError=''}
+ if(id==='supplier')access='Not checked';
+ if(id==='theme')changeTheme(value);else render();
+}
+function refreshMap(){const map=document.querySelector('#week');if(map)map.innerHTML=mapMarkup()}
+function previewDialog(){
+ if(['general','home'].includes(page)){integrationPreview();return}
+ if(detail==='setup'){connectionPreview();return}
+ let dialog=document.querySelector('#preview');if(!dialog){dialog=document.createElement('dialog');dialog.id='preview';document.body.append(dialog)}
+ const now=clock();
+ dialog.innerHTML=`<div class="dialog-body preview-fields"><h2>Preview transfer state</h2><p>Sample state only. The native app uses the engine’s current state.</p><label>Day<select id="preview-day">${days.map((day,index)=>`<option value="${index}"${index===now.day?' selected':''}>${day}</option>`).join('')}</select></label><label>Time<input type="time" id="preview-time" value="${time(now.minute)}" required></label><label><input type="checkbox" id="preview-manual" ${preview.manual?'checked':''}> Paused by you</label><label><input type="checkbox" id="preview-adapter" ${preview.adapter?'checked':''}> Selected adapter unavailable</label><p>Resume bypasses a scheduled pause until the next change of scheduled mode.</p></div><div class="dialog-actions"><button class="command" data-live>${icon('clock')}<span>Live time</span></button><button class="command" data-resume>${icon('play')}<span>Resume</span></button><button class="command accent" data-preview>${icon('play')}<span>Preview</span></button></div>`;dialog.showModal();
+}
+function advanceTime(day,minute){
+ const previous=clock(),distance=(day*1440+minute-previous.day*1440-previous.minute+10080)%10080,next=Week.next(periods,previous.day,previous.minute);
+ if(next&&distance>=next.distance)preview.resumed=false;
+ preview.fixed=true;preview.day=day;preview.minute=minute;
+}
+function runBatch(){
+ if(batch){clearInterval(batch.timer);values.batchStatus=`Stopped · ${batch.done} of 6 movies checked`;batch=null;render();return}
+ batch={done:0,timer:setInterval(()=>{batch.done++;if(batch.done===6){clearInterval(batch.timer);values.batchStatus='Finished · 6 movies checked';batch=null}render()},800)};render();
+}
+document.addEventListener('pointerdown',event=>{if(event.target.closest('[data-clear]'))event.preventDefault()});
+document.addEventListener('click',event=>{
+ const button=event.target.closest('button');if(!button||button.disabled)return;
+ if(button.hasAttribute('data-clear')){const input=button.previousElementSibling;if(input.disabled)return;input.focus();input.value='';input.dispatchEvent(new Event('input',{bubbles:true}));if(!input.dataset.capacity)input.dispatchEvent(new Event('change',{bubbles:true}));return}
+ if(button.id==='advanced-toggle'){showAdvanced=!showAdvanced;render();button.focus();return}
+ if(button.dataset.go)go(button.dataset.go);
+ if(button.dataset.integration){changeIntegration(button.dataset.integration,true,true);return}
+ if(button.hasAttribute('data-integration-preview')){previewIntegration();return}
+ if(button.hasAttribute('data-integration-close')){document.querySelector('#integration-preview').close();return}
+ if(button.dataset.toggle){const id=button.dataset.toggle;if(['handlers','signin'].includes(id)){changeIntegration(id,!integrationOn(id));return}values[id]=!values[id];render();document.querySelector(`[data-toggle="${id}"]`)?.focus()}
+ if(button.dataset.edit)edit(button.dataset.edit);
+ if(button.dataset.mode)changeTheme(button.dataset.mode);
+ if(button.hasAttribute('data-add-period'))addPeriod();
+ if(button.dataset.removePeriod){const now=clock(),previous=Week.at(periods,now.day,now.minute).mode;periods.splice(periods.findIndex(period=>period.key===+button.dataset.removePeriod),1);if(Week.at(periods,now.day,now.minute).mode!==previous)preview.resumed=false;openPeriod(null);document.querySelector('[data-add-period]')?.focus({preventScroll:true})}
+ if(button.hasAttribute('data-apply'))connection.apply();
+ if(button.hasAttribute('data-measure')){if(connection.testing)connection.restore('cancelled');else connection.start()}
+ if(button.hasAttribute('data-test-info')){
+  let info=document.querySelector('#connection-info');if(!info){info=document.createElement('dialog');info.id='connection-info';document.body.append(info)}
+  info.innerHTML=`<form method="dialog"><div class="dialog-body"><h2>About the speed test</h2><p>The native test temporarily pauses torrent traffic and uses Cloudflare to measure download and upload capacity, transferring up to 128 MiB each way.</p><p>Cloudflare receives your IP address and shares anonymized measurements. <a href="https://www.cloudflare.com/privacypolicy/" target="_blank" rel="noreferrer">Cloudflare privacy policy</a></p><p>After measurement, transfers stay paused for up to 3 minutes while you review. Apply or leaving this page releases the test pause; your other pause and schedule rules still apply.</p><p>This prototype simulates the test. No data is transferred.</p></div><div class="dialog-actions"><button class="command">${icon('close')}<span>Close</span></button></div></form>`;info.showModal();
+ }
+ if(button.hasAttribute('data-connection-preview')){
+  connection.scenario=document.querySelector('#connection-outcome').value;connection.connected=document.querySelector('#connection-connected').checked;
+  if(!connection.connected&&connection.suspended){clearTimeout(connection.timer);connection.phase='failed';connection.failure='Connection lost during the test. Check torrent activity after reconnecting.'}
+  document.querySelector('#connection-preview').close();render();
+ }
+ if(button.hasAttribute('data-empty-capacity')){values.capacityDown=0;values.capacityUp=0;setupDraft=null;document.querySelector('#connection-preview').close();render()}
+ if(button.hasAttribute('data-expire-test')){document.querySelector('#connection-preview').close();connection.deadline=0;connection.advance()}
+ if(button.id==='check-draft'&&validDraft())draftResult('Sample check passed','Sample check passed. No connection was made.');
+ if(button.hasAttribute('data-access')){access='Sample access check passed. No connection was made.';render()}
+ if(button.hasAttribute('data-batch'))runBatch();
+ if(button.hasAttribute('data-scan')){scan='34 files found · 0 read errors';render()}
+ if(button.hasAttribute('data-preview')||button.hasAttribute('data-resume')){const input=document.querySelector('#preview-time');if(!input.reportValidity())return;advanceTime(+document.querySelector('#preview-day').value,minutes(input.value));preview.manual=document.querySelector('#preview-manual').checked;preview.adapter=document.querySelector('#preview-adapter').checked;if(button.hasAttribute('data-resume')){preview.manual=false;preview.resumed=Week.at(periods,preview.day,preview.minute).mode==='paused'}document.querySelector('#preview').close();render()}
+ if(button.hasAttribute('data-live')){preview.fixed=false;preview.resumed=false;document.querySelector('#preview').close();render()}
+});
+document.addEventListener('input',event=>{
+ const input=event.target;if(input.closest('#fields')){updateEditor();draftResult();if(draft.id==='proxy'&&draft.validated)validDraft();return}if(input.id==='language-search'){languageQuery=input.value;document.querySelector('#language-choices').innerHTML=languageList();return}if(!setupDraft||!connection.editable)return;
+ if(input.dataset.capacity){setupDraft[input.dataset.capacity]=input.value;connection.error='';render()}
+ if(input.dataset.share&&+input.value!==setupDraft[input.dataset.share]){setupDraft[input.dataset.share]=+input.value;setupDraft[input.dataset.share+'Moved']=true;connection.error='';render()}
+});
+document.addEventListener('change',event=>{
+ const input=event.target;
+ if(input.closest('#fields')){updateEditor();draftResult();if(draft.id==='proxy'){if(draft.validated)validDraft()}else document.querySelector('#draft-error').textContent='';return}
+ if(input.dataset.languageMode){languages=input.dataset.languageMode==='display'?[]:(languages.length?languages:[values.language]);languageQuery='';render();return}
+ if(input.dataset.language){languages=input.checked?[...languages,input.dataset.language]:languages.filter(language=>language!==input.dataset.language);render();if(!languages.length)document.querySelector('[data-language-mode="display"]').focus({preventScroll:true});return}
+ if(input.dataset.periodField){periodDraft[input.dataset.periodField]=input.dataset.periodField==='mode'?input.value:minutes(input.value);savePeriod();return}
+ if(input.dataset.periodDay!==undefined){const day=+input.dataset.periodDay;periodDraft.days=input.checked?[...periodDraft.days,day]:periodDraft.days.filter(value=>value!==day);savePeriod();return}
+ if(input.dataset.unit){units[input.dataset.unit]=input.value;render();return}
+ if(input.dataset.capacity||input.dataset.share)return;
+ commitInput(input);
+});
+document.querySelector('#form').addEventListener('submit',event=>{
+ event.preventDefault();if(!validDraft())return;const data=new FormData(event.target);
+ if(draft.id==='proxy'){for(const input of document.querySelectorAll('#fields input,#fields select'))credentials.proxy[input.name]=input.name==='host'?input.value.trim():input.value;const proxy=credentials.proxy;values.proxy=proxy.type==='Off'?'Off':`${proxy.type} · ${proxy.host}:${proxy.port}`}
+ else if(draft.id==='supplier'){credentials[values.supplier]=Object.fromEntries(data);access='Not checked'}
+ else values[draft.id]=String(data.get('value'));
+ editor.close();render();document.querySelector(`[data-edit="${draft.id}"]`)?.focus();
+});
+document.querySelector('#cancel').onclick=()=>editor.close();
+editor.addEventListener('close',()=>document.querySelector(`[data-edit="${draft?.id}"]`)?.focus());
+document.querySelector('#back').onclick=()=>detail?go(page):go('home');
+document.querySelector('#previous').onclick=()=>switchVariant(-1);
+document.querySelector('#next').onclick=()=>switchVariant(1);
+document.querySelector('#theme').onclick=()=>changeTheme(document.body.classList.contains('light')?'Dark':'Light');
+document.querySelector('#design').onclick=()=>{document.querySelector('#state').textContent=JSON.stringify({variant,page,detail,values,periods,preview,languages,integration},null,2);notes.showModal()};
+document.querySelector('#close-notes').onclick=()=>notes.close();
+main.addEventListener('pointerdown',event=>{
+ const line=event.target.closest('.timeline');if(!line||values.mode!=='Weekly schedule'||event.button!==0)return;
+ const rect=line.getBoundingClientRect(),day=+line.dataset.day,minute=Math.max(0,Math.min(1439,(event.clientX-rect.left)/rect.width*1440));
+ const range=Week.at(periods,day,minute),selected=periodDraft&&periods.find(period=>period.key===periodDraft.key),original=selected&&Week.occurrences(selected,day).some(span=>minute>=span.start&&minute<=span.end)?selected:range.period;
+ cursor={day,minute:Math.floor(minute/15)*15};gesture={day,anchor:minute,rect,startX:event.clientX,moved:false,kind:event.target.classList.contains('start')?'start':event.target.classList.contains('end')?'end':original?'move':'new',original:original?structuredClone(original):null,period:null};
+ line.focus();main.setPointerCapture(event.pointerId);event.preventDefault();
+});
+main.addEventListener('pointermove',event=>{
+ if(!gesture)return;const g=gesture;if(!g.moved&&Math.abs(event.clientX-g.startX)<4)return;g.moved=true;
+ const delta=Math.round((event.clientX-g.startX)/g.rect.width*1440);
+ const original=g.original||{key:periodKey+1,days:[g.day],start:cursor.minute,end:(cursor.minute+15)%1440,mode:'alternative'};
+ g.period=Week.adjust(original,g.kind,delta);
+ refreshMap();
+});
+main.addEventListener('pointerup',event=>{
+ if(!gesture)return;const g=gesture;gesture=null;main.releasePointerCapture(event.pointerId);
+ if(!g.moved){openPeriod(g.original?.key||null);return}
+ if(!g.original&&periods.length>=128){render();return}
+ const error=Week.validate(g.period,periods);if(error){periodError=error;render();return}
+ const now=clock(),before=Week.at(periods,now.day,now.minute).mode;
+ if(g.original)periods[periods.findIndex(period=>period.key===g.original.key)]=g.period;else{periodKey++;periods.push(g.period)}
+ if(before!==Week.at(periods,now.day,now.minute).mode)preview.resumed=false;
+ openPeriod(g.period.key);
+});
+main.addEventListener('lostpointercapture',()=>{if(gesture){gesture=null;render()}});
+document.addEventListener('keydown',event=>{
+ const theme=event.target.closest('.theme-swatch');
+ if(theme&&['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(event.key)){
+  event.preventDefault();const tiles=[...theme.closest('.themes').querySelectorAll('[data-mode]')],index=tiles.indexOf(theme);
+  const next=event.key==='Home'?0:event.key==='End'?tiles.length-1:(index+(['ArrowLeft','ArrowUp'].includes(event.key)?-1:1)+tiles.length)%tiles.length,mode=tiles[next].dataset.mode;
+  changeTheme(mode);document.querySelector(`[data-mode="${mode}"]`)?.focus({preventScroll:true});return;
+ }
+ if(event.key==='Enter'&&!event.isComposing&&detail==='setup'&&!document.querySelector('dialog[open]')&&!event.target.closest('button')&&connection.canApply){event.preventDefault();connection.apply();return}
+ if(event.key==='Enter'&&event.target.matches('input[data-value],input[data-period-field]')){event.preventDefault();event.target.dispatchEvent(new Event('change',{bubbles:true}));return}
+ if(event.key==='Escape'&&gesture){gesture=null;render();return}
+ const line=event.target.closest('.timeline');
+ if(line&&values.mode==='Weekly schedule'){
+  if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(event.key)){event.preventDefault();if(event.key==='ArrowLeft')cursor.minute=Math.max(0,cursor.minute-15);if(event.key==='ArrowRight')cursor.minute=Math.min(1425,cursor.minute+15);if(event.key==='ArrowUp')cursor.day=(cursor.day+6)%7;if(event.key==='ArrowDown')cursor.day=(cursor.day+1)%7;if(event.key==='Home')cursor.minute=0;if(event.key==='End')cursor.minute=1425;render();document.querySelector(`.timeline[data-day="${cursor.day}"]`)?.focus();return}
+  if(event.key==='Enter'||event.key===' '){event.preventDefault();const period=Week.at(periods,cursor.day,cursor.minute).period;if(period)openPeriod(period.key);else if(event.key==='Enter')addPeriod(cursor.day,cursor.minute,Math.min(cursor.minute+60,1440)%1440);return}
+ }
+ if(event.key==='Escape'&&periodDraft&&!editor.open&&!notes.open){const key=periodDraft.key;openPeriod(null);document.querySelector(`details[data-period="${key}"] summary`)?.focus();return}
+ if(document.querySelector('dialog[open]')||event.altKey||event.ctrlKey||event.metaKey||event.target.closest('input,textarea,select,button,summary,.timeline,[contenteditable=true]'))return;
+ if(event.key==='ArrowLeft'||event.key==='ArrowRight'){event.preventDefault();switchVariant(event.key==='ArrowLeft'?-1:1)}
+});
+const languageOptions=['English','Español','Français','Deutsch','Português','Italiano','Nederlands','Polski','日本語','한국어','中文','العربية'];
+values.subtitleCoverage='178 of 240 movies';values.capacityDown='200';values.capacityUp='50';values.batchScope='Not searched';values.batchMatch='Up to 2';
+for(const [selector,glyph] of [['#back','back'],['#previous','back'],['#next','arrow'],['#design','info'],['#theme','sun'],['#cancel','close'],['#form button[type=submit]','save'],['#close-notes','close']]){
+ const button=document.querySelector(selector),label=button.hasAttribute('aria-label')?'':button.textContent;
+ button.classList.add('command');button.innerHTML=icon(glyph)+(label?`<span>${escape(label)}</span>`:'');
+}
+const previewButton=document.createElement('button');previewButton.className='command';previewButton.innerHTML=icon('play')+'<span>Preview state</span>';previewButton.onclick=previewDialog;document.querySelector('#design').before(previewButton);
+matchMedia('(prefers-color-scheme: light)').addEventListener('change',()=>{if(values.theme==='Use Windows setting')changeTheme(values.theme)});
+let lastClock=clock();
+setInterval(()=>{const now=clock(),distance=(now.day*1440+now.minute-lastClock.day*1440-lastClock.minute+10080)%10080,next=Week.next(periods,lastClock.day,lastClock.minute);if(!preview.fixed&&next&&distance>=next.distance)preview.resumed=false;lastClock=now;if(!gesture&&!document.querySelector('dialog[open]')&&!document.activeElement?.matches('input,textarea,select')&&(page==='schedule'||page==='home'||page==='speed'))render()},60000);
+if(detail&&detail!=='setup')go(`${page}/${detail}`);else render();
+</script>
+</body>
+</html>

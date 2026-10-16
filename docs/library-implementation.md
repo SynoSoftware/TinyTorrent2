@@ -23,7 +23,7 @@ implemented feature:
 Cancellation changes delivery scope, not the feature's data-safety rules.
 Follow [repository rules](../AGENTS.md), [testing](testing.md), the
 [Library spec](library.md), [interface](interface.md), and
-[Library prototype](../app/library-prototype.html). Those owners define the
+[Library prototype](../app/prototypes/library-prototype.html). Those owners define the
 behavior; this plan does not repeat their requirements.
 
 ## Current status
@@ -410,7 +410,7 @@ behavior.
   file adds `video_misses` and `provider_keys`, and a version 3 file adds
   `provider_keys`; both keep their data. There are no other upgrades for
   earlier development databases. The complete schema lives in
-  `Services/Database/Schema.cs`; the database owns future versioned migrations.
+  `Shared/Storage/Database/Schema.cs`; the database owns future versioned migrations.
   `source_state.initialized` records whether the first confirmed torrent list
   has been reconciled, including an empty list. That first list establishes
   `known_torrents` without searching the person's whole collection. Reopening

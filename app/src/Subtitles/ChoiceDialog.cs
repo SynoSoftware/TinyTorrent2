@@ -3,9 +3,8 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
-using Syno.TinyTorrent.Models;
-using Syno.TinyTorrent.Services;
-using Syno.TinyTorrent.Views;
+using Syno.TinyTorrent.Shared;
+using Syno.TinyTorrent.Shared.Network;
 
 namespace Syno.TinyTorrent.Subtitles;
 

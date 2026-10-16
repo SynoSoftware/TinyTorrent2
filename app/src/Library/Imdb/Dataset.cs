@@ -7,8 +7,8 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using SQLitePCL;
-using Syno.TinyTorrent.Models;
-using Syno.TinyTorrent.Services;
+using Syno.TinyTorrent.Shared;
+using Syno.TinyTorrent.Shared.Network;
 
 namespace Syno.TinyTorrent.Library.Imdb;
 
@@ -471,7 +471,7 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
     internal static string Key(string title)
     {
         var key = new StringBuilder(title.Length);
-        foreach (var character in Models.FileName.Normalize(title))
+        foreach (var character in Syno.TinyTorrent.Shared.FileName.Normalize(title))
         {
             if (char.IsLetterOrDigit(character))
             {

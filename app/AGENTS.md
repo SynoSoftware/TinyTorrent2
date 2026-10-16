@@ -25,7 +25,7 @@ MSBuild for affected WinUI projects.
 
 ## Dialogs
 
-Every dialog is a `Controls.Dialog` that `MainWindow` opens through `Interact`
+Every dialog is a `Shared.Dialog` that `MainWindow` opens through `Interact`
 and then `ShowDialog`, or `ShowEditor` when the primary button saves a draft.
 These owners hold what every dialog shares, so a dialog states only its title,
 content, buttons and outcome:

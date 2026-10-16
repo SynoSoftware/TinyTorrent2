@@ -2,7 +2,8 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
-using Syno.TinyTorrent.Services;
+using Syno.TinyTorrent.Shared;
+using Syno.TinyTorrent.Shell;
 using Windows.Foundation;
 
 namespace Syno.TinyTorrent.Controls;
@@ -38,9 +39,9 @@ public sealed partial class Pane : ContentControl
 
     public static readonly DependencyProperty DockProperty = DependencyProperty.Register(
         nameof(Dock),
-        typeof(Models.Dock),
+        typeof(Syno.TinyTorrent.Dock),
         typeof(Pane),
-        new PropertyMetadata(Models.Dock.None, OnChromeChanged)
+        new PropertyMetadata(Syno.TinyTorrent.Dock.None, OnChromeChanged)
     );
 
     public static readonly DependencyProperty CanCloseProperty = DependencyProperty.Register(
@@ -93,9 +94,9 @@ public sealed partial class Pane : ContentControl
     /// <summary>
     /// The compact strip's edge. None removes Pin and keeps the expanded presentation.
     /// </summary>
-    public Models.Dock Dock
+    public Syno.TinyTorrent.Dock Dock
     {
-        get => (Models.Dock)GetValue(DockProperty);
+        get => (Syno.TinyTorrent.Dock)GetValue(DockProperty);
         set => SetValue(DockProperty, value);
     }
 
@@ -195,7 +196,7 @@ public sealed partial class Pane : ContentControl
     {
         ApplyTemplate();
         var button =
-            Dock != Models.Dock.None ? _collapse
+            Dock != Syno.TinyTorrent.Dock.None ? _collapse
             : CanMaximize ? _maximize
             : CanClose ? _close
             : null;
@@ -213,13 +214,13 @@ public sealed partial class Pane : ContentControl
 
     private void OnCollapse(object sender, RoutedEventArgs args)
     {
-        if (Dock != Models.Dock.None)
+        if (Dock != Syno.TinyTorrent.Dock.None)
             CollapseRequested?.Invoke(this, FocusFrom((Button)sender));
     }
 
     private void OnOpen(object sender, RoutedEventArgs args)
     {
-        if (Dock != Models.Dock.None)
+        if (Dock != Syno.TinyTorrent.Dock.None)
             OpenRequested?.Invoke(this, FocusFrom((Button)sender));
     }
 
@@ -253,7 +254,7 @@ public sealed partial class Pane : ContentControl
             _separator.Visibility =
                 Actions is not null
                 && _actions is { ActualWidth: > 0 }
-                && (Dock != Models.Dock.None || CanMaximize || CanClose)
+                && (Dock != Syno.TinyTorrent.Dock.None || CanMaximize || CanClose)
                     ? Visibility.Visible
                     : Visibility.Collapsed;
     }
@@ -271,29 +272,29 @@ public sealed partial class Pane : ContentControl
             || _maximizeGlyph is null
         )
             return;
-        var compact = IsCompact && Dock != Models.Dock.None;
+        var compact = IsCompact && Dock != Syno.TinyTorrent.Dock.None;
         _expanded.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
         _toggle.Visibility = compact ? Visibility.Visible : Visibility.Collapsed;
-        _collapse.Visibility = Dock == Models.Dock.None ? Visibility.Collapsed : Visibility.Visible;
+        _collapse.Visibility = Dock == Syno.TinyTorrent.Dock.None ? Visibility.Collapsed : Visibility.Visible;
         _maximize.Visibility = CanMaximize ? Visibility.Visible : Visibility.Collapsed;
         _close.Visibility = CanClose ? Visibility.Visible : Visibility.Collapsed;
         _maximizeGlyph.Glyph = IsMaximized ? Lucide.Minimize2 : Lucide.Maximize2;
-        var vertical = Dock is Models.Dock.Left or Models.Dock.Right;
+        var vertical = Dock is Syno.TinyTorrent.Dock.Left or Syno.TinyTorrent.Dock.Right;
         _toggle.Width = vertical ? 8 : double.NaN;
         _toggle.Height = vertical ? double.NaN : 8;
         _toggle.HorizontalAlignment =
-            Dock == Models.Dock.Right ? HorizontalAlignment.Right
+            Dock == Syno.TinyTorrent.Dock.Right ? HorizontalAlignment.Right
             : vertical ? HorizontalAlignment.Left
             : HorizontalAlignment.Stretch;
         _toggle.VerticalAlignment =
-            Dock == Models.Dock.Top ? VerticalAlignment.Top
+            Dock == Syno.TinyTorrent.Dock.Top ? VerticalAlignment.Top
             : vertical ? VerticalAlignment.Stretch
             : VerticalAlignment.Bottom;
         _toggle.Margin = Dock switch
         {
-            Models.Dock.Left => new Thickness(0, 0, 2, 0),
-            Models.Dock.Right => new Thickness(2, 0, 0, 0),
-            Models.Dock.Top => new Thickness(0, 0, 0, 2),
+            Syno.TinyTorrent.Dock.Left => new Thickness(0, 0, 2, 0),
+            Syno.TinyTorrent.Dock.Right => new Thickness(2, 0, 0, 0),
+            Syno.TinyTorrent.Dock.Top => new Thickness(0, 0, 0, 2),
             _ => new Thickness(0, 2, 0, 0),
         };
         _toggleClip.Width = vertical ? 8 : 16;

@@ -13,7 +13,7 @@ is implemented in source; build and native interaction verification are pending.
 [Arc dimming](peer-location.md#arc-dimming) now implements the
 approved D treatment, Less glow; native visual verification remains pending.
 
-The Peers inspector follows `app/peers-prototype.html`: one Lucide ellipsis menu in its
+The Peers inspector follows `app/prototypes/peers-prototype.html`: one Lucide ellipsis menu in its
 existing header selects Map, Table or both, and Countries or Cities. The inspector
 header owns the separator before its common actions. Missing city data downloads
 directly through the existing dataset owner and status bar. This revision is
@@ -202,7 +202,7 @@ their values, composition order, origin formula and theme exceptions in one plac
 Updated 2026-10-14 from the supplied zoom plan and the subsequent prototype review.
 [Peer location](peer-location.md#zoom-and-pan) owns the input,
 appearance and view-lifetime behavior. The single maintained prototype is
-[app/peers-prototype.html](../app/peers-prototype.html); retain its Map/Table
+[app/prototypes/peers-prototype.html](../app/prototypes/peers-prototype.html); retain its Map/Table
 header toggles, automatic arrangement, splitter and inspector-height adjustment.
 
 ### Implementation approach

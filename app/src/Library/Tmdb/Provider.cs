@@ -3,8 +3,7 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Reflection;
 using System.Text.Json;
-using Syno.TinyTorrent.Library;
-using Syno.TinyTorrent.Models;
+using Syno.TinyTorrent.Shared;
 
 namespace Syno.TinyTorrent.Library.Tmdb;
 
