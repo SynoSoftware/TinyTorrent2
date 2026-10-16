@@ -4,6 +4,10 @@ This is the delivery record. [Peer location](peer-location.md#map) owns map
 behavior and precision; [Interface](interface.md#inspector-and-edits) owns its placement.
 The existing protocol and window-layout owners retain their responsibilities.
 
+The [deferred MVVM refactor](#deferred-mvvm-refactor) is a proposed ownership
+change to start after the current performance work has a measured, committed
+baseline. It does not authorize implementation or change current map behavior.
+
 The native baseline is recorded below. The [zoom and pan extension](#zoom-and-pan-extension)
 is implemented in source; build and native interaction verification are pending.
 [Arc dimming](peer-location.md#arc-dimming) now implements the
@@ -18,6 +22,139 @@ The combined arrangement automatically
 fits the larger map and reuses Splitter; the existing inspector height adjustment
 stays. Coordinates use shared-location rendering; country-only records use the
 approved estimated distribution. Selection determines the torrent scope.
+
+## Deferred MVVM refactor
+
+Proposed 2026-10-15 at the owner's request. This section records a design for
+later implementation, not another active work queue. The existing delivery
+sections below describe earlier revisions; this proposal supersedes their
+single-control ownership approach only when implemented. Product behavior
+continues to belong to [Peer location](peer-location.md#map).
+
+### Starting point and evidence
+
+Finish the current performance change, its authorized build and capture, and
+commit it before starting this refactor. Record that commit and its evidence
+paths when implementation starts. Use the same map asset, peer fixtures,
+viewport sizes, build configuration and journeys for before/after comparisons,
+because otherwise a timing difference cannot be attributed to the refactor.
+Coordinate ownership of the affected files before editing; another writer is
+currently changing the renderer and navigation.
+
+Source review found peer aggregation, destination placement, animation and
+native resource reconciliation interleaved in `PeerMap.Arrange`. It also found
+that initial tracing and dirty peer preparation run before the drawing rebuild
+allowance begins. This establishes an ownership and scheduling concern, not a
+measured cause of slow dragging. Pan alone does not dirty peer aggregation;
+telemetry updates during a drag can still trigger it on the next draw.
+
+The chosen-place path currently sends map events to `Inspector.Place` without
+feeding that authoritative value back into the map. A visible disagreement has
+not been reproduced. Investigate concrete transitions before describing this as
+a confirmed defect or inventing reconciliation behavior.
+
+### Concepts and owners
+
+Use the [product vocabulary](../CONTEXT.md#peers): a peer place is a filter,
+a map destination is a drawn position, and selected table peers are individual
+records. Several estimated destinations can belong to one place. Picking one
+does not reveal which actual peers occupy that estimated region.
+
+| Owner | Responsibility and reason |
+| --- | --- |
+| Existing `Inspector` view model | Owns peer scope, geolocation results and the writable chosen place. The table and map therefore consume one filter decision. Owns the map view model within the existing presentation lifetime. |
+| Map view model | Owns grouped peer counts, rates, precision and destination descriptions, including one implementation of estimated distribution. Contains plain values and existing peer identities, with no XAML or Win2D resources. Its parts may separate aggregation and distribution, but neither repeats the other's rules. |
+| `PeerMap` control | Owns native input, focus, hover, tooltip and automation wiring. Turns gestures into selection requests and viewport operations. It does not acquire peers or independently decide the table filter. |
+| Renderer | Owns geometry, brushes, animation values, clipping, detail selection, cache reconciliation and disposal. It consumes destination descriptions and retains GPU resources by stable identity across rate-only updates. |
+| Viewport | Owns centre, zoom, ratio, forward/inverse transforms, constraints and anchor preservation. Drawing and hit testing consume the same transform, preventing separate projection rules. Native pointer capture remains in the control. |
+
+These are concrete owners inside the existing app, not new projects or a plugin
+framework. Use repository naming and placement conventions when extracting
+types; these responsibility labels do not prescribe filenames. Partial files
+are suitable for organizing one owner, not for pretending shared mutable state
+has been separated. Keep the renderer and viewport interfaces small rather than
+passing the entire control into them.
+
+### Data flow and lifetime
+
+1. Inspector supplies the current peers, origin and detail choice to the map
+   view model. Capture the mutable peer facts needed for change detection once
+   per input update; retain identity and avoid notifications for unchanged data.
+2. Screen-dependent merging of populated places stays with map layout. Supply
+   the resulting candidate regions to the one distribution implementation;
+   changing pan or zoom does not rerun allocation. Preserve the existing
+   resize behavior and population ordering.
+3. The renderer reconciles destinations only when those inputs change. Separate
+   destination facts from cached `Arc` and `Paint`; presentation objects neither
+   dispose nor transfer native resources. Preserve the baseline's cache keys,
+   shared borders, clipping, detail thresholds and rebuild allowance.
+4. A map choice requests an update to `Inspector.Place`. Feed the resulting
+   chosen place back to the map through the presentation path. Keep the exact
+   inspected destination local where needed: a country filter cannot identify
+   one of its several estimated markers. Table selection remains the existing
+   table selection and is supplied for highlighting, not duplicated as another
+   independently writable collection in the map view model.
+5. Drawing reads retained presentation data and renderer state. It does not
+   regroup peers, publish view-model notifications or allocate a new scene on
+   every frame. Native geometry preparation remains under renderer ownership.
+6. Preserve current hide/show and Map-off behavior. Unload releases native
+   resources and bundled geography as today; a retained view model must not
+   accidentally keep those resources alive or start hidden peer acquisition.
+   Device recreation rebuilds rendering resources without changing peer facts
+   or the chosen place.
+
+### Implementation sequence
+
+1. **Establish the baseline and selection behavior.** Read the committed source
+   and existing capture consumers, including reflection calls. Exercise the
+   scenarios below in the authorized capture and record any pre-existing
+   discrepancy. Verification: baseline behavior and timing evidence are linked,
+   and selection risks are distinguished from reproduced failures.
+2. **Extract the map view model and make filter ownership explicit.** Move peer
+   aggregation and distribution without changing their calculations. Keep
+   destination facts separate from renderer resources and remove the replaced
+   paths in the same change. Verification: rates, counts, destinations and
+   table membership match the baseline, except for a documented selection fix.
+3. **Extract rendering and viewport ownership.** Preserve cache lifetimes and
+   current projection behavior, including latitude correction during pan.
+   Update real consumers and the existing capture together. Verification: no
+   projection, geometry or per-frame binding work is introduced by the split.
+4. **Address measured preparation stalls separately.** First measure initial
+   show and peer updates during dragging. If geometry work outside the allowance
+   stalls frames, include it in renderer scheduling without rendering a partial
+   logical peer update. Do not add background queues, cancellation infrastructure
+   or chunked aggregation merely to complete the architecture. Moving CPU work
+   out of `Draw` alone does not make it cheaper on the UI thread.
+5. **Review and compare.** Review the final ownership and disposal paths, then
+   perform only the owner-authorized build/capture needed for the comparison.
+   Update the existing architecture and map records to describe the delivered
+   owners; remove superseded paths rather than preserving compatibility wrappers.
+
+### Acceptance evidence
+
+- Select two estimated destinations belonging to the same country. The exact
+  inspected marker may differ while the table's place filter stays the same.
+  Select rows within that filtered table: highlighting must not replace its
+  chosen place. Check Escape, empty-map click, detail changes and Table-only
+  against the existing clearing rules.
+- Change peer scope or remove the last peer at the chosen place; also hide/show
+  the inspector. Record baseline behavior and preserve the product contract.
+  Do not silently introduce an automatic filter-clearing policy for an empty
+  place as part of an architectural move.
+- Compare pan-only, zoom, and pan with live peer updates using the same journeys.
+  Include high-latitude motion, seam crossing, drag cancellation, resize and
+  device/resource recreation where the existing harness supports it. Verify
+  pointer anchoring, fixed-width strokes, fades and selected-path appearance.
+- Compare frame-time distributions and slow frames, managed allocations and
+  retained memory with the measured baseline. Use existing instrumentation;
+  distinguish CPU submission timing from GPU completion. Investigate differences
+  beyond run-to-run variation instead of promising an unmeasured zero overhead.
+- Rate-only updates retain route geometry when endpoints are unchanged; redraws
+  do not publish presentation changes; unloading releases renderer resources.
+
+Reuse existing meaningful capture checks. Add a focused regression check only
+for a reproduced failure not already covered, following [Testing](testing.md).
+This plan authorizes no builds, tests, captures or application changes now.
 
 ## Data and ownership
 

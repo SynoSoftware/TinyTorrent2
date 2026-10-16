@@ -455,6 +455,23 @@
                     />
                   </AppBarButton.Icon>
                 </AppBarButton>
+                <AppBarSeparator />
+                <AppBarButton x:Name="SelectedMapButton" Command="{x:Bind SelectedMap}">
+                  <AppBarButton.Icon>
+                    <FontIcon
+                      FontFamily="{x:Bind icons:Lucide.Font}"
+                      Glyph="{x:Bind icons:Lucide.MapPin}"
+                    />
+                  </AppBarButton.Icon>
+                </AppBarButton>
+                <AppBarButton x:Name="AllMapButton" Command="{x:Bind AllMap}">
+                  <AppBarButton.Icon>
+                    <FontIcon
+                      FontFamily="{x:Bind icons:Lucide.Font}"
+                      Glyph="{x:Bind icons:Lucide.Globe2}"
+                    />
+                  </AppBarButton.Icon>
+                </AppBarButton>
               </CommandBar>
               <table:Table
                 x:Name="Torrents"

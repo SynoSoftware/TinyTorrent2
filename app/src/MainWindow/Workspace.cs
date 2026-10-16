@@ -48,6 +48,7 @@ public sealed partial class MainWindow
     private async Task GoBack()
     {
         var previous = Model.Navigation.Current;
+        var saved = _mapReturn;
         if (!await Model.Navigation.GoBack())
             return;
         var destination = Model.Navigation.Current;
@@ -67,6 +68,13 @@ public sealed partial class MainWindow
                     _settingsPage?.FocusConnection();
                 else if (destination == WindowPage.About && previous == WindowPage.Credits)
                     _aboutPage?.FocusCredits();
+                else if (
+                    saved is not null
+                    && _mapReturn is null
+                    && saved.Focus is { IsLoaded: true } focus
+                    && focus.Focus(FocusState.Programmatic)
+                )
+                    return;
                 else
                     FocusPage();
             }
@@ -75,7 +83,15 @@ public sealed partial class MainWindow
 
     private void FocusPage()
     {
-        if (Model.Navigation.Current == WindowPage.Torrents)
+        if (
+            Model.Page is WindowPage.Torrents or WindowPage.Library
+            && InspectorContent.Content is InspectorPane pane
+            && Model.HasInspector
+            && !Model.IsInspectorCompact
+            && pane.Surface.IsMaximized
+        )
+            pane.Surface.FocusHeader(FocusState.Programmatic);
+        else if (Model.Navigation.Current == WindowPage.Torrents)
             Torrents.Focus(FocusState.Programmatic);
         else if (Model.Navigation.Current == WindowPage.Library)
             _libraryTable?.FocusRows();
@@ -479,6 +495,7 @@ public sealed partial class MainWindow
             pane.Surface.CollapseRequested += OnInspectorCollapse;
             pane.Surface.MaximizeRequested += OnInspectorMaximize;
             pane.Surface.OpenRequested += OnInspectorOpen;
+            pane.LayoutChanged += (_, _) => KeepMap();
             if (_placement?.Inspector is { } layout)
                 pane.Layout = layout;
             InspectorContent.Content = pane;
@@ -508,6 +525,7 @@ public sealed partial class MainWindow
     // The split height is kept while maximized, so Restore returns to it.
     private void OnInspectorMaximize(object? sender, EventArgs args)
     {
+        KeepMap();
         var pane = (InspectorPane)InspectorContent.Content;
         pane.Surface.IsMaximized = !pane.Surface.IsMaximized;
         UpdateInspectorSize();

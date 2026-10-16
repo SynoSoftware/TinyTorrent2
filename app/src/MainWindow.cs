@@ -44,6 +44,8 @@ public sealed partial class MainWindow : Window
         Model.CanStartFeatures = !IsCaptureReview;
 #endif
         Back = new RelayCommand(GoBack, () => Model.Navigation.CanGoBack);
+        SelectedMap = new RelayCommand(() => ShowConnections(false), () => CanShowMap(false));
+        AllMap = new RelayCommand(() => ShowConnections(true), () => CanShowMap(true));
         InitializeComponent();
         LanguageButton.Flyout = MenuItems.Flyout(LanguageMenu, () => Model.Text);
         ConfigureWork();
@@ -280,11 +282,23 @@ public sealed partial class MainWindow : Window
         AddShortcut(
             new()
             {
-                Key = VirtualKey.M,
-                Modifiers = VirtualKeyModifiers.Control,
+                Key = VirtualKey.S,
+                Modifiers = VirtualKeyModifiers.Control | VirtualKeyModifiers.Menu,
                 ScopeOwner = Torrents,
             },
             Model.Force
+        );
+        AddShortcut(
+            new() { Key = VirtualKey.M, Modifiers = VirtualKeyModifiers.Control },
+            SelectedMap
+        );
+        AddShortcut(
+            new()
+            {
+                Key = VirtualKey.M,
+                Modifiers = VirtualKeyModifiers.Control | VirtualKeyModifiers.Shift,
+            },
+            AllMap
         );
         AddShortcut(
             new()
@@ -393,6 +407,7 @@ public sealed partial class MainWindow : Window
             Model.Bottom
         );
         Root.KeyDown += OnQueueKey;
+        Root.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(OnMapKey), true);
         RefreshText();
     }
 
@@ -421,6 +436,18 @@ public sealed partial class MainWindow : Window
 
     private void OnModelChanged(object? sender, PropertyChangedEventArgs args)
     {
+        if (
+            args.PropertyName
+            is nameof(MainViewModel.FilterPane)
+                or nameof(MainViewModel.HasInspector)
+                or nameof(MainViewModel.IsInspectorCompact)
+                or nameof(MainViewModel.IsToolbarOpen)
+            || Model.Inspector.Section != InspectorSection.Peers
+            || !Model.Inspector.HasPeerScope
+        )
+            KeepMap();
+        ((RelayCommand)SelectedMap).Refresh();
+        ((RelayCommand)AllMap).Refresh();
         QueueStatus();
         QueueMenus();
         if (
@@ -502,13 +529,18 @@ public sealed partial class MainWindow : Window
     private void AddShortcut(KeyboardAccelerator accelerator, ICommand command)
     {
         _shortcuts.Add(command, accelerator);
-        AddShortcut(accelerator, () => Run(command));
+        AddShortcut(
+            accelerator,
+            () => Run(command),
+            canInvoke: command == SelectedMap || command == AllMap ? () => !HasEditorFocus() : null
+        );
     }
 
     private void AddShortcut(
         KeyboardAccelerator accelerator,
         Action action,
-        UIElement? target = null
+        UIElement? target = null,
+        Func<bool>? canInvoke = null
     )
     {
         var selection = accelerator.ScopeOwner == Torrents;
@@ -516,7 +548,7 @@ public sealed partial class MainWindow : Window
             accelerator.ScopeOwner = Root;
         accelerator.Invoked += (_, args) =>
         {
-            if (HasDialog)
+            if (HasDialog || canInvoke?.Invoke() == false)
                 return;
             if (selection && (Model.Page != WindowPage.Torrents || HasEditorFocus()))
                 return;

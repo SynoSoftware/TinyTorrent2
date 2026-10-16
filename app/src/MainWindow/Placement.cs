@@ -252,6 +252,9 @@ public sealed partial class MainWindow
             return;
         RememberBounds();
         _libraryTable?.SaveLayout();
+        var inspector = (InspectorContent.Content as InspectorPane)?.Layout ?? _placement?.Inspector;
+        if (_mapReturn is { } saved && inspector is not null)
+            inspector = inspector with { View = saved.View };
         var placement = new Placement
         {
             X = _normalBounds.X,
@@ -262,21 +265,21 @@ public sealed partial class MainWindow
             Maximized =
                 AppWindow.Presenter
                     is OverlappedPresenter { State: OverlappedPresenterState.Maximized },
-            SplitHeight = _splitHeight,
+            SplitHeight = _mapReturn?.Height ?? _splitHeight,
             Torrents = Torrents.Layout,
-            Inspector = InspectorContent.Content is InspectorPane pane
-                ? pane.Layout
-                : _placement?.Inspector,
-            Page = Model.Page,
+            Inspector = inspector,
+            Page = Model.Page == WindowPage.Torrents ? _mapReturn?.Page ?? Model.Page : Model.Page,
             Category = _settingsPage?.Category,
             Filter = Model.Filter,
-            FiltersOpen = Model.IsFilterOpen,
+            FiltersOpen = _mapReturn is { } origin
+                ? origin.Filters == FilterPane.Open
+                : Model.IsFilterOpen,
             ToolbarOpen = Model.IsToolbarOpen,
             Selected = [.. Model.Selected.Select(torrent => torrent.TorrentId)],
             Current = Model.Current?.TorrentId,
-            InspectorOpen = Model.HasInspector,
-            Section = Model.Inspector.Section,
-            VerticalOffset = Torrents.VerticalOffset,
+            InspectorOpen = _mapReturn?.Open ?? Model.HasInspector,
+            Section = _mapReturn?.Section ?? Model.Inspector.Section,
+            VerticalOffset = _mapReturn?.Offset ?? Torrents.VerticalOffset,
             LibraryConfiguration = Model.Library.Configuration,
             LibraryLayouts = _libraryTable?.Layouts ?? _placement?.LibraryLayouts,
             LibraryFilters = Model.Library.SaveFilters(),

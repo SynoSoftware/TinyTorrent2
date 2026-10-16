@@ -63,8 +63,9 @@ they prevent the XAML compiler's `bin-fl` output from re-entering source globs.
 If changing them, verify repeated builds do not deepen the output tree.
 
 Building a WinUI test host does not run it. Running the sample or the UI test
-host opens a real window on the owner's desktop, so do it only when explicitly
-requested; the [root instructions](../../AGENTS.md#working-rules) govern
-launching the product. If rendered or out-of-process automation evidence is needed but unavailable,
+host opens a real window on the owner's desktop; the
+[root validation ruling](../../AGENTS.md#working-rules) governs permission,
+and [testing](../../docs/testing.md) decides which checks earn that cost.
+If rendered or out-of-process automation evidence is needed but unavailable,
 report that gap. A compile result, an in-process automation cache, or an old
 measurement cannot establish current pixels, Narrator behavior, or responsiveness.

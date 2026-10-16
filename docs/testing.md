@@ -3,8 +3,9 @@
 The default feedback loop for a small edit should take seconds, not a five-minute
 suite followed by another five-minute suite. Choose evidence for the failure the
 change could cause. Neither a test per change nor a full run per task is required.
-This policy owns test scope across TinyTorrent; local instructions still govern
-build entry points and permission to launch desktop applications.
+This policy owns test scope across TinyTorrent. [Compilation](compilation.md)
+owns build batching, reuse and failure handling; the root instructions govern
+permission to run tests and launch desktop applications.
 
 ## The everyday loop
 
@@ -14,16 +15,17 @@ existing check that adds evidence, with its native filter. Multiple checks of
 the same behavior need a distinct failure each can catch. A full suite is for a
 deliberate integration or release check, or an explicit owner request.
 
-Finish related edits and inspect their direct consumers before compiling,
-including reflection-based test calls. Build affected targets once and reuse
-current outputs across checks. Run the installer (`Release.cmd`) only for
+Include reflection-based test calls when reviewing consumers for a queued build.
+Reuse outputs through the [compilation protocol](compilation.md) across checks.
+Run the installer (`Release.cmd`) only for
 installer work or an owner request, because it also consumes a build number.
 Documentation and screen-copy edits need no application build or suite.
 
-Review the settled diff once. Use an independent review for a material
-correctness or ownership risk; it replaces a second general review. After a
-finding, review the correction and rerun only checks whose evidence it changes.
-Keep one shared record of findings and results so agents can use completed work.
+Use the [focused review passes](compilation.md#focused-review-passes) for source
+review. An independent review for a material correctness or ownership risk can
+serve the corresponding pass; it need not duplicate it. After a finding, review
+the correction and rerun only checks whose evidence it changes. Keep one shared
+record of findings and results so agents can use completed work.
 
 A known relevant failure needs resolution. When it reveals a stale harness,
 inspect the affected calls together before rerunning, rather than rebuilding
@@ -148,6 +150,18 @@ It watches contextual returns through secondary pages, same-page workspace
 resets, nested Connection navigation, and refused or overlapping departures.
 These checks cover history and command availability, not native button input,
 focus, animation, or the editor guards themselves.
+They also check that a temporary layout visit restores once after accepted
+departure, survives a secondary page and a refused departure, and can be kept
+without restoring the old layout.
+
+`Capture.ps1 -Review connections` exercises the connections-map toolbar and View
+menu commands, selected and all-transfer scopes, Back restoration, Properties
+canceling the return point, selection loss through filtering and a Library
+return through Settings. It also removes the disposable transfer to
+check Back's missing-target recovery and a fixed speed scope with no remaining
+transfers. It saves the original layout and full-map view for inspection.
+This off-screen journey uses real controls and a disposable engine store. It
+does not synthesize OS keyboard input or create live remote peer connections.
 
 `app/tests/DistributionChecks.ps1 -BinaryDirectory <built-app-folder>` checks
 the peer map's estimated distribution without starting WinUI. It watches the
@@ -159,8 +173,8 @@ Use this machine and the targeted checks below for the
 [architecture](architecture.md).
 Lifecycle behavior needs a real process check when it changes; a cache-policy
 or hot-path change may need a short comparable workload. Cosmetic changes do not
-inherit those costs. Respect the local restriction on launching WinUI tests or
-samples; this policy does not grant permission to interrupt the desktop.
+inherit those costs. The [root validation ruling](../AGENTS.md#working-rules)
+governs running WinUI tests and samples; protect the owner's active desktop work.
 
 Report the relevant checks performed, their outcome, and any material gap.
 Distinguish source review, compilation, automated behavior checks, and manual
@@ -171,6 +185,9 @@ Capture journeys are excluded from ordinary builds. Build the app with
 `_capture` suffix under `artifacts/`, so a diagnostic build cannot replace the
 ordinary product. The option does not launch anything.
 Run a review with the launcher, [Capture.ps1](../app/tests/Capture.ps1) `-Review <mode>`.
+First perform the [pre-launch check](compilation.md#verify-the-build-before-launch)
+against that launcher's resolved output; a normal-app build leaves capture
+outputs unchanged.
 The launcher stops development instances from this checkout in the current
 Windows session before claiming the engine pipe. This pauses their transfers;
 installed copies outside the checkout are left alone. The review still verifies
@@ -208,8 +225,9 @@ database lookup uses the bundled MMDB; the synthetic city points do not establis
 city-database accuracy or live transfer timing. The unknown-origin scene retains
 markers without arcs. This journey also renders the country flags whose deferred
 font binding previously failed when table cells were created. Its review report
-records the map's draw times for 100, 1,000 and 10,000 known peers and for each
-wheel step of a zoom from 100% to 3200%.
+records the map's draw times for 100, 1,000 and 10,000 known peers, for each
+wheel step of a zoom from 1× to 128×, and for drags across the land at 8×,
+32× and 128×.
 Use `TINYTORRENT_CAPTURE_REVIEW=add-layout` for the workspace headers and empty/long-link
 magnet Add dialog in English and Spanish, Light and Dark, at the three review sizes.
 It also captures the engine-stopped message bar with its Restart action and records

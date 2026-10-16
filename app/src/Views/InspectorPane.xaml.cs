@@ -25,6 +25,7 @@ public sealed partial class InspectorPane : UserControl
     private bool _composing;
     private (Torrent Target, int Index)? _fileReveal;
     public Inspector Model { get; }
+    internal event EventHandler? LayoutChanged;
     internal InspectorLayout Layout
     {
         get =>
@@ -352,6 +353,7 @@ public sealed partial class InspectorPane : UserControl
     {
         if (_refreshing)
             return;
+        LayoutChanged?.Invoke(this, EventArgs.Empty);
         if (ReferenceEquals(sender, LibrarySections))
         {
             if (_library is null)

@@ -547,6 +547,12 @@ public sealed partial class MainViewModel
             IsInspectorCompact = false;
     }
 
+    internal void SetInspector(bool open, bool compact)
+    {
+        HasInspector = open;
+        IsInspectorCompact = compact;
+    }
+
     public bool CloseInspector()
     {
         if (Inspector.HasDraft || Inspector.IsPending || !Inspector.Show(null))

@@ -40,7 +40,11 @@ public sealed partial class MainViewModel
                 && !_selected.Except(selected).ToHashSet().Overlaps(VisibleTorrents);
             var keepsTarget = dropped && Inspector.Target is not null;
             var next = selected.Length == 1 ? selected[0] : null;
-            var changesTarget = HasInspector && next != Inspector.Target && !keepsTarget;
+            var changesTarget =
+                HasInspector
+                && !keepsTarget
+                && (!dropped || !Inspector.HasPeerScope)
+                && (next != Inspector.Target || Inspector.HasPeerScope);
             if (changesTarget)
             {
                 if (Inspector.IsPending)
@@ -61,7 +65,11 @@ public sealed partial class MainViewModel
                 return false;
             _selected = selected;
             _current = current;
-            if (Inspector.Target is null && !previous.SetEquals(selected))
+            if (
+                Inspector.Target is null
+                && !Inspector.HasPeerScope
+                && !previous.SetEquals(selected)
+            )
                 Inspector.RefreshScope();
             // The inspector shows the selected count when it has no target.
             Inspector.Refresh();

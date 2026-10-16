@@ -76,7 +76,9 @@ do not define this product.
 
 - **Owner ruling: user steers are cumulative.** Keep earlier requirements and
   unfinished work in scope unless the user explicitly cancels or replaces them,
-  so a follow-up adds to the task without silently dropping prior requests.
+  and execute them in the order received. A later steer does not outrank an
+  earlier one merely because it is newer, so follow-ups cannot silently drop or
+  reorder the work.
 - **Owner ruling: update only `en.json` during normal work.** Refresh all other
   language catalogues from English at release, or for an explicit translation
   request, because translating unsettled text for every patch wastes work.
@@ -84,13 +86,23 @@ do not define this product.
 - State assumptions and verifiable success criteria before implementing. Resolve
   material ambiguity before dependent changes.
 - Inspect the existing owner, data flow, and adjacent patterns before editing.
-- **Owner ruling: do not compile or run tests unless asked by the owner.** A
-  task that explicitly requires checking the app, such as reviewing screenshots,
-  authorizes only the build, launch and checks needed for that review. An
-  ordinary implementation or fix request does not authorize builds or tests,
-  so the owner controls when validation uses the machine. Otherwise review the
-  source and report validation gaps. This ruling overrides validation
-  instructions elsewhere.
+- Before declaring implementation complete, perform the
+  [focused review passes](docs/compilation.md#focused-review-passes). They trace
+  behavior, simplify ownership and recheck corrections, because one broad review
+  can miss defects and the fixes can introduce others.
+- **Owner ruling: compilation is shared work.** Before editing build inputs,
+  requesting or starting compilation, reusing an executable, or handling a build
+  failure, read the [compilation protocol](docs/compilation.md). It authorizes
+  needed builds, batches ready work and assigns failures to one owner, because
+  separate agents repeating five-minute builds waste the owner's machine.
+- **Owner ruling: finish the requested work, including its validation.** An
+  implementation, fix or review authorizes the focused tests and application
+  inspection needed to verify that work. Use shared build outputs and choose
+  checks under [testing](docs/testing.md), including its separately restricted
+  checks, because compiling without using the result can leave the actual
+  behavior unverified. Respect explicit user restrictions and protect the
+  owner's data and running applications. Close what you launched and report
+  the evidence and any remaining gaps.
 - Do not report or change line endings on disk. Files there mix CRLF and LF
   because Windows editors and tools write CRLF, and `.gitattributes` converts
   every text file to LF on commit, so the mix never reaches a diff or history.
@@ -100,42 +112,6 @@ do not define this product.
   rebuild anything in `3rdParty/`. The owner compiles the dependencies once,
   because building them again takes over an hour of the owner's machine. When
   a build reports that `3rdParty/` is incomplete, stop and report it.
-- For authorized compilation, build affected targets. Make all
-  the edits first and build once, because each build holds the owner's
-  machine. Launch applications and desktop test hosts only when requested or
-  needed for an authorized app review. Close what you launched and report
-  what was verified and any material gaps.
-- For authorized builds, use Debug x64. Build Release only when the result
-  depends on the optimised build: a timing or performance measurement,
-  `engine/tests/Checks.ps1`,
-  which runs the Release engine, a release candidate, or an owner request.
-  Debug and Release are the only configurations. Release adds whole-program
-  optimisation to every link and leaves a second set of executables, so an
-  unneeded one holds the owner's machine longer and hides which executable
-  carries the current code.
-- Build into the default output, `artifacts/`. While another build is writing
-  it, or an engine or window executable started from it is running, use the
-  lowest-numbered free lane, `artifacts/lanes/2`, then `artifacts/lanes/3`:
-  pass `/p:ArtifactsPath=<repository>\artifacts\lanes\<n>` to the engine build
-  and then the app build, because the app copies the engine from its own lane. Return to the default output once it is free. Every output folder holds
-  a complete set of executables, and one that is not rebuilt runs old code with
-  no sign of it.
-- Read the build summary. Investigate unexpected target rebuilds or duration
-  before repeating them, because every later build pays that cost. Native header
-  changes rebuild their consumers; C# source changes recompile the assembly.
-- Check output containment once for a build/test batch. Repeat after changes to
-  project files, copy steps or test-output paths, or when unexpected output
-  appears; unchanged output rules do not need another repository scan after
-  every check. All generated output belongs in `artifacts/`, so this command,
-  run from the repository root, must print nothing:
-  `& "C:\Program Files\Everything\es.exe" -path $PWD /ad "wfn:bin|wfn:obj|wfn:bin-fl|wfn:TestResults" "!*\artifacts\*" "!*\3rdParty\*"`.
-  The one exception is `3rdParty/`, the compiled dependencies, which stays
-  outside `artifacts/` so cleaning build output never forces a dependency
-  rebuild ([third-party dependencies](docs/architecture.md#third-party-dependencies)).
-  The check skips it because its checkouts and tools contain their own `bin`
-  folders, which this repository's builds do not write.
-  A result is a defect: report it and find the output path that caused it
-  before continuing. Do not delete the folder and move on.
 
 ## Code style
 

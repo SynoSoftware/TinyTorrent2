@@ -131,8 +131,9 @@ also contribute to the estimated arcs.
 The map reads the bundled `world.bin` when it shows and releases it when it
 hides. Every outline point carries the largest error, in degrees, that leaving
 it out causes, so the map draws only points that would move a border by half a
-DIP or more at the current zoom. Shared borders keep identical points on both
-sides at every zoom.
+DIP or more at the current zoom. A border two countries share is stored once
+and drawn once, by one of them, so it is a single line at every zoom; the 180°
+cut in the data is never drawn.
 
 Win2D draws bundled Natural Earth geometry and great-circle guides, not measured
 network paths. Active arcs use a fixed logarithmic speed scale and the app's
@@ -252,12 +253,12 @@ reduced-motion settings bypass activity interpolation.
 The map uses the inspector's existing flyout instance, so right-click and the
 ellipsis share commands, live state and the same icon-led native menu headings.
 
-Zoom ranges from 1× to 32×, with 1.25× per wheel notch and proportional small
+Zoom ranges from 1× to 128×, with 1.25× per wheel notch and proportional small
 wheel deltas. A drag does not select a location. Show the SizeAll cursor only
 after the drag threshold is crossed, restoring the normal cursor when the drag
 ends or is cancelled. Input moves the view directly, without added easing,
 inertia or a zoom animation. A compact top-right control
-shows the zoom percentage and a Lucide Fit button whenever the view is zoomed
+shows the zoom factor, such as 2×, and a Lucide Fit button whenever the view is zoomed
 or panned. Fit shows the whole world with the origin in the centre and returns
 focus to the map when its button disappears. The menu exposes Zoom in, Zoom out
 and Fit, including shortcut text. No permanent toolbar or on-map hint is added.
@@ -270,7 +271,25 @@ new bounds. Peer updates do not move the view. Estimated destinations are merged
 in fitted-map space, so zoom does not change their number or locations. Resize
 may still merge or separate destinations under the existing spacing rule.
 
-Geometry remains vector-based. Country borders, arc widths, marker and hit-target
+The map uses equirectangular coordinates. Zooming calculates the horizontal
+ratio as the cosine of the latitude at the centre of the constrained view.
+The full-world overview is centred at 0° and has a 2:1 width-to-height ratio.
+Correction follows the centre latitude as the view moves toward either pole;
+it does not preserve every local shape across a broad view. The vertical bounds
+keep a finite polar view centred below 90°, so the horizontal scale stays
+positive. An undrawable view is constrained to 0° and uses the overview ratio.
+Zoom and drag preserve the geographic point under the pointer except where
+vertical world bounds constrain it. Panning recalculates the ratio as the
+centre latitude changes, so the map stays in proportion without zooming; Fit
+restores the overview.
+Estimated-place spacing and inspector arrangement use the same fixed overview
+ratio, so navigation does not redistribute peers or rearrange the inspector.
+
+Geometry remains vector-based. Land fills are clipped to a window three views
+wide and stay cached until the view nears its edge or outline detail changes.
+Strokes are prepared after both axis scales and retain that scale with
+their GPU geometry, so the existing rebuild budget can replace them as the view
+changes. Country borders, arc widths, marker and hit-target
 sizes, glow width and fade distances retain their screen-space sizes while zooming.
 The view survives minimising and temporary section changes. Explicitly turning
 Map off discards that view; turning it on starts fitted. Zoom and pan are not

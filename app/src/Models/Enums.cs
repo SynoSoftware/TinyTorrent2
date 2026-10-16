@@ -613,6 +613,7 @@ internal enum CaptureMode
     Traffic,
     Peers,
     LibraryFiles,
+    Connections,
     Edits,
     AddLayout,
     SettingsLayout,

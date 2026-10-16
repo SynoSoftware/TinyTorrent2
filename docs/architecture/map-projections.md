@@ -1,9 +1,14 @@
 # Map projection research and proposed design
 
-Research checked 2026-10-15. This is a design proposal, not an approved
-implementation or a measured performance result. The existing
-[peer-location contract](../peer-location.md) remains authoritative. No app
-changes, dependency installation, build, test or benchmark accompanies this note.
+**Disposition: Won't do.** The current map works well: its equirectangular
+ratio adapts to the view as it moves and zooms. No projection-family change is
+planned; the research below remains for reference.
+
+Research checked 2026-10-15. The owner subsequently chose adaptive
+equirectangular proportions, implemented as described in the
+[peer-location contract](../peer-location.md#zoom-and-pan). The renderer still
+uses Win2D cached geometry. No build, test or performance measurement has
+validated this change; the projection-family interfaces below remain proposals.
 
 ## Question and recommendation
 
@@ -12,11 +17,173 @@ framework on every rendered frame. Treat the interchangeable part as coordinate
 mathematics with declared world bounds and edge behaviour. Keep geometry,
 navigation, selection, animation and Win2D resources with their existing owner.
 
-For the current choices, prefer a small built-in set: the existing Plate Carrée,
-Miller and Robinson. A dynamically loaded assembly is a separate distribution
-requirement; switching implementations does not itself require a loader,
-reflection, dependency injection container or process boundary. This is a design
-recommendation based on the requested scope, not a restriction imposed by PROJ.
+Preserving the current performance gains takes priority over projection changes.
+Keep one projection family with adaptive geometry detail. The implementation
+now derives its horizontal factor from the cosine of the view's centre latitude
+on zoom and pan, starting with a 2:1 overview.
+Its land fills reuse an affine transform;
+strokes are prepared after both axis scales, and endpoint fades and hit testing
+account for those scales. The shared outline traversal and cached GPU drawing
+remain in place. Their update and rendering cost must be measured before
+describing this as a free change. Adoption depends on preserving the current
+renderer's measured performance and visible detail.
+
+If switching projection families is eventually justified, consider only
+Miller for broad views and bounded spherical Mercator for regional detail,
+retaining Miller for polar views. Prepare a replacement after interaction settles;
+do not continuously deform the cached geometry. The earlier manual-selector
+interface below is a design study, not the implementation recommendation for
+this adaptive mode. Its full-world domain and lack of an inverse are insufficient
+for that mode.
+
+A dynamically loaded assembly is a separate distribution requirement; switching
+implementations does not require a loader, reflection, dependency injection
+container or process boundary.
+
+## Optimization audit and revised recommendation
+
+The audited baseline is commit `3adf807b` plus the working changes to
+`PeerMap.xaml.cs`. The higher-resolution asset and outline hierarchy are already
+in that commit; the remaining diff adds further caching and rendering changes.
+Compare a future implementation against this combined baseline, not its slower
+predecessor. These are source and asset inspections, not new timing measurements.
+The counts below predate the subsequent shared-section asset change in the
+working tree; they describe the audited baseline, not that replacement asset.
+
+| Outline asset | Countries | Rings | Stored vertices | Bytes |
+| --- | ---: | ---: | ---: | ---: |
+| Previous JSON, `3adf807b^` | 206 | 280 | 9,986 | 479,761 |
+| Audited binary, `3adf807b` | 254 | 1,520 | 73,073 | 959,486 |
+
+The audited source has 7.3 times as many outline vertices, but the shared
+simplification hierarchy retains only 6,114 at the 0.5-degree detail level,
+9,311 at 0.25 degrees and 23,863 at 0.0625 degrees. These are source-filter
+counts before visibility, seam handling and realization, not GPU vertex counts.
+All 73,073 are available at the finest level, 1/128 degree. Thus an overview
+can use fewer points than the old asset while zoomed views reveal much more.
+
+The owner's pasted development chat describes a different, intermediate
+baseline: 27,069 vertices in an earlier 50m binary after a 0.05-degree cutoff,
+versus 73,073 after lowering that cutoff to 1/128 degree. The 9,986 count above
+belongs to the older JSON asset, not that intermediate binary. These comparisons
+must not be presented as the same before/after measurement.
+
+The important mechanisms to preserve are:
+
+- Binary loading and shared-border error levels, with power-of-two detail
+  selection. The half-DIP target is nominal: rounding the level can increase
+  the threshold by up to the square root of two.
+- Geometry in map coordinates, retained across resize and transformed for
+  navigation. Visible countries are retraced at the new detail as budget permits.
+- Cached fills, strokes and route brushes, reused routes for unchanged
+  destinations, and one shared glow pass.
+- The working diff's selected-route preparation priority and paced brush-colour
+  changes. Rounded joins and
+  pixel-wide borders with compensating alpha improve outline rendering.
+- The existing marker sizes, route widths, origin/landing fades, hit testing
+  and composition order. A faster result that loses these is not equivalent.
+
+Selection-ring caching was an unsuccessful experiment, not a demonstrated gain:
+the pasted chat reports that redraw time did not improve. One investigated
+version instead drew all markers before drawing selection rings; the working
+tree now contains cached rings again. The chat's batching explanation remains
+a hypothesis until a comparable result confirms the improvement. Neither the
+presence of that code nor an instrumented capture proves it. Shared-border,
+projection and batching changes need comparable measurements before assigning
+a performance gain to any one of them.
+
+Continuous CPU reprojection would invalidate the geometry that makes this fast.
+Microsoft specifically recommends geometry realizations for maps whose stable
+geometry is transformed, and explains why continuously changing geometry defeats
+that reuse. A crossfade also draws two scenes during the transition. Neither is
+the first choice for the owner's speed constraint.
+[Direct2D geometry realizations](https://learn.microsoft.com/en-us/windows/win32/direct2d/geometry-realizations-overview)
+
+For a fixed built-in Miller map, the most direct way to preserve the optimization
+is to generate its outline coordinates and shared-border simplification levels
+with the asset. The existing asset preparation already owns that shared-border
+calculation. Longitude recentering remains a horizontal translation, while
+projected latitude and its detail hierarchy are fixed. Static land then needs no
+runtime projection or conservative global stretch multiplier. Keep geographic
+peer/place coordinates as the source of truth and project their changing display
+positions during preparation. If the two-projection mode is chosen, the same
+preparation can produce a separate bounded Mercator outline asset; load the
+required one rather than keeping every realization resident. This trades asset
+size and preparation work for less runtime work, and still requires measuring
+the resulting geometry's rendering cost. It is appropriate for a small built-in
+set, not an answer to arbitrary runtime projection plugins.
+
+### Projection choice by geographic view
+
+Pixel resolution determines required geometry detail. Geographic coverage and
+latitude determine suitable projections; a larger monitor or a particular zoom
+multiplier alone is not a reason to change projection.
+
+| View | Candidates considered | Choice for this renderer |
+| --- | --- | --- |
+| Whole world | Miller; Robinson or Natural Earth for a balanced world outline; Equal Earth for area comparison | Miller is the least disruptive change because it retains rectangular wrapping and simple longitude recentering. Curved outlines remain optional visual alternatives, not a prerequisite for detail. |
+| Broad continental view | Miller; region-specific Lambert conformal conic | Keep Miller. Selecting regional parameters adds transitions and ownership for little benefit to locating peers. |
+| Small regional view, away from poles | Spherical Mercator | Useful if automatic projection changes are justified: preserves local shapes on the sphere. Keep its projection fixed within this mode and adapt only detail. |
+| Polar view | Polar stereographic | Retain Miller in the small implementation so every location remains representable. A true polar map would be a separate product requirement. |
+
+Mercator distorts area at world scale and is singular at the poles. The useful
+property here is local shape preservation, not web-tile compatibility.
+[PROJ Mercator](https://proj.org/en/stable/operations/projections/merc.html)
+World compromise/equal-area and regional conic projections serve different
+purposes; a globe hides half the world.
+[Mapbox projection guidance](https://docs.mapbox.com/mapbox-gl-js/guides/projections/)
+Polar stereographic supplies a dedicated polar alternative.
+[PROJ stereographic](https://proj.org/en/stable/operations/projections/stere.html)
+
+### Smallest defensible adaptive implementation
+
+1. Choose the mode from visible geographic coverage and latitude. Use separated
+   entry/exit thresholds to prevent repeated switching near a boundary; select
+   those thresholds from the actual viewport and visual comparison, not an
+   arbitrary universal zoom value.
+2. Finish the gesture using the current scene. Prepare the candidate with the
+   same geometry owner, retaining the geographic anchor and a defined local
+   scale. A projection change still changes surrounding shapes; anchoring cannot
+   make it visually identical. Inverse conversion and explicit valid-domain
+   clipping become real requirements. Never clamp polar peers onto a false
+   Mercator boundary.
+3. Publish land, routes, markers, gradients, bounds and hit geometry together.
+   Retain only the active caches and temporary replacement work. Rate changes
+   and frames with ready geometry perform no projection calls.
+4. Prefer the precomputed projected hierarchy for these fixed built-in choices.
+   If retaining the generic geographic hierarchy instead, keep detail selection
+   projection-aware without breaking common borders.
+   The earlier global `MaxStretch` is conservative, but applying Mercator's
+   polar worst case everywhere would waste the existing detail savings.
+   The binary has matching vertex levels, not shared-arc identities: independently
+   simplifying each country can create cracks. For regional preparation, use
+   one common, conservatively bounded geographic window, clip all geometry to it
+   consistently and apply one bound to that window. Its preparation margin must
+   cover navigation until replacement geometry is ready. Projection-specific
+   shared-border hierarchies are another option, but require additional asset
+   preparation/topology and are not a free extension of the current format.
+
+Even fixed Miller needs projected-error accounting; its global derivative bound
+can retain unnecessary detail. The four-member interface below therefore describes
+a conservative boundary, not an efficient final LOD policy. Do not adopt a
+conservative formula that passes visual checks by drawing substantially more
+geometry everywhere.
+
+One existing opportunity worth measuring before adding adaptive projection work
+is separating fill and border realization lifetimes. `Realized` recreates both
+after a scale change above five percent. Country fills are already polylines and
+their shape changes with detail; border stroke widths genuinely depend on scale.
+Reusing the fill within the same detail may avoid work. No gain is claimed before
+measurement, and this audit makes no implementation change.
+
+The speed target is **no regression against the current optimized baseline** in
+ready-scene rendering or interaction, at equivalent visible quality. Zero
+projection calls on a ready frame is achievable by design; zero added GPU cost
+or switch latency is not established by source inspection. Existing captures
+exclude GPU execution and do not establish a before/after result for unimplemented
+projections. The six-millisecond rebuild deadline is checked between operations
+and starts after `Arrange`, so it is not a hard frame-time guarantee. Compare
+preparation latency separately from steady rendering before adopting a change.
 
 ## Primary-source findings
 
@@ -121,7 +288,7 @@ coefficient set with its licence notice, rather than inventing interpolation.
 If PROJ is chosen, use one implementation for each projection; do not keep a
 second managed fallback for the same mathematics.
 
-## Proposed interface and integration
+## Earlier manual-selector interface study
 
 The research agent investigated established techniques. A separate design agent
 independently inspected the renderer and proposed an interface before comparison

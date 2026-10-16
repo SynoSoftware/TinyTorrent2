@@ -17,14 +17,15 @@ The installer owns distribution notices; their provenance is in
 ## Peer map
 
 `world.bin` comes from Natural Earth 5.1
-[1:50m admin-0 countries](https://www.naturalearthdata.com/downloads/50m-cultural-vectors/50m-admin-0-countries-2/)
+[1:10m admin-0 countries](https://www.naturalearthdata.com/downloads/10m-cultural-vectors/10m-admin-0-countries/)
 without Antarctica, and
 [10m populated places](https://www.naturalearthdata.com/downloads/10m-cultural-vectors/10m-populated-places/)
 with their `POP_MAX` populations. Each outline point stores its
-Douglas-Peucker tolerance, computed once per shared border so both sides
-match; points below 1/128° are left out. Anchors are Natural Earth label points;
-Bonaire, Bouvet Island and the US Minor Outlying Islands have neither an
-outline nor a place, so their anchors are Kralendijk, the island, and Wake
-Island. Population weights are a visual proxy, not a density raster or evidence
-of individual peers' locations.
+Douglas-Peucker tolerance; a border two countries share is stored once and
+both outlines refer to it. Points within 0.00001° of their simplified line are left out. Areas that 1:10m splits from the
+country whose lookup code they carry, such as Baikonur, join that country's
+outline. Anchors are Natural Earth label points; Bonaire and Bouvet Island have
+neither an outline nor a place, so their anchors are Kralendijk and the island.
+Population weights are a visual proxy, not a density raster or evidence of
+individual peers' locations.
 Natural Earth makes the data [public domain](https://www.naturalearthdata.com/about/terms-of-use/).

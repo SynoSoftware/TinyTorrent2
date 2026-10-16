@@ -36,12 +36,25 @@ public sealed partial class PeerMap : UserControl
     private float _meridian;
     private GeoPoint? _arcOrigin;
     private CanvasRadialGradientBrush? _originMask;
+    private CanvasCachedGeometry? _ring;
+    private CanvasCachedGeometry? _wideRing;
+    private CanvasRenderTarget? _dot;
+    private CanvasRenderTarget? _activeDot;
+    private CanvasCommandList? _glowLines;
+    private GaussianBlurEffect? _glowBlur;
+    private GlowInputs? _glowInputs;
+    private int _arrangement;
     private double _originStrength;
-    private static readonly CanvasStrokeStyle Plain = new();
-    private readonly Dictionary<
-        string,
-        (CanvasCachedGeometry Fill, CanvasCachedGeometry Border, float Scale)
-    > _realized = [];
+    // Miter joins spike past the line at sharp outline corners.
+    private static readonly CanvasStrokeStyle Rounded = new() { LineJoin = CanvasLineJoin.Round };
+    private static readonly CanvasStrokeStyle FixedStroke = new()
+    {
+        LineJoin = CanvasLineJoin.Round,
+        TransformBehavior = CanvasStrokeTransformBehavior.Fixed,
+    };
+    private readonly Dictionary<string, Fill> _fills = [];
+    private Extent _window;
+    private float _windowDetail;
     private long _rebuildUntil;
     private bool _rebuildPending;
     private Strings? _text;
@@ -53,10 +66,6 @@ public sealed partial class PeerMap : UserControl
     private bool _dirty = true;
     private bool _cities;
     private float _detail;
-
-    // world.bin leaves out points below this level, so a finer level traces
-    // the same outlines.
-    private const float FinestDetail = 1f / 128;
     private Size _size;
     private float _scale;
     private Vector2 _offset;
@@ -105,7 +114,17 @@ public sealed partial class PeerMap : UserControl
         bool cities = true
     )
     {
-        var observations = (peers ?? [])
+        peers ??= [];
+        // Most refreshes change nothing, so the peers are compared with the
+        // last snapshot before a new one is allocated.
+        if (
+            IsShowing(peers)
+            && _origin == origin
+            && _language == text.Language
+            && _cities == cities
+        )
+            return;
+        var observations = peers
             .Select(peer => new Observation(
                 peer,
                 peer.DownloadRate,
@@ -113,13 +132,6 @@ public sealed partial class PeerMap : UserControl
                 peer.Location
             ))
             .ToArray();
-        if (
-            _observations.SequenceEqual(observations)
-            && _origin == origin
-            && _language == text.Language
-            && _cities == cities
-        )
-            return;
         if (_cities != cities)
         {
             Choose(null);
@@ -243,18 +255,25 @@ public sealed partial class PeerMap : UserControl
         _destinations.Clear();
         _originMask?.Dispose();
         _originMask = null;
-        foreach (var (fill, border, _) in _realized.Values)
-        {
-            fill.Dispose();
-            border.Dispose();
-        }
-        _realized.Clear();
+        _ring?.Dispose();
+        _ring = null;
+        _wideRing?.Dispose();
+        _wideRing = null;
+        _dot?.Dispose();
+        _dot = null;
+        _activeDot?.Dispose();
+        _activeDot = null;
+        ReleaseGlow();
+        foreach (var fill in _fills.Values)
+            fill.Geometry?.Dispose();
+        _fills.Clear();
+        _windowDetail = 0;
         _arcOrigin = null;
         _pointed = null;
     }
 
     private Vector2 Project(GeoPoint point) =>
-        _offset + Coordinates(point) * _scale;
+        _offset + Coordinates(point) * new Vector2(OverviewRatio, 1) * _scale;
 
     // Geometry stays in geographic coordinates so resizing retains its GPU caches.
     // Longitude is measured from _meridian, the centre of the map.
@@ -274,7 +293,7 @@ public sealed partial class PeerMap : UserControl
         );
 
     internal static float FitScale(Size size) =>
-        (float)Math.Max(0, Math.Min((size.Width - 24) / 360, (size.Height - 20) / 180));
+        (float)Math.Max(0, Math.Min((size.Width - 24) / (360 * OverviewRatio), (size.Height - 20) / 180));
 
     private void Arrange(CanvasControl canvas)
     {
@@ -291,26 +310,26 @@ public sealed partial class PeerMap : UserControl
             _size = canvas.Size;
             _scale = FitScale(_size);
             _offset = new Vector2((float)_size.Width / 2, (float)_size.Height / 2);
-            SetView(_zoom, _center);
+            // A new size can move the centre's latitude limit, so the ratio
+            // follows the constrained centre.
+            SetView(_zoom, _center, CalculateRatio(_zoom, _center.Y));
             _dirty = true;
         }
         // Outline points closer than half a DIP to their simplified line are
         // invisible. The level moves in powers of two, so zooming traces the
-        // land again only once per doubling, and stops at FinestDetail.
-        // Realized traces each country again when it next realizes it.
+        // land again only once per doubling. Draw traces each country again
+        // when it next shows.
         if (ViewScale > 0)
-            _detail = Math.Max(
-                MathF.Pow(2, MathF.Round(MathF.Log2(.5f / ViewScale))),
-                FinestDetail
-            );
+            _detail = MathF.Pow(2, MathF.Round(MathF.Log2(.5f / ViewScale)));
         if (_land.Count == 0)
         {
             foreach (var country in _world.Values.Where(country => country.Rings.Length > 0))
-                _land[country.Code] = Trace(canvas, country);
+                _land[country.Code] = Trace(country);
         }
         if (!_dirty)
             return;
         _dirty = false;
+        _arrangement++;
         var pointed = _pointed?.Key;
         var previous = _destinations.ToDictionary(destination => destination.Key);
         _destinations.Clear();
@@ -327,9 +346,10 @@ public sealed partial class PeerMap : UserControl
             var country = _world.GetValueOrDefault(code);
             if (!_countries.TryGetValue(code, out var group))
             {
+                var language = _text!.Language;
                 group = new Group(
                     PeerPlace.Of(location, false),
-                    location.CountryName(_text!.Language),
+                    () => location.CountryName(language),
                     country?.Anchor ?? point,
                     estimated: !_cities
                 );
@@ -341,7 +361,8 @@ public sealed partial class PeerMap : UserControl
             var place = PeerPlace.Of(location, true);
             if (!locations.TryGetValue(place, out var destination))
             {
-                destination = new Group(place, observation.Peer.LocationText, point);
+                var peer = observation.Peer;
+                destination = new Group(place, () => peer.LocationText, point);
                 locations.Add(place, destination);
             }
             destination.Add(observation);
@@ -429,105 +450,145 @@ public sealed partial class PeerMap : UserControl
     // A ring never jumps across 180°, so it moves whole to within a turn of
     // the centre. Draw shows any part past a map edge through a copy of the
     // country on the other side. Only points at or above _detail are traced;
-    // a ring left with fewer than three is too small to see.
-    private Outline Trace(CanvasControl canvas, Geography.Country country)
+    // a ring left with fewer than three is too small to see. The border holds
+    // only the sections this country draws, so each line is stroked once.
+    private Outline Trace(Geography.Country country)
     {
-        var cuts = false;
-        foreach (var vertices in country.Rings)
-            cuts |= HasCut(vertices);
-        using var fill = new CanvasPathBuilder(canvas);
-        using var border = cuts ? new CanvasPathBuilder(canvas) : null;
-        fill.SetFilledRegionDetermination(CanvasFilledRegionDetermination.Alternate);
-        var west = float.MaxValue;
-        var east = float.MinValue;
+        List<Vector2[]> rings = [];
+        List<Piece> pieces = [];
+        List<Vector2[]> lines = [];
+        var gathered = 0;
+        var extent = Extent.Empty;
         List<Vector2> ring = [];
-        foreach (var vertices in country.Rings)
+        List<Vector2> line = [];
+        foreach (var parts in country.Rings)
         {
             ring.Clear();
+            foreach (var part in parts)
+                Collect(part, ring, false);
             var low = float.MaxValue;
             var high = float.MinValue;
-            foreach (var vertex in vertices)
+            foreach (var point in ring)
             {
-                if (vertex.Level < _detail)
-                    continue;
-                ring.Add(vertex.Position);
-                low = Math.Min(low, vertex.Position.X);
-                high = Math.Max(high, vertex.Position.X);
+                low = Math.Min(low, point.X);
+                high = Math.Max(high, point.X);
             }
-            if (ring.Count < 3)
-                continue;
             var shift = 360 * MathF.Round(-((low + high) / 2 - _meridian) / 360) - _meridian;
-            west = Math.Min(west, low + shift);
-            east = Math.Max(east, high + shift);
-            AddRing(fill, ring, shift);
-            if (border is null)
+            var placed = Place(ring, 0, ring.Count, shift);
+            // A ring too small to draw still counts, so the country shows, and
+            // is traced finer, once zooming makes it large enough.
+            extent = extent.With(Extent.Of(placed));
+            if (placed.Length < 3)
                 continue;
-            // Natural Earth cuts countries at 180°; the cut is not a border.
-            var cut = -1;
-            for (var index = 0; index < ring.Count && cut < 0; index++)
+            rings.Add(placed);
+            foreach (var part in parts)
             {
-                if (IsCut(ring[index], ring[(index + 1) % ring.Count]))
-                    cut = index;
-            }
-            if (cut < 0)
-            {
-                AddRing(border, ring, shift);
-                continue;
-            }
-            var drawing = false;
-            for (var step = 1; step <= ring.Count; step++)
-            {
-                var from = (cut + step) % ring.Count;
-                var to = (from + 1) % ring.Count;
-                if (IsCut(ring[from], ring[to]))
-                {
-                    if (drawing)
-                        border.EndFigure(CanvasFigureLoop.Open);
-                    drawing = false;
+                if (!part.Draws)
                     continue;
-                }
-                if (!drawing)
+                line.Clear();
+                Collect(part, line, true);
+                // A piece gathers parts, each a line of its own, so short
+                // parts share one draw; a longer part splits into lines that
+                // share their end point, so it stays whole.
+                for (var start = 0; start < line.Count - 1; start += Piece.Length - 1)
                 {
-                    border.BeginFigure(Map(ring[from], shift));
-                    drawing = true;
+                    var count = Math.Min(Piece.Length, line.Count - start);
+                    if (gathered + count > Piece.Length)
+                        Gather();
+                    lines.Add(Place(line, start, count, shift));
+                    gathered += count;
                 }
-                border.AddLine(Map(ring[to], shift));
             }
-            if (drawing)
-                border.EndFigure(CanvasFigureLoop.Open);
         }
-        var shape = CanvasGeometry.CreatePath(fill);
-        return new Outline(
-            shape,
-            border is null ? shape : CanvasGeometry.CreatePath(border),
-            west,
-            east,
-            _detail
-        );
+        Gather();
+        return new Outline([.. rings], [.. pieces], extent, _detail);
 
-        static void AddRing(CanvasPathBuilder path, List<Vector2> ring, float shift)
+        void Gather()
         {
-            path.BeginFigure(Map(ring[0], shift));
-            for (var index = 1; index < ring.Count; index++)
-                path.AddLine(Map(ring[index], shift));
-            path.EndFigure(CanvasFigureLoop.Closed);
+            if (lines.Count == 0)
+                return;
+            pieces.Add(new Piece([.. lines]));
+            lines.Clear();
+            gathered = 0;
         }
 
-        static Vector2 Map(Vector2 point, float shift) => new(point.X + shift, -point.Y);
-
-        static bool IsCut(Vector2 from, Vector2 to) =>
-            MathF.Abs(from.X) == 180 && to.X == from.X;
-
-        // Points on a cut have an infinite level, so every detail keeps them.
-        static bool HasCut(Geography.Vertex[] vertices)
+        // A part starts where the previous one ends, so a ring takes each
+        // part's start from the part before it.
+        void Collect(Geography.Part part, List<Vector2> points, bool start)
         {
-            for (var index = 0; index < vertices.Length; index++)
+            var section = part.Section;
+            for (var step = start ? 0 : 1; step < section.Length; step++)
             {
-                var next = vertices[(index + 1) % vertices.Length];
-                if (IsCut(vertices[index].Position, next.Position))
-                    return true;
+                var vertex = section[part.Reversed ? section.Length - 1 - step : step];
+                if (vertex.Level >= _detail)
+                    points.Add(vertex.Position);
             }
-            return false;
+        }
+
+        // Map coordinates: longitude moved by the ring's shift, latitude inverted.
+        static Vector2[] Place(List<Vector2> points, int start, int count, float shift)
+        {
+            var placed = new Vector2[count];
+            for (var index = 0; index < count; index++)
+            {
+                var point = points[start + index];
+                placed[index] = new Vector2(point.X + shift, -point.Y);
+            }
+            return placed;
+        }
+    }
+
+    private static void AddFigure(
+        CanvasPathBuilder path,
+        IReadOnlyList<Vector2> points,
+        CanvasFigureLoop loop
+    )
+    {
+        path.BeginFigure(points[0]);
+        for (var index = 1; index < points.Count; index++)
+            path.AddLine(points[index]);
+        path.EndFigure(loop);
+    }
+
+    // Sutherland-Hodgman: the part of a ring inside a window. Each ring is cut
+    // on its own, so the Alternate fill keeps every hole inside the window.
+    private static IReadOnlyList<Vector2> Crop(Vector2[] ring, Extent window)
+    {
+        var extent = Extent.Of(ring);
+        if (window.Contains(extent))
+            return ring;
+        if (!window.Overlaps(extent))
+            return [];
+        var low = window.Low;
+        var high = window.High;
+        IReadOnlyList<Vector2> points = ring;
+        points = Cut(points, point => point.X >= low.X, (a, b) => Across(a, b, (low.X - a.X) / (b.X - a.X)));
+        points = Cut(points, point => point.X <= high.X, (a, b) => Across(a, b, (high.X - a.X) / (b.X - a.X)));
+        points = Cut(points, point => point.Y >= low.Y, (a, b) => Across(a, b, (low.Y - a.Y) / (b.Y - a.Y)));
+        points = Cut(points, point => point.Y <= high.Y, (a, b) => Across(a, b, (high.Y - a.Y) / (b.Y - a.Y)));
+        return points;
+
+        static Vector2 Across(Vector2 from, Vector2 to, float amount) => from + (to - from) * amount;
+
+        static List<Vector2> Cut(
+            IReadOnlyList<Vector2> points,
+            Func<Vector2, bool> inside,
+            Func<Vector2, Vector2, Vector2> edge
+        )
+        {
+            List<Vector2> kept = [];
+            if (points.Count == 0)
+                return kept;
+            var previous = points[^1];
+            foreach (var point in points)
+            {
+                if (inside(point) != inside(previous))
+                    kept.Add(edge(previous, point));
+                if (inside(point))
+                    kept.Add(point);
+                previous = point;
+            }
+            return kept;
         }
     }
 
@@ -648,41 +709,58 @@ public sealed partial class PeerMap : UserControl
         var progress = _settings.AnimationsEnabled && !contrast ? AnimationProgress : 1;
         _rebuildUntil = Stopwatch.GetTimestamp() + Stopwatch.Frequency * 6 / 1000;
         _rebuildPending = false;
-        // Prioritise the selected strokes before map drawing uses its rebuild budget.
+        // The view shows one turn of longitude around its centre. A shape near
+        // a map edge also draws a turn away, so it continues on the other side.
+        var view = ViewTransform;
+        var scale = AxisScale;
+        var west = Math.Max(ToMap(Vector2.Zero).X, _center.X - 180);
+        var east = Math.Min(ToMap(new Vector2((float)_size.Width, 0)).X, _center.X + 180);
+        // The margin covers a border's width.
+        var visible = new Extent(
+            new Vector2(west, ToMap(Vector2.Zero).Y),
+            new Vector2(east, ToMap(new Vector2(0, (float)_size.Height)).Y)
+        ).Grown(new Vector2(2) / scale);
+        MoveWindow(visible);
+        // Prioritise the selected routes before map drawing uses its rebuild budget.
         if (Locate(_origin) is { } source)
         {
             foreach (var selected in _destinations.Where(IsMarked))
             {
-                if (selected.Arc is not null)
-                    PaintOf(canvas, selected, source).Line(2);
+                if (
+                    selected.Arc is null
+                    || !(Reaches(selected, -1) || Reaches(selected, 0) || Reaches(selected, 1))
+                )
+                    continue;
+                var paint = PaintOf(canvas, selected, source);
+                paint.Line(2);
+                paint.Core(ink);
             }
         }
         foreach (var destination in _destinations)
             _displayed[destination.Key] =
                 destination.Start + (destination.Strength - destination.Start) * (float)progress;
-        // The view shows one turn of longitude around its centre. A shape near
-        // a map edge also draws a turn away, so it continues on the other side.
-        var view = ViewTransform;
-        var west = Math.Max(ToMap(Vector2.Zero).X, _center.X - 180);
-        var east = Math.Min(ToMap(new Vector2((float)_size.Width, 0)).X, _center.X + 180);
         var bounds = new Rect(
-            _offset.X + (west - _center.X) * ViewScale,
+            _offset.X + (west - _center.X) * scale.X,
             0,
-            (east - west) * ViewScale,
+            (east - west) * scale.X,
             _size.Height
         );
         using (draw.CreateLayer(1, bounds))
         {
             // A ring moved to within a turn of the centre can reach past 180°,
-            // so each country tests every turn. It realizes, and so spends
-            // rebuild budget, only where it shows.
+            // so each country tests every turn. It traces and realizes, and so
+            // spends rebuild budget, only where it shows.
             for (var turn = -1; turn <= 1; turn++)
             {
                 draw.Transform = Turned(turn);
-                foreach (var (code, outline) in _land)
+                foreach (var (code, traced) in _land)
                 {
-                    if (!Shows(outline.West, outline.East, turn))
+                    if (!traced.Extent.Moved(360 * turn).Overlaps(visible))
                         continue;
+                    var outline =
+                        traced.Detail == _detail || !MayRebuild()
+                            ? traced
+                            : Retrace(canvas, code, traced, visible.Moved(-360 * turn));
                     var fill = land;
                     if (_countries.TryGetValue(code, out var group) && group.Estimated)
                     {
@@ -692,24 +770,59 @@ public sealed partial class PeerMap : UserControl
                         _displayed[(code, null, true)] = strength;
                         fill = Blend(land, down, group.Active > 0 ? .1 + .35 * strength : .08);
                     }
-                    if (Realized(canvas, code, outline) is { } cached)
-                        draw.DrawCachedGeometry(cached.Fill, fill);
-                    else
-                        draw.FillGeometry(outline.Fill, fill);
+                    if (Filled(canvas, code, outline, turn, visible) is { } cached)
+                        draw.DrawCachedGeometry(cached, fill);
                 }
             }
+            var borderWidth = BorderWidth(canvas);
+            var border = contrast ? ink : Alpha(edge, .5 / borderWidth);
+            List<Piece> stale = [];
             for (var turn = -1; turn <= 1; turn++)
             {
-                draw.Transform = Turned(turn);
-                foreach (var (code, outline) in _land)
+                var transform = Turned(turn);
+                Vector2? applied = null;
+                foreach (var outline in _land.Values)
                 {
-                    if (!Shows(outline.West, outline.East, turn))
+                    if (!outline.Extent.Moved(360 * turn).Overlaps(visible))
                         continue;
-                    if (_realized.TryGetValue(code, out var shape))
-                        draw.DrawCachedGeometry(shape.Border, contrast ? ink : edge);
-                    else
-                        draw.DrawGeometry(outline.Border, contrast ? ink : edge, .5f / ViewScale);
+                    foreach (var piece in outline.Pieces)
+                    {
+                        if (!piece.Extent.Moved(360 * turn).Overlaps(visible))
+                            continue;
+                        if (Stroked(canvas, piece) is { } stroke)
+                        {
+                            if (!IsCurrent(stroke.Scale, BorderTolerance))
+                                stale.Add(piece);
+                            ApplyStroke(draw, stroke, transform, ref applied);
+                            // A stroke from another scale draws that much wider
+                            // or narrower; its ink changes inversely, so the
+                            // border keeps its weight until it is rebuilt.
+                            var widened = AxisScale / stroke.Scale;
+                            draw.DrawCachedGeometry(
+                                stroke.Geometry,
+                                contrast ? ink : Alpha(border, 2 / (widened.X + widened.Y))
+                            );
+                        }
+                        else
+                        {
+                            ApplyStroke(draw, null, transform, ref applied);
+                            draw.DrawGeometry(piece.Line(canvas), border, borderWidth, FixedStroke);
+                        }
+                    }
                 }
+            }
+            // A stale stroke still draws in place, so pieces with none take the
+            // budget first and stale ones are replaced from what is left. This
+            // frame already drew the old strokes, so the next one shows the
+            // replacements.
+            foreach (var piece in stale)
+            {
+                if (piece.Stroke is { } made && IsCurrent(made.Scale, BorderTolerance))
+                    continue;
+                if (!MayRebuild())
+                    break;
+                Restroke(canvas, piece);
+                _rebuildPending = true;
             }
             draw.Transform = Matrix3x2.Identity;
             var arcs = _destinations.Where(destination => destination.Arc is not null).ToArray();
@@ -765,82 +878,98 @@ public sealed partial class PeerMap : UserControl
                 _originMask.Opacity = contrast ? 1 : .8f;
                 using (draw.CreateLayer(_originMask))
                 {
-                    if (!contrast)
+                    // The blurred glow is kept while its inputs stay the same.
+                    // Animation changes it at every frame, and a frame that
+                    // leaves a rebuild pending forgets it, because the next
+                    // frame draws better strokes.
+                    var inputs = new GlowInputs(view, _size, down, up, _arrangement);
+                    if (!contrast && (progress < 1 || _glowInputs != inputs || _glowBlur is null))
                     {
-                        using var glow = new CanvasCommandList(canvas);
-                        using (var halo = glow.CreateDrawingSession())
+                        ReleaseGlow();
+                        _glowLines = new CanvasCommandList(canvas);
+                        using (var halo = _glowLines.CreateDrawingSession())
                         {
                             foreach (var turn in turns)
                             {
-                                halo.Transform = Turned(turn);
+                                var transform = Turned(turn);
+                                Vector2? applied = null;
                                 foreach (var destination in arcs)
                                 {
-                                    if (turns.Length > 1 && !Reaches(destination, turn))
+                                    if (!Reaches(destination, turn))
                                         continue;
                                     var strength = _displayed[destination.Key];
                                     var colour =
                                         destination.Group.Down >= destination.Group.Up ? down : up;
                                     var paint = PaintOf(canvas, destination, home);
+                                    var glowStroke = paint.Glow(Step(2 + 3 * strength, 2));
                                     var brush = paint.Halo(colour);
                                     brush.Center = Coordinates(destination.Point);
-                                    brush.RadiusX = brush.RadiusY = 30 / ViewScale;
+                                    brush.RadiusX = 30 / scale.X;
+                                    brush.RadiusY = 30 / scale.Y;
                                     brush.Opacity = .5f * .35f * strength * strength;
-                                    if (paint.Glow(Step(2 + 3 * strength, 2)) is { } stroke)
-                                        halo.DrawCachedGeometry(stroke, brush);
+                                    ApplyStroke(halo, glowStroke, transform, ref applied);
+                                    if (glowStroke is { } stroke)
+                                        halo.DrawCachedGeometry(stroke.Geometry, brush);
                                     else
                                         halo.DrawGeometry(
                                             destination.Arc,
                                             brush,
-                                            (2 + 3 * strength) / ViewScale
+                                            2 + 3 * strength,
+                                            FixedStroke
                                         );
                                 }
                             }
                         }
-                        using var crop = new CropEffect
+                        _glowBlur = new GaussianBlurEffect
                         {
-                            Source = glow,
-                            SourceRectangle = new Rect(
-                                -6,
-                                -6,
-                                canvas.Size.Width + 12,
-                                canvas.Size.Height + 12
-                            ),
-                        };
-                        using var blur = new GaussianBlurEffect
-                        {
-                            Source = crop,
+                            Source = new CropEffect
+                            {
+                                Source = _glowLines,
+                                SourceRectangle = new Rect(
+                                    -6,
+                                    -6,
+                                    canvas.Size.Width + 12,
+                                    canvas.Size.Height + 12
+                                ),
+                            },
                             BlurAmount = 1.5f,
+                            CacheOutput = true,
                         };
-                        draw.DrawImage(blur);
+                        _glowInputs = progress < 1 ? null : inputs;
                     }
+                    if (!contrast && _glowBlur is not null)
+                        draw.DrawImage(_glowBlur);
                     foreach (var turn in turns)
                     {
-                        draw.Transform = Turned(turn);
+                        var transform = Turned(turn);
+                        Vector2? applied = null;
                         foreach (var destination in arcs)
                         {
-                            if (turns.Length > 1 && !Reaches(destination, turn))
+                            if (!Reaches(destination, turn))
                                 continue;
                             var strength = _displayed[destination.Key];
                             var paint = PaintOf(canvas, destination, home);
                             var marked = IsMarked(destination);
                             var line = paint.Line(marked ? 2 : Step(1 + strength, 4));
-                            var width = (marked ? 2 : 1 + strength) / ViewScale;
+                            var width = marked ? 2 : 1 + strength;
                             if (contrast)
                             {
-                                if (line is not null)
-                                    draw.DrawCachedGeometry(line, ink);
+                                ApplyStroke(draw, line, transform, ref applied);
+                                if (line is { } stroke)
+                                    draw.DrawCachedGeometry(stroke.Geometry, ink);
                                 else
-                                    draw.DrawGeometry(destination.Arc, ink, width);
+                                    draw.DrawGeometry(destination.Arc, ink, width, FixedStroke);
                                 continue;
                             }
                             var brush = paint.Core(
                                 marked ? ink : destination.Group.Down >= destination.Group.Up ? down : up
                             );
                             brush.Opacity = .18f + .82f * strength;
-                            if (line is not null)
-                                draw.DrawCachedGeometry(line, brush);
+                            ApplyStroke(draw, line, transform, ref applied);
+                            if (line is { } core)
+                                draw.DrawCachedGeometry(core.Geometry, brush);
                             else
-                                draw.DrawGeometry(destination.Arc, brush, width);
+                                draw.DrawGeometry(destination.Arc, brush, width, FixedStroke);
                         }
                     }
                     draw.Transform = Matrix3x2.Identity;
@@ -848,36 +977,63 @@ public sealed partial class PeerMap : UserControl
                 draw.FillCircle(origin, 3, ink);
             }
         }
-        foreach (var destination in _destinations)
+        // Every mark is a tinted copy of one white dot, so one sprite batch
+        // submits them all; selection rings then draw above every mark.
+        List<(Vector2 Point, bool Wide)> rings = [];
+        using (var batch = draw.CreateSpriteBatch())
         {
-            var group = destination.Group;
-            var point = Screen(destination.Point);
-            var kinds =
-                (group.Seeds > 0 ? 1 : 0)
-                + (group.Leechers > 0 ? 1 : 0)
-                + (group.Unknown > 0 ? 1 : 0);
-            var offset = -2.5f * (kinds - 1);
-            Mark(group.Seeds, down);
-            Mark(group.Leechers, up);
-            Mark(group.Unknown, ink);
-            if (IsMarked(destination) || ReferenceEquals(destination, _pointed))
-                draw.DrawCircle(point, kinds > 1 ? 8 : 5, ink, 1.2f);
-
-            void Mark(int count, Color colour)
+            foreach (var destination in _destinations)
             {
-                if (count == 0)
-                    return;
-                var position = point + new Vector2(offset, 0);
-                draw.FillCircle(
-                    position,
-                    group.Active > 0 ? 2.4f : 2,
-                    contrast ? ink : colour
-                );
-                offset += 5;
+                var group = destination.Group;
+                var point = Screen(destination.Point);
+                // Marks and their selection ring stay within 16 DIPs of the point.
+                if (
+                    point.X < -16
+                    || point.Y < -16
+                    || point.X > _size.Width + 16
+                    || point.Y > _size.Height + 16
+                )
+                    continue;
+                var kinds =
+                    (group.Seeds > 0 ? 1 : 0)
+                    + (group.Leechers > 0 ? 1 : 0)
+                    + (group.Unknown > 0 ? 1 : 0);
+                var offset = -2.5f * (kinds - 1);
+                Mark(group.Seeds, down);
+                Mark(group.Leechers, up);
+                Mark(group.Unknown, ink);
+                if (IsMarked(destination) || ReferenceEquals(destination, _pointed))
+                    rings.Add((point, kinds > 1));
+
+                void Mark(int count, Color colour)
+                {
+                    if (count == 0)
+                        return;
+                    var radius = group.Active > 0 ? 2.4f : 2;
+                    var dot = group.Active > 0
+                        ? Dot(canvas, ref _activeDot, radius)
+                        : Dot(canvas, ref _dot, radius);
+                    var tint = contrast ? ink : colour;
+                    batch.Draw(
+                        dot,
+                        point + new Vector2(offset - radius - 1, -radius - 1),
+                        new Vector4(tint.R, tint.G, tint.B, tint.A) / 255
+                    );
+                    offset += 5;
+                }
             }
         }
+        foreach (var (point, wide) in rings)
+            draw.DrawCachedGeometry(
+                wide ? Ring(canvas, ref _wideRing, 8) : Ring(canvas, ref _ring, 5),
+                point,
+                ink
+            );
         if (_rebuildPending)
+        {
+            _glowInputs = null;
             canvas.Invalidate();
+        }
 #if CAPTURE
         FrameMeasured?.Invoke(Stopwatch.GetElapsedTime(measured).TotalMilliseconds);
 #endif
@@ -887,28 +1043,174 @@ public sealed partial class PeerMap : UserControl
 
         Matrix3x2 Turned(int turn) => Matrix3x2.CreateTranslation(360 * turn, 0) * view;
 
-        // A route runs from the origin, at 0, to its destination without
-        // passing either end's longitude, so a copy a turn away shows only near
-        // the map's edge. The margin covers its glow.
-        bool Reaches(Destination destination, int turn)
+        // A route lies within its path's bounds; the margin covers its glow.
+        bool Reaches(Destination destination, int turn) =>
+            destination.Reach.Grown(new Vector2(30) / scale).Moved(360 * turn).Overlaps(visible);
+    }
+
+    // Fills are clipped to a window three views wide, so a cut edge is always
+    // a view off screen. The window moves once the view comes within half a
+    // view of its edge, or the detail changes, so a drag rebuilds fills once
+    // per half view and the window never outgrows the view. A view that wraps
+    // a turn keeps the window a turn away, so its fills stay current.
+    private void MoveWindow(Extent visible)
+    {
+        var span = visible.High - visible.Low;
+        var needed = visible.Grown(span / 2);
+        if (_windowDetail == _detail)
         {
-            var end = Coordinates(destination.Point).X;
-            var margin = 30 / ViewScale;
-            return Shows(Math.Min(0, end) - margin, Math.Max(0, end) + margin, turn);
+            for (var turn = -1; turn <= 1; turn++)
+            {
+                if (_window.Moved(360 * turn).Contains(needed))
+                {
+                    _window = _window.Moved(360 * turn);
+                    return;
+                }
+            }
         }
+        _window = visible.Grown(span);
+        _windowDetail = _detail;
+    }
+
+    // The old outline draws until this replaces it in one budgeted step, which
+    // also makes the paths its visible pieces draw, so a detail change never
+    // makes them all in one unbudgeted frame. View is in the outline's own
+    // coordinates.
+    private Outline Retrace(CanvasControl canvas, string code, Outline outline, Extent view)
+    {
+        outline.Dispose();
+        var traced = Trace(_world[code]);
+        foreach (var piece in traced.Pieces)
+        {
+            if (piece.Extent.Overlaps(view))
+                piece.Line(canvas);
+        }
+        // Replacing a value keeps Draw's enumeration of _land valid.
+        _land[code] = traced;
+        return traced;
+    }
+
+    // A fill keeps drawing its last realization, at another detail or window,
+    // until the budget replaces it; a country with none yet shows no fill,
+    // because a plain fill of a large country takes far longer than a frame.
+    // A clipped fill whose window no longer holds the country's visible part
+    // would show its cut edge, as after a fast drag, so it is replaced even
+    // past the budget.
+    private CanvasCachedGeometry? Filled(
+        CanvasControl canvas,
+        string code,
+        Outline outline,
+        int turn,
+        Extent visible
+    )
+    {
+        // The window in the outline's own coordinates, for the turn it shows in.
+        var window = _window.Moved(-360 * turn);
+        var turns = 0;
+        for (var other = -1; other <= 1; other++)
+        {
+            if (outline.Extent.Moved(360 * other).Overlaps(_window))
+                turns++;
+        }
+        // A country the window holds whole, or meets in two turns, stays whole.
+        Extent? clip = turns > 1 || window.Contains(outline.Extent) ? null : window;
+        var found = _fills.TryGetValue(code, out var fill);
+        var covers =
+            !found
+            || fill.Window is not { } made
+            || made.Contains(visible.Moved(-360 * turn).Within(outline.Extent));
+        if (
+            (found && fill.Detail == outline.Detail && (fill.Window is null || fill.Window == clip))
+            || (covers && !MayRebuild())
+        )
+            return found ? fill.Geometry : null;
+        using var path = new CanvasPathBuilder(canvas);
+        path.SetFilledRegionDetermination(CanvasFilledRegionDetermination.Alternate);
+        var figures = 0;
+        foreach (var ring in outline.Rings)
+        {
+            var points = clip is { } bounds ? Crop(ring, bounds) : ring;
+            if (points.Count < 3)
+                continue;
+            AddFigure(path, points, CanvasFigureLoop.Closed);
+            figures++;
+        }
+        fill.Geometry?.Dispose();
+        CanvasCachedGeometry? geometry = null;
+        if (figures > 0)
+        {
+            using var shape = CanvasGeometry.CreatePath(path);
+            // Country fills contain only lines; changing the view cannot expose
+            // curve-flattening error, so only a detail or window change replaces one.
+            geometry = CanvasCachedGeometry.CreateFill(
+                shape,
+                CanvasGeometry.ComputeFlatteningTolerance(canvas.Dpi, ViewScale)
+            );
+        }
+        _fills[code] = new Fill(geometry, outline.Detail, clip);
+        return geometry;
+    }
+
+    // A piece with no stroke draws plainly, which Direct2D tessellates on the
+    // CPU at every frame, so it gets one first. A piece keeps drawing its last
+    // stroke, made at another scale, until Draw replaces it.
+    private Stroke? Stroked(CanvasControl canvas, Piece piece)
+    {
+        if (piece.Stroke is null && MayRebuild())
+            Restroke(canvas, piece);
+        return piece.Stroke;
+    }
+
+    private void Restroke(CanvasControl canvas, Piece piece)
+    {
+        piece.Stroke?.Geometry.Dispose();
+        piece.Stroke = CreateStroke(canvas, piece.Line(canvas), BorderWidth(canvas));
     }
 
     // Direct2D rasterizes a plain geometry on the CPU at every draw, at a cost
     // that grows with its size on screen, so zoomed arcs took most of a second.
     // A realization is tessellated once for a scale and then drawn by the GPU,
-    // but making one is slow, and a scale change makes one for every country and
-    // arc. Each frame therefore rebuilds only until _rebuildUntil. Within 5% of
-    // its scale a realization looks the same; one further off, or made at
-    // another outline detail, still draws, a little too wide, narrow or coarse,
-    // until its turn. A shape with none yet draws plainly. A country's outline
-    // is traced again at the current detail only when it realizes, so a zoom
-    // spends the same budget on tracing, and only on countries that show.
-    private bool IsCurrent(float scale) => Math.Abs(ViewScale / scale - 1) <= .05f;
+    // but making one is slow, and a scale change makes one for every visible
+    // border piece and arc. Each frame therefore rebuilds only until
+    // _rebuildUntil. Within 5% of its scale a realization looks the same; one
+    // further off, or made at another outline detail, still draws, a little too
+    // wide, narrow or coarse, until its turn. A country's outline is traced
+    // again at the current detail only when it shows, so a zoom spends the same
+    // budget on tracing, and only on countries that show.
+    // A border carries half a DIP of ink. Below one physical pixel its
+    // antialiasing breaks into uneven steps, so it widens to a pixel and Draw
+    // fades its colour to keep the same ink.
+    private static float BorderWidth(CanvasControl canvas) => Math.Max(.5f, 96 / canvas.Dpi);
+
+    // A border's ink follows its width error, so it keeps its weight over a
+    // larger change than a route, and a pan toward a pole rebuilds it half as
+    // often.
+    private const float BorderTolerance = .1f;
+
+    private bool IsCurrent(Vector2 scale, float tolerance = .05f)
+    {
+        var change = AxisScale / scale - Vector2.One;
+        return Math.Abs(change.X) <= tolerance && Math.Abs(change.Y) <= tolerance;
+    }
+
+    private void ReleaseGlow()
+    {
+        (_glowBlur?.Source as CropEffect)?.Dispose();
+        _glowBlur?.Dispose();
+        _glowBlur = null;
+        _glowLines?.Dispose();
+        _glowLines = null;
+        _glowInputs = null;
+    }
+
+    /// <summary>What the route glow depends on besides the routes' animation.</summary>
+    private readonly record struct GlowInputs(
+        Matrix3x2 View,
+        Size Size,
+        Color Down,
+        Color Up,
+        int Arrangement
+    );
 
     private bool MayRebuild()
     {
@@ -918,35 +1220,74 @@ public sealed partial class PeerMap : UserControl
         return false;
     }
 
-    private (CanvasCachedGeometry Fill, CanvasCachedGeometry Border, float Scale)? Realized(
-        CanvasControl canvas,
-        string code,
-        Outline outline
+    private readonly record struct Stroke(CanvasCachedGeometry Geometry, Vector2 Scale);
+
+    private Stroke CreateStroke(CanvasControl canvas, CanvasGeometry source, float width)
+    {
+        // Widen after applying both axis scales, so the cached pen stays round.
+        var scale = AxisScale;
+        using var geometry = source.Transform(Matrix3x2.CreateScale(scale));
+        return new Stroke(
+            CanvasCachedGeometry.CreateStroke(
+                geometry,
+                width,
+                Rounded,
+                CanvasGeometry.ComputeFlatteningTolerance(canvas.Dpi, 1)
+            ),
+            scale
+        );
+    }
+
+    private static void ApplyStroke(
+        CanvasDrawingSession draw,
+        Stroke? stroke,
+        Matrix3x2 transform,
+        ref Vector2? applied
     )
     {
-        var found = _realized.TryGetValue(code, out var shape);
-        if ((found && IsCurrent(shape.Scale) && outline.Detail == _detail) || !MayRebuild())
-            return found ? shape : null;
-        if (found)
+        var scale = stroke?.Scale ?? Vector2.One;
+        if (applied == scale)
+            return;
+        draw.Transform = Matrix3x2.CreateScale(Vector2.One / scale) * transform;
+        applied = scale;
+    }
+
+    // A mark is this white dot, with a DIP of margin, multiplied by its theme
+    // colour in a sprite batch.
+    private static CanvasRenderTarget Dot(CanvasControl canvas, ref CanvasRenderTarget? dot, float radius)
+    {
+        if (dot is null)
         {
-            shape.Fill.Dispose();
-            shape.Border.Dispose();
+            var size = 2 * (radius + 1);
+            dot = new CanvasRenderTarget(canvas, size, size, canvas.Dpi);
+            using var session = dot.CreateDrawingSession();
+            session.Clear(Microsoft.UI.Colors.Transparent);
+            session.FillCircle(radius + 1, radius + 1, radius, Microsoft.UI.Colors.White);
         }
-        if (outline.Detail != _detail)
+        return dot;
+    }
+
+    // Direct2D outlines a plain circle on the CPU at every draw. A selection
+    // ring has the same shape at every place, so one realization per radius
+    // draws them all.
+
+    private static CanvasCachedGeometry Ring(
+        CanvasControl canvas,
+        ref CanvasCachedGeometry? ring,
+        float radius
+    )
+    {
+        if (ring is null)
         {
-            outline.Dispose();
-            outline = Trace(canvas, _world[code]);
-            // Replacing a value keeps Draw's enumeration of _land valid.
-            _land[code] = outline;
+            using var circle = CanvasGeometry.CreateCircle(canvas, Vector2.Zero, radius);
+            ring = CanvasCachedGeometry.CreateStroke(
+                circle,
+                1.2f,
+                Rounded,
+                CanvasGeometry.ComputeFlatteningTolerance(canvas.Dpi, 1)
+            );
         }
-        var tolerance = CanvasGeometry.ComputeFlatteningTolerance(canvas.Dpi, ViewScale);
-        shape = (
-            CanvasCachedGeometry.CreateFill(outline.Fill, tolerance),
-            CanvasCachedGeometry.CreateStroke(outline.Border, .5f / ViewScale, Plain, tolerance),
-            ViewScale
-        );
-        _realized[code] = shape;
-        return shape;
+        return ring;
     }
 
     // Widths move in steps, so animated activity rebuilds an arc's
@@ -975,9 +1316,21 @@ public sealed partial class PeerMap : UserControl
             // Routes are traced once, within 180° of the origin.
             var mapped = ToMap(point);
             mapped.X = Wrap(mapped.X, 0);
-            nearest ??= _destinations.FirstOrDefault(destination =>
-                destination.Arc?.StrokeContainsPoint(mapped, 8 / ViewScale) == true
-            );
+            if (nearest is null)
+            {
+                var scale = AxisScale;
+                var transform = Matrix3x2.CreateScale(scale);
+                foreach (var destination in _destinations)
+                {
+                    if (destination.Arc is not { } arc)
+                        continue;
+                    using var geometry = arc.Transform(transform);
+                    if (!geometry.StrokeContainsPoint(mapped * scale, 8))
+                        continue;
+                    nearest = destination;
+                    break;
+                }
+            }
         }
         if (ReferenceEquals(_pointed, nearest))
             return;
@@ -1040,31 +1393,114 @@ public sealed partial class PeerMap : UserControl
     }
 
     /// <summary>
-    /// A country in map coordinates, traced at one outline detail. The border
-    /// leaves out the 180° cuts in the country data, and is the fill itself for
-    /// a country without one; West and East bound both shapes.
+    /// A country's points in map coordinates, traced at one outline detail.
+    /// Extent bounds its rings and pieces.
     /// </summary>
-    private sealed record Outline(
-        CanvasGeometry Fill,
-        CanvasGeometry Border,
-        float West,
-        float East,
-        float Detail
-    ) : IDisposable
+    private sealed record Outline(Vector2[][] Rings, Piece[] Pieces, Extent Extent, float Detail)
+        : IDisposable
     {
         public void Dispose()
         {
-            Fill.Dispose();
-            if (!ReferenceEquals(Border, Fill))
-                Border.Dispose();
+            foreach (var piece in Pieces)
+                piece.Dispose();
         }
     }
 
-    private sealed class Group(PeerPlace place, string name, GeoPoint point, bool estimated = false)
+    /// <summary>Lines of one country's border, short enough together to stroke within a frame's rebuild budget.</summary>
+    private sealed class Piece(Vector2[][] lines) : IDisposable
+    {
+        // A stroke takes time in proportion to its points to build.
+        internal const int Length = 512;
+
+        private CanvasGeometry? _line;
+
+        internal Extent Extent { get; } =
+            lines.Aggregate(Extent.Empty, (extent, line) => extent.With(Extent.Of(line)));
+
+        /// <summary>The last stroke built, possibly at another scale; null before the first.</summary>
+        internal Stroke? Stroke { get; set; }
+
+        internal CanvasGeometry Line(ICanvasResourceCreator creator)
+        {
+            if (_line is null)
+            {
+                using var path = new CanvasPathBuilder(creator);
+                foreach (var line in lines)
+                    AddFigure(path, line, CanvasFigureLoop.Open);
+                _line = CanvasGeometry.CreatePath(path);
+            }
+            return _line;
+        }
+
+        public void Dispose()
+        {
+            _line?.Dispose();
+            Stroke?.Geometry.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// A country's realized fill, null when nothing of it lies in its window,
+    /// with the detail it was traced at and the window it was clipped to, null
+    /// when it is whole.
+    /// </summary>
+    private readonly record struct Fill(CanvasCachedGeometry? Geometry, float Detail, Extent? Window);
+
+    /// <summary>An axis-aligned box in map coordinates.</summary>
+    private readonly record struct Extent(Vector2 Low, Vector2 High)
+    {
+        internal static Extent Empty => new(new Vector2(float.MaxValue), new Vector2(float.MinValue));
+
+        internal static Extent Of(ReadOnlySpan<Vector2> points)
+        {
+            var extent = Empty;
+            foreach (var point in points)
+                extent = new(Vector2.Min(extent.Low, point), Vector2.Max(extent.High, point));
+            return extent;
+        }
+
+        internal static Extent Of(Rect bounds) =>
+            new(
+                new Vector2((float)bounds.Left, (float)bounds.Top),
+                new Vector2((float)bounds.Right, (float)bounds.Bottom)
+            );
+
+        internal Extent With(Extent other) =>
+            new(Vector2.Min(Low, other.Low), Vector2.Max(High, other.High));
+
+        internal Extent Moved(float longitude) =>
+            new(Low + new Vector2(longitude, 0), High + new Vector2(longitude, 0));
+
+        internal Extent Grown(Vector2 margin) => new(Low - margin, High + margin);
+
+        /// <summary>The part of this box inside another; callers pass boxes that overlap.</summary>
+        internal Extent Within(Extent other) =>
+            new(Vector2.Max(Low, other.Low), Vector2.Min(High, other.High));
+
+        internal bool Overlaps(Extent other) =>
+            High.X >= other.Low.X
+            && Low.X <= other.High.X
+            && High.Y >= other.Low.Y
+            && Low.Y <= other.High.Y;
+
+        internal bool Contains(Extent other) =>
+            other.Low.X >= Low.X
+            && other.High.X <= High.X
+            && other.Low.Y >= Low.Y
+            && other.High.Y <= High.Y;
+    }
+
+    // Only the inspected place shows its name, so a group formats it when first read.
+    private sealed class Group(
+        PeerPlace place,
+        Func<string> name,
+        GeoPoint point,
+        bool estimated = false
+    )
     {
         internal PeerPlace Place { get; } = place;
         internal string Code => Place.Code;
-        internal string Name { get; } = name;
+        internal string Name => field ??= name();
         internal GeoPoint Point { get; } = point;
         internal bool Estimated { get; private set; } = estimated;
         internal float Start { get; set; }
@@ -1109,7 +1545,20 @@ public sealed partial class PeerMap : UserControl
         internal int Rank { get; init; }
         internal float Start { get; set; }
         internal float Strength { get; init; }
-        internal CanvasGeometry? Arc { get; set; }
+        internal CanvasGeometry? Arc
+        {
+            get => _arc;
+            set
+            {
+                _arc = value;
+                Reach = value is null ? default : Extent.Of(value.ComputeBounds());
+            }
+        }
+
+        private CanvasGeometry? _arc;
+
+        /// <summary>The bounds of <see cref="Arc"/> in map coordinates.</summary>
+        internal Extent Reach { get; private set; }
 
         /// <summary>The brushes for <see cref="Arc"/>; it shares the arc's lifetime.</summary>
         internal Paint? Paint { get; set; }
@@ -1143,42 +1592,38 @@ public sealed partial class PeerMap : UserControl
         Vector2 end
     ) : IDisposable
     {
-        private readonly float _length = Math.Max(1 / map._scale, Vector2.Distance(start, end));
         private CanvasRadialGradientBrush? _halo;
         private CanvasRadialGradientBrush? _core;
         private Color _haloColour;
         private Color _coreColour;
-        private float _coreScale;
-        private CanvasCachedGeometry? _glow;
-        private CanvasCachedGeometry? _line;
-        private (float Width, float Scale) _glowMade;
-        private (float Width, float Scale) _lineMade;
+        private Vector2 _coreScale;
+        private Matrix3x2 _haloTransform;
+        private Matrix3x2 _coreTransform;
+        private Stroke? _glow;
+        private Stroke? _line;
+        private float _glowWidth;
+        private float _lineWidth;
 
         /// <summary>The halo's stroke for a width in DIPs on screen, or null before the first one is made.</summary>
-        internal CanvasCachedGeometry? Glow(float width) => Stroke(ref _glow, ref _glowMade, width);
+        internal Stroke? Glow(float width) => Realize(ref _glow, ref _glowWidth, width);
 
         /// <summary>The core's stroke for a width in DIPs on screen, or null before the first one is made.</summary>
-        internal CanvasCachedGeometry? Line(float width) => Stroke(ref _line, ref _lineMade, width);
+        internal Stroke? Line(float width) => Realize(ref _line, ref _lineWidth, width);
 
-        private CanvasCachedGeometry? Stroke(
-            ref CanvasCachedGeometry? stroke,
-            ref (float Width, float Scale) made,
+        private Stroke? Realize(
+            ref Stroke? stroke,
+            ref float made,
             float width
         )
         {
             if (
-                (stroke is not null && made.Width == width && map.IsCurrent(made.Scale))
+                (stroke is { } cached && made == width && map.IsCurrent(cached.Scale))
                 || !map.MayRebuild()
             )
                 return stroke;
-            stroke?.Dispose();
-            stroke = CanvasCachedGeometry.CreateStroke(
-                arc,
-                width / map.ViewScale,
-                Plain,
-                CanvasGeometry.ComputeFlatteningTolerance(canvas.Dpi, map.ViewScale)
-            );
-            made = (width, map.ViewScale);
+            stroke?.Geometry.Dispose();
+            stroke = map.CreateStroke(canvas, arc, width);
+            made = width;
             return stroke;
         }
 
@@ -1189,6 +1634,13 @@ public sealed partial class PeerMap : UserControl
                 _halo?.Dispose();
                 _halo = CreateLanding(canvas, colour);
                 _haloColour = colour;
+                _haloTransform = Matrix3x2.Identity;
+            }
+            var transform = Matrix3x2.CreateScale(_glow?.Scale ?? Vector2.One);
+            if (_haloTransform != transform)
+            {
+                _halo.Transform = transform;
+                _haloTransform = transform;
             }
             return _halo;
         }
@@ -1196,17 +1648,19 @@ public sealed partial class PeerMap : UserControl
         // One radial brush around the destination carries both the brightness
         // along the route and the landing fade, so an arc needs no layer of its
         // own. The fade is measured on screen, so a scale change rebuilds it.
+        // A new colour, as when a selection marks many routes, waits for the
+        // rebuild budget like a new scale.
         internal CanvasRadialGradientBrush Core(Color colour)
         {
             if (
                 _core is null
-                || _coreColour != colour
-                || (!map.IsCurrent(_coreScale) && map.MayRebuild())
+                || ((_coreColour != colour || !map.IsCurrent(_coreScale)) && map.MayRebuild())
             )
             {
-                var scale = map.ViewScale;
+                var scale = map.AxisScale;
+                var length = Math.Max(1, ((end - start) * scale).Length());
                 _core?.Dispose();
-                var landed = 30 / (_length * scale);
+                var landed = 30 / length;
                 var stops = new[]
                 {
                     0,
@@ -1225,18 +1679,25 @@ public sealed partial class PeerMap : UserControl
                         Position = position,
                         Color = Alpha(
                             colour,
-                            Route(1 - position) * Landing(position * _length * scale)
+                            Route(1 - position) * Landing(position * length)
                         ),
                     })
                     .ToArray();
                 _core = new CanvasRadialGradientBrush(canvas, stops)
                 {
                     Center = end,
-                    RadiusX = _length,
-                    RadiusY = _length,
+                    RadiusX = length / scale.X,
+                    RadiusY = length / scale.Y,
                 };
                 _coreColour = colour;
                 _coreScale = scale;
+                _coreTransform = Matrix3x2.Identity;
+            }
+            var transform = Matrix3x2.CreateScale(_line?.Scale ?? Vector2.One);
+            if (_coreTransform != transform)
+            {
+                _core.Transform = transform;
+                _coreTransform = transform;
             }
             return _core;
         }
@@ -1254,15 +1715,35 @@ public sealed partial class PeerMap : UserControl
         {
             _halo?.Dispose();
             _core?.Dispose();
-            _glow?.Dispose();
-            _line?.Dispose();
+            _glow?.Geometry.Dispose();
+            _line?.Geometry.Dispose();
         }
     }
 
     // Peer instances update in place; retain the last observation to avoid
     // running an animation when an idle snapshot has not changed.
+    private bool IsShowing(IReadOnlyList<Models.Peer> peers)
+    {
+        if (peers.Count != _observations.Length)
+            return false;
+        for (var index = 0; index < peers.Count; index++)
+        {
+            if (!_observations[index].Matches(peers[index]))
+                return false;
+        }
+        return true;
+    }
+
     private sealed record Observation(Models.Peer Peer, double Down, double Up, Location? Location)
     {
         internal PeerRole Role { get; } = Peer.Role;
+
+        /// <summary>Whether the peer still has the values this observation recorded.</summary>
+        internal bool Matches(Models.Peer peer) =>
+            ReferenceEquals(Peer, peer)
+            && Down == peer.DownloadRate
+            && Up == peer.UploadRate
+            && Equals(Location, peer.Location)
+            && Role == peer.Role;
     }
 }

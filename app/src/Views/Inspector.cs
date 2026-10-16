@@ -45,10 +45,11 @@ public sealed partial class Inspector : INotifyPropertyChanged
     public string SizeText => IsGlobal ? string.Empty : _target?.SizeText ?? string.Empty;
 
     internal bool IsVisible => _visible;
+    private int SelectionCount => PeerSelection is null ? _owner.Selected.Count : Scope.Count();
     public string EmptyText =>
-        _owner.Selected.Count == 0
+        SelectionCount == 0
             ? Text.Get("inspector", "none")
-            : Text.FormatCount("inspector", "selection", _owner.Selected.Count);
+            : Text.FormatCount("inspector", "selection", SelectionCount);
     public bool IsAvailable =>
         _owner.IsConnected && HasContent && (_target is null || _owner.Contains(_target));
 
@@ -282,17 +283,31 @@ public sealed partial class Inspector : INotifyPropertyChanged
 
     // Another target starts at the given section, so the previous section is
     // not read first.
-    internal bool Show(Torrent? target, InspectorSection? section = null)
+    internal bool Show(
+        Torrent? target,
+        InspectorSection? section = null,
+        bool allPeers = false,
+        IReadOnlyList<Torrent>? selection = null
+    )
     {
-        if (!Retarget(target, section ?? _section))
+        if (!Retarget(target, section ?? _section, allPeers, selection))
             return false;
         Refresh();
         return true;
     }
 
-    private bool Retarget(Torrent? target, InspectorSection section)
+    private bool Retarget(
+        Torrent? target,
+        InspectorSection section,
+        bool allPeers,
+        IReadOnlyList<Torrent>? selection
+    )
     {
-        if (_target == target)
+        if (
+            _target == target
+            && ShowsAllPeers == allPeers
+            && ReferenceEquals(PeerSelection, selection)
+        )
             return true;
         if (HasDraft || IsPending)
             return false;
@@ -300,6 +315,8 @@ public sealed partial class Inspector : INotifyPropertyChanged
         CancelDraft();
         Clear();
         _target = target;
+        ShowsAllPeers = allPeers;
+        PeerSelection = selection;
         _section = section;
         Invalidate();
         _ = Read();
@@ -642,7 +659,11 @@ public sealed partial class Inspector : INotifyPropertyChanged
     private async Task<SpeedSample[]> ReadHistory(int context)
     {
         var target = _target;
-        var ids = _owner.Selected.Select(torrent => torrent.TorrentId).ToArray();
+        string[] ids = IsGlobal
+            ? []
+            : Scope.Select(torrent => torrent.TorrentId).ToArray();
+        if (!ShowsAllPeers && PeerSelection is not null && ids.Length == 0)
+            return [];
         var day = Samples(
             await _client.Read(Consumer.Inspector, "history", HistoryArguments("day"))
         );

@@ -870,13 +870,17 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             _current = null;
         var inspected = Inspector.Target;
         if (inspected is { } target && !Contains(target))
-            Inspector.Show(null);
+            Inspector.Show(
+                null,
+                allPeers: Inspector.ShowsAllPeers,
+                selection: Inspector.PeerSelection
+            );
         if (
             Inspector.Target is null
             && (previousSelection != _selected.Length || inspected is not null)
         )
         {
-            if (HasInspector && _selected.Length == 1)
+            if (HasInspector && _selected.Length == 1 && !Inspector.HasPeerScope)
                 Inspector.Show(_selected[0]);
             else
                 Inspector.RefreshScope();

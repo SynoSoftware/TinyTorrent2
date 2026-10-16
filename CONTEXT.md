@@ -69,6 +69,22 @@ _Avoid_: geolocation, in product text.
 representative populated regions. These are illustrative destinations, not
 observed peer coordinates or network routes.
 
+**Peer place**: the geographic grouping used to filter peers: a whole country
+in Countries detail, or shared coordinates or a country's records without
+coordinates in Cities detail.
+_Avoid_: destination, when referring to the peers included by a place filter.
+
+**Map destination**: a position representing peers on the map, either at supplied
+coordinates or in an estimated populated region. Several estimated destinations
+can represent the same peer place.
+
+**Chosen place**: the peer place chosen on the map that limits the table's peers.
+It is distinct from the individual peers selected in that table.
+
+**Inspected destination**: the map destination whose details the person is
+examining. An estimated destination does not establish the actual location of
+any individual peer.
+
 **City data**: DB-IP's address-to-city data, downloaded when the person asks
 and kept on this computer as a replaceable copy, like IMDb data. The country
 data that resolves flags is installed with the app.

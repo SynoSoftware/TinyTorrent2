@@ -55,8 +55,14 @@ public sealed partial class Inspector
 
     internal bool HasCities => _owner.Geolocation.Installed is not null;
 
+    internal bool ShowsAllPeers { get; private set; }
+    internal IReadOnlyList<Torrent>? PeerSelection { get; private set; }
+    internal bool HasPeerScope => ShowsAllPeers || PeerSelection is not null;
+
     private IEnumerable<Torrent> Scope =>
-        _target is not null ? [_target]
+        ShowsAllPeers ? _owner.Torrents
+        : PeerSelection is { } selected ? selected.Where(_owner.Contains)
+        : _target is not null ? [_target]
         : _owner.Selected.Count == 0 ? _owner.Torrents
         : _owner.Selected;
 
@@ -74,7 +80,8 @@ public sealed partial class Inspector
         {
             if (_section is not (InspectorSection.Peers or InspectorSection.Speed))
                 return false;
-            return _target is null && _owner.Selected.Count == 0;
+            return ShowsAllPeers
+                || PeerSelection is null && _target is null && _owner.Selected.Count == 0;
         }
     }
     public bool HasContent =>

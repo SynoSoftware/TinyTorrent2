@@ -112,6 +112,8 @@ public sealed partial class MainWindow
                 (PropertiesButton, "properties", Model.Properties),
                 (VerifyButton, "verify", Model.Verify),
                 (RemoveButton, "remove", Model.Remove),
+                (SelectedMapButton, "selected_map", SelectedMap),
+                (AllMapButton, "all_map", AllMap),
             }
         )
         {
@@ -206,6 +208,9 @@ public sealed partial class MainWindow
                     AccessKey = MenuKey("toolbar"),
                 }
             );
+        view.Add(new MenuSeparator());
+        view.Add(Command("selected_map", SelectedMap, Syno.Lucide.MapPin));
+        view.Add(Command("all_map", AllMap, Syno.Lucide.Globe2));
         MenuItems.Fill(ViewMenu.Items, view, Model.Text);
         MenuItems.Fill(
             HelpMenu.Items,

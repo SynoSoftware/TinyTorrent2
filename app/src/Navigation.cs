@@ -5,7 +5,11 @@ namespace Syno.TinyTorrent;
 
 internal sealed class Navigation(Func<WindowPage, Task<bool>> prepare) : INotifyPropertyChanged
 {
-    private sealed record Destination(WindowPage Page, SettingTarget? Settings = null);
+    private sealed record Destination(
+        WindowPage Page,
+        SettingTarget? Settings = null,
+        Action? Restore = null
+    );
 
     private readonly List<Destination> _history = [new(WindowPage.Torrents)];
     private bool _pending;
@@ -32,6 +36,17 @@ internal sealed class Navigation(Func<WindowPage, Task<bool>> prepare) : INotify
 
     internal Task<bool> Open(WindowPage page) => Open(new Destination(page));
 
+    internal Task<bool> Visit(WindowPage page, Action restore) =>
+        Change(new(page, Restore: restore), _history.Count);
+
+    internal void KeepWorkspace()
+    {
+        var page = Current;
+        _history.Clear();
+        _history.Add(new(page));
+        Changed(nameof(CanGoBack));
+    }
+
     private Task<bool> Open(Destination destination)
     {
         var index = _history.LastIndexOf(destination);
@@ -53,8 +68,12 @@ internal sealed class Navigation(Func<WindowPage, Task<bool>> prepare) : INotify
                 return false;
             if (_history[^1] == destination && retained == _history.Count - 1)
                 return true;
+            var removed = _history.Skip(retained).Reverse().ToArray();
             _history.RemoveRange(retained, _history.Count - retained);
             _history.Add(destination);
+            foreach (var item in removed)
+                if (item != destination)
+                    item.Restore?.Invoke();
             Changed(nameof(Current));
             return true;
         }

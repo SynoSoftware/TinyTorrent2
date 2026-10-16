@@ -1033,7 +1033,9 @@ editor keeps its own keys.
 | Enter | Show and expand the inspector for the selected torrent or Library file, as double-click does |
 | Ctrl+S | Start |
 | Ctrl+P | Stop |
-| Ctrl+M | Force start |
+| Ctrl+Alt+S | Force start |
+| Ctrl+M | Connections map for the selected transfers |
+| Ctrl+Shift+M | Connections map for all transfers |
 | Ctrl+R | Verify |
 | Ctrl+Shift+S | Resume all |
 | Ctrl+Shift+P | Pause all |
@@ -1856,8 +1858,19 @@ With no torrent selected, Peers shows all torrents and Speed shows session
 history. With multiple torrents selected, both sections combine only that
 selection. General, Files, Trackers and Pieces require one torrent and are
 disabled otherwise; leaving one of them for an aggregate scope selects Peers.
-Scope follows the selection;
-there is no separate All torrents control.
+Scope normally follows the selection. The toolbar and View menu offer Selected
+connections map (Ctrl+M) and All connections map (Ctrl+Shift+M). Selected is
+available only with a transfer selection on Torrents; All is also available from
+Library. These commands use the existing inspector: hide filters, select Peers,
+choose Map only and maximise the pane. The selected scope stays on those
+transfers even when a table filter drops their rows; All includes new transfers
+as they arrive. Neither command changes the table's selection or filters.
+One temporary entry in window navigation restores the caller's workspace,
+filter pane and inspector presentation through Back, Alt+Left or Escape. Choosing
+another map scope retains that original return point. An explicit layout change,
+including filters, toolbar, inspector open/close, compact/restore, section or peer
+view, discards the return point and continues with the chosen layout, because
+Back must not undo the person's layout choices. Map pan, zoom and Fit keep it.
 
 Tracker headers stay short: Downloads and Next. Header and value tooltips explain
 completed downloads reported by the tracker and the next announce or retry;

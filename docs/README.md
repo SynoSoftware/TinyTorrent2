@@ -15,6 +15,10 @@ here so moving a topic does not require renaming its links.
 | 7 | [Testing](testing.md) | Which evidence earns its cost and what it establishes. |
 | 8 | [Naming and structure](naming.md) | Names and placement of types, files, folders, namespaces, and resource keys. |
 
+Before compiling, reusing a build or resolving build failures, read the
+[compilation protocol](compilation.md). It owns the shared queue, build interval,
+exclusive build ownership and result use across chats and worktrees.
+
 The [architecture follow-up](architecture.md#architecture-follow-up) records
 settled ownership and deferred design choices. GitHub issues own actionable work,
 implementation status and remaining acceptance criteria; local review artifacts

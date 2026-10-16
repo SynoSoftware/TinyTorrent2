@@ -335,6 +335,13 @@ public sealed partial class MainWindow
                 "SetView",
                 BindingFlags.Instance | BindingFlags.NonPublic
             )!;
+            var ratio = typeof(PeerMap).GetMethod(
+                "CalculateRatio",
+                BindingFlags.Instance | BindingFlags.NonPublic
+            )!;
+            // The journeys use the ratio that zooming or panning to the view gives.
+            void View(float zoom, Vector2 focus) =>
+                setView.Invoke(centred, [zoom, focus, ratio.Invoke(centred, [zoom, focus.Y])!]);
             var center = typeof(PeerMap).GetField(
                 "_center",
                 BindingFlags.Instance | BindingFlags.NonPublic
@@ -355,10 +362,10 @@ public sealed partial class MainWindow
                     home.Point?.Longitude ?? countries[home.Code].Anchor.Longitude
                 );
                 centred.Show(peers, home, Model.Text);
-                setView.Invoke(centred, [1f, Vector2.Zero]);
+                View(1f, Vector2.Zero);
                 await CaptureUi($"peers-meridian-{place}");
                 completed.Add($"peers-meridian-{place}");
-                setView.Invoke(centred, [1f, new Vector2(90, 0)]);
+                View(1f, new Vector2(90, 0));
                 if (((Vector2)center.GetValue(centred)!).X != 90)
                     throw new InvalidOperationException("The fitted map did not scroll.");
                 await CaptureUi($"peers-meridian-{place}-scrolled");
@@ -368,15 +375,15 @@ public sealed partial class MainWindow
                 cut -= 360 * MathF.Round(cut / 360);
                 foreach (var (part, latitude) in new[] { ("russia", 66f), ("fiji", -17f) })
                 {
-                    setView.Invoke(centred, [6f, new Vector2(cut, -latitude)]);
+                    View(6f, new Vector2(cut, -latitude));
                     await CaptureUi($"peers-meridian-{place}-{part}");
                     completed.Add($"peers-meridian-{place}-{part}");
                 }
                 // Opposite the origin, then one turn further, which must look the same.
-                setView.Invoke(centred, [3f, new Vector2(175, -40)]);
+                View(3f, new Vector2(175, -40));
                 await CaptureUi($"peers-meridian-{place}-edge");
                 completed.Add($"peers-meridian-{place}-edge");
-                setView.Invoke(centred, [3f, new Vector2(175 + 360, -40)]);
+                View(3f, new Vector2(175 + 360, -40));
                 if (((Vector2)center.GetValue(centred)!).X != 175)
                     throw new InvalidOperationException("Panning a whole turn did not wrap.");
                 outcomes.Add(new { journey = "peer map centred on origin", place, meridian });
@@ -391,10 +398,10 @@ public sealed partial class MainWindow
                 BindingFlags.Instance | BindingFlags.NonPublic
             )!;
             centred.Show(peers, homes[0].Origin, Model.Text);
-            setView.Invoke(centred, [1f, Vector2.Zero]);
+            View(1f, Vector2.Zero);
             await CaptureUi("peers-detail-fitted");
             var fitted = (float)detail.GetValue(centred)!;
-            setView.Invoke(centred, [6f, new Vector2(10 - 139.69f, -50)]);
+            View(6f, new Vector2(10 - 139.69f, -50));
             await CaptureUi("peers-detail-europe");
             completed.Add("peers-detail-europe");
             var zoomed = (float)detail.GetValue(centred)!;
@@ -411,7 +418,7 @@ public sealed partial class MainWindow
                 .GetValue(null)!;
             foreach (var (area, focus) in new[] { ("fit", Vector2.Zero), ("europe", new Vector2(10 - 139.69f, -50)) })
             {
-                setView.Invoke(centred, [1f, focus]);
+                View(1f, focus);
                 await Task.Delay(500);
                 using var before = Process.GetCurrentProcess();
                 var fittedBytes = before.PrivateMemorySize64;
@@ -421,7 +428,7 @@ public sealed partial class MainWindow
                     List<double> frames = [];
                     var previous = (float)detail.GetValue(centred)!;
                     centred.FrameMeasured = frames.Add;
-                    setView.Invoke(centred, [zoom, focus]);
+                    View(zoom, focus);
                     await Task.Delay(500);
                     centred.FrameMeasured = null;
                     var current = (float)detail.GetValue(centred)!;
@@ -446,7 +453,66 @@ public sealed partial class MainWindow
                     scope = "Map only at 1280 by 900, synthetic peers, draw CPU time including Arrange; excludes GPU execution.",
                 });
             }
-            setView.Invoke(centred, [1f, Vector2.Zero]);
+            // Drags cross the fill window's edges at a steady and a fast pointer
+            // speed; the vertical ones also change the ratio with the latitude.
+            var hold = typeof(PeerMap).GetMethod(
+                "Hold",
+                BindingFlags.Instance | BindingFlags.NonPublic
+            )!;
+            var offset = (Vector2)typeof(PeerMap)
+                .GetField("_offset", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(centred)!;
+            foreach (
+                var (area, zoom, focus, direction, speed) in new[]
+                {
+                    ("canada-islands", 32f, new Vector2(-110 - 139.69f, -72), new Vector2(-1, 0), 20f),
+                    ("canada-islands-fast", 32f, new Vector2(-110 - 139.69f, -72), new Vector2(-1, 0), 100f),
+                    ("europe-north", 8f, new Vector2(10 - 139.69f, -35), new Vector2(0, 1), 4f),
+                    ("norway-north", 128f, new Vector2(8 - 139.69f, -61), new Vector2(0, 1), 20f),
+                }
+            )
+            {
+                View(zoom, focus);
+                await Task.Delay(1000);
+                List<double> frames = [];
+                List<double> starts = [];
+                var watch = Stopwatch.StartNew();
+                centred.FrameMeasured = ms =>
+                {
+                    frames.Add(ms);
+                    starts.Add(watch.Elapsed.TotalMilliseconds);
+                };
+                const int Steps = 120;
+                for (var step = 1; step <= Steps; step++)
+                {
+                    hold.Invoke(centred, [zoom, focus, offset + direction * speed * step]);
+                    await Task.Delay(16);
+                }
+                await Task.Delay(500);
+                centred.FrameMeasured = null;
+                // The time between frames also counts what Direct2D does after
+                // Draw returns, such as tessellating plain lines.
+                var intervals = starts.Zip(starts.Skip(1), (from, to) => to - from).Order().ToList();
+                frames.Sort();
+                outcomes.Add(new
+                {
+                    journey = "peer map drag timing",
+                    area,
+                    zoom,
+                    speed,
+                    steps = Steps,
+                    elapsedMs = watch.Elapsed.TotalMilliseconds,
+                    frames = frames.Count,
+                    medianMs = frames.Count == 0 ? 0 : frames[frames.Count / 2],
+                    p95Ms = frames.Count == 0 ? 0 : frames[(int)(frames.Count * .95)],
+                    maxMs = frames.DefaultIfEmpty().Max(),
+                    over16Ms = frames.Count(frame => frame > 16.7),
+                    intervalMedianMs = intervals.Count == 0 ? 0 : intervals[intervals.Count / 2],
+                    intervalMaxMs = intervals.DefaultIfEmpty().Max(),
+                    scope = "Map only, synthetic peers, draw CPU time including Arrange; excludes GPU execution.",
+                });
+            }
+            View(1f, Vector2.Zero);
             await CaptureLayout();
             // Choosing a place on the map limits the table to every peer there;
             // clicking empty map and Escape both clear the choice through Choose(null).

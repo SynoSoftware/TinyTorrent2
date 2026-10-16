@@ -115,6 +115,7 @@ public sealed partial class InspectorPane
     {
         if (_layout.View == view)
             return;
+        LayoutChanged?.Invoke(this, EventArgs.Empty);
         _layout = _layout with { View = view };
         ArrangePeers(fit: true);
         RefreshMap();

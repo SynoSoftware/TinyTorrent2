@@ -60,7 +60,8 @@ A capture review is a diagnostic build that drives the app off-screen through
 scripted journeys. It saves screenshots and control bounds in English and
 Spanish, Light and Dark, at several window sizes. It does not take over the
 desktop. The [root owner ruling](../AGENTS.md#working-rules) governs whether a
-review may run.
+review may run; the [pre-launch check](../docs/compilation.md#verify-the-build-before-launch)
+establishes which successful build the capture will actually run.
 
 It has found text and controls clipped or pushed out of view at narrow sizes or
 in Spanish, input and drafts lost, and crashes while the window closes. For an

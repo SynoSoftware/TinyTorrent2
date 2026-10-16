@@ -112,4 +112,27 @@ for ($visit = 0; $visit -lt 4; $visit++) {
 Invoke-Navigation GoBack
 Require-Route Torrents $false
 
-Write-Output 'PASS: contextual return, secondary pages, Connection, same-page reset, refusal, overlapping navigation and sidebar history.'
+$visits = @{ Restored = 0 }
+$restore = [Action]{ $visits.Restored++ }.GetNewClosure()
+$visit = $navigationType.GetMethod('Visit', $flags)
+$keep = $navigationType.GetMethod('KeepWorkspace', $flags)
+Invoke-Navigation Navigate Library
+Require ($visit.Invoke($navigation, [object[]]@([Enum]::Parse($pageType, 'Torrents'), $restore)).GetAwaiter().GetResult()) 'The layout visit was refused.'
+Invoke-Navigation Navigate Settings
+Invoke-Navigation GoBack
+Require-Route Torrents $true
+Require ($visits.Restored -eq 0) 'Returning from Settings restored the layout before leaving its visit.'
+$gate.Result = [Threading.Tasks.Task]::FromResult($false)
+Require (!(Start-Navigation GoBack).GetAwaiter().GetResult()) 'A refused layout departure consumed its return.'
+Require ($visits.Restored -eq 0) 'A refused departure restored the layout.'
+$gate.Result = [Threading.Tasks.Task]::FromResult($true)
+Invoke-Navigation GoBack
+Require-Route Library $false
+Require ($visits.Restored -eq 1) 'Leaving the layout visit did not restore exactly once.'
+Require ($visit.Invoke($navigation, [object[]]@([Enum]::Parse($pageType, 'Torrents'), $restore)).GetAwaiter().GetResult()) 'The second layout visit was refused.'
+$keep.Invoke($navigation, @())
+Require-Route Torrents $false
+Require ($visits.Restored -eq 1) 'Keeping an explicit layout restored the old one.'
+Require (!(Start-Navigation GoBack).GetAwaiter().GetResult()) 'Back undid an explicit layout choice.'
+
+Write-Output 'PASS: contextual return, secondary pages, Connection, same-page reset, refusal, overlapping navigation, sidebar history and temporary layout visits.'
