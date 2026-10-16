@@ -167,7 +167,7 @@ Broader virtualization, Narrator and RTL scenarios remain unverified.
 
 The lifetime and automation findings follow concrete source paths. The RTL
 consequence also depends on documented platform mirroring. The narrow product
-evidence is recorded in [implementation](../../../docs/implementation.md);
+evidence is recorded in [implementation](../../../docs/01-implementation.md);
 it does not establish Narrator, detached reload or unrealized-row behavior.
 The later item-data and header-peer changes have source review only. The focused
 `AutomationTests` cover item selection, keyed replacement and selection policy;

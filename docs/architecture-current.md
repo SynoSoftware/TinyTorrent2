@@ -5,7 +5,7 @@ what exists in **TinyTorrent2**, not the earlier application in `../TinyTorrent`
 The [target architecture](architecture.md)
 owns the intended product design and its [open decisions](architecture.md#decisions-still-open).
 The first download path has Release builds, production checks and a hands-on
-review recorded in [implementation evidence](implementation.md).
+review recorded in [implementation evidence](01-implementation.md).
 
 ## What exists
 
@@ -77,8 +77,7 @@ refresh where the catalogue changes.
 In the engine, one private `CommitEdit` derives, persists and applies intended
 tracker/priority changes for explicit edits and merges; each entry point keeps
 its own legality checks. `SpeedHistory` owns its buffers and aggregation, while
-the engine owns sampling cadence and the session envelope. These are the
-implemented owners selected by the [consolidated architecture](architecture/proposed/README.md).
+the engine owns sampling cadence and the session envelope.
 
 The project files own framework, platform, and package choices. The sample and
 test hosts declare unpackaged deployment. TableView carries its own English
@@ -97,8 +96,7 @@ and InspectorPane composition. `Torrents/`, `Settings/`, `Library/` and
 desktop and diagnostics in their supporting folders; `Controls/` holds reusable
 UI. `App` and `Enums.cs` stay in the project root. Partial-type folders retain
 their owner's namespace. [Naming and structure](naming.md#app-folders) owns the
-placement rules; the [organization plan](../plans/app-reorganisation-2026-10-15.md)
-records the complete move map. Prototype documents live in `app/prototypes/`.
+placement rules. Prototype documents live in `app/prototypes/`.
 
 ## Build integration
 
@@ -201,7 +199,7 @@ remaining keyboard, automation and RTL work. [Strings](../lib/TableView/src/Stri
 now prepares immutable embedded catalogues with fallback; live column text and
 `Table.Strings` refresh existing presentation. Source subscriptions suspend on
 unload and resume on reload. The first product builds and live language switches
-have runtime evidence in the [implementation record](implementation.md).
+have runtime evidence in the [implementation record](01-implementation.md).
 Broader source-lifetime and unrealized-row automation scenarios remain separate
 from that narrow product journey.
 

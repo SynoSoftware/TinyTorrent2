@@ -19,9 +19,9 @@ design before this requirement.
   measurement, or libtorrent source. Mark a claim you did not verify.
 - The editor folds accepted notes into the design, records rejected ones under
   "Rejected alternatives" with the reason, and replies under the note.
-- The repository contracts still decide: [engine](../engine.md),
-  [protocol](../protocol.md), [architecture](../architecture.md) and
-  [AGENTS.md](../../AGENTS.md), especially "Plans start from common sense". A
+- The repository contracts still decide: [engine](engine.md),
+  [protocol](protocol.md), [architecture](architecture.md) and
+  [AGENTS.md](../AGENTS.md), especially "Plans start from common sense". A
   design part names the failure a person would see without it.
 
 ## Problem
@@ -179,7 +179,7 @@ percentiles. Q2 remains open.
   would make its answer indistinguishable from the recorded query's answer,
   breaking D5.
   Physical completed-file discovery uses the bounded worker observation defined
-  in [the engine contract](../engine.md), because unverified display progress
+  in [the engine contract](engine.md), because unverified display progress
   and untagged alert recovery cannot prove a file safe to rename.
 - **D3. Stored copies for the viewed torrent, refreshed by reads.** The engine
   keeps libtorrent's raw data, per data kind, for one torrent: the one the last
@@ -295,7 +295,7 @@ percentiles. Q2 remains open.
     answers would be discarded as belonging to a replaced torrent.
 - **D9. Immediate display replies and correlated updates.** Protocol version 11
   adds a display context, readiness and a pushed detail result, as recorded in
-  [the wire representation](../implementation.md#inspector-engine-integration).
+  [the wire representation](01-implementation.md#inspector-engine-integration).
   Each endpoint coalesces undelivered detail into one latest slot, separate
   from reliable replies and controls. The window discards obsolete session,
   torrent and context results, including results queued before a command reply.
@@ -379,7 +379,7 @@ code first, and build once.
 2. Build the Debug engine once, to prove it compiles. Fix all errors, then
    build again only if the fixes changed code.
 3. Run only the existing tests that cover the changed engine code, once. Add a
-   test only where [testing](../testing.md) says it earns its cost.
+   test only where [testing](testing.md) says it earns its cost.
 4. Measure Q1 and Q2 once, on the finished design: one Release build, then,
    with the owner's permission, stop the running engine and start the Release
    one. There is no separate measurement before implementation, because a

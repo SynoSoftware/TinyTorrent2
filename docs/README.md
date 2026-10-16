@@ -24,19 +24,15 @@ settled ownership and deferred design choices. GitHub issues own actionable work
 implementation status and remaining acceptance criteria; local review artifacts
 are not a second backlog.
 
-The completed [selected refactoring plan](architecture/proposed/README.md) preserves
-the architecture reviews and delivery decisions at that checkpoint. The active
-contracts above remain the authority for product behavior.
-
 The architecture owns the [live decision list](architecture.md#decisions-still-open).
 Update it as choices are made; historical reviews do not supply active requirements.
 
 For automatic subtitle downloading or its Settings prototype, read the
 [subtitle design](subtitles.md). It records the agreed invisible workflow,
 configuration, and required file-operation changes before implementation.
-The completed [subtitle implementation plan](subtitles-implementation.md) maps
+The completed [subtitle implementation plan](04-subtitles-implementation.md) maps
 it entirely to C# owners, including database and subtitle-file handling.
-The completed [subtitle records and acquisition plan](subtitles-records-plan.md)
+The completed [subtitle records and acquisition plan](06-subtitles-records-plan.md)
 records unified subtitle records,
 one-time language identification, an explicit rescan and a per-movie lookup
 limit, with implementation evidence. The subtitle contract remains the authority.
@@ -47,19 +43,19 @@ design before implementation.
 Its [prototype implementation review](library.md#prototype-implementation-review)
 tracks the current Inspector and navigation decisions, pending choices, and
 evidence required before native adoption.
-The completed [Library implementation plan](library-implementation.md) records the C# work;
+The completed [Library implementation plan](05-library-implementation.md) records the C# work;
 Library and subtitles share one window-lifetime SQLite owner. The
 [database contract](database.md) owns schema initialization, versioning,
 connection lifetime and the rationale for durable and reconstructed state.
-The [Library catalogue cache](library-cache-plan.md) records why the file
+The [Library catalogue cache](12-library-cache-plan.md) records why the file
 catalogue is retained, how the summary reconciles it before publication, and
 what confirmation still protects.
 
-The completed [native Settings implementation](settings-implementation.md) records
+The completed [native Settings implementation](07-settings-implementation.md) records
 the sidebar, page composition, shared controls and ownership corrections, with
 remaining defects and validation limits kept explicit.
 
-The completed [request protection plan](request-protection.md) records Library
+The completed [request protection plan](08-request-protection.md) records Library
 and subtitle suppression, pacing, explicit retries and Settings reset, with
 implementation evidence. The active feature contracts remain the authorities.
 
@@ -73,7 +69,7 @@ not implemented and remains a design for review.
 country data installed with the app, the city data the person downloads
 through the same dataset path as IMDb data, and the flags.
 It also owns the native peer map and its estimated country distribution. The
-[implementation plan](peer-map-plan.md) records the approved scope and validation gaps.
+[implementation plan](11-peer-map-plan.md) records the approved scope and validation gaps.
 
 The [communication plan](communication-plan.md) records the reviewed
 responsiveness fixes and the next scoped-subscription design. It distinguishes
@@ -90,7 +86,9 @@ The [product glossary](../CONTEXT.md) defines terms, not additional requirements
 ## Where documents belong
 
 Keep repository instructions and the product glossary at the root. Product
-contracts and plans live in `docs/`; TableView's contract, source map, glossary,
+contracts and plans live in `docs/`. A finished plan's filename starts with a
+two-digit number that gives its place in the order of implementation, so the
+folder lists the plans in delivery order. TableView's contract, source map, glossary,
 and control history stay beside the library in `lib/TableView/`. Folder-specific
 `AGENTS.md` files contain local guidance and inherit the root rules. Keep licence
 notices with their assets or dependencies. Link between these owners rather
@@ -100,7 +98,7 @@ than keeping copies in both locations.
 
 The native engine and first WinUI download path exist alongside TableView,
 Lucide, the sample and control tests; see [current build integration](architecture-current.md#build-integration)
-and [implementation evidence](implementation.md). Later milestones and the
+and [implementation evidence](01-implementation.md). Later milestones and the
 installer's installed journeys remain targets; the [release command](../installer/README.md)
 generates candidates, and a contract alone is not implementation evidence.
 The control's implementation document identifies known gaps against its contract.
@@ -116,31 +114,15 @@ the contract merely to describe whatever the code currently does.
 
 ## Historical material
 
-The [handover](handover.md) and [morning report](morning-report.md) preserve
-earlier goals and evidence, not current work queues. The
-[implementation record](implementation.md) is also historical except for its
+The [implementation record](01-implementation.md) is historical except for its
 Wire representation section, which the protocol contract still uses. Prototype
-files and critiques describe their reviewed versions; current interface rulings
-decide which parts remain applicable.
-
-The [architecture review of 2026-10-03](archive/architecture-review-2026-10-03.md)
-preserves the assessment before the usability revisions, including superseded
-choices and review dispositions. Consult the active contracts for current behavior.
-
-The later [skill audit](archive/skill-audit-2026-10-03.md) records additional
-source-backed findings, their disposition, and the limits of the review.
+files describe their reviewed versions; current interface rulings decide which
+parts remain applicable.
 
 [Archived TableView documents](../lib/TableView/docs/archive/README.md) preserve
-earlier control construction reasoning. The [archived interface review](archive/interface-review.md)
-preserves earlier product presentation work. These are reference material, not
+earlier control construction reasoning. These are reference material, not
 current plans, implementation permissions, or proof of current behavior. Useful
 ideas must satisfy the current owner's contract before reuse.
-
-The [historical torrent table reference](archive/torrent-table-reference.md)
-preserves the old host integration formerly embedded in the table contract.
-The [archived TableView API proposal](archive/tableview-api-proposal.md) preserves
-the design rationale and review record behind the current table API, and a map of
-old torrent application files to their new owners.
 
 Build configuration and dependencies live in project/build files. Do not copy a
 toolchain inventory or measured performance result into a plan as though it were

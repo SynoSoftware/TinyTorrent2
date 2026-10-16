@@ -8,7 +8,7 @@ about those files; it does not establish that a file belongs in Library.
 
 This is the master plan for the feature, not implementation evidence or an
 instruction to begin implementation. The
-[implementation plan](library-implementation.md) orders the work. It supersedes earlier conversational
+[implementation plan](05-library-implementation.md) orders the work. It supersedes earlier conversational
 proposals to retain removed torrents as Library entries, watch directories, or
 check file existence automatically. The [architecture](architecture.md) owns
 product scope and process responsibilities; the [engine](engine.md),
@@ -479,7 +479,7 @@ A late reply cannot overwrite a newer correction or recreate an entry removed
 from its data source. A file's video information stays only while a current
 entry uses it. Everything else a provider returned, its raw pages and every
 movie its pages listed, stays saved, so a later lookup of the same movie needs
-no request ([keep everything a provider returns](library-implementation.md#replaceable-movie-providers)).
+no request ([keep everything a provider returns](05-library-implementation.md#replaceable-movie-providers)).
 
 With multiple movies selected, Fetch metadata asks only about the chosen
 provider. Below the provider's name and the number of selected videos, it
@@ -495,7 +495,7 @@ the identification; another title is no answer. The dialog says that
 information from other sources is kept, and counts the selected videos the
 provider cannot check: extras and other unsearchable names, videos whose
 information the person cleared, and videos whose match has no IMDb ID to compare.
-The [request protection contract](request-protection.md) defines recovery and reset.
+The [request protection contract](08-request-protection.md) defines recovery and reset.
 It works in the background: the status bar shows "Metadata · 3 of 7 processed"
 until it finishes, on every page, with an X that stops it and cancels the
 request in progress. Fetching more files while it runs adds them to the same
@@ -1207,7 +1207,7 @@ stale file catalogue or new engine communication.
 ## Verification
 
 Follow [testing](testing.md) and the
-[current delivery plan](library-implementation.md#finish-the-delivery).
+[current delivery plan](05-library-implementation.md#finish-the-delivery).
 Comprehensive checklists and agent interaction runs are **cancelled**. Reuse
 existing valid evidence and review the settled change once. A new check must
 address a concrete failure introduced or exposed by that change, especially

@@ -155,7 +155,7 @@ Phase 1 downloads `title.basics`, `title.ratings` and `title.episode`: about
    index's `rebuild` command does the same work and reports nothing. It then
    runs `optimize`, which has its own indeterminate, cancellable phase,
    because SQLite reports no progress for it. The
-   [background-work plan](background-work.md#imdb-execution-and-sql-design)
+   [background-work plan](09-background-work.md#imdb-execution-and-sql-design)
    owns scheduling and cancellation. Runtime cancellation remains
    unverified; the phase durations are measured below.
 7. The import closes its connection, flushes the file to disk, and moves it over
@@ -274,7 +274,7 @@ goes in the same change, so no type shares the name of the namespace.
   selected provider keeps its failure. A running batch keeps its waiting
   files.
 
-The [request-protection plan](request-protection.md#imdb-datasets-and-local-answers)
+The [request-protection plan](08-request-protection.md#imdb-datasets-and-local-answers)
 applies to remote requests. Local dataset reads are not remote requests and
 need no bypass or force permission. After installation, local matching must
 use the new dataset rather than stale query results, learned choices or the
@@ -407,7 +407,7 @@ The removal deleted:
   [network route](architecture.md#network-route);
 - the `websites` and `websites_http` text sections;
 - the website paragraphs in [library.md](library.md) and
-  [library-implementation.md](library-implementation.md);
+  [05-library-implementation.md](05-library-implementation.md);
 - the website checks in `app/tests/SourceChecks.ps1`. They load
   `Public.Provider.Options` and run the website parsers. The store checks
   "late reply overwrote a newer Clear" and "late reply overwrote a merged
@@ -421,7 +421,7 @@ options, which sent requests only when the person asked, and the saved choice
 content only for website pages, which are expensive to read. `VideoLookup`
 keeps scheduling.
 
-The [request-protection plan](request-protection.md) now covers the API providers
+The [request-protection plan](08-request-protection.md) now covers the API providers
 and streaming dataset downloads. It removes the former website-reader rules
 and preserves the local/remote distinction above. It is implemented; the
 phase 2 rating join must preserve its reset and lookup-drain rules.
@@ -556,4 +556,4 @@ the measurements read the installed file, so IMDb sees no extra download.
 9. Finish the download lifetime as [Ending a download](#ending-a-download)
    describes, and delete `VideoSchedule`, as
    [Removing the Public plugin](#removing-the-public-plugin) lists, with its
-   description in [library-implementation.md](library-implementation.md).
+   description in [05-library-implementation.md](05-library-implementation.md).

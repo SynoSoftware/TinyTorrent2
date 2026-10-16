@@ -2,7 +2,7 @@
 
 Target communication between the engine and WinUI in the
 [architecture](architecture.md). Concrete message fields are defined in the
-[implementation record](implementation.md#wire-representation). This document
+[implementation record](01-implementation.md#wire-representation). This document
 establishes their required behavior and names a field only where that behavior
 depends on it; it is not a second wire-format specification.
 
@@ -55,7 +55,7 @@ stateful replies; simply abandoning a timed-out task would lose that ownership.
 ## Encoding and validation
 
 The concrete first-screen fields and units are defined in the
-[implementation record](implementation.md#wire-representation), beside the
+[implementation record](01-implementation.md#wire-representation), beside the
 code implementing both codecs. This contract remains the authority for their
 behavior.
 

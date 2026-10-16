@@ -983,7 +983,7 @@ batch. Each row consumes the same operation and cancellation command; no
 aggregate percentage or Cancel is introduced. A successor batch takes the
 inline slot while its settling predecessor remains in the list. With no
 successor, the settling batch remains inline until cleanup ends. The reporting
-contract and integration inventory are in [Background work](background-work.md).
+contract and integration inventory are in [Background work](09-background-work.md).
 Narrow concurrency layout requires native review before release.
 
 Free-space and external-IP appearance settings remain opt-ins and describe
@@ -2141,7 +2141,3 @@ Verify the affected journey at relevant sizes, themes, text scales, and input
 methods under [testing](testing.md). Review native semantics, reachable actions,
 focus return, automation, live text, and bounded hidden work. State the evidence
 and gaps explicitly; a static screenshot cannot establish all of them.
-
-[Historical reviews](archive/interface-review.md) preserve earlier
-experiments. Their approvals, old shortcuts, Transmission limits, and unsupported
-features do not expand this contract or replace a design for the actual product.

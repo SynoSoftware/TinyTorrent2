@@ -573,7 +573,7 @@ so reopening TinyTorrent does not reset those limits.
 
 ## Delivery order
 
-Use the [current implementation plan](subtitles-implementation.md#finish-the-delivery).
+Use the [current implementation plan](04-subtitles-implementation.md#finish-the-delivery).
 The feature is implemented in C# alongside Library's shared source and database
 owners. Finish concrete defects and presentation corrections without repeating
 the old source/startup feasibility gate.

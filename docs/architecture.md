@@ -100,7 +100,7 @@ and subtitle searches share that limit, one setting on the Plugins page.
 Force fetch and the batch scopes Fetch missing and Fetch all authorize a fresh
 request for the selected data, including locally blocked data. Provider waits
 and pacing still apply. Reset in Settings clears local protection without
-starting work; the [request protection plan](request-protection.md) records
+starting work; the [request protection plan](08-request-protection.md) records
 the precise counting, retry and reset rules.
 Automatic subtitle searches run only for new torrents, because a subtitle
 search spends the supplier's allowance. A torrent is new when the database's list of known
@@ -546,7 +546,7 @@ reference this same installer without becoming a Store dependency.
 ## First implementation
 
 The [existing projects](architecture-current.md#build-integration) implement
-the first usable download path; [the implementation record](implementation.md)
+the first usable download path; [the implementation record](01-implementation.md)
 holds its checks, measurements and review findings. This plan establishes the
 remaining work in order. The first path uses a `.torrent` file, destination choice,
 Add, live progress in TableView, and Pause/Resume. Include saved membership and

@@ -322,6 +322,6 @@ the engine's retained histories and displays its day range before fetching finer
 The initial native implementation built successfully and passed a 25-scene
 capture review with synthetic peers and a real country-MMDB lookup. The approved
 adaptive header revision supersedes that review's menu and fixed-layout checks.
-The [delivery record](peer-map-plan.md) records verification for each revision.
+The [delivery record](11-peer-map-plan.md) records verification for each revision.
 Live public-swarm timing, city-MMDB decoding and OS accessibility settings remain
 separate from synthetic rendering evidence.

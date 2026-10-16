@@ -739,8 +739,7 @@ them depends on motion to be understood.
 
 ## 15. Reference host page — torrent list
 
-Informative, matching the
-[historical Appendix A reference](../../../../docs/archive/torrent-table-reference.md).
+Informative.
 
 ### 15.1 Allocation
 

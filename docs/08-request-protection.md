@@ -580,13 +580,13 @@ authority. Schema changes follow the [database contract](database.md).
 
 Use these skills during implementation and review:
 
-- [sqlite-expert](C:/Users/user/.agents/skills/sqlite-expert/SKILL.md): review
+- `sqlite-expert`: review
   durable request keys, constraints, indexes, transaction boundaries and atomic
   reset, including preservation of successful data and accepted retry intent.
-- [domain-modeling](C:/Users/user/.agents/skills/domain-modeling/SKILL.md): keep
+- `domain-modeling`: keep
   New, Blocked, Missing, Force fetch, reset and provider waits precise and
   consistent with the product vocabulary; record settled terms in `CONTEXT.md`.
-- [codebase-design](C:/Users/user/.agents/skills/codebase-design/SKILL.md): review
+- `codebase-design`: review
   ownership, interfaces and seams, keeping one policy implementation and removing
   replaced paths without adding unnecessary layers.
 

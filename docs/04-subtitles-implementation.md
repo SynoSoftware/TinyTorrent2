@@ -7,7 +7,7 @@ the [release assessment](subtitles-release.md).
 
 ## Delivery ruling — 2026-10-09
 
-The [Library delivery ruling](library-implementation.md#delivery-ruling--2026-10-09)
+The [Library delivery ruling](05-library-implementation.md#delivery-ruling--2026-10-09)
 also governs this feature: **all benchmarks, agent interaction runs,
 comprehensive test matrices, and repeated intermediate review/build cycles are
 cancelled.** Their cost no longer earns its place in this delivery.
@@ -40,12 +40,12 @@ and do not repeat live probes or consume supplier allowance to fill coverage.
 
 The settled shared-owner, supplier, routing, naming and Settings corrections
 passed colleague source review, Debug x64 compilation and the focused offline
-checks recorded in [delivery evidence](library-implementation.md#current-status).
+checks recorded in [delivery evidence](05-library-implementation.md#current-status).
 The existing SourceChecks reopening fixture now corrupts a protected secret,
 language JSON and a timestamp, then verifies persisted repairs without losing
 healthy subtitle records or ownership. This guards the feature-wide failure and
 repeat-download risk that the earlier healthy-value fixture did not exercise.
-The fresh focused native review in [delivery evidence](library-implementation.md#current-status)
+The fresh focused native review in [delivery evidence](05-library-implementation.md#current-status)
 confirms the supplier editor's English/Spanish fields and complete button labels.
 The selected-language column correction passed fresh pixel and colleague review.
 No live supplier request ran for this batch.
@@ -54,7 +54,7 @@ No live supplier request ran for this batch.
 
 C# owns supplier configuration, protected credentials, matching, downloading,
 publication, retries, Find/Recheck and saved subtitle records. It shares the
-[application's C# database owner](library-implementation.md#owners-and-reuse), source
+[application's C# database owner](05-library-implementation.md#owners-and-reuse), source
 adapter and filename interpretation. The product window process is their
 lifetime: close cancels I/O and releases workers; reopen reconciles current
 torrents before resuming accepted work. Disabling subtitles cancels accepted

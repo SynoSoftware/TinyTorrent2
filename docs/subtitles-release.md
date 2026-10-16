@@ -30,7 +30,7 @@ login is separate from the application key; quota exhaustion never purchases acc
 
 The production anonymous acquisition path passed on 2026-10-09 with the existing
 free consumer key, yielding a valid 39,992-byte SRT. Its evidence and scope are
-recorded in [implementation evidence](subtitles-implementation.md#existing-evidence-and-release-gates).
+recorded in [implementation evidence](04-subtitles-implementation.md#existing-evidence-and-release-gates).
 This establishes the observed download path; quota/reset responses and
 distribution terms remain unverified.
 
@@ -59,7 +59,7 @@ from June 2026 ([Bazarr issue 3393](https://github.com/morpheus65535/bazarr/issu
 describes free keys receiving HTTP 402 on downloads. On 2026-10-09 the configured
 development key downloaded one exact unpacked SRT over the fixed API origin
 with HTTP 200; the production decoder preserved its 135,733 bytes. The
-[implementation evidence](subtitles-implementation.md#existing-evidence-and-release-gates)
+[implementation evidence](04-subtitles-implementation.md#existing-evidence-and-release-gates)
 records its digest and scope. This proves that key's observed download access,
 not every free plan. SubDL does not report a full/forced-only flag in the observed
 response; the matching contract requires an exact release and language and rejects

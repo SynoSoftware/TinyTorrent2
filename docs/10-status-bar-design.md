@@ -322,7 +322,7 @@ available without hovering; tooltips supplement visible text and UI Automation.
 
 The owner assigned implementation of the shared service and status-bar UI to
 this chat after accepting the architecture review. The
-[background-work contract](background-work.md) owns the reviewed service
+[background-work contract](09-background-work.md) owns the reviewed service
 contract and inventory, replacing the preliminary handoff here. The UI owns
 localized full/compact text, Lucide icons, stock WinUI 3 ProgressBar, accessible
 names, native Cancel buttons, focus recovery and responsive presentation.

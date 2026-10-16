@@ -2,13 +2,13 @@
 
 Initial research checked 2026-10-08. The selected implementation below records
 the subsequent decision; runtime evidence is in the
-[settings implementation record](../settings-implementation.md).
+[settings implementation record](07-settings-implementation.md).
 
 ## Selected implementation
 
 The owner selected Cloudflare's public HTTP endpoints for the small native
 integration. TinyTorrent uses Windows WinHTTP, without a package, JavaScript,
-or WebView. The [product network route](../architecture.md#network-route)
+or WebView. The [product network route](architecture.md#network-route)
 governs this operation. Its current WinHTTP implementation cannot enforce a
 configured proxy or adapter, so that route leaves testing unavailable. The page
 discloses the provider, IP/data use,

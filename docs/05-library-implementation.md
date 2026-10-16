@@ -33,7 +33,7 @@ and the app-icon page switch. Their native implementation is done. The
 [acceptance checklist](library.md#prototype-implementation-review) records the
 current target and outstanding evidence. The earlier B build and captures below
 do not validate these new changes. Later authorized builds and app checks are
-recorded in the [Settings implementation record](settings-implementation.md#authorized-compilation-and-checks--13-october-2026).
+recorded in the [Settings implementation record](07-settings-implementation.md#authorized-compilation-and-checks--13-october-2026).
 The reported filter-opening jump remains a runtime follow-up, not unfinished
 implementation of the selected composition.
 

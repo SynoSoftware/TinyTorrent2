@@ -269,5 +269,4 @@ The move changes placement, not behavioral ownership, and adds no forwarding
 layers or independently loaded plugins.
 
 The owner accepts locality within these areas in place of identical role-folder
-locations across their other WinUI applications, the tradeoff recorded in the
-[15 October organization plan](../plans/app-reorganisation-2026-10-15.md).
+locations across their other WinUI applications.

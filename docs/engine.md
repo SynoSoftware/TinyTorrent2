@@ -1085,7 +1085,7 @@ ten seconds so a session that cannot become quiet is restored instead of
 measured under load.
 
 Measurement runs off the engine thread using the native integration described
-in [the provider decision](architecture/connection-test-provider.md). Download
+in [the provider decision](02-connection-test-provider.md). Download
 and upload share a 45-second deadline. A successful test retains suspension for
 three minutes; a successful retest starts that hold again without releasing
 the existing suspension. Draft edits do not extend it. Navigation, Apply, page
@@ -1105,7 +1105,7 @@ they are tuned and a changed value can slow transfers without a visible
 benefit. The Settings page exposes the approved [product settings](interface.md#settings),
 including network protocol choices, queue and seeding policy,
 and the memory and checking controls in [Disk write caching](#disk-write-caching).
-The [wire record](implementation.md#wire-representation) owns their fields and ranges.
+The [wire record](01-implementation.md#wire-representation) owns their fields and ranges.
 The disk backend stays at its
 default ([Disk write caching](#disk-write-caching)). The engine changes three
 more defaults:

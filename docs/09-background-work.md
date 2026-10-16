@@ -18,7 +18,7 @@ and checks keep their existing row presentation. This extends the earlier
 metadata-only cancellation exception in [Interface](interface.md).
 
 The [interface contract](interface.md) owns the status bar's product behavior;
-the [status bar design](status-bar-design.md) records the design and review.
+the [status bar design](10-status-bar-design.md) records the design and review.
 This proposal owns the reporting interface and integration inventory, including
 the client-reviewed revisions below. The ordinary Library query remains ready
 on opening; this does not introduce a Library loading screen.

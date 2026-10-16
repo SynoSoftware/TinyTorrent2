@@ -505,8 +505,7 @@ their folder, and expand it. Hidden selection was pruned, outside selection was
 retained, current moved to the folder, and expansion left priorities unchanged.
 All 300 torrents and 307 payload hashes were retained. Twelve Files captures
 across EN/ES, Light/Dark and the three supported sizes passed an independent
-image review. The app build and Everything output-path check passed; exact logs
-and evidence are in the [morning report](../../../docs/morning-report.md).
+image review. The app build and Everything output-path check passed.
 
 The later `LibraryCapture-88080534-8c7b-4f9e-843d-cc7bf429e73e` selected a folder,
 its child and an outside file through native selection providers, then invoked

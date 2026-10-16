@@ -9,7 +9,7 @@ to miss in the HTML. Neither file proves production integration or performance.
 This handoff was checked against source; no application was run or compiled.
 
 For delivery order, existing owners, field coverage, and completion criteria,
-use the [implementation plan](../../docs/settings-implementation.md).
+use the [implementation plan](../../docs/07-settings-implementation.md).
 
 ## Start here
 

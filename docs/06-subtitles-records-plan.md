@@ -255,7 +255,7 @@ All seven steps are done; the descriptions below record the delivered scope.
    says a record identifies an output path and language, to say that found
    records also live at paths TinyTorrent did not name. Replace the
    language-inventory paragraph in `library.md` with a link to it. Fix the
-   `interface.md` paragraph and the `subtitles-implementation.md` sentence that
+   `interface.md` paragraph and the `04-subtitles-implementation.md` sentence that
    say changing the supplier turns automatic subtitles off: `subtitles.md` and
    `SaveAccount` keep the switch.
 2. **Batch candidates.** Done: `Count` on read, `Advance` before the automatic

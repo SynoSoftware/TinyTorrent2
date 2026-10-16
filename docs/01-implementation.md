@@ -2140,27 +2140,3 @@ The review capture runs the actual views in an off-desktop, nonactivating window
 against a named disposable store. It saves pixels and control bounds and closes
 itself. It never uses desktop input. Native chrome and desktop acrylic remain
 outside RenderTargetBitmap evidence.
-
-## Handover checkpoint — 2026-10-05
-
-The owner asked to finish the pending task and stop for another project. The
-unattended recovery smoke passed in 12,156 ms, retaining rejected speed-limit and
-magnet text and an unavailable torrent's inspector draft with Save disabled and
-Cancel enabled. Evidence is
-artifacts/evidence/UiSelfCapture-e494957a-cdea-4359-b498-7bdd65569b6a/captures/review.json.
-Its thirteen saved scenes include all Settings sections and the corrected Pieces
-legend. Earlier failed limit-input runs are superseded by this specific passing
-journey, not by a widened assertion or timeout.
-
-The integrated app Release/x64 build passed with zero warnings/errors in 112.55
-seconds. It includes the coordinated PipeClient deadline/admission corrections;
-their connection-fault behavior still needs focused runtime evidence. Only the
-app compiled, using existing TableView/dependency outputs. No full suite or new
-adversarial review was run during this final checkpoint.
-
-The prescribed Everything stray-folder check returned exit 0 and no paths after
-the smoke run; a separate traversal also found no stray output folders. All
-launched processes closed, and the final process check found no app or engine.
-This record ends at 2026-10-05. Later milestone work is committed; the
-[plan status](handover.md#plan-status) holds current milestone status and the
-remaining release evidence.
