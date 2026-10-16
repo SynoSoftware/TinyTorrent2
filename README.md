@@ -113,7 +113,7 @@ Get the latest installer from
 ## How we build software
 
 TinyTorrent is a working example of how we build software at
-[Synapse](https://synapse.sr). We make custom software for businesses, and
+[Synapse.sr](https://synapse.sr). We make custom software for businesses, and
 every project follows the same [rules](AGENTS.md#code-style) as this one. The
 full code and those rules are here for you to read.
 
