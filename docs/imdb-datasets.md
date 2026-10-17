@@ -1,8 +1,8 @@
 # IMDb datasets plan
 
-**Phases 1 and 2: implementation done.** The import was timed on 2026-10-15
-([measured result](#download-and-import)); live-data validation remains
-outstanding. **Phase 3: not implemented; design for review.** The [Library master plan](library.md) stays the authority
+**Phases 1 and 2: implementation done.** The import was timed and its data
+compared on 2026-10-16 ([measured result](#download-and-import)); live Library
+matching validation remains outstanding. **Phase 3: not implemented; design for review.** The [Library master plan](library.md) stays the authority
 for Library behavior.
 
 ## Summary
@@ -140,24 +140,36 @@ Phase 1 downloads `title.basics`, `title.ratings` and `title.episode`: about
      `title.episode`, because a file names an episode only by those. The
      import reads `title.episode` first, into memory, and writes the
      episodes under their numbers; the one pass over `title.basics` then
-     keeps the title of each episode that has numbers.
+     keeps the title of each episode that has numbers. A bitmap retains
+     membership by numeric IMDb ID, so the episode records can be released
+     after linking without sorting them again or searching them for each title.
 
    An import that keeps no title, no rating or no episode fails, so data that
    IMDb changed never replaces the installed copy with an empty one.
-5. The rows go in one transaction, with prepared commands and with
+5. The rows go in one transaction, with reused native SQLite statements and with
    `journal_mode=OFF` and `synchronous=OFF`. These settings are safe because
-   the file is temporary until step 7. The episodes go in primary-key order,
+   the file is temporary until step 7. Inserts use 100-row `VALUES` batches;
+   the last batch prepares exactly the remaining rows. The widest insert
+   uses 1,000 parameters and about 2 KB of SQL. Text stays in bound values,
+   so long titles do not enlarge the SQL statement. The import reads
+   `title.ratings` into memory, sorted by title, before the pass over
+   `title.basics`, and writes each title's rating and votes with its row;
+   updating the rated titles afterwards read a random page for each of them.
+   The episodes go in primary-key order,
    sorted in memory, because inserting millions of rows in file order into a
    `WITHOUT ROWID` table touches a random page for every row, while sorted
    rows extend the table at its end. The phase counts the rows it writes.
 6. After the rows, the import builds the two key indexes and fills the
-   full-text index one title at a time, so that phase counts titles; the
-   index's `rebuild` command does the same work and reports nothing. It then
+   full-text index in batches of 10,000 titles copied directly in SQL, so
+   strings do not cross into managed code and back for every title. The phase
+   counts the title keys to report exact progress; the index's `rebuild`
+   command does the same work and reports nothing. It then
    runs `optimize`, which has its own indeterminate, cancellable phase,
    because SQLite reports no progress for it. The
    [background-work plan](09-background-work.md#imdb-execution-and-sql-design)
-   owns scheduling and cancellation. Runtime cancellation remains
-   unverified; the phase durations are measured below.
+   owns scheduling and cancellation. The checks below cover cancellation
+   during title insertion and after an index batch; the other phases have
+   not had runtime cancellation checks.
 7. The import closes its connection, flushes the file to disk, and moves it over
    `imdb.db` with `File.Move` and overwrite. `File.Replace` fails when
    `imdb.db` does not exist yet. The flush prevents a power cut from leaving a
@@ -170,6 +182,172 @@ connection. The import took 1 min 46 s after them: episodes 4 s, linking 28 s,
 titles 49 s, ratings 7 s, indexing 16 s, optimize 2 s, flush under a second.
 The importing process grew by about 270 MB at its peak, for the episode
 numbers held in memory.
+
+Measured comparison, 2026-10-16, Release builds on the same machine, through
+`Dataset.Build` using the same cached archives and background worker. No
+download is included. Native prepared writes and SQL index batches reduced
+elapsed import time from 126.27 s to 98.35 s (22.1%) and process CPU time from
+93.22 s to 72.42 s. Peak process working set was 402 MB before and 406 MB after.
+
+| Phase | Before | After |
+| --- | ---: | ---: |
+| Episodes, including sort by series | 7.11 s | 6.75 s |
+| Linking, including sort by episode | 33.82 s | 21.28 s |
+| Titles | 56.73 s | 46.56 s |
+| Ratings | 10.45 s | 7.53 s |
+| Indexing | 16.06 s | 14.48 s |
+| Optimizing | 1.31 s | 1.49 s |
+| Flushing | 0.15 s | 0.10 s |
+
+All 1,208,696 title rows, 7,861,478 episode rows and 7,861,484 episode-title
+rows matched the baseline in every column and SQLite value type. SQLite's
+`quick_check` and FTS5's integrity check against external content passed; the
+file is 587,960,320 bytes. The index batch uses a primary-key range search.
+[ImdbChecks.ps1](../app/tests/ImdbChecks.ps1) covers nullable and Unicode
+bindings, ratings, duplicate episode numbers, reused and partial insert batches,
+the final partial index batch,
+and cancellation after a batch, including discarding the temporary file and
+preserving the installed copy byte for byte. It runs against disposable
+fixtures without starting WinUI or the engine. Local timing and comparison
+records are in `artifacts/imdb-performance/`.
+
+The follow-up 100-row insert comparison used the same cached archives and
+background worker, with the previous binary saved before rebuilding. The
+repeated per-row baseline and final typed-buffer run measured:
+
+| Work | Per-row | 100-row batches |
+| --- | ---: | ---: |
+| Episode links, including sort by episode | 19.43 s | 15.39 s |
+| Titles | 46.30 s | 44.53 s |
+| Whole import, elapsed | 92.27 s | 95.19 s |
+| Whole import, process CPU | 66.73 s | 64.09 s |
+
+The two insert phases took 8.8% less time and total CPU time fell 4.0%, but
+these runs do not establish an end-to-end elapsed improvement. Background
+load varied substantially: an earlier per-row run took 173.20 s. Batching
+reduces statement executions without removing per-value binding, parsing,
+sorting or index construction.
+
+All 16,931,658 rows again matched in every column and SQLite value type;
+`quick_check` and FTS5's external-content integrity check passed. The fixture
+also covers complete and partial batches in all three inserted tables, and
+nullable values when a batch is reused. A separate cancellation run stopped
+title insertion and released the temporary file for deletion. Records are
+`single-repeat.json`, `batched-final.json`, `batch-comparison.json` and
+`cancel-batch.json` under the same performance-artifacts directory. Disposable
+database copies are removed after comparison to recover their disk space.
+
+The next changes replace the second episode sort and per-title binary search
+with bitmap membership, and omit FTS document token counts that search does
+not use. The numbering records become collectible after linking. Neither
+change alters retained rows or the provider's search contract.
+
+The monitored full imports measured the following. The baseline overlapped
+other diagnostic work, so the difference is not an isolated speedup from these
+changes; even process CPU time can vary with processor frequency and contention.
+
+| Measurement | Before | After |
+| --- | ---: | ---: |
+| Import elapsed | 162.24 s | 74.98 s |
+| Import process CPU | 86.94 s | 52.78 s |
+| Average machine CPU use, eight logical processors | 51.1% | 23.0% |
+| Peak process working set | 405.30 MB | 411.32 MB |
+| Database bytes | 587,960,320 | 573,812,736 |
+
+All 16,931,658 retained rows matched in every column and SQLite value type.
+`quick_check`, FTS external-content integrity and five search-result comparisons
+passed. The combined fixture also passed, including unnumbered and out-of-range
+episode IDs, phrase matching and cancellation preserving the installed copy.
+The numbering records' shorter lifetime does not reduce measured peak working set.
+
+The final monitor covered 77.29 s including harness startup. Importer CPU use
+was at least 85% of one core for 9.39 s, 65–85% for 44.88 s, 35–65% for
+20.70 s, and below 35% for 2.32 s. No competing benchmark or diagnostic tool
+was detected. A resident compiler server used 0.27 CPU seconds across 3.40 s
+of sampled activity; its presence throughout the run did not mean a build
+was consuming CPU throughout. Machine CPU use never reached 85% in a sample.
+The first monitor rounded per-process deltas; its process samples are marked
+invalid, while its machine-wide counters remain valid. The corrected final
+samples account for 52.92 process CPU seconds, consistent with 52.78 s inside
+the import plus harness startup. Records are `controlled-before.json`,
+`controlled-after.json`, their `-load.json` companions, and
+`bitmap-comparison.json` in the performance-artifacts directory.
+
+A separate cache experiment replayed all ratings and built the ordinary key
+indexes using the bundled SQLite runtime. Increasing the cache from its
+observed `-2000` default to `-32768` reduced cache misses from 75,562 to 68,853,
+but writes increased from 36,177 to 42,867 and spills stayed near 35,700.
+The experiment did not establish a worthwhile benefit, so the import keeps
+the default cache. Its elapsed times are not a controlled comparison because
+other workloads were not recorded throughout that experiment.
+
+Import comparisons record machine-wide CPU use and overlapping build,
+benchmark and diagnostic processes, because other sessions share this laptop.
+`artifacts/imdb-performance/Monitor.ps1` wraps the existing import harness
+and samples those workloads about once a second. Its CPU bands describe how
+much CPU the importing process used, not how much scheduling time it was
+denied: waiting for I/O also lowers CPU use. A busy-machine elapsed result
+does not establish the improvement from a code change.
+
+A CPU sample profile of the batched import (dotnet-trace, 2026-10-16, under
+competing load, and sharing the data directory with another session's run, so
+its elapsed figures are not evidence) put about 90 of its 119 traced seconds
+under native SQLite calls: 51 s under the batched inserts, 29 s under the
+index phase and 10 s under the ratings updates. Time under a native call
+includes any waiting for I/O; the sampler cannot separate the two. All managed
+work, including decompression, UTF-8 decoding, parsing, title keys and the
+episode sort, was under 25 s. A replay of the pipeline outside the app, with a
+load monitor recording competing processes, tested the candidates that
+profile suggested. Per-row inserts cost 6 to 8 more CPU seconds than 100-row
+batches on the episode links and about 1 s on titles, so batching stays. A
+64 MB page cache, 8 KB pages, UTF-16 text binding and a struct or
+`IComparable` sort comparer each measured within noise of the shipped code;
+16 KB pages measured 27 s then 37 s for the same titles phase on two runs, so
+the page size stays at the default. This implementation ran in 56 CPU seconds
+against an in-memory database on a quiet machine and in 98 CPU seconds
+against the file while builds and Windows Defender shared the processor.
+Those runs bound this implementation's own cost; they do not establish the
+fastest possible one, and they do not separate what the competing load,
+Defender's scanning and the worker's priority mode each contributed.
+
+The ratings pre-join replaced the 1.7 million random-access updates with a
+lookup and two more bound values per title during the titles pass. The
+monitored full import measured, against the previous record's run:
+
+| Phase | Ratings as updates | Ratings written with the row |
+| --- | ---: | ---: |
+| Episodes | 5.16 s | 7.50 s |
+| Linking | 11.47 s | 11.27 s |
+| Ratings | 6.01 s | 1.04 s |
+| Titles | 40.06 s | 40.67 s |
+| Indexing | 10.52 s | 10.03 s |
+| Whole import, elapsed | 74.98 s | 71.97 s |
+| Whole import, process CPU | 52.78 s | 59.03 s |
+| Peak process working set | 411 MB | 476 MB |
+| Database bytes | 573,812,736 | 568,459,264 |
+
+Other processes averaged 1.9 cores during the second run and no competing
+benchmark was detected during the first, which the slower pure-managed
+Episodes phase shows, so neither the CPU totals nor the whole-import elapsed
+times are a controlled comparison; the second run's process CPU also includes
+its in-process load monitor, about 2 s. The Ratings phase shrank under the
+heavier load, and the Titles phase that absorbed its lookups did not grow
+measurably, but the whole-import gain remains unproven under equal
+conditions. The sorted ratings list stays in memory through the titles pass,
+which raised the peak working set by about 65 MB in this one run. All
+16,931,658 rows matched the previous build in every column and SQLite value
+type; `quick_check`, FTS integrity, four search comparisons and the fixture
+checks passed. Records, the replay harness and the load monitor are in
+`artifacts/imdb-performance/replay/`; the load records written before the
+monitor was corrected count samples as seconds and include the monitor
+thread's CPU in the process total.
+
+The worker now runs at `ThreadPriority.Lowest` instead of Windows background
+mode, by the [owner ruling](09-background-work.md#imdb-execution-and-sql-design)
+that the import gives up the processor, not the disk. No controlled
+measurement of that change exists; under background mode the import's phases
+took up to 2.5 times longer than their CPU time whenever builds ran, which is
+consistent with, but does not prove, lowered I/O priority as the cause.
 
 ### Schema
 
@@ -200,7 +378,7 @@ CREATE TABLE episode_titles (
 );
 CREATE VIRTUAL TABLE title_search USING fts5(
     title, original, content='titles', content_rowid='title_id',
-    tokenize='unicode61 remove_diacritics 2'
+    tokenize='unicode61 remove_diacritics 2', columnsize=0
 );
 CREATE INDEX titles_by_key ON titles(title_key);
 CREATE INDEX titles_by_original ON titles(original_key) WHERE original_key IS NOT NULL;
@@ -215,7 +393,9 @@ rows, which is faster than updating them for each row.
 `title_id` saves the number from the IMDb ID as an integer, and the provider
 writes it back with the `tt` prefix. An integer key makes the file smaller than
 a text key would. The full-text index searches words, with accents removed, so
-`amelie` finds `Amélie`.
+`amelie` finds `Amélie`. It retains token positions for phrase matching but
+omits per-document token counts (`columnsize=0`): search orders by exact title
+and votes, not BM25. Existing files with token counts remain readable.
 
 ### Provider
 
@@ -528,8 +708,8 @@ listed, are part of phase 1.
   many with the same title and year. Library keeps an ambiguous match
   unassigned, so the risk is fewer automatic matches, not wrong ones. Measure
   the match rate on a real Library before release.
-- **Import time.** The estimate is under a minute after the download. Measure
-  it on the owner's computer.
+- **Import time.** The measured time above excludes downloading and varies
+  with the computer's load.
 - **Disk space.** The import briefly needs space for both `imdb.db` and
   `imdb.db.tmp`. If the disk is full, the import fails with a message that
   says so, and the old file and the downloaded archives stay, so the person

@@ -1,4 +1,4 @@
-using System.ComponentModel;
+using System.Collections;
 using System.Globalization;
 using System.IO.Compression;
 using System.Net.Http;
@@ -30,8 +30,6 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
     private const string RatingsHeader = "tconst\taverageRating\tnumVotes";
     private const string EpisodesHeader = "tconst\tparentTconst\tseasonNumber\tepisodeNumber";
 
-    private const int ThreadModeBackgroundBegin = 0x10000;
-    private const int ThreadModeBackgroundEnd = 0x20000;
     private static readonly Uri Basics = new("https://datasets.imdbws.com/title.basics.tsv.gz");
     private static readonly Uri RatingsSource = new(
         "https://datasets.imdbws.com/title.ratings.tsv.gz"
@@ -42,9 +40,6 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
         Provider.CatalogId,
         RequestKey.Digest(string.Empty),
         "dataset"
-    );
-    private static readonly Comparer<EpisodeNumber> ByEpisode = Comparer<EpisodeNumber>.Create(
-        (a, b) => a.EpisodeId.CompareTo(b.EpisodeId)
     );
     private static readonly Comparer<EpisodeNumber> BySeries = Comparer<EpisodeNumber>.Create(
         (a, b) =>
@@ -130,21 +125,15 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
                 .Factory.StartNew(
                     () =>
                     {
-                        var thread = GetCurrentThread();
-                        if (!SetThreadPriority(thread, ThreadModeBackgroundBegin))
-                            throw new Win32Exception(Marshal.GetLastWin32Error());
-                        try
-                        {
-                            cancellation.ThrowIfCancellationRequested();
-                            Import(report, cancellation);
-                        }
-                        finally
-                        {
-                            if (!SetThreadPriority(thread, ThreadModeBackgroundEnd))
-                                System.Diagnostics.Debug.WriteLine(
-                                    new Win32Exception(Marshal.GetLastWin32Error())
-                                );
-                        }
+                        // The import yields the processor to the person's
+                        // other work and keeps normal disk and memory
+                        // priority: Windows background mode lowers those too,
+                        // and left the import waiting far longer than it
+                        // computed whenever other programs were busy. The
+                        // thread ends with the task, so nothing restores it.
+                        Thread.CurrentThread.Priority = ThreadPriority.Lowest;
+                        cancellation.ThrowIfCancellationRequested();
+                        Import(report, cancellation);
                     },
                     cancellation,
                     TaskCreationOptions.LongRunning,
@@ -601,38 +590,33 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
                     );
                     CREATE VIRTUAL TABLE title_search USING fts5(
                         title, original, content='titles', content_rowid='title_id',
-                        tokenize='unicode61 remove_diacritics 2'
+                        tokenize='unicode61 remove_diacritics 2', columnsize=0
                     );
                     BEGIN;
                     """
                 );
                 // Data that IMDb changed so that nothing reads would replace
                 // the installed copy with an empty one.
-                var numbers = CollectionsMarshal.AsSpan(
-                    ReadEpisodes(Archive(Episodes), Reading(ImdbPhase.Episodes), cancellation)
+                var numbered = LinkEpisodes(
+                    connection,
+                    ReadEpisodes(Archive(Episodes), Reading(ImdbPhase.Episodes), cancellation),
+                    Counting(ImdbPhase.Linking),
+                    cancellation
                 );
-                if (numbers.Length == 0)
-                    throw new VideoException(VideoFailure.UnknownFormat);
-                numbers.Sort(BySeries);
-                LinkEpisodes(connection, numbers, Counting(ImdbPhase.Linking), cancellation);
-                numbers.Sort(ByEpisode);
-                var titles = ImportTitles(
+                var ratings = ReadRatings(
+                    Archive(RatingsSource),
+                    Reading(ImdbPhase.Ratings),
+                    cancellation
+                );
+                var (titles, rated) = ImportTitles(
                     connection,
                     Archive(Basics),
-                    numbers,
+                    numbered,
+                    CollectionsMarshal.AsSpan(ratings),
                     Reading(ImdbPhase.Titles),
                     cancellation
                 );
-                if (titles == 0)
-                    throw new VideoException(VideoFailure.UnknownFormat);
-                if (
-                    ImportRatings(
-                        connection,
-                        Archive(RatingsSource),
-                        Reading(ImdbPhase.Ratings),
-                        cancellation
-                    ) == 0
-                )
+                if (titles == 0 || rated == 0)
                     throw new VideoException(VideoFailure.UnknownFormat);
                 IndexTitles(connection, titles, Counting(ImdbPhase.Indexing), cancellation);
                 Execute(connection, "COMMIT;");
@@ -664,13 +648,6 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
             (done, total) =>
                 report(phase, new WorkProgress.Fraction(done, total, WorkUnit.Percent));
     }
-
-    [DllImport("kernel32.dll", ExactSpelling = true)]
-    private static extern IntPtr GetCurrentThread();
-
-    [DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool SetThreadPriority(IntPtr thread, int priority);
 
     // An episode's place in its series, from title.episode. The import holds
     // every episode's in memory, so each field is an int, which IMDb's
@@ -726,30 +703,27 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
             ? (int)number
             : null;
 
-    // Whether title.episode gives this episode a season and number; numbers
-    // must be sorted by episode.
-    private static bool IsNumbered(ReadOnlySpan<EpisodeNumber> numbers, long episode) =>
-        episode <= int.MaxValue
-        && numbers.BinarySearch(new EpisodeNumber((int)episode, 0, 0, 0), ByEpisode) >= 0;
-
-    // Stores each episode under its series, season and number; numbers must
-    // be sorted that way, so the table grows at its end instead of at a
-    // random page for every row. A file names an episode by its number, so
-    // a second episode under the same number is ignored; the order keeps the
-    // lower identifier.
-    private static void LinkEpisodes(
+    // Stores each episode under its series, season and number in that order,
+    // so the table grows at its end instead of at a random page for every row.
+    // A file names an episode by its number, so duplicates keep the lower ID.
+    private static BitArray LinkEpisodes(
         SqliteConnection connection,
-        ReadOnlySpan<EpisodeNumber> numbers,
+        List<EpisodeNumber> episodes,
         Action<int, int> report,
         CancellationToken cancellation
     )
     {
-        using var insert = connection.CreateCommand();
-        insert.CommandText = "INSERT OR IGNORE INTO episodes VALUES($series,$season,$number,$id);";
-        var series = insert.Parameters.Add("$series", SqliteType.Integer);
-        var season = insert.Parameters.Add("$season", SqliteType.Integer);
-        var number = insert.Parameters.Add("$number", SqliteType.Integer);
-        var id = insert.Parameters.Add("$id", SqliteType.Integer);
+        var numbers = CollectionsMarshal.AsSpan(episodes);
+        if (numbers.Length == 0)
+            throw new VideoException(VideoFailure.UnknownFormat);
+        numbers.Sort(BySeries);
+        var maximum = 0;
+        foreach (var episode in numbers)
+            maximum = Math.Max(maximum, episode.EpisodeId);
+        // Positive IDs start at bit zero so int.MaxValue also fits; only
+        // membership survives this phase.
+        var numbered = new BitArray(maximum);
+        using var insert = new Insert(connection, "INSERT OR IGNORE INTO episodes", 4);
         for (var done = 0; done < numbers.Length; done++)
         {
             if (done % 100_000 == 0)
@@ -758,46 +732,43 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
                 report(done, numbers.Length);
             }
             var episode = numbers[done];
-            series.Value = episode.SeriesId;
-            season.Value = episode.Season;
-            number.Value = episode.Number;
-            id.Value = episode.EpisodeId;
-            insert.ExecuteNonQuery();
+            numbered[episode.EpisodeId - 1] = true;
+            insert.Bind(1, episode.SeriesId);
+            insert.Bind(2, episode.Season);
+            insert.Bind(3, episode.Number);
+            insert.Bind(4, episode.EpisodeId);
+            insert.AddRow();
         }
+        insert.Flush();
+        return numbered;
     }
 
     // Keeps the titles a video file can be: films, TV films and TV specials
     // as movies, series and miniseries, and their episodes. Direct-to-video
     // titles stay out, because IMDb files music videos under the same type.
     // Movies and series need a start year to distinguish same-name releases;
-    // that year does not establish whether the title has been released.
-    private static int ImportTitles(
+    // that year does not establish whether the title has been released. A
+    // title's rating goes in with its row, because updating the rated titles
+    // afterwards reads a random page for each of them.
+    private static (int Titles, int Rated) ImportTitles(
         SqliteConnection connection,
         string path,
-        ReadOnlySpan<EpisodeNumber> numbers,
+        BitArray numbered,
+        ReadOnlySpan<TitleRating> ratings,
         Action<int> report,
         CancellationToken cancellation
     )
     {
-        using var insert = connection.CreateCommand();
-        insert.CommandText = """
-            INSERT INTO titles(title_id,kind,title,original,title_key,original_key,year,genres)
-            VALUES($id,$kind,$title,$original,$title_key,$original_key,$year,$genres);
-            """;
-        var id = insert.Parameters.Add("$id", SqliteType.Integer);
-        var kind = insert.Parameters.Add("$kind", SqliteType.Text);
-        var title = insert.Parameters.Add("$title", SqliteType.Text);
-        var original = insert.Parameters.Add("$original", SqliteType.Text);
-        var titleKey = insert.Parameters.Add("$title_key", SqliteType.Text);
-        var originalKey = insert.Parameters.Add("$original_key", SqliteType.Text);
-        var year = insert.Parameters.Add("$year", SqliteType.Integer);
-        var genres = insert.Parameters.Add("$genres", SqliteType.Text);
-        using var episode = connection.CreateCommand();
-        episode.CommandText = "INSERT INTO episode_titles VALUES($id,$title,$year);";
-        var episodeId = episode.Parameters.Add("$id", SqliteType.Integer);
-        var episodeTitle = episode.Parameters.Add("$title", SqliteType.Text);
-        var episodeYear = episode.Parameters.Add("$year", SqliteType.Integer);
+        using var insert = new Insert(
+            connection,
+            """
+            INSERT INTO titles(title_id,kind,title,original,title_key,original_key,year,genres,rating,votes)
+            """,
+            10
+        );
+        using var episode = new Insert(connection, "INSERT INTO episode_titles", 3);
         var count = 0;
+        var rated = 0;
         Span<Range> fields = stackalloc Range[9];
         foreach (var line in Rows(path, BasicsHeader, report, cancellation))
         {
@@ -819,12 +790,12 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
                 : null;
             if (row[fields[1]] is "tvEpisode")
             {
-                if (!IsNumbered(numbers, identity))
+                if (identity > numbered.Length || !numbered[(int)identity - 1])
                     continue;
-                episodeId.Value = identity;
-                episodeTitle.Value = line[fields[2]];
-                episodeYear.Value = (object?)released ?? DBNull.Value;
-                episode.ExecuteNonQuery();
+                episode.Bind(1, identity);
+                episode.Bind(2, line[fields[2]]);
+                episode.Bind(3, released);
+                episode.AddRow();
                 continue;
             }
             var titleKind = row[fields[1]] switch
@@ -840,33 +811,42 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
                 row[fields[3]] is Empty || row[fields[3]].SequenceEqual(row[fields[2]])
                     ? null
                     : line[fields[3]];
-            id.Value = identity;
-            kind.Value = titleKind;
-            title.Value = name;
-            original.Value = (object?)originalName ?? DBNull.Value;
-            titleKey.Value = Key(name);
-            originalKey.Value = originalName is null ? DBNull.Value : Key(originalName);
-            year.Value = released;
-            genres.Value = row[fields[8]] is Empty ? DBNull.Value : line[fields[8]];
-            insert.ExecuteNonQuery();
+            insert.Bind(1, identity);
+            insert.Bind(2, titleKind);
+            insert.Bind(3, name);
+            insert.Bind(4, originalName);
+            insert.Bind(5, Key(name));
+            insert.Bind(6, originalName is null ? null : Key(originalName));
+            insert.Bind(7, released);
+            insert.Bind(8, row[fields[8]] is Empty ? null : line[fields[8]]);
+            var position = ratings.BinarySearch(new TitleRating(identity, 0, 0));
+            insert.Bind(9, position < 0 ? null : ratings[position].Value);
+            insert.Bind(10, position < 0 ? null : ratings[position].Votes);
+            if (position >= 0)
+                rated++;
+            insert.AddRow();
             count++;
         }
-        return count;
+        insert.Flush();
+        episode.Flush();
+        return (count, rated);
     }
 
-    private static int ImportRatings(
-        SqliteConnection connection,
+    // A title's rating from title.ratings; ordering by title lets ImportTitles
+    // find one by binary search.
+    private readonly record struct TitleRating(long TitleId, double Value, long Votes)
+        : IComparable<TitleRating>
+    {
+        public int CompareTo(TitleRating other) => TitleId.CompareTo(other.TitleId);
+    }
+
+    private static List<TitleRating> ReadRatings(
         string path,
         Action<int> report,
         CancellationToken cancellation
     )
     {
-        using var update = connection.CreateCommand();
-        update.CommandText = "UPDATE titles SET rating=$rating,votes=$votes WHERE title_id=$id;";
-        var id = update.Parameters.Add("$id", SqliteType.Integer);
-        var rating = update.Parameters.Add("$rating", SqliteType.Real);
-        var votes = update.Parameters.Add("$votes", SqliteType.Integer);
-        var count = 0;
+        var ratings = new List<TitleRating>();
         Span<Range> fields = stackalloc Range[3];
         foreach (var line in Rows(path, RatingsHeader, report, cancellation))
         {
@@ -889,18 +869,15 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
                 )
             )
                 continue;
-            id.Value = identity;
-            rating.Value = value;
-            votes.Value = number;
-            count += update.ExecuteNonQuery();
+            ratings.Add(new(identity, value, number));
         }
-        return count;
+        CollectionsMarshal.AsSpan(ratings).Sort();
+        return ratings;
     }
 
-    // Fills the search index one title at a time, so the progress counts the
-    // titles; the index's own rebuild command reports nothing. The key
-    // indexes report nothing either, so the count stays at zero while they
-    // build.
+    // SQL copies each batch's text directly into FTS without a managed
+    // round trip per title. Counting the keys keeps progress exact; the key
+    // indexes report nothing, so the count stays at zero while they build.
     private static void IndexTitles(
         SqliteConnection connection,
         int total,
@@ -917,27 +894,125 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
             """
         );
         using var insert = connection.CreateCommand();
-        insert.CommandText =
-            "INSERT INTO title_search(rowid,title,original) VALUES($id,$title,$original);";
-        var id = insert.Parameters.Add("$id", SqliteType.Integer);
-        var title = insert.Parameters.Add("$title", SqliteType.Text);
-        var original = insert.Parameters.Add("$original", SqliteType.Text);
+        insert.CommandText = """
+            INSERT INTO title_search(rowid,title,original)
+            SELECT title_id,title,original FROM titles
+            WHERE title_id>$after AND title_id<=$through ORDER BY title_id;
+            """;
+        var after = insert.Parameters.AddWithValue("$after", 0L);
+        var through = insert.Parameters.Add("$through", SqliteType.Integer);
         using var select = connection.CreateCommand();
-        select.CommandText = "SELECT title_id,title,original FROM titles ORDER BY title_id;";
+        select.CommandText = "SELECT title_id FROM titles ORDER BY title_id;";
         using var reader = select.ExecuteReader();
         var done = 0;
         while (reader.Read())
         {
-            if (++done % 10_000 == 0)
-            {
-                cancellation.ThrowIfCancellationRequested();
-                report(done, total);
-            }
-            id.Value = reader.GetInt64(0);
-            title.Value = reader.GetString(1);
-            original.Value = reader.IsDBNull(2) ? DBNull.Value : reader.GetString(2);
+            if (++done % 10_000 != 0 && done != total)
+                continue;
+            cancellation.ThrowIfCancellationRequested();
+            through.Value = reader.GetInt64(0);
             insert.ExecuteNonQuery();
+            after.Value = through.Value;
+            report(done, total);
         }
+    }
+
+    // 100 rows a statement remove most of the per-execution cost, which
+    // dominates the narrow episode rows; the widest insert binds 1,000 of
+    // SQLite's 32,766 parameters in about 2 KB of SQL. Bound values keep title
+    // length out of the SQL. Buffering lets the final batch use a VALUES
+    // clause with exactly its remaining rows.
+    private sealed class Insert(SqliteConnection connection, string sql, int columns) : IDisposable
+    {
+        private const int Capacity = 100;
+        private readonly (long? Number, double? Real, string? Text)[] _values =
+            new (long?, double?, string?)[Capacity * columns];
+        private Statement? _statement;
+        private int _preparedRows;
+        private int _rows;
+
+        internal void Bind(int index, long? value) =>
+            _values[_rows * columns + index - 1] = (value, null, null);
+
+        internal void Bind(int index, double? value) =>
+            _values[_rows * columns + index - 1] = (null, value, null);
+
+        internal void Bind(int index, string? value) =>
+            _values[_rows * columns + index - 1] = (null, null, value);
+
+        internal void AddRow()
+        {
+            if (++_rows == Capacity)
+                Flush();
+        }
+
+        internal void Flush()
+        {
+            if (_rows == 0)
+                return;
+            if (_preparedRows != _rows)
+            {
+                _statement?.Dispose();
+                var row = "(" + string.Join(",", Enumerable.Repeat("?", columns)) + ")";
+                _statement = new Statement(
+                    connection,
+                    sql + " VALUES " + string.Join(",", Enumerable.Repeat(row, _rows))
+                );
+                _preparedRows = _rows;
+            }
+            for (var index = 0; index < _rows * columns; index++)
+            {
+                var value = _values[index];
+                if (value.Text is { } text)
+                    _statement!.Bind(index + 1, text);
+                else if (value.Real is { } real)
+                    _statement!.Bind(index + 1, real);
+                else
+                    _statement!.Bind(index + 1, value.Number);
+            }
+            _statement!.Execute();
+            _rows = 0;
+        }
+
+        public void Dispose() => _statement?.Dispose();
+    }
+
+    // Millions of writes avoid SqliteCommand's per-execution parameter lookup
+    // and reader allocation. Every row binds every parameter, including nulls,
+    // because resetting a native statement retains its bindings.
+    private sealed class Statement : IDisposable
+    {
+        private readonly sqlite3 _connection;
+        private readonly sqlite3_stmt _statement;
+
+        internal Statement(SqliteConnection connection, string sql)
+        {
+            _connection = connection.Handle!;
+            Check(raw.sqlite3_prepare_v2(_connection, sql, out _statement));
+        }
+
+        internal void Bind(int index, long? value) =>
+            Check(
+                value is { } number
+                    ? raw.sqlite3_bind_int64(_statement, index, number)
+                    : raw.sqlite3_bind_null(_statement, index)
+            );
+
+        internal void Bind(int index, double value) =>
+            Check(raw.sqlite3_bind_double(_statement, index, value));
+
+        internal void Bind(int index, string value) =>
+            Check(raw.sqlite3_bind_text(_statement, index, value));
+
+        internal void Execute()
+        {
+            Check(raw.sqlite3_step(_statement));
+            Check(raw.sqlite3_reset(_statement));
+        }
+
+        private void Check(int code) => SqliteException.ThrowExceptionForRC(code, _connection);
+
+        public void Dispose() => _statement.Dispose();
     }
 
     // The rows of a tab-separated IMDb file after its header, which must name

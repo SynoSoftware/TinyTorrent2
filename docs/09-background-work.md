@@ -286,9 +286,11 @@ publication barrier belongs at installation; a stop during an uninterruptible
 flush remains a cancellation request awaiting that call's return, not a false
 promise of instant completion.
 
-The search index is filled one title at a time from the titles table, so the
-phase counts titles; FTS5's `rebuild` command does the same work and reports
-nothing. `INSERT INTO title_search(title_search) VALUES('optimize');` follows
+The search index is filled from the titles table in batches of 10,000. Reading
+the ordered title keys gives each batch its bounds and exact progress; SQL
+copies the text without a managed round trip per title. FTS5's `rebuild`
+command reports no progress.
+`INSERT INTO title_search(title_search) VALUES('optimize');` follows
 the commit, before closing/flushing/installing the build file. `optimize`
 merges FTS index structures and can itself take substantial time; SQLite
 exposes no whole-command percentage here. It keeps its own indeterminate phase.
@@ -302,14 +304,18 @@ that file. Interrupted SQL is translated to cancellation only when the matching
 token was requested. The handler's instruction interval is not a progress total.
 [SQLite progress handler](https://www.sqlite.org/c3ref/progress_handler.html).
 
-Run the entire synchronous `Import` body on one dedicated worker thread. Enter
-Windows `THREAD_MODE_BACKGROUND_BEGIN` on that thread before opening its private
-files/connection, and leave with `THREAD_MODE_BACKGROUND_END` in `finally` on
-the same thread. This lowers background resource scheduling priority, including
-the I/O contention important for this import. Do not change process priority or
-a reusable thread-pool thread. Do not put an asynchronous delegate on this
-thread and assume its continuations retain the scheduling mode.
-[SetThreadPriority](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-setthreadpriority).
+Run the entire synchronous `Import` body on one dedicated worker thread at
+`ThreadPriority.Lowest`, set on that thread before opening its private
+files/connection. **Owner ruling: the import gives up the processor, not the
+disk.** The import runs in the background anyway, so it must not take the
+processor from the person's other work; Windows background mode
+(`THREAD_MODE_BACKGROUND_BEGIN`) also lowers disk and memory priority, and
+under that mode the import waited far longer than it computed whenever other
+programs were busy, so the import keeps normal disk and memory priority. Do
+not change process priority or a reusable thread-pool thread. Do not put an
+asynchronous delegate on this thread and assume its continuations retain the
+priority.
+[Thread.Priority](https://learn.microsoft.com/en-us/dotnet/api/system.threading.thread.priority).
 
 Keep this small worker implementation next to the importer until a second real
 caller needs it. Return an awaitable completion with asynchronous continuations,
@@ -318,13 +324,20 @@ result; failure to establish the requested mode is surfaced through the existing
 error path. Low priority improves coexistence; it does not promise a shorter
 elapsed import time or instant interruption of an operating-system file call.
 
-The import keeps one bulk transaction and reused commands; `journal_mode=OFF`
-and `synchronous=OFF` remain confined to the disposable build file. The
+The import keeps one bulk transaction and reused native SQLite statements,
+with inserts in 100-row `VALUES` batches and a shorter final partial batch.
+This avoids command parameter lookup and reader allocation for each row,
+and reduces statement executions. `journal_mode=OFF` and `synchronous=OFF`
+remain confined to the disposable build file. The
 episodes table is written in primary-key order from episode numbers sorted in
 memory, because inserting millions of rows in file order into a `WITHOUT
 ROWID` table touches a random page for every row, while sorted rows extend the
-table at its end. Each episode's title is a separate table keyed by episode,
-written in file order; the provider joins the two. Do not change global WAL
+table at its end. A bitmap keeps episode membership for the titles pass,
+allowing the larger numbering records to be released after linking. Each
+episode's title is a separate table keyed by episode, written in file order;
+the provider joins the two. FTS retains positions for phrases but omits
+per-document token counts because search ranks by exact title and votes.
+Do not change global WAL
 settings, pooling or durability on the strength of a source review. The
 [IMDb plan](imdb-datasets.md#download-and-import) records each phase's
 measured duration and the resulting file size; further SQL tuning starts from
@@ -463,7 +476,7 @@ new operation using the same display name.
    review must establish atomic observations, one cancellation path, no worker
    UI access and no reports surviving disposal.
 2. Integrate IMDb end to end, restore immediate `optimize`, split phase reporting
-   and introduce its dedicated background-priority import thread. Source review
+   and introduce its dedicated lowest-priority import thread. Source review
    must trace cancel through parsing, both FTS commands, flush, install and
    discard while protecting the installed database.
 3. Integrate explicit/automatic metadata, file facts, subtitle batches and
