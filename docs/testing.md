@@ -4,7 +4,7 @@ The default feedback loop for a small edit should take seconds, not a five-minut
 suite followed by another five-minute suite. Choose evidence for the failure the
 change could cause. Neither a test per change nor a full run per task is required.
 This policy owns test scope across TinyTorrent. [Compilation](compilation.md)
-owns build batching, reuse and failure handling; the root instructions govern
+owns when to build, output reuse and failure handling; the root instructions govern
 permission to run tests and launch desktop applications.
 
 ## The everyday loop
@@ -15,8 +15,9 @@ existing check that adds evidence, with its native filter. Multiple checks of
 the same behavior need a distinct failure each can catch. A full suite is for a
 deliberate integration or release check, or an explicit owner request.
 
-Include reflection-based test calls when reviewing consumers for a queued build.
-Reuse outputs through the [compilation protocol](compilation.md) across checks.
+Include reflection-based test calls when reviewing consumers before a build.
+Run every check on one build's output; [compilation](compilation.md) says how
+to find the output that matches the source.
 Run the installer (`Release.cmd`) only for
 installer work or an owner request, because it also consumes a build number.
 Documentation and screen-copy edits need no application build or suite.
@@ -364,6 +365,20 @@ capture dimensions and scale for actual size claims. A scene labelled 720x560
 does not prove a literal 720-pixel client width when Windows clamps the request.
 
 ## Resource checks
+
+`Capture.ps1 -Review memory` records private committed memory, working set,
+managed bytes and GC commitment at startup, after a Settings tour, after leaving
+Settings for ten seconds, and after repeating the tour. It then visits Settings,
+Connection, Library, Torrents, the global peer map and speed graph, About and
+Credits five times, recording each pass and About's UI memory reading. The peers
+fixture then measures the real table at 100, 1,000 and 10,000 rows, recording its
+visual element counts, scrolling allocations and unload/reload samples. It takes
+its screenshot after the measurements so rendering a capture cannot inflate them. These are
+observations from an off-screen disposable window, not pass/fail memory limits.
+For debugger or profiler attachment, set `TINYTORRENT_MEMORY_AUDIT` to an absolute
+directory. Each checkpoint writes `<stage>.json` and `ready.txt`, then waits up to
+two minutes for `<stage>.continue`. Without that variable, the journey proceeds
+automatically and records its samples in `review.json`.
 
 Clear ownership, bounded retention, on-demand UI, and sensible upstream defaults
 guide the design before measurements exist. Do not invent a memory promise or

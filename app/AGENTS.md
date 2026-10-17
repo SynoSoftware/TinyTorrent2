@@ -20,8 +20,8 @@ Before changing Settings navigation, read its
 
 Reference [TableView.csproj](../lib/TableView/src/TableView.csproj). Keep torrent
 commands, persistence, and product settings in their product owners; the
-library owns generic table mechanics. For authorized builds, use Visual Studio
-MSBuild for affected WinUI projects.
+library owns generic table mechanics. Build through
+[compilation](../docs/compilation.md).
 
 ## Dialogs
 

@@ -56,7 +56,8 @@ find those contracts. Keep live XAML bindings live; `x:Bind` defaults to one-tim
 ## Build and evidence
 
 Project files and [TinyTorrent.slnx](../../TinyTorrent.slnx) define the supported targets and
-package versions. Use Visual Studio MSBuild for the affected WinUI target.
+package versions. Build the affected target through
+[compilation](../../docs/compilation.md), naming it with `-Project`.
 
 Keep [Directory.Build.props](../../Directory.Build.props)'s generated-output exclusions:
 they prevent the XAML compiler's `bin-fl` output from re-entering source globs.

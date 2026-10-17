@@ -6,7 +6,8 @@ param(
 $ErrorActionPreference = 'Stop'
 
 function Resolve-PhysicalPath([string] $Path) {
-    $entry = Get-Item -LiteralPath $Path
+    # Running engines can sit under hidden folders such as AppData.
+    $entry = Get-Item -LiteralPath $Path -Force
     $parent = Split-Path -Path $entry.FullName -Parent
     if (-not $parent) {
         return $entry.FullName

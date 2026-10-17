@@ -173,6 +173,11 @@ public sealed partial class MainWindow
         try
         {
             typeof(Inspector).GetProperty(nameof(Inspector.Peers))!.SetValue(inspector, peers);
+            if (ReviewMode == CaptureMode.Memory)
+            {
+                await CaptureTableMemory(inspector, pane, outcomes);
+                return;
+            }
             foreach (var theme in new[] { "dark", "light" })
             {
                 await Model.Settings.SelectTheme(theme);
@@ -772,15 +777,7 @@ public sealed partial class MainWindow
             var drawing = CaptureElements(pane).OfType<PeerMap>().Single();
             foreach (var count in new[] { 100, 1000, 10000 })
             {
-                var rows = JsonSerializer.SerializeToElement(
-                    Enumerable.Range(0, count).Select(index => new
-                    {
-                        endpoint = $"10.{index / 65536}.{index / 256 % 256}.{index % 256}:51413",
-                        state = "known",
-                        role = index % 3 == 0 ? "seed" : index % 3 == 1 ? "leecher" : "unknown",
-                        sources = new[] { "tracker" },
-                    })
-                );
+                var rows = PeerRows(count);
                 var apply = typeof(Inspector).GetMethod("ApplyPeers", BindingFlags.Instance | BindingFlags.NonPublic)!;
                 var groups = new Dictionary<string, Peer[]>();
                 typeof(Inspector).GetProperty(nameof(Inspector.Peers))!.SetValue(inspector, null);
@@ -862,4 +859,15 @@ public sealed partial class MainWindow
             Model.CloseInspector();
         }
     }
+
+    private static JsonElement PeerRows(int count) =>
+        JsonSerializer.SerializeToElement(
+            Enumerable.Range(0, count).Select(index => new
+            {
+                endpoint = $"10.{index / 65536}.{index / 256 % 256}.{index % 256}:51413",
+                state = "known",
+                role = index % 3 == 0 ? "seed" : index % 3 == 1 ? "leecher" : "unknown",
+                sources = new[] { "tracker" },
+            })
+        );
 }

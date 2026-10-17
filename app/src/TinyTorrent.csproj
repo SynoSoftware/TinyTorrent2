@@ -24,6 +24,7 @@
     <Nullable>enable</Nullable>
     <WindowsPackageType>None</WindowsPackageType>
     <PublishTrimmed>false</PublishTrimmed>
+    <PublishReadyToRun>true</PublishReadyToRun>
     <!-- The solution's build dependency on the engine looks like a reference to
          a project on a newer Windows SDK. The engine is a separate native
          process that the window only copies beside itself. -->

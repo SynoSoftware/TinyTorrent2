@@ -621,6 +621,7 @@ internal enum CaptureMode
     AddLayout,
     SettingsLayout,
     SettingsPrototype,
+    Memory,
     Footer,
 }
 #endif

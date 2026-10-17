@@ -1,6 +1,6 @@
 param(
     [ValidateSet('1', 'smoke', 'shell', 'schedule', 'desktop', 'details', 'details-files', 'files', 'files-layout',
-        'search', 'library', 'library-files', 'traffic', 'peers', 'connections', 'edits', 'add-layout', 'settings-layout', 'settings-prototype', 'footer')]
+        'search', 'library', 'library-files', 'traffic', 'peers', 'connections', 'edits', 'add-layout', 'settings-layout', 'settings-prototype', 'memory', 'footer')]
     [string] $Review = '1',
     [ValidateSet('en', 'es')]
     [string] $Language,
@@ -41,6 +41,21 @@ $executable = Join-Path $output "$engineName.exe"
 $window = Join-Path $output "$windowName.exe"
 if (-not (Test-Path -LiteralPath $window)) {
     throw "$output has no capture build. Build the app with /p:EnableCapture=true first."
+}
+# A second review would stop this review's engine below, so reviews take turns.
+$lock = $null
+while (-not $lock) {
+    try { $lock = [IO.File]::Open((Join-Path $repository 'artifacts/compilation/capture.lock'), 'OpenOrCreate', 'ReadWrite', 'None') }
+    catch [IO.IOException] {
+        Write-Host 'Waiting for another capture review to finish...'
+        Start-Sleep -Seconds 10
+    }
+}
+# Releases the lock when a check below throws before the main try begins, which
+# matters when the script runs inside a console that stays open.
+trap {
+    if ($lock) { $lock.Dispose() }
+    break
 }
 $session = (Get-Process -Id $PID).SessionId
 $running = @(Get-Process -Name $engineName, $windowName, 'Transfer' -ErrorAction SilentlyContinue |
@@ -367,5 +382,6 @@ try {
             if (-not $peer.WaitForExit(10000)) { Stop-Process -InputObject $peer }
         }
         Write-Output "Evidence: $run"
+        $lock.Dispose()
     }
 }

@@ -53,6 +53,7 @@ public sealed partial class MainWindow
         "add-layout" => CaptureMode.AddLayout,
         "settings-layout" => CaptureMode.SettingsLayout,
         "settings-prototype" => CaptureMode.SettingsPrototype,
+        "memory" => CaptureMode.Memory,
         "footer" => CaptureMode.Footer,
         _ => CaptureMode.None,
     };
@@ -2062,6 +2063,11 @@ public sealed partial class MainWindow
                 throw new InvalidOperationException(
                     "The connected engine does not own the capture store."
                 );
+            if (ReviewMode == CaptureMode.Memory)
+            {
+                await CaptureMemory(outcomes);
+                return;
+            }
             if (ReviewMode == CaptureMode.SettingsPrototype)
             {
                 await CaptureSettings(outcomes, completed);

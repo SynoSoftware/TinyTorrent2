@@ -94,11 +94,11 @@ do not define this product.
   [focused review passes](docs/compilation.md#focused-review-passes). They trace
   behavior, simplify ownership and recheck corrections, because one broad review
   can miss defects and the fixes can introduce others.
-- **Owner ruling: compilation is shared work.** Before editing build inputs,
-  requesting or starting compilation, reusing an executable, or handling a build
-  failure, read the [compilation protocol](docs/compilation.md). It authorizes
-  needed builds, batches ready work and assigns failures to one owner, because
-  separate agents repeating five-minute builds waste the owner's machine.
+- **Owner ruling: compile last.** Before compiling, launching a built
+  executable, or handling a build failure, read
+  [compilation](docs/compilation.md). Each build costs minutes of the owner's
+  15 W laptop, which agents share, so a task compiles only when nothing else
+  can answer its remaining questions, and then once for all of them.
 - **Owner ruling: finish the requested work, including its validation.** An
   implementation, fix or review authorizes the focused tests and application
   inspection needed to verify that work. Use shared build outputs and choose
