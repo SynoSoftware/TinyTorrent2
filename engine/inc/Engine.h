@@ -236,6 +236,8 @@ std::string_view Word(std::pair<std::string_view, Value> const (&names)[Size], V
 
 std::string Utf8(std::wstring const& value);
 std::wstring Wide(std::string const& value);
+// Whether two paths name one folder, also when they are spelled differently.
+bool SameFolder(std::filesystem::path const& first, std::filesystem::path const& second);
 std::string Base64(std::string_view bytes);
 std::wstring Executable();
 char const* ToString(NoticeKind kind);

@@ -222,7 +222,7 @@ Application::Application(std::filesystem::path directory, std::wstring sid, bool
         0, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (file == INVALID_HANDLE_VALUE)
     {
-        throw std::runtime_error(Utf8(strings_.Text("error", "ownership")) + " " + Utf8(directory.wstring()));
+        throw Refusal{.key = "ownership", .detail = directory.wstring()};
     }
     ownership_.reset(file);
     WNDCLASSW type{};
@@ -1423,11 +1423,49 @@ void Application::ShowError(std::string const& key, std::wstring detail, std::ve
     notices_->Report({.code = key, .detail = std::move(detail), .actions = std::move(actions)});
 }
 
+void Application::ShowRefusal(Strings const& strings, Refusal refusal)
+{
+    OwnedIcon icon(ErrorIcon());
+    // Without commands, selecting the message only closes the popup, so it
+    // never starts the launch again unasked.
+    Notices notices(strings, false, icon.get(), {});
+    Notices::Failure failure{.code = std::move(refusal.key), .detail = std::move(refusal.detail)};
+    if (refusal.retry)
+    {
+        failure.actions.push_back(notices.Retry(strings.Text("notification", "retry_request_tip"), []
+        {
+            std::wstring command = GetCommandLineW();
+            STARTUPINFOW startup{sizeof(startup)};
+            PROCESS_INFORMATION process{};
+            // The person's click lets this launch take the foreground.
+            AllowSetForegroundWindow(ASFW_ANY);
+            if (CreateProcessW(Executable().c_str(), command.data(), nullptr, nullptr, FALSE, 0, nullptr,
+                nullptr, &startup, &process))
+            {
+                CloseHandle(process.hThread);
+                CloseHandle(process.hProcess);
+            }
+        }));
+    }
+    if (refusal.folder)
+    {
+        failure.actions.push_back(
+            notices.OpenFolder(*refusal.folder, strings.Text("notification", "open_folder_tip")));
+    }
+    notices.ShowFailure(std::move(failure));
+    MSG message{};
+    while (notices.IsOpen() && GetMessageW(&message, nullptr, 0, 0) > 0)
+    {
+        TranslateMessage(&message);
+        DispatchMessageW(&message);
+    }
+}
+
 // The window did not start: Retry opens it again, and Open folder shows the
 // folder that holds the window program.
 void Application::ShowStartError(std::string const& key, std::wstring detail)
 {
-    ShowError(key, std::move(detail), {notices_->Retry(),
+    ShowError(key, std::move(detail), {notices_->Retry(strings_.Text("notification", "retry_tip"), [this] { Open(); }),
         notices_->OpenFolder(WindowExecutable().parent_path(), strings_.Text("notification", "open_folder_tip"))});
 }
 

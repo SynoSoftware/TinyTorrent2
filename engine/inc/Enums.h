@@ -428,12 +428,14 @@ enum class TrayItem
 };
 
 // How a second launch's request to the running engine ended. A different
-// version is its own outcome, because the person must exit that engine first.
+// version or data folder is its own outcome, because the person must exit that
+// engine first.
 enum class Forwarding
 {
     Accepted,
     Refused,
-    OtherVersion
+    OtherVersion,
+    OtherStore
 };
 
 namespace desktop

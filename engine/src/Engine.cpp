@@ -43,6 +43,12 @@ std::wstring Wide(std::string const& value)
     return text;
 }
 
+bool SameFolder(std::filesystem::path const& first, std::filesystem::path const& second)
+{
+    std::error_code error;
+    return first == second || std::filesystem::equivalent(first, second, error);
+}
+
 std::string Base64(std::string_view bytes)
 {
     if (bytes.empty())

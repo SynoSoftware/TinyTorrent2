@@ -11,6 +11,20 @@
 
 namespace tt::desktop
 {
+// Why a launch cannot start, as the failure popup shows it.
+struct Refusal
+{
+    // The explanation's key in the error group.
+    std::string key;
+    // One diagnostic line, such as the folder the failure concerns.
+    std::wstring detail;
+    // Adds Open folder for the folder that holds what the person must close.
+    std::optional<std::filesystem::path> folder;
+    // Adds Retry, which starts this launch again, for a failure the person
+    // can resolve without leaving the popup.
+    bool retry = false;
+};
+
 class Application
 {
 public:
@@ -23,6 +37,9 @@ public:
     void ShowSampleNotice();
 #endif
     static bool ValidSources(std::vector<std::string> const& sources);
+    // Shows why a launch cannot start in the failure popup, without an engine
+    // of its own, and returns once the person closes it.
+    static void ShowRefusal(Strings const& strings, Refusal refusal);
 private:
     struct Activation
     {

@@ -150,6 +150,69 @@ void Restart()
     CloseHandle(process.hThread);
     CloseHandle(process.hProcess);
 }
+
+// Another version or another data folder keeps this launch out until that
+// engine closes. Its folder identifies it, and Retry starts this launch again
+// once it has closed.
+tt::desktop::Refusal OtherEngine(tt::Forwarded const& forwarded)
+{
+    tt::desktop::Refusal refusal{
+        .key = forwarded.outcome == tt::Forwarding::OtherVersion ? "version" : "other_store", .retry = true};
+    // The detail line shortens a path in its middle, so the folder rather than
+    // the program path keeps the folder that tells engines apart in view.
+    if (forwarded.engine)
+    {
+        refusal.folder = forwarded.engine->parent_path();
+        refusal.detail = refusal.folder->wstring();
+    }
+    return refusal;
+}
+
+// MSVC's system and file system errors describe themselves in the ANSI code
+// page rather than UTF-8, so text that is not UTF-8 is read in that page.
+std::wstring Describe(std::exception const& error)
+{
+    std::string text = error.what();
+    try
+    {
+        return tt::Wide(text);
+    }
+    catch (std::runtime_error const&)
+    {
+        auto size = MultiByteToWideChar(CP_ACP, 0, text.data(), static_cast<int>(text.size()), nullptr, 0);
+        std::wstring wide(size, L'\0');
+        MultiByteToWideChar(CP_ACP, 0, text.data(), static_cast<int>(text.size()), wide.data(), size);
+        return wide;
+    }
+}
+
+// Writes why this launch cannot start to the error output for scripts, and
+// shows it in the failure popup unless the launch is headless.
+int Report(tt::desktop::Refusal refusal, bool headless)
+{
+    tt::Strings strings;
+    auto message = strings.Text("error", refusal.key);
+    if (!refusal.detail.empty())
+    {
+        message += L"\n" + refusal.detail;
+    }
+    auto output = GetStdHandle(STD_ERROR_HANDLE);
+    if (output && output != INVALID_HANDLE_VALUE)
+    {
+        auto bytes = tt::Utf8(message) + "\n";
+        DWORD written = 0;
+        WriteFile(output, bytes.data(), static_cast<DWORD>(bytes.size()), &written, nullptr);
+    }
+    if (headless)
+    {
+        OutputDebugStringW(message.c_str());
+    }
+    else
+    {
+        tt::desktop::Application::ShowRefusal(strings, std::move(refusal));
+    }
+    return 1;
+}
 }
 
 int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
@@ -160,7 +223,6 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
     bool headless = false;
     try
     {
-        tt::Strings strings;
         SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         if (FAILED(SetCurrentProcessExplicitAppUserModelID(tt::appId)))
         {
@@ -201,19 +263,19 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
             {
                 if (++index == count)
                 {
-                    throw std::runtime_error(tt::Utf8(strings.Text("error", "argument_registration")));
+                    throw tt::desktop::Refusal{.key = "argument_registration"};
                 }
                 registration = tt::Utf8(arguments[index]);
                 if (registration.empty())
                 {
-                    throw std::runtime_error(tt::Utf8(strings.Text("error", "argument_registration")));
+                    throw tt::desktop::Refusal{.key = "argument_registration"};
                 }
             }
             else if (!literal && argument == tt::option::data)
             {
                 if (++index == count || std::wstring(arguments[index]) == tt::option::literal)
                 {
-                    throw std::runtime_error(tt::Utf8(strings.Text("error", "argument_folder")));
+                    throw tt::desktop::Refusal{.key = "argument_folder"};
                 }
                 directory = arguments[index];
             }
@@ -228,7 +290,7 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
             {
                 if (++index == count)
                 {
-                    throw std::runtime_error(tt::Utf8(strings.Text("error", "argument_class")));
+                    throw tt::desktop::Refusal{.key = "argument_class"};
                 }
                 repairClasses.push_back(arguments[index]);
             }
@@ -246,15 +308,15 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
         LocalFree(arguments);
         if (!registration.empty() && !sources.empty())
         {
-            throw std::runtime_error(tt::Utf8(strings.Text("error", "argument_sources")));
+            throw tt::desktop::Refusal{.key = "argument_sources"};
         }
         if (exiting && (!registration.empty() || !sources.empty() || background || !directory.empty()))
         {
-            throw std::runtime_error(tt::Utf8(strings.Text("error", "argument_exit")));
+            throw tt::desktop::Refusal{.key = "argument_exit"};
         }
         if (!sources.empty() && !tt::desktop::Application::ValidSources(sources))
         {
-            throw std::runtime_error(tt::Utf8(strings.Text("error", "sources_limit")));
+            throw tt::desktop::Refusal{.key = "sources_limit"};
         }
         // The window starts this repair as an administrator, and forwarding
         // would hand it to the person's own engine, which cannot change
@@ -264,7 +326,7 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
         {
             if (!registration.empty() || !sources.empty() || exiting || background || !directory.empty())
             {
-                throw std::runtime_error(tt::Utf8(strings.Text("error", "argument_repair")));
+                throw tt::desktop::Refusal{.key = "argument_repair"};
             }
             tt::Registration().RepairMachine(repairClasses);
             return 0;
@@ -287,20 +349,19 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
         // An engine with its own store, such as a test's, is not the person's
         // copy, so only the default store moves the registrations to it. A
         // restart names the default store explicitly, so compare the folders.
-        std::error_code error;
-        bool personal = directory == standard || std::filesystem::equivalent(directory, standard, error);
+        bool personal = tt::SameFolder(directory, standard);
         if (personal && !exiting)
         {
             if (IsAppContainer())
             {
-                throw std::runtime_error(tt::Utf8(strings.Text("error", "sandbox")));
+                throw tt::desktop::Refusal{.key = "sandbox"};
             }
             if (IsRedirected(standard))
             {
                 wchar_t buffer[2]{};
                 if (GetEnvironmentVariableW(breakaway, buffer, 2))
                 {
-                    throw std::runtime_error(tt::Utf8(strings.Text("error", "package")));
+                    throw tt::desktop::Refusal{.key = "package"};
                 }
                 Restart();
                 return 0;
@@ -319,50 +380,53 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
         auto acquired = WaitForSingleObject(mutex.get(), 0);
         if (acquired == WAIT_TIMEOUT)
         {
-            auto forwarding = tt::Forwarding::Accepted;
+            tt::Forwarded forwarded{tt::Forwarding::Accepted};
             if (exiting)
             {
-                forwarding = tt::Pipe::Forward(sid, {{"command", "exit"}});
+                forwarded = tt::Pipe::Forward(sid, {{"command", "exit"}});
             }
             else if (!registration.empty())
             {
-                forwarding =
-                    tt::Pipe::Forward(sid, {{"command", "registration"}, {"action", registration}});
+                // An engine of another store, such as a test's, would register
+                // its own program with Windows.
+                forwarded = tt::Pipe::Forward(
+                    sid, {{"command", "registration"}, {"action", registration}}, directory);
             }
             else if (!sources.empty())
             {
-                forwarding = tt::Pipe::Forward(sid, {{"command", "activate_sources"}, {"sources", sources}});
+                forwarded = tt::Pipe::Forward(
+                    sid, {{"command", "activate_sources"}, {"sources", sources}}, directory);
             }
 #ifdef _DEBUG
             // The running engine shows the sample, as it takes another
             // launch's sources.
             else if (notice)
             {
-                forwarding = tt::Pipe::Forward(sid, {{"command", "sample_notice"}});
+                forwarded = tt::Pipe::Forward(sid, {{"command", "sample_notice"}});
             }
 #endif
             else if (!background && !headless)
             {
-                forwarding = tt::Pipe::Forward(sid);
+                forwarded = tt::Pipe::Forward(sid, {{"command", "open"}}, directory);
             }
-            if (forwarding == tt::Forwarding::OtherVersion)
+            if (forwarded.outcome == tt::Forwarding::OtherVersion || forwarded.outcome == tt::Forwarding::OtherStore)
             {
-                throw std::runtime_error(tt::Utf8(strings.Text("error", "version")));
+                throw OtherEngine(forwarded);
             }
             if (exiting)
             {
                 acquired = WaitForSingleObject(mutex.get(), 30'000);
                 if (acquired != WAIT_OBJECT_0 && acquired != WAIT_ABANDONED)
                 {
-                    throw std::runtime_error(tt::Utf8(strings.Text("error", "engine_running")));
+                    throw tt::desktop::Refusal{.key = "engine_running", .retry = true};
                 }
             }
             else
             {
                 mutex.reset();
-                if (forwarding == tt::Forwarding::Refused)
+                if (forwarded.outcome == tt::Forwarding::Refused)
                 {
-                    throw std::runtime_error(tt::Utf8(strings.Text("error", "activation_refused")));
+                    throw tt::desktop::Refusal{.key = "activation_refused", .retry = true};
                 }
                 return 0;
             }
@@ -385,7 +449,7 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
                 auto closed = WaitForSingleObject(window.get(), 0);
                 if (closed != WAIT_OBJECT_0 && closed != WAIT_ABANDONED)
                 {
-                    throw std::runtime_error(tt::Utf8(strings.Text("error", "window_open")));
+                    throw tt::desktop::Refusal{.key = "window_open", .retry = true};
                 }
                 ReleaseMutex(window.get());
             }
@@ -399,9 +463,8 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
             result = response.value("ok", false) ? 0 : 1;
             if (result)
             {
-                auto message = tt::Utf8(strings.Text("error", "registration_failed"));
-                auto detail = response.at("error").at("detail").get<std::string>();
-                throw std::runtime_error(detail.empty() ? message : message + "\n\n" + detail);
+                throw tt::desktop::Refusal{.key = "registration_failed",
+                    .detail = tt::Wide(response.at("error").at("detail").get<std::string>())};
             }
         }
         else
@@ -422,24 +485,15 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
         ReleaseMutex(mutex.get());
         return result;
     }
+    catch (tt::desktop::Refusal& refusal)
+    {
+        // Another launch can start while this one waits for the person.
+        mutex.reset();
+        return Report(std::move(refusal), headless);
+    }
     catch (std::exception const& error)
     {
-        auto message = tt::Strings().Text("error", "start") + L"\n\n" + tt::Wide(error.what());
-        auto output = GetStdHandle(STD_ERROR_HANDLE);
-        if (output && output != INVALID_HANDLE_VALUE)
-        {
-            auto bytes = tt::Utf8(message) + "\n";
-            DWORD written = 0;
-            WriteFile(output, bytes.data(), static_cast<DWORD>(bytes.size()), &written, nullptr);
-        }
-        if (headless)
-        {
-            OutputDebugStringA(error.what());
-        }
-        else
-        {
-            MessageBoxW(nullptr, message.c_str(), tt::productName, MB_OK | MB_ICONERROR);
-        }
-        return 1;
+        mutex.reset();
+        return Report({.key = "start", .detail = Describe(error)}, headless);
     }
 }

@@ -1,4 +1,5 @@
 #include "Pipe.h"
+#include "Owned.h"
 #include <limits>
 #include <stdexcept>
 
@@ -356,7 +357,8 @@ void Pipe::Deliver(std::shared_ptr<Connection> client, HANDLE handle)
     }
 }
 
-Forwarding Pipe::Forward(std::wstring const& sid, Json request)
+Forwarded Pipe::Forward(std::wstring const& sid, Json request,
+    std::optional<std::filesystem::path> const& store)
 {
     auto name = Name(sid);
     auto deadline = GetTickCount64() + forwardTimeout;
@@ -365,7 +367,7 @@ Forwarding Pipe::Forward(std::wstring const& sid, Json request)
     {
         if (GetTickCount64() >= deadline)
         {
-            return Forwarding::Refused;
+            return {};
         }
         if (WaitNamedPipeW(name.c_str(), connectWait))
         {
@@ -378,17 +380,34 @@ Forwarding Pipe::Forward(std::wstring const& sid, Json request)
         }
         Sleep(retryDelay);
     }
+    Forwarded forwarded;
+    ULONG processId = 0;
+    bool identified = GetNamedPipeServerProcessId(handle, &processId);
+    if (identified)
+    {
+        OwnedHandle process(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, processId));
+        std::wstring path(32768, L'\0');
+        auto size = static_cast<DWORD>(path.size());
+        if (process && QueryFullProcessImageNameW(process.get(), 0, path.data(), &size))
+        {
+            path.resize(size);
+            forwarded.engine = std::move(path);
+        }
+    }
     Json hello;
     Io io{handle, nullptr, nullptr, GetTickCount64() + forwardTimeout};
-    auto outcome = Forwarding::Refused;
     if (Read(io, hello))
     {
-        outcome = hello.value("version", 0) == version ? Forwarding::Accepted : Forwarding::OtherVersion;
+        forwarded.outcome = hello.value("version", 0) == version ? Forwarding::Accepted : Forwarding::OtherVersion;
     }
-    if (outcome == Forwarding::Accepted)
+    if (forwarded.outcome == Forwarding::Accepted && store &&
+        !SameFolder(Wide(hello.value("data_directory", std::string())), *store))
     {
-        ULONG processId = 0;
-        if (GetNamedPipeServerProcessId(handle, &processId))
+        forwarded.outcome = Forwarding::OtherStore;
+    }
+    if (forwarded.outcome == Forwarding::Accepted)
+    {
+        if (identified)
         {
             AllowSetForegroundWindow(processId);
         }
@@ -397,9 +416,9 @@ Forwarding Pipe::Forward(std::wstring const& sid, Json request)
         Json reply;
         bool accepted = Write(io, bytes) && Read(io, reply) &&
             reply.value("request_id", 0) == 1 && reply.value("ok", false);
-        outcome = accepted ? Forwarding::Accepted : Forwarding::Refused;
+        forwarded.outcome = accepted ? Forwarding::Accepted : Forwarding::Refused;
     }
     CloseHandle(handle);
-    return outcome;
+    return forwarded;
 }
 }

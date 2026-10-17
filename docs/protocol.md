@@ -85,7 +85,10 @@ The greeting also gives the absolute data-directory path for an explicit
 Restart, so a surviving window restarts the same saved store rather than silently
 choosing a different developer or user-data location. A window ignores it from
 an engine of another version, except a debug build that replaces that engine and
-keeps its store.
+keeps its store. A second launch that opens the window, adds torrents or changes the Windows
+registration compares
+it with its own store and does not forward to an engine of another store; like a
+different version, that error says where the other engine runs.
 
 ## Outcomes and reconnection
 

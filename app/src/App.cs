@@ -72,18 +72,15 @@ public partial class App : Application
             try
             {
                 PipeClient.StartEngine(text);
+                Exit();
+                return;
             }
+            // Without an engine this window opens and shows why it cannot
+            // connect, as it does when its engine stops.
             catch (Exception error) when (error is FileNotFoundException or Win32Exception)
             {
-                MessageBoxW(
-                    IntPtr.Zero,
-                    text.Error("unknown", error.Message),
-                    text.Get("window", "title"),
-                    0x10
-                );
+                System.Diagnostics.Debug.WriteLine($"The engine did not start: {error.Message}");
             }
-            Exit();
-            return;
         }
         _instance = new Mutex(false, "Local\\TinyTorrent.Window." + PipeClient.LogonSid);
         var owned = Acquire(_instance, 0);
@@ -112,11 +109,12 @@ public partial class App : Application
                 {
                     await PipeClient.ForwardOpen(text);
                 }
+                // The window that holds the lock shows the engine's state, so it
+                // comes to the front instead.
                 catch (Exception error)
                 {
-                    // The message box has no title that names the failure.
-                    var message = text.Error("unknown", error.Message);
-                    MessageBoxW(IntPtr.Zero, message, text.Get("window", "title"), 0x10);
+                    System.Diagnostics.Debug.WriteLine($"Forwarding Open to the engine failed: {error.Message}");
+                    ShowOtherWindow();
                 }
             }
             finally
@@ -211,10 +209,50 @@ public partial class App : Application
         {
             CrashDialog.Show(report, _strings, _windowHandle);
         }
+        // A window that is closing can no longer own the dialog, so it shows
+        // on its own; the report is already in the log if that fails too.
+        catch (Exception failure) when (_windowHandle != IntPtr.Zero)
+        {
+            System.Diagnostics.Debug.WriteLine($"Could not show the fatal error: {failure}");
+            try
+            {
+                CrashDialog.Show(report, _strings, IntPtr.Zero);
+            }
+            catch (Exception again)
+            {
+                System.Diagnostics.Debug.WriteLine($"Could not show the fatal error: {again}");
+            }
+        }
         catch (Exception failure)
         {
             System.Diagnostics.Debug.WriteLine($"Could not show the fatal error: {failure}");
-            MessageBoxW(IntPtr.Zero, report.Text, "TinyTorrent", 0x2010);
+        }
+    }
+
+    // Brings the window that holds the instance lock to the front.
+    private static void ShowOtherWindow()
+    {
+        using var current = Process.GetCurrentProcess();
+        foreach (var process in Process.GetProcessesByName(current.ProcessName))
+        {
+            using (process)
+            {
+                try
+                {
+                    var window = process.MainWindowHandle;
+                    if (
+                        process.Id == current.Id
+                        || process.SessionId != current.SessionId
+                        || window == IntPtr.Zero
+                    )
+                        continue;
+                    if (IsIconic(window))
+                        ShowWindow(window, 9); // SW_RESTORE
+                    SetForegroundWindow(window);
+                    return;
+                }
+                catch (InvalidOperationException) { }
+            }
         }
     }
 
@@ -227,6 +265,12 @@ public partial class App : Application
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
     private static extern int SetCurrentProcessExplicitAppUserModelID(string appId);
 
-    [DllImport("user32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
-    private static extern int MessageBoxW(IntPtr owner, string text, string caption, uint type);
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern bool IsIconic(IntPtr window);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern bool ShowWindow(IntPtr window, int command);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern bool SetForegroundWindow(IntPtr window);
 }

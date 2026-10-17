@@ -56,9 +56,13 @@ public:
     // once the shown popup has closed.
     void Notify();
     void Close();
+    // Shows a failure at once, even while Windows holds notifications back,
+    // because it answers something the person just did.
+    void ShowFailure(Failure failure);
+    bool IsOpen() const { return popup_.IsOpen(); }
     // The buttons that failures offer, so each looks and reads the same
-    // wherever it shows. Retry opens the window again.
-    Popup::Action Retry() const;
+    // wherever it shows.
+    Popup::Action Retry(std::wstring tooltip, std::function<void()> run) const;
     Popup::Action OpenFolder(std::filesystem::path folder, std::wstring tooltip) const;
     Popup::Action ForceExit(std::function<void()> run) const;
 #ifdef _DEBUG
@@ -76,7 +80,6 @@ private:
     bool Accepts(NoticeKind kind) const;
     bool IsOn(NoticeSwitch notices) const;
     void ShowBackground();
-    void ShowFailure(Failure failure);
     // Offers the More menu when there is a switch that turns `notices` off.
     void Show(Popup::Content content, std::optional<NoticeSwitch> notices);
     Popup::Content Message(Notice const& notice) const;

@@ -315,10 +315,9 @@ std::function<void()> Notices::Selection(Notice const& notice) const
 }
 
 // Lucide's rotate-ccw glyph, as the window's Retry button shows.
-Popup::Action Notices::Retry() const
+Popup::Action Notices::Retry(std::wstring tooltip, std::function<void()> run) const
 {
-    return {L'\uE148', strings_.Text("notification", "retry"), strings_.Text("notification", "retry_tip"),
-        commands_.open};
+    return {L'\uE148', strings_.Text("notification", "retry"), std::move(tooltip), std::move(run)};
 }
 
 // Lucide's folder-open glyph. Open alone would read as opening the window, so

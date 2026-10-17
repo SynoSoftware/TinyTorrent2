@@ -6,7 +6,9 @@
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
+#include <filesystem>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <sddl.h>
 #include <stdexcept>
@@ -36,6 +38,14 @@ public:
 
 private:
     SECURITY_ATTRIBUTES attributes_{sizeof(SECURITY_ATTRIBUTES), nullptr, FALSE};
+};
+
+// How a forwarded request ended, and the running engine's executable when
+// Windows reveals it.
+struct Forwarded
+{
+    Forwarding outcome = Forwarding::Refused;
+    std::optional<std::filesystem::path> engine;
 };
 
 class Pipe
@@ -70,7 +80,10 @@ public:
     Pipe(Pipe const&) = delete;
     Pipe& operator=(Pipe const&) = delete;
     void Stop();
-    static Forwarding Forward(std::wstring const& sid, Json request = {{"command", "open"}});
+    // With a store, the request is not sent to an engine that uses another data
+    // folder, because it would open or add to that folder's torrents.
+    static Forwarded Forward(std::wstring const& sid, Json request,
+        std::optional<std::filesystem::path> const& store = std::nullopt);
 
 private:
     static std::wstring Name(std::wstring const& sid);

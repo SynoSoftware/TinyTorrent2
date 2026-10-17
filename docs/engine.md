@@ -602,7 +602,23 @@ start-at-sign-in starts the engine with WinUI closed, and so does every start
 when the person chose to start in the notification area. That choice is known
 once startup has read the settings, so a start opens WinUI only then. Simultaneous launches
 resolve to one owner; subsequent launches forward their activation and exit only
-after ownership of that request has been accepted or rejection reported.
+after ownership of that request has been accepted or rejection reported. A launch
+that opens the window, adds torrents or changes the Windows registration
+reports, instead of forwarding, when the running engine uses another data
+folder, such as a test's, because that engine would show other torrents or an
+off-screen window, or register its own program. The
+[greeting](protocol.md#encoding-and-validation) supplies that folder.
+
+A launch that cannot start shows why in the failure popup and exits when the
+person closes it; it releases the instance lock first, so another launch is not
+blocked while it waits. The popup stays until closed, as every failure does.
+Retry starts the same launch again and appears only where the person can
+resolve the cause meanwhile: another version or data folder is running, the
+running engine did not accept the request, or `--exit` found TinyTorrent still
+running. The detail line then names the other engine's program folder, and
+Open folder shows it. Selecting
+the message only closes the popup. A headless launch writes the reason to the
+error output instead.
 
 Shortcuts, file associations, and taskbar relaunch enter through the engine.
 Use one [AppUserModelID](https://learn.microsoft.com/en-us/windows/win32/shell/appids)
@@ -610,8 +626,9 @@ for the cooperating processes, window, and engine-targeting shortcut. Without a
 shortcut, set the window's [relaunch command and display-name resource](https://learn.microsoft.com/en-us/windows/win32/properties/props-system-appusermodel-relaunchcommand)
 together. Verify pin/close/relaunch with the selected unpackaged installer.
 
-A WinUI executable started directly enters through the engine and exits. The
-engine starts its window with `--engine`, which selects ordinary window startup
+A WinUI executable started directly enters through the engine and exits. When
+the engine cannot start, the window opens instead and shows why it cannot
+connect, as it does when its engine stops. The engine starts its window with `--engine`, which selects ordinary window startup
 without repeating the hand-off. This is a launch mode, not authentication;
 [protocol isolation](protocol.md#isolation) admits only the same user and logon.
 The debugger's launch profile passes `--engine`, so the debugger stays attached
@@ -636,7 +653,8 @@ WinUI acquires one logon-scoped [mutex](https://learn.microsoft.com/en-us/window
 without waiting and holds it on its main thread from before window/draft creation
 until exit, so one window owns the drafts, also across engine restarts. A WinUI
 that cannot acquire the mutex forwards its activation through the engine to the
-existing window and exits. The mutex stores no product state; the engine still
+existing window and exits. When forwarding fails, it brings that window to the
+front, which shows the engine's state. The mutex stores no product state; the engine still
 owns launch policy.
 
 Activation follows the interface's [Add policy](interface.md#add). Several
