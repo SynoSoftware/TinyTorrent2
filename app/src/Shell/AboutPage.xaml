@@ -38,6 +38,7 @@
                 <ColumnDefinition Width="*" />
               </Grid.ColumnDefinitions>
               <Image
+                x:Name="Logo"
                 Source="ms-appx:///Assets/tinyTorrent.svg"
                 Width="72"
                 Height="78"

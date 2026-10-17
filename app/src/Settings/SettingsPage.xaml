@@ -137,7 +137,7 @@
           ToolTipService.ToolTip="{x:Bind Main.ReturnText, Mode=OneWay}"
         >
           <StackPanel Orientation="Horizontal" Spacing="12">
-            <Image Source="ms-appx:///Assets/tinyTorrent.svg" Width="40" Height="40" />
+            <Image x:Name="Logo" Source="ms-appx:///Assets/tinyTorrent.svg" Width="40" Height="40" />
             <TextBlock
               Text="TinyTorrent"
               Style="{StaticResource TinyTorrentGroupTitleTextStyle}"

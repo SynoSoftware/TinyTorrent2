@@ -23,11 +23,14 @@ public sealed class Strings
         ]);
 
     // The flag beside the name shows the region, so the name leaves it out:
-    // Portuguese reads Português, not Português (Brasil).
-    internal static string NativeName(CultureInfo language) =>
-        language.TextInfo.ToTitleCase(
-            (language.IsNeutralCulture ? language : language.Parent).NativeName
-        );
+    // Portuguese reads Português, not Português (Brasil). Invariant casing keeps
+    // .NET from opening an ICU collator for each language, which it would then
+    // hold for the process.
+    internal static string NativeName(CultureInfo language)
+    {
+        var name = (language.IsNeutralCulture ? language : language.Parent).NativeName;
+        return char.ToUpperInvariant(name[0]) + name[1..];
+    }
 
     // The region whose flag stands for the language. English text uses British
     // spelling, so it shows the UK flag rather than its default region's.

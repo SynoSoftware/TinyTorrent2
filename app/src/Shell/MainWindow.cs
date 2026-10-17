@@ -46,6 +46,8 @@ public sealed partial class MainWindow : Window
         SelectedMap = new RelayCommand(() => ShowConnections(false), () => CanShowMap(false));
         AllMap = new RelayCommand(() => ShowConnections(true), () => CanShowMap(true));
         InitializeComponent();
+        Svg.Fit(TorrentsFace);
+        Svg.Fit(LibraryFace);
         LanguageButton.Flyout = MenuItems.Flyout(LanguageMenu, () => Model.Text);
         ConfigureWork();
         Model.Navigation.PropertyChanged += (_, _) => UpdateBack();

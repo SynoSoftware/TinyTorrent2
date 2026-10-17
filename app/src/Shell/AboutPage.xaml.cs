@@ -28,6 +28,7 @@ public sealed partial class AboutPage : UserControl
     {
         Main = main;
         InitializeComponent();
+        Svg.Fit(Logo);
         AutomationProperties.SetAutomationId(_company, "AboutCompany");
         AutomationProperties.SetAutomationId(_source, "AboutSource");
         AutomationProperties.SetAutomationId(_credits, "AboutCredits");

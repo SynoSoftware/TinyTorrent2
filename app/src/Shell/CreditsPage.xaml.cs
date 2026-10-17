@@ -250,6 +250,7 @@ public sealed partial class CreditsPage : UserControl
                         Width = 64,
                         Height = 32,
                     };
+                    Svg.Fit(logo);
                     AutomationProperties.SetAccessibilityView(
                         logo,
                         Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw

@@ -117,11 +117,15 @@ public sealed partial class PeerMap : UserControl
                 return;
             var canvas = new CanvasControl();
             _canvas = canvas;
-            _renderer = new MapRenderer(canvas, _model, _viewport, world);
+            var renderer = new MapRenderer(canvas, _model, _viewport, world);
+            _renderer = renderer;
             canvas.CreateResources += (_, _) =>
             {
+                // Win2D also raises this for a canvas that Stop has retired.
+                if (!ReferenceEquals(_canvas, canvas))
+                    return;
                 _ready = true;
-                _renderer.ReleaseGeometry();
+                renderer.ReleaseGeometry();
                 QueuePreparation();
             };
             canvas.SizeChanged += (_, _) => QueuePreparation();

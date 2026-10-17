@@ -60,6 +60,8 @@ public sealed partial class SettingsPage : UserControl
         Main = main;
         Model = main.Settings;
         InitializeComponent();
+        Svg.Fit(Logo);
+        Svg.Fit(PageArtwork);
         Categories.ItemInvoked += OnCategoryInvoked;
         // Keep the overhanging corner marks off the navigation pane and caption.
         Root.SizeChanged += Motion.Clip;
@@ -142,19 +144,26 @@ public sealed partial class SettingsPage : UserControl
             }
         )
         {
-            item.Icon = theme.HighContrast
-                ? new FontIcon
+            if (theme.HighContrast)
+            {
+                item.Icon = new FontIcon
                 {
                     FontFamily = Lucide.Font,
                     Glyph = glyph,
                     FontSize = size,
-                }
-                : new ImageIcon
+                };
+            }
+            else
+            {
+                var icon = new ImageIcon
                 {
                     Source = new SvgImageSource(new Uri($"ms-appx:///Assets/Settings/{asset}.svg")),
                     Width = size,
                     Height = size,
                 };
+                Svg.Fit(icon);
+                item.Icon = icon;
+            }
             AutomationProperties.SetAccessibilityView(item.Icon, AccessibilityView.Raw);
         }
     }
