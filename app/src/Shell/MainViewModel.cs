@@ -1127,7 +1127,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         {
             if (revision != _languageRevision || _closed)
                 return;
-            _requestedLanguage = Text.Language;
+            // The failed language stays requested, so later snapshots that
+            // carry the same saved language do not load it and report again.
             Report(error);
         }
     }
@@ -1421,10 +1422,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         if (ReferenceEquals(sender, Settings))
         {
             ObserveSpace();
+            ObserveMemory();
             Changed(nameof(Theme));
             Changed(nameof(ShowsExternalIp));
             Changed(nameof(ShowsTitleSpeeds));
             Changed(nameof(ShowsFreeSpace));
+            Changed(nameof(ShowsMemory));
             RefreshIncoming();
             RefreshLimits();
             RefreshRates();

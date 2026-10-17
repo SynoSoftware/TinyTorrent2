@@ -75,6 +75,7 @@ constexpr char confirmsExit[] = "confirm_exit";
 constexpr char showsExternalIp[] = "show_external_ip";
 constexpr char showsTitleSpeeds[] = "show_title_speeds";
 constexpr char showsFreeSpace[] = "show_free_space";
+constexpr char showsMemory[] = "show_memory";
 constexpr Number refreshInterval{"refresh_interval", 1000, 10000};
 constexpr char recentInterval[] = "recent_interval";
 constexpr char historyInterval[] = "history_interval";
@@ -339,6 +340,7 @@ Json Engine::State::Settings::ToJson() const
         {setting::showsExternalIp, showsExternalIp},
         {setting::showsTitleSpeeds, showsTitleSpeeds},
         {setting::showsFreeSpace, showsFreeSpace},
+        {setting::showsMemory, showsMemory},
         {setting::refreshInterval.key, refreshInterval},
         {setting::recentInterval, recentInterval},
         {setting::historyInterval, historyInterval},
@@ -460,6 +462,7 @@ void Engine::State::Settings::Read(Json const& saved)
     showsExternalIp = ReadSaved(saved, setting::showsExternalIp, showsExternalIp);
     showsTitleSpeeds = ReadSaved(saved, setting::showsTitleSpeeds, showsTitleSpeeds);
     showsFreeSpace = ReadSaved(saved, setting::showsFreeSpace, showsFreeSpace);
+    showsMemory = ReadSaved(saved, setting::showsMemory, showsMemory);
     refreshInterval = setting::refreshInterval.Read(saved, refreshInterval);
     if (auto found = saved.find(setting::recentInterval); found != saved.end() && IsRecentInterval(*found))
     {
@@ -702,6 +705,10 @@ std::optional<Engine::State::Settings> Engine::State::Settings::With(Json const&
         else if (key == setting::showsFreeSpace && value.is_boolean())
         {
             next.showsFreeSpace = value;
+        }
+        else if (key == setting::showsMemory && value.is_boolean())
+        {
+            next.showsMemory = value;
         }
         else if (key == setting::refreshInterval.key && setting::refreshInterval.Accepts(value))
         {

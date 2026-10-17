@@ -277,7 +277,7 @@ buttons with icons keep the same height and alignment as those without.
 Platform-owned glyphs, such as menu-item icons and control chevrons, keep their
 native size.
 
-<a id="icon-sizes"></a>Icon sizes come from seven role tokens in `App.xaml`, so one
+<a id="icon-sizes"></a>Icon sizes come from eight role tokens in `App.xaml`, so one
 role has one size and a size changes in one place:
 
 - **Chevron**, 12: chevrons the application draws in place of a platform one.
@@ -285,11 +285,17 @@ role has one size and a size changes in one place:
   table cells, notices, labelled buttons and title-bar buttons, whose
   neighbours are the window's small caption glyphs.
 - **Button**, 20: the glyph of an icon-only button.
-- **Header**, 20: the icon that leads a group, section, card or statistic.
+- **Header**, 20: the icon that leads a group, section or card.
+- **Statistic**, 24: the icon beside a statistic's caption and value.
 - **Surface**, 24: the icon that identifies a surface, such as a dialog title,
   the inspector heading, the workspace switch or Settings navigation.
 - **Toolbar**, 24: toolbar buttons.
 - **Large**, 32: empty states.
+
+**Owner ruling: an icon that leads stacked lines is centred on all of them,**
+such as a caption and its value or a title and its summary, so it identifies
+the whole block rather than its first line. The InfoBar keeps WinUI's own
+layout, which places its severity icon beside the title.
 
 Each role takes the largest size its containers hold without growing. The
 filter and inspector strips keep their sixteen-pixel glyph, because their clip
@@ -782,7 +788,9 @@ days or more reads as ∞, because a raw count of minutes cannot
 be read at a glance. Seeds and Peers each show the connected count with the
 swarm total in parentheses: the tracker's count when it
 reports one, otherwise the peers this session has heard of. Peers excludes
-seeds. Added and Completed read as elapsed time, such as 3 hours ago, because
+seeds. Both sort by the swarm total, because it shows how widely a torrent is
+shared, while the connected count follows this session's own connections.
+Added and Completed read as elapsed time, such as 3 hours ago, because
 how long ago a torrent arrived or finished is what the person compares; the
 exact date and time is the tooltip. Completed shows a dash until the torrent
 is complete.
@@ -904,8 +912,10 @@ Settings shows its current section, such as `Settings · Network`, from the
 navigation state; it has no collection count. About has no collection facts. Retained disconnected data is
 labelled Last known, while initial torrent connection says Connecting.
 About and Credits show their navigation location, process memory and all-time
-download/upload totals in the existing status bar. The main view model samples
-resident working sets off the UI thread, only while these pages are visible;
+download/upload totals in the existing status bar. Appearance's Show memory
+usage, off by default, shows the same memory item at the start of the transfer
+group on every other page. The main view model samples resident working sets
+off the UI thread, only while the memory item is shown;
 the pipe client identifies the connected engine process. Tooltips state that
 working sets include shared pages. All-time totals come from the same confirmed
 engine snapshot as Settings, with unavailable values during disconnection.
@@ -1432,9 +1442,10 @@ the end.** One shared header keeps the tabs
 consistent. Facts describe the selected tab using its existing owners, so they
 remain current without another query or stored summary. Measured content widths
 move facts below the title, then into separate rows when necessary. Captions and
-values and the single-line page title keep their full text in tooltips. Home uses one
-Home title beside its logo, an activity subtitle, and session and all-time totals
-in the 20-DIP semibold role, avoiding a repeated heading and small primary facts.
+values and the single-line page title keep their full text in tooltips. Facts
+use the shared statistic, the same as the inspector's statistics strip. Home uses
+one Home title beside its logo, an activity subtitle, and session and all-time
+totals, with download and upload in their theme colours.
 
 Home provides curated shortcuts and the same theme, Windows integration and
 automatic subtitle controls as their category pages. It shows facts supplied
@@ -1502,9 +1513,9 @@ Appearance uses one responsive three-column native radio group for System,
 Light and Dark. All previews share a compact 21:9 crop with 8-DIP clipped
 corners; System splits the same Light/Dark artwork. Display language remains
 a separate row below. There is no redundant theme dropdown. Free space,
-external IP and title-bar speeds use three directly accessible switch cards.
-The external-IP card follows Advanced mode; hiding it keeps its saved
-value and removes its whole card from the layout.
+external IP, memory usage and title-bar speeds use four directly accessible
+switch cards. The external-IP and memory-usage cards follow Advanced mode;
+hiding one keeps its saved value and removes its whole card from the layout.
 
 Home, search and related links use one reveal-expand-scroll-focus path.
 
@@ -1862,11 +1873,14 @@ The map and table share live peer observations and keep individual connections
 in the table. Connection and active counts join the existing status-bar context;
 map hover details describe the location, rates and precision.
 The map area shows total download and upload rates for the inspector's selection
-in a quiet bottom-left readout, without a scope label. These totals come from
+as a Speed statistic, the same shared statistic as Settings and the General
+section, with no background so it blends into the map. These totals come from
 torrent summaries, including transfers with no mapped location, and use the
 existing rate formatting and download/upload theme brushes. The shared peer-view
 menu offers Speed position: Top-left, Bottom-left or Bottom-right, saved with
-the peer layout. Top-right stays reserved for the map's zoom and Fit controls.
+the peer layout and starting at Bottom-right. Top-right stays reserved for the
+map's close button. The zoom and Fit controls sit at the bottom centre, so
+moving Speed never moves them.
 [Peer location](peer-location.md#map) owns aggregation, precision and rendering.
 With no torrent selected, Peers shows all torrents and Speed shows session
 history. With multiple torrents selected, both sections combine only that
@@ -1895,7 +1909,8 @@ so a working route cannot inherit another route's error. Diagnostic text also
 appears as automation help. These details add no columns or network requests.
 
 **Owner ruling:** the six inspector sections use a native SelectorBar at the
-start of one header row. The torrent name is centred in the space between the
+start of one header row. Each section, and each Library section, shows a Lucide
+icon before its name, as Microsoft's SelectorBar guidance does. The torrent name is centred in the space between the
 SelectorBar and the Pin and Close icon buttons. The owner
 could not get used to a left navigation pane, and one row keeps the sections
 visible while the working view gets the full inspector width. The person

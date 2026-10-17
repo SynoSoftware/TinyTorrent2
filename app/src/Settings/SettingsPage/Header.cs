@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Shell;
 using Windows.Foundation;
 
@@ -213,63 +214,50 @@ public sealed partial class SettingsPage
                 break;
         }
 
-        var style = (Style)
-            Application.Current.Resources[
-                category is null ? "SubtitleTextBlockStyle" : "TinyTorrentTitleDetailTextStyle"
-            ];
-        var captionStyle = (Style)
-            Application.Current.Resources[
-                category is null ? "TinyTorrentTitleDetailTextStyle" : "BodyStrongTextBlockStyle"
-            ];
-        FirstCaption.Style = captionStyle;
-        SecondCaption.Style = captionStyle;
-        ShowFact(FirstIcon, FirstCaption, FirstValue, first, style);
-        ShowFact(SecondIcon, SecondCaption, SecondValue, second, style);
+        ShowFact(FirstFact, FirstValue, first);
+        ShowFact(SecondFact, SecondValue, second);
+        var totals = category is null ? Visibility.Visible : Visibility.Collapsed;
+        var values = category is null ? Visibility.Collapsed : Visibility.Visible;
+        FirstTotals.Visibility = totals;
+        SecondTotals.Visibility = totals;
+        FirstValue.Visibility = values;
+        SecondValue.Visibility = values;
         if (category is null)
         {
-            ShowTotals(FirstValue, Main.SessionTotals);
-            ShowTotals(SecondValue, Main.LifetimeTotals);
+            ShowTotals(FirstTotals, Main.SessionTotals);
+            ShowTotals(SecondTotals, Main.LifetimeTotals);
         }
         ArrangeHeader();
     }
 
     private static void ShowFact(
-        FontIcon icon,
-        TextBlock caption,
+        Field field,
         TextBlock value,
-        (string Glyph, string Caption, string Value) fact,
-        Style style
+        (string Glyph, string Caption, string Value) fact
     )
     {
-        icon.Glyph = fact.Glyph;
-        caption.Text = fact.Caption;
-        ToolTipService.SetToolTip(caption, fact.Caption);
-        value.Style = style;
+        field.Glyph = fact.Glyph;
+        field.Label = fact.Caption;
         value.Text = fact.Value;
         ToolTipService.SetToolTip(value, fact.Value);
         AutomationProperties.SetName(value, fact.Value);
     }
 
-    private void ShowTotals(TextBlock block, TransferTotals totals)
+    private void ShowTotals(TransferPair pair, TransferTotals totals)
     {
-        block.Text = Main.IsConnected
-            ? Model.Text.Format(
-                "settings",
-                "transfer_totals",
-                Model.Text.Bytes(totals.Downloaded),
-                Model.Text.Bytes(totals.Uploaded)
-            )
-            : "—";
-        var description = Main.IsConnected
-            ? Model.Text.Format(
-                "settings",
-                "transfer_totals_hint",
-                Model.Text.Bytes(totals.Downloaded),
-                Model.Text.Bytes(totals.Uploaded)
-            )
-            : Model.Text.Get("connection", "unavailable");
-        ToolTipService.SetToolTip(block, description);
-        AutomationProperties.SetName(block, description);
+        if (!Main.IsConnected)
+        {
+            pair.Show("—", "—", Model.Text.Get("connection", "unavailable"), Model.Text);
+            return;
+        }
+        var downloaded = Model.Text.Bytes(totals.Downloaded);
+        var uploaded = Model.Text.Bytes(totals.Uploaded);
+        pair.Show(
+            downloaded,
+            uploaded,
+            Model.Text.Format("settings", "transfer_totals_hint", downloaded, uploaded),
+            Model.Text
+        );
     }
 
     private void OnHeaderSize(object sender, SizeChangedEventArgs args) => ArrangeHeader();

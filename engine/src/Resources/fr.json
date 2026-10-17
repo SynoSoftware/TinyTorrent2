@@ -53,6 +53,8 @@
     "retry_tip": "Réessayer d’ouvrir la fenêtre",
     "open_folder": "Ouvrir le dossier",
     "open_folder_tip": "Ouvrir le dossier des fichiers du programme TinyTorrent",
+    "force_exit": "Forcer la fermeture",
+    "force_exit_tip": "Quitter maintenant sans enregistrer les dernières modifications",
     "files_folder_tip": "Ouvrir le dossier contenant les fichiers"
   },
   "power": {
@@ -97,7 +99,7 @@
     "window_invalid": "Windows ne peut pas exécuter le programme de la fenêtre sur ce PC. TinyTorrent fonctionne toujours.\n\nRéinstallez la version de TinyTorrent adaptée à votre PC.",
     "window_dependency": "Un fichier nécessaire au programme de la fenêtre est manquant. TinyTorrent fonctionne toujours.\n\nRéinstallez TinyTorrent pour restaurer les fichiers nécessaires.",
     "startup": "La fenêtre ne s’est pas ouverte. TinyTorrent fonctionne toujours.",
-    "save": "TinyTorrent n’a pas pu enregistrer les données et fonctionne toujours. Choisissez Quitter dans la zone de notification pour réessayer.",
+    "save": "TinyTorrent n’a pas encore pu enregistrer. Il continue d’essayer et se ferme dès que l’enregistrement réussit.",
     "pause": "Impossible d’enregistrer le réglage de pause des transferts.",
     "notification": "Impossible d’enregistrer le réglage des notifications.",
     "window_open": "La fenêtre de TinyTorrent est toujours ouverte. Fermez-la, puis réessayez.",

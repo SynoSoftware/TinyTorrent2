@@ -16,6 +16,7 @@ public sealed partial class MainViewModel
     public string Version => App.Version.ToString();
     public string VersionText => Text.Format("about", "version", Version);
     internal bool IsAbout => Page is WindowPage.About or WindowPage.Credits;
+    internal bool ShowsMemory => IsAbout || Settings.ShowMemory.IsOn;
     internal string EngineMemory =>
         IsConnected && _engineMemory is { } bytes ? Text.Bytes(bytes) : "—";
     internal string UiMemory => _uiMemory is { } bytes ? Text.Bytes(bytes) : "—";
@@ -27,7 +28,7 @@ public sealed partial class MainViewModel
     private void ObserveMemory()
     {
         if (
-            !IsAbout
+            !ShowsMemory
             || _closed
             || _memoryRead is { IsCompleted: false }
             || _memoryChecked is { } checkedAt && Environment.TickCount64 - checkedAt < 2000
@@ -43,7 +44,7 @@ public sealed partial class MainViewModel
         var sample = await Task.Run(() =>
             (Engine: Memory(engine), UI: Memory(Environment.ProcessId))
         );
-        if (_closed || !IsAbout)
+        if (_closed || !ShowsMemory)
             return;
         _engineMemory = engine == _client.ProcessId ? sample.Engine : null;
         _uiMemory = sample.UI;

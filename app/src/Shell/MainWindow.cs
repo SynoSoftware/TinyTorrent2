@@ -223,8 +223,8 @@ public sealed partial class MainWindow : Window
             .SortKey(LimitColumn, row => (Rank(row.DownloadLimit), Rank(row.UploadLimit)))
             .SortKey(EtaColumn, row => row.Eta ?? double.PositiveInfinity)
             .SortKey(RatioColumn, row => row.Ratio)
-            .SortKey(SeedsColumn, row => row.SeedCount)
-            .SortKey(PeersColumn, row => row.LeecherCount)
+            .SortKey(SeedsColumn, row => row.SwarmSeedCount)
+            .SortKey(PeersColumn, row => row.SwarmLeecherCount)
             .SortKey(AddedColumn, row => row.Added)
             .SortKey(CompletedOnColumn, row => row.CompletedOn);
         Torrents.Sort = new Syno.TableView.Sort(QueueColumn);

@@ -53,6 +53,8 @@
     "retry_tip": "Het venster opnieuw proberen te openen",
     "open_folder": "Map openen",
     "open_folder_tip": "De map met de programmabestanden van TinyTorrent openen",
+    "force_exit": "Geforceerd afsluiten",
+    "force_exit_tip": "Nu afsluiten zonder de laatste wijzigingen op te slaan",
     "files_folder_tip": "De map met de bestanden openen"
   },
   "power": {
@@ -97,7 +99,7 @@
     "window_invalid": "Windows kan het vensterprogramma niet uitvoeren op deze pc. TinyTorrent blijft actief.\n\nInstalleer de versie van TinyTorrent die bij je pc past opnieuw.",
     "window_dependency": "Een bestand dat het vensterprogramma nodig heeft ontbreekt. TinyTorrent blijft actief.\n\nInstalleer TinyTorrent opnieuw om de benodigde bestanden te herstellen.",
     "startup": "Het venster is niet geopend. TinyTorrent blijft actief.",
-    "save": "TinyTorrent kon niet opslaan en blijft actief. Kies Afsluiten in het systeemvak om het opnieuw te proberen.",
+    "save": "TinyTorrent kon nog niet opslaan. Het blijft het proberen en sluit af zodra opslaan lukt.",
     "pause": "De instelling voor het pauzeren van overdrachten kon niet worden opgeslagen.",
     "notification": "De meldingsinstelling kon niet worden opgeslagen.",
     "window_open": "Het TinyTorrent-venster is nog open. Sluit het en probeer het opnieuw.",

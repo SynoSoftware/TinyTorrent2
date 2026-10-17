@@ -146,7 +146,7 @@ public sealed partial class MainWindow
             InformationStatus,
             library && current && !work && Model.Library.InformationStatus.Length > 0
         );
-        ShowStatus(MemoryStatus, about);
+        ShowStatus(MemoryStatus, Model.ShowsMemory);
         ShowStatus(DownloadRate, about || transfers);
         ShowStatus(UploadRate, about || transfers);
         ShowStatus(RestrictionStatus, !about && current && Model.HasRestriction);
@@ -159,8 +159,18 @@ public sealed partial class MainWindow
         ShowStatus(ExternalIpStatus, !about && current && Model.ShowsExternalIp);
         ShowStatus(Incoming, current && Model.Page == WindowPage.Torrents);
         ShowStatus(UpdateAvailable, !about && Model.HasUpdate);
-        ReserveRate(DownloadRate, DownloadLabel);
-        ReserveRate(UploadRate, UploadLabel);
+        // MemoryStatus yields first, so while it shows, nothing after it
+        // changes visibility and the divider can be decided here.
+        ShowStatus(
+            MemoryDivider,
+            TransferStatus
+                .Children.OfType<FrameworkElement>()
+                .Any(control => control != MemoryStatus && control.Visibility == Visibility.Visible)
+        );
+        ReserveDigits(EngineMemory, EngineMemoryLabel);
+        ReserveDigits(UiMemory, UiMemoryLabel);
+        ReserveDigits(DownloadRate, DownloadLabel);
+        ReserveDigits(UploadRate, UploadLabel);
         if (StatusFits())
             return;
 
@@ -191,8 +201,8 @@ public sealed partial class MainWindow
             LimitsLabel,
             !about && transfers && Model.HasCaps && !Model.ShowsAlternativeLimits
         );
-        ReserveRate(DownloadRate, DownloadLabel);
-        ReserveRate(UploadRate, UploadLabel);
+        ReserveDigits(DownloadRate, DownloadLabel);
+        ReserveDigits(UploadRate, UploadLabel);
         if (StatusFits())
             return;
 
@@ -287,7 +297,7 @@ public sealed partial class MainWindow
             ToolTipService.SetToolTip(label, description);
     }
 
-    private void ReserveRate(StackPanel panel, TextBlock label)
+    private void ReserveDigits(StackPanel panel, TextBlock label)
     {
         var text = new string(
             label.Text.Select(character => char.IsDigit(character) ? '8' : character).ToArray()

@@ -219,6 +219,7 @@ public sealed partial class Scheduler : UserControl
                     FontFamily = Syno.Lucide.Font,
                     Glyph = Syno.Lucide.Clock,
                     FontSize = (double)Application.Current.Resources["TinyTorrentHeaderIconSize"],
+                    VerticalAlignment = VerticalAlignment.Center,
                 }
             );
             var labels = new StackPanel

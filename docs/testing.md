@@ -241,11 +241,12 @@ disposable store. These cases do not run unrelated journeys.
 The English 1040-wide case also captures the theme button's PointerOver
 state in Light and Dark through WinUI's state manager. This checks the
 custom template's appearance, not pointer input or OS High Contrast rendering.
-Use `TINYTORRENT_CAPTURE_REVIEW=footer` to capture filter and update
-presentation at fixed window sizes, including their combined state.
+Use `TINYTORRENT_CAPTURE_REVIEW=footer` to capture filter, update and memory
+presentation at fixed window sizes, including the combined filter and update state.
 The Paused/All filter changes use the real owner with an idle disposable torrent;
 the update state is a presentation override retained through binding
-refresh. The report records their survival and workspace bounds for review,
+refresh. The memory state turns on the real Show memory usage setting, waits
+for the engine to confirm it and for a sample, then turns it off. The report records their survival and workspace bounds for review,
 not layout assertions. It does not trigger an engine failure or open an update.
 It then resumes the paused fixture through the real Resume command while every
 transfer stays paused, and checks at every size, language and theme that the row

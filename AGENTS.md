@@ -57,8 +57,8 @@ permanent design, code, and review cost that the user never sees.
   [database contract](docs/database.md). Every change from the current
   revision 9 on is a migration that keeps saved data, because editing the
   schema and raising its version makes saved Library databases unusable.
-- Before changing text, language selection, or display formatting, read
-  [localisation](docs/localisation.md).
+- Before changing text or translations, language selection, or display
+  formatting, read [localisation](docs/localisation.md).
 - Before changing the product UI, read [WinUI instructions](app/AGENTS.md).
 - Before changing the table library, its development hosts, or its tooling, read
   [TableView instructions](lib/TableView/AGENTS.md).

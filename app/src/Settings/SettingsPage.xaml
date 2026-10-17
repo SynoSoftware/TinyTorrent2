@@ -296,58 +296,30 @@
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
-                <Grid x:Name="FirstFact" ColumnSpacing="12">
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                  </Grid.ColumnDefinitions>
-                  <FontIcon
-                    x:Name="FirstIcon"
-                    FontFamily="{x:Bind icons:Lucide.Font}"
-                    FontSize="{StaticResource TinyTorrentHeaderIconSize}"
-                    VerticalAlignment="Center"
-                    AutomationProperties.AccessibilityView="Raw"
-                  />
-                  <StackPanel Grid.Column="1" Spacing="4">
-                    <TextBlock
-                      x:Name="FirstCaption"
-                      Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
-                      TextTrimming="CharacterEllipsis"
-                    />
+                <controls:Field x:Name="FirstFact" Style="{StaticResource TinyTorrentStatisticStyle}">
+                  <Grid>
                     <TextBlock
                       x:Name="FirstValue"
-                      Style="{StaticResource BodyStrongTextBlockStyle}"
-                      TextWrapping="NoWrap"
+                      Style="{StaticResource TinyTorrentStatisticValueStyle}"
                       TextTrimming="CharacterEllipsis"
                     />
-                  </StackPanel>
-                </Grid>
-                <Grid x:Name="SecondFact" Grid.Column="1" ColumnSpacing="12">
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                  </Grid.ColumnDefinitions>
-                  <FontIcon
-                    x:Name="SecondIcon"
-                    FontFamily="{x:Bind icons:Lucide.Font}"
-                    FontSize="{StaticResource TinyTorrentHeaderIconSize}"
-                    VerticalAlignment="Center"
-                    AutomationProperties.AccessibilityView="Raw"
-                  />
-                  <StackPanel Grid.Column="1" Spacing="4">
-                    <TextBlock
-                      x:Name="SecondCaption"
-                      Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
-                      TextTrimming="CharacterEllipsis"
-                    />
+                    <controls:TransferPair x:Name="FirstTotals" Visibility="Collapsed" />
+                  </Grid>
+                </controls:Field>
+                <controls:Field
+                  x:Name="SecondFact"
+                  Grid.Column="1"
+                  Style="{StaticResource TinyTorrentStatisticStyle}"
+                >
+                  <Grid>
                     <TextBlock
                       x:Name="SecondValue"
-                      Style="{StaticResource BodyStrongTextBlockStyle}"
-                      TextWrapping="NoWrap"
+                      Style="{StaticResource TinyTorrentStatisticValueStyle}"
                       TextTrimming="CharacterEllipsis"
                     />
-                  </StackPanel>
-                </Grid>
+                    <controls:TransferPair x:Name="SecondTotals" Visibility="Collapsed" />
+                  </Grid>
+                </controls:Field>
               </Grid>
             </Grid>
           </StackPanel>
@@ -2297,6 +2269,29 @@
                           Toggled="OnToggle"
                           AutomationProperties.Name="{x:Bind Model.ShowExternalIp.Label, Mode=OneWay}"
                           AutomationProperties.AutomationId="ShowExternalIp"
+                        />
+                      </controls:SettingsRow>
+                    </Border>
+                    <Border
+                      Style="{StaticResource TinyTorrentSettingsCardStyle}"
+                      Visibility="{x:Bind MemoryUsage.Visibility, Mode=OneWay}"
+                    >
+                      <controls:SettingsRow
+                        x:Name="MemoryUsage"
+                        IsAdvanced="True"
+                        Header="{x:Bind Model.ShowMemory.Label, Mode=OneWay}"
+                        BorderThickness="0"
+                        Error="{x:Bind Model.ShowMemory.Message, Mode=OneWay}"
+                        Description="{x:Bind Model.Text.Get('settings', 'memory_usage_hint'), Mode=OneWay}"
+                        StateText="{x:Bind controls:SettingsRow.State(Model.ShowMemory.IsOn, Model.OnText, Model.OffText), Mode=OneWay}"
+                      >
+                        <ToggleSwitch
+                          Tag="{x:Bind Model.ShowMemory}"
+                          IsOn="{x:Bind Model.ShowMemory.IsOn, Mode=OneWay}"
+                          IsEnabled="{x:Bind Model.ShowMemory.CanEdit, Mode=OneWay}"
+                          Toggled="OnToggle"
+                          AutomationProperties.Name="{x:Bind Model.ShowMemory.Label, Mode=OneWay}"
+                          AutomationProperties.AutomationId="ShowMemory"
                         />
                       </controls:SettingsRow>
                     </Border>

@@ -155,6 +155,7 @@ public:
         bool showsExternalIp = false;
         bool showsTitleSpeeds = false;
         bool showsFreeSpace = true;
+        bool showsMemory = false;
         int refreshInterval = 1000;
         int recentInterval = 1;
         int historyInterval = 60;

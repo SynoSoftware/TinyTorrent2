@@ -128,8 +128,15 @@ project's loader applies this same rule; fallback is a complete message,
 including all its plural forms. Preserve the language of the resolved message so
 inherited English uses English plural rules.
 
-Reject invalid catalogue data before packaging: translated keys that English
-lacks, duplicate keys, incompatible placeholders, and incomplete plural sets. A failed language load
+Check catalogue data before packaging: translated keys that English lacks,
+duplicate keys, incompatible placeholders, and incomplete plural sets. The
+[release command](../installer/README.md) lists translated messages that are
+missing, that English lacks, or whose placeholders differ, and asks the owner
+whether to release anyway.
+At run time, a loader ignores a translated message whose key English lacks or
+whose placeholders differ from English, and shows the English message. English
+changes between translation refreshes, so a removed or changed key must not
+break the whole language. A failed language load
 cannot prevent startup; embedded English remains available. Keep unknown engine
 error codes usable through a translated generic message with optional diagnostic
 detail.
@@ -158,6 +165,12 @@ singular or plural message by that known rule, because loading another API to
 produce identical results adds no user benefit. Revisit that selection when a
 shipped language needs a different rule; this is not a general plural rule for
 other languages.
+
+**Owner ruling: Chinese text has no Latin letters,** because many Chinese
+readers cannot read them. Translate product, company and technical names too;
+reuse the names the catalogue already has, such as 微种下载器 for TinyTorrent,
+互联网电影资料库 for IMDb and 云网络服务 for Cloudflare. Only literal text keeps
+Latin letters: access keys, file extensions, URLs and command-line options.
 
 Allow longer translations, Unicode, appropriate font fallback, and right-to-left
 layout. Direction changes with the UI language; paths and identifiers retain

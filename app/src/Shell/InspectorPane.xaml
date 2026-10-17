@@ -72,27 +72,75 @@
           <SelectorBarItem
             x:Name="GeneralSection"
             AutomationProperties.AutomationId="InspectorGeneral"
-          />
+          >
+            <SelectorBarItem.Icon>
+              <FontIcon
+                Style="{StaticResource TinyTorrentStatusIconStyle}"
+                FontFamily="{x:Bind icons:Lucide.Font}"
+                Glyph="{x:Bind icons:Lucide.Info}"
+              />
+            </SelectorBarItem.Icon>
+          </SelectorBarItem>
           <SelectorBarItem
             x:Name="FilesSection"
             AutomationProperties.AutomationId="InspectorFiles"
-          />
+          >
+            <SelectorBarItem.Icon>
+              <FontIcon
+                Style="{StaticResource TinyTorrentStatusIconStyle}"
+                FontFamily="{x:Bind icons:Lucide.Font}"
+                Glyph="{x:Bind icons:Lucide.Files}"
+              />
+            </SelectorBarItem.Icon>
+          </SelectorBarItem>
           <SelectorBarItem
             x:Name="PeersSection"
             AutomationProperties.AutomationId="InspectorPeers"
-          />
+          >
+            <SelectorBarItem.Icon>
+              <FontIcon
+                Style="{StaticResource TinyTorrentStatusIconStyle}"
+                FontFamily="{x:Bind icons:Lucide.Font}"
+                Glyph="{x:Bind icons:Lucide.Users}"
+              />
+            </SelectorBarItem.Icon>
+          </SelectorBarItem>
           <SelectorBarItem
             x:Name="TrackersSection"
             AutomationProperties.AutomationId="InspectorTrackers"
-          />
+          >
+            <SelectorBarItem.Icon>
+              <FontIcon
+                Style="{StaticResource TinyTorrentStatusIconStyle}"
+                FontFamily="{x:Bind icons:Lucide.Font}"
+                Glyph="{x:Bind icons:Lucide.RadioTower}"
+              />
+            </SelectorBarItem.Icon>
+          </SelectorBarItem>
           <SelectorBarItem
             x:Name="SpeedSection"
             AutomationProperties.AutomationId="InspectorSpeed"
-          />
+          >
+            <SelectorBarItem.Icon>
+              <FontIcon
+                Style="{StaticResource TinyTorrentStatusIconStyle}"
+                FontFamily="{x:Bind icons:Lucide.Font}"
+                Glyph="{x:Bind icons:Lucide.Activity}"
+              />
+            </SelectorBarItem.Icon>
+          </SelectorBarItem>
           <SelectorBarItem
             x:Name="PiecesSection"
             AutomationProperties.AutomationId="InspectorPieces"
-          />
+          >
+            <SelectorBarItem.Icon>
+              <FontIcon
+                Style="{StaticResource TinyTorrentStatusIconStyle}"
+                FontFamily="{x:Bind icons:Lucide.Font}"
+                Glyph="{x:Bind icons:Lucide.Grid3x3}"
+              />
+            </SelectorBarItem.Icon>
+          </SelectorBarItem>
         </SelectorBar>
         <SelectorBar
           x:Name="LibrarySections"
@@ -104,8 +152,24 @@
           <SelectorBarItem
             x:Name="LibraryInformation"
             AutomationProperties.AutomationId="LibraryInformation"
-          />
-          <SelectorBarItem x:Name="LibraryFile" AutomationProperties.AutomationId="LibraryFile" />
+          >
+            <SelectorBarItem.Icon>
+              <FontIcon
+                Style="{StaticResource TinyTorrentStatusIconStyle}"
+                FontFamily="{x:Bind icons:Lucide.Font}"
+                Glyph="{x:Bind icons:Lucide.Info}"
+              />
+            </SelectorBarItem.Icon>
+          </SelectorBarItem>
+          <SelectorBarItem x:Name="LibraryFile" AutomationProperties.AutomationId="LibraryFile">
+            <SelectorBarItem.Icon>
+              <FontIcon
+                Style="{StaticResource TinyTorrentStatusIconStyle}"
+                FontFamily="{x:Bind icons:Lucide.Font}"
+                Glyph="{x:Bind icons:Lucide.File}"
+              />
+            </SelectorBarItem.Icon>
+          </SelectorBarItem>
         </SelectorBar>
       </Grid>
     </controls:Pane.Navigation>
@@ -231,71 +295,71 @@
                 </Grid>
                 <controls:Strip Margin="0,16,0,0" ColumnSpacing="32" RowSpacing="12">
                   <controls:Field
-                    Style="{StaticResource InspectorStatisticStyle}"
+                    Style="{StaticResource TinyTorrentStatisticStyle}"
                     Glyph="{x:Bind icons:Lucide.Download}"
                     Label="{x:Bind Model.Text.Get('inspector', 'downloaded')}"
                   >
                     <TextBlock
                       Text="{x:Bind Model.Target.DownloadedText, Mode=OneWay}"
-                      Style="{StaticResource InspectorStatisticValueStyle}"
+                      Style="{StaticResource TinyTorrentStatisticValueStyle}"
                     />
                   </controls:Field>
                   <controls:Field
-                    Style="{StaticResource InspectorStatisticStyle}"
+                    Style="{StaticResource TinyTorrentStatisticStyle}"
                     Glyph="{x:Bind icons:Lucide.Upload}"
                     Label="{x:Bind Model.Text.Get('peers', 'uploaded')}"
                   >
                     <TextBlock
                       Text="{x:Bind Model.Target.UploadedText, Mode=OneWay}"
-                      Style="{StaticResource InspectorStatisticValueStyle}"
+                      Style="{StaticResource TinyTorrentStatisticValueStyle}"
                     />
                   </controls:Field>
                   <controls:Field
                     x:Name="Ratio"
-                    Style="{StaticResource InspectorStatisticStyle}"
+                    Style="{StaticResource TinyTorrentStatisticStyle}"
                     Glyph="{x:Bind icons:Lucide.Scale}"
                     Label="{x:Bind Model.Text.Get('columns', 'ratio')}"
                   >
                     <TextBlock
                       Text="{x:Bind Model.Target.RatioText, Mode=OneWay}"
-                      Style="{StaticResource InspectorStatisticValueStyle}"
+                      Style="{StaticResource TinyTorrentStatisticValueStyle}"
                     />
                   </controls:Field>
                   <controls:Field
                     x:Name="SeedCount"
-                    Style="{StaticResource InspectorStatisticStyle}"
+                    Style="{StaticResource TinyTorrentStatisticStyle}"
                     Glyph="{x:Bind icons:Lucide.Sprout}"
                     Label="{x:Bind Model.Text.Get('columns', 'seeds')}"
                   >
                     <TextBlock
                       Text="{x:Bind Model.Target.SeedsText, Mode=OneWay}"
-                      Style="{StaticResource InspectorStatisticValueStyle}"
+                      Style="{StaticResource TinyTorrentStatisticValueStyle}"
                       ToolTipService.ToolTip="{x:Bind Model.Target.SeedsName, Mode=OneWay}"
                       AutomationProperties.Name="{x:Bind Model.Target.SeedsName, Mode=OneWay}"
                     />
                   </controls:Field>
                   <controls:Field
                     x:Name="PeerCount"
-                    Style="{StaticResource InspectorStatisticStyle}"
+                    Style="{StaticResource TinyTorrentStatisticStyle}"
                     Glyph="{x:Bind icons:Lucide.Users}"
                     Label="{x:Bind Model.Text.Get('columns', 'peers')}"
                   >
                     <TextBlock
                       Text="{x:Bind Model.Target.PeersText, Mode=OneWay}"
-                      Style="{StaticResource InspectorStatisticValueStyle}"
+                      Style="{StaticResource TinyTorrentStatisticValueStyle}"
                       ToolTipService.ToolTip="{x:Bind Model.Target.PeersName, Mode=OneWay}"
                       AutomationProperties.Name="{x:Bind Model.Target.PeersName, Mode=OneWay}"
                     />
                   </controls:Field>
                   <controls:Field
                     x:Name="Limit"
-                    Style="{StaticResource InspectorStatisticStyle}"
+                    Style="{StaticResource TinyTorrentStatisticStyle}"
                     Glyph="{x:Bind icons:Lucide.Gauge}"
                     Label="{x:Bind Model.Text.Get('columns', 'limit')}"
                   >
                     <TextBlock
                       Text="{x:Bind Model.LimitText, Mode=OneWay}"
-                      Style="{StaticResource InspectorStatisticValueStyle}"
+                      Style="{StaticResource TinyTorrentStatisticValueStyle}"
                       AutomationProperties.Name="{x:Bind Model.LimitName, Mode=OneWay}"
                     />
                   </controls:Field>
@@ -517,45 +581,18 @@
               HorizontalContentAlignment="Stretch"
               VerticalContentAlignment="Stretch"
             />
-            <controls:Strip
+            <controls:Field
               x:Name="PeerRates"
-              ColumnSpacing="16"
-              RowSpacing="4"
+              Style="{StaticResource TinyTorrentStatisticStyle}"
               Margin="16"
               HorizontalAlignment="Left"
               VerticalAlignment="Bottom"
-              Background="{ThemeResource LayerFillColorDefaultBrush}"
               FlowDirection="LeftToRight"
+              Glyph="{x:Bind icons:Lucide.Activity}"
+              Label="{x:Bind Model.Text.Get('inspector', 'speed')}"
             >
-              <StackPanel Orientation="Horizontal" Spacing="4">
-                <FontIcon
-                  Style="{StaticResource TinyTorrentStatusIconStyle}"
-                  FontFamily="{x:Bind icons:Lucide.Font}"
-                  Glyph="{x:Bind icons:Lucide.ArrowDown}"
-                  Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
-                  AutomationProperties.AccessibilityView="Raw"
-                />
-                <TextBlock
-                  x:Name="PeerDownload"
-                  Style="{StaticResource SubtitleTextBlockStyle}"
-                  Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
-                />
-              </StackPanel>
-              <StackPanel Orientation="Horizontal" Spacing="4">
-                <FontIcon
-                  Style="{StaticResource TinyTorrentStatusIconStyle}"
-                  FontFamily="{x:Bind icons:Lucide.Font}"
-                  Glyph="{x:Bind icons:Lucide.ArrowUp}"
-                  Foreground="{ThemeResource TinyTorrentUploadBrush}"
-                  AutomationProperties.AccessibilityView="Raw"
-                />
-                <TextBlock
-                  x:Name="PeerUpload"
-                  Style="{StaticResource SubtitleTextBlockStyle}"
-                  Foreground="{ThemeResource TinyTorrentUploadBrush}"
-                />
-              </StackPanel>
-            </controls:Strip>
+              <controls:TransferPair x:Name="PeerTransfer" />
+            </controls:Field>
             <Border
               Margin="0,8,0,0"
               HorizontalAlignment="Right"

@@ -1673,6 +1673,19 @@ public sealed partial class MainWindow
                         Model.Filter = TorrentFilter.All;
                         await Scene("filter-cleared", "Real All filter setter");
                         await Scene("update", "Simulated update-status visibility");
+                        await Model.Settings.Toggle(Model.Settings.ShowMemory, true);
+                        try
+                        {
+                            await CaptureReady(
+                                Model,
+                                () => Model.Settings.ShowMemory.ConfirmedOn && Model.UiMemory != "—"
+                            );
+                            await Scene("memory", "Real Show memory usage setting");
+                        }
+                        finally
+                        {
+                            await Model.Settings.Toggle(Model.Settings.ShowMemory, false);
+                        }
                         Model.Filter = TorrentFilter.Paused;
                         await Scene(
                             "combined",

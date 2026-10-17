@@ -13,6 +13,11 @@ From PowerShell, run:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\installer\Build.ps1
 ```
 
+Before it reserves a build number, the command compares every language file of
+the engine, TableView and the app with its `en.json`. It lists each message that
+a translation lacks, that English lacks, or whose placeholders differ, and asks
+whether to release anyway. Any answer other than `y` stops the release.
+
 The shared version lives in `Directory.Build.props`. Each run reserves the next
 build number before preparing tools or compiling: `0.1.0.1`, `0.1.0.2`, and so
 on. The engine, UI, installer, and filename all use that same number. The command

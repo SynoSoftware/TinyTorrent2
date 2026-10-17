@@ -16,6 +16,7 @@
           FontFamily="{x:Bind icons:Lucide.Font}"
           Glyph="{x:Bind icons:Lucide.SlidersHorizontal}"
           FontSize="{StaticResource TinyTorrentHeaderIconSize}"
+          VerticalAlignment="Center"
         />
         <controls:SettingsRow
           x:Name="ModeRow"
@@ -81,6 +82,7 @@
           FontFamily="{x:Bind icons:Lucide.Font}"
           Glyph="{x:Bind icons:Lucide.Gauge}"
           FontSize="{StaticResource TinyTorrentHeaderIconSize}"
+          VerticalAlignment="Center"
         />
         <StackPanel Grid.Column="1" Spacing="4">
           <TextBlock

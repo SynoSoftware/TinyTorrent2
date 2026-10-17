@@ -75,12 +75,11 @@ public sealed class Strings
             foreach (var message in group.Value)
             {
                 if (
-                    !english.TryGetValue(group.Key, out var messages)
-                    || !messages.TryGetValue(message.Key, out var fallback)
-                    || !Arguments(message.Value.Format).SetEquals(Arguments(fallback.Format))
+                    english.TryGetValue(group.Key, out var messages)
+                    && messages.TryGetValue(message.Key, out var fallback)
+                    && Arguments(message.Value.Format).SetEquals(Arguments(fallback.Format))
                 )
-                    throw new InvalidDataException($"Invalid message '{group.Key}.{message.Key}'.");
-                text[group.Key][message.Key] = message.Value;
+                    text[group.Key][message.Key] = message.Value;
             }
         }
         return new Catalogue(

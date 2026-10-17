@@ -427,6 +427,7 @@
                     FontFamily="{x:Bind icons:Lucide.Font}"
                     Glyph="{x:Bind icons:Lucide.EthernetPort}"
                     FontSize="{StaticResource TinyTorrentHeaderIconSize}"
+                    VerticalAlignment="Center"
                     Visibility="{x:Bind settings:ConnectionPage.Hidden(Model.HasLinkWarning), Mode=OneWay}"
                     AutomationProperties.AccessibilityView="Raw"
                   />
@@ -434,6 +435,7 @@
                     FontFamily="{x:Bind icons:Lucide.Font}"
                     Glyph="{x:Bind icons:Lucide.TriangleAlert}"
                     FontSize="{StaticResource TinyTorrentHeaderIconSize}"
+                    VerticalAlignment="Center"
                     Foreground="{ThemeResource SystemFillColorCautionBrush}"
                     Visibility="{x:Bind Model.HasLinkWarning, Mode=OneWay}"
                     AutomationProperties.AccessibilityView="Raw"

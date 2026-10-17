@@ -146,6 +146,7 @@
       <x:Double x:Key="TinyTorrentInlineIconSize">16</x:Double>
       <x:Double x:Key="TinyTorrentButtonIconSize">20</x:Double>
       <x:Double x:Key="TinyTorrentHeaderIconSize">20</x:Double>
+      <x:Double x:Key="TinyTorrentStatisticIconSize">24</x:Double>
       <x:Double x:Key="TinyTorrentSurfaceIconSize">24</x:Double>
       <x:Double x:Key="TinyTorrentToolbarIconSize">24</x:Double>
       <x:Double x:Key="TinyTorrentLargeIconSize">32</x:Double>
@@ -1210,6 +1211,7 @@
                       FontFamily="{ThemeResource LucideFont}"
                       Glyph="{TemplateBinding Glyph}"
                       FontSize="{StaticResource TinyTorrentHeaderIconSize}"
+                      VerticalAlignment="Center"
                       AutomationProperties.AccessibilityView="Raw"
                     />
                     <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
@@ -1489,7 +1491,7 @@
         <Setter Property="FlowDirection" Value="LeftToRight" />
       </Style>
       <Style
-        x:Key="InspectorStatisticValueStyle"
+        x:Key="TinyTorrentStatisticValueStyle"
         TargetType="TextBlock"
         BasedOn="{StaticResource BodyLargeTextBlockStyle}"
       >
@@ -1571,9 +1573,9 @@
           </Setter.Value>
         </Setter>
       </Style>
-      <!-- A statistic: its icon beside the caption, with the value below the caption.
+      <!-- A statistic: its icon centred beside the caption and the value below it.
                The transparent background makes the whole statistic a double-click target. -->
-      <Style x:Key="InspectorStatisticStyle" TargetType="controls:Field">
+      <Style x:Key="TinyTorrentStatisticStyle" TargetType="controls:Field">
         <Setter Property="IsTabStop" Value="False" />
         <Setter Property="Template">
           <Setter.Value>
@@ -1583,7 +1585,8 @@
                   FontFamily="{ThemeResource LucideFont}"
                   Glyph="{TemplateBinding Glyph}"
                   Style="{StaticResource InspectorIconStyle}"
-                  FontSize="{StaticResource TinyTorrentHeaderIconSize}"
+                  FontSize="{StaticResource TinyTorrentStatisticIconSize}"
+                  VerticalAlignment="Center"
                 />
                 <StackPanel>
                   <TextBlock
@@ -1591,6 +1594,7 @@
                     Style="{StaticResource CaptionTextBlockStyle}"
                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                     TextWrapping="NoWrap"
+                    ToolTipService.ToolTip="{TemplateBinding Label}"
                   />
                   <ContentPresenter Content="{TemplateBinding Content}" />
                 </StackPanel>

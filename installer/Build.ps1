@@ -129,6 +129,50 @@ function Check-Output {
     }
 }
 
+function Read-Catalogue([string] $File) {
+    $messages = @{}
+    $catalogue = Get-Content -LiteralPath $File -Raw -Encoding UTF8 | ConvertFrom-Json
+    foreach ($group in $catalogue.PSObject.Properties) {
+        foreach ($message in $group.Value.PSObject.Properties) {
+            $messages["$($group.Name).$($message.Name)"] = $message.Value
+        }
+    }
+    return $messages
+}
+
+function Get-Placeholders([string] $Text) {
+    return (@([regex]::Matches($Text, '\{\{|\{(\d+)[^}]*\}') | Where-Object { $_.Groups[1].Success } |
+        ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique) -join ',')
+}
+
+# The loaders show English for a message a translation lacks or no longer
+# matches, so a release with these gaps works but is partly untranslated.
+function Check-Catalogues {
+    $problems = foreach ($project in 'engine/src', 'lib/TableView/src', 'app/src') {
+        $resources = Join-Path $repository "$project/Resources"
+        $english = Read-Catalogue (Join-Path $resources 'en.json')
+        foreach ($file in Get-ChildItem -LiteralPath $resources -Filter '*.json' | Where-Object Name -ne 'en.json') {
+            $name = "$project/Resources/$($file.Name)"
+            $translated = Read-Catalogue $file.FullName
+            foreach ($key in $english.Keys | Sort-Object) {
+                if (-not $translated.ContainsKey($key)) { "${name}: $key is missing" }
+                elseif ((Get-Placeholders $translated[$key]) -ne (Get-Placeholders $english[$key])) {
+                    "${name}: $key has different placeholders from English"
+                }
+            }
+            foreach ($key in $translated.Keys | Sort-Object) {
+                if (-not $english.ContainsKey($key)) { "${name}: $key is not in en.json" }
+            }
+        }
+    }
+    if (-not $problems) { return }
+    Write-Host "`nThe translations do not match en.json:" -ForegroundColor Yellow
+    $problems | ForEach-Object { Write-Host "  $_" }
+    if ((Read-Host "`nRelease anyway? (y/N)") -ne 'y') {
+        throw 'The translations do not match en.json. The installer was not generated.'
+    }
+}
+
 function Check-Executable([string] $File, [version] $Version, [string] $Company, [string] $Description) {
     if (-not (Test-Path -LiteralPath $File)) { throw "The release is missing $File." }
     $actual = [Diagnostics.FileVersionInfo]::GetVersionInfo($File)
@@ -149,6 +193,7 @@ try {
     catch { throw 'Another installer is being generated. Wait for it to finish, then try again.' }
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     Write-Host 'Generating TinyTorrent installer' -ForegroundColor Cyan
+    Check-Catalogues
     $releaseVersion = Reserve-Version (Join-Path $repository 'Directory.Build.props') $Version
     Write-Host "Version: $releaseVersion"
     Add-Type -Path (Join-Path $PSScriptRoot 'Icons.cs')

@@ -1,0 +1,12 @@
+<UserControl
+  x:Class="Syno.TinyTorrent.Controls.TransferPair"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  IsTabStop="False"
+>
+  <TextBlock x:Name="Value" Style="{StaticResource TinyTorrentStatisticValueStyle}" FlowDirection="LeftToRight">
+    <Run x:Name="Download" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+    <Run Text=" · " Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+    <Run x:Name="Upload" Foreground="{ThemeResource TinyTorrentUploadBrush}" />
+  </TextBlock>
+</UserControl>

@@ -118,17 +118,14 @@ public sealed class Strings
             foreach (var group in translated)
             {
                 if (!text.TryGetValue(group.Key, out var messages))
-                    throw new InvalidDataException($"Unknown text group '{group.Key}'.");
+                    continue;
                 foreach (var message in group.Value)
                 {
                     if (
-                        !English._text[group.Key].TryGetValue(message.Key, out string? fallback)
-                        || !Arguments(message.Value).SetEquals(Arguments(fallback))
+                        English._text[group.Key].TryGetValue(message.Key, out string? fallback)
+                        && Arguments(message.Value).SetEquals(Arguments(fallback))
                     )
-                        throw new InvalidDataException(
-                            $"Invalid message '{group.Key}.{message.Key}'."
-                        );
-                    messages[message.Key] = message.Value;
+                        messages[message.Key] = message.Value;
                 }
             }
         }

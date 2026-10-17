@@ -27,6 +27,7 @@ public sealed class Editor : INotifyPropertyChanged
     public Setting ShowExternalIp { get; }
     public Setting ShowTitleSpeeds { get; }
     public Setting ShowFreeSpace { get; }
+    public Setting ShowMemory { get; }
     public Setting RefreshInterval { get; }
     public Setting RecentInterval { get; }
     public Setting HistoryInterval { get; }
@@ -487,6 +488,7 @@ public sealed class Editor : INotifyPropertyChanged
             SettingKind.Boolean,
             SettingsCategory.Appearance
         );
+        ShowMemory = new(this, "show_memory", SettingKind.Boolean, SettingsCategory.Appearance);
         RefreshInterval = new(
             this,
             "refresh_interval",
@@ -873,6 +875,7 @@ public sealed class Editor : INotifyPropertyChanged
             ShowExternalIp,
             ShowTitleSpeeds,
             ShowFreeSpace,
+            ShowMemory,
             RefreshInterval,
             RecentInterval,
             HistoryInterval,

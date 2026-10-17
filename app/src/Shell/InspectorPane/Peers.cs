@@ -270,18 +270,13 @@ public sealed partial class InspectorPane
                 || !ReferenceEquals(PeerDrawing.Content, _peerMap)
             )
                 return;
-            PeerDownload.Text = Model.DownloadText;
-            PeerUpload.Text = Model.UploadText;
-            DescribeRate(PeerDownload, "down");
-            DescribeRate(PeerUpload, "up");
+            PeerTransfer.Show(
+                Model.DownloadText,
+                Model.UploadText,
+                Model.Text.Format("peer_map", "speed_hint", Model.DownloadText, Model.UploadText),
+                Model.Text
+            );
             Model.UpdateMap(_layout.View.Cities && Model.HasCities);
         });
-
-        void DescribeRate(TextBlock rate, string key)
-        {
-            var name = Model.Text.Format("units", "detail", Model.Text.Get("columns", key), rate.Text);
-            AutomationProperties.SetName(rate, name);
-            ToolTipService.SetToolTip(rate, name);
-        }
     }
 }

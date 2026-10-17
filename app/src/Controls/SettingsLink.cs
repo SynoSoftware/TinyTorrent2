@@ -17,6 +17,7 @@ public sealed partial class SettingsLink : Button
     {
         FontFamily = Lucide.Font,
         FontSize = (double)Application.Current.Resources["TinyTorrentHeaderIconSize"],
+        VerticalAlignment = VerticalAlignment.Center,
     };
     private readonly FontIcon _ending = new()
     {

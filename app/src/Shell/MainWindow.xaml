@@ -1085,7 +1085,7 @@
             Style="{StaticResource TinyTorrentStatusTextStyle}"
             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
           />
-          <StackPanel Orientation="Horizontal" Spacing="6">
+          <StackPanel x:Name="EngineMemory" Orientation="Horizontal" Spacing="6">
             <FontIcon
               Style="{StaticResource TinyTorrentStatusIconStyle}"
               FontFamily="{x:Bind icons:Lucide.Font}"
@@ -1097,7 +1097,7 @@
               Style="{StaticResource TinyTorrentStatusTextStyle}"
             />
           </StackPanel>
-          <StackPanel Orientation="Horizontal" Spacing="6">
+          <StackPanel x:Name="UiMemory" Orientation="Horizontal" Spacing="6">
             <FontIcon
               Style="{StaticResource TinyTorrentStatusIconStyle}"
               FontFamily="{x:Bind icons:Lucide.Font}"
@@ -1107,6 +1107,7 @@
             <TextBlock x:Name="UiMemoryLabel" Style="{StaticResource TinyTorrentStatusTextStyle}" />
           </StackPanel>
           <Border
+            x:Name="MemoryDivider"
             Width="1"
             Height="16"
             Background="{ThemeResource DividerStrokeColorDefaultBrush}"

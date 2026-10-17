@@ -53,6 +53,8 @@
     "retry_tip": "Tentar abrir a janela novamente",
     "open_folder": "Abrir pasta",
     "open_folder_tip": "Abrir a pasta dos arquivos do programa TinyTorrent",
+    "force_exit": "Forçar saída",
+    "force_exit_tip": "Sair agora sem salvar as alterações mais recentes",
     "files_folder_tip": "Abrir a pasta que contém os arquivos"
   },
   "power": {
@@ -97,7 +99,7 @@
     "window_invalid": "O Windows não consegue executar o programa da janela neste computador. O TinyTorrent continua em execução.\n\nReinstale a versão do TinyTorrent compatível com seu computador.",
     "window_dependency": "Falta um arquivo necessário ao programa da janela. O TinyTorrent continua em execução.\n\nReinstale o TinyTorrent para restaurar os arquivos necessários.",
     "startup": "A janela não abriu. O TinyTorrent continua em execução.",
-    "save": "O TinyTorrent não conseguiu salvar os dados e continua em execução. Escolha Sair na área de notificação para tentar novamente.",
+    "save": "O TinyTorrent ainda não conseguiu salvar. Ele continua tentando e sai quando o salvamento der certo.",
     "pause": "Não foi possível salvar a configuração de pausa das transferências.",
     "notification": "Não foi possível salvar a configuração de notificações.",
     "window_open": "A janela do TinyTorrent ainda está aberta. Feche-a e tente novamente.",
