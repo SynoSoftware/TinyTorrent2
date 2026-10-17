@@ -4,7 +4,7 @@ Follow the [root instructions](../../AGENTS.md). This directory contains the
 reusable TableView library in [src](src/), its development hosts in
 [sample](sample/) and [tests](tests/), and its control documentation.
 [TableView.slnx](TableView.slnx) opens the library on its own. The product
-interface follows the [architecture](../../docs/architecture.md).
+interface follows the [architecture](../../docs/contracts/architecture.md).
 
 ## Read for the change
 
@@ -12,16 +12,16 @@ interface follows the [architecture](../../docs/architecture.md).
   [visual contract](docs/tableview-contract.md#8-rendering-layout-and-visual-language).
   The library owns table design so every host uses the same control.
 - When integrating TableView into a product surface, read
-  [interface guidance](../../docs/interface.md) for host content and page layout;
+  [UI guidance](../../docs/contracts/ui.md) for host content and page layout;
   table appearance and interaction remain defined by this library's contract.
 - Before changing TableView behavior or its public API, read the relevant sections
   of the [contract](docs/tableview-contract.md), using the
   [table vocabulary](CONTEXT.md).
 - Before changing table state ownership, input, rendering, or layout, read the
   [implementation map](docs/tableview-implementation.md).
-- Text and formatting follow [localisation](../../docs/localisation.md), including
+- Text and formatting follow [localisation](../../docs/contracts/localisation.md), including
   the control's own `en.json` and live language changes.
-- Test scope follows [testing](../../docs/testing.md).
+- Test scope follows [testing](../../docs/agents/testing.md).
 
 ## Control work
 
@@ -57,7 +57,7 @@ find those contracts. Keep live XAML bindings live; `x:Bind` defaults to one-tim
 
 Project files and [TinyTorrent.slnx](../../TinyTorrent.slnx) define the supported targets and
 package versions. Build the affected target through
-[compilation](../../docs/compilation.md), naming it with `-Project`.
+[compilation](../../docs/agents/compilation.md), naming it with `-Project`.
 
 Keep [Directory.Build.props](../../Directory.Build.props)'s generated-output exclusions:
 they prevent the XAML compiler's `bin-fl` output from re-entering source globs.
@@ -66,7 +66,7 @@ If changing them, verify repeated builds do not deepen the output tree.
 Building a WinUI test host does not run it. Running the sample or the UI test
 host opens a real window on the owner's desktop; the
 [root validation ruling](../../AGENTS.md#working-rules) governs permission,
-and [testing](../../docs/testing.md) decides which checks earn that cost.
+and [testing](../../docs/agents/testing.md) decides which checks earn that cost.
 If rendered or out-of-process automation evidence is needed but unavailable,
 report that gap. A compile result, an in-process automation cache, or an old
 measurement cannot establish current pixels, Narrator behavior, or responsiveness.

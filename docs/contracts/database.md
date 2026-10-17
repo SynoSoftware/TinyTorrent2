@@ -38,9 +38,19 @@ Subtitles owns accepted work, supplier policy and subtitle-file operations.
 Their SQL executes through `Database.Run`; network requests and file reads run
 outside it. `Database/Files.cs` owns the shared reconciliation, cleanup and
 search invalidation SQL so membership changes commit consistently across both
-domains. `FileSources` applies source facts through that transaction boundary;
-`TorrentSource` obtains those facts from coherent engine replies. Application
-wiring supplies these owners, never schema fragments.
+domains. `FileSources` applies source facts through that transaction boundary
+and owns contribution scheduling, readiness and the checked timestamps;
+`TorrentSource` obtains those facts from coherent engine replies and
+coordinates engine reads without SQL of its own. It keeps its own range-checked
+verification projection, because the Pieces display model also parses
+availability and downloading and classifies every piece, which the source does
+not need. Application wiring supplies these owners, never schema fragments.
+
+`FileSources` exposes collected file rows and pending origins through
+temporary views. Library and Subtitles consume those views and never interpret
+`contributions.collected` themselves, so source currency has one owner. Cleanup
+for both features consumes the same views and keeps its retention while
+synchronization is pending.
 
 Library's Store saves an answered search and its reusable candidates in one
 transaction. Each downloaded resource and its request outcome commit together
@@ -74,7 +84,7 @@ seconds. No performance claims are implied without measurement.
 | `provider_keys` | The person's own API key for a Library provider, protected for the Windows user. It replaces the key built into the release until the person removes it. A key that cannot be decrypted is removed, so the provider uses its built-in key again. |
 | `subtitle_outputs` | Actual subtitle path, language, created/found ownership and supplier reference. These facts distinguish files the app created from files it merely found. |
 | `subtitle_output_sources` | Associations of actual subtitle outputs with source files and the movie location they served. A failed move retains old ownership without claiming a subtitle at the new location. Deleting an output cascades its associations. |
-| `subtitle_jobs` | Accepted work, evidence stage, retry, outcome and match history for an output/language. Cancellation stops work without erasing its history. Jobs and outputs are removed when no accepted source remains. |
+| `subtitle_jobs` | Accepted work, evidence stage, retry, outcome and match history for an output/language. An extra subtitle's job holds its candidate reference, prefixed with the supplier as `subtitle_outputs.reference` is, so it downloads without searching again; the reference is valid only at the supplier that returned it. Cancellation stops work without erasing its history. Jobs and outputs are removed when no accepted source remains. |
 | `subtitle_job_sources` | Accepted jobs' source files, independent of output ownership. Jobs and search history follow the movie even when a caption is missing, found-file discovery replaces its associations, or a created caption cannot move. Deleting a job cascades its associations. |
 | `subtitle_scans` | Completed one-time discovery stamps per source file and path. Explicit rescan bypasses these; ordinary refresh does not repeatedly walk folders. |
 
@@ -90,7 +100,7 @@ never recreates an association after its last source leaves.
 
 | Temporary tables and views | Reason to exist |
 | --- | --- |
-| `file_reads` | Current engine summary, file-list confirmation and scheduling. A reconnect clears confirmation; a command only schedules every list for another read while confirmed lists stay in use. Process-relative retry times never survive the connection. |
+| `file_reads` | Current engine summary, file-list confirmation and scheduling. A reconnect clears confirmation; a command only schedules every list for another read while confirmed lists stay in use. Process-relative retry times never survive the connection. Every connection still reads every torrent's files in the background, because the summary stamp (save path, completion, settlement, size) cannot see a renamed file or one file finishing inside an incomplete torrent. |
 | `present`, `received` | Transaction scratch sets for replacing complete origin and file lists without treating partial reads as deletion. |
 | `new_origins` | Current-session subtitle eligibility, derived while reconciling durable known-origin history. |
 | `collected_files`, `pending_origins`, `current_files` | Shared membership and file-read readiness rules, including path settlement. |
@@ -106,6 +116,18 @@ requires current confirmation, completion and settled paths. Choices and
 ownership shared across a location join only confirmed files, because a cached
 file can still name a path its torrent has left. Display completion and
 subtitle languages use cached files; they do not authorize file work.
+
+Confirmation follows these rules:
+
+- A reconnect clears it for every list. A torrent command does not: every list
+  is read again in the background while confirmed lists stay in use, so metadata
+  commands, subtitle work and file facts continue.
+- A changed summary stamp, such as a move or a priority edit, clears
+  confirmation for that torrent only, until its new list arrives.
+- A failed or unusable read keeps whatever confirmation the list had and
+  retries later.
+- Confirming an identical list updates only `file_reads` and leaves the search
+  snapshot valid.
 
 Media bytes, transfer progress history, selection, scroll position, network
 clients and active cancellation tokens do not belong in this database. Search
@@ -140,8 +162,11 @@ further operations and the original failure remains visible. A normal transient
 failure retries through the existing owner; it does not secretly replace the
 connection or clear saved decisions.
 
-Incompatible or damaged storage remains untouched until the person confirms
-deletion through the existing UI. Deletion failure remains visible and retryable.
+Incompatible or damaged storage, meaning a file of another schema version or
+one that SQLite reports as damaged, remains untouched until the person confirms
+deletion through the existing UI. Feature work pauses, and the failure surface
+offers Delete database instead of Retry, because a retry cannot repair either
+file. Deletion failure remains visible and retryable.
 Successful deletion creates fresh owners through normal startup. Rebuilding a
 search snapshot never requires deleting durable data.
 

@@ -24,5 +24,5 @@ flag font's notice is `lib/Lucide/LICENSE.Twemoji`, beside the Lucide notice.
 <https://github.com/microsoft/Win2D/blob/master/LICENSE.txt>.
 
 Credits links to licence sites; the application does not embed these texts.
-The [licence review](../../docs/licences.md) records the scope and remaining
+The [licence review](../../docs/contracts/licences.md) records the scope and remaining
 distribution questions.

@@ -26,11 +26,11 @@ Done when the build passed and every listed check has a result.
 
 ## Build
 
-Run [Build.ps1](../Build.ps1) from the repository root with `pwsh`. One build
+Run [Build.ps1](../../Build.ps1) from the repository root with `pwsh`. One build
 covers the whole list:
 
 - Add `-Engine` when only engine code changed and the checks run the engine
-  alone, such as [Checks.ps1](../engine/tests/Checks.ps1): it compiles the
+  alone, such as [Checks.ps1](../../engine/tests/Checks.ps1): it compiles the
   engine and prints its path. It leaves the app folder alone, because the
   window there may not speak this engine's protocol; to run the window with a
   changed engine, build without `-Engine`. Add `-App` when only app code
@@ -81,8 +81,8 @@ folder, or one built before your last edit, shows old code. The check scripts
 default to other folders, so pass the printed paths:
 
 - App check scripts: `-BinaryDirectory <folder>`.
-- [Checks.ps1](../engine/tests/Checks.ps1): `-EnginePath <folder>\TinyTorrent.exe`.
-- [Capture.ps1](../app/tests/Capture.ps1): `-ArtifactsPath <artifacts>`, and
+- [Checks.ps1](../../engine/tests/Checks.ps1): `-EnginePath <folder>\TinyTorrent.exe`.
+- [Capture.ps1](../../app/tests/Capture.ps1): `-ArtifactsPath <artifacts>`, and
   `-Configuration Release` after a `-Release` build.
 
 A capture waits while another capture runs, and it stops development instances
@@ -103,7 +103,7 @@ readings of the original diff do not verify those fixes.
    Complete when affected paths have been traced and every finding has a fix or
    an explicit unresolved reason; compilation alone cannot establish this.
 2. **Ownership and simplicity.** Apply the existing
-   [code principles](../AGENTS.md#code-style) to the feature as a whole. Check
+   [code principles](../../AGENTS.md#code-style) to the feature as a whole. Check
    that each rule has one authoritative owner and implementation; remove
    duplication, competing state and ceremony without a concrete requirement.
    Refactor when it materially clarifies responsibility or simplifies the code,

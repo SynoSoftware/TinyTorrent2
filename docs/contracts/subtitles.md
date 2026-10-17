@@ -1,15 +1,13 @@
 # Automatic subtitles
 
-Implementation design. The owner approved the Plugins settings presentation on
-2026-10-11: move the Library card unchanged, group subtitle settings, show SQLite
-coverage, and keep batch scope and matching separate from automatic downloads.
-The prototype is archived at `app/subtitles-prototype.html` on
-`codex/subtitles-prototype` (commit `c60e02b`). It supersedes the subtitle
-presentation in the earlier Settings handoff. This document specifies behavior,
-not implementation evidence. Existing ownership and recovery
-rules come from [architecture](architecture.md), [engine](engine.md), and
-[protocol](protocol.md). The C# ownership ruling below replaces the earlier
-native acquisition, early-piece and companion-file proposals.
+This is the contract for automatic subtitles. The Plugins settings page keeps
+the Library card unchanged, groups the subtitle settings, shows SQLite
+coverage, and keeps batch scope and matching separate from automatic
+downloads; the [Settings handoff](../../app/prototypes/settings-options-prototype.md#subtitles)
+holds the presentation. Existing ownership and recovery rules come from
+[architecture](architecture.md), [engine](engine.md), and
+[pipe API](pipe-api.md). Subtitle acquisition has no native part: the engine
+has no acquisition, early-piece or companion-file code.
 
 ## Outcome
 
@@ -24,6 +22,18 @@ no feature code, piece requests, sidecar rules or new feature API. This replaces
 the earlier closed-window acquisition and native companion-file requirements,
 keeping the resident engine focused on torrent work.
 
+**Owner ruling: no Library or subtitle feature is implemented in C++.** C#
+creates and migrates SQLite, constructs the current projection, performs every
+query and write, downloads TMDB information and subtitles, and manages created
+subtitle files. The existing engine pipe supplies ordinary torrent/file facts
+only. There is no exception for a small native helper, generic byte interface,
+subtitle-aware payload operation or feature-specific invalidation cache. The
+pipe carries no subtitle-settings, supplier Check, Find, Recheck, credential,
+provider-search, job-status or database messages: views call their C# owners
+directly, and SQLite is not linked into the engine. Early lookup uses
+filename and release evidence; no engine piece demand or early-hash interface
+exists.
+
 **Owner ruling: after configuration, subtitles appear beside the movie without
 interaction, preferably before the movie finishes downloading.** Early arrival
 lets the person start watching with subtitles. Supplier availability and useful
@@ -31,9 +41,11 @@ filename/release evidence determine when that is possible; movie completion is
 not a prerequisite for searching or saving subtitles.
 
 Normal operation has no dialogs, notifications, torrent columns or inspector
-statuses. A manual choice opens only on request, as described under
+statuses. Running subtitle work shows in the shared
+[background work](background-work.md) status, and only a requested run reports
+its success. A manual choice opens only on request, as described under
 [choosing a subtitle](#choosing-a-subtitle). Problems use the window's existing
-[feedback placement](interface.md#feedback-placement), because one place for
+[feedback placement](ui.md#feedback-placement), because one place for
 every problem lets the person find it without opening Settings. A subtitle failure never changes torrent
 completion, seeding, or the availability of the movie.
 Shared source and database failures use the existing persistent workspace
@@ -55,12 +67,12 @@ The Library card moves from General unchanged. One Subtitles card groups
 supplier access, languages, download preferences and explicit actions.
 Persistent configuration comes first: supplier access, wanted languages, then
 automatic downloading and its extra subtitle count. The search limit is the
-[shared Plugins setting](architecture.md#third-party-provider-access) above the
-Library and Subtitles cards. Spacing separates
-configuration groups, with supplier and access together and language entry beside
-the wanted languages. Dividers separate configuration from Batch
-download and supplier operations from the local subtitle-folder scan, so the
-saved limit stays distinct from the choices for one batch.
+[shared Plugins setting](architecture.md#third-party-provider-access), on the
+Search protection card below the Library and Subtitles cards. Spacing separates
+configuration groups, with supplier and access together and the language filter
+beside the wanted languages. Dividers separate configuration from Library
+subtitle search and supplier operations from the local subtitle-folder scan, so
+the saved limit stays distinct from the choices for one batch.
 
 **Owner ruling: Download automatically controls automatic downloading only.**
 It does not enable the subtitle feature. Supplier setup, language selection,
@@ -70,13 +82,13 @@ manual downloads never requires enabling automatic work.
 | Input | Behavior and reason |
 | --- | --- |
 | Download automatically | Saves automatic intent independently of readiness. Missing credentials or temporary failures pause work without changing the switch. |
-| Extra subtitles when unsure | Saves 0 to 3 alternatives for new automatic searches, default 1. Accepted jobs retain their matching choice, and batch choices remain independent. |
-| Supplier | Selection applies immediately, with empty credentials for a different supplier. Only Edit opens the account dialog. Selection preserves automatic intent. |
+| Additional automatic matches | Saves 0 to 3 alternatives for new automatic searches, default 1. Accepted jobs retain their matching choice, and batch choices remain independent. |
+| Supplier | Selection applies immediately, with empty credentials for a different supplier. Only Account opens the account dialog. Selection preserves automatic intent. |
 | API key | OpenSubtitles uses the free application key without customer setup. SubDL and SubSource use the free application key built into the release, and the person may enter their own key instead, following [third-party provider access](architecture.md#third-party-provider-access). |
 | User name and password | OpenSubtitles optionally accepts a personal login alongside the application key. Both blank omits user login; entering either requires the complete pair. Other suppliers show only the key. |
-| Wanted languages | When unset, use the interface language. An explicit choice downloads one suitable subtitle for **each** selected language, so this is not an ordered fallback list. |
-| Batch download | Movies: New, Missing data, All selected, with nested movie counts. Download: Exact match only, Best match, Up to 2, 3, or 4 subtitles. These choices apply only to the requested batch. |
-| Scan torrent folders for subtitles | Finds bundled subtitles again without supplier access or changes to files. Reports files found and read errors. |
+| Wanted languages | A choice between the interface language and chosen languages. Chosen languages are a checklist of the supplier's catalog, narrowed by a filter box; typing filters the list and never adds a language. An explicit choice downloads one suitable subtitle for **each** selected language, so this is not an ordered fallback list. |
+| Library subtitle search | Movies to search: New, Missing data, All selected, with nested movie counts. Matches to download: Exact match only, Best match, Up to 2, 3, or 4 subtitles. These choices apply only to the requested batch. |
+| Scan torrent folders | Finds bundled subtitles again without supplier access or changes to files. Reports files found and read errors. |
 
 **Owner ruling: when subtitle languages are unset, use the current interface
 language.** Do not save a copy of that default: an interface-language change
@@ -110,12 +122,13 @@ changes live credentials. Check validates the complete draft without saving it
 or sending movie information. Save does not require a preceding Check; Cancel
 and Escape discard the draft. Failed saves retain the draft and explain the
 failure in the dialog. Check is disabled while checking or when the required
-account values are incomplete; saved secrets count toward readiness.
+account values are incomplete, and a click while a check runs does nothing;
+saved secrets count toward readiness.
 
 Apply [saved-value recovery](architecture.md#saved-value-recovery) when loading:
 an unreadable secret becomes no saved secret, malformed language choices use
 the interface-language default, and an
-out-of-range extras count is clamped to 0 to 3. Repair
+out-of-range extras count is clamped to 0 to 3, and an invalid date is cleared. Repair
 only damaged values and retain subtitle records, pending work and valid quota
 deadlines, so recovery cannot cause repeat downloads.
 
@@ -130,22 +143,30 @@ Configuration and protected secrets commit together in C# SQLite. No subtitle
 secret belongs in engine settings or the pipe.
 
 The supplier dialog reuses the proxy editor's matching field presentation and
-dialog mechanics, as the [handoff](../app/prototypes/settings-options-prototype.md#subtitles)
+dialog mechanics, as the [handoff](../../app/prototypes/settings-options-prototype.md#subtitles)
 describes. Proxy and supplier drafts, validation, secrets and network operations
 keep their own owners: shared controls do not require a configurable editor
 workflow with mode flags or callback lists. Supplier Check and saved-access
 validation call the same supplier operation. Account requirements remain
 supplier-specific.
 
+The Proxy and supplier dialogs share one Check footer, `CheckStatus`: progress,
+success and failure glyphs and one-line accessible feedback. Each draft keeps
+its own validation, cancellation and operations. Account Save validation sits
+beside its credential field, separate from the Check outcome. Operation
+failures stay exceptions and validation messages stay catalogue keys, so a
+language switch translates feedback already shown. Subtitle Settings' persistent
+status and its file problems stay independent, with one classification for
+persistent account failures. Each failure line is trimmed, and tooltips and
+accessibility expose the full text.
+
 Store stable language identifiers, not display names or one supplier's codes;
 each supplier maps them to its own codes. TinyTorrent ships each supplier's
 language catalog as that mapping, so the language list works offline and
 opening Settings never contacts a supplier before the person enables the
 feature. Display names come from Windows for each identifier, in the interface
-language, so no catalog of language names needs translating. Search and
-submitted text resolve against the saved supplier's catalog; unknown text is
-not saved as an unsupported language. Adding a language that is already chosen does nothing.
-Removing the last explicit choice restores the interface-language default.
+language, so no catalog of language names needs translating. The filter box searches the saved supplier's catalog, so a
+language the supplier does not offer cannot be chosen.
 After a supplier change, a chosen language that the new supplier does not offer
 stays in the list, is marked inline as not offered, and is not requested. It
 never vanishes on its own, because the person chose it and may switch back.
@@ -156,11 +177,16 @@ Automatic downloading searches only for
 [new torrents](architecture.md#third-party-provider-access), once their files
 are known. Changing languages reconsiders missing subtitles for them and for
 accepted work. Changing supplier preserves the automatic switch and accepted
-work. Work waits until the supplier is configured. Every other file needs Find,
+work, and drops the pending candidate references of extra subtitles, because a
+reference is valid only at the supplier that returned it. Correcting the same
+supplier's account preserves accepted work. Work waits until the supplier is
+configured. Every other file needs Find,
 so enabling the feature or reopening the window never starts a backlog against
 the supplier's allowance. Reopening cancels unfinished automatic jobs for
 previously finished torrents while retaining their search history. Accepted
-manual jobs resume, and torrents not previously seen finished remain new.
+manual jobs resume, and torrents not previously seen finished remain new. A
+requested search that a failure stopped is tried once more on reopening,
+because the reason for the failure is not saved.
 
 **Owner ruling: Batch download works while automatic downloading is Off.**
 Scope refers to the selected matching goal, not simply files on disk. New
@@ -181,13 +207,23 @@ subtitle. Otherwise the choice limits the total likely subtitles, including
 existing alternatives. Exact match only permits no guesses. Files are preserved;
 supplier references prevent repeat downloads. A newly available exact match can
 be saved beside earlier guesses. Changing choices restores the count for the
-next search. Status counts movies, not languages or output paths.
+next search. Status counts movies, not languages or output paths. There
+is no separate limit on how many movies one Find searches. The first Find on a
+large library searches every movie once, and the supplier's own quota slows that
+traffic. There is no billing ledger or unconditional maximum.
+
+Find works on finished movies only, so Library, the Plugins coverage count and
+Find describe one set of movies; a movie still downloading is automatic work's
+job. The batch count is derived from SQLite when it is read, with the selection
+the batch captured, and is never kept as a copy that can disagree with
+Library's queries. Manual jobs still advance through their evidence stages
+while automatic downloading is Off, so a manual job reaches its hash stage.
 
 Manual jobs retain their matching choice and authorization across restarts.
 Switching automatic downloading Off cancels automatic pending work only.
 Allowance and retries remain shared with automatic work. The default scope
-never repeats a saved miss; Missing data, All selected or an individual Force
-fetch authorize one fresh attempt. Reset search protection is a separate
+never repeats a saved miss; Missing data, All selected or an individual Search
+again authorize one fresh attempt. Reset search protection is a separate
 Settings action and enqueues no searches.
 
 **Owner ruling: C# owns subtitle records in its SQLite database.** A record
@@ -253,6 +289,50 @@ found associations, checks whether recorded downloads still exist, and leaves
 files alone. Missing downloads lose their output record while search history
 remains. Unreadable paths retain their ownership records and report read errors.
 
+Whether a video already has a subtitle in a language is answered from the
+records and their associations to the video, including found bundled files, so
+a bundled `Movie.eng.srt` stops the download of `Movie.en.srt` beside it.
+Discovery reads only what the shared source views list. It takes the torrent's
+content folder to be the common parent of its confirmed file paths when that
+parent lies below the save path; the torrent name is not used, because the
+engine's Keep, Create or Strip layout decides whether a name folder exists.
+
+A subtitle belongs to a video when its name, or the name of a folder between it
+and the content folder, starts with the video's name followed by the end of the
+name or one of `. _-([`. It also belongs when the content folder holds only that
+one video, unless its name has the form `<other title>.<language>`, which names
+another movie. So `Subs/<video name>/2_English.srt` belongs to its video, and a
+plain `English.srt` in a season folder covers no episode.
+Samples and unselected files never count as the folder's one movie. The
+language comes from every token of the subtitle's name after the video's name
+and from the names of the folders between them; it is accepted when exactly one
+language appears. A `forced` token marks a forced-only file, which gets no
+record and does not stop a full subtitle from being downloaded.
+
+When the names do not tell, the first part of a text subtitle (`.srt`, `.ass`,
+`.ssa`, `.vtt`) is read through the shared subtitle decoding, with cue numbers,
+timestamps and markup removed, and the detector runs. The read happens off the
+database worker and the dispatcher. Only a confident result counts, and never a
+regional variant; a binary `.sub` or a weak result gets no record. The detector
+calls Windows Extended Linguistic Services directly, with no package or model
+files. That service ranks languages without confidence scores, so the first
+language is accepted only when the sample holds at least 160 letters and the
+whole sample and both halves agree. Filename language names and codes resolve
+through Windows culture data, plus a table of bibliographic codes such as `ger`
+and `fre`. A regional tag then falls back through its parent cultures to the
+first tag a supplier catalog offers: `en-US` becomes `en`, and a supported
+distinction such as `pt-BR` stays distinct. A found language uses the same tag as the catalogues and the display
+names, so it compares equal to a wanted one.
+
+Each identified subtitle becomes a found record with its association, after
+the video is confirmed current. Created records never become found. The scan
+stamp changes when the torrent's path, completion, settled state or selected
+size changes, so a bundled subtitle that was not selected at the first scan
+and is downloaded later gets its identification without routine folder walks.
+A moved video is scanned at its new location. A folder that cannot be read
+keeps its existing records and gets no marker, so the next reconciliation
+tries again. A late result for a torrent removed during the scan is dropped.
+
 Subtitle searches follow the owner's
 [shared search limit](architecture.md#third-party-provider-access), 5 by
 default: a hidden count per supplier, search text and language. The search text
@@ -260,8 +340,8 @@ is the movie's title and year, with the season and episodes for an episode, so
 a second copy or another release of the same movie shares the count. The count
 prevents repeated searches from consuming the supplier's allowance. It survives
 job resets, moves, removal of the torrent and reopening.
-A completed search counts once, including a miss; connection, access and quota
-failures do not count. Downloads of the returned alternatives reuse the saved
+A completed search counts once, including a miss, however many HTTP requests
+the supplier needs; connection, access and quota failures do not count. Downloads of the returned alternatives reuse the saved
 supplier references and do not search again. Supplier pacing remains shared
 across all requests. Automatic work and New respect the cap. Missing data,
 All selected and an individual Search again can override local protection for
@@ -272,12 +352,10 @@ owns the cap and access holds in the existing database.
 
 ### Discovery and permission
 
-The Settings index carries a dismissible Automatic subtitles shortcut, with
-its explanation in a tooltip rather than body text, following the
-[interface](interface.md). It never takes focus or overlays the task. Dismissing it or leaving the
-index without using it counts as seen. Save that fact with window settings and
-never show it again on restart or update, because ignoring help is a valid
-choice. Set up subtitles navigates only; it never turns the feature on.
+The Settings index carries the Download subtitles automatically switch, the
+same saved setting as on the Subtitles card, and a link to that card. Set up
+subtitles, in the Help menu, opens the Plugins page only; it never turns the
+feature on.
 
 Each supplier owns its disclosure and privacy/terms links, shown in an
 information flyout from the supplier name; never show OpenSubtitles terms for
@@ -287,9 +365,10 @@ another supplier. The flyout is not a modal dialog or a consent step.
 requires explaining applicable third-party data sharing before opt-in, but does
 not mandate a particular card or dialog. The supplier link makes its information
 available before enabling without forcing users through Edit. Validate this final
-permission presentation against the release's actual data flow and agreement under
-the existing [release assessment](subtitles-release.md); the prototype does not
-establish certification. No checkbox or additional consent step is introduced.
+permission presentation against the release's actual data flow and agreement
+under the [release requirements](licences.md#store-privacy-and-permission); the
+presentation does not establish certification. No checkbox or additional
+consent step is introduced.
 
 The switch authorizes automatic requests; Find authorizes its requested batch
 independently. Saving a supplier or account never changes that choice. Correcting
@@ -304,8 +383,10 @@ accepted application/account credentials where supported. It does not spend a
 subtitle download to prove access, promise a future match, or clear an
 outstanding save error.
 
-Supplier status starts Not checked and reports only results that happened: a
-check or request that succeeded or failed. Filled fields never imply access.
+Supplier status shows Checking, Access checked after a check or request
+succeeded, the time a used-up allowance returns, or Not checked. Refused access
+returns it to Not checked. Failures are reported through the window's feedback,
+because the status line holds state, not events. Filled fields never imply access.
 Saving a changed supplier, account, proxy, or network adapter returns the
 status to Not checked, because the old result no longer describes the saved
 configuration. The one exception: saving the exact supplier values the dialog
@@ -317,19 +398,23 @@ exists.
 This design uses one clear action, without additional checkboxes, confirmation
 dialogs, reminders, or legal banners. Any additional permission needs a specific
 applicable requirement, recorded with evidence in the
-[release assessment](subtitles-release.md#remaining-release-blockers).
+[release blockers](licences.md#remaining-release-blockers).
 
 ## Early lookup and matching
 
 1. Once metadata is available, inspect wanted video files, excluding recognizable
    samples and trailers. Work per video rather than choosing the largest file,
    so movie collections receive the same behavior as a single movie.
-2. Search immediately using the video's filename and release name, with title
-   and year derived when useful. Torrent identity and file index identify the
+2. Search as soon as the video file exists on disk, using the video's filename
+   and release name, with title and year derived when useful. A file not yet
+   created is tried again a minute later. Automatic searches start 30 seconds
+   after the window opens, so they do not compete with its start for the
+   network; requested searches start at once. Torrent identity and file index identify the
    target inside TinyTorrent; the supplier receives search information, not
    TinyTorrent's internal identity or an absolute local path.
-3. Accept a result in the requested language when it identifies the same release
-   and has no conflicting movie, year, or edition information. A title-only
+3. Accept a result in the requested language as exact when its release name
+   equals the video's, ignoring case and accents, with the same year, season
+   and episodes, or when the supplier matched the movie hash. A title-only
    match is not an exact match, because different cuts can have different
    timing. Require full subtitles: forced-only tracks omit most
    dialogue and cannot satisfy a language request. Use the supplier's explicit
@@ -365,10 +450,13 @@ using the saved automatic extras count (0 to 3, default 1).** A person
 who wants subtitles wants them at once; a wrong guess costs a player menu
 choice, a missing one costs a manual search.
 
-The likeliest subtitle shares the video's edition (Extended, Director's Cut,
-Unrated and the like), which decides the cut, then its source family (web,
-Blu-ray, HDTV, DVD) and the most release tags, which decide the timing. Ties
-keep the supplier's order. An exact or hash match is not in doubt, so it gets
+The likeliest subtitle has the highest score. Each release tag it shares with
+the video adds 1. The same source family (web, Blu-ray, HDTV, DVD) adds 4 and a
+different one subtracts 4, because the source decides the timing. A different
+edition (Extended, Director's Cut, Unrated and the like) subtracts 8, because
+the edition decides the cut. A hearing-impaired subtitle for a video without
+that tag subtracts 1, so it loses ties. Equal scores keep the supplier's order,
+and candidates with the same reference or release name count once. An exact or hash match is not in doubt, so it gets
 no extras. With a hash supplier, guessing waits for the completed-file hash
 search, which can still find the exact file.
 
@@ -376,6 +464,13 @@ The first subtitle is `Movie.en.srt`; extras are `Movie.en.2.srt`,
 `Movie.en.3.srt` and so on, so a player loads the likeliest first and lists
 the others. Extras use the supplier's allowance only after every first
 subtitle due, so they never delay one. Batch status counts movies across requested languages.
+
+One search serves a movie and language, however many extras are wanted. The
+first subtitle's job searches and ranks the candidates and downloads at once.
+Each extra becomes a pending job that holds its candidate's supplier reference
+and downloads without searching again. Find and automatic acceptance create
+only first-subtitle jobs, while recorded extra files still follow their movie
+when it moves.
 
 ### Choosing a subtitle
 
@@ -414,11 +509,10 @@ completion, rather than guessing readiness from a filename or file length.
 Existing torrent priorities, pauses, queue policy and bandwidth
 limits remain unchanged. Only accepted files participate, never Add previews.
 
-[Library identification](library.md#identification-and-early-enrichment) can supply an
-already known movie identifier. Subtitle matching still establishes release and
+Subtitle matching uses no Library identification: it establishes release and
 edition compatibility itself, and never enables Library enrichment or waits for
-it. Keep any shared filename identification with its existing owner rather than
-creating a second movie-identification system for subtitles.
+it. Filename interpretation is shared with Library through its existing owner,
+so subtitles have no second movie-identification system.
 
 The torrent info hash and piece hashes cannot substitute for a supplier's movie
 hash: they describe different inputs and use different algorithms. Hash matching
@@ -428,9 +522,11 @@ improves release identification; it does not guarantee subtitle synchronization.
 
 Save subtitles beside the video's current location, using its final basename
 and a stable language tag: `Movie.en.srt` beside `Movie.mkv`. Obtain that final
-name from torrent metadata and the engine's file mapping. The optional
-unfinished-file suffix does not participate in naming: the same subtitle name
-applies while the video is `Movie.mkv` or `Movie.mkv.!tt`.
+name from torrent metadata and the engine's file mapping, and use it
+unchanged: C# never strips `.!tt` itself, because that text can belong to a
+genuine filename (see the [filename rule](library.md#ownership-and-data-sources)).
+The optional unfinished-file suffix does not participate in naming: the same
+subtitle name applies while the video is `Movie.mkv` or `Movie.mkv.!tt`.
 
 Save UTF-8 when the supplier offers that conversion; otherwise save the
 supplier's text unchanged, because guessing an encoding can corrupt a correct
@@ -439,7 +535,8 @@ temporary file only after the download succeeds, so a player never opens a
 partially written subtitle. Derive the destination name locally, rather than
 accepting a supplier-supplied path. Before a lookup searches, check two names
 once: the movie file, and the subtitle's intended name. A missing movie skips
-the lookup, so no subtitle is saved beside nothing. A file already at the
+the lookup, so no subtitle is saved beside nothing; when its torrent is
+complete, the job fails with the subtitle error toast. A file already at the
 intended name gains a found record and is never replaced. Automatic acquisition
 then skips the lookup; an explicit batch may add different candidates beside
 the existing file, up to the requested total. Subtitle discovery records other
@@ -476,6 +573,9 @@ opens C# SQLite.
   absent torrent, or reach a subtitle still referenced by another managed file.
   Check current torrent payload paths too: a subtitle may itself be another
   torrent's payload, which these best-effort operations must leave alone.
+  Subtitles follow the payload's deletion mode: the Recycle Bin, or permanent
+  deletion when Shift is held. A subtitle that cannot be deleted stays in place
+  and the failure is reported.
   All gestures for this command use this one C# path.
   An accepted window-side cleanup waits for a refreshed source and the removed
   origins to disappear. Its receipt exists only in that window, so reconnecting
@@ -502,7 +602,7 @@ instead of adding C++ feature code or a cross-process transaction.
 
 ## Ownership and quiet recovery
 
-The [product code rules](../AGENTS.md#code-style) govern reuse and ownership.
+The [product code rules](../../AGENTS.md#code-style) govern reuse and ownership.
 The table below identifies the existing owners for subtitle work; supplier
 implementations add only the request and decoding behavior that differs.
 
@@ -512,11 +612,21 @@ allowance, including login, retries and redirects, so adapters cannot accidental
 spend requests for obsolete work. Account Check carries no movie membership;
 its cancellation and network route still apply.
 
+The subtitle module keeps scheduling, matching policy, cancellation and storage
+for every supplier, and the Settings and dialog owners keep drafts, focus and
+presentation. A supplier adapter keeps only what differs:
+request shapes, language mappings, authentication, matching evidence and
+response decoding. Three real alternatives sit behind the supplier interface,
+so it earns its place. The release name is interpreted, and empty titles and
+extras are rejected, once before a request reaches a supplier. The shared HTTP
+owner holds platform HTTP, proxy and TLS configuration, request limits, route
+enforcement and cancellation, and makes no title or subtitle decisions.
+
 | Responsibility | Existing owner to reuse or extend |
 | --- | --- |
-| Dialog shell, buttons, settings layout | [Dialog](../app/src/Shared/Dialog.cs), [ActionButton](../app/src/Controls/ActionButton.cs), [SettingsRow](../app/src/Controls/SettingsRow.cs), [SettingsSection](../app/src/Controls/SettingsSection.cs), and their shared App.xaml styles. Equal action sizing belongs in that shared styling, not a subtitle-only dialog template. |
-| Compound account edits and checks | [Proxy editor](../app/src/Settings/Proxy.cs) and [ProxyDialog](../app/src/Settings/ProxyDialog.xaml.cs) already handle drafts and obsolete check results. Reuse their common behavior while keeping supplier validation and credentials separate. |
-| Ordinary settings, search and text | [Settings](../app/src/Settings/Editor.cs), [SettingsPage](../app/src/Settings/SettingsPage.xaml.cs), [Strings](../app/src/Shared/Strings.cs), and existing English/Spanish catalogues. Extend their inventory, navigation and save path. |
+| Dialog shell, buttons, settings layout | [Dialog](../../app/src/Shared/Dialog.cs), [ActionButton](../../app/src/Controls/ActionButton.cs), [SettingsRow](../../app/src/Controls/SettingsRow.cs), [SettingsSection](../../app/src/Controls/SettingsSection.cs), and their shared App.xaml styles. Equal action sizing belongs in that shared styling, not a subtitle-only dialog template. |
+| Compound account edits and checks | [Proxy editor](../../app/src/Settings/Proxy.cs) and [ProxyDialog](../../app/src/Settings/ProxyDialog.xaml.cs) already handle drafts and obsolete check results. Reuse their common behavior while keeping supplier validation and credentials separate. |
+| Ordinary settings, search and text | [Settings](../../app/src/Settings/Editor.cs), [SettingsPage](../../app/src/Settings/SettingsPage.xaml.cs), [Strings](../../app/src/Shared/Strings.cs), and existing English/Spanish catalogues. Extend their inventory, navigation and save path. |
 | Commands and background completion | Direct C# asynchronous operations at the subtitle owner; existing PipeClient supplies torrent facts only. No supplier/job pipe protocol. |
 | Saved state and protected secrets | The C# SQLite owner shared with Library; one schema and transaction path, Windows user-scoped DPAPI for secrets. |
 | Subtitle records and pending work | The same C# database owner, with subtitle decisions at the subtitle module. Library enablement never gates subtitle work. |
@@ -527,7 +637,8 @@ One C# subtitle module queries current managed-file facts and its confirmed
 settings from SQLite, following the [shared data flow](library.md#sqlite-and-video-information).
 Shared application settings, such as the effective proxy, adapter and interface
 language, still come from their existing owner; they are not copied into another
-settings store to satisfy the file-data rule.
+settings store to satisfy the file-data rule. Enabling subtitles creates no
+Library page, runs no Library query and starts no TMDB work.
 It owns supplier requests, matching, retry decisions and direct Settings
 operations. Network and file reads run
 outside the UI dispatcher and database worker. The engine owns torrent state
@@ -535,8 +646,10 @@ and operations; it neither schedules subtitle jobs nor publishes their status.
 Before issuing each request and before publishing its result, query SQLite to
 confirm that the output still serves at least one captured, current wanted
 source file, the feature is enabled, and the supplier/account and requested
-language still apply. Publish at the movie's
-latest observed location, because the movie can move during a request. A settings
+language still apply. The movie can move during a request: when the check
+before publishing finds the video gone from its captured path, the attempt is
+cancelled and the job returns to pending, so reconciliation can give it the
+new location. A settings
 change or observed removal cancels obsolete work; an uncancellable late result
 cannot replace newer state. The concurrent file-operation limitation above
 applies to publication. An already transmitted request cannot be
@@ -554,9 +667,11 @@ retry or quota-reset time. Authentication failures wait for corrected credential
 Apply rate and quota limits across the supplier account's work, not independently
 per movie. A large movie collection must not multiply the permitted request rate.
 While Automatic subtitles is On or requested manual work waits, a lasting
-supplier problem, such as refused access, an unusable proxy route or subtitle
-files that cannot be saved, shows in the [message bar](interface.md#message-bar)
-with Settings. A waiting batch's status names the same problem instead of
+supplier problem, such as refused access, an incomplete configuration, an
+unavailable supplier or an unusable proxy route, shows in the
+[message bar](ui.md#message-bar) with Settings. Subtitle files that
+cannot be saved show there with Retry, because the folder is fixed outside the
+app. A waiting batch's status names the same problem instead of
 Searching. A subtitle that could
 not be downloaded or saved for one movie is an event: one error toast names the
 latest subtitle file and counts the others, and stays until the person closes
@@ -571,12 +686,10 @@ Do not repeat a lookup already made with that eligible evidence. Further polling
 spend requests without new local evidence. Unresolved outcomes survive restart
 so reopening TinyTorrent does not reset those limits.
 
-## Delivery order
+## Delivery scope
 
-Use the [current implementation plan](04-subtitles-implementation.md#finish-the-delivery).
 The feature is implemented in C# alongside Library's shared source and database
-owners. Finish concrete defects and presentation corrections without repeating
-the old source/startup feasibility gate.
+owners.
 
 **Owner ruling, 2026-10-09:** benchmarks, agent interaction runs, exhaustive
 supplier/route/failure matrices and comprehensive test checklists are
@@ -595,7 +708,7 @@ video bytes, and its
 [integration guide](https://opensubtitles.tawk.help/article/getting-started)
 describes API keys and download quotas. These establish a possible integration
 route, not proof that TinyTorrent has acquired the necessary rights.
-The [release assessment](subtitles-release.md) records the evidence and gaps.
+[Licences](licences.md#opensubtitles) records the evidence and gaps.
 
 Each shipped supplier needs terms covering the intended application distribution,
 automated search and local subtitle downloads. Use its authorized API, supported
@@ -616,10 +729,10 @@ logs. The supplier necessarily sees the request's network address; a hash is
 not a promise of anonymity.
 
 Publish one accurate TinyTorrent privacy policy, accessible from Settings,
-About, and the Store listing. The [subtitle privacy draft](subtitle-privacy.md)
-specifies this feature's contribution; it needs the publisher's actual identity,
-contact, recipients, routing, and retention facts before publication. Supplier
-website policies do not establish API-specific retention.
+About, and the Store listing. For this feature it states what this section
+sends, the local records and their retention described above, and the
+publisher's identity, contact, recipients and routing. Supplier website
+policies do not establish API-specific retention.
 
 All supplier operations follow the product's [network route](architecture.md#network-route).
 Verify the shared transport before describing its behavior as provided.
@@ -645,10 +758,11 @@ SubDL's [API documentation](https://subdl.com/developers) and
   under the matching rules above. Explicit forced or foreign-part labels are
   rejected. SubDL has no movie-hash search, so step 4's completed-file hashing
   does not apply; filename search can start as soon as metadata names the file.
-- `GET /api/v2/me` reports the key's plan, usage, and reset times without movie
-  information, so Check uses it.
-- A free key allows 2,000 searches and 50 downloads a day. Responses report the
-  remaining allowance, and quota waits use the reported reset time.
+- Check calls `GET /api/v2/me`, which needs no movie information; a reply
+  confirms the key.
+- A free key allows 2,000 searches and 50 downloads a day. Quota waits use the
+  shared rate-limit handling: remaining-allowance and reset headers,
+  `Retry-After`, and 429 and 402 replies.
 - Downloads default to a ZIP archive; request the single subtitle file and
   accept only SRT, under the saving rules above.
 
@@ -662,12 +776,15 @@ SubSource's [API documentation](https://subsource.net/api-docs) and
   generated under My Profile on subsource.net, which replaces it. Either is
   sent as `X-API-Key`. SubSource limits requests per key, so every
   installation shares the built-in key's limits.
-- Matching takes two steps. `GET /movies/search` finds the title by text with
-  year, or by IMDb ID when one is known; `GET /subtitles` then lists that
-  title's subtitles by `movieId` and language. Accept a result only when its
+- Matching takes two steps. `GET /movies/search` finds the title by text, with
+  the season for an episode; TinyTorrent compares the year itself and gives up
+  when more than one title matches. `GET /subtitles` then lists that title's
+  subtitles by `movieId` and language. Accept a result only when its
   release information names the file's release, under rule 3. Results marked
   `foreignParts` are forced-only and never accepted. SubSource has no
-  movie-hash search, so step 4's completed-file hashing does not apply.
+  movie-hash search, so step 4's completed-file hashing does not apply. A
+  movie year may be missing from the title search only while exact release
+  matching and a unique movie identity still protect the download.
 - Language filters use names such as `english`; the shipped catalog maps
   stable identifiers to them.
 - Every call counts against 60 requests a minute, 1,800 an hour, and 7,200 a
@@ -678,8 +795,8 @@ SubSource's [API documentation](https://subsource.net/api-docs) and
   search unrelated to the person's movies; a rejected key returns 401.
 - The terms say subtitles belong to their translators and must not be
   altered, which the rule to save text unchanged already satisfies. They say
-  nothing about API use by applications; the
-  [release assessment](subtitles-release.md) records that gap.
+  nothing about API use by applications; [licences](licences.md#subsource)
+  records that gap.
 
 Keep matching, languages, file work, and recovery independent of a supplier's
 account model. The three suppliers differ in credentials, search steps, the
@@ -690,8 +807,8 @@ completion or disguising torrent features.
 
 ## Verification and contract integration
 
-Follow [testing](testing.md) and the current implementation plan. The former
-comprehensive verification checklist is **cancelled**. Existing successful
+Follow [testing](../agents/testing.md). The former comprehensive verification checklist
+is **cancelled**. Existing successful
 storage, filesystem, supplier and UI evidence remains useful; do not rerun it
 for unchanged behavior or probe suppliers to fill every unverified combination.
 
@@ -700,9 +817,7 @@ network requests, stale publication, overwriting an existing file, or moving
 and deleting files the feature does not own. These are behavior requirements,
 not a mandate to create a test for each scenario.
 
-When implementing, update the owning architecture, engine, protocol, and
-interface contracts for their respective changes and replace the corresponding
-rules here with links. This keeps the feature design discoverable without
-leaving two authorities for implemented behavior. The approved prototype and its
-handoff remain the presentation reference; implementation does not reopen those
-UI decisions.
+The architecture, engine, pipe API and UI contracts own the rules for
+their concerns. This contract links to them instead of restating them, so
+implemented behavior has one authority. The [Settings handoff](../../app/prototypes/settings-options-prototype.md#subtitles)
+remains the presentation reference.

@@ -10,7 +10,7 @@ scope, risk, or authorization. Match implementation, review and validation effor
 to the change, because process that costs more than it protects delays delivery.
 
 For product and implementation decisions, apply
-[Usability comes first](docs/architecture.md#usability-comes-first).
+[Usability comes first](docs/contracts/architecture.md#usability-comes-first).
 
 ## Every rule states why
 
@@ -49,21 +49,21 @@ permanent design, code, and review cost that the user never sees.
 ## Read for the change
 
 - Before changing ownership, dependencies, or project structure, read
-  [architecture](docs/architecture.md).
+  [architecture](docs/contracts/architecture.md).
 - Before changing engine state, persistence, activation, or shutdown, read the
-  [engine contract](docs/engine.md).
-- Before changing communication, read the [protocol contract](docs/protocol.md).
+  [engine contract](docs/contracts/engine.md).
+- Before changing communication, read the [pipe API contract](docs/contracts/pipe-api.md).
 - Before changing the Library database schema, read the
-  [database contract](docs/database.md). Every change from the current
+  [database contract](docs/contracts/database.md). Every change from the current
   revision 9 on is a migration that keeps saved data, because editing the
   schema and raising its version makes saved Library databases unusable.
 - Before changing text or translations, language selection, or display
-  formatting, read [localisation](docs/localisation.md).
+  formatting, read [localisation](docs/contracts/localisation.md).
 - Before changing the product UI, read [WinUI instructions](app/AGENTS.md).
 - Before changing the table library, its development hosts, or its tooling, read
   [TableView instructions](lib/TableView/AGENTS.md).
 - Before writing, changing, deleting, choosing, or running tests, read
-  [testing](docs/testing.md). It decides whether a test is worth writing.
+  [testing](docs/agents/testing.md). It decides whether a test is worth writing.
 - Before designing or changing a type, an enum, an interface, or where a seam
   goes, use the `/codebase-design` skill. It gives every session the same design
   vocabulary and principles, so a design is judged by one standard instead of
@@ -71,8 +71,12 @@ permanent design, code, and review cost that the user never sees.
 - Use [product vocabulary](CONTEXT.md) and, for controls,
   [table vocabulary](lib/TableView/CONTEXT.md).
 
-The [documentation guide](docs/README.md) identifies current authorities and
-historical references. The source repository at `../TinyTorrent` stays untouched.
+`docs/contracts/` describes how the product works now and is the authority for
+it. `docs/agents/` holds the working rules linked here. `docs/plans/` holds only
+work that is open or in progress; a finished plan moves its rules into the
+contracts and is deleted, because a finished plan read as current misleads. The
+[documentation guide](docs/README.md) lists every document. The source
+repository at `../TinyTorrent` stays untouched.
 Transmission, TypeScript concepts, browser architecture, and web state models
 do not define this product.
 
@@ -86,23 +90,23 @@ do not define this product.
 - **Owner ruling: update only `en.json` during normal work.** Refresh all other
   language catalogues from English at release, or for an explicit translation
   request, because translating unsettled text for every patch wastes work.
-  [Localisation](docs/localisation.md) owns catalogue structure and fallback.
+  [Localisation](docs/contracts/localisation.md) owns catalogue structure and fallback.
 - State assumptions and verifiable success criteria before implementing. Resolve
   material ambiguity before dependent changes.
 - Inspect the existing owner, data flow, and adjacent patterns before editing.
 - Before declaring implementation complete, perform the
-  [focused review passes](docs/compilation.md#focused-review-passes). They trace
+  [focused review passes](docs/agents/compilation.md#focused-review-passes). They trace
   behavior, simplify ownership and recheck corrections, because one broad review
   can miss defects and the fixes can introduce others.
 - **Owner ruling: compile last.** Before compiling, launching a built
   executable, or handling a build failure, read
-  [compilation](docs/compilation.md). Each build costs minutes of the owner's
+  [compilation](docs/agents/compilation.md). Each build costs minutes of the owner's
   15 W laptop, which agents share, so a task compiles only when nothing else
   can answer its remaining questions, and then once for all of them.
 - **Owner ruling: finish the requested work, including its validation.** An
   implementation, fix or review authorizes the focused tests and application
   inspection needed to verify that work. Use shared build outputs and choose
-  checks under [testing](docs/testing.md), including its separately restricted
+  checks under [testing](docs/agents/testing.md), including its separately restricted
   checks, because compiling without using the result can leave the actual
   behavior unverified. Respect explicit user restrictions and protect the
   owner's data and running applications. Close what you launched and report
@@ -209,14 +213,14 @@ holds.
 
 ## Naming
 
-Read [naming and structure](docs/naming.md) before naming or placing a type,
+Read [naming and structure](docs/agents/naming.md) before naming or placing a type,
 member, file, folder, namespace, or resource key, or before adding an interface
 or a signature, including an enum, and run its naming review on every new or
 changed name. One policy serves every project.
 
 ## Code comments
 
-Read [code comments](docs/comments.md) before adding, changing, or reviewing
+Read [code comments](docs/agents/comments.md) before adding, changing, or reviewing
 comments or API documentation. Before reporting a code change complete, review
 every comment the diff adds against that policy and remove the ones that fail.
 One policy serves every project.

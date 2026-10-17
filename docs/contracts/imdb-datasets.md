@@ -1,37 +1,32 @@
-# IMDb datasets plan
+# IMDb datasets
 
-**Phases 1 and 2: implementation done.** The import was timed and its data
-compared on 2026-10-16 ([measured result](#download-and-import)); live Library
-matching validation remains outstanding. **Phase 3: not implemented; design for review.** The [Library master plan](library.md) stays the authority
-for Library behavior.
+The IMDb provider and IMDb ratings for every provider's movies. The
+[Library contract](library.md) stays the authority for Library behavior.
 
 ## Summary
 
-Import the IMDb data into SQLite, in a separate file, `imdb.db`, beside
-`library.db`. Do not put the data into `library.db`.
+The IMDb data goes into SQLite, in a separate file, `imdb.db`, beside
+`library.db`. It is never put into `library.db`.
 
 - The person selects **Download** in Settings. The app downloads the IMDb files
   once and builds `imdb.db` from them. After that, every lookup reads the local
   file and sends no request.
-- A new **IMDb** provider searches and describes movies and series from `imdb.db`. Library
-  matching, saving and display stay as they are.
-- The same change removes the Public plugin, which reads the IMDb and Rotten
-  Tomatoes websites through a browser.
+- The **IMDb** provider searches and describes movies and series from `imdb.db`.
+  Library matching, saving and display are the same as for every provider.
+- No plugin reads the IMDb or Rotten Tomatoes websites.
 - The person selects **Update** to get newer data. Nothing downloads unless the
   person asks for it.
 
-**Owner ruling: IMDb offline is available only in Settings.** Do not offer it
-in a movie context menu, a Fetch/Force fetch chooser, or a batch fetch action.
-Download and Update obtain the complete dataset as one Settings operation;
-there are no small per-movie IMDb downloads. Phase 1 builds the one installed
-database from the basics, ratings and episode archives described below. Lookups
-only read that database. Dataset transfers follow the shared request protection
-without an IMDb-specific bypass.
-
-A provider's `ProviderOption` declares the data it answers from, `Dataset`, or
-none for a provider that answers over the network. Only a provider that answers
-over the network fetches an individual movie, so Settings lists either kind,
-while movie actions and their execution checks use only the network kind.
+IMDb offline is managed only in Settings
+([owner ruling](search-protection.md#imdb-datasets-and-local-answers)).
+Download and Update obtain the complete dataset as one operation: the import
+builds the one installed database from the basics, ratings and episode archives
+below, and lookups only read it. There are no small per-movie IMDb downloads.
+Dataset transfers follow the shared search protection without an IMDb-specific
+bypass. A provider that answers from a local file declares its `Dataset` in
+`ProviderOption`; only a provider that answers over the network fetches an
+individual movie (`ProviderOption.IsOnline`, owned by the same
+[search protection section](search-protection.md#imdb-datasets-and-local-answers)).
 Installing IMDb data does not enable per-movie downloads.
 
 The result: IMDb titles, years, genres and ratings for every movie, read in
@@ -64,12 +59,11 @@ no synopsis. The other providers keep supplying it.
 
 ## Where the data goes
 
-**Recommendation: one separate SQLite file, `imdb.db`, in the same folder as
-`library.db`.**
+**One separate SQLite file, `imdb.db`, in the same folder as `library.db`.**
 
 | Option | Result |
 | --- | --- |
-| Separate `imdb.db` | Recommended. See the reasons below. |
+| Separate `imdb.db` | Chosen. See the reasons below. |
 | Tables in `library.db` | Adds hundreds of MB to the file that holds the person's own decisions. A rebuild locks the Library while it runs. |
 | Keep the TSV files and read them | Each lookup reads up to 1 GB of text. Too slow. |
 | Load the data into memory | Uses hundreds of MB of RAM for the whole session. |
@@ -88,7 +82,7 @@ Reasons for the separate file:
    install deletes data that an earlier version built, because nothing reads
    it again. The name
    lets the provider check for the file without opening it. `library.db`
-   versioning does not change. The rest of this plan calls the file
+   versioning does not change. The rest of this document calls the file
    `imdb.db`.
 4. **Deleting it is simple.** Deleting the file frees all the space. Delete
    database in Settings does not touch it.
@@ -97,8 +91,8 @@ Reasons for the separate file:
 `Database.Run` treats `SQLITE_CORRUPT` and `SQLITE_NOTADB` as damage to the
 Library database, and the app then offers to delete `library.db`. An error
 from the IMDb file must never reach that path, because it would offer to
-delete the person's manual matches because of a cache file. Both phases keep
-the two files on separate connections for this reason.
+delete the person's manual matches because of a cache file. The two files stay
+on separate connections for this reason.
 
 ## Phase 1: the IMDb provider
 
@@ -146,7 +140,8 @@ Phase 1 downloads `title.basics`, `title.ratings` and `title.episode`: about
 
    An import that keeps no title, no rating or no episode fails, so data that
    IMDb changed never replaces the installed copy with an empty one.
-5. The rows go in one transaction, with reused native SQLite statements and with
+5. The rows go in one transaction, with reused native SQLite statements, which
+   avoid parameter lookup and reader allocation for each row, and with
    `journal_mode=OFF` and `synchronous=OFF`. These settings are safe because
    the file is temporary until step 7. Inserts use 100-row `VALUES` batches;
    the last batch prepares exactly the remaining rows. The widest insert
@@ -155,199 +150,150 @@ Phase 1 downloads `title.basics`, `title.ratings` and `title.episode`: about
    `title.ratings` into memory, sorted by title, before the pass over
    `title.basics`, and writes each title's rating and votes with its row;
    updating the rated titles afterwards read a random page for each of them.
-   The episodes go in primary-key order,
+   The sorted ratings stay in memory through the titles pass, which costs about
+   65 MB of peak working set. The episodes go in primary-key order,
    sorted in memory, because inserting millions of rows in file order into a
    `WITHOUT ROWID` table touches a random page for every row, while sorted
-   rows extend the table at its end. The phase counts the rows it writes.
+   rows extend the table at its end. Each episode's title is a separate table
+   keyed by episode and written in file order; the provider joins the two. The
+   phase counts the rows it writes.
 6. After the rows, the import builds the two key indexes and fills the
-   full-text index in batches of 10,000 titles copied directly in SQL, so
-   strings do not cross into managed code and back for every title. The phase
-   counts the title keys to report exact progress; the index's `rebuild`
-   command does the same work and reports nothing. It then
-   runs `optimize`, which has its own indeterminate, cancellable phase,
-   because SQLite reports no progress for it. The
-   [background-work plan](09-background-work.md#imdb-execution-and-sql-design)
-   owns scheduling and cancellation. The checks below cover cancellation
-   during title insertion and after an index batch; the other phases have
-   not had runtime cancellation checks.
+   full-text index in batches of 10,000 titles. Reading the ordered title keys
+   gives each batch its bounds and exact progress, and SQL copies the text, so
+   strings do not cross into managed code and back for every title. The index's
+   `rebuild` command does the same work and reports nothing. The one
+   transaction commits after indexing, before `optimize`; that commit is not
+   publication of the installed dataset.
+   `INSERT INTO title_search(title_search) VALUES('optimize');` then merges the
+   index structures. It can take substantial time and SQLite reports no
+   percentage for it, so it is its own indeterminate, cancellable phase
+   ([SQLite FTS5 optimize](https://www.sqlite.org/fts5.html#the_optimize_command)).
+   Scheduling, priority and cancellation are in
+   [import execution](#import-execution-and-sql-design).
 7. The import closes its connection, flushes the file to disk, and moves it over
    `imdb.db` with `File.Move` and overwrite. `File.Replace` fails when
    `imdb.db` does not exist yet. The flush prevents a power cut from leaving a
-   renamed file with missing data.
+   renamed file with missing data. Installation is the irreversible publication
+   point.
 
-Measured result, 2026-10-15, Release build on the owner's machine, driven
-through `Dataset.Build` outside the window: 1,208,696 titles, 7,861,478
-episodes and a 560 MB file. The three downloads took 2 min 16 s on that
-connection. The import took 1 min 46 s after them: episodes 4 s, linking 28 s,
-titles 49 s, ratings 7 s, indexing 16 s, optimize 2 s, flush under a second.
-The importing process grew by about 270 MB at its peak, for the episode
-numbers held in memory.
+### Import execution and SQL design
 
-Measured comparison, 2026-10-16, Release builds on the same machine, through
-`Dataset.Build` using the same cached archives and background worker. No
-download is included. Native prepared writes and SQL index batches reduced
-elapsed import time from 126.27 s to 98.35 s (22.1%) and process CPU time from
-93.22 s to 72.42 s. Peak process working set was 402 MB before and 406 MB after.
+The disposable build file and `VideoLookup.Reload` coordinate the install. The
+installed dataset stays readable while the new one is prepared. The importer
+never holds the shared Library database lock through downloading, parsing,
+indexing or optimization.
 
-| Phase | Before | After |
-| --- | ---: | ---: |
-| Episodes, including sort by series | 7.11 s | 6.75 s |
-| Linking, including sort by episode | 33.82 s | 21.28 s |
-| Titles | 56.73 s | 46.56 s |
-| Ratings | 10.45 s | 7.53 s |
-| Indexing | 16.06 s | 14.48 s |
-| Optimizing | 1.31 s | 1.49 s |
-| Flushing | 0.15 s | 0.10 s |
+| Phase | Progress | Cancellation |
+| --- | --- | --- |
+| Downloading each source | Received bytes over the length the response declares; the received count alone when the response declares none or sends more than it declared | Cancel network/file copy through the existing token |
+| Reading episodes, titles, ratings | Approximate current compressed-source position/length; kept below 100% until that source is fully consumed | Check between input records and through the SQLite handler |
+| Linking episodes | Episodes written over episodes read | Check between rows and through the SQLite handler |
+| Indexing titles | Titles added to the search index over titles kept; the two key indexes build first and report nothing, so the count holds at zero meanwhile | Check between rows; the SQLite progress handler interrupts the key indexes |
+| Optimizing search index | Unknown | SQLite progress handler interrupts `optimize` |
+| Flushing prepared data | Unknown | A synchronous flush must return before cancellation cleanup can finish |
+| Installing data | Unknown; short Finishing state | Existing coordinated publication finishes once committed |
 
-All 1,208,696 title rows, 7,861,478 episode rows and 7,861,484 episode-title
-rows matched the baseline in every column and SQLite value type. SQLite's
-`quick_check` and FTS5's integrity check against external content passed; the
-file is 587,960,320 bytes. The index batch uses a primary-key range search.
-[ImdbChecks.ps1](../app/tests/ImdbChecks.ps1) covers nullable and Unicode
-bindings, ratings, duplicate episode numbers, reused and partial insert batches,
-the final partial index batch,
-and cancellation after a batch, including discarding the temporary file and
-preserving the installed copy byte for byte. It runs against disposable
-fixtures without starting WinUI or the engine. Local timing and comparison
-records are in `artifacts/imdb-performance/`.
+A stop during an uninterruptible flush remains a cancellation request that
+awaits that call's return, not a promise of instant completion.
 
-The follow-up 100-row insert comparison used the same cached archives and
-background worker, with the previous binary saved before rebuilding. The
-repeated per-row baseline and final typed-buffer run measured:
+One connection-scoped SQLite progress handler covers the interruptible SQL
+phases and is unregistered before the connection is disposed. It only inspects
+cancellation and returns the interruption decision, with no SQL, UI calls or
+formatting, so a cancel during the key indexes or the full-text `optimize`
+statement does not wait for it to finish. Interrupting the build discards the
+disposable file. Interrupted SQL becomes cancellation only when the matching
+token was requested. The handler's instruction interval is not a progress total.
+[SQLite progress handler](https://www.sqlite.org/c3ref/progress_handler.html).
 
-| Work | Per-row | 100-row batches |
-| --- | ---: | ---: |
-| Episode links, including sort by episode | 19.43 s | 15.39 s |
-| Titles | 46.30 s | 44.53 s |
-| Whole import, elapsed | 92.27 s | 95.19 s |
-| Whole import, process CPU | 66.73 s | 64.09 s |
+The entire synchronous `Import` body runs on one dedicated worker thread at
+`ThreadPriority.Lowest`, set on that thread before it opens its private
+files/connection. **Owner ruling: the import gives up the processor, not the
+disk.** The import runs in the background anyway, so it must not take the
+processor from the person's other work; Windows background mode
+(`THREAD_MODE_BACKGROUND_BEGIN`) also lowers disk and memory priority, and
+under that mode the import waited far longer than it computed whenever other
+programs were busy, so the import keeps normal disk and memory priority. Do
+not change process priority or a reusable thread-pool thread. Do not put an
+asynchronous delegate on this thread and assume its continuations retain the
+priority.
+[Thread.Priority](https://learn.microsoft.com/en-us/dotnet/api/system.threading.thread.priority).
 
-The two insert phases took 8.8% less time and total CPU time fell 4.0%, but
-these runs do not establish an end-to-end elapsed improvement. Background
-load varied substantially: an earlier per-row run took 173.20 s. Batching
-reduces statement executions without removing per-value binding, parsing,
-sorting or index construction.
+The small worker implementation sits next to the importer until a second real
+caller needs it. It returns an awaitable completion with asynchronous
+continuations, propagates exceptions, and cleanup awaits its exit. The native
+call's result is checked; failure to establish the requested mode surfaces
+through the existing error path. Low priority improves coexistence; it does not
+promise a shorter elapsed import or instant interruption of an operating-system
+file call.
 
-All 16,931,658 rows again matched in every column and SQLite value type;
-`quick_check` and FTS5's external-content integrity check passed. The fixture
-also covers complete and partial batches in all three inserted tables, and
-nullable values when a batch is reused. A separate cancellation run stopped
-title insertion and released the temporary file for deletion. Records are
-`single-repeat.json`, `batched-final.json`, `batch-comparison.json` and
-`cancel-batch.json` under the same performance-artifacts directory. Disposable
-database copies are removed after comparison to recover their disk space.
+Global WAL settings, pooling and durability stay unchanged on the strength of a
+source review. Further SQL tuning starts from a new measurement.
 
-The next changes replace the second episode sort and per-title binary search
-with bitmap membership, and omit FTS document token counts that search does
-not use. The numbering records become collectible after linking. Neither
-change alters retained rows or the provider's search contract.
+### Measured import
 
-The monitored full imports measured the following. The baseline overlapped
-other diagnostic work, so the difference is not an isolated speedup from these
-changes; even process CPU time can vary with processor frequency and contention.
+Measured on the owner's machine, Release build, through `Dataset.Build` outside
+the window with cached archives. The data kept 1,208,696 titles, 7,861,478
+episodes and 7,861,484 episode-title rows (16,931,658 rows), in a file of
+568,459,264 bytes. Downloading the three archives took 2 min 16 s on that
+connection.
 
-| Measurement | Before | After |
-| --- | ---: | ---: |
-| Import elapsed | 162.24 s | 74.98 s |
-| Import process CPU | 86.94 s | 52.78 s |
-| Average machine CPU use, eight logical processors | 51.1% | 23.0% |
-| Peak process working set | 405.30 MB | 411.32 MB |
-| Database bytes | 587,960,320 | 573,812,736 |
+| Measurement (2026-10-16) | Result |
+| --- | ---: |
+| Episodes | 7.50 s |
+| Linking | 11.27 s |
+| Ratings | 1.04 s |
+| Titles | 40.67 s |
+| Indexing | 10.03 s |
+| Optimizing and flushing | about 1.6 s |
+| Whole import, elapsed | 71.97 s |
+| Whole import, process CPU | 59.03 s |
+| Peak process working set | 476 MB |
 
-All 16,931,658 retained rows matched in every column and SQLite value type.
-`quick_check`, FTS external-content integrity and five search-result comparisons
-passed. The combined fixture also passed, including unnumbered and out-of-range
-episode IDs, phrase matching and cancellation preserving the installed copy.
-The numbering records' shorter lifetime does not reduce measured peak working set.
+These runs shared the machine with other work, so they bound the
+implementation's cost; they do not isolate the effect of one change. All retained
+rows matched an earlier build in every column and SQLite value type, and
+`quick_check`, the FTS5 external-content integrity check and search-result
+comparisons passed.
 
-The final monitor covered 77.29 s including harness startup. Importer CPU use
-was at least 85% of one core for 9.39 s, 65–85% for 44.88 s, 35–65% for
-20.70 s, and below 35% for 2.32 s. No competing benchmark or diagnostic tool
-was detected. A resident compiler server used 0.27 CPU seconds across 3.40 s
-of sampled activity; its presence throughout the run did not mean a build
-was consuming CPU throughout. Machine CPU use never reached 85% in a sample.
-The first monitor rounded per-process deltas; its process samples are marked
-invalid, while its machine-wide counters remain valid. The corrected final
-samples account for 52.92 process CPU seconds, consistent with 52.78 s inside
-the import plus harness startup. Records are `controlled-before.json`,
-`controlled-after.json`, their `-load.json` companions, and
-`bitmap-comparison.json` in the performance-artifacts directory.
+A CPU sample profile of the batched import, taken under competing load, put
+about 90 of its 119 traced seconds under native SQLite calls: 51 s under the
+batched inserts, 29 s under the index phase and 10 s under the ratings updates
+that the ratings pre-join later replaced. Time under a native call includes any
+waiting for I/O. All managed work, including decompression, UTF-8 decoding,
+parsing, title keys and the episode sort, was under 25 s. Candidates that
+profile suggested were tested in a replay of the pipeline outside the app:
 
-A separate cache experiment replayed all ratings and built the ordinary key
-indexes using the bundled SQLite runtime. Increasing the cache from its
-observed `-2000` default to `-32768` reduced cache misses from 75,562 to 68,853,
-but writes increased from 36,177 to 42,867 and spills stayed near 35,700.
-The experiment did not establish a worthwhile benefit, so the import keeps
-the default cache. Its elapsed times are not a controlled comparison because
-other workloads were not recorded throughout that experiment.
+- Per-row inserts cost 6 to 8 more CPU seconds than 100-row batches on the
+  episode links and about 1 s on titles, so batching stays.
+- A 64 MB page cache, 8 KB pages, UTF-16 text binding and a struct or
+  `IComparable` sort comparer each measured within noise of the shipped code.
+  The larger cache cut cache misses from 75,562 to 68,853 but raised writes from
+  36,177 to 42,867, so the default cache stays.
+- 16 KB pages measured 27 s then 37 s for the same titles phase on two runs, so
+  the page size stays at the default.
 
-Import comparisons record machine-wide CPU use and overlapping build,
-benchmark and diagnostic processes, because other sessions share this laptop.
-`artifacts/imdb-performance/Monitor.ps1` wraps the existing import harness
-and samples those workloads about once a second. Its CPU bands describe how
-much CPU the importing process used, not how much scheduling time it was
-denied: waiting for I/O also lowers CPU use. A busy-machine elapsed result
-does not establish the improvement from a code change.
+Under Windows background mode, the import's phases took up to 2.5 times longer
+than their CPU time whenever builds ran. This is consistent with, but does not
+prove, lowered I/O priority as the cause; no controlled measurement of the move
+to `ThreadPriority.Lowest` exists.
 
-A CPU sample profile of the batched import (dotnet-trace, 2026-10-16, under
-competing load, and sharing the data directory with another session's run, so
-its elapsed figures are not evidence) put about 90 of its 119 traced seconds
-under native SQLite calls: 51 s under the batched inserts, 29 s under the
-index phase and 10 s under the ratings updates. Time under a native call
-includes any waiting for I/O; the sampler cannot separate the two. All managed
-work, including decompression, UTF-8 decoding, parsing, title keys and the
-episode sort, was under 25 s. A replay of the pipeline outside the app, with a
-load monitor recording competing processes, tested the candidates that
-profile suggested. Per-row inserts cost 6 to 8 more CPU seconds than 100-row
-batches on the episode links and about 1 s on titles, so batching stays. A
-64 MB page cache, 8 KB pages, UTF-16 text binding and a struct or
-`IComparable` sort comparer each measured within noise of the shipped code;
-16 KB pages measured 27 s then 37 s for the same titles phase on two runs, so
-the page size stays at the default. This implementation ran in 56 CPU seconds
-against an in-memory database on a quiet machine and in 98 CPU seconds
-against the file while builds and Windows Defender shared the processor.
-Those runs bound this implementation's own cost; they do not establish the
-fastest possible one, and they do not separate what the competing load,
-Defender's scanning and the worker's priority mode each contributed.
+Import comparisons record machine-wide CPU use and overlapping build, benchmark
+and diagnostic processes, because other sessions share the laptop.
+`artifacts/imdb-performance/Monitor.ps1` wraps the existing import harness and
+samples those workloads about once a second; the replay harness and the records
+are in `artifacts/imdb-performance/` and its `replay/` folder. Its CPU bands
+describe how much CPU the importing process used, not how much scheduling time
+it was denied, because waiting for I/O also lowers CPU use. An elapsed time
+from a busy machine does not establish the improvement from a code change.
+Measurements read saved archives; IMDb never sees repeated downloads for
+development.
 
-The ratings pre-join replaced the 1.7 million random-access updates with a
-lookup and two more bound values per title during the titles pass. The
-monitored full import measured, against the previous record's run:
-
-| Phase | Ratings as updates | Ratings written with the row |
-| --- | ---: | ---: |
-| Episodes | 5.16 s | 7.50 s |
-| Linking | 11.47 s | 11.27 s |
-| Ratings | 6.01 s | 1.04 s |
-| Titles | 40.06 s | 40.67 s |
-| Indexing | 10.52 s | 10.03 s |
-| Whole import, elapsed | 74.98 s | 71.97 s |
-| Whole import, process CPU | 52.78 s | 59.03 s |
-| Peak process working set | 411 MB | 476 MB |
-| Database bytes | 573,812,736 | 568,459,264 |
-
-Other processes averaged 1.9 cores during the second run and no competing
-benchmark was detected during the first, which the slower pure-managed
-Episodes phase shows, so neither the CPU totals nor the whole-import elapsed
-times are a controlled comparison; the second run's process CPU also includes
-its in-process load monitor, about 2 s. The Ratings phase shrank under the
-heavier load, and the Titles phase that absorbed its lookups did not grow
-measurably, but the whole-import gain remains unproven under equal
-conditions. The sorted ratings list stays in memory through the titles pass,
-which raised the peak working set by about 65 MB in this one run. All
-16,931,658 rows matched the previous build in every column and SQLite value
-type; `quick_check`, FTS integrity, four search comparisons and the fixture
-checks passed. Records, the replay harness and the load monitor are in
-`artifacts/imdb-performance/replay/`; the load records written before the
-monitor was corrected count samples as seconds and include the monitor
-thread's CPU in the process total.
-
-The worker now runs at `ThreadPriority.Lowest` instead of Windows background
-mode, by the [owner ruling](09-background-work.md#imdb-execution-and-sql-design)
-that the import gives up the processor, not the disk. No controlled
-measurement of that change exists; under background mode the import's phases
-took up to 2.5 times longer than their CPU time whenever builds ran, which is
-consistent with, but does not prove, lowered I/O priority as the cause.
+[ImdbChecks.ps1](../../app/tests/ImdbChecks.ps1) covers nullable and Unicode
+bindings, ratings, duplicate and unnumbered or out-of-range episode IDs, phrase
+matching, reused and partial insert batches, the final partial index batch, and
+cancellation after a batch, including discarding the temporary file and
+preserving the installed copy byte for byte. It runs against disposable fixtures
+without starting WinUI or the engine.
 
 ### Schema
 
@@ -399,8 +345,7 @@ and votes, not BM25. Existing files with token counts remain readable.
 
 ### Provider
 
-The folder is `app/src/Library/Imdb/`. The Public plugin's `Public.Imdb` class
-goes in the same change, so no type shares the name of the namespace.
+The folder is `app/src/Library/Imdb/`.
 
 - `Provider` implements `IProvider`, and its `ProviderOption` has the provider
   ID `imdb`, which also names its catalogue, and the `Dataset`. It answers
@@ -434,9 +379,8 @@ goes in the same change, so no type shares the name of the namespace.
   a well-known newer film. The full-text rank alone puts famous films below
   obscure ones: for "the matrix" it ranked a 2010 film with 20 votes above the
   1999 film. Library's existing confidence rules then choose the match, as
-  they do for every provider. Step 1 counts how many films share a common
-  title. If a correct film can fall outside the first 50, `Search` also needs
-  the release year.
+  they do for every provider. If a correct film can fall outside the first 50,
+  `Search` also needs the release year.
 - `Describe` reads one row and returns the title, year, genres and the IMDb
   rating with its votes. For a series it also returns the release's
   episodes with their names, as TMDB does, and the series' rating. An episode
@@ -445,33 +389,18 @@ goes in the same change, so no type shares the name of the namespace.
 - `Dataset` owns the download, the import, the file replacement and the
   deletion. It replaces or deletes the file inside `VideoLookup`'s change, so
   no lookup has the file open at that moment.
-- Cancel interrupts the import's connection, as the Library connection's
-  progress handler already does, so a cancel during the full-text `optimize`
-  statement does not wait for it to finish.
 - Installing new data goes through `VideoLookup.Reload`, which replaces the
   file off the window thread and, when IMDb is the selected provider,
   recreates it, as saving an API key does, and forgets its failures. Another
   selected provider keeps its failure. A running batch keeps its waiting
   files.
 
-The [request-protection plan](08-request-protection.md#imdb-datasets-and-local-answers)
-applies to remote requests. Local dataset reads are not remote requests and
-need no bypass or force permission. After installation, local matching must
-use the new dataset rather than stale query results, learned choices or the
-saved title/year shortcut for unresolved files. Accepted matches and useful
-saved metadata remain intact. A session's attempt markers prevent an empty
-answer from starting a busy loop; installing new data clears IMDb's unresolved
-markers so eligible unfinished work can use it immediately.
-
-Settings' dataset Download and Update use the same request protection as every
-other remote transfer: pacing, saved remote waits and standard retry/reset
-rules. There is no IMDb-specific override or movie-search charge. A refusal,
-401 or 403, needs attention; each Download or Update click tries once past it
-and past a backoff, as Retry does for lookups. Reset clears local download
-protection without deleting installed data or starting a download; it cancels
-and drains the whole download/install command before taking Library's lookup
-gates or clearing its policy writes. Local searches
-remain usable while a remote dataset download is waiting.
+[Search protection](search-protection.md#imdb-datasets-and-local-answers) owns
+how remote requests, local dataset reads, installation, reset and Settings'
+Download and Update relate: local reads are not remote requests, Download and
+Update follow the standard search protection, and an installation makes local
+matching use the new dataset while keeping accepted matches and useful saved
+metadata.
 
 ### Settings
 
@@ -487,10 +416,10 @@ the data setup or key setup that the chosen provider needs:
    fixed text, because it changes slowly and reading it would cost a request.
 2. The **IMDb data** row under Video information (phase 2, point 5) shows each
    file's download as received over declared bytes, then the current
-   preparation stage: an approximate percentage while parsing each source,
-   and an exact one while the episodes and the search index are written.
-   Optimization and the final disk flush stay indeterminate, because SQLite
-   and Windows report no progress for them. Each stage restarts the
+   preparation stage as the [phase table](#import-execution-and-sql-design)
+   lists it: an approximate percentage while parsing each source, and an exact
+   one while the episodes and the search index are written. Optimization and
+   the final disk flush stay indeterminate. Each stage restarts the
    percentage, so the row names the current stage, for example "IMDb titles ·
    ≈45%". The shared observation supplies Settings and the status bar with
    the same phase and cancellation command. The status bar names IMDb on
@@ -546,71 +475,35 @@ cancellation does not discard the installed data or hide a later failure.
 
 Waiting cannot deadlock. The caller holds none of Library's gates while it
 waits, and the cancelled download either stops before `VideoLookup.Reload` or
-lets `Reload` drain the lookups and then refuses the install. A protection
-reset already relies on this path.
+lets `Reload` drain the lookups and then refuses the install.
 
-### Removing the Public plugin
+### No website reader
 
 IMDb's dataset conditions say: "The data must be taken only from the datasets
-made available", and they forbid screen scraping of the website. Using the
-datasets therefore requires removing the IMDb website reader. Its browser
-options start an installed Chrome-based browser and load a whole web page to
-read a few facts. That uses much memory and takes about ten seconds for each
-movie.
+made available", and they forbid screen scraping of the website. No plugin
+therefore reads the IMDb website. Reading it needed an installed Chrome-based
+browser to load a whole web page for a few facts, which used much memory and took
+about ten seconds for each movie.
 
-The Rotten Tomatoes HTTP option needs no browser and is not under IMDb's
-conditions. It goes too, because it gives nothing that another provider lacks
-(see the table), and it is the last user of the shared website reader: the
-page parsing, the saved-page handling and the website error texts. Keeping it
-would keep that code for no visible benefit.
+Rotten Tomatoes is not offered either. Its HTTP option needed no browser and is
+not under IMDb's conditions, but it gave nothing that another provider lacks, and
+keeping the shared website-reading code for it would carry that code for no
+visible benefit.
 
-| Public option gives | Source after the change |
+| Fact | Source |
 | --- | --- |
 | IMDb title, year, genres | IMDb provider, OMDb, TMDB |
 | IMDb cast | OMDb, TMDB |
 | IMDb plot | OMDb (full plot), TMDB, MDBList |
 | IMDb rating | IMDb provider; for every provider's match in phase 2 |
 | Rotten Tomatoes synopsis, genres, cast | TMDB, OMDb |
-| Rotten Tomatoes score | Not shown today by any option. OMDb and MDBList already save it. |
-| IMDb "More like this" titles, saved as choices for Fetch metadata | TMDB recommendations, saved the same way |
+| Rotten Tomatoes score | OMDb and MDBList save it; no option shows it |
+| Related titles, saved as choices for Fetch metadata | TMDB recommendations |
 | Keywords | TMDB |
 
-Every fact has another source, but not always in one provider, because the
-person chooses one provider at a time. The IMDb provider alone gives no cast
-or synopsis; TMDB gives both, and phase 2 adds the IMDb rating to it.
-
-The removal deleted:
-
-- the website reader, its browser control and `movie-websites.md`;
-- `ProviderHttp.BeginDirect`, which only the browser reader uses;
-- the external-browser paragraph under
-  [network route](architecture.md#network-route);
-- the `websites` and `websites_http` text sections;
-- the website paragraphs in [library.md](library.md) and
-  [05-library-implementation.md](05-library-implementation.md);
-- the website checks in `app/tests/SourceChecks.ps1`. They load
-  `Public.Provider.Options` and run the website parsers. The store checks
-  "late reply overwrote a newer Clear" and "late reply overwrote a merged
-  identification" use the Rotten Tomatoes result as their fixture, and one
-  check expected `rottentomatoes` to survive as the saved provider. These
-  checks now build an IMDb record in the check itself.
-
-The removal also deleted `VideoSchedule`, `IProvider.Schedule` and
-`VideoChoice.Content`. The `Manual` schedule existed only for the website
-options, which sent requests only when the person asked, and the saved choice
-content only for website pages, which are expensive to read. `VideoLookup`
-keeps scheduling.
-
-The [request-protection plan](08-request-protection.md) now covers the API providers
-and streaming dataset downloads. It removes the former website-reader rules
-and preserves the local/remote distinction above. It is implemented; the
-phase 2 rating join must preserve its reset and lookup-drain rules.
-
-What existing users see: phase 2 raised `Database.Version` to 6, so every
-older `library.db` is recreated, and no saved provider choice or saved
-information from the removed options survives the update. The person chooses a
-provider again. The IMDb provider gives no synopsis, cast or keywords, which
-the website gave; TMDB gives all three.
+Every fact has a source, but not always in one provider, because the person
+chooses one provider at a time. The IMDb provider alone gives no cast or
+synopsis; TMDB gives both, and phase 2 adds the IMDb rating to it.
 
 ## Phase 2: IMDb ratings for every provider
 
@@ -621,8 +514,8 @@ rows, takes each movie's rating from `imdb.db`. The rating is not copied into
 
 - Wikidata's IMDb rating is the value an editor last recorded, often years old.
   The local rating is at most as old as the last update.
-- TMDB returns no IMDb rating. With this change, the IMDb column fills for TMDB
-  matches too.
+- TMDB returns no IMDb rating, so the IMDb column fills from the dataset for
+  TMDB matches.
 - Without `imdb.db`, or when it cannot be read, the rating that the provider
   returned stays in use.
 
@@ -630,7 +523,7 @@ rows, takes each movie's rating from `imdb.db`. The rating is not copied into
 `library.db`, then asks `Dataset` for the ratings of their IMDb IDs in one query
 on `imdb.db`. The table and the Details card use the same rule. Library sorts
 ratings in C# and no SQL filter reads them, so a SQL join would gain nothing.
-Attaching `imdb.db` to the Library connection would need four new mechanisms in
+Attaching `imdb.db` to the Library connection would need four mechanisms in
 the shared Database owner: attaching, telling a damaged `imdb.db` from a
 damaged `library.db`, a file swap outside transactions, and invalidating the
 row snapshot. The C# read needs none of them:
@@ -680,17 +573,6 @@ score would look as trustworthy as a right one:
   one index lookup, and a similarity search for each file would slow every
   refresh.
 
-## Phase 3, only if needed: cast and localized titles
-
-Each addition is a large download for a smaller benefit, so none is in the
-plan until someone asks for it. Series and episodes, which phase 3 also
-listed, are part of phase 1.
-
-| Addition | Extra download | Benefit |
-| --- | --- | --- |
-| Cast | about 1 GB (`title.principals` and `name.basics`) | The Cast column. Keep the first five actors for each kept title, and only the names they reference. |
-| Localized titles | about 450 MB (`title.akas`) | Spanish titles. TMDB and Wikidata already supply them. |
-
 ## Risks
 
 - **Licence.** IMDb allows the datasets for personal and non-commercial use
@@ -706,34 +588,11 @@ listed, are part of phase 1.
   Credits on the About page.
 - **More ambiguous matches.** IMDb lists many more films than TMDB, including
   many with the same title and year. Library keeps an ambiguous match
-  unassigned, so the risk is fewer automatic matches, not wrong ones. Measure
-  the match rate on a real Library before release.
-- **Import time.** The measured time above excludes downloading and varies
-  with the computer's load.
+  unassigned, so the risk is fewer automatic matches, not wrong ones. The match
+  rate on a real Library is measured before release.
+- **Import time.** The measured time excludes downloading and varies with the
+  computer's load.
 - **Disk space.** The import briefly needs space for both `imdb.db` and
   `imdb.db.tmp`. If the disk is full, the import fails with a message that
   says so, and the old file and the downloaded archives stay, so the person
   frees space and tries again without a new download.
-
-## Work order
-
-Steps 2 to 9 are done. Step 1 is not, so the sizes, counts and times in this
-plan are still estimates. The owner's first download in the app provides them:
-the measurements read the installed file, so IMDb sees no extra download.
-
-1. Download `title.basics`, `title.ratings` and `title.episode` once and save them locally for
-   development. Do not download them repeatedly from IMDb. From the saved
-   files, measure the row counts, the import time, the file size, and how many
-   films share a common title.
-2. Add the streaming download to the HTTP owner.
-3. Write `Dataset` and the import.
-4. Write `Imdb.Provider` and register it with the provider ID `imdb`.
-5. Remove the Public plugin and everything listed under
-   [Removing the Public plugin](#removing-the-public-plugin).
-6. Add the Settings flow and its strings.
-7. Update `library.md`, `architecture.md` and the About credits.
-8. Phase 2.
-9. Finish the download lifetime as [Ending a download](#ending-a-download)
-   describes, and delete `VideoSchedule`, as
-   [Removing the Public plugin](#removing-the-public-plugin) lists, with its
-   description in [05-library-implementation.md](05-library-implementation.md).

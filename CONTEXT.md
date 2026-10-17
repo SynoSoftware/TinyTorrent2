@@ -2,7 +2,7 @@
 
 Terms for TinyTorrent. The [table glossary](lib/TableView/CONTEXT.md) defines TableView's
 separate, domain-neutral vocabulary. Decisions belong in the
-[architecture](docs/architecture.md).
+[architecture](docs/contracts/architecture.md).
 
 ## Language
 
@@ -136,6 +136,12 @@ a scheduled pause period. The torrent continues by itself when that hold ends.
 **Session pause**: a pause of transfers across all torrents that preserves each
 torrent's own intent.
 
+**Recovery hold**: a torrent's block on transfers because previously present
+payload is missing or its prior state cannot be established. It ends through
+the person's recovery choice or validated adoption authorized by movement tracking,
+not an ordinary Start or scheduled resume. Reusing existing files does not
+authorize downloading missing payload.
+
 **Session totals**: payload bytes downloaded and uploaded since TinyTorrent's
 engine started, including transfers while its window was closed.
 
@@ -201,6 +207,10 @@ used by torrents outside the operation. Removal and deletion have separate outco
 verifying files already at the destination.
 _Avoid_: relocation.
 
+**Adoption**: updating a torrent's location to use its files already present
+elsewhere, without physically moving them. It is distinct from permission to
+download missing payload.
+
 ### Library
 
 **Library**: the searchable collection of finished files reported by its
@@ -209,6 +219,18 @@ current data sources, together with their video or music information.
 **Library data source**: an origin of Library file entries and their current
 membership, such as managed torrents.
 _Avoid_: source alone, which means a torrent file or magnet supplied for addition.
+
+**Disk discovery**: Library's automatic finding of video, music and subtitle
+files on selected local NTFS drives, including changes to their locations.
+
+**File finder**: the helper process, `TinyTorrentFileFinder.exe`, that reads
+the NTFS metadata and USN change journal of selected drives for disk discovery
+and locates missing torrent files.
+_Avoid_: Find, which is the subtitle batch command.
+
+**File presence**: the observed existence or absence of a file at its location,
+distinct from a torrent's continued claim to that file. An unavailable drive or
+failed check does not establish absence.
 
 **Library entry**: a known file location represented by one or more current
 data-source contributions.
@@ -311,6 +333,12 @@ and outbound pacing remain binding after a local reset.
 
 **Force fetch**: the person's request for one fresh answer despite local
 protection. It does not clear history or bypass a provider's remote wait.
+Subtitles show it as Search again.
+
+**Library subtitle search**: the person's request to download subtitles for
+finished movies, chosen as New, Missing data or All selected. Its command is
+Find, which becomes Stop while the batch runs.
+_Avoid_: file finder, which is disk discovery's helper process.
 
 **Missing data**: unresolved questions, including both New and locally blocked
 ones. Subtitle matching options still determine what satisfies the request.

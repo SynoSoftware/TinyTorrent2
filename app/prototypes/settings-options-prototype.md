@@ -8,16 +8,13 @@ preserves decisions, reasons, ownership boundaries, and limitations that are eas
 to miss in the HTML. Neither file proves production integration or performance.
 This handoff was checked against source; no application was run or compiled.
 
-For delivery order, existing owners, field coverage, and completion criteria,
-use the [implementation plan](../../docs/07-settings-implementation.md).
-
 ## Start here
 
 1. Use **C: Search and index** as the selected direction: category cards and
    search, with D's compact setting rows. D remains a useful direct category
    view; A, B, and E are comparison variants, not additional product modes.
 2. Read the [documentation guide](../../docs/README.md),
-   [interface contract](../../docs/interface.md), and
+   [UI contract](../../docs/contracts/ui.md), and
    [WinUI instructions](../AGENTS.md). Reconcile the specific differences listed
    below before changing their production owners. This companion is a design
    handoff, not a replacement engine or protocol contract.
@@ -53,7 +50,7 @@ An attractive placeholder is not evidence that its backend feature exists.
   Use its placeholder and accessible name without an extra "Find a setting" label.
 - Ordinary settings use the existing individual commit and error behavior.
   There is no page-wide Save. Use the
-  [committing-edits contract](../../docs/interface.md#committing-edits) for pending,
+  [committing-edits contract](../../docs/contracts/ui.md#committing-edits) for pending,
   invalid, rejected, and uncertain edits; HTML assignments are not that protocol.
 - Connection setup is a **Settings child page**, because it has measurement,
   temporary suspension, a proposal, and explicit Apply/Cancel. Proxy editing
@@ -141,7 +138,7 @@ copy of every label and range here.
 | --- | --- |
 | General | Default-app integration; sign-in/background startup, splash and start-paused choices; exit confirmation; notifications; sleep prevention on mains power; updates. Closing a window and exiting the engine remain distinct operations. |
 | Transfers | Background versus dialog-based addition, start/queue placement, folder layout and duplicates, skipped files, download/incomplete folders, suffix and allocation, seeding stop rules, watched folders. Defaults for new torrents must not relocate existing data or rewrite existing torrent choices. |
-| Subtitles | Automatic downloading, supplier access, and wanted languages. Follow the [subtitle design](../../docs/subtitles.md) for early lookup, quiet recovery, and file ownership. |
+| Subtitles | Automatic downloading, supplier access, and wanted languages. Follow the [subtitle design](../../docs/contracts/subtitles.md) for early lookup, quiet recovery, and file ownership. |
 | Network | Adapter, incoming port/mapping, encryption, transport and address family, connection attempts, proxy and peer discovery. Reuse the existing network and proxy owners, including private-torrent restrictions. |
 | Speed limits | Connection setup, active speed-limit mode, standard caps, queue limits, peer limits, alternative caps, bandwidth accounting. Queue activity and transfer speed are separate concepts even though they share this category. |
 | Schedule | Weekly schedule and its existing editing capabilities, plus a compact summary of the actual standard and alternative speeds. |
@@ -163,7 +160,7 @@ result opens the existing setting rather than a second editor. The shared field
 inventory also makes these controls available in the comparison layouts.
 
 Supplier access follows
-[third-party provider access](../../docs/architecture.md#third-party-provider-access).
+[third-party provider access](../../docs/contracts/architecture.md#third-party-provider-access).
 Settings shows Subtitle supplier on the left and the clickable saved supplier
 with Edit on the right, all in one row. The value and action align with the
 language input and Add. Edit opens the supplier/account
@@ -247,7 +244,7 @@ catalog for the suppliers, so it does not show this case. Unsupported choices
 stay visible but are excluded from actionable Find counts and requests.
 
 Problems do not appear on the Subtitles page, its Supplier card or the index
-card. They use the window's [feedback placement](../../docs/interface.md#feedback-placement):
+card. They use the window's [feedback placement](../../docs/contracts/ui.md#feedback-placement):
 the message bar for a lasting supplier problem and an error toast for a subtitle
 that could not be saved. The Supplier card shows only access and allowance
 state in secondary text. Only a language that cannot be added shows as a field
@@ -418,19 +415,19 @@ integration decision; until then, manual capacity entry is the real input path.
 
 Current [PipeClient](../src/Shared/Engine/PipeClient.cs) still creates a fixed one-second
 refresh timer. Adding the prototype field did not change it. Keep command-driven
-refreshes responsive and the [protocol's](../../docs/protocol.md#snapshots-and-detail)
+refreshes responsive and the [pipe API's](../../docs/contracts/pipe-api.md#snapshots-and-detail)
 bounded, command-priority read behavior when making the periodic interval
 configurable. Do not apply it to unrelated preview or engine timers by accident.
 
 History belongs to the engine, continues while WinUI is closed, is session-wide,
 and remains bounded in memory. UI polling never supplies its samples. The
 current [SpeedHistory](../../engine/inc/SpeedHistory.h) and
-[history contract](../../docs/engine.md#state-and-work) use fixed cadences; exposing
+[history contract](../../docs/contracts/engine.md#state-and-work) use fixed cadences; exposing
 granularity requires real engine work. Coarser storage loses detail; choosing a
 finer interval later cannot recreate it. The treatment of already stored samples
 when the interval changes remains to be specified at that owner.
 
-Follow [disk-write caching](../../docs/engine.md#disk-write-caching) rather than
+Follow [disk-write caching](../../docs/contracts/engine.md#disk-write-caching) rather than
 copying a qBittorrent memory setting by name. The pinned libtorrent 2.1 design
 does not provide the old configurable disk-cache size. Lowering a write buffer
 can reduce queued-write memory, with a throughput tradeoff; it cannot promise a
@@ -453,7 +450,7 @@ editor, Add/Remove/Undo, and sample data do **not** cover the production
 scheduler's complete interaction.
 Keep the existing drag creation/move/resize, keyboard routes, save ordering,
 validation, and focus behavior described in the
-[interface contract](../../docs/interface.md#settings). Reuse the existing scheduler
+[UI contract](../../docs/contracts/ui.md#settings). Reuse the existing scheduler
 and period editor rather than rewriting them from this browser demo.
 
 ## Differences to reconcile during implementation
@@ -473,7 +470,7 @@ owner's settled UI decisions.
 
 ## Focused acceptance review
 
-Use [testing guidance](../../docs/testing.md) to choose evidence when implementation
+Use [testing guidance](../../docs/agents/testing.md) to choose evidence when implementation
 is authorized. The current prototype work carries an explicit no-run/no-compile
 instruction; these are handoff criteria, not authorization to launch anything.
 
@@ -501,5 +498,5 @@ instruction; these are handoff criteria, not authorization to launch anything.
 - Scheduler gestures, keyboard editing, pending/invalid saves, overnight periods,
   and preserved schedules work at least as well as before the Settings changes.
 - Native English/Spanish, Light/Dark/High Contrast, and text scaling follow the
-  existing [localisation](../../docs/localisation.md) and interface contracts. The
+  existing [localisation](../../docs/contracts/localisation.md) and UI contracts. The
   prototype's English-only language choice is not localisation evidence.

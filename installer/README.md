@@ -40,7 +40,7 @@ The publish step includes the UI resource index with its embedded compiled XAML;
 the release command rejects missing application or library resource indexes,
 the Lucide and flag fonts and the DB-IP country data, so published
 installations keep their icons and peer flags. The app build fetches the month's
-country data, as [peer location](../docs/peer-location.md) describes.
+country data, as [peer location](../docs/contracts/peer-location.md) describes.
 The command compresses the staged engine with UPX, preserves its resources
 (including properties and icons), and verifies the compressed data before
 signing and packaging. Build outputs stay uncompressed.
@@ -104,7 +104,7 @@ Optional handler or startup registration failures leave the app installed and
 usable, with those choices available again in Settings. Uninstall uses the same
 Exit and registration owners and preserves saved state, downloads, and shared
 runtimes. Missing program files or failed optional registration cleanup do not
-prevent removal. The [installation contract](../docs/architecture.md#installation-and-updates)
+prevent removal. The [installation contract](../docs/contracts/architecture.md#installation-and-updates)
 owns these decisions.
 
 Generating an installer does not publish it or establish product release

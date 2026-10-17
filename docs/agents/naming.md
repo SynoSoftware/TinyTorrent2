@@ -95,7 +95,7 @@ its outcome rather than name a domain concept.
 
 ### Keep one durable vocabulary
 
-- Domain terms are defined in [CONTEXT.md](../CONTEXT.md) and, for controls, in each library's
+- Domain terms are defined in [CONTEXT.md](../../CONTEXT.md) and, for controls, in each library's
   `CONTEXT.md`. Each means one thing in code, tests, and docs; a synonym reads as a second concept.
 - Prefer established C#/.NET and WinUI vocabulary when it already names the same concept. A locally
   cleaner synonym makes framework-facing code harder to recognize without improving the model.

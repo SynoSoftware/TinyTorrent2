@@ -1,8 +1,8 @@
 # Engine contract
 
-Target behavior for the native engine in the [architecture](architecture.md).
+Behavior of the native engine in the [architecture](architecture.md).
 This document owns torrent operations, persistence, activation, and lifetime.
-[Protocol](protocol.md) owns their transport representation.
+[Pipe API](pipe-api.md) owns their transport representation.
 
 Dependency selection follows [the architecture](architecture.md#dependencies-and-cost).
 The version-specific source evidence below was reviewed against
@@ -23,7 +23,10 @@ acknowledgements.
 Native desktop actions call named Engine operations with typed outcomes, so
 tray behavior does not depend on protocol JSON. The protocol dispatcher adapts
 the same operation outcomes to replies. Settings validation and persistence
-remain in the single settings owner for both callers.
+remain in the single settings owner for both callers. A settings change
+reapplies only the policy groups it affects (connection, session, per-torrent,
+history and limits), compared with the previous settings, so a display
+preference reapplies no policy; confirmation still follows the storage commit.
 
 Queue moves operate on libtorrent's download queue. Completed seeds have no
 download queue position and are refused as move targets; a placement before a
@@ -32,6 +35,11 @@ to torrents currently in that queue, so seeds cannot create gaps in its order.
 Background eligibility changes apply the saved order once after the alert batch,
 so restoring many torrents does not replay the whole queue for each torrent.
 Explicit queue commands apply their accepted order immediately.
+
+Detail answers mark the current reading as changed while the alert batch is
+handled, and the engine publishes it once after that batch, building each latest
+document once. Publication waits for neither the periodic tick nor a debounce
+timer.
 
 Pause all pauses the libtorrent session, which keeps each torrent's own running
 or paused state, so Resume all does not start torrents the person paused one by
@@ -176,7 +184,7 @@ telemetry does not invalidate an editor.
 Check durable torrent identity and whether the requested operation is legal
 when it executes. A removed target or a path held by an unfinished move is still
 a reason to refuse. With one active window, there is no general draft-revision or
-conflict-resolution protocol. The [interface](interface.md#committing-edits)
+conflict-resolution protocol. The [UI](ui.md#committing-edits)
 decides when an edit is committed; confirmation and persistence still follow
 this contract even when the interaction applies a choice immediately.
 
@@ -411,7 +419,7 @@ refuses a second torrent with the same info hash; the engine adds no other
 ownership check. A
 torrent that finds existing files verifies them before using them and downloads
 the pieces that do not match, which overwrites those files. The
-[Add dialog](interface.md#add) therefore names the torrents that already use files
+[Add dialog](ui.md#add) therefore names the torrents that already use files
 where the new torrent will save, before the person confirms. That is the
 incomplete-download folder while one is in use, and otherwise the chosen
 destination.
@@ -607,7 +615,7 @@ that opens the window, adds torrents or changes the Windows registration
 reports, instead of forwarding, when the running engine uses another data
 folder, such as a test's, because that engine would show other torrents or an
 off-screen window, or register its own program. The
-[greeting](protocol.md#encoding-and-validation) supplies that folder.
+[greeting](pipe-api.md#encoding-and-validation) supplies that folder.
 
 A launch that cannot start shows why in the failure popup and exits when the
 person closes it; it releases the instance lock first, so another launch is not
@@ -630,7 +638,7 @@ A WinUI executable started directly enters through the engine and exits. When
 the engine cannot start, the window opens instead and shows why it cannot
 connect, as it does when its engine stops. The engine starts its window with `--engine`, which selects ordinary window startup
 without repeating the hand-off. This is a launch mode, not authentication;
-[protocol isolation](protocol.md#isolation) admits only the same user and logon.
+[pipe API isolation](pipe-api.md#isolation) admits only the same user and logon.
 The debugger's launch profile passes `--engine`, so the debugger stays attached
 to the window, and capture reviews with an explicit disposable store retain
 their direct window start. A window already running when the engine restarts
@@ -657,7 +665,7 @@ existing window and exits. When forwarding fails, it brings that window to the
 front, which shows the engine's state. The mutex stores no product state; the engine still
 owns launch policy.
 
-Activation follows the interface's [Add policy](interface.md#add). Several
+Activation follows the interface's [Add policy](ui.md#add). Several
 sources are added directly; a single source opens or activates the Add dialog
 when its torrent-file or magnet dialog preference is on. The two choices are
 saved independently.
@@ -674,7 +682,7 @@ starting another; the engine observes that launch through its
 [process handle](https://learn.microsoft.com/en-us/windows/win32/procthread/terminating-a-process).
 The mutex, not this wait, guarantees one window. Bound readiness waiting and make
 failed startup retryable. Endpoint and data-directory exclusion follow
-[protocol isolation](protocol.md#isolation).
+[pipe API isolation](pipe-api.md#isolation).
 
 For a user-directed Open, carry [foreground permission](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-allowsetforegroundwindow)
 through the launch or forwarding path where Windows permits. Restore/show the
@@ -691,7 +699,7 @@ torrent has an error. The complete menu has
 two live, nonclickable status rows, a separator, Show window and Pause all,
 a separator, and Exit. The first status row shows aggregate download and upload
 speed; the second shows active and queued counts. While the session is paused,
-the second row is Paused with the torrent count. The [interface](interface.md#main-window)
+the second row is Paused with the torrent count. The [UI](ui.md#main-window)
 owns command names. Resume all replaces Pause all only while the person or the
 schedule paused transfers, because Resume cannot lift a missing adapter's pause;
 the tooltip names that adapter
@@ -888,7 +896,7 @@ unfinished operation, or failed save that keeps it alive prevents file replaceme
 setup reports the condition and can be retried. No process is force-terminated.
 
 Closing WinUI normally exits without confirmation. Resolve actual unfinished
-edits according to [the interface](interface.md#committing-edits), and do not
+edits according to [the UI](ui.md#committing-edits), and do not
 silently drop changes already committed in the window but still being submitted.
 **Owner ruling: Close and Exit hide the window at once.** The window hides
 before it waits for anything, unless a draft, dialog or picker needs the person,
@@ -1042,7 +1050,7 @@ adapter.
 Speed limits and a second pair, alternative limits, use libtorrent's session
 rate limits. Both pairs start unlimited, so selecting either before configuring
 it does not unexpectedly throttle transfers. The interface owns the
-[speed-mode choices](interface.md#main-window).
+[speed-mode choices](ui.md#main-window).
 A fixed choice saves `schedule_enabled: false` with `limit_mode`; Weekly schedule
 enables the saved periods. Turning limits off keeps the caps the person typed.
 Outside scheduled periods, the schedule applies standard limits. Both pairs include LAN and loopback peers: global means all torrent
@@ -1102,9 +1110,41 @@ peers and unchanged payload counters for one second. Stopping is bounded to
 ten seconds so a session that cannot become quiet is restored instead of
 measured under load.
 
-Measurement runs off the engine thread using the native integration described
-in [the provider decision](02-connection-test-provider.md). Download
-and upload share a 45-second deadline. A successful test retains suspension for
+Measurement runs off the engine thread against Cloudflare's public HTTP
+endpoints, the owner's choice, through Windows WinHTTP, without a package,
+JavaScript or WebView. The [network route](architecture.md#network-route)
+governs it; WinHTTP cannot enforce a configured proxy or adapter, so either one
+leaves testing unavailable. Before the person selects Test, the page discloses
+the provider, IP and data use, its privacy link, the temporary torrent pause,
+the test length, and that data use depends on connection speed. Cloudflare's
+open-source SDK documents the endpoints, but that is no compatibility guarantee
+for a native client; there is no second provider or silent fallback.
+
+Download and upload run in turn for a fixed time: five seconds each way for
+Quick and fifteen for Longer. Only time ends a direction, so traffic grows with
+the connection's speed; at 1 Gbps, Longer moves about 1.9 GB each way. Four
+HTTPS connections repeat 10 MB requests back to back, so the line is not idle
+between requests and a limit on one connection does not cap the result. The
+rate is payload bytes divided by elapsed time after a two-second warm-up,
+measured with a monotonic clock. The warm-up absorbs connection set-up and an
+ISP's short burst above the sustained speed. Upload counts the bytes the socket
+accepted. A direction that moves no bytes after the warm-up fails visibly. The
+owner chose this over Cloudflare's own aggregation, the 90th percentile of
+single requests within a small data budget, which reports bursts above the
+sustained speed on download and the idle gaps between requests on upload;
+Ookla, fast.com and M-Lab also measure for a fixed time.
+
+Requests use WinHTTP's asynchronous mode, so cancellation and the direction
+deadline close a pending request after its initiating function returns. The
+worker keeps its buffers and callback context until WinHTTP reports handle
+closure, so cancellation cannot race an in-progress call or free memory a
+callback still uses
+([WinHTTP concurrency](https://learn.microsoft.com/en-us/windows/win32/winhttp/concurrency-in-winhttp)).
+Elapsed time freezes when each direction ends, including cancellation and
+failure. Payload counts exclude protocol overhead, so billed traffic is higher,
+and results do not promise torrent speed.
+
+Download and upload share a 45-second deadline. A successful test retains suspension for
 three minutes; a successful retest starts that hold again without releasing
 the existing suspension. Draft edits do not extend it. Navigation, Apply, page
 cancellation, test cancellation, failure, expiry, disconnect and shutdown release
@@ -1120,10 +1160,10 @@ connection owns the operation, so another caller cannot release or replace it.
 
 The engine keeps the defaults of the pinned libtorrent release, v2.1.2, because
 they are tuned and a changed value can slow transfers without a visible
-benefit. The Settings page exposes the approved [product settings](interface.md#settings),
+benefit. The Settings page exposes the approved [product settings](ui.md#settings),
 including network protocol choices, queue and seeding policy,
 and the memory and checking controls in [Disk write caching](#disk-write-caching).
-The [wire record](01-implementation.md#wire-representation) owns their fields and ranges.
+The [wire representation](pipe-api.md#wire-representation) owns their fields and ranges.
 The disk backend stays at its
 default ([Disk write caching](#disk-write-caching)). The engine changes three
 more defaults:
@@ -1199,7 +1239,7 @@ Coalesce a burst instead of flooding the desktop. Never execute a downloaded
 file. Keep only bounded pending notification context, identified by durable
 torrent identity rather than a stale path. While the window is open, problems
 appear in it instead, following
-[feedback placement](interface.md#feedback-placement).
+[feedback placement](ui.md#feedback-placement).
 
 In the open window, a finished download shows a short message with Open folder.
 A torrent finishes when its currently wanted files finish downloading, not when
@@ -1291,6 +1331,6 @@ this backend. A Windows working-set limit would not cap allocations or the
 separate WinUI process.
 
 The default is the starting point, not a claim of lower memory use. Take the
-first real workload measurement required by [testing](testing.md#resource-checks),
+first real workload measurement required by [testing](../agents/testing.md#resource-checks),
 and compare mmap only if it shows a disk or memory problem mmap could plausibly
 improve.

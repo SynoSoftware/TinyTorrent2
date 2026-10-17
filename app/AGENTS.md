@@ -1,7 +1,7 @@
 # Product WinUI
 
 Follow the [root instructions](../AGENTS.md). This directory holds the
-TinyTorrent product UI described by the [architecture](../docs/architecture.md).
+TinyTorrent product UI described by the [architecture](../docs/contracts/architecture.md).
 The reusable table and its development hosts live in
 [lib/TableView](../lib/TableView/AGENTS.md).
 
@@ -10,18 +10,18 @@ Table design belongs to the
 The app consumes that design rather than defining another table appearance,
 so its tables remain consistent with every other library host.
 
-Before changing product screens, read the [interface contract](../docs/interface.md).
-Text and formatting follow [localisation](../docs/localisation.md); test scope
-follows [testing](../docs/testing.md).
+Before changing product screens, read the [UI contract](../docs/contracts/ui.md).
+Text and formatting follow [localisation](../docs/contracts/localisation.md); test scope
+follows [testing](../docs/agents/testing.md).
 
 Before changing Settings navigation, read its
-[icon and label owner ruling](../docs/interface.md#settings-navigation), so the shared
+[icon and label owner ruling](../docs/contracts/ui.md#settings-navigation), so the shared
 24-DIP icons and visually centred labels survive styling and template changes.
 
 Reference [TableView.csproj](../lib/TableView/src/TableView.csproj). Keep torrent
 commands, persistence, and product settings in their product owners; the
 library owns generic table mechanics. Build through
-[compilation](../docs/compilation.md).
+[compilation](../docs/agents/compilation.md).
 
 ## Dialogs
 
@@ -48,11 +48,11 @@ dialog, as `SettingsPage.ProxyRequested` does, so the one-dialog rule holds.
 When a dialog needs something these owners lack, add it to the owner, because a
 copy in one dialog drifts from the others.
 
-Follow [dialog prose and facts](../docs/interface.md#text-icons-and-typography)
+Follow [dialog prose and facts](../docs/contracts/ui.md#text-icons-and-typography)
 when choosing a plain string or a `Lines` list for the body. Save and Cancel come
 from the `dialog` text section, so every dialog uses the same word. Button words,
 icons, tooltips, colour, placement and the default button
-follow the [button rulings](../docs/interface.md#buttons).
+follow the [button rulings](../docs/contracts/ui.md#buttons).
 
 ## Capture review
 
@@ -60,7 +60,7 @@ A capture review is a diagnostic build that drives the app off-screen through
 scripted journeys. It saves screenshots and control bounds in English and
 Spanish, Light and Dark, at several window sizes. It does not take over the
 desktop. The [root owner ruling](../AGENTS.md#working-rules) governs whether a
-review may run; the [pre-launch check](../docs/compilation.md#verify-the-build-before-launch)
+review may run; the [pre-launch check](../docs/agents/compilation.md#verify-the-build-before-launch)
 establishes which successful build the capture will actually run.
 
 It has found text and controls clipped or pushed out of view at narrow sizes or
@@ -68,6 +68,6 @@ in Spanish, input and drafts lost, and crashes while the window closes. For an
 authorized app review, choose a mode covering the requested checks.
 
 Reuse a current capture build across review modes; another mode alone needs no
-build. [Testing](../docs/testing.md#windows-evidence) owns validation scope and
+build. [Testing](../docs/agents/testing.md#windows-evidence) owns validation scope and
 the available journeys. Inspect screenshots of the changed area, because the
 journeys' behavior checks do not establish layout quality.

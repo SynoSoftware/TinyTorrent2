@@ -3,7 +3,7 @@
 The Peers table shows where each peer is in separate Country and City columns:
 its country as a flag and name, and its city when the downloaded data provides
 a name. This document owns the data, the lookup and the build step; the
-[interface contract](interface.md) owns the columns and the Settings row,
+[UI contract](ui.md) owns the columns and the Settings row,
 and [licences](licences.md#db-ip) owns the
 attribution.
 
@@ -40,7 +40,7 @@ The City data row sits under IMDb data in Plugins and is the same control,
 IMDb data and `Geolocation` fulfils for city data. One pair of dialogs,
 worded from the dataset's text section, asks before an update or a deletion.
 The download goes through the shared HTTP owner, so the saved proxy and
-adapter apply, and through request protection under the `dbip` catalogue. It
+adapter apply, and through search protection under the `dbip` catalogue. It
 fetches this month's archive, or the previous month's when this month's does
 not exist yet, unpacks it beside the installed file, checks that the result
 opens as a database, flushes it to disk and moves it over the installed copy
@@ -329,9 +329,6 @@ the engine's retained histories and displays its day range before fetching finer
 
 ## Native map validation
 
-The initial native implementation built successfully and passed a 25-scene
-capture review with synthetic peers and a real country-MMDB lookup. The approved
-adaptive header revision supersedes that review's menu and fixed-layout checks.
-The [delivery record](11-peer-map-plan.md) records verification for each revision.
-Live public-swarm timing, city-MMDB decoding and OS accessibility settings remain
-separate from synthetic rendering evidence.
+The `peers` capture review renders the map with synthetic peers and a real
+country-MMDB lookup. Live public-swarm timing, city-MMDB decoding and OS
+accessibility settings are outside that review.

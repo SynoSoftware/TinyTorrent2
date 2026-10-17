@@ -115,7 +115,7 @@ The native container paints selection and keyboard focus. The row template
 adds only drag opacity; it does not paint an additional selected-row stripe.
 Actual contrast, Narrator,
 and out-of-process automation still require relevant runtime evidence under the
-[testing policy](../../../docs/testing.md).
+[testing policy](../../../docs/agents/testing.md).
 
 ## Localisation and source lifetime
 
@@ -166,9 +166,8 @@ Broader virtualization, Narrator and RTL scenarios remain unverified.
   do not add a second panel-mirroring path based only on this input defect.
 
 The lifetime and automation findings follow concrete source paths. The RTL
-consequence also depends on documented platform mirroring. The narrow product
-evidence is recorded in [implementation](../../../docs/01-implementation.md);
-it does not establish Narrator, detached reload or unrealized-row behavior.
+consequence also depends on documented platform mirroring. The product
+evidence does not establish Narrator, detached reload or unrealized-row behavior.
 The later item-data and header-peer changes have source review only. The focused
 `AutomationTests` cover item selection, keyed replacement and selection policy;
 their four tests passed on 2026-10-06, and they do not establish out-of-process

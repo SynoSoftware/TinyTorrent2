@@ -1,7 +1,7 @@
 # Creates 3rdParty at the repository root: the engine's dependencies as git
 # checkouts at the pinned revisions below, the build tools that Visual Studio lacks,
 # and the static libraries and headers the engine builds against. The
-# arrangement and its reasons are in docs/architecture.md, "Third-party
+# arrangement and its reasons are in docs/contracts/architecture.md, "Third-party
 # dependencies".
 #
 # Only the repository owner runs this script; a build never starts it. The

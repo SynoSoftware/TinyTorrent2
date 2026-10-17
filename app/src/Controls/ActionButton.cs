@@ -5,7 +5,7 @@ using Microsoft.UI.Xaml.Controls;
 namespace Syno.TinyTorrent.Controls;
 
 // A labelled button: the Lucide Glyph before the one-word Text, as the
-// interface contract's button ruling requires of every labelled button.
+// UI contract's button ruling requires of every labelled button.
 public sealed partial class ActionButton : Button
 {
     public static readonly DependencyProperty GlyphProperty = Register(nameof(Glyph));

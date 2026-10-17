@@ -4,8 +4,10 @@ Reviewed 2026-10-13 against the checked-out source and public primary sources.
 This records evidence and unresolved distribution questions; a Credits page alone
 does not establish permission to distribute provider content or credentials.
 No provider API was called with a key, no credentials were printed, and no build
-or test was run for this review. Existing supplier evidence remains in
-[the subtitle release assessment](subtitles-release.md).
+or test was run for this review. Subtitle supplier permissions and the Store
+and privacy requirements for automatic subtitles are under
+[Subtitle release requirements](#subtitle-release-requirements). This document
+does not certify legality or Store acceptance.
 
 ## Provider notices and logos
 
@@ -15,7 +17,7 @@ The absence of a published logo requirement is not permission to use a trademark
 
 | Integration | Required notice or logo found | Current source and action |
 | --- | --- | --- |
-| TMDB API | An approved, unmodified logo and the exact notice: “This product uses the TMDB API but is not endorsed or certified by TMDB.” Attribution belongs in About/Credits; the logo must be less prominent than TinyTorrent's identity and must not imply endorsement. [Official FAQ](https://developer.themoviedb.org/docs/faq). | The native Credits page and prototype contain the logo and notice. Keep both inside the TMDB surface in the approved redesign. Preserve its colors and proportions. Asset provenance is in [Attribution.md](../app/src/Assets/Attribution.md). |
+| TMDB API | An approved, unmodified logo and the exact notice: “This product uses the TMDB API but is not endorsed or certified by TMDB.” Attribution belongs in About/Credits; the logo must be less prominent than TinyTorrent's identity and must not imply endorsement. [Official FAQ](https://developer.themoviedb.org/docs/faq). | The native Credits page and prototype contain the logo and notice. Keep both inside the TMDB surface in the approved redesign. Preserve its colors and proportions. Asset provenance is in [Attribution.md](../../app/src/Assets/Attribution.md). |
 | IMDb downloadable datasets | Exact source acknowledgement: “Information courtesy of IMDb (https://www.imdb.com). Used with permission.” [Software-use rules](https://help.imdb.com/article/imdb/general-information/can-i-use-imdb-data-in-my-software/G5JTRESSHJBBHTGX). The [linking rules](https://help.imdb.com/article/imdb/general-information/how-do-i-link-to-a-specific-page-on-your-site/GTRTF6K8UA9JP9QQ) prohibit using an IMDb logo in a link without permission or a commercial content licence. | Required text is present in Credits and the Settings disclosure. Keep the logo out. This acknowledgement is the required formula, not evidence that the publisher has a commercial agreement. |
 | Wikidata structured data | Structured data is CC0; text from other namespaces uses CC BY-SA 4.0. [Licensing policy](https://www.wikidata.org/wiki/Wikidata:Licensing). No required logo or prescribed credit found for this integration. | The provider reads structured SPARQL results, not wiki articles or media. Existing CC0 text credit is appropriate. A link to [CC0](https://creativecommons.org/publicdomain/zero/1.0/) makes its status clearer. |
 | OMDb API | The [API key page](https://omdbapi.com/apikey.aspx) names Brian Fritz and licenses content under CC BY-NC 4.0. That licence requires reasonable attribution, a licence link, preservation of supplied notices, and identification of changes when applicable. [Licence section 3](https://creativecommons.org/licenses/by-nc/4.0/legalcode.en). No required logo found. | Credits includes OMDb API / Brian Fritz, the licence link and a display-formatting notice inside the OMDb row. Preserve any attribution notices supplied with content. Keep this content licence separate from TinyTorrent's MPL source licence. |
@@ -25,10 +27,10 @@ The absence of a published logo requirement is not permission to use a trademark
 | SubSource | No prescribed logo or app credit found. [Terms](https://subsource.net/terms) reserve translators' rights and prohibit altering subtitles; permitted re-synchronization/re-upload retains translator and sponsor names. | Existing text credit/link is appropriate. Keep downloaded SRT contents unchanged. The source downloads/extracts a selected file; it does not perform subtitle text editing or re-upload. |
 | Cloudflare connection test | No required logo or attribution formula found in the reviewed [speed-test introduction](https://blog.cloudflare.com/test-your-home-network-performance/) or [official speedtest repository](https://github.com/cloudflare/speedtest). | Existing text credit is appropriate. Native code calls measurement endpoints directly; it does not ship the JavaScript module, so that module's MIT licence is not a shipped dependency merely because the service is used. |
 
-Evidence for current notices: [native Credits](../app/src/Shell/CreditsPage.xaml.cs),
-[English catalogue](../app/src/Resources/en.json),
-[Spanish catalogue](../app/src/Resources/es.json), and
-[prototype Credits](../app/prototypes/about-prototype.html).
+Evidence for current notices: [native Credits](../../app/src/Shell/CreditsPage.xaml.cs),
+[English catalogue](../../app/src/Resources/en.json),
+[Spanish catalogue](../../app/src/Resources/es.json), and
+[prototype Credits](../../app/prototypes/about-prototype.html).
 
 The prescribed TMDB and IMDb statements retain their English wording in both
 catalogues. Their legal quotations are source notices, not translated UI prose.
@@ -39,7 +41,7 @@ the owner's final decision. Only TMDB's required logo is included.
 
 The inspected dependency graph is the restored application assets and existing
 Debug output; the final release has not been built or verified in this review.
-[installer/Build.ps1](../installer/Build.ps1) owns distribution notices. It uses
+[installer/Build.ps1](../../installer/Build.ps1) owns distribution notices. It uses
 the published application's `.deps.json` to select runtime package notices,
 which excludes unrelated build-tool packages. Credits provides licence-site
 links and does not embed licence texts.
@@ -75,9 +77,9 @@ references that metadata without copying it to output. No WebView2 binaries
 are shipped.
 The installer rejects a publish directory containing WebView2 components.
 
-The root [LICENSE](../LICENSE) now contains Mozilla's
+The root [LICENSE](../../LICENSE) now contains Mozilla's
 [official MPL 2.0 plain text](https://www.mozilla.org/media/MPL/2.0/index.txt),
-as approved by the owner. The separate [branding notice](../resources/LICENSE)
+as approved by the owner. The separate [branding notice](../../resources/LICENSE)
 continues to describe project artwork. Preserve source corresponding to each
 released binary and tell recipients where to obtain it, as required by
 [MPL section 3.2](https://www.mozilla.org/en-US/MPL/2.0/#distribution-of-executable-form).
@@ -86,7 +88,7 @@ released binary and tell recipients where to obtain it, as required by
 
 Windows App SDK package terms section 3(b)(ii) require distributors and end
 users to agree to terms protecting Microsoft's distributable code. The existing
-[installer](../installer/Setup.iss) has no licence-acceptance step. Including
+[installer](../../installer/Setup.iss) has no licence-acceptance step. Including
 notices or linking to the terms does not establish that agreement.
 
 The shipped Windows SDK projections (`Microsoft.Windows.SDK.NET.dll` and
@@ -134,9 +136,9 @@ contains a six-month cache limit. The live terms page denied automated retrieval
 the indexed copy is older and cannot establish the current accepted agreement.
 This is a concrete verification item, not a reason to invent a 180-day limit.
 If the applicable terms retain it, the present persistent cache is insufficient:
-[Store/Videos.cs](../app/src/Library/Store/Videos.cs) reads saved records and
+[Store/Videos.cs](../../app/src/Library/Store/Videos.cs) reads saved records and
 derived information without an age limit or deletion, while
-[Tmdb/Provider.cs](../app/src/Library/Tmdb/Provider.cs) stores retrieval timestamps.
+[Tmdb/Provider.cs](../../app/src/Library/Tmdb/Provider.cs) stores retrieval timestamps.
 Check search choices and derived saved information as well as raw responses.
 
 The current TMDB adapter requests search, movie/series/episode information,
@@ -150,7 +152,7 @@ The [dataset page](https://data.imdb.com/non-commercial-datasets/) permits local
 copies for personal, noncommercial use. Its linked [software-use rules](https://help.imdb.com/article/imdb/general-information/can-i-use-imdb-data-in-my-software/G5JTRESSHJBBHTGX)
 limit source acquisition to the datasets and forbid republishing, reselling or
 repurposing them into a movie database except for individual personal use.
-[Dataset.cs](../app/src/Library/Imdb/Dataset.cs) downloads the official basics,
+[Dataset.cs](../../app/src/Library/Imdb/Dataset.cs) downloads the official basics,
 ratings and episodes archives on request and imports them locally; it does not
 scrape IMDb. That fits the stated personal-local-use route when the user's use
 is personal and noncommercial. Do not bundle the imported database, mirror the
@@ -163,8 +165,8 @@ The [API usage guidelines](https://foundation.wikimedia.org/wiki/Policy:Wikimedi
 require following rate-limit responses, correct identification and applicable
 content licences. The [User-Agent policy](https://foundation.wikimedia.org/wiki/Policy:Wikimedia_Foundation_User-Agent_Policy/en)
 requires descriptive identification with contact information for automated
-clients. [App.cs](../app/src/App.cs) supplies `TinyTorrent/version` with the
-project/contact URL; [ProviderHttp.cs](../app/src/Shared/Network/ProviderHttp.cs) applies
+clients. [App.cs](../../app/src/App.cs) supplies `TinyTorrent/version` with the
+project/contact URL; [ProviderHttp.cs](../../app/src/Shared/Network/ProviderHttp.cs) applies
 that shared value. CC0 permits commercial reuse of
 structured data, but does not exempt the API's operating rules.
 
@@ -195,16 +197,46 @@ account operations; do not introduce OAuth solely from general guidance.
 ### OpenSubtitles
 
 The [API overview](https://opensubtitles.tawk.help/article/about-the-api)
-offers free access and optional professional packages. The [getting-started guide](https://opensubtitles.tawk.help/article/getting-started)
-requires an application key and app/version identification and documents limited
-anonymous downloads. The [Pro guide](https://opensubtitles.tawk.help/article/pro-packages)
-allows development/testing before plan selection. Those pages establish a free
-development route, not the particular Consumer agreement TinyTorrent accepted.
-Its [website terms](https://opensubtitles.tawk.help/article/terms-of-service)
+offers free access and professional packages for commercial applications. The
+[Pro packages guide](https://opensubtitles.tawk.help/article/pro-packages)
+describes application subscriptions assigned to consumer keys, including access
+without end-user authentication, so commercial integration is a supported route,
+not categorically prohibited. An end-user VIP account and an application
+subscription are different arrangements. The selected access model follows
+[third-party provider access](architecture.md#third-party-provider-access): the
+owner's existing free OpenSubtitles key; TinyTorrent funds no paid package.
+
+The [getting-started guide](https://opensubtitles.tawk.help/article/getting-started)
+requires an application key on every request, requires app/version
+identification, and allows limited free downloads without user login: five
+downloads per 24 hours per IP. The Pro guide directs developers to create a
+Consumer and test the application before choosing a paid plan, so a free
+consumer key establishes the development route without buying a package. The
+owner reports a four-request per-IP limit; its time window needs confirmation.
+Optional login is separate from the application key, and quota exhaustion never
+purchases access. The production anonymous acquisition path worked with the
+existing free consumer key and returned a valid 39,992-byte SRT. That is an
+observed download path; quota and reset responses and the distribution terms
+remain unverified.
+
+The [website terms](https://opensubtitles.tawk.help/article/terms-of-service)
 prohibit commercial use while the API materials offer commercial packages; keep
-those scopes separate and verify the actual agreement, key distribution,
-content rights and required notices for the shipped free integration. Do not
-conclude a paid package is mandatory for every noncommercial release.
+those scopes separate. Neither they nor the
+[legal information](https://opensubtitles.tawk.help/article/legal-information),
+which discusses the older .org website and other products, establish the scope
+of a TinyTorrent API agreement. A library's open-source licence and API
+availability do not license all subtitle content. The linked
+[subscription page](https://opensubtitles.stoplight.io/docs/opensubtitles-api/fcgiyz3p7sqn9-api-subscription-prices)
+yielded no readable terms. Those pages establish a free development route, not
+the particular Consumer agreement TinyTorrent accepted.
+
+Resolve the actual agreement's scope: desktop and Store distribution, commercial
+use if applicable, automatic and early searches, local downloads, permitted key
+distribution, quotas, attribution, and treatment of rights complaints. An
+explicit applicable published grant suffices; request written clarification only
+where those terms leave a material gap. Apply the same check to each supplier
+before it is offered as working. Do not conclude a paid package is mandatory for
+every noncommercial release.
 
 ### SubDL
 
@@ -217,10 +249,22 @@ TinyTorrent's use is commercial and whether its shared free-key route is
 covered; if commercial, the present built-in-free-key policy conflicts unless
 separately authorized. Existing personal-key replacement is already supported.
 
+No attribution requirement was found. The [API documentation](https://subdl.com/developers)
+states that search and download work on a free key, limited to 50 downloads a
+day. One user report from June 2026
+([Bazarr issue 3393](https://github.com/morpheus65535/bazarr/issues/3393))
+describes free keys receiving HTTP 402 on downloads. The configured development
+key downloaded one exact unpacked SRT over the fixed API origin with HTTP 200,
+and the production decoder preserved its 135,733 bytes. That shows this key's
+observed download access, not every free plan. SubDL does not report a
+full/forced-only flag in the observed response; the matching contract requires
+an exact release and language and rejects explicit partial-subtitle labels, as
+[Automatic subtitles](subtitles.md) defines.
+
 ### SubSource
 
 [API docs](https://subsource.net/api-docs) tell developers to keep keys secure
-and not share them publicly. [SubSource.cs](../app/src/Subtitles/Suppliers/SubSource.cs)
+and not share them publicly. [SubSource.cs](../../app/src/Subtitles/Suppliers/SubSource.cs)
 can read a built-in key from assembly metadata, which is recoverable in a
 distributed binary. The owner ruling to ship this key therefore needs an
 applicable exception/authorization from SubSource; binary embedding is not
@@ -229,12 +273,19 @@ but the [terms](https://subsource.net/terms) do not expressly settle distributed
 application use or commercial API/content licensing. Treat that as unresolved,
 not as either a blanket prohibition or permission.
 
+The API issues each account its own key and sets rate limits per key. The terms
+require that subtitles are not altered, and no attribution requirement was
+found. The [privacy policy](https://subsource.net/policy) covers the website.
+Ask SubSource in writing whether a distributed desktop application may let each
+user bring their own key, because the published terms leave that gap.
+Development testing with a developer key does not depend on the answer.
+
 ### Cloudflare
 
 The [official announcement](https://blog.cloudflare.com/aim-database-for-internet-quality/)
 invites applications to use its open-source speed test; the public repository
 documents requests against Cloudflare's edge network. Native
-[ConnectionTest.cpp](../engine/src/Engine/ConnectionTest.cpp) independently calls
+[ConnectionTest.cpp](../../engine/src/Engine/ConnectionTest.cpp) independently calls
 `/__down` and `/__up`. No separate native-client service grant or quota agreement
 was located. Record the endpoint terms that cover the release's traffic rather
 than treating a JavaScript MIT licence as a service contract. Cloudflare's
@@ -242,6 +293,79 @@ than treating a JavaScript MIT licence as a service contract. Cloudflare's
 also makes it a recipient to disclose when the person runs the connection test;
 do not infer the native client sends the JavaScript module's completed-result
 telemetry, because the inspected native path does not do that.
+
+## Subtitle release requirements
+
+These are the release requirements and unresolved facts for automatic
+subtitles. [Automatic subtitles](subtitles.md) owns the experience, and the
+supplier sections above hold each supplier's terms. The feature works without
+these items resolved; they gate the release.
+
+### Store privacy and permission
+
+[Store policy 7.19](https://learn.microsoft.com/en-us/windows/apps/publish/store-policy-archive/store-policy-7-19)
+is in force. Sections 10.5.1, 10.5.2, and 10.5.4 address privacy disclosure,
+affirmative permission for third-party sharing, withdrawal, and secure handling.
+Win32 applications require a privacy policy. Section 11.2 requires a lawful
+basis for third-party content. These obligations do not prescribe a separate
+checkbox or a modal consent screen.
+
+**Design interpretation:** the disclosed Off-to-On action in the feature design
+provides the affirmative choice, and Off withdraws it. Setup navigation alone
+does not. No movie information is necessary to check supplier access. This is
+an approach to validate against the final agreement and data flow, not a
+guarantee of certification.
+
+Supplier operations follow the product's [network route](architecture.md#network-route).
+The release policy describes the verified implementation.
+
+Where GDPR applies, [the regulation](https://eur-lex.europa.eu/eli/reg/2016/679/oj/eng)
+requires a lawful processing basis, transparency, minimization, and appropriate
+security. Recital 32 expressly allows an affirmative technical setting as
+consent. Articles 7 and 13 cover demonstrating consent, withdrawal, and the
+information given to people. Do not assume consent is the only lawful basis for
+every operation, or that it alone resolves international transfers. Confirm the
+publisher's role, markets, recipients, retention and any applicable transfer
+mechanism for the final service arrangement. No separate copyright-ownership
+checkbox or per-movie confirmation is established by these sources.
+
+The supplier's [privacy policy](https://opensubtitles.tawk.help/article/privacy-policy)
+describes website processing, including IP logging. It is insufficient evidence
+for a promise about current API retention, location, or onward recipients.
+
+### Microsoft Store submission
+
+[Policy 7.20](https://learn.microsoft.com/en-us/windows/apps/publish/store-policies)
+takes effect on 2026-10-22. It strengthens section 11.12 for third-party
+user-generated-content integrations, including reporting and source disclosure.
+Section 11.11.3 addresses content above an app's rating. Review the version
+effective at submission.
+
+Community-contributed subtitles make those content provisions relevant to
+assess; saving to disk does not establish an exemption. Determine applicability
+with the actual supplier and submission. If required, place source attribution
+and an accessible Report a subtitle problem link in supplier information,
+connected to the publisher/supplier's real handling process. That can preserve
+the silent workflow without an in-torrent reporting panel. Additional account
+or content-filter requirements depend on the actual rating/content rule, not a
+universal subtitle-login assumption.
+
+Store 7.19 sections 10.1 and 10.3 require accurate representation and a testable
+product. Certification notes should describe early downloading faithfully and
+provide a lawful movie/subtitle fixture and working access where needed. The
+reviewed rules do not establish a blanket ban on early subtitle matching or
+torrent clients; renaming functionality is not a rights or privacy remedy.
+
+### Remaining release blockers
+
+| Scope | Missing evidence or work | Completion evidence |
+| --- | --- | --- |
+| Supplier release | OpenSubtitles: TinyTorrent's applicable API/content permission and access arrangement are unverified; the free application key passed Check and production anonymous acquisition. SubDL: its terms permit each user's own key; production acquisition, explicit partial-label rejection and the 73-language mapping are verified. SubSource: its terms do not address application use. Store 11.2 establishes the content-rights obligation. | Record the applicable grant/agreement and plan, resolve material scope/key-distribution/attribution questions, and verify the remaining authorized search/download paths. |
+| Feature release and Store | The actual privacy policy, publisher contact, API data handling, and network routing have not been established. Store 10.5 and applicable privacy law govern this. | Publish the accurate policy, link it in-app and in Partner Center, and verify disclosed payloads, credential handling, enable/disable behavior, recipients, retention and any applicable transfers. |
+| Store only | The treatment of supplier-contributed subtitles under UGC and age-rating provisions is unresolved. Sections 11.11/11.12 supply a concrete question, not proof of rejection. | Document applicable treatment for the submission date; implement any required unobtrusive reporting/source information and content access control, or retain authoritative evidence that a provision does not apply. |
+
+These are release checks, not reasons to remove early matching, background
+work, languages, or quiet recovery.
 
 ## Release evidence still required
 
@@ -253,9 +377,9 @@ telemetry, because the inspected native path does not do that.
   providers above. A working development key or a successful download is not
   evidence of redistribution rights.
 - Current TMDB cache terms and, if applicable, cache retention implementation.
+- The subtitle [release blockers](#remaining-release-blockers).
 - An accurate published privacy policy covering actual recipients, request
-  inputs, account handling, network routing and contact; the existing
-  [subtitle privacy document](subtitle-privacy.md) remains a draft.
+  inputs, account handling, network routing and contact.
 - Verification against the final shipped distribution: code/source licences,
   native and managed transitive dependencies, notices and any modified
   third-party files are separate from API/content permission.

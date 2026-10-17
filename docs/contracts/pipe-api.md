@@ -1,10 +1,10 @@
-# Protocol contract
+# Pipe API
 
-Target communication between the engine and WinUI in the
-[architecture](architecture.md). Concrete message fields are defined in the
-[implementation record](01-implementation.md#wire-representation). This document
-establishes their required behavior and names a field only where that behavior
-depends on it; it is not a second wire-format specification.
+Communication between the engine and WinUI in the
+[architecture](architecture.md). The sections before
+[Wire representation](#wire-representation) establish required behavior and
+name a field only where that behavior depends on it; that last section records
+the concrete message fields.
 
 ## One local connection
 
@@ -36,7 +36,7 @@ one writer per connection serializes whole frames so notifications and replies
 cannot interleave. A close request for Exit runs asynchronously, outside the
 request slot and receive loop, so committed edits are sent and unfinished input
 can be prompted before the window closes. A clean window closes without prompting;
-the [interface](interface.md#committing-edits) owns that behavior. A window whose
+the [UI](ui.md#committing-edits) owns that behavior. A window whose
 user keeps unfinished input replies that Exit is cancelled. The same close reply
 distinguishes waiting for the person from continuing closure, so an unanswered
 draft or Exit confirmation cannot trigger an unresponsive-window warning. The engine's
@@ -54,10 +54,8 @@ stateful replies; simply abandoning a timed-out task would lose that ownership.
 
 ## Encoding and validation
 
-The concrete first-screen fields and units are defined in the
-[implementation record](01-implementation.md#wire-representation), beside the
-code implementing both codecs. This contract remains the authority for their
-behavior.
+[Wire representation](#wire-representation) records the concrete fields and
+units that both codecs implement.
 
 Each message is a 4-byte little-endian length followed by that many bytes of
 UTF-8 JSON, at most 16 MiB. The engine reads it with nlohmann/json and WinUI
@@ -181,6 +179,13 @@ request current visible detail without waiting for the obsolete read; discard
 that read's eventual reply.
 Correct transport correlation alone does not make a reply current for the view.
 
+**Owner requirement: display available facts immediately, even when they are
+not current; fresh facts follow in a later packet and the UI never waits.**
+Cheap cache access and short state mutations remain synchronous on their owner.
+Slow collection, file I/O and lookup must not occupy that dispatch path. Actions
+such as Open may asynchronously await their own complete-data reply; this never
+holds the pipe or another request. Successful saves still require persistence.
+
 Inspector reads return immediately with available facts and a readiness flag;
 they never hold the request slot for libtorrent. Retained facts remain available
 for display regardless of age, until their torrent or generation is invalidated;
@@ -190,7 +195,9 @@ queries answer, then a complete fresh result when all have answered. All message
 inspector context, and the pushed result also identifies its session and torrent.
 The immediate reply's readiness describes available facts, not completion of the
 fresh demand. Views apply those facts immediately and retain known values while
-missing ones arrive. PipeClient keeps background file reads behind that demand until
+missing ones arrive. Peer rows are matched within the affected torrent, so an
+ordinary rate or state change updates existing rows and keeps their identity
+instead of rebuilding the whole list. PipeClient keeps background file reads behind that demand until
 its matching complete push arrives or the demand ends through failure, replacement,
 release or disconnect, so a Library read cannot replace Inspector's awaited update.
 PipeClient forwards only the current Inspector push to the window's coalesced
@@ -200,6 +207,16 @@ The window invalidates that context on command replies before applying later
 pushed data, so a queued pre-command result cannot overwrite a confirmed edit.
 Reads used by actions such as Open retain their complete-data replies because
 they need confirmed disk paths. They use the same collector.
+
+Immediate inspector replies and command replies answer within 50 ms at p95 and
+100 ms at p99 under active Release load of 100 or more peers, also at the
+longest refresh interval and after invalidation. No request dispatch or reply
+callback makes a synchronous libtorrent call on the engine owner; workers may
+wait while completing an operation, and that wait belongs to the operation's
+own completion time. Adding content, moving files and confirming file
+priorities keep their completion semantics. The cost of the Pieces reply is
+unmeasured: a stall of 50–100 ms of the engine thread on every read would
+justify sending `verified` as a bit string; a few milliseconds would not.
 
 Each endpoint retains at most one undelivered detail update per connection or
 window, replacing it with the latest. Replies and control messages take priority
@@ -314,3 +331,184 @@ Also hold exclusive ownership of the engine data directory. Another logon must
 not open that state concurrently; explain the conflict rather than starting a
 second writer or retrying forever. Arbitrary same-user code is outside this
 isolation guarantee; an extra token would not create a stronger boundary.
+
+## Wire representation
+
+Protocol version 21 uses a four-byte little-endian UTF-8 JSON frame length,
+bounded to 16 MiB. `Directory.Build.props` defines the version once for the
+native endpoints and the window. The shared transport in `lib/Pipe` serves every
+native endpoint. The engine endpoint is `TinyTorrent.<logon SID>`; each connecting
+client first receives `{type:"hello",endpoint:"engine",version:21,session_id:"...",data_directory:"..."}`. The absolute data directory
+keeps the same store for explicit Restart, which starts the engine beside the
+window rather than a path a pipe peer reports. Requests are
+`{request_id:signed-64-bit-integer,command:string,...}`. Replies repeat `request_id` and have
+`ok:boolean`, either `data` or `error:{code:string,detail:string}`. Native control
+notifications are `{type:"activate"}`, `{type:"close"}`, `{type:"confirm_exit"}`, and `{type:"sources"}`.
+`{type:"settings",setting}` opens Settings at that card of the General page and
+highlights it, as search does. The pipe
+passes the engine each request's connection beside the request, so no request field
+can claim another connection's previews.
+
+Desktop notices use `{type:"notice",kind,torrent_id,name,detail,code,count}` on that
+same connection while the window is open. `count` is one: a notice queued in
+the tray stays there, and the window never receives a tray burst. The window
+keeps completion feedback bounded and uses the current
+torrent identity to resolve Open folder. Windows delivery is reserved for a
+closed window and obeys the corresponding notification preference.
+
+`snapshot` answers immediately with known state. With `subscribe:true`, it also
+registers that connection for `{type:"snapshot",ok:true,data:...}` pushes until
+disconnect. Pushes use the same snapshot data as replies, including `session_id`
+and a signed 64-bit `sequence` that increases whenever the engine builds a
+snapshot. The client discards a snapshot whose sequence is not newer than the
+last received on that connection. One replaceable summary slot bounds unsent
+pushes. The writer alternates ordered frames with optional updates and alternates
+summary and detail when both are pending. Routine publication follows
+`refresh_interval` on one-second engine ticks, preserving the interval's phase
+instead of rounding every interval up; a connection test publishes each second.
+Successful mutation replies include `data.snapshot_sequence` when subscribers
+exist: the sequence of the known-state summary published after that command.
+Consumers use it to recognize a qualifying summary that arrived before the reply
+or retain their optimistic state until its push arrives. Commands also post a
+status query; fresh status is pushed on arrival. The window retains explicit
+refreshes but no summary timer or post-command polls.
+
+Snapshots include `transfers: {session: {downloaded, uploaded}, all_time:
+{downloaded, uploaded}}`, with nonnegative signed 64-bit payload byte counts.
+`settings.json` retains the lifetime pair under `transfers`; older documents
+without it start at zero. The engine owns sampling and persistence; Home only
+formats these snapshot values.
+
+Commands are `snapshot`, `preview` (source, destination), `preview_detail`
+(preview_id, destination), `add` (preview_id, destination, paused, optional
+priorities, optional sequential, first_last and queue_top booleans that default to false),
+`cancel_preview` (preview_id), `merge_trackers` (preview_id,
+torrent_id), `torrent` (torrent_id), `pause`, `resume`, `force`, `verify`, and
+`remove` (torrent_ids), `queue` (torrent_ids with direction: up/down/top/bottom,
+or before_torrent_id: string/null for a row drop; null means end),
+`piece_order` (torrent_ids with sequential, first_last or both as booleans; an
+absent one keeps each torrent's choice),
+`session_pause` (paused), `settings` (changes), `check_proxy` (proxy), `open`, `ready`,
+`window_closed`, `activate_reply` (available boolean), `close_reply` (state:
+waiting/closing/cancelled), `exit_reply` (answer: confirmed/cancelled/unavailable),
+and `exit`. Activation acknowledgement lets Open wait through an
+old window's close path without losing the request. Current settings changes accept language (`en`, `es`)
+and theme (`system`, `light`, `dark`); unknown fields or values are refused. A
+settings acknowledgement confirms the same durable replacement as membership.
+Settings also accept `default_destination` (absolute path), `torrent_dialog` and
+`magnet_dialog` (independent booleans, default true). Settings also accept
+`confirm_delete` (boolean, default true, added in protocol version 12) and
+`limit_mode` (`none`, `speed` or `alternative` for a manual choice, default
+`none`, or null to clear its temporary override while scheduling is enabled).
+The product's [mode selector](ui.md#main-window) commits
+`schedule_enabled: false` with a fixed `limit_mode`; Weekly schedule commits
+`schedule_enabled: true` with `limit_mode: null`. The nullable wire value does
+not make a fixed UI choice expire at the next schedule boundary.
+Settings also accept `download_limit`, `upload_limit`,
+`alternative_download_limit`, `alternative_upload_limit` (bytes per second,
+integer 0 through INT_MAX; 0 means unlimited). Alternative limits initially use
+10 KiB/s in each direction. Settings also accept `notify_problems` (default true),
+`notifications_enabled` (finished downloads, default false), `notify_added`
+(default false), `notify_background` (the notice when the window closes,
+default true), `prevent_sleep` and `prevent_sleep_seeding` (booleans).
+Settings also accept `encryption` (`preferred`, the default, `required`,
+`allowed` or `disabled`) and the proxy: `proxy_type` (`none`, the default,
+`socks5`, `socks4` or `http`), `proxy_host`, `proxy_port` (0 through 65,535),
+`proxy_username` and `proxy_password` (at most 255 bytes each). A proxy type
+other than `none` without a host and a port is refused. settings.json holds
+`proxy_password` encrypted with DPAPI for the current Windows user, as base64;
+the settings reply and the snapshot carry it as plain text.
+`check_proxy` takes `proxy`, an object with the settings command's proxy
+fields, and starts a check that connects to that proxy and signs in within 10
+seconds without changing the session. It replies at once with `check_id`,
+because the check can take longer than a client waits for a reply; the
+snapshot reports the result.
+Settings also accept `incomplete_folder` (absolute path), `use_incomplete_folder`
+(default false), `append_suffix` (default true), `confirm_exit` (default true),
+`show_external_ip` (default false), and `disk_buffer_mib` (integer 1–1024,
+default 100). Each added torrent saves `append_suffix` and, when using a separate
+incomplete folder, `final_folder`; `save_path` remains its current location.
+Advanced also accepts `checking_memory_mib` (integer 1–1024, default 4),
+`hashing_threads` (integer 1–64, default 1), and `file_pool_size` (integer
+1–10000, default 40). The existing `disk_buffer_mib` key is unchanged when
+its control moves to Advanced. These settings use the existing settings reply
+and snapshot object.
+Existing saved notification choices keep their value.
+Session pause is persisted as `all_paused` through
+its command and preserves individual torrent intent.
+`registration` takes an `action` string: `observe`, `register_handlers`,
+`unregister_handlers`, `enable_startup`, or `disable_startup`. Its data contains
+`handlers`, `handlers_target`, `startup`, `startup_target`, `startup_disabled`,
+`torrent_default`, `magnet_default`, `torrent_app` and `magnet_app`. The two
+registration states are `none`, `this` or `other`; an unavailable default query
+is null. `startup_disabled` is true while Windows has disabled the Run entry.
+The app fields name the app Windows opens each kind with, and are empty when
+Windows asks instead.
+A partial failure includes the observed data with the refusal.
+The same operations are available through the engine executable's
+`--registration OPERATION` option without starting transfers or WinUI.
+Snapshot settings contain the live language, with `language_saved` indicating
+whether it matches the saved preference. The store retains only saved settings;
+a failed save leaves the live choice selected and reports the failure.
+Preview replies contain preview_id, name, size, files (index, path, size,
+priority, padding), metadata_ready, hashes (full v1/v2 hexadecimal strings),
+trackers (URLs), merge_available, error, shared_with (torrent names), and
+torrent_id of the existing torrent when the source is a duplicate. Add returns torrent_id after storage
+commit with duplicate:false, or the existing torrent_id with duplicate:true.
+File preview parses
+metadata without creating a payload handle; destination is applied at Add.
+Another instance of the storage worker reads and parses preview sources, so a
+slow share cannot hold up metadata commits; destruction cancels its blocked read.
+Snapshot contains session_id, torrents, settings, language_saved, download_rate,
+upload_rate, paused, limits, has_incoming, proxy, proxy_check, stopping, loading, storage_failed, and startup_error.
+Protocol version 7 adds `proxy` and `proxy_check`. A proxy check's outcome is
+`connected`, `sign_in_failed`, `unreachable`, `not_found`, `wrong_type` or
+`timed_out`. `proxy` is the outcome of the engine's check of the proxy in use,
+or null while no proxy is in use and until the check ends. `proxy_check` is the
+check that `check_proxy` started last: `check_id`, and `outcome` and
+`milliseconds`, which are null while it runs. It is null before the first
+check and when that check could not run.
+Protocol version 8 adds `external_ipv4` and `external_ipv6` to snapshots. Each
+is an address string or empty when unavailable. Torrent rows add `final_folder`,
+empty unless they will move on completion, so recent download folders do not
+mistake the incomplete folder for the chosen final destination.
+Protocol version 9 extends settings with queue, network, checking, history,
+window-refresh and addition defaults. `refresh_interval` is milliseconds;
+`recent_interval`, `history_interval`, and `slow_wait` are seconds;
+`slow_download` and `slow_upload` are bytes per second. Capacity facts are Mbps.
+`addition_destination` is the derived destination for new additions and is not
+stored in settings.json. Existing keys and defaults keep their prior meanings.
+Protocol version 10 adds the remaining addition/file policies and `connection_test`.
+Its snapshot reports `phase`, with the active test's `id`, measured `download` and
+`upload` in Mbps, `remaining` hold seconds, and a stable `failure` code. The command
+accepts `action` as `start`, `cancel`, or `release`; it does not apply transfer
+limits. `delete_files` accepts an explicit `deletion` choice (`recycle` or
+`permanent`) so the confirmed dialog and the asynchronous file operation agree.
+Torrent rows contain torrent_id, name,
+size (wanted bytes), completed (wanted bytes present), progress (0..1 for the
+current task, including verification), status (stable code), paused, download_rate and
+upload_rate (bytes/second), save_path, error (stable code), diagnostic detail,
+added (Unix seconds), seed_count and peer_count (connected; peers include seeds),
+swarm_seed_count and swarm_peer_count (tracker scrape totals, else known peers),
+downloaded/uploaded (bytes), queue
+(libtorrent position), complete, completed_on (Unix seconds when libtorrent
+finished the wanted files; 0 until complete), incoming, forced, sequential, first_last, and
+hashes. Protocol version 6 adds `completed`, so content totals and remaining time
+do not mistake verification progress for downloaded bytes. `torrent` returns
+the torrent's facts, name, metadata_ready, files, hashes, current content folder,
+and magnet link.
+All identities are strings. Settings are intended changes rather than replacement
+snapshots. Input sources are bounded to 32 KiB and retained previews/parses to
+256. `activate_sources` forwards sources, preserving relative-path meaning at
+the launching process. `pending_activations` returns activations with activation_id
+and sources; `activations_received` acknowledges activation_ids after the UI owns
+them. The engine retains each accepted batch until that acknowledgement. A
+window that has begun closing takes no more sources, so they stay with the
+engine.
+
+Persistence uses format 1 settings.json with authoritative membership and user
+intent, plus per-identity libtorrent resume files. The ordered writer atomically
+renames files using Windows replacement; a reply acknowledges saved membership
+only after the replacement succeeds. Checkpoints run every 30 seconds, retaining
+failed-save work for retry. This bounds crash loss of transfer progress without
+turning a transfer tick into a disk write.

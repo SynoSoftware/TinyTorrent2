@@ -154,7 +154,7 @@ an Expander template replacement. It does not animate. Microsoft's
 [initial-focus guidance](https://learn.microsoft.com/en-us/windows/apps/develop/input/keyboard-interactions#initial-focus)
 supports placing focus at the logical destination.
 
-Implementer note: follow the [navigation contract](../../docs/interface.md#native-controls-and-visual-authority)
+Implementer note: follow the [navigation contract](../../docs/contracts/ui.md#native-controls-and-visual-authority)
 for hierarchy and history. Cross-links select the destination category; only
 Connection setup has a parent breadcrumb. The prototype's Back button currently
 returns to a fixed parent or Home and does not demonstrate the required history

@@ -12,7 +12,7 @@ application.
 ## Languages during implementation
 
 `en.json` owns canonical keys and English text. Follow the
-[translation owner ruling](../AGENTS.md#working-rules) for when other catalogues
+[translation owner ruling](../../AGENTS.md#working-rules) for when other catalogues
 are updated. Between translation tasks, missing translated messages use the
 fallback below so ordinary patches remain usable while release text settles.
 
@@ -33,7 +33,7 @@ surfaces. Another shipped language is a `<language-tag>.json` with the same keys
 in the same folder. These
 files are the project's catalogues. The project embeds them in its own binary,
 so a library or the engine works without another project's text.
-These catalogues own translation data; the [protocol](protocol.md#encoding-and-validation) owns IPC encoding.
+These catalogues own translation data; the [pipe API](pipe-api.md#encoding-and-validation) owns IPC encoding.
 
 Group keys by surface in one level of objects, with snake_case names that do not
 repeat their group: `column_menu.hide`, not `column_menu.hide_column`.
@@ -73,8 +73,8 @@ together on the UI thread. TableView keeps catalogue lookup internal and owns no
 saved language setting. New views bind to the same current prepared value.
 Standalone English uses the same presentation refresh path without host setup.
 
-The [TableView contract](../lib/TableView/docs/tableview-contract.md) owns what a
-switch preserves. Its [implementation map](../lib/TableView/docs/tableview-implementation.md)
+The [TableView contract](../../lib/TableView/docs/tableview-contract.md) owns what a
+switch preserves. Its [implementation map](../../lib/TableView/docs/tableview-implementation.md)
 records the implementation and the remaining runtime verification.
 
 ## Ownership and live behavior
@@ -130,7 +130,7 @@ inherited English uses English plural rules.
 
 Check catalogue data before packaging: translated keys that English lacks,
 duplicate keys, incompatible placeholders, and incomplete plural sets. The
-[release command](../installer/README.md) lists translated messages that are
+[release command](../../installer/README.md) lists translated messages that are
 missing, that English lacks, or whose placeholders differ, and asks the owner
 whether to release anyway.
 At run time, a loader ignores a translated message whose key English lacks or
@@ -197,7 +197,7 @@ representation if that implementation finds a simpler arrangement; preserve one
 editable source for each message, one lookup policy per process, and the same
 fallback results. No translation server, network fetch, watcher, or plugin framework is needed.
 
-Follow [the testing policy](testing.md). A quick catalogue integrity check covers
+Follow [the testing policy](../agents/testing.md). A quick catalogue integrity check covers
 duplicate keys, placeholders, and required forms when catalogues change; it does
 not assert the wording of screen strings. One focused live-switch exercise should
 cover an open draft, an owned control, tray state, fallback, and switching back

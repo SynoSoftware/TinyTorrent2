@@ -535,7 +535,7 @@ function addLanguage(){
 function subtitleReady(){return (subtitleAccount()?!!state.supplier.password:!state.supplier.username&&!state.supplier.password||!!(state.supplier.username.trim()&&state.supplier.password))&&!['unconfigured','account'].includes(document.querySelector('#subtitle-outcome').value)}
 function supplierDisclosure(name){
   const supplier=suppliers[name],disclosure=`Subtitle matching sends ${supplier.sends}, and your IP address to ${name}.`;
-  return `<p>${escape(disclosure)}</p><div class="subtitle-links"><a href="../../docs/subtitle-privacy.md" target="_blank" rel="noopener noreferrer" data-tip="TinyTorrent privacy policy draft">Privacy policy draft</a><a href="${supplier.privacy}" target="_blank" rel="noopener noreferrer" data-tip="${escape(name)} privacy policy">Supplier privacy</a><a href="${supplier.terms}" target="_blank" rel="noopener noreferrer" data-tip="${escape(name)} terms of service">Supplier terms</a></div>`;
+  return `<p>${escape(disclosure)}</p><div class="subtitle-links"><a href="${supplier.privacy}" target="_blank" rel="noopener noreferrer" data-tip="${escape(name)} privacy policy">Supplier privacy</a><a href="${supplier.terms}" target="_blank" rel="noopener noreferrer" data-tip="${escape(name)} terms of service">Supplier terms</a></div>`;
 }
 function showSupplierInfo(button){
   hideTooltip();

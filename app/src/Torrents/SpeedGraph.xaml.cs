@@ -14,7 +14,7 @@ using Windows.UI.Core;
 
 namespace Syno.TinyTorrent.Torrents;
 
-// Draws the Speed view as docs/interface.md defines it: averages, not samples.
+// Draws the Speed view as docs/contracts/ui.md defines it: averages, not samples.
 public sealed partial class SpeedGraph : UserControl
 {
     public static readonly DependencyProperty SamplesProperty = DependencyProperty.Register(

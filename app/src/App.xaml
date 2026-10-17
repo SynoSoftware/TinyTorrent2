@@ -141,7 +141,7 @@
       <x:Double x:Key="TinyTorrentSettingsWidth">1200</x:Double>
       <x:Double x:Key="TinyTorrentCaptionButtonWidth">48</x:Double>
       <!-- Every application-authored icon takes its size from one of these
-           roles; Icon sizes in docs/interface.md assigns them. -->
+           roles; Icon sizes in docs/contracts/ui.md assigns them. -->
       <x:Double x:Key="TinyTorrentChevronIconSize">12</x:Double>
       <x:Double x:Key="TinyTorrentInlineIconSize">16</x:Double>
       <x:Double x:Key="TinyTorrentButtonIconSize">20</x:Double>

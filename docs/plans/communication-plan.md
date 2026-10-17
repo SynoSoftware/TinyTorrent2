@@ -5,18 +5,14 @@ condensed rewrite or restore an older copy over it. Propose shortening as an
 edit that keeps the owner rulings, the findings table, the modules-and-seams
 section and the baseline gate, so the owner can see what is removed.**
 
-Implementation plan, 2026-10-15. The first responsiveness patch passed source
-review, including an adversarial review. It has not been built or measured by
-this chat. This document separates that bug-fix commit from the next architecture
-change, which the owner deferred until later.
+**Paused.** Stage 1, the reviewed responsiveness fixes, is implemented, and its
+rules live in the [pipe API](../contracts/pipe-api.md) and
+[engine](../contracts/engine.md) contracts. The next version below is not
+scheduled: it is complicated for little gain, and the owner has not decided
+whether to implement it. Start it only when the owner asks.
 
-The owner requested this order: fix the reviewed bugs with the reviewing agent,
-commit that work, then address the subscription design below later. Builds, tests,
-launches and benchmarks still require the owner's request under
-[AGENTS.md](../AGENTS.md#working-rules).
-
-[Architecture](architecture.md), [engine](engine.md), [protocol](protocol.md),
-[interface](interface.md#committing-edits), and [testing](testing.md) remain the
+[Architecture](../contracts/architecture.md), [engine](../contracts/engine.md), [pipe API](../contracts/pipe-api.md),
+[UI](../contracts/ui.md#committing-edits), and [testing](../agents/testing.md) remain the
 authorities. Update their affected sections as the design is implemented. This
 plan is not runtime evidence or a second implementation-status backlog.
 
@@ -37,16 +33,16 @@ then all detail and communication paths, including the Settings delay.
 
 | Finding | Source | Disposition |
 | --- | --- | --- |
-| Peer aggregation dropped the callback applying the immediate cached reply. | [Inspector peers](../app/src/Torrents/Inspector/Peers.cs) | The patch restores it. Preserve this fast display path. |
-| The pipe previously waited for each reply before sending another request. | [PipeClient](../app/src/Shared/Engine/PipeClient.cs), [native Pipe](../engine/src/Pipe.cpp) | The patch multiplexes requests using existing request IDs and one ordered writer. |
-| Every peer reply rebuilds collections over all displayed peers. | [Inspector peers](../app/src/Torrents/Inspector/Peers.cs) | Fix the repeated merge work before expanding concurrency. |
-| Every changed setting previously called full policy application, including display preferences. | [Settings](../engine/src/Engine/Settings.cpp), [Policy](../engine/src/Engine/Policy.cpp) | The reviewing agent's fix compares policy groups and skips unaffected work. It is included in the first commit; confirmation still follows the store commit. |
-| Partial replies construct complete file JSON separately for each arriving detail kind. | [Detail](../engine/src/Engine/Detail.cpp), [Torrent](../engine/src/Torrent.cpp) | Combine publication at the end of the current alert batch, before construction. Implemented in source: `Receive` marks the reading and `Tick` publishes once after the batch. |
-| The engine holds one detail collection, and a new context read from the same connection cancels the earlier one. The window therefore reads the all-torrents Peers scope one torrent per round trip, and a refresh of N torrents costs N pipe and libtorrent round trips. | [Detail](../engine/src/Engine/Detail.cpp), [Inspector peers](../app/src/Torrents/Inspector/Peers.cs) | Replace this with shared per-torrent collection in the next architecture change. This is the one finding that forces that change. |
-| The snapshot reply serializes status refreshed on the engine's periodic clock, while the window polls on its own clock. | [Session](../engine/src/Engine/Session.cpp), [Commands](../engine/src/Engine/Commands.cpp), [PipeClient](../app/src/Shared/Engine/PipeClient.cs) | Keep the immediate reply and push later observations. The two cadences introduce staleness; their constants alone do not bound collection, queueing or UI time. |
-| Native delivery and the window each retain one pending detail message. | [Pipe](../engine/inc/Pipe.h), [MainViewModel](../app/src/Shell/MainViewModel.cs) | Concurrent torrent updates require separate pending entries, or results will overwrite each other. |
-| Background file reads share Inspector's demand lifetime and use negative contexts. | [File reads](../app/src/Shared/Engine/PipeClient/Files.cs) | Move complete-data consumers to independent requests using the same collector. |
-| Settings already chooses the clicked value before awaiting the save. | [Settings](../app/src/Settings/Editor.cs) | Trace input-to-render latency as well as the pipe; do not add a second optimistic state owner. |
+| Peer aggregation dropped the callback applying the immediate cached reply. | [Inspector peers](../../app/src/Torrents/Inspector/Peers.cs) | The patch restores it. Preserve this fast display path. |
+| The pipe previously waited for each reply before sending another request. | [PipeClient](../../app/src/Shared/Engine/PipeClient.cs), [native Pipe](../../lib/Pipe/Pipe.cpp) | The patch multiplexes requests using existing request IDs and one ordered writer. |
+| Every peer reply rebuilds collections over all displayed peers. | [Inspector peers](../../app/src/Torrents/Inspector/Peers.cs) | Fix the repeated merge work before expanding concurrency. |
+| Every changed setting previously called full policy application, including display preferences. | [Settings](../../engine/src/Engine/Settings.cpp), [Policy](../../engine/src/Engine/Policy.cpp) | The reviewing agent's fix compares policy groups and skips unaffected work. It is included in the first commit; confirmation still follows the store commit. |
+| Partial replies construct complete file JSON separately for each arriving detail kind. | [Detail](../../engine/src/Engine/Detail.cpp), [Torrent](../../engine/src/Torrent.cpp) | Combine publication at the end of the current alert batch, before construction. Implemented in source: `Receive` marks the reading and `Tick` publishes once after the batch. |
+| The engine holds one detail collection, and a new context read from the same connection cancels the earlier one. The window therefore reads the all-torrents Peers scope one torrent per round trip, and a refresh of N torrents costs N pipe and libtorrent round trips. | [Detail](../../engine/src/Engine/Detail.cpp), [Inspector peers](../../app/src/Torrents/Inspector/Peers.cs) | Replace this with shared per-torrent collection in the next architecture change. This is the one finding that forces that change. |
+| The snapshot reply serializes status refreshed on the engine's periodic clock, while the window polls on its own clock. | [Session](../../engine/src/Engine/Session.cpp), [Commands](../../engine/src/Engine/Commands.cpp), [PipeClient](../../app/src/Shared/Engine/PipeClient.cs) | Keep the immediate reply and push later observations. The two cadences introduce staleness; their constants alone do not bound collection, queueing or UI time. |
+| Native delivery and the window each retain one pending detail message. | [Pipe](../../lib/Pipe/Pipe.h), [MainViewModel](../../app/src/Shell/MainViewModel.cs) | Concurrent torrent updates require separate pending entries, or results will overwrite each other. |
+| Background file reads share Inspector's demand lifetime and use negative contexts. | [File reads](../../app/src/Shared/Engine/PipeClient/Files.cs) | Move complete-data consumers to independent requests using the same collector. |
+| Settings already chooses the clicked value before awaiting the save. | [Settings](../../app/src/Settings/Editor.cs) | Trace input-to-render latency as well as the pipe; do not add a second optimistic state owner. |
 
 The source proves these paths exist, not their share of the reported delay.
 The request path itself has no timer: the pipe thread posts each request to
@@ -65,47 +61,6 @@ Slow collection, file I/O and lookup must not occupy that dispatch path. Actions
 such as Open may asynchronously await their own complete-data reply; this never
 holds the pipe or another request. Successful saves still require persistence.
 Do not add an acceptance message unless a caller needs it.
-
-## First commit: reviewed fixes
-
-Keep the immediate cached reply, partial known-field display, asynchronous local
-lookup, concurrent request correlation, and stale-context protection already
-implemented in source. Review the whole change as one result before committing.
-
-The reviewing agent implemented selective Settings policy application and
-publication after the current alert batch. Both are included in this first
-commit. The main chat owns the managed and native pipe, Inspector
-peer merging, documentation, integration review, and commit.
-
-1. Match peer rows within the affected torrent. Avoid rebuilding an aggregate
-   dictionary and copying the entire list for ordinary rate/state changes.
-   Preserve row identity and immediate results. Combine display notifications.
-   Preserve selective Settings policy application in its existing owner, with
-   complete initialization and save-before-confirm unchanged.
-2. Mark changed detail during alert handling and publish after that batch has
-   been consumed. Construct each latest document once. Do not defer publication
-   to the next periodic tick or add a debounce timer.
-3. Store validated request IDs as integers in the native outstanding set.
-   Document the client/server capacity relationship at its constants: the
-   window's command and read limits add up to the engine's per-connection
-   limit, and the engine releases an entry when the reply is queued while the
-   window releases it when the reply is received, so the engine's count never
-   exceeds the window's. Keep bounds and explicit overload behavior rather than
-   silently losing requests.
-4. Review timeout isolation. A failed or partial frame write still invalidates
-   the connection. A response timeout must not be made request-local by merely
-   swallowing its exception: outstanding capacity and late preview cleanup need
-   an owner. Record any retained connection-wide timeout behavior explicitly.
-5. Review and commit only this task's coherent changes. Preserve unrelated edits
-   in the shared checkout. Record that compilation and runtime checks remain
-   unperformed unless the owner separately authorizes them.
-
-Keep snapshots immediate, including stale or incomplete facts. The window
-displays that first reply without waiting for collection. A fresh observation
-arrives separately and updates the displayed facts. Merely refreshing the engine
-cache after replying does not improve displayed freshness: without delivery,
-the window still waits for its next poll. The status delivery change belongs to
-the next version below, not to the first commit's performance claims.
 
 ## Next version: scoped detail subscriptions
 
@@ -133,7 +88,7 @@ tells the engine its interval through settings, the fresh facts then arrive as
 pushed packets without a request in front of them, and a scope of many
 torrents costs one declaration instead of one request per refresh. With
 summaries pushed the same way below, this is the only consistent choice, so it
-is not an open decision. The [protocol](protocol.md) sentence that no refresh
+is not an open decision. The [pipe API](../contracts/pipe-api.md) sentence that no refresh
 timer runs for a hidden inspector stays true, because a hidden view releases
 its subscription.
 
@@ -313,7 +268,7 @@ existing objects for telemetry changes and alter membership only where needed.
 Do not rebuild a dictionary of all `P` peers for every torrent's answer.
 
 Combine aggregate membership, summary, sorting and map updates once per scheduled
-UI drain where required. Follow the [TableView update contract](../lib/TableView/docs/tableview-contract.md#53-source-identity-and-update-contract)
+UI drain where required. Follow the [TableView update contract](../../lib/TableView/docs/tableview-contract.md#53-source-identity-and-update-contract)
 to retain focus, selection and scrolling. A large drain must yield to input;
 coalescing should reduce repeated work rather than delay first useful content.
 
@@ -346,7 +301,7 @@ pushes replace routine polling; keep explicit refresh and reconnect reads where
 needed. The selected cadence governs recurring telemetry collection, never
 initial replies or command feedback. While a connection test is active the
 engine pushes once per second whatever the saved interval, which replaces the
-window's one-second polling that the [protocol](protocol.md#connection-measurement)
+window's one-second polling that the [pipe API](../contracts/pipe-api.md#connection-measurement)
 requires during the test, so phase changes and the hold countdown stay
 responsive. One slow request cannot stop these independent updates.
 

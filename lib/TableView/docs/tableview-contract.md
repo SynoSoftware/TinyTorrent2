@@ -8,8 +8,8 @@
 This is the reusable control's behavior and public API authority. The
 [implementation map](tableview-implementation.md) records the existing code and
 known gaps; the contract does not claim that every requirement is implemented.
-[Product architecture](../../../docs/architecture.md) owns application scope, and
-[testing](../../../docs/testing.md) owns validation scope.
+[Product architecture](../../../docs/contracts/architecture.md) owns application scope, and
+[testing](../../../docs/agents/testing.md) owns validation scope.
 
 The [hierarchical rows extension](hierarchy.md) is the authority for optional
 child rows. This contract continues to govern shared behavior and flat tables.
@@ -753,7 +753,7 @@ sort status and drag status without recreating the table or changing selection,
 layout or source. New views bind to the host's current prepared `Strings` value.
 Prepare that initial value before creating the first localised bound view.
 Regional formatting remains separate from UI language. The desktop
-[localisation contract](../../../docs/localisation.md) owns catalogue policy and
+[localisation contract](../../../docs/contracts/localisation.md) owns catalogue policy and
 composition protection; the library does not persist a language preference.
 
 The declared defaults are: visible, hideable, resizable, non-sortable,
@@ -890,7 +890,7 @@ must not add its standalone control minimum height to the table's own padding,
 because that makes one table's header taller than the other tables' headers.
 
 The retained row appearance has specific exceptions awaiting the
-[hands-on Fluent review](../../../docs/architecture.md#decisions-still-open): no hover
+[hands-on Fluent review](../../../docs/contracts/architecture.md#decisions-still-open): no hover
 fill and square corners for edge-to-edge rows. Native row focus is enabled after
 the first product journey verified visible keyboard location, selection,
 Pause/Resume and focus recovery during refresh.
@@ -1259,7 +1259,7 @@ Space follows section 9's sort cycle. The column entries use each column's
 localized `DisplayName`, and the commands that name a column place that name into
 a sentence their translation owns; every other label is localized by
 `Table`'s own `en.json`. They are not host-overridable configuration. Catalogue
-authoring follows [localisation](../../../docs/localisation.md#tableview).
+authoring follows [localisation](../../../docs/contracts/localisation.md#tableview).
 The control owns these generic messages without depending on product settings. This
 keeps generated UI self-contained while the host owns its column names and
 header content. Focus returns to the invoking header when the menu closes, in
@@ -1786,7 +1786,7 @@ package size, memory use, and versioning surface small.
 ## Appendix — Core verification checklist
 
 The component is ready when these generic scenarios pass in a WinUI 3 sample or
-host integration, with validation scope set by [testing](../../../docs/testing.md).
+host integration, with validation scope set by [testing](../../../docs/agents/testing.md).
 
 1. Typed templates render text, progress, buttons, toggles, and custom controls
    without stealing their normal input, focus, or automation behavior.

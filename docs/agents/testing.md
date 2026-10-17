@@ -171,10 +171,10 @@ instead of spreading to a 10% one, and checks that the regions used take all of
 a country's traffic. It does not cover merging places into regions or drawing.
 
 Use this machine and the targeted checks below for the
-[architecture](architecture.md).
+[architecture](../contracts/architecture.md).
 Lifecycle behavior needs a real process check when it changes; a cache-policy
 or hot-path change may need a short comparable workload. Cosmetic changes do not
-inherit those costs. The [root validation ruling](../AGENTS.md#working-rules)
+inherit those costs. The [root validation ruling](../../AGENTS.md#working-rules)
 governs running WinUI tests and samples; protect the owner's active desktop work.
 
 Report the relevant checks performed, their outcome, and any material gap.
@@ -185,7 +185,7 @@ Capture journeys are excluded from ordinary builds. Build the app with
 `/p:EnableCapture=true` to include them; its output and intermediates use the
 `_capture` suffix under `artifacts/`, so a diagnostic build cannot replace the
 ordinary product. The option does not launch anything.
-Run a review with the launcher, [Capture.ps1](../app/tests/Capture.ps1) `-Review <mode>`.
+Run a review with the launcher, [Capture.ps1](../../app/tests/Capture.ps1) `-Review <mode>`.
 First perform the [pre-launch check](compilation.md#verify-the-build-before-launch)
 against that launcher's resolved output; a normal-app build leaves capture
 outputs unchanged.
@@ -311,7 +311,7 @@ No live traffic is implied by this paused fixture.
 `TINYTORRENT_CAPTURE_REVIEW=library-files` visits the Library page and file
 properties with its disposable two-file fixture across English/Spanish and
 Light/Dark. Its separate `library-timing.json` branch is the retained timing
-diagnostic; the [cancelled Library validation programme](library.md#measurement-gates--cancelled)
+diagnostic; the [cancelled Library validation programme](../contracts/library.md#measurement-gates--cancelled)
 does not authorize running it. Existing `app/tests/SourceChecks.ps1` and
 `ProviderChecks.ps1` are focused source-membership and provider checks, not a
 standing requirement to rerun them for every edit. Preserve their earlier

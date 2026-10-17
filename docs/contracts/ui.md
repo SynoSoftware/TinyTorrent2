@@ -1,10 +1,9 @@
-# Interface
+# UI
 
-Target interaction and presentation for the new WinUI application. The
+Interaction and presentation of the WinUI application. The
 [architecture](architecture.md) owns product scope; the [engine](engine.md) owns
 operation semantics. Existing TableView behavior follows its
-[TableView contract](../lib/TableView/docs/tableview-contract.md). This document does not
-claim a product UI is implemented or visually verified.
+[TableView contract](../../lib/TableView/docs/tableview-contract.md).
 
 Common sense and intuitive use take precedence when choosing the interaction.
 Make the ordinary path obvious and short, preserve the user's work, and handle
@@ -26,7 +25,7 @@ Review both clutter and missing essentials: every visible element should support
 a decision, and every required task needs a discoverable path. A successful build
 cannot establish usability or visual conformance. Screenshots can verify a
 design later; they do not replace understanding its interactions. Runtime checks
-follow [testing](testing.md) and the repository's desktop-launch restriction.
+follow [testing](../agents/testing.md) and the repository's desktop-launch restriction.
 
 ## Native controls and visual authority
 
@@ -267,6 +266,8 @@ add an icon when it helps recognition or scanning. Keep Lucide for
 application-authored icons and retain platform-owned control glyphs. Preserve
 native sizing, padding, hit areas, and button semantics. Decorative icons stay
 out of automation; icon-only actions have explicit accessible names.
+Actionable controls carry a stable `AutomationProperties.AutomationId`, so UI
+checks find them; decorative content has none.
 
 **Owner ruling: an application-authored icon is larger than the text beside it,
 and it never enlarges its container.** The icon may extend into the container's
@@ -908,8 +909,31 @@ Library shows its published configuration, file count, applied filtering and
 selection. Count files, not distinct movies; publish filtering with the rows,
 so a pending query cannot relabel old results. Before a usable Library result,
 show the configuration only, never an invented zero or a loading message.
-Settings shows its current section, such as `Settings · Network`, from the
-navigation state; it has no collection count. About has no collection facts. Retained disconnected data is
+
+Torrents reads `84 torrents`, `12 of 84 torrents · Downloading` and
+`3 selected`. A filter with no matches reads `0 of 84 torrents · Downloading`
+and the table keeps its empty-state action. With no managed torrents it reads
+`0 torrents`, and before the first coherent snapshot `Connecting…`, never zero.
+The bar carries no aggregate ETA, average progress, total ratio, peer count, DHT
+count or lifetime bytes; the inspector and Speed limits give those facts their
+context.
+
+Library reads `Videos · 240 files`, `Music · 86 files` and `412 files` for
+Files, which does not repeat the configuration's noun. A selection appends
+`2 selected`; sizes stay in the table and inspector. A query or facets append
+`Filtered` and one short criterion when it fits, such as `Genre: Drama`. No
+matches read `Videos · 0 files · Filtered`, which differs from an empty Library;
+a real failure reads `Library unavailable`. Counts cover current Library entries
+only: no unfiltered denominator comes from a facet count or the Torrents
+collection, and the bar shows no total bytes, metadata-coverage percentage or
+subtitle-coverage count. The applied `RowsConfiguration` supplies the
+configuration, so no second configuration state exists, and the filtered
+indication describes the query that produced the displayed rows.
+
+Settings shows its current section, such as `Settings · Network`, with a Settings
+icon in the left group, from the navigation state; it has no collection count.
+A selection count sits beside the collection count, not at the far end of the
+window. Counts refer to the table, and rates always refer to all torrents. About has no collection facts. Retained disconnected data is
 labelled Last known, while initial torrent connection says Connecting.
 About and Credits show their navigation location, process memory and all-time
 download/upload totals in the existing status bar. Appearance's Show memory
@@ -924,24 +948,43 @@ before background work, and totals use the existing transfer icons and fitting
 path. This changes neither work registration nor its cancellation controls.
 
 Rates describe all torrents and keep their down/up icons and colors. Numeric
-caps appear only while confirmed and unpaused. In Library the transfer group
-is explicitly labelled Torrents, remains present across zero-rate samples
-while managed torrents exist, and yields before Library work. At narrow widths,
-rates may omit numeric caps while showing Limits on; that marker disappears
-with the rates. A cap describes the applied policy, not proof of why a transfer
-is slow. Disconnection shows unavailable rates and suppresses stale restrictions
-and healthy connection icons.
+caps appear only while confirmed and unpaused. A directional cap reads
+`↓ 1.2 MB/s of 5 MB/s` and shows only that direction's cap. In Library the
+transfer group is explicitly labelled Torrents, remains present across zero-rate
+samples while managed torrents exist, and yields before Library work. At narrow
+widths, rates may omit numeric caps while showing Limits on, which appears
+while an effective nonzero cap applies and transfers are not paused; that marker
+disappears with the rates. A cap describes the applied policy, not proof of why
+a transfer is slow. Disconnection shows `Last known · 84 torrents`, `—` for
+rates, and suppresses stale restrictions and healthy connection icons.
 
-The session uses the engine's confirmed pause reason. Manual pause says All
-paused; scheduled pause names its end when known; a missing adapter says
-Paused · Adapter unavailable; connection setup keeps its own explanation.
-Alternative limits uses the caution Turtle and its known scheduled expiry.
+Each rate keeps aligned digits and a compact width measured for the active
+format, units and cap, recomputed when language, scale, unit range or cap
+changes. The bar reserves no two fixed 216-DIP speed fields and does not size
+its right group for the longest hypothetical status.
+
+The session uses the engine's confirmed pause reason, and the status view builds
+no second precedence algorithm. Manual pause says All
+paused and omits caps, and rate digits yield before this explanation; scheduled
+pause names its end when known and otherwise says Paused by schedule; a missing
+adapter says Paused · Adapter unavailable; connection setup says Paused for
+connection setup and is never labelled a manual pause.
+Alternative limits uses the caution Turtle and its known scheduled expiry; the
+standard profile gets no label, because the caps explain it.
 Pause takes precedence over limits. Full detail and existing announcements
-retain the current notification owner. Library scopes these states to Torrents.
-The routine port/proxy item is shown only on Torrents and says nothing about
-general internet health or privacy.
+retain the current notification owner. Library scopes these states to Torrents
+and words them `Torrents paused`, `Torrents paused until 18:00` and `Torrents
+paused · Adapter unavailable`. A missing-adapter hold gets no InfoBar of its own;
+the existing Resume notice may explain a refused resume, and Settings > Network >
+network adapter is the repair path.
+The routine port/proxy item is shown only on Torrents, at the end of the session
+group, and says nothing about general internet health or privacy. An unavailable
+adapter stays an explicit torrent hold on Library.
 Its short labels are `Others can connect`, `Connection unconfirmed`, `Using proxy`,
-and `Network unavailable`. Tooltips explain the observed incoming connection,
+and `Network unavailable`. `Others can connect` uses the existing success icon,
+`Connection unconfirmed` the caution icon and `Using proxy` stays neutral; the
+text is neutral in every case. The item yields as a whole icon-and-text item
+before core facts. Tooltips explain the observed incoming connection,
 unconfirmed listening port, proxy route, or unavailable selected adapter, so
 the status stays readable without claiming an unconfirmed firewall problem.
 
@@ -982,8 +1025,45 @@ count for them. Per-phase percentages are never presented as one overall
 percentage. A
 confirmed wait is named as such; accepted subtitle work alone does not prove
 active network searching. A video-provider wait appears on Library's Videos view
-only when explicit work does not occupy the space. Automatic download preferences
-stay in Settings · Plugins, because an intentional choice needs no ambient notice.
+only when explicit work does not occupy the space, and names the actual provider,
+such as `Waiting for TMDB`; the detailed reason and recovery stay with the
+existing feature surface. Music and Files show no ambient video-provider state.
+Automatic download preferences stay in Settings · Plugins, because an intentional
+choice needs no ambient notice.
+
+An accepted metadata batch reads `Metadata · 2 of 7 processed` in Library and
+`Library metadata · 2 of 7 processed` on Torrents, Settings and About, so it is
+never mistaken for torrent metadata. Processed means completed attempts,
+including no match or local protection, not successful matches. When all remaining
+work waits, the text is `Metadata waiting · 2 of 7 processed`. A provider or
+retry time is named only when the batch owner establishes that it explains the
+whole wait, because a batch can contain several providers; the queue head and the
+default provider's warning never establish it. The batch takes the activity slot
+before ambient provider state. A displaced provider warning stays in the
+inspector and Settings, and no text claims that provider blocks a different
+batch. Competing messages never alternate on a timer.
+
+Metadata work uses the Lucide Download icon and a confirmed wait uses Clock;
+accepted subtitle work uses Captions. The X means **Stop fetching metadata**, not
+dismiss, and keeps its native focus, hover and pressed states, a full accessible
+name and a matching tooltip. After completion or failure the footer returns to
+its resting context, without a lingering Ready. Subtitle work reads `Subtitle
+work` when only accepted unfinished work is known, `Subtitles waiting` for a
+confirmed blocker, and `Finding subtitles` only when its owner establishes active
+searching; resumed persisted jobs are not proof of live network work. Found
+counts successful outcomes and is never a progress fraction. Explicit
+operations outrank ambient video-information state.
+
+IMDb phases read `Downloading IMDb data · 284 MB` (determinate only with a
+trustworthy byte total), the named parse or index phase, and `Finishing IMDb
+preparation`, after which cancellation is unavailable because publication has
+begun. `Cancelling IMDb import` disables Cancel and keeps the item until cleanup
+finishes. Success removes the item and existing completion feedback owns the
+outcome. A requested cancellation is not presented as a failure; a failure uses
+the existing actionable feedback, never an endlessly busy bar. A ProgressRing
+never replaces the bar: Windows guidance recommends the indeterminate bar for
+work that lets the person keep using the app. An explicit IMDb import differs
+from opening Library, which acquires no loading state.
 
 The footer measures text in the current language and scale. Remove optional
 update, default-download-volume space, torrent IP and routine port diagnostics
@@ -999,16 +1079,80 @@ batch. Each row consumes the same operation and cancellation command; no
 aggregate percentage or Cancel is introduced. A successor batch takes the
 inline slot while its settling predecessor remains in the list. With no
 successor, the settling batch remains inline until cleanup ends. The reporting
-contract and integration inventory are in [Background work](09-background-work.md).
+contract and the list of registered work are in [Background work](background-work.md).
 Narrow concurrency layout requires native review before release.
 
+At narrow widths the shortened forms are `Library metadata · 2/7`, with
+“processed” in its accessible name, and `IMDb import`. Numeric caps move to the
+rate's accessible description while Limits on stays visible. The metadata bar
+yields before its exact fraction, and decorative icons before operation
+identities and Cancel; IMDb's indeterminate indicator stays. Filter criteria
+collapse to `Filtered`, and a compact collection phrase (`12/84 torrents`,
+`Videos · 24 files`) keeps the selection. Long provider, filter and adapter names
+ellipsize, with the full state in UI Automation and the Settings or filter
+surface. At extreme text scale the collection count goes before an active batch
+and its X or an active hold; the page, configuration and selection count stay
+if they fit. A batch, selection or pause never becomes an unexplained glyph.
+The last reduction step is not proof that content fits: the result is verified.
+The batch's Stop target stays stable as its processed count changes, using the
+digit width of the actual total.
+
+The bar does not guarantee that every fact fits at every width. The desktop's
+minimum width stays; optional status never raises it. Enlarged text can raise the
+single row's height but never produces a second line, horizontal scrolling or
+overlap.
+
 Free-space and external-IP appearance settings remain opt-ins and describe
-their scope. Free space belongs to the default download destination's volume;
-an unavailable measurement says so. Torrent IP uses reported torrent-network
-addresses. Both yield when the footer has insufficient room. Update available
-remains passive discovery when space permits; Help > Update owns its action.
-Tooltips and UI Automation preserve full descriptions without announcing every
-rate or processed file.
+their scope, including that they are the first items omitted at narrow widths.
+Free space shows a drive icon with, for example, `120 GB free`; it belongs to the
+default download destination's volume, its tooltip names that folder and drive,
+and it never implies Library space or the selected file's disk. Torrent IP reads
+`Torrent IP: …` from reported torrent-network addresses. An unavailable
+measurement says so instead of showing a stale healthy value. Both yield when the
+footer has insufficient room. Update available remains passive discovery when
+space permits, at the lowest layout priority, because no other passive update
+notification exists; Help > Update owns its action. Passive footer text has no
+hidden double-click navigation; the Windows status bar guidance discourages it,
+and settings, filters and updates have visible keyboard-accessible homes.
+
+Decorative icons are excluded from the accessibility tree. Each semantic group
+has a complete accessible name, such as “12 of 84 torrents shown; Downloading
+filter; 3 selected” or “All torrents, download 1.2 megabytes per second, limit 5
+megabytes per second”. Static text is not exposed as a button. Significant
+automatic holds and batch completion are announced once through the existing
+notification owner, without duplicating an InfoBar announcement. The X takes part
+in normal Tab order and activates with Enter or Space. Essential information and
+recovery are available without hovering; tooltips supplement visible text and UI
+Automation. Tooltips and UI Automation preserve full descriptions without
+announcing every rate or processed file.
+
+The bar adds no engine messages, polling, provider requests, settings or
+scheduler. It derives its phrases from `MainViewModel` torrent and session facts,
+the Library browser's applied rows, selection and ambient state, and the
+`BackgroundWork` observations, and caches no second copy of engine or Library
+state.
+
+The bar continues the window surface: no raised card, acrylic island, rounded
+container or accent-filled strip. It is about 40 DIP high at normal text scale
+with a 16 DIP horizontal inset, vertically centred, and grows for scaled text
+and the native Stop button instead of clipping. Text is the shared Body status
+style at regular weight, never a smaller font to relieve crowding. Primary text
+carries count, selection, activity and holds; secondary text carries optional
+scope detail and background torrent telemetry. Small middle dots join a context
+phrase; groups sit about 16 DIP apart and an icon sits 6–8 DIP from its label.
+One leading Lucide List marks Torrents, and Film, Music or Files marks the
+Library configuration; numbers carry no icons of their own. Transfer arrows are
+Lucide down and up arrows at 16 DIP, holds use Pause, Clock and the
+caution-coloured Turtle, and filtering is stated in text because a funnel alone
+cannot say which scope the count describes. The bar has no animated
+rearrangement, pulsing dot or rotating message.
+
+Colours follow the owner ruling: the download rate and arrow use
+`AccentTextFillColorPrimaryBrush`, upload uses `TinyTorrentUploadBrush` (#7756A3
+Light, #C5A3E6 Dark), the alternative-limits icon uses
+`SystemFillColorCautionBrush`, and the port icon uses success or caution while
+proxy stays neutral. High Contrast uses system colours. Arrows, icons and text
+carry every meaning without colour.
 
 Settings > Speed limits groups the current mode, standard and alternative caps,
 queue activity, peer connections, and bandwidth accounting. The weekly editor
@@ -1102,7 +1246,7 @@ Routine outcomes are announced to assistive technology without a visible toast;
 actionable failures follow the
 [feedback placement policy](#feedback-placement). Pending operations
 and failures remain visible without exposing internal protocol machinery.
-Reconnection preserves presentation state according to the protocol contract.
+Reconnection preserves presentation state according to the pipe API contract.
 After reconnecting, show the confirmed list; do not leave a permanent busy state.
 A missing row means the torrent was removed, not that its files were deleted; a
 deletion failure arrives as a notification with Open folder.
@@ -1810,7 +1954,7 @@ each layout for its task. The Pieces view is the [Pieces map](#pieces-map).
 Peers and Trackers use the existing TableView, sharing its header, selection,
 column, keyboard, and scrolling behavior with the main torrent table. Files and
 the Add dialog's file browser use TableView's
-[hierarchical rows extension](../lib/TableView/docs/hierarchy.md#files-browser-integration)
+[hierarchical rows extension](../../lib/TableView/docs/hierarchy.md#files-browser-integration)
 for wanted, size, progress, and priority content, because folders require
 hierarchy. Torrent-specific file commands stay in the application. Tracker error
 status text uses the critical brush; other tracker states remain neutral, so
@@ -1945,7 +2089,7 @@ with its group icon and title, as Settings and Add groups do. Both groups sit on
 the inspector's own surface, which is already a card, and a divider separates
 them, so the groups add no surface of their own. A Lucide icon in the secondary text colour leads
 each label; privacy shows a lock or a globe, so its icon also states the value.
-Double-clicking a value opens the place that changes it, as on the status bar:
+Double-clicking a value opens the place that changes it:
 a rate or the speed limit opens the torrent's Speed limit dialog, which also
 shows the global limit; the folder opens Move files; ratio opens the seeding
 ratio in Settings > Transfers; and seeds or peers open the connection limit in
@@ -1960,7 +2104,7 @@ Its right edge aligns with the table header; its bottom inset
 matches Filters. It shares the Filters pane's material,
 so these two supporting surfaces stay consistent. Its header sits on that layer with a
 `DividerStrokeColorDefaultBrush` bottom edge. Tables inside it follow the
-[TableView visual contract](../lib/TableView/docs/tableview-contract.md#8-rendering-layout-and-visual-language),
+[TableView visual contract](../../lib/TableView/docs/tableview-contract.md#8-rendering-layout-and-visual-language),
 so the inspector does not define a second table appearance.
 Files, Peers and Trackers have no extra horizontal table padding: TableView owns
 their row and header spacing. A table directly below the pane header has an
@@ -2167,6 +2311,6 @@ outlines, as that map's were; change them only when the
 ## Implementation review
 
 Verify the affected journey at relevant sizes, themes, text scales, and input
-methods under [testing](testing.md). Review native semantics, reachable actions,
+methods under [testing](../agents/testing.md). Review native semantics, reachable actions,
 focus return, automation, live text, and bounded hidden work. State the evidence
 and gaps explicitly; a static screenshot cannot establish all of them.

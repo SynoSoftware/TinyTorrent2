@@ -1,20 +1,17 @@
 # Library
 
-Agreed feature plan, updated 2026-10-09. Library is a searchable view of the
-finished files reported by its data sources. Video information comes from the
-selected provider, and music information comes from the audio files' own tags. Torrents
-are the first and only data source in this implementation. SQLite stores facts
-about those files; it does not establish that a file belongs in Library.
+Library is a searchable view of the finished files reported by its data
+sources. Video information comes from the selected provider, and music
+information comes from the audio files' own tags. Torrents are the first and
+only data source. SQLite stores facts about those files; it does not establish
+that a file belongs in Library.
 
-This is the master plan for the feature, not implementation evidence or an
-instruction to begin implementation. The
-[implementation plan](05-library-implementation.md) orders the work. It supersedes earlier conversational
-proposals to retain removed torrents as Library entries, watch directories, or
-check file existence automatically. The [architecture](architecture.md) owns
-product scope and process responsibilities; the [engine](engine.md),
-[protocol](protocol.md), [interface](interface.md),
-[localisation](localisation.md), and [testing](testing.md) contracts continue to
-govern their respective concerns. Feature-specific decisions live here.
+This is the contract for the feature. Library does not retain removed torrents
+as entries, watch directories, or check file existence automatically. The
+[architecture](architecture.md) owns product scope and process responsibilities;
+the [engine](engine.md), [pipe API](pipe-api.md), [UI](ui.md),
+[localisation](localisation.md), and [testing](../agents/testing.md) contracts govern
+their respective concerns. Feature-specific decisions live here.
 
 ## Purpose and experience
 
@@ -79,22 +76,54 @@ subtitle-file handling or feature API, including under a generic helper name. A 
 source's assertion of membership means that it reports the entry, not that
 Library has independently verified the file on disk.
 
-Four parts divide the work. Each one has one job and does not know the
-internals of the others:
+Filename interpretation, title and normalized text are computed once on
+ingestion, because moving them into queries adds query work without improving
+behavior. The filename is the engine's final name, used unchanged. The engine
+distinguishes that name from the file's current disk path, and stripping a
+textual `.!tt` suffix would also change genuine filenames. One file-kind table
+classifies extensions for ingestion and the file tree, and keeps every format
+either already recognizes, including NFO, Markdown, subtitles and ISO files. One
+glyph map serves both file presentations; Library keeps its
+identified-episode TV icon.
+
+These parts divide the work. They are responsibilities in the existing C# app,
+not one project, interface or forwarding class per row. Each has one job and
+does not know the internals of the others. Feature code lives in
+`app/src/Library/` and `app/src/Subtitles/`, following
+[app folders](../agents/naming.md#app-folders).
 
 | Part | Owns | Does not know |
 | --- | --- | --- |
-| Data source (the torrent adapter now) | Seeding and synchronizing current contributions and file facts in SQLite, including unfinished targets, confirmed withdrawal and shared filename interpretation: kind, title and normalized filename text | Provider behavior, Library queries and feature eligibility |
+| Data source (the torrent adapter now) | Seeding and synchronizing current contributions and file facts in SQLite through the pipe client, including unfinished and unwanted files, confirmed withdrawal and shared filename interpretation: kind, title and normalized filename text. It decides neither Library eligibility nor subtitle eligibility and exposes no separate file catalogue | Provider behavior, Library queries and feature eligibility |
 | Library | Finished-entry eligibility, effective identification decisions, fact lifetime and its SQL text/filter queries | Torrent internals, provider transport, how a source finds files |
-| C# database owner (`library.db`) | Connection, authoritative schema, initialization and versioning, transactions and shared consistency rules | Provider behavior, presentation and feature decisions |
-| TMDB lookup and file facts reader | Returning video information or local file facts for Library to validate and save | Source membership, search, presentation |
+| Library Browser | Query and configuration input, stable row objects, selection, navigation and opening outcomes; Library initialization, worker events, failure pause, retry/resume and worker drain. TableView performs the only sort | Provider transport, SQL |
+| Video lookup | Selected-provider requests, cancellation and background eligibility ([replaceable movie providers](#replaceable-movie-providers)). Each provider owns its API decoding; the IMDb provider owns the download, import and local search of the IMDb data. Library accepts identification evidence and saves video information | Source membership, search, presentation |
+| File facts reader | One-time Windows property reads for dates, audio tags, media duration, bitrate and video dimensions; Library accepts and saves the returned facts. It lives with Library, its only consumer | Source membership, search, presentation |
+| C# database owner (`library.db`) | Connection, authoritative schema, initialization and versioning, transactions and shared consistency rules ([database](database.md)) | Provider behavior, presentation and feature decisions |
+| Inspector and opening owners | The shared card mechanics and Windows file execution. Library supplies a target and consumes the outcome | What the target is |
 
 Library and subtitles are sibling modules supplied with these shared resources
-by the existing application lifetime owner. Subtitle work queries current
-torrent files in SQLite, including unfinished files; Library's visible rows and
-automatic download setting never gate it. Domain queries stay beside their
-feature's behavior instead of accumulating in a general database class. Sharing the
-connection does not require sharing provider scheduling or job states.
+by the existing application lifetime owner. That owner starts source
+synchronization and supplies the shared database; neither feature creates or
+owns the other's lifetime. Subtitle work queries current torrent files in
+SQLite, including unfinished files; Library's visible rows and automatic
+download setting never gate it. SQLite holds one current-source projection, not
+an adapter catalogue beside separate Library and subtitle catalogues. The
+database owns transaction mechanics; each feature owns the meaning of its
+queries, and domain queries stay beside their feature's behavior instead of
+accumulating in a general database class. Sharing the connection does not
+require sharing provider scheduling or job states, and these responsibilities
+need no common enrichment interface, host class, service layer or repository.
+The application shell forwards source readiness and requests fresh snapshots; it
+disposes shared resources only after Library has drained. Concrete construction
+and provider registration happen in one place, `Features.cs`.
+
+Library reuses what the product already has: the title-bar search, the
+workspace and column-layout owners, the filter drawer, the Inspector pane with
+its Field and Strip controls, the opening owner, Settings and Strings. Shared
+behavior is extracted only where these direct callers need it, and the old
+caller moves in the same change. Domain state does not belong in XAML
+code-behind or a general-purpose helper.
 
 Stored facts belong to the contribution of their entry. Source synchronization
 applies confirmed withdrawal and cleanup in one SQLite transaction, using the
@@ -171,7 +200,9 @@ separate rows even if they contain the same movie.
 Reconcile locations using the application's established path-comparison
 behavior. Do not read contents, calculate hashes, resolve hard-link identity or
 search for duplicate files. Source entry identity is separate from current
-path, so a known move or rename can preserve the entry and selection.
+path, so a known move or rename can preserve the entry and selection. Removing
+the first contributor to a location does not replace a surviving row, and
+selection is reconciled explicitly when locations merge or split.
 
 A multi-episode video remains one row. Its video information may describe
 several episodes but must not create several apparently separate files.
@@ -350,7 +381,8 @@ keystroke, or perform a database read per row.
 
 Start with parameterized literal substring matching over normalized current
 file fields and referenced video text. Each term can match either, preserving
-AND-across-terms semantics. An empty query bypasses text matching. Ordinary
+AND-across-terms semantics. SQL wildcard characters in the typed text never
+change how punctuation matches. An empty query bypasses text matching. Ordinary
 indexes serve identities, joins and filters; they are not assumed to accelerate
 arbitrary substrings. Measure short and broad searches before adding an index.
 
@@ -399,6 +431,10 @@ The providers differ in what they return:
 | OMDb | Built-in key, or the person's own | English titles, full plot, genres, main cast, directors, age rating, box office, and IMDb, Rotten Tomatoes and Metacritic scores |
 | MDBList | Built-in key, or the person's own | English titles, synopsis, genres, age rating, box office, and IMDb, TMDB, Rotten Tomatoes, Popcornmeter and Metacritic scores; no cast |
 | IMDb | No key; the person first downloads IMDb's movie and TV data, about 290 MB | Movies and series with English titles, original titles, episode names, genres and IMDb rating, read from the [IMDb data](imdb-datasets.md) on this computer; no synopsis or cast |
+
+No provider reads web pages through an installed browser. The owner removed the
+IMDb and Rotten Tomatoes providers that did, because a browser costs too much
+memory and time for one score. Do not reopen browser experiments.
 
 **Owner ruling: ratings and title facts belong to the title, not to the
 provider that found them.** Library saves each site's score, the directors,
@@ -462,7 +498,7 @@ numbers and no conflicting known year. More than one qualifying candidate
 remains ambiguous. A first search result is not sufficient evidence by itself.
 Unmatched and ambiguous files remain usable under their original filenames,
 with the type and year their names give
-([identification](../CONTEXT.md)): a name with a season is a TV episode, and
+([identification](../../CONTEXT.md)): a name with a season is a TV episode, and
 every other video is a movie.
 Provide Fetch metadata and Erase metadata actions without prompting
 for every file. Erasing an incorrect association preserves the user's decision
@@ -479,7 +515,7 @@ A late reply cannot overwrite a newer correction or recreate an entry removed
 from its data source. A file's video information stays only while a current
 entry uses it. Everything else a provider returned, its raw pages and every
 movie its pages listed, stays saved, so a later lookup of the same movie needs
-no request ([keep everything a provider returns](05-library-implementation.md#replaceable-movie-providers)).
+no request ([keep everything a provider returns](#saved-provider-data)).
 
 With multiple movies selected, Fetch metadata asks only about the chosen
 provider. Below the provider's name and the number of selected videos, it
@@ -495,7 +531,7 @@ the identification; another title is no answer. The dialog says that
 information from other sources is kept, and counts the selected videos the
 provider cannot check: extras and other unsearchable names, videos whose
 information the person cleared, and videos whose match has no IMDb ID to compare.
-The [request protection contract](08-request-protection.md) defines recovery and reset.
+The [search protection contract](search-protection.md) defines recovery and reset.
 It works in the background: the status bar shows "Metadata · 3 of 7 processed"
 until it finishes, on every page, with an X that stops it and cancels the
 request in progress. Fetching more files while it runs adds them to the same
@@ -506,7 +542,7 @@ Retries preserve the accepted scope and freshness cutoff: an All request still
 refreshes existing information after a wait. Permission to override local
 protection ends when its attempt fails; retaining the requested work does not
 grant that permission again. Replacing the selected provider clears the old
-provider's displayed failure, while its saved request protection stays with it.
+provider's displayed failure, while its saved search protection stays with it.
 Library retains completed remote query answers across sessions, so equivalent
 files reuse an answer without another request.
 Library retains the complete selection across result refreshes and remembers
@@ -528,6 +564,176 @@ block before offering Force fetch. Remote waits cannot be forced.
 The table shows an em dash in that file's empty provider cells, so a file the
 provider does not have differs from one not looked up yet. Provider failure must not
 block local search, torrent operations or shutdown.
+
+### Replaceable movie providers
+
+Optional providers are removable, and a new provider uses the same Library
+workflow. Providers are composed at compile time in the existing app, because
+no runtime plugin installation or discovery is required. Runtime loaders, new
+projects, pluggable databases and provider-specific schedulers add no required
+behavior.
+
+A provider owns only what differs between providers: how it builds its requests
+and reads their answers. It knows neither current torrent membership nor
+whether an answer may be saved, and it receives no `Store`, search protection
+or network route.
+
+```csharp
+internal interface IProvider
+{
+    string Prepare(string query) => query.Trim();
+    Task<VideoSearch> Search(VideoQuery query, CancellationToken cancellation);
+    Task<VideoInformation> Describe(
+        VideoChoice choice, VideoRequest request, CancellationToken cancellation);
+}
+```
+
+Each provider folder declares its own `ProviderOption`: the provider ID, which
+also names its catalogue and its text section, the name, the policy links,
+`Access`, `BuiltInKey`, `Kinds`, `IsLocalized` and, for a provider that answers
+from downloaded data, `Dataset`. The provider ID persists the selection and
+qualifies stored information, such as `imdb` or `tmdb`. It is an
+implementation-owned stable string, because removing a provider must not
+require changing central enum ordinals. A saved provider ID that no option
+matches durably turns downloading off with no selected provider, rather than
+refusing to start; silently falling back to another provider would change the
+person's disclosed network behavior.
+
+Library owns what every provider shares. It chooses the key, the person's own
+or else the built-in one, and passes it to the option's `Create`. It decides
+whether a provider is available. It sends a request through `ProviderGet`,
+which applies the saved network route and the search protection of the key and
+of the operation Library runs; a 404 for a detail means the video is missing. A
+provider reports a failure as a `VideoFailure`, and Library writes its text
+with the provider's name. `VideoInformation` carries `Related`, the other
+choices its page listed, and Library keeps them. The provider's text section
+holds its disclosure. Settings binds to the provider options, and MainWindow
+imports no provider implementation. Providers have no settings of their own: a
+provider that answers from downloaded data, such as IMDb, declares it on its
+option, and Settings offers the download, update and deletion.
+
+`VideoKind` names a movie, a series or an episode, and Library stores the
+existing words for them. `VideoInformation` carries facts: genres, cast and
+keywords are lists, and an episode carries its series title and each episode's
+number, name and synopsis. Library composes the stored title, such as
+`Show · S01E01 Pilot`, and the joined text its search and filters read.
+
+Feature construction is the only registration location. Adding an independent
+provider adds its folder, its text section and its option to that list.
+Removing an online provider deletes its folder, list entry, resources and
+dedicated checks; shared lookup, storage, settings, details and dialog code
+need no edits. IMDb is the exception: its data also gives every provider's
+movies their IMDb rating, so `Store` and the Library view know `Imdb.Dataset`,
+and removing IMDb changes them too.
+
+#### Identification order
+
+Library owns automatic identification, and SQLite answers before the provider.
+It first reads the saved choices of the provider's catalogue whose normalized
+title or original title equals the release's title, through an index on each.
+One saved choice of the release's kind and year is described without a search.
+Otherwise it searches the provider for the release's title, keeps choices of
+the release's kind whose title or original title and year agree, and describes
+the one remaining choice. When the search keeps none, one saved choice still
+answers before the lookup reports no match. A saved choice decides alone only
+with the year, because without it the provider's search could list a second
+movie of the same title that no page has shown yet. The description must agree
+with that choice, because a search result can lack its year or carry a looser
+title. A provider whose `Kinds` lack the release's kind is not asked. The
+series hint comes from Library's current, accepted sibling decisions, and
+Library describes it directly. Library describes a series choice only for a
+file whose name gives a season, and refuses any other as `EpisodeRequired`. No
+unique match ends the attempt as a miss, so restarting does not repeat the
+lookup. `Describe` returns information or a failure; it does not return null.
+
+An automatic search runs once a session, and the files of one movie reuse its
+result. Fetch metadata's dialog always searches again, because the person
+repeats a search after an empty or failed answer. It lists the saved choices of
+the typed title with the search results, and only those when the provider
+fails.
+
+#### Lookup execution and failures
+
+VideoLookup has one guarded execution and commit path for background work, the
+batch, Fetch, Refresh and explicit identification. It captures the provider,
+catalogue, language and current entry evidence, serializes requests, reuses
+matching normalized information unless refreshing, and commits only through
+Library's current-membership and latest-decision guards. A provider change,
+Disable, a connection change, a language change and a network route change
+cancel that context; a route change also clears failures without a retry time.
+
+VideoLookup also owns Fetch metadata's batch: one queue that identifies its
+files in order on a worker thread. The background sweep finishes the file it is
+reading and then waits until the batch ends, so no page read is wasted and
+automatic lookups do not start and cancel between batch files. A batch file
+follows the automatic policy, except that it retries an earlier miss: its own
+failure is a miss and its match is automatic. The Library view only adds files,
+stops the batch and shows its progress.
+
+VideoLookup reports a stored match or miss separately from state changes such
+as the provider, its failure or the batch. Saved data can answer many files a
+second, so the view refreshes its rows at once and then at most once a second
+while such results arrive. Visibility and dwell remain with Library Browser,
+and providers do not subscribe to the window.
+
+Expected provider failures carry a `VideoFailure`. A failure of one video, such
+as an unreadable page or record, uses `VideoException`; it ends an automatic or
+batch lookup as a miss and an explicit one with its error. A provider that
+cannot serve any request uses `ProviderException` with an optional retry time,
+so one bad page cannot suspend unrelated enrichment. Cancellation stays
+`OperationCanceledException`, and storage errors stay with the existing failure
+owner.
+
+The background sweep takes every video file that has no saved decision, no
+attempt in this session and no remembered no-match answer from the provider
+under the file's current name. Opening the database returns earlier failures,
+search-limit stops and unusable pages to the sweep; only the provider's own
+no-match answer is permanent. Automatic and batch lookups search the provider
+only within the shared [search limit](architecture.md#third-party-provider-access),
+which [search protection](search-protection.md) counts. The sweep starts only
+after the delay that observing files creates for it and for the subtitle
+worker.
+
+A miss permits background work on the next eligible file. A provider failure
+with a retry time suspends background work until that time; without one, it
+suspends automatic work until explicit Retry or a relevant configuration
+change. This prevents a blocked provider receiving the same request for every
+file. An on-demand failure ends the attempt without scheduling another request.
+A later explicit request before a retry deadline reports the remaining wait
+without contacting the provider. Library owns these decisions and cancellable
+waits; adapters own no retry loop. The shared HTTP reply reader parses the
+Retry-After fact once, and Library and Subtitles keep their own retry defaults
+and quota and reset decisions. The full retry deadline is kept and each
+cancellable worker wait is bounded, because a valid long provider delay can
+exceed the platform timer's supported duration.
+
+VideoLookup cancels and drains background and interactive requests before the
+application disposes storage or shared HTTP access. Library Browser cancels its
+dwell and selection requests. Each adapter observes the supplied cancellation.
+The adapters need no separate provider lifetime interface, because resources
+are shared or scoped to a call.
+
+#### Saved provider data
+
+Normalized videos, identification associations and attempts carry catalogue
+identity. Raw records use catalogue, record key and language; providers
+interpret their content. Library keeps a raw record as soon as the provider
+returns it, also when the lookup rejects the video, and saves its references
+atomically with the accepted `VideoInformation` response.
+
+**Owner ruling, 2026-10-11: keep everything a provider returns.** Raw records
+and saved choices stay after their files leave the Library, because reading a
+page again costs seconds and risks the website refusing the person's address.
+Library saves every search result, every related choice and every described
+video as a saved choice, with title, original title, year and kind; a later
+listing of the same choice keeps a known year that the new one lacks. Library
+supplies the language: it saves information from a provider that is not
+`IsLocalized`, such as OMDb, as valid for every language. Cached normalized
+facts remain readable after a provider is removed. Episode information records
+its reusable series choice explicitly, so the live shared Series query does not
+decode TMDB's `tv/...` identifier. That query retains its contribution,
+directory, evidence and conflict checks and restricts the hint to the captured
+catalogue.
 
 ### TMDB early and background enrichment
 
@@ -585,12 +791,14 @@ returned outcome supports:
 These observations do not withdraw source membership or delete a torrent.
 
 External moves and deletions may leave stale recorded paths until opening
-fails. Do not search for replacement locations. This accepted limitation keeps
+fails. A file moved while the window was closed keeps its old path until its
+torrent's file list is read again; Open in that gap reports Missing with
+Retry, as any recent-files list does. Do not search for replacement locations. This accepted limitation keeps
 Library free of filesystem discovery and background validation work.
 
 ## Presentation and interaction
 
-The [Library prototype](../app/prototypes/library-prototype.html) opens directly and reuses
+The [Library prototype](../../app/prototypes/library-prototype.html) opens directly and reuses
 the canonical assets in `resources/`. Its layout selector compares A — Reading,
 B — Inspector and C — Sections. C is the owner's approved implementation target.
 The [implementation review](#prototype-implementation-review)
@@ -603,7 +811,7 @@ search box, card, file renderer or name for an existing command is a second
 implementation that drifts from the first. A label is new only where the noun
 is new.
 
-Help text follows the [interface contract](interface.md#text-icons-and-typography).
+Help text follows the [UI contract](ui.md#text-icons-and-typography).
 Each provider's information flyout carries the disclosure required by
 [privacy requirements](#privacy-and-provider-release-requirements).
 
@@ -718,7 +926,7 @@ items forward rather than asking the owner to rediscover them.
 
 #### Approved title-bar navigation
 
-The [title-bar contract](interface.md#native-controls-and-visual-authority) owns
+The [title-bar contract](ui.md#native-controls-and-visual-authority) owns
 the approved navigation and caption behavior.
 
 - [ ] Remove the Torrents/Library page selector and add no navigation row or
@@ -727,7 +935,7 @@ the approved navigation and caption behavior.
 - [ ] Use the actual `resources/tinyTorrent.svg` for Torrents and the Library
   face for Library. Do not substitute a Lucide download glyph for the brand.
 - [ ] Make the switch the caption button that the
-  [title-bar contract](interface.md#native-controls-and-visual-authority)
+  [title-bar contract](ui.md#native-controls-and-visual-authority)
   describes: the current page's icon and name, with its press feedback.
 - [ ] Keep Ctrl+1 / Ctrl+2, search, current-page menus, focus and Settings/About
   return behavior consistent with the existing navigation owner.
@@ -739,40 +947,22 @@ the approved navigation and caption behavior.
   prototype's repeated filtered count. Preserve one shared status-bar owner;
   no new arrangement has been approved.
 
-#### Implementation evidence and handoff
+#### Native composition
 
-Prototype evidence on 2026-10-10: movie, episode and music compositions were
-visually inspected; an eight-genre sample was inspected at 1280 and 900 pixels.
-The actual-brand icon flip was captured through hover, click, leave and re-entry
-in both directions after fixing the post-click reversal. The new Inspector
-Show in Torrents action was captured selecting the sample's source torrent,
-opening its Inspector, and returning to the same Library selection and open
-Inspector through Back. These observations do
-not establish native parity or validate the outstanding native filter animation.
-
-The canonical prototype was committed at `8b4b3ca`, with the final icon/action
-corrections at `ef37eb4`. It now opens C by default and reads the vendored Lucide
-font instead of keeping copied icon outlines. The later HTML capture review
-inspected the movie and 900-pixel episode compositions and the More menu with
-Edit. Show in Torrents uses the locate glyph in these renders.
-
-Native source now composes C through `Details`, shared `Section`, `FieldColumns`
+Native Library composes C through `Details`, shared `Section`, `FieldColumns`
 and `WrapPanel`; `Browser` and `Store` own the extended filters. `OriginActions`
 shares the one-source/direct and multiple-source/choice presentation across the
-Inspector and Library menus, retaining `Browser.ShowTorrent` as the operation
-owner. `MainWindow` retains page navigation and owns the app-icon switch. These
-changes have source review only; no build, test or native capture has run for
-this batch. The filter-opening jump remains unresolved pending runtime evidence.
+Inspector and Library menus, and `Browser.ShowTorrent` owns the operation.
+`MainWindow` keeps page navigation and owns the app-icon switch. Filters comes
+first in both menu modes, and Show in Torrents uses the locate glyph.
 
-The subsequent menu review added the missing choice icons and moved Filters
-first in both modes. Native pane visibility now has one owner in
-`MainViewModel.FilterPane`; Library requests opening instead of storing a
-second value. The pane distinguishes hidden, compact and open; Close hides it,
-while Minimize keeps a ten-pixel bar with EllipsisVertical and leaves View > Filters checked.
-Hiding preserves the compact or expanded presentation, and View restores it.
-HTML captures confirmed the menu order and icons, and opening in
-Library persisted into Torrents while closing there persisted on return. Native
-source review found no remaining issue; runtime verification is still pending.
+`MainViewModel.FilterPane` is the one owner of filter pane visibility; Library
+requests opening instead of storing a second value. The pane is hidden, compact
+or open. Close hides it; Minimize keeps a ten-pixel bar with EllipsisVertical
+and leaves View > Filters checked. Hiding keeps the compact or expanded
+presentation, which View restores, and the state carries across Torrents and
+Library. Runtime verification of the native composition and the filter-opening
+jump is still open.
 
 - [ ] Audit all unbuilt native changes against the approved composition and
   interactions; earlier partial edits do not establish parity.
@@ -780,7 +970,7 @@ source review found no remaining issue; runtime verification is still pending.
   by item. Resolve drift in the owning control, formatter or command, and remove
   implementations made obsolete by the change.
 - [ ] After authorization, build and run only the checks justified by
-  [testing](testing.md). Use the app's existing off-screen capture layer for
+  [testing](../agents/testing.md). Use the app's existing off-screen capture layer for
   native visual evidence; capture before/after when useful, at least after.
 - [ ] Visually inspect movie, episode, multi-episode, music and long-genre
   content, missing information, wide/narrow layouts, and the affected language
@@ -791,13 +981,13 @@ source review found no remaining issue; runtime verification is still pending.
   record unrelated or deferred findings explicitly with their remaining work.
 - [ ] Report implementation, source review, build/test evidence and visual
   evidence separately. Close this checklist only when the relevant evidence
-  exists, and update the existing Library/interface contracts to the approved
+  exists, and update the existing Library and UI contracts to the approved
   result rather than retaining competing specifications.
 
 ### Page and menus
 
 **Owner ruling: Library is a page, a peer of Torrents, not a View of Torrents.**
-The [interface contract](interface.md) owns the title bar, which holds the page
+The [UI contract](ui.md) owns the title bar, which holds the page
 switcher, and the rule that the second menu is the current page's menu. On
 Library, the menus are:
 
@@ -810,9 +1000,13 @@ Library, the menus are:
 
 ### Search
 
-The title bar follows the product's [search behavior](interface.md#main-window).
+The title bar follows the product's [search behavior](ui.md#main-window).
 Its Library placeholder is "Search Library". Live filtering uses the stored
 Library fields described above; no suggestion list covers the filtered rows.
+Title-bar suggestions on both pages use the same accent- and case-insensitive
+normalization, so one query finds the same spelling everywhere. The subtitle
+category's summary and search terms live in the existing Settings suggestion
+builder, not beside its navigation command.
 
 ### Configurations
 
@@ -855,7 +1049,7 @@ are hidden by default and appear at the end when the person adds them.
 
 The status footer names the published configuration and file count, for example
 "Videos · 19 files", applied filtering and selection. Its composition and
-background-work presentation follow the [interface contract](interface.md).
+background-work presentation follow the [UI contract](ui.md).
 
 ### Filters
 
@@ -865,7 +1059,9 @@ counts. Sections combine: a row must match every chosen section. Each section
 lists choices that have rows. Counts apply the query and other sections' choices;
 they ignore their own section's choice, so a person can see the alternatives.
 Keep a selected choice visible even when its count reaches zero, so it can be
-cleared. Clear resets every section.
+cleared. Clear resets every section. Closing Filters returns keyboard focus to
+the active table, and count refreshes update the facet controls in place, so
+focus and open choices survive. The facet dimensions stay separate.
 Each section uses one compact row: a neutral Inline Lucide icon, its label and
 a native ComboBox. Library gives the shared drawer enough width for these
 rows, so labels do not consume a second line above each selector. Full selected
@@ -907,6 +1103,15 @@ the error InfoBar with Retry. Library adds no second card.
   [prototype implementation review](#prototype-implementation-review).
   The File page and shared Inspector shell retain their existing
   structure.
+- Info's field columns and General's share one geometry, `FieldColumns`: two
+  content slots, fixed 3:2 columns with a 48-pixel gap, stacked below 760
+  pixels. Content, headings and actions stay with their owners.
+- A transient fetch, association or torrent notification updates the card in
+  place. Fetch feedback and command availability change without replacing the
+  card's controls, and a result whose content has not changed announces nothing
+  new, so the person keeps a text selection. Selection, changed metadata,
+  provider configuration and language still refresh the card. The torrent
+  bindings stop tracking while the person is not on Torrents.
 - Year and individual genres in Info apply the corresponding table filter and
   open the filter pane, so the person can see and change the active filters.
   They retain other filters and use the same filtering operation as the pane.
@@ -942,6 +1147,8 @@ providers, followed by Settings. Refresh metadata uses the file's saved online
 provider, independently of the default provider and automatic download setting.
 Fetch metadata opens the same dialog for one file with or without
 an existing match, starting at the chosen provider. It is titled "Fetch metadata", with Save and Cancel.
+The search box carries the native query icon, and the shared Dialog owner gives
+Title the initial focus.
 With multiple movies selected, the command offers the three scopes above and
 uses the same classification for counts and accepted work.
 While it searches or saves, an indeterminate progress bar under the search box
@@ -989,11 +1196,15 @@ The page has no loading state; see the owner ruling under
 | --- | --- |
 | No files | "No files yet", with a button that opens Torrents. |
 | No matches | "No videos match" and the query (or music, or files), with one button for each other configuration that has matches, and its count, plus Clear search. The action buttons share the widest button's natural width through the shared ActionButton alignment. |
-| Engine disconnected | The window's [message bar](interface.md#message-bar). Cached search, filters, saved Inspector details, Properties, Open and Open folder remain available. Metadata changes and engine commands are disabled; automatic file reads and subtitle work pause. A database failure still makes the last view non-actionable. |
-| Database unavailable | The window's [message bar](interface.md#message-bar) reports the failure and offers Retry. Any last view stays non-actionable; normal torrent work remains available. |
+| Engine disconnected | The window's [message bar](ui.md#message-bar). Cached search, filters, saved Inspector details, Properties, Open and Open folder remain available. Metadata changes and engine commands are disabled; automatic file reads and subtitle work pause. A database failure still makes the last view non-actionable. |
+| Database unavailable | The window's [message bar](ui.md#message-bar) reports the failure and offers Retry. Any last view stays non-actionable; normal torrent work remains available. |
 | Automatic downloads off | Saved video information and lookup outcomes stay visible. Fetch metadata works with an explicitly chosen provider; Refresh metadata works with the saved online provider. Neither enables automatic downloading. A file without information shows "No metadata". Its Fetch button lists every provider, then Settings. The automatic download choice stays in Settings · Plugins, without an inspector or status-bar notice, because it is a preference like automatic subtitles. |
 | Provider failure | A file without metadata shows "Waiting for TMDB", naming the default provider, and the status bar shows the same wait. A manual refresh reports its own provider's failure in the existing inspector message, preserving saved information. |
 | Failed Open | The title-cell and card glyph show the failure, and the card shows an error InfoBar with Missing, Unavailable or Couldn't open, the time it was checked, and Retry. |
+
+The empty states match the torrent table's typography and spacing and keep
+their recovery actions. Shared failures use the workspace feedback without
+shrinking the rows.
 
 TMDB's and IMDb's attributions are under Credits on the About page, not on the
 Library page.
@@ -1084,7 +1295,7 @@ The repository's MPL 2.0 code license is distinct from permission to use provide
 content. No copyright-ownership checkbox, per-file legal confirmation or
 unrelated content restriction is added without a concrete applicable
 requirement. Provider release work does not prevent implementing or using the
-local torrent-backed search. This plan is not a certification of legality.
+local torrent-backed search. This contract is not a certification of legality.
 
 ## Performance and implementation constraints
 
@@ -1141,7 +1352,17 @@ the inputs; total disk capacity and unrelated folders do not affect the work.
   query; writes and source updates must still make progress during rapid typing.
   Membership, decision changes and reads use that same ordered path; workers
   return proposed facts for acceptance there. Network requests and Windows
-  property reads never occupy that worker.
+  property reads never occupy that worker. Applying a worker's result rechecks
+  the contribution, source entry, filename evidence and latest decision.
+  Withdrawal is ordered after already accepted writes and rejects later stale
+  results. A pending edit is not reported as saved before it commits. Workers
+  never mutate live entries; only presentation rows cross to the dispatcher.
+- Report a shared source failure once per failure episode, through the app's
+  error surface. Suppression clears only after the source is ready again, so
+  ordinary snapshot retries do not repeat the announcement. The existing
+  source gate suppresses failures from obsolete or disposed work. Library
+  keeps its own property and provider failures and shows unavailable while the
+  shared source cannot serve either feature.
 - Hidden Library pages cancel queries/detail reads and stop rendering and
   sorting. Source synchronization and automatic downloads may continue while the
   window remains open. Keep only current row/navigation state, no query history.
@@ -1206,8 +1427,7 @@ stale file catalogue or new engine communication.
 
 ## Verification
 
-Follow [testing](testing.md) and the
-[current delivery plan](05-library-implementation.md#finish-the-delivery).
+Follow [testing](../agents/testing.md).
 Comprehensive checklists and agent interaction runs are **cancelled**. Reuse
 existing valid evidence and review the settled change once. A new check must
 address a concrete failure introduced or exposed by that change, especially
@@ -1227,4 +1447,4 @@ That adapter, its drivers, elevation flows and configuration screens are future
 work. Do not build them or a framework for managing them in the initial feature.
 Whole-disk deduplication, automatic recovery of externally moved files, embedded
 playback, artwork, recommendations, watch history and online torrent discovery
-are also outside this plan.
+are also outside this feature.

@@ -218,7 +218,7 @@ public sealed class Schedule : INotifyPropertyChanged
         }
     }
 
-    // Leaving Settings drops a refused duplicate (see the interface contract).
+    // Leaving Settings drops a refused duplicate (see the UI contract).
     // The person can come back and edit during the waits, so the duplicate is
     // cleared only while the same draft still holds the values that were refused.
     internal async Task Depart()

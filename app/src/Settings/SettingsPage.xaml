@@ -81,7 +81,7 @@
   </UserControl.Resources>
   <Grid x:Name="Root">
     <!-- Owner ruling: the page shows the window's acrylic and keeps the two
-             gear marks. See Settings in docs/interface.md. -->
+             gear marks. See Settings in docs/contracts/ui.md. -->
     <FontIcon
       Style="{StaticResource SettingsMarkStyle}"
       FontFamily="{x:Bind icons:Lucide.Font}"

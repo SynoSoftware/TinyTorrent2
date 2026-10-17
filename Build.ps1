@@ -1,5 +1,5 @@
 # Builds the engine, the app or both for development checks and prints the output
-# folder to launch. docs/compilation.md says when to run it; the installer has
+# folder to launch. docs/agents/compilation.md says when to run it; the installer has
 # its own Release build in installer/Build.ps1.
 param(
     [switch] $Capture,

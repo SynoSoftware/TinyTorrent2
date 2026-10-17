@@ -103,7 +103,7 @@ binding-expression compiler is needed to describe these four facts.
 it declares a relationship, not a runtime command. The boolean reader and state
 writer have distinct names at the call site. `children` means immediate children;
 descendants is reserved for the whole subtree. These names follow the existing
-[naming policy](../../../docs/naming.md) without introducing synonyms for item,
+[naming policy](../../../docs/agents/naming.md) without introducing synonyms for item,
 identity, source snapshot or private view.
 
 Declare hierarchy at most once before schema capture, with a column belonging
@@ -387,7 +387,7 @@ properties in an in-process cache alone do not establish that experience.
 
 ## Files browser integration
 
-The product's [Files policy](../../../docs/interface.md#add) owns its columns,
+The product's [Files policy](../../../docs/contracts/ui.md#add) owns its columns,
 priority actions, command targets and wanted choices. The shared `FileBrowser`
 uses a hierarchy column whose host content is the checkbox, file-type icon and
 name; TableView supplies the indent and arrow. Column widths, first fill,
@@ -416,7 +416,7 @@ the extension from being mistaken for behavior already guaranteed today.
 
 ## Delivery and evidence
 
-Implement in coherent slices, following [testing](../../../docs/testing.md).
+Implement in coherent slices, following [testing](../../../docs/agents/testing.md).
 This specification does not authorize desktop launches or require a new test
 framework. Inspect existing coverage before adding checks; each new test must
 watch a failure not already guarded at a cheaper layer.

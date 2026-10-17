@@ -1,11 +1,11 @@
-# Target architecture
+# Architecture
 
-Selected design, updated 2026-10-04. TinyTorrent will be a Windows desktop
-torrent client with one native libtorrent engine, an on-demand WinUI 3 interface,
-one local pipe, and the shared TableView control library. These are implementation
-targets; the [current architecture](architecture-current.md) records what exists.
+TinyTorrent is a Windows desktop torrent client with one native libtorrent
+engine, an on-demand WinUI 3 window, one local pipe between them, and the shared
+TableView control library. This document owns product scope, process
+responsibilities, source layout, dependencies and installation.
 [Decisions still open](#decisions-still-open) lists the remaining choices, and
-the [documentation guide](README.md) identifies each contract's authority.
+the [documentation guide](../README.md) identifies each contract's authority.
 
 ## Usability comes first
 
@@ -19,7 +19,7 @@ is ambiguous or proceeding would risk their files or discard unfinished work.
 Follow Microsoft's Fluent 2 principles through native Windows and WinUI patterns.
 When inherited visual rules conflict with clarity, accessibility, or familiar
 platform behavior, resolve the conflict at the rule's owner. The
-[interface contract](interface.md#native-controls-and-visual-authority) owns the
+[UI contract](ui.md#native-controls-and-visual-authority) owns the
 concrete presentation guidance.
 
 ## Saved-value recovery
@@ -100,8 +100,8 @@ and subtitle searches share that limit, one setting on the Plugins page.
 Force fetch and the batch scopes Fetch missing and Fetch all authorize a fresh
 request for the selected data, including locally blocked data. Provider waits
 and pacing still apply. Reset in Settings clears local protection without
-starting work; the [request protection plan](08-request-protection.md) records
-the precise counting, retry and reset rules.
+starting work; [search protection](search-protection.md) owns the precise
+counting, retry and reset rules.
 Automatic subtitle searches run only for new torrents, because a subtitle
 search spends the supplier's allowance. A torrent is new when the database's list of known
 torrents does not contain it: it was added in this session or while the window
@@ -125,9 +125,9 @@ program when a download finishes need an identified user requirement before
 they become implementation work. The approved Settings scope includes one
 watched torrent folder, configurable speed-history intervals, addition and
 seeding defaults, and protocol and storage choices.
-These serve the workflows in [Settings](interface.md#settings); they do not
+These serve the workflows in [Settings](ui.md#settings); they do not
 authorize a general automation system or arbitrary engine tuning.
-The initial release includes automatic port mapping (UPnP/NAT-PMP), an
+The product includes automatic port mapping (UPnP/NAT-PMP), an
 editable listen port, binding torrent traffic to one network adapter such as a
 VPN, notifications, preventing idle sleep while downloading on mains power, and
 an update check. Port mapping, notifications about problems, idle-sleep
@@ -238,9 +238,11 @@ processes keep that cost out of start at sign-in and out of the closed-window
 state this product measures first. The second reason is real too: WinUI ends
 its process on an unhandled exception, and in one process that would stop
 every download. The price is a cold WinUI start on every Open, which the splash
-covers, and the pipe with its reconnect path. The first milestone's
-[resource check](testing.md#resource-checks) measures the time from Open to a
-usable window; a slow open is a reason to revisit this split.
+covers, and the pipe with its reconnect path. The
+[resource check](../agents/testing.md#resource-checks) measures the time from Open to a
+usable window; a slow open is a reason to revisit this split. A single process
+would keep the measured WinUI cost resident, and shared memory would add
+synchronisation and lifetime costs.
 
 A separate tray process would add another resident executable and
 supervision path without earning its cost. The engine loads neither .NET nor
@@ -257,7 +259,7 @@ full product name, not an abbreviation such as `tt-`, because a person who
 sees an abbreviation cannot tell which product it belongs to. Both report
 "TinyTorrent" as their file description, so Windows shows the product name
 where it would otherwise show the file name.
-[Directory.Build.props](../Directory.Build.props) is the only place that
+[Directory.Build.props](../../Directory.Build.props) is the only place that
 defines the two names; projects, code and scripts read them from there, because
 each process starts the other by name and two copies of a name drift apart.
 
@@ -292,13 +294,32 @@ Tray actions and pipe requests call the same engine operations. Transport checks
 belong to the adapter; torrent-state validation and download policy belong to the
 engine. The tray does not call its own process through IPC.
 
-WinUI uses MVVM. `MainViewModel` owns the window's presentation state, selection,
-command availability, and commands through one concrete pipe client. `AddDraft`
-owns unfinished addition choices and preview state. Views bind to those owners;
-they retain native pickers, dialogs, window chrome, and control-specific focus
-and scrolling. View models use `INotifyPropertyChanged` and `ICommand` directly,
-without a new framework, service interface, or second torrent database. This
-keeps gestures on one command path and stops control lifetime from owning edits.
+WinUI uses MVVM. View models use `INotifyPropertyChanged` and `ICommand`
+directly, without a new framework, service interface, or second torrent
+database. This keeps gestures on one command path and stops control lifetime
+from owning edits.
+
+- `MainViewModel` owns the window's presentation state, membership, accepted
+  selection, command availability and connection facts, through one concrete
+  pipe client. It publishes a completed visible list only when membership or
+  order changes; routine snapshots refresh window state, and connection and
+  language transitions reach the affected child owners.
+- `Settings.Editor` owns confirmed settings, ordinary field drafts, adapter
+  choices, conversion and submission. Its `Schedule` owns period editing and
+  whole-list saves.
+- `AddDraft`, `Inspector` and `FileDraft` own their unfinished operations.
+  `AddDraft` holds addition choices and preview state; `Inspector` keeps peer
+  and tracker row identity within the current session and target.
+- Views bind to those owners. `MainWindow` keeps native pickers, dialogs,
+  window chrome, control-specific focus and scrolling, and TableView gestures.
+  The model accepts or refuses a selection before the window reflects it.
+  Connection conditions and command failures have separate app-level messages;
+  field and editor failures stay at their owners.
+
+In the engine, one private `CommitEdit` derives, persists and applies tracker
+and priority changes for explicit edits and merges; each entry point keeps its
+own legality checks. `SpeedHistory` owns its buffers and aggregation, while the
+engine owns sampling cadence and the session envelope.
 
 The peer map follows the same ownership inside `Torrents`. `Inspector` owns
 scope, geolocation and the chosen place, and retains its plain `MapModel`.
@@ -316,7 +337,7 @@ through the engine.
 The product host maps a completed engine snapshot into display rows keyed by
 durable torrent identity, then supplies its filtered projection to TableView.
 Keep row instances stable and apply live property updates on the UI dispatcher,
-following the [TableView update contract](../lib/TableView/docs/tableview-contract.md#53-source-identity-and-update-contract).
+following the [TableView update contract](../../lib/TableView/docs/tableview-contract.md#53-source-identity-and-update-contract).
 Replacing the source on every transfer tick would cancel queue dragging;
 ordinary telemetry updates the row values. Table sorting changes presentation
 order; a queue reorder event becomes a
@@ -349,39 +370,108 @@ sequenceDiagram
 Application Exit follows the coordinated [shutdown](engine.md#closing-and-shutdown)
 path.
 
-## Reuse and source layout
+## Ownership decisions
+
+These settle ownership questions that the code alone does not answer. GitHub
+issues own actionable work and its status.
+
+- [PipeClient.Files](../../app/src/Shared/Engine/PipeClient/Files.cs) holds Inspector
+  arbitration through the matching fresh push, including after a cached-ready
+  reply. Background file reads settle there; Inspector alone decides whether
+  its current presentation accepts a result. The
+  [pipe API contract](pipe-api.md#snapshots-and-detail) owns that lifetime.
+- Settings and the Plugins search-limit field keep their own edit owners.
+  Escape discards unsubmitted intent while accepted work settles; later deliberate
+  input stays distinct from cancellation, including input equal to the former
+  confirmed value.
+- [Supplier](../../app/src/Subtitles/Supplier.cs) owns validity before every send and
+  allowance reservation. Its operation carries account, HTTP access and the
+  acquisition validity callback through login, retries and redirects. Account
+  Check has no movie membership requirement. Acquisition keeps file-work and
+  publication checks; ProviderHttp stays the network-route owner.
+- Table resolves saved visibility and sort before publishing the layout, and
+  accepts held rows and release intentions only after comparison succeeds.
+  A changed saved sort uses the same full-source presentation as explicit Sort;
+  initial capture evaluates only the final pending sort. Host callbacks
+  unrelated to that comparison have no general rollback; notification handlers
+  run after mechanics.
+- [Engine settings](../../engine/src/Engine/Settings.cpp) protect a changed proxy
+  password before committing it. Confirmed ciphertext is reused by unrelated
+  document saves, so encryption failure refuses the credential change without
+  blocking those saves or losing the previous credentials.
+  [Acquisition.Load](../../app/src/Subtitles/Acquisition/Storage.cs) publishes settings
+  and supplier allowance only after its SQLite transaction commits.
+
+Settings editing has no shared machinery: `Setting` owns engine wire
+confirmation and uncertain-command reconciliation, while the Plugins field saves
+one SQLite value. A shared module earns its place only if it removes obligations
+without importing those unrelated dependencies; moving the queue behind another
+interface does not do that.
+
+## Projects and source layout
+
+[TinyTorrent.slnx](../../TinyTorrent.slnx) holds these projects and selects x64.
+Broader platform lists in individual C# projects do not add release targets.
+
+| Project | Role | Project dependency |
+| --- | --- | --- |
+| [Engine](../../engine/src/Engine.vcxproj) | Native transfer state, persistence, pipe, tray, splash and lifetime. | libtorrent and native dependencies from `3rdParty/`; no WinUI or .NET. |
+| [TinyTorrent](../../app/src/TinyTorrent.csproj) | On-demand product window, display and draft state, Library and subtitles. | TableView, WinUI and .NET; one pipe to Engine. |
+| [TableView](../../lib/TableView/src/TableView.csproj) | Reusable `Table` control, templates, and English text. | WinUI and Lucide; no torrent application dependency. |
+| [Lucide](../../lib/Lucide/src/Lucide.csproj) | Lucide icon font and glyph names. | WinUI. |
+| [TableViewSample](../../lib/TableView/sample/TableViewSample.csproj) | Desktop demonstrations and diagnostic probes. | TableView. |
+| [TableViewTests](../../lib/TableView/tests/TableViewTests.csproj) | Desktop MSTest host for control behavior. | TableView. |
 
 | Location | Purpose |
 | --- | --- |
 | `engine/src/` | The native engine project. |
 | `engine/inc/` | The native project's headers. Includes name a header from this root, such as `Engine/State.h`. |
-| `app/` | The WinUI product host and its instructions. |
-| `lib/TableView/` | Existing reusable control library and the only TableView: the library in `src/`, focused verification in `tests/`, and a demonstration host in `sample/`. |
+| `app/` | The WinUI product host and its instructions. Prototype documents live in `app/prototypes/`. |
+| `lib/TableView/` | The only TableView: the library in `src/`, focused verification in `tests/`, and a demonstration host in `sample/`. [TableView.slnx](../../lib/TableView/TableView.slnx) holds only these, with Lucide. |
 | `lib/Lucide/` | The Lucide icon font and its glyph names, for any WinUI project. |
 | `resources/` | Product branding: the application icon and logo. |
-| `artifacts/` | Generated output, kept outside source inputs to prevent recursive copies. Current routing is described in [build integration](architecture-current.md#build-integration). |
+| `artifacts/` | Generated output, kept outside source inputs to prevent recursive copies. |
 | `3rdParty/` | The engine's dependencies, compiled once; not in git. See [third-party dependencies](#third-party-dependencies). |
 
-Use [TinyTorrent.slnx](../TinyTorrent.slnx) and its existing MSBuild projects.
-The sample and tests reference [TableView.csproj](../lib/TableView/src/TableView.csproj),
-which produces `TableView.dll`; the product host will reference it too. The
-library owns its templates and English text and has no engine dependency.
+The app is one WinUI project. `Shell/` holds the window, the main view model and
+InspectorPane composition. `Torrents/`, `Settings/`, `Library/` and
+`Subtitles/` keep their related state, operations and presentation together.
+`Shared/` holds common facilities, with engine communication, storage, network,
+desktop and diagnostics in their own folders; `Controls/` holds reusable UI.
+`App` and `Enums.cs` stay in the project root. Partial-type folders keep their
+owner's namespace. [Naming and structure](../agents/naming.md#app-folders) owns the
+placement rules.
 
-Build the product UI from the [interface contract](interface.md), using the
-selected engine and pipe design and the existing TableView and Lucide libraries.
-No screen from the earlier product is selected for reuse, and the implementation
-milestones do not depend on importing that UI.
+TableView owns its templates and English text and has no engine dependency.
+Hosts supply rows, columns, templates, identity and handlers through its public
+API; the [TableView contract](../../lib/TableView/docs/tableview-contract.md) owns
+that API and the [implementation map](../../lib/TableView/docs/tableview-implementation.md)
+owns its internals.
 
-Keep the original `../TinyTorrent` repository untouched as reference material.
-Source inspection has not established that adopting its screens would improve
-this product; their usability, responsiveness, and accessibility remain
-unverified here. Reusing a specific part needs a concrete benefit supported by
-review of its behavior, dependencies, and adaptation cost. That decision belongs
-to the affected implementation; it is not a required migration task. Verify the
-resulting interaction under [testing](testing.md), whether its code is new or
-adapted. Keep one product host and reference TableView.
-Transmission, its daemon supervisor and RPC client, TypeScript concepts, browser
-architecture, and web state models do not define this product.
+### Build integration
+
+[Compilation](../agents/compilation.md) owns when and how to build.
+[Directory.Build.props](../../Directory.Build.props) owns the `artifacts/` root and
+the managed output layout. It excludes generated folders from source inputs, so
+repeated XAML builds cannot consume their own output. The
+[native project](../../engine/src/Engine.vcxproj) uses the same root for its output
+and intermediates.
+
+The app build copies the engine beside the window through
+[CopyEngine.ps1](../../app/CopyEngine.ps1). An identical binary stays untouched, so
+UI-only rebuilds leave transfers running. When the binary changed, the script
+force-stops the engine running from that destination in the current Windows
+session, bypassing Exit confirmation and the final checkpoint, then replaces it.
+It resolves junctions before comparing paths, because the process can report the
+physical output path rather than the repository's `artifacts/` path.
+
+Every TinyTorrent in a logon session shares one window lock and one engine pipe,
+so a launch hands off to whichever window and engine already run, from any
+folder. A Debug window stops a window started from another path and takes the
+lock; on its first connection it stops the engine that owns the pipe unless that
+engine runs from beside it, then starts its own. Path identifies the build,
+because the build stops a running engine before replacing it. Release windows
+never stop anything.
 
 ## Dependencies and cost
 
@@ -394,8 +484,8 @@ Retain libtorrent and the networking/crypto dependencies needed for torrent
 interoperability. Removing application HTTP/RPC does not remove HTTPS trackers,
 web seeds, incoming peer connections, TCP/uTP, or useful discovery.
 
-The [native project](../engine/src/Engine.vcxproj) defines the toolchain, x64
-target and static linking, and [Dependencies.ps1](../engine/src/Dependencies.ps1)
+The [native project](../../engine/src/Engine.vcxproj) defines the toolchain, x64
+target and static linking, and [Dependencies.ps1](../../engine/src/Dependencies.ps1)
 pins the dependency versions and feature selection, as
 [third-party dependencies](#third-party-dependencies) describes. Extend that build
 for engine implementation. When updating dependencies, check the latest stable
@@ -430,7 +520,7 @@ libraries.
 
 The engine's dependencies are therefore git checkouts at pinned revisions. They are
 compiled once and are never downloaded or compiled again until someone changes a
-pin. [Dependencies.ps1](../engine/src/Dependencies.ps1) owns the pins and creates
+pin. [Dependencies.ps1](../../engine/src/Dependencies.ps1) owns the pins and creates
 `3rdParty/` at the repository root:
 
 - the checkouts of libtorrent, OpenSSL, Boost (headers only) and nlohmann/json;
@@ -483,7 +573,8 @@ the project's release page. The Microsoft Store is not required. Use
 [non-administrative install mode](https://jrsoftware.org/ishelp/topic_setup_privilegesrequired.htm)
 for the application under `%LOCALAPPDATA%\Programs\TinyTorrent`; engine data
 lives separately under `%LOCALAPPDATA%\TinyTorrent`. Resolve these locations
-through Windows known folders.
+through Windows known folders. [Release.cmd](../../Release.cmd) runs the
+[release command](../../installer/README.md), which generates the installer.
 
 Publish WinUI as framework-dependent. Ship the engine, product host, TableView,
 resources, and required application dependencies, without app-local copies of
@@ -552,92 +643,6 @@ Sign public release artifacts; validate installation, upgrade, and uninstall
 with the chosen prerequisites before publication. A future winget listing can
 reference this same installer without becoming a Store dependency.
 
-## First implementation
-
-The [existing projects](architecture-current.md#build-integration) implement
-the first usable download path; [the implementation record](01-implementation.md)
-holds its checks, measurements and review findings. This plan establishes the
-remaining work in order. The first path uses a `.torrent` file, destination choice,
-Add, live progress in TableView, and Pause/Resume. Include saved membership and
-intent, basic process launch, close/reopen, disconnect feedback, and a minimal
-tray icon with Open and Exit: closing the window leaves the engine running, so
-the user needs a way to reopen the window and to stop the engine.
-
-Implement the engine operations and pipe messages that this path needs, then
-connect the first WinUI screen. TableView API polish can proceed alongside the
-engine work; integrate through the agreed public API. Resolve the
-[control gaps affecting that screen](../lib/TableView/docs/tableview-implementation.md#keyboard-and-automation-integration)
-before treating its interaction as complete. Design each journey against the
-[interface contract](interface.md), keeping implementation tied to a real caller.
-The [testing policy](testing.md) governs evidence and desktop execution.
-
-| Milestone | What it establishes | Completion evidence |
-| --- | --- | --- |
-| First usable download | The narrow path above: libtorrent state, durable identity, one command and persistence owner, [safe addition](engine.md#addition-and-identity), and [bounded diagnostics](engine.md#diagnostics). One pipe connects the WinUI host to that engine, and a minimal tray icon offers Open and Exit. Use [text catalogues](localisation.md#one-catalogue-per-project) from the first screen. | Add a real torrent, see progress, pause and resume. Closing WinUI leaves the transfer running; Open from the tray restores confirmed state, and Exit stops the engine. Membership and intent survive engine restart; failed storage is not reported as saved. Complete a hands-on [journey review](interface.md#implementation-review) with pointer and keyboard and the first [resource check](testing.md#resource-checks) before expanding the UI. |
-| Everyday torrent actions | Extend the same Add path with magnet metadata preview and file choices, [several-source addition](interface.md#add), drag-and-drop and paste, and tracker merging for duplicates. Then add queue ordering, force start, verification, Remove keeping files, text search and the Errors shortcut, the [main window commands](interface.md#main-window), and the global and alternative speed limits. Establish the [preview guard](engine.md#addition-and-identity) before acquiring magnet metadata. | Preview writes no payload; cancellation and duplicates preserve existing downloads. Intended choices reach the engine. Thirty torrent files opened from Explorer are added directly without an Add dialog. A confirmed removal stays removed after restart while its files remain. Reconnect reconciles pending work without silently repeating uncertain commands. |
-| Background and desktop behavior | Complete tray, activation, splash, startup failure feedback, coordinated Exit, and [Windows registration](engine.md#windows-registration). Add the scoped completion and error notifications, the first-close notice, and idle-sleep behavior. | Tray and launch actions reach the same engine; engine restart reattaches a surviving window; saved work survives shutdown and Exit protects unfinished input. Registration uses one owner. Notifications and sleep behavior work with WinUI closed. |
-| Details and Settings | Add the [inspector journeys](interface.md#inspector-and-edits) and [Settings](interface.md#settings), one task at a time. Include file choices and priorities, trackers, peer information, speed/pieces visuals, live language switching, and RTL header navigation. | Committed choices apply without unnecessary save prompts; real drafts survive failed edits. Hidden views stop detail work. The Speed view shows transfer from while WinUI was closed. Switching languages updates existing surfaces, controls, and tray without losing input or breaking keyboard navigation; the [live-switch exercise](localisation.md#cost-and-proportionate-evidence) proves it. Review each adopted surface in use. |
-| Move and delete files | Moves and explicit delete-data, following [removal and moves](engine.md#removal-and-moves) and the [shared-files policy](engine.md#shared-files). | A destination collision is reported, not replaced. A move interrupted by a crash leaves the torrent paused with Move interrupted instead of downloading again. Neither deletion nor a move reaches the files of a torrent outside the command; cross-seeded torrents move and delete together. |
-| Distribution | The selected [installer and runtime delivery](#installation-and-updates). | Complete the whole-application [resource and release checks](testing.md#resource-checks), fresh installation with missing prerequisites, preserved settings on upgrade, taskbar/handler/sign-in activation, and safe uninstall; no downloads or shared runtimes removed. |
-
-Choose concrete message fields and project boundaries as that path requires
-them. Add complexity only after naming the behavior that the simpler
-arrangement cannot provide.
-
-Revisit a decision when evidence contradicts its reason. A single process would
-keep the measured WinUI cost resident; shared memory would add synchronisation
-and lifetime costs.
-Neither is needed now. If custom serialization or lifecycle code becomes harder
-to maintain than a platform facility, reconsider that choice at its owner rather
-than wrapping it in more layers.
-
-### Architecture follow-up
-
-[GitHub issues](https://github.com/SynoSoftware/TinyTorrent2/issues) own actionable
-work and its implementation status. This section records ownership and design
-decisions from the combined source review; it is not a second backlog.
-
-- [PipeClient.Files](../app/src/Shared/Engine/PipeClient/Files.cs) holds Inspector
-  arbitration through the matching fresh push, including after a cached-ready
-  reply. Background file reads settle there; Inspector alone decides whether
-  its current presentation accepts a result. The
-  [protocol contract](protocol.md#snapshots-and-detail) owns that lifetime.
-- Settings and the Plugins search-limit field retain their existing edit owners.
-  Escape discards unsubmitted intent while accepted work settles; later deliberate
-  input remains distinct from cancellation, including input equal to the former
-  confirmed value. [#178](https://github.com/SynoSoftware/TinyTorrent2/issues/178)
-  records the corrections and source-only evidence.
-- [Supplier](../app/src/Subtitles/Supplier.cs) owns validity before every send and
-  allowance reservation. Its operation carries account, HTTP access and the
-  acquisition validity callback through login, retries and redirects. Account
-  Check has no movie membership requirement. Acquisition retains file-work and
-  publication checks; ProviderHttp remains the network-route owner.
-  [#316](https://github.com/SynoSoftware/TinyTorrent2/issues/316) tracks landing
-  and remaining evidence.
-- Table resolves saved visibility and sort before publishing the layout, and
-  accepts held rows and release intentions only after comparison succeeds.
-  A changed saved sort uses the same full-source presentation as explicit Sort;
-  initial capture still evaluates only the final pending sort.
-  [#317](https://github.com/SynoSoftware/TinyTorrent2/issues/317) tracks landing
-  and remaining evidence. General rollback for unrelated host callbacks remains
-  deferred without a demonstrated failure; notification handlers run after mechanics.
-- [Engine settings](../engine/src/Engine/Settings.cpp) protect a changed proxy
-  password before committing it. Confirmed ciphertext is reused by unrelated
-  document saves, so encryption failure refuses the credential change without
-  blocking those saves or losing the previous credentials.
-  [Acquisition.Load](../app/src/Subtitles/Acquisition/Storage.cs) publishes settings
-  and supplier allowance only after its SQLite transaction commits.
-
-Shared Settings editing machinery remains deferred: Setting owns engine wire
-confirmation and uncertain-command reconciliation, while the Plugins field saves
-one SQLite value. A shared module earns its place only if it removes obligations
-without importing those unrelated dependencies; moving the queue behind another
-interface does not do that.
-
-These corrections were initially source-reviewed against the combined, uncommitted
-working tree based on `77a3317`. Subsequent build and targeted test evidence, with
-its limitations, is recorded in the linked GitHub issues.
-
 ## Decisions still open
 
 Resolve each decision before its dependent work, then record the choice at its
@@ -646,4 +651,4 @@ unrelated questions remain open.
 
 | Decision | When it matters | Owner |
 | --- | --- | --- |
-| Table row appearance | With hands-on testing before product integration. Review row hover, selection accent, corner shape, and focus treatment. Retain the existing appearance until that review; invisible keyboard location remains an accessibility gap. | [TableView visual contract](../lib/TableView/docs/tableview-contract.md#8-rendering-layout-and-visual-language) |
+| Table row appearance | At the next hands-on Fluent review of the product tables. Review row hover, selection accent, corner shape, and focus treatment. Retain the existing appearance until that review; invisible keyboard location remains an accessibility gap. | [TableView visual contract](../../lib/TableView/docs/tableview-contract.md#8-rendering-layout-and-visual-language) |

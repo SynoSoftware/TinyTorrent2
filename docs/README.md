@@ -6,75 +6,68 @@ here so moving a topic does not require renaming its links.
 
 | Order | Document | Authority |
 | --- | --- | --- |
-| 1 | [Current architecture](architecture-current.md) | Source-backed map of the existing projects, runtime, and control data flow. |
-| 2 | [Target architecture](architecture.md) | Product scope, responsibilities, dependencies, reuse, and the [implementation plan](architecture.md#first-implementation). |
-| 3 | [Engine](engine.md) | Torrent state, durable changes, activation, and process lifetime. |
-| 4 | [Protocol](protocol.md) | Local communication, snapshots, and connection outcomes. |
-| 5 | [Localisation](localisation.md) | Text sources, language selection, live updates, and formatting. |
-| 6 | [Interface](interface.md) | Product journeys and native Windows interaction and presentation. |
-| 7 | [Testing](testing.md) | Which evidence earns its cost and what it establishes. |
-| 8 | [Naming and structure](naming.md) | Names and placement of types, files, folders, namespaces, and resource keys. |
+| 1 | [Architecture](contracts/architecture.md) | Product scope, process responsibilities, projects and source layout, dependencies, and installation. |
+| 2 | [Engine](contracts/engine.md) | Torrent state, durable changes, activation, and process lifetime. |
+| 3 | [Pipe API](contracts/pipe-api.md) | Local communication, snapshots, and connection outcomes. |
+| 4 | [Localisation](contracts/localisation.md) | Text sources, language selection, live updates, and formatting. |
+| 5 | [UI](contracts/ui.md) | Product journeys and native Windows interaction and presentation. |
+| 6 | [Testing](agents/testing.md) | Which evidence earns its cost and what it establishes. |
+| 7 | [Naming and structure](agents/naming.md) | Names and placement of types, files, folders, namespaces, and resource keys. |
 
 Before compiling, launching a built executable or resolving build failures,
-read [compilation](compilation.md). It owns when a task compiles, the shared
+read [compilation](agents/compilation.md). It owns when a task compiles, the shared
 build script and failure handling.
 
-The [architecture follow-up](architecture.md#architecture-follow-up) records
-settled ownership and deferred design choices. GitHub issues own actionable work,
+The architecture's [ownership decisions](contracts/architecture.md#ownership-decisions)
+record settled ownership and deferred design choices. GitHub issues own actionable work,
 implementation status and remaining acceptance criteria; local review artifacts
 are not a second backlog.
 
-The architecture owns the [live decision list](architecture.md#decisions-still-open).
+The architecture owns the [live decision list](contracts/architecture.md#decisions-still-open).
 Update it as choices are made; historical reviews do not supply active requirements.
 
-For automatic subtitle downloading or its Settings prototype, read the
-[subtitle design](subtitles.md). It records the agreed invisible workflow,
-configuration, and required file-operation changes before implementation.
-The completed [subtitle implementation plan](04-subtitles-implementation.md) maps
-it entirely to C# owners, including database and subtitle-file handling.
-The completed [subtitle records and acquisition plan](06-subtitles-records-plan.md)
-records unified subtitle records,
-one-time language identification, an explicit rescan and a per-movie lookup
-limit, with implementation evidence. The subtitle contract remains the authority.
+For automatic subtitle downloading, read the [subtitle contract](contracts/subtitles.md):
+its workflow, configuration, supplier records and file handling.
 
-For Library work, read the [Library master plan](library.md). It owns the
-agreed data-source membership, cached video information, search and interaction
-design before implementation.
-Its [prototype implementation review](library.md#prototype-implementation-review)
-tracks the current Inspector and navigation decisions, pending choices, and
-evidence required before native adoption.
-The completed [Library implementation plan](05-library-implementation.md) records the C# work;
-Library and subtitles share one window-lifetime SQLite owner. The
-[database contract](database.md) owns schema initialization, versioning,
-connection lifetime and the rationale for durable and reconstructed state.
-The [Library catalogue cache](12-library-cache-plan.md) records why the file
-catalogue is retained, how the summary reconciles it before publication, and
-what confirmation still protects.
+For Library work, read the [Library contract](contracts/library.md): data-source
+membership, cached video information, providers, search and interaction. Its
+[prototype implementation review](contracts/library.md#prototype-implementation-review)
+tracks the pending Inspector and navigation choices. Library and subtitles
+share one window-lifetime SQLite owner; the [database contract](contracts/database.md)
+owns schema initialization, versioning, connection lifetime and the rationale
+for durable and reconstructed state.
+[Search protection](contracts/search-protection.md) owns suppression, pacing, explicit
+retries and Settings reset for Library and subtitle requests.
 
-The completed [native Settings implementation](07-settings-implementation.md) records
-the sidebar, page composition, shared controls and ownership corrections, with
-remaining defects and validation limits kept explicit.
+The [disk discovery plan](plans/13-disk-discovery-plan.md) defines the optional NTFS
+C++ helper for video, music and subtitles, plus targeted lookup of missing torrent
+files: its purpose, shared pipe interface, DTOs, memory budget, current-file
+visibility and the engine's recovery hold. Two independent opt-ins start it when
+Library needs discovery or with the engine for movement tracking. Tracking searches
+only after files are noticed missing; neither option builds an all-files index.
+It releases query memory while unused and exits with the engine. Its
+implementation is in progress. The supporting
+[NTFS research](plans/ntfs-indexing.md) records platform evidence.
 
-The completed [request protection plan](08-request-protection.md) records Library
-and subtitle suppression, pacing, explicit retries and Settings reset, with
-implementation evidence. The active feature contracts remain the authorities.
+[IMDb datasets](contracts/imdb-datasets.md) owns the Library provider that reads IMDb's
+downloadable datasets from a local SQLite file and shows their ratings for
+every provider's movies.
 
-The [IMDb datasets plan](imdb-datasets.md) designs a Library provider that
-reads IMDb's downloadable datasets from a local SQLite file, and shows their
-ratings for every provider's movies. Phases 1 and 2 have implementation done;
-dataset measurements and live-data validation remain outstanding. Phase 3 is
-not implemented and remains a design for review.
+[Background work](contracts/background-work.md) owns the shared reporting of app-wide
+long operations and their progress and cancellation in the status bar.
 
-[Peer location](peer-location.md) owns the peers' Location column: the DB-IP
+[Peer location](contracts/peer-location.md) owns the peers' Location column: the DB-IP
 country data installed with the app, the city data the person downloads
 through the same dataset path as IMDb data, and the flags.
-It also owns the native peer map and its estimated country distribution. The
-[implementation plan](11-peer-map-plan.md) records the approved scope and validation gaps.
+It also owns the native peer map and its estimated country distribution.
 
-The [communication plan](communication-plan.md) records the reviewed
-responsiveness fixes and the next scoped-subscription design. It distinguishes
-source changes from unverified runtime behavior; the protocol and engine
-contracts remain authoritative.
+[Licences](contracts/licences.md) holds release rights, provider attribution and the
+unresolved distribution questions.
+
+The [communication plan](plans/communication-plan.md) is paused. It holds the
+scoped-subscription design for torrent detail, which the owner has not decided
+to implement; its implemented first stage lives in the protocol and engine
+contracts.
 
 For TableView work, continue with the [table glossary](../lib/TableView/CONTEXT.md),
 [TableView contract](../lib/TableView/docs/tableview-contract.md), and
@@ -85,10 +78,19 @@ The [product glossary](../CONTEXT.md) defines terms, not additional requirements
 
 ## Where documents belong
 
-Keep repository instructions and the product glossary at the root. Product
-contracts and plans live in `docs/`. A finished plan's filename starts with a
-two-digit number that gives its place in the order of implementation, so the
-folder lists the plans in delivery order. TableView's contract, source map, glossary,
+Keep repository instructions and the product glossary at the root. `docs/`
+has three folders:
+
+- `contracts/` describes how the product works now. It is the authority for
+  product behavior and changes alongside it.
+- `agents/` holds the working rules for building, testing, naming and comments.
+- `plans/` holds only work that is open or in progress. A plan's filename
+  starts with a two-digit number, given when its work starts, so the folder
+  lists plans in order of implementation. When the work is done, its live
+  rules move into the contract that owns them and the plan is deleted, because
+  a finished plan read as current misleads; git history keeps it.
+
+TableView's contract, source map, glossary,
 and control history stay beside the library in `lib/TableView/`. Folder-specific
 `AGENTS.md` files contain local guidance and inherit the root rules. Keep licence
 notices with their assets or dependencies. Link between these owners rather
@@ -96,10 +98,8 @@ than keeping copies in both locations.
 
 ## Status and authority
 
-The native engine and first WinUI download path exist alongside TableView,
-Lucide, the sample and control tests; see [current build integration](architecture-current.md#build-integration)
-and [implementation evidence](01-implementation.md). Later milestones and the
-installer's installed journeys remain targets; the [release command](../installer/README.md)
+The architecture lists the [existing projects](contracts/architecture.md#projects-and-source-layout).
+The installer's installed journeys remain targets; the [release command](../installer/README.md)
 generates candidates, and a contract alone is not implementation evidence.
 The control's implementation document identifies known gaps against its contract.
 
@@ -114,10 +114,8 @@ the contract merely to describe whatever the code currently does.
 
 ## Historical material
 
-The [implementation record](01-implementation.md) is historical except for its
-Wire representation section, which the protocol contract still uses. Prototype
-files describe their reviewed versions; current interface rulings decide which
-parts remain applicable.
+Prototype files describe their reviewed versions; current interface rulings
+decide which parts remain applicable.
 
 [Archived TableView documents](../lib/TableView/docs/archive/README.md) preserve
 earlier control construction reasoning. These are reference material, not
