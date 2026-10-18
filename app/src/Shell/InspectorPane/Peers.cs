@@ -14,7 +14,7 @@ public sealed partial class InspectorPane
     private bool _mapQueued;
     private bool _arrangingPeers;
     private bool _peersStacked;
-    private readonly Button _peerMore = CreateAction(Lucide.Ellipsis, "PeerMore");
+    private readonly Button _peerMore;
 
     private void SetupPeers()
     {

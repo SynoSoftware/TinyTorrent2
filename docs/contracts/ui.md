@@ -44,7 +44,7 @@ the tray menu, keep the appearance Windows gives them.
 The logo uses the canonical SVG so it remains sharp at different display scales;
 Windows shell icons use the canonical ICO. Windows owns the caption buttons.
 Application commands use native WinUI controls and their standard states.
-The title-bar Settings, language and theme shortcuts keep the existing custom caption-button style:
+The title-bar language and theme shortcuts keep the existing custom caption-button style:
 full caption height, square hover surface and caption-button width, so it feels
 part of the window chrome. This is the exception to standard button visuals.
 
@@ -79,8 +79,8 @@ that is empty beside the others. A menu of only on/off choices, such as View,
 uses native check-mark items with Lucide icons, because no column stands empty.
 
 The custom title bar contains one row: app-icon page switch, File/Torrent/View/Help
-MenuBar, bounded Search, Settings, the language switch, the light/dark switch, and native caption
-buttons. Add and the selection commands are on the toolbar, not the title bar.
+MenuBar, bounded Search, the language switch, the light/dark switch, and native caption
+buttons. Add, the selection commands and Settings are on the toolbar, not the title bar.
 Fit columns and Fill width are only in the table's column-header menu: in the
 title bar they read as window commands, and the column header holds no buttons
 because every part of it belongs to a column. A 24-pixel
@@ -92,14 +92,13 @@ WinUI TitleBar control.**
 Title-bar actions are ordinary Buttons with the existing
 TinyTorrentCaptionButtonStyle, so they share its size, spacing and states with
 each other and with the native caption buttons beside them; CommandBar's
-separate button metrics would break that consistency. Settings uses the Lucide
-Settings gear icon. The language button sits between Settings and the theme button,
-showing EN, ES, NL, 中文, PT or FR in the existing caption font. It opens the shared
+separate button metrics would break that consistency. The language button sits
+before the theme button, showing EN, ES, NL, 中文, PT or FR in the existing caption font. It opens the shared
 context-menu renderer's language choices, with flags, native names and the current choice
 checked. Its centred label uses the shared button dimensions and zero margin and
 padding, so the language shortcut stays the same size as its neighbours. The theme button uses
-Lucide Lightbulb for switching to light and LightbulbOff for switching to dark, so it
-remains distinct from Settings. Its tooltip names the destination theme. It sits
+Lucide Lightbulb for switching to light and LightbulbOff for switching to dark,
+so it remains distinct from the Settings gear. Its tooltip names the destination theme. It sits
 immediately beside the native caption buttons, with no extra gap.
 Windows still owns minimize, maximize and close; never simulate those controls.
 
@@ -678,7 +677,7 @@ On Library, search filters the current configuration as the person types and
 shows no suggestion list, keeping the filtered rows visible. Escape clears
 the filter; Down or Enter focuses the rows. The query stays when the
 configuration changes. Commands and Settings remain available through the
-menus, title-bar Settings button and their shortcuts. Ctrl+K, Ctrl+F and Ctrl+E
+menus and their shortcuts. Ctrl+K, Ctrl+F and Ctrl+E
 focus the current page's search. Scope labels in global search distinguish a
 command for the selection from a command for all torrents.
 
@@ -860,11 +859,16 @@ Its accessible text names download and upload instead of the arrows. It sorts
 by download limit and then upload limit, with no limit as the highest value, so
 an ascending sort lists the limited torrents first.
 
-The toolbar, a row above the table that View shows or hides, is a CommandBar
-holding Add, Magnet, Start, Stop, Open, Properties, Verify, Remove and
-Delete as AppBarButtons in
-groups split by AppBarSeparators. Selected connections map and All connections
-map sit at the row's right end. **Owner ruling: the toolbar buttons are
+The toolbar, a row above the table that View shows or hides, is a CommandBar of
+AppBarButtons in groups split by AppBarSeparators. From the left, the groups
+follow a torrent's life, and the most used commands come first: Add and Magnet;
+Start and Stop; Open folder and Properties; Verify; Remove. Remove is a group
+of its own at the end of the selection commands, so the destructive command
+sits apart from the frequent ones. At the row's right end, Selected
+connections map and All connections map form one group, because they are two
+scopes of one view. Settings comes last, in a group of its own, because it acts
+on the application and not on torrents; Edge and File Explorer also put their
+settings at the end of the bar. **Owner ruling: the toolbar buttons are
 icon-only,** because text labels make the interface look cheap. Each button
 keeps its label as its accessible name and its text in the More menu, and its
 tooltip names it with its shortcut. When

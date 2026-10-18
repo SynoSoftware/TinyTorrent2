@@ -21,7 +21,6 @@
     <PackageReference Include="Microsoft.WindowsAppSDK.InteractiveExperiences" Version="2.1.9" />
   </ItemGroup>
 
-  <!-- Byte-identical to the copy vendored in LabForms and Pharmacy. -->
   <ItemGroup>
     <Content Include="Fonts\lucide.ttf" />
   </ItemGroup>

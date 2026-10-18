@@ -115,6 +115,7 @@ public sealed partial class MainWindow
                 (RemoveButton, "remove", Model.Remove),
                 (SelectedMapButton, "selected_map", SelectedMap),
                 (AllMapButton, "all_map", AllMap),
+                (SettingsButton, "settings", Model.ShowSettings),
             }
         )
         {
@@ -152,7 +153,7 @@ public sealed partial class MainWindow
                 Command("add_file", Model.Add, Syno.Lucide.FilePlus),
                 Command("add_magnet", Model.AddMagnet, Syno.Lucide.Link),
                 new MenuSeparator(),
-                Command("settings", Model.ShowSettings, Syno.Lucide.Wrench),
+                Command("settings", Model.ShowSettings, Syno.Lucide.Settings),
                 new MenuSeparator(),
                 Command("close", Model.CloseWindow, Syno.Lucide.X),
                 Command("exit", Model.Exit, Syno.Lucide.Power),
@@ -210,7 +211,7 @@ public sealed partial class MainWindow
                 }
             );
         view.Add(new MenuSeparator());
-        view.Add(Command("selected_map", SelectedMap, Syno.Lucide.MapPin));
+        view.Add(Command("selected_map", SelectedMap, Syno.Lucide.GraphStar));
         view.Add(Command("all_map", AllMap, Syno.Lucide.Globe2));
         MenuItems.Fill(ViewMenu.Items, view, Model.Text);
         MenuItems.Fill(
@@ -272,7 +273,7 @@ public sealed partial class MainWindow
         if (properties)
             yield return Command("properties", Model.Properties, Syno.Lucide.Info);
         yield return new MenuSeparator();
-        yield return Command("verify", Model.Verify, Syno.Lucide.RefreshCw);
+        yield return Command("verify", Model.Verify, Syno.Lucide.BookOpenCheck);
         yield return Command("move", Model.MoveFiles, Syno.Lucide.FolderInput);
         yield return new MenuSubmenu(
             Model.Text.Get("menus", "queue"),

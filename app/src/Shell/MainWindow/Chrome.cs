@@ -353,7 +353,6 @@ public sealed partial class MainWindow
             - right
             - CaptionStart.ActualWidth
             - Menus.ActualWidth
-            - SettingsButton.ActualWidth
             - LanguageButton.ActualWidth
             - ThemeButton.ActualWidth
             - SearchArea.Margin.Left
@@ -416,7 +415,6 @@ public sealed partial class MainWindow
             AppIcon,
             Menus,
             Search,
-            SettingsButton,
             LanguageButton,
             ThemeButton,
         }
@@ -465,7 +463,6 @@ public sealed partial class MainWindow
             + SearchArea.Margin.Left
             + Search.MinWidth
             + SearchArea.Margin.Right
-            + SettingsButton.Width
             + LanguageButton.Width
             + ThemeButton.Width;
         var frame = AppWindow.Size.Width - AppWindow.ClientSize.Width;
@@ -527,15 +524,6 @@ public sealed partial class MainWindow
                 ? "中文"
                 : Model.Text.Language.Split('-')[0].ToUpperInvariant();
         NameButton(LanguageButton, Model.Text.Get("settings", "language"));
-        NameButton(
-            SettingsButton,
-            Model.Text.Format(
-                "shortcuts",
-                "tip",
-                Model.Text.Get("commands", "settings"),
-                ShortcutText(Model.ShowSettings)
-            )
-        );
         NameButton(
             BackButton,
             Model.Text.Format(

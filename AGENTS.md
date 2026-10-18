@@ -84,6 +84,13 @@ do not define this product.
 
 ## Working rules
 
+- **Owner ruling: filename discovery.** Use only `C:\Program Files\goz\goz.exe`,
+  with the narrowest known `-path`, a specific name/pattern and `-n 20`, so
+  broad results do not flood agent context. If 20 rows return, refine the query
+  rather than treating the list as complete. Never run `es.exe`. If goz cannot
+  answer after a refined query, report that. For a sandbox pipe denial, retry
+  the same read-only command outside the sandbox before treating the tool as
+  unavailable. Use `rg` for file contents.
 - **Owner ruling: user steers are cumulative.** Keep earlier requirements and
   unfinished work in scope unless the user explicitly cancels or replaces them,
   and execute them in the order received. A later steer does not outrank an
@@ -113,6 +120,12 @@ do not define this product.
   behavior unverified. Respect explicit user restrictions and protect the
   owner's data and running applications. Close what you launched and report
   the evidence and any remaining gaps.
+- **Owner ruling: never end a TinyTorrent that holds a lock.** A TinyTorrent
+  engine or window that holds the instance or pipe lock is in use by the owner
+  or by another session, and ending it loses that work or breaks that run.
+  When a check needs a held lock, report it instead of ending the process. A
+  TinyTorrent process that holds no lock, such as one left behind after its
+  run ended, serves nobody and may be ended with `Stop-Process`.
 - Do not report or change line endings on disk. Files there mix CRLF and LF
   because Windows editors and tools write CRLF, and `.gitattributes` converts
   every text file to LF on commit, so the mix never reaches a diff or history.
@@ -122,6 +135,9 @@ do not define this product.
   rebuild anything in `3rdParty/`. The owner compiles the dependencies once,
   because building them again takes over an hour of the owner's machine. When
   a build reports that `3rdParty/` is incomplete, stop and report it.
+  `3rdParty/goz` is the exception: it is a separate Rust project, not a
+  TinyTorrent2 dependency, and agents may build and test it under its own
+  `AGENTS.md`.
 
 ## Code style
 
@@ -137,11 +153,8 @@ the code, without a map of the architecture.
 2. **Clarity over cleverness.** Write for the reader, because code is read and
    changed far more often than it is written. Intent is obvious without
    tracing abstractions or indirection.
-   - Choose the simplest algorithm and data shape the requirement allows.
-     Use straight-line control flow, early returns where they clarify a
-     decision, and names, types and structure that say what the code does. One
-     operation reads from its command to its stored change without crossing
-     pass-through layers.
+   - Choose the most appropriate algorithm and data structure for the problem. Consider time and space complexity, expected scale, and proven library implementations. Prefer efficient, established algorithms over simpler but inferior ones. Among comparably effective solutions, choose the easiest to understand and maintain. Keep control flow straightforward, names and types expressive, and execution paths easy to trace without unnecessary indirection.
+   - **Choose the right model for the behavior.** Evaluate booleans, enums, discriminated unions, state machines, polymorphism and ordinary branching according to the problem. Use booleans for independent facts, enums for mutually exclusive states, state machines for constrained transitions, and polymorphism when implementations differ in behavior. Interacting flags, impossible combinations, repeated conditions and scattered transitions signal that the model may be wrong. Reconsider the representation instead of adding more branches. Choose the simplest model that expresses the rules correctly.
    - Requests, results and errors that cross a boundary have named types, not
      strings, loose JSON or the other side's storage shapes. A contract
      separates the failures its caller handles differently.

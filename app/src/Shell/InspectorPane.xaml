@@ -8,6 +8,16 @@
   xmlns:table="using:Syno.TableView"
   xmlns:icons="using:Syno"
 >
+  <UserControl.Resources>
+    <DataTemplate x:Key="TinyTorrentInspectorActionTemplate">
+      <Button Style="{StaticResource TinyTorrentSubtleButtonStyle}">
+        <FontIcon
+          FontFamily="{ThemeResource LucideFont}"
+          FontSize="{StaticResource TinyTorrentButtonIconSize}"
+        />
+      </Button>
+    </DataTemplate>
+  </UserControl.Resources>
   <controls:Pane
     x:Name="Surface"
     x:FieldModifier="internal"
@@ -589,7 +599,7 @@
               VerticalAlignment="Bottom"
               FlowDirection="LeftToRight"
               Glyph="{x:Bind icons:Lucide.Activity}"
-              Label="{x:Bind Model.Text.Get('inspector', 'speed')}"
+              Label="{x:Bind Model.Text.Get('peer_map', 'speed')}"
             >
               <controls:TransferPair x:Name="PeerTransfer" />
             </controls:Field>

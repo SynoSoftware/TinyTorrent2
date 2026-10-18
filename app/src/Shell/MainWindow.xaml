@@ -47,7 +47,6 @@
         <ColumnDefinition Width="*" />
         <ColumnDefinition Width="Auto" />
         <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="Auto" />
         <ColumnDefinition x:Name="RightInset" Width="0" />
       </Grid.ColumnDefinitions>
       <StackPanel x:Name="CaptionStart" Grid.Column="1" Orientation="Horizontal">
@@ -221,20 +220,8 @@
         </Grid>
       </Grid>
       <Button
-        x:Name="SettingsButton"
-        Grid.Column="4"
-        Style="{StaticResource TinyTorrentCaptionButtonStyle}"
-        Command="{x:Bind Model.ShowSettings}"
-      >
-        <FontIcon
-          FontFamily="{x:Bind icons:Lucide.Font}"
-          Glyph="{x:Bind icons:Lucide.Settings}"
-          FontSize="{StaticResource TinyTorrentInlineIconSize}"
-        />
-      </Button>
-      <Button
         x:Name="LanguageButton"
-        Grid.Column="5"
+        Grid.Column="4"
         Style="{StaticResource TinyTorrentCaptionButtonStyle}"
         IsEnabled="{x:Bind Model.Settings.CanSelectLanguage, Mode=OneWay}"
         AutomationProperties.AutomationId="LanguageSwitcher"
@@ -243,7 +230,7 @@
       </Button>
       <Button
         x:Name="ThemeButton"
-        Grid.Column="6"
+        Grid.Column="5"
         Style="{StaticResource TinyTorrentCaptionButtonStyle}"
         Command="{x:Bind Model.SwitchTheme}"
       >
@@ -362,8 +349,9 @@
                 <RowDefinition Height="*" MinHeight="110" />
               </Grid.RowDefinitions>
               <!-- A CommandBar cannot place some of its buttons at the far
-                   end, so the map buttons have their own bar. The row holds
-                   the focus settings so that both bars are one Tab stop. -->
+                   end, so the map and Settings buttons have their own bar.
+                   The row holds the focus settings so that both bars are one
+                   Tab stop. -->
               <Grid
                 x:Name="ToolbarRow"
                 TabFocusNavigation="Once"
@@ -452,7 +440,7 @@
                     <AppBarButton.Icon>
                       <FontIcon
                         FontFamily="{x:Bind icons:Lucide.Font}"
-                        Glyph="{x:Bind icons:Lucide.RefreshCw}"
+                        Glyph="{x:Bind icons:Lucide.BookOpenCheck}"
                       />
                     </AppBarButton.Icon>
                   </AppBarButton>
@@ -475,7 +463,7 @@
                     <AppBarButton.Icon>
                       <FontIcon
                         FontFamily="{x:Bind icons:Lucide.Font}"
-                        Glyph="{x:Bind icons:Lucide.MapPin}"
+                        Glyph="{x:Bind icons:Lucide.GraphStar}"
                       />
                     </AppBarButton.Icon>
                   </AppBarButton>
@@ -484,6 +472,15 @@
                       <FontIcon
                         FontFamily="{x:Bind icons:Lucide.Font}"
                         Glyph="{x:Bind icons:Lucide.Globe2}"
+                      />
+                    </AppBarButton.Icon>
+                  </AppBarButton>
+                  <AppBarSeparator />
+                  <AppBarButton x:Name="SettingsButton" Command="{x:Bind Model.ShowSettings}">
+                    <AppBarButton.Icon>
+                      <FontIcon
+                        FontFamily="{x:Bind icons:Lucide.Font}"
+                        Glyph="{x:Bind icons:Lucide.Settings}"
                       />
                     </AppBarButton.Icon>
                   </AppBarButton>

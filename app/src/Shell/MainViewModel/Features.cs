@@ -25,6 +25,7 @@ public sealed partial class MainViewModel
     private bool _refreshingFeatures;
     private bool _featuresPending;
     private Database? _database;
+    private Task<bool>? _databaseOpening;
     private RequestPolicy? _requestPolicy;
     private TorrentSource? _fileSource;
     private readonly ProviderHttp _providerHttp = new();
@@ -195,6 +196,12 @@ public sealed partial class MainViewModel
         if (_fileSource is null && DataDirectory is { } directory)
         {
             _database ??= new Database(directory);
+            // Every feature queries the database as it starts, so they start
+            // only after it opened: a file they cannot use then fails once,
+            // and it is opened again only by Retry or Delete.
+            _databaseOpening ??= OpenDatabase(_database);
+            if (_databaseOpening is not { IsCompletedSuccessfully: true, Result: true })
+                return;
             var policy = _requestPolicy ??= new RequestPolicy(_database);
             // Automatic lookups and subtitle searches wait, so starting the
             // window does not compete with them for the network.
@@ -288,6 +295,23 @@ public sealed partial class MainViewModel
                 });
             source.Observe(snapshot);
         }
+    }
+
+    private async Task<bool> OpenDatabase(Database database)
+    {
+        try
+        {
+            await database.Run(_ => true);
+        }
+        catch (Exception error)
+        {
+            if (ReferenceEquals(database, _database))
+                ReportFeature(error);
+            return false;
+        }
+        if (ReferenceEquals(database, _database))
+            RequestSnapshot();
+        return true;
     }
 
     private async Task ConfigureRoute()
@@ -482,6 +506,8 @@ public sealed partial class MainViewModel
                 await ResetFeatures(false);
                 return;
             }
+            if (_databaseOpening is { IsCompleted: true, Result: false })
+                _databaseOpening = null;
             using var operation = Work.Begin(
                 new(
                     new WorkDescription.Maintenance(MaintenanceWork.Recovery),
@@ -540,6 +566,7 @@ public sealed partial class MainViewModel
                 await database.DeleteIncompatible();
             await database.DisposeAsync();
             _database = null;
+            _databaseOpening = null;
             _requestPolicy = null;
             _featureFailure = null;
             RefreshFeedback();

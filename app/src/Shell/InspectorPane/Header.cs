@@ -9,19 +9,10 @@ public sealed partial class InspectorPane
 {
     private bool ActionsOverflow => Surface.ActualWidth < FieldColumns.WideMinimum;
 
-    private static Button CreateAction(string glyph, string name)
+    private Button CreateAction(string glyph, string name)
     {
-        var resources = Application.Current.Resources;
-        var button = new Button
-        {
-            Style = (Style)resources["TinyTorrentSubtleButtonStyle"],
-            Content = new FontIcon
-            {
-                FontFamily = Lucide.Font,
-                Glyph = glyph,
-                FontSize = (double)resources["TinyTorrentButtonIconSize"],
-            },
-        };
+        var button = (Button)((DataTemplate)Resources["TinyTorrentInspectorActionTemplate"]).LoadContent();
+        ((FontIcon)button.Content).Glyph = glyph;
         AutomationProperties.SetAutomationId(button, name);
         return button;
     }

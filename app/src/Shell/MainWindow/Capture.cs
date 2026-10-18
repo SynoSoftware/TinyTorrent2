@@ -838,7 +838,6 @@ public sealed partial class MainWindow
                 ViewMenu,
                 HelpMenu,
                 Search,
-                SettingsButton,
                 ThemeButton,
             }
         )

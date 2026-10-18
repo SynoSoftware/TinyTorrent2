@@ -768,6 +768,7 @@
     "fit": "Fit to window",
     "zoom": "{0:0.#}×",
     "resize": "Resize map and peers table",
+    "speed": "Transfer speed",
     "speed_position": "Speed position",
     "speed_hint": "Download: {0}. Upload: {1}.",
     "top_left": "Top-left",

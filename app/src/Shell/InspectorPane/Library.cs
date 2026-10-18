@@ -19,9 +19,9 @@ public sealed partial class InspectorPane
     private ScrollViewer? _librarySpare;
     private ICommand? _downloadSubtitles;
     private (LibraryBrowser Browser, Entry? Entry, bool File, string Language)? _libraryView;
-    private readonly Button _libraryOpen = CreateAction(Lucide.Play, "LibraryOpen");
-    private readonly Button _libraryTorrents = CreateAction(Lucide.LocateFixed, "LibraryTorrents");
-    private readonly Button _libraryMore = CreateAction(Lucide.Ellipsis, "LibraryMore");
+    private readonly Button _libraryOpen;
+    private readonly Button _libraryTorrents;
+    private readonly Button _libraryMore;
 
     internal void ShowLibrary(LibraryBrowser? library, ICommand? downloadSubtitles)
     {

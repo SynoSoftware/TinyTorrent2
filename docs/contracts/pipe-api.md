@@ -334,11 +334,9 @@ isolation guarantee; an extra token would not create a stronger boundary.
 
 ## Wire representation
 
-Protocol version 21 uses a four-byte little-endian UTF-8 JSON frame length,
-bounded to 16 MiB. `Directory.Build.props` defines the version once for the
-native endpoints and the window. The shared transport in `lib/Pipe` serves every
-native endpoint. The engine endpoint is `TinyTorrent.<logon SID>`; each connecting
-client first receives `{type:"hello",endpoint:"engine",version:21,session_id:"...",data_directory:"..."}`. The absolute data directory
+Protocol version 20 uses a four-byte little-endian UTF-8 JSON frame length,
+bounded to 16 MiB. The endpoint is `TinyTorrent.<logon SID>`; each connecting
+client first receives `{type:"hello",version:20,session_id:"...",data_directory:"..."}`. The absolute data directory
 keeps the same store for explicit Restart, which starts the engine beside the
 window rather than a path a pipe peer reports. Requests are
 `{request_id:signed-64-bit-integer,command:string,...}`. Replies repeat `request_id` and have

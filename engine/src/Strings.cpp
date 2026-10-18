@@ -1,13 +1,15 @@
 #include "Strings.h"
 #include "Resources.h"
 #include <windows.h>
+#include <set>
 
 namespace tt
 {
 namespace
 {
 // The shipped catalogues by language tag. English holds every message, and
-// another catalogue replaces the messages it translates.
+// another catalogue replaces the messages it translates with the same
+// placeholders, because English changes between translation refreshes.
 constexpr std::pair<std::string_view, WORD> catalogues[] = {
     {"en", IDR_ENGLISH_TEXT},
     {"es", IDR_SPANISH_TEXT},
@@ -50,18 +52,55 @@ std::string_view Match(std::string_view tag)
     }
     return "en";
 }
+
+std::set<std::string> Placeholders(std::string const& text)
+{
+    std::set<std::string> found;
+    for (auto open = text.find('{'); open != std::string::npos; open = text.find('{', open + 1))
+    {
+        auto close = text.find('}', open);
+        if (close == std::string::npos)
+        {
+            break;
+        }
+        auto number = std::string_view(text).substr(open + 1, close - open - 1);
+        if (!number.empty() && number.find_first_not_of("0123456789") == std::string_view::npos)
+        {
+            found.insert(std::string(number));
+        }
+    }
+    return found;
+}
 }
 
 Strings::Strings(std::string language)
     : language_(std::move(language)), catalogue_(Catalogue(IDR_ENGLISH_TEXT))
 {
     auto resource = Parse(catalogues, Match(language_));
-    if (resource && *resource != IDR_ENGLISH_TEXT)
+    if (!resource || *resource == IDR_ENGLISH_TEXT)
     {
-        auto translated = Catalogue(*resource);
-        if (translated.is_object())
+        return;
+    }
+    auto translated = Catalogue(*resource);
+    if (!translated.is_object())
+    {
+        return;
+    }
+    for (auto const& [group, messages] : translated.items())
+    {
+        auto english = catalogue_.find(group);
+        if (english == catalogue_.end() || !messages.is_object())
         {
-            catalogue_.merge_patch(translated);
+            continue;
+        }
+        for (auto const& [key, message] : messages.items())
+        {
+            auto original = english->find(key);
+            if (original != english->end() && original->is_string() && message.is_string() &&
+                Placeholders(original->get<std::string>()) == Placeholders(message.get<std::string>()))
+            {
+                *original = message;
+            }
         }
     }
 }

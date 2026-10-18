@@ -87,8 +87,6 @@ public sealed partial class MainWindow : Window
         Caption.SizeChanged += (_, _) => UpdateChrome();
         CaptionStart.SizeChanged += (_, _) => UpdateChrome();
         Menus.SizeChanged += (_, _) => UpdateChrome();
-        SettingsButton.Loaded += (_, _) => UpdateChrome();
-        SettingsButton.SizeChanged += (_, _) => UpdateChrome();
         LanguageButton.Loaded += (_, _) => UpdateChrome();
         LanguageButton.SizeChanged += (_, _) => UpdateChrome();
         ThemeButton.Loaded += (_, _) => UpdateChrome();

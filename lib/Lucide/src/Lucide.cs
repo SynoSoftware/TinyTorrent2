@@ -6,9 +6,10 @@ namespace Syno;
 /// The Lucide font vendored at Fonts/lucide.ttf, and every glyph in it by its Lucide name.
 /// </summary>
 /// <remarks>
-/// Generated from the info.json of the lucide-static package at the font's version, 1.48.0.
-/// LabForms, Pharmacy and Synapse ship the same font and constants, so a name means the same glyph
-/// in every one of this owner's WinUI projects.
+/// Generated from the info.json of the lucide-static package at the font's version, 1.59.0.
+/// LabForms, Pharmacy and Synapse ship earlier versions of this font and these constants. Lucide
+/// adds glyphs without moving existing ones, as 1.48.0 to 1.59.0 shows, so a name means the same
+/// glyph in every one of this owner's WinUI projects.
 /// </remarks>
 public static class Lucide
 {
@@ -81,6 +82,7 @@ public static class Lucide
     public const string Archive = "\uE041";
     public const string AreaChart = "\uE4D3";
     public const string Armchair = "\uE2C0";
+    public const string ArmenianDram = "\uE791";
     public const string ArrowBigDownDash = "\uE41D";
     public const string ArrowBigDown = "\uE1E1";
     public const string ArrowBigLeftDash = "\uE41E";
@@ -187,6 +189,7 @@ public static class Lucide
     public const string Ban = "\uE051";
     public const string Banana = "\uE34F";
     public const string Bandage = "\uE61D";
+    public const string BangladeshiTaka = "\uE78D";
     public const string BanknoteArrowDown = "\uE64C";
     public const string BanknoteArrowUp = "\uE64D";
     public const string BanknoteCheck = "\uE70C";
@@ -220,6 +223,7 @@ public static class Lucide
     public const string Beef = "\uE3A5";
     public const string BeerOff = "\uE5D9";
     public const string Beer = "\uE2CF";
+    public const string BelarusianRuble = "\uE7A6";
     public const string BellCheck = "\uE6EF";
     public const string BellDot = "\uE42B";
     public const string BellElectric = "\uE57C";
@@ -338,6 +342,7 @@ public static class Lucide
     public const string CalendarArrowUp = "\uE5FF";
     public const string CalendarCheck2 = "\uE2B8";
     public const string CalendarCheck = "\uE2B7";
+    public const string CalendarChevronsLeft = "\uE7A7";
     public const string CalendarChevronsRight = "\uE76C";
     public const string CalendarClock = "\uE304";
     public const string CalendarCog = "\uE5ED";
@@ -386,6 +391,7 @@ public static class Lucide
     public const string Cat = "\uE38C";
     public const string CctvOff = "\uE6D8";
     public const string Cctv = "\uE57D";
+    public const string Certificate = "\uE7B1";
     public const string ChartArea = "\uE4D3";
     public const string ChartBarBig = "\uE4A7";
     public const string ChartBarDecreasing = "\uE607";
@@ -475,6 +481,7 @@ public static class Lucide
     public const string CircleEqual = "\uE400";
     public const string CircleEuro = "\uE71F";
     public const string CircleFadingArrowUp = "\uE618";
+    public const string CircleFadingPlay = "\uE7A8";
     public const string CircleFadingPlus = "\uE5BC";
     public const string CircleGauge = "\uE4E1";
     public const string CircleHelp = "\uE082";
@@ -609,6 +616,7 @@ public static class Lucide
     public const string CornerRightUp = "\uE0A6";
     public const string CornerUpLeft = "\uE0A7";
     public const string CornerUpRight = "\uE0A8";
+    public const string CpuAi = "\uE7A9";
     public const string Cpu = "\uE0A9";
     public const string CreativeCommons = "\uE3B2";
     public const string CreditCardCheck = "\uE743";
@@ -670,6 +678,7 @@ public static class Lucide
     public const string DollarSign = "\uE0B1";
     public const string Dome = "\uE75F";
     public const string Donut = "\uE4BC";
+    public const string DoorClosedCog = "\uE792";
     public const string DoorClosedLocked = "\uE664";
     public const string DoorClosedPackage = "\uE77E";
     public const string DoorClosed = "\uE3D5";
@@ -700,6 +709,8 @@ public static class Lucide
     public const string EggFried = "\uE351";
     public const string EggOff = "\uE395";
     public const string Egg = "\uE25D";
+    public const string EighthNote = "\uE34A";
+    public const string EighthNotes = "\uE122";
     public const string Eject = "\uE733";
     public const string Ellipse = "\uE6B2";
     public const string EllipsisVertical = "\uE0B7";
@@ -879,6 +890,8 @@ public static class Lucide
     public const string FolderSync = "\uE4C9";
     public const string FolderTree = "\uE33C";
     public const string FolderUp = "\uE33D";
+    public const string FolderUser = "\uE7AA";
+    public const string FolderUsers = "\uE7AB";
     public const string FolderX = "\uE33E";
     public const string Folder = "\uE0D7";
     public const string Folders = "\uE33F";
@@ -951,6 +964,7 @@ public static class Lucide
     public const string Grab = "\uE1E6";
     public const string GraduationCap = "\uE234";
     public const string Grape = "\uE352";
+    public const string GraphStar = "\uE7AC";
     public const string Grid2X2Check = "\uE5E4";
     public const string Grid2X2Plus = "\uE628";
     public const string Grid2X2X = "\uE5E5";
@@ -966,8 +980,11 @@ public static class Lucide
     public const string GripHorizontal = "\uE0EA";
     public const string GripVertical = "\uE0EB";
     public const string Grip = "\uE3B1";
+    public const string Groceries = "\uE799";
     public const string Group = "\uE464";
+    public const string GuitarElectric = "\uE7AD";
     public const string Guitar = "\uE55F";
+    public const string HalfNote = "\uE34B";
     public const string Ham = "\uE5D7";
     public const string Hamburger = "\uE665";
     public const string Hammer = "\uE0EC";
@@ -980,6 +997,7 @@ public static class Lucide
     public const string HandPlatter = "\uE5BA";
     public const string Hand = "\uE1D7";
     public const string Handbag = "\uE689";
+    public const string HandleBottomRight = "\uE79D";
     public const string Handshake = "\uE5C0";
     public const string HardDriveDownload = "\uE4E5";
     public const string HardDriveUpload = "\uE4E6";
@@ -1014,6 +1032,7 @@ public static class Lucide
     public const string HelpingHand = "\uE3B8";
     public const string Hexagon = "\uE0F3";
     public const string Highlighter = "\uE0F4";
+    public const string HikingStick = "\uE79A";
     public const string History = "\uE1F5";
     public const string Home = "\uE0F5";
     public const string HopOff = "\uE398";
@@ -1064,6 +1083,7 @@ public static class Lucide
     public const string KanbanSquare = "\uE170";
     public const string Kanban = "\uE4DC";
     public const string Kayak = "\uE68F";
+    public const string KazakhTenge = "\uE793";
     public const string KeyRound = "\uE4A3";
     public const string KeySquare = "\uE4A4";
     public const string Key = "\uE0FD";
@@ -1100,6 +1120,7 @@ public static class Lucide
     public const string LayoutArrowRight = "\uE772";
     public const string LayoutDashboard = "\uE1C1";
     public const string LayoutFreeform = "\uE723";
+    public const string LayoutGridCircles = "\uE790";
     public const string LayoutGrid = "\uE0FF";
     public const string LayoutList = "\uE1D9";
     public const string LayoutPanelLeft = "\uE470";
@@ -1111,7 +1132,9 @@ public static class Lucide
     public const string Lectern = "\uE5E9";
     public const string LensConcave = "\uE6B7";
     public const string LensConvex = "\uE6B8";
+    public const string Lens = "\uE79C";
     public const string LetterText = "\uE605";
+    public const string Letters = "\uE78E";
     public const string LibraryBig = "\uE54E";
     public const string LibrarySquare = "\uE54F";
     public const string Library = "\uE100";
@@ -1176,6 +1199,7 @@ public static class Lucide
     public const string MailBadge = "\uE734";
     public const string MailCheck = "\uE361";
     public const string MailClock = "\uE73E";
+    public const string MailDot = "\uE79E";
     public const string MailMinus = "\uE362";
     public const string MailOpen = "\uE363";
     public const string MailPen = "\uE74E";
@@ -1229,6 +1253,7 @@ public static class Lucide
     public const string MessageCircleQuestionMark = "\uE568";
     public const string MessageCircleQuestion = "\uE568";
     public const string MessageCircleReply = "\uE569";
+    public const string MessageCircleText = "\uE7A4";
     public const string MessageCircleWarning = "\uE56A";
     public const string MessageCircleX = "\uE56B";
     public const string MessageCircle = "\uE116";
@@ -1431,12 +1456,14 @@ public static class Lucide
     public const string PercentDiamond = "\uE51B";
     public const string PercentSquare = "\uE51C";
     public const string Percent = "\uE132";
+    public const string PerfumeBottle = "\uE7AE";
     public const string PersonStanding = "\uE21E";
     public const string Phi = "\uE71C";
     public const string PhilippinePeso = "\uE604";
     public const string PhoneCall = "\uE134";
     public const string PhoneForwarded = "\uE135";
     public const string PhoneIncoming = "\uE136";
+    public const string PhoneLog = "\uE79F";
     public const string PhoneMissed = "\uE137";
     public const string PhoneOff = "\uE138";
     public const string PhoneOutgoing = "\uE139";
@@ -1490,6 +1517,7 @@ public static class Lucide
     public const string PowerSquare = "\uE551";
     public const string Power = "\uE140";
     public const string Presentation = "\uE4AE";
+    public const string Printer3d = "\uE78F";
     public const string PrinterCheck = "\uE5F5";
     public const string PrinterX = "\uE6C1";
     public const string Printer = "\uE141";
@@ -1572,6 +1600,7 @@ public static class Lucide
     public const string Rows4 = "\uE58B";
     public const string Rows = "\uE439";
     public const string Rss = "\uE14A";
+    public const string RugbyBall = "\uE794";
     public const string RulerDimensionLine = "\uE662";
     public const string Ruler = "\uE14B";
     public const string RussianRuble = "\uE14C";
@@ -1610,8 +1639,10 @@ public static class Lucide
     public const string ScissorsSquare = "\uE4EC";
     public const string Scissors = "\uE14E";
     public const string Scooter = "\uE6AC";
+    public const string ScratchBlocks = "\uE79B";
     public const string ScreenShareOff = "\uE150";
     public const string ScreenShare = "\uE14F";
+    public const string Screw = "\uE7A0";
     public const string ScrollText = "\uE45F";
     public const string Scroll = "\uE2ED";
     public const string SearchAlert = "\uE6E7";
@@ -1629,6 +1660,7 @@ public static class Lucide
     public const string SeparatorVertical = "\uE1C9";
     public const string ServerCog = "\uE341";
     public const string ServerCrash = "\uE1E9";
+    public const string ServerNas = "\uE7A5";
     public const string ServerOff = "\uE1EA";
     public const string ServerPlus = "\uE721";
     public const string Server = "\uE153";
@@ -1648,6 +1680,7 @@ public static class Lucide
     public const string ShieldCog = "\uE6E9";
     public const string ShieldEllipsis = "\uE516";
     public const string ShieldHalf = "\uE517";
+    public const string ShieldHouse = "\uE7A1";
     public const string ShieldKeyhole = "\uE722";
     public const string ShieldLock = "\uE731";
     public const string ShieldMinus = "\uE518";
@@ -1689,6 +1722,7 @@ public static class Lucide
     public const string SignpostBig = "\uE541";
     public const string Signpost = "\uE540";
     public const string Siren = "\uE2EF";
+    public const string SixteenthNotes = "\uE34C";
     public const string SkipBack = "\uE15F";
     public const string SkipForward = "\uE160";
     public const string Skull = "\uE221";
@@ -1893,6 +1927,9 @@ public static class Lucide
     public const string TestTubes = "\uE407";
     public const string TextAlignCenter = "\uE182";
     public const string TextAlignEnd = "\uE183";
+    public const string TextAlignJustifyCenter = "\uE795";
+    public const string TextAlignJustifyEnd = "\uE796";
+    public const string TextAlignJustifyStart = "\uE797";
     public const string TextAlignJustify = "\uE184";
     public const string TextAlignStart = "\uE185";
     public const string TextCursorInput = "\uE265";
@@ -2019,6 +2056,7 @@ public static class Lucide
     public const string UserRoundPen = "\uE5FD";
     public const string UserRoundPlus = "\uE46C";
     public const string UserRoundSearch = "\uE578";
+    public const string UserRoundStar = "\uE7A2";
     public const string UserRoundX = "\uE46D";
     public const string UserRound = "\uE468";
     public const string UserSearch = "\uE579";
@@ -2030,6 +2068,8 @@ public static class Lucide
     public const string UserX = "\uE1A3";
     public const string User = "\uE19F";
     public const string Users2 = "\uE46E";
+    public const string UsersCollaboration = "\uE7AF";
+    public const string UsersRoundCollaboration = "\uE7B0";
     public const string UsersRound = "\uE46E";
     public const string Users = "\uE1A4";
     public const string UtensilsCrossed = "\uE2F7";
@@ -2091,6 +2131,7 @@ public static class Lucide
     public const string WholeWord = "\uE3DF";
     public const string WifiCog = "\uE674";
     public const string WifiHigh = "\uE5F7";
+    public const string WifiLock = "\uE7A3";
     public const string WifiLow = "\uE5F8";
     public const string WifiOff = "\uE1AF";
     public const string WifiPen = "\uE663";
@@ -2098,6 +2139,7 @@ public static class Lucide
     public const string WifiZero = "\uE5F9";
     public const string Wifi = "\uE1AE";
     public const string WindArrowDown = "\uE631";
+    public const string WindArrowUp = "\uE798";
     public const string Wind = "\uE1B0";
     public const string WineOff = "\uE3A0";
     public const string Wine = "\uE2F8";

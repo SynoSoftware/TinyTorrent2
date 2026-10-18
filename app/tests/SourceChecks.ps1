@@ -465,18 +465,17 @@ try {
         Invoke-Value $policy 'Fail' @((New-Value 'Shared.Network.ProviderAccess' @('omdb', $identity, 'search')), $backoff) | Out-Null
         Invoke-Value $policy 'Fail' @((New-Value 'Shared.Network.ProviderAccess' @('omdb', $identity, 'detail')), $remote) | Out-Null
         $plan = @(Invoke-Value $videos 'Plan' @($entries, $option, $cancel))
-        Require (($plan | Where-Object { $_.Entry.Name -eq 'Remake.2000.mkv' }).Block.Kind.ToString() -eq 'NoMatch' -and
-            $null -eq ($plan | Where-Object { $_.Entry.Name -eq 'Remake.2024.mkv' }).Block -and
+        Require (($plan | Where-Object { $_.Entry.Name -eq 'Remake.2000.mkv' }).Answer.ToString() -eq 'Unasked' -and
+            ($plan | Where-Object { $_.Entry.Name -eq 'Remake.2024.mkv' }).Answer.ToString() -eq 'Unasked' -and
             $plan[0].Wait.Kind.ToString() -eq 'RemoteWait') 'Provider availability changed New membership or concealed a hard hold behind forceable backoff.'
         $connection = $database.GetType().GetField('_connection', $flags).GetValue($database)
         $store.GetType().GetMethod('ResetProtection', $staticFlags).Invoke($null, @($connection, 'omdb')) | Out-Null
         Require ((Sql 'SELECT COUNT(*) FROM video_searches WHERE catalog_id=''omdb'';') -eq 0 -and
             (Sql 'SELECT COUNT(*) FROM video_choices WHERE catalog_id=''omdb'';') -eq 1) 'Reset kept a chooser-only no-match association or erased useful choices.'
+        Sql 'DELETE FROM request_holds WHERE provider_id=''omdb'';' | Out-Null
         $answer = New-Value 'Library.VideoSearch' @((New-Values 'Library.VideoChoice' @()), $true)
         Invoke-Value $store 'SaveSearch' @($request, $answer, $cancel) | Out-Null
-        $plan = @(Invoke-Value $videos 'Plan' @($entries, $option, $cancel))
-        Require ($plan[0].Block.Kind.ToString() -eq 'Missing') 'An empty provider answer lost its Missing reason.'
-        Sql 'DELETE FROM request_holds WHERE provider_id=''omdb'';' | Out-Null
+        Require ((Invoke-Value $videos 'Protection' @('Remake', 'Remake.2000.mkv', $option, $cancel, 2000, $true)).Kind.ToString() -eq 'Missing') 'An empty provider answer lost its Missing reason.'
     }
     finally { $videos.DisposeAsync().AsTask().GetAwaiter().GetResult() | Out-Null }
 

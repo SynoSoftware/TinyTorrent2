@@ -187,7 +187,7 @@ public class ColumnFitTests
         });
 
     [TestMethod]
-    public Task AFrameDragReusesItsFirstFitAcrossMinimumWidthsUntilItEnds() =>
+    public Task AResizeBurstReusesItsFirstFitAndMeasuresAgainWhenItSettles() =>
         TestHost.RunAsync(async () =>
         {
             Column a = Column("a", 200);
@@ -201,7 +201,6 @@ public class ColumnFitTests
             await SettleAsync(table);
 
             header.Width = 76;
-            Proof.Call(table, "OnEnteredMoveSize", null, null);
             table.Width = 200;
             table.UpdateLayout();
             Assert.AreEqual(80d, TableHarness.EffectiveWidth(table, "a"), 0.01);
@@ -213,10 +212,10 @@ public class ColumnFitTests
             Assert.AreEqual(150d, TableHarness.EffectiveWidth(table, "a"), 0.01);
             Assert.AreEqual(450d, TableHarness.EffectiveWidth(table, "b"), 0.01);
 
-            Proof.Call(table, "OnExitedMoveSize", null, null);
-            table.UpdateLayout();
-            Assert.AreEqual(150d, TableHarness.EffectiveWidth(table, "a"), 0.01);
-            Assert.AreEqual(450d, TableHarness.EffectiveWidth(table, "b"), 0.01);
+            var timer = Proof.Field<Microsoft.UI.Dispatching.DispatcherQueueTimer>(table, "_resizeDue");
+            await TableHarness.WaitUntilAsync(() => !timer.IsRunning, "the resize burst to settle");
+            Assert.AreEqual(300d, TableHarness.EffectiveWidth(table, "a"), 0.01);
+            Assert.AreEqual(300d, TableHarness.EffectiveWidth(table, "b"), 0.01);
 
             table.Width = 500;
             table.UpdateLayout();
@@ -237,6 +236,8 @@ public class ColumnFitTests
 
             table.Width = 600;
             table.UpdateLayout();
+            var timer = Proof.Field<Microsoft.UI.Dispatching.DispatcherQueueTimer>(table, "_resizeDue");
+            await TableHarness.WaitUntilAsync(() => !timer.IsRunning, "the first resize to settle");
             double before = TableHarness.EffectiveWidth(table, "a");
             table.ItemsSource = Rows(20, 600);
             table.UpdateLayout();
