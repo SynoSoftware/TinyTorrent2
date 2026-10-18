@@ -147,6 +147,18 @@ std::wstring Executable()
     return path;
 }
 
+std::optional<std::filesystem::path> ProcessImage(HANDLE process)
+{
+    std::wstring path(32'768, L'\0');
+    auto size = static_cast<DWORD>(path.size());
+    if (!QueryFullProcessImageNameW(process, 0, path.data(), &size))
+    {
+        return std::nullopt;
+    }
+    path.resize(size);
+    return std::filesystem::path(std::move(path));
+}
+
 char const* ToString(NoticeKind kind)
 {
     switch (kind)

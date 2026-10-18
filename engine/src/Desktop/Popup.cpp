@@ -5,9 +5,12 @@
 #include <cmath>
 #include <filesystem>
 #include <sstream>
+#include <utility>
+#include <oleacc.h>
+#include <UIAutomation.h>
+#include <servprov.h>
 #include <windowsx.h>
 #include <commctrl.h>
-#include <oleacc.h>
 #include <oleauto.h>
 #include <wrl.h>
 
@@ -29,9 +32,14 @@ constexpr ULONG defaultDuration = 5;
 constexpr wchar_t closeGlyph[] = L"\xE8BB";
 // Segoe MDL2 Assets' More, the button Windows' own notifications show.
 constexpr wchar_t moreGlyph[] = L"\xE712";
+// Lucide's x glyph, the Dismiss button's icon.
+constexpr wchar_t dismissGlyph = L'\uE1B2';
 constexpr UINT textFormat = DT_WORDBREAK | DT_EDITCONTROL | DT_NOPREFIX | DT_END_ELLIPSIS;
 constexpr UINT labelFormat = DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_END_ELLIPSIS;
 constexpr UINT detailFormat = DT_SINGLELINE | DT_NOPREFIX;
+// A WM_KEYDOWN and WM_SYSKEYDOWN flag: the key was already down, because it
+// repeats or was held before the popup had the focus.
+constexpr LPARAM keyHeld = 1 << 30;
 
 // Layout in effective pixels.
 constexpr int popupWidth = 360;
@@ -49,6 +57,10 @@ constexpr int actionInset = 12;
 // The window's buttons: a 16-pixel icon, 8 pixels before the word.
 constexpr int actionIconSize = 16;
 constexpr int actionIconGap = 8;
+// Fluent's focus visual: a 2-pixel ring a pixel outside the button.
+constexpr int focusWidth = 2;
+constexpr int focusGap = 1;
+constexpr int edgeWidth = 1;
 constexpr int lineGap = 4;
 constexpr int fontSize = 14;
 constexpr int captionSize = 12;
@@ -70,6 +82,9 @@ constexpr int textLimit = 160;
 
 // The fill of the foreground colour over the backdrop under the pointer, out of 255.
 constexpr BYTE hoverOpacity = 0x1A;
+// The fill of a pressed button, below its rest fill as Fluent's pressed
+// state is, out of 255.
+constexpr BYTE pressedOpacity = 0x08;
 // The fill of a button at rest, Fluent's subtle control fill, out of 255.
 constexpr BYTE buttonOpacity = 0x0F;
 // Fluent's divider stroke, out of 255.
@@ -108,16 +123,26 @@ std::filesystem::path IconFont()
 }
 }
 
-// MSAA's simple children expose the painted rows without a second control tree;
-// Windows' MSAA-to-UIA proxy makes them available to UI Automation clients too.
-class Popup::MenuAccessibility final : public Microsoft::WRL::RuntimeClass<
+// MSAA's simple children expose a popup window's painted parts without a
+// second control tree; Windows' MSAA-to-UIA proxy makes them available to UI
+// Automation clients, and IAccessibleEx adds the AutomationId that MSAA lacks.
+// Popup decides every part, its state and what it does; this class only
+// answers in those terms.
+class Popup::Accessibility final : public Microsoft::WRL::RuntimeClass<
     Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>,
-    Microsoft::WRL::ChainInterfaces<IAccessible, IDispatch>>
+    Microsoft::WRL::ChainInterfaces<IAccessible, IDispatch>, IServiceProvider, IAccessibleEx,
+    IRawElementProviderSimple>
 {
 public:
-    explicit MenuAccessibility(Popup& popup) : popup_(&popup)
+    Accessibility(Popup& popup, HWND window) : popup_(&popup), window_(window)
     {
-        CreateStdAccessibleObject(popup.menu_, OBJID_CLIENT, IID_PPV_ARGS(&standard_));
+        CreateStdAccessibleObject(window, OBJID_CLIENT, IID_PPV_ARGS(&standard_));
+    }
+
+    // UI Automation needs a separate object for each child of `parent`.
+    Accessibility(Microsoft::WRL::ComPtr<Accessibility> parent, long child)
+        : window_(parent->window_), standard_(parent->standard_), parent_(std::move(parent)), child_(child)
+    {
     }
 
     void Disconnect() { popup_ = nullptr; }
@@ -145,113 +170,157 @@ public:
     }
     HRESULT STDMETHODCALLTYPE get_accParent(IDispatch** parent) override
     {
-        if (!parent) return E_POINTER;
+        if (!parent)
+        {
+            return E_POINTER;
+        }
         *parent = nullptr;
-        if (!popup_) return CO_E_OBJNOTCONNECTED;
+        if (!Owner())
+        {
+            return CO_E_OBJNOTCONNECTED;
+        }
         return standard_ ? standard_->get_accParent(parent) : S_FALSE;
     }
     HRESULT STDMETHODCALLTYPE get_accChildCount(long* count) override
     {
-        if (!count) return E_POINTER;
-        *count = popup_ ? static_cast<long>(popup_->content_.menu.size()) : 0;
-        return popup_ ? S_OK : CO_E_OBJNOTCONNECTED;
+        if (!count)
+        {
+            return E_POINTER;
+        }
+        auto owner = Owner();
+        *count = owner ? static_cast<long>(owner->Elements(window_).size()) - 1 : 0;
+        return owner ? S_OK : CO_E_OBJNOTCONNECTED;
     }
     HRESULT STDMETHODCALLTYPE get_accChild(VARIANT child, IDispatch** object) override
     {
-        if (!object) return E_POINTER;
+        if (!object)
+        {
+            return E_POINTER;
+        }
         *object = nullptr;
-        if (!Valid(child)) return E_INVALIDARG;
+        if (!Find(child))
+        {
+            return E_INVALIDARG;
+        }
         return child.lVal == CHILDID_SELF ? QueryInterface(IID_PPV_ARGS(object)) : S_FALSE;
     }
     HRESULT STDMETHODCALLTYPE get_accName(VARIANT child, BSTR* name) override
     {
-        if (!name) return E_POINTER;
-        *name = nullptr;
-        if (!Valid(child)) return E_INVALIDARG;
-        auto const& text = child.lVal == CHILDID_SELF ? popup_->content_.menuTitle :
-            popup_->content_.menu[child.lVal - 1].text;
-        *name = SysAllocString(text.c_str());
-        return *name ? S_OK : E_OUTOFMEMORY;
+#ifdef _DEBUG
+        // Shows which thread and apartment serve accessibility, which must be
+        // the window's thread in its single-threaded apartment.
+        APTTYPE apartment{};
+        APTTYPEQUALIFIER qualifier{};
+        std::wstring kind = L"none";
+        if (SUCCEEDED(CoGetApartmentType(&apartment, &qualifier)))
+        {
+            kind = std::to_wstring(static_cast<int>(apartment)) + L"." + std::to_wstring(static_cast<int>(qualifier));
+        }
+        OutputDebugStringW((L"TinyTorrent accessibility: thread " + std::to_wstring(GetCurrentThreadId()) +
+            L", window thread " + std::to_wstring(GetWindowThreadProcessId(window_, nullptr)) + L", apartment " +
+            kind + L"\n").c_str());
+#endif
+        auto element = Find(child);
+        return element ? Text(element->name, name) : Missing(name);
     }
     HRESULT STDMETHODCALLTYPE get_accValue(VARIANT, BSTR* value) override { return Empty(value); }
-    HRESULT STDMETHODCALLTYPE get_accDescription(VARIANT, BSTR* text) override { return Empty(text); }
+    HRESULT STDMETHODCALLTYPE get_accDescription(VARIANT child, BSTR* text) override
+    {
+        auto element = Find(child);
+        return element ? Text(element->description, text) : Missing(text);
+    }
     HRESULT STDMETHODCALLTYPE get_accHelp(VARIANT, BSTR* text) override { return Empty(text); }
     HRESULT STDMETHODCALLTYPE get_accKeyboardShortcut(VARIANT, BSTR* text) override { return Empty(text); }
     HRESULT STDMETHODCALLTYPE get_accHelpTopic(BSTR* file, VARIANT, long* topic) override
     {
-        if (!topic) return E_POINTER;
+        if (!topic)
+        {
+            return E_POINTER;
+        }
         *topic = -1;
         return Empty(file);
     }
     HRESULT STDMETHODCALLTYPE get_accRole(VARIANT child, VARIANT* role) override
     {
-        if (!role) return E_POINTER;
-        VariantInit(role);
-        if (!Valid(child)) return E_INVALIDARG;
-        role->vt = VT_I4;
-        role->lVal = child.lVal == CHILDID_SELF ? ROLE_SYSTEM_MENUPOPUP : ROLE_SYSTEM_MENUITEM;
-        return S_OK;
+        return Number(child, role, &Element::role);
     }
     HRESULT STDMETHODCALLTYPE get_accState(VARIANT child, VARIANT* state) override
     {
-        if (!state) return E_POINTER;
-        VariantInit(state);
-        if (!Valid(child)) return E_INVALIDARG;
-        state->vt = VT_I4;
-        state->lVal = STATE_SYSTEM_FOCUSABLE;
-        if (child.lVal != CHILDID_SELF) state->lVal |= STATE_SYSTEM_SELECTABLE;
-        auto focused = popup_->menuHover_ ? static_cast<long>(*popup_->menuHover_ + 1) : CHILDID_SELF;
-        if (GetFocus() == popup_->menu_ && child.lVal == focused)
-        {
-            state->lVal |= STATE_SYSTEM_FOCUSED;
-            if (child.lVal != CHILDID_SELF) state->lVal |= STATE_SYSTEM_SELECTED;
-        }
-        if (!IsWindowVisible(popup_->menu_)) state->lVal |= STATE_SYSTEM_INVISIBLE;
-        return S_OK;
+        return Number(child, state, &Element::state);
     }
     HRESULT STDMETHODCALLTYPE get_accFocus(VARIANT* focus) override
     {
-        if (!focus) return E_POINTER;
+        if (!focus)
+        {
+            return E_POINTER;
+        }
         VariantInit(focus);
-        if (!popup_) return CO_E_OBJNOTCONNECTED;
-        if (GetFocus() != popup_->menu_) return S_FALSE;
+        auto owner = Owner();
+        if (!owner)
+        {
+            return CO_E_OBJNOTCONNECTED;
+        }
+        auto focused = owner->FocusedChild(window_);
+        if (!focused)
+        {
+            return S_FALSE;
+        }
         focus->vt = VT_I4;
-        focus->lVal = popup_->menuHover_ ? static_cast<long>(*popup_->menuHover_ + 1) : CHILDID_SELF;
+        focus->lVal = *focused;
         return S_OK;
     }
     HRESULT STDMETHODCALLTYPE get_accSelection(VARIANT* selection) override
     {
-        if (!selection) return E_POINTER;
+        if (!selection)
+        {
+            return E_POINTER;
+        }
         VariantInit(selection);
-        if (!popup_) return CO_E_OBJNOTCONNECTED;
-        if (!popup_->menuHover_) return S_FALSE;
-        selection->vt = VT_I4;
-        selection->lVal = static_cast<long>(*popup_->menuHover_ + 1);
-        return S_OK;
+        auto owner = Owner();
+        if (!owner)
+        {
+            return CO_E_OBJNOTCONNECTED;
+        }
+        auto elements = owner->Elements(window_);
+        for (std::size_t child = 1; child < elements.size(); ++child)
+        {
+            if (elements[child].state & STATE_SYSTEM_SELECTED)
+            {
+                selection->vt = VT_I4;
+                selection->lVal = static_cast<long>(child);
+                return S_OK;
+            }
+        }
+        return S_FALSE;
     }
     HRESULT STDMETHODCALLTYPE get_accDefaultAction(VARIANT child, BSTR* action) override
     {
-        return child.vt == VT_I4 && child.lVal == CHILDID_SELF ? Empty(action) : get_accName(child, action);
+        auto element = Find(child);
+        return element ? Text(element->defaultAction, action) : Missing(action);
     }
     HRESULT STDMETHODCALLTYPE accSelect(long flags, VARIANT child) override
     {
-        if (!Valid(child) || !flags || (flags & ~(SELFLAG_TAKEFOCUS | SELFLAG_TAKESELECTION)))
+        if (!Find(child) || !flags || (flags & ~(SELFLAG_TAKEFOCUS | SELFLAG_TAKESELECTION)))
+        {
             return E_INVALIDARG;
-        SetFocus(popup_->menu_);
-        popup_->HoverMenu(child.lVal == CHILDID_SELF ? std::nullopt :
-            std::optional<std::size_t>(child.lVal - 1));
-        return S_OK;
+        }
+        return Owner()->Select(window_, child.lVal, flags) ? S_OK : DISP_E_MEMBERNOTFOUND;
     }
     HRESULT STDMETHODCALLTYPE accLocation(long* left, long* top, long* width, long* height,
         VARIANT child) override
     {
-        if (!left || !top || !width || !height) return E_POINTER;
+        if (!left || !top || !width || !height)
+        {
+            return E_POINTER;
+        }
         *left = *top = *width = *height = 0;
-        if (!Valid(child)) return E_INVALIDARG;
-        RECT bounds{};
-        if (child.lVal == CHILDID_SELF) GetClientRect(popup_->menu_, &bounds);
-        else bounds = popup_->MenuBounds(child.lVal - 1);
-        MapWindowPoints(popup_->menu_, nullptr, reinterpret_cast<POINT*>(&bounds), 2);
+        auto element = Find(child);
+        if (!element)
+        {
+            return E_INVALIDARG;
+        }
+        auto bounds = element->bounds;
+        MapWindowPoints(window_, nullptr, reinterpret_cast<POINT*>(&bounds), 2);
         *left = bounds.left;
         *top = bounds.top;
         *width = bounds.right - bounds.left;
@@ -260,62 +329,287 @@ public:
     }
     HRESULT STDMETHODCALLTYPE accNavigate(long direction, VARIANT start, VARIANT* destination) override
     {
-        if (!destination) return E_POINTER;
+        if (!destination)
+        {
+            return E_POINTER;
+        }
         VariantInit(destination);
-        if (!Valid(start)) return E_INVALIDARG;
+        if (!Find(start))
+        {
+            return E_INVALIDARG;
+        }
         long child = 0;
-        auto count = static_cast<long>(popup_->content_.menu.size());
-        if (start.lVal == CHILDID_SELF && direction == NAVDIR_FIRSTCHILD) child = 1;
-        else if (start.lVal == CHILDID_SELF && direction == NAVDIR_LASTCHILD) child = count;
-        else if (start.lVal && (direction == NAVDIR_NEXT || direction == NAVDIR_DOWN)) child = start.lVal + 1;
-        else if (start.lVal && (direction == NAVDIR_PREVIOUS || direction == NAVDIR_UP)) child = start.lVal - 1;
-        if (child < 1 || child > count) return S_FALSE;
+        auto count = static_cast<long>(Owner()->Elements(window_).size()) - 1;
+        if (start.lVal == CHILDID_SELF && direction == NAVDIR_FIRSTCHILD)
+        {
+            child = 1;
+        }
+        else if (start.lVal == CHILDID_SELF && direction == NAVDIR_LASTCHILD)
+        {
+            child = count;
+        }
+        else if (start.lVal && (direction == NAVDIR_NEXT || direction == NAVDIR_DOWN))
+        {
+            child = start.lVal + 1;
+        }
+        else if (start.lVal && (direction == NAVDIR_PREVIOUS || direction == NAVDIR_UP))
+        {
+            child = start.lVal - 1;
+        }
+        if (child < 1 || child > count)
+        {
+            return S_FALSE;
+        }
         destination->vt = VT_I4;
         destination->lVal = child;
         return S_OK;
     }
     HRESULT STDMETHODCALLTYPE accHitTest(long x, long y, VARIANT* child) override
     {
-        if (!child) return E_POINTER;
+        if (!child)
+        {
+            return E_POINTER;
+        }
         VariantInit(child);
-        if (!popup_) return CO_E_OBJNOTCONNECTED;
+        auto owner = Owner();
+        if (!owner)
+        {
+            return CO_E_OBJNOTCONNECTED;
+        }
         POINT point{x, y};
-        ScreenToClient(popup_->menu_, &point);
-        RECT bounds{};
-        GetClientRect(popup_->menu_, &bounds);
-        if (!PtInRect(&bounds, point)) return S_FALSE;
-        auto item = popup_->MenuItemAt(point);
+        ScreenToClient(window_, &point);
+        auto elements = owner->Elements(window_);
+        if (!PtInRect(&elements.front().bounds, point))
+        {
+            return S_FALSE;
+        }
         child->vt = VT_I4;
-        child->lVal = item ? static_cast<long>(*item + 1) : CHILDID_SELF;
+        child->lVal = CHILDID_SELF;
+        for (std::size_t index = 1; index < elements.size(); ++index)
+        {
+            if (PtInRect(&elements[index].bounds, point))
+            {
+                child->lVal = static_cast<long>(index);
+                break;
+            }
+        }
         return S_OK;
     }
     HRESULT STDMETHODCALLTYPE accDoDefaultAction(VARIANT child) override
     {
-        if (!Valid(child) || child.lVal == CHILDID_SELF) return E_INVALIDARG;
-        // Let the accessibility call return before destroying its window.
-        PostMessageW(popup_->menu_, WM_COMMAND, static_cast<WPARAM>(child.lVal), 0);
+        auto element = Find(child);
+        if (!element)
+        {
+            return E_INVALIDARG;
+        }
+        if (element->defaultAction.empty())
+        {
+            return DISP_E_MEMBERNOTFOUND;
+        }
+        // Let the accessibility call return before the part's command can
+        // destroy its window.
+        PostMessageW(window_, WM_COMMAND, static_cast<WPARAM>(child.lVal), 0);
         return S_OK;
     }
     HRESULT STDMETHODCALLTYPE put_accName(VARIANT, BSTR) override { return E_NOTIMPL; }
     HRESULT STDMETHODCALLTYPE put_accValue(VARIANT, BSTR) override { return E_NOTIMPL; }
 
-private:
-    bool Valid(VARIANT child) const
+    HRESULT STDMETHODCALLTYPE QueryService(REFGUID service, REFIID iid, void** object) override
     {
-        return popup_ && child.vt == VT_I4 && child.lVal >= CHILDID_SELF &&
-            static_cast<std::size_t>(child.lVal) <= popup_->content_.menu.size();
+        if (!object)
+        {
+            return E_POINTER;
+        }
+        *object = nullptr;
+        return service == __uuidof(IAccessibleEx) ? QueryInterface(iid, object) : E_NOINTERFACE;
+    }
+
+    HRESULT STDMETHODCALLTYPE GetObjectForChild(long child, IAccessibleEx** object) override
+    {
+        if (!object)
+        {
+            return E_POINTER;
+        }
+        *object = nullptr;
+        if (parent_ || child == CHILDID_SELF || !Find(child))
+        {
+            return E_INVALIDARG;
+        }
+        auto element = Microsoft::WRL::Make<Accessibility>(Microsoft::WRL::ComPtr<Accessibility>(this), child);
+        if (!element)
+        {
+            return E_OUTOFMEMORY;
+        }
+        *object = element.Detach();
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE GetIAccessiblePair(IAccessible** accessible, long* child) override
+    {
+        if (!accessible || !child)
+        {
+            return E_POINTER;
+        }
+        *accessible = parent_ ? static_cast<IAccessible*>(parent_.Get()) : static_cast<IAccessible*>(this);
+        (*accessible)->AddRef();
+        *child = child_;
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE GetRuntimeId(SAFEARRAY** id) override
+    {
+        if (!id)
+        {
+            return E_POINTER;
+        }
+        // Unique within the window, as UI Automation requires.
+        *id = SafeArrayCreateVector(VT_I4, 0, 2);
+        if (!*id)
+        {
+            return E_OUTOFMEMORY;
+        }
+        LONG index = 0;
+        int part = UiaAppendRuntimeId;
+        SafeArrayPutElement(*id, &index, &part);
+        index = 1;
+        part = child_;
+        SafeArrayPutElement(*id, &index, &part);
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE ConvertReturnedElement(IRawElementProviderSimple*, IAccessibleEx** object) override
+    {
+        if (object)
+        {
+            *object = nullptr;
+        }
+        return E_NOTIMPL;
+    }
+
+    HRESULT STDMETHODCALLTYPE get_ProviderOptions(ProviderOptions* options) override
+    {
+        if (!options)
+        {
+            return E_POINTER;
+        }
+        *options = ProviderOptions_ServerSideProvider;
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE GetPatternProvider(PATTERNID, IUnknown** pattern) override
+    {
+        if (!pattern)
+        {
+            return E_POINTER;
+        }
+        *pattern = nullptr;
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE GetPropertyValue(PROPERTYID property, VARIANT* value) override
+    {
+        if (!value)
+        {
+            return E_POINTER;
+        }
+        VariantInit(value);
+        auto element = Find(child_);
+        if (!element)
+        {
+            return UIA_E_ELEMENTNOTAVAILABLE;
+        }
+        // Every other property comes from IAccessible.
+        if (property == UIA_AutomationIdPropertyId && !element->automationId.empty())
+        {
+            value->bstrVal = SysAllocString(element->automationId.c_str());
+            if (!value->bstrVal)
+            {
+                return E_OUTOFMEMORY;
+            }
+            value->vt = VT_BSTR;
+        }
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE get_HostRawElementProvider(IRawElementProviderSimple** host) override
+    {
+        if (!host)
+        {
+            return E_POINTER;
+        }
+        *host = nullptr;
+        return S_OK;
+    }
+
+private:
+    Popup* Owner() const { return parent_ ? parent_->popup_ : popup_; }
+    std::optional<Element> Find(long child) const
+    {
+        auto owner = Owner();
+        if (!owner || child < CHILDID_SELF)
+        {
+            return std::nullopt;
+        }
+        auto elements = owner->Elements(window_);
+        if (static_cast<std::size_t>(child) >= elements.size())
+        {
+            return std::nullopt;
+        }
+        return std::move(elements[child]);
+    }
+    std::optional<Element> Find(VARIANT child) const
+    {
+        return child.vt == VT_I4 ? Find(child.lVal) : std::nullopt;
+    }
+    HRESULT Number(VARIANT child, VARIANT* number, long Element::* field) const
+    {
+        if (!number)
+        {
+            return E_POINTER;
+        }
+        VariantInit(number);
+        auto element = Find(child);
+        if (!element)
+        {
+            return E_INVALIDARG;
+        }
+        number->vt = VT_I4;
+        number->lVal = (*element).*field;
+        return S_OK;
+    }
+    static HRESULT Text(std::wstring const& text, BSTR* result)
+    {
+        if (text.empty())
+        {
+            return Empty(result);
+        }
+        if (!result)
+        {
+            return E_POINTER;
+        }
+        *result = SysAllocString(text.c_str());
+        return *result ? S_OK : E_OUTOFMEMORY;
     }
     static HRESULT Empty(BSTR* text)
     {
-        if (!text) return E_POINTER;
+        if (!text)
+        {
+            return E_POINTER;
+        }
         *text = nullptr;
         return S_FALSE;
     }
-    Popup* popup_;
+    static HRESULT Missing(BSTR* text)
+    {
+        if (text)
+        {
+            *text = nullptr;
+        }
+        return text ? E_INVALIDARG : E_POINTER;
+    }
+    // Null once the window is destroyed; a child's comes from its parent.
+    Popup* popup_ = nullptr;
+    HWND window_;
     Microsoft::WRL::ComPtr<IAccessible> standard_;
+    Microsoft::WRL::ComPtr<Accessibility> parent_;
+    long child_ = CHILDID_SELF;
 };
 
-Popup::Popup()
+Popup::Popup(Strings const& strings) : strings_(strings)
 {
     WNDCLASSW type{};
     type.lpfnWndProc = Procedure;
@@ -339,31 +633,159 @@ Popup::~Popup()
     }
 }
 
-void Popup::Show(Content content)
+void Popup::Show(Content notice)
 {
+    // A prompt's or an interactive notice's window has other styles. Closing
+    // it before the new content is stored keeps its teardown on its own
+    // content.
+    if (asking_ || Interactive() != (notice.stay == NoticeStay::Interactive))
+    {
+        Close();
+    }
     // The menu belongs to the content it was opened for.
     if (menu_)
     {
         DestroyWindow(menu_);
     }
-    content_ = std::move(content);
+    // Dismiss only closes the notice, which Invoke does before running it.
+    notice.actions.push_back({.glyph = dismissGlyph, .label = strings_.Text("notification", "dismiss"),
+        .run = [] {}, .automationId = L"Dismiss"});
+    content_ = std::move(notice);
+    Present();
     if (!window_)
     {
-        // Created hidden on the taskbar's monitor, so it has that monitor's
-        // DPI before Layout sizes it. The frame styles keep DWM's rounded
-        // corners and shadow; WM_NCCALCSIZE removes their chrome.
-        auto work = Taskbar().rcWork;
-        CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE, windowClass, productName,
-            WS_POPUP | WS_CAPTION | WS_THICKFRAME, (work.left + work.right) / 2, (work.top + work.bottom) / 2,
-            1, 1, nullptr, nullptr, GetModuleHandleW(nullptr), this);
+        return;
+    }
+    // Screen readers announce the alert also when the notice takes no focus.
+    NotifyWinEvent(EVENT_SYSTEM_ALERT, window_, OBJID_CLIENT, CHILDID_SELF);
+    if (Interactive())
+    {
+        Focus(Answer());
+        SetForegroundWindow(window_);
+        SetFocus(window_);
+    }
+    ScheduleClose();
+}
+
+void Popup::Ask(Prompt prompt)
+{
+    // A notice's window has other styles, so it closes before the prompt
+    // replaces the content. Its More menu closes with it and reads the content
+    // it was opened for.
+    auto asking = asking_;
+    if (!asking)
+    {
+        Close();
+    }
+    Content content{.title = std::move(prompt.title), .body = std::move(prompt.body),
+        .location = std::move(prompt.location), .stay = NoticeStay::Interactive};
+    content.actions.push_back(std::move(prompt.answer));
+    for (auto& action : prompt.others)
+    {
+        content.actions.push_back(std::move(action));
+    }
+    if (!asking)
+    {
+        content_ = std::move(content);
+        asking_ = true;
+        Present();
         if (!window_)
         {
+            asking_ = false;
             return;
         }
-        // The popup is never active, so the tooltip shows without that.
-        tooltip_ = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr, WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX,
-            CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, window_, nullptr, GetModuleHandleW(nullptr),
-            nullptr);
+        Focus(Answer());
+        SetForegroundWindow(window_);
+        SetFocus(window_);
+        return;
+    }
+    auto previous = std::exchange(content_, std::move(content));
+    Layout();
+    SetWindowTextW(window_, content_.title.c_str());
+    auto usable = [this](std::size_t action)
+    {
+        return action < content_.actions.size() && content_.actions[action].enabled;
+    };
+    // A button that becomes disabled loses its press and the focus, so it
+    // never shows pressed or runs when it is enabled again.
+    if (pressed_ && pressed_->part == PopupPart::Action && !usable(pressed_->index))
+    {
+        pressed_.reset();
+    }
+    if (focused_ && !usable(*focused_))
+    {
+        Focus(std::nullopt);
+    }
+    if (!focused_)
+    {
+        Focus(Answer());
+    }
+    for (std::size_t index = 0; index < content_.actions.size(); ++index)
+    {
+        if (index >= previous.actions.size() || previous.actions[index].enabled != content_.actions[index].enabled)
+        {
+            NotifyWinEvent(EVENT_OBJECT_STATECHANGE, window_, OBJID_CLIENT, static_cast<LONG>(index + 1));
+        }
+    }
+    if (previous.title != content_.title || previous.body != content_.body)
+    {
+        NotifyWinEvent(EVENT_OBJECT_NAMECHANGE, window_, OBJID_CLIENT, CHILDID_SELF);
+        NotifyWinEvent(EVENT_SYSTEM_ALERT, window_, OBJID_CLIENT, CHILDID_SELF);
+    }
+}
+
+void Popup::Create()
+{
+    // Created hidden on the taskbar's monitor, so it has that monitor's DPI
+    // before Layout sizes it. The frame styles keep DWM's rounded corners and
+    // shadow; WM_NCCALCSIZE removes their chrome. A notice stays above other
+    // windows without a taskbar button, and only an interactive one takes the
+    // focus. A prompt has a taskbar button and an Alt+Tab entry, so the person
+    // can return to it, and is not topmost, so it never covers a window the
+    // person turns to, such as the other TinyTorrent's own confirmation.
+    auto work = Taskbar().rcWork;
+    DWORD style = WS_EX_TOOLWINDOW | WS_EX_TOPMOST;
+    if (asking_)
+    {
+        style = 0;
+    }
+    else if (content_.stay != NoticeStay::Interactive)
+    {
+        style |= WS_EX_NOACTIVATE;
+    }
+    CreateWindowExW(style, windowClass, productName, WS_POPUP | WS_CAPTION | WS_THICKFRAME,
+        (work.left + work.right) / 2, (work.top + work.bottom) / 2, 1, 1, nullptr, nullptr,
+        GetModuleHandleW(nullptr), this);
+    if (!window_)
+    {
+        return;
+    }
+    // A notice is mostly inactive, so the tooltip shows without activation.
+    tooltip_ = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr, WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX,
+        CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, window_, nullptr, GetModuleHandleW(nullptr),
+        nullptr);
+}
+
+bool Popup::Interactive() const
+{
+    return window_ && content_.stay == NoticeStay::Interactive;
+}
+
+std::size_t Popup::Answer() const
+{
+    // A prompt's answer comes first, and Dismiss last.
+    return asking_ ? 0 : content_.actions.size() - 1;
+}
+
+void Popup::Present()
+{
+    if (!window_)
+    {
+        Create();
+    }
+    if (!window_)
+    {
+        return;
     }
     auto shown = IsWindowVisible(window_) != FALSE;
     // New content stops a slide out, so the popup stays for its full time.
@@ -371,20 +793,14 @@ void Popup::Show(Content content)
     StopSlide();
     Layout();
     acrylic_.Apply(window_, theme_);
-    auto text = content_.title + L"\n" + content_.body;
-    if (!content_.detail.empty())
-    {
-        text += L"\n" + content_.detail;
-    }
-    SetWindowTextW(window_, text.c_str());
+    // The taskbar and Alt+Tab name a prompt by its window text; accessibility
+    // reads the whole content from the popup's own object.
+    SetWindowTextW(window_, content_.title.c_str());
     if (!shown && Slides())
     {
         StartSlide(false);
     }
-    ShowWindow(window_, SW_SHOWNOACTIVATE);
-    // Screen readers announce the alert although the popup never takes focus.
-    NotifyWinEvent(EVENT_SYSTEM_ALERT, window_, OBJID_CLIENT, CHILDID_SELF);
-    ScheduleClose();
+    ShowWindow(window_, Interactive() ? SW_SHOW : SW_SHOWNOACTIVATE);
 }
 
 void Popup::Close()
@@ -398,7 +814,7 @@ void Popup::Close()
 
 void Popup::ScheduleClose()
 {
-    if (!content_.persistent && !tracking_ && !menu_)
+    if (content_.stay == NoticeStay::Timed && !tracking_ && !menu_)
     {
         SetTimer(window_, closeTimer, Duration(), nullptr);
     }
@@ -459,11 +875,29 @@ void Popup::Layout()
 
     auto width = Scale(popupWidth, dpi);
     auto inset = Scale(padding, dpi);
+    auto device = GetDC(window_);
+    // The popup widens until every button holds its whole label, because
+    // the buttons share equal widths and a cut action label hides the action.
+    if (!content_.actions.empty())
+    {
+        auto previous = SelectObject(device, font_);
+        LONG widest = 0;
+        for (auto const& action : content_.actions)
+        {
+            SIZE label{};
+            GetTextExtentPoint32W(device, action.label.c_str(), static_cast<int>(action.label.size()), &label);
+            widest = std::max(widest, label.cx);
+        }
+        SelectObject(device, previous);
+        auto icon = hasIcons_ ? Scale(actionIconSize, dpi) + Scale(actionIconGap, dpi) : 0;
+        auto count = static_cast<LONG>(content_.actions.size());
+        auto button = widest + icon + 2 * Scale(actionInset, dpi);
+        width = std::max<LONG>(width, 2 * inset + count * button + (count - 1) * Scale(actionSpacing, dpi));
+    }
     close_ = {width - Scale(closeInset + closeSize, dpi), Scale(closeInset, dpi), width - Scale(closeInset, dpi),
         Scale(closeInset + closeSize, dpi)};
     more_ = {close_.left - Scale(closeSize, dpi), close_.top, close_.left, close_.bottom};
     header_ = {inset, close_.top, close_.left, close_.bottom};
-    auto device = GetDC(window_);
     auto measure = [&](std::wstring const& text, HFONT font, LONG top)
     {
         RECT bounds{inset, top, width - inset, top};
@@ -483,14 +917,14 @@ void Popup::Layout()
         (content_.body.empty() ? 0 : Scale(bodyGap, dpi)));
     auto bottom = body_.bottom;
     detail_ = {};
-    if (!content_.detail.empty())
+    auto lines = Lines();
+    if (!lines.empty())
     {
         auto previous = SelectObject(device, caption_);
         TEXTMETRICW metrics{};
         GetTextMetricsW(device, &metrics);
         SelectObject(device, previous);
-        auto lines = 1 + std::count(content_.detail.begin(), content_.detail.end(), L'\n');
-        auto height = std::min<LONG>(static_cast<LONG>(lines) * (metrics.tmHeight + Scale(lineGap, dpi)) -
+        auto height = std::min<LONG>(static_cast<LONG>(lines.size()) * (metrics.tmHeight + Scale(lineGap, dpi)) -
             Scale(lineGap, dpi), Scale(textLimit, dpi));
         detail_ = {inset, bottom + Scale(detailGap, dpi), width - inset,
             bottom + Scale(detailGap, dpi) + height};
@@ -515,9 +949,12 @@ void Popup::Layout()
     auto height = bottom + inset;
     auto work = Taskbar().rcWork;
     place_ = {work.right - Scale(margin, dpi) - width, work.bottom - Scale(margin, dpi) - height};
-    // A slide keeps moving the popup toward or away from its new place.
+    // A slide keeps moving the popup toward or away from its new place. A
+    // prompt keeps its place in the z-order, so asking again never raises it
+    // over a window the person turned to.
     auto move = slideStart_ ? SWP_NOMOVE : 0;
-    SetWindowPos(window_, HWND_TOPMOST, place_.x, place_.y, width, height, SWP_NOACTIVATE | move);
+    auto order = asking_ ? SWP_NOZORDER : 0;
+    SetWindowPos(window_, HWND_TOPMOST, place_.x, place_.y, width, height, SWP_NOACTIVATE | move | order);
     InvalidateRect(window_, nullptr, FALSE);
 }
 
@@ -588,47 +1025,75 @@ void Popup::Paint(HWND window)
         MAKEINTRESOURCEW(IDI_TINYTORRENT), IMAGE_ICON, size, size, LR_SHARED));
     DrawIconEx(canvas.Device(), header_.left, (header_.top + header_.bottom - size) / 2, icon, size, size, 0,
         nullptr, DI_NORMAL);
+    // A mouse press shows while the pointer stays on its part, as on Windows'
+    // buttons; a key press shows until its release.
+    auto fill = [this](Target target, BYTE rest)
+    {
+        if (pressed_ == target && (GetCapture() != window_ || hover_ == target))
+        {
+            return pressedOpacity;
+        }
+        return hover_ == target ? hoverOpacity : rest;
+    };
     // As in Windows' own notifications, More shows only while the pointer is
     // over the popup, so the message is all the person reads.
     auto showsMore = !content_.menu.empty() && (hover_ || menu_);
     RECT name{header_.left + size + Scale(iconGap, dpi), header_.top, showsMore ? more_.left : header_.right,
         header_.bottom};
-    canvas.Text(productName, name, labelFormat, caption_);
+    canvas.Text(productName, name, labelFormat, caption_, foreground);
     if (showsMore)
     {
-        if (hover_ == PopupPart::More || menu_)
+        if (auto opacity = menu_ ? hoverOpacity : fill({PopupPart::More}, 0))
         {
-            canvas.Fill(more_, foreground, hoverOpacity, corner);
+            canvas.Fill(more_, foreground, opacity, corner);
         }
-        canvas.Text(moreGlyph, more_, DT_SINGLELINE | DT_CENTER | DT_VCENTER, glyphs_);
+        canvas.Text(moreGlyph, more_, DT_SINGLELINE | DT_CENTER | DT_VCENTER, glyphs_, foreground);
     }
-    if (hover_ == PopupPart::Close)
+    if (auto opacity = fill({PopupPart::Close}, 0))
     {
-        canvas.Fill(close_, foreground, hoverOpacity, corner);
+        canvas.Fill(close_, foreground, opacity, corner);
     }
-    canvas.Text(closeGlyph, close_, DT_SINGLELINE | DT_CENTER | DT_VCENTER, glyphs_);
-    canvas.Text(content_.title, title_, textFormat, headline_);
-    canvas.Text(content_.body, body_, textFormat, font_);
+    canvas.Text(closeGlyph, close_, DT_SINGLELINE | DT_CENTER | DT_VCENTER, glyphs_, foreground);
+    canvas.Text(content_.title, title_, textFormat, headline_, foreground);
+    canvas.Text(content_.body, body_, textFormat, font_, foreground);
     auto previous = SelectObject(canvas.Device(), caption_);
     TEXTMETRICW metrics{};
     GetTextMetricsW(canvas.Device(), &metrics);
     SelectObject(canvas.Device(), previous);
-    std::wistringstream details(content_.detail);
     auto bounds = detail_;
-    for (std::wstring line; std::getline(details, line) && bounds.top + metrics.tmHeight <= detail_.bottom;)
+    for (auto const& line : Lines())
     {
+        if (bounds.top + metrics.tmHeight > detail_.bottom)
+        {
+            break;
+        }
         bounds.bottom = bounds.top + metrics.tmHeight;
         auto ellipsis = line.find(L'\\') == std::wstring::npos ? DT_END_ELLIPSIS : DT_PATH_ELLIPSIS;
-        canvas.Text(line, bounds, detailFormat | ellipsis, caption_);
+        canvas.Text(line, bounds, detailFormat | ellipsis, caption_, foreground);
         bounds.top = bounds.bottom + Scale(lineGap, dpi);
     }
     auto iconWidth = hasIcons_ ? Scale(actionIconSize, dpi) + Scale(actionIconGap, dpi) : 0;
+    auto focused = GetFocus() == window_;
     previous = SelectObject(canvas.Device(), font_);
     for (std::size_t index = 0; index < actions_.size(); ++index)
     {
         auto const& action = content_.actions[index];
         auto button = actions_[index];
-        canvas.Fill(button, foreground, actionHover_ == index ? hoverOpacity : buttonOpacity, corner);
+        auto opacity = action.enabled ? fill({PopupPart::Action, index}, buttonOpacity) : buttonOpacity;
+        canvas.Fill(button, foreground, opacity, corner);
+        if (auto edge = acrylic_.Edge())
+        {
+            canvas.Stroke(button, *edge, Scale(edgeWidth, dpi), corner);
+        }
+        // With no emphasised button, the ring is what shows where Enter goes.
+        if (focused && focused_ == index)
+        {
+            auto ring = button;
+            auto offset = Scale(focusWidth + focusGap, dpi);
+            InflateRect(&ring, offset, offset);
+            canvas.Stroke(ring, acrylic_.Focus(), Scale(focusWidth, dpi), corner + offset);
+        }
+        auto color = action.enabled ? foreground : acrylic_.Disabled();
         SIZE label{};
         GetTextExtentPoint32W(canvas.Device(), action.label.c_str(), static_cast<int>(action.label.size()), &label);
         // The icon and word are centred together, and a word too long for the
@@ -639,51 +1104,47 @@ void Popup::Paint(HWND window)
         if (hasIcons_)
         {
             RECT glyph{left, button.top, left + Scale(actionIconSize, dpi), button.bottom};
-            canvas.Text(std::wstring(1, action.glyph), glyph, DT_SINGLELINE | DT_CENTER | DT_VCENTER, icons_);
+            canvas.Text(std::wstring(1, action.glyph), glyph, DT_SINGLELINE | DT_CENTER | DT_VCENTER, icons_, color);
         }
         RECT text{left + iconWidth, button.top, button.right - inner, button.bottom};
-        canvas.Text(action.label, text, labelFormat, font_);
+        canvas.Text(action.label, text, labelFormat, font_, color);
     }
     SelectObject(canvas.Device(), previous);
 }
 
-void Popup::Hover(std::optional<PopupPart> part, std::optional<std::size_t> action)
+void Popup::Hover(std::optional<Target> target)
 {
-    if (part != hover_ || action != actionHover_)
+    if (target != hover_)
     {
-        hover_ = part;
-        actionHover_ = action;
+        hover_ = target;
         InvalidateRect(window_, nullptr, FALSE);
     }
 }
 
-PopupPart Popup::Part(POINT point) const
+std::optional<Popup::Target> Popup::PartAt(POINT point) const
 {
+    RECT client{};
+    GetClientRect(window_, &client);
+    if (!PtInRect(&client, point))
+    {
+        return std::nullopt;
+    }
     if (PtInRect(&close_, point))
     {
-        return PopupPart::Close;
+        return Target{PopupPart::Close};
     }
     if (!content_.menu.empty() && PtInRect(&more_, point))
     {
-        return PopupPart::More;
+        return Target{PopupPart::More};
     }
-    if (ActionAt(point))
-    {
-        return PopupPart::Action;
-    }
-    return PopupPart::Body;
-}
-
-std::optional<std::size_t> Popup::ActionAt(POINT point) const
-{
     for (std::size_t index = 0; index < actions_.size(); ++index)
     {
         if (PtInRect(&actions_[index], point))
         {
-            return index;
+            return Target{PopupPart::Action, index};
         }
     }
-    return std::nullopt;
+    return Target{PopupPart::Body};
 }
 
 void Popup::SetTooltips()
@@ -694,7 +1155,7 @@ void Popup::SetTooltips()
     }
     TOOLINFOW tool{sizeof(tool)};
     tool.hwnd = window_;
-    // Each button's tool id is its index, so the earlier ids are known.
+    // Each tool's id is its index, so the earlier ids are known.
     for (auto count = SendMessageW(tooltip_, TTM_GETTOOLCOUNT, 0, 0); count > 0; --count)
     {
         tool.uId = static_cast<UINT_PTR>(count - 1);
@@ -707,6 +1168,292 @@ void Popup::SetTooltips()
         tool.rect = actions_[index];
         tool.lpszText = const_cast<LPWSTR>(content_.actions[index].tooltip.c_str());
         SendMessageW(tooltip_, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&tool));
+    }
+    if (content_.location)
+    {
+        tool.uId = actions_.size();
+        tool.rect = detail_;
+        tool.lpszText = const_cast<LPWSTR>(content_.location->path.c_str());
+        SendMessageW(tooltip_, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&tool));
+    }
+}
+
+std::vector<std::wstring> Popup::Lines() const
+{
+    std::vector<std::wstring> lines;
+    if (content_.location)
+    {
+        lines.push_back(content_.location->caption);
+        lines.push_back(content_.location->path.wstring());
+    }
+    std::wistringstream detail(content_.detail);
+    for (std::wstring line; std::getline(detail, line);)
+    {
+        lines.push_back(std::move(line));
+    }
+    return lines;
+}
+
+// The window first, then the buttons, so a button's child ID is its index
+// plus one, then Close and More.
+std::vector<Popup::Target> Popup::Targets() const
+{
+    std::vector<Target> targets{{PopupPart::Body}};
+    for (std::size_t index = 0; index < content_.actions.size(); ++index)
+    {
+        targets.push_back({PopupPart::Action, index});
+    }
+    targets.push_back({PopupPart::Close});
+    // Listed whether or not the pointer shows it, so a person without a
+    // pointer can reach the menu.
+    if (!content_.menu.empty())
+    {
+        targets.push_back({PopupPart::More});
+    }
+    return targets;
+}
+
+std::vector<Popup::Element> Popup::Elements(HWND window) const
+{
+    RECT client{};
+    GetClientRect(window, &client);
+    long hidden = IsWindowVisible(window) ? 0 : STATE_SYSTEM_INVISIBLE;
+    auto focused = GetFocus() == window;
+    std::vector<Element> elements;
+    if (window == menu_)
+    {
+        elements.push_back({.name = content_.menuTitle, .role = ROLE_SYSTEM_MENUPOPUP,
+            .state = STATE_SYSTEM_FOCUSABLE | hidden | (focused && !menuHover_ ? STATE_SYSTEM_FOCUSED : 0),
+            .bounds = client});
+        for (std::size_t index = 0; index < content_.menu.size(); ++index)
+        {
+            auto const& item = content_.menu[index];
+            long state = STATE_SYSTEM_FOCUSABLE | STATE_SYSTEM_SELECTABLE | hidden;
+            if (menuHover_ == index)
+            {
+                state |= STATE_SYSTEM_SELECTED | (focused ? STATE_SYSTEM_FOCUSED : 0);
+            }
+            elements.push_back({.name = item.text, .automationId = item.automationId, .role = ROLE_SYSTEM_MENUITEM,
+                .state = state, .defaultAction = item.text, .bounds = MenuBounds(index)});
+        }
+        return elements;
+    }
+    for (auto target : Targets())
+    {
+        switch (target.part)
+        {
+        case PopupPart::Body:
+        {
+            // The whole content, which an alert announces.
+            auto text = content_.title + L"\n" + content_.body;
+            for (auto const& line : Lines())
+            {
+                text += L"\n" + line;
+            }
+            long state = hidden;
+            if (Interactive())
+            {
+                state |= STATE_SYSTEM_FOCUSABLE | (focused && !focused_ ? STATE_SYSTEM_FOCUSED : 0);
+            }
+            elements.push_back({.name = std::move(text), .role = asking_ ? ROLE_SYSTEM_DIALOG : ROLE_SYSTEM_ALERT,
+                .state = state, .defaultAction = content_.select ? content_.title : std::wstring(),
+                .bounds = client});
+            break;
+        }
+        case PopupPart::Action:
+        {
+            auto const& action = content_.actions[target.index];
+            long state = hidden;
+            if (!action.enabled)
+            {
+                state |= STATE_SYSTEM_UNAVAILABLE;
+            }
+            else if (Interactive())
+            {
+                state |= STATE_SYSTEM_FOCUSABLE;
+            }
+            if (Interactive() && Answer() == target.index)
+            {
+                state |= STATE_SYSTEM_DEFAULT;
+            }
+            if (focused && focused_ == target.index)
+            {
+                state |= STATE_SYSTEM_FOCUSED;
+            }
+            if (pressed_ == target)
+            {
+                state |= STATE_SYSTEM_PRESSED;
+            }
+            auto bounds = target.index < actions_.size() ? actions_[target.index] : RECT{};
+            elements.push_back({.name = action.label, .description = action.tooltip,
+                .automationId = action.automationId, .role = ROLE_SYSTEM_PUSHBUTTON, .state = state,
+                .defaultAction = action.label, .bounds = bounds});
+            break;
+        }
+        case PopupPart::Close:
+        {
+            auto name = strings_.Text("notification", "close");
+            elements.push_back({.name = name, .automationId = L"Close", .role = ROLE_SYSTEM_PUSHBUTTON,
+                .state = hidden, .defaultAction = name, .bounds = close_});
+            break;
+        }
+        case PopupPart::More:
+        {
+            auto name = strings_.Text("notification", "more");
+            auto state = hidden | STATE_SYSTEM_HASPOPUP | (menu_ ? STATE_SYSTEM_EXPANDED : STATE_SYSTEM_COLLAPSED);
+            elements.push_back({.name = name, .automationId = L"More", .role = ROLE_SYSTEM_BUTTONMENU,
+                .state = state, .defaultAction = name, .bounds = more_});
+            break;
+        }
+        }
+    }
+    return elements;
+}
+
+std::optional<long> Popup::FocusedChild(HWND window) const
+{
+    if (GetFocus() != window)
+    {
+        return std::nullopt;
+    }
+    auto item = window == menu_ ? menuHover_ : focused_;
+    return item ? static_cast<long>(*item + 1) : CHILDID_SELF;
+}
+
+bool Popup::Select(HWND window, long child, long flags)
+{
+    if (window == menu_)
+    {
+        SetFocus(menu_);
+        HoverMenu(child == CHILDID_SELF ? std::nullopt : std::optional<std::size_t>(child - 1));
+        return true;
+    }
+    // Only a prompt or an interactive notice takes the focus, and then only
+    // its window and its enabled buttons do.
+    if (!Interactive() || !(flags & SELFLAG_TAKEFOCUS))
+    {
+        return false;
+    }
+    auto target = Targets()[child];
+    if (target.part == PopupPart::Body)
+    {
+        Focus(std::nullopt);
+    }
+    else if (target.part != PopupPart::Action || !Focus(target.index))
+    {
+        return false;
+    }
+    SetFocus(window_);
+    return true;
+}
+
+LRESULT Popup::Serve(Accessibility*& accessibility, HWND window, WPARAM first)
+{
+    if (!accessibility)
+    {
+        accessibility = Microsoft::WRL::Make<Accessibility>(*this, window).Detach();
+    }
+    return accessibility ? LresultFromObject(IID_IAccessible, first, static_cast<IAccessible*>(accessibility)) : 0;
+}
+
+bool Popup::Focus(std::optional<std::size_t> action)
+{
+    if (action && !content_.actions[*action].enabled)
+    {
+        return false;
+    }
+    focused_ = action;
+    InvalidateRect(window_, nullptr, FALSE);
+    if (GetFocus() == window_)
+    {
+        NotifyWinEvent(EVENT_OBJECT_FOCUS, window_, OBJID_CLIENT,
+            action ? static_cast<LONG>(*action + 1) : CHILDID_SELF);
+    }
+    return true;
+}
+
+void Popup::Run(Target target)
+{
+    switch (target.part)
+    {
+    case PopupPart::More:
+        // The More button toggles its menu, which a click on a notice does
+        // not close, because a notice never takes the focus.
+        if (menu_)
+        {
+            DestroyWindow(menu_);
+        }
+        else
+        {
+            OpenMenu();
+        }
+        return;
+    case PopupPart::Close:
+        Close();
+        return;
+    case PopupPart::Action:
+        Invoke(target.index);
+        return;
+    case PopupPart::Body:
+        // Only Close and Dismiss close a notice before its time, so selecting
+        // its message does nothing unless the content acts on it, which a
+        // prompt's never does.
+        if (content_.select)
+        {
+            // A copy, because the code it runs may replace the content.
+            auto select = content_.select;
+            Close();
+            select();
+        }
+        return;
+    }
+}
+
+void Popup::Invoke(std::size_t index)
+{
+    if (!content_.actions[index].enabled)
+    {
+        return;
+    }
+    ReleaseCapture();
+    // A copy, because the code it runs may replace the content.
+    auto action = content_.actions[index];
+    if (action.closes)
+    {
+        Close();
+    }
+    action.run();
+}
+
+void Popup::CopyPath()
+{
+    auto const& path = content_.location->path.native();
+    auto bytes = (path.size() + 1) * sizeof(wchar_t);
+    auto memory = GlobalAlloc(GMEM_MOVEABLE, bytes);
+    if (!memory)
+    {
+        return;
+    }
+    auto text = GlobalLock(memory);
+    if (!text)
+    {
+        GlobalFree(memory);
+        return;
+    }
+    memcpy(text, path.c_str(), bytes);
+    GlobalUnlock(memory);
+    if (OpenClipboard(window_))
+    {
+        // The clipboard owns the memory once it accepts it.
+        if (EmptyClipboard() && SetClipboardData(CF_UNICODETEXT, memory))
+        {
+            memory = nullptr;
+        }
+        CloseClipboard();
+    }
+    if (memory)
+    {
+        GlobalFree(memory);
     }
 }
 
@@ -727,11 +1474,75 @@ LRESULT Popup::Handle(HWND window, UINT message, WPARAM first, LPARAM second)
 {
     switch (message)
     {
+    case WM_GETOBJECT:
+        if (static_cast<LONG>(second) == OBJID_CLIENT)
+        {
+            return Serve(accessibility_, window, first);
+        }
+        break;
+    case WM_SETFOCUS:
+        Focus(focused_);
+        return 0;
+    case WM_KILLFOCUS:
+        pressed_.reset();
+        InvalidateRect(window, nullptr, FALSE);
+        return 0;
+    case WM_KEYDOWN:
+    case WM_KEYUP:
+        // Only a prompt or an interactive notice has the focus.
+        if (Interactive() && HandleKey(message, first, second))
+        {
+            return 0;
+        }
+        break;
+    case WM_SYSKEYDOWN:
+        // Alt+F4 held since before the popup had the focus would close it
+        // unread.
+        if (Interactive() && (second & keyHeld))
+        {
+            return 0;
+        }
+        break;
+    case WM_CONTEXTMENU:
+        if (content_.location)
+        {
+            POINT point{GET_X_LPARAM(second), GET_Y_LPARAM(second)};
+            // The context menu key gives no point.
+            if (point.x == -1 && point.y == -1)
+            {
+                point = {detail_.left, detail_.bottom};
+                ClientToScreen(window, &point);
+            }
+            auto copy = strings_.Text("notification", "copy_path");
+            auto menu = CreatePopupMenu();
+            AppendMenuW(menu, MF_STRING, 1, copy.c_str());
+            auto selected = TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_NONOTIFY, point.x, point.y, window, nullptr);
+            DestroyMenu(menu);
+            if (selected == 1)
+            {
+                CopyPath();
+            }
+            return 0;
+        }
+        break;
+    case WM_CLOSE:
+        Close();
+        return 0;
+    case WM_COMMAND:
+    {
+        // An accessible default action, posted with the part's child ID.
+        auto targets = Targets();
+        if (first < targets.size())
+        {
+            Run(targets[first]);
+        }
+        return 0;
+    }
     case WM_TIMER:
         if (first == closeTimer)
         {
             KillTimer(window, closeTimer);
-            if (content_.persistent)
+            if (content_.stay != NoticeStay::Timed)
             {
                 return 0;
             }
@@ -750,7 +1561,7 @@ LRESULT Popup::Handle(HWND window, UINT message, WPARAM first, LPARAM second)
         }
         return 0;
     case WM_MOUSEACTIVATE:
-        return MA_NOACTIVATE;
+        return Interactive() ? MA_ACTIVATE : MA_NOACTIVATE;
     case WM_MOUSEMOVE:
         // The popup stays while the pointer is over it, so it can be read.
         if (!tracking_)
@@ -764,55 +1575,66 @@ LRESULT Popup::Handle(HWND window, UINT message, WPARAM first, LPARAM second)
             StopSlide();
             SetWindowPos(window, nullptr, place_.x, place_.y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
         }
-    {
-        POINT point{GET_X_LPARAM(second), GET_Y_LPARAM(second)};
-        Hover(Part(point), ActionAt(point));
+        Hover(PartAt({GET_X_LPARAM(second), GET_Y_LPARAM(second)}));
         return 0;
-    }
     case WM_MOUSELEAVE:
         tracking_ = false;
-        Hover(std::nullopt, std::nullopt);
+        // A notice that takes no focus never has the foreground, so Windows
+        // sends it no mouse input outside it, and the release of a press
+        // dragged off it never arrives.
+        if (!Interactive())
+        {
+            pressed_.reset();
+        }
+        Hover(std::nullopt);
         ScheduleClose();
         return 0;
-    case WM_LBUTTONUP:
+    case WM_LBUTTONDOWN:
     {
-        POINT point{GET_X_LPARAM(second), GET_Y_LPARAM(second)};
-        auto part = Part(point);
-        // The More button toggles its menu, which a click on this popup does
-        // not close, because the popup never takes the focus.
-        if (part == PopupPart::More)
+        auto target = PartAt({GET_X_LPARAM(second), GET_Y_LPARAM(second)});
+        // A disabled button takes no press.
+        if (target && target->part == PopupPart::Action && !content_.actions[target->index].enabled)
         {
-            if (menu_)
-            {
-                DestroyWindow(menu_);
-            }
-            else
-            {
-                OpenMenu();
-            }
-            return 0;
+            target.reset();
         }
-        // Copies, because the code they run may replace the content.
-        if (part == PopupPart::Action)
+        // Captured first, because taking the capture from this window would
+        // clear the new press.
+        if (target)
         {
-            auto action = content_.actions[*ActionAt(point)];
-            if (action.closes)
-            {
-                Close();
-            }
-            action.run();
-            return 0;
+            SetCapture(window);
         }
-        if (part == PopupPart::Body && content_.select)
-        {
-            auto select = content_.select;
-            Close();
-            select();
-            return 0;
-        }
-        Close();
+        pressed_ = target;
+        InvalidateRect(window, nullptr, FALSE);
         return 0;
     }
+    case WM_LBUTTONUP:
+    {
+        // A copy, because releasing the capture clears the press.
+        auto pressed = pressed_;
+        pressed_.reset();
+        ReleaseCapture();
+        InvalidateRect(window, nullptr, FALSE);
+        // Only a release on the pressed part acts, so a press dragged onto a
+        // button, or off one, does nothing.
+        if (pressed && pressed == PartAt({GET_X_LPARAM(second), GET_Y_LPARAM(second)}))
+        {
+            Run(*pressed);
+        }
+        return 0;
+    }
+    case WM_CAPTURECHANGED:
+    {
+        pressed_.reset();
+        // Tracking starts again, so a pointer released outside the popup still
+        // reports its leave, at once, and a notice schedules its close.
+        TRACKMOUSEEVENT track{sizeof(track), TME_LEAVE, window, 0};
+        tracking_ = TrackMouseEvent(&track) != FALSE;
+        InvalidateRect(window, nullptr, FALSE);
+        return 0;
+    }
+    case WM_CANCELMODE:
+        pressed_.reset();
+        break;
     case WM_NCCALCSIZE:
         return 0;
     case WM_NCHITTEST:
@@ -833,17 +1655,89 @@ LRESULT Popup::Handle(HWND window, UINT message, WPARAM first, LPARAM second)
         acrylic_.Apply(window, theme_);
         return 0;
     case WM_NCDESTROY:
+        if (accessibility_)
+        {
+            accessibility_->Disconnect();
+            accessibility_->Release();
+            accessibility_ = nullptr;
+        }
         // The tooltip is owned by the popup, so Windows has destroyed it.
         window_ = nullptr;
         tooltip_ = nullptr;
         tracking_ = false;
         hover_.reset();
-        actionHover_.reset();
+        pressed_.reset();
+        focused_.reset();
+        asking_ = false;
         slideStart_ = 0;
         leaving_ = false;
         break;
     }
     return DefWindowProcW(window, message, first, second);
+}
+
+bool Popup::HandleKey(UINT message, WPARAM key, LPARAM flags)
+{
+    if (message == WM_KEYUP)
+    {
+        // Space acts on its release, as on Windows' buttons.
+        if (key != VK_SPACE || !focused_ || pressed_ != Target{PopupPart::Action, *focused_})
+        {
+            return false;
+        }
+        pressed_.reset();
+        InvalidateRect(window_, nullptr, FALSE);
+        Invoke(*focused_);
+        return true;
+    }
+    // A repeat, or a key held since before the popup had the focus, could
+    // answer it unread.
+    if (flags & keyHeld)
+    {
+        return true;
+    }
+    switch (key)
+    {
+    case VK_ESCAPE:
+        Close();
+        return true;
+    case VK_TAB:
+    {
+        pressed_.reset();
+        auto count = content_.actions.size();
+        auto back = GetKeyState(VK_SHIFT) < 0;
+        // Without a focused button, Tab starts at the first and Shift+Tab at
+        // the last.
+        auto index = focused_.value_or(back ? 0 : count - 1);
+        for (std::size_t step = 0; step < count; ++step)
+        {
+            index = (index + (back ? count - 1 : 1)) % count;
+            if (Focus(index))
+            {
+                break;
+            }
+        }
+        return true;
+    }
+    case VK_RETURN:
+        Invoke(focused_.value_or(Answer()));
+        return true;
+    case VK_SPACE:
+        if (focused_)
+        {
+            pressed_ = Target{PopupPart::Action, *focused_};
+            InvalidateRect(window_, nullptr, FALSE);
+        }
+        return true;
+    case 'C':
+        if (GetKeyState(VK_CONTROL) < 0 && content_.location)
+        {
+            CopyPath();
+            return true;
+        }
+        return false;
+    }
+    return false;
 }
 
 // The menu opens above the More button, aligned to its right edge, as
@@ -889,7 +1783,14 @@ void Popup::OpenMenu()
     KillTimer(window_, closeTimer);
     acrylic_.Apply(menu_, theme_);
     ShowWindow(menu_, SW_SHOW);
-    SetForegroundWindow(menu_);
+    // Without the focus, nothing would close the menu, and it would keep the
+    // notice open. That happens when accessibility opens it while another
+    // app is in front.
+    if (!SetForegroundWindow(menu_))
+    {
+        DestroyWindow(menu_);
+        return;
+    }
     SetFocus(menu_);
     NotifyWinEvent(EVENT_SYSTEM_MENUPOPUPSTART, menu_, OBJID_CLIENT, CHILDID_SELF);
     NotifyWinEvent(EVENT_OBJECT_FOCUS, menu_, OBJID_CLIENT, CHILDID_SELF);
@@ -903,27 +1804,29 @@ void Popup::PaintMenu(HWND window)
     auto padding = Scale(menuPadding, dpi);
     auto inset = Scale(menuInset, dpi);
     auto width = canvas.Bounds().right;
+    auto foreground = acrylic_.Foreground();
     // The title lines up with the items' text, as in Windows' menu.
     RECT title{padding + inset + MenuIconsWidth(dpi), padding, width - padding - inset, padding + menuRow_};
-    canvas.Text(content_.menuTitle, title, labelFormat, font_);
+    canvas.Text(content_.menuTitle, title, labelFormat, font_, foreground);
     auto line = title.bottom + Scale(menuSeparator, dpi) / 2;
-    canvas.Fill({0, line, width, line + Scale(1, dpi)}, acrylic_.Foreground(), dividerOpacity, 0);
+    canvas.Fill({0, line, width, line + Scale(1, dpi)}, foreground, dividerOpacity, 0);
     for (std::size_t index = 0; index < content_.menu.size(); ++index)
     {
         auto const& item = content_.menu[index];
         auto row = MenuBounds(index);
         if (menuHover_ == index)
         {
-            canvas.Fill(row, acrylic_.Foreground(), hoverOpacity, Scale(radius, dpi));
+            canvas.Fill(row, foreground, hoverOpacity, Scale(radius, dpi));
         }
         auto left = row.left + inset;
         if (hasIcons_)
         {
             RECT icon{left, row.top, left + Scale(menuIconSize, dpi), row.bottom};
-            canvas.Text(std::wstring(1, item.glyph), icon, DT_SINGLELINE | DT_CENTER | DT_VCENTER, icons_);
+            canvas.Text(std::wstring(1, item.glyph), icon, DT_SINGLELINE | DT_CENTER | DT_VCENTER, icons_,
+                foreground);
         }
         RECT text{left + MenuIconsWidth(dpi), row.top, row.right - inset, row.bottom};
-        canvas.Text(item.text, text, labelFormat, font_);
+        canvas.Text(item.text, text, labelFormat, font_, foreground);
     }
 }
 
@@ -1005,11 +1908,7 @@ LRESULT Popup::HandleMenu(HWND window, UINT message, WPARAM first, LPARAM second
     case WM_GETOBJECT:
         if (static_cast<LONG>(second) == OBJID_CLIENT)
         {
-            if (!accessibility_)
-            {
-                accessibility_ = Microsoft::WRL::Make<MenuAccessibility>(*this).Detach();
-            }
-            return accessibility_ ? LresultFromObject(IID_IAccessible, first, accessibility_) : 0;
+            return Serve(menuAccessibility_, window, first);
         }
         break;
     case WM_COMMAND:
@@ -1079,11 +1978,11 @@ LRESULT Popup::HandleMenu(HWND window, UINT message, WPARAM first, LPARAM second
         return 0;
     case WM_NCDESTROY:
         NotifyWinEvent(EVENT_SYSTEM_MENUPOPUPEND, window, OBJID_CLIENT, CHILDID_SELF);
-        if (accessibility_)
+        if (menuAccessibility_)
         {
-            accessibility_->Disconnect();
-            accessibility_->Release();
-            accessibility_ = nullptr;
+            menuAccessibility_->Disconnect();
+            menuAccessibility_->Release();
+            menuAccessibility_ = nullptr;
         }
         menu_ = nullptr;
         menuHover_.reset();

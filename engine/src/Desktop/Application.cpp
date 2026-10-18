@@ -295,7 +295,7 @@ int Application::Run(bool background, std::vector<std::string> sources)
         auto response = Activate(std::move(sources));
         if (!response.value("ok", false))
         {
-            ShowError("source", Wide(response.at("error").dump()));
+            ShowError({.code = "source", .detail = Wide(response.at("error").dump()), .interactive = true});
             return 1;
         }
     }
@@ -438,7 +438,7 @@ void Application::TurnOff(std::vector<NoticeSwitch> notices)
     {
         if (outcome.error)
         {
-            ShowError("notification", Wide(outcome.detail));
+            ShowError({.code = "notification", .detail = Wide(outcome.detail), .interactive = true});
         }
         Refresh();
     });
@@ -481,7 +481,7 @@ void Application::OnTimer()
                 reopen_ = false;
                 settingsCard_.reset();
                 splash_.Close();
-                ShowStartError("startup", std::to_wstring(code));
+                ShowStartError({.code = "startup", .detail = std::to_wstring(code)});
             }
             else if (reopen_)
             {
@@ -506,7 +506,7 @@ void Application::OnTimer()
         if (!IsExiting() && exit_ != ExitPhase::WindowConfirming)
         {
             splash_.Close();
-            ShowStartError("startup");
+            ShowStartError({.code = "startup"});
         }
         else if (headless_)
         {
@@ -515,7 +515,7 @@ void Application::OnTimer()
         else
         {
             CancelExit();
-            ShowError("unresponsive");
+            ShowError({.code = "unresponsive"});
         }
     }
 }
@@ -925,7 +925,7 @@ bool Application::Open()
         {
             detail += L" \u00B7 " + std::wstring(reason);
         }
-        ShowStartError(key, executable.wstring() + L"\n" + detail);
+        ShowStartError({.code = key, .detail = executable.wstring() + L"\n" + detail, .interactive = true});
         return true;
     }
     CloseHandle(process.hThread);
@@ -1226,7 +1226,7 @@ void Application::Pause()
     {
         if (outcome.error)
         {
-            ShowError("pause", Wide(outcome.detail));
+            ShowError({.code = "pause", .detail = Wide(outcome.detail), .interactive = true});
         }
         Refresh();
     });
@@ -1313,7 +1313,7 @@ void Application::FinishSource(Outcome const& outcome, Added const& added)
     {
         if (headless_)
         {
-            ShowError("source", Wide(source) + L"\n" + Wide(outcome.detail));
+            ShowError({.code = "source", .detail = Wide(source) + L"\n" + Wide(outcome.detail)});
         }
         else
         {
@@ -1407,32 +1407,34 @@ void Application::Notify(Notice notice)
     notices_->Queue(std::move(notice));
 }
 
-void Application::ShowError(std::string const& key, std::wstring detail, std::vector<Popup::Action> actions)
+void Application::ShowError(Notices::Failure failure)
 {
     if (headless_)
     {
-        auto message = strings_.Text("error", key);
-        if (!detail.empty())
+        auto message = strings_.Text("error", failure.code);
+        if (!failure.detail.empty())
         {
-            message += L"\n\n" + detail;
+            message += L"\n\n" + failure.detail;
         }
         OutputDebugStringW(message.c_str());
         return;
     }
     // The window may be the one that stopped responding.
-    notices_->Report({.code = key, .detail = std::move(detail), .actions = std::move(actions)});
+    notices_->Report(std::move(failure));
 }
 
 void Application::ShowRefusal(Strings const& strings, Refusal refusal)
 {
     OwnedIcon icon(ErrorIcon());
-    // Without commands, selecting the message only closes the popup, so it
-    // never starts the launch again unasked.
+    // Without commands, selecting the message does nothing, so it never
+    // starts the launch again unasked. The refusal answers the person's
+    // launch, so it takes the focus.
     Notices notices(strings, false, icon.get(), {});
-    Notices::Failure failure{.code = std::move(refusal.key), .detail = std::move(refusal.detail)};
+    Notices::Failure failure{.code = std::move(refusal.key), .detail = std::move(refusal.detail),
+        .interactive = true};
     if (refusal.retry)
     {
-        failure.actions.push_back(notices.Retry(strings.Text("notification", "retry_request_tip"), []
+        failure.actions.push_back(Notices::Retry(strings, strings.Text("notification", "retry_request_tip"), []
         {
             std::wstring command = GetCommandLineW();
             STARTUPINFOW startup{sizeof(startup)};
@@ -1450,7 +1452,7 @@ void Application::ShowRefusal(Strings const& strings, Refusal refusal)
     if (refusal.folder)
     {
         failure.actions.push_back(
-            notices.OpenFolder(*refusal.folder, strings.Text("notification", "open_folder_tip")));
+            Notices::OpenFolder(strings, *refusal.folder, strings.Text("notification", "open_folder_tip")));
     }
     notices.ShowFailure(std::move(failure));
     MSG message{};
@@ -1463,10 +1465,12 @@ void Application::ShowRefusal(Strings const& strings, Refusal refusal)
 
 // The window did not start: Retry opens it again, and Open folder shows the
 // folder that holds the window program.
-void Application::ShowStartError(std::string const& key, std::wstring detail)
+void Application::ShowStartError(Notices::Failure failure)
 {
-    ShowError(key, std::move(detail), {notices_->Retry(strings_.Text("notification", "retry_tip"), [this] { Open(); }),
-        notices_->OpenFolder(WindowExecutable().parent_path(), strings_.Text("notification", "open_folder_tip"))});
+    failure.actions.push_back(Notices::Retry(strings_, strings_.Text("notification", "retry_tip"), [this] { Open(); }));
+    failure.actions.push_back(Notices::OpenFolder(strings_, WindowExecutable().parent_path(),
+        strings_.Text("notification", "open_folder_tip")));
+    ShowError(std::move(failure));
 }
 
 // A stalled torrent may never let the save succeed, so Force exit ends the
@@ -1474,10 +1478,12 @@ void Application::ShowStartError(std::string const& key, std::wstring detail)
 // are lost, as after any abrupt end.
 void Application::ShowSaveFailure()
 {
-    ShowError("save", *saveFailure_, {notices_->ForceExit([this]
+    auto forceExit = Notices::ForceExit(strings_, [this]
     {
         tray_->Remove();
         TerminateProcess(GetCurrentProcess(), 1);
-    })});
+    });
+    ShowError({.code = "save", .title = strings_.Text("notification", "save_failure"), .detail = *saveFailure_,
+        .actions = {std::move(forceExit)}, .interactive = true, .opens = false});
 }
 }

@@ -73,7 +73,8 @@ bool UsesWindow(NoticeKind kind)
 }
 
 Notices::Notices(Strings const& strings, bool headless, HICON errorIcon, Commands commands)
-    : strings_(strings), headless_(headless), errorIcon_(errorIcon), commands_(std::move(commands))
+    : strings_(strings), headless_(headless), errorIcon_(errorIcon), commands_(std::move(commands)),
+      popup_(strings)
 {
 }
 
@@ -136,6 +137,11 @@ void Notices::Report(Failure failure)
     if (headless_ || (popup_.IsOpen() && shownFailure_ == failure.code))
     {
         return;
+    }
+    // Notify shows it within a tick only when nothing holds it back.
+    if (popup_.IsOpen() || !failures_.empty() || !AcceptsNotifications())
+    {
+        failure.interactive = false;
     }
     auto waiting = std::find_if(failures_.begin(), failures_.end(),
         [&failure](Failure const& other) { return other.code == failure.code; });
@@ -206,9 +212,10 @@ void Notices::Notify()
 void Notices::ShowFailure(Failure failure)
 {
     shownFailure_ = failure.code;
-    popup_.Show({.title = strings_.Text("notification", "failure"), .body = ErrorText(failure.code),
-        .select = commands_.open, .detail = std::move(failure.detail), .actions = std::move(failure.actions),
-        .icon = errorIcon_, .persistent = true});
+    popup_.Show({.title = failure.title.value_or(strings_.Text("notification", "failure")),
+        .body = ErrorText(failure.code), .select = failure.opens ? commands_.open : nullptr,
+        .detail = std::move(failure.detail), .actions = std::move(failure.actions), .icon = errorIcon_,
+        .stay = failure.interactive ? NoticeStay::Interactive : NoticeStay::Persistent});
 }
 
 Popup::Content Notices::Message(Notice const& notice) const
@@ -247,7 +254,8 @@ Popup::Content Notices::Message(Notice const& notice) const
         }
         if (!notice.folder.empty())
         {
-            content.actions = {OpenFolder(Wide(notice.folder), strings_.Text("notification", "files_folder_tip"))};
+            content.actions = {
+                OpenFolder(strings_, Wide(notice.folder), strings_.Text("notification", "files_folder_tip"))};
         }
     }
     return content;
@@ -315,27 +323,29 @@ std::function<void()> Notices::Selection(Notice const& notice) const
 }
 
 // Lucide's rotate-ccw glyph, as the window's Retry button shows.
-Popup::Action Notices::Retry(std::wstring tooltip, std::function<void()> run) const
+Popup::Action Notices::Retry(Strings const& strings, std::wstring tooltip, std::function<void()> run)
 {
-    return {L'\uE148', strings_.Text("notification", "retry"), std::move(tooltip), std::move(run)};
+    return {.glyph = L'\uE148', .label = strings.Text("notification", "retry"), .tooltip = std::move(tooltip),
+        .run = std::move(run), .automationId = L"Retry"};
 }
 
 // Lucide's folder-open glyph. Open alone would read as opening the window, so
 // the label names the folder. Showing a folder leaves the popup open.
-Popup::Action Notices::OpenFolder(std::filesystem::path folder, std::wstring tooltip) const
+Popup::Action Notices::OpenFolder(Strings const& strings, std::filesystem::path folder, std::wstring tooltip)
 {
-    return {L'\uE247', strings_.Text("notification", "open_folder"), std::move(tooltip),
-        [folder = std::move(folder)] { ShowFolder(folder); }, false};
+    return {.glyph = L'\uE247', .label = strings.Text("notification", "open_folder"), .tooltip = std::move(tooltip),
+        .run = [folder = std::move(folder)] { ShowFolder(folder); }, .closes = false, .automationId = L"OpenFolder"};
 }
 
 // Lucide's power glyph, as the window's Exit command shows.
-Popup::Action Notices::ForceExit(std::function<void()> run) const
+Popup::Action Notices::ForceExit(Strings const& strings, std::function<void()> run)
 {
-    return {L'\uE140', strings_.Text("notification", "force_exit"), strings_.Text("notification", "force_exit_tip"),
-        std::move(run)};
+    return {.glyph = L'\uE140', .label = strings.Text("notification", "force_exit"),
+        .tooltip = strings.Text("notification", "force_exit_tip"), .run = std::move(run),
+        .automationId = L"ForceExit"};
 }
 
-// Selecting the message of this popup only dismisses it, because opening the
+// Selecting the message of this popup does nothing, because opening the
 // window the person just closed would undo their action.
 void Notices::ShowBackground()
 {
@@ -359,14 +369,14 @@ void Notices::Show(Popup::Content content, std::optional<NoticeSwitch> notices)
         // Lucide's bell-minus, bell-off and settings glyphs.
         content.menu = {
             {L'\uE1F0', strings_.Text("notification", TurnOffKey(*notices)),
-                [this, shown = *notices] { commands_.turnOff({shown}); }},
+                [this, shown = *notices] { commands_.turnOff({shown}); }, L"TurnOff"},
             {L'\uE05A', strings_.Text("notification", "off_all"), [this]
             {
                 commands_.turnOff({NoticeSwitch::Finished, NoticeSwitch::Added, NoticeSwitch::Problems,
                     NoticeSwitch::Background});
-            }},
+            }, L"TurnOffAll"},
             {L'\uE154', strings_.Text("notification", "settings"),
-                [this] { commands_.openSettings("notifications"); }}};
+                [this] { commands_.openSettings("notifications"); }, L"NotificationSettings"}};
     }
     popup_.Show(std::move(content));
 }

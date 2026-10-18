@@ -1,4 +1,5 @@
 #pragma once
+#include <optional>
 #include <string>
 #include <windows.h>
 #include <uxtheme.h>
@@ -20,6 +21,12 @@ public:
     // Windows' high contrast and transparency settings.
     void Apply(HWND window, std::string const& theme);
     COLORREF Foreground() const { return foreground_; }
+    COLORREF Disabled() const { return disabled_; }
+    // The keyboard focus ring.
+    COLORREF Focus() const { return focus_; }
+    // High contrast outlines each button, because its faint fill can match the
+    // background there; otherwise a button has no edge.
+    std::optional<COLORREF> Edge() const { return edge_; }
 
     // One WM_PAINT pass over the window. It fills the backdrop when created
     // and shows what was drawn when destroyed.
@@ -35,7 +42,10 @@ public:
         // Lays `color` at `opacity`, out of 255, over what is drawn inside
         // `bounds`, with corners of `radius` pixels.
         void Fill(RECT const& bounds, COLORREF color, BYTE opacity, int radius);
-        void Text(std::wstring const& text, RECT bounds, UINT format, HFONT font);
+        // Draws an outline `width` pixels wide just inside `bounds`, with
+        // outer corners of `radius` pixels.
+        void Stroke(RECT const& bounds, COLORREF color, int width, int radius);
+        void Text(std::wstring const& text, RECT bounds, UINT format, HFONT font, COLORREF color);
     private:
         Acrylic const& acrylic_;
         HWND window_;
@@ -51,5 +61,10 @@ private:
     bool blurred_ = false;
     COLORREF foreground_ = RGB(0, 0, 0);
     COLORREF background_ = RGB(255, 255, 255);
+    // How much of the background covers the blur, out of 255.
+    BYTE tint_ = 255;
+    COLORREF disabled_ = RGB(128, 128, 128);
+    COLORREF focus_ = RGB(0, 0, 0);
+    std::optional<COLORREF> edge_;
 };
 }

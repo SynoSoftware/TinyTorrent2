@@ -1,4 +1,5 @@
 #include "Desktop/Application.h"
+#include "Desktop/Instance.h"
 #include "Registration.h"
 #include "Strings.h"
 #include <sddl.h>
@@ -151,9 +152,9 @@ void Restart()
     CloseHandle(process.hProcess);
 }
 
-// Another version or another data folder keeps this launch out until that
-// engine closes. Its folder identifies it, and Retry starts this launch again
-// once it has closed.
+// Another version keeps this launch out until that engine closes, and so does
+// another data folder for a headless launch, which cannot ask to exit it. Its
+// folder identifies it, and Retry starts this launch again once it has closed.
 tt::desktop::Refusal OtherEngine(tt::Forwarded const& forwarded)
 {
     tt::desktop::Refusal refusal{
@@ -219,6 +220,21 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
 {
     // Prevent Windows from reporting application crashes to Microsoft.
     SetErrorMode(GetErrorMode() | SEM_NOGPFAULTERRORBOX);
+    // The popup's accessibility objects reach other processes through COM,
+    // which needs an apartment on this thread. A single-threaded one delivers
+    // their calls through this thread's message loop, so they never run
+    // beside the popup's own code.
+    struct Apartment
+    {
+        HRESULT result = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+        ~Apartment()
+        {
+            if (SUCCEEDED(result))
+            {
+                CoUninitialize();
+            }
+        }
+    } apartment;
     tt::OwnedHandle mutex;
     bool headless = false;
     try
@@ -371,14 +387,14 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
         auto sid = LogonSid();
         {
             tt::Security security(sid);
-            mutex.reset(CreateMutexW(&security.Attributes(), FALSE, (L"Local\\TinyTorrent.Engine." + sid).c_str()));
+            mutex.reset(CreateMutexW(&security.Attributes(), FALSE, tt::desktop::EngineLockName(sid).c_str()));
         }
         if (!mutex)
         {
             throw std::runtime_error("Cannot claim engine instance ownership.");
         }
         auto acquired = WaitForSingleObject(mutex.get(), 0);
-        if (acquired == WAIT_TIMEOUT)
+        while (acquired == WAIT_TIMEOUT)
         {
             tt::Forwarded forwarded{tt::Forwarding::Accepted};
             if (exiting)
@@ -409,6 +425,20 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
             {
                 forwarded = tt::Pipe::Forward(sid, {{"command", "open"}}, directory);
             }
+            if (forwarded.outcome == tt::Forwarding::OtherStore && !headless)
+            {
+                // Exit and Force exit need the identified process and program.
+                if (!forwarded.process || !forwarded.engine)
+                {
+                    throw tt::desktop::Refusal{.key = "other_store_unidentified", .retry = true};
+                }
+                if (!tt::desktop::ExitOther(tt::Strings(), sid, forwarded))
+                {
+                    return 1;
+                }
+                acquired = WaitForSingleObject(mutex.get(), 0);
+                continue;
+            }
             if (forwarded.outcome == tt::Forwarding::OtherVersion || forwarded.outcome == tt::Forwarding::OtherStore)
             {
                 throw OtherEngine(forwarded);
@@ -437,21 +467,9 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
         }
         if (exiting)
         {
-            // The window can survive an engine crash and still hold application files.
-            tt::OwnedHandle window(OpenMutexW(SYNCHRONIZE | MUTEX_MODIFY_STATE, FALSE,
-                (L"Local\\TinyTorrent.Window." + sid).c_str()));
-            if (!window && GetLastError() != ERROR_FILE_NOT_FOUND)
+            if (tt::desktop::HasWindow(sid))
             {
-                throw std::runtime_error("Cannot check window instance ownership.");
-            }
-            if (window)
-            {
-                auto closed = WaitForSingleObject(window.get(), 0);
-                if (closed != WAIT_OBJECT_0 && closed != WAIT_ABANDONED)
-                {
-                    throw tt::desktop::Refusal{.key = "window_open", .retry = true};
-                }
-                ReleaseMutex(window.get());
+                throw tt::desktop::Refusal{.key = "window_open", .retry = true};
             }
             ReleaseMutex(mutex.get());
             return 0;

@@ -1,8 +1,8 @@
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('Frames', 'Summaries', 'Targets', 'Facts', 'Restore', 'Exit', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames', 'Pause', 'History', 'Accounting')]
+    [ValidateSet('Frames', 'Summaries', 'Targets', 'Facts', 'Restore', 'Exit', 'Conflict', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames', 'Pause', 'History', 'Accounting')]
     [string] $Check,
-    [Parameter(Mandatory)]
+    # Every check but Conflict, which makes its own torrents.
     [string] $TorrentFile,
     [string] $EnginePath,
     [switch] $Transfer
@@ -12,6 +12,9 @@ $ErrorActionPreference = 'Stop'
 # These checks start the Transfer peer and download real payload, which takes
 # minutes of the owner's machine, so they run only when the owner asks.
 $transferChecks = 'MagnetDownload', 'SelectedTransfer', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles'
+if (-not $TorrentFile -and $Check -ne 'Conflict') {
+    throw "$Check needs -TorrentFile."
+}
 if ($Check -in $transferChecks -and -not $Transfer) {
     throw "$Check runs a real transfer. Run it only when the owner asks, with -Transfer."
 }
@@ -89,6 +92,69 @@ try {
             $snapshot = Start-Engine
             Assert ($snapshot.transfers.all_time.downloaded -eq 0 -and $snapshot.transfers.all_time.uploaded -eq 0 -and
                 $snapshot.settings.theme -eq 'light') 'Missing transfer totals lost the existing settings'
+        }
+        'Conflict' {
+            # Two launches that add torrents to another data folder at once
+            # each ask to exit the engine that runs. Once it ends, one launch
+            # owns the folder and the other forwards to it, so neither torrent
+            # is lost. The store cannot show a second delivery, because the
+            # engine adds each info-hash once.
+            $reply = Send-Command @{ command = 'settings'; changes = @{ torrent_dialog = $false; start_paused = $true; confirm_exit = $false } }
+            Assert $reply.ok 'The launch folder could not save its settings'
+            Stop-Engine
+            $store = $directory
+            $directory = Join-Path $store 'other'
+            $null = New-Item -ItemType Directory -Path $directory
+            $null = Start-Engine
+            $directory = $store
+            $sources = foreach ($name in 'first', 'second') {
+                $source = Join-Path $store "$name.torrent"
+                $content = [Text.Encoding]::ASCII.GetBytes($name * 512)
+                $prefix = [Text.Encoding]::ASCII.GetBytes("d4:infod6:lengthi$($content.Length)e4:name$($name.Length + 4):$name.bin12:piece lengthi16384e6:pieces20:")
+                $suffix = [Text.Encoding]::ASCII.GetBytes('7:privatei1eee')
+                [IO.File]::WriteAllBytes($source, [byte[]]($prefix + [Security.Cryptography.SHA1]::HashData($content) + $suffix))
+                $source
+            }
+            $launches = @(foreach ($source in $sources) {
+                Start-Process -FilePath $executable -ArgumentList @('--background', '--data', ('"' + $store + '"'), ('"' + $source + '"')) -PassThru
+            })
+            $continuing = $null
+            try {
+                # The prompt is the launch's only visible unowned window, so .NET
+                # reports it as the main window.
+                $until = [DateTime]::UtcNow.AddSeconds(30)
+                while (@($launches | Where-Object { $_.Refresh(); $_.MainWindowHandle -ne 0 }).Count -lt 2) {
+                    Assert (@($launches | Where-Object HasExited).Count -eq 0) 'A launch ended before it asked to exit the other engine'
+                    Assert ([DateTime]::UtcNow -lt $until) 'Both launches did not ask to exit the other engine'
+                    Start-Sleep -Milliseconds 100
+                }
+                Stop-Engine
+                $until = [DateTime]::UtcNow.AddSeconds(30)
+                while (@($launches | Where-Object HasExited).Count -eq 0) {
+                    Assert ([DateTime]::UtcNow -lt $until) 'Neither launch continued after the other engine ended'
+                    Start-Sleep -Milliseconds 100
+                }
+                $forwarded = @($launches | Where-Object HasExited)
+                Assert ($forwarded.Count -eq 1 -and $forwarded[0].ExitCode -eq 0) 'The second launch did not hand its torrent to the first'
+                $continuing = $launches | Where-Object { -not $_.HasExited }
+                $script:process = $continuing
+                $script:pipe = Connect-Pipe
+                $until = [DateTime]::UtcNow.AddSeconds(15)
+                do {
+                    $snapshot = (Send-Command @{ command = 'snapshot' }).data
+                    if ($snapshot.torrents.Count -ge 2) { break }
+                    Start-Sleep -Milliseconds 100
+                } while ([DateTime]::UtcNow -lt $until)
+                $names = @($snapshot.torrents | ForEach-Object name | Sort-Object)
+                Assert ($names.Count -eq 2 -and $names[0] -eq 'first.bin' -and $names[1] -eq 'second.bin') `
+                    "Simultaneous launches lost or duplicated a torrent: $($names -join ', ')"
+                Stop-Engine
+            }
+            finally {
+                foreach ($launch in $launches) {
+                    if ($launch -ne $continuing -and -not $launch.HasExited) { $launch.Kill(); $launch.WaitForExit() }
+                }
+            }
         }
         'Exit' {
             function Exit-Code {

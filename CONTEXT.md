@@ -392,6 +392,20 @@ history range, independent of whether the product window is open.
 
 **Splash window**: the temporary window shown while the product interface opens.
 
+**Popup**: the acrylic surface the engine draws itself near the notification
+area to show a notice or a prompt. **Owner ruling:** the engine's notices and
+prompts use the popup; a Windows dialog, such as a task dialog or message box,
+never replaces it.
+_Avoid_: toast, balloon, task dialog.
+
+**Notice**: a popup that tells the person something, such as a finished
+download or a failure, without taking focus.
+_Avoid_: toast; notification, when naming the popup rather than its setting.
+
+**Prompt**: a popup that asks the person to choose before the engine continues,
+such as whether to exit another TinyTorrent. It takes focus.
+_Avoid_: question, dialog, message box.
+
 **Settings**: the saved, application-wide choices for how TinyTorrent behaves.
 _Avoid_: preferences.
 

@@ -358,7 +358,7 @@ void Pipe::Deliver(std::shared_ptr<Connection> client, HANDLE handle)
 }
 
 Forwarded Pipe::Forward(std::wstring const& sid, Json request,
-    std::optional<std::filesystem::path> const& store)
+    std::optional<std::filesystem::path> const& store, std::optional<DWORD> processId)
 {
     auto name = Name(sid);
     auto deadline = GetTickCount64() + forwardTimeout;
@@ -381,17 +381,19 @@ Forwarded Pipe::Forward(std::wstring const& sid, Json request,
         Sleep(retryDelay);
     }
     Forwarded forwarded;
-    ULONG processId = 0;
-    bool identified = GetNamedPipeServerProcessId(handle, &processId);
+    ULONG server = 0;
+    bool identified = GetNamedPipeServerProcessId(handle, &server);
+    if (processId && (!identified || server != *processId))
+    {
+        CloseHandle(handle);
+        return forwarded;
+    }
     if (identified)
     {
-        OwnedHandle process(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, processId));
-        std::wstring path(32768, L'\0');
-        auto size = static_cast<DWORD>(path.size());
-        if (process && QueryFullProcessImageNameW(process.get(), 0, path.data(), &size))
+        forwarded.process.reset(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE, server));
+        if (forwarded.process)
         {
-            path.resize(size);
-            forwarded.engine = std::move(path);
+            forwarded.engine = ProcessImage(forwarded.process.get());
         }
     }
     Json hello;
@@ -409,7 +411,7 @@ Forwarded Pipe::Forward(std::wstring const& sid, Json request,
     {
         if (identified)
         {
-            AllowSetForegroundWindow(processId);
+            AllowSetForegroundWindow(server);
         }
         request["request_id"] = 1;
         auto bytes = request.dump();

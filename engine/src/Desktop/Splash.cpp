@@ -199,7 +199,7 @@ void Splash::Paint(HWND window)
         size, size, 0, nullptr, DI_NORMAL);
     RECT textBounds{Scale(textInset, dpi), top + size + gap,
         bounds.right - Scale(textInset, dpi), bounds.bottom};
-    canvas.Text(text, textBounds, DT_CENTER | DT_WORDBREAK | DT_NOPREFIX, font_);
+    canvas.Text(text, textBounds, DT_CENTER | DT_WORDBREAK | DT_NOPREFIX, font_, acrylic_.Foreground());
 }
 
 LRESULT CALLBACK Splash::Procedure(HWND window, UINT message, WPARAM first, LPARAM second)

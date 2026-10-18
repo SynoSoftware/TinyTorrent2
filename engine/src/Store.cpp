@@ -12,6 +12,25 @@ constexpr std::size_t jobLimit = 64;
 // The largest file Store reads. Writes keep to it too, so every file written
 // can be read back.
 constexpr std::streamoff fileLimit = 16 * 1024 * 1024;
+
+// The file and Windows' own words for `error`, in the person's language,
+// because the person reads the failure.
+std::string WriteFailure(std::filesystem::path const& path, DWORD error)
+{
+    wchar_t reason[512]{};
+    auto length = FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS |
+        FORMAT_MESSAGE_MAX_WIDTH_MASK, nullptr, error, 0, reason, static_cast<DWORD>(std::size(reason)), nullptr);
+    std::wstring text(reason, length);
+    while (!text.empty() && text.back() == L' ')
+    {
+        text.pop_back();
+    }
+    if (text.empty())
+    {
+        text = std::to_wstring(error);
+    }
+    return Utf8(path.wstring() + L": " + text);
+}
 }
 
 Outcome StorageOutcome::ToOutcome(ErrorCode code) const
@@ -120,7 +139,7 @@ void Store::Write(std::filesystem::path path, std::function<std::string()> encod
             CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
         if (file == INVALID_HANDLE_VALUE)
         {
-            throw std::runtime_error("CreateFile: " + std::to_string(GetLastError()));
+            throw std::runtime_error(WriteFailure(path, GetLastError()));
         }
         DWORD written = 0;
         bool success = WriteFile(file, bytes.data(), static_cast<DWORD>(bytes.size()),
@@ -131,21 +150,16 @@ void Store::Write(std::filesystem::path path, std::function<std::string()> encod
         }
         DWORD error = success ? 0 : GetLastError();
         CloseHandle(file);
-        char const* operation = "WriteFile";
         if (success)
         {
-            operation = "MoveFileEx";
             success = MoveFileExW(temporary.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);
             error = success ? 0 : GetLastError();
         }
         if (!success)
         {
-            auto detail = std::string(operation) + ": " + std::to_string(error);
-            if (!DeleteFileW(temporary.c_str()))
-            {
-                detail += "; DeleteFile: " + std::to_string(GetLastError());
-            }
-            throw std::runtime_error(detail);
+            // A temporary file left behind is replaced by the next write.
+            DeleteFileW(temporary.c_str());
+            throw std::runtime_error(WriteFailure(path, error));
         }
     }, std::move(completion));
 }

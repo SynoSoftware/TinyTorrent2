@@ -240,6 +240,9 @@ std::wstring Wide(std::string const& value);
 bool SameFolder(std::filesystem::path const& first, std::filesystem::path const& second);
 std::string Base64(std::string_view bytes);
 std::wstring Executable();
+// The executable of `process`, a Windows process handle with query access;
+// nothing when Windows does not reveal it.
+std::optional<std::filesystem::path> ProcessImage(void* process);
 char const* ToString(NoticeKind kind);
 char const* ToString(ErrorCode code);
 std::optional<ErrorCode> ParseError(std::string_view word);

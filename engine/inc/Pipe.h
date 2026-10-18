@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Engine.h"
+#include "Owned.h"
 #include <windows.h>
 #include <atomic>
 #include <condition_variable>
@@ -41,11 +42,13 @@ private:
 };
 
 // How a forwarded request ended, and the running engine's executable when
-// Windows reveals it.
+// Windows reveals it. The process handle keeps the prompt to exit that engine
+// tied to it, even if another engine starts while the prompt is open.
 struct Forwarded
 {
     Forwarding outcome = Forwarding::Refused;
     std::optional<std::filesystem::path> engine;
+    OwnedHandle process;
 };
 
 class Pipe
@@ -82,8 +85,11 @@ public:
     void Stop();
     // With a store, the request is not sent to an engine that uses another data
     // folder, because it would open or add to that folder's torrents.
+    // With a process ID, the request goes only to that engine, such as the one
+    // the person chose to exit.
     static Forwarded Forward(std::wstring const& sid, Json request,
-        std::optional<std::filesystem::path> const& store = std::nullopt);
+        std::optional<std::filesystem::path> const& store = std::nullopt,
+        std::optional<DWORD> processId = std::nullopt);
 
 private:
     static std::wstring Name(std::wstring const& sid);

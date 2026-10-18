@@ -90,8 +90,8 @@ private:
     void OpenSettings(std::string card);
     void ShowSettings();
     void Notify(Notice notice);
-    void ShowError(std::string const& key, std::wstring detail = {}, std::vector<Popup::Action> actions = {});
-    void ShowStartError(std::string const& key, std::wstring detail = {});
+    void ShowError(Notices::Failure failure);
+    void ShowStartError(Notices::Failure failure);
     void ShowSaveFailure();
     bool headless_;
     ExitPhase exit_ = ExitPhase::Idle;

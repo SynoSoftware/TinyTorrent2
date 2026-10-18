@@ -617,16 +617,35 @@ folder, such as a test's, because that engine would show other torrents or an
 off-screen window, or register its own program. The
 [greeting](pipe-api.md#encoding-and-validation) supplies that folder.
 
-A launch that cannot start shows why in the failure popup and exits when the
-person closes it; it releases the instance lock first, so another launch is not
-blocked while it waits. The popup stays until closed, as every failure does.
+A different data folder offers Exit and Force exit in the existing acrylic
+popup titled "Exit the other TinyTorrent?". This prompt takes the focus and has
+a taskbar button and an Alt+Tab entry, so the person can return to it, but it is
+not kept above other windows, so the other TinyTorrent's own confirmation stays
+reachable. Exit is the default for Enter and requests the
+running engine's normal shutdown, including its existing confirmations and draft
+protection. Force exit ends that engine, and every product window in this
+Windows session that runs from its program folder, without saving. Its program path stays visible on one line under Program location, with
+the complete path available on hover, with Copy path on its context menu and
+Ctrl+C. Force exit targets only the identified program and process. If Windows cannot identify
+them, startup shows an explanation with Retry instead of asking a question with
+unavailable actions. The launch continues as soon as the other engine and its
+window have ended, however they ended, or another launch has started an
+engine in its place, with its requested data folder and sources. Escape, Alt+F4 and the popup's close button dismiss this
+launch without requesting an exit. A pending Exit does not block Force exit or
+dismissal, because the other instance may be hung or waiting for a decision.
+
+A launch that otherwise cannot start shows why in the failure popup and exits
+when the person closes it; it releases the instance lock first, so another
+launch is not blocked while it waits. The popup stays until closed, as every
+failure does.
 Retry starts the same launch again and appears only where the person can
-resolve the cause meanwhile: another version or data folder is running, the
-running engine did not accept the request, or `--exit` found TinyTorrent still
-running. The detail line then names the other engine's program folder, and
-Open folder shows it. Selecting
-the message only closes the popup. A headless launch writes the reason to the
-error output instead.
+resolve the cause meanwhile: another version is running, the running engine
+could not be identified or did not accept the request, or `--exit` found TinyTorrent still
+running. When the other engine's program folder is known, the detail line
+names it, and Open folder shows it. Selecting
+the message does nothing. The popup takes the focus, because it answers the
+person's launch. A headless launch writes the reason to the error output
+instead.
 
 Shortcuts, file associations, and taskbar relaunch enter through the engine.
 Use one [AppUserModelID](https://learn.microsoft.com/en-us/windows/win32/shell/appids)
@@ -950,7 +969,10 @@ If the final save fails, report it once in a notice and keep the engine alive:
   because a save while their disk work runs can record pieces that are not on
   disk. The engine log names each torrent whose pause wait timed out.
 - The notice offers Force exit, which ends the process at once without the
-  final save, because a stalled torrent may never let a save succeed.
+  final save, because a stalled torrent may never let a save succeed. Its
+  message says that the changes since the last save are lost and that
+  downloaded files stay on disk, and its detail names the file that could not
+  be written and Windows' reason.
 - Choosing Exit again shows the notice again. The notice never keeps the
   engine running.
 
@@ -1200,11 +1222,19 @@ notifications. It does not use Windows notifications, toasts or balloons,
 because Windows lets a person turn those off for every app at once, and a
 notice the person turned on in Settings must still appear. It slides in from
 the screen's edge and back out, unless Windows animation effects are off or
-another monitor lies beyond that edge, never takes focus,
+another monitor lies beyond that edge, takes no focus,
 stays for Windows' notification duration and stays while the pointer is over
-it. A failure of something the person just asked for stays until dismissed,
+it. Every notice ends its buttons with Dismiss, and keeps its close button. A
+failure of something the person just asked for stays until dismissed,
 without a timeout or replacement by later notices, so the repair instructions
-remain available. It does not appear over a full-screen app or a presentation.
+remain available. When it shows at once in
+answer to the person's own action, such as a launch, Exit or adding a torrent,
+it takes the focus without a taskbar button, so Tab, Enter and Escape reach
+its buttons; Enter runs Dismiss until another button has the focus. A failure
+that arrives in the background, such as a window that ended unexpectedly or
+did not open within its time, or one that waits behind another popup, never
+takes the focus, because the person may be typing elsewhere. It does not
+appear over a full-screen app or a presentation.
 While the pointer is over a popup, its header shows a More button (…) beside
 the close button, as Windows' own notifications do; otherwise each popup shows
 only its message. More opens a menu laid out as Windows' own, drawn on the
@@ -1218,8 +1248,9 @@ card of Settings and highlights it. A failure of something the person just
 asked for has no More button, because it always shows. Debug builds accept
 `--notice`, which shows a sample Added popup whatever the switches say, so the
 popup and its menu can be checked without adding a torrent. A running engine
-shows it; otherwise the engine starts in the tray to show it. Selecting the rest of the popup acts on the notice,
-as each kind below says, and the close button only dismisses it. Show a notice
+shows it; otherwise the engine starts in the tray to show it. Selecting the rest of the popup acts on the notice
+where each kind below says so, and otherwise does nothing; only the close
+button and Dismiss close a notice before its time. Show a notice
 only when its switch is on. Problems and completions use the open window when
 one exists; background additions still use the tray so they do not raise that
 window:
@@ -1252,7 +1283,7 @@ notification that TinyTorrent is still running in the notification area and
 that Exit is in its menu. Windows 11 places new tray icons in the hidden
 overflow, so without it the person cannot tell that transfers continue. Notify
 when the window closes and transfers continue starts on. Selecting the rest of
-this popup only dismisses it, because opening the window the person just closed
+this popup does nothing, because opening the window the person just closed
 would undo their action.
 
 The idle-sleep setting starts enabled for active payload downloads on mains

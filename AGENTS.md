@@ -60,6 +60,8 @@ permanent design, code, and review cost that the user never sees.
 - Before changing text or translations, language selection, or display
   formatting, read [localisation](docs/contracts/localisation.md).
 - Before changing the product UI, read [WinUI instructions](app/AGENTS.md).
+- Before changing the engine's popup, its buttons or another engine-drawn
+  control, read [engine instructions](engine/AGENTS.md).
 - Before changing the table library, its development hosts, or its tooling, read
   [TableView instructions](lib/TableView/AGENTS.md).
 - Before writing, changing, deleting, choosing, or running tests, read

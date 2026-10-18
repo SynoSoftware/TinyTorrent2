@@ -37,9 +37,21 @@ public:
     {
         // Names its message in the error group, and tells failures apart.
         std::string code;
+        // Names the failure; without it, the title only says that TinyTorrent
+        // needs attention.
+        std::optional<std::wstring> title;
         std::wstring detail;
         // The buttons that resolve it, made by Retry, OpenFolder or ForceExit.
         std::vector<Popup::Action> actions;
+        // It answers the person's own action, such as a launch, Exit or
+        // adding a torrent, so it takes the focus when it shows at once. A
+        // failure that arrives in the background, or waits behind another
+        // popup, never takes it, because the person may be typing elsewhere.
+        bool interactive = false;
+        // Selecting its message opens the window. A failure shown while the
+        // window cannot open, such as during the final save, leaves this off,
+        // so selecting its message does nothing.
+        bool opens = true;
     };
 
     // The caller keeps `errorIcon`, which marks problems and failures, alive.
@@ -60,11 +72,11 @@ public:
     // because it answers something the person just did.
     void ShowFailure(Failure failure);
     bool IsOpen() const { return popup_.IsOpen(); }
-    // The buttons that failures offer, so each looks and reads the same
-    // wherever it shows.
-    Popup::Action Retry(std::wstring tooltip, std::function<void()> run) const;
-    Popup::Action OpenFolder(std::filesystem::path folder, std::wstring tooltip) const;
-    Popup::Action ForceExit(std::function<void()> run) const;
+    // The buttons that failures and prompts offer, so each looks and reads the
+    // same wherever it shows.
+    static Popup::Action Retry(Strings const& strings, std::wstring tooltip, std::function<void()> run);
+    static Popup::Action OpenFolder(Strings const& strings, std::filesystem::path folder, std::wstring tooltip);
+    static Popup::Action ForceExit(Strings const& strings, std::function<void()> run);
 #ifdef _DEBUG
     // Shows an Added notice for a sample torrent, whatever the switches say.
     void ShowSample();

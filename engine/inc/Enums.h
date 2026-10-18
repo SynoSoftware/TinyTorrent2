@@ -455,13 +455,36 @@ enum class TrayClick
     Double
 };
 
-// The parts of a notice popup that the person can select.
+// The parts of a popup that the person can select.
 enum class PopupPart
 {
     Body,
     Action,
     More,
     Close
+};
+
+// How long a notice stays: until its timeout, until the person dismisses it,
+// or until dismissed while it also takes the focus, because it answers the
+// person's own action.
+enum class NoticeStay
+{
+    Timed,
+    Persistent,
+    Interactive
+};
+
+// Where the prompt to exit another TinyTorrent stands: asking, waiting for
+// Exit's answer, Exit accepted while the other TinyTorrent still runs, Exit
+// refused, waiting after Force exit, or Force exit refused by Windows.
+enum class Recovery
+{
+    Asking,
+    Exiting,
+    Accepted,
+    Refused,
+    Forcing,
+    ForceFailed
 };
 
 enum class CloseState
