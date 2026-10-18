@@ -626,14 +626,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             },
             () => true
         );
-        OpenUpdate = new RelayCommand(
-            () =>
-            {
-                OpenRequested?.Invoke(this, new(ReleasePage));
-                return Task.CompletedTask;
-            },
-            () => HasUpdate
-        );
+        InstallUpdate = new RelayCommand(StartInstall, () => CanInstallUpdate);
         _commands =
         [
             Add,
@@ -666,7 +659,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             ShowSettings,
             ShowTorrents,
             ShowAbout,
-            OpenUpdate,
+            InstallUpdate,
             Exit,
             SwitchTheme,
             Restart,
@@ -678,7 +671,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         {
             ObserveUpdates();
             Changed(nameof(HasUpdate));
-            ((RelayCommand)OpenUpdate).Refresh();
+            ((RelayCommand)InstallUpdate).Refresh();
         };
         _client.Snapshot += QueueSnapshot;
         _client.Detail += detail => QueueDetail(detail);

@@ -152,7 +152,8 @@ public sealed class Strings
                 WorkDescription.Subtitles subtitles => "subtitles_"
                     + subtitles.Work.ToString().ToLowerInvariant(),
                 WorkDescription.FileProperties => "file_properties",
-                WorkDescription.Update => "update",
+                WorkDescription.Update update => "update_"
+                    + update.Phase.ToString().ToLowerInvariant(),
                 WorkDescription.Sources => "sources",
                 WorkDescription.Maintenance maintenance => "maintenance_"
                     + maintenance.Work.ToString().ToLowerInvariant(),
@@ -189,6 +190,10 @@ public sealed class Strings
                 block.Kind.ToString().ToLowerInvariant()
             ),
             Library.VideoException video => Failure(video),
+            Shell.UpdateException update => Get(
+                "about",
+                "update_" + update.Reason.ToString().ToLowerInvariant()
+            ),
             Subtitles.SubtitleException subtitle => Get(
                 "subtitles",
                 "failure_" + subtitle.Reason.ToString().ToLowerInvariant()

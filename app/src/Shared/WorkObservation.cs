@@ -28,7 +28,7 @@ internal abstract record WorkDescription
 
     internal sealed record FileProperties : WorkDescription;
 
-    internal sealed record Update : WorkDescription;
+    internal sealed record Update(UpdatePhase Phase) : WorkDescription;
 
     internal sealed record Sources : WorkDescription;
 

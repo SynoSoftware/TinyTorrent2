@@ -624,7 +624,8 @@ inbound access is blocked. Port mapping does not bypass the host firewall.
 Updates use the same release installer, after the coordinated
 [Exit](engine.md#closing-and-shutdown). When TinyTorrent was running before the
 update, the installer starts it again, so downloads do not stay stopped until
-the person remembers to open it. If the installed executable cannot start,
+the person remembers to open it. It starts in the tray, or with its window when
+Help > Update passed `/OPEN=1`, because that person was using the window. If the installed executable cannot start,
 Setup uses the bundled engine to request Exit; a running application's refused
 Exit still stops replacement to protect unfinished input. Windows Restart Manager
 handles remaining file locks. Stage and validate a complete release
@@ -634,9 +635,18 @@ Keep an interrupted update recoverable without modifying downloads.
 Without an update check, most installations keep an old libtorrent and its known
 network-facing defects. When the window opens, WinUI asks the project's release
 page for the latest version, at most once a day, unless the Check for updates
-setting is off. A newer release shows Update available in the window, which
-opens the release page; installing it is the person's action. There is no silent
-update, resident updater, or check while the window is closed.
+setting is off. A newer release shows Update available in the window.
+Installing it is the person's action: Help > Update downloads the release's
+installer through the saved proxy and network adapter, checks it, and runs it
+without questions, as the update above describes. The check depends on the
+running program. A TinyTorrent whose signature Windows trusts runs only an
+installer with a trusted signature from the same publisher, so an unsigned
+installer never replaces a signed installation. Any other TinyTorrent requires
+the SHA-256 that the release publishes beside the installer. Signature checks fetch no revocation
+or certificate data, because Windows would send those requests outside the
+saved route. A failed download, check or setup leaves the current version
+running and says why. There is no silent update, resident updater, or check
+while the window is closed.
 
 WinUI stores the last attempt and known release version in `updates.json`
 beside its window layout. The check uses the project's public latest-release

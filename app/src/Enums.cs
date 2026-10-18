@@ -23,6 +23,22 @@ internal enum CityPhase
     Installing,
 }
 
+internal enum UpdatePhase
+{
+    Checking,
+    Downloading,
+    Installing,
+}
+
+// Why Help > Update left the current version running.
+internal enum UpdateFailure
+{
+    Missing,
+    Signature,
+    Checksum,
+    Setup,
+}
+
 internal enum RatingSample
 {
     Unknown,

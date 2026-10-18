@@ -226,7 +226,7 @@ public sealed partial class MainWindow
                     )
                 ),
                 new MenuSeparator(),
-                new MenuCommand(Model.UpdateText, Syno.Lucide.CircleFadingArrowUp, Model.OpenUpdate)
+                new MenuCommand(Model.UpdateText, Syno.Lucide.CircleFadingArrowUp, Model.InstallUpdate)
                 {
                     AccessKey = MenuKey("update"),
                 },

@@ -228,6 +228,7 @@ procedure CurStepChanged(CurStep: TSetupStep);
 var
   Code: Integer;
   Registered: Boolean;
+  Parameters: String;
 begin
   if CurStep = ssPostInstall then
   begin
@@ -244,8 +245,14 @@ begin
       if not Registered then
         SuppressibleMsgBox(CustomMessage('RegistrationFailed'), mbInformation, MB_OK, IDOK);
     end;
+    // TinyTorrent's Help > Update passes /OPEN=1, because the person was
+    // using the window and expects it back after the update.
+    if ExpandConstant('{param:OPEN|0}') = '1' then
+      Parameters := ''
+    else
+      Parameters := '--background';
     if WasRunning and not RebootNeeded then
-      if not Exec(ExpandConstant('{app}\{#EngineName}.exe'), '--background', '',
+      if not Exec(ExpandConstant('{app}\{#EngineName}.exe'), Parameters, '',
         SW_SHOWNORMAL, ewNoWait, Code) then
       begin
         Log(Format('Background restart failed (%d); offering launch on Finish.', [Code]));

@@ -92,18 +92,26 @@ internal sealed partial class ProviderHttp : IDisposable
     /// <see cref="Send"/>, it fails only when no bytes arrive for a minute, so
     /// a slow line can finish a large file.
     /// </summary>
-    internal async Task<long> Download(
+    internal Task<long> Download(
         ProviderCall call,
         string path,
         Action<WorkProgress> progress,
         CancellationToken cancellation
+    ) => Download(call.Message, path, progress, cancellation, call);
+
+    internal async Task<long> Download(
+        HttpRequestMessage request,
+        string path,
+        Action<WorkProgress> progress,
+        CancellationToken cancellation,
+        ProviderCall? call = null
     )
     {
         return await Exchange(
-                call.Message,
+                request,
                 async (response, deadline) =>
                 {
-                    if (call.Observe is { } observe)
+                    if (call?.Observe is { } observe)
                         await observe(new(response.StatusCode, [], Headers(response)))
                             .ConfigureAwait(false);
                     if (response.StatusCode != HttpStatusCode.OK)
@@ -135,7 +143,7 @@ internal sealed partial class ProviderHttp : IDisposable
                                 .ReadAsync(buffer, deadline.Token)
                                 .ConfigureAwait(false);
                         }
-                        catch (IOException)
+                        catch (IOException) when (call is not null)
                         {
                             await call
                                 .Policy.Fail(call.Request.Access, new(RequestBlockKind.Backoff))
@@ -157,7 +165,8 @@ internal sealed partial class ProviderHttp : IDisposable
                                 : new WorkProgress.Amount(total, WorkUnit.Bytes)
                         );
                     }
-                    await call.Policy.Succeed(call.Request.Access).ConfigureAwait(false);
+                    if (call is not null)
+                        await call.Policy.Succeed(call.Request.Access).ConfigureAwait(false);
                     return total;
                 },
                 cancellation,
