@@ -176,6 +176,28 @@ char const* ToString(NoticeKind kind)
     return "";
 }
 
+std::string ToString(NoticeSwitch notices)
+{
+    for (auto const& [name, value] : noticeSwitches)
+    {
+        if (value == notices)
+        {
+            return std::string(name);
+        }
+    }
+    return {};
+}
+
+std::vector<NoticeSwitch> AllNoticeSwitches()
+{
+    std::vector<NoticeSwitch> notices;
+    for (auto const& [name, value] : noticeSwitches)
+    {
+        notices.push_back(value);
+    }
+    return notices;
+}
+
 
 Engine::Engine(std::filesystem::path directory, std::function<void()> wake) :
     state_(std::make_unique<State>(std::move(directory), std::move(wake))) {}
@@ -210,26 +232,7 @@ void Engine::TurnOff(std::vector<NoticeSwitch> const& notices, std::function<voi
         completion({*refusal});
         return;
     }
-    auto choices = Json::object();
-    for (auto notice : notices)
-    {
-        switch (notice)
-        {
-        case NoticeSwitch::Finished:
-            choices["notifications_enabled"] = false;
-            break;
-        case NoticeSwitch::Added:
-            choices["notify_added"] = false;
-            break;
-        case NoticeSwitch::Problems:
-            choices["notify_problems"] = false;
-            break;
-        case NoticeSwitch::Background:
-            choices["notify_background"] = false;
-            break;
-        }
-    }
-    state_->Configure(choices, std::move(completion));
+    state_->TurnOff(notices, std::move(completion));
 }
 void Engine::RecordPrograms(std::vector<std::string> programs, std::function<void(Outcome)> completion)
 {

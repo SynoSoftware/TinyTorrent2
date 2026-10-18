@@ -1397,11 +1397,17 @@ void Application::ShowSettings()
 
 void Application::Notify(Notice notice)
 {
+    if (!notices_->IsOn(notice.kind))
+    {
+        return;
+    }
     if (windowClient_ && UsesWindow(notice.kind))
     {
+        auto notices = Switch(notice.kind);
         windowClient_->Send(Json{{"type", "notice"}, {"kind", ToString(notice.kind)},
             {"torrent_id", notice.torrentId}, {"name", notice.name}, {"detail", notice.detail}, {"code", notice.code},
-            {"folder", notice.folder}, {"count", notice.count}});
+            {"folder", notice.folder}, {"count", notice.count},
+            {"switch", notices ? Json(ToString(*notices)) : Json(nullptr)}});
         return;
     }
     notices_->Queue(std::move(notice));

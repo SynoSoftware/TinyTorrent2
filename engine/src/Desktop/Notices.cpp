@@ -1,4 +1,5 @@
 #include "Desktop/Notices.h"
+#include "Engine.h"
 #include <algorithm>
 #include <shellapi.h>
 
@@ -8,46 +9,6 @@ namespace
 {
 // Notices that arrive within this many milliseconds share one popup.
 constexpr ULONGLONG noticeDelay = 1000;
-
-// The switch that turns off notices of `kind`.
-std::optional<NoticeSwitch> Switch(NoticeKind kind)
-{
-    switch (kind)
-    {
-    case NoticeKind::Completed:
-        return NoticeSwitch::Finished;
-    case NoticeKind::Added:
-    case NoticeKind::Duplicate:
-        return NoticeSwitch::Added;
-    case NoticeKind::Error:
-    case NoticeKind::AddFailed:
-    case NoticeKind::DeleteFailed:
-    case NoticeKind::MissingProgram:
-        return NoticeSwitch::Problems;
-    case NoticeKind::Background:
-        return NoticeSwitch::Background;
-    case NoticeKind::Aggregate:
-        return std::nullopt;
-    }
-    return std::nullopt;
-}
-
-// The More menu names the Settings switch it turns off.
-char const* TurnOffKey(NoticeSwitch notices)
-{
-    switch (notices)
-    {
-    case NoticeSwitch::Finished:
-        return "off_finished";
-    case NoticeSwitch::Added:
-        return "off_added";
-    case NoticeSwitch::Problems:
-        return "off_problems";
-    case NoticeSwitch::Background:
-        return "off_background";
-    }
-    return "";
-}
 
 bool AcceptsNotifications()
 {
@@ -72,6 +33,28 @@ bool UsesWindow(NoticeKind kind)
     return IsProblem(kind) || kind == NoticeKind::Completed;
 }
 
+std::optional<NoticeSwitch> Switch(NoticeKind kind)
+{
+    switch (kind)
+    {
+    case NoticeKind::Completed:
+        return NoticeSwitch::Finished;
+    case NoticeKind::Added:
+    case NoticeKind::Duplicate:
+        return NoticeSwitch::Added;
+    case NoticeKind::Error:
+    case NoticeKind::AddFailed:
+    case NoticeKind::DeleteFailed:
+    case NoticeKind::MissingProgram:
+        return NoticeSwitch::Problems;
+    case NoticeKind::Background:
+        return NoticeSwitch::Background;
+    case NoticeKind::Aggregate:
+        return std::nullopt;
+    }
+    return std::nullopt;
+}
+
 Notices::Notices(Strings const& strings, bool headless, HICON errorIcon, Commands commands)
     : strings_(strings), headless_(headless), errorIcon_(errorIcon), commands_(std::move(commands)),
       popup_(strings)
@@ -91,13 +74,17 @@ void Notices::Close()
 
 bool Notices::Accepts(NoticeKind kind) const
 {
-    auto notices = Switch(kind);
-    return !headless_ && (!notices || IsOn(*notices));
+    return !headless_ && IsOn(kind);
 }
 
-bool Notices::IsOn(NoticeSwitch notices) const
+bool Notices::IsOn(NoticeKind kind) const
 {
-    switch (notices)
+    auto notices = Switch(kind);
+    if (!notices)
+    {
+        return true;
+    }
+    switch (*notices)
     {
     case NoticeSwitch::Finished:
         return activity_.notificationsEnabled;
@@ -163,16 +150,17 @@ void Notices::Notify()
     {
         return;
     }
+    // Failures and notices wait while Windows holds notifications back, such
+    // as over a full-screen app, so a stopped torrent is still reported later.
+    if (!AcceptsNotifications())
+    {
+        return;
+    }
     if (!failures_.empty())
     {
-        // A failure waits while Windows holds notifications back, because it
-        // always shows.
-        if (AcceptsNotifications())
-        {
-            auto failure = std::move(failures_.front());
-            failures_.erase(failures_.begin());
-            ShowFailure(std::move(failure));
-        }
+        auto failure = std::move(failures_.front());
+        failures_.erase(failures_.begin());
+        ShowFailure(std::move(failure));
         return;
     }
     if (batches_.empty())
@@ -190,7 +178,7 @@ void Notices::Notify()
     auto batch = std::move(next->second);
     batches_.erase(next);
     auto kind = batch.first.kind;
-    if (!Accepts(kind) || !AcceptsNotifications())
+    if (!Accepts(kind))
     {
         return;
     }
@@ -368,13 +356,10 @@ void Notices::Show(Popup::Content content, std::optional<NoticeSwitch> notices)
         content.menuTitle = strings_.Text("notification", "fewer");
         // Lucide's bell-minus, bell-off and settings glyphs.
         content.menu = {
-            {L'\uE1F0', strings_.Text("notification", TurnOffKey(*notices)),
+            {L'\uE1F0', strings_.Text("notification", "off_" + ToString(*notices)),
                 [this, shown = *notices] { commands_.turnOff({shown}); }, L"TurnOff"},
-            {L'\uE05A', strings_.Text("notification", "off_all"), [this]
-            {
-                commands_.turnOff({NoticeSwitch::Finished, NoticeSwitch::Added, NoticeSwitch::Problems,
-                    NoticeSwitch::Background});
-            }, L"TurnOffAll"},
+            {L'\uE05A', strings_.Text("notification", "off_all"),
+                [this] { commands_.turnOff(AllNoticeSwitches()); }, L"TurnOffAll"},
             {L'\uE154', strings_.Text("notification", "settings"),
                 [this] { commands_.openSettings("notifications"); }, L"NotificationSettings"}};
     }

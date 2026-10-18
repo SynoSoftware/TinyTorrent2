@@ -835,7 +835,12 @@
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="local:Notice">
             <Grid
+              x:Name="NoticeToast"
               Padding="16,12,16,16"
+              PointerEntered="OnToastPointerEntered"
+              PointerExited="OnToastPointerExited"
+              GotFocus="OnToastGotFocus"
+              LostFocus="OnToastLostFocus"
               ColumnSpacing="12"
               RowSpacing="2"
               Background="{ThemeResource SolidBackgroundFillColorQuarternaryBrush}"
@@ -936,22 +941,42 @@
                 AutomationProperties.HelpText="{x:Bind ActionTip, Mode=OneWay}"
               />
               <!-- The negative margin keeps the title row as tall as the
-                       text while Close keeps its full target size. -->
-              <Button
+                       text while More and Close keep their full target size. -->
+              <StackPanel
                 Grid.Column="2"
                 Margin="0,-4,-8,-4"
                 VerticalAlignment="Center"
-                Style="{StaticResource TinyTorrentSubtleButtonStyle}"
-                ToolTipService.ToolTip="{x:Bind CloseText, Mode=OneWay}"
-                AutomationProperties.Name="{x:Bind CloseText, Mode=OneWay}"
-                Click="OnCloseNotice"
+                Orientation="Horizontal"
+                Spacing="4"
               >
-                <FontIcon
-                  FontFamily="{x:Bind icons:Lucide.Font}"
-                  Glyph="{x:Bind icons:Lucide.X}"
-                  FontSize="{StaticResource TinyTorrentButtonIconSize}"
-                />
-              </Button>
+                <Button
+                  x:Name="NoticeMore"
+                  Opacity="0"
+                  Visibility="{x:Bind HasSwitch, Mode=OneWay}"
+                  Style="{StaticResource TinyTorrentSubtleButtonStyle}"
+                  ToolTipService.ToolTip="{x:Bind MoreText, Mode=OneWay}"
+                  AutomationProperties.Name="{x:Bind MoreText, Mode=OneWay}"
+                  Click="OnNoticeMore"
+                >
+                  <FontIcon
+                    FontFamily="{x:Bind icons:Lucide.Font}"
+                    Glyph="{x:Bind icons:Lucide.Ellipsis}"
+                    FontSize="{StaticResource TinyTorrentButtonIconSize}"
+                  />
+                </Button>
+                <Button
+                  Style="{StaticResource TinyTorrentSubtleButtonStyle}"
+                  ToolTipService.ToolTip="{x:Bind CloseText, Mode=OneWay}"
+                  AutomationProperties.Name="{x:Bind CloseText, Mode=OneWay}"
+                  Click="OnCloseNotice"
+                >
+                  <FontIcon
+                    FontFamily="{x:Bind icons:Lucide.Font}"
+                    Glyph="{x:Bind icons:Lucide.X}"
+                    FontSize="{StaticResource TinyTorrentButtonIconSize}"
+                  />
+                </Button>
+              </StackPanel>
             </Grid>
           </DataTemplate>
         </ItemsControl.ItemTemplate>

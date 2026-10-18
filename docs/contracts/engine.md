@@ -1239,7 +1239,10 @@ its buttons; Enter runs Dismiss until another button has the focus. A failure
 that arrives in the background, such as a window that ended unexpectedly or
 did not open within its time, or one that waits behind another popup, never
 takes the focus, because the person may be typing elsewhere. It does not
-appear over a full-screen app or a presentation.
+appear over a full-screen app or a presentation, and waits until Windows shows
+notifications again, so a torrent that stopped meanwhile is still reported.
+The notice that the window closed is the exception: it is dropped, because it
+only helps at the moment the window closes.
 While the pointer is over a popup, its header shows a More button (…) beside
 the close button, as Windows' own notifications do; otherwise each popup shows
 only its message. More opens a menu laid out as Windows' own, drawn on the

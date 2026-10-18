@@ -1330,6 +1330,18 @@ subtitle that could not be saved, and a start that waits for a pause to end. A t
 title, the torrent it concerns, the reason or next step, at most one action at
 the bottom right, and Close at the top right.
 
+A finished download and a problem the engine reports also show More beside
+Close, because they come from the engine's notices and a Settings switch
+turns them off. As on the engine's popup, More shows only while the pointer is
+over that toast; it also shows while keyboard focus is inside the toast or its
+menu is open. Hidden, it keeps its space, so the title does not reflow and Tab
+still reaches it. Its menu offers what the engine's popup menu offers: turn off
+this kind of notice, turn off all notifications, or open the notification
+settings. The engine names each notice's switch and turns the switches off,
+so both menus turn off the same notices. Each choice closes the toast. A
+failure of the person's own command has no More, because no switch turns it
+off.
+
 - The title says what happened, in one line without a final period: a noun
   and a past-tense verb, such as Download finished, Stop failed or Torrent
   stopped. A failed command's title names the command, so the error text
@@ -1347,7 +1359,8 @@ the bottom right, and Close at the top right.
   message cannot be the only explanation of failed work. The resume toast
   stays until the person closes it or the pause ends.
 - The seven seconds pause while the pointer is over the stack, keyboard focus
-  is in it, the window is inactive, or the stack is hidden, so a toast that
+  is in it, a toast's More menu is open, the window is inactive, or the stack
+  is hidden, so a toast that
   arrives unseen waits for the person.
 - The stack takes no room, so showing or hiding a toast moves no page
   content. It never takes focus, and it hides while an editor has focus,

@@ -33,7 +33,8 @@ constexpr std::pair<std::string_view, Command> commands[] = {
     {"piece_order", Command::PieceOrder},
     {"speed_limit", Command::SpeedLimit},
     {"check_proxy", Command::CheckProxy},
-    {"connection_test", Command::ConnectionTest}};
+    {"connection_test", Command::ConnectionTest},
+    {"turn_off", Command::TurnOff}};
 
 constexpr std::pair<std::string_view, QueueMove> moves[] = {
     {"up", QueueMove::Up},
@@ -118,7 +119,7 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
                 // The settings and session-pause owners publish the snapshot
                 // themselves, because they also serve tray actions.
                 if (command != Command::Settings && command != Command::ResetSettings &&
-                    command != Command::SessionPause)
+                    command != Command::SessionPause && command != Command::TurnOff)
                 {
                     PublishSnapshot();
                     RequestStatus();
@@ -207,6 +208,29 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
             reply(outcome.error ? Failure(*outcome.error, outcome.detail) : Success());
         });
         break;
+    case Command::TurnOff:
+    {
+        auto word = request.at("switch").get<std::string>();
+        std::vector<NoticeSwitch> notices;
+        if (word == "all")
+        {
+            notices = AllNoticeSwitches();
+        }
+        else if (auto notice = Parse(noticeSwitches, word))
+        {
+            notices.push_back(*notice);
+        }
+        else
+        {
+            reply(Failure(ErrorCode::InvalidRequest));
+            break;
+        }
+        TurnOff(notices, [reply](Outcome outcome)
+        {
+            reply(outcome.error ? Failure(*outcome.error, outcome.detail) : Success());
+        });
+        break;
+    }
     case Command::Preview:
         Inspect(request.at("source").get<std::string>(), connectionId,
             [this, destination = request.value("destination", ""), reply](Outcome outcome, Preview* preview)

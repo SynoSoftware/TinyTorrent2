@@ -534,6 +534,9 @@ public:
     void Configure(Json const& choices, std::function<void(Outcome)> completion);
     // Saves every setting at its default, as a new installation starts.
     void ResetSettings(std::function<void(Outcome)> completion);
+    // Saves each switch in `notices` as off, for the popup's and the window's
+    // More menus alike.
+    void TurnOff(std::vector<NoticeSwitch> const& notices, std::function<void(Outcome)> completion);
     // Saves `next` as the settings and applies it; `settled` runs once it
     // applies, before the snapshot is published.
     void SaveSettings(Settings next, std::function<void()> settled, std::function<void(Outcome)> completion);

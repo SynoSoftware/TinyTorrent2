@@ -1,8 +1,11 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Syno.TinyTorrent.Controls;
+using Syno.TinyTorrent.Shared;
 
 namespace Syno.TinyTorrent.Shell;
 
@@ -13,6 +16,11 @@ public sealed partial class MainWindow
         Interval = TimeSpan.FromMilliseconds(250),
     };
     private bool _noticeHovered;
+    // The More button whose menu is open. The pointer leaves the stack for
+    // the menu, so the menu pauses the notices itself, or its notice would
+    // close under it, and keeps its More showing.
+    private Button? _noticeMenuButton;
+    private FrameworkElement? _pointedToast;
     private bool _windowActive = true;
     private readonly HashSet<Notice> _shownNotices = [];
 
@@ -75,6 +83,7 @@ public sealed partial class MainWindow
             if (
                 NoticeStack.Visibility != Visibility.Visible
                 || _noticeHovered
+                || _noticeMenuButton is not null
                 || !_windowActive
                 || HasNoticeKeyboardFocus()
             )
@@ -114,19 +123,55 @@ public sealed partial class MainWindow
     // neighbouring notice is not the person reading it.
     private bool HasNoticeKeyboardFocus()
     {
-        if (
-            FocusManager.GetFocusedElement(Root.XamlRoot)
-            is not Control { FocusState: FocusState.Keyboard } control
-        )
-            return false;
-        DependencyObject? element = control;
+        return FocusManager.GetFocusedElement(Root.XamlRoot)
+                is Control { FocusState: FocusState.Keyboard } control
+            && IsInside(control, NoticeStack);
+    }
+
+    private static bool IsInside(DependencyObject? element, DependencyObject container)
+    {
         while (element is not null)
         {
-            if (ReferenceEquals(element, NoticeStack))
+            if (ReferenceEquals(element, container))
                 return true;
             element = VisualTreeHelper.GetParent(element);
         }
         return false;
+    }
+
+    private void OnToastPointerEntered(object sender, PointerRoutedEventArgs args)
+    {
+        _pointedToast = (FrameworkElement)sender;
+        ShowNoticeMore(_pointedToast);
+    }
+
+    private void OnToastPointerExited(object sender, PointerRoutedEventArgs args)
+    {
+        if (ReferenceEquals(_pointedToast, sender))
+            _pointedToast = null;
+        ShowNoticeMore((FrameworkElement)sender);
+    }
+
+    private void OnToastGotFocus(object sender, RoutedEventArgs args) =>
+        ShowNoticeMore((FrameworkElement)sender);
+
+    // Focus has not reached its next element yet when LostFocus runs.
+    private void OnToastLostFocus(object sender, RoutedEventArgs args) =>
+        DispatcherQueue.TryEnqueue(() => ShowNoticeMore((FrameworkElement)sender));
+
+    // More shows while the pointer is over its toast, focus is inside it or
+    // its menu is open, as the engine's popup shows More only under the
+    // pointer. Hidden, it keeps its space, so the title does not reflow and
+    // Tab still reaches it.
+    private void ShowNoticeMore(FrameworkElement toast)
+    {
+        if (toast.FindName("NoticeMore") is not Button more || toast.XamlRoot is null)
+            return;
+        var shows =
+            ReferenceEquals(_pointedToast, toast)
+            || ReferenceEquals(_noticeMenuButton, more)
+            || IsInside(FocusManager.GetFocusedElement(toast.XamlRoot) as DependencyObject, toast);
+        more.Opacity = shows ? 1 : 0;
     }
 
     // Notices show above an open dialog, so a result reported while it is
@@ -197,4 +242,53 @@ public sealed partial class MainWindow
 
     private void OnCloseNotice(object sender, RoutedEventArgs args) =>
         Model.DismissNotice((Notice)((FrameworkElement)sender).DataContext);
+
+    private void OnNoticeMore(object sender, RoutedEventArgs args)
+    {
+        var button = (Button)sender;
+        var notice = (Notice)button.DataContext;
+        if (notice.Switch is not { } notices)
+            return;
+        var menu = MenuItems.Flyout(
+            () =>
+                [
+                    new MenuCommand(
+                        Model.Text.Get("notifications", "off_" + notices),
+                        Lucide.BellMinus,
+                        new RelayCommand(() => Model.TurnOffNotices(notice), () => Model.CanEdit)
+                    ),
+                    new MenuCommand(
+                        Model.Text.Get("notifications", "off_all"),
+                        Lucide.BellOff,
+                        new RelayCommand(() => Model.TurnOffAllNotices(notice), () => Model.CanEdit)
+                    ),
+                    new MenuCommand(
+                        Model.Text.Get("notifications", "notification_settings"),
+                        Lucide.Settings,
+                        new RelayCommand(() => Model.ShowNotificationSettings(notice), () => true)
+                    ),
+                ],
+            () => Model.Text
+        );
+        menu.Opened += (_, _) => _noticeMenuButton = button;
+        menu.Closed += (_, _) =>
+        {
+            _noticeMenuButton = null;
+            // Focus returns to More after Closed, so the toast decides then.
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                DependencyObject? toast = button;
+                while (toast is not null and not FrameworkElement { Name: "NoticeToast" })
+                    toast = VisualTreeHelper.GetParent(toast);
+                if (toast is FrameworkElement shown)
+                    ShowNoticeMore(shown);
+            });
+        };
+        // The toasts sit at the window's right edge, so the menu grows left
+        // from More instead of past the edge, where the window cuts it off.
+        menu.ShowAt(
+            button,
+            new FlyoutShowOptions { Placement = FlyoutPlacementMode.TopEdgeAlignedRight }
+        );
+    }
 }

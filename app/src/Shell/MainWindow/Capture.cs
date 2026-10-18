@@ -407,6 +407,7 @@ public sealed partial class MainWindow
                         code,
                         detail,
                         folder = kind == "delete_failed" ? torrent.SavePath : string.Empty,
+                        @switch = "problems",
                         count = 1,
                     }
                 )
@@ -2249,6 +2250,7 @@ public sealed partial class MainWindow
                                     {
                                         type = "notice",
                                         kind = "completed",
+                                        @switch = "finished",
                                         torrent_id = torrent.TorrentId,
                                         name = torrent.Name,
                                         detail = string.Empty,

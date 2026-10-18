@@ -1023,6 +1023,30 @@ void Engine::State::Configure(Json const& choices, std::function<void(Outcome)> 
     }
 }
 
+void Engine::State::TurnOff(std::vector<NoticeSwitch> const& notices, std::function<void(Outcome)> completion)
+{
+    auto choices = Json::object();
+    for (auto notice : notices)
+    {
+        switch (notice)
+        {
+        case NoticeSwitch::Finished:
+            choices["notifications_enabled"] = false;
+            break;
+        case NoticeSwitch::Added:
+            choices["notify_added"] = false;
+            break;
+        case NoticeSwitch::Problems:
+            choices["notify_problems"] = false;
+            break;
+        case NoticeSwitch::Background:
+            choices["notify_background"] = false;
+            break;
+        }
+    }
+    Configure(choices, std::move(completion));
+}
+
 // Pause all and the reported programs are kept: one is the person's choice
 // about transfers rather than a preference, and the other records what the
 // person was already told.

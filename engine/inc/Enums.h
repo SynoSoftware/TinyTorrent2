@@ -29,7 +29,8 @@ enum class Command
     PieceOrder,
     SpeedLimit,
     CheckProxy,
-    ConnectionTest
+    ConnectionTest,
+    TurnOff
 };
 
 enum class ConnectionPhase

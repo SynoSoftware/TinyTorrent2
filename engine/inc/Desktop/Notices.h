@@ -13,6 +13,8 @@ namespace tt::desktop
 // completions do; additions and the background notice always use a popup, so
 // they do not raise the window.
 bool UsesWindow(NoticeKind kind);
+// The Settings switch that turns off notices of `kind`, wherever they show.
+std::optional<NoticeSwitch> Switch(NoticeKind kind);
 
 // The popups above the notification area: which notices and failures show,
 // which share a popup, and what selecting each part of a popup does.
@@ -60,6 +62,9 @@ public:
     Notices& operator=(Notices const&) = delete;
     // Takes the notification switches and the theme.
     void Update(Activity const& activity);
+    // Whether the switch that governs `kind` is on, wherever the notice shows.
+    // A kind without a switch is always on.
+    bool IsOn(NoticeKind kind) const;
     void Queue(Notice notice);
     // A failure with the code of one that waits replaces it, and one that is
     // on screen is not shown again.
@@ -90,7 +95,6 @@ private:
         ULONGLONG due;
     };
     bool Accepts(NoticeKind kind) const;
-    bool IsOn(NoticeSwitch notices) const;
     void ShowBackground();
     // Offers the More menu when there is a switch that turns `notices` off.
     void Show(Popup::Content content, std::optional<NoticeSwitch> notices);

@@ -31,12 +31,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
 
     // How the error notice describes _error: a title key from the
     // notifications text, the torrent it names, the reason when the
-    // engine sent one instead of an error code, and the folder where the
-    // person finishes a failed deletion.
+    // engine sent one instead of an error code, the folder where the
+    // person finishes a failed deletion, and the engine's word for the
+    // Settings switch that turns off a problem the engine reports.
     private string _errorTitle = string.Empty;
     private Func<string>? _errorSubject;
     private Func<string>? _errorReason;
     private string? _errorFolder;
+    private string? _errorSwitch;
     private double _downloadRate;
     private double _uploadRate;
     private long? _freeSpace;
@@ -1302,7 +1304,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         string title,
         Func<string>? subject,
         Func<string>? reason,
-        string? folder = null
+        string? folder = null,
+        string? notices = null
     )
     {
         if (_closed)
@@ -1312,6 +1315,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         _errorSubject = subject;
         _errorReason = reason;
         _errorFolder = folder;
+        _errorSwitch = notices;
         Refresh();
         Announce(CommandError);
     }

@@ -334,9 +334,9 @@ isolation guarantee; an extra token would not create a stronger boundary.
 
 ## Wire representation
 
-Protocol version 20 uses a four-byte little-endian UTF-8 JSON frame length,
+Protocol version 21 uses a four-byte little-endian UTF-8 JSON frame length,
 bounded to 16 MiB. The endpoint is `TinyTorrent.<logon SID>`; each connecting
-client first receives `{type:"hello",version:20,session_id:"...",data_directory:"..."}`. The absolute data directory
+client first receives `{type:"hello",version:21,session_id:"...",data_directory:"..."}`. The absolute data directory
 keeps the same store for explicit Restart, which starts the engine beside the
 window rather than a path a pipe peer reports. Requests are
 `{request_id:signed-64-bit-integer,command:string,...}`. Replies repeat `request_id` and have
@@ -347,8 +347,11 @@ highlights it, as search does. The pipe
 passes the engine each request's connection beside the request, so no request field
 can claim another connection's previews.
 
-Desktop notices use `{type:"notice",kind,torrent_id,name,detail,code,count}` on that
-same connection while the window is open. `count` is one: a notice queued in
+Desktop notices use `{type:"notice",kind,torrent_id,name,detail,code,folder,count,switch}` on that
+same connection while the window is open. `switch` names the Settings switch
+that turns the notice off: `finished`, `added`, `problems` or `background`, or
+null when none does. The window's More menu sends it back in `turn_off`, so
+the engine alone decides which switch a notice has. `count` is one: a notice queued in
 the tray stays there, and the window never receives a tray burst. The window
 keeps completion feedback bounded and uses the current
 torrent identity to resolve Open folder. Windows delivery is reserved for a
@@ -386,7 +389,9 @@ torrent_id), `torrent` (torrent_id), `pause`, `resume`, `force`, `verify`, and
 or before_torrent_id: string/null for a row drop; null means end),
 `piece_order` (torrent_ids with sequential, first_last or both as booleans; an
 absent one keeps each torrent's choice),
-`session_pause` (paused), `settings` (changes), `reset_settings`, `check_proxy` (proxy), `open`, `ready`,
+`session_pause` (paused), `settings` (changes), `reset_settings`, `turn_off`
+(switch: a notice's `switch` word, or `all` for every switch; it saves those
+notification settings as off, as the popup's More menu does), `check_proxy` (proxy), `open`, `ready`,
 `window_closed`, `activate_reply` (available boolean), `close_reply` (state:
 waiting/closing/cancelled), `exit_reply` (answer: confirmed/cancelled/unavailable),
 and `exit`. Activation acknowledgement lets Open wait through an

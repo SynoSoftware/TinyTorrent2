@@ -106,8 +106,9 @@ public sealed partial class MainViewModel
         var name = notice.GetProperty("name").GetString() ?? string.Empty;
         var torrentId = notice.GetProperty("torrent_id").GetString() ?? string.Empty;
         var count = notice.TryGetProperty("count", out var total) ? total.GetInt32() : 1;
+        var notices = notice.GetProperty("switch").GetString();
         if (kind == "completed")
-            ShowCompletion(torrentId, name);
+            ShowCompletion(torrentId, name, notices);
         else if (kind is "error" or "add_failed" or "delete_failed")
         {
             var detail = notice.GetProperty("detail").GetString() ?? string.Empty;
@@ -143,7 +144,14 @@ public sealed partial class MainViewModel
                 _ => "torrent_stopped",
             };
             var folder = notice.GetProperty("folder").GetString();
-            Report(error, title, () => name, Reason, folder is { Length: > 0 } ? folder : null);
+            Report(
+                error,
+                title,
+                () => name,
+                Reason,
+                folder is { Length: > 0 } ? folder : null,
+                notices
+            );
         }
     }
 
@@ -270,6 +278,7 @@ public sealed partial class MainViewModel
                 notice.ActionText = Text.Get("commands", "open_folder");
                 notice.ActionTip = Text.Get("notifications", "files_folder_tip");
                 notice.ActionGlyph = Syno.Lucide.FolderOpen;
+                notice.Switch = _errorSwitch;
                 break;
             case NoticeKind.SubtitleError:
                 var latest = _subtitleFailure!;
@@ -307,11 +316,12 @@ public sealed partial class MainViewModel
                 notice.ActionGlyph = Syno.Lucide.FolderOpen;
                 break;
         }
+        notice.MoreText = Text.Get("notifications", "more");
     }
 
     // A torrent that finishes again replaces its earlier notice, and beyond
     // the limit the oldest timed notice gives way to the new one.
-    private void ShowCompletion(string torrentId, string name)
+    private void ShowCompletion(string torrentId, string name, string? notices)
     {
         if (
             Notices.FirstOrDefault(shown =>
@@ -324,6 +334,7 @@ public sealed partial class MainViewModel
         {
             Subject = name,
             CloseText = Text.Get("commands", "close"),
+            Switch = notices,
         };
         notice.Action = new RelayCommand(
             () => OpenCompletion(notice),
@@ -466,6 +477,35 @@ public sealed partial class MainViewModel
         Notices.Remove(notice);
         await OpenTorrent(torrent, true);
     }
+
+    // A toast's More menu offers what the engine's popup menu offers, and the
+    // engine turns the switches off for both. Each choice closes the toast,
+    // because the person has decided about it.
+    internal Task TurnOffNotices(Notice notice) =>
+        notice.Switch is { } notices ? TurnOff(notice, notices) : Task.CompletedTask;
+
+    internal Task TurnOffAllNotices(Notice notice) => TurnOff(notice, "all");
+
+    private async Task TurnOff(Notice notice, string notices)
+    {
+        if (!CanEdit)
+            return;
+        DismissNotice(notice);
+        try
+        {
+            await _client.Send("turn_off", new { @switch = notices });
+        }
+        catch (Exception error)
+        {
+            Report(error);
+        }
+    }
+
+    internal Task ShowNotificationSettings(Notice notice)
+    {
+        DismissNotice(notice);
+        return RequestSettings(new(SettingsCategory.General, "notifications"));
+    }
 }
 
 // One message in the window's toast stack, or the message bar's content.
@@ -482,6 +522,8 @@ public sealed class Notice : INotifyPropertyChanged
     private string _actionTip = string.Empty;
     private string _actionGlyph = string.Empty;
     private string _closeText = string.Empty;
+    private string _moreText = string.Empty;
+    private string? _switch;
 
     internal Notice(NoticeKind kind, string torrentId = "", TimeSpan? lifetime = null)
     {
@@ -582,6 +624,25 @@ public sealed class Notice : INotifyPropertyChanged
         get => _closeText;
         internal set => Set(ref _closeText, value);
     }
+    public string MoreText
+    {
+        get => _moreText;
+        internal set => Set(ref _moreText, value);
+    }
+
+    // The engine's word for the Settings switch that turns off notices like
+    // this one, which the More menu offers; null when none does, such as for
+    // a failure of the person's own command.
+    internal string? Switch
+    {
+        get => _switch;
+        set
+        {
+            if (Set(ref _switch, value))
+                Changed(nameof(HasSwitch));
+        }
+    }
+    public bool HasSwitch => Switch is not null;
 
     private bool Set<T>(ref T field, T value, [CallerMemberName] string property = "")
     {

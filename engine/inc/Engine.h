@@ -187,6 +187,14 @@ std::optional<Value> Parse(std::pair<std::string_view, Value> const (&names)[Siz
     return std::nullopt;
 }
 
+// The protocol word of each notification switch. It lists every switch, so
+// Turn off all notifications turns off each one in it.
+inline constexpr std::pair<std::string_view, NoticeSwitch> noticeSwitches[] = {
+    {"finished", NoticeSwitch::Finished},
+    {"added", NoticeSwitch::Added},
+    {"problems", NoticeSwitch::Problems},
+    {"background", NoticeSwitch::Background}};
+
 // Reads a value from settings.json, or returns `fallback` when the key is
 // missing or holds a value of another type, so a damaged file still loads with
 // every value it holds correctly. Every whole number saved there is zero or
@@ -244,6 +252,8 @@ std::wstring Executable();
 // nothing when Windows does not reveal it.
 std::optional<std::filesystem::path> ProcessImage(void* process);
 char const* ToString(NoticeKind kind);
+std::string ToString(NoticeSwitch notices);
+std::vector<NoticeSwitch> AllNoticeSwitches();
 char const* ToString(ErrorCode code);
 std::optional<ErrorCode> ParseError(std::string_view word);
 Json Success(Json data = Json::object());
