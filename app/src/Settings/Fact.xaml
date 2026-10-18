@@ -1,0 +1,49 @@
+<UserControl
+  x:Class="Syno.TinyTorrent.Settings.Fact"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:controls="using:Syno.TinyTorrent.Controls"
+  HorizontalContentAlignment="Stretch"
+  IsTabStop="False"
+>
+  <controls:Field
+    x:Name="Field"
+    Style="{StaticResource TinyTorrentFactStyle}"
+    Glyph="{x:Bind Glyph, Mode=OneWay}"
+    Label="{x:Bind Label, Mode=OneWay}"
+  >
+    <VisualStateManager.VisualStateGroups>
+      <VisualStateGroup>
+        <VisualState x:Name="Plain" />
+        <VisualState x:Name="Transfers">
+          <VisualState.StateTriggers>
+            <StateTrigger IsActive="{x:Bind ShowsTransfers, Mode=OneWay}" />
+          </VisualState.StateTriggers>
+          <VisualState.Setters>
+            <Setter Target="PlainValue.Visibility" Value="Collapsed" />
+            <Setter Target="TransferValue.Visibility" Value="Visible" />
+          </VisualState.Setters>
+        </VisualState>
+      </VisualStateGroup>
+    </VisualStateManager.VisualStateGroups>
+    <Grid>
+      <TextBlock
+        x:Name="PlainValue"
+        Text="{x:Bind Value, Mode=OneWay}"
+        Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
+        TextTrimming="CharacterEllipsis"
+        ToolTipService.ToolTip="{x:Bind Value, Mode=OneWay}"
+      />
+      <controls:TransferPair
+        x:Name="TransferValue"
+        ValueStyle="{StaticResource TinyTorrentTitleDetailTextStyle}"
+        Text="{x:Bind Text, Mode=OneWay}"
+        Download="{x:Bind Download, Mode=OneWay}"
+        Upload="{x:Bind Upload, Mode=OneWay}"
+        Total="{x:Bind Total, Mode=OneWay}"
+        Description="{x:Bind Value, Mode=OneWay}"
+        Visibility="Collapsed"
+      />
+    </Grid>
+  </controls:Field>
+</UserControl>

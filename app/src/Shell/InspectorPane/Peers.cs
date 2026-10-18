@@ -270,11 +270,14 @@ public sealed partial class InspectorPane
                 || !ReferenceEquals(PeerDrawing.Content, _peerMap)
             )
                 return;
-            PeerTransfer.Show(
+            PeerTransfer.Text = Model.Text;
+            PeerTransfer.Download = Model.DownloadText;
+            PeerTransfer.Upload = Model.UploadText;
+            PeerTransfer.Description = Model.Text.Format(
+                "peer_map",
+                "speed_hint",
                 Model.DownloadText,
-                Model.UploadText,
-                Model.Text.Format("peer_map", "speed_hint", Model.DownloadText, Model.UploadText),
-                Model.Text
+                Model.UploadText
             );
             Model.UpdateMap(_layout.View.Cities && Model.HasCities);
         });

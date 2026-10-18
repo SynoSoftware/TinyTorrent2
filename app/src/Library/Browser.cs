@@ -1265,7 +1265,12 @@ public sealed partial class Browser
         if (facts is not null)
             await facts.DisposeAsync();
         if (videos is not null)
+        {
+            // Closing the lookup cancels its changes, so the person's last
+            // provider choice finishes saving first.
+            await _choiceSave;
             await videos.DisposeAsync();
+        }
         if (searching is not null)
             await searching;
         if (ratings is not null)

@@ -32,7 +32,7 @@
         Style="{StaticResource TinyTorrentSurfaceIconStyle}"
         FontFamily="{x:Bind icons:Lucide.Font}"
         Glyph="{x:Bind icons:Lucide.CirclePlus}"
-        Visibility="{x:Bind local:AddDialog.Hidden(Model.AddDraft.GettingMetadata), Mode=OneWay}"
+        Visibility="{x:Bind controls:Visibilities.Unless(Model.AddDraft.GettingMetadata), Mode=OneWay}"
       />
       <!-- Left-aligned, so the size follows a short name and a long name trims before it. -->
       <Grid Grid.Column="1" HorizontalAlignment="Left" ColumnSpacing="12">
@@ -146,7 +146,7 @@
                      without moving anything. The icon and text match the status
                      bar's free space. -->
                 <Grid MinHeight="32">
-                  <Grid Visibility="{x:Bind local:AddDialog.Hidden(Model.AddDraft.HasDestinationError), Mode=OneWay}">
+                  <Grid Visibility="{x:Bind controls:Visibilities.Unless(Model.AddDraft.HasDestinationError), Mode=OneWay}">
                     <StackPanel
                       Orientation="Horizontal"
                       Spacing="6"
@@ -165,7 +165,7 @@
                           Text="{x:Bind Model.AddDraft.Space, Mode=OneWay}"
                           Style="{StaticResource TinyTorrentStatusTextStyle}"
                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                          Visibility="{x:Bind local:AddDialog.Hidden(Model.AddDraft.LacksSpace), Mode=OneWay}"
+                          Visibility="{x:Bind controls:Visibilities.Unless(Model.AddDraft.LacksSpace), Mode=OneWay}"
                         />
                         <TextBlock
                           Text="{x:Bind Model.AddDraft.Space, Mode=OneWay}"
@@ -346,7 +346,7 @@
               ItemsSource="{x:Bind Model.AddDraft.Sources}"
               SelectionMode="None"
               IsEnabled="{x:Bind Model.AddDraft.CanEdit, Mode=OneWay}"
-              Visibility="{x:Bind local:AddDialog.Hidden(Model.AddDraft.HasFiles), Mode=OneWay}"
+              Visibility="{x:Bind controls:Visibilities.Unless(Model.AddDraft.HasFiles), Mode=OneWay}"
             >
               <ListView.ItemTemplate>
                 <DataTemplate x:DataType="local:AddSource">

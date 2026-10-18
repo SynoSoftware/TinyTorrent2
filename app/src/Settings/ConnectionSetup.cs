@@ -18,6 +18,7 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
     private readonly PipeClient _client;
     private ConnectionPhase _phase;
     private string _measuredId = string.Empty;
+    private string? _scaleTestId;
     private string _testFailure = string.Empty;
     private int _remaining;
     private double _downloadBytes;
@@ -81,6 +82,9 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
     public string TestId { get; private set; } = string.Empty;
     public double DownloadRate { get; private set; }
     public double UploadRate { get; private set; }
+
+    /// <summary>The top of both speed meters, in megabits a second, or null when nothing is measured or entered.</summary>
+    public double? MeterScale { get; private set; }
     public double DownloadCapacity => Parse(Download);
     public double UploadCapacity => Parse(Upload);
     public bool QuickTest => !LongerTest;
@@ -176,6 +180,11 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
             : "—";
     public string StandardSummary => _settings.StandardSummary;
     public string AlternativeSummary => _settings.AlternativeSummary;
+    public IReadOnlyList<string> Hierarchy { get; private set; } = [];
+    public string StandardDownload => Text.SpeedLimit(SavedStandard.Download);
+    public string StandardUpload => Text.SpeedLimit(SavedStandard.Upload);
+    public string AlternativeDownload => Text.SpeedLimit(SavedAlternative.Download);
+    public string AlternativeUpload => Text.SpeedLimit(SavedAlternative.Upload);
     public string StandardText
     {
         get
@@ -518,6 +527,13 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
 
     internal void Refresh()
     {
+        var hierarchy = new[]
+        {
+            Text.Get("settings", "limits"),
+            Text.Get("connection_setup", "title"),
+        };
+        if (!Hierarchy.SequenceEqual(hierarchy))
+            Hierarchy = hierarchy;
         var proposal = Propose();
         ModeRows = RetainRows(ModeRows, CreateModeRows(proposal));
         StandardRows = RetainRows(StandardRows, PairRows(SavedStandard, proposal?.Standard));
@@ -526,7 +542,35 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
             PairRows(SavedAlternative, proposal?.Alternative)
         );
         QueueRows = RetainRows(QueueRows, CreateQueueRows(proposal?.Queue));
+        RefreshMeterScale();
         PropertyChanged?.Invoke(this, new(string.Empty));
+    }
+
+    // Both meters share one scale, so equal speeds fill equal arcs. It only
+    // grows during a test, so the needles do not jump, and fits the result
+    // once the test completes, so a stale entered capacity does not stay.
+    private void RefreshMeterScale()
+    {
+        if (_scaleTestId != TestId || TestId.Length == 0)
+        {
+            _scaleTestId = TestId;
+            MeterScale = Ceiling(DownloadCapacity, UploadCapacity);
+        }
+        var reading = Ceiling(DownloadRate, UploadRate);
+        if (HasResult || reading > (MeterScale ?? 0))
+            MeterScale = reading;
+    }
+
+    /// <summary>The smallest 1, 2 or 5 step of a power of ten that holds the
+    /// largest positive value, or null when no value is positive.</summary>
+    private static double? Ceiling(params double[] values)
+    {
+        var largest = values.Where(value => double.IsFinite(value) && value > 0).DefaultIfEmpty().Max();
+        if (largest <= 0)
+            return null;
+        var magnitude = Math.Pow(10, Math.Floor(Math.Log10(largest)));
+        var step = largest / magnitude;
+        return (step <= 1 ? 1 : step <= 2 ? 2 : step <= 5 ? 5 : 10) * magnitude;
     }
 
     private static IReadOnlyList<ConnectionChange> RetainRows(

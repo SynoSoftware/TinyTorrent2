@@ -403,7 +403,7 @@
                     <controls:Field
                       Glyph="{x:Bind icons:Lucide.Hash}"
                       Label="{x:Bind Model.HashV1Label, Mode=OneWay}"
-                      Visibility="{x:Bind local:InspectorPane.Shown(Model.HashV1), Mode=OneWay}"
+                      Visibility="{x:Bind controls:Visibilities.HasText(Model.HashV1), Mode=OneWay}"
                     >
                       <controls:Field.Action>
                         <Button
@@ -428,7 +428,7 @@
                     <controls:Field
                       Glyph="{x:Bind icons:Lucide.Hash}"
                       Label="{x:Bind Model.HashV2Label, Mode=OneWay}"
-                      Visibility="{x:Bind local:InspectorPane.Shown(Model.HashV2), Mode=OneWay}"
+                      Visibility="{x:Bind controls:Visibilities.HasText(Model.HashV2), Mode=OneWay}"
                     >
                       <controls:Field.Action>
                         <Button
@@ -555,7 +555,7 @@
             HorizontalAlignment="Center"
             VerticalAlignment="Center"
             TextWrapping="Wrap"
-            Visibility="{x:Bind local:InspectorPane.Hidden(Model.HasFiles), Mode=OneWay}"
+            Visibility="{x:Bind controls:Visibilities.Unless(Model.HasFiles), Mode=OneWay}"
           />
         </Grid>
         <Grid
@@ -759,7 +759,7 @@
                         Text="{x:Bind icons:Flags.Glyph(CountryCode), Mode=OneWay}"
                         FontFamily="{StaticResource FlagsFont}"
                         VerticalAlignment="Center"
-                        Visibility="{x:Bind local:InspectorPane.Shown(CountryCode), Mode=OneWay}"
+                        Visibility="{x:Bind controls:Visibilities.HasText(CountryCode), Mode=OneWay}"
                         AutomationProperties.AccessibilityView="Raw"
                       />
                       <TextBlock
@@ -861,7 +861,7 @@
             HorizontalAlignment="Right"
             Spacing="12"
             Margin="16,12,16,0"
-            Visibility="{x:Bind local:InspectorPane.Hidden(Model.IsEditingTrackers), Mode=OneWay}"
+            Visibility="{x:Bind controls:Visibilities.Unless(Model.IsEditingTrackers), Mode=OneWay}"
           >
             <controls:ActionButton
               Glyph="{x:Bind icons:Lucide.Pencil}"
@@ -882,7 +882,7 @@
             x:Name="TrackerTable"
             Grid.Row="1"
             ItemsSource="{x:Bind Model.Trackers, Mode=OneWay}"
-            Visibility="{x:Bind local:InspectorPane.Hidden(Model.IsEditingTrackers), Mode=OneWay}"
+            Visibility="{x:Bind controls:Visibilities.Unless(Model.IsEditingTrackers), Mode=OneWay}"
           >
             <table:Table.EmptyContent>
               <TextBlock
@@ -937,7 +937,7 @@
                         VerticalAlignment="Center"
                         TextTrimming="CharacterEllipsis"
                         AutomationProperties.HelpText="{x:Bind StatusHint, Mode=OneWay}"
-                        Visibility="{x:Bind local:InspectorPane.Hidden(IsError), Mode=OneWay}"
+                        Visibility="{x:Bind controls:Visibilities.Unless(IsError), Mode=OneWay}"
                       />
                       <TextBlock
                         Grid.Column="1"

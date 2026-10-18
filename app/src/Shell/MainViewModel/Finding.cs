@@ -461,10 +461,6 @@ public sealed partial class MainViewModel
             new(SettingsCategory.Plugins, "video_information"),
             Library.DownloadLabel
         );
-        yield return SettingSuggestion(
-            new(SettingsCategory.Plugins, "lookup_limit"),
-            Text.Get("plugins", "lookups")
-        );
         foreach (
             var name in new[] { "automatic", "extras", "supplier", "languages", "batch", "scan" }
         )

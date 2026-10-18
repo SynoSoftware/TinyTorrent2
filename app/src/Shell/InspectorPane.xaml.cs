@@ -274,12 +274,6 @@ public sealed partial class InspectorPane : UserControl
         return Model.IsEditingTrackers ? TrackerInput : Retry;
     }
 
-    public static Visibility Hidden(bool value) =>
-        value ? Visibility.Collapsed : Visibility.Visible;
-
-    public static Visibility Shown(string text) =>
-        text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
-
     private void OnRows(object? sender, InspectorSection section)
     {
         if (_library is not null || !Model.IsVisible || section != Model.Section || _rowsQueued)

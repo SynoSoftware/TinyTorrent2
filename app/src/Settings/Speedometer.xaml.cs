@@ -133,18 +133,6 @@ public sealed partial class Speedometer : UserControl
     private double Progress => Math.Clamp(Stopwatch.GetElapsedTime(_started).TotalMilliseconds / 550, 0, 1);
     private double Displayed => _from + (_target - _from) * (1 - Math.Pow(1 - Progress, 3));
 
-    /// <summary>The smallest 1, 2 or 5 step of a power of ten that holds the
-    /// largest positive value, or null when no value is positive.</summary>
-    internal static double? Ceiling(params double[] values)
-    {
-        var largest = values.Where(value => double.IsFinite(value) && value > 0).DefaultIfEmpty().Max();
-        if (largest <= 0)
-            return null;
-        var magnitude = Math.Pow(10, Math.Floor(Math.Log10(largest)));
-        var step = largest / magnitude;
-        return (step <= 1 ? 1 : step <= 2 ? 2 : step <= 5 ? 5 : 10) * magnitude;
-    }
-
     private void OnTextScale(UISettings sender, object args) => DispatcherQueue.TryEnqueue(() =>
     {
         Drawing.Height = 136 * _settings.TextScaleFactor;

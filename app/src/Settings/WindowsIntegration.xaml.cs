@@ -23,9 +23,6 @@ public sealed partial class WindowsIntegration : UserControl
         Unloaded += (_, _) => Model.PropertyChanged -= OnModel;
     }
 
-    public static Visibility HasText(string text) =>
-        text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
-
     private void OnModel(object? sender, PropertyChangedEventArgs args)
     {
         if (string.IsNullOrEmpty(args.PropertyName))

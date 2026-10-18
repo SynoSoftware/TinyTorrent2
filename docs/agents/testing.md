@@ -281,10 +281,17 @@ for baseline images; such a capture is not evidence that the search checks pass.
 Use `TINYTORRENT_CAPTURE_REVIEW=settings-prototype` for the implemented Settings
 index and categories with advanced controls hidden and shown, plus manual
 Connection setup. It uses English/Dark and Spanish/Light fixtures; its typed
-capacity is sample input, not a network measurement.
+capacity is sample input, not a network measurement. It also selects another
+Library provider in its list, with automatic downloads off, and checks the same
+saving and display as the edits review's choices before it restores the provider.
+It also switches the language while Network is shown and checks the header's
+first fact caption.
 Its rendering-frame samples record category and Connection motion, rapid
 navigation, and drawer height and clipping during expansion and collapse;
 settled screenshots alone do not establish animation timing.
+Its Queue destination visit also captures a 280-DIP header to inspect stacked
+facts and trimmed values, then restores its automatic width. That constraint
+applies only to the header within the review window.
 Use `TINYTORRENT_CAPTURE_REVIEW=edits` for ordinary Settings departure,
 new input and explicit commits during a pending acknowledgement, and schedule
 edits applied on departure. The acknowledgement races change the setting input
@@ -292,9 +299,13 @@ synchronously before the UI thread yields and verify its native display
 afterward; ordinary departure uses native editors. A two-field departure edits
 Download again when Upload starts saving, then verifies that the first navigation
 applies both values. This catches an earlier field being left unsaved after the
-departure loop has passed it. The check restores its
-fixture values and periods. It does not simulate keyboard delivery or engine
-refusal.
+departure loop has passed it. It then selects another peer protocol, encryption
+choice and network adapter in their controls, and checks that each saves and
+shows the saved value, and that selecting the current value again saves nothing.
+The ComboBox selections are set on the control without opening its list. The
+check restores its fixture values, choices and periods. It does not simulate
+keyboard delivery or engine refusal, and it needs one network adapter besides
+Any adapter in the list.
 Use `TINYTORRENT_CAPTURE_REVIEW=library` only with the
 launcher's `library-capture.json` manifest. It checks native filter and named
 torrent selection with 300 real paused torrents, then captures the populated

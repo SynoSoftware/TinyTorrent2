@@ -38,13 +38,16 @@ public sealed partial class MainWindow
         await CaptureFill(outcomes);
         AppWindow.Resize(new SizeInt32((int)(1040 * resizeScale), (int)(680 * resizeScale)));
         await CaptureNoticeReplay(outcomes);
+        await CaptureLookupLimit(outcomes);
+        await CaptureProviderChoice(outcomes, completed);
+        await CaptureHeaderLanguage(outcomes);
         await ShowSettings(new(SettingsCategory.Transfers));
         await CaptureUi("settings-resize-compact");
         AppWindow.Resize(new SizeInt32((int)(1538 * resizeScale), (int)(1246 * resizeScale)));
         await CaptureUi("settings-resize-expanded");
         var resized =
             _settingsPage ?? throw new InvalidOperationException("Settings did not open.");
-        var heading = (FrameworkElement)resized.FindName("PageTitle");
+        var heading = (FrameworkElement)resized.FindName("PageHeader");
         var transfers = (FrameworkElement)resized.FindName("Transfers");
         var scroll = (ScrollViewer)resized.FindName("Body");
         var content = (FrameworkElement)resized.FindName("BodyContent");
@@ -205,6 +208,16 @@ public sealed partial class MainWindow
                     "The Queue link did not reveal Queue in Transfers."
                 );
             await CaptureUi(prefix + "-queue-destination");
+            var header = (FrameworkElement)page.FindName("PageHeader");
+            header.Width = 280;
+            try
+            {
+                await CaptureUi(prefix + "-header-narrow");
+            }
+            finally
+            {
+                header.ClearValue(FrameworkElement.WidthProperty);
+            }
             outcomes.Add(new { journey = "settings links and Back", restored = true });
 
             CaptureInvoke((Control)page.FindName("Brand"));
@@ -466,6 +479,117 @@ public sealed partial class MainWindow
             completed.Add(prefix);
         }
         await Model.Settings.PrepareLeave();
+    }
+
+    private async Task CaptureLookupLimit(List<object> outcomes)
+    {
+        await ShowSettings(new(SettingsCategory.Plugins));
+        var page = _settingsPage ?? throw new InvalidOperationException("Settings did not open.");
+        var input = (TextBox)page.FindName("LookupLimit");
+        var setting = Model.Settings.LookupLimit;
+        var saved = Model.LookupLimit;
+        try
+        {
+            input.Text = "0";
+            await Model.Settings.Commit(setting);
+            if (!setting.HasDraft || setting.IsPending || Model.LookupLimit != saved)
+                throw new InvalidOperationException("An invalid lookup limit changed the saved policy.");
+            setting.Cancel();
+            var changed = saved == 1 ? 2 : 1;
+            input.Text = changed.ToString(System.Globalization.CultureInfo.CurrentCulture);
+            await Model.Settings.Commit(setting);
+            if (Model.LookupLimit != changed || setting.HasDraft || setting.IsPending)
+                throw new InvalidOperationException("The lookup limit did not save through the settings editor.");
+            input.Text = saved.ToString(System.Globalization.CultureInfo.CurrentCulture);
+            await Model.Settings.Depart(setting);
+            if (Model.LookupLimit != saved || setting.HasDraft || setting.IsPending)
+                throw new InvalidOperationException("Leaving the lookup limit did not restore the saved policy.");
+            outcomes.Add(new { journey = "lookup limit validation, commit and departure", restored = true });
+        }
+        finally
+        {
+            setting.Cancel();
+            await Model.SaveLookupLimit(saved);
+        }
+    }
+
+    private async Task CaptureProviderChoice(List<object> outcomes, List<string> completed)
+    {
+        var library = Model.Library;
+
+        async Task ChooseProvider(ComboBox choice, int index)
+        {
+            choice.SelectedIndex = index;
+            if (library.ProviderIndex != index)
+                throw new InvalidOperationException(
+                    "The provider list does not show the choice while it saves."
+                );
+            await CaptureReady(
+                library,
+                () => ReferenceEquals(library.Option, library.Providers[index])
+            );
+            await CaptureLayout();
+            if (choice.SelectedIndex != index || library.ProviderIndex != index)
+                throw new InvalidOperationException(
+                    "The provider list does not show the saved provider."
+                );
+        }
+
+        await ShowSettings(new(SettingsCategory.Plugins, "video_provider"));
+        await CaptureReady(library, () => library.IsAvailable && library.ProviderIndex >= 0);
+        await CaptureLayout();
+        var providers = (ComboBox)_settingsPage!.FindName("ProviderChoice");
+        // Automatic downloads would send the fixture's videos to the provider.
+        if (library.AutomaticDownload)
+            throw new InvalidOperationException(
+                "The provider review requires automatic downloads off."
+            );
+        var originalProvider = library.ProviderIndex;
+        if (CaptureChanges(library, () => CaptureReselect(providers)))
+            throw new InvalidOperationException("Selecting the current provider saved it.");
+        try
+        {
+            await ChooseProvider(providers, originalProvider == 0 ? 1 : 0);
+        }
+        finally
+        {
+            await ChooseProvider(providers, originalProvider);
+        }
+        outcomes.Add(
+            new
+            {
+                journey = "provider choice saves",
+                providerRestored = library.Option?.ProviderId,
+                currentSelectionSaved = false,
+            }
+        );
+        completed.Add("settings-provider-choice");
+    }
+
+    // A language change must reach the header of the tab that stays shown.
+    private async Task CaptureHeaderLanguage(List<object> outcomes)
+    {
+        var original = Model.Text.Language;
+        var other = original == "es" ? "en" : "es";
+        await ShowSettings(new(SettingsCategory.Network));
+        await CaptureLayout();
+        var fact = (Syno.TinyTorrent.Settings.Fact)_settingsPage!.FindName("FirstFact");
+        try
+        {
+            Model.SelectLanguage(other);
+            await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == other);
+            await CaptureLayout();
+            if (fact.Label != Model.Text.Get("settings", "proxy_server"))
+                throw new InvalidOperationException(
+                    $"The Network fact caption kept '{fact.Label}' after the language changed."
+                );
+        }
+        finally
+        {
+            Model.SelectLanguage(original);
+            await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == original);
+        }
+        outcomes.Add(new { journey = "header follows a language change", updated = true });
     }
 
     private async Task CaptureNoticeReplay(List<object> outcomes)

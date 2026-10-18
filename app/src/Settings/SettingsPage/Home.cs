@@ -50,7 +50,7 @@ public sealed partial class SettingsPage
         AddLink(
             HomeLibrary,
             "video_information",
-            () => VideoProvider,
+            () => Model.VideoProvider,
             new(SettingsCategory.Plugins, "video_provider"),
             Syno.Lucide.Film
         );
@@ -171,7 +171,6 @@ public sealed partial class SettingsPage
             button.Header = Model.Text.Get("settings", key);
             button.Description = value();
         }
-        RefreshHeader();
     }
 
     private void OnHomeSize(object sender, SizeChangedEventArgs args) => UpdateHomeLayout();

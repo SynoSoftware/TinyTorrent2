@@ -16,7 +16,6 @@ public sealed partial class ConnectionPage : UserControl
     private readonly Speedometer _downloadMeter = new(Syno.Lucide.Download);
     private readonly Speedometer _uploadMeter = new(Syno.Lucide.Upload);
     private string? _meterId;
-    private double? _meterScale;
     public ConnectionSetup Model { get; }
     public event EventHandler? ReturnRequested;
     internal event EventHandler? ParentRequested;
@@ -36,7 +35,6 @@ public sealed partial class ConnectionPage : UserControl
         Loaded += async (_, _) =>
         {
             Model.PropertyChanged += OnModel;
-            RefreshHierarchy();
             RefreshMeters();
             _display.TextScaleFactorChanged += OnTextScale;
             NetworkInformation.NetworkStatusChanged += OnNetwork;
@@ -54,48 +52,24 @@ public sealed partial class ConnectionPage : UserControl
     public static FontWeight Weight(bool changed) =>
         changed ? Microsoft.UI.Text.FontWeights.SemiBold : Microsoft.UI.Text.FontWeights.Normal;
 
-    public static Visibility Hidden(bool visible) =>
-        visible ? Visibility.Collapsed : Visibility.Visible;
-
     internal void FocusHeading() => Hierarchy.Focus(FocusState.Programmatic);
 
-    private void OnModel(object? sender, PropertyChangedEventArgs args)
-    {
-        RefreshHierarchy();
-        RefreshMeters();
-    }
+    private void OnModel(object? sender, PropertyChangedEventArgs args) => RefreshMeters();
 
     private void RefreshMeters()
     {
-        // Both meters share one scale, so equal speeds fill equal arcs. It only
-        // grows during a test, so the needles do not jump, and fits the result
-        // once the test completes, so a stale entered capacity does not stay.
+        // Each test starts its needles from zero.
         if (_meterId != Model.TestId || Model.TestId.Length == 0)
         {
             _meterId = Model.TestId;
-            _meterScale = Speedometer.Ceiling(Model.DownloadCapacity, Model.UploadCapacity);
             _downloadMeter.Reset();
             _uploadMeter.Reset();
         }
-        var reading = Speedometer.Ceiling(Model.DownloadRate, Model.UploadRate);
-        if (Model.HasResult || reading > (_meterScale ?? 0))
-            _meterScale = reading;
-        _downloadMeter.Show(Model.DownloadRate, _meterScale, Model.Text.Get("connection_setup", "download_limit"), Model.Text);
-        _uploadMeter.Show(Model.UploadRate, _meterScale, Model.Text.Get("connection_setup", "upload_limit"), Model.Text);
+        _downloadMeter.Show(Model.DownloadRate, Model.MeterScale, Model.Text.Get("connection_setup", "download_limit"), Model.Text);
+        _uploadMeter.Show(Model.UploadRate, Model.MeterScale, Model.Text.Get("connection_setup", "upload_limit"), Model.Text);
     }
 
     private void OnNetwork(object sender) => DispatcherQueue.TryEnqueue(async () => await Model.RefreshLink());
-
-    private void RefreshHierarchy()
-    {
-        var labels = new[]
-        {
-            Model.Text.Get("settings", "limits"),
-            Model.Text.Get("connection_setup", "title"),
-        };
-        if (Hierarchy.ItemsSource is not string[] current || !current.SequenceEqual(labels))
-            Hierarchy.ItemsSource = labels;
-    }
 
     private void OnHierarchy(BreadcrumbBar sender, BreadcrumbBarItemClickedEventArgs args)
     {
@@ -125,9 +99,6 @@ public sealed partial class ConnectionPage : UserControl
         TestActions.Width = 120 * scale;
         StatusArea.MinHeight = 112 * scale;
         var stacked = Body.ActualWidth < 880 * scale;
-        Header.RowSpacing = stacked ? 16 : 0;
-        Grid.SetColumn(HeaderFacts, stacked ? 0 : 1);
-        Grid.SetRow(HeaderFacts, stacked ? 1 : 0);
         MeasurementBody.ColumnSpacing = stacked ? 0 : 24;
         StatusColumn.Width = stacked ? new GridLength(0) : new GridLength(240 * scale);
         Grid.SetColumn(StatusArea, stacked ? 0 : 1);

@@ -139,6 +139,7 @@
       </ResourceDictionary.ThemeDictionaries>
       <x:Double x:Key="TinyTorrentCaptionHeight">48</x:Double>
       <x:Double x:Key="TinyTorrentSettingsWidth">1200</x:Double>
+      <x:Double x:Key="TinyTorrentTitleDetailSpacing">12</x:Double>
       <x:Double x:Key="TinyTorrentCaptionButtonWidth">48</x:Double>
       <!-- Every application-authored icon takes its size from one of these
            roles; Icon sizes in docs/contracts/ui.md assigns them. -->
@@ -734,6 +735,7 @@
         TargetType="TextBlock"
         BasedOn="{StaticResource TitleTextBlockStyle}"
       >
+        <Setter Property="TextLineBounds" Value="Tight" />
         <Setter Property="TextWrapping" Value="NoWrap" />
         <Setter Property="TextTrimming" Value="CharacterEllipsis" />
       </Style>
@@ -1599,6 +1601,54 @@
                   <ContentPresenter Content="{TemplateBinding Content}" />
                 </StackPanel>
               </StackPanel>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
+      <Style x:Key="TinyTorrentFactStyle" TargetType="controls:Field">
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="controls:Field">
+              <Grid ColumnSpacing="12">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto" />
+                  <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid
+                  Width="{StaticResource TinyTorrentStatisticIconSize}"
+                  Height="{StaticResource TinyTorrentStatisticIconSize}"
+                  VerticalAlignment="Center"
+                >
+                  <!-- Lucide's glyphs fill the em; its Latin cap height
+                       would shift them above the slot. -->
+                  <TextBlock
+                    FontFamily="{ThemeResource LucideFont}"
+                    Text="{TemplateBinding Glyph}"
+                    FontSize="{StaticResource TinyTorrentStatisticIconSize}"
+                    TextLineBounds="TrimToBaseline"
+                    IsTextScaleFactorEnabled="False"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    AutomationProperties.AccessibilityView="Raw"
+                  />
+                </Grid>
+                <StackPanel
+                  Grid.Column="1"
+                  Spacing="{StaticResource TinyTorrentTitleDetailSpacing}"
+                  VerticalAlignment="Center"
+                >
+                  <TextBlock
+                    Text="{TemplateBinding Label}"
+                    Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
+                    TextWrapping="NoWrap"
+                    TextTrimming="CharacterEllipsis"
+                    ToolTipService.ToolTip="{TemplateBinding Label}"
+                  />
+                  <ContentPresenter Content="{TemplateBinding Content}" />
+                </StackPanel>
+              </Grid>
             </ControlTemplate>
           </Setter.Value>
         </Setter>

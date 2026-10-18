@@ -214,6 +214,14 @@ internal enum Access
     Password,
 }
 
+/// <summary>What the person must supply before a Library provider downloads automatically.</summary>
+internal enum ProviderRequirement
+{
+    None,
+    Data,
+    Key,
+}
+
 internal enum SubtitleSupplier
 {
     OpenSubtitles,

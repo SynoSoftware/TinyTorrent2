@@ -5,6 +5,7 @@
   xmlns:shared="using:Syno.TinyTorrent.Shared"
   xmlns:icons="using:Syno"
   xmlns:local="using:Syno.TinyTorrent.Settings"
+  xmlns:app="using:Syno.TinyTorrent"
   xmlns:controls="using:Syno.TinyTorrent.Controls"
 >
   <UserControl.Resources>
@@ -80,6 +81,105 @@
     </ResourceDictionary>
   </UserControl.Resources>
   <Grid x:Name="Root">
+    <VisualStateManager.VisualStateGroups>
+      <VisualStateGroup>
+        <VisualState x:Name="HeaderHome">
+          <VisualState.StateTriggers>
+            <StateTrigger IsActive="{x:Bind local:SettingsPage.IsHome(Model.Overview.Category), Mode=OneWay}" />
+          </VisualState.StateTriggers>
+          <VisualState.Setters>
+            <Setter Target="PageHeader.HeadingLevel" Value="Level1" />
+            <Setter Target="PageHeader.Artwork">
+              <Setter.Value>
+                <SvgImageSource UriSource="ms-appx:///Assets/tinyTorrent.svg" />
+              </Setter.Value>
+            </Setter>
+            <Setter Target="FirstFact.Glyph" Value="{x:Bind icons:Lucide.Clock}" />
+            <Setter Target="SecondFact.Glyph" Value="{x:Bind icons:Lucide.History}" />
+          </VisualState.Setters>
+        </VisualState>
+        <VisualState x:Name="HeaderGeneral">
+          <VisualState.StateTriggers>
+            <StateTrigger IsActive="{x:Bind local:SettingsPage.IsCategory(Model.Overview.Category, app:SettingsCategory.General), Mode=OneWay}" />
+          </VisualState.StateTriggers>
+          <VisualState.Setters>
+            <Setter Target="PageHeader.Artwork" Value="ms-appx:///Assets/Settings/general.png" />
+            <Setter Target="FirstFact.Glyph" Value="{x:Bind icons:Lucide.File}" />
+            <Setter Target="SecondFact.Glyph" Value="{x:Bind icons:Lucide.Power}" />
+          </VisualState.Setters>
+        </VisualState>
+        <VisualState x:Name="HeaderTransfers">
+          <VisualState.StateTriggers>
+            <StateTrigger IsActive="{x:Bind local:SettingsPage.IsCategory(Model.Overview.Category, app:SettingsCategory.Transfers), Mode=OneWay}" />
+          </VisualState.StateTriggers>
+          <VisualState.Setters>
+            <Setter Target="PageHeader.Artwork" Value="ms-appx:///Assets/Settings/transfers.png" />
+            <Setter Target="FirstFact.Glyph" Value="{x:Bind icons:Lucide.ListOrdered}" />
+            <Setter Target="SecondFact.Glyph" Value="{x:Bind icons:Lucide.Upload}" />
+          </VisualState.Setters>
+        </VisualState>
+        <VisualState x:Name="HeaderLimits">
+          <VisualState.StateTriggers>
+            <StateTrigger IsActive="{x:Bind local:SettingsPage.IsCategory(Model.Overview.Category, app:SettingsCategory.Limits), Mode=OneWay}" />
+          </VisualState.StateTriggers>
+          <VisualState.Setters>
+            <Setter Target="PageHeader.Artwork" Value="ms-appx:///Assets/Settings/speed.png" />
+            <Setter Target="FirstFact.Glyph" Value="{x:Bind icons:Lucide.Gauge}" />
+            <Setter Target="SecondFact.Glyph" Value="{x:Bind icons:Lucide.Gauge}" />
+          </VisualState.Setters>
+        </VisualState>
+        <VisualState x:Name="HeaderSchedule">
+          <VisualState.StateTriggers>
+            <StateTrigger IsActive="{x:Bind local:SettingsPage.IsCategory(Model.Overview.Category, app:SettingsCategory.Schedule), Mode=OneWay}" />
+          </VisualState.StateTriggers>
+          <VisualState.Setters>
+            <Setter Target="PageHeader.Artwork" Value="ms-appx:///Assets/Settings/schedule.png" />
+            <Setter Target="FirstFact.Glyph" Value="{x:Bind icons:Lucide.SlidersHorizontal}" />
+            <Setter Target="SecondFact.Glyph" Value="{x:Bind icons:Lucide.CalendarClock}" />
+          </VisualState.Setters>
+        </VisualState>
+        <VisualState x:Name="HeaderAppearance">
+          <VisualState.StateTriggers>
+            <StateTrigger IsActive="{x:Bind local:SettingsPage.IsCategory(Model.Overview.Category, app:SettingsCategory.Appearance), Mode=OneWay}" />
+          </VisualState.StateTriggers>
+          <VisualState.Setters>
+            <Setter Target="PageHeader.Artwork" Value="ms-appx:///Assets/Settings/appearance.png" />
+            <Setter Target="FirstFact.Glyph" Value="{x:Bind icons:Lucide.Palette}" />
+            <Setter Target="SecondFact.Glyph" Value="{x:Bind icons:Lucide.Languages}" />
+          </VisualState.Setters>
+        </VisualState>
+        <VisualState x:Name="HeaderNetwork">
+          <VisualState.StateTriggers>
+            <StateTrigger IsActive="{x:Bind local:SettingsPage.IsCategory(Model.Overview.Category, app:SettingsCategory.Network), Mode=OneWay}" />
+          </VisualState.StateTriggers>
+          <VisualState.Setters>
+            <Setter Target="PageHeader.Artwork" Value="ms-appx:///Assets/Settings/network.png" />
+            <Setter Target="FirstFact.Glyph" Value="{x:Bind icons:Lucide.Globe}" />
+            <Setter Target="SecondFact.Glyph" Value="{x:Bind icons:Lucide.Shield}" />
+          </VisualState.Setters>
+        </VisualState>
+        <VisualState x:Name="HeaderPlugins">
+          <VisualState.StateTriggers>
+            <StateTrigger IsActive="{x:Bind local:SettingsPage.IsCategory(Model.Overview.Category, app:SettingsCategory.Plugins), Mode=OneWay}" />
+          </VisualState.StateTriggers>
+          <VisualState.Setters>
+            <Setter Target="PageHeader.Artwork" Value="ms-appx:///Assets/Settings/plugins.png" />
+            <Setter Target="FirstFact.Glyph" Value="{x:Bind icons:Lucide.Film}" />
+            <Setter Target="SecondFact.Glyph" Value="{x:Bind icons:Lucide.Captions}" />
+          </VisualState.Setters>
+        </VisualState>
+        <VisualState x:Name="HeaderAdvanced">
+          <VisualState.StateTriggers>
+            <StateTrigger IsActive="{x:Bind local:SettingsPage.IsCategory(Model.Overview.Category, app:SettingsCategory.Advanced), Mode=OneWay}" />
+          </VisualState.StateTriggers>
+          <VisualState.Setters>
+            <Setter Target="PageHeader.Artwork" Value="ms-appx:///Assets/Settings/advanced.png" />
+            <Setter Target="FirstFact.Glyph" Value="{x:Bind icons:Lucide.Check}" />
+            <Setter Target="SecondFact.Glyph" Value="{x:Bind icons:Lucide.History}" />
+          </VisualState.Setters>
+        </VisualState>
+      </VisualStateGroup>
+    </VisualStateManager.VisualStateGroups>
     <!-- Owner ruling: the page shows the window's acrylic and keeps the two
              gear marks. See Settings in docs/contracts/ui.md. -->
     <FontIcon
@@ -110,6 +210,7 @@
       IsSettingsVisible="False"
       IsPaneOpen="True"
       SelectionChanged="OnCategory"
+      AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'categories'), Mode=OneWay}"
       AutomationProperties.AutomationId="SettingsCategories"
     >
       <NavigationView.Resources>
@@ -148,54 +249,91 @@
         </Button>
       </NavigationView.PaneHeader>
       <NavigationView.MenuItems>
-        <NavigationViewItem x:Name="HomeCategory" Tag="Home" />
+        <NavigationViewItem
+          x:Name="HomeCategory"
+          Tag="Home"
+          AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'home'), Mode=OneWay}"
+        >
+          <TextBlock Text="{x:Bind Model.Text.Get('settings', 'home'), Mode=OneWay}" Style="{StaticResource TinyTorrentNavigationTextStyle}" />
+        </NavigationViewItem>
         <NavigationViewItem
           x:Name="GeneralCategory"
           Tag="General"
+          AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'general'), Mode=OneWay}"
           AutomationProperties.AutomationId="GeneralCategory"
-        />
+        >
+          <TextBlock Text="{x:Bind Model.Text.Get('settings', 'general'), Mode=OneWay}" Style="{StaticResource TinyTorrentNavigationTextStyle}" />
+        </NavigationViewItem>
         <NavigationViewItem
           x:Name="TransfersCategory"
           Tag="Transfers"
+          AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'transfers'), Mode=OneWay}"
           AutomationProperties.AutomationId="TransfersCategory"
-        />
+        >
+          <TextBlock Text="{x:Bind Model.Text.Get('settings', 'transfers'), Mode=OneWay}" Style="{StaticResource TinyTorrentNavigationTextStyle}" />
+        </NavigationViewItem>
         <NavigationViewItem
           x:Name="LimitsCategory"
           Tag="Limits"
+          AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'limits'), Mode=OneWay}"
           AutomationProperties.AutomationId="LimitsCategory"
-        />
+        >
+          <TextBlock Text="{x:Bind Model.Text.Get('settings', 'limits'), Mode=OneWay}" Style="{StaticResource TinyTorrentNavigationTextStyle}" />
+        </NavigationViewItem>
         <NavigationViewItem
           x:Name="ScheduleCategory"
           Tag="Schedule"
+          AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'schedule'), Mode=OneWay}"
           AutomationProperties.AutomationId="ScheduleCategory"
-        />
+        >
+          <TextBlock Text="{x:Bind Model.Text.Get('settings', 'schedule'), Mode=OneWay}" Style="{StaticResource TinyTorrentNavigationTextStyle}" />
+        </NavigationViewItem>
         <NavigationViewItem
           x:Name="AppearanceCategory"
           Tag="Appearance"
+          AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'appearance'), Mode=OneWay}"
           AutomationProperties.AutomationId="AppearanceCategory"
-        />
+        >
+          <TextBlock Text="{x:Bind Model.Text.Get('settings', 'appearance'), Mode=OneWay}" Style="{StaticResource TinyTorrentNavigationTextStyle}" />
+        </NavigationViewItem>
         <NavigationViewItem
           x:Name="NetworkCategory"
           Tag="Network"
+          AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'network'), Mode=OneWay}"
           AutomationProperties.AutomationId="NetworkCategory"
-        />
+        >
+          <TextBlock Text="{x:Bind Model.Text.Get('settings', 'network'), Mode=OneWay}" Style="{StaticResource TinyTorrentNavigationTextStyle}" />
+        </NavigationViewItem>
         <NavigationViewItem
           x:Name="PluginsCategory"
           Tag="Plugins"
+          AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'plugins'), Mode=OneWay}"
           AutomationProperties.AutomationId="PluginsCategory"
-        />
+        >
+          <TextBlock Text="{x:Bind Model.Text.Get('settings', 'plugins'), Mode=OneWay}" Style="{StaticResource TinyTorrentNavigationTextStyle}" />
+        </NavigationViewItem>
         <NavigationViewItem
           x:Name="AdvancedCategory"
           Tag="Advanced"
+          AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'advanced'), Mode=OneWay}"
           AutomationProperties.AutomationId="AdvancedCategory"
-        />
+        >
+          <TextBlock Text="{x:Bind Model.Text.Get('settings', 'advanced'), Mode=OneWay}" Style="{StaticResource TinyTorrentNavigationTextStyle}" />
+        </NavigationViewItem>
       </NavigationView.MenuItems>
       <NavigationView.FooterMenuItems>
         <NavigationViewItem
           x:Name="AdvancedMode"
           SelectsOnInvoked="False"
+          AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'show_advanced'), Mode=OneWay}"
           AutomationProperties.AutomationId="AdvancedMode"
         >
+          <NavigationViewItem.Content>
+            <TextBlock
+              Text="{x:Bind Model.Text.Get('settings', 'show_advanced'), Mode=OneWay}"
+              Style="{StaticResource TinyTorrentNavigationTextStyle}"
+            />
+          </NavigationViewItem.Content>
           <NavigationViewItem.Icon>
             <FontIcon
               x:Name="AdvancedModeIcon"
@@ -231,98 +369,38 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
           </Grid.RowDefinitions>
-          <StackPanel
+          <local:Header
+            x:Name="PageHeader"
             Margin="24,0,24,24"
             MaxWidth="{StaticResource TinyTorrentSettingsWidth}"
-            Spacing="16"
+            PageTitle="{x:Bind Model.Overview.PageTitle, Mode=OneWay}"
+            Title="{x:Bind Model.Overview.Title, Mode=OneWay}"
+            Subtitle="{x:Bind Model.Overview.Subtitle, Mode=OneWay}"
           >
-            <TextBlock
-              x:Name="PageTitle"
-              IsTextSelectionEnabled="True"
-              Style="{StaticResource TinyTorrentPageTitleTextStyle}"
-              TextWrapping="NoWrap"
-              TextTrimming="CharacterEllipsis"
-              AutomationProperties.HeadingLevel="Level1"
-            />
-            <Grid x:Name="PageHeader" ColumnSpacing="24" RowSpacing="16" SizeChanged="OnHeaderSize">
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-              </Grid.ColumnDefinitions>
-              <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-              </Grid.RowDefinitions>
-              <Grid x:Name="HeaderIdentity" ColumnSpacing="16" VerticalAlignment="Center">
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="Auto" />
-                  <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <Image
-                  x:Name="PageArtwork"
-                  Width="96"
-                  Height="96"
-                  Stretch="Uniform"
-                  IsHitTestVisible="False"
-                  AutomationProperties.AccessibilityView="Raw"
-                />
-                <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
-                  <TextBlock
-                    x:Name="IdentityTitle"
-                    IsTextSelectionEnabled="True"
-                    Style="{StaticResource SubtitleTextBlockStyle}"
-                    TextWrapping="NoWrap"
-                    TextTrimming="CharacterEllipsis"
-                  />
-                  <TextBlock
-                    x:Name="PageSummary"
-                    Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
-                    TextTrimming="CharacterEllipsis"
-                  />
-                </StackPanel>
-              </Grid>
-              <Grid
-                x:Name="HeaderFacts"
-                Grid.Column="1"
-                ColumnSpacing="24"
-                RowSpacing="16"
-                VerticalAlignment="Center"
-              >
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="*" />
-                  <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-                <controls:Field x:Name="FirstFact" Style="{StaticResource TinyTorrentStatisticStyle}">
-                  <Grid>
-                    <TextBlock
-                      x:Name="FirstValue"
-                      Style="{StaticResource TinyTorrentStatisticValueStyle}"
-                      TextTrimming="CharacterEllipsis"
-                    />
-                    <controls:TransferPair x:Name="FirstTotals" Visibility="Collapsed" />
-                  </Grid>
-                </controls:Field>
-                <controls:Field
-                  x:Name="SecondFact"
-                  Grid.Column="1"
-                  Style="{StaticResource TinyTorrentStatisticStyle}"
-                >
-                  <Grid>
-                    <TextBlock
-                      x:Name="SecondValue"
-                      Style="{StaticResource TinyTorrentStatisticValueStyle}"
-                      TextTrimming="CharacterEllipsis"
-                    />
-                    <controls:TransferPair x:Name="SecondTotals" Visibility="Collapsed" />
-                  </Grid>
-                </controls:Field>
-              </Grid>
-            </Grid>
-          </StackPanel>
+            <local:Header.First>
+              <local:Fact
+                x:Name="FirstFact"
+                Label="{x:Bind Model.Overview.FirstLabel, Mode=OneWay}"
+                Value="{x:Bind Model.Overview.FirstValue, Mode=OneWay}"
+                ShowsTransfers="{x:Bind Model.Overview.ShowsFirstTransfers, Mode=OneWay}"
+                Download="{x:Bind Model.Overview.FirstDownload, Mode=OneWay}"
+                Upload="{x:Bind Model.Overview.FirstUpload, Mode=OneWay}"
+                Total="{x:Bind Model.Overview.FirstTotal, Mode=OneWay}"
+                Text="{x:Bind Model.Text}"
+              />
+            </local:Header.First>
+            <local:Header.Second>
+              <local:Fact
+                x:Name="SecondFact"
+                Label="{x:Bind Model.Overview.SecondLabel, Mode=OneWay}"
+                Value="{x:Bind Model.Overview.SecondValue, Mode=OneWay}"
+                ShowsTransfers="{x:Bind Model.Overview.ShowsSecondTransfers, Mode=OneWay}"
+                Download="{x:Bind Model.Overview.SecondDownload, Mode=OneWay}"
+                Upload="{x:Bind Model.Overview.SecondUpload, Mode=OneWay}"
+                Text="{x:Bind Model.Text}"
+              />
+            </local:Header.Second>
+          </local:Header>
           <ScrollViewer
             x:Name="Body"
             Grid.Row="1"
@@ -415,6 +493,7 @@
                               x:Name="ProviderInformation"
                               Style="{StaticResource TinyTorrentSubtleButtonStyle}"
                               Click="OnProviderInformation"
+                              IsEnabled="{x:Bind Main.Library.HasProvider, Mode=OneWay}"
                               ToolTipService.ToolTip="{x:Bind Model.Text.Get('library', 'provider_information'), Mode=OneWay}"
                               AutomationProperties.Name="{x:Bind Model.Text.Get('library', 'provider_information'), Mode=OneWay}"
                             >
@@ -428,6 +507,7 @@
                               x:Name="ProviderKey"
                               Style="{StaticResource TinyTorrentSubtleButtonStyle}"
                               Click="OnProviderKey"
+                              Visibility="{x:Bind Main.Library.UsesKey, Mode=OneWay}"
                               ToolTipService.ToolTip="{x:Bind Model.Text.Get('library', 'key_tip'), Mode=OneWay}"
                               AutomationProperties.Name="{x:Bind Model.Text.Get('account', 'api_key'), Mode=OneWay}"
                               AutomationProperties.AutomationId="ProviderKey"
@@ -441,7 +521,9 @@
                             <ComboBox
                               x:Name="ProviderChoice"
                               Width="260"
-                              SelectionChanged="OnProviderChoice"
+                              ItemsSource="{x:Bind Main.Library.ProviderNames, Mode=OneWay}"
+                              SelectedIndex="{x:Bind Main.Library.ProviderIndex, Mode=OneWay}"
+                              SelectionChanged="OnProvider"
                               IsEnabled="{x:Bind Main.Library.IsAvailable, Mode=OneWay}"
                               ToolTipService.ToolTip="{x:Bind Model.Text.Get('library', 'information_tip'), Mode=OneWay}"
                               AutomationProperties.Name="{x:Bind Model.Text.Get('library', 'provider'), Mode=OneWay}"
@@ -456,6 +538,7 @@
                         >
                           <ToggleSwitch
                             x:Name="AutomaticDownload"
+                            IsOn="{x:Bind Main.Library.AutomaticDownload, Mode=OneWay}"
                             IsEnabled="{x:Bind Main.Library.IsAvailable, Mode=OneWay}"
                             Toggled="OnAutomaticDownload"
                             AutomationProperties.Name="{x:Bind Main.Library.DownloadLabel, Mode=OneWay}"
@@ -463,13 +546,13 @@
                           />
                         </controls:SettingsRow>
                         <shared:DatasetRow x:Name="ImdbRow" />
-                        <shared:DatasetRow x:Name="CityRow" />
                         <controls:SettingsRow
                           Header="{x:Bind Model.Text.Get('plugins', 'movies_with_information'), Mode=OneWay}"
                           BorderThickness="0"
                         >
                           <TextBlock
                             x:Name="VideoCoverage"
+                            Text="{x:Bind Model.VideoCoverage, Mode=OneWay}"
                             Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
                           />
                         </controls:SettingsRow>
@@ -486,6 +569,7 @@
                       <StackPanel>
                         <controls:SettingsRow
                           x:Name="LookupsRow"
+                          Error="{x:Bind Model.LookupLimit.Message, Mode=OneWay}"
                           Header="{x:Bind Model.Text.Get('plugins', 'lookups'), Mode=OneWay}"
                           Description="{x:Bind Model.Text.Get('plugins', 'lookups_hint'), Mode=OneWay}"
                           Unit="{x:Bind Model.Text.Get('plugins', 'lookup_scope'), Mode=OneWay}"
@@ -494,33 +578,35 @@
                             x:Name="LookupLimit"
                             InputScope="Number"
                             Width="160"
-                            IsEnabled="{x:Bind Main.Library.IsAvailable, Mode=OneWay}"
-                            Loaded="OnLookupLoaded"
-                            PreviewKeyDown="OnLookupKey"
-                            LostFocus="OnLookupDeparture"
+                            Tag="{x:Bind Model.LookupLimit}"
+                            Text="{x:Bind Model.LookupLimit.Input, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                            IsEnabled="{x:Bind Model.LookupLimit.CanEdit, Mode=OneWay}"
+                            Loaded="OnTextLoaded"
+                            PreviewKeyDown="OnFieldKey"
+                            LostFocus="OnFieldDeparture"
                             ToolTipService.ToolTip="{x:Bind Model.Text.Get('plugins', 'lookups_hint'), Mode=OneWay}"
                             AutomationProperties.Name="{x:Bind Model.Text.Get('plugins', 'lookups'), Mode=OneWay}"
                             AutomationProperties.AutomationId="LookupLimit"
                           />
                         </controls:SettingsRow>
                         <controls:SettingsRow
-                          x:Name="ProtectionRow"
                           BorderThickness="0"
                           Header="{x:Bind Model.Text.Get('request_protection', 'reset'), Mode=OneWay}"
                           Description="{x:Bind Model.Text.Get('request_protection', 'reset_summary'), Mode=OneWay}"
                         >
                           <StackPanel Orientation="Horizontal" Spacing="12">
                             <ComboBox
-                              x:Name="ProtectionScope"
                               Width="260"
-                              Loaded="OnProtectionLoaded"
+                              ItemsSource="{x:Bind Main.ProtectionScopes, Mode=OneWay}"
+                              SelectedItem="{x:Bind Main.ProtectionScope, Mode=TwoWay}"
+                              IsEnabled="{x:Bind Main.CanResetProtection, Mode=OneWay}"
                               ToolTipService.ToolTip="{x:Bind Model.Text.Get('request_protection', 'reset_hint'), Mode=OneWay}"
                               AutomationProperties.Name="{x:Bind Model.Text.Get('library', 'provider'), Mode=OneWay}"
                               AutomationProperties.AutomationId="ProtectionScope"
                             />
                             <controls:ActionButton
-                              x:Name="ProtectionReset"
                               Click="OnProtectionReset"
+                              IsEnabled="{x:Bind Main.CanResetProtection, Mode=OneWay}"
                               Glyph="{x:Bind icons:Lucide.RotateCcw}"
                               Text="{x:Bind Model.Text.Get('request_protection', 'reset_button'), Mode=OneWay}"
                               ToolTipService.ToolTip="{x:Bind Model.Text.Get('request_protection', 'reset_hint'), Mode=OneWay}"
@@ -529,6 +615,15 @@
                             />
                           </StackPanel>
                         </controls:SettingsRow>
+                      </StackPanel>
+                    </controls:SettingsSection>
+                    <controls:SettingsSection
+                      Header="{x:Bind Model.Text.Get('settings', 'peer_locations'), Mode=OneWay}"
+                      Style="{StaticResource TinyTorrentSettingsGroupStyle}"
+                      Glyph="{x:Bind icons:Lucide.MapPin}"
+                    >
+                      <StackPanel>
+                        <shared:DatasetRow x:Name="CityRow" />
                       </StackPanel>
                     </controls:SettingsSection>
                     <controls:SettingsExpander
@@ -555,7 +650,7 @@
                             <TextBlock Text="{x:Bind Model.Text.Get('plugins', 'database'), Mode=OneWay}" />
                             <TextBlock
                               x:Name="DatabaseSize"
-                              Text="—"
+                              Text="{x:Bind Model.DatabaseSize, Mode=OneWay}"
                               Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
                             />
                           </StackPanel>
@@ -565,14 +660,14 @@
                         <controls:SettingsRow Header="{x:Bind Model.Text.Get('plugins', 'files'), Mode=OneWay}">
                           <TextBlock
                             x:Name="LibraryFiles"
-                            Text="—"
+                            Text="{x:Bind Model.LibraryFiles, Mode=OneWay}"
                             TextTrimming="CharacterEllipsis"
                           />
                         </controls:SettingsRow>
                         <controls:SettingsRow Header="{x:Bind Model.Text.Get('plugins', 'information'), Mode=OneWay}">
                           <TextBlock
                             x:Name="StoredInformation"
-                            Text="—"
+                            Text="{x:Bind Model.StoredInformation, Mode=OneWay}"
                             TextTrimming="CharacterEllipsis"
                           />
                         </controls:SettingsRow>
@@ -582,7 +677,7 @@
                         >
                           <TextBlock
                             x:Name="StoredSubtitles"
-                            Text="—"
+                            Text="{x:Bind Model.StoredSubtitles, Mode=OneWay}"
                             TextTrimming="CharacterEllipsis"
                           />
                         </controls:SettingsRow>
@@ -597,6 +692,7 @@
                     />
                     <controls:SettingsSection
                       x:Name="LifecycleSection"
+                      Header="{x:Bind Model.Text.Get('settings', 'startup_closing'), Mode=OneWay}"
                       Margin="0,16,0,0"
                       Summary="{x:Bind Model.StartupSummary, Mode=OneWay}"
                       Glyph="{x:Bind icons:Lucide.Power}"
@@ -650,6 +746,8 @@
                     </controls:SettingsSection>
                     <controls:SettingsSection
                       x:Name="NotificationsSection"
+                      Header="{x:Bind Model.Text.Get('settings', 'notifications'), Mode=OneWay}"
+                      Description="{x:Bind Model.Text.Get('settings', 'notifications_hint'), Mode=OneWay}"
                       Glyph="{x:Bind icons:Lucide.Bell}"
                     >
                       <StackPanel>
@@ -715,6 +813,7 @@
                     </controls:SettingsSection>
                     <controls:SettingsSection
                       x:Name="PowerSection"
+                      Header="{x:Bind Model.Text.Get('settings', 'power'), Mode=OneWay}"
                       Summary="{x:Bind Model.PowerSummary, Mode=OneWay}"
                       Glyph="{x:Bind icons:Lucide.PlugZap}"
                     >
@@ -752,24 +851,29 @@
                         </controls:SettingsRow>
                       </StackPanel>
                     </controls:SettingsSection>
+                    <Border Style="{StaticResource TinyTorrentSettingsCardStyle}">
+                      <controls:SettingsRow
+                        BorderThickness="0"
+                        Header="{x:Bind Model.Text.Get('settings', 'settings_index'), Mode=OneWay}"
+                        Description="{x:Bind Model.Text.Get('settings', 'settings_index_hint'), Mode=OneWay}"
+                        StateText="{x:Bind controls:SettingsRow.State(Main.ShowsSettingsIndex, Model.OnText, Model.OffText), Mode=OneWay}"
+                      >
+                        <ToggleSwitch
+                          x:Name="IndexSwitch"
+                          IsOn="{x:Bind Main.ShowsSettingsIndex, Mode=OneWay}"
+                          Toggled="OnIndexSwitch"
+                          AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'settings_index'), Mode=OneWay}"
+                          AutomationProperties.AutomationId="SettingsIndex"
+                        />
+                      </controls:SettingsRow>
+                    </Border>
                     <controls:SettingsSection
                       x:Name="ConfirmationsSection"
+                      Header="{x:Bind Model.Text.Get('settings', 'confirmations'), Mode=OneWay}"
                       Summary="{x:Bind Model.ConfirmationsSummary, Mode=OneWay}"
                       Glyph="{x:Bind icons:Lucide.MessageSquare}"
                     >
                       <StackPanel>
-                        <controls:SettingsRow
-                          x:Name="IndexRow"
-                          Description="{x:Bind Model.Text.Get('settings', 'settings_index_hint'), Mode=OneWay}"
-                          StateText="{x:Bind controls:SettingsRow.State(Main.ShowsSettingsIndex, Model.OnText, Model.OffText), Mode=OneWay}"
-                        >
-                          <ToggleSwitch
-                            x:Name="IndexSwitch"
-                            IsOn="{x:Bind Main.ShowsSettingsIndex, Mode=OneWay}"
-                            Toggled="OnIndexSwitch"
-                            AutomationProperties.AutomationId="SettingsIndex"
-                          />
-                        </controls:SettingsRow>
                         <controls:SettingsRow
                           Header="{x:Bind Model.TorrentDialog.Label, Mode=OneWay}"
                           Error="{x:Bind Model.TorrentDialog.Message, Mode=OneWay}"
@@ -879,6 +983,7 @@
                   <StackPanel x:Name="Transfers" x:Load="False" Spacing="8" Visibility="Collapsed">
                     <controls:SettingsSection
                       x:Name="DownloadsSection"
+                      Header="{x:Bind Model.Text.Get('settings', 'files'), Mode=OneWay}"
                       Style="{StaticResource TinyTorrentSettingsGroupStyle}"
                       Glyph="{x:Bind icons:Lucide.FolderDown}"
                     >
@@ -891,22 +996,21 @@
                           <ComboBox
                             Width="260"
                             Tag="{x:Bind Model.UseLastFolder}"
-                            Loaded="OnChoiceLoaded"
-                            SelectionChanged="OnChoice"
+                            SelectedValuePath="Tag"
+                            SelectedValue="{x:Bind Model.UseLastFolder.SelectedValue, Mode=OneWay}"
+                            SelectionChanged="OnSelection"
                             IsEnabled="{x:Bind Model.UseLastFolder.CanEdit, Mode=OneWay}"
                             AutomationProperties.Name="{x:Bind Model.UseLastFolder.Label, Mode=OneWay}"
                             AutomationProperties.AutomationId="UseLastFolder"
                           >
-                            <ComboBoxItem Content="{x:Bind Model.Text.Get('settings', 'default_folder'), Mode=OneWay}">
-                              <ComboBoxItem.Tag>
-                                <x:Boolean>False</x:Boolean>
-                              </ComboBoxItem.Tag>
-                            </ComboBoxItem>
-                            <ComboBoxItem Content="{x:Bind Model.Text.Get('settings', 'last_folder'), Mode=OneWay}">
-                              <ComboBoxItem.Tag>
-                                <x:Boolean>True</x:Boolean>
-                              </ComboBoxItem.Tag>
-                            </ComboBoxItem>
+                            <ComboBoxItem
+                              Tag="false"
+                              Content="{x:Bind Model.Text.Get('settings', 'default_folder'), Mode=OneWay}"
+                            />
+                            <ComboBoxItem
+                              Tag="true"
+                              Content="{x:Bind Model.Text.Get('settings', 'last_folder'), Mode=OneWay}"
+                            />
                           </ComboBox>
                         </controls:SettingsRow>
                         <controls:SettingsRow
@@ -1012,6 +1116,7 @@
                     </controls:SettingsSection>
                     <controls:SettingsSection
                       x:Name="AddingSection"
+                      Header="{x:Bind Model.Text.Get('settings', 'adding'), Mode=OneWay}"
                       Margin="0,16,0,0"
                       Summary="{x:Bind Model.AddingSummary, Mode=OneWay}"
                       Glyph="{x:Bind icons:Lucide.Plus}"
@@ -1054,8 +1159,9 @@
                           <ComboBox
                             Width="260"
                             Tag="{x:Bind Model.Layout}"
-                            Loaded="OnChoiceLoaded"
-                            SelectionChanged="OnChoice"
+                            SelectedValuePath="Tag"
+                            SelectedValue="{x:Bind Model.Layout.SelectedValue, Mode=OneWay}"
+                            SelectionChanged="OnSelection"
                             IsEnabled="{x:Bind Model.Layout.CanEdit, Mode=OneWay}"
                             AutomationProperties.Name="{x:Bind Model.Layout.Label, Mode=OneWay}"
                             AutomationProperties.AutomationId="Layout"
@@ -1082,8 +1188,9 @@
                           <ComboBox
                             Width="260"
                             Tag="{x:Bind Model.Duplicates}"
-                            Loaded="OnChoiceLoaded"
-                            SelectionChanged="OnChoice"
+                            SelectedValuePath="Tag"
+                            SelectedValue="{x:Bind Model.Duplicates.SelectedValue, Mode=OneWay}"
+                            SelectionChanged="OnSelection"
                             IsEnabled="{x:Bind Model.Duplicates.CanEdit, Mode=OneWay}"
                             AutomationProperties.Name="{x:Bind Model.Duplicates.Label, Mode=OneWay}"
                             AutomationProperties.AutomationId="Duplicates"
@@ -1102,6 +1209,7 @@
                     </controls:SettingsSection>
                     <controls:SettingsSection
                       x:Name="QueueSection"
+                      Header="{x:Bind Model.Text.Get('settings', 'queue'), Mode=OneWay}"
                       Summary="{x:Bind Model.QueueSummary, Mode=OneWay}"
                       Glyph="{x:Bind icons:Lucide.ListOrdered}"
                     >
@@ -1251,6 +1359,7 @@
                     </controls:SettingsSection>
                     <controls:SettingsSection
                       x:Name="SeedingSection"
+                      Header="{x:Bind Model.Text.Get('settings', 'seeding'), Mode=OneWay}"
                       Summary="{x:Bind Model.SeedingSummary, Mode=OneWay}"
                       Glyph="{x:Bind icons:Lucide.Sprout}"
                     >
@@ -1289,10 +1398,12 @@
                             <ComboBox
                               Width="174"
                               Tag="{x:Bind Model.SeedingMinutes}"
-                              Loaded="OnChoiceLoaded"
-                              SelectionChanged="OnChoice"
+                              SelectedValuePath="Tag"
+                              SelectedValue="{x:Bind Model.SeedingMinutes.DurationUnit, Mode=OneWay}"
+                              SelectionChanged="OnUnit"
                               IsEnabled="{x:Bind Model.SeedingMinutes.CanEdit, Mode=OneWay}"
-                              AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'duration_unit'), Mode=OneWay}"
+                              AutomationProperties.Name="{x:Bind Model.SeedingMinutes.UnitLabel, Mode=OneWay}"
+                              AutomationProperties.AutomationId="SeedingMinutesUnit"
                             >
                               <ComboBoxItem
                                 Tag="minutes"
@@ -1327,10 +1438,12 @@
                             <ComboBox
                               Width="174"
                               Tag="{x:Bind Model.InactiveTime}"
-                              Loaded="OnChoiceLoaded"
-                              SelectionChanged="OnChoice"
+                              SelectedValuePath="Tag"
+                              SelectedValue="{x:Bind Model.InactiveTime.DurationUnit, Mode=OneWay}"
+                              SelectionChanged="OnUnit"
                               IsEnabled="{x:Bind Model.InactiveTime.CanEdit, Mode=OneWay}"
-                              AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'duration_unit'), Mode=OneWay}"
+                              AutomationProperties.Name="{x:Bind Model.InactiveTime.UnitLabel, Mode=OneWay}"
+                              AutomationProperties.AutomationId="InactiveTimeUnit"
                             >
                               <ComboBoxItem
                                 Tag="minutes"
@@ -1364,8 +1477,9 @@
                           <ComboBox
                             Width="260"
                             Tag="{x:Bind Model.SeedRule}"
-                            Loaded="OnChoiceLoaded"
-                            SelectionChanged="OnChoice"
+                            SelectedValuePath="Tag"
+                            SelectedValue="{x:Bind Model.SeedRule.SelectedValue, Mode=OneWay}"
+                            SelectionChanged="OnSelection"
                             IsEnabled="{x:Bind Model.SeedRule.CanEdit, Mode=OneWay}"
                             AutomationProperties.Name="{x:Bind Model.SeedRule.Label, Mode=OneWay}"
                             AutomationProperties.AutomationId="SeedRule"
@@ -1384,6 +1498,7 @@
                     </controls:SettingsSection>
                     <controls:SettingsSection
                       x:Name="WatchedSection"
+                      Header="{x:Bind Model.Text.Get('settings', 'watched_folder'), Mode=OneWay}"
                       Summary="{x:Bind Model.WatchedSummary, Mode=OneWay}"
                       Glyph="{x:Bind icons:Lucide.FolderInput}"
                     >
@@ -1482,7 +1597,7 @@
                       </StackPanel>
                     </controls:SettingsSection>
                     <controls:SettingsSection
-                      x:Name="FileSelectionSection"
+                      Header="{x:Bind Model.Text.Get('settings', 'file_selection'), Mode=OneWay}"
                       Glyph="{x:Bind icons:Lucide.ListChecks}"
                       IsAdvanced="True"
                     >
@@ -1536,6 +1651,7 @@
                     />
                     <controls:SettingsSection
                       x:Name="AccountingSection"
+                      Header="{x:Bind Model.Text.Get('settings', 'bandwidth_accounting'), Mode=OneWay}"
                       Summary="{x:Bind Model.AccountingSummary, Mode=OneWay}"
                       Glyph="{x:Bind icons:Lucide.Calculator}"
                       IsAdvanced="True"
@@ -1618,16 +1734,16 @@
                         <controls:SettingsRow
                           Grid.Column="1"
                           BorderThickness="0"
-                          x:Name="AdapterRow"
+                          Description="{x:Bind Model.Text.Get('settings', 'adapter_hint'), Mode=OneWay}"
                           Header="{x:Bind Model.Adapter.Label, Mode=OneWay}"
                           Error="{x:Bind Model.Adapter.Message, Mode=OneWay}"
                         >
                           <ComboBox
                             x:Name="Adapters"
                             Width="260"
-                            SelectionChanged="OnAdapter"
                             ItemsSource="{x:Bind Model.Adapters, Mode=OneWay}"
                             SelectedItem="{x:Bind Model.SelectedAdapter, Mode=OneWay}"
+                            SelectionChanged="OnAdapter"
                             IsEnabled="{x:Bind Model.Adapter.CanEdit, Mode=OneWay}"
                             AutomationProperties.Name="{x:Bind Model.Adapter.Label, Mode=OneWay}"
                             AutomationProperties.AutomationId="NetworkAdapter"
@@ -1652,7 +1768,12 @@
                           Glyph="{x:Bind icons:Lucide.Globe}"
                           FontSize="{StaticResource TinyTorrentHeaderIconSize}"
                         />
-                        <controls:SettingsRow Grid.Column="1" BorderThickness="0" x:Name="ProxyRow">
+                        <controls:SettingsRow
+                          Grid.Column="1"
+                          BorderThickness="0"
+                          Header="{x:Bind Model.Text.Get('settings', 'proxy'), Mode=OneWay}"
+                          Description="{x:Bind Model.Text.Get('settings', 'proxy_hint'), Mode=OneWay}"
+                        >
                           <StackPanel Orientation="Horizontal" Spacing="12">
                             <FontIcon
                               FontFamily="{x:Bind icons:Lucide.Font}"
@@ -1705,17 +1826,20 @@
                           <controls:SettingsRow.Detail>
                             <StackPanel Spacing="16">
                               <RadioButtons
-                                x:Name="EncryptionChoice"
                                 MaxColumns="1"
                                 Tag="{x:Bind Model.Encryption}"
-                                SelectionChanged="OnEncryption"
+                                SelectionChanged="OnSelection"
                                 IsEnabled="{x:Bind Model.Encryption.CanEdit, Mode=OneWay}"
                                 AutomationProperties.Name="{x:Bind Model.Encryption.Label, Mode=OneWay}"
                                 AutomationProperties.AutomationId="Encryption"
                               >
-                                <RadioButton x:Name="PreferredEncryption" Tag="preferred">
+                                <RadioButton
+                                  Tag="preferred"
+                                  IsChecked="{x:Bind local:SettingsPage.IsSelected(Model.Encryption.SelectedValue, 'preferred'), Mode=OneWay}"
+                                  AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'encryption_recommended'), Mode=OneWay}"
+                                >
                                   <StackPanel Spacing="4">
-                                    <TextBlock x:Name="PreferredLabel" />
+                                    <TextBlock Text="{x:Bind Model.Text.Get('settings', 'encryption_recommended'), Mode=OneWay}" />
                                     <TextBlock
                                       Text="{x:Bind Model.Text.Get('settings', 'encryption_preferred_hint'), Mode=OneWay}"
                                       Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
@@ -1724,9 +1848,13 @@
                                     />
                                   </StackPanel>
                                 </RadioButton>
-                                <RadioButton x:Name="RequiredEncryption" Tag="required">
+                                <RadioButton
+                                  Tag="required"
+                                  IsChecked="{x:Bind local:SettingsPage.IsSelected(Model.Encryption.SelectedValue, 'required'), Mode=OneWay}"
+                                  AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'encryption_required'), Mode=OneWay}"
+                                >
                                   <StackPanel Spacing="4">
-                                    <TextBlock x:Name="RequiredLabel" />
+                                    <TextBlock Text="{x:Bind Model.Text.Get('settings', 'encryption_required'), Mode=OneWay}" />
                                     <TextBlock
                                       Text="{x:Bind Model.Text.Get('settings', 'encryption_required_hint'), Mode=OneWay}"
                                       Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
@@ -1735,9 +1863,13 @@
                                     />
                                   </StackPanel>
                                 </RadioButton>
-                                <RadioButton x:Name="AllowedEncryption" Tag="allowed">
+                                <RadioButton
+                                  Tag="allowed"
+                                  IsChecked="{x:Bind local:SettingsPage.IsSelected(Model.Encryption.SelectedValue, 'allowed'), Mode=OneWay}"
+                                  AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'encryption_allowed'), Mode=OneWay}"
+                                >
                                   <StackPanel Spacing="4">
-                                    <TextBlock x:Name="AllowedLabel" />
+                                    <TextBlock Text="{x:Bind Model.Text.Get('settings', 'encryption_allowed'), Mode=OneWay}" />
                                     <TextBlock
                                       Text="{x:Bind Model.Text.Get('settings', 'encryption_allowed_hint'), Mode=OneWay}"
                                       Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
@@ -1746,9 +1878,13 @@
                                     />
                                   </StackPanel>
                                 </RadioButton>
-                                <RadioButton x:Name="DisabledEncryption" Tag="disabled">
+                                <RadioButton
+                                  Tag="disabled"
+                                  IsChecked="{x:Bind local:SettingsPage.IsSelected(Model.Encryption.SelectedValue, 'disabled'), Mode=OneWay}"
+                                  AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'encryption_disabled'), Mode=OneWay}"
+                                >
                                   <StackPanel Spacing="4">
-                                    <TextBlock x:Name="DisabledLabel" />
+                                    <TextBlock Text="{x:Bind Model.Text.Get('settings', 'encryption_disabled'), Mode=OneWay}" />
                                     <TextBlock
                                       Text="{x:Bind Model.Text.Get('settings', 'encryption_disabled_hint'), Mode=OneWay}"
                                       Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
@@ -1771,6 +1907,7 @@
                     </controls:SettingsSection>
                     <controls:SettingsSection
                       x:Name="PeersSection"
+                      Header="{x:Bind Model.Text.Get('settings', 'connections'), Mode=OneWay}"
                       Summary="{x:Bind Model.PeersSummary, Mode=OneWay}"
                       Glyph="{x:Bind icons:Lucide.Network}"
                       IsAdvanced="True"
@@ -1784,7 +1921,7 @@
                           ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'connections_guide'), Mode=OneWay}"
                         />
                         <controls:SettingsRow
-                          x:Name="ConnectionLimitRow"
+                          Description="{x:Bind Model.Text.Get('settings', 'connections_hint'), Mode=OneWay}"
                           Header="{x:Bind Model.ConnectionLimit.Label, Mode=OneWay}"
                           Error="{x:Bind Model.ConnectionLimit.Message, Mode=OneWay}"
                         >
@@ -1847,10 +1984,12 @@
                           <ComboBox
                             Width="260"
                             Tag="{x:Bind Model.Transport}"
-                            Loaded="OnChoiceLoaded"
-                            SelectionChanged="OnChoice"
+                            SelectedValuePath="Tag"
+                            SelectedValue="{x:Bind Model.Transport.SelectedValue, Mode=OneWay}"
+                            SelectionChanged="OnSelection"
                             IsEnabled="{x:Bind Model.Transport.CanEdit, Mode=OneWay}"
                             AutomationProperties.Name="{x:Bind Model.Transport.Label, Mode=OneWay}"
+                            AutomationProperties.AutomationId="Transport"
                           >
                             <ComboBoxItem
                               Tag="both"
@@ -1870,6 +2009,7 @@
                     </controls:SettingsSection>
                     <controls:SettingsSection
                       x:Name="DiscoverySection"
+                      Header="{x:Bind Model.Text.Get('settings', 'peer_discovery'), Mode=OneWay}"
                       Summary="{x:Bind Model.DiscoverySummary, Mode=OneWay}"
                       Glyph="{x:Bind icons:Lucide.Radar}"
                       IsAdvanced="True"
@@ -1978,10 +2118,12 @@
                           <ComboBox
                             Width="260"
                             Tag="{x:Bind Model.IpFamily}"
-                            Loaded="OnChoiceLoaded"
-                            SelectionChanged="OnChoice"
+                            SelectedValuePath="Tag"
+                            SelectedValue="{x:Bind Model.IpFamily.SelectedValue, Mode=OneWay}"
+                            SelectionChanged="OnSelection"
                             IsEnabled="{x:Bind Model.IpFamily.CanEdit, Mode=OneWay}"
                             AutomationProperties.Name="{x:Bind Model.IpFamily.Label, Mode=OneWay}"
+                            AutomationProperties.AutomationId="IpFamily"
                           >
                             <ComboBoxItem
                               Tag="both"
@@ -2002,7 +2144,7 @@
                   </StackPanel>
                   <StackPanel x:Name="Advanced" x:Load="False" Spacing="8" Visibility="Collapsed">
                     <controls:SettingsSection
-                      x:Name="RefreshSection"
+                      Header="{x:Bind Model.Text.Get('settings', 'interface'), Mode=OneWay}"
                       Glyph="{x:Bind icons:Lucide.RefreshCw}"
                     >
                       <StackPanel>
@@ -2028,7 +2170,7 @@
                       </StackPanel>
                     </controls:SettingsSection>
                     <controls:SettingsSection
-                      x:Name="MemorySection"
+                      Header="{x:Bind Model.Text.Get('settings', 'memory'), Mode=OneWay}"
                       Glyph="{x:Bind icons:Lucide.Gauge}"
                     >
                       <StackPanel>
@@ -2072,7 +2214,7 @@
                       </StackPanel>
                     </controls:SettingsSection>
                     <controls:SettingsSection
-                      x:Name="CheckingSection"
+                      Header="{x:Bind Model.Text.Get('settings', 'checking'), Mode=OneWay}"
                       Summary="{x:Bind Model.CheckingSummary, Mode=OneWay}"
                       Glyph="{x:Bind icons:Lucide.Check}"
                     >
@@ -2151,7 +2293,7 @@
                       </StackPanel>
                     </controls:SettingsSection>
                     <controls:SettingsSection
-                      x:Name="HistorySection"
+                      Header="{x:Bind Model.Text.Get('settings', 'speed_history'), Mode=OneWay}"
                       Summary="{x:Bind Model.HistorySummary, Mode=OneWay}"
                       Glyph="{x:Bind icons:Lucide.ChartLine}"
                     >
@@ -2165,10 +2307,12 @@
                           <ComboBox
                             Width="160"
                             Tag="{x:Bind Model.RecentInterval}"
-                            Loaded="OnChoiceLoaded"
-                            SelectionChanged="OnChoice"
+                            SelectedValuePath="Tag"
+                            SelectedValue="{x:Bind Model.RecentInterval.SelectedValue, Mode=OneWay}"
+                            SelectionChanged="OnSelection"
                             IsEnabled="{x:Bind Model.RecentInterval.CanEdit, Mode=OneWay}"
                             AutomationProperties.Name="{x:Bind Model.RecentInterval.Label, Mode=OneWay}"
+                            AutomationProperties.AutomationId="RecentInterval"
                           >
                             <ComboBoxItem Tag="1" Content="1" />
                             <ComboBoxItem Tag="5" Content="5" />
@@ -2184,10 +2328,12 @@
                           <ComboBox
                             Width="160"
                             Tag="{x:Bind Model.HistoryInterval}"
-                            Loaded="OnChoiceLoaded"
-                            SelectionChanged="OnChoice"
+                            SelectedValuePath="Tag"
+                            SelectedValue="{x:Bind Model.HistoryInterval.SelectedValue, Mode=OneWay}"
+                            SelectionChanged="OnSelection"
                             IsEnabled="{x:Bind Model.HistoryInterval.CanEdit, Mode=OneWay}"
                             AutomationProperties.Name="{x:Bind Model.HistoryInterval.Label, Mode=OneWay}"
+                            AutomationProperties.AutomationId="HistoryInterval"
                           >
                             <ComboBoxItem Tag="10" Content="10" />
                             <ComboBoxItem Tag="30" Content="30" />
@@ -2200,13 +2346,13 @@
                   </StackPanel>
                   <StackPanel x:Name="Appearance" x:Load="False" Spacing="8" Visibility="Collapsed">
                     <controls:SettingsSection
-                      x:Name="AppearanceSection"
+                      Header="{x:Bind Model.Text.Get('settings', 'personalization'), Mode=OneWay}"
                       Style="{StaticResource TinyTorrentSettingsGroupStyle}"
                       Glyph="{x:Bind icons:Lucide.Palette}"
                     >
                       <StackPanel>
                         <controls:SettingsRow
-                          x:Name="ThemeRow"
+                          Header="{x:Bind Model.Text.Get('settings', 'theme'), Mode=OneWay}"
                           Error="{x:Bind Model.Theme.Message, Mode=OneWay}"
                         >
                           <controls:SettingsRow.Detail>
@@ -2218,14 +2364,18 @@
                           </controls:SettingsRow.Detail>
                         </controls:SettingsRow>
                         <controls:SettingsRow
-                          x:Name="LanguageRow"
+                          Header="{x:Bind Model.Text.Get('settings', 'language'), Mode=OneWay}"
                           Error="{x:Bind Model.Language.Message, Mode=OneWay}"
                         >
                           <ComboBox
                             x:Name="Languages"
                             Width="260"
+                            ItemsSource="{x:Bind LanguageItems}"
+                            SelectedValuePath="Tag"
+                            SelectedValue="{x:Bind Model.ChosenLanguage, Mode=OneWay}"
                             SelectionChanged="OnLanguage"
                             IsEnabled="{x:Bind Model.CanSelectLanguage, Mode=OneWay}"
+                            AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'language'), Mode=OneWay}"
                             AutomationProperties.AutomationId="Language"
                           />
                         </controls:SettingsRow>

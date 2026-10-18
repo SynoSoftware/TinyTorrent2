@@ -385,7 +385,7 @@ public sealed partial class MainViewModel
             () =>
             {
                 Notices.Remove(notice);
-                return RequestSettings(new(SettingsCategory.Plugins, "lookup_limit"));
+                return RequestSettings(new(SettingsCategory.Plugins, "lookups"));
             },
             () => true
         );

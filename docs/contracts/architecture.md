@@ -306,7 +306,11 @@ from owning edits.
   language transitions reach the affected child owners.
 - `Settings.Editor` owns confirmed settings, ordinary field drafts, adapter
   choices, conversion and submission. Its `Schedule` owns period editing and
-  whole-list saves.
+  whole-list saves. The lookup limit uses the same field lifecycle and saves
+  through the Library request policy rather than the engine. Editor also owns
+  plugin coverage and database summary reads and their retained results, so
+  those operations do not depend on a page's controls. Views request loading
+  when the relevant content becomes visible and bind to the results.
 - `AddDraft`, `Inspector` and `FileDraft` own their unfinished operations.
   `AddDraft` holds addition choices and preview state; `Inspector` keeps peer
   and tracker row identity within the current session and target.
@@ -380,8 +384,10 @@ issues own actionable work and its status.
   reply. Background file reads settle there; Inspector alone decides whether
   its current presentation accepts a result. The
   [pipe API contract](pipe-api.md#snapshots-and-detail) owns that lifetime.
-- Settings and the Plugins search-limit field keep their own edit owners.
-  Escape discards unsubmitted intent while accepted work settles; later deliberate
+- `Settings.Editor` owns the engine setting fields and the Plugins search
+  limit; `Library.Browser` owns the provider and automatic download choices, and
+  `Subtitles.Settings` owns the subtitle choices. In Editor's fields, Escape
+  discards unsubmitted intent while accepted work settles; later deliberate
   input stays distinct from cancellation, including input equal to the former
   confirmed value.
 - [Supplier](../../app/src/Subtitles/Supplier.cs) owns validity before every send and
@@ -402,11 +408,13 @@ issues own actionable work and its status.
   [Acquisition.Load](../../app/src/Subtitles/Acquisition/Storage.cs) publishes settings
   and supplier allowance only after its SQLite transaction commits.
 
-Settings editing has no shared machinery: `Setting` owns engine wire
-confirmation and uncertain-command reconciliation, while the Plugins field saves
-one SQLite value. A shared module earns its place only if it removes obligations
-without importing those unrelated dependencies; moving the queue behind another
-interface does not do that.
+Each `Setting` saves through a `SettingStore`. A store says whether its value
+can be edited and saved, saves it, and says whether a failed save proves the
+value is unsaved; the field lifecycle stays in `Editor`. The default store sends
+the value to the engine. Only an engine refusal proves the value is unsaved,
+because any other failure can lose the reply to an applied save, so the setting
+waits for a snapshot to confirm the value. The lookup limit's store saves one
+SQLite value, so each failure is final.
 
 ## Projects and source layout
 

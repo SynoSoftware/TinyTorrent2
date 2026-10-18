@@ -82,9 +82,12 @@ internal abstract class Supplier(RequestPolicy policy)
                 : null;
     }
 
+    /// <summary>The supplier's identity in the shared request policy.</summary>
+    internal string ProviderId => SupplierId.ToString().ToLowerInvariant();
+
     internal ProviderAccess Scope(Account account, string operation) =>
         new(
-            SupplierId.ToString().ToLowerInvariant(),
+            ProviderId,
             RequestKey.Digest(Access == Access.Password ? account.Username : ApiKey(account)),
             operation
         );

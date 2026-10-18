@@ -33,6 +33,9 @@ public sealed partial class MainViewModel
     private Task? _settled;
     private bool _featuresClosed;
     private bool _resetting;
+    private bool _resettingProtection;
+    private IReadOnlyList<ProtectionScope> _protectionScopes = [];
+    private string? _protectionProviderId;
     private Exception? _featureFailure;
     private Exception? FeatureFailure =>
         _featureFailure ?? Library.FailureCause ?? Subtitles?.DatabaseFailure;
@@ -243,6 +246,7 @@ public sealed partial class MainViewModel
                         ShowSubtitleFailure(failure);
                 });
             Changed(nameof(Subtitles));
+            RefreshProtectionScopes();
             _subtitlesStarting = Subtitles.Initialize(Text.Language);
             var sources = new FileSources(_database);
             var source = new TorrentSource(_client, sources);
@@ -574,8 +578,9 @@ public sealed partial class MainViewModel
         await _featureAccess.WaitAsync();
         try
         {
+            // The Settings field keeps its input when nothing was saved.
             if (_closed || _featuresClosed || _requestPolicy is not { } policy)
-                return;
+                throw new IOException(Text.Get("notifications", "library_unavailable"));
             await policy.SaveLimit(limit, CancellationToken.None);
             Changed(nameof(LookupLimit));
             Subtitles?.RefreshLookupLimit();
@@ -586,8 +591,62 @@ public sealed partial class MainViewModel
         }
     }
 
-    internal async Task ResetProtection(string? providerId = null)
+    /// <summary>All providers and suppliers first, then each one, for the Settings reset.</summary>
+    public IReadOnlyList<ProtectionScope> ProtectionScopes
     {
+        get
+        {
+            ProtectionScope[] scopes =
+            [
+                new(null, Text.Get("request_protection", "reset_all")),
+                .. Library.Providers.Select(provider => new ProtectionScope(
+                    provider.ProviderId,
+                    provider.Name
+                )),
+                .. (Subtitles?.Suppliers ?? []).Select(supplier => new ProtectionScope(
+                    supplier.ProviderId,
+                    supplier.SupplierId.ToString()
+                )),
+            ];
+            // A new list clears the choice's selection, so an equal list is kept.
+            if (!_protectionScopes.SequenceEqual(scopes))
+                _protectionScopes = scopes;
+            return _protectionScopes;
+        }
+    }
+
+    /// <summary>The scope that <see cref="ResetProtection"/> resets; all of them until the person chooses one.</summary>
+    public ProtectionScope ProtectionScope
+    {
+        get =>
+            ProtectionScopes.FirstOrDefault(scope => scope.ProviderId == _protectionProviderId)
+            ?? ProtectionScopes[0];
+        set
+        {
+            // The choice clears its selection while its list is replaced.
+            if (value is not null)
+                _protectionProviderId = value.ProviderId;
+        }
+    }
+
+    // The scope follows, because a replaced list clears the choice's selection.
+    private void RefreshProtectionScopes()
+    {
+        Changed(nameof(ProtectionScopes));
+        Changed(nameof(ProtectionScope));
+    }
+
+    public bool CanResetProtection => !_resettingProtection;
+
+    /// <summary>Resets request protection for <see cref="ProtectionScope"/>, and reports a failure.</summary>
+    internal async Task ResetProtection()
+    {
+        if (_resettingProtection)
+            return;
+        // A null provider resets every provider and supplier.
+        var providerId = ProtectionScope.ProviderId;
+        _resettingProtection = true;
+        Changed(nameof(CanResetProtection));
         await _featureAccess.WaitAsync();
         try
         {
@@ -624,9 +683,15 @@ public sealed partial class MainViewModel
             );
             operation.Outcome = WorkOutcome.Completed;
         }
+        catch (Exception error)
+        {
+            Report(error);
+        }
         finally
         {
             _featureAccess.Release();
+            _resettingProtection = false;
+            Changed(nameof(CanResetProtection));
         }
     }
 
@@ -692,6 +757,7 @@ public sealed partial class MainViewModel
             _subtitlesStarting = null;
         }
         Changed(nameof(Subtitles));
+        RefreshProtectionScopes();
         var libraryClosing = Library.Detach();
         await Geolocation.Detach();
         if (source is not null)
@@ -711,4 +777,13 @@ public sealed partial class MainViewModel
         if (subtitles is not null)
             await subtitles.DisposeAsync();
     }
+}
+
+/// <summary>
+/// A choice of the request-protection reset: one provider or subtitle
+/// supplier, or every one of them when <see cref="ProviderId"/> is null.
+/// </summary>
+public sealed record ProtectionScope(string? ProviderId, string Name)
+{
+    public override string ToString() => Name;
 }

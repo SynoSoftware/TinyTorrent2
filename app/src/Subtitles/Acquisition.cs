@@ -220,7 +220,7 @@ internal sealed partial class Acquisition(
             """,
             ("$provider", providerId)
         );
-        if (providerId is not null && providerId != SupplierId.ToString().ToLowerInvariant())
+        if (providerId is not null && providerId != RequireSupplier(SupplierId).ProviderId)
             return;
         Unblock(connection);
         Execute(

@@ -287,7 +287,8 @@ role has one size and a size changes in one place:
   neighbours are the window's small caption glyphs.
 - **Button**, 20: the glyph of an icon-only button.
 - **Header**, 20: the icon that leads a group, section or card.
-- **Statistic**, 24: the icon beside a statistic's caption and value.
+- **Statistic**, 24: the icon beside a statistic's caption and value, or a
+  Settings header fact's label and value.
 - **Surface**, 24: the icon that identifies a surface, such as a dialog title,
   the inspector heading, the workspace switch or Settings navigation.
 - **Toolbar**, 24: toolbar buttons.
@@ -871,9 +872,10 @@ the window is too narrow, the CommandBar moves the commands that do not fit
 into its More menu instead of clipping them. The menus keep every command. Copy magnet
 link stays off it because its link icon is Add magnet link's. Add comes first and stays enabled
 without a selection; with the toolbar hidden, the File menu, its
-shortcuts, drag-and-drop and paste still add torrents. The other buttons
-act on the selection and are disabled without one, as their menu items are.
-Settings stays available in the title bar even when the toolbar is hidden.
+shortcuts, drag-and-drop and paste still add torrents. The buttons that act
+on the selection are disabled without one, as their menu items are.
+On Library, and with the toolbar hidden, File > Settings, Ctrl+, and search
+open Settings.
 The toolbar is one Tab stop, and the arrow keys move inside it. It starts visible,
 and the window layout remembers it.
 
@@ -1617,7 +1619,9 @@ Settings labels, values and feedback remain single-line, with ellipsis and the
 full text available through tooltips and accessibility.
 
 General begins with Windows integration, then Startup and closing,
-Notifications, Power, Dialogs and confirmations, and automatic updates.
+Notifications, Power, the Settings start-page preference, Dialogs and
+confirmations, and automatic updates. The start-page preference is a separate
+card, because it controls navigation rather than consent or a dialog.
 Registration warnings use the full row width below the first row of actions.
 The native proxy dialog keeps its existing transaction, validation, feedback
 slot and button placement.
@@ -1660,6 +1664,18 @@ a separate row below. There is no redundant theme dropdown. Free space,
 external IP, memory usage and title-bar speeds use four directly accessible
 switch cards. The external-IP and memory-usage cards follow Advanced mode;
 hiding one keeps its saved value and removes its whole card from the layout.
+
+**Owner ruling: Reset all settings is the Advanced card after the last
+Appearance card,** so the owner can see what a new installation shows. It flows
+with the other cards rather than sitting at the bottom of the page. Its
+confirmation defaults to Reset, the act the person chose. The reset returns
+every engine setting, the Library and subtitle settings, saved sign-ins and API
+keys, and the window layout to their defaults. The window then closes without
+saving its layout, and the engine opens a new one, which starts as after
+installation. Torrents, downloaded files, Library information, downloaded data,
+search protection and the Windows file and sign-in registration stay, because
+they are not settings: the installer sets the registration, and resetting it
+would rewrite the person's default apps in Windows.
 
 Home, search and related links use one reveal-expand-scroll-focus path.
 

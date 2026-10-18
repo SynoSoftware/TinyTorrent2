@@ -157,9 +157,6 @@ public sealed partial class AddDialog : UserControl, IDisposable
         };
     }
 
-    public static Visibility Hidden(bool value) =>
-        value ? Visibility.Collapsed : Visibility.Visible;
-
     public static GridLength PaneHeight(bool visible) => new(visible ? 1 : 0, GridUnitType.Star);
 
     private void OnDestination(object sender, RoutedEventArgs args) =>

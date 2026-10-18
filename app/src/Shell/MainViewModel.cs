@@ -350,6 +350,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         Geolocation.Failed += (_, error) => Report(error);
         Inspector = new Inspector(this, _client);
         Library = new LibraryBrowser(strings, dispatcher, Work);
+        Settings.AttachLibrary();
         Library.RetryRequested += (_, _) => RequestSnapshot();
         Library.FiltersRequested += (_, _) => IsFilterOpen = true;
         Library.PropertiesRequested += (_, _) => OpenInspector();
@@ -357,6 +358,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         {
             if (args.PropertyName is nameof(Library.Failure) or "")
                 RefreshFeedback();
+            if (args.PropertyName is nameof(Library.Providers) or "")
+                RefreshProtectionScopes();
             if (Page != WindowPage.Library)
                 return;
             if (args.PropertyName is nameof(Library.Query) or "")
@@ -1132,6 +1135,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             Report(error);
         }
     }
+
+    // The person's choice while it loads, then the language the text uses.
+    internal string ChosenLanguage => _changingLanguage ? _requestedLanguage : Text.Language;
 
     internal void SelectLanguage(string language)
     {

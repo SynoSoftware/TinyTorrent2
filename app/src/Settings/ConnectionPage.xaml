@@ -108,6 +108,7 @@
     >
       <BreadcrumbBar
         x:Name="Hierarchy"
+        ItemsSource="{x:Bind Model.Hierarchy, Mode=OneWay}"
         ItemClicked="OnHierarchy"
         VerticalAlignment="Center"
         IsTabStop="True"
@@ -124,106 +125,35 @@
           </DataTemplate>
         </BreadcrumbBar.ItemTemplate>
       </BreadcrumbBar>
-      <!-- Matches the Settings page header, so the picture and facts stay in
-           place when Speed limits opens this page. -->
-      <Grid x:Name="Header" ColumnSpacing="24">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="Auto" />
-        </Grid.ColumnDefinitions>
-        <Grid.RowDefinitions>
-          <RowDefinition Height="Auto" />
-          <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
-        <Grid ColumnSpacing="16" VerticalAlignment="Center">
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="*" />
-          </Grid.ColumnDefinitions>
-          <Image
-            Source="ms-appx:///Assets/Settings/setup.png"
-            Width="96"
-            Height="96"
-            Stretch="Uniform"
-            IsHitTestVisible="False"
-            AutomationProperties.AccessibilityView="Raw"
+      <settings:Header
+        x:Name="PageHeader"
+        Artwork="ms-appx:///Assets/Settings/setup.png"
+        Title="{x:Bind Model.Text.Get('connection_setup', 'saved_capacity'), Mode=OneWay}"
+        Subtitle="{x:Bind Model.SavedCapacity, Mode=OneWay}"
+      >
+        <settings:Header.First>
+          <settings:Fact
+            Glyph="{x:Bind icons:Lucide.Gauge}"
+            Label="{x:Bind Model.Text.Get('settings', 'standard_caps'), Mode=OneWay}"
+            Value="{x:Bind Model.StandardSummary, Mode=OneWay}"
+            ShowsTransfers="True"
+            Download="{x:Bind Model.StandardDownload, Mode=OneWay}"
+            Upload="{x:Bind Model.StandardUpload, Mode=OneWay}"
+            Text="{x:Bind Model.Text}"
           />
-          <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
-            <TextBlock
-              Text="{x:Bind Model.Text.Get('connection_setup', 'saved_capacity'), Mode=OneWay}"
-              Style="{StaticResource SubtitleTextBlockStyle}"
-              TextWrapping="NoWrap"
-              TextTrimming="CharacterEllipsis"
-              AutomationProperties.HeadingLevel="Level2"
-              ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'saved_capacity'), Mode=OneWay}"
-            />
-            <TextBlock
-              Text="{x:Bind Model.SavedCapacity, Mode=OneWay}"
-              Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
-              TextTrimming="CharacterEllipsis"
-              ToolTipService.ToolTip="{x:Bind Model.SavedCapacity, Mode=OneWay}"
-            />
-          </StackPanel>
-        </Grid>
-        <Grid x:Name="HeaderFacts" Grid.Column="1" ColumnSpacing="24" VerticalAlignment="Center">
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="Auto" />
-          </Grid.ColumnDefinitions>
-          <Grid ColumnSpacing="12">
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="Auto" />
-              <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <FontIcon
-              FontFamily="{x:Bind icons:Lucide.Font}"
-              Glyph="{x:Bind icons:Lucide.Gauge}"
-              FontSize="{StaticResource TinyTorrentHeaderIconSize}"
-              VerticalAlignment="Center"
-              AutomationProperties.AccessibilityView="Raw"
-            />
-            <StackPanel Grid.Column="1" Spacing="4">
-              <TextBlock
-                Text="{x:Bind Model.Text.Get('settings', 'standard_caps'), Mode=OneWay}"
-                Style="{StaticResource BodyStrongTextBlockStyle}"
-                TextTrimming="CharacterEllipsis"
-              />
-              <TextBlock
-                Text="{x:Bind Model.StandardSummary, Mode=OneWay}"
-                Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
-                TextWrapping="NoWrap"
-                TextTrimming="CharacterEllipsis"
-              />
-            </StackPanel>
-          </Grid>
-          <Grid Grid.Column="1" ColumnSpacing="12">
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="Auto" />
-              <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <FontIcon
-              FontFamily="{x:Bind icons:Lucide.Font}"
-              Glyph="{x:Bind icons:Lucide.Gauge}"
-              FontSize="{StaticResource TinyTorrentHeaderIconSize}"
-              VerticalAlignment="Center"
-              AutomationProperties.AccessibilityView="Raw"
-            />
-            <StackPanel Grid.Column="1" Spacing="4">
-              <TextBlock
-                Text="{x:Bind Model.Text.Get('settings', 'alternative_caps'), Mode=OneWay}"
-                Style="{StaticResource BodyStrongTextBlockStyle}"
-                TextTrimming="CharacterEllipsis"
-              />
-              <TextBlock
-                Text="{x:Bind Model.AlternativeSummary, Mode=OneWay}"
-                Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
-                TextWrapping="NoWrap"
-                TextTrimming="CharacterEllipsis"
-              />
-            </StackPanel>
-          </Grid>
-        </Grid>
-      </Grid>
+        </settings:Header.First>
+        <settings:Header.Second>
+          <settings:Fact
+            Glyph="{x:Bind icons:Lucide.Gauge}"
+            Label="{x:Bind Model.Text.Get('settings', 'alternative_caps'), Mode=OneWay}"
+            Value="{x:Bind Model.AlternativeSummary, Mode=OneWay}"
+            ShowsTransfers="True"
+            Download="{x:Bind Model.AlternativeDownload, Mode=OneWay}"
+            Upload="{x:Bind Model.AlternativeUpload, Mode=OneWay}"
+            Text="{x:Bind Model.Text}"
+          />
+        </settings:Header.Second>
+      </settings:Header>
     </StackPanel>
     <ScrollViewer
       Grid.Row="1"
@@ -332,7 +262,7 @@
                     HorizontalAlignment="Stretch"
                     Glyph="{x:Bind icons:Lucide.Gauge}"
                     ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'test_hint'), Mode=OneWay}"
-                    Visibility="{x:Bind settings:ConnectionPage.Hidden(Model.IsTesting), Mode=OneWay}"
+                    Visibility="{x:Bind controls:Visibilities.Unless(Model.IsTesting), Mode=OneWay}"
                     IsEnabled="{x:Bind Model.CanTest, Mode=OneWay}"
                     Click="OnTest"
                     AutomationProperties.AutomationId="ConnectionTest"
@@ -408,7 +338,7 @@
                   Margin="12,0"
                   BorderThickness="0,1,0,0"
                   BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
-                  Visibility="{x:Bind settings:ConnectionPage.Hidden(Model.HasLinkWarning), Mode=OneWay}"
+                  Visibility="{x:Bind controls:Visibilities.Unless(Model.HasLinkWarning), Mode=OneWay}"
                 />
                 <Border
                   Background="{ThemeResource SystemFillColorCautionBackgroundBrush}"
@@ -428,7 +358,7 @@
                     Glyph="{x:Bind icons:Lucide.EthernetPort}"
                     FontSize="{StaticResource TinyTorrentHeaderIconSize}"
                     VerticalAlignment="Center"
-                    Visibility="{x:Bind settings:ConnectionPage.Hidden(Model.HasLinkWarning), Mode=OneWay}"
+                    Visibility="{x:Bind controls:Visibilities.Unless(Model.HasLinkWarning), Mode=OneWay}"
                     AutomationProperties.AccessibilityView="Raw"
                   />
                   <FontIcon

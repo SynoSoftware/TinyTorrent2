@@ -22,6 +22,13 @@ public sealed partial class Browser
     private bool _automaticOnInstall;
     private bool _resettingProtection;
 
+    // The person's provider choice while its save runs, so a refresh does not
+    // show the earlier choice before the save ends.
+    private sealed record ProviderChoice(ProviderOption Option, bool AutomaticDownload);
+    private ProviderChoice? _choice;
+    private Task _choiceSave = Task.CompletedTask;
+    private IReadOnlyList<string> _providerNames = [];
+
     private abstract record FetchOutcome
     {
         private FetchOutcome() { }
@@ -89,23 +96,151 @@ public sealed partial class Browser
         FetchMetadataRequested?.Invoke(this, source);
     }
 
-    internal async Task EnableAutomaticDownload(string providerId)
-    {
-        _automaticOnInstall = false;
-        if (_videos is null)
-            return;
-        await _videos.EnableAutomaticDownload(providerId);
-    }
+    internal Task EnableAutomaticDownload(string providerId) =>
+        SaveProvider(FindProvider(providerId), true, videos => videos.EnableAutomaticDownload(providerId));
 
-    internal async Task SelectProvider(string providerId)
-    {
-        _automaticOnInstall = false;
-        if (_videos is null)
-            return;
-        await _videos.SelectProvider(providerId);
-    }
+    internal Task SelectProvider(string providerId) =>
+        SaveProvider(FindProvider(providerId), AutomaticDownload, videos => videos.SelectProvider(providerId));
+
+    internal Task DisableAutomaticDownload() =>
+        SaveProvider(ChosenProvider, false, videos => videos.DisableAutomaticDownload());
+
+    private ProviderOption? FindProvider(string providerId) =>
+        Providers.FirstOrDefault(option => option.ProviderId == providerId);
 
     internal bool HasKey(string providerId) => _videos?.HasKey(providerId) == true;
+
+    /// <summary>The provider names in <see cref="Providers"/> order, for the Settings choice.</summary>
+    public IReadOnlyList<string> ProviderNames
+    {
+        get
+        {
+            // A new list clears the choice's selection, so an equal list is kept.
+            var names = Providers.Select(option => option.Name).ToArray();
+            if (!_providerNames.SequenceEqual(names))
+                _providerNames = names;
+            return _providerNames;
+        }
+    }
+
+    /// <summary>The chosen provider's index in <see cref="Providers"/>, or -1.</summary>
+    public int ProviderIndex =>
+        ChosenProvider is { } option ? Providers.ToList().IndexOf(option) : -1;
+
+    /// <summary>
+    /// Saves the provider at <paramref name="index"/> in <see cref="Providers"/>
+    /// as the person's Settings choice, unless it is already chosen; a failure
+    /// is reported.
+    /// </summary>
+    internal void ChooseProvider(int index)
+    {
+        if (!IsAvailable || index < 0 || index >= Providers.Count || index == ProviderIndex)
+            return;
+        _ = ReportFailure(SelectProvider(Providers[index].ProviderId));
+    }
+
+    /// <summary>Whether automatic download is chosen, including a choice that is still saving.</summary>
+    public bool AutomaticDownload => _choice?.AutomaticDownload ?? IsAutomaticDownloadEnabled;
+
+    internal ProviderOption? ChosenProvider => _choice?.Option ?? Option;
+    public bool HasProvider => Option is not null;
+    public bool UsesKey => Option is { Access: Access.Key };
+
+    /// <summary>
+    /// Saves automatic download for <see cref="ChosenProvider"/>. Turning it on
+    /// needs the provider's data and, without a built-in key, the person's own
+    /// key; when one is missing, nothing is saved and this returns what the
+    /// person must supply, or <see cref="ProviderRequirement.None"/> when a data
+    /// download cannot start now.
+    /// </summary>
+    internal ProviderRequirement ChooseAutomaticDownload(bool enabled)
+    {
+        if (!IsAvailable || enabled == AutomaticDownload || ChosenProvider is not { } option)
+            return ProviderRequirement.None;
+        var missing =
+            !enabled ? ProviderRequirement.None
+            : option is { Dataset.IsInstalled: false } ? ProviderRequirement.Data
+            : option is { Access: Access.Key, HasBuiltInKey: false } && !HasKey(option.ProviderId)
+                ? ProviderRequirement.Key
+            : ProviderRequirement.None;
+        if (missing != ProviderRequirement.None)
+        {
+            // The switch returns to the saved choice.
+            Changed(nameof(AutomaticDownload));
+            return missing == ProviderRequirement.Data && !CanDownload
+                ? ProviderRequirement.None
+                : missing;
+        }
+        _ = ReportFailure(
+            enabled ? EnableAutomaticDownload(option.ProviderId) : DisableAutomaticDownload()
+        );
+        return ProviderRequirement.None;
+    }
+
+    // Settings has no dialog to show a failed save in.
+    private async Task ReportFailure(Task save)
+    {
+        try
+        {
+            await save;
+        }
+        catch (Exception error)
+        {
+            ReportCommand(error);
+        }
+    }
+
+    // Every provider change passes here. While it saves, Settings shows it,
+    // and Detach waits for it, because closing VideoLookup cancels its changes.
+    private Task SaveProvider(
+        ProviderOption? option,
+        bool automaticDownload,
+        Func<VideoLookup, Task> save
+    )
+    {
+        _automaticOnInstall = false;
+        if (_videos is not { } videos)
+            return Task.CompletedTask;
+        var choice = option is null ? null : new ProviderChoice(option, automaticDownload);
+        if (choice is not null)
+        {
+            _choice = choice;
+            ChangedProviders();
+        }
+        var saving = save(videos);
+        _choiceSave = Settle(choice, saving);
+        return saving;
+    }
+
+    // VideoLookup saves changes in order, so the latest save ends last. The
+    // caller of SaveProvider handles the failure.
+    private async Task Settle(ProviderChoice? choice, Task save)
+    {
+        try
+        {
+            await save;
+        }
+        catch (Exception) { }
+        finally
+        {
+            if (choice is not null && ReferenceEquals(_choice, choice))
+            {
+                _choice = null;
+                ChangedProviders();
+            }
+        }
+    }
+
+    private void ChangedProviders()
+    {
+        Changed(nameof(Providers));
+        // The names come first, because an index beyond the shown list throws.
+        Changed(nameof(ProviderNames));
+        Changed(nameof(ProviderIndex));
+        Changed(nameof(AutomaticDownload));
+        Changed(nameof(HasProvider));
+        Changed(nameof(UsesKey));
+    }
 
     /// <summary>Saves the person's own API key, as <see cref="VideoLookup.SaveKey"/> describes.</summary>
     internal async Task SaveKey(string providerId, string? key)
@@ -283,7 +418,7 @@ public sealed partial class Browser
         finally
         {
             Refresh();
-            Changed(nameof(Providers));
+            ChangedProviders();
             Changed(nameof(IDataset.Installed));
         }
     }
@@ -293,14 +428,6 @@ public sealed partial class Browser
         Changed(nameof(DataWork));
         Changed(nameof(HasDataWork));
         Changed(nameof(CanDownload));
-    }
-
-    internal async Task DisableAutomaticDownload()
-    {
-        _automaticOnInstall = false;
-        if (_videos is null)
-            return;
-        await _videos.DisableAutomaticDownload();
     }
 
     internal void WatchInspector(bool visible)
@@ -326,7 +453,7 @@ public sealed partial class Browser
             _viewProvider = Provider;
             _automaticDownload = IsAutomaticDownloadEnabled;
             Changed(nameof(IsAutomaticDownloadEnabled));
-            Changed(nameof(Providers));
+            ChangedProviders();
             Changed(nameof(Provider));
             Refresh();
         }

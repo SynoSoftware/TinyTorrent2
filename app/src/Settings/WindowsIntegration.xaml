@@ -2,7 +2,6 @@
   x:Class="Syno.TinyTorrent.Settings.WindowsIntegration"
   xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-  xmlns:settings="using:Syno.TinyTorrent.Settings"
   xmlns:controls="using:Syno.TinyTorrent.Controls"
   xmlns:icons="using:Syno"
 >
@@ -83,7 +82,7 @@
             </Grid>
             <Grid
               ColumnSpacing="8"
-              Visibility="{x:Bind settings:WindowsIntegration.HasText(Model.HandlersCaution), Mode=OneWay}"
+              Visibility="{x:Bind controls:Visibilities.HasText(Model.HandlersCaution), Mode=OneWay}"
             >
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />

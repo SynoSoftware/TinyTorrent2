@@ -618,14 +618,14 @@ internal sealed partial class Acquisition
 
     private RequestKey SearchCount(string fileName, string language) =>
         RequestKey.Create(
-            SupplierId.ToString().ToLowerInvariant(),
+            RequireSupplier(SupplierId).ProviderId,
             "search-count",
             [Query(fileName), language]
         );
 
     private RequestKey SearchKey(SubtitleLookup lookup) =>
         RequestKey.Create(
-            SupplierId.ToString().ToLowerInvariant(),
+            RequireSupplier(SupplierId).ProviderId,
             "search",
             [
                 RequireSupplier(SupplierId).Question(lookup),
@@ -778,7 +778,7 @@ internal sealed partial class Acquisition
         SubtitleFile.Probe(target.Path);
         var request = new LookupRequest(
             RequestKey.Create(
-                SupplierId.ToString().ToLowerInvariant(),
+                RequireSupplier(SupplierId).ProviderId,
                 "download",
                 [candidate.Reference]
             )

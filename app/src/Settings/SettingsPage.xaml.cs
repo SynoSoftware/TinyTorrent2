@@ -21,13 +21,9 @@ public sealed partial class SettingsPage : UserControl
 {
     private readonly HashSet<TextBox> _composing = [];
     private readonly HashSet<TextBox> _editors = [];
-    private readonly HashSet<ComboBox> _choices = [];
     private bool _refreshing;
-    private bool _refreshingProviders;
+    private IReadOnlyList<ComboBoxItem>? _languageItems;
     private bool _showAdvanced;
-    private Task _providerSave = Task.CompletedTask;
-    private Task _lookupSave = Task.CompletedTask;
-    private bool _lookupEdited;
     private ThemePicker? _themes;
     private WindowsIntegration? _integration;
     private Scheduler? _scheduler;
@@ -61,7 +57,6 @@ public sealed partial class SettingsPage : UserControl
         Model = main.Settings;
         InitializeComponent();
         Svg.Fit(Logo);
-        Svg.Fit(PageArtwork);
         Categories.ItemInvoked += OnCategoryInvoked;
         // Keep the overhanging corner marks off the navigation pane and caption.
         Root.SizeChanged += Motion.Clip;
@@ -82,7 +77,6 @@ public sealed partial class SettingsPage : UserControl
         Model.PropertyChanged += OnModel;
         Main.PropertyChanged += OnMain;
         Main.Library.PropertyChanged += OnProviders;
-        Main.Library.CoverageChanged += OnCoverage;
         RefreshSubtitles();
         _display.TextScaleFactorChanged += OnTextScale;
         _themeSettings = ThemeSettings.CreateForWindowId(
@@ -105,6 +99,7 @@ public sealed partial class SettingsPage : UserControl
             subtitles.SetVisible(false);
             subtitles.Attach(null);
         }
+        Model.HidePlugins();
         ClearOutline();
         _motion.Stop();
         _pages.Stop();
@@ -112,7 +107,6 @@ public sealed partial class SettingsPage : UserControl
         Model.PropertyChanged -= OnModel;
         Main.PropertyChanged -= OnMain;
         Main.Library.PropertyChanged -= OnProviders;
-        Main.Library.CoverageChanged -= OnCoverage;
         _display.TextScaleFactorChanged -= OnTextScale;
         if (_themeSettings is { } theme)
         {
@@ -170,79 +164,13 @@ public sealed partial class SettingsPage : UserControl
 
     private void OnText(object? sender, EventArgs args) => RefreshText();
 
-    private int ProviderIndex =>
-        Main.Library.Option is { } option ? Main.Library.Providers.ToList().IndexOf(option) : -1;
-
-    private async void OnProviderChoice(object sender, SelectionChangedEventArgs args)
+    private void OnAutomaticDownload(object sender, RoutedEventArgs args)
     {
-        var index = ProviderChoice.SelectedIndex;
-        if (
-            _refreshingProviders
-            || index < 0
-            || !ProviderChoice.IsEnabled
-            || _providerSave.IsCompleted && index == ProviderIndex
-        )
-            return;
-        var option = Main.Library.Providers[index];
-        await SaveProvider(Main.Library.SelectProvider(option.ProviderId));
-    }
-
-    private async void OnAutomaticDownload(object sender, RoutedEventArgs args)
-    {
-        if (
-            _refreshingProviders
-            || !AutomaticDownload.IsEnabled
-            || _providerSave.IsCompleted
-                && AutomaticDownload.IsOn == Main.Library.IsAutomaticDownloadEnabled
-            || ProviderChoice.SelectedIndex < 0
-        )
-            return;
-        var option = Main.Library.Providers[ProviderChoice.SelectedIndex];
-        if (AutomaticDownload.IsOn && !PrepareAutomaticDownload(option))
-            return;
-        await SaveProvider(
-            AutomaticDownload.IsOn
-                ? Main.Library.EnableAutomaticDownload(option.ProviderId)
-                : Main.Library.DisableAutomaticDownload()
-        );
-    }
-
-    private bool PrepareAutomaticDownload(ProviderOption option)
-    {
-        if (option is { Dataset.IsInstalled: false })
-        {
-            RefreshProviders();
-            if (Main.Library.CanDownload)
-                AutomaticDataRequested?.Invoke(this, EventArgs.Empty);
-            return false;
-        }
-        if (
-            option is { Access: Access.Key, HasBuiltInKey: false }
-            && !Main.Library.HasKey(option.ProviderId)
-        )
-        {
-            RefreshProviders();
+        var requirement = Main.Library.ChooseAutomaticDownload(AutomaticDownload.IsOn);
+        if (requirement == ProviderRequirement.Data)
+            AutomaticDataRequested?.Invoke(this, EventArgs.Empty);
+        else if (requirement == ProviderRequirement.Key && Main.Library.ChosenProvider is { } option)
             KeyRequested?.Invoke(this, new(option, true));
-            return false;
-        }
-        return true;
-    }
-
-    private async Task SaveProvider(Task save)
-    {
-        _providerSave = save;
-        try
-        {
-            await save;
-        }
-        catch (Exception error)
-        {
-            Main.Report(error);
-        }
-        finally
-        {
-            RefreshProviders();
-        }
     }
 
     private void OnProviderKey(object sender, RoutedEventArgs args)
@@ -265,167 +193,11 @@ public sealed partial class SettingsPage : UserControl
                 .ShowAt(ProviderInformation);
     }
 
-    // Library saves the search limit, not the engine, so the limit follows
-    // the field rules of Settings.Commit and Settings.Depart here: Enter keeps
-    // invalid input with its error, leaving restores the saved limit, and a
-    // refused save is reported through the application notification.
-    private void OnLookupLoaded(object sender, RoutedEventArgs args)
-    {
-        if (TextEditor.Find(LookupLimit) is { } editor && _editors.Add(editor))
-        {
-            Watch(editor);
-            editor.TextChanging += (_, _) =>
-            {
-                _lookupEdited = true;
-                LookupsRow.Error = string.Empty;
-            };
-        }
-    }
-
-    private async void OnLookupKey(object sender, KeyRoutedEventArgs args)
-    {
-        if (TextEditor.Find(LookupLimit) is not { } editor || _composing.Contains(editor))
-            return;
-        if (args.Key == VirtualKey.Escape)
-        {
-            args.Handled = true;
-            RefreshLookupLimit();
-        }
-        else if (args.Key == VirtualKey.Enter)
-        {
-            args.Handled = true;
-            if (ParseLookupLimit(editor.Text) is { } limit)
-                await SaveLookupLimit(limit);
-            else
-                LookupsRow.Error = Model.Text.Get("plugins", "invalid_lookups");
-        }
-    }
-
-    // Leaving the page also saves, because the page's own leave check covers
-    // only the engine's settings.
-    private async void OnLookupDeparture(object sender, RoutedEventArgs args)
-    {
-        if (TextEditor.Find(LookupLimit) is not { } editor || _composing.Contains(editor))
-            return;
-        for (
-            var current = FocusManager.GetFocusedElement(XamlRoot) as DependencyObject;
-            current is not null;
-            current = VisualTreeHelper.GetParent(current)
-        )
-        {
-            if (current == LookupLimit)
-                return;
-            if (current == this)
-                break;
-        }
-        if (ParseLookupLimit(editor.Text) is not { } limit)
-            RefreshLookupLimit();
-        else
-            await SaveLookupLimit(limit);
-    }
-
-    private static int? ParseLookupLimit(string input) =>
-        Editor.TryInteger(input, out var limit) && limit >= 1 ? limit : null;
-
-    private Task SaveLookupLimit(int limit)
-    {
-        if (!_lookupEdited)
-            return _lookupSave;
-        var input = LookupLimit.Text;
-        var previous = _lookupSave;
-        return _lookupSave = Save();
-
-        async Task Save()
-        {
-            await previous;
-            if (limit != Main.LookupLimit)
-            {
-                try
-                {
-                    await Main.SaveLookupLimit(limit);
-                }
-                catch (Exception error)
-                {
-                    Main.Report(error);
-                    return;
-                }
-            }
-            if (!_lookupEdited || LookupLimit.Text == input)
-                RefreshLookupLimit();
-        }
-    }
-
-    private void OnProtectionLoaded(object sender, RoutedEventArgs args) => RefreshProtection();
-
-    private void RefreshProtection()
-    {
-        if (ProtectionScope is null)
-            return;
-        var selected = (ProtectionScope.SelectedItem as ComboBoxItem)?.Tag;
-        ProtectionScope.Items.Clear();
-        ProtectionScope.Items.Add(
-            new ComboBoxItem { Content = Model.Text.Get("request_protection", "reset_all") }
-        );
-        foreach (var provider in Main.Library.Providers)
-            ProtectionScope.Items.Add(
-                new ComboBoxItem { Content = provider.Name, Tag = provider.ProviderId }
-            );
-        if (Main.Subtitles is { } subtitles)
-            foreach (var supplier in subtitles.Suppliers)
-                ProtectionScope.Items.Add(
-                    new ComboBoxItem
-                    {
-                        Content = supplier.SupplierId.ToString(),
-                        Tag = supplier.SupplierId.ToString().ToLowerInvariant(),
-                    }
-                );
-        ProtectionScope.SelectedItem =
-            ProtectionScope
-                .Items.Cast<ComboBoxItem>()
-                .FirstOrDefault(item => Equals(item.Tag, selected))
-            ?? ProtectionScope.Items[0];
-        ProtectionRow.StateText = string.Empty;
-    }
-
-    private async void OnProtectionReset(object sender, RoutedEventArgs args)
-    {
-        ProtectionReset.IsEnabled = ProtectionScope.IsEnabled = false;
-        ProtectionRow.Error = string.Empty;
-        try
-        {
-            await Main.ResetProtection(
-                (ProtectionScope.SelectedItem as ComboBoxItem)?.Tag as string
-            );
-        }
-        catch (Exception error)
-        {
-            Main.Report(error);
-        }
-        finally
-        {
-            ProtectionReset.IsEnabled = ProtectionScope.IsEnabled = true;
-        }
-    }
+    private async void OnProtectionReset(object sender, RoutedEventArgs args) =>
+        await Main.ResetProtection();
 
     internal async Task SaveFeatures()
     {
-        Task lookup = _lookupSave;
-        if (Main.Page == WindowPage.Settings && _category == PluginsCategory)
-        {
-            if (ParseLookupLimit(LookupLimit.Text) is { } limit)
-                lookup = SaveLookupLimit(limit);
-            else
-                RefreshLookupLimit();
-        }
-        try
-        {
-            await _providerSave;
-        }
-        catch (Exception)
-        {
-            // The selector already reports and restores a refused choice.
-        }
-        await lookup;
         if (SubtitlesContent?.Content is SubtitleSettings subtitles)
             await subtitles.Saving;
         if (_automatic is not null)
@@ -434,15 +206,6 @@ public sealed partial class SettingsPage : UserControl
 
     private void OnMain(object? sender, PropertyChangedEventArgs args)
     {
-        // Preserve the draft when shared settings refresh during an edit.
-        if (
-            args.PropertyName is nameof(MainViewModel.LookupLimit)
-            && _lookupSave.IsCompleted
-            && !_lookupEdited
-            && LookupLimit is not null
-            && TextEditor.Find(LookupLimit)?.FocusState is null or FocusState.Unfocused
-        )
-            RefreshLookupLimit();
         if (
             args.PropertyName is nameof(MainViewModel.Page) or nameof(MainViewModel.Subtitles) or ""
         )
@@ -476,226 +239,90 @@ public sealed partial class SettingsPage : UserControl
                 or ""
         )
             QueueHome();
-        if (args.PropertyName is nameof(Main.Library.IsAvailable) or "")
-            RefreshCoverage();
         if (args.PropertyName is nameof(Main.Library.Providers) or "")
-            RefreshProviders();
+            ShowImdb();
     }
 
-    private void RefreshLookupLimit()
-    {
-        if (LookupLimit is null)
-            return;
-        LookupsRow.Error = string.Empty;
-        LookupLimit.Text = Main.LookupLimit.ToString(
-            System.Globalization.CultureInfo.CurrentCulture
-        );
-        _lookupEdited = false;
-    }
-
-    private void RefreshProviders()
-    {
-        if (ProviderChoice is null)
-            return;
-        ProviderInformation.IsEnabled = Main.Library.Option is not null;
-        ProviderKey.Visibility = Main.Library.Option is { Access: Access.Key }
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-        // The row has nothing to manage until Library attaches.
-        ImdbRow.Show(Main.Library.DataProvider is null ? null : Main.Library, Model.Text);
-        if (!_providerSave.IsCompleted)
-            return;
-        _refreshingProviders = true;
-        ProviderChoice.ItemsSource = Main.Library.Providers.Select(option => option.Name).ToArray();
-        ProviderChoice.SelectedIndex = ProviderIndex;
-        AutomaticDownload.IsOn = Main.Library.IsAutomaticDownloadEnabled;
-        _refreshingProviders = false;
-    }
+    // The row has nothing to manage until Library attaches.
+    private void ShowImdb() =>
+        ImdbRow?.Show(Main.Library.DataProvider is null ? null : Main.Library, Model.Text);
 
     private void OnTextScale(UISettings sender, object args) =>
         DispatcherQueue.TryEnqueue(() =>
         {
             AlignCategory();
             UpdateHomeLayout();
-            ArrangeHeader();
         });
 
     private void OnModel(object? sender, PropertyChangedEventArgs args)
     {
-        _refreshing = true;
-        if (Languages is not null)
-            Languages.SelectedItem = SelectedLanguage;
-        if (EncryptionChoice is not null)
-            EncryptionChoice.SelectedItem = SelectedEncryption;
-        var unitsChanged = false;
-        foreach (var choice in _choices)
-        {
-            var previous = choice.SelectedItem;
-            RefreshChoice(choice);
-            unitsChanged |=
-                choice.Tag is Setting { IsDuration: true }
-                && !ReferenceEquals(previous, choice.SelectedItem);
-        }
-        _refreshing = false;
+        if (args.PropertyName is nameof(Editor.SubtitleCoverage) or "")
+            RefreshSubtitleCoverage();
         QueueHome();
-        if (unitsChanged)
-            AlignCategory();
     }
 
-    private ComboBoxItem? SelectedLanguage =>
-        Languages
-            .Items.OfType<ComboBoxItem>()
-            .FirstOrDefault(item => item.Tag is string tag && tag == Model.Text.Language);
-
-    private RadioButton SelectedEncryption =>
-        Model.Encryption.Input switch
-        {
-            "required" => RequiredEncryption,
-            "allowed" => AllowedEncryption,
-            "disabled" => DisabledEncryption,
-            _ => PreferredEncryption,
-        };
+    // Built in code, because a template cannot give each item's container its
+    // own AutomationId.
+    public IReadOnlyList<ComboBoxItem> LanguageItems =>
+        _languageItems ??=
+        [
+            .. Strings.Languages.Select(language =>
+            {
+                var name = Strings.NativeName(language);
+                var flag = new TextBlock
+                {
+                    Text = Flags.Glyph(Strings.FlagRegion(language)),
+                    FontFamily = Flags.Font,
+                };
+                AutomationProperties.SetAccessibilityView(flag, AccessibilityView.Raw);
+                var item = new ComboBoxItem
+                {
+                    Tag = language.Name,
+                    Content = new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal,
+                        Spacing = 6,
+                        Children = { flag, new TextBlock { Text = name } },
+                    },
+                };
+                AutomationProperties.SetName(item, name);
+                AutomationProperties.SetAutomationId(
+                    item,
+                    language.Name switch
+                    {
+                        "en" => "EnglishLanguage",
+                        "es" => "SpanishLanguage",
+                        _ => language.Name + "Language",
+                    }
+                );
+                return item;
+            }),
+        ];
 
     internal void RefreshText()
     {
-        RefreshStatistics();
-        if (LookupsRow is not null && LookupsRow.Error.Length > 0)
-            LookupsRow.Error = Model.Text.Get("plugins", "invalid_lookups");
-        RefreshProviders();
+        ShowImdb();
         CityRow?.RefreshText();
-        RefreshProtection();
-        if (!_lookupEdited)
-            RefreshLookupLimit();
-        _refreshing = true;
         Bindings.Update();
-        Label(HomeCategory, "home");
-        Label(GeneralCategory, "general");
-        Label(TransfersCategory, "transfers");
-        Label(LimitsCategory, "limits");
-        Label(NetworkCategory, "network");
-        Label(AppearanceCategory, "appearance");
-        Label(AdvancedCategory, "advanced");
-        Label(ScheduleCategory, "schedule");
-        Label(PluginsCategory, "plugins");
         RefreshSubtitles();
-        Label(AdvancedMode, "show_advanced");
         RefreshAdvancedMode();
-        AutomationProperties.SetName(Categories, Model.Text.Get("settings", "categories"));
-        if (Transfers is not null)
+        // A ComboBox keeps the text its item had when it was selected, so each
+        // choice is selected again after its item texts change.
+        foreach (
+            var choice in CategoryPanels
+                .SelectMany(panel => Elements(panel))
+                .OfType<ComboBox>()
+                .Where(choice => choice.Tag is Setting)
+        )
         {
-            DownloadsSection.Header = Model.Text.Get("settings", "files");
-            AddingSection.Header = Model.Text.Get("settings", "adding");
-            FileSelectionSection.Header = Model.Text.Get("settings", "file_selection");
-            WatchedSection.Header = Model.Text.Get("settings", "watched_folder");
-            QueueSection.Header = Model.Text.Get("settings", "queue");
-            SeedingSection.Header = Model.Text.Get("settings", "seeding");
-        }
-        if (General is not null)
-        {
-            ConfirmationsSection.Header = Model.Text.Get("settings", "confirmations");
-            NotificationsSection.Header = Model.Text.Get("settings", "notifications");
-            NotificationsSection.Description = Model.Text.Get("settings", "notifications_hint");
-            LifecycleSection.Header = Model.Text.Get("settings", "startup_closing");
-            IndexRow.Header = Model.Text.Get("settings", "settings_index");
-            AutomationProperties.SetName(IndexSwitch, IndexRow.Header);
-            PowerSection.Header = Model.Text.Get("settings", "power");
-        }
-        if (Advanced is not null)
-        {
-            MemorySection.Header = Model.Text.Get("settings", "memory");
-            CheckingSection.Header = Model.Text.Get("settings", "checking");
-            RefreshSection.Header = Model.Text.Get("settings", "interface");
-            HistorySection.Header = Model.Text.Get("settings", "speed_history");
-        }
-        if (Limits is not null)
-        {
-            AccountingSection.Header = Model.Text.Get("settings", "bandwidth_accounting");
-        }
-        if (Network is not null)
-        {
-            PeersSection.Header = Model.Text.Get("settings", "connections");
-            DiscoverySection.Header = Model.Text.Get("settings", "peer_discovery");
-            AdapterRow.Description = Model.Text.Get("settings", "adapter_hint");
-            ConnectionLimitRow.Description = Model.Text.Get("settings", "connections_hint");
-            Label(PreferredEncryption, PreferredLabel, "encryption_recommended");
-            Label(RequiredEncryption, RequiredLabel, "encryption_required");
-            Label(AllowedEncryption, AllowedLabel, "encryption_allowed");
-            Label(DisabledEncryption, DisabledLabel, "encryption_disabled");
-            EncryptionChoice.SelectedItem = null;
-            EncryptionChoice.SelectedItem = SelectedEncryption;
-            ProxyRow.Description = Model.Text.Get("settings", "proxy_hint");
-            ProxyRow.Header = Model.Text.Get("settings", "proxy");
-        }
-        if (Appearance is not null)
-        {
-            if (Languages.Items.Count == 0)
-                foreach (var language in Strings.Languages)
-                {
-                    var name = Strings.NativeName(language);
-                    var flag = new TextBlock
-                    {
-                        Text = Flags.Glyph(Strings.FlagRegion(language)),
-                        FontFamily = Flags.Font,
-                    };
-                    AutomationProperties.SetAccessibilityView(flag, AccessibilityView.Raw);
-                    var item = new ComboBoxItem
-                    {
-                        Tag = language.Name,
-                        Content = new StackPanel
-                        {
-                            Orientation = Orientation.Horizontal,
-                            Spacing = 6,
-                            Children = { flag, new TextBlock { Text = name } },
-                        },
-                    };
-                    AutomationProperties.SetName(item, name);
-                    AutomationProperties.SetAutomationId(
-                        item,
-                        language.Name switch
-                        {
-                            "en" => "EnglishLanguage",
-                            "es" => "SpanishLanguage",
-                            _ => language.Name + "Language",
-                        }
-                    );
-                    Languages.Items.Add(item);
-                }
-            AppearanceSection.Header = Model.Text.Get("settings", "personalization");
-            LanguageRow.Header = Model.Text.Get("settings", "language");
-            AutomationProperties.SetName(Languages, LanguageRow.Header);
-            Languages.SelectedItem = null;
-            Languages.SelectedItem = SelectedLanguage;
-            ThemeRow.Header = Model.Text.Get("settings", "theme");
-        }
-        foreach (var choice in _choices)
-        {
+            var item = choice.SelectedItem;
             choice.SelectedItem = null;
-            RefreshChoice(choice);
+            choice.SelectedItem = item;
         }
-        _refreshing = false;
         RefreshHome();
         (SubtitlesContent?.Content as SubtitleSettings)?.RefreshText();
         _automatic?.Refresh();
         AlignCategory();
-    }
-
-    private void Label(Control item, TextBlock label, string key)
-    {
-        label.Text = Model.Text.Get("settings", key);
-        AutomationProperties.SetName(item, label.Text);
-    }
-
-    private void Label(NavigationViewItem item, string key)
-    {
-        if (item.Content is not TextBlock label)
-        {
-            label = new TextBlock
-            {
-                Style = (Style)Application.Current.Resources["TinyTorrentNavigationTextStyle"],
-            };
-            item.Content = label;
-        }
-        Label(item, label, key);
     }
 
     private async void OnCategory(
@@ -812,7 +439,7 @@ public sealed partial class SettingsPage : UserControl
                     ? Visibility.Visible
                     : Visibility.Collapsed;
             UpdateLayout();
-            RefreshCoverage();
+            RefreshSubtitles();
             AlignCategory();
             var position = _category is { } item
                 ? _positions.GetValueOrDefault(item)
@@ -934,7 +561,7 @@ public sealed partial class SettingsPage : UserControl
             if (!_showAdvanced)
                 DatabaseSummary.IsExpanded = false;
             else
-                RefreshCoverage();
+                RefreshSubtitles();
         }
         foreach (var panel in CategoryPanels)
         foreach (var element in Elements(panel))
@@ -1025,6 +652,12 @@ public sealed partial class SettingsPage : UserControl
             PluginsCategory,
         ];
 
+    public static bool IsHome(SettingsCategory? category) => category is null;
+
+    public static bool IsCategory(SettingsCategory? selected, SettingsCategory category) => selected == category;
+
+    public static bool IsSelected(string selected, string value) => selected == value;
+
     internal SettingsCategory? Category
     {
         get
@@ -1079,7 +712,7 @@ public sealed partial class SettingsPage : UserControl
                 }
                 if (target.Category is null || target.Name is null)
                 {
-                    Heading.Focus(FocusState.Programmatic);
+                    PageHeader.FocusHeading(FocusState.Programmatic);
                     return;
                 }
                 if (FindControl(target.Name) is { } control)
@@ -1147,7 +780,6 @@ public sealed partial class SettingsPage : UserControl
             "theme" => _themes?.Choices,
             "video_provider" => ProviderChoice,
             "video_information" => AutomaticDownload,
-            "lookup_limit" => LookupLimit,
             "subtitle_automatic"
             or "subtitle_extras"
             or "subtitle_supplier"
@@ -1173,88 +805,45 @@ public sealed partial class SettingsPage : UserControl
     private string SlowDescription(bool enabled, string key) =>
         Model.Text.Get("settings", enabled ? key : "enable_slow");
 
-    private void OnChoiceLoaded(object sender, RoutedEventArgs args)
-    {
-        if (sender is not ComboBox choice)
-            return;
-        _choices.Add(choice);
-        _refreshing = true;
-        RefreshChoice(choice);
-        _refreshing = false;
-    }
-
-    private static void RefreshChoice(ComboBox choice)
-    {
-        if (choice.Tag is Setting setting)
-            choice.SelectedItem = choice
-                .Items.OfType<ComboBoxItem>()
-                .FirstOrDefault(item =>
-                    item.Tag is bool value
-                        ? value == setting.IsOn
-                        : (string)item.Tag
-                            == (setting.IsDuration ? setting.DurationUnit : setting.Input)
-                );
-    }
-
-    private async void OnChoice(object sender, SelectionChangedEventArgs args)
-    {
-        if (
-            _refreshing
-            || sender
-                is not ComboBox
-                {
-                    Tag: Setting setting,
-                    SelectedItem: ComboBoxItem { Tag: { } value },
-                }
-        )
-            return;
-        if (value is bool boolean)
-        {
-            await Model.Toggle(setting, boolean);
-            return;
-        }
-        if (setting.IsDuration)
-        {
-            setting.SelectUnit((string)value);
-            AlignCategory();
-            return;
-        }
-        if ((string)value == setting.Input)
-            return;
-        setting.Input = (string)value;
-        await Model.Commit(setting);
-    }
-
     private void OnIndexSwitch(object sender, RoutedEventArgs args) =>
         Main.ShowsSettingsIndex = IndexSwitch.IsOn;
 
-    private async void OnAdapter(object sender, SelectionChangedEventArgs args)
+    // Selectors show their setting one way. A selection the binding makes
+    // equals the setting, so CommitSelection saves nothing for it.
+    private async void OnSelection(object sender, SelectionChangedEventArgs args)
     {
-        if (
-            _refreshing
-            || Adapters.SelectedItem is not AdapterChoice choice
-            || choice.AdapterId == Model.Adapter.Input
-        )
-            return;
-        Model.Adapter.Input = choice.AdapterId;
-        await Model.Commit(Model.Adapter);
+        var selected = sender switch
+        {
+            ComboBox choice => choice.SelectedItem,
+            RadioButtons choice => choice.SelectedItem,
+            _ => null,
+        };
+        if (sender is FrameworkElement { Tag: Setting setting } && selected is FrameworkElement { Tag: string value })
+            await Model.CommitSelection(setting, value);
     }
 
-    private async void OnEncryption(object sender, SelectionChangedEventArgs args)
+    private async void OnAdapter(object sender, SelectionChangedEventArgs args)
     {
-        if (
-            _refreshing
-            || EncryptionChoice.SelectedItem is not RadioButton { Tag: string encryption }
-            || encryption == Model.Encryption.Input
-        )
-            return;
-        Model.Encryption.Input = encryption;
-        await Model.Commit(Model.Encryption);
+        if (Adapters.SelectedItem is AdapterChoice choice)
+            await Model.CommitSelection(Model.Adapter, choice.AdapterId);
+    }
+
+    private void OnProvider(object sender, SelectionChangedEventArgs args) =>
+        Main.Library.ChooseProvider(ProviderChoice.SelectedIndex);
+
+    private void OnUnit(object sender, SelectionChangedEventArgs args)
+    {
+        if (sender is ComboBox { Tag: Setting setting, SelectedValue: string unit })
+        {
+            setting.SelectUnit(unit);
+            AlignCategory();
+        }
     }
 
     private void OnLanguage(object sender, SelectionChangedEventArgs args)
     {
-        if (!_refreshing && Languages.SelectedItem is ComboBoxItem { Tag: string language })
+        // The binding selects the chosen language, which is no new choice.
+        if (Languages.SelectedValue is string language && language != Model.ChosenLanguage)
             Model.SelectLanguage(language);
     }
 

@@ -10,7 +10,7 @@ using Syno.TinyTorrent.Torrents;
 
 namespace Syno.TinyTorrent.Settings;
 
-public sealed class Editor : INotifyPropertyChanged
+public sealed partial class Editor : INotifyPropertyChanged
 {
     private readonly MainViewModel _owner;
     private readonly PipeClient _client;
@@ -19,6 +19,7 @@ public sealed class Editor : INotifyPropertyChanged
     private AdapterChoice? _unavailableAdapter;
     private Task _adapterRefresh = Task.CompletedTask;
     public Strings Text => _owner.Text;
+    public Overview Overview { get; }
     public Setting Destination { get; }
     public Setting IncompleteFolder { get; }
     public Setting UseIncompleteFolder { get; }
@@ -40,6 +41,7 @@ public sealed class Editor : INotifyPropertyChanged
     public Setting FilePool { get; }
     public Setting TorrentDialog { get; }
     public Setting MagnetDialog { get; }
+    public Setting LookupLimit { get; }
 
     public Setting StartDownload { get; }
     public Setting QueueTop { get; }
@@ -194,14 +196,16 @@ public sealed class Editor : INotifyPropertyChanged
             "settings",
             LimitLan.ConfirmedOn ? "accounting_lan" : "accounting_lan_unlimited"
         );
-    public string QueueSummary =>
-        Text.Format(
-            "settings",
-            "queue_summary",
-            CountText(ActiveDownloads),
-            CountText(ActiveSeeds),
-            CountText(ActiveTotal)
-        );
+    internal string QueueDownloads => QueueCount(ActiveDownloads, "queue_download");
+    internal string QueueSeeds => QueueCount(ActiveSeeds, "queue_seed");
+    internal string QueueTotal => ActiveTotal.ConfirmedNumber == 0
+        ? Text.Get("settings", "queue_unlimited")
+        : Text.Format("settings", "queue_total", CountText(ActiveTotal));
+    public string QueueSummary => string.Join(" · ", QueueDownloads, QueueSeeds, QueueTotal);
+
+    private string QueueCount(Setting setting, string key) => setting.ConfirmedNumber == 0
+        ? Text.Get("settings", key + "_unlimited")
+        : Text.FormatCount("settings", key, (long)setting.ConfirmedNumber);
     public string PeersSummary =>
         Text.Format(
             "settings",
@@ -310,6 +314,9 @@ public sealed class Editor : INotifyPropertyChanged
         || Proxy.IsPending;
     public bool CanEdit => _owner.CanEdit;
     internal bool CanSave => _owner.CanSave;
+
+    // Where a setting saves unless it names another store.
+    internal SettingStore Engine { get; }
 
     internal void Report(Exception error) => _owner.Report(error, "failed_settings", null, null);
 
@@ -447,6 +454,28 @@ public sealed class Editor : INotifyPropertyChanged
     {
         _owner = owner;
         _client = client;
+        Engine = new(
+            () => CanEdit,
+            () => CanSave,
+            (setting, value) => Save(new Dictionary<string, object> { [setting.Name] = value }),
+            // Other failures can lose the reply to a save the engine applied.
+            error => error is CommandException
+        );
+        Overview = new(this, owner);
+        LookupLimit = new(this, "lookups", SettingKind.Integer, SettingsCategory.Plugins, 1)
+        {
+            Section = "plugins",
+            ValidationKey = "invalid_lookups",
+            Store = new(
+                () => _owner.Library.IsAvailable,
+                () => _owner.Library.IsAvailable,
+                (_, value) => _owner.SaveLookupLimit((int)value),
+                // A failed SQLite save keeps the earlier value.
+                _ => true
+            ),
+        };
+        ConfirmLookupLimit();
+        _owner.PropertyChanged += OnOwner;
         Destination = new(
             this,
             "default_destination",
@@ -807,6 +836,7 @@ public sealed class Editor : INotifyPropertyChanged
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsPending)));
         All =
         [
+            LookupLimit,
             Destination,
             TorrentDialog,
             MagnetDialog,
@@ -1021,6 +1051,8 @@ public sealed class Editor : INotifyPropertyChanged
         await Register("observe");
     }
 
+    public string ChosenLanguage => _owner.ChosenLanguage;
+
     public void SelectLanguage(string language)
     {
         if (CanSelectLanguage)
@@ -1058,6 +1090,24 @@ public sealed class Editor : INotifyPropertyChanged
         }
     }
 
+    /// <summary>
+    /// Saves the value a choice control selected, which is its item's tag:
+    /// "true" or "false" for an on/off setting, otherwise the input. The
+    /// current value saves nothing.
+    /// </summary>
+    public async Task CommitSelection(Setting setting, string value)
+    {
+        if (value == setting.SelectedValue)
+            return;
+        if (setting.Kind == SettingKind.Boolean)
+        {
+            await Toggle(setting, value == "true");
+            return;
+        }
+        setting.Input = value;
+        await Commit(setting);
+    }
+
     public async Task Commit(Setting setting)
     {
         if (!setting.CanEdit || !setting.IsPending && !setting.HasDraft)
@@ -1092,7 +1142,7 @@ public sealed class Editor : INotifyPropertyChanged
             setting.Cancel();
             return;
         }
-        if (!_owner.CanSave)
+        if (!setting.Store.CanSave())
             return;
         if (setting.Failure is null)
             await Submit(setting, value);
@@ -1113,7 +1163,7 @@ public sealed class Editor : INotifyPropertyChanged
 
     private async Task Submit(Setting setting, object value)
     {
-        if (!_owner.CanSave)
+        if (!setting.Store.CanSave())
         {
             var error = new IOException(Text.Get("connection", "unavailable"));
             setting.Reject(error);
@@ -1136,7 +1186,7 @@ public sealed class Editor : INotifyPropertyChanged
                 Exception? failure = null;
                 try
                 {
-                    await Save(new Dictionary<string, object> { [setting.Name] = submitted.Value });
+                    await setting.Store.Save(setting, submitted.Value);
                     setting.Accept(JsonSerializer.SerializeToElement(submitted.Value), submitted);
                 }
                 catch (Exception error)
@@ -1145,8 +1195,8 @@ public sealed class Editor : INotifyPropertyChanged
                     _owner.Report(error, "failed_settings", () => setting.Label, null);
                 }
                 if (
-                    _owner.CanSave
-                    && (failure is null or CommandException)
+                    setting.Store.CanSave()
+                    && (failure is null || setting.Store.Refused(failure))
                     && setting.TakeIntent() is { } next
                     && next != submitted
                 )
@@ -1319,12 +1369,16 @@ public sealed class Setting(
     public SettingsCategory Category { get; } = category;
     public int Minimum { get; } = minimum;
     public int Maximum { get; } = maximum;
+    public string Section { get; init; } = kind == SettingKind.Rate ? "limits" : "settings";
+    public string? ValidationKey { get; init; }
     public bool IsDuration { get; init; }
+
     public string DurationUnit { get; private set; } = "minutes";
     internal int DurationScale => IsDuration && DurationUnit == "hours" ? 60 : 1;
 
     // Other state that must hold before the setting can be edited.
     internal Func<bool>? Condition { get; init; }
+    internal SettingStore Store { get; init; } = owner.Engine;
     public bool IsRate => Kind == SettingKind.Rate;
     internal RateScale RateScale { get; init; } = RateScale.MbPerSecond;
     public string RateUnit => owner.Text.RateUnit(RateScale);
@@ -1336,7 +1390,11 @@ public sealed class Setting(
     internal double ConfirmedNumber =>
         _confirmed.ValueKind == JsonValueKind.Number ? _confirmed.GetDouble() : 0;
     internal bool ConfirmedOn => _confirmed.ValueKind == JsonValueKind.True;
-    public string Label => owner.Text.Get(IsRate ? "limits" : "settings", Name);
+    public string Label => owner.Text.Get(Section, Name);
+
+    // Names the duration's unit selector after its setting, so each one reads
+    // differently in Narrator.
+    public string UnitLabel => owner.Text.Format("settings", "duration_unit", Label);
     public string Input
     {
         get => _input;
@@ -1353,6 +1411,11 @@ public sealed class Setting(
         }
     }
     public bool IsOn => _choice ?? _confirmed.ValueKind == JsonValueKind.True;
+
+    // The tag of the item a selector shows, as Editor.CommitSelection reads it.
+    public string SelectedValue =>
+        Kind == SettingKind.Boolean ? IsOn ? "true" : "false"
+        : Input;
     public bool HasDraft =>
         _input != _confirmedInput
         || _choice is { } choice && choice != (_confirmed.ValueKind == JsonValueKind.True)
@@ -1365,13 +1428,15 @@ public sealed class Setting(
     internal Task Saving => _saving?.Task ?? Task.CompletedTask;
 
     // A save keeps its control enabled so later input keeps focus.
-    public bool CanEdit => owner.CanEdit && (Condition?.Invoke() ?? true);
+    public bool CanEdit => Store.CanEdit() && (Condition?.Invoke() ?? true);
     public string Message
     {
         get
         {
             if (!_invalid)
                 return string.Empty;
+            if (ValidationKey is { } key)
+                return owner.Text.Get(Section, key);
             if (IsDuration)
                 return owner.Text.Get("settings", "invalid_duration");
             if (IsRate)
@@ -1505,12 +1570,13 @@ public sealed class Setting(
         var current =
             submitted is null
             || !_cancelled && _input == submitted.Input && _choice == submitted.Choice;
-        if (_cancelled && submitted is not null && error is CommandException)
+        var refused = Store.Refused(error);
+        if (_cancelled && submitted is not null && refused)
             Settle(submitted);
         _failure = current ? error : null;
         // A lost reply still needs confirmation, even after the input changes
         // or is cancelled; Settle preserves any newer input when it arrives.
-        _uncertain = error is CommandException ? null : submitted;
+        _uncertain = refused ? null : submitted;
         Refresh();
     }
 
@@ -1545,6 +1611,18 @@ public sealed class Setting(
     internal void Refresh() =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
 }
+
+/// <summary>
+/// Where a <see cref="Setting"/> saves: whether it can be edited and saved
+/// now, the save of a submitted value, and whether a failed save proves the
+/// value is unsaved. Otherwise the setting waits for a confirmed value.
+/// </summary>
+internal sealed record SettingStore(
+    Func<bool> CanEdit,
+    Func<bool> CanSave,
+    Func<Setting, object, Task> Save,
+    Func<Exception, bool> Refused
+);
 
 public sealed class AdapterChoice(string adapterId, string text) : INotifyPropertyChanged
 {

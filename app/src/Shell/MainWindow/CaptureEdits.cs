@@ -670,5 +670,173 @@ public sealed partial class MainWindow
                 originalPeriodsRetained = true,
             }
         );
+        await CaptureSelections(outcomes, completed);
+    }
+
+    // Selectors save through their selection handlers, so only the running
+    // page shows that a selection saves and shows the saved value, and that
+    // selecting the current value again saves nothing. The provider choice runs
+    // in the Settings review, whose fixture attaches Library.
+    private async Task CaptureSelections(List<object> outcomes, List<string> completed)
+    {
+        var settings = Model.Settings;
+
+        async Task Choose(ComboBox choice, Setting setting, string value)
+        {
+            choice.SelectedItem = choice
+                .Items.OfType<ComboBoxItem>()
+                .Single(item => (string)item.Tag == value);
+            await CaptureReady(
+                setting,
+                () => !setting.IsPending && !setting.HasDraft && setting.ConfirmedText == value
+            );
+            await CaptureLayout();
+            if ((string?)choice.SelectedValue != value)
+                throw new InvalidOperationException(
+                    $"{setting.Name} does not show its saved value {value}."
+                );
+        }
+
+        async Task Check(RadioButton button, Setting setting)
+        {
+            var value = (string)button.Tag;
+            if (
+                FrameworkElementAutomationPeer
+                    .CreatePeerForElement(button)
+                    .GetPattern(PatternInterface.SelectionItem)
+                is not ISelectionItemProvider selection
+            )
+                throw new InvalidOperationException(
+                    "The native encryption choice does not expose SelectionItem."
+                );
+            selection.Select();
+            await CaptureReady(
+                setting,
+                () => !setting.IsPending && !setting.HasDraft && setting.ConfirmedText == value
+            );
+            await CaptureLayout();
+            if (button.IsChecked != true)
+                throw new InvalidOperationException(
+                    $"Encryption does not show its saved value {value}."
+                );
+        }
+
+        async Task ChooseAdapter(ComboBox choice, AdapterChoice adapter)
+        {
+            choice.SelectedItem = adapter;
+            await CaptureReady(
+                settings.Adapter,
+                () =>
+                    !settings.Adapter.IsPending
+                    && !settings.Adapter.HasDraft
+                    && settings.Adapter.ConfirmedText == adapter.AdapterId
+            );
+            await CaptureLayout();
+            if (!ReferenceEquals(choice.SelectedItem, settings.SelectedAdapter))
+                throw new InvalidOperationException(
+                    "The adapter list does not show the saved adapter."
+                );
+        }
+
+        // Opening each choice by name reveals its section and advanced rows.
+        async Task<T> Reveal<T>(string name, Func<T, bool> matches)
+            where T : FrameworkElement
+        {
+            await ShowSettings(new(SettingsCategory.Network, name));
+            await CaptureLayout();
+            return CaptureElements(_settingsPage!).OfType<T>().Single(matches);
+        }
+
+        var transport = await Reveal<ComboBox>(
+            settings.Transport.Name,
+            control => ReferenceEquals(control.Tag, settings.Transport)
+        );
+        var encryption = await Reveal<RadioButtons>(
+            "connection_encryption",
+            control => ReferenceEquals(control.Tag, settings.Encryption)
+        );
+        await CaptureReady(settings, () => settings.Adapters.Count > 1);
+        var adapters = await Reveal<ComboBox>(
+            "network_interface",
+            control => AutomationProperties.GetAutomationId(control) == "NetworkAdapter"
+        );
+        var buttons = CaptureElements(encryption).OfType<RadioButton>().ToArray();
+        var originalTransport = settings.Transport.SelectedValue;
+        var originalEncryption = buttons.Single(button => button.IsChecked == true);
+        var originalAdapter =
+            settings.SelectedAdapter
+            ?? throw new InvalidOperationException("The adapter list shows no saved adapter.");
+        if (
+            CaptureChanges(settings.Transport, () => CaptureReselect(transport))
+            || CaptureChanges(
+                settings.Encryption,
+                () =>
+                {
+                    encryption.SelectedItem = null;
+                    encryption.SelectedItem = originalEncryption;
+                }
+            )
+            || CaptureChanges(settings.Adapter, () => CaptureReselect(adapters))
+        )
+            throw new InvalidOperationException("Selecting the current network choice saved it.");
+        try
+        {
+            await Choose(
+                transport,
+                settings.Transport,
+                originalTransport == "tcp" ? "utp" : "tcp"
+            );
+            await Check(buttons.First(button => button != originalEncryption), settings.Encryption);
+            await ChooseAdapter(
+                adapters,
+                settings.Adapters.First(adapter => adapter != originalAdapter)
+            );
+        }
+        finally
+        {
+            await Choose(transport, settings.Transport, originalTransport);
+            await Check(originalEncryption, settings.Encryption);
+            await ChooseAdapter(adapters, originalAdapter);
+        }
+        outcomes.Add(
+            new
+            {
+                journey = "network choices save",
+                transportRestored = originalTransport,
+                encryptionRestored = originalEncryption.Tag,
+                adapterRestored = originalAdapter.AdapterId,
+                currentSelectionSaved = false,
+            }
+        );
+        completed.Add("edits-network-choices");
+    }
+
+    // A save raises a change on its owner before it first waits.
+    private static bool CaptureChanges(
+        System.ComponentModel.INotifyPropertyChanged owner,
+        Action select
+    )
+    {
+        var changed = false;
+        void Changed(object? sender, System.ComponentModel.PropertyChangedEventArgs args) =>
+            changed = true;
+        owner.PropertyChanged += Changed;
+        try
+        {
+            select();
+        }
+        finally
+        {
+            owner.PropertyChanged -= Changed;
+        }
+        return changed;
+    }
+
+    // Selects the current item again, as the page does after a text change.
+    private static void CaptureReselect(ComboBox choice)
+    {
+        var item = choice.SelectedItem;
+        choice.SelectedItem = null;
+        choice.SelectedItem = item;
     }
 }

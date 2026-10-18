@@ -31,7 +31,7 @@
       <FontIcon
         FontFamily="{x:Bind icons:Lucide.Font}"
         Glyph="{x:Bind icons:Lucide.TriangleAlert}"
-        FontSize="{StaticResource TinyTorrentButtonIconSize}"
+        FontSize="{StaticResource TinyTorrentStatisticIconSize}"
         Foreground="{ThemeResource SystemFillColorCautionBrush}"
       />
       <Button.Flyout>
