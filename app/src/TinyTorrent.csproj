@@ -98,11 +98,14 @@
       CopyToPublishDirectory="PreserveNewest"
       Visible="false"
     />
-    <UpToDateCheckInput Include="$(ArtifactsPath)\bin\Engine\$(Configuration)\$(EngineTargetName).exe" />
-    <UpToDateCheckInput Include="..\CopyEngine.ps1" />
-    <UpToDateCheckInput Include="..\CountryData.ps1" />
-    <UpToDateCheckOutput Include="$(TargetDir)$(EngineTargetName).exe" />
-    <UpToDateCheckOutput Include="$(TargetDir)Assets\dbip-country-lite.mmdb" />
+    <!-- Visual Studio's up-to-date check compares the engine copy with its
+         source only. CopyEngine.ps1 and CountryData.ps1 leave current files
+         untouched, so declared as ordinary outputs they stay older than every
+         later edit, and each Start would build the app again. -->
+    <UpToDateCheckBuilt
+      Include="$(TargetDir)$(EngineTargetName).exe"
+      Original="$(ArtifactsPath)\bin\Engine\$(Configuration)\$(EngineTargetName).exe"
+    />
     <AssemblyMetadata Include="EngineFile" Value="$(EngineTargetName).exe" />
     <AssemblyMetadata Include="TmdbToken" Value="$(TmdbToken)" Condition="'$(TmdbToken)' != ''" />
     <AssemblyMetadata Include="OmdbKey" Value="$(OmdbKey)" Condition="'$(OmdbKey)' != ''" />

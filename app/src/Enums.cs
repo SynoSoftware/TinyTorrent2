@@ -295,6 +295,14 @@ public enum PeerLayout
     Both,
 }
 
+// Which connections map the window shows over its workspace, if any.
+public enum MapScope
+{
+    None,
+    Selected,
+    All,
+}
+
 public enum MapCorner
 {
     BottomLeft,

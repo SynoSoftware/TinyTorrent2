@@ -48,9 +48,19 @@ public sealed partial class MainWindow
         // defaults, rather than keeping the splash waiting.
         if (_placementRead is { } reading)
             await Task.WhenAny(reading);
-        await RestoreView();
+        var map = await RestoreView();
         await Task.WhenAny(Model.LanguageLoad);
         await Rendered();
+        // After the language and the workspace's first frame, as when the
+        // person opens the map: opened earlier in startup, the map's section
+        // bar showed only its first section. Back returns to the restored
+        // workspace, and a selected map whose torrents are gone leaves the
+        // workspace showing.
+        if (map != MapScope.None)
+        {
+            await ShowConnections(map == MapScope.All);
+            await Rendered();
+        }
         var ready = await Model.SendReady();
         Reveal();
         if (!ready)
@@ -197,13 +207,23 @@ public sealed partial class MainWindow
         }
     }
 
-    private async Task RestoreView()
+    // Returns the map the window showed when it closed, for ShowWhenReady to
+    // open over the restored workspace.
+    private async Task<MapScope> RestoreView()
     {
         if (_viewRestored || Model.IsClosing || Model.IsStorageFailed)
-            return;
+            return MapScope.None;
         _viewRestored = true;
         if (_placement is not { } placement)
-            return;
+        {
+            // With no saved layout, as after installation, the window opens on
+            // the map of every torrent's connections.
+#if CAPTURE
+            if (IsCaptureReview)
+                return MapScope.None;
+#endif
+            return MapScope.All;
+        }
         Model.ShowsSettingsIndex = placement.ShowsSettingsIndex;
         // An unknown saved value keeps its default; the rest still restores.
         if (Enum.IsDefined(placement.Filter))
@@ -242,6 +262,7 @@ public sealed partial class MainWindow
             await ShowAbout();
         else if (placement.Page == WindowPage.Library)
             await Model.Navigation.Navigate(WindowPage.Library);
+        return Enum.IsDefined(placement.Map) ? placement.Map : MapScope.None;
     }
 
     private async Task SavePlacement()
@@ -284,6 +305,10 @@ public sealed partial class MainWindow
             LibraryLayouts = _libraryTable?.Layouts ?? _placement?.LibraryLayouts,
             LibraryFilters = Model.Library.SaveFilters(),
             ShowsSettingsIndex = Model.ShowsSettingsIndex,
+            Map =
+                _mapReturn is null || Model.Page != WindowPage.Torrents ? MapScope.None
+                : Model.Inspector.ShowsAllPeers ? MapScope.All
+                : MapScope.Selected,
         };
         var temporary = _placementPath + ".tmp";
         try
@@ -345,5 +370,6 @@ public sealed partial class MainWindow
             Dictionary<string, string>
         >? LibraryFilters { get; init; }
         public bool ShowsSettingsIndex { get; init; } = true;
+        public MapScope Map { get; init; }
     }
 }

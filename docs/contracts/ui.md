@@ -462,7 +462,8 @@ requested inspector split and the three tables' public layout snapshots in
 `window.json` beside the engine data. It also saves the view: the page and
 Settings category, the filter and whether the filter pane is open, the selected
 torrents and current torrent, whether the inspector is open and on which
-section, and the torrent table's scroll position. Reopening the window shows it
+section, the torrent table's scroll position, and which connections map is
+open. Reopening the window shows it
 as the person left it; a saved torrent that no longer exists is left out of the
 selection. The view is restored once, from the first snapshot whose storage
 loaded. A window closed before then saves nothing, so an Exit during startup
@@ -2092,6 +2093,11 @@ Library. These commands use the existing inspector: hide filters, select Peers,
 choose Map only and maximise the pane. The selected scope stays on those
 transfers even when a table filter drops their rows; All includes new transfers
 as they arrive. Neither command changes the table's selection or filters.
+The window layout remembers an open map and its scope, so a window closed on
+the map opens on it again, over the restored workspace that Back returns to.
+A new installation, which has no saved window layout, opens on All connections
+map, because the world map makes a better first view than an empty table; the
+menu bar keeps Add, and a drop anywhere on the window adds a torrent.
 One temporary entry in window navigation restores the caller's workspace,
 filter pane and inspector presentation through Back, Alt+Left or Escape. Choosing
 another map scope retains that original return point. An explicit layout change,
