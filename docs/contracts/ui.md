@@ -1583,15 +1583,49 @@ Transfers uses paired up/down arrows on a transparent background, because its
 settings cover both downloading and uploading.
 
 **Owner ruling: Settings tab headers put the category title above a summary row
-with artwork, identity and status, and two compact facts with Lucide icons at
-the end.** One shared header keeps the tabs
-consistent. Facts describe the selected tab using its existing owners, so they
+with artwork and two compact facts with Lucide icons at the end.** The artwork
+stays visible on every tab. Summary text is optional: General, Appearance and
+Advanced omit the generic product name and version, because they add no context
+to those settings. Plugins summarises Library and its status.
+The shared header component owns its artwork, title, subtitle, fact controls,
+tooltips, accessibility and responsive layout. Pages supply text and values;
+they do not assemble the header's visual tree. Removing summary text never
+removes the artwork or selects a layout.
+The header and fact visual trees, styles and layout states are declared in
+XAML; their code-behind measures available space and selects the layout state.
+Category states in page XAML own artwork, icons and the heading level. Titles,
+captions and values bind to Editor's `Overview`, so controls do not have a
+second copy of the model's display calculations, and a language change reaches
+them while the tab stays shown.
+Settings and Connection setup use this measured layout, so only available width
+moves facts below the subject and then into separate rows by the same rules.
+Facts describe the selected tab using its existing owners, so they
 remain current without another query or stored summary. Measured content widths
 move facts below the title, then into separate rows when necessary. Captions and
-values and the single-line page title keep their full text in tooltips. Facts
-use the shared statistic, the same as the inspector's statistics strip. Home uses
-one Home title beside its logo, an activity subtitle, and session and all-time
-totals, with download and upload in their theme colours.
+values and the single-line page title keep their full text in tooltips. A fact
+reads like a Windows Settings header fact: a Body Strong label above a Body
+value, both using the 14-DIP `BodyTextBlockFontSize` token. Neutral values use
+the secondary text brush rather than smaller type, so they stay readable.
+The header's summary and fact pairs use `TinyTorrentTitleDetailSpacing` from
+`App.xaml` between their lines, so their spacing changes in one place.
+A Statistic icon sits at its native size in a shared square centred on both
+lines. Tight text bounds align the text blocks by their visible capitals and
+baselines, rather than the font's leading, so the Home title and its facts
+share a visual centre. The fact's text column is constrained to its available
+width, so long values trim after the facts have stacked. A fact that pairs
+downloads with uploads, such as Home's session and all-time totals or the queue's
+active counts, shows them with the download and upload arrows in their theme
+colours; a fact with one
+value needs no marker beyond its own icon. Transfers identifies its default
+download folder above Download locations, and Queue limits names downloads,
+seeds and the total beside their values so the limits are clear. Home uses one
+Home title beside its logo and an activity subtitle.
+Speed limits summarises Current limits; Schedule identifies whether it is active
+and counts saved periods, so an inactive schedule does not imply those periods
+are running. An inactive schedule has no subtitle, because its title and the
+Current limits fact already say what applies. Advanced summarises torrent checking and speed history, whose
+controls belong to that page. Network status names incoming connections rather
+than implying the whole connection is unavailable.
 
 Home provides curated shortcuts and the same theme, Windows integration and
 automatic subtitle controls as their category pages. It shows facts supplied
@@ -1631,10 +1665,12 @@ Watched folder, and Skip files. Skip files
 hides its pattern editor while off, retaining the saved patterns. Network begins with adapter
 and proxy cards; advanced groups contain encryption, peer connections,
 discovery and incoming connections. Plugins places video
-information, with the IMDb data and City data rows, before supplier access,
+information, with the IMDb data row, before supplier access,
 wanted languages, automatic subtitles and
 additional matches, followed by Library search, local scan and the shared
-provider search limit. Video information separates Provider from the Download
+provider search limit. City data has its own Peer locations section after
+those media settings, because it describes torrent peers, not video information.
+Video information separates Provider from the Download
 automatically switch; configuring a provider, its credentials or its data does
 not change automatic download intent. Provider configuration supports manual
 requests independently of automatic work, so its controls stay available in
@@ -2033,8 +2069,7 @@ The map and table share live peer observations and keep individual connections
 in the table. Connection and active counts join the existing status-bar context;
 map hover details describe the location, rates and precision.
 The map area shows total download and upload rates for the inspector's selection
-as a Speed statistic, the same shared statistic as Settings and the General
-section, with no background so it blends into the map. These totals come from
+as a Speed statistic, the same shared statistic as the General section, with no background so it blends into the map. These totals come from
 torrent summaries, including transfers with no mapped location, and use the
 existing rate formatting and download/upload theme brushes. The shared peer-view
 menu offers Speed position: Top-left, Bottom-left or Bottom-right, saved with
