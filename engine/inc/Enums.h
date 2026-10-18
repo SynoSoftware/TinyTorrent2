@@ -6,6 +6,7 @@ enum class Command
 {
     Snapshot,
     Settings,
+    ResetSettings,
     SessionPause,
     Preview,
     PreviewDetail,

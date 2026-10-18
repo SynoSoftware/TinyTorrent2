@@ -49,6 +49,7 @@ public sealed partial class SettingsPage : UserControl
     internal event EventHandler<IDataset>? UpdateRequested;
     internal event EventHandler<IDataset>? DeleteRequested;
     public event EventHandler? ConnectionRequested;
+    internal event EventHandler? ResetRequested;
     internal event EventHandler? LayoutChanged;
 
     public SettingsPage(MainViewModel main)
@@ -192,6 +193,9 @@ public sealed partial class SettingsPage : UserControl
                 )
                 .ShowAt(ProviderInformation);
     }
+
+    private void OnResetAll(object sender, RoutedEventArgs args) =>
+        ResetRequested?.Invoke(this, EventArgs.Empty);
 
     private async void OnProtectionReset(object sender, RoutedEventArgs args) =>
         await Main.ResetProtection();

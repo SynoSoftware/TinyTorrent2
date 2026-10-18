@@ -355,6 +355,11 @@ reply use the same key. Renaming a key therefore needs a migration. Without one,
 loading does not find the saved value under the new key, and the setting returns
 to its default for every user.
 
+Reset all settings saves `Defaults()`, the same defaults a new store starts
+with, through the path that saves a settings change, so the reset applies at
+once and keeps the route, schedule and language rules of an ordinary change.
+The [pipe API](pipe-api.md) lists what the reset keeps.
+
 An unreadable resume file affects only its own torrent. Startup adds that
 torrent again from the hashes `settings.json` saved, as a magnet link: it
 fetches the metadata from peers and checks the files already on disk, so no

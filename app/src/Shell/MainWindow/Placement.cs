@@ -298,6 +298,22 @@ public sealed partial class MainWindow
         }
     }
 
+    private async Task ForgetPlacement()
+    {
+        if (_placementRead is { } reading)
+            await reading;
+        if (_placementPath is null)
+            return;
+        try
+        {
+            File.Delete(_placementPath);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            Debug.WriteLine($"Window layout could not be deleted: {error.Message}");
+        }
+    }
+
     private sealed record Placement
     {
         public int X { get; init; }

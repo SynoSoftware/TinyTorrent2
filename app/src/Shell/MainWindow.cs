@@ -30,6 +30,9 @@ public sealed partial class MainWindow : Window
     private AddDialog? _addDialog;
     private bool _allowClose;
     private bool _exiting;
+    // Reset all settings closes the window this way and the engine opens a
+    // new one, which starts as a new installation does.
+    private bool _reopening;
     private bool _loaded;
     private readonly Dictionary<ICommand, KeyboardAccelerator> _shortcuts = [];
 
@@ -764,6 +767,41 @@ public sealed partial class MainWindow : Window
         await Model.ReplyExit(answer);
     }
 
+    private async Task ConfirmReset()
+    {
+        var confirmed = await Interact(async interaction =>
+        {
+            var dialog = new Dialog
+            {
+                Glyph = Syno.Lucide.RotateCcw,
+                PrimaryGlyph = Syno.Lucide.RotateCcw,
+            };
+            var choice = await ShowDialog(
+                interaction,
+                dialog,
+                () =>
+                {
+                    dialog.Title = Model.Text.Get("settings", "reset_all_title");
+                    dialog.Content = DataConfirmation(
+                        [
+                            Model.Text.Get("settings", "reset_all_body"),
+                            Model.Text.Get("settings", "reset_all_kept"),
+                        ],
+                        [Model.Text.Get("settings", "reset_all_caution")]
+                    );
+                    dialog.PrimaryButtonText = Model.Text.Get("settings", "reset_all_confirm");
+                    dialog.PrimaryToolTip = Model.Text.Get("settings", "reset_all_tip");
+                }
+            );
+            return choice == ContentDialogResult.Primary;
+        });
+        // A close that began while the dialog was open owns the window.
+        if (!confirmed || Model.IsClosing)
+            return;
+        _reopening = true;
+        await CloseWindow(exiting: false);
+    }
+
     private async Task CloseWindow(bool exiting)
     {
         var focused = FocusManager.GetFocusedElement(Root.XamlRoot) as Control;
@@ -833,12 +871,25 @@ public sealed partial class MainWindow : Window
                     return;
             }
             AppWindow.Hide();
+            // After the drafts are saved, so none is saved over the defaults.
+            if (_reopening)
+                await Model.Settings.ResetAll();
             Model.DisconnectFeatures();
             if (_settingsPage is { } settings)
                 await settings.SaveFeatures();
-            await SavePlacement();
-            await Model.Close(_exiting);
+            if (_reopening)
+                await ForgetPlacement();
+            else
+                await SavePlacement();
+            // Exit can arrive during a reset; the engine then waits for this
+            // reply rather than a new window.
+            if (!_reopening || _exiting)
+                await Model.Close(_exiting);
             await Model.CloseFeatures();
+            if (_reopening)
+                await Model.ResetFeatureSettings();
+            if (_reopening && !_exiting)
+                await Model.Reopen();
             _settingsPage?.Release();
             _allowClose = true;
             Close();
@@ -863,6 +914,7 @@ public sealed partial class MainWindow : Window
                 }
             }
             _exiting = false;
+            _reopening = false;
             if (!_allowClose)
                 Model.EndClose();
             if (!_allowClose)

@@ -1222,6 +1222,24 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             );
     }
 
+    // Instead of `window_closed`, which shows the background notice: the engine
+    // asks this closing window to activate, is told it cannot, and opens a new
+    // window once this one has exited. A refusal, such as from an engine that
+    // is exiting, still lets this window close, because its features already
+    // have.
+    internal async Task Reopen()
+    {
+        try
+        {
+            if (_connected)
+                await _client.Send("open");
+        }
+        catch (Exception error)
+        {
+            System.Diagnostics.Debug.WriteLine(error);
+        }
+    }
+
     public async Task CancelClose()
     {
         if (_connected)

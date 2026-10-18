@@ -388,7 +388,7 @@ torrent_id), `torrent` (torrent_id), `pause`, `resume`, `force`, `verify`, and
 or before_torrent_id: string/null for a row drop; null means end),
 `piece_order` (torrent_ids with sequential, first_last or both as booleans; an
 absent one keeps each torrent's choice),
-`session_pause` (paused), `settings` (changes), `check_proxy` (proxy), `open`, `ready`,
+`session_pause` (paused), `settings` (changes), `reset_settings`, `check_proxy` (proxy), `open`, `ready`,
 `window_closed`, `activate_reply` (available boolean), `close_reply` (state:
 waiting/closing/cancelled), `exit_reply` (answer: confirmed/cancelled/unavailable),
 and `exit`. Activation acknowledgement lets Open wait through an
@@ -498,7 +498,11 @@ do not mistake verification progress for downloaded bytes. `torrent` returns
 the torrent's facts, name, metadata_ready, files, hashes, current content folder,
 and magnet link.
 All identities are strings. Settings are intended changes rather than replacement
-snapshots. Input sources are bounded to 32 KiB and retained previews/parses to
+snapshots. `reset_settings` saves every setting at the default a new
+installation starts with and replies like `settings`. It keeps Pause all,
+because that is a choice about transfers, and the programs already reported
+missing, so a reset does not repeat those notices. Torrents, their choices and
+the lifetime transfer totals are not settings and stay. Input sources are bounded to 32 KiB and retained previews/parses to
 256. `activate_sources` forwards sources, preserving relative-path meaning at
 the launching process. `pending_activations` returns activations with activation_id
 and sources; `activations_received` acknowledges activation_ids after the UI owns

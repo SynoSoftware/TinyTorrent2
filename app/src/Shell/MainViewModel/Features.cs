@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml.Controls;
 using SQLitePCL;
 using Syno.TinyTorrent.Library;
 using Syno.TinyTorrent.Shared;
+using Syno.TinyTorrent.Shared.Diagnostics;
 using Syno.TinyTorrent.Shared.Network;
 using Syno.TinyTorrent.Shared.Storage;
 using ImdbDataset = Syno.TinyTorrent.Library.Imdb.Dataset;
@@ -739,6 +740,26 @@ public sealed partial class MainViewModel
         finally
         {
             _featureAccess.Release();
+        }
+    }
+
+    // Runs after CloseFeatures, so no feature writes its settings back. The
+    // window is already closed to the person, so a failure goes to the error
+    // log rather than leaving a window without its features. An incompatible
+    // database holds no settings that apply.
+    internal async Task ResetFeatureSettings()
+    {
+        if (DataDirectory is not { } directory)
+            return;
+        await using var database = new Database(directory);
+        try
+        {
+            await database.ResetSettings();
+        }
+        catch (DatabaseVersionException) { }
+        catch (Exception error)
+        {
+            ExceptionLog.Write(directory, error, "Reset all settings");
         }
     }
 

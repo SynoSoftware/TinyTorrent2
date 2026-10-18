@@ -10,6 +10,7 @@ namespace
 constexpr std::pair<std::string_view, Command> commands[] = {
     {"snapshot", Command::Snapshot},
     {"settings", Command::Settings},
+    {"reset_settings", Command::ResetSettings},
     {"session_pause", Command::SessionPause},
     {"preview", Command::Preview},
     {"preview_detail", Command::PreviewDetail},
@@ -114,8 +115,10 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
         {
             if (response.at("ok").get<bool>())
             {
-                // These two owners also serve tray actions and publish there.
-                if (command != Command::Settings && command != Command::SessionPause)
+                // The settings and session-pause owners publish the snapshot
+                // themselves, because they also serve tray actions.
+                if (command != Command::Settings && command != Command::ResetSettings &&
+                    command != Command::SessionPause)
                 {
                     PublishSnapshot();
                     RequestStatus();
@@ -134,6 +137,12 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
         break;
     case Command::Settings:
         Configure(request.at("changes"), [this, reply](Outcome outcome)
+        {
+            reply(outcome.error ? Failure(*outcome.error, outcome.detail) : Success(settings.ToJson()));
+        });
+        break;
+    case Command::ResetSettings:
+        ResetSettings([this, reply](Outcome outcome)
         {
             reply(outcome.error ? Failure(*outcome.error, outcome.detail) : Success(settings.ToJson()));
         });

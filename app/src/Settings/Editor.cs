@@ -1001,6 +1001,10 @@ public sealed partial class Editor : INotifyPropertyChanged
         return reply.GetProperty("snapshot_sequence").GetInt64();
     }
 
+    // The engine publishes a snapshot with the defaults, so no setting is
+    // confirmed here.
+    internal Task ResetAll() => _client.Send("reset_settings");
+
     internal async Task SaveLanguage(string language)
     {
         Language.Input = language;

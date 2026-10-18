@@ -2463,6 +2463,26 @@
                         />
                       </controls:SettingsRow>
                     </Border>
+                    <Border
+                      Style="{StaticResource TinyTorrentSettingsCardStyle}"
+                      Visibility="{x:Bind ResetRow.Visibility, Mode=OneWay}"
+                    >
+                      <controls:SettingsRow
+                        x:Name="ResetRow"
+                        IsAdvanced="True"
+                        Header="{x:Bind Model.Text.Get('settings', 'reset_all'), Mode=OneWay}"
+                        Description="{x:Bind Model.Text.Get('settings', 'reset_all_hint'), Mode=OneWay}"
+                        BorderThickness="0"
+                      >
+                        <controls:ActionButton
+                          Click="OnResetAll"
+                          Glyph="{x:Bind icons:Lucide.RotateCcw}"
+                          Text="{x:Bind Model.Text.Get('settings', 'reset_all_button'), Mode=OneWay}"
+                          ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'reset_all_tip'), Mode=OneWay}"
+                          AutomationProperties.AutomationId="ResetAll"
+                        />
+                      </controls:SettingsRow>
+                    </Border>
                   </StackPanel>
                 </Grid>
                 <Canvas IsHitTestVisible="False" AutomationProperties.AccessibilityView="Raw">

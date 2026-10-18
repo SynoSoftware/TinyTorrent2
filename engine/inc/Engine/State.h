@@ -532,6 +532,11 @@ public:
     void QuerySeeds();
     bool ReachedSeedLimit(Torrent const& torrent) const;
     void Configure(Json const& choices, std::function<void(Outcome)> completion);
+    // Saves every setting at its default, as a new installation starts.
+    void ResetSettings(std::function<void(Outcome)> completion);
+    // Saves `next` as the settings and applies it; `settled` runs once it
+    // applies, before the snapshot is published.
+    void SaveSettings(Settings next, std::function<void()> settled, std::function<void(Outcome)> completion);
     // Connects to the proxy and signs in, without changing the session.
     // `completion` receives nothing when the check cannot run.
     void CheckProxy(Settings::Proxy proxy, std::function<void(std::optional<ProxyCheck>)> completion);

@@ -998,8 +998,7 @@ void Engine::State::Configure(Json const& choices, std::function<void(Outcome)> 
             completion({ErrorCode::InvalidRequest});
             return;
         }
-        auto next = *chosen;
-        auto finish = [this, choices, completion]
+        SaveSettings(std::move(*chosen), [this, choices]
         {
             if (choices.contains(setting::limitMode))
             {
@@ -1010,51 +1009,7 @@ void Engine::State::Configure(Json const& choices, std::function<void(Outcome)> 
                     std::optional<LimitMode>(settings.limitMode) : std::nullopt;
                 RefreshPolicy();
             }
-            PublishSnapshot();
-            RequestStatus();
-            completion({});
-        };
-        if (next.ToJson() == settings.ToJson())
-        {
-            finish();
-            return;
-        }
-        if (next.proxy.password != settings.proxy.password)
-        {
-            auto encrypted = Protect(next.proxy.password);
-            if (!encrypted)
-            {
-                completion(std::move(encrypted.error()));
-                return;
-            }
-            next.encryptedPassword = std::move(*encrypted);
-        }
-        auto document = Saved();
-        document.settings = next;
-        changes.Commit([document = std::move(document)] { return document.ToJson(); },
-            [this, next, finish, completion](Outcome outcome)
-        {
-            if (outcome.error)
-            {
-                completion(std::move(outcome));
-                return;
-            }
-            bool routeChanged = settings.proxy != next.proxy || settings.networkAdapter != next.networkAdapter;
-            if (routeChanged)
-            {
-                std::lock_guard lock(checkGate);
-                checkStop.request_stop();
-            }
-            if (routeChanged && connectionTest)
-                ReleaseConnectionTest(connectionTest->connectionId, ConnectionPhase::Cancelled);
-            if (settings.scheduleEnabled != next.scheduleEnabled)
-            {
-                limitOverride.reset();
-            }
-            auto previous = std::exchange(settings, next);
-            RefreshPolicy(&previous);
-            finish();
-        });
+        }, completion);
     }))
     {
         completion({ErrorCode::Overloaded});
@@ -1066,6 +1021,75 @@ void Engine::State::Configure(Json const& choices, std::function<void(Outcome)> 
     {
         language = chosen->language;
     }
+}
+
+// Pause all and the reported programs are kept: one is the person's choice
+// about transfers rather than a preference, and the other records what the
+// person was already told.
+void Engine::State::ResetSettings(std::function<void(Outcome)> completion)
+{
+    if (!changes.Queue([this, completion]
+    {
+        auto next = Defaults();
+        next.allPaused = settings.allPaused;
+        next.reportedPrograms = settings.reportedPrograms;
+        SaveSettings(std::move(next), [this] { language = settings.language; }, completion);
+    }))
+    {
+        completion({ErrorCode::Overloaded});
+    }
+}
+
+void Engine::State::SaveSettings(Settings next, std::function<void()> settled, std::function<void(Outcome)> completion)
+{
+    auto finish = [this, settled, completion]
+    {
+        settled();
+        PublishSnapshot();
+        RequestStatus();
+        completion({});
+    };
+    if (next.ToJson() == settings.ToJson())
+    {
+        finish();
+        return;
+    }
+    if (next.proxy.password != settings.proxy.password)
+    {
+        auto encrypted = Protect(next.proxy.password);
+        if (!encrypted)
+        {
+            completion(std::move(encrypted.error()));
+            return;
+        }
+        next.encryptedPassword = std::move(*encrypted);
+    }
+    auto document = Saved();
+    document.settings = next;
+    changes.Commit([document = std::move(document)] { return document.ToJson(); },
+        [this, next, finish, completion](Outcome outcome)
+    {
+        if (outcome.error)
+        {
+            completion(std::move(outcome));
+            return;
+        }
+        bool routeChanged = settings.proxy != next.proxy || settings.networkAdapter != next.networkAdapter;
+        if (routeChanged)
+        {
+            std::lock_guard lock(checkGate);
+            checkStop.request_stop();
+        }
+        if (routeChanged && connectionTest)
+            ReleaseConnectionTest(connectionTest->connectionId, ConnectionPhase::Cancelled);
+        if (settings.scheduleEnabled != next.scheduleEnabled)
+        {
+            limitOverride.reset();
+        }
+        auto previous = std::exchange(settings, next);
+        RefreshPolicy(&previous);
+        finish();
+    });
 }
 
 std::string Engine::State::Settings::SavePath(std::string const& destination) const

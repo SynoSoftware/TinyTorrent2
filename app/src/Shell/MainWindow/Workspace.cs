@@ -203,6 +203,7 @@ public sealed partial class MainWindow
             _settingsPage.DeleteRequested += async (_, dataset) =>
                 await ConfirmDataDeletion(dataset);
             _settingsPage.ConnectionRequested += async (_, _) => await ShowConnection();
+            _settingsPage.ResetRequested += async (_, _) => await ConfirmReset();
             _settingsPage.LayoutChanged += (_, _) => UpdateChrome();
         }
         return _settingsPage;

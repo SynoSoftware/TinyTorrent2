@@ -30,6 +30,24 @@ internal sealed partial class Database : IAsyncDisposable
             return Convert.ToInt64(command.ExecuteScalar());
         });
 
+    // Returns each settings row to the defaults Schema gives a new database and
+    // forgets the person's own API keys; Library information stays.
+    internal Task ResetSettings() =>
+        Run(connection =>
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                DELETE FROM provider_keys;
+                DELETE FROM request_settings;
+                INSERT INTO request_settings(singleton) VALUES(1);
+                DELETE FROM library_settings;
+                INSERT INTO library_settings(singleton) VALUES(1);
+                DELETE FROM subtitle_settings;
+                INSERT INTO subtitle_settings(singleton) VALUES(1);
+                """;
+            return command.ExecuteNonQuery();
+        });
+
     internal Task<Statistics> ReadStatistics() =>
         Run(connection =>
         {
