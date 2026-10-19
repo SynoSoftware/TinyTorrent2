@@ -473,6 +473,7 @@ enum class ErrorCode
     PreviewExpired,
     PreviewFailed,
     TorrentRemoved,
+    TorrentRemoving,
     AliasConflict,
     TorrentError,
     AddFailed,

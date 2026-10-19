@@ -258,7 +258,7 @@ void Engine::State::RestorePending()
     }
     for (auto& [id, torrent] : torrents)
     {
-        if (!torrent.restore || torrent.deleted || FindDuplicate(torrent.status.info_hashes, id))
+        if (!torrent.restore || Removing(torrent.status.info_hashes) || FindDuplicate(torrent.status.info_hashes, id))
         {
             continue;
         }
@@ -378,12 +378,7 @@ Engine::State::Document Engine::State::Saved() const
     document.watchedSources = watchedSources;
     for (auto const& [id, torrent] : torrents)
     {
-        // A deleted torrent is out of the saved list; it stays in torrents
-        // only until it is removed.
-        if (!torrent.deleted)
-        {
-            document.torrents.emplace(id, torrent.facts);
-        }
+        document.torrents.emplace(id, torrent.facts);
     }
     document.queueOrder = queueOrder;
     std::erase_if(document.queueOrder, [&document](auto const& id) { return !document.torrents.contains(id); });
@@ -449,10 +444,6 @@ tt::Activity Engine::State::Activity() const
     auto paused = Paused();
     for (auto const& [id, torrent] : torrents)
     {
-        if (torrent.deleted)
-        {
-            continue;
-        }
         ++activity.torrentCount;
         activity.downloadRate += torrent.status.download_payload_rate;
         activity.uploadRate += torrent.status.upload_payload_rate;
@@ -528,12 +519,9 @@ Json Engine::State::Snapshot()
     Json rows = Json::array();
     for (auto const& [id, torrent] : torrents)
     {
-        if (!torrent.deleted)
-        {
-            auto queued = queue.find(id);
-            rows.push_back(torrent.Row(paused.has_value(), queued == queue.end() ? -1 : queued->second,
-                MoveProgress(torrent)));
-        }
+        auto queued = queue.find(id);
+        rows.push_back(torrent.Row(paused.has_value(), queued == queue.end() ? -1 : queued->second,
+            MoveProgress(torrent)));
     }
     auto current = settings.ToJson();
     current["language"] = language;
@@ -571,6 +559,42 @@ Torrent* Engine::State::Find(lt::torrent_handle const& handle)
 {
     auto found = handles.find(handle);
     return found == handles.end() ? nullptr : found->second;
+}
+
+Torrent& Engine::State::Working(std::string const& id)
+{
+    return const_cast<Torrent&>(std::as_const(*this).Working(id));
+}
+
+Torrent const& Engine::State::Working(std::string const& id) const
+{
+    auto found = torrents.find(id);
+    return found != torrents.end() ? found->second : removed.at(id).torrent;
+}
+
+Torrent* Engine::State::FindWorking(std::string const& id)
+{
+    return const_cast<Torrent*>(std::as_const(*this).FindWorking(id));
+}
+
+Torrent const* Engine::State::FindWorking(std::string const& id) const
+{
+    if (auto found = torrents.find(id); found != torrents.end())
+        return &found->second;
+    auto removal = removed.find(id);
+    return removal == removed.end() ? nullptr : &removal->second.torrent;
+}
+
+Torrent* Engine::State::FindWorking(lt::torrent_handle const& handle)
+{
+    if (auto torrent = Find(handle))
+        return torrent;
+    for (auto& [id, removal] : removed)
+    {
+        if (removal.torrent.handle == handle)
+            return &removal.torrent;
+    }
+    return nullptr;
 }
 
 Torrent& Engine::State::Install(std::string const& id, lt::torrent_handle handle, Facts facts,
@@ -620,10 +644,6 @@ Torrent& Engine::State::Install(std::string const& id, lt::torrent_handle handle
 
 void Engine::State::Notify(ToastKind kind, Torrent const& torrent, std::string detail, std::string code)
 {
-    if (torrent.deleted && kind != ToastKind::Error)
-    {
-        return;
-    }
     Notify(kind, torrent.Name(), std::move(detail), torrent.torrentId, std::move(code));
 }
 
@@ -659,7 +679,7 @@ void Engine::State::RecordHashes(Torrent& torrent)
     }
     if (!changes.Queue([this, id, hashes = std::move(hashes)]
     {
-        if (!torrents.contains(id) || torrents.at(id).deleted)
+        if (!torrents.contains(id))
         {
             return;
         }
@@ -758,9 +778,8 @@ void Engine::State::Maintain()
         MoveWaiting();
         for (auto& [id, torrent] : torrents)
         {
-            if (!torrent.deleted)
-                torrent.history.Sample(time, double(torrent.status.download_payload_rate),
-                    double(torrent.status.upload_payload_rate));
+            torrent.history.Sample(time, double(torrent.status.download_payload_rate),
+                double(torrent.status.upload_payload_rate));
             QueryPriorities(torrent);
             ApplyWaiting(torrent);
             FinishFiles(torrent);

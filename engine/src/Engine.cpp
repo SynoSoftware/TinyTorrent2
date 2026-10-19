@@ -102,6 +102,7 @@ constexpr std::pair<std::string_view, ErrorCode> errors[] = {
     {"preview_expired", ErrorCode::PreviewExpired},
     {"preview_failed", ErrorCode::PreviewFailed},
     {"torrent_removed", ErrorCode::TorrentRemoved},
+    {"torrent_removing", ErrorCode::TorrentRemoving},
     {"alias_conflict", ErrorCode::AliasConflict},
     {"torrent_error", ErrorCode::TorrentError},
     {"add_failed", ErrorCode::AddFailed},

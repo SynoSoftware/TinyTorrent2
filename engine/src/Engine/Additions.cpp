@@ -63,6 +63,12 @@ bool Engine::State::IsChoice(lt::download_priority_t priority)
 void Engine::State::Add(Preview& preview, Addition::Choices choices, std::function<void(Outcome, Added)> completion)
 {
     UpdatePreview(preview);
+    // A preview opened before the removal began is confirmed here.
+    if (Removing(preview.InfoHashes()))
+    {
+        completion({ErrorCode::TorrentRemoving}, {});
+        return;
+    }
     if (auto duplicate = FindDuplicate(preview.InfoHashes()))
     {
         completion({}, {AdditionKind::Duplicate, *duplicate});
@@ -403,9 +409,9 @@ void Engine::State::RecoverAdditions()
     if (observations->empty())
         return;
 
+    // A removed torrent stays in the session until its removal ends.
     std::set<lt::torrent_handle> accepted;
-    for (auto const& [handle, torrent] : handles)
-        accepted.insert(handle);
+    EachWorking([&accepted](Torrent const& torrent) { accepted.insert(torrent.handle); });
     payload.Run([session = session.get(), observations, accepted = std::move(accepted)]
     {
         SyncCall(*session, [session, observations, accepted]
@@ -479,7 +485,11 @@ void Engine::State::On(lt::add_torrent_alert const& alert)
         PrepareAddition(found->first, alert.handle);
         return;
     }
-    if (auto duplicate = FindDuplicate(alert.params.info_hashes))
+    if (Removing(alert.params.info_hashes))
+    {
+        Abandon(found->first, {ErrorCode::TorrentRemoving});
+    }
+    else if (auto duplicate = FindDuplicate(alert.params.info_hashes))
     {
         Abandon(found->first, {}, {AdditionKind::Duplicate, *duplicate});
     }

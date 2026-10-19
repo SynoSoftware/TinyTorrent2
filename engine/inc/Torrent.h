@@ -218,11 +218,6 @@ struct Torrent
     // two never overlap, because each waits until the other's files are free.
     bool moving = false;
     std::optional<Problem> moveError;
-    // The person deleted the torrent before the engine could remove it. It is
-    // out of the list, stays paused, and refuses commands until it is removed.
-    bool deleted = false;
-    // Nothing when the person kept the files.
-    std::optional<DeletionMode> deletionMode;
     // Rises with each reply to a command that changes the torrent, and when
     // its metadata arrives, so no detail queried before then is shown.
     std::uint64_t generation = 0;
@@ -248,8 +243,8 @@ struct Torrent
     bool FilesBusy() const;
     bool MoveBlocked() const;
     // The engine keeps it paused for its own work, whatever the person chose:
-    // its removal, a conflict, a move, the write before a rename, or names
-    // that wait for preparation once it has `hasMetadata`.
+    // a conflict, a move, the write before a rename, or names that wait for
+    // preparation once it has `hasMetadata`.
     bool IsHeld(bool hasMetadata) const;
     Status Classify(bool sessionPaused) const;
     // The status without a move that runs or waits.

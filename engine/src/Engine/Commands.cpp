@@ -357,7 +357,7 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
         {
             auto id = request.at("torrent_id").get<std::string>();
             auto found = torrents.find(id);
-            if (found == torrents.end() || found->second.deleted)
+            if (found == torrents.end())
             {
                 reply(Failure(ErrorCode::TorrentRemoved));
                 return;
@@ -379,7 +379,7 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
             for (auto const& id : ids)
             {
                 auto found = torrents.find(id);
-                if (found == torrents.end() || found->second.deleted)
+                if (found == torrents.end())
                 {
                     reply(Failure(ErrorCode::TorrentRemoved));
                     return;
@@ -607,7 +607,7 @@ void Engine::State::Act(std::vector<std::string> ids, std::function<void(Outcome
         for (auto const& id : ids)
         {
             auto found = torrents.find(id);
-            if (found == torrents.end() || found->second.deleted)
+            if (found == torrents.end())
             {
                 completion({ErrorCode::TorrentRemoved});
                 return;
@@ -653,7 +653,7 @@ void Engine::State::Recheck(Torrent& torrent)
 
 void Engine::State::ApplyWaiting(Torrent& torrent)
 {
-    if (torrent.deleted || torrent.restore || torrent.FilesBusy() || torrent.namePhase != NamePhase::Ready)
+    if (torrent.restore || torrent.FilesBusy() || torrent.namePhase != NamePhase::Ready)
         return;
     if (torrent.prioritiesPending)
     {

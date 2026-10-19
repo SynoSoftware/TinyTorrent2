@@ -9,9 +9,9 @@ namespace tt
 {
 // Removes the torrents from the list. With a mode it also deletes their
 // files. A torrent that CanRemove refuses, or whose deletion waits for other
-// torrents' names, leaves the list at once and is removed later. With a
-// torrentFiles mode it deletes the .torrent files they were added from once
-// the list no longer holds them.
+// torrents' names, leaves the list at once and its handle goes to libtorrent
+// later. With a torrentFiles mode it deletes the .torrent files they were
+// added from once the list no longer holds them.
 void Engine::State::Remove(std::vector<std::string> const& ids,
     std::function<void(Outcome, std::optional<std::size_t> kept)> completion,
     std::optional<DeletionMode> mode, std::optional<DeletionMode> torrentFiles)
@@ -46,13 +46,13 @@ void Engine::State::Remove(std::vector<std::string> const& ids,
             sourceNames += (sourceNames.empty() ? "" : ", ") + torrent.Name();
         }
     }
-    auto removed = [&ids](std::string const& id) { return Contains(ids, id); };
+    auto selected = [&ids](std::string const& id) { return Contains(ids, id); };
     auto document = Saved();
-    std::erase_if(document.torrents, [&removed](auto const& entry) { return removed(entry.first); });
-    std::erase_if(document.queueOrder, removed);
+    std::erase_if(document.torrents, [&selected](auto const& entry) { return selected(entry.first); });
+    std::erase_if(document.queueOrder, selected);
     auto order = document.queueOrder;
     changes.Commit([document = std::move(document)] { return document.ToJson(); },
-        [this, ready, later, order = std::move(order), deletion, kept, completion, mode, torrentFiles,
+        [this, ids, ready, order = std::move(order), deletion, kept, completion, mode, torrentFiles,
             sources = std::move(sources), sourceNames = std::move(sourceNames)](Outcome outcome)
     {
         if (outcome.error)
@@ -66,14 +66,11 @@ void Engine::State::Remove(std::vector<std::string> const& ids,
             return;
         }
         queueOrder = order;
-        RemoveHandles(ready, deletion);
-        for (auto const& id : later)
+        for (auto const& id : ids)
         {
-            auto& torrent = torrents.at(id);
-            torrent.deleted = true;
-            torrent.deletionMode = mode;
-            torrent.ApplyIntent();
+            Extract(id, mode);
         }
+        RemoveHandles(ready, deletion);
         if (!sources.empty())
             DeleteTorrentFiles(sources, *torrentFiles, sourceNames);
         ContinueMove();
@@ -101,7 +98,7 @@ std::list<Engine::State::Deletion>::iterator Engine::State::PrepareDeletion(std:
     }
     for (auto const& id : ids)
     {
-        auto const& torrent = torrents.at(id);
+        auto const& torrent = Working(id);
         if (mode)
             deleting.roots.push_back(FullPath(Wide(torrent.facts.savePath)));
         else
@@ -130,30 +127,20 @@ void Engine::State::RemoveHandles(std::vector<std::string> const& ids, std::list
     std::vector<std::filesystem::path> files;
     for (auto const& id : ids)
     {
-        auto found = torrents.find(id);
-        if (found->second.priorityCompletion)
-        {
-            std::exchange(found->second.priorityCompletion, nullptr)({ErrorCode::TorrentRemoved});
-        }
-        if (reading && reading->torrentId == id)
-        {
-            FailReading(Failure(ErrorCode::TorrentRemoved));
-        }
-        if (!found->second.restore)
+        auto const& torrent = removed.at(id).torrent;
+        if (!torrent.restore)
         {
             if (deletion->mode)
             {
-                session->remove_torrent(found->second.handle, lt::session::delete_partfile);
+                session->remove_torrent(torrent.handle, lt::session::delete_partfile);
             }
             else
             {
-                session->remove_torrent(found->second.handle);
+                session->remove_torrent(torrent.handle);
             }
-            deletion->waiting.push_back(found->second.handle);
-            handles.erase(found->second.handle);
-            seedQueries.erase(found->second.handle);
+            deletion->waiting.push_back(torrent.handle);
         }
-        torrents.erase(found);
+        removed.erase(id);
         files.push_back(ResumeFile(id));
     }
     deletion->phase = DeletionPhase::Waiting;
@@ -188,6 +175,38 @@ bool Engine::State::CanRemove(Torrent const& torrent, std::optional<DeletionMode
     return !torrent.FilesBusy() && (!mode || additions.empty());
 }
 
+// Runs once the removal's document commit has succeeded. The torrent stays
+// paused, and its edit and detail reading end now, so nothing that answers the
+// window waits for its files.
+void Engine::State::Extract(std::string const& id, std::optional<DeletionMode> mode)
+{
+    auto& torrent = torrents.at(id);
+    if (torrent.priorityCompletion)
+    {
+        std::exchange(torrent.priorityCompletion, nullptr)({ErrorCode::TorrentRemoved});
+    }
+    if (reading && reading->torrentId == id)
+    {
+        FailReading(Failure(ErrorCode::TorrentRemoved));
+    }
+    torrent.needsRecheck = false;
+    torrent.prioritiesPending = false;
+    torrent.waitingMove.reset();
+    torrent.facts.intent = Intent::Paused;
+    torrent.ApplyIntent();
+    handles.erase(torrent.handle);
+    seedQueries.erase(torrent.handle);
+    removed.emplace(id, Removal{std::move(torrents.extract(id).mapped()), mode});
+}
+
+bool Engine::State::Removing(lt::info_hash_t const& hashes) const
+{
+    // A conflicting restore was never loaded, so libtorrent does not hold it.
+    auto values = Hashes(hashes);
+    return std::any_of(removed.begin(), removed.end(), [&values](auto const& entry)
+        { return !entry.second.torrent.restore && Overlaps(values, entry.second.torrent.Hashes()); });
+}
+
 void Engine::State::RemoveDeferred()
 {
     // A pending membership change may have kept files for these handles.
@@ -203,8 +222,8 @@ void Engine::State::RemoveDeferred()
         if (mode && !namesReady)
             continue;
         std::vector<std::string> ready;
-        for (auto const& [id, torrent] : torrents)
-            if (torrent.deleted && torrent.deletionMode == mode && CanRemove(torrent, mode))
+        for (auto const& [id, removal] : removed)
+            if (removal.mode == mode && CanRemove(removal.torrent, mode))
                 ready.push_back(id);
         if (!ready.empty())
             RemoveHandles(ready, PrepareDeletion(ready, mode, mode ? FileScope(ready) : Scope{}));

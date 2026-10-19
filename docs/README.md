@@ -63,10 +63,6 @@ It also owns the native peer map and its estimated country distribution.
 [Licences](contracts/licences.md) holds release rights, provider attribution and the
 unresolved distribution questions.
 
-The [removed torrents plan](plans/14-removed-torrents-plan.md) is the settled,
-not yet built design for issue 540: a removed torrent leaves the torrent list
-at once, and adding it again while libtorrent still holds it is refused.
-
 The [ring copy research](plans/ring-copy-plan.md) keeps the evidence and the
 design of a copy engine of the engine's own, for moves between hard disks. It
 will not be implemented.

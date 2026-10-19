@@ -14,8 +14,8 @@ namespace
 constexpr std::size_t previewLimit = 256;
 }
 
-// The torrents in the list that already use a file this content would use
-// at the destination. A torrent whose names are still being read counts only
+// The torrents, listed or still being removed, that already use a file this
+// content would use at the destination. A torrent whose names are still being read counts only
 // with its final names, so the Add dialog never waits for them.
 std::vector<std::string> Engine::State::SharedFiles(std::shared_ptr<lt::torrent_info const> const& metadata,
     std::string const& destination) const
@@ -26,12 +26,12 @@ std::vector<std::string> Engine::State::SharedFiles(std::shared_ptr<lt::torrent_
         return names;
     }
     auto wanted = FilePaths(*metadata, destination, settings.layout);
-    for (auto const& [id, torrent] : torrents)
+    EachWorking([this, &wanted, &names](Torrent const& torrent)
     {
         auto other = torrent.restore ? torrent.restore->ti : torrent.handle.torrent_file();
         if (!other)
         {
-            continue;
+            return;
         }
         for (auto const& full : Footprint(torrent))
         {
@@ -41,7 +41,7 @@ std::vector<std::string> Engine::State::SharedFiles(std::shared_ptr<lt::torrent_
                 break;
             }
         }
-    }
+    });
     auto holders = Holders(metadata, destination);
     names.insert(names.end(), holders.begin(), holders.end());
     return names;
@@ -208,6 +208,12 @@ void Engine::State::Inspect(std::string source, std::string connectionId,
             }
             return false;
         };
+        // libtorrent still holds the removed copy, so it would refuse this one.
+        if (Removing(preview->InfoHashes()))
+        {
+            completion({ErrorCode::TorrentRemoving}, nullptr);
+            return;
+        }
         if (merge())
             return;
         if (!preview->params.ti && !FindDuplicate(preview->params.info_hashes))

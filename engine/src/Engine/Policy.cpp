@@ -409,16 +409,14 @@ void Engine::State::RefreshPolicy()
         history.Configure(next.intervals.recent, next.intervals.history);
         for (auto& [id, torrent] : torrents)
         {
-            if (!torrent.deleted)
-                torrent.history.Configure(next.intervals.recent, next.intervals.history);
+            torrent.history.Configure(next.intervals.recent, next.intervals.history);
         }
     }
     if (torrentsChanged)
     {
         for (auto& [id, torrent] : torrents)
         {
-            if (!torrent.deleted)
-                ApplyPolicy(torrent.handle);
+            ApplyPolicy(torrent.handle);
         }
         for (auto const& [id, preview] : previews)
         {
@@ -487,7 +485,7 @@ void Engine::State::LimitSeeds()
         // Idle torrents do not emit state updates as their elapsed durations increase.
         for (auto const& [id, torrent] : torrents)
         {
-            if (!torrent.deleted && !torrent.restore && torrent.status.is_finished &&
+            if (!torrent.restore && torrent.status.is_finished &&
                 torrent.facts.intent != Intent::Paused && !torrent.facts.ignoresSeedLimits)
             {
                 seedQueue.push_back(torrent.handle);
@@ -498,7 +496,7 @@ void Engine::State::LimitSeeds()
     std::vector<std::string> ids;
     for (auto const& [id, torrent] : torrents)
     {
-        if (torrent.deleted || Contains(limitingSeeds, id))
+        if (Contains(limitingSeeds, id))
         {
             continue;
         }
@@ -554,7 +552,7 @@ void Engine::State::QuerySeeds()
         auto handle = seedQueue.back();
         seedQueue.pop_back();
         auto torrent = Find(handle);
-        if (!torrent || torrent->deleted || !torrent->status.is_finished ||
+        if (!torrent || !torrent->status.is_finished ||
             torrent->facts.intent == Intent::Paused || torrent->facts.ignoresSeedLimits)
         {
             continue;

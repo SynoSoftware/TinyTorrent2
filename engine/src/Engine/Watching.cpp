@@ -123,8 +123,9 @@ void Engine::State::WatchFolder()
                     if (file != watchedFiles.end() && file->second.stamp == stamp)
                     {
                         file->second.readyAt = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+                        // These clear by themselves, and the retry adds the file.
                         if (*outcome.error != ErrorCode::Overloaded &&
-                            !file->second.reported)
+                            *outcome.error != ErrorCode::TorrentRemoving && !file->second.reported)
                         {
                             Notify(ToastKind::AddFailed, source, outcome.detail, {}, ToString(*outcome.error));
                             file->second.reported = true;
@@ -133,7 +134,7 @@ void Engine::State::WatchFolder()
                     return;
                 }
                 if (auto found = torrents.find(added.torrentId);
-                    added.kind == AdditionKind::New && found != torrents.end() && !found->second.deleted)
+                    added.kind == AdditionKind::New && found != torrents.end())
                     Notify(ToastKind::Added, found->second);
             }, stamp);
             break;

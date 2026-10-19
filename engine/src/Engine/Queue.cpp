@@ -29,7 +29,7 @@ std::vector<std::string> Engine::State::CurrentQueue() const
 {
     auto queued = [](Torrent const& torrent)
     {
-        return !torrent.restore && !torrent.deleted &&
+        return !torrent.restore &&
             (torrent.queueReport != QueueReport::Reported || IsQueued(torrent.status.queue_position));
     };
     std::vector<std::string> order;
@@ -61,7 +61,7 @@ std::vector<std::string> Engine::State::CurrentQueue() const
 void Engine::State::ApplyQueue()
 {
     queuePending = false;
-    std::erase_if(queueOrder, [this](auto const& id) { return !torrents.contains(id) || torrents.at(id).deleted; });
+    std::erase_if(queueOrder, [this](auto const& id) { return !torrents.contains(id); });
     auto order = CurrentQueue();
     std::set<std::string> listed(queueOrder.begin(), queueOrder.end());
     for (auto const& id : order)
@@ -91,7 +91,7 @@ void Engine::State::Queue(std::vector<std::string> const& ids, QueueMove move, s
         }
     }
     if (move == QueueMove::Before &&
-        (!torrents.contains(before) || torrents.at(before).deleted || Contains(ids, before)))
+        (!torrents.contains(before) || Contains(ids, before)))
     {
         completion({ErrorCode::InvalidTorrents});
         return;

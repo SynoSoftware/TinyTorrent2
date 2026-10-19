@@ -476,6 +476,9 @@ priority, padding), metadata_ready, hashes (full v1/v2 hexadecimal strings),
 trackers (URLs), merge_available, error, shared_with (torrent names), and
 torrent_id of the existing torrent when the source is a duplicate. Add returns torrent_id after storage
 commit with duplicate:false, or the existing torrent_id with duplicate:true.
+`preview` and `add` fail with `torrent_removing` while a removed torrent with
+the same content has not yet been given to libtorrent for removal, as
+[Removal and moves](engine.md#removal-and-moves) describes.
 File preview parses
 metadata without creating a payload handle; destination is applied at Add.
 Another instance of the storage worker reads and parses preview sources, so a

@@ -475,7 +475,22 @@ public:
     std::vector<std::string> queueOrder;
     bool queuePending = false;
     std::string language;
+    // The list: rows, the saved document and commands.
     std::map<std::string, Torrent> torrents;
+    // A torrent the person removed whose own files are still busy: the
+    // running member of a move, an owner of the running rename, name
+    // preparation, a Zone.Identifier write, or a deletion that waits for a
+    // running addition. It is out of the list and the saved document. Its
+    // handle goes to libtorrent for removal when that work ends, at once for
+    // a torrent whose files are free.
+    struct Removal
+    {
+        Torrent torrent;
+        // Nothing when the person kept the files.
+        std::optional<DeletionMode> mode;
+    };
+    std::map<std::string, Removal> removed;
+    // The handles of listed torrents only.
     std::map<lt::torrent_handle, Torrent*> handles;
     std::vector<Toast> toasts;
     std::map<std::string, Preview> previews;
@@ -643,6 +658,33 @@ public:
     void ObserveConnectionTest(lt::session_stats_alert const& alert);
     void MeasureConnection(std::shared_ptr<ConnectionTest> const& test);
     Torrent* Find(lt::torrent_handle const& handle);
+    // A listed or removed torrent: the ones whose files the engine may still
+    // change. Throws like map::at when neither holds the id.
+    Torrent& Working(std::string const& id);
+    Torrent const& Working(std::string const& id) const;
+    Torrent* FindWorking(std::string const& id);
+    Torrent const* FindWorking(std::string const& id) const;
+    // For the alert handlers that write names, renames, marking and file
+    // completion, which a removed torrent's release still depends on.
+    Torrent* FindWorking(lt::torrent_handle const& handle);
+    // Visits every listed torrent, then every removed one.
+    template <class Visit> void EachWorking(Visit visit)
+    {
+        for (auto& [id, torrent] : torrents)
+            visit(torrent);
+        for (auto& [id, removal] : removed)
+            visit(removal.torrent);
+    }
+    template <class Visit> void EachWorking(Visit visit) const
+    {
+        for (auto const& [id, torrent] : torrents)
+            visit(torrent);
+        for (auto const& [id, removal] : removed)
+            visit(removal.torrent);
+    }
+    // A removal in `removed` that libtorrent still holds loads this content,
+    // so a second copy is refused as torrent_removing.
+    bool Removing(lt::info_hash_t const& hashes) const;
     Torrent& Install(std::string const& id, lt::torrent_handle handle, Facts facts,
         lt::add_torrent_params const& params);
     void Notify(ToastKind kind, Torrent const& torrent, std::string detail = {}, std::string code = {});
@@ -747,13 +789,16 @@ public:
         std::optional<DeletionMode> mode, Scope scope);
     void RemoveHandles(std::vector<std::string> const& ids, std::list<Deletion>::iterator deletion);
     bool CanRemove(Torrent const& torrent, std::optional<DeletionMode> mode) const;
+    // Takes a removed torrent out of the list into `removed`, where it stays
+    // until RemoveHandles gives its handle to libtorrent.
+    void Extract(std::string const& id, std::optional<DeletionMode> mode);
     void RemoveDeferred();
     static std::filesystem::path FullPath(std::filesystem::path const& path);
     static bool PathBefore(std::filesystem::path const& left, std::filesystem::path const& right);
     static bool SamePath(std::filesystem::path const& left, std::filesystem::path const& right);
     static bool SameFolder(std::string const& left, std::string const& right);
     bool FilesBusy() const;
-    // A deletion or rename runs, or a deleted torrent waits for its removal.
+    // A deletion or rename runs.
     bool RemovingOrRenaming() const;
     static std::vector<std::filesystem::path> FilePaths(lt::torrent_info const& metadata,
         std::string const& folder, Layout layout = Layout::Keep);

@@ -220,8 +220,7 @@ void Engine::State::On(lt::state_update_alert const& alert)
                 }
                 if (torrent.completion.NeedsSample())
                 {
-                    changed |= !torrent.deleted &&
-                        IsQueued(torrent.status.queue_position) != IsQueued(status.queue_position);
+                    changed |= IsQueued(torrent.status.queue_position) != IsQueued(status.queue_position);
                     ObserveCompletion(torrent, status);
                 }
             });
@@ -229,7 +228,7 @@ void Engine::State::On(lt::state_update_alert const& alert)
         }
         if (auto torrent = Find(status.handle))
         {
-            changed |= !torrent->deleted && torrent->queueReport == QueueReport::Reported &&
+            changed |= torrent->queueReport == QueueReport::Reported &&
                 IsQueued(torrent->status.queue_position) != IsQueued(status.queue_position);
             torrent->Update(status);
             auto problem = torrent->Error();
@@ -249,7 +248,7 @@ void Engine::State::On(lt::state_update_alert const& alert)
         if (torrent.queueReport == QueueReport::AwaitingStatus)
         {
             torrent.queueReport = QueueReport::Reported;
-            changed |= !torrent.deleted;
+            changed = true;
         }
     }
     if (changed)
@@ -287,7 +286,7 @@ void Engine::State::QueryCompletions()
     {
         if (pending >= 64)
             break;
-        if (!torrent.completion.NeedsSample() || torrent.deleted || torrent.restore ||
+        if (!torrent.completion.NeedsSample() || torrent.restore ||
             torrent.queries.contains(DetailKind::Status))
             continue;
         Query(torrent, DetailKind::Status);
@@ -378,7 +377,7 @@ void Engine::State::On(lt::metadata_received_alert const& alert)
             preview.error.clear();
         }
     }
-    if (auto torrent = Find(alert.handle))
+    if (auto torrent = FindWorking(alert.handle))
     {
         // The next file query reads its names, which every file check waits
         // for.

@@ -92,7 +92,9 @@ void Engine::State::ContinueShutdown()
     }
     if (!payload.IsIdle())
         return;
-    if (FilesBusy())
+    // A removed torrent has already left the saved list, so nothing after
+    // Exit would delete its files or its resume file.
+    if (FilesBusy() || !removed.empty())
     {
         if (rename)
         {

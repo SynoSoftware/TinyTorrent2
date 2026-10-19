@@ -73,7 +73,7 @@ void Engine::State::ReadDetail(Reading::Read read)
     if (read.context && !Refusal())
     {
         auto found = torrents.find(read.torrentId);
-        if (found != torrents.end() && !found->second.deleted && !found->second.restore)
+        if (found != torrents.end() && !found->second.restore)
         {
             auto& torrent = found->second;
             read.started = std::chrono::steady_clock::now();
@@ -116,7 +116,7 @@ void Engine::State::CollectDetail(Reading::Read read)
         return;
     }
     auto found = torrents.find(read.torrentId);
-    if (found == torrents.end() || found->second.deleted)
+    if (found == torrents.end())
     {
         read.reply(Failure(ErrorCode::TorrentRemoved));
         return;
@@ -193,11 +193,6 @@ void Engine::State::ContinueReading(bool changed)
         return;
     }
     auto& torrent = torrents.at(reading->torrentId);
-    if (torrent.deleted)
-    {
-        FailReading(Failure(ErrorCode::TorrentRemoved));
-        return;
-    }
     auto const& detail = reading->detail;
     auto metadata = torrent.handle.torrent_file();
     for (auto& read : std::exchange(reading->held, {}))
@@ -236,12 +231,14 @@ void Engine::State::ContinueReading(bool changed)
 
 void Engine::State::Invalidate(std::string const& torrentId)
 {
-    auto found = torrents.find(torrentId);
-    if (found == torrents.end())
+    // A removed torrent's names still change, and its file work compares
+    // generations to notice that.
+    auto found = FindWorking(torrentId);
+    if (!found)
     {
         return;
     }
-    ++found->second.generation;
+    ++found->generation;
     if (reading && reading->torrentId == torrentId)
     {
         reading->detail = {};

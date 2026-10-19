@@ -472,7 +472,7 @@ bool Torrent::FilesBusy() const
 
 bool Torrent::IsHeld(bool hasMetadata) const
 {
-    return deleted || !conflict.empty() || moving || facts.marker || cacheWrite == CacheWrite::Flushing ||
+    return !conflict.empty() || moving || facts.marker || cacheWrite == CacheWrite::Flushing ||
         (hasMetadata && namePhase != NamePhase::Ready);
 }
 

@@ -625,6 +625,19 @@ are still kept. Such a torrent also leaves the saved list before Delete
 replies, so it does not return after a restart; if the engine stops before
 removing it, its files stay on disk.
 
+A removed torrent whose own files are still busy is out of the list, the saved
+list and every command at once. Until the engine gives it to libtorrent for
+removal, a preview or Add of the same content is refused with
+`torrent_removing`, because libtorrent cannot hold two copies of one torrent.
+This lasts while the torrent's own move, rename, name preparation or
+Zone.Identifier write runs. Delete files also waits while an addition runs or
+while another torrent's file names are still being read, because only then can
+it find the files other torrents use. After that the content can be added
+again, and the Add dialog names a deletion that still holds files at the
+destination. Such a waiting removal does not by itself stop other torrents
+from preparing their names or finishing their renames: the deletion compares
+every other torrent's names when it starts, so a shared file is still kept.
+
 Before moving or renaming shared files, pause every owner and wait for each
 storage's disk-release callback on the worker that changes the files. A paused flag or an
 untagged flush alert cannot establish that those owners have stopped using the
@@ -1063,9 +1076,11 @@ the host asks it to show the prompt in the app's dialog style; the host asks in
 its popup when the window is closed or cannot show a dialog at that moment.
 Windows shutdown and headless operation bypass it. After confirmation, engine Exit closes
 the window by the same rules as Close: a prompt appears only for actual unfinished
-input, and Cancel in that prompt cancels Exit. If a move or file deletion is running, Exit
-waits for it to finish without a second prompt, because stopping it midway leaves
-files in two places. Then:
+input, and Cancel in that prompt cancels Exit. If a move, a file deletion or a removal
+is running, Exit waits for it to finish without a second prompt, because stopping it
+midway leaves files in two places. A removed torrent has already left the saved list,
+so nothing after Exit would delete its resume file or, with Delete files, its files.
+Then:
 
 1. Stop accepting new commands and settle accepted state changes and writes.
 2. Pause the session and await transfer/disk quiescence without changing each

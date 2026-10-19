@@ -95,6 +95,7 @@
     "preview_failed": "Couldn't get the torrent metadata.",
     "invalid_priorities": "Every file in this torrent matches the file name patterns that Settings skips.",
     "torrent_removed": "The torrent that this one matches was removed from the list.",
+    "torrent_removing": "This torrent is still being removed. Add it again after that if you want it.",
     "shutting_down": "TinyTorrent is closing.",
     "shared_files": "Other torrents use these files. Refresh the list and include them in the move.",
     "destination_conflict": "These torrents would put different files at one path, or one file at two paths. Choose another folder or move these torrents separately.",

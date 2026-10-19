@@ -144,7 +144,7 @@ void Engine::State::SaveCheckpoint(Torrent& torrent, lt::add_torrent_params para
                 }
                 auto& torrent = found->second;
                 if (torrent.handle != handle || torrent.generation != generation || torrent.pendingCheckpoint ||
-                    torrent.deleted || !torrent.facts.verifyFiles || torrent.namePhase != NamePhase::Ready || torrent.moving ||
+                    !torrent.facts.verifyFiles || torrent.namePhase != NamePhase::Ready || torrent.moving ||
                     torrent.facts.marker || !SameFolder(path, torrent.facts.savePath))
                 {
                     FinishCheckpoint(torrent);

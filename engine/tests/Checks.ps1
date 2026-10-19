@@ -1,12 +1,15 @@
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('Frames', 'Summaries', 'Targets', 'Facts', 'Restore', 'Exit', 'Conflict', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames', 'Pause', 'History', 'Accounting', 'WaitingMove')]
+    [ValidateSet('Frames', 'Summaries', 'Targets', 'Facts', 'Restore', 'Exit', 'Conflict', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames', 'Pause', 'History', 'Accounting', 'WaitingMove', 'RemoveDuringMove')]
     [string] $Check,
-    # Every check but Conflict and WaitingMove, which make their own torrents.
+    # Every check but Conflict, WaitingMove and RemoveDuringMove, which make
+    # their own torrents.
     [string] $TorrentFile,
     [string] $EnginePath,
     [switch] $Transfer,
-    [switch] $OptIn
+    [switch] $OptIn,
+    # RemoveDuringMove moves its payload to a folder here, on another volume.
+    [string] $Volume
 )
 
 $ErrorActionPreference = 'Stop'
@@ -15,8 +18,8 @@ $ErrorActionPreference = 'Stop'
 $transferChecks = 'MagnetDownload', 'SelectedTransfer', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles'
 # These checks each guard one defect that was already fixed, so a run of every
 # check skips them; the owner asks for them when that code changes.
-$optInChecks = 'WaitingMove'
-if (-not $TorrentFile -and $Check -notin 'Conflict', 'WaitingMove') {
+$optInChecks = 'WaitingMove', 'RemoveDuringMove'
+if (-not $TorrentFile -and $Check -notin 'Conflict', 'WaitingMove', 'RemoveDuringMove') {
     throw "$Check needs -TorrentFile."
 }
 if ($Check -in $transferChecks -and -not $Transfer) {
@@ -26,6 +29,27 @@ if ($Check -in $optInChecks -and -not $OptIn) {
     throw "$Check runs only when the owner asks, with -OptIn."
 }
 $repository = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+# The drive that holds a path, through any junction on the way, because the
+# repository's artifacts folder can be a junction to another drive.
+function Path-Volume([string] $path) {
+    $path = [IO.Path]::GetFullPath($path)
+    for ($part = $path; $part; $part = Split-Path $part -Parent) {
+        $item = Get-Item -LiteralPath $part -Force -ErrorAction SilentlyContinue
+        if ($item -and $item.LinkTarget) {
+            return Path-Volume ($item.ResolveLinkTarget($true).FullName + $path.Substring($part.Length))
+        }
+    }
+    return [IO.Path]::GetPathRoot($path)
+}
+# A move on one volume is a rename that ends at once, so only a copy to another
+# volume leaves time to remove the torrent while its move runs. The payload
+# starts under artifacts.
+if ($Check -eq 'RemoveDuringMove') {
+    $payloadVolume = Path-Volume (Join-Path $repository 'artifacts')
+    if (-not ($Volume -and (Test-Path -LiteralPath $Volume -PathType Container) -and (Path-Volume $Volume) -ne $payloadVolume)) {
+        throw "RemoveDuringMove needs -Volume, an existing folder on another volume than $payloadVolume, which holds the check's payload."
+    }
+}
 $engineName = ([xml](Get-Content (Join-Path $repository 'Directory.Build.props'))).Project.PropertyGroup.EngineTargetName | Where-Object { $_ }
 $configuration = if ($Check -eq 'Pause') { 'Debug' } else { 'Release' }
 $executable = Join-Path $repository "artifacts/bin/Engine/$configuration/$engineName.exe"
@@ -35,6 +59,11 @@ $directory = Join-Path $repository ('artifacts/evidence/' + $Check + '-' + [guid
 $null = New-Item -ItemType Directory -Path $directory
 $payload = Join-Path $directory 'payload'
 $null = New-Item -ItemType Directory -Path $payload
+$volumeFolder = $null
+if ($Check -eq 'RemoveDuringMove') {
+    $volumeFolder = Join-Path ([IO.Path]::GetFullPath($Volume)) ('TinyTorrent-' + $Check + '-' + [guid]::NewGuid())
+    $null = New-Item -ItemType Directory -Path $volumeFolder
+}
 . (Join-Path $PSScriptRoot 'Engine.ps1')
 $stalled = $null
 $heldFile = $null
@@ -1246,6 +1275,90 @@ while ($true) { Add-Content -LiteralPath $Frames -Value (Read-Frame) }
             $null = New-Item -ItemType File -Path (Join-Path $directory 'window-stop') -Force
             Assert ($standIn.WaitForExit(15000)) 'The stand-in window did not end'
         }
+        'RemoveDuringMove' {
+            # A torrent removed while its own move runs stays out of the list
+            # until libtorrent releases it. Only a copy to another volume runs
+            # long enough to act inside that time.
+            $reply = Send-Command @{ command = 'session_pause'; paused = $true }
+            Assert $reply.ok 'The removal session could not pause'
+            $pieceLength = 16MB
+            $pieceCount = 128
+            $pieceHash = [Security.Cryptography.SHA1]::HashData([byte[]]::new($pieceLength))
+            $pieces = [byte[]]::new(20 * $pieceCount)
+            for ($piece = 0; $piece -lt $pieceCount; ++$piece) { [Array]::Copy($pieceHash, 0, $pieces, 20 * $piece, 20) }
+            $fixture = Join-Path $directory 'removing.torrent'
+            $prefix = [Text.Encoding]::ASCII.GetBytes("d4:infod6:lengthi$($pieceLength * $pieceCount)e4:name12:removing.bin12:piece lengthi$($pieceLength)e6:pieces$($pieces.Length):")
+            $suffix = [Text.Encoding]::ASCII.GetBytes('7:privatei1eee')
+            [IO.File]::WriteAllBytes($fixture, [byte[]]($prefix + $pieces + $suffix))
+            $sourceFile = Join-Path $payload 'removing.bin'
+            foreach ($command in 'delete_files', 'remove') {
+                # Written, not only sized: a file sized with SetLength holds no
+                # data, and its copy to another volume ends at once.
+                $block = [byte[]]::new($pieceLength)
+                $file = [IO.File]::Create($sourceFile)
+                try { for ($piece = 0; $piece -lt $pieceCount; ++$piece) { $file.Write($block, 0, $block.Length) } } finally { $file.Dispose() }
+                $originalHash = Payload-Hash $sourceFile
+                $preview = Send-Command @{ command = 'preview'; source = $fixture; destination = $payload }
+                Assert $preview.ok 'The removal fixture did not preview'
+                $reply = Send-Command @{ command = 'add'; preview_id = $preview.data.preview_id; destination = $payload; paused = $true }
+                Assert ($reply.ok -and -not $reply.data.duplicate) 'The removal fixture could not be added'
+                $torrentId = $reply.data.torrent_id
+                # Confirmed during the removal, as a person who opened Add
+                # before removing the torrent would.
+                $early = Send-Command @{ command = 'preview'; source = $fixture; destination = $payload }
+                Assert $early.ok 'The second removal preview failed'
+                $destination = Join-Path $volumeFolder $command
+                $reply = Send-Command @{ command = 'move'; torrent_ids = @($torrentId); destination = $destination }
+                Assert $reply.ok "The removal fixture could not move: $($reply.error.code)"
+                $until = [DateTime]::UtcNow.AddSeconds(120)
+                do {
+                    Start-Sleep -Milliseconds 50
+                    $row = (Send-Command @{ command = 'snapshot' }).data.torrents | Where-Object torrent_id -eq $torrentId
+                    $copying = $row.moving -and $row.progress -gt 0 -and $row.progress -lt 1
+                } while (-not $copying -and -not $row.error -and ($row.moving -or $row.save_path -ne $destination) -and [DateTime]::UtcNow -lt $until)
+                Assert (-not $row.error) "The move failed before the removal: $($row.error) $($row.detail)"
+                Assert $copying 'The check missed the copy: it ended before the removal, so nothing was tested. Use a slower volume.'
+
+                $reply = Send-Command @{ command = $command; torrent_ids = @($torrentId); deletion = 'permanent' }
+                Assert $reply.ok "$command during the move failed: $($reply.error.code)"
+                $rows = @((Send-Command @{ command = 'snapshot' }).data.torrents)
+                Assert ($rows.Count -eq 0) "$command during the move left the row in the list"
+                $preview = Send-Command @{ command = 'preview'; source = $fixture; destination = $payload }
+                Assert (-not ($preview.ok -and $preview.data.torrent_id)) 'A re-add during the removal was reported as already in the list'
+                Assert (-not $preview.ok) 'The check missed the removal: the move ended before the re-add, so nothing was tested. Use a slower volume.'
+                Assert ($preview.error.code -eq 'torrent_removing') "A re-add during the removal failed with '$($preview.error.code)'"
+                $reply = Send-Command @{ command = 'add'; preview_id = $early.data.preview_id; destination = $payload; paused = $true }
+                Assert (-not $reply.ok -and $reply.error.code -eq 'torrent_removing') "Add of a preview opened before the removal answered '$($reply.error.code)'"
+                $reply = Send-Command @{ command = 'torrent'; torrent_id = $torrentId; view = 'general' }
+                Assert (-not $reply.ok -and $reply.error.code -eq 'torrent_removed') 'A read of the removed torrent did not report it removed'
+
+                $until = [DateTime]::UtcNow.AddMinutes(10)
+                do {
+                    Start-Sleep -Milliseconds 250
+                    $preview = Send-Command @{ command = 'preview'; source = $fixture; destination = $payload }
+                } while (-not $preview.ok -and $preview.error.code -eq 'torrent_removing' -and [DateTime]::UtcNow -lt $until)
+                Assert ($preview.ok -and -not $preview.data.torrent_id) "The content could not be added again after its removal: '$($preview.error.code)'"
+                $null = Send-Command @{ command = 'cancel_preview'; preview_id = $preview.data.preview_id }
+                $movedFile = Join-Path $destination 'removing.bin'
+                $kept = $command -eq 'remove'
+                $until = [DateTime]::UtcNow.AddSeconds(60)
+                while (((Test-Path -LiteralPath $sourceFile) -or (-not $kept -and (Test-Path -LiteralPath $movedFile))) -and [DateTime]::UtcNow -lt $until) {
+                    Start-Sleep -Milliseconds 250
+                }
+                Assert (-not (Test-Path -LiteralPath $sourceFile)) "$command during the move left the payload in its source folder"
+                if ($kept) {
+                    Assert ((Payload-Hash $movedFile) -eq $originalHash) 'Remove during the move did not keep the moved payload whole'
+                }
+                else {
+                    Assert (-not (Test-Path -LiteralPath $movedFile)) 'Delete files during the move left the payload at the destination'
+                }
+                Stop-Engine
+                $snapshot = Start-Engine
+                Assert ($snapshot.torrents.Count -eq 0) "The torrent removed during its move returned after a restart"
+                $reply = Send-Command @{ command = 'session_pause'; paused = $true }
+                Assert $reply.ok 'The removal session could not pause again'
+            }
+        }
     }
     Stop-Engine
     if ($stalled) { $stalled.Dispose(); $stalled = $null }
@@ -1275,6 +1388,7 @@ finally {
         }
     }
     if ($script:pipe) { $script:pipe.Dispose() }
+    if ($volumeFolder) { Remove-Item -LiteralPath $volumeFolder -Recurse -Force -ErrorAction Continue }
     # A run keeps only its logs and reports. Its payload, peer seed and engine
     # state are worthless once the check has ended.
     $evidence = [IO.Path]::GetFullPath((Join-Path $repository 'artifacts/evidence')) + [IO.Path]::DirectorySeparatorChar
