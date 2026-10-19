@@ -788,12 +788,8 @@ public sealed partial class MainWindow : Window
     {
         var focused = FocusManager.GetFocusedElement(Root.XamlRoot) as Control;
         var focusName = focused?.Name;
-        if (!Model.BeginClose(request))
-        {
-            if (request == CloseRequest.Exit)
-                await Model.DeferClose();
+        if (!await Model.BeginClose(request))
             return;
-        }
         DialogInteraction? suspended = null;
         try
         {
@@ -802,8 +798,7 @@ public sealed partial class MainWindow : Window
             // make keeps it visible, and a failed close shows it again.
             if (!HasDialog && !Model.HasDraft && !Model.IsPicking)
                 AppWindow.Hide();
-            if (Model.IsExiting)
-                await Model.DeferClose();
+            await Model.DeferExit();
             if (
                 _interaction is { IsDraftDecision: true } decision
                 && !await decision.Completion.Task
@@ -824,8 +819,7 @@ public sealed partial class MainWindow : Window
             {
                 if (!AppWindow.IsVisible)
                     AppWindow.Show();
-                if (Model.IsExiting)
-                    await Model.DeferClose();
+                await Model.DeferExit();
                 if (!await ResolveRemainingDraft())
                     return;
             }

@@ -45,8 +45,10 @@ internal sealed class DataDownload
     internal static Exception Failure(ReplyException error) =>
         error switch
         {
-            { Failure: ReplyFailure.Route } => new Library.RouteException(error),
-            { Failure: ReplyFailure.Wait, Hold: { } hold } => new RequestBlockedException(hold),
+            ReplyException.Route => new Library.RouteException(error),
+            ReplyException.Held { Failure: ReplyFailure.Wait } wait => new RequestBlockedException(
+                wait.Hold
+            ),
             _ => new Library.VideoException(VideoFailure.DownloadFailed, error),
         };
 

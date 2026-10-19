@@ -262,6 +262,9 @@ internal sealed partial class Acquisition(
             finally
             {
                 written.SetResult();
+                // A view that waits for Saving shows the saved values when
+                // the last queued write raises Changed.
+                Notify();
             }
         }
     }

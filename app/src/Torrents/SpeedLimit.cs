@@ -22,6 +22,7 @@ public sealed class SpeedLimit : IDraft
     private bool _invalid;
     public bool IsPending { get; private set; }
     public bool HasDraft => _downloadInput != _download.Input || _uploadInput != _upload.Input;
+    public bool CanEdit => _owner.CanEdit && !IsPending;
     public bool CanSubmit => _owner.CanSave && !IsPending;
     public ClosePolicy ClosePolicy =>
         _owner.CanSave ? new ClosePolicy.Save() : new ClosePolicy.Discard();
@@ -112,7 +113,7 @@ public sealed class SpeedLimit : IDraft
         Refresh();
         try
         {
-            await _client.Send("speed_limit", arguments);
+            await _client.Send("speed_limit", arguments, Requester.Person);
             _owner.Notifications.AnnounceAccepted("speed_limit", "title");
             _failure = null;
             await Discard();

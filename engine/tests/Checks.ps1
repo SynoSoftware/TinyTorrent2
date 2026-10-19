@@ -40,7 +40,7 @@ $stalled = $null
 $heldFile = $null
 $peer = $null
 $peerDirectory = Join-Path $directory 'peer'
-$window = $null
+$standIn = $null
 
 function Preview {
     $reply = Send-Command @{ command = 'preview'; source = $TorrentFile; destination = $payload }
@@ -1156,7 +1156,7 @@ try {
         }
         'WaitingMove' {
             # A Move that waits for another torrent's metadata once repeated
-            # its notice every second. The engine sends notices only to the
+            # its toast every second. The engine sends toasts only to the
             # window, so a second process stands in for it. That process ends
             # before Exit, because Exit waits for the window's process.
             $windowScript = @'
@@ -1184,7 +1184,7 @@ while ($true) { Add-Content -LiteralPath $Frames -Value (Read-Frame) }
             $windowFile = Join-Path $directory 'window.ps1'
             $frames = Join-Path $directory 'window.json'
             Set-Content -LiteralPath $windowFile -Value $windowScript
-            $window = Start-Process -FilePath (Get-Process -Id $PID).Path -WindowStyle Hidden -PassThru -ArgumentList @(
+            $standIn = Start-Process -FilePath (Get-Process -Id $PID).Path -WindowStyle Hidden -PassThru -ArgumentList @(
                 '-NoProfile', '-File', ('"' + $windowFile + '"'), '-Name', "TinyTorrent.$logon",
                 '-Frames', ('"' + $frames + '"'), '-Stop', ('"' + (Join-Path $directory 'window-stop') + '"'))
             function Read-Window {
@@ -1229,8 +1229,8 @@ while ($true) { Add-Content -LiteralPath $Frames -Value (Read-Frame) }
             $row = (Send-Command @{ command = 'snapshot' }).data.torrents | Where-Object torrent_id -eq $torrentId
             Assert (-not $row.complete -and $row.error -eq 'metadata_unavailable' -and $row.save_path -eq $payload) `
                 "The waiting Move shows '$($row.error)' at '$($row.save_path)'"
-            $notices = @(Read-Window | Where-Object { $_.type -eq 'notice' -and $_.torrent_id -eq $torrentId })
-            Assert ($notices.Count -eq 1 -and $notices[0].code -eq 'metadata_unavailable') "The waiting Move sent $($notices.Count) notices"
+            $toasts = @(Read-Window | Where-Object { $_.type -eq 'toast' -and $_.torrent_id -eq $torrentId })
+            Assert ($toasts.Count -eq 1 -and $toasts[0].code -eq 'metadata_unavailable') "The waiting Move sent $($toasts.Count) toasts"
 
             $reply = Send-Command @{ command = 'remove'; torrent_ids = @($magnetId) }
             Assert $reply.ok 'The metadata-less magnet could not be removed'
@@ -1241,10 +1241,10 @@ while ($true) { Add-Content -LiteralPath $Frames -Value (Read-Frame) }
             } while (($row.save_path -ne $destination -or $row.moving -or $row.move_destination) -and [DateTime]::UtcNow -lt $until)
             Assert ($row.save_path -eq $destination -and -not $row.moving -and -not $row.error) `
                 "The waiting Move did not start: '$($row.save_path)', moving $($row.moving), error '$($row.error)'"
-            $notices = @(Read-Window | Where-Object { $_.type -eq 'notice' -and $_.torrent_id -eq $torrentId })
-            Assert ($notices.Count -eq 1) "The Move sent $($notices.Count) notices in total"
+            $toasts = @(Read-Window | Where-Object { $_.type -eq 'toast' -and $_.torrent_id -eq $torrentId })
+            Assert ($toasts.Count -eq 1) "The Move sent $($toasts.Count) toasts in total"
             $null = New-Item -ItemType File -Path (Join-Path $directory 'window-stop') -Force
-            Assert ($window.WaitForExit(15000)) 'The stand-in window did not end'
+            Assert ($standIn.WaitForExit(15000)) 'The stand-in window did not end'
         }
     }
     Stop-Engine
@@ -1258,9 +1258,9 @@ finally {
         if (-not $peer.WaitForExit(15000)) { $peer.Kill(); $peer.WaitForExit() }
     }
     if ($stalled) { $stalled.Dispose() }
-    if ($window -and -not $window.HasExited) {
+    if ($standIn -and -not $standIn.HasExited) {
         $null = New-Item -ItemType File -Path (Join-Path $directory 'window-stop') -Force
-        if (-not $window.WaitForExit(15000)) { $window.Kill(); $window.WaitForExit() }
+        if (-not $standIn.WaitForExit(15000)) { $standIn.Kill(); $standIn.WaitForExit() }
     }
     if ($script:process -and -not $script:process.HasExited) {
         try {

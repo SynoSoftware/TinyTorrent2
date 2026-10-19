@@ -1,4 +1,4 @@
-#include "Desktop/Notices.h"
+#include "Desktop/Toasts.h"
 #include "Engine.h"
 #include "Resources.h"
 #include <algorithm>
@@ -8,8 +8,8 @@ namespace tt::desktop
 {
 namespace
 {
-// Notices that arrive within this many milliseconds share one popup.
-constexpr ULONGLONG noticeDelay = 1000;
+// Toasts that arrive within this many milliseconds share one popup.
+constexpr ULONGLONG delay = 1000;
 
 bool AcceptsNotifications()
 {
@@ -23,34 +23,34 @@ void ShowFolder(std::filesystem::path const& folder)
 }
 
 // Torrent problems, which show the error icon and share a popup by kind.
-bool IsProblem(NoticeKind kind)
+bool IsProblem(ToastKind kind)
 {
-    return kind == NoticeKind::Error || kind == NoticeKind::AddFailed || kind == NoticeKind::DeleteFailed;
+    return kind == ToastKind::Error || kind == ToastKind::AddFailed || kind == ToastKind::DeleteFailed;
 }
 }
 
-bool UsesWindow(NoticeKind kind)
+bool UsesWindow(ToastKind kind)
 {
-    return IsProblem(kind) || kind == NoticeKind::Completed;
+    return IsProblem(kind) || kind == ToastKind::Completed;
 }
 
-std::optional<NoticeSwitch> Switch(NoticeKind kind)
+std::optional<ToastSwitch> Switch(ToastKind kind)
 {
     switch (kind)
     {
-    case NoticeKind::Completed:
-        return NoticeSwitch::Finished;
-    case NoticeKind::Added:
-    case NoticeKind::Duplicate:
-        return NoticeSwitch::Added;
-    case NoticeKind::Error:
-    case NoticeKind::AddFailed:
-    case NoticeKind::DeleteFailed:
-    case NoticeKind::MissingProgram:
-        return NoticeSwitch::Problems;
-    case NoticeKind::Background:
-        return NoticeSwitch::Background;
-    case NoticeKind::Aggregate:
+    case ToastKind::Completed:
+        return ToastSwitch::Finished;
+    case ToastKind::Added:
+    case ToastKind::Duplicate:
+        return ToastSwitch::Added;
+    case ToastKind::Error:
+    case ToastKind::AddFailed:
+    case ToastKind::DeleteFailed:
+    case ToastKind::MissingProgram:
+        return ToastSwitch::Problems;
+    case ToastKind::Background:
+        return ToastSwitch::Background;
+    case ToastKind::Aggregate:
         return std::nullopt;
     }
     return std::nullopt;
@@ -84,62 +84,62 @@ HICON ErrorIcon()
     return result;
 }
 
-Notices::Notices(Strings const& strings, bool headless, HICON errorIcon, Commands commands)
+Toasts::Toasts(Strings const& strings, bool headless, HICON errorIcon, Commands commands)
     : strings_(strings), headless_(headless), errorIcon_(errorIcon), commands_(std::move(commands)),
       popup_(strings)
 {
 }
 
-void Notices::Update(Activity const& activity)
+void Toasts::Update(Activity const& activity)
 {
     activity_ = activity;
     popup_.SetTheme(activity_.theme);
 }
 
-void Notices::Close()
+void Toasts::Close()
 {
     popup_.Close();
 }
 
-bool Notices::IsOn(NoticeKind kind) const
+bool Toasts::IsOn(ToastKind kind) const
 {
-    auto notices = Switch(kind);
-    return !notices || activity_.notices.contains(*notices);
+    auto toasts = Switch(kind);
+    return !toasts || activity_.toasts.contains(*toasts);
 }
 
-void Notices::Queue(Notice notice)
+void Toasts::Queue(Toast toast)
 {
-    auto kind = notice.kind;
+    auto kind = toast.kind;
     if (!IsOn(kind))
     {
         return;
     }
-    if (UsesWindow(kind) && commands_.window && commands_.window(notice))
+    if (UsesWindow(kind) && commands_.window && commands_.window(toast))
     {
         return;
     }
     if (headless_)
     {
-        auto content = Message(notice);
+        auto content = Message(toast);
         auto message = content.title + L"\n" + content.body + L"\n";
         OutputDebugStringW(message.c_str());
         return;
     }
-    if (kind == NoticeKind::Background)
+    if (kind == ToastKind::Background)
     {
         ShowBackground();
         return;
     }
     // One batch per kind bounds pending context while an open menu keeps its
     // popup unchanged. Different notification switches never share a batch.
-    auto [entry, inserted] = batches_.try_emplace(kind, Batch{std::move(notice), 1, GetTickCount64() + noticeDelay});
-    if (!inserted && kind != NoticeKind::MissingProgram)
+    auto [entry, inserted] = batches_.try_emplace(kind, Batch{std::move(toast), 1, GetTickCount64() + delay});
+    if (!inserted && kind != ToastKind::MissingProgram)
     {
         ++entry->second.count;
     }
 }
 
-void Notices::Report(Failure failure)
+void Toasts::Report(Failure failure)
 {
     if (headless_)
     {
@@ -173,7 +173,7 @@ void Notices::Report(Failure failure)
     }
 }
 
-void Notices::Notify()
+void Toasts::Notify()
 {
     // Let the displayed popup finish its lifetime, including hover and menu
     // interaction, before showing another.
@@ -181,7 +181,7 @@ void Notices::Notify()
     {
         return;
     }
-    // Failures and notices wait while Windows holds notifications back, such
+    // Failures and toasts wait while Windows holds notifications back, such
     // as over a full-screen app, so a stopped torrent is still reported later.
     if (!AcceptsNotifications())
     {
@@ -223,21 +223,21 @@ void Notices::Notify()
     }
     else
     {
-        Show(Message({.kind = NoticeKind::Aggregate, .count = batch.count}), Switch(kind));
+        Show(Message({.kind = ToastKind::Aggregate, .count = batch.count}), Switch(kind));
     }
 }
 
 // Selecting the message opens the window, where the person can act on it.
-void Notices::ShowFailure(Failure failure)
+void Toasts::ShowFailure(Failure failure)
 {
     shownFailure_ = failure;
     popup_.Show({.title = failure.title.value_or(strings_.Text("notification", "failure")),
         .body = ErrorText(failure.code), .select = failure.opens ? commands_.open : nullptr,
         .detail = std::move(failure.detail), .actions = std::move(failure.actions), .icon = errorIcon_,
-        .stay = failure.interactive ? NoticeStay::Interactive : NoticeStay::Persistent});
+        .stay = failure.interactive ? ToastStay::Interactive : ToastStay::Persistent});
 }
 
-void Notices::Ask(Popup::Prompt prompt)
+void Toasts::Ask(Popup::Prompt prompt)
 {
     // A failure stays until the person closes it, so it shows again after
     // the prompt.
@@ -250,31 +250,31 @@ void Notices::Ask(Popup::Prompt prompt)
     popup_.Ask(std::move(prompt));
 }
 
-Popup::Content Notices::Message(Notice const& notice) const
+Popup::Content Toasts::Message(Toast const& toast) const
 {
-    Popup::Content content{.select = Selection(notice)};
-    if (notice.kind == NoticeKind::Aggregate)
+    Popup::Content content{.select = Selection(toast)};
+    if (toast.kind == ToastKind::Aggregate)
     {
-        content.title = strings_.Format("notification", "aggregate", {Strings::Number(notice.count)});
+        content.title = strings_.Format("notification", "aggregate", {Strings::Number(toast.count)});
     }
-    else if (notice.kind == NoticeKind::MissingProgram)
+    else if (toast.kind == ToastKind::MissingProgram)
     {
         content.title = strings_.Text("notification", "missing_title");
-        content.body = strings_.Format("notification", notice.count > 1 ? "missing_programs" : "missing_program",
-            {Wide(notice.name), Strings::Number(notice.count - 1)});
+        content.body = strings_.Format("notification", toast.count > 1 ? "missing_programs" : "missing_program",
+            {Wide(toast.name), Strings::Number(toast.count - 1)});
     }
     else
     {
-        content.title = strings_.Text("notification", ToString(notice.kind));
-        content.body = Wide(notice.name);
-        auto problem = ErrorText(notice.code, !notice.detail.empty());
-        if (!notice.detail.empty())
+        content.title = strings_.Text("notification", ToString(toast.kind));
+        content.body = Wide(toast.name);
+        auto problem = ErrorText(toast.code, !toast.detail.empty());
+        if (!toast.detail.empty())
         {
             if (!problem.empty())
             {
                 problem += L"\n";
             }
-            problem += Wide(notice.detail);
+            problem += Wide(toast.detail);
         }
         if (!problem.empty())
         {
@@ -284,10 +284,10 @@ Popup::Content Notices::Message(Notice const& notice) const
             }
             content.body += problem;
         }
-        if (!notice.folder.empty())
+        if (!toast.folder.empty())
         {
             content.actions = {
-                OpenFolder(strings_, Wide(notice.folder), strings_.Text("notification", "files_folder_tip"))};
+                OpenFolder(strings_, Wide(toast.folder), strings_.Text("notification", "files_folder_tip"))};
         }
     }
     return content;
@@ -295,15 +295,15 @@ Popup::Content Notices::Message(Notice const& notice) const
 
 // Problems of one kind share a popup that shows the first of them. With
 // several, it counts them and opens the window, which lists each one.
-Popup::Content Notices::Problems(Notice const& first, unsigned count) const
+Popup::Content Toasts::Problems(Toast const& first, unsigned count) const
 {
-    auto notice = first;
-    if (notice.kind == NoticeKind::AddFailed)
+    auto toast = first;
+    if (toast.kind == ToastKind::AddFailed)
     {
-        notice.name = Utf8(IsMagnet(first.name) ? strings_.Text("notification", "magnet") :
+        toast.name = Utf8(IsMagnet(first.name) ? strings_.Text("notification", "magnet") :
             std::filesystem::path(Wide(first.name)).filename().wstring());
     }
-    auto content = Message(notice);
+    auto content = Message(toast);
     content.icon = errorIcon_;
     if (count > 1)
     {
@@ -314,7 +314,7 @@ Popup::Content Notices::Problems(Notice const& first, unsigned count) const
     return content;
 }
 
-std::wstring Notices::ErrorText(std::string const& code, bool explained) const
+std::wstring Toasts::ErrorText(std::string const& code, bool explained) const
 {
     if (code.empty())
     {
@@ -324,16 +324,16 @@ std::wstring Notices::ErrorText(std::string const& code, bool explained) const
 }
 
 // A completed torrent opens its folder; a missing program opens its Settings
-// card; any other notice opens the window.
-std::function<void()> Notices::Selection(Notice const& notice) const
+// card; any other toast opens the window.
+std::function<void()> Toasts::Selection(Toast const& toast) const
 {
-    if (notice.kind == NoticeKind::MissingProgram)
+    if (toast.kind == ToastKind::MissingProgram)
     {
         return [this] { commands_.openSettings("windows_integration"); };
     }
-    if (notice.kind == NoticeKind::Completed)
+    if (toast.kind == ToastKind::Completed)
     {
-        return [this, id = notice.torrentId]
+        return [this, id = toast.torrentId]
         {
             auto folder = commands_.folder(id);
             if (folder.empty())
@@ -350,7 +350,7 @@ std::function<void()> Notices::Selection(Notice const& notice) const
 }
 
 // Lucide's rotate-ccw glyph, as the window's Retry button shows.
-Popup::Action Notices::Retry(Strings const& strings, std::wstring tooltip, std::function<void()> run)
+Popup::Action Toasts::Retry(Strings const& strings, std::wstring tooltip, std::function<void()> run)
 {
     return {.glyph = L'\uE148', .label = strings.Text("notification", "retry"), .tooltip = std::move(tooltip),
         .run = std::move(run), .automationId = L"Retry"};
@@ -358,14 +358,14 @@ Popup::Action Notices::Retry(Strings const& strings, std::wstring tooltip, std::
 
 // Lucide's folder-open glyph. Open alone would read as opening the window, so
 // the label names the folder. Showing a folder leaves the popup open.
-Popup::Action Notices::OpenFolder(Strings const& strings, std::filesystem::path folder, std::wstring tooltip)
+Popup::Action Toasts::OpenFolder(Strings const& strings, std::filesystem::path folder, std::wstring tooltip)
 {
     return {.glyph = L'\uE247', .label = strings.Text("notification", "open_folder"), .tooltip = std::move(tooltip),
         .run = [folder = std::move(folder)] { ShowFolder(folder); }, .closes = false, .automationId = L"OpenFolder"};
 }
 
 // Lucide's power glyph, as the window's Exit command shows.
-Popup::Action Notices::ForceExit(Strings const& strings, std::function<void()> run)
+Popup::Action Toasts::ForceExit(Strings const& strings, std::function<void()> run)
 {
     return {.glyph = L'\uE140', .label = strings.Text("notification", "force_exit"),
         .tooltip = strings.Text("notification", "force_exit_tip"), .run = std::move(run),
@@ -374,7 +374,7 @@ Popup::Action Notices::ForceExit(Strings const& strings, std::function<void()> r
 
 // Selecting the message of this popup does nothing, because opening the
 // window the person just closed would undo their action.
-void Notices::ShowBackground()
+void Toasts::ShowBackground()
 {
     if (popup_.IsPersistent() || popup_.IsMenuOpen())
     {
@@ -383,22 +383,22 @@ void Notices::ShowBackground()
     if (AcceptsNotifications())
     {
         Show({.title = strings_.Text("notification", "background"),
-            .body = strings_.Text("tray", "background")}, NoticeSwitch::Background);
+            .body = strings_.Text("tray", "background")}, ToastSwitch::Background);
     }
 }
 
-void Notices::Show(Popup::Content content, std::optional<NoticeSwitch> notices)
+void Toasts::Show(Popup::Content content, std::optional<ToastSwitch> toasts)
 {
     shownFailure_.reset();
-    if (notices)
+    if (toasts)
     {
         content.menuTitle = strings_.Text("notification", "fewer");
         // Lucide's bell-minus, bell-off and settings glyphs.
         content.menu = {
-            {L'\uE1F0', strings_.Text("notification", "off_" + ToString(*notices)),
-                [this, shown = *notices] { commands_.turnOff({shown}); }, L"TurnOff"},
+            {L'\uE1F0', strings_.Text("notification", "off_" + ToString(*toasts)),
+                [this, shown = *toasts] { commands_.turnOff({shown}); }, L"TurnOff"},
             {L'\uE05A', strings_.Text("notification", "off_all"),
-                [this] { commands_.turnOff(AllNoticeSwitches()); }, L"TurnOffAll"},
+                [this] { commands_.turnOff(AllToastSwitches()); }, L"TurnOffAll"},
             {L'\uE154', strings_.Text("notification", "settings"),
                 [this] { commands_.openSettings("notifications"); }, L"NotificationSettings"}};
     }
@@ -406,9 +406,9 @@ void Notices::Show(Popup::Content content, std::optional<NoticeSwitch> notices)
 }
 
 #ifdef _DEBUG
-void Notices::ShowSample()
+void Toasts::ShowSample()
 {
-    Show(Message({.kind = NoticeKind::Added, .name = "Sample torrent"}), NoticeSwitch::Added);
+    Show(Message({.kind = ToastKind::Added, .name = "Sample torrent"}), ToastSwitch::Added);
 }
 #endif
 }

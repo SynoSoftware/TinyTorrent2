@@ -31,7 +31,7 @@ struct Arguments
         bool background = false;
         std::vector<std::string> sources;
 #ifdef _DEBUG
-        // Shows the popup of an Added notice for a sample torrent.
+        // Shows the popup of an Added toast for a sample torrent.
         bool sample = false;
 #endif
     };

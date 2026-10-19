@@ -223,7 +223,7 @@ enum class NamePhase
 
 // A finished download waits for libtorrent to write its data to disk, then
 // for its files to settle in their final names and folder, before the
-// Completed notice.
+// Completed toast.
 enum class CompletionPhase
 {
     Idle,
@@ -486,7 +486,7 @@ enum class StorageFailure
     Overloaded
 };
 
-enum class NoticeKind
+enum class ToastKind
 {
     Completed,
     Error,
@@ -497,12 +497,12 @@ enum class NoticeKind
     Background,
     // A torrent or magnet handler starts a program that is missing.
     MissingProgram,
-    // Several notices that arrived together, shown as one popup.
+    // Several toasts that arrived together, shown as one popup.
     Aggregate
 };
 
-// The Settings switches that each turn off one kind of notice.
-enum class NoticeSwitch
+// The Settings switches that each turn off one kind of toast.
+enum class ToastSwitch
 {
     Finished,
     Added,
@@ -571,10 +571,10 @@ enum class PopupPart
     Close
 };
 
-// How long a notice stays: until its timeout, until the person dismisses it,
+// How long a toast stays: until its timeout, until the person dismisses it,
 // or until dismissed while it also takes the focus, because it answers the
 // person's own action.
-enum class NoticeStay
+enum class ToastStay
 {
     Timed,
     Persistent,
@@ -638,7 +638,7 @@ enum class Command
     Open,
     Exit,
 #ifdef _DEBUG
-    SampleNotice,
+    SampleToast,
 #endif
 };
 }

@@ -8,9 +8,8 @@ $assembly = [Reflection.Assembly]::LoadFrom((Join-Path $binary 'TinyTorrentUI.dl
 $flags = [Reflection.BindingFlags]'Instance,Public,NonPublic'
 $strings = [Activator]::CreateInstance($assembly.GetType('Syno.TinyTorrent.Shared.Strings', $true))
 $type = $assembly.GetType('Syno.TinyTorrent.Shell.Notifications', $true)
-$kind = $assembly.GetType('Syno.TinyTorrent.Shell.Notice', $true).GetProperty('Kind', $flags)
 
-# The notices below read only the owner's closed state, which an owner whose
+# The toasts below read only the owner's closed state, which an owner whose
 # constructor never ran reports as open; the constructor needs a WinUI thread.
 $owner = [Runtime.CompilerServices.RuntimeHelpers]::GetUninitializedObject(
     $assembly.GetType('Syno.TinyTorrent.Shell.MainViewModel', $true))
@@ -38,27 +37,27 @@ function Set-Visible($Notifications, [bool] $Visible) {
 }
 
 function Get-Kinds($Notifications) {
-    , @($Notifications.Notices | ForEach-Object { $kind.GetValue($_).ToString() })
+    , @($Notifications.Toasts | ForEach-Object { $_.GetType().Name })
 }
 
-# A timed notice closes after seven seconds on screen.
+# A timed toast closes after seven seconds on screen.
 $notifications = New-Notifications
 Show-Outcome $notifications 'first'
 Set-Visible $notifications $true
 Step $notifications 6.75
-Require ($notifications.Notices.Count -eq 1) 'A timed notice closed before its lifetime.'
+Require ($notifications.Toasts.Count -eq 1) 'A timed toast closed before its lifetime.'
 Step $notifications 0.25
-Require ($notifications.Notices.Count -eq 0) 'A timed notice outlived its lifetime.'
+Require ($notifications.Toasts.Count -eq 0) 'A timed toast outlived its lifetime.'
 
-# A fifth timed notice removes the oldest.
+# A fifth timed toast removes the oldest.
 foreach ($subject in 'one', 'two', 'three', 'four', 'five') {
     Show-Outcome $notifications $subject
 }
-$subjects = @($notifications.Notices | ForEach-Object { $_.Subject })
-Require (($subjects -join ',') -eq 'two,three,four,five') "Five timed notices left $($subjects -join ',')."
+$subjects = @($notifications.Toasts | ForEach-Object { $_.Subject })
+Require (($subjects -join ',') -eq 'two,three,four,five') "Five timed toasts left $($subjects -join ',')."
 
 # A command error survives the countdown and the stack hiding, while a timed
-# notice the person saw retires when the stack hides.
+# toast the person saw retires when the stack hides.
 $notifications = New-Notifications
 $type.GetMethod('Report', $flags, $null, [Type[]]@([Exception]), $null).Invoke(
     $notifications, [object[]]@([IO.IOException]::new('Stop failed'))) | Out-Null
@@ -94,6 +93,6 @@ Set-Visible $notifications $true
 Step $notifications 60
 Set-Visible $notifications $false
 Set-Visible $notifications $true
-Require ($notifications.Notices.Count -eq 1 -and $notifications.Notices[0].IsError) 'A failed work result did not stay, a repeated failure piled up, or a completed one did not close.'
+Require ($notifications.Toasts.Count -eq 1 -and $notifications.Toasts[0].IsError) 'A failed work result did not stay, a repeated failure piled up, or a completed one did not close.'
 
 'Notification checks passed.'

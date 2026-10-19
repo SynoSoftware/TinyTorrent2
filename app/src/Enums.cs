@@ -595,23 +595,17 @@ internal enum RequestBlockKind
 }
 
 /// <summary>
-/// Why a provider call failed, as the shared HTTP path reads the reply.
-/// Library and Subtitles turn it into their own failures.
+/// Why a provider call failed with a hold, as the shared HTTP path reads the
+/// reply. Library and Subtitles turn it into their own failures.
 /// </summary>
 internal enum ReplyFailure
 {
-    // The call names one resource, and the provider has no such resource.
-    Missing,
     Refused,
-
-    // The provider refused a session that the caller renews; nothing is held.
-    Expired,
     Wait,
     Unavailable,
 
     // The reply exceeds its size limit, or its body is not what the call reads.
     Invalid,
-    Route,
 }
 
 internal enum FetchScope
@@ -681,23 +675,6 @@ internal enum PauseReason
     Manual,
     Schedule,
     ConnectionTest,
-}
-
-internal enum NoticeKind
-{
-    Status,
-    Resume,
-    CommandError,
-    Completion,
-    SubtitleError,
-    Outcome,
-    SearchLimit,
-    WorkResult,
-#if CAPTURE
-    // A notice a capture journey shows without the state behind it; the
-    // model neither describes nor removes it.
-    Presentation,
-#endif
 }
 
 internal enum RefusalReason

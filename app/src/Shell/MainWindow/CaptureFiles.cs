@@ -233,18 +233,7 @@ public sealed partial class MainWindow
             return;
         }
 
-        Torrents.Selection = new Syno.TableView.Selection([outside], outside);
-        await SelectTorrent();
-        Run(Model.Remove);
-        await CaptureLayout();
-        var removal =
-            _interaction?.Dialog
-            ?? throw new InvalidOperationException(
-                "The outside owner removal confirmation did not open."
-            );
-        closed =
-            _interaction?.Completion.Task
-            ?? throw new InvalidOperationException("The removal confirmation has no completion.");
+        (var removal, closed) = await Open([outside], FileAction.Remove);
         try
         {
             CaptureInvoke(removal);

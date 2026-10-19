@@ -150,7 +150,10 @@ public sealed partial class AddDialog : UserControl, IDisposable
         Destination.Text = Model.AddDraft.Destination;
         if (TextEditor.Find(Destination, "EditableText") is not { } editor)
             return;
-        editor.TextChanged += (_, _) =>
+        // The draft takes the text as it changes. TextChanged runs later, and a
+        // draft refresh before it would write the draft's folder back over the
+        // edit through the one-way binding.
+        editor.TextChanging += (_, _) =>
         {
             if (Model.AddDraft.CanEdit)
                 Model.AddDraft.Destination = editor.Text;

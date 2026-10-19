@@ -25,7 +25,7 @@ struct Problem
 {
     ProblemKind kind;
     std::string detail;
-    // Why a move did not start. The row and the notice report it instead of
+    // Why a move did not start. The row and the toast report it instead of
     // the kind, so the window can say why.
     std::optional<ErrorCode> refusal;
 
@@ -143,7 +143,7 @@ public:
     // Returns true when a settling download starts its recheck.
     bool BeginCheck();
     void FailCheck();
-    // Returns true when the download is complete, so the Completed notice is
+    // Returns true when the download is complete, so the Completed toast is
     // due.
     bool Finish();
 

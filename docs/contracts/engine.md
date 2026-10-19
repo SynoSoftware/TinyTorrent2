@@ -99,8 +99,8 @@ is applied again, so libtorrent's queue matches the list.
 
 Completed means that received payload is ready on disk. After libtorrent reports
 the download finished, keep its completion pending until `cache_flushed_alert`;
-the row and completion notice share that acknowledgement. Rechecks do not create
-download notices. Payload counts contribute to completion only during a download
+the row and completion toast share that acknowledgement. Rechecks do not create
+download toasts. Payload counts contribute to completion only during a download
 cycle: late duplicate blocks received while finished do not start another one.
 The completion phase keeps the active download cycle independently of the last
 ordered file-event origin, which becomes unknown only when state-change alerts
@@ -900,10 +900,10 @@ moments later. Sign-in with WinUI closed shows no splash.
 
 On process-creation failure or unexpected exit before window readiness, close
 the splash and report the reason through the existing tray notification path.
-That notice has two buttons of equal width: Retry opens the window again, as
+That toast has two buttons of equal width: Retry opens the window again, as
 the tray's Show window does, and Open folder shows the program folder in File
 Explorer, where a missing or blocked file can be checked. Open folder leaves
-the notice open, so Retry stays available after the person checks the folder.
+the toast open, so Retry stays available after the person checks the folder.
 There is no second recovery dialog.
 A launched WinUI that hands off to an existing window and exits is not a launch
 failure. If readiness times out while the process is still alive, report that it
@@ -1087,19 +1087,19 @@ acknowledged and discarded. Reopening a disconnected but living window retains i
 process and starts the same bounded readiness wait used for a new window; a
 window already on screen is raised instead.
 
-If the final save fails, report it once in a notice and keep the engine alive:
+If the final save fails, report it once in a toast and keep the engine alive:
 
 - The engine saves again after the checkpoint retry delay, and exits once a
   save succeeds. The person does not have to retry.
 - Each attempt waits again for torrents that never confirmed their pause,
   because a save while their disk work runs can record pieces that are not on
   disk. The engine log names each torrent whose pause wait timed out.
-- The notice offers Force exit, which ends the process at once without the
+- The toast offers Force exit, which ends the process at once without the
   final save, because a stalled torrent may never let a save succeed. Its
   message says that the changes since the last save are lost and that
   downloaded files stay on disk, and its detail names the file that could not
   be written and Windows' reason.
-- Choosing Exit again shows the notice again. The notice never keeps the
+- Choosing Exit again shows the toast again. The toast never keeps the
   engine running.
 
 Do not discard unsaved state automatically or offer recovery buttons on the
@@ -1342,17 +1342,17 @@ something the person just asked for, such as the final save on Exit, opening a
 source or starting the window, is not one of these notifications and always
 shows, because staying silent would leave the person believing it worked.
 
-A notice is a popup that the engine draws itself, with the splash's acrylic
-look, in the corner of the taskbar's monitor where Windows shows its own
-notifications. It does not use Windows notifications, toasts or balloons,
+The engine shows a toast in a popup that it draws itself, with the splash's
+acrylic look, in the corner of the taskbar's monitor where Windows shows its
+own notifications. It does not use Windows' own notifications or balloons,
 because Windows lets a person turn those off for every app at once, and a
-notice the person turned on in Settings must still appear. It slides in from
+toast the person turned on in Settings must still appear. It slides in from
 the screen's edge and back out, unless Windows animation effects are off or
 another monitor lies beyond that edge, takes no focus,
 stays for Windows' notification duration and stays while the pointer is over
-it. Every notice ends its buttons with Dismiss, and keeps its close button. A
+it. Every toast ends its buttons with Dismiss, and keeps its close button. A
 failure of something the person just asked for stays until dismissed,
-without a timeout or replacement by later notices, so the repair instructions
+without a timeout or replacement by later toasts, so the repair instructions
 remain available. When it shows at once in
 answer to the person's own action, such as a launch, Exit or adding a torrent,
 it takes the focus without a taskbar button, so Tab, Enter and Escape reach
@@ -1362,7 +1362,7 @@ did not open within its time, or one that waits behind another popup, never
 takes the focus, because the person may be typing elsewhere. It does not
 appear over a full-screen app or a presentation, and waits until Windows shows
 notifications again, so a torrent that stopped meanwhile is still reported.
-The notice that the window closed is the exception: it is dropped, because it
+The toast that the window closed is the exception: it is dropped, because it
 only helps at the moment the window closes.
 While the pointer is over a popup, its header shows a More button (…) beside
 the close button, as Windows' own notifications do; otherwise each popup shows
@@ -1370,16 +1370,16 @@ only its message. More opens a menu laid out as Windows' own, drawn on the
 popup's acrylic surface in the popup's theme: the title See fewer
 notifications, a separator, and commands that each show their Lucide icon
 from the font beside the engine: a command that turns off the
-switch for that kind of notice, named for the switch, such as Don't notify when
+switch for that kind of toast, named for the switch, such as Don't notify when
 a torrent is added; Turn off all notifications, which turns off every switch;
 and Go to notification settings, which opens the window at the Notifications
 card of Settings and highlights it. A failure of something the person just
 asked for has no More button, because it always shows. Debug builds accept
-`--notice`, which shows a sample Added popup whatever the switches say, so the
+`--toast`, which shows a sample Added popup whatever the switches say, so the
 popup and its menu can be checked without adding a torrent. A running engine
-shows it; otherwise the engine starts in the tray to show it. Selecting the rest of the popup acts on the notice
+shows it; otherwise the engine starts in the tray to show it. Selecting the rest of the popup acts on the toast
 where each kind below says so, and otherwise does nothing; only the close
-button and Dismiss close a notice before its time. Show a notice
+button and Dismiss close a toast before its time. Show a toast
 only when its switch is on. Problems and completions use the open window when
 one exists; background additions still use the tray so they do not raise that
 window:

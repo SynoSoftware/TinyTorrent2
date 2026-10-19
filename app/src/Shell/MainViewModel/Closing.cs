@@ -4,23 +4,32 @@ namespace Syno.TinyTorrent.Shell;
 
 public sealed partial class MainViewModel
 {
-    private bool _exiting;
-    private bool _reopening;
+    // A running close. Exits is whether the engine waits for this close to
+    // exit; Exit can arrive during a close or a reset that is already running.
+    private readonly record struct Close(bool Resets, bool Exits);
 
-    // Whether the engine waits for this close to exit. Exit can arrive during
-    // a close or a reset that is already running.
-    internal bool IsExiting => _exiting;
+    // Null while the window is open.
+    private Close? _close;
+
+    public bool IsClosing => _close is not null;
 
     // Stops new operations while the window closes. Accepted work still
     // finishes, and CanClose reports when it has. Returns false when a close
-    // is already running; an Exit then only marks it as exiting.
-    internal bool BeginClose(CloseRequest request)
+    // is already running; an Exit then marks it as exiting and asks the
+    // engine to wait for it.
+    internal async Task<bool> BeginClose(CloseRequest request)
     {
-        _exiting |= request == CloseRequest.Exit;
-        if (_closing)
+        var exits = request == CloseRequest.Exit;
+        if (_close is { } running)
+        {
+            if (exits)
+            {
+                _close = running with { Exits = true };
+                await DeferClose();
+            }
             return false;
-        _closing = true;
-        _reopening = request == CloseRequest.Reset;
+        }
+        _close = new(request == CloseRequest.Reset, exits);
         Refresh();
         return true;
     }
@@ -31,8 +40,8 @@ public sealed partial class MainViewModel
     {
         if (!CanClose)
         {
-            if (_exiting && IsPicking)
-                await DeferClose();
+            if (IsPicking)
+                await DeferExit();
             var idle = new TaskCompletionSource(
                 TaskCreationOptions.RunContinuationsAsynchronously
             );
@@ -63,8 +72,9 @@ public sealed partial class MainViewModel
     // not receive the close reply, so the window stays open.
     internal async Task<bool> FinishClose()
     {
+        var resets = _close is { Resets: true };
         // After the drafts are saved, so none is saved over the defaults.
-        if (_reopening)
+        if (resets)
             await Settings.ResetAll();
         Features.Disconnect();
         // Requests queued before this one reach the engine first, so a command
@@ -72,9 +82,9 @@ public sealed partial class MainViewModel
         // can arrive during a reset; the engine then waits for this reply
         // rather than a new window.
         if (
-            (!_reopening || _exiting)
+            (!resets || Exiting)
             && !await Reply(
-                _exiting ? "close_reply" : "window_closed",
+                Exiting ? "close_reply" : "window_closed",
                 new { state = "closing" }
             )
         )
@@ -85,14 +95,14 @@ public sealed partial class MainViewModel
         await Features.Close();
         await updates;
         _providerHttp.Dispose();
-        if (_reopening)
+        if (resets)
             await Features.ResetSettings();
-        // Instead of `window_closed`, which shows the background notice: the
+        // Instead of `window_closed`, which shows the background toast: the
         // engine asks this closing window to activate, is told it cannot, and
         // opens a new window once this one has exited. A refusal, such as from
         // an engine that is exiting, still lets this window close, because its
         // features already have.
-        if (_reopening && !_exiting)
+        if (resets && !Exiting)
             await Reply("open");
         return true;
     }
@@ -100,11 +110,9 @@ public sealed partial class MainViewModel
     // Ends a close that did not finish, so the window works again.
     internal async Task CancelClose()
     {
-        if (_exiting)
+        if (Exiting)
             await Reply("close_reply", new { state = "cancelled" });
-        _exiting = false;
-        _reopening = false;
-        _closing = false;
+        _close = null;
         _ = Features.Refresh();
         Refresh();
         if (_activationsPending)
@@ -112,8 +120,14 @@ public sealed partial class MainViewModel
         await ReplyActivation(true);
     }
 
+    private bool Exiting => _close is { Exits: true };
+
     // Asks an exiting engine to wait while the person decides.
     internal Task DeferClose() => Reply("close_reply", new { state = "waiting" });
+
+    // Asks the engine to wait while the person decides, when it exits through
+    // this close. Otherwise no engine waits for the close.
+    internal Task DeferExit() => Exiting ? DeferClose() : Task.CompletedTask;
 
     internal Task ReplyExit(ExitAnswer answer) =>
         Reply(

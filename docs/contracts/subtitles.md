@@ -619,11 +619,22 @@ presentation. The host [Supplier](../../app/src/Subtitles/Supplier.cs) sends
 every request a supplier builds, adds the account's key, accounts for the
 sign-in request apart from the operation it serves, follows the redirects the
 supplier allows and decodes subtitle files. It also decides what fits the
-file: which listing of a supplier's catalogue the file names, and which
-subtitles to drop because they are forced or report another season, episode or
-year. An [ISupplier](../../app/src/Subtitles/ISupplier.cs) keeps only what
+file. For a supplier that lists subtitles by title, the host asks for the
+catalogue's titles, chooses the one the file names and asks for that title's
+subtitles. For a supplier that lists subtitles for the file itself, each
+subtitle carries the title the supplier reports, and the host drops it unless
+that title is the file's. The supplier yields its answer page by page, and the
+host requests no page after one whose subtitles all name another title, so a
+wrong title costs one request. A hash search needs no title, because the hash
+names the file. The host also drops subtitles that are forced or report another
+season, episode or year. The host records each operation's outcome: success,
+and a backoff when the supplier cannot read an answer, for a search as for
+Check and Download. A search also backs off once when its pages together take
+more than 60 seconds; a single request that times out holds through the shared
+HTTP path instead. An [ISupplier](../../app/src/Subtitles/ISupplier.cs) keeps only what
 differs: request shapes, language mappings, how it signs in, and reading its
-answers into facts, such as a listing's title or whether a subtitle is forced.
+answers into facts, such as a listing's title, whether a subtitle is forced,
+or that its downloads are used up, with their return time when it says.
 Three real alternatives sit behind the supplier interface,
 so it earns its place. The release name is interpreted, and empty titles and
 extras are rejected, once before a request reaches a supplier. The shared HTTP

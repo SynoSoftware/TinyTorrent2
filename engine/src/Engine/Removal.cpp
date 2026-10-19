@@ -383,7 +383,7 @@ void Engine::State::DeleteTorrentFiles(std::vector<std::filesystem::path> files,
     });
 }
 
-// The notice offers the folder, where the person deletes the rest in File
+// The toast offers the folder, where the person deletes the rest in File
 // Explorer.
 void Engine::State::ReportDeletion(StorageOutcome const& outcome, std::string names,
     std::filesystem::path const& folder)
@@ -391,7 +391,7 @@ void Engine::State::ReportDeletion(StorageOutcome const& outcome, std::string na
     // A busy store refused the deletion before it began, so it has no detail.
     std::string code = outcome.failure == StorageFailure::Overloaded ? ToString(ErrorCode::Overloaded) : "";
     log.Write("delete", "", code.empty() ? outcome.detail : code);
-    Notify(NoticeKind::DeleteFailed, std::move(names), outcome.detail, {}, code, Utf8(folder.wstring()));
+    Notify(ToastKind::DeleteFailed, std::move(names), outcome.detail, {}, code, Utf8(folder.wstring()));
 }
 
 void Engine::State::On(lt::torrent_deleted_alert const& alert)
@@ -422,7 +422,7 @@ void Engine::State::On(lt::torrent_delete_failed_alert const& alert)
         if (std::erase(deletion.waiting, alert.handle))
         {
             log.Write("delete", "", "partfile_delete_failed");
-            Notify(NoticeKind::DeleteFailed, deletion.names, alert.error.message(), {}, {},
+            Notify(ToastKind::DeleteFailed, deletion.names, alert.error.message(), {}, {},
                 Utf8(deletion.roots.front().wstring()));
         }
     }

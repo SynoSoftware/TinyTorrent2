@@ -144,28 +144,28 @@ std::optional<std::filesystem::path> ProcessImage(HANDLE process)
     return std::filesystem::path(std::move(path));
 }
 
-char const* ToString(NoticeKind kind)
+char const* ToString(ToastKind kind)
 {
     switch (kind)
     {
-    case NoticeKind::Completed: return "completed";
-    case NoticeKind::Error: return "error";
-    case NoticeKind::Added: return "added";
-    case NoticeKind::Duplicate: return "duplicate";
-    case NoticeKind::AddFailed: return "add_failed";
-    case NoticeKind::DeleteFailed: return "delete_failed";
-    case NoticeKind::Background: return "background";
-    case NoticeKind::MissingProgram: return "missing_program";
-    case NoticeKind::Aggregate: return "aggregate";
+    case ToastKind::Completed: return "completed";
+    case ToastKind::Error: return "error";
+    case ToastKind::Added: return "added";
+    case ToastKind::Duplicate: return "duplicate";
+    case ToastKind::AddFailed: return "add_failed";
+    case ToastKind::DeleteFailed: return "delete_failed";
+    case ToastKind::Background: return "background";
+    case ToastKind::MissingProgram: return "missing_program";
+    case ToastKind::Aggregate: return "aggregate";
     }
     return "";
 }
 
-std::string ToString(NoticeSwitch notices)
+std::string ToString(ToastSwitch toasts)
 {
-    for (auto const& [name, value] : noticeSwitches)
+    for (auto const& [name, value] : toastSwitches)
     {
-        if (value == notices)
+        if (value == toasts)
         {
             return std::string(name);
         }
@@ -173,14 +173,14 @@ std::string ToString(NoticeSwitch notices)
     return {};
 }
 
-std::vector<NoticeSwitch> AllNoticeSwitches()
+std::vector<ToastSwitch> AllToastSwitches()
 {
-    std::vector<NoticeSwitch> notices;
-    for (auto const& [name, value] : noticeSwitches)
+    std::vector<ToastSwitch> toasts;
+    for (auto const& [name, value] : toastSwitches)
     {
-        notices.push_back(value);
+        toasts.push_back(value);
     }
-    return notices;
+    return toasts;
 }
 
 
@@ -210,14 +210,14 @@ void Engine::PauseSession(bool paused, std::function<void(Outcome)> completion)
     }
     state_->PauseSession(paused, std::move(completion));
 }
-void Engine::TurnOff(std::vector<NoticeSwitch> const& notices, std::function<void(Outcome)> completion)
+void Engine::TurnOff(std::vector<ToastSwitch> const& toasts, std::function<void(Outcome)> completion)
 {
     if (auto refusal = state_->Refusal())
     {
         completion({*refusal});
         return;
     }
-    state_->TurnOff(notices, std::move(completion));
+    state_->TurnOff(toasts, std::move(completion));
 }
 void Engine::RecordPrograms(std::vector<std::string> programs, std::function<void(Outcome)> completion)
 {
@@ -238,7 +238,7 @@ void Engine::Add(std::string const& source, std::function<void(Outcome, Added)> 
     state_->AddSource(source, std::move(completion));
 }
 Activity Engine::Activity() const { return state_->Activity(); }
-std::vector<Notice> Engine::TakeNotices() { return std::exchange(state_->notices, {}); }
+std::vector<Toast> Engine::TakeToasts() { return std::exchange(state_->toasts, {}); }
 std::string Engine::Name(std::string const& torrentId) const
 {
     auto found = state_->torrents.find(torrentId);

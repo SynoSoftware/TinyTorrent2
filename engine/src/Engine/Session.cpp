@@ -499,11 +499,11 @@ tt::Activity Engine::State::Activity() const
     activity.pausedByChoice = paused == PauseReason::Manual || paused == PauseReason::Schedule;
     if (IsAdapterMissing())
         activity.missingAdapter = settings.networkAdapter;
-    for (auto const& [word, notice] : noticeSwitches)
+    for (auto const& [word, toast] : toastSwitches)
     {
-        if (settings.*Settings::Switch(notice))
+        if (settings.*Settings::Switch(toast))
         {
-            activity.notices.insert(notice);
+            activity.toasts.insert(toast);
         }
     }
     activity.preventsSleep = settings.preventsSleep;
@@ -618,24 +618,24 @@ Torrent& Engine::State::Install(std::string const& id, lt::torrent_handle handle
     return torrent;
 }
 
-void Engine::State::Notify(NoticeKind kind, Torrent const& torrent, std::string detail, std::string code)
+void Engine::State::Notify(ToastKind kind, Torrent const& torrent, std::string detail, std::string code)
 {
-    if (torrent.deleted && kind != NoticeKind::Error)
+    if (torrent.deleted && kind != ToastKind::Error)
     {
         return;
     }
     Notify(kind, torrent.Name(), std::move(detail), torrent.torrentId, std::move(code));
 }
 
-void Engine::State::Notify(NoticeKind kind, std::string name, std::string detail, std::string torrentId,
+void Engine::State::Notify(ToastKind kind, std::string name, std::string detail, std::string torrentId,
     std::string code, std::string folder)
 {
     log.Write("notification", torrentId, ToString(kind));
-    if (notices.size() == Notice::limit)
+    if (toasts.size() == Toast::limit)
     {
-        notices.erase(notices.begin());
+        toasts.erase(toasts.begin());
     }
-    notices.push_back(
+    toasts.push_back(
         {.kind = kind, .name = std::move(name), .detail = std::move(detail), .code = std::move(code),
             .torrentId = std::move(torrentId), .folder = std::move(folder)});
 }

@@ -127,7 +127,7 @@ public sealed partial class MainWindow
             var scale = Root.XamlRoot.RasterizationScale;
             var scene = new List<FrameworkElement> { Root };
             // A rendering of Root leaves out its own popups, such as the
-            // notices, and the open-popup list leaves them out too.
+            // toasts, and the open-popup list leaves them out too.
             scene.AddRange(
                 VisualTreeHelper
                     .GetOpenPopupsForXamlRoot(Root.XamlRoot)
@@ -141,30 +141,43 @@ public sealed partial class MainWindow
             );
             var frames = new List<object>();
             var controls = new List<object>();
-            foreach (var element in scene)
+            var bitmaps = scene.Select(_ => new RenderTargetBitmap()).ToArray();
+            var images = new byte[]?[scene.Count];
+            var stable = false;
+            var rendering = Stopwatch.StartNew();
+            // Theme transitions can produce identical frames during their
+            // initial delay. Every pass renders the whole scene, so the window
+            // and its popups wait out that delay together.
+            var unchanged = Stopwatch.StartNew();
+            do
             {
-                if (!element.IsLoaded || element.ActualWidth <= 0 || element.ActualHeight <= 0)
-                    continue;
-                var bitmap = new RenderTargetBitmap();
-                byte[]? previous = null;
-                byte[] pixels;
-                var stable = false;
-                var rendering = Stopwatch.StartNew();
-                // Theme transitions can produce identical frames during their initial delay.
-                var unchanged = Stopwatch.StartNew();
-                do
+                for (var index = 0; index < scene.Count; index++)
                 {
+                    var element = scene[index];
+                    if (!element.IsLoaded || element.ActualWidth <= 0 || element.ActualHeight <= 0)
+                        continue;
+                    var bitmap = bitmaps[index];
                     await bitmap.RenderAsync(
                         element,
                         (int)Math.Ceiling(element.ActualWidth * scale),
                         (int)Math.Ceiling(element.ActualHeight * scale)
                     );
-                    pixels = (await bitmap.GetPixelsAsync()).ToArray();
-                    if (previous is null || !pixels.AsSpan().SequenceEqual(previous))
+                    var image = (await bitmap.GetPixelsAsync()).ToArray();
+                    if (
+                        images[index] is not { } previous
+                        || !SameFrame(previous, image, bitmap.PixelWidth, CaretBounds(element, scale))
+                    )
                         unchanged.Restart();
-                    stable = unchanged.ElapsedMilliseconds >= 500;
-                    previous = pixels;
-                } while (!stable && rendering.ElapsedMilliseconds < 5000);
+                    images[index] = image;
+                }
+                stable = unchanged.ElapsedMilliseconds >= 500;
+            } while (!stable && rendering.ElapsedMilliseconds < 5000);
+            for (var index = 0; index < scene.Count; index++)
+            {
+                var element = scene[index];
+                var bitmap = bitmaps[index];
+                if (images[index] is not { } pixels)
+                    continue;
                 if (bitmap.PixelWidth == 0 || bitmap.PixelHeight == 0 || pixels.Length == 0)
                 {
                     frames.Add(
@@ -260,6 +273,58 @@ public sealed partial class MainWindow
         }
     }
 
+    // The focused text box in element's pixels, or null when element does not
+    // hold it. Its caret blinks at the Windows caret rate, 530 ms by default,
+    // so comparing it would restart the unchanged window on almost every blink.
+    private Windows.Foundation.Rect? CaretBounds(FrameworkElement element, double scale)
+    {
+        if (
+            FocusManager.GetFocusedElement(Root.XamlRoot) is not FrameworkElement focused
+            || focused is not (TextBox or PasswordBox or RichEditBox)
+        )
+            return null;
+        DependencyObject? ancestor = focused;
+        while (ancestor is not null && !ReferenceEquals(ancestor, element))
+            ancestor = VisualTreeHelper.GetParent(ancestor);
+        if (ancestor is null)
+            return null;
+        var bounds = focused
+            .TransformToVisual(element)
+            .TransformBounds(new(0, 0, focused.ActualWidth, focused.ActualHeight));
+        return new(bounds.X * scale, bounds.Y * scale, bounds.Width * scale, bounds.Height * scale);
+    }
+
+    // Compares two BGRA renderings that are width pixels wide, leaving out the
+    // pixels inside skipped.
+    private static bool SameFrame(
+        byte[] previous,
+        byte[] current,
+        int width,
+        Windows.Foundation.Rect? skipped
+    )
+    {
+        if (skipped is not { } area || width == 0 || previous.Length != current.Length)
+            return previous.AsSpan().SequenceEqual(current);
+        var stride = width * 4;
+        var left = Math.Clamp((int)Math.Floor(area.Left), 0, width) * 4;
+        var right = Math.Max(Math.Clamp((int)Math.Ceiling(area.Right), 0, width) * 4, left);
+        var top = (int)Math.Floor(area.Top);
+        var bottom = (int)Math.Ceiling(area.Bottom);
+        for (var row = 0; row * stride < current.Length; row++)
+        {
+            var before = previous.AsSpan(row * stride, stride);
+            var after = current.AsSpan(row * stride, stride);
+            var same =
+                row < top || row >= bottom
+                    ? before.SequenceEqual(after)
+                    : before[..left].SequenceEqual(after[..left])
+                        && before[right..].SequenceEqual(after[right..]);
+            if (!same)
+                return false;
+        }
+        return true;
+    }
+
     private static IEnumerable<FrameworkElement> CaptureElements(
         DependencyObject parent,
         bool includeCollapsed = false
@@ -334,12 +399,10 @@ public sealed partial class MainWindow
 
     // Every message bar and toast the window shows, so their wording and
     // layout can be reviewed together. Toasts come through the same handlers
-    // as the engine's notices and the commands' failures; message bars are
+    // as the engine's messages and the commands' failures; message bars are
     // presented, because their conditions need a failed engine or store.
-    private Notice? CommandErrorNotice =>
-        Model.Notifications.Notices.FirstOrDefault(notice =>
-            notice.Kind == NoticeKind.CommandError
-        );
+    private Toast.CommandError? CommandErrorToast =>
+        Model.Notifications.Toasts.OfType<Toast.CommandError>().FirstOrDefault();
 
     private async Task CaptureNotifications(string prefix, Torrent torrent)
     {
@@ -414,7 +477,7 @@ public sealed partial class MainWindow
                 JsonSerializer.SerializeToElement(
                     new
                     {
-                        type = "notice",
+                        type = "toast",
                         kind,
                         torrent_id = torrent.TorrentId,
                         name = torrent.Name,
@@ -455,9 +518,9 @@ public sealed partial class MainWindow
         {
             Model.PresentedStatus = null;
             Model.Notifications.ClearError();
-            foreach (var notice in Model.Notifications.Notices.ToArray())
+            foreach (var toast in Model.Notifications.Toasts.ToArray())
             {
-                Model.Notifications.Dismiss(notice);
+                Model.Notifications.Dismiss(toast);
             }
         }
     }
@@ -692,7 +755,7 @@ public sealed partial class MainWindow
             void Announced(object? sender, string message)
             {
                 // A resume under the global pause announces when the torrent starts instead.
-                if (message == accepted || command == Model.Resume && message == Model.ResumeNotice)
+                if (message == accepted || command == Model.Resume && message == Model.ResumeMessage)
                     acknowledged.TrySetResult();
             }
             Model.Notifications.AnnouncementRequested += Announced;
@@ -705,7 +768,7 @@ public sealed partial class MainWindow
             {
                 Model.Notifications.AnnouncementRequested -= Announced;
             }
-            if (CommandErrorNotice is not null)
+            if (CommandErrorToast is not null)
                 throw new InvalidOperationException("The native torrent command failed.");
             var directory =
                 Model.DataDirectory
@@ -1519,8 +1582,8 @@ public sealed partial class MainWindow
     }
 
     // A real Resume while every transfer is paused: the row changes to All
-    // paused and the notice says when the torrent starts and offers Resume.
-    private async Task CaptureResumeNotice(
+    // paused and the toast says when the torrent starts and offers Resume.
+    private async Task CaptureResumeToast(
         Torrent target,
         List<object> outcomes,
         List<string> completed
@@ -1533,7 +1596,7 @@ public sealed partial class MainWindow
         );
         void Announced(object? sender, string message)
         {
-            if (message == Model.ResumeNotice)
+            if (message == Model.ResumeMessage)
                 announced.TrySetResult();
         }
         Model.Notifications.AnnouncementRequested += Announced;
@@ -1550,41 +1613,41 @@ public sealed partial class MainWindow
         {
             await CaptureReady(
                 Model,
-                () => target.StatusCode == "all_paused" && Model.HasResumeNotice
+                () => target.StatusCode == "all_paused" && Model.HasResumeToast
             );
             await CaptureMatrix(
                 async (suffix, _) =>
                 {
-                    var name = "footer-" + suffix + "-resume-notice";
+                    var name = "footer-" + suffix + "-resume-toast";
                     await CaptureLayout();
                     await CaptureUi(name);
-                    var notice = Model.Notifications.Notices.FirstOrDefault(shown =>
-                        shown.Kind == NoticeKind.Resume
-                    );
+                    var toast = Model
+                        .Notifications.Toasts.OfType<Toast.Resume>()
+                        .FirstOrDefault();
                     outcomes.Add(
                         new
                         {
                             journey = name,
-                            scope = "Real Resume while every transfer is paused; the notice button is not pressed",
+                            scope = "Real Resume while every transfer is paused; the toast button is not pressed",
                             status = target.StatusCode,
-                            message = notice?.Message,
-                            action = notice?.ActionText,
-                            severity = notice?.Severity.ToString(),
+                            message = toast?.Message,
+                            action = toast?.ActionText,
+                            severity = toast?.Severity.ToString(),
                         }
                     );
                     completed.Add(name);
                     if (
-                        notice is null
-                        || NoticeStack.Visibility != Visibility.Visible
-                        || !notice.HasAction
-                        || notice.Severity != InfoBarSeverity.Informational
-                        || notice.Message != Model.ResumeNotice
-                        || !notice.Message.Contains(target.Name, StringComparison.Ordinal)
-                        || notice.ActionText != Model.Text.Get("notifications", "resume")
+                        toast is null
+                        || ToastStack.Visibility != Visibility.Visible
+                        || !toast.HasAction
+                        || toast.Severity != InfoBarSeverity.Informational
+                        || toast.Message != Model.ResumeMessage
+                        || !toast.Message.Contains(target.Name, StringComparison.Ordinal)
+                        || toast.ActionText != Model.Text.Get("notifications", "resume")
                         || target.StatusCode != "all_paused"
                     )
                         throw new InvalidOperationException(
-                            "The blocked resume did not show All paused and its notice."
+                            "The blocked resume did not show All paused and its toast."
                         );
                 }
             );
@@ -1594,7 +1657,7 @@ public sealed partial class MainWindow
             Run(Model.Pause);
             await CaptureReady(
                 Model,
-                () => target.StatusCode == "paused" && !Model.HasResumeNotice
+                () => target.StatusCode == "paused" && !Model.HasResumeToast
             );
         }
     }
@@ -1714,7 +1777,7 @@ public sealed partial class MainWindow
                     }
                 }
             );
-            await CaptureResumeNotice(target, outcomes, completed);
+            await CaptureResumeToast(target, outcomes, completed);
         }
         finally
         {
@@ -2245,21 +2308,17 @@ public sealed partial class MainWindow
                             );
                         }
                         await ShowTorrents();
-                        // One more notice than the stack holds, so the
+                        // One more toast than the stack holds, so the
                         // capture shows the oldest one giving way.
                         var finished = Model.Torrents.Take(5).ToArray();
-                        Notice[] Completions() =>
-                            Model
-                                .Notifications.Notices.Where(notice =>
-                                    notice.Kind == NoticeKind.Completion
-                                )
-                                .ToArray();
+                        Toast.Completion[] Completions() =>
+                            Model.Notifications.Toasts.OfType<Toast.Completion>().ToArray();
                         foreach (var torrent in finished)
                             Model.Notifications.Receive(
                                 JsonSerializer.SerializeToElement(
                                     new
                                     {
-                                        type = "notice",
+                                        type = "toast",
                                         kind = "completed",
                                         @switch = "finished",
                                         torrent_id = torrent.TorrentId,
@@ -2271,12 +2330,12 @@ public sealed partial class MainWindow
                             );
                         await CaptureLayout();
                         if (
-                            NoticeStack.Visibility != Visibility.Visible
+                            ToastStack.Visibility != Visibility.Visible
                             || Completions().Length != Math.Min(finished.Length, 4)
                             || Completions()[^1].Subject != finished[^1].Name
                         )
                             throw new InvalidOperationException(
-                                "The completion notices do not show the newest finished downloads."
+                                "The completion toasts do not show the newest finished downloads."
                             );
                         await CapturePage(name + "-completion");
                         if (language == "en" && theme == "light" && size.Width == 1040)
@@ -2285,7 +2344,7 @@ public sealed partial class MainWindow
                             await CaptureLayout();
                             if (
                                 !HasEditorFocus()
-                                || NoticeStack.Visibility != Visibility.Collapsed
+                                || ToastStack.Visibility != Visibility.Collapsed
                                 || Completions().Length == 0
                             )
                                 throw new InvalidOperationException(
@@ -2293,7 +2352,7 @@ public sealed partial class MainWindow
                                 );
                             Torrents.Focus(FocusState.Programmatic);
                             await CaptureLayout();
-                            if (NoticeStack.Visibility != Visibility.Visible)
+                            if (ToastStack.Visibility != Visibility.Visible)
                                 throw new InvalidOperationException(
                                     "Completion feedback did not return after editing."
                                 );
@@ -2308,8 +2367,8 @@ public sealed partial class MainWindow
                                 }
                             );
                         }
-                        foreach (var notice in Completions())
-                            Model.Notifications.Dismiss(notice);
+                        foreach (var toast in Completions())
+                            Model.Notifications.Dismiss(toast);
                         completed.Add(name);
                     }
                 }
@@ -2317,7 +2376,7 @@ public sealed partial class MainWindow
                     new
                     {
                         journey = "completion presentation",
-                        scope = "Simulated engine notice through the production UI handler; no download or Explorer launch",
+                        scope = "Simulated engine toast through the production UI handler; no download or Explorer launch",
                     }
                 );
                 return;
@@ -2486,7 +2545,7 @@ public sealed partial class MainWindow
                                 .TransformPoint(new Windows.Foundation.Point())
                                 .Y,
                         };
-                        if (CommandErrorNotice is not null)
+                        if (CommandErrorToast is not null)
                             throw new InvalidOperationException(
                                 "The layout fixture already has a command failure."
                             );
@@ -2579,16 +2638,16 @@ public sealed partial class MainWindow
                             );
                             await CapturePage(prefix + "combined-errors");
                             CaptureInvoke(
-                                CaptureElements(NoticeStack)
+                                CaptureElements(ToastStack)
                                     .OfType<Button>()
                                     .Single(button =>
                                         button is not Controls.ActionButton
                                         && button.DataContext
-                                            is Notice { Kind: NoticeKind.CommandError }
+                                            is Toast.CommandError
                                     )
                             );
                             await CaptureLayout();
-                            if (CommandErrorNotice is not null || Model.CurrentStatus != stopped)
+                            if (CommandErrorToast is not null || Model.CurrentStatus != stopped)
                                 throw new InvalidOperationException(
                                     "Dismissing a command error changed connection state or retained the error."
                                 );
@@ -2615,7 +2674,7 @@ public sealed partial class MainWindow
                         var dialog =
                             _interaction?.Dialog
                             ?? throw new InvalidOperationException(
-                                "The Add dialog did not open: " + CommandErrorNotice?.Message
+                                "The Add dialog did not open: " + CommandErrorToast?.Message
                             );
                         try
                         {
@@ -2716,7 +2775,7 @@ public sealed partial class MainWindow
                                 .Single(control => control.Name == "EditableText");
                             var original = Model.AddDraft.Destination;
                             folder.Focus(FocusState.Programmatic);
-                            destination.Text = "relative-download-folder";
+                            folder.Text = "relative-download-folder";
                             await CaptureLayout();
                             if (Model.AddDraft.Destination != "relative-download-folder")
                                 throw new InvalidOperationException(
@@ -2764,7 +2823,7 @@ public sealed partial class MainWindow
                                     sources = Model.AddDraft.Sources.Count,
                                 }
                             );
-                            destination.Text = original;
+                            folder.Text = original;
                             await CaptureReady(
                                 Model.AddDraft,
                                 () => Model.AddDraft.CanSubmit && Model.AddDraft.Failure is null

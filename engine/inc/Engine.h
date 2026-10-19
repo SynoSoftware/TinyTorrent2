@@ -38,9 +38,9 @@ constexpr wchar_t registration[] = L"--registration";
 constexpr wchar_t data[] = L"--data";
 constexpr wchar_t repairClass[] = L"--repair-class";
 #ifdef _DEBUG
-// Starts in the tray and shows a sample notice popup, whatever the notice
+// Starts in the tray and shows a sample toast popup, whatever the toast
 // switches say, so its look and More menu can be checked.
-constexpr wchar_t notice[] = L"--notice";
+constexpr wchar_t toast[] = L"--toast";
 #endif
 }
 
@@ -64,18 +64,18 @@ inline void NormaliseMagnet(std::string& source)
     }
 }
 
-struct Notice
+struct Toast
 {
     static constexpr std::size_t limit = 32;
-    NoticeKind kind;
+    ToastKind kind;
     std::string name;
     std::string detail;
-    // The code of the problem, translated by the surface showing the notice;
-    // empty when the notice carries no problem code.
+    // The code of the problem, translated by the surface showing the toast;
+    // empty when the toast carries no problem code.
     std::string code;
     std::string torrentId;
     // The folder that Open folder shows, where the person fixes a failed
-    // deletion in File Explorer; empty when the notice offers no folder.
+    // deletion in File Explorer; empty when the toast offers no folder.
     std::string folder;
     unsigned count = 1;
 };
@@ -113,7 +113,7 @@ struct Activity
     bool seeding = false;
     bool hasIncoming = false;
     // The notification switches that are on.
-    std::set<NoticeSwitch> notices;
+    std::set<ToastSwitch> toasts;
     bool preventsSleep = true;
     bool preventsSleepSeeding = false;
     std::vector<std::string> reportedPrograms;
@@ -142,14 +142,14 @@ public:
     // while saving changes nothing.
     void Shutdown(std::function<void(std::optional<std::string> failure)> report);
     void PauseSession(bool paused, std::function<void(Outcome)> completion);
-    // Saves the switches that turn `notices` off, in one settings change.
-    void TurnOff(std::vector<NoticeSwitch> const& notices, std::function<void(Outcome)> completion);
+    // Saves the switches that turn `toasts` off, in one settings change.
+    void TurnOff(std::vector<ToastSwitch> const& toasts, std::function<void(Outcome)> completion);
     // Saves the missing programs that torrent handlers start, once reported.
     void RecordPrograms(std::vector<std::string> programs, std::function<void(Outcome)> completion);
     // Adds a source to the default destination with the default file choices.
     void Add(std::string const& source, std::function<void(Outcome, Added)> completion);
     tt::Activity Activity() const;
-    std::vector<Notice> TakeNotices();
+    std::vector<Toast> TakeToasts();
     std::string Name(std::string const& torrentId) const;
     std::string Folder(std::string const& torrentId) const;
     std::string Language() const;
@@ -185,11 +185,11 @@ std::optional<Value> Parse(std::pair<std::string_view, Value> const (&names)[Siz
 
 // The protocol word of each notification switch. It lists every switch, so
 // Turn off all notifications turns off each one in it.
-inline constexpr std::pair<std::string_view, NoticeSwitch> noticeSwitches[] = {
-    {"finished", NoticeSwitch::Finished},
-    {"added", NoticeSwitch::Added},
-    {"problems", NoticeSwitch::Problems},
-    {"background", NoticeSwitch::Background}};
+inline constexpr std::pair<std::string_view, ToastSwitch> toastSwitches[] = {
+    {"finished", ToastSwitch::Finished},
+    {"added", ToastSwitch::Added},
+    {"problems", ToastSwitch::Problems},
+    {"background", ToastSwitch::Background}};
 
 // Reads a value from settings.json, or returns `fallback` when the key is
 // missing or holds a value of another type, so a damaged file still loads with
@@ -247,9 +247,9 @@ std::wstring Executable();
 // The executable of `process`, a Windows process handle with query access;
 // nothing when Windows does not reveal it.
 std::optional<std::filesystem::path> ProcessImage(void* process);
-char const* ToString(NoticeKind kind);
-std::string ToString(NoticeSwitch notices);
-std::vector<NoticeSwitch> AllNoticeSwitches();
+char const* ToString(ToastKind kind);
+std::string ToString(ToastSwitch toasts);
+std::vector<ToastSwitch> AllToastSwitches();
 char const* ToString(ErrorCode code);
 Json Success(Json data = Json::object());
 Json Failure(ErrorCode code, std::string detail = {});

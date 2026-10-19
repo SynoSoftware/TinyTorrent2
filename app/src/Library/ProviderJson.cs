@@ -55,7 +55,7 @@ internal static class ProviderJson
                     }
                 )
                 .ConfigureAwait(false);
-            throw new ProviderException(failure, refused.Hold?.RetryAt, refused);
+            throw new ProviderException(failure, refused.Hold.RetryAt, refused);
         }
         return data;
     }
@@ -64,26 +64,25 @@ internal static class ProviderJson
     // that the shared request policy keeps. A remote wait stays a request
     // block, which the person reads as a wait with its time.
     private static Exception Failure(ReplyException error) =>
-        error.Failure switch
+        error switch
         {
-            ReplyFailure.Missing => new MissingVideoException(),
-            ReplyFailure.Refused or ReplyFailure.Expired => new ProviderException(
-                VideoFailure.Refused,
-                error.Hold?.RetryAt,
+            ReplyException.Held { Failure: ReplyFailure.Wait } wait => new RequestBlockedException(
+                wait.Hold
+            ),
+            ReplyException.Held held => new ProviderException(
+                held.Failure switch
+                {
+                    ReplyFailure.Refused => VideoFailure.Refused,
+                    ReplyFailure.Unavailable => VideoFailure.Unavailable,
+                    ReplyFailure.Invalid => VideoFailure.InvalidResult,
+                    _ => throw new ArgumentOutOfRangeException(nameof(error)),
+                },
+                held.Hold.RetryAt,
                 error
             ),
-            ReplyFailure.Wait when error.Hold is { } hold => new RequestBlockedException(hold),
-            ReplyFailure.Unavailable => new ProviderException(
-                VideoFailure.Unavailable,
-                error.Hold?.RetryAt,
-                error
-            ),
-            ReplyFailure.Invalid => new ProviderException(
-                VideoFailure.InvalidResult,
-                error.Hold?.RetryAt,
-                error
-            ),
-            ReplyFailure.Route => new RouteException(error),
+            ReplyException.Expired => new ProviderException(VideoFailure.Refused, null, error),
+            ReplyException.Missing => new MissingVideoException(),
+            ReplyException.Route => new RouteException(error),
             _ => throw new ArgumentOutOfRangeException(nameof(error)),
         };
 }

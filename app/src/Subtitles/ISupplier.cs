@@ -56,20 +56,35 @@ internal interface ISupplier
     bool CanRedirect(Uri address, Uri target) => false;
 
     /// <summary>
-    /// When the account's downloads return, if a reply to the request says in
-    /// the supplier's own way that they are used up; otherwise null.
+    /// The account's used-up downloads, if a reply to the request says in the
+    /// supplier's own way that they are used up; otherwise null.
     /// </summary>
-    DateTimeOffset? DownloadReset(HttpRequestMessage request, ProviderReply reply) => null;
+    Exhaustion? UsedUp(HttpRequestMessage request, ProviderReply reply) => null;
 
     /// <summary>Proves that the supplier accepts the client's account.</summary>
     Task Check(SupplierClient client, CancellationToken cancellation);
 
     /// <summary>
-    /// Lists the full SRT subtitles in the query's language for the title the
-    /// query names, or, with a hash, for that exact file, with what the
-    /// supplier reports about each. The host decides which fit the file.
+    /// Lists, by the supplier's own key, the titles in its catalogue that the
+    /// query's title may name, when the supplier lists subtitles by title.
+    /// The host chooses the file's title among them for
+    /// <see cref="SubtitleQuery.Title"/>. Null when the supplier lists the
+    /// subtitles for the file itself.
     /// </summary>
-    Task<SubtitleSearch> Search(
+    Task<IReadOnlyDictionary<long, Listing>?> Titles(
+        SubtitleQuery query,
+        SupplierClient client,
+        CancellationToken cancellation
+    ) => Task.FromResult<IReadOnlyDictionary<long, Listing>?>(null);
+
+    /// <summary>
+    /// Lists the full SRT subtitles in the query's language for the title the
+    /// host chose, or else for the file, by its name or hash, with what the
+    /// supplier reports about each, one page per reply. The host decides
+    /// which fit the file, and reads no further page after one whose
+    /// subtitles all report a title that is not the file's.
+    /// </summary>
+    IAsyncEnumerable<SubtitleSearch> Search(
         SubtitleQuery query,
         SupplierClient client,
         CancellationToken cancellation
@@ -116,11 +131,20 @@ internal sealed record SubtitleQuery(Release Release, string FileName, string La
 {
     internal string? Hash { get; init; }
     internal long Size { get; init; }
+
+    /// <summary>The title the host chose from <see cref="ISupplier.Titles"/>.</summary>
+    internal CatalogueTitle? Title { get; init; }
 }
+
+/// <summary>A title in a supplier's catalogue, with the supplier's key for it.</summary>
+internal sealed record CatalogueTitle(long TitleId, Listing Listing);
+
+/// <summary>A used-up allowance, and when the supplier renews it, if it says.</summary>
+internal sealed record Exhaustion(DateTimeOffset? Until);
 
 /// <summary>
 /// A movie, or a show, season or episode, as a supplier's catalogue lists it.
-/// <see cref="Supplier.Matches"/> decides whether a file names it.
+/// The host decides whether a file names it.
 /// </summary>
 internal sealed record Listing(VideoKind Kind, IReadOnlyList<string> Titles)
 {

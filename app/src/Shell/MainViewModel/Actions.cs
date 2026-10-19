@@ -199,16 +199,16 @@ public sealed partial class MainViewModel
     internal async Task ReceiveActivations()
     {
         _activationsPending = true;
-        if (_receivingActivations || !_ready || !_connected || _closing)
+        if (_receivingActivations || !_ready || !_connected || IsClosing)
             return;
         _receivingActivations = true;
         try
         {
-            while (_activationsPending && _ready && _connected && !_closing)
+            while (_activationsPending && _ready && _connected && !IsClosing)
             {
                 _activationsPending = false;
                 var pending = await _client.Send("pending_activations", null, Requester.Window);
-                if (_closing)
+                if (IsClosing)
                 {
                     _activationsPending = true;
                     return;
@@ -278,7 +278,7 @@ public sealed partial class MainViewModel
             return;
         try
         {
-            await _client.Send("queue", arguments);
+            await _client.Send("queue", arguments, Requester.Person);
             Notifications.AnnounceAccepted("outcomes", "queue");
         }
         catch (Exception error)
@@ -313,7 +313,7 @@ public sealed partial class MainViewModel
         };
         try
         {
-            await _client.Send("piece_order", arguments);
+            await _client.Send("piece_order", arguments, Requester.Person);
             Notifications.AnnounceAccepted("commands", PieceOrderKey(order, enabled));
         }
         catch (Exception error)
@@ -328,13 +328,13 @@ public sealed partial class MainViewModel
             return;
         try
         {
-            await _client.Send("session_pause", new { paused });
-            // Resume all cannot lift a missing adapter's pause, so the notice
+            await _client.Send("session_pause", new { paused }, Requester.Person);
+            // Resume all cannot lift a missing adapter's pause, so the toast
             // says why nothing starts.
             _waiting = !paused && MissingAdapter.Length > 0 ? [] : null;
-            Changed(nameof(HasResumeNotice));
-            if (HasResumeNotice)
-                Notifications.Announce(ResumeNotice);
+            Changed(nameof(HasResumeToast));
+            if (HasResumeToast)
+                Notifications.Announce(ResumeMessage);
             else
                 Notifications.AnnounceAccepted("commands", paused ? "pause_all" : "resume_all");
         }

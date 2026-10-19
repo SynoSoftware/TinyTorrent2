@@ -1021,6 +1021,15 @@ public sealed class SubtitleSearchReply : HttpMessageHandler {
             $offered = @((Invoke-Value $unfitSupplier 'Candidates' @($http, $unfitAccount, $unfitLookup, $cancel)).Candidates | ForEach-Object { $_.Release })
             Require ($offered.Count -eq 1 -and $offered[0] -eq 'Unfit.Show.S01E02.Full') "$name offered $($offered -join ', ') for Unfit.Show.S01E02."
         }
+        # SubDL reports the title it matched, Search Once, on the first of two
+        # pages. The host drops its subtitles for a file of another title and
+        # requests no second page.
+        $otherLookup = New-Value 'Subtitles.SubtitleLookup' @('Other.Title.2024.mkv', 'en', $validate)
+        $reply.Partial = $true
+        $before = $reply.Searches
+        try { $offered = @((Invoke-Value $subdlSupplier 'Candidates' @($http, $subdlAccount, $otherLookup, $cancel)).Candidates) }
+        finally { $reply.Partial = $false }
+        Require ($offered.Count -eq 0 -and $reply.Searches -eq $before + 1) "SubDL offered $($offered.Count) subtitles of another title in $($reply.Searches - $before) pages."
         Sql 'DELETE FROM request_holds WHERE provider_id IN (''opensubtitles'',''subdl'',''subsource'');' | Out-Null
         $waiting = [Threading.Tasks.TaskCompletionSource]::new()
         $videos = New-Value 'Library.VideoLookup' @($store, $waiting.Task, (New-Values 'Library.ProviderOption' @($option, $wikidataOption)), $policy, $http) @{ Work = $work }

@@ -173,17 +173,17 @@ std::wstring Describe(std::exception const& error)
 // of its own, and returns once the person closes it.
 void ShowRefusal(tt::Strings const& strings, tt::desktop::Refusal refusal)
 {
-    using tt::desktop::Notices;
+    using tt::desktop::Toasts;
     tt::OwnedIcon icon(tt::desktop::ErrorIcon());
     // Without commands, selecting the message does nothing, so it never
     // starts the launch again unasked. The refusal answers the person's
     // launch, so it takes the focus.
-    Notices notices(strings, false, icon.get(), {});
-    Notices::Failure failure{.code = std::move(refusal.key), .detail = std::move(refusal.detail),
+    Toasts toasts(strings, false, icon.get(), {});
+    Toasts::Failure failure{.code = std::move(refusal.key), .detail = std::move(refusal.detail),
         .interactive = true};
     if (refusal.retry)
     {
-        failure.actions.push_back(Notices::Retry(strings, strings.Text("notification", "retry_request_tip"), []
+        failure.actions.push_back(Toasts::Retry(strings, strings.Text("notification", "retry_request_tip"), []
         {
             std::wstring command = GetCommandLineW();
             STARTUPINFOW startup{sizeof(startup)};
@@ -201,11 +201,11 @@ void ShowRefusal(tt::Strings const& strings, tt::desktop::Refusal refusal)
     if (refusal.folder)
     {
         failure.actions.push_back(
-            Notices::OpenFolder(strings, *refusal.folder, strings.Text("notification", "open_folder_tip")));
+            Toasts::OpenFolder(strings, *refusal.folder, strings.Text("notification", "open_folder_tip")));
     }
-    notices.ShowFailure(std::move(failure));
+    toasts.ShowFailure(std::move(failure));
     MSG message{};
-    while (notices.IsOpen() && GetMessageW(&message, nullptr, 0, 0) > 0)
+    while (toasts.IsOpen() && GetMessageW(&message, nullptr, 0, 0) > 0)
     {
         TranslateMessage(&message);
         DispatchMessageW(&message);
@@ -350,7 +350,7 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
 #ifdef _DEBUG
             if (open.sample)
             {
-                application.ShowSampleNotice();
+                application.ShowSampleToast();
             }
 #endif
             result = application.Run(open.background, std::move(open.sources));

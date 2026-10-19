@@ -911,7 +911,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
         Refresh();
         try
         {
-            await _client.Send(command, arguments);
+            await _client.Send(command, arguments, Requester.Person);
             confirmed?.Invoke();
         }
         catch (Exception error)

@@ -279,7 +279,12 @@ public sealed class Setting : INotifyPropertyChanged
         Change();
     }
 
-    private async Task Submit(object value)
+    /// <summary>
+    /// Saves the value without the <see cref="CanEdit"/> check of the
+    /// setting's own control. A store that cannot save rejects the value and
+    /// raises <see cref="Failed"/>.
+    /// </summary>
+    internal async Task Submit(object value)
     {
         if (!Store.CanSave())
         {

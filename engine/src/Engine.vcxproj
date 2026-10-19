@@ -145,7 +145,7 @@
     <ClCompile Include="Desktop\Instance.cpp">
       <PreprocessorDefinitions>TT_WINDOW_FILE=L&quot;$(WindowTargetName).exe&quot;;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
-    <ClCompile Include="Desktop\Notices.cpp" />
+    <ClCompile Include="Desktop\Toasts.cpp" />
     <ClCompile Include="Desktop\Popup.cpp" />
     <ClCompile Include="Desktop\PowerRequest.cpp" />
     <ClCompile Include="Desktop\Splash.cpp" />
@@ -155,7 +155,7 @@
     </ClCompile>
     <ResourceCompile Include="Resources.rc" />
   </ItemGroup>
-  <!-- The notice menu's icons. The window's output has its own copy from Lucide.csproj
+  <!-- The popup's icons. The window's output has its own copy from Lucide.csproj
        beside the engine it copies; this one gives the engine's own output its icons. -->
   <ItemGroup>
     <CopyFileToFolders Include="$(MSBuildThisFileDirectory)..\..\lib\Lucide\src\Fonts\lucide.ttf">

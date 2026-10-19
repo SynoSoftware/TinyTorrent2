@@ -134,13 +134,13 @@
         Content="{x:Bind Model.FileDraft.DownloadedText, Mode=OneWay}"
         AutomationProperties.AutomationId="DeleteDownloaded"
         IsChecked="{x:Bind Model.FileDraft.DeleteDownloaded, Mode=TwoWay}"
-        IsEnabled="{x:Bind Model.FileDraft.CanSubmit, Mode=OneWay}"
+        IsEnabled="{x:Bind Model.FileDraft.CanEdit, Mode=OneWay}"
       />
       <CheckBox
         Content="{x:Bind Model.FileDraft.TorrentFilesText, Mode=OneWay}"
         AutomationProperties.AutomationId="DeleteTorrentFiles"
         IsChecked="{x:Bind Model.FileDraft.DeleteTorrentFiles, Mode=TwoWay}"
-        IsEnabled="{x:Bind Model.FileDraft.CanSubmit, Mode=OneWay}"
+        IsEnabled="{x:Bind Model.FileDraft.CanEdit, Mode=OneWay}"
         Visibility="{x:Bind Model.FileDraft.HasTorrentFiles, Mode=OneWay}"
       />
       <TextBlock

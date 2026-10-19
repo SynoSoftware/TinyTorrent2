@@ -40,7 +40,8 @@ public sealed class FileDraft : IDraft
         && !IsPending
         && _torrentIds.Length > 0
         && (IsRemoval || _loaded && HasDestination && (!HasShared || IncludeShared));
-    public bool CanRefresh => _owner.CanEdit && !_reading && !_submitting && _torrentIds.Length > 0;
+    public bool CanEdit => _owner.CanEdit && !IsPending;
+    public bool CanRefresh => CanEdit && !_reading && _torrentIds.Length > 0;
     public bool IsMove => Action == FileAction.Move;
     public ClosePolicy ClosePolicy =>
         IsMove
@@ -308,7 +309,8 @@ public sealed class FileDraft : IDraft
             var outcome = IsMove
                 ? await _client.Send(
                     "move",
-                    new { torrent_ids = torrentIds, destination = Destination }
+                    new { torrent_ids = torrentIds, destination = Destination },
+                    Requester.Person
                 )
                 : await _client.Send(
                     deletesDownloaded ? "delete_files" : "remove",
@@ -317,7 +319,8 @@ public sealed class FileDraft : IDraft
                         torrent_ids = torrentIds,
                         deletion = Recycles ? "recycle" : "permanent",
                         torrent_files = DeleteTorrentFiles,
-                    }
+                    },
+                    Requester.Person
                 );
             _owner.Notifications.AnnounceAccepted("commands", IsMove ? "move" : "remove");
             if (subtitleDeletion is not null && subtitles is not null)

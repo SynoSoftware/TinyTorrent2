@@ -133,8 +133,15 @@ internal sealed class Supplier(ISupplier supplier, RequestPolicy policy)
         return bytes;
     }
 
-    // Lists the subtitles that fit the file, for the person to choose one
-    // when no release matches.
+    /// <summary>
+    /// Lists the subtitles that fit the file, and records the search's outcome
+    /// in the request policy.
+    /// </summary>
+    /// <exception cref="SubtitleException">
+    /// The search failed; its retry time is the hold's. An answer the supplier
+    /// cannot read, or a search that runs out of time, backs off searches as
+    /// <see cref="SubtitleFailure.Network"/>.
+    /// </exception>
     internal async Task<SubtitleSearch> Candidates(
         ProviderHttp http,
         Account account,
@@ -150,35 +157,67 @@ internal sealed class Supplier(ISupplier supplier, RequestPolicy policy)
         if (!supplier.Codes.TryGetValue(lookup.Language, out var code))
             throw new SubtitleException(SubtitleFailure.Unavailable);
         var operation = new Operation(http, account, lookup.Validate) { Fresh = lookup.Fresh };
+        var query = new SubtitleQuery(release, lookup.FileName, lookup.Language, code)
+        {
+            Hash = SupportsHash ? lookup.Hash : null,
+            Size = lookup.Size,
+        };
+        // ProviderHttp bounds each request and holds one that times out. The
+        // deadline bounds the whole search, whose pages can each arrive in time.
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
         deadline.CancelAfter(TimeSpan.FromSeconds(60));
         SubtitleSearch found;
         try
         {
-            found = await supplier
-                .Search(
-                    new(release, lookup.FileName, lookup.Language, code)
-                    {
-                        Hash = lookup.Hash,
-                        Size = lookup.Size,
-                    },
-                    Client(operation),
-                    deadline.Token
-                )
-                .ConfigureAwait(false);
+            found = await Search(query, Client(operation), deadline.Token).ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
-            when (deadline.IsCancellationRequested && !cancellation.IsCancellationRequested)
+        catch (Exception error)
+            when (error is SubtitleException { Reason: SubtitleFailure.Format }
+                || error is OperationCanceledException
+                    && deadline.IsCancellationRequested
+                    && !cancellation.IsCancellationRequested
+            )
         {
             var hold = await policy
                 .Fail(Scope(account, "search"), new(RequestBlockKind.Backoff))
                 .ConfigureAwait(false);
             throw new SubtitleException(SubtitleFailure.Network, hold.RetryAt);
         }
-        return found with
+        await policy.Succeed(Scope(account, "search")).ConfigureAwait(false);
+        return found;
+    }
+
+    // A supplier that lists subtitles by title lists those of the one title
+    // the file names. A catalogue that lists no title at all is an empty
+    // answer, and so is a search whose every page lists no subtitle.
+    private async Task<SubtitleSearch> Search(
+        SubtitleQuery query,
+        SupplierClient client,
+        CancellationToken cancellation
+    )
+    {
+        if (await supplier.Titles(query, client, cancellation).ConfigureAwait(false) is { } titles)
         {
-            Candidates = found.Candidates.Where(candidate => Fits(release, candidate)).ToArray(),
-        };
+            if (Choose(query.Release, titles) is not { } titleId)
+                return new([], titles.Count == 0);
+            query = query with { Title = new(titleId, titles[titleId]) };
+        }
+        var candidates = new List<SubtitleCandidate>();
+        var empty = true;
+        await foreach (
+            var page in supplier.Search(query, client, cancellation).ConfigureAwait(false)
+        )
+        {
+            empty &= page.Empty;
+            candidates.AddRange(page.Candidates.Where(candidate => Fits(query, candidate)));
+            // A title that is not the file's costs no further page.
+            if (
+                page.Candidates.Count > 0
+                && !page.Candidates.Any(candidate => Named(query, candidate))
+            )
+                break;
+        }
+        return new(candidates, empty);
     }
 
     private static Task<byte[]> Decode(ProviderReply reply, CancellationToken cancellation)
@@ -293,17 +332,19 @@ internal sealed class Supplier(ISupplier supplier, RequestPolicy policy)
             Fresh = operation.Fresh,
             CanRedirect = message.Method == HttpMethod.Get,
             Renewable = kind == SupplierRequest.Session,
-            NamesResource = download,
+            // A download's requests name its subtitle, except the sign-in
+            // that serves it.
+            NamesResource = download && kind != SupplierRequest.SignIn,
             // A 402 says that an allowance is used up, as a supplier's own
-            // download reset does.
+            // report of used-up downloads does.
             Quota = reply =>
             {
-                var reset = link ? null : supplier.DownloadReset(message, reply);
-                return reset is null && reply.Status != HttpStatusCode.PaymentRequired
+                var exhausted = link ? null : supplier.UsedUp(message, reply);
+                return exhausted is null && reply.Status != HttpStatusCode.PaymentRequired
                     ? null
                     : new Quota(
                         download ? Scope(account, "download") : scope,
-                        reset ?? reply.RetryAt
+                        exhausted?.Until ?? reply.RetryAt
                     );
             },
         };
@@ -312,18 +353,23 @@ internal sealed class Supplier(ISupplier supplier, RequestPolicy policy)
     // The failure's retry time is the hold's. A missing download reference is
     // Format, which Acquisition holds for that reference alone.
     private static SubtitleException Failure(ReplyException error) =>
-        new(
-            error.Failure switch
-            {
-                ReplyFailure.Refused or ReplyFailure.Expired => SubtitleFailure.Authentication,
-                ReplyFailure.Wait => SubtitleFailure.Quota,
-                ReplyFailure.Missing => SubtitleFailure.Format,
-                ReplyFailure.Unavailable or ReplyFailure.Invalid => SubtitleFailure.Network,
-                ReplyFailure.Route => SubtitleFailure.Route,
-                _ => throw new ArgumentOutOfRangeException(nameof(error)),
-            },
-            error.Hold?.RetryAt
-        );
+        error switch
+        {
+            ReplyException.Held held => new(
+                held.Failure switch
+                {
+                    ReplyFailure.Refused => SubtitleFailure.Authentication,
+                    ReplyFailure.Wait => SubtitleFailure.Quota,
+                    ReplyFailure.Unavailable or ReplyFailure.Invalid => SubtitleFailure.Network,
+                    _ => throw new ArgumentOutOfRangeException(nameof(error)),
+                },
+                held.Hold.RetryAt
+            ),
+            ReplyException.Expired => new(SubtitleFailure.Authentication),
+            ReplyException.Missing => new(SubtitleFailure.Format),
+            ReplyException.Route => new(SubtitleFailure.Route),
+            _ => throw new ArgumentOutOfRangeException(nameof(error)),
+        };
 
     private sealed record Operation(
         ProviderHttp Http,
@@ -339,19 +385,28 @@ internal sealed class Supplier(ISupplier supplier, RequestPolicy policy)
     // exactly for an episode's subtitle, so the season also tells an
     // episode's subtitle from a movie's. An unreported episode does not count
     // against the subtitle.
-    private static bool Fits(Release release, SubtitleCandidate candidate) =>
-        !candidate.Forced
-        && candidate.Season == release.Season
-        && SameYear(release, candidate.Year)
-        && (candidate.Episode is not { } episode || release.Episodes.Contains(episode));
+    private static bool Fits(SubtitleQuery query, SubtitleCandidate candidate)
+    {
+        var release = query.Release;
+        return !candidate.Forced
+            && candidate.Season == release.Season
+            && SameYear(release, candidate.Year)
+            && (candidate.Episode is not { } episode || release.Episodes.Contains(episode))
+            && Named(query, candidate);
+    }
 
-    /// <summary>
-    /// Chooses, by the supplier's own key, the listing that names the file:
-    /// the one listing that <see cref="Matches"/> it, or else the one whose
-    /// title holds the file's title words, as "Death on the Brandywine" holds
-    /// a file's "Brandywine". Null when none qualifies or several do.
-    /// </summary>
-    internal static long? Choose(Release release, IReadOnlyDictionary<long, Listing> listings)
+    // Whether the subtitle is listed under the file's title. It needs no
+    // title of its own when the query named the file's title or hash.
+    private static bool Named(SubtitleQuery query, SubtitleCandidate candidate) =>
+        query.Title is not null
+        || query.Hash is not null
+        || candidate.Title is { } title && Matches(query.Release, title);
+
+    // Chooses, by the supplier's own key, the listing that names the file:
+    // the one listing that matches it, or else the one whose title holds the
+    // file's title words, as "Death on the Brandywine" holds a file's
+    // "Brandywine". Null when none qualifies or several do.
+    private static long? Choose(Release release, IReadOnlyDictionary<long, Listing> listings)
     {
         var exact = listings.Where(pair => Matches(release, pair.Value)).ToArray();
         if (exact.Length > 0)
@@ -365,11 +420,9 @@ internal sealed class Supplier(ISupplier supplier, RequestPolicy policy)
         return near.Length == 1 ? near[0].Key : null;
     }
 
-    /// <summary>
-    /// Whether the listing is the file's title, by its kind, season, year and
-    /// title words.
-    /// </summary>
-    internal static bool Matches(Release release, Listing listing) =>
+    // Whether the listing is the file's title, by its kind, season, year and
+    // title words.
+    private static bool Matches(Release release, Listing listing) =>
         Agrees(release, listing)
         && listing.Titles.Any(title =>
             string.Equals(TitleWords(title), TitleWords(release.Title), StringComparison.Ordinal)
@@ -521,8 +574,18 @@ internal sealed record SubtitleCandidate(
     internal int? Season { get; init; }
     internal int? Episode { get; init; }
     internal bool Forced { get; init; }
+
+    /// <summary>
+    /// The title the supplier lists the subtitle under, which the host checks
+    /// when the query named neither the file's title nor its hash.
+    /// </summary>
+    internal Listing? Title { get; init; }
 }
 
+/// <summary>
+/// A supplier's answer, or one page of it: its subtitles, and whether it
+/// lists no subtitle at all.
+/// </summary>
 internal sealed record SubtitleSearch(
     IReadOnlyList<SubtitleCandidate> Candidates,
     bool Empty = false

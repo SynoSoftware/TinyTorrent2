@@ -282,7 +282,7 @@ role has one size and a size changes in one place:
 
 - **Chevron**, 12: chevrons the application draws in place of a platform one.
 - **Inline**, 16: an icon in a line of body text, including status bar, fields,
-  table cells, notices, labelled buttons and title-bar buttons, whose
+  table cells, toasts, labelled buttons and title-bar buttons, whose
   neighbours are the window's small caption glyphs.
 - **Button**, 20: the glyph of an icon-only button.
 - **Header**, 20: the icon that leads a group, section or card.
@@ -989,7 +989,7 @@ Pause takes precedence over limits. Full detail and existing announcements
 retain the current notification owner. Library scopes these states to Torrents
 and words them `Torrents paused`, `Torrents paused until 18:00` and `Torrents
 paused · Adapter unavailable`. A missing-adapter hold gets no InfoBar of its own;
-the existing Resume notice may explain a refused resume, and Settings > Network >
+the existing Resume toast may explain a refused resume, and Settings > Network >
 network adapter is the repair path.
 The routine port/proxy item is shown only on Torrents, at the end of the session
 group, and says nothing about general internet health or privacy. An unavailable
@@ -1273,8 +1273,8 @@ message cannot be the only explanation of unfinished or failed work.
 | Situation | Surface |
 | --- | --- |
 | Routine stop, start, addition in the open window or applied setting | The changed state and one accessible outcome announcement; no visible success toast. |
-| Start or Force start while a global pause prevents transfers | The start takes effect, so the row changes from Stopped to All paused at once, and an informational notice says when the torrent starts: when all transfers resume, at the time the scheduled pause ends, or when the network adapter is available. It never says the start failed, because the person would press it again. Its action is Resume, which lifts the global pause; its tooltip says that a scheduled pause is lifted only until the next schedule change and stopped torrents stay stopped. An unavailable adapter offers Settings instead. Screen readers hear the notice instead of the routine announcement. The notice stays until the person closes it or the pause ends. |
-| Resume all while the network adapter is absent | Resume all lifts the person's own pause, but the missing adapter still pauses every transfer, so the same notice says that transfers start when the adapter is available and offers Settings. |
+| Start or Force start while a global pause prevents transfers | The start takes effect, so the row changes from Stopped to All paused at once, and an informational toast says when the torrent starts: when all transfers resume, at the time the scheduled pause ends, or when the network adapter is available. It never says the start failed, because the person would press it again. Its action is Resume, which lifts the global pause; its tooltip says that a scheduled pause is lifted only until the next schedule change and stopped torrents stay stopped. An unavailable adapter offers Settings instead. Screen readers hear the toast instead of the routine announcement. The toast stays until the person closes it or the pause ends. |
+| Resume all while the network adapter is absent | Resume all lifts the person's own pause, but the missing adapter still pauses every transfer, so the same toast says that transfers start when the adapter is available and offers Settings. |
 | Refused setting or failed editor action | Persistent feedback beside the field or inside that editor, following [Committing edits](#committing-edits). |
 | Failed command without an editor, such as Stop or Open folder | An error toast that stays until the person closes it or the engine accepts a later command the person caused, separate from the message bar. Reads, such as the files a Move dialog shows or an Add preview, and messages the window sends on its own, such as its start and close handshake, do not close it. |
 | The engine did not start or stopped, or the download state could not be read or saved | The [message bar](#message-bar), with Restart for the engine and Open folder for the engine data folder. Recovery clears it. While the engine starts, the list shows its loading state and no message bar shows. |
@@ -1285,8 +1285,8 @@ message cannot be the only explanation of unfinished or failed work.
 | A subtitle that could not be downloaded or saved | One error toast, titled Subtitle not saved, naming the latest subtitle file and counting the others, with Settings. It stays until the person closes it. |
 | A language choice that could not be saved | The message bar as a warning, with Settings. |
 | The selected torrent has an error | The details pane shows the error in its summary and progress bar; the window adds no message for it. |
-| A finished download | A success notice for each download, titled Download finished, with the torrent name below it and Open folder, as the [notification policy](engine.md#notifications-and-sleep) defines a finished download. It closes by itself. |
-| A torrent stopped by an error, or a deletion that failed after removal | The error notice of a failed command; a stopped torrent also stays in the Errors count. With the window closed, the engine's [notification policy](engine.md#notifications-and-sleep) shows its native popup instead. |
+| A finished download | A success toast for each download, titled Download finished, with the torrent name below it and Open folder, as the [notification policy](engine.md#notifications-and-sleep) defines a finished download. It closes by itself. |
+| A torrent stopped by an error, or a deletion that failed after removal | The error toast of a failed command; a stopped torrent also stays in the Errors count. With the window closed, the engine's [notification policy](engine.md#notifications-and-sleep) shows its native popup instead. |
 | A decision requiring consent | The existing dialog for that operation. |
 
 **Owner ruling: a message bar or toast never repeats itself.** The person
@@ -1338,14 +1338,13 @@ title, the torrent it concerns, the reason or next step, at most one action at
 the bottom right, and Close at the top right.
 
 A finished download and a problem the engine reports also show More beside
-Close, because they come from the engine's notices and a Settings switch
-turns them off. As on the engine's popup, More shows only while the pointer is
-over that toast; it also shows while keyboard focus is inside the toast or its
+Close, because the engine sends them and a Settings switch turns them off.
+As on the engine's popup, More shows only while the pointer is over that toast; it also shows while keyboard focus is inside the toast or its
 menu is open. Hidden, it keeps its space, so the title does not reflow and Tab
 still reaches it. Its menu offers what the engine's popup menu offers: turn off
-this kind of notice, turn off all notifications, or open the notification
-settings. The engine names each notice's switch and turns the switches off,
-so both menus turn off the same notices. Each choice closes the toast. A
+this kind of toast, turn off all notifications, or open the notification
+settings. The engine names each toast's switch and turns the switches off,
+so both menus turn off the same toasts. Each choice closes the toast. A
 failure of the person's own command has no More, because no switch turns it
 off.
 
@@ -1377,8 +1376,8 @@ off.
   content. It never takes focus, and it hides while an editor has focus,
   because it must not cover what the person is typing.
   Timed toasts already displayed are retired when the stack hides, so later
-  notices do not replay them. Error and resume toasts survive the hide and
-  show again. New notices received while hidden wait to be shown.
+  toasts do not replay them. Error and resume toasts survive the hide and
+  show again. New toasts received while hidden wait to be shown.
 - **Owner ruling, 2026-10-11:** toasts show above an open dialog, so a result
   reported while the dialog is open, such as the supplier dialog's Check, is
   seen at once. The supplier dialog's Check result is a toast: Access checked
@@ -1424,7 +1423,7 @@ from Explorer that reach the window together. They go to the default folder with
 the default options, and the torrents they add are selected in the list, so the
 person sees that all of them arrived. A torrent already in the list is selected
 where it is and keeps its trackers, because offering a merge would be a
-question. A source that fails is reported in the window's error notice and
+question. A source that fails is reported in the window's error toast and
 dropped. File choices for each torrent are made later in the Files view. One
 drop of thirty torrents opens nothing, because a cascade of dialogs is the
 failure this protects against. Several files chosen through Add torrent file
@@ -1833,7 +1832,7 @@ option), deleting downloaded files, then exiting. Spacing separates the start
 page, Add options and confirmations while keeping related rows together. These
 controls restore suppressed dialogs without needing advanced options. Transfers
 keeps the defaults applied by Add rather than a second control for showing its
-dialog. The background-running notice is restored by its Notifications switch,
+dialog. The background-running toast is restored by its Notifications switch,
 so all notification preferences stay together.
 Advanced mode reveals deliberate tuning and diagnostics, not merely
 less-used features. Startup behavior, bringing Add to the front, queue position,

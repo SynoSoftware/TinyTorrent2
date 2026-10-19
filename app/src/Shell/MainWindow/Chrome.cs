@@ -583,8 +583,8 @@ public sealed partial class MainWindow
             dialog.RequestedTheme = Root.ActualTheme;
             dialog.FlowDirection = Root.FlowDirection;
         }
-        NoticeStack.RequestedTheme = Root.ActualTheme;
-        NoticeStack.FlowDirection = Root.FlowDirection;
+        ToastStack.RequestedTheme = Root.ActualTheme;
+        ToastStack.FlowDirection = Root.FlowDirection;
         WorkContent.RequestedTheme = Root.ActualTheme;
         WorkContent.FlowDirection = Root.FlowDirection;
     }

@@ -236,7 +236,7 @@ void Engine::State::On(lt::state_update_alert const& alert)
             auto error = problem ? problem->detail : std::string();
             if (problem && !error.empty() && error != torrent->notifiedError)
             {
-                Notify(NoticeKind::Error, *torrent, error, problem->Code());
+                Notify(ToastKind::Error, *torrent, error, problem->Code());
             }
             torrent->notifiedError = std::move(error);
         }

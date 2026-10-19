@@ -1,7 +1,7 @@
 #include "Desktop/Instance.h"
 #include "Registration.h"
 #include "Desktop/Window.h"
-#include "Desktop/Notices.h"
+#include "Desktop/Toasts.h"
 #include "Desktop/Popup.h"
 #include <algorithm>
 #include <chrono>
@@ -209,7 +209,7 @@ void Conflict::Ask()
         .tooltip = strings_.Text("conflict", "exit_tip"), .run = [this] { Exit(); }, .closes = false,
         .enabled = !request_.valid(), .automationId = L"Exit"};
     // Both answers leave the prompt open until the other engine has ended.
-    auto force = Notices::ForceExit(strings_, [this] { Force(); });
+    auto force = Toasts::ForceExit(strings_, [this] { Force(); });
     force.closes = false;
     popup_.Ask({.title = strings_.Text("conflict", "title"), .body = strings_.Text("conflict", reason),
         .location = Popup::Location{strings_.Text("conflict", "location"), *other_.engine},
@@ -320,7 +320,7 @@ Forwarded Forward(std::wstring const& sid, Arguments const& arguments)
     // sources.
     if (open.sample)
     {
-        return Pipe::Forward(sid, {{"command", "sample_notice"}});
+        return Pipe::Forward(sid, {{"command", "sample_toast"}});
     }
 #endif
     if (!open.background && !arguments.headless)
@@ -399,7 +399,7 @@ Arguments Arguments::Read(wchar_t const* line)
             }
         }
 #ifdef _DEBUG
-        else if (!literal && word == option::notice)
+        else if (!literal && word == option::toast)
         {
             sample = true;
             background = true;

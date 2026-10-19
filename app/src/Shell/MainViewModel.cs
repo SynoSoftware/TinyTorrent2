@@ -52,7 +52,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     private bool _ready;
     private bool _shuttingDown;
     private bool _closed;
-    private bool _closing;
     private bool _picking;
     private bool _dark;
     private bool _toolbarOpen = true;
@@ -114,7 +113,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool IsLoading => _loading || !_connected;
     public bool IsStorageFailed => _storageFailed;
     public bool IsEmptyVisible => !_storageFailed;
-    public bool IsClosing => _closing;
     internal bool IsClosed => _closed;
     public bool CanClose =>
         !_changingLanguage
@@ -131,7 +129,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool HasDraft => AddDraft.HasDraft || Inspector.HasDraft || FileDraft.HasDraft;
     internal bool CanSave =>
         _connected && !_loading && !_storageFailed && !_shuttingDown && !_picking;
-    public bool CanEdit => CanSave && !_closing;
+    public bool CanEdit => CanSave && !IsClosing;
     public bool IsPicking
     {
         get => _picking;
@@ -332,7 +330,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         Features.Changed += OnFeaturesChanged;
         Work.Completed += (_, result) =>
         {
-            if (!_closing && !Features.IsClosed)
+            if (!IsClosing && !Features.IsClosed)
                 Notifications.ShowWorkResult(result);
         };
         Settings = new Editor(this, _client);
@@ -657,7 +655,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             if (reply is { Succeeded: true, Requester: Requester.Person })
                 _dispatcher.TryEnqueue(Notifications.ClearError);
         };
-        _client.Notice += notice => _dispatcher.TryEnqueue(() => Notifications.Receive(notice));
+        _client.Toast += toast => _dispatcher.TryEnqueue(() => Notifications.Receive(toast));
         // Every card the engine opens is on the General page.
         _client.SettingsRequested += setting =>
             _dispatcher.TryEnqueue(() =>
@@ -700,7 +698,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         PropertyChanged += (_, _) =>
         {
             if (!_applyingSnapshot)
-                SyncNotices();
+                SyncMessages();
         };
     }
 
@@ -722,7 +720,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         try
         {
             ApplySnapshot(snapshot);
-            SyncNotices();
+            SyncMessages();
         }
         finally
         {
@@ -1061,11 +1059,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         var torrentIds = torrents.Select(row => row.TorrentId).ToArray();
         try
         {
-            await _client.Send(command, new { torrent_ids = torrentIds });
+            await _client.Send(command, new { torrent_ids = torrentIds }, Requester.Person);
             _waiting = command is "resume" or "force" && IsSessionPaused ? torrents : null;
-            Changed(nameof(HasResumeNotice));
-            if (HasResumeNotice)
-                Notifications.Announce(ResumeNotice);
+            Changed(nameof(HasResumeToast));
+            if (HasResumeToast)
+                Notifications.Announce(ResumeMessage);
             else
                 Notifications.AnnounceAccepted("commands", command);
         }
@@ -1081,7 +1079,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             return;
         try
         {
-            await _client.Send("exit");
+            await _client.Send("exit", null, Requester.Person);
         }
         catch (Exception error)
         {

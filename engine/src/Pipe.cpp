@@ -15,9 +15,9 @@ constexpr DWORD instances = 8;
 constexpr DWORD bufferSize = 64 * 1024;
 // PipeClient admits at most 32 commands plus 32 reads; this bound must cover both.
 constexpr std::size_t requestLimit = 64;
-// One engine turn can forward every notice while a reply is being written.
+// One engine turn can forward every toast while a reply is being written.
 // Leave room for outstanding replies and control messages, then disconnect a slow client.
-constexpr std::size_t outputLimit = Notice::limit + requestLimit + 8;
+constexpr std::size_t outputLimit = Toast::limit + requestLimit + 8;
 
 // The fields that the refusal of an oversized message keeps from it, so the
 // client can tell which message was refused.

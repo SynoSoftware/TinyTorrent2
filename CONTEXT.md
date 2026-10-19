@@ -398,14 +398,16 @@ history range, independent of whether the product window is open.
 **Splash window**: the temporary window shown while the product interface opens.
 
 **Popup**: the acrylic surface the engine draws itself near the notification
-area to show a notice or a prompt. **Owner ruling:** the engine's notices and
+area to show a toast or a prompt. **Owner ruling:** the engine's toasts and
 prompts use the popup; a Windows dialog, such as a task dialog or message box,
 never replaces it.
-_Avoid_: toast, balloon, task dialog.
+_Avoid_: balloon, task dialog.
 
-**Notice**: a popup that tells the person something, such as a finished
-download or a failure, without taking focus.
-_Avoid_: toast; notification, when naming the popup rather than its setting.
+**Toast**: a short message that tells the person something, such as a finished
+download or a failure, without taking focus. A toast is the same thing to the
+person whether the product window or the engine's popup shows it. Text the
+person reads calls toasts notifications, as in the Notifications settings.
+_Avoid_: balloon.
 
 **Prompt**: a popup that asks the person to choose before the engine continues,
 such as whether to exit another TinyTorrent. It takes focus.

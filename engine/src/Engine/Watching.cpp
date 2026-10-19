@@ -60,7 +60,7 @@ void Engine::State::WatchFolder()
         if (outcome.failure || found->size() > torrentLimit)
         {
             if (!watchFailed)
-                Notify(NoticeKind::AddFailed, folder, outcome.detail, {},
+                Notify(ToastKind::AddFailed, folder, outcome.detail, {},
                     outcome.failure ? "" : "watch_limit");
             watchFailed = true;
             return;
@@ -89,7 +89,7 @@ void Engine::State::WatchFolder()
                     if (outcome.error)
                     {
                         if (!watchSaveFailed)
-                            Notify(NoticeKind::AddFailed, folder, outcome.detail, {}, ToString(*outcome.error));
+                            Notify(ToastKind::AddFailed, folder, outcome.detail, {}, ToString(*outcome.error));
                         watchSaveFailed = true;
                         return;
                     }
@@ -126,7 +126,7 @@ void Engine::State::WatchFolder()
                         if (*outcome.error != ErrorCode::Overloaded &&
                             !file->second.reported)
                         {
-                            Notify(NoticeKind::AddFailed, source, outcome.detail, {}, ToString(*outcome.error));
+                            Notify(ToastKind::AddFailed, source, outcome.detail, {}, ToString(*outcome.error));
                             file->second.reported = true;
                         }
                     }
@@ -134,7 +134,7 @@ void Engine::State::WatchFolder()
                 }
                 if (auto found = torrents.find(added.torrentId);
                     added.kind == AdditionKind::New && found != torrents.end() && !found->second.deleted)
-                    Notify(NoticeKind::Added, found->second);
+                    Notify(ToastKind::Added, found->second);
             }, stamp);
             break;
         }

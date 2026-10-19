@@ -44,7 +44,7 @@ void Engine::State::StartFinalSave()
 
 // Records that the current final save failed; it does nothing before
 // shutdown. A failure without a cause keeps a cause already recorded, so the
-// notice still names the file and Windows' reason.
+// toast still names the file and Windows' reason.
 void Engine::State::FailFinalSave(std::optional<std::string> cause)
 {
     if (!IsShuttingDown())

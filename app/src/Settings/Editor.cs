@@ -1014,7 +1014,7 @@ public sealed partial class Editor : INotifyPropertyChanged
 
     internal async Task<long> Save(object changes)
     {
-        var reply = await _client.Send("settings", new { changes });
+        var reply = await _client.Send("settings", new { changes }, Requester.Person);
         var confirmation = JsonSerializer.SerializeToElement(changes);
         var changed = false;
         foreach (var setting in All)
@@ -1027,12 +1027,14 @@ public sealed partial class Editor : INotifyPropertyChanged
 
     // The engine publishes a snapshot with the defaults, so no setting is
     // confirmed here.
-    internal Task ResetAll() => _client.Send("reset_settings");
+    internal Task ResetAll() => _client.Send("reset_settings", null, Requester.Person);
 
+    // The window shows the language before it saves, so a language that the
+    // engine cannot save is reported instead of skipped like a disabled field.
     internal async Task SaveLanguage(string language)
     {
         Language.Input = language;
-        await Language.Commit();
+        await Language.Submit(language);
         if (Language.Failure is { } error)
             throw error;
     }

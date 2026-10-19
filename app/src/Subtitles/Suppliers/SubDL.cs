@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Syno.TinyTorrent.Shared.Network;
@@ -34,14 +35,13 @@ internal sealed partial class SubDL : ISupplier
         using var document = Parse(reply.Bytes);
     }
 
-    public async Task<SubtitleSearch> Search(
+    public async IAsyncEnumerable<SubtitleSearch> Search(
         SubtitleQuery query,
         SupplierClient client,
-        CancellationToken cancellation
+        [EnumeratorCancellation] CancellationToken cancellation
     )
     {
-        var candidates = new List<SubtitleCandidate>();
-        var total = 0;
+        Listing? title = null;
         var codes = query.Code.Split(',');
         var address =
             "/api/v2/files/search?engine=local&episode_scope=exact&unpack=1&subs_per_page=30&filename="
@@ -61,33 +61,48 @@ internal sealed partial class SubDL : ISupplier
             if (!root.TryGetProperty("match", out var match))
                 throw new SubtitleException(SubtitleFailure.Format);
             if (match.ValueKind == JsonValueKind.Null)
-                return page == 1
-                    ? new(candidates, true)
-                    : throw new SubtitleException(SubtitleFailure.Format);
+            {
+                if (page > 1)
+                    throw new SubtitleException(SubtitleFailure.Format);
+                yield return new([], true);
+                yield break;
+            }
             // SubDL matches the file name to one title and answers every page
-            // for it. When the first page's title is not the file's, nothing
-            // is; when a later page's is not, the answer contradicts itself.
+            // for it. A first page without a readable title names none; a
+            // later page that names another title contradicts the first.
             var type = Text(match, "type");
             var series = type == "tv";
             int? season = series ? (int?)Number(match, "season") : null;
             int? episode = series ? (int?)Number(match, "episode") : null;
             if (
                 type is not ("movie" or "tv")
-                || Text(match, "title") is not { } title
+                || Text(match, "title") is not { } reported
                 || series && season is null
-                || !Matches(
-                    query.Release,
-                    new(series ? VideoKind.Series : VideoKind.Movie, [title])
-                    {
-                        Year = (int?)Number(match, "year"),
-                        Season = season,
-                        Episode = episode,
-                    }
+            )
+            {
+                if (page > 1)
+                    throw new SubtitleException(SubtitleFailure.Format);
+                yield return new([]);
+                yield break;
+            }
+            var listing = new Listing(series ? VideoKind.Series : VideoKind.Movie, [reported])
+            {
+                Year = (int?)Number(match, "year"),
+                Season = season,
+                Episode = episode,
+            };
+            if (
+                title is not null
+                && (
+                    title.Kind != listing.Kind
+                    || title.Titles[0] != reported
+                    || title.Year != listing.Year
+                    || title.Season != season
+                    || title.Episode != episode
                 )
             )
-                return page == 1
-                    ? new(candidates)
-                    : throw new SubtitleException(SubtitleFailure.Format);
+                throw new SubtitleException(SubtitleFailure.Format);
+            title ??= listing;
             if (
                 !root.TryGetProperty("subtitles", out var subtitles)
                 || subtitles.ValueKind != JsonValueKind.Array
@@ -96,9 +111,9 @@ internal sealed partial class SubDL : ISupplier
                 || pages < 0
             )
                 throw new SubtitleException(SubtitleFailure.Format);
+            var candidates = new List<SubtitleCandidate>();
             foreach (var subtitle in subtitles.EnumerateArray())
             {
-                total++;
                 if (
                     Text(subtitle, "language") is not { } code
                     || !codes.Contains(code, StringComparer.OrdinalIgnoreCase)
@@ -140,12 +155,14 @@ internal sealed partial class SubDL : ISupplier
                             Season = season,
                             Episode = episode,
                             Forced = IsForced(subtitle) || IsForced(file),
+                            Title = title,
                         }
                     );
                 }
             }
+            yield return new(candidates, subtitles.GetArrayLength() == 0);
             if (page >= pages)
-                return new(candidates, total == 0);
+                yield break;
         }
     }
 

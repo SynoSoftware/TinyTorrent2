@@ -37,7 +37,7 @@ public sealed partial class MainWindow
         AppWindow.Resize(new SizeInt32((int)(1920 * resizeScale), (int)(680 * resizeScale)));
         await CaptureFill(outcomes);
         AppWindow.Resize(new SizeInt32((int)(1040 * resizeScale), (int)(680 * resizeScale)));
-        await CaptureNoticeReplay(outcomes);
+        await CaptureToastReplay(outcomes);
         await CaptureLookupLimit(outcomes);
         await CaptureProviderChoice(outcomes, completed);
         await CaptureHeaderLanguage(outcomes);
@@ -592,76 +592,76 @@ public sealed partial class MainWindow
         outcomes.Add(new { journey = "header follows a language change", updated = true });
     }
 
-    private async Task CaptureNoticeReplay(List<object> outcomes)
+    private async Task CaptureToastReplay(List<object> outcomes)
     {
         await ShowSettings(new(SettingsCategory.Plugins));
         var page = _settingsPage ?? throw new InvalidOperationException("Settings did not open.");
         if (!BackButton.Focus(FocusState.Programmatic))
             throw new InvalidOperationException(
-                "The notice review could not focus the window Back button."
+                "The toast review could not focus the window Back button."
             );
         await CaptureLayout();
-        var notices = Model.Notifications.Notices;
+        var toasts = Model.Notifications.Toasts;
         var editor = (TextBox)page.FindName("LookupLimit");
         Model.Notifications.Report(new IOException("Proxy connection review"));
         await CaptureLayout();
-        var error = notices.Single(notice => notice.Kind == NoticeKind.CommandError);
-        if (NoticeStack.Visibility != Visibility.Visible)
+        var error = toasts.OfType<Toast.CommandError>().Single();
+        if (ToastStack.Visibility != Visibility.Visible)
             throw new InvalidOperationException(
-                "The proxy-error review did not display its notice."
+                "The proxy-error review did not display its toast."
             );
         if (!editor.Focus(FocusState.Programmatic))
             throw new InvalidOperationException(
-                "The notice review could not focus the search-limit editor."
+                "The toast review could not focus the search-limit editor."
             );
         await CaptureLayout();
-        if (NoticeStack.Visibility == Visibility.Visible || !notices.Contains(error))
+        if (ToastStack.Visibility == Visibility.Visible || !toasts.Contains(error))
             throw new InvalidOperationException(
                 "A displayed proxy error did not survive hiding for editor focus."
             );
         Model.Notifications.ShowOutcome("subtitles", "connected", string.Empty);
-        var unseen = notices.Last();
+        var unseen = toasts.Last();
         await CaptureLayout();
-        if (!notices.Contains(unseen))
+        if (!toasts.Contains(unseen))
             throw new InvalidOperationException(
-                "A notice received while editing did not wait unseen."
+                "A toast received while editing did not wait unseen."
             );
         if (!BackButton.Focus(FocusState.Programmatic))
             throw new InvalidOperationException(
-                "The notice review could not leave the search-limit editor."
+                "The toast review could not leave the search-limit editor."
             );
         await CaptureLayout();
         if (
-            NoticeStack.Visibility != Visibility.Visible
-            || !notices.Contains(error)
-            || !notices.Contains(unseen)
+            ToastStack.Visibility != Visibility.Visible
+            || !toasts.Contains(error)
+            || !toasts.Contains(unseen)
         )
             throw new InvalidOperationException(
-                $"Notice reveal failed: errorRetained={notices.Contains(error)}, "
-                    + $"unseenRetained={notices.Contains(unseen)}, "
+                $"Toast reveal failed: errorRetained={toasts.Contains(error)}, "
+                    + $"unseenRetained={toasts.Contains(unseen)}, "
                     + $"editorFocused={HasEditorFocus()}, focusedElement={(FocusManager.GetFocusedElement(Root.XamlRoot) as FrameworkElement)?.Name}, "
-                    + $"stackVisibility={NoticeStack.Visibility}, popupOpen={NoticeLayer.IsOpen}."
+                    + $"stackVisibility={ToastStack.Visibility}, popupOpen={ToastLayer.IsOpen}."
             );
         if (!editor.Focus(FocusState.Programmatic))
             throw new InvalidOperationException(
-                "The notice review could not focus the search-limit editor again."
+                "The toast review could not focus the search-limit editor again."
             );
         await CaptureLayout();
-        if (notices.Contains(unseen) || !notices.Contains(error))
+        if (toasts.Contains(unseen) || !toasts.Contains(error))
             throw new InvalidOperationException(
-                $"Hiding the stack again kept the shown outcome ({notices.Contains(unseen)}) "
-                    + $"or retired the error ({!notices.Contains(error)})."
+                $"Hiding the stack again kept the shown outcome ({toasts.Contains(unseen)}) "
+                    + $"or retired the error ({!toasts.Contains(error)})."
             );
         Model.Notifications.ClearError();
         if (!BackButton.Focus(FocusState.Programmatic))
             throw new InvalidOperationException(
-                "The notice review could not leave the search-limit editor."
+                "The toast review could not leave the search-limit editor."
             );
         await CaptureLayout();
         outcomes.Add(
             new
             {
-                journey = "shown error survives a hide; unseen notice waits; seen timed one retires",
+                journey = "shown error survives a hide; unseen toast waits; seen timed one retires",
                 retained = true,
             }
         );

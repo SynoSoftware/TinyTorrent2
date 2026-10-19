@@ -206,7 +206,7 @@ internal sealed partial class ProviderHttp : IDisposable
         catch (Exception error)
             when (call is not null && error is not ReplyException && IsRoute(error))
         {
-            throw new ReplyException(ReplyFailure.Route, null, error);
+            throw new ReplyException.Route(error);
         }
     }
 

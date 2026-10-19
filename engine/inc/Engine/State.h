@@ -255,7 +255,7 @@ public:
         static char const* Name(LimitMode mode);
         static std::optional<LimitMode> Named(Json const& value);
         // The setting that holds each notification switch.
-        static auto Switch(NoticeSwitch notice) -> bool Settings::*;
+        static auto Switch(ToastSwitch toast) -> bool Settings::*;
     private:
         // Visits each setting that settings.json, the settings reply and the
         // settings command share, with its key and the values it accepts.
@@ -477,7 +477,7 @@ public:
     std::string language;
     std::map<std::string, Torrent> torrents;
     std::map<lt::torrent_handle, Torrent*> handles;
-    std::vector<Notice> notices;
+    std::vector<Toast> toasts;
     std::map<std::string, Preview> previews;
     std::map<std::string, Addition> additions;
     std::vector<std::shared_ptr<Preview>> parsing;
@@ -645,8 +645,8 @@ public:
     Torrent* Find(lt::torrent_handle const& handle);
     Torrent& Install(std::string const& id, lt::torrent_handle handle, Facts facts,
         lt::add_torrent_params const& params);
-    void Notify(NoticeKind kind, Torrent const& torrent, std::string detail = {}, std::string code = {});
-    void Notify(NoticeKind kind, std::string name, std::string detail, std::string torrentId = {},
+    void Notify(ToastKind kind, Torrent const& torrent, std::string detail = {}, std::string code = {});
+    void Notify(ToastKind kind, std::string name, std::string detail, std::string torrentId = {},
         std::string code = {}, std::string folder = {});
     tt::Activity Activity() const;
     Json Snapshot();
@@ -678,9 +678,9 @@ public:
     void Configure(Json const& choices, std::function<void(Outcome)> completion);
     // Saves every setting at its default, as a new installation starts.
     void ResetSettings(std::function<void(Outcome)> completion);
-    // Saves each switch in `notices` as off, for the popup's and the window's
+    // Saves each switch in `toasts` as off, for the popup's and the window's
     // More menus alike.
-    void TurnOff(std::vector<NoticeSwitch> const& notices, std::function<void(Outcome)> completion);
+    void TurnOff(std::vector<ToastSwitch> const& toasts, std::function<void(Outcome)> completion);
     // Saves `next` as the settings and applies it; `settled` runs once it
     // applies, before the snapshot is published.
     void SaveSettings(Settings next, std::function<void()> settled, std::function<void(Outcome)> completion);

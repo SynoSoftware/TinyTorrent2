@@ -296,7 +296,7 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
             {
                 await Get(now).ConfigureAwait(false);
             }
-            catch (ReplyException error) when (error.Failure == ReplyFailure.Missing)
+            catch (ReplyException.Missing)
             {
                 await Get(now.AddMonths(-1)).ConfigureAwait(false);
             }

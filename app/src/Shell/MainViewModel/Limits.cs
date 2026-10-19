@@ -221,7 +221,7 @@ public sealed partial class MainViewModel
         // The week draws a fixed choice in place of its periods.
         if (FixedLimits != fixedLimits)
             Settings.Schedule.Refresh();
-        // The notice after Resume all explains only a missing adapter's pause.
+        // The toast after Resume all explains only a missing adapter's pause.
         if (_pause == PauseReason.None || _waiting is [] && MissingAdapter.Length == 0)
             _waiting = null;
         AnnounceRestriction();

@@ -8,7 +8,7 @@
 namespace tt::desktop
 {
 // The translucent surface of the engine's own windows, the splash and the
-// notice popup: a blur behind a tint of the theme's background, or a solid
+// popup: a blur behind a tint of the theme's background, or a solid
 // background when high contrast or Windows' transparency setting rules the
 // blur out.
 class Acrylic

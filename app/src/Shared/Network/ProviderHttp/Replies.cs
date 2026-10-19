@@ -21,13 +21,13 @@ internal sealed partial class ProviderHttp
         )
         {
             var hold = await Hold(call, ReplyFailure.Wait, reply.RetryAt).ConfigureAwait(false);
-            wait = wait?.RetryAt > hold?.RetryAt ? wait : hold;
+            wait = wait?.RetryAt > hold.RetryAt ? wait : hold;
         }
         var status = (int)reply.Status;
         if (status is >= 200 and < 300 || call.CanRedirect && status is >= 300 and < 400)
             return;
         if (wait is not null)
-            throw new ReplyException(ReplyFailure.Wait, wait);
+            throw new ReplyException.Held(ReplyFailure.Wait, wait);
         // A request without an authentication scope sends no credentials to
         // refuse, so a refused file link backs off like any other failure.
         if (
@@ -35,10 +35,10 @@ internal sealed partial class ProviderHttp
             && call.Request.Authentication is not null
         )
             throw call.Renewable
-                ? new ReplyException(ReplyFailure.Expired, null)
+                ? new ReplyException.Expired()
                 : await Fail(call, ReplyFailure.Refused).ConfigureAwait(false);
         if (call.NamesResource && reply.Status is HttpStatusCode.NotFound or HttpStatusCode.Gone)
-            throw new ReplyException(ReplyFailure.Missing, null);
+            throw new ReplyException.Missing();
         throw await Fail(call, ReplyFailure.Unavailable, reply.RetryAt).ConfigureAwait(false);
     }
 
@@ -49,7 +49,7 @@ internal sealed partial class ProviderHttp
     /// parse or an error that the provider writes there.
     /// </summary>
     /// <param name="until">When the provider asks for the next request, if it says.</param>
-    internal static async Task<ReplyException> Fail(
+    internal static async Task<ReplyException.Held> Fail(
         ProviderCall call,
         ReplyFailure failure,
         DateTimeOffset? until = null,
@@ -59,7 +59,7 @@ internal sealed partial class ProviderHttp
     // A refusal waits for the person to fix access, and a remote wait for the
     // provider; both hold every operation of the access. Any other failure
     // backs off only the operation that failed.
-    private static async Task<RequestBlock?> Hold(
+    private static async Task<RequestBlock> Hold(
         ProviderCall call,
         ReplyFailure failure,
         DateTimeOffset? until
@@ -78,7 +78,7 @@ internal sealed partial class ProviderHttp
             ReplyFailure.Unavailable or ReplyFailure.Invalid => await call
                 .Policy.Fail(request.Access, new(RequestBlockKind.Backoff, until))
                 .ConfigureAwait(false),
-            _ => null,
+            _ => throw new ArgumentOutOfRangeException(nameof(failure)),
         };
     }
 }
@@ -90,12 +90,31 @@ internal sealed partial class ProviderHttp
 internal sealed record Quota(ProviderAccess Scope, DateTimeOffset? Until);
 
 /// <summary>
-/// A provider call that did not succeed, and the hold that the shared path
-/// recorded for it. Missing, Expired and Route hold nothing.
+/// A provider call that did not succeed. Only a <see cref="Held"/> failure
+/// holds the provider; the others hold nothing.
 /// </summary>
-internal sealed class ReplyException(ReplyFailure failure, RequestBlock? hold, Exception? inner = null)
-    : Exception(failure.ToString(), inner)
+internal abstract class ReplyException : Exception
 {
-    internal ReplyFailure Failure { get; } = failure;
-    internal RequestBlock? Hold { get; } = hold;
+    private ReplyException(string message, Exception? inner)
+        : base(message, inner) { }
+
+    /// <summary>
+    /// A failure and the hold that <see cref="ProviderHttp"/> recorded for it.
+    /// Only ProviderHttp builds one, so every Held failure was recorded.
+    /// </summary>
+    internal sealed class Held(ReplyFailure failure, RequestBlock hold, Exception? inner = null)
+        : ReplyException(failure.ToString(), inner)
+    {
+        internal ReplyFailure Failure { get; } = failure;
+        internal RequestBlock Hold { get; } = hold;
+    }
+
+    /// <summary>The call names one resource, and the provider has no such resource.</summary>
+    internal sealed class Missing() : ReplyException(nameof(Missing), null);
+
+    /// <summary>The provider refused a session that the caller renews.</summary>
+    internal sealed class Expired() : ReplyException(nameof(Expired), null);
+
+    /// <summary>A proxy or adapter cannot carry the call.</summary>
+    internal sealed class Route(Exception inner) : ReplyException(nameof(Route), inner);
 }

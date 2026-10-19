@@ -271,17 +271,17 @@ std::optional<LimitMode> Engine::State::Settings::Named(Json const& value)
     return std::nullopt;
 }
 
-auto Engine::State::Settings::Switch(NoticeSwitch notice) -> bool Settings::*
+auto Engine::State::Settings::Switch(ToastSwitch toast) -> bool Settings::*
 {
-    switch (notice)
+    switch (toast)
     {
-    case NoticeSwitch::Finished:
+    case ToastSwitch::Finished:
         return &Settings::notificationsEnabled;
-    case NoticeSwitch::Added:
+    case ToastSwitch::Added:
         return &Settings::notifiesAdded;
-    case NoticeSwitch::Problems:
+    case ToastSwitch::Problems:
         return &Settings::notifiesProblems;
-    case NoticeSwitch::Background:
+    case ToastSwitch::Background:
         break;
     }
     return &Settings::notifiesBackground;
@@ -659,14 +659,14 @@ void Engine::State::Configure(Json const& choices, std::function<void(Outcome)> 
     }
 }
 
-void Engine::State::TurnOff(std::vector<NoticeSwitch> const& notices, std::function<void(Outcome)> completion)
+void Engine::State::TurnOff(std::vector<ToastSwitch> const& toasts, std::function<void(Outcome)> completion)
 {
-    if (!changes.Queue([this, notices, completion]
+    if (!changes.Queue([this, toasts, completion]
     {
         auto next = settings;
-        for (auto notice : notices)
+        for (auto toast : toasts)
         {
-            next.*Settings::Switch(notice) = false;
+            next.*Settings::Switch(toast) = false;
         }
         SaveSettings(std::move(next), [] {}, completion);
     }))

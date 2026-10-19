@@ -101,7 +101,7 @@ public sealed partial class MainWindow
             refreshText();
         }
         dialog.XamlRoot = Root.XamlRoot;
-        dialog.Opened += (_, _) => RaiseNotices();
+        dialog.Opened += (_, _) => RaiseToasts();
         interaction.Dialog = dialog;
         interaction.RefreshText = ShowText;
         try
@@ -146,13 +146,16 @@ public sealed partial class MainWindow
         try
         {
             await ShowDialog(interaction, dialog, refreshText);
-            if (interaction.IsSuspended && draft.ClosePolicy is not ClosePolicy.Discard)
+            if (interaction.IsSuspended)
             {
                 // CloseWindow resolves the draft after the dialog has closed.
-                // An unchanged draft stays unresolved, so a failed close
-                // reopens its dialog.
+                // An unchanged draft stays unresolved, and so does a Discard
+                // draft, which only the window's closing drops. A failed close
+                // then reopens the dialog with the person's input.
                 interaction.ResolveDraft = async () =>
-                    !draft.HasDraft || (interaction.IsResolved = await ResolveDraft(draft));
+                    !draft.HasDraft
+                    || draft.ClosePolicy is ClosePolicy.Discard
+                    || (interaction.IsResolved = await ResolveDraft(draft));
             }
             else
             {

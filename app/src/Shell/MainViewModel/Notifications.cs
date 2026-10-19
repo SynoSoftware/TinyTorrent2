@@ -11,7 +11,7 @@ namespace Syno.TinyTorrent.Shell;
 public sealed partial class MainViewModel
 {
     // The torrents the person resumed, which start once every transfer may
-    // run, or none after Resume all; null when no such notice shows.
+    // run, or none after Resume all; null when no such toast shows.
     private Torrent[]? _waiting;
 
     // A lasting problem and the action that resolves it, which Fluent 2
@@ -27,7 +27,10 @@ public sealed partial class MainViewModel
         string ActionGlyph,
         string ActionTip,
         bool OffersDataFolder = false
-    );
+    )
+    {
+        internal bool HasAction => Action is not null;
+    }
 
     // The status the person closed. Fluent 2 brings a closed message bar
     // back while its problem lasts, so it returns when the problem changes
@@ -38,12 +41,12 @@ public sealed partial class MainViewModel
     // The events the window reports as toasts.
     public Notifications Notifications { get; }
 
-    // The message bar's content; ShowsStatus says whether it shows.
-    public Notice AppStatus { get; } = new(NoticeKind.Status);
+    // The message bar's content, the latest status; ShowsStatus says whether
+    // it shows.
+    internal Status? AppStatus { get; private set; }
     public bool ShowsStatus => _showsStatus;
-    public bool StatusOffersDataFolder { get; private set; }
-    public bool HasResumeNotice => _waiting is not null && IsSessionPaused;
-    public string ResumeNotice => _waiting is null ? string.Empty : Waiting(_waiting);
+    public bool HasResumeToast => _waiting is not null && IsSessionPaused;
+    public string ResumeMessage => _waiting is null ? string.Empty : Waiting(_waiting);
     public ICommand ResolvePause { get; }
     public string PauseAction =>
         _pause == PauseReason.Adapter
@@ -65,7 +68,7 @@ public sealed partial class MainViewModel
     public void DismissResume()
     {
         _waiting = null;
-        Changed(nameof(HasResumeNotice));
+        Changed(nameof(HasResumeToast));
     }
 
     // Says when the resumed torrents start, so the person knows the resume took
@@ -87,7 +90,7 @@ public sealed partial class MainViewModel
         return Text.FormatCount("notifications", key, torrents.Length, torrents[0].Name, detail);
     }
 
-    private void SyncNotices()
+    private void SyncMessages()
     {
         if (_closed)
             return;
@@ -95,26 +98,16 @@ public sealed partial class MainViewModel
         Notifications.Sync();
     }
 
-    // Raising ShowsStatus runs this sync again, which then finds nothing new.
+    // Raising AppStatus or ShowsStatus runs this sync again, which then finds
+    // nothing new.
     private void SyncStatus()
     {
         var status = CurrentStatus;
-        if (status is not null)
+        if (status is not null && status != AppStatus)
         {
-            AppStatus.Title = status.Title;
-            AppStatus.Message = status.Body;
-            AppStatus.Severity = status.Severity;
-            AppStatus.Action = status.Action;
-            AppStatus.ActionText = status.ActionText;
-            AppStatus.ActionGlyph = status.ActionGlyph;
-            AppStatus.ActionTip = status.ActionTip;
-            if (StatusOffersDataFolder != status.OffersDataFolder)
-            {
-                StatusOffersDataFolder = status.OffersDataFolder;
-                Changed(nameof(StatusOffersDataFolder));
-            }
+            AppStatus = status;
+            Changed(nameof(AppStatus));
         }
-        AppStatus.CloseText = Text.Get("commands", "close");
         var shows = status is not null && status != _dismissedStatus;
         if (shows == _showsStatus)
             return;
@@ -205,19 +198,19 @@ public sealed partial class MainViewModel
     // A toast's More menu offers what the engine's popup menu offers, and the
     // engine turns the switches off for both. Each choice closes the toast,
     // because the person has decided about it.
-    internal Task TurnOffNotices(Notice notice) =>
-        notice.Switch is { } notices ? TurnOff(notice, notices) : Task.CompletedTask;
+    internal Task TurnOffToasts(Toast toast) =>
+        toast.Switch is { } @switch ? TurnOff(toast, @switch) : Task.CompletedTask;
 
-    internal Task TurnOffAllNotices(Notice notice) => TurnOff(notice, "all");
+    internal Task TurnOffAllToasts(Toast toast) => TurnOff(toast, "all");
 
-    private async Task TurnOff(Notice notice, string notices)
+    private async Task TurnOff(Toast toast, string @switch)
     {
         if (!CanEdit)
             return;
-        Notifications.Dismiss(notice);
+        Notifications.Dismiss(toast);
         try
         {
-            await _client.Send("turn_off", new { @switch = notices });
+            await _client.Send("turn_off", new { @switch }, Requester.Person);
         }
         catch (Exception error)
         {
@@ -225,9 +218,9 @@ public sealed partial class MainViewModel
         }
     }
 
-    internal Task ShowNotificationSettings(Notice notice)
+    internal Task ShowNotificationSettings(Toast toast)
     {
-        Notifications.Dismiss(notice);
+        Notifications.Dismiss(toast);
         return RequestSettings(new(SettingsCategory.General, "notifications"));
     }
 }

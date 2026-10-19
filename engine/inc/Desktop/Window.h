@@ -2,7 +2,7 @@
 #include "Owned.h"
 #include "Pipe.h"
 #include "Strings.h"
-#include "Desktop/Notices.h"
+#include "Desktop/Toasts.h"
 #include "Desktop/Splash.h"
 #include <deque>
 #include <optional>
@@ -41,8 +41,8 @@ public:
         std::function<void(ExitAnswer answer)> answer;
     };
 
-    // The caller keeps `strings`, `engine` and `notices` alive.
-    Window(Strings const& strings, Engine& engine, Notices& notices, bool headless, Commands commands);
+    // The caller keeps `strings`, `engine` and `toasts` alive.
+    Window(Strings const& strings, Engine& engine, Toasts& toasts, bool headless, Commands commands);
     Window(Window const&) = delete;
     Window& operator=(Window const&) = delete;
 
@@ -67,8 +67,8 @@ public:
     void Offer(Activation activation);
     // How many sources wait for the window's Add dialog.
     std::size_t Offered() const;
-    // Shows a notice in the connected window; false without one.
-    bool Notify(Notice const& notice);
+    // Shows a toast in the connected window; false without one.
+    bool Notify(Toast const& toast);
     bool Owns(std::shared_ptr<Pipe::Connection> const& client) const { return client == client_; }
     void OnReady(std::shared_ptr<Pipe::Connection> const& client, Reply const& reply);
     void OnClosed(Reply const& reply);
@@ -101,10 +101,10 @@ private:
     void Forget();
     void ShowSplash();
     void ShowSettings();
-    void ShowStartError(Notices::Failure failure);
+    void ShowStartError(Toasts::Failure failure);
     Strings const& strings_;
     Engine& engine_;
-    Notices& notices_;
+    Toasts& toasts_;
     bool headless_;
     Commands commands_;
     std::optional<Wait> wait_;

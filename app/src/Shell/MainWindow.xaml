@@ -773,14 +773,14 @@
           IsClosable="True"
           CloseButtonClick="OnDismissStatus"
           Title="{x:Bind Model.AppStatus.Title, Mode=OneWay}"
-          Message="{x:Bind Model.AppStatus.Message, Mode=OneWay}"
+          Message="{x:Bind Model.AppStatus.Body, Mode=OneWay}"
           Severity="{x:Bind Model.AppStatus.Severity, Mode=OneWay}"
           IsOpen="{x:Bind Model.ShowsStatus, Mode=OneWay}"
         >
           <controls:ActionButton
             Margin="0,0,8,0"
             Command="{x:Bind Model.OpenDataFolder}"
-            Visibility="{x:Bind Model.StatusOffersDataFolder, Mode=OneWay}"
+            Visibility="{x:Bind Model.AppStatus.OffersDataFolder, Mode=OneWay}"
             Glyph="{x:Bind icons:Lucide.FolderOpen}"
             Text="{x:Bind Model.Text.Get('commands', 'open_folder'), Mode=OneWay}"
             ToolTipService.ToolTip="{x:Bind Model.Text.Get('window', 'database_folder_tip'), Mode=OneWay}"
@@ -799,27 +799,27 @@
         </InfoBar>
       </Border>
     </Grid>
-    <!-- Every notice the window shows outside a field, laid out as a Fluent 2
-             toaster: each new notice arrives at the bottom and moves the older
+    <!-- Every toast the window shows outside a field, laid out as a Fluent 2
+             toaster: each new toast arrives at the bottom and moves the older
              ones up. A popup holds the stack, because only a popup opened after
              a dialog draws above it; it sits at the content's bottom-right
-             corner and takes no room, so a notice moves no page content. -->
+             corner and takes no room, so a toast moves no page content. -->
     <Popup
-      x:Name="NoticeLayer"
+      x:Name="ToastLayer"
       Grid.Row="1"
       Margin="16,0,16,8"
       VerticalAlignment="Bottom"
       HorizontalAlignment="Right"
     >
       <ItemsControl
-        x:Name="NoticeStack"
+        x:Name="ToastStack"
         Width="400"
         Visibility="Collapsed"
         IsTabStop="False"
-        ItemsSource="{x:Bind Model.Notifications.Notices}"
-        PointerEntered="OnNoticePointerEntered"
-        PointerExited="OnNoticePointerExited"
-        PointerCanceled="OnNoticePointerExited"
+        ItemsSource="{x:Bind Model.Notifications.Toasts}"
+        PointerEntered="OnStackPointerEntered"
+        PointerExited="OnStackPointerExited"
+        PointerCanceled="OnStackPointerExited"
       >
         <ItemsControl.ItemContainerTransitions>
           <TransitionCollection>
@@ -832,9 +832,9 @@
           </ItemsPanelTemplate>
         </ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
-          <DataTemplate x:DataType="local:Notice">
+          <DataTemplate x:DataType="local:Toast">
             <Grid
-              x:Name="NoticeToast"
+              x:Name="ToastContainer"
               Padding="16,12,16,16"
               PointerEntered="OnToastPointerEntered"
               PointerExited="OnToastPointerExited"
@@ -903,7 +903,7 @@
                 Style="{StaticResource BodyStrongTextBlockStyle}"
                 TextWrapping="NoWrap"
                 TextTrimming="CharacterEllipsis"
-                IsTextTrimmedChanged="OnNoticeTextTrimmed"
+                IsTextTrimmedChanged="OnToastTextTrimmed"
               />
               <TextBlock
                 Grid.Column="1"
@@ -912,7 +912,7 @@
                 Visibility="{x:Bind HasSubject, Mode=OneWay}"
                 TextWrapping="NoWrap"
                 TextTrimming="CharacterEllipsis"
-                IsTextTrimmedChanged="OnNoticeTextTrimmed"
+                IsTextTrimmedChanged="OnToastTextTrimmed"
               />
               <TextBlock
                 Grid.Column="1"
@@ -924,7 +924,7 @@
                 TextWrapping="NoWrap"
                 TextTrimming="CharacterEllipsis"
                 IsTextSelectionEnabled="True"
-                IsTextTrimmedChanged="OnNoticeTextTrimmed"
+                IsTextTrimmedChanged="OnToastTextTrimmed"
               />
               <controls:ActionButton
                 Grid.Column="1"
@@ -949,13 +949,13 @@
                 Spacing="4"
               >
                 <Button
-                  x:Name="NoticeMore"
+                  x:Name="ToastMore"
                   Opacity="0"
                   Visibility="{x:Bind HasSwitch, Mode=OneWay}"
                   Style="{StaticResource TinyTorrentSubtleButtonStyle}"
                   ToolTipService.ToolTip="{x:Bind MoreText, Mode=OneWay}"
                   AutomationProperties.Name="{x:Bind MoreText, Mode=OneWay}"
-                  Click="OnNoticeMore"
+                  Click="OnToastMore"
                 >
                   <FontIcon
                     FontFamily="{x:Bind icons:Lucide.Font}"
@@ -967,7 +967,7 @@
                   Style="{StaticResource TinyTorrentSubtleButtonStyle}"
                   ToolTipService.ToolTip="{x:Bind CloseText, Mode=OneWay}"
                   AutomationProperties.Name="{x:Bind CloseText, Mode=OneWay}"
-                  Click="OnCloseNotice"
+                  Click="OnCloseToast"
                 >
                   <FontIcon
                     FontFamily="{x:Bind icons:Lucide.Font}"

@@ -18,8 +18,8 @@ namespace tt::desktop
 {
 namespace
 {
-constexpr wchar_t windowClass[] = L"TinyTorrent.Notice";
-constexpr wchar_t menuClass[] = L"TinyTorrent.NoticeMenu";
+constexpr wchar_t windowClass[] = L"TinyTorrent.Popup";
+constexpr wchar_t menuClass[] = L"TinyTorrent.PopupMenu";
 constexpr UINT_PTR closeTimer = 1;
 constexpr UINT_PTR slideTimer = 2;
 // The slide in from the screen's edge and back out, as Windows notifications
@@ -633,12 +633,12 @@ Popup::~Popup()
     }
 }
 
-void Popup::Show(Content notice)
+void Popup::Show(Content toast)
 {
-    // A prompt's or an interactive notice's window has other styles. Closing
+    // A prompt's or an interactive toast's window has other styles. Closing
     // it before the new content is stored keeps its teardown on its own
     // content.
-    if (asking_ || Interactive() != (notice.stay == NoticeStay::Interactive))
+    if (asking_ || Interactive() != (toast.stay == ToastStay::Interactive))
     {
         Close();
     }
@@ -647,16 +647,16 @@ void Popup::Show(Content notice)
     {
         DestroyWindow(menu_);
     }
-    // Dismiss only closes the notice, which Invoke does before running it.
-    notice.actions.push_back({.glyph = dismissGlyph, .label = strings_.Text("notification", "dismiss"),
+    // Dismiss only closes the toast, which Invoke does before running it.
+    toast.actions.push_back({.glyph = dismissGlyph, .label = strings_.Text("notification", "dismiss"),
         .run = [] {}, .automationId = L"Dismiss"});
-    content_ = std::move(notice);
+    content_ = std::move(toast);
     Present();
     if (!window_)
     {
         return;
     }
-    // Screen readers announce the alert also when the notice takes no focus.
+    // Screen readers announce the alert also when the toast takes no focus.
     NotifyWinEvent(EVENT_SYSTEM_ALERT, window_, OBJID_CLIENT, CHILDID_SELF);
     if (Interactive())
     {
@@ -669,7 +669,7 @@ void Popup::Show(Content notice)
 
 void Popup::Ask(Prompt prompt)
 {
-    // A notice's window has other styles, so it closes before the prompt
+    // A toast's window has other styles, so it closes before the prompt
     // replaces the content. Its More menu closes with it and reads the content
     // it was opened for.
     auto asking = asking_;
@@ -678,7 +678,7 @@ void Popup::Ask(Prompt prompt)
         Close();
     }
     Content content{.title = std::move(prompt.title), .body = std::move(prompt.body),
-        .location = std::move(prompt.location), .stay = NoticeStay::Interactive};
+        .location = std::move(prompt.location), .stay = ToastStay::Interactive};
     content.actions.push_back(std::move(prompt.answer));
     for (auto& action : prompt.others)
     {
@@ -738,7 +738,7 @@ void Popup::Create()
 {
     // Created hidden on the taskbar's monitor, so it has that monitor's DPI
     // before Layout sizes it. The frame styles keep DWM's rounded corners and
-    // shadow; WM_NCCALCSIZE removes their chrome. A notice stays above other
+    // shadow; WM_NCCALCSIZE removes their chrome. A toast stays above other
     // windows without a taskbar button, and only an interactive one takes the
     // focus. A prompt has a taskbar button and an Alt+Tab entry, so the person
     // can return to it, and is not topmost, so it never covers a window the
@@ -749,7 +749,7 @@ void Popup::Create()
     {
         style = 0;
     }
-    else if (content_.stay != NoticeStay::Interactive)
+    else if (content_.stay != ToastStay::Interactive)
     {
         style |= WS_EX_NOACTIVATE;
     }
@@ -760,7 +760,7 @@ void Popup::Create()
     {
         return;
     }
-    // A notice is mostly inactive, so the tooltip shows without activation.
+    // A toast is mostly inactive, so the tooltip shows without activation.
     tooltip_ = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr, WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX,
         CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, window_, nullptr, GetModuleHandleW(nullptr),
         nullptr);
@@ -768,7 +768,7 @@ void Popup::Create()
 
 bool Popup::Interactive() const
 {
-    return window_ && content_.stay == NoticeStay::Interactive;
+    return window_ && content_.stay == ToastStay::Interactive;
 }
 
 std::size_t Popup::Answer() const
@@ -814,7 +814,7 @@ void Popup::Close()
 
 void Popup::ScheduleClose()
 {
-    if (content_.stay == NoticeStay::Timed && !tracking_ && !menu_)
+    if (content_.stay == ToastStay::Timed && !tracking_ && !menu_)
     {
         SetTimer(window_, closeTimer, Duration(), nullptr);
     }
@@ -1326,7 +1326,7 @@ bool Popup::Select(HWND window, long child, long flags)
         HoverMenu(child == CHILDID_SELF ? std::nullopt : std::optional<std::size_t>(child - 1));
         return true;
     }
-    // Only a prompt or an interactive notice takes the focus, and then only
+    // Only a prompt or an interactive toast takes the focus, and then only
     // its window and its enabled buttons do.
     if (!Interactive() || !(flags & SELFLAG_TAKEFOCUS))
     {
@@ -1375,8 +1375,8 @@ void Popup::Run(Target target)
     switch (target.part)
     {
     case PopupPart::More:
-        // The More button toggles its menu, which a click on a notice does
-        // not close, because a notice never takes the focus.
+        // The More button toggles its menu, which a click on a toast does
+        // not close, because a toast never takes the focus.
         if (menu_)
         {
             DestroyWindow(menu_);
@@ -1393,7 +1393,7 @@ void Popup::Run(Target target)
         Invoke(target.index);
         return;
     case PopupPart::Body:
-        // Only Close and Dismiss close a notice before its time, so selecting
+        // Only Close and Dismiss close a toast before its time, so selecting
         // its message does nothing unless the content acts on it, which a
         // prompt's never does.
         if (content_.select)
@@ -1487,7 +1487,7 @@ LRESULT Popup::Handle(HWND window, UINT message, WPARAM first, LPARAM second)
         return 0;
     case WM_KEYDOWN:
     case WM_KEYUP:
-        // Only a prompt or an interactive notice has the focus.
+        // Only a prompt or an interactive toast has the focus.
         if (Interactive() && HandleKey(message, first, second))
         {
             return 0;
@@ -1540,7 +1540,7 @@ LRESULT Popup::Handle(HWND window, UINT message, WPARAM first, LPARAM second)
         if (first == closeTimer)
         {
             KillTimer(window, closeTimer);
-            if (content_.stay != NoticeStay::Timed)
+            if (content_.stay != ToastStay::Timed)
             {
                 return 0;
             }
@@ -1577,7 +1577,7 @@ LRESULT Popup::Handle(HWND window, UINT message, WPARAM first, LPARAM second)
         return 0;
     case WM_MOUSELEAVE:
         tracking_ = false;
-        // A notice that takes no focus never has the foreground, so Windows
+        // A toast that takes no focus never has the foreground, so Windows
         // sends it no mouse input outside it, and the release of a press
         // dragged off it never arrives.
         if (!Interactive())
@@ -1624,7 +1624,7 @@ LRESULT Popup::Handle(HWND window, UINT message, WPARAM first, LPARAM second)
     {
         pressed_.reset();
         // Tracking starts again, so a pointer released outside the popup still
-        // reports its leave, at once, and a notice schedules its close.
+        // reports its leave, at once, and a toast schedules its close.
         TRACKMOUSEEVENT track{sizeof(track), TME_LEAVE, window, 0};
         tracking_ = TrackMouseEvent(&track) != FALSE;
         InvalidateRect(window, nullptr, FALSE);
@@ -1781,7 +1781,7 @@ void Popup::OpenMenu()
     acrylic_.Apply(menu_, theme_);
     ShowWindow(menu_, SW_SHOW);
     // Without the focus, nothing would close the menu, and it would keep the
-    // notice open. That happens when accessibility opens it while another
+    // toast open. That happens when accessibility opens it while another
     // app is in front.
     if (!SetForegroundWindow(menu_))
     {

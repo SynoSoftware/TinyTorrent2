@@ -520,20 +520,9 @@ internal sealed partial class Acquisition
                 )
                     throw new RequestBlockedException(block);
             }
-            SubtitleSearch answer;
-            try
-            {
-                answer = await supplier
-                    .Candidates(http, _account, question, cancellation)
-                    .ConfigureAwait(false);
-            }
-            catch (SubtitleException error) when (error.Reason == SubtitleFailure.Format)
-            {
-                var hold = await policy
-                    .Fail(supplier.Scope(_account, "search"), new(RequestBlockKind.Backoff))
-                    .ConfigureAwait(false);
-                throw new SubtitleException(SubtitleFailure.Network, hold.RetryAt);
-            }
+            var answer = await supplier
+                .Candidates(http, _account, question, cancellation)
+                .ConfigureAwait(false);
             await Run(
                     connection =>
                     {
@@ -560,7 +549,6 @@ internal sealed partial class Acquisition
                     CancellationToken.None
                 )
                 .ConfigureAwait(false);
-            await policy.Succeed(supplier.Scope(_account, "search")).ConfigureAwait(false);
             downloaded = true;
             return answer.Candidates;
         }

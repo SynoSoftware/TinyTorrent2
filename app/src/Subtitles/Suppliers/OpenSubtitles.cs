@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -55,7 +56,7 @@ internal sealed partial class OpenSubtitles : ISupplier
             ? CanDownload(target)
             : target.Host == address.Host && target.AbsolutePath == address.AbsolutePath;
 
-    public DateTimeOffset? DownloadReset(HttpRequestMessage request, ProviderReply reply) =>
+    public Exhaustion? UsedUp(HttpRequestMessage request, ProviderReply reply) =>
         request.RequestUri?.AbsolutePath == "/api/v1/download" ? Quota(reply) : null;
 
     public async Task Check(SupplierClient client, CancellationToken cancellation)
@@ -87,31 +88,17 @@ internal sealed partial class OpenSubtitles : ISupplier
             throw new SubtitleException(SubtitleFailure.Format);
     }
 
-    public async Task<SubtitleSearch> Search(
+    public async IAsyncEnumerable<SubtitleSearch> Search(
         SubtitleQuery query,
         SupplierClient client,
-        CancellationToken cancellation
+        [EnumeratorCancellation] CancellationToken cancellation
     )
     {
         var release = query.Release;
-        var candidates = new List<SubtitleCandidate>();
-        var total = 0;
         var filter = new SortedDictionary<string, string>(StringComparer.Ordinal);
-        if (query.Hash is { } hash)
+        if (query.Title is { } title)
         {
-            filter["moviehash"] = hash;
-            filter["moviebytesize"] = query.Size.ToString(CultureInfo.InvariantCulture);
-        }
-        else
-        {
-            // A title search matches any title sharing its words, and the API
-            // refuses to page past 1,000 results, so search one feature only.
-            if (
-                await Feature(release, client, cancellation).ConfigureAwait(false)
-                is not { } feature
-            )
-                return new(candidates);
-            filter[release.Season is null ? "id" : "parent_feature_id"] = feature.ToString(
+            filter[release.Season is null ? "id" : "parent_feature_id"] = title.TitleId.ToString(
                 CultureInfo.InvariantCulture
             );
             if (release.Season is { } season)
@@ -120,6 +107,12 @@ internal sealed partial class OpenSubtitles : ISupplier
                 filter["episode_number"] = release
                     .Episodes[0]
                     .ToString(CultureInfo.InvariantCulture);
+        }
+        else
+        {
+            // Titles lists none only for a hash search.
+            filter["moviehash"] = query.Hash!;
+            filter["moviebytesize"] = query.Size.ToString(CultureInfo.InvariantCulture);
         }
         for (var page = 1; ; page++)
         {
@@ -139,9 +132,10 @@ internal sealed partial class OpenSubtitles : ISupplier
                 )
                 .ConfigureAwait(false);
             using var document = Parse(reply.Bytes);
-            foreach (var subtitle in Data(document.RootElement).EnumerateArray())
+            var subtitles = Data(document.RootElement);
+            var candidates = new List<SubtitleCandidate>();
+            foreach (var subtitle in subtitles.EnumerateArray())
             {
-                total++;
                 if (
                     subtitle.ValueKind != JsonValueKind.Object
                     || !subtitle.TryGetProperty("attributes", out var attributes)
@@ -187,8 +181,9 @@ internal sealed partial class OpenSubtitles : ISupplier
             }
             if (Number(document.RootElement, "total_pages") is not { } pages || pages < 0)
                 throw new SubtitleException(SubtitleFailure.Format);
+            yield return new(candidates, subtitles.GetArrayLength() == 0);
             if (page >= pages)
-                return new(candidates, total == 0);
+                yield break;
         }
     }
 
@@ -219,13 +214,18 @@ internal sealed partial class OpenSubtitles : ISupplier
         return await client.Send(request, SupplierRequest.Link, cancellation).ConfigureAwait(false);
     }
 
-    // Finds the one movie or show the file names, or null.
-    private async Task<long?> Feature(
-        Release release,
+    // A title search for subtitles matches any title sharing its words, and
+    // the API refuses to page past 1,000 results, so a search without a hash
+    // lists one feature's subtitles.
+    public async Task<IReadOnlyDictionary<long, Listing>?> Titles(
+        SubtitleQuery query,
         SupplierClient client,
         CancellationToken cancellation
     )
     {
+        if (query.Hash is not null)
+            return null;
+        var release = query.Release;
         // The API parses a movie's whole file name into the right title, but
         // an episode's file name finds unrelated shows, so it sends the title.
         var parameters = new SortedDictionary<string, string>(StringComparer.Ordinal)
@@ -278,7 +278,7 @@ internal sealed partial class OpenSubtitles : ISupplier
                         : null,
             };
         }
-        return Choose(release, listings);
+        return listings;
     }
 
     // The API redirects a request whose parameters are not sorted and lower
@@ -303,7 +303,7 @@ internal sealed partial class OpenSubtitles : ISupplier
         && (uri.Host is "www.opensubtitles.com" or "dl.opensubtitles.com")
         && uri.AbsolutePath.StartsWith("/download/", StringComparison.Ordinal);
 
-    private static DateTimeOffset? Quota(ProviderReply reply)
+    private static Exhaustion? Quota(ProviderReply reply)
     {
         try
         {
@@ -311,15 +311,17 @@ internal sealed partial class OpenSubtitles : ISupplier
             if (Number(document.RootElement, "remaining") is not <= 0)
                 return null;
             if (
-                DateTimeOffset.TryParse(
+                !DateTimeOffset.TryParse(
                     Text(document.RootElement, "reset_time_utc"),
                     CultureInfo.InvariantCulture,
                     DateTimeStyles.AssumeUniversal,
                     out var reset
                 )
             )
-                return reset > DateTimeOffset.UtcNow ? reset : DateTimeOffset.UtcNow.AddSeconds(30);
-            return reply.RetryAt ?? DateTimeOffset.UtcNow.AddHours(1);
+                return new(null);
+            return new(
+                reset > DateTimeOffset.UtcNow ? reset : DateTimeOffset.UtcNow.AddSeconds(30)
+            );
         }
         catch (JsonException)
         {

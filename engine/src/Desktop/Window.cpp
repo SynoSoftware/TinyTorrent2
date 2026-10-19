@@ -117,8 +117,8 @@ bool ValidSources(std::vector<std::string> const& sources)
         std::all_of(sources.begin(), sources.end(), Engine::IsSource);
 }
 
-Window::Window(Strings const& strings, Engine& engine, Notices& notices, bool headless, Commands commands)
-    : strings_(strings), engine_(engine), notices_(notices), headless_(headless), commands_(std::move(commands)),
+Window::Window(Strings const& strings, Engine& engine, Toasts& toasts, bool headless, Commands commands)
+    : strings_(strings), engine_(engine), toasts_(toasts), headless_(headless), commands_(std::move(commands)),
       splash_(strings)
 {
 }
@@ -315,17 +315,17 @@ std::size_t Window::Offered() const
     return count;
 }
 
-bool Window::Notify(Notice const& notice)
+bool Window::Notify(Toast const& toast)
 {
     if (!client_)
     {
         return false;
     }
-    auto notices = Switch(notice.kind);
-    client_->Send(Json{{"type", "notice"}, {"kind", ToString(notice.kind)},
-        {"torrent_id", notice.torrentId}, {"name", notice.name}, {"detail", notice.detail}, {"code", notice.code},
-        {"folder", notice.folder}, {"count", notice.count},
-        {"switch", notices ? Json(ToString(*notices)) : Json(nullptr)}});
+    auto toasts = Switch(toast.kind);
+    client_->Send(Json{{"type", "toast"}, {"kind", ToString(toast.kind)},
+        {"torrent_id", toast.torrentId}, {"name", toast.name}, {"detail", toast.detail}, {"code", toast.code},
+        {"folder", toast.folder}, {"count", toast.count},
+        {"switch", toasts ? Json(ToString(*toasts)) : Json(nullptr)}});
     return true;
 }
 
@@ -390,7 +390,7 @@ void Window::OnClosed(Reply const& reply)
     Forget();
     if (!closing)
     {
-        notices_.Queue({.kind = NoticeKind::Background});
+        toasts_.Queue({.kind = ToastKind::Background});
     }
 }
 
@@ -580,7 +580,7 @@ void Window::OnTimer()
     {
         commands_.cancelExit();
         // The window may be the one that stopped responding.
-        notices_.Report({.code = "unresponsive"});
+        toasts_.Report({.code = "unresponsive"});
     }
 }
 
@@ -657,12 +657,12 @@ void Window::ShowSettings()
 
 // The window did not start: Retry opens it again, and Open folder shows the
 // folder that holds the window program.
-void Window::ShowStartError(Notices::Failure failure)
+void Window::ShowStartError(Toasts::Failure failure)
 {
     failure.actions.push_back(
-        Notices::Retry(strings_, strings_.Text("notification", "retry_tip"), [this] { Open(); }));
-    failure.actions.push_back(Notices::OpenFolder(strings_, WindowExecutable().parent_path(),
+        Toasts::Retry(strings_, strings_.Text("notification", "retry_tip"), [this] { Open(); }));
+    failure.actions.push_back(Toasts::OpenFolder(strings_, WindowExecutable().parent_path(),
         strings_.Text("notification", "open_folder_tip")));
-    notices_.Report(std::move(failure));
+    toasts_.Report(std::move(failure));
 }
 }

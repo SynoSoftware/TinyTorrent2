@@ -11,10 +11,10 @@
 
 namespace tt::desktop
 {
-// A notice or a prompt that the engine draws above the notification area,
-// where Windows shows its own notices. Windows lets a person turn off every
-// app's notifications, balloons included, and a notice the person turned on in
-// Settings must still appear.
+// A toast or a prompt that the engine draws above the notification area,
+// where Windows shows its own notifications. Windows lets a person turn off
+// every app's notifications, balloons included, and a toast the person turned
+// on in Settings must still appear.
 class Popup
 {
 public:
@@ -59,9 +59,9 @@ public:
     {
         std::wstring title;
         std::wstring body;
-        // Runs when the person selects a notice's message; without it,
+        // Runs when the person selects a toast's message; without it,
         // selecting the message does nothing, because only Close and Dismiss
-        // close a notice before its time.
+        // close a toast before its time.
         std::function<void()> select;
         std::optional<Location> location;
         // Diagnostic lines stay on one line each, with paths shortened to fit.
@@ -76,11 +76,11 @@ public:
         std::vector<MenuItem> menu;
         // Shown beside the product name in place of the product icon.
         HICON icon = nullptr;
-        // Every notice ends its buttons with Dismiss, which the popup adds. An
+        // Every toast ends its buttons with Dismiss, which the popup adds. An
         // interactive one takes the focus as a prompt does, without a taskbar
         // button, so Tab, Enter and Escape reach its buttons; Enter runs
         // Dismiss until another button has the focus.
-        NoticeStay stay = NoticeStay::Timed;
+        ToastStay stay = ToastStay::Timed;
     };
 
     // A choice the person must make before the engine continues. A prompt
@@ -101,15 +101,15 @@ public:
     // language change applies at once. The caller keeps it alive.
     // Selecting a button or a More menu item closes the popup, except a button
     // that does not close it, and then runs what the content gave that part,
-    // as selecting a notice's message does when the content acts on it. That
+    // as selecting a toast's message does when the content acts on it. That
     // code may show new content.
     explicit Popup(Strings const& strings);
     ~Popup();
     Popup(Popup const&) = delete;
     Popup& operator=(Popup const&) = delete;
-    // Replaces the shown popup with a notice. Only an interactive notice takes
+    // Replaces the shown popup with a toast. Only an interactive toast takes
     // the focus.
-    void Show(Content notice);
+    void Show(Content toast);
     // The first Ask shows the prompt, requests the foreground and focuses the
     // answer when it is enabled. While the prompt is open, asking again
     // changes its text and buttons in place, without requesting the
@@ -120,7 +120,7 @@ public:
     void Close();
     void SetTheme(Theme theme);
     bool IsOpen() const { return window_ != nullptr; }
-    bool IsPersistent() const { return window_ && content_.stay != NoticeStay::Timed; }
+    bool IsPersistent() const { return window_ && content_.stay != ToastStay::Timed; }
     bool IsMenuOpen() const { return menu_ != nullptr; }
 private:
     class Accessibility;
@@ -161,13 +161,13 @@ private:
     // DefWindowProc, such as the Menu key, whose release opens the context
     // menu.
     bool HandleKey(UINT message, WPARAM key, LPARAM flags);
-    // Creates the window, with the styles of a prompt, an interactive notice
-    // or a notice.
+    // Creates the window, with the styles of a prompt, an interactive toast
+    // or a toast.
     void Create();
-    // An open prompt or interactive notice, which takes the focus and keys.
+    // An open prompt or interactive toast, which takes the focus and keys.
     bool Interactive() const;
     // The button Enter runs while no button has the focus: a prompt's answer,
-    // or an interactive notice's Dismiss.
+    // or an interactive toast's Dismiss.
     std::size_t Answer() const;
     // Shows the current content, creating the window when there is none.
     void Present();

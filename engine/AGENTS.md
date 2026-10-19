@@ -6,15 +6,15 @@ Follow the [root instructions](../AGENTS.md). The engine's contract is the
 
 ## Engine UI ownership
 
-The engine draws its own popup, the custom Win32 acrylic window for notices and
+The engine draws its own popup, the custom Win32 acrylic window for toasts and
 prompts. Each behaviour has one owner, because a second copy in a caller drifts
 and the popups stop behaving alike:
 
 - `Popup` owns window behaviour, rendering, focus, keyboard, accessibility,
-  button states and dismissal, for both notices and prompts. It adds Dismiss,
-  last, to every notice, so no caller adds it. A caller passes
+  button states and dismissal, for both toasts and prompts. It adds Dismiss,
+  last, to every toast, so no caller adds it. A caller passes
   content and answers to `Show` or `Ask`, and ends a prompt through `Close`.
-- `Notices` owns which notices show, which share a popup, and the buttons that
+- `Toasts` owns which toasts show, which share a popup, and the buttons that
   failures and prompts reuse (`Retry`, `OpenFolder`, `ForceExit`).
 - Callers, such as `ExitOther`, own their business logic: what each answer
   does, when the prompt changes, and whether a failure answers the person's
@@ -37,7 +37,7 @@ accent-coloured primary buttons, outlined buttons or other variants.
   button text colour (`COLOR_BTNTEXT`), because the subtle fill leaves the
   buttons invisible in a high contrast theme.
 - **Interaction:** hover and pressed states change the fill. Keyboard focus is
-  always visible while a prompt or an interactive notice has the focus. When
+  always visible while a prompt or an interactive toast has the focus. When
   no button has the focus, the default answer takes it as soon as it is
   enabled, so the ring always shows the button Enter runs. A disabled button
   looks disabled and takes no hover, press, focus or invocation, so the person

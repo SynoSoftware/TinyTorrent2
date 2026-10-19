@@ -176,7 +176,7 @@ bool Engine::State::DelaysMove(Outcome const& outcome)
     return outcome.error == ErrorCode::FilesBusy || outcome.error == ErrorCode::MetadataUnavailable;
 }
 
-// Shows on the torrent, and once as a notice, why a move that the person is
+// Shows on the torrent, and once as a toast, why a move that the person is
 // not waiting on could not start.
 void Engine::State::RefuseMove(Torrent& torrent, Outcome const& outcome)
 {
@@ -186,7 +186,7 @@ void Engine::State::RefuseMove(Torrent& torrent, Outcome const& outcome)
     // status update does not report it again.
     torrent.notifiedError = outcome.detail;
     if (!shown)
-        Notify(NoticeKind::Error, torrent, outcome.detail, torrent.moveError->Code());
+        Notify(ToastKind::Error, torrent, outcome.detail, torrent.moveError->Code());
 }
 
 // A crash, power loss or forced exit interrupts a move the person asked for,
@@ -676,7 +676,7 @@ void Engine::State::EndMove(Torrent& torrent, std::optional<Problem> problem)
     }
     torrent.ApplyIntent();
     torrent.notifiedError = problem->detail;
-    Notify(NoticeKind::Error, torrent, problem->detail, problem->Code());
+    Notify(ToastKind::Error, torrent, problem->detail, problem->Code());
     log.Write("move", torrent.torrentId, ToString(problem->kind));
 }
 

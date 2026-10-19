@@ -689,7 +689,8 @@ public sealed class AddDraft : IDraft
                     if (source.Merge)
                         await _client.Send(
                             "merge_trackers",
-                            new { preview_id = source.PreviewId, torrent_id = source.TorrentId }
+                            new { preview_id = source.PreviewId, torrent_id = source.TorrentId },
+                            Requester.Person
                         );
                     Sources.Remove(source);
                     await Release(source.PreviewId);
@@ -713,7 +714,8 @@ public sealed class AddDraft : IDraft
                             sequential,
                             first_last = firstLast,
                             priorities,
-                        }
+                        },
+                        Requester.Person
                     );
                 }
                 catch (Exception error)

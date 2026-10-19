@@ -24,7 +24,7 @@ constexpr std::pair<std::string_view, Command> commands[] = {
     {"activations_received", Command::ActivationsReceived},
     {"open", Command::Open},
 #ifdef _DEBUG
-    {"sample_notice", Command::SampleNotice},
+    {"sample_toast", Command::SampleToast},
 #endif
     {"exit", Command::Exit}};
 
@@ -120,16 +120,16 @@ Application::Application(std::filesystem::path directory, std::wstring sid, bool
             .pause = [this] { Pause(); },
             .exit = [this] { Exit(); },
             .refresh = [this] { Refresh(); }});
-    notices_ = std::make_unique<Notices>(strings_, headless_, errorIcon_.get(), Notices::Commands{
+    toasts_ = std::make_unique<Toasts>(strings_, headless_, errorIcon_.get(), Toasts::Commands{
         .open = [this] { window_->Open(); },
         .openSettings = [this](std::string card) { window_->OpenSettings(std::move(card)); },
         .folder = [this](std::string const& torrentId) { return engine_->Folder(torrentId); },
-        .turnOff = [this](std::vector<NoticeSwitch> notices) { TurnOff(std::move(notices)); },
-        .window = [this](Notice const& notice) { return window_->Notify(notice); }});
+        .turnOff = [this](std::vector<ToastSwitch> toasts) { TurnOff(std::move(toasts)); },
+        .window = [this](Toast const& toast) { return window_->Notify(toast); }});
     auto data = directory.wstring();
     engine_ = std::make_unique<Engine>(std::move(directory),
         [this] { PostMessageW(owner_.get(), wake, 0, 0); });
-    window_ = std::make_unique<Window>(strings_, *engine_, *notices_, headless_, Window::Commands{
+    window_ = std::make_unique<Window>(strings_, *engine_, *toasts_, headless_, Window::Commands{
         .shutdown = [this] { Shutdown(); },
         .cancelExit = [this] { CancelExit(); },
         .answer = [this](ExitAnswer answer) { Answer(answer); }});
@@ -152,7 +152,7 @@ Application::Application(std::filesystem::path directory, std::wstring sid, bool
 }
 
 #ifdef _DEBUG
-void Application::ShowSampleNotice()
+void Application::ShowSampleToast()
 {
     showsSample_ = true;
 }
@@ -167,7 +167,7 @@ int Application::Run(bool background, std::vector<std::string> sources)
         auto response = Activate(std::move(sources));
         if (!response.value("ok", false))
         {
-            notices_->Report({.code = "source", .detail = Wide(response.at("error").dump()), .interactive = true});
+            toasts_->Report({.code = "source", .detail = Wide(response.at("error").dump()), .interactive = true});
             return 1;
         }
     }
@@ -251,13 +251,13 @@ LRESULT Application::Handle(UINT message, WPARAM first, LPARAM second)
     return DefWindowProcW(owner_.get(), message, first, second);
 }
 
-void Application::TurnOff(std::vector<NoticeSwitch> notices)
+void Application::TurnOff(std::vector<ToastSwitch> toasts)
 {
-    engine_->TurnOff(notices, [this](Outcome outcome)
+    engine_->TurnOff(toasts, [this](Outcome outcome)
     {
         if (outcome.error)
         {
-            notices_->Report({.code = "notification", .detail = Wide(outcome.detail), .interactive = true});
+            toasts_->Report({.code = "notification", .detail = Wide(outcome.detail), .interactive = true});
         }
         Refresh();
     });
@@ -391,8 +391,8 @@ void Application::Receive(std::shared_ptr<Pipe::Connection> const& client, Json 
             Exit();
             break;
 #ifdef _DEBUG
-        case Command::SampleNotice:
-            ShowSampleNotice();
+        case Command::SampleToast:
+            ShowSampleToast();
             reply(Success());
             break;
 #endif
@@ -407,7 +407,7 @@ void Application::Receive(std::shared_ptr<Pipe::Connection> const& client, Json 
 void Application::Exit()
 {
     // The engine saves again by itself, so Exit shows again why it has not
-    // ended, which brings back Force exit after the person closed the notice.
+    // ended, which brings back Force exit after the person closed the toast.
     if (engine_->IsShuttingDown())
     {
         if (saveFailure_)
@@ -456,11 +456,11 @@ bool Application::ConfirmExit()
     bool confirmed = false;
     exit_ = ExitPhase::Confirming;
     // Lucide's power glyph, as the tray's Exit shows.
-    notices_->Ask({.title = strings_.Text("exit", "title"), .body = strings_.Text("exit", "active"),
+    toasts_->Ask({.title = strings_.Text("exit", "title"), .body = strings_.Text("exit", "active"),
         .answer = {.glyph = L'\uE140', .label = strings_.Text("tray", "exit"),
             .run = [&confirmed] { confirmed = true; }, .automationId = L"Exit"}});
     MSG message{};
-    while (notices_->IsOpen() && exit_ == ExitPhase::Confirming && GetMessageW(&message, nullptr, 0, 0) > 0)
+    while (toasts_->IsOpen() && exit_ == ExitPhase::Confirming && GetMessageW(&message, nullptr, 0, 0) > 0)
     {
         TranslateMessage(&message);
         DispatchMessageW(&message);
@@ -469,7 +469,7 @@ bool Application::ConfirmExit()
     {
         PostQuitMessage(static_cast<int>(message.wParam));
     }
-    notices_->Close();
+    toasts_->Close();
     // Windows can end the session while the prompt is open.
     if (exit_ != ExitPhase::Confirming)
     {
@@ -501,7 +501,7 @@ void Application::Shutdown()
         }
         if (!failure)
         {
-            notices_->Close();
+            toasts_->Close();
             tray_->Remove();
             PostQuitMessage(0);
         }
@@ -575,7 +575,7 @@ void Application::Tick()
     if (showsSample_ && !engine_->IsLoading())
     {
         showsSample_ = false;
-        notices_->ShowSample();
+        toasts_->ShowSample();
     }
 #endif
     if (pendingStart_ && engine_->HasSettings())
@@ -592,11 +592,11 @@ void Application::Tick()
         programsChecked_ = true;
         CheckPrograms();
     }
-    for (auto& notice : engine_->TakeNotices())
+    for (auto& toast : engine_->TakeToasts())
     {
-        notices_->Queue(std::move(notice));
+        toasts_->Queue(std::move(toast));
     }
-    notices_->Notify();
+    toasts_->Notify();
     ticking_ = false;
 }
 
@@ -615,14 +615,14 @@ void Application::CancelExit()
     Refresh();
 }
 
-// Brings the tray, the notices, the power request, the splash theme and the
+// Brings the tray, the toasts, the power request, the splash theme and the
 // text language in line with the engine and with Exit.
 void Application::Refresh()
 {
     activity_ = engine_->Activity();
     bool loading = engine_->IsLoading();
     tray_->Update(activity_, loading, !loading && !engine_->HasStorageFailure() && !IsExiting());
-    notices_->Update(activity_);
+    toasts_->Update(activity_);
     power_.Update(activity_, IsExiting() || engine_->IsShuttingDown());
     window_->Refresh(activity_.theme);
     auto language = engine_->Language();
@@ -642,7 +642,7 @@ void Application::Pause()
     {
         if (outcome.error)
         {
-            notices_->Report({.code = "pause", .detail = Wide(outcome.detail), .interactive = true});
+            toasts_->Report({.code = "pause", .detail = Wide(outcome.detail), .interactive = true});
         }
         Refresh();
     });
@@ -686,7 +686,7 @@ void Application::AddSources()
         {
             for (auto const& source : activation.sources)
             {
-                notices_->Queue({.kind = NoticeKind::AddFailed, .name = source, .detail = detail});
+                toasts_->Queue({.kind = ToastKind::AddFailed, .name = source, .detail = detail});
             }
         }
         incoming_.clear();
@@ -711,15 +711,15 @@ void Application::FinishSource(Outcome const& outcome, Added const& added)
     auto const& source = activation.sources.front();
     if (outcome.error)
     {
-        // The notice shows the code's sentence, then the detail when there
+        // The toast shows the code's sentence, then the detail when there
         // is one.
-        notices_->Queue({.kind = NoticeKind::AddFailed, .name = source, .detail = outcome.detail,
+        toasts_->Queue({.kind = ToastKind::AddFailed, .name = source, .detail = outcome.detail,
             .code = ToString(*outcome.error)});
     }
     else
     {
-        auto kind = added.kind == AdditionKind::Duplicate ? NoticeKind::Duplicate : NoticeKind::Added;
-        notices_->Queue({.kind = kind, .name = engine_->Name(added.torrentId), .torrentId = added.torrentId});
+        auto kind = added.kind == AdditionKind::Duplicate ? ToastKind::Duplicate : ToastKind::Added;
+        toasts_->Queue({.kind = kind, .name = engine_->Name(added.torrentId), .torrentId = added.torrentId});
     }
     activation.sources.erase(activation.sources.begin());
     if (activation.sources.empty())
@@ -739,7 +739,7 @@ void Application::FinishSource(Outcome const& outcome, Added const& added)
 // broken.
 void Application::CheckPrograms()
 {
-    if (!activity_.notices.contains(NoticeSwitch::Problems))
+    if (!activity_.toasts.contains(ToastSwitch::Problems))
     {
         return;
     }
@@ -757,13 +757,13 @@ void Application::CheckPrograms()
         return;
     }
     reported.insert(reported.end(), fresh.begin(), fresh.end());
-    Notice notice{.kind = NoticeKind::MissingProgram, .name = fresh.front(),
+    Toast toast{.kind = ToastKind::MissingProgram, .name = fresh.front(),
         .count = static_cast<unsigned>(fresh.size())};
-    engine_->RecordPrograms(std::move(reported), [this, notice](Outcome outcome)
+    engine_->RecordPrograms(std::move(reported), [this, toast](Outcome outcome)
     {
         if (!outcome.error)
         {
-            notices_->Queue(notice);
+            toasts_->Queue(toast);
         }
     });
 }
@@ -773,12 +773,12 @@ void Application::CheckPrograms()
 // are lost, as after any abrupt end.
 void Application::ShowSaveFailure()
 {
-    auto forceExit = Notices::ForceExit(strings_, [this]
+    auto forceExit = Toasts::ForceExit(strings_, [this]
     {
         tray_->Remove();
         TerminateProcess(GetCurrentProcess(), 1);
     });
-    notices_->Report({.code = "save", .title = strings_.Text("notification", "save_failure"), .detail = *saveFailure_,
+    toasts_->Report({.code = "save", .title = strings_.Text("notification", "save_failure"), .detail = *saveFailure_,
         .actions = {std::move(forceExit)}, .interactive = true, .opens = false});
 }
 }

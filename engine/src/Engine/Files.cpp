@@ -433,7 +433,7 @@ void Engine::State::FinishFiles(Torrent& torrent, std::optional<lt::file_index_t
 }
 
 // Moves a finished torrent's settled files to its final folder, and otherwise
-// sends the Completed notice that is due.
+// sends the Completed toast that is due.
 void Engine::State::FinishDownload(Torrent& torrent)
 {
     // A move that waits for another torrent's metadata tries again; other
@@ -479,7 +479,7 @@ void Engine::State::FinishDownload(Torrent& torrent)
         return;
     }
     if (torrent.completion.Finish())
-        Notify(NoticeKind::Completed, torrent);
+        Notify(ToastKind::Completed, torrent);
 }
 
 void Engine::State::ContinueRename()

@@ -238,7 +238,11 @@ public sealed class Proxy : IDraft
         Refresh();
         try
         {
-            var reply = await _client.Send("check_proxy", new { proxy = Values(server) });
+            var reply = await _client.Send(
+                "check_proxy",
+                new { proxy = Values(server) },
+                Requester.Person
+            );
             if (current == _checks)
                 _requested = (reply.GetProperty("check_id").GetString() ?? string.Empty, server);
         }

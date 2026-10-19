@@ -30,7 +30,7 @@ at the same endpoint and contract, so an attached window
 cannot prevent another launch from forwarding its request.
 
 The engine also sends bounded control notifications for activation, close
-requests, Exit confirmation, desktop notices, and opening Settings after the person selects a
+requests, Exit confirmation, toasts, and opening Settings after the person selects a
 notification about a broken torrent handler. One receive dispatcher separates them from replies;
 one writer per connection serializes whole frames so notifications and replies
 cannot interleave. A close request for Exit runs asynchronously, outside the
@@ -329,7 +329,7 @@ deletion failure is.
 `delete_files` commits removal and replies with
 `kept_files`, or null while physical names are still being observed. Payload
 deletion then continues without the removed rows; failures
-are notified and logged, and the notice carries the `folder` that Open folder
+are notified and logged, and the toast carries the `folder` that Open folder
 shows. It never refuses because files are busy, following
 [the deletion ruling](engine.md#removal-and-moves): a torrent whose own
 files are moving or being renamed, or that is deleted while an addition runs,
@@ -352,9 +352,9 @@ isolation guarantee; an extra token would not create a stronger boundary.
 
 ## Wire representation
 
-Protocol version 22 uses a four-byte little-endian UTF-8 JSON frame length,
+Protocol version 23 uses a four-byte little-endian UTF-8 JSON frame length,
 bounded to 16 MiB. The endpoint is `TinyTorrent.<logon SID>`; each connecting
-client first receives `{type:"hello",version:22,session_id:"...",data_directory:"..."}`. The absolute data directory
+client first receives `{type:"hello",version:23,session_id:"...",data_directory:"..."}`. The absolute data directory
 keeps the same store for explicit Restart, which starts the engine beside the
 window rather than a path a pipe peer reports. Requests are
 `{request_id:signed-64-bit-integer,command:string,...}`. Replies repeat `request_id` and have
@@ -365,11 +365,11 @@ highlights it, as search does. The pipe
 passes the engine each request's connection beside the request, so no request field
 can claim another connection's previews.
 
-Desktop notices use `{type:"notice",kind,torrent_id,name,detail,code,folder,count,switch}` on that
+Toasts use `{type:"toast",kind,torrent_id,name,detail,code,folder,count,switch}` on that
 same connection while the window is open. `switch` names the Settings switch
-that turns the notice off: `finished`, `added`, `problems` or `background`, or
+that turns the toast off: `finished`, `added`, `problems` or `background`, or
 null when none does. The window's More menu sends it back in `turn_off`, so
-the engine alone decides which switch a notice has. `count` is one: a notice queued in
+the engine alone decides which switch a toast has. `count` is one: a toast queued in
 the tray stays there, and the window never receives a tray burst. The window
 keeps completion feedback bounded and uses the current
 torrent identity to resolve Open folder. Windows delivery is reserved for a
@@ -408,7 +408,7 @@ or before_torrent_id: string/null for a row drop; null means end),
 `piece_order` (torrent_ids with sequential, first_last or both as booleans; an
 absent one keeps each torrent's choice),
 `session_pause` (paused), `settings` (changes), `reset_settings`, `turn_off`
-(switch: a notice's `switch` word, or `all` for every switch; it saves those
+(switch: a toast's `switch` word, or `all` for every switch; it saves those
 notification settings as off, as the popup's More menu does), `check_proxy` (proxy), `open`, `ready`,
 `window_closed`, `activate_reply` (available boolean), `close_reply` (state:
 waiting/closing/cancelled), `exit_reply` (answer: confirmed/cancelled/unavailable),
@@ -430,7 +430,7 @@ Settings also accept `download_limit`, `upload_limit`,
 integer 0 through INT_MAX; 0 means unlimited). Alternative limits initially use
 10 KiB/s in each direction. Settings also accept `notify_problems` (default true),
 `notifications_enabled` (finished downloads, default false), `notify_added`
-(default false), `notify_background` (the notice when the window closes,
+(default false), `notify_background` (the toast when the window closes,
 default true), `prevent_sleep` and `prevent_sleep_seeding` (booleans).
 Settings also accept `encryption` (`preferred`, the default, `required`,
 `allowed` or `disabled`) and the proxy: `proxy_type` (`none`, the default,
@@ -522,7 +522,7 @@ All identities are strings. Settings are intended changes rather than replacemen
 snapshots. `reset_settings` saves every setting at the default a new
 installation starts with and replies like `settings`. It keeps Pause all,
 because that is a choice about transfers, and the programs already reported
-missing, so a reset does not repeat those notices. Torrents, their choices and
+missing, so a reset does not repeat those toasts. Torrents, their choices and
 the lifetime transfer totals are not settings and stay. Input sources are bounded to 32 KiB and retained previews/parses to
 256. `activate_sources` forwards sources, preserving relative-path meaning at
 the launching process. `pending_activations` returns activations with activation_id

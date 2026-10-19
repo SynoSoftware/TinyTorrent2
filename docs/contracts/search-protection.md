@@ -79,9 +79,10 @@ those paths and adds no parallel operation or persistence layer.
 `ProviderHttp` classifies every reply on the common outbound path once, as
 [answers, holds and recovery](#answers-holds-and-recovery) lists. Anything but
 a success records its hold through RequestPolicy and throws a
-`ReplyException`, which names its `ReplyFailure` and that hold. Library,
-Subtitles and the data downloads each turn it into their own failure in one
-switch, and the failure's retry time is the hold's. An adapter states its
+`ReplyException`. A `ReplyException.Held` names its `ReplyFailure` and carries
+that hold; `Missing`, `Expired` and `Route` hold nothing. Library, Subtitles
+and the data downloads each turn it into their own failure in one switch, and
+the failure's retry time is the hold's. An adapter states its
 provider's facts on the `ProviderCall`: whether a 3xx is a redirect it
 follows, whether a refused session is one it renews, whether a 404 names the
 requested resource, and a quota that its reply reports in its own way.

@@ -40,7 +40,7 @@ refuses them without `-Transfer`. Checks that each guard one defect already
 fixed, such as `WaitingMove`, also run only when the owner asks, so a run of
 every check skips them; `Checks.ps1` refuses them without `-OptIn`.
 `WaitingMove` checks that a Move waiting for another torrent's metadata
-replies at once, sends one notice, and starts once the metadata is no longer
+replies at once, sends one toast, and starts once the metadata is no longer
 missing.
 
 ## What earns a test
@@ -228,8 +228,11 @@ time and dimensions. With `TINYTORRENT_CAPTURE_REVIEW=1` and an absolute
 diagnostic visits the real pages and cancels their dialogs automatically. It
 uses a window outside the desktop, does not activate it, saves images and XAML
 control bounds, and closes itself. A connected store mismatch stops the review
-before changes. Frames must remain unchanged for 300 ms before they count as
-stable, so an entrance animation's initial delay cannot produce a blank capture.
+before changes. The window and its open popups must remain unchanged together
+for 500 ms before they count as stable, so an entrance animation's initial delay
+cannot produce a blank capture. The comparison leaves out the focused text box,
+because its caret blinks about as often as that window, so the image shows the
+caret on or off.
 Long pages include overlapping middle captures as well as their
 top and bottom, so controls between the endpoints receive layout review too.
 A second review window exits without activating an existing
@@ -269,11 +272,11 @@ for the engine to confirm it and for a sample, then turns it off. The report rec
 not layout assertions. It does not trigger an engine failure or open an update.
 It then resumes the paused fixture through the real Resume command while every
 transfer stays paused, and checks at every size, language and theme that the row
-shows All paused and that the informational notice names the torrent and offers
+shows All paused and that the informational toast names the torrent and offers
 Resume. It does not press that button, and pauses the fixture again afterwards.
 These existing text and severity comparisons are diagnostic implementation,
 not a requirement to assert translated presentation; review the captured
-notice under [What earns a test](#what-earns-a-test). It does not cover a
+toast under [What earns a test](#what-earns-a-test). It does not cover a
 scheduled pause or a missing adapter.
 Use `TINYTORRENT_CAPTURE_REVIEW=shell` for the title-bar menus, narrow layouts,
 themes, selection commands, secondary pages and retained filter state.
@@ -287,7 +290,7 @@ completion feedback in English and Spanish, Light and Dark, at the three review
 sizes. It reveals Startup and Default app sections, checks native registration
 switches against their observed model state, and leaves Windows registrations
 unchanged. It commits and restores one notification switch through its native
-control. Completion captures feed a simulated engine notice into the production
+control. Completion captures feed a simulated engine toast into the production
 UI handler; they do not prove Windows delivery, a real completed download or
 Explorer launch.
 Use `TINYTORRENT_CAPTURE_REVIEW=search` for native AutoSuggestBox result

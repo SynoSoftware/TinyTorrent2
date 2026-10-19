@@ -452,19 +452,19 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
         if (!CanTest)
             return;
         _testFailure = string.Empty;
-        await Execute(() => SendTest("start"));
+        await Execute(() => SendTest("start", Requester.Person));
     }
 
     public async Task CancelTest()
     {
         if (CanCancelTest)
-            await Execute(() => SendTest("cancel"));
+            await Execute(() => SendTest("cancel", Requester.Person));
     }
 
     public async Task Resume()
     {
         if (IsHolding && !IsPending)
-            await Execute(() => SendTest("release"));
+            await Execute(() => SendTest("release", Requester.Person));
     }
 
     internal async Task<bool> Depart()
@@ -476,7 +476,7 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
         return true;
     }
 
-    private async Task SendTest(string action, Requester requester = Requester.Person)
+    private async Task SendTest(string action, Requester requester)
     {
         var session = _sessionId;
         var reply = await _client.Send(

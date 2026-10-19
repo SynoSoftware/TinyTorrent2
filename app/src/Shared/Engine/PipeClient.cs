@@ -57,7 +57,7 @@ internal sealed partial class PipeClient : IDisposable
 
     // The engine names the Settings card to open.
     internal event Action<string>? SettingsRequested;
-    internal event Action<JsonElement>? Notice;
+    internal event Action<JsonElement>? Toast;
     internal event Action<JsonElement>? Detail;
     internal event Action<CommandReply>? CommandReplied;
 
@@ -73,11 +73,7 @@ internal sealed partial class PipeClient : IDisposable
         }
     }
 
-    internal Task<JsonElement> Send(
-        string name,
-        object? arguments = null,
-        Requester requester = Requester.Person
-    )
+    internal Task<JsonElement> Send(string name, object? arguments, Requester requester)
     {
         lock (_gate)
         {
@@ -89,7 +85,7 @@ internal sealed partial class PipeClient : IDisposable
                 return Task.FromException<JsonElement>(
                     new IOException(_strings.Get("connection", "overload"))
                 );
-            var request = new Request(name, arguments) { Requester = requester };
+            var request = new Request(name, arguments, requester);
             _commands.Enqueue(request);
             _commandCount++;
             _queued.Release();
@@ -457,8 +453,8 @@ internal sealed partial class PipeClient : IDisposable
                         Control?.Invoke(type.GetString()!);
                     else if (type.GetString() == "settings")
                         SettingsRequested?.Invoke(message.GetProperty("setting").GetString()!);
-                    else if (type.GetString() == "notice")
-                        Notice?.Invoke(message);
+                    else if (type.GetString() == "toast")
+                        Toast?.Invoke(message);
                     else if (type.GetString() == "detail")
                         ReceiveDetail(message);
                     else if (type.GetString() == "snapshot")
@@ -478,8 +474,8 @@ internal sealed partial class PipeClient : IDisposable
                         && message.GetProperty("ok").GetBoolean()
                     )
                         Publish(message.GetProperty("data"));
-                    if (pending.Request.Consumer is null && pending.Request.Name != "snapshot")
-                        CommandReplied?.Invoke(Reply(pending, message));
+                    if (pending.Request.Requester is { } requester)
+                        CommandReplied?.Invoke(Reply(pending, requester, message));
                     pending.Completion.TrySetResult(message);
                 }
             }
@@ -514,7 +510,7 @@ internal sealed partial class PipeClient : IDisposable
             Snapshot?.Invoke(data);
         }
 
-        CommandReply Reply(PendingReply pending, JsonElement message)
+        CommandReply Reply(PendingReply pending, Requester requester, JsonElement message)
         {
             var succeeded = message.GetProperty("ok").GetBoolean();
             JsonElement? confirmed = null;
@@ -530,7 +526,7 @@ internal sealed partial class PipeClient : IDisposable
             return new(
                 pending.Request.Name,
                 pending.Arguments,
-                pending.Request.Requester,
+                requester,
                 succeeded,
                 confirmed
             );
@@ -585,7 +581,7 @@ internal sealed partial class PipeClient : IDisposable
 
     private static void CheckVersion(NamedPipeClientStream pipe, JsonElement hello, Strings strings)
     {
-        if (hello.TryGetProperty("version", out var version) && version.GetInt32() == 22)
+        if (hello.TryGetProperty("version", out var version) && version.GetInt32() == 23)
             return;
         throw new VersionException(EngineProcess.VersionMessage(pipe, strings));
     }
@@ -702,12 +698,28 @@ internal sealed partial class PipeClient : IDisposable
             new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 
-    private sealed class Request(string name, object? arguments, Consumer? consumer = null)
+    // A command names who requested it, and a read names the view it
+    // refreshes; the other of the two is null.
+    private sealed class Request
     {
-        internal string Name { get; private set; } = name;
-        internal object? Arguments { get; private set; } = arguments;
-        internal Consumer? Consumer { get; } = consumer;
-        internal Requester Requester { get; init; }
+        internal Request(string name, object? arguments, Requester requester)
+        {
+            Name = name;
+            Arguments = arguments;
+            Requester = requester;
+        }
+
+        internal Request(string name, object? arguments, Consumer consumer)
+        {
+            Name = name;
+            Arguments = arguments;
+            Consumer = consumer;
+        }
+
+        internal string Name { get; private set; }
+        internal object? Arguments { get; private set; }
+        internal Consumer? Consumer { get; }
+        internal Requester? Requester { get; }
         internal TaskCompletionSource Written { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource<JsonElement> Completion { get; } =
