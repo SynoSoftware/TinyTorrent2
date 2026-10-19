@@ -3,7 +3,7 @@
 Design plan, 2026-10-16. Implementation and performance measurements are still
 to come. The [Library](../contracts/library.md), [engine](../contracts/engine.md), [database](../contracts/database.md), and
 [pipe API](../contracts/pipe-api.md) contracts own current behavior; update them alongside
-implementation. The [NTFS research](ntfs-indexing.md) records feasibility.
+implementation.
 
 ## North star
 

@@ -46,8 +46,7 @@ visibility and the engine's recovery hold. Two independent opt-ins start it when
 Library needs discovery or with the engine for movement tracking. Tracking searches
 only after files are noticed missing; neither option builds an all-files index.
 It releases query memory while unused and exits with the engine. Its
-implementation is in progress. The supporting
-[NTFS research](plans/ntfs-indexing.md) records platform evidence.
+implementation is in progress.
 
 [IMDb datasets](contracts/imdb-datasets.md) owns the Library provider that reads IMDb's
 downloadable datasets from a local SQLite file and shows their ratings for
