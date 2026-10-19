@@ -226,7 +226,11 @@ public sealed partial class MainWindow
                     )
                 ),
                 new MenuSeparator(),
-                new MenuCommand(Model.UpdateText, Syno.Lucide.CircleFadingArrowUp, Model.InstallUpdate)
+                new MenuCommand(
+                    Model.UpdateText,
+                    Syno.Lucide.CircleFadingArrowUp,
+                    Model.Updates.Install
+                )
                 {
                     AccessKey = MenuKey("update"),
                 },
@@ -397,8 +401,6 @@ public sealed partial class MainWindow
                     torrents.All(Model.Contains)
                         ? ShowFiles(torrents, action, initialize: false)
                         : Task.CompletedTask;
-            interaction.ResolveDraft = async () =>
-                !Model.FileDraft.HasDraft || (interaction.IsResolved = await ResolveDraft("move"));
             var content = new FileDialog(Model);
             content.DestinationRequested += async (_, _) =>
             {
@@ -457,8 +459,6 @@ public sealed partial class MainWindow
                 Root.SizeChanged -= Resize;
                 Model.FileDraft.PropertyChanged -= ShowAct;
                 _fileDialog = null;
-                if (!Model.IsClosing || action != FileAction.Move)
-                    Model.FileDraft.Cancel();
             }
             return true;
         });
@@ -472,8 +472,6 @@ public sealed partial class MainWindow
                 Model.SpeedLimit.Begin(torrents);
             interaction.Restore = () =>
                 torrents.All(Model.Contains) ? ShowSpeedLimit(torrents, false) : Task.CompletedTask;
-            interaction.ResolveDraft = () =>
-                SaveOnClose(interaction, Model.SpeedLimit, Model.CanSave);
             var content = new SpeedLimitDialog(Model);
             var dialog = new Dialog
             {
@@ -481,26 +479,18 @@ public sealed partial class MainWindow
                 Glyph = Syno.Lucide.Gauge,
                 PrimaryGlyph = Syno.Lucide.Check,
             };
-            try
-            {
-                await ShowEditor(
-                    interaction,
-                    dialog,
-                    Model.SpeedLimit,
-                    () =>
-                    {
-                        dialog.Title = Model.Text.Get("speed_limit", "title");
-                        dialog.PrimaryButtonText = Model.Text.Get("dialog", "save");
-                        dialog.PrimaryToolTip = Model.Text.Get("speed_limit", "save_tip");
-                        content.RefreshText();
-                    }
-                );
-            }
-            finally
-            {
-                if (!Model.IsClosing)
-                    Model.SpeedLimit.Cancel();
-            }
+            await ShowEditor(
+                interaction,
+                dialog,
+                Model.SpeedLimit,
+                () =>
+                {
+                    dialog.Title = Model.Text.Get("speed_limit", "title");
+                    dialog.PrimaryButtonText = Model.Text.Get("dialog", "save");
+                    dialog.PrimaryToolTip = Model.Text.Get("speed_limit", "save_tip");
+                    content.RefreshText();
+                }
+            );
             return true;
         });
     }
@@ -513,7 +503,6 @@ public sealed partial class MainWindow
             if (initialize)
                 proxy.Begin();
             interaction.Restore = () => ShowProxy(false);
-            interaction.ResolveDraft = () => SaveOnClose(interaction, proxy, Model.CanSave);
             var content = new ProxyDialog(Model);
             var dialog = new Dialog
             {
@@ -584,7 +573,7 @@ public sealed partial class MainWindow
         }
         catch (Exception error)
         {
-            Model.Report(error);
+            Model.Notifications.Report(error);
         }
     }
 
@@ -609,7 +598,7 @@ public sealed partial class MainWindow
         }
         catch (Exception error)
         {
-            Model.Report(error);
+            Model.Notifications.Report(error);
         }
         finally
         {
@@ -632,7 +621,7 @@ public sealed partial class MainWindow
             var files = await data.GetStorageItemsAsync();
             if (!CanApply())
                 return;
-            if (Model.IsAddOpen && files is [StorageFolder folder])
+            if (Model.AddDraft.IsOpen && files is [StorageFolder folder])
             {
                 if (Model.AddDraft.CanEdit)
                     Model.AddDraft.Destination = folder.Path;
@@ -644,7 +633,8 @@ public sealed partial class MainWindow
                     .Where(file =>
                         file.FileType.Equals(".torrent", StringComparison.OrdinalIgnoreCase)
                     )
-                    .Select(file => file.Path)
+                    .Select(file => file.Path),
+                picked: false
             );
         }
         else if (data.Contains(StandardDataFormats.Text))
@@ -652,7 +642,10 @@ public sealed partial class MainWindow
             var text = await data.GetTextAsync();
             if (!CanApply())
                 return;
-            await Model.AddSources(text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries));
+            await Model.AddSources(
+                text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries),
+                picked: false
+            );
         }
     }
 }

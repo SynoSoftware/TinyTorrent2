@@ -230,9 +230,12 @@ flat and owns its related presentation, behavior and state, so a feature change
 stays local. The root holds `App`, `Enums.cs`, the project and manifest;
 `Assets/`, `Resources/` and `Properties/` retain their packaging roles.
 
-- `Shell/` owns MainWindow, MainViewModel, Navigation, AboutPage, CreditsPage and
-  InspectorPane. It composes the features and coordinates their lifetime and
-  native window interactions; feature rules remain with their existing owners.
+- `Shell/` owns MainWindow, MainViewModel, Navigation, Notifications,
+  AboutPage, CreditsPage, InspectorPane, Features, which hosts the
+  features that share the Library database, and Updates, which checks for
+  and installs a newer TinyTorrent. It composes the features and
+  coordinates their lifetime and native window interactions; feature rules
+  remain with their existing owners.
 - `Torrents/` owns torrent state, Inspector, peers, trackers, pieces, torrent
   visualizations, addition, file operations and speed-limit editing.
 - `Settings/` owns Editor, SettingsPage, connection and proxy setup, scheduling,
@@ -243,11 +246,13 @@ stays local. The root holds `App`, `Enums.cs`, the project and manifest;
   `Imdb/`, `Tmdb/`, `Wikidata/`, `Omdb/` and `MdbList/` own their respective
   provider behavior.
 - `Subtitles/` owns acquisition and its shared supplier contract. `Suppliers/`
-  holds OpenSubtitles, SubDL and SubSource; the Supplier base stays at the root.
+  holds OpenSubtitles, SubDL and SubSource; the Supplier host and the
+  ISupplier contract stay at the root.
 - `Shared/` owns common dialogs, drafts, accounts, file membership, dataset and
   work presentation, text, geography and RelayCommand. Its `Engine/`, `Storage/`,
-  `Network/`, `Desktop/` and `Diagnostics/` folders group the engine connection,
-  database, network policy, Windows integration mechanics and failure reporting.
+  `Network/`, `Desktop/` and `Diagnostics/` folders group the engine connection
+  and the engine process, database, network policy, Windows integration
+  mechanics and failure reporting.
 - `Controls/` owns reusable UI controls and framework mechanics, including the
   state a control owns, such as FileSelection beside FileBrowser.
 

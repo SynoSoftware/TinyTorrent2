@@ -18,12 +18,15 @@ public sealed partial class PeerMap : UserControl
     private readonly MapModel _model;
     private readonly MapViewport _viewport = new();
     private CanvasControl? _canvas;
+    private Dictionary<string, Geography.Country>? _world;
     private MapRenderer? _renderer;
     private bool _ready;
     private bool _queued;
     private string _language = string.Empty;
     private Destination? _selected;
     private IReadOnlyList<Peer> _selectedPeers = [];
+    // Drawing reads the marks every frame, so they change only with the
+    // selection, the destinations or the map detail.
     private Dictionary<PeerPlace, int> _marks = [];
     private Destination? _pointed;
 #if CAPTURE
@@ -117,6 +120,7 @@ public sealed partial class PeerMap : UserControl
                 return;
             var canvas = new CanvasControl();
             _canvas = canvas;
+            _world = world;
             var renderer = new MapRenderer(canvas, _model, _viewport, world);
             _renderer = renderer;
             canvas.CreateResources += (_, _) =>
@@ -180,8 +184,8 @@ public sealed partial class PeerMap : UserControl
 
     private void Prepare()
     {
-        if (!_ready || _canvas is null || _renderer is null || _model.Text is not { } text
-            || _canvas.Size.Width < 1 || _canvas.Size.Height < 1)
+        if (!_ready || _canvas is null || _renderer is null || _world is null
+            || _model.Text is not { } text || _canvas.Size.Width < 1 || _canvas.Size.Height < 1)
             return;
 #if CAPTURE
         var started = Stopwatch.GetTimestamp();
@@ -192,6 +196,7 @@ public sealed partial class PeerMap : UserControl
             _viewport.Resize(_canvas.Size);
         }
         var pointed = _pointed?.Group.Place.Cities == _model.Cities ? _pointed?.Key : null;
+        _model.Arrange(_world, _viewport.Scale);
         _renderer.Prepare();
         RefreshPlace();
         _pointed = _model.Destinations.FirstOrDefault(destination => destination.Key == pointed);
@@ -200,7 +205,7 @@ public sealed partial class PeerMap : UserControl
             var present = _model.Peers.ToHashSet();
             _selectedPeers = _selectedPeers.Where(present.Contains).ToArray();
         }
-        RefreshMarks();
+        _marks = _model.Marks(_selectedPeers);
         if (_language != text.Language)
         {
             _language = text.Language;
@@ -226,6 +231,7 @@ public sealed partial class PeerMap : UserControl
         _ready = false;
         _renderer?.Dispose();
         _renderer = null;
+        _world = null;
         _canvas?.RemoveFromVisualTree();
         _canvas = null;
         _pointed = null;
@@ -289,37 +295,7 @@ public sealed partial class PeerMap : UserControl
     private void SelectPeers(IReadOnlyList<Peer> peers)
     {
         _selectedPeers = peers;
-        RefreshMarks();
-    }
-
-    // How many destinations of each place the selected peers mark, most
-    // populous first. Drawing reads it every frame, so it changes only with
-    // the selection, the destinations or the map detail.
-    private void RefreshMarks()
-    {
-        if (_selectedPeers.Count == 0)
-        {
-            if (_marks.Count > 0)
-                _marks = [];
-            return;
-        }
-        Dictionary<PeerPlace, int> counts = [];
-        foreach (var peer in _selectedPeers)
-        {
-            if (peer.Location is { } location)
-            {
-                var place = PeerPlace.Of(location, _model.Cities);
-                counts[place] = counts.GetValueOrDefault(place) + 1;
-            }
-        }
-        Dictionary<PeerPlace, int> marks = [];
-        foreach (var destination in _model.Destinations)
-        {
-            var group = destination.Group;
-            if (!marks.ContainsKey(group.Place) && counts.TryGetValue(group.Place, out var count))
-                marks[group.Place] = group.Regions.Length == 0 ? 1 : MapModel.Reach(group.Regions, count);
-        }
-        _marks = marks;
+        _marks = _model.Marks(peers);
     }
 
 }

@@ -1276,7 +1276,7 @@ message cannot be the only explanation of unfinished or failed work.
 | Start or Force start while a global pause prevents transfers | The start takes effect, so the row changes from Stopped to All paused at once, and an informational notice says when the torrent starts: when all transfers resume, at the time the scheduled pause ends, or when the network adapter is available. It never says the start failed, because the person would press it again. Its action is Resume, which lifts the global pause; its tooltip says that a scheduled pause is lifted only until the next schedule change and stopped torrents stay stopped. An unavailable adapter offers Settings instead. Screen readers hear the notice instead of the routine announcement. The notice stays until the person closes it or the pause ends. |
 | Resume all while the network adapter is absent | Resume all lifts the person's own pause, but the missing adapter still pauses every transfer, so the same notice says that transfers start when the adapter is available and offers Settings. |
 | Refused setting or failed editor action | Persistent feedback beside the field or inside that editor, following [Committing edits](#committing-edits). |
-| Failed command without an editor, such as Stop or Open folder | An error toast that stays until the person closes it, separate from the message bar. Retain the existing policy for clearing it after later command outcomes. |
+| Failed command without an editor, such as Stop or Open folder | An error toast that stays until the person closes it or the engine accepts a later command the person caused, separate from the message bar. Reads, such as the files a Move dialog shows or an Add preview, and messages the window sends on its own, such as its start and close handshake, do not close it. |
 | The engine did not start or stopped, or the download state could not be read or saved | The [message bar](#message-bar), with Restart for the engine and Open folder for the engine data folder. Recovery clears it. While the engine starts, the list shows its loading state and no message bar shows. |
 | The running engine is another version | The message bar, titled Engine version mismatch, says where that engine runs and the way out: Exit in the tray for another folder's engine, reinstalling for a folder holding both versions. It has no action, because the fix is outside the window and Restart cannot replace a running engine. Recovery clears it. |
 | Shared Library/subtitle source or database failure | The message bar, which names the cause from SQLite's error code. A read-only `library.db` offers Repair, which clears the Read-only attribute; an incompatible database offers Delete. Denied access, a disk error, a full drive or another program using the file offers Open folder beside Retry, because the person fixes it outside the app. Any other failure shows its own message with Retry, through the existing source and feature recovery paths. A table or supplier card does not repeat this shared condition. |
@@ -1358,12 +1358,16 @@ off.
   then, because a tooltip that repeats readable text adds nothing.
 - The action is a specific verb, such as Open folder.
 - A new toast arrives at the bottom and moves older ones up, 16 pixels apart.
-- A finished download closes after seven seconds on screen. At most four such
-  toasts show; a fifth removes the oldest, because the event stays visible
-  where it happened, such as a finished row. Its action, Open folder, closes
+- A finished download closes after seven seconds on screen. At most four
+  toasts that close by themselves show; a fifth removes the oldest, because
+  the event stays visible where it happened, such as a finished row. Its
+  action, Open folder, closes
   it, because the person has acted on it.
 - An error toast stays until the person closes it, because a disappearing
-  message cannot be the only explanation of failed work. The resume toast
+  message cannot be the only explanation of failed work. This includes the
+  result of a background task that failed; the same task failing again
+  replaces its earlier toast, so a task that restarts by itself, such as
+  automatic metadata, never stacks failures. The resume toast
   stays until the person closes it or the pause ends.
 - The seven seconds pause while the pointer is over the stack, keyboard focus
   is in it, a toast's More menu is open, the window is inactive, or the stack
@@ -1372,8 +1376,9 @@ off.
 - The stack takes no room, so showing or hiding a toast moves no page
   content. It never takes focus, and it hides while an editor has focus,
   because it must not cover what the person is typing.
-  Toasts already displayed are retired when the stack hides, so later notices
-  do not replay them. New notices received while hidden wait to be shown.
+  Timed toasts already displayed are retired when the stack hides, so later
+  notices do not replay them. Error and resume toasts survive the hide and
+  show again. New notices received while hidden wait to be shown.
 - **Owner ruling, 2026-10-11:** toasts show above an open dialog, so a result
   reported while the dialog is open, such as the supplier dialog's Check, is
   seen at once. The supplier dialog's Check result is a toast: Access checked

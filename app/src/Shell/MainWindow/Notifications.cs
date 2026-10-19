@@ -22,7 +22,6 @@ public sealed partial class MainWindow
     private Button? _noticeMenuButton;
     private FrameworkElement? _pointedToast;
     private bool _windowActive = true;
-    private readonly HashSet<Notice> _shownNotices = [];
 
     private void ConfigureNotifications()
     {
@@ -37,10 +36,10 @@ public sealed partial class MainWindow
                 AppStatusBar.IsOpen = true;
             }
         );
-        Model.Notices.CollectionChanged += (_, _) =>
+        Model.Notifications.Notices.CollectionChanged += (_, _) =>
         {
             UpdateNoticeTimer();
-            if (Model.Notices.Count == 0)
+            if (Model.Notifications.Notices.Count == 0)
             {
                 // A notice that closes under the pointer may leave without
                 // a PointerExited, which would pause the next notices forever.
@@ -88,21 +87,14 @@ public sealed partial class MainWindow
                 || HasNoticeKeyboardFocus()
             )
                 return;
-            foreach (var notice in Model.Notices.ToArray())
-            {
-                if (notice.Remaining is not { } remaining)
-                    continue;
-                notice.Remaining = remaining - _noticeTimer.Interval;
-                if (notice.Remaining <= TimeSpan.Zero)
-                    Model.DismissNotice(notice);
-            }
+            Model.Notifications.Elapse(_noticeTimer.Interval);
         };
         Closed += (_, _) => _noticeTimer.Stop();
     }
 
     private void UpdateNoticeTimer()
     {
-        if (_windowActive && Model.Notices.Count > 0)
+        if (_windowActive && Model.Notifications.Notices.Count > 0)
             _noticeTimer.Start();
         else
             _noticeTimer.Stop();
@@ -183,20 +175,11 @@ public sealed partial class MainWindow
             return;
         NoticeStack.Width = Math.Min(400, Math.Max(0, Root.ActualWidth - 32));
         var visible =
-            Model.Notices.Count > 0 && !HasEditorFocus() && !Model.IsClosing && !Model.IsPicking;
-        if (!visible && _shownNotices.Count > 0)
-        {
-            var shown = _shownNotices.ToArray();
-            _shownNotices.Clear();
-            foreach (var notice in shown)
-                if (Model.Notices.Contains(notice))
-                    Model.DismissNotice(notice);
-        }
-        if (visible)
-        {
-            _shownNotices.Clear();
-            _shownNotices.UnionWith(Model.Notices);
-        }
+            Model.Notifications.Notices.Count > 0
+            && !HasEditorFocus()
+            && !Model.IsClosing
+            && !Model.IsPicking;
+        Model.Notifications.SetVisible(visible);
         NoticeStack.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
         PlaceNotices();
         NoticeLayer.IsOpen = visible;
@@ -241,7 +224,7 @@ public sealed partial class MainWindow
     private void OnDismissStatus(InfoBar sender, object args) => Model.DismissStatus();
 
     private void OnCloseNotice(object sender, RoutedEventArgs args) =>
-        Model.DismissNotice((Notice)((FrameworkElement)sender).DataContext);
+        Model.Notifications.Dismiss((Notice)((FrameworkElement)sender).DataContext);
 
     private void OnNoticeMore(object sender, RoutedEventArgs args)
     {

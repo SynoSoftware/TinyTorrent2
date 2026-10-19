@@ -279,6 +279,15 @@ public sealed partial class MainWindow
                 yield return child;
     }
 
+    private static T Field<T>(DependencyObject parent, Setting setting)
+        where T : Control =>
+        CaptureElements(parent)
+            .OfType<Controls.SettingsRow>()
+            .Where(row => ReferenceEquals(row.Setting, setting))
+            .Select(row => row.Content)
+            .OfType<T>()
+            .Single();
+
     private async Task CaptureLayout()
     {
         var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -327,6 +336,11 @@ public sealed partial class MainWindow
     // layout can be reviewed together. Toasts come through the same handlers
     // as the engine's notices and the commands' failures; message bars are
     // presented, because their conditions need a failed engine or store.
+    private Notice? CommandErrorNotice =>
+        Model.Notifications.Notices.FirstOrDefault(notice =>
+            notice.Kind == NoticeKind.CommandError
+        );
+
     private async Task CaptureNotifications(string prefix, Torrent torrent)
     {
         var text = Model.Text;
@@ -396,7 +410,7 @@ public sealed partial class MainWindow
             ),
         ];
         void Notify(string kind, string code, string detail) =>
-            Model.ReceiveNotice(
+            Model.Notifications.Receive(
                 JsonSerializer.SerializeToElement(
                     new
                     {
@@ -421,9 +435,9 @@ public sealed partial class MainWindow
             }
             Model.PresentedStatus = null;
             Notify("completed", string.Empty, string.Empty);
-            Model.ShowOutcome("subtitles", "connected", "OpenSubtitles");
+            Model.Notifications.ShowOutcome("subtitles", "connected", "OpenSubtitles");
             await CapturePage(prefix + "toast-finished");
-            Model.Report(new CommandException("storage_failed", null, text, "move"));
+            Model.Notifications.Report(new CommandException("storage_failed", null, text, "move"));
             await CapturePage(prefix + "toast-command");
             Notify("error", "storage_failed", string.Empty);
             await CapturePage(prefix + "toast-torrent");
@@ -431,8 +445,8 @@ public sealed partial class MainWindow
             await CapturePage(prefix + "toast-add");
             Notify("delete_failed", string.Empty, "recycle_failed");
             await CapturePage(prefix + "toast-delete");
-            Model.ClearError();
-            Model.ShowSubtitleFailure(
+            Model.Notifications.ClearError();
+            Model.Notifications.ShowSubtitleFailure(
                 new(Path.Combine(torrent.Name, "movie.en.srt"), SubtitleFailure.Save)
             );
             await CapturePage(prefix + "toast-subtitle");
@@ -440,10 +454,10 @@ public sealed partial class MainWindow
         finally
         {
             Model.PresentedStatus = null;
-            Model.ClearError();
-            foreach (var notice in Model.Notices.ToArray())
+            Model.Notifications.ClearError();
+            foreach (var notice in Model.Notifications.Notices.ToArray())
             {
-                Model.DismissNotice(notice);
+                Model.Notifications.Dismiss(notice);
             }
         }
     }
@@ -681,7 +695,7 @@ public sealed partial class MainWindow
                 if (message == accepted || command == Model.Resume && message == Model.ResumeNotice)
                     acknowledged.TrySetResult();
             }
-            Model.AnnouncementRequested += Announced;
+            Model.Notifications.AnnouncementRequested += Announced;
             try
             {
                 invoke.Invoke();
@@ -689,9 +703,9 @@ public sealed partial class MainWindow
             }
             finally
             {
-                Model.AnnouncementRequested -= Announced;
+                Model.Notifications.AnnouncementRequested -= Announced;
             }
-            if (Model.HasCommandError)
+            if (CommandErrorNotice is not null)
                 throw new InvalidOperationException("The native torrent command failed.");
             var directory =
                 Model.DataDirectory
@@ -1271,7 +1285,7 @@ public sealed partial class MainWindow
                         () =>
                             !Model.IsClosing
                             && Model.CanEdit
-                            && Model.IsAddOpen
+                            && Model.AddDraft.IsOpen
                             && _interaction is { IsDraftDecision: false, Dialog: not null }
                     );
                     await CaptureLayout();
@@ -1322,7 +1336,7 @@ public sealed partial class MainWindow
             () =>
                 !Model.IsClosing
                 && Model.CanEdit
-                && Model.IsAddOpen
+                && Model.AddDraft.IsOpen
                 && _interaction is { IsDraftDecision: false, Dialog: not null }
                 && Model.AddDraft.HasMagnetError
         );
@@ -1522,7 +1536,7 @@ public sealed partial class MainWindow
             if (message == Model.ResumeNotice)
                 announced.TrySetResult();
         }
-        Model.AnnouncementRequested += Announced;
+        Model.Notifications.AnnouncementRequested += Announced;
         try
         {
             Run(Model.Resume);
@@ -1530,7 +1544,7 @@ public sealed partial class MainWindow
         }
         finally
         {
-            Model.AnnouncementRequested -= Announced;
+            Model.Notifications.AnnouncementRequested -= Announced;
         }
         try
         {
@@ -1544,7 +1558,7 @@ public sealed partial class MainWindow
                     var name = "footer-" + suffix + "-resume-notice";
                     await CaptureLayout();
                     await CaptureUi(name);
-                    var notice = Model.Notices.FirstOrDefault(shown =>
+                    var notice = Model.Notifications.Notices.FirstOrDefault(shown =>
                         shown.Kind == NoticeKind.Resume
                     );
                     outcomes.Add(
@@ -1674,7 +1688,7 @@ public sealed partial class MainWindow
                         Model.Filter = TorrentFilter.All;
                         await Scene("filter-cleared", "Real All filter setter");
                         await Scene("update", "Simulated update-status visibility");
-                        await Model.Settings.Toggle(Model.Settings.ShowMemory, true);
+                        await Model.Settings.ShowMemory.Toggle(true);
                         try
                         {
                             await CaptureReady(
@@ -1685,7 +1699,7 @@ public sealed partial class MainWindow
                         }
                         finally
                         {
-                            await Model.Settings.Toggle(Model.Settings.ShowMemory, false);
+                            await Model.Settings.ShowMemory.Toggle(false);
                         }
                         Model.Filter = TorrentFilter.Paused;
                         await Scene(
@@ -1729,7 +1743,7 @@ public sealed partial class MainWindow
                 .Concat(System.Text.Encoding.ASCII.GetBytes("ee"))
                 .ToArray()
         );
-        await Model.AddDraft.Cancel();
+        await Model.AddDraft.Discard();
         Model.AddDraft.EditingMagnet = true;
         var closed = ShowAdd();
         await CaptureLayout();
@@ -1738,8 +1752,7 @@ public sealed partial class MainWindow
             ?? throw new InvalidOperationException("The preview review Add dialog did not open.");
         try
         {
-            Model.AddDraft.Own([preview]);
-            await Model.AddDraft.PrepareAll().WaitAsync(TimeSpan.FromSeconds(20));
+            await Model.AddSources([preview], picked: true).WaitAsync(TimeSpan.FromSeconds(20));
             await CaptureReady(
                 Model.AddDraft,
                 () => Model.AddDraft.HasFiles && !Model.AddDraft.IsBusy
@@ -2007,9 +2020,7 @@ public sealed partial class MainWindow
         var page =
             _settingsPage
             ?? throw new InvalidOperationException("The detail review settings page did not open.");
-        var toggle = CaptureElements(page)
-            .OfType<ToggleSwitch>()
-            .Single(control => ReferenceEquals(control.Tag, settings.ShowSplash));
+        var toggle = Field<ToggleSwitch>(page, settings.ShowSplash);
         var originalSplash = toggle.IsOn;
         toggle.IsOn = !originalSplash;
         await CaptureReady(
@@ -2075,7 +2086,7 @@ public sealed partial class MainWindow
             }
             if (ReviewMode == CaptureMode.LibraryFiles)
             {
-                Model.CanStartFeatures = true;
+                Model.Features.CanStart = true;
                 Model.RequestSnapshot();
                 await CaptureLibraryFiles(outcomes, completed);
                 return;
@@ -2206,9 +2217,7 @@ public sealed partial class MainWindow
                         if (language == "en" && theme == "light" && size.Width == 1040)
                         {
                             var setting = Model.Settings.AddedNotifications;
-                            var toggle = CaptureElements(page)
-                                .OfType<ToggleSwitch>()
-                                .Single(control => ReferenceEquals(control.Tag, setting));
+                            var toggle = Field<ToggleSwitch>(page, setting);
                             var original = setting.ConfirmedOn;
                             toggle.IsOn = !original;
                             await CaptureReady(
@@ -2241,10 +2250,12 @@ public sealed partial class MainWindow
                         var finished = Model.Torrents.Take(5).ToArray();
                         Notice[] Completions() =>
                             Model
-                                .Notices.Where(notice => notice.Kind == NoticeKind.Completion)
+                                .Notifications.Notices.Where(notice =>
+                                    notice.Kind == NoticeKind.Completion
+                                )
                                 .ToArray();
                         foreach (var torrent in finished)
-                            Model.ReceiveNotice(
+                            Model.Notifications.Receive(
                                 JsonSerializer.SerializeToElement(
                                     new
                                     {
@@ -2298,7 +2309,7 @@ public sealed partial class MainWindow
                             );
                         }
                         foreach (var notice in Completions())
-                            Model.DismissNotice(notice);
+                            Model.Notifications.Dismiss(notice);
                         completed.Add(name);
                     }
                 }
@@ -2377,7 +2388,7 @@ public sealed partial class MainWindow
             var filesOnly = ReviewMode == CaptureMode.DetailsFiles;
             var addOnly = ReviewMode == CaptureMode.AddLayout;
             if (addOnly)
-                await Model.AddDraft.Cancel();
+                await Model.AddDraft.Discard();
             var settingValues = Model
                 .Settings.All.Select(setting => (setting.Name, setting.Input, setting.IsOn))
                 .ToArray();
@@ -2475,13 +2486,13 @@ public sealed partial class MainWindow
                                 .TransformPoint(new Windows.Foundation.Point())
                                 .Y,
                         };
-                        if (Model.HasCommandError)
+                        if (CommandErrorNotice is not null)
                             throw new InvalidOperationException(
                                 "The layout fixture already has a command failure."
                             );
                         try
                         {
-                            Model.Report(
+                            Model.Notifications.Report(
                                 new InvalidOperationException(
                                     Model.Text.Get("errors", "invalid_destination")
                                 )
@@ -2514,7 +2525,7 @@ public sealed partial class MainWindow
                         }
                         finally
                         {
-                            Model.ClearError();
+                            Model.Notifications.ClearError();
                         }
                         await CaptureLayout();
                         var stopped = new MainViewModel.Status(
@@ -2561,7 +2572,7 @@ public sealed partial class MainWindow
                                     },
                                 }
                             );
-                            Model.Report(
+                            Model.Notifications.Report(
                                 new InvalidOperationException(
                                     Model.Text.Get("errors", "invalid_destination")
                                 )
@@ -2577,7 +2588,7 @@ public sealed partial class MainWindow
                                     )
                             );
                             await CaptureLayout();
-                            if (Model.HasCommandError || Model.CurrentStatus != stopped)
+                            if (CommandErrorNotice is not null || Model.CurrentStatus != stopped)
                                 throw new InvalidOperationException(
                                     "Dismissing a command error changed connection state or retained the error."
                                 );
@@ -2593,7 +2604,7 @@ public sealed partial class MainWindow
                         }
                         finally
                         {
-                            Model.ClearError();
+                            Model.Notifications.ClearError();
                             Model.PresentedStatus = null;
                         }
                         await CaptureNotifications(prefix, target);
@@ -2604,7 +2615,7 @@ public sealed partial class MainWindow
                         var dialog =
                             _interaction?.Dialog
                             ?? throw new InvalidOperationException(
-                                "The Add dialog did not open: " + Model.CommandError
+                                "The Add dialog did not open: " + CommandErrorNotice?.Message
                             );
                         try
                         {
@@ -2691,7 +2702,7 @@ public sealed partial class MainWindow
                                     }
                                 );
                             }
-                            await Model.AddDraft.Cancel();
+                            await Model.AddDraft.Discard();
                             Model.AddDraft.EditingMagnet = true;
                             Model.AddDraft.Paused = true;
                             var hash = Guid.NewGuid().ToString("N") + "01234567";
@@ -3017,7 +3028,7 @@ public sealed partial class MainWindow
                 foreach (var setting in Model.Settings.All)
                     setting.Cancel();
             await Model.CancelDraft();
-            await CloseWindow(exiting: false);
+            await CloseWindow(CloseRequest.Close);
         }
     }
 }

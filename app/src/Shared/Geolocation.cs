@@ -255,9 +255,9 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
                 cancellation
             );
         }
-        catch (HttpRouteException error)
+        catch (ReplyException error)
         {
-            throw new RouteException(error);
+            throw DataDownload.Failure(error);
         }
         catch (Exception error) when (error is InvalidDataException or InvalidDatabaseException)
         {
@@ -267,8 +267,7 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
         {
             throw new VideoException(VideoFailure.DiskFull, error);
         }
-        catch (Exception error)
-            when (error is HttpRequestException or IOException or UnauthorizedAccessException)
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
             throw new VideoException(VideoFailure.DownloadFailed, error);
         }
@@ -297,7 +296,7 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
             {
                 await Get(now).ConfigureAwait(false);
             }
-            catch (HttpRequestException error) when (error.StatusCode == HttpStatusCode.NotFound)
+            catch (ReplyException error) when (error.Failure == ReplyFailure.Missing)
             {
                 await Get(now.AddMonths(-1)).ConfigureAwait(false);
             }
@@ -314,7 +313,11 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
                 HttpMethod.Get,
                 new Uri($"https://download.db-ip.com/free/dbip-city-lite-{month:yyyy-MM}.mmdb.gz")
             );
-            var call = new ProviderCall(request, policy, new(Access)) { Fresh = fresh };
+            var call = new ProviderCall(request, policy, new(Access))
+            {
+                Fresh = fresh,
+                NamesResource = true,
+            };
             await http.Download(call, part, progress, cancellation).ConfigureAwait(false);
         }
     }

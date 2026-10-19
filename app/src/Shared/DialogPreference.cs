@@ -21,6 +21,10 @@ public sealed class DialogPreference(Editor settings) : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
+    /// <summary>
+    /// When the person chose not to see the dialog again, turns off the given
+    /// settings that show it in one save. A failed save throws.
+    /// </summary>
     internal Task Save(params Setting[] choices)
     {
         if (!NeverShow)

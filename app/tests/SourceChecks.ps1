@@ -674,15 +674,29 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 public sealed class SubtitleSearchReply : HttpMessageHandler {
-    public int Searches, Downloads;
+    public int Searches, Downloads, Replies;
     public bool Fail, Empty, Quota, PaymentRequired, Partial;
     public string OmdbError;
+    // The reply table: a status, or a transport or route failure.
+    public HttpStatusCode Status = HttpStatusCode.OK;
+    public bool Transport, Route;
     public static Task Validate(CancellationToken cancellation) => Task.CompletedTask;
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellation) {
         var response = new HttpResponseMessage(HttpStatusCode.OK);
+        if (request.RequestUri.Host is "replies.invalid" or "download.db-ip.com") {
+            Replies++;
+            if (Route) throw new HttpRequestException("Offline route failure", new System.InvalidOperationException());
+            if (Transport) throw new HttpRequestException("Offline connection failure");
+            response.StatusCode = Status;
+            return Task.FromResult(response);
+        }
         if (request.RequestUri.AbsolutePath == "/api/v1/download") {
             response.StatusCode = PaymentRequired ? HttpStatusCode.PaymentRequired : HttpStatusCode.OK;
             response.Content = new StringContent("{\"remaining\":0,\"reset_time_utc\":\"" + System.DateTimeOffset.UtcNow.AddHours(5).ToString("O") + "\"}");
+            return Task.FromResult(response);
+        }
+        if (Unfit(request.RequestUri) is { } unfit) {
+            response.Content = new StringContent(unfit);
             return Task.FromResult(response);
         }
         if (request.RequestUri.AbsolutePath.Contains("/files/search")) {
@@ -720,6 +734,39 @@ public sealed class SubtitleSearchReply : HttpMessageHandler {
                 : "1\n00:00:00,000 --> 00:00:01,000\nFixture subtitle\n");
         }
         return Task.FromResult(response);
+    }
+    // Each supplier answers for Unfit.Show.S01E02 with a full subtitle and
+    // one that is forced or for another episode.
+    static string Unfit(System.Uri address) {
+        switch (address.Host + address.AbsolutePath) {
+            case "api.opensubtitles.com/api/v1/features":
+                return """{"data":[{"id":"7","attributes":{"title":"Unfit Show","year":"2024"}}]}""";
+            case "api.opensubtitles.com/api/v1/subtitles":
+                return """
+                    {"total_pages":1,"data":[
+                      {"attributes":{"language":"en","foreign_parts_only":false,"release":"Unfit.Show.S01E02.Full","files":[{"file_id":1}],
+                        "feature_details":{"feature_type":"Episode","season_number":1,"episode_number":2}}},
+                      {"attributes":{"language":"en","foreign_parts_only":false,"release":"Unfit.Show.S01E03.Other","files":[{"file_id":2}],
+                        "feature_details":{"feature_type":"Episode","season_number":1,"episode_number":3}}}]}
+                    """;
+            case "api.subsource.net/api/v1/movies/search":
+                return """{"success":true,"data":[{"type":"tvseries","title":"Unfit Show","season":1,"movieId":7}]}""";
+            case "api.subsource.net/api/v1/subtitles":
+                return """
+                    {"success":true,"pagination":{"pages":1},"data":[
+                      {"movieId":7,"subtitleId":1,"language":"english","foreignParts":false,"files":1,"releaseInfo":["Unfit.Show.S01E02.Full"]},
+                      {"movieId":7,"subtitleId":2,"language":"english","foreignParts":true,"files":1,"releaseInfo":["Unfit.Show.S01E02.Foreign"]}]}
+                    """;
+            case "api.subdl.com/api/v2/files/search" when address.Query.Contains("Unfit"):
+                return """
+                    {"match":{"type":"tv","title":"Unfit Show","season":1,"episode":2},"currentPage":1,"totalPages":1,"subtitles":[
+                      {"language":"EN","unpack_files":[
+                        {"language":"EN","format":"srt","release_name":"Unfit.Show.S01E02.Full","url":"/subtitle/full"},
+                        {"language":"EN","format":"srt","release_name":"Unfit.Show.S01E02.Forced","url":"/subtitle/forced"}]}]}
+                    """;
+            default:
+                return null;
+        }
     }
 }
 '@
@@ -843,14 +890,15 @@ public sealed class SubtitleSearchReply : HttpMessageHandler {
         catch { $blocked = $_.Exception.GetBaseException().GetType().Name -eq 'RequestBlockedException' }
         Require ($blocked -and $reply.Downloads -eq $before) 'Saving a subtitle renewed an old Force command and bypassed a newer download hold.'
         Sql 'DELETE FROM request_holds WHERE provider_id=''subdl'';' | Out-Null
-        $supplier = New-Value 'Subtitles.Suppliers.OpenSubtitles' @($policy)
+        $supplier = New-Value 'Subtitles.Supplier' @((New-Value 'Subtitles.Suppliers.OpenSubtitles' @()), $policy)
         $account = New-Value 'Subtitles.Account' @([Enum]::Parse($supplierType, 'OpenSubtitles'), '', '')
         $operation = New-Value 'Subtitles.Supplier+Operation' @($http, $account, $validate) @{ Purpose = 'download' }
+        $api = [Enum]::Parse($assembly.GetType('Syno.TinyTorrent.SupplierRequest'), 'Api')
         foreach ($payment in @($false, $true)) {
             $reply.PaymentRequired = $payment
             $request = [Net.Http.HttpRequestMessage]::new([Net.Http.HttpMethod]::Post, 'https://api.opensubtitles.com/api/v1/download')
             $refused = $false
-            try { Invoke-Value $supplier 'Send' @($operation, $request, $cancel, 2097152, $true, $false) | Out-Null }
+            try { Invoke-Value $supplier 'Send' @($operation, $request, $api, $cancel) | Out-Null }
             catch { $refused = $_.Exception.GetBaseException().GetType().Name -eq 'SubtitleException' }
             finally { $request.Dispose() }
             Require ($refused -eq $payment -and (Sql 'SELECT COUNT(*) FROM request_holds WHERE provider_id=''opensubtitles'' AND operation=''download'' AND reason=4 AND retry_at>$minimum;' @{ '$minimum' = [DateTimeOffset]::UtcNow.AddHours(4).UtcTicks }) -eq 1 -and
@@ -862,7 +910,7 @@ public sealed class SubtitleSearchReply : HttpMessageHandler {
         foreach ($number in @(1, 2)) {
             $request = [Net.Http.HttpRequestMessage]::new([Net.Http.HttpMethod]::Get, "https://provider.invalid/detail/$number")
             $call = New-Value 'Shared.Network.ProviderCall' @($request, $policy, (New-Value 'Shared.Network.OutboundRequest' @($access)))
-            try { $assembly.GetType('Syno.TinyTorrent.Library.ProviderJson').GetMethod('Get', $staticFlags).Invoke($null, (Unwrap @($http, $call, $cancel, $false, $null))).GetAwaiter().GetResult() | Out-Null }
+            try { $assembly.GetType('Syno.TinyTorrent.Library.ProviderJson').GetMethod('Get', $staticFlags).Invoke($null, (Unwrap @($http, $call, $cancel, $null))).GetAwaiter().GetResult() | Out-Null }
             catch {
                 $failure = $_.Exception
                 while ($failure.InnerException -and $failure.GetType().Name -notin @('ProviderException', 'RequestBlockedException')) { $failure = $failure.InnerException }
@@ -871,6 +919,109 @@ public sealed class SubtitleSearchReply : HttpMessageHandler {
             finally { $request.Dispose() }
         }
         Require ($reply.Downloads -eq $before + 1) 'A malformed detail endpoint was requested again for another movie during backoff.'
+
+        # Library, Subtitles and the city data read one reply table alike: each
+        # records the same hold, and its failure carries the hold's time.
+        $getJson = $assembly.GetType('Syno.TinyTorrent.Library.ProviderJson').GetMethod('Get', $staticFlags)
+        $replyAccess = New-Value 'Shared.Network.ProviderAccess' @('replies', 'fixture', 'search')
+        $subdlSupplier = New-Value 'Subtitles.Supplier' @((New-Value 'Subtitles.Suppliers.SubDL' @()), $policy)
+        $subdlAccount = New-Value 'Subtitles.Account' @([Enum]::Parse($supplierType, 'SubDL'), '', 'offline-fixture')
+        $subdlOperation = New-Value 'Subtitles.Supplier+Operation' @($http, $subdlAccount, $validate)
+        $geolocation = New-Value 'Shared.Geolocation' @($http, $work)
+        $cityPhase = [Enum]::Parse($assembly.GetType('Syno.TinyTorrent.CityPhase'), 'Downloading')
+        $replyFeatures = @(
+            @{ Name = 'Library'; Provider = 'replies'; Send = {
+                $request = [Net.Http.HttpRequestMessage]::new([Net.Http.HttpMethod]::Get, 'https://replies.invalid/search')
+                try {
+                    $call = New-Value 'Shared.Network.ProviderCall' @($request, $policy, (New-Value 'Shared.Network.OutboundRequest' @($replyAccess)))
+                    $getJson.Invoke($null, (Unwrap @($http, $call, $cancel, $null))).GetAwaiter().GetResult() | Out-Null
+                }
+                finally { $request.Dispose() }
+            } },
+            @{ Name = 'Subtitles'; Provider = 'subdl'; Send = {
+                $request = [Net.Http.HttpRequestMessage]::new([Net.Http.HttpMethod]::Get, 'https://replies.invalid/search')
+                try { Invoke-Value $subdlSupplier 'Send' @($subdlOperation, $request, $api, $cancel) | Out-Null }
+                finally { $request.Dispose() }
+            } },
+            @{ Name = 'City'; Provider = 'dbip'; Send = {
+                $download = New-Value 'Shared.DataDownload' @($work, (New-Value 'Shared.WorkDescription+City' @($cityPhase)))
+                try { Invoke-Value $geolocation 'Build' @($directory, $policy, $download) | Out-Null }
+                finally { $download.GetType().GetProperty('Operation', $flags).GetValue($download).Dispose() }
+            } }
+        )
+        # Returns the failure a feature reports, or null when the send succeeded.
+        function Send-Reply([scriptblock] $Send) {
+            try { & $Send }
+            catch {
+                $failure = $_.Exception
+                while ($failure.InnerException -and $failure.GetType().Name -notin @('ProviderException', 'RouteException', 'VideoException', 'SubtitleException', 'RequestBlockedException')) { $failure = $failure.InnerException }
+                return $failure
+            }
+            return $null
+        }
+        function Read-Value($Target, [string] $Name) { return $Target.GetType().GetProperty($Name, $flags).GetValue($Target) }
+        $replyCases = @(
+            @{ Status = 429; Hold = 4; Library = 'RemoteWait'; Subtitles = 'Quota'; City = 'RemoteWait' },
+            @{ Status = 503; Hold = 3; Library = 'Unavailable'; Subtitles = 'Network'; City = 'DownloadFailed' },
+            @{ Transport = $true; Hold = 3; Library = 'Unavailable'; Subtitles = 'Network'; City = 'DownloadFailed' },
+            @{ Route = $true; Library = 'Route'; Subtitles = 'Route'; City = 'Route' }
+        )
+        try {
+            foreach ($case in $replyCases) {
+                $reply.Status = if ($case.Status) { [Net.HttpStatusCode]$case.Status } else { [Net.HttpStatusCode]::OK }
+                $reply.Transport = [bool]$case.Transport
+                $reply.Route = [bool]$case.Route
+                foreach ($feature in $replyFeatures) {
+                    $label = "$($feature.Name) reply $($case.Status)$(if ($case.Transport) { 'transport' })$(if ($case.Route) { 'route' })"
+                    Sql 'DELETE FROM request_holds WHERE provider_id=$provider;' @{ '$provider' = $feature.Provider } | Out-Null
+                    $failure = Send-Reply $feature.Send
+                    Require ($null -ne $failure) "$label succeeded."
+                    $reason = switch ($failure.GetType().Name) {
+                        'SubtitleException' { Read-Value $failure 'Reason' }
+                        'RequestBlockedException' { (Read-Value $failure 'Block').Kind }
+                        default { Read-Value $failure 'Failure' }
+                    }
+                    Require ("$reason" -eq $case[$feature.Name]) "$label reported $reason."
+                    if ($null -eq $case.Hold) {
+                        Require ((Sql 'SELECT COUNT(*) FROM request_holds WHERE provider_id=$provider;' @{ '$provider' = $feature.Provider }) -eq 0) "$label recorded a hold."
+                        continue
+                    }
+                    $retry = Sql 'SELECT MAX(retry_at) FROM request_holds WHERE provider_id=$provider AND reason=$reason;' @{ '$provider' = $feature.Provider; '$reason' = $case.Hold }
+                    Require ($retry -is [long]) "$label recorded no hold of reason $($case.Hold)."
+                    if ($case.Status -ne 429) { continue }
+                    $time = switch ($failure.GetType().Name) {
+                        'RequestBlockedException' { (Read-Value $failure 'Block').RetryAt }
+                        default { Read-Value $failure 'RetryAt' }
+                    }
+                    Require ($retry -gt [DateTimeOffset]::UtcNow.AddMinutes(59).UtcTicks -and $retry -lt [DateTimeOffset]::UtcNow.AddMinutes(61).UtcTicks -and
+                        $null -ne $time -and $time.UtcTicks -eq $retry) "$label did not hold for the policy's hour or report the hold's time."
+                    if ($feature.Name -eq 'City') {
+                        $sent = $reply.Replies
+                        $again = Send-Reply $feature.Send
+                        Require ($again.GetType().Name -eq 'RequestBlockedException' -and $reply.Replies -eq $sent -and
+                            (Read-Value $again 'Block').RetryAt.UtcTicks -eq $retry) 'A city-data Download was sent during its remote wait, or did not name the time.'
+                    }
+                }
+            }
+        }
+        finally {
+            $reply.Status = [Net.HttpStatusCode]::OK
+            $reply.Transport = $reply.Route = $false
+            $geolocation.Dispose()
+            Sql 'DELETE FROM request_holds WHERE provider_id IN (''replies'',''subdl'',''dbip'');' | Out-Null
+        }
+
+        # Only subtitles that fit the file reach the choice or a download,
+        # whichever supplier lists the forced one or the other episode's.
+        $unfitLookup = New-Value 'Subtitles.SubtitleLookup' @('Unfit.Show.S01E02.mkv', 'en', $validate)
+        foreach ($name in @('OpenSubtitles', 'SubDL', 'SubSource')) {
+            $secret = if ($name -eq 'OpenSubtitles') { '' } else { 'offline-fixture' }
+            $unfitAccount = New-Value 'Subtitles.Account' @([Enum]::Parse($supplierType, $name), '', $secret)
+            $unfitSupplier = New-Value 'Subtitles.Supplier' @((New-Value "Subtitles.Suppliers.$name" @()), $policy)
+            $offered = @((Invoke-Value $unfitSupplier 'Candidates' @($http, $unfitAccount, $unfitLookup, $cancel)).Candidates | ForEach-Object { $_.Release })
+            Require ($offered.Count -eq 1 -and $offered[0] -eq 'Unfit.Show.S01E02.Full') "$name offered $($offered -join ', ') for Unfit.Show.S01E02."
+        }
+        Sql 'DELETE FROM request_holds WHERE provider_id IN (''opensubtitles'',''subdl'',''subsource'');' | Out-Null
         $waiting = [Threading.Tasks.TaskCompletionSource]::new()
         $videos = New-Value 'Library.VideoLookup' @($store, $waiting.Task, (New-Values 'Library.ProviderOption' @($option, $wikidataOption)), $policy, $http) @{ Work = $work }
         try {
@@ -1266,7 +1417,24 @@ INSERT INTO subtitle_output_sources(path,language,origin,file_index,movie_path) 
     $database = New-Value 'Shared.Storage.Database' @($directory)
     Invoke-Value $database 'ReadStatistics' @() | Out-Null
     Require ((Sql 'SELECT COUNT(*) FROM subtitle_output_sources;') -eq 0) 'Incompatible-storage recovery did not recreate subtitle ownership.'
-    Write-Output 'PASS: source membership, cached payload, stale replies, deletion recovery, subtitle ownership, one-search alternatives, saved lookup limits, failure exclusion, recursive inventory, local language detection, scan markers, moves and allowance restoration.'
+
+    # Closing right after a settings change applies the change instead of
+    # cancelling it.
+    $policy = New-Value 'Shared.Network.RequestPolicy' @($database)
+    $subtitles = New-Value 'Subtitles.Acquisition' @($database, $http, [Threading.Tasks.Task]::CompletedTask, $policy) @{ Work = $work }
+    Invoke-Value $subtitles 'Initialize' @('en') | Out-Null
+    $enabled = -not $subtitles.GetType().GetProperty('Enabled', $flags).GetValue($subtitles)
+    $saving = $subtitles.GetType().GetMethod('SetEnabled', $flags).Invoke($subtitles, @($enabled))
+    $subtitles.DisposeAsync().AsTask().GetAwaiter().GetResult() | Out-Null
+    $subtitles = $null
+    $saving.GetAwaiter().GetResult()
+    $database.DisposeAsync().AsTask().GetAwaiter().GetResult() | Out-Null
+    $database = New-Value 'Shared.Storage.Database' @($directory)
+    $policy = New-Value 'Shared.Network.RequestPolicy' @($database)
+    $subtitles = New-Value 'Subtitles.Acquisition' @($database, $http, [Threading.Tasks.Task]::CompletedTask, $policy) @{ Work = $work }
+    Invoke-Value $subtitles 'Initialize' @('en') | Out-Null
+    Require ($subtitles.GetType().GetProperty('Enabled', $flags).GetValue($subtitles) -eq $enabled) 'A subtitle setting changed just before closing was not saved.'
+    Write-Output 'PASS: source membership, cached payload, stale replies, deletion recovery, subtitle ownership, one-search alternatives, saved lookup limits, failure exclusion, recursive inventory, local language detection, scan markers, moves, allowance restoration and settings saved at close.'
 }
 finally {
     try {

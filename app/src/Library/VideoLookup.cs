@@ -1,10 +1,9 @@
-using System.Text.RegularExpressions;
 using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Shared.Network;
 
 namespace Syno.TinyTorrent.Library;
 
-internal sealed class VideoLookup(
+internal sealed partial class VideoLookup(
     Store store,
     Task settled,
     IReadOnlyList<ProviderOption> options,
@@ -22,12 +21,11 @@ internal sealed class VideoLookup(
     private Dictionary<string, string> _keys = [];
     internal required BackgroundWork Work { get; init; }
     private BatchRun? _batch;
-    private readonly SemaphoreSlim _batchWake = new(0, 1);
-    private Task _batchWork = Task.CompletedTask;
-    private bool _batchRunning;
-    private CancellationTokenSource _context = new();
-    private CancellationTokenSource? _background;
+    private Sweep? _sweep;
+    private readonly SemaphoreSlim _wake = new(0, 1);
     private Task _work = Task.CompletedTask;
+    private bool _working;
+    private CancellationTokenSource _context = new();
     private int _interactive;
     private string _language = "en";
     private bool _connected;
@@ -296,14 +294,16 @@ internal sealed class VideoLookup(
         await _changes.WaitAsync(_lifetime.Token).ConfigureAwait(false);
         try
         {
+            Task work;
             lock (_gate)
             {
                 ObjectDisposedException.ThrowIf(_closed, this);
                 _changingContext = !automaticOnly;
                 if (automaticOnly)
-                    _background?.Cancel();
+                    CancelSweep();
                 else
                     CancelContext(preserveBatch);
+                work = _work;
             }
             if (automaticOnly)
             {
@@ -311,7 +311,7 @@ internal sealed class VideoLookup(
                 return;
             }
             if (preserveBatch)
-                await _batchWork.ConfigureAwait(false);
+                await work.ConfigureAwait(false);
             await _access.WaitAsync(_lifetime.Token).ConfigureAwait(false);
             try
             {
@@ -332,7 +332,8 @@ internal sealed class VideoLookup(
                 if (preserveBatch && _batch is { } run)
                     for (var remaining = run.Queue.Count; remaining > 0; remaining--)
                         run.Queue.Enqueue(run.Queue.Dequeue() with { RetryAt = null });
-                StartBatch();
+                if (_batch is not null)
+                    Wake();
                 Refresh(_connected, _language);
             }
             Changed?.Invoke(this, EventArgs.Empty);
@@ -344,7 +345,7 @@ internal sealed class VideoLookup(
         _context.Cancel();
         _context.Dispose();
         _context = new();
-        _background?.Cancel();
+        CancelSweep();
         if (!preserveBatch)
             EndBatch();
     }
@@ -368,20 +369,31 @@ internal sealed class VideoLookup(
                 || _changes.CurrentCount == 0
             )
             {
-                _background?.Cancel();
+                CancelSweep();
                 return;
             }
             // A request cancels the sweep itself; the batch lets it finish its
             // file. Either only keeps it from starting here.
-            if (_interactive != 0 || _batchRunning || _background is not null)
+            if (_interactive != 0 || _batch is not null || _sweep is not null)
+                return;
+            // CancelContext ends a waiting sweep on this thread, and the sweep's
+            // end calls Refresh before the new context exists. A sweep started
+            // then would end at once and call Refresh again, without end; the
+            // caller of CancelContext starts the next sweep instead.
+            if (_context.IsCancellationRequested)
                 return;
             var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
                 _lifetime.Token,
                 _context.Token
             );
-            var context = Bind(option, cancellation.Token) with { Command = _recheck };
-            _background = cancellation;
-            _work = Task.Run(() => Run(context, cancellation));
+            _sweep = new(
+                Bind(option, cancellation.Token) with
+                {
+                    Command = _recheck,
+                },
+                cancellation
+            );
+            Wake();
         }
     }
 
@@ -526,18 +538,25 @@ internal sealed class VideoLookup(
         Action<WorkExecution> report
     ) =>
         Request(
-            context =>
-                Execute(
-                    context,
-                    current =>
-                        Collect(
-                            current,
-                            new VideoTarget(entry, current.Option.ProviderId, LookupKind.Explicit),
-                            null,
-                            entry.HasMetadata
-                        ),
-                    report
-                ),
+            async context =>
+                (
+                    await Execute(
+                            context,
+                            current =>
+                                Collect(
+                                    current,
+                                    new VideoTarget(
+                                        entry,
+                                        current.Option.ProviderId,
+                                        LookupKind.Explicit
+                                    ),
+                                    null,
+                                    entry.HasMetadata
+                                ),
+                            report
+                        )
+                        .ConfigureAwait(false)
+                ).Outcome == IdentificationOutcome.Matched,
             cancellation,
             source
         );
@@ -674,26 +693,15 @@ internal sealed class VideoLookup(
                     run.Total++;
                 }
             ReportBatch(run, run.Observation.Execution);
-            if (_batchWake.CurrentCount == 0)
-                _batchWake.Release();
-            StartBatch();
+            // A sweep that has not begun its operation can be waiting for
+            // start-up to settle, which holds the work loop, so it stops; the
+            // batch's end starts it again. CancelAsync ends it on a worker
+            // thread rather than on this thread, which holds _gate.
+            if (_sweep is { Operation: null, Cancellation.IsCancellationRequested: false } waiting)
+                waiting.Signalling = waiting.Cancellation.CancelAsync();
+            Wake();
         }
         Changed?.Invoke(this, EventArgs.Empty);
-    }
-
-    private void StartBatch()
-    {
-        if (
-            !_closed
-            && _connected
-            && !_changingContext
-            && !_batchRunning
-            && _batch is { Queue.Count: > 0 } run
-        )
-        {
-            _batchRunning = run.Running = true;
-            _batchWork = Task.Run(() => RunBatch(run));
-        }
     }
 
     private void EndBatch()
@@ -763,187 +771,233 @@ internal sealed class VideoLookup(
         }
     }
 
-    private async Task RunBatch(BatchRun run)
+    // Callers hold _gate. Starts the work loop, or ends its wait for a hold so
+    // it takes the new work first.
+    private void Wake()
     {
-        var limited = 0;
-        var suspended = false;
-        try
+        if (_working)
         {
-            while (true)
+            if (_wake.CurrentCount == 0)
+                _wake.Release();
+        }
+        else if (!_closed)
+        {
+            _working = true;
+            _work = Task.Run(Run);
+        }
+    }
+
+    // Identifies one file at a time in the background. The batch takes each
+    // file before the sweep takes its next, so the sweep finishes the file it
+    // is reading and waits until the batch ends; a stopped sweep ends at once.
+    private async Task Run()
+    {
+        while (true)
+        {
+            BatchRun? run;
+            Sweep? sweep;
+            lock (_gate)
             {
-                BatchItem item;
-                DateTimeOffset? next = null;
-                Context context;
-                CancellationTokenSource request;
-                lock (_gate)
+                run = _connected && _batch is { Queue.Count: > 0 } batch ? batch : null;
+                // The context change that suspends the batch starts it again.
+                if (run is not null && _changingContext)
                 {
-                    if (
-                        _closed
-                        || !_connected
-                        || run.Cancellation.IsCancellationRequested
-                        || run.Queue.Count == 0
-                    )
-                    {
-                        run.Ended = true;
-                        if (run.Queue.Count == 0 && !run.Cancellation.IsCancellationRequested)
-                            run.Operation.Outcome = run.Operation.Error is null
-                                ? WorkOutcome.Completed : WorkOutcome.Failed;
-                        if (ReferenceEquals(_batch, run))
-                            _batch = null;
-                        break;
-                    }
-                    if (_changingContext)
-                    {
-                        suspended = true;
-                        ReportBatch(run, new WorkExecution.Waiting());
-                        break;
-                    }
-                    request = CancellationTokenSource.CreateLinkedTokenSource(
-                        run.Cancellation.Token,
-                        _lifetime.Token,
-                        _context.Token
-                    );
-                    var now = DateTimeOffset.UtcNow;
-                    for (var remaining = run.Queue.Count; remaining > 0; remaining--)
-                    {
-                        item = run.Queue.Peek();
-                        if (item.RetryAt is not { } due || due <= now)
-                        {
-                            next = null;
-                            break;
-                        }
-                        next = next is null || due < next ? due : next;
-                        run.Queue.Enqueue(run.Queue.Dequeue());
-                    }
-                    item = run.Queue.Peek();
-                    context = Bind(item.Source, request.Token) with
-                    {
-                        Scope = item.Scope,
-                        Accepted = item.Accepted,
-                        Command = item.Command,
-                    };
-                    if (next is not null)
-                        ReportBatch(run, new WorkExecution.Waiting { RetryAt = next });
+                    ReportBatch(run, new WorkExecution.Waiting());
+                    run = null;
                 }
-                using (request)
+                sweep =
+                    run is null || _sweep is { Cancellation.IsCancellationRequested: true }
+                        ? _sweep
+                        : null;
+                if (run is null && sweep is null)
                 {
-                    try
-                    {
-                        if (next is { } due)
-                        {
-                            var delay = due - DateTimeOffset.UtcNow;
-                            if (delay > TimeSpan.Zero)
-                                await _batchWake
-                                    .WaitAsync(
-                                        delay < TimeSpan.FromDays(1) ? delay : TimeSpan.FromDays(1),
-                                        request.Token
-                                    )
-                                    .ConfigureAwait(false);
-                            continue;
-                        }
-                        var identified = await Execute(
-                                context,
-                                current =>
-                                    Collect(
-                                        current,
-                                        new VideoTarget(
-                                            item.Entry,
-                                            current.Option.ProviderId,
-                                            item.Scope == FetchScope.All
-                                                ? LookupKind.Refresh
-                                                : LookupKind.Batch
-                                        ),
-                                        null,
-                                        item.Scope == FetchScope.All
-                                    ),
-                                execution =>
-                                {
-                                    lock (_gate)
-                                        ReportBatch(run, execution);
-                                }
-                            )
-                            .ConfigureAwait(false);
-                        lock (_gate)
-                        {
-                            if (run.Cancellation.IsCancellationRequested)
-                                break;
-                            run.Queue.Dequeue();
-                            run.Entries.Remove(item.Entry.EntryId);
-                            run.Done++;
-                            if (identified)
-                                run.Found++;
-                            ReportBatch(run, new WorkExecution.Running());
-                            if (!identified && context.Block is { Kind: RequestBlockKind.Limit } block)
-                            {
-                                run.Operation.Error = new RequestBlockedException(block);
-                                limited++;
-                            }
-                        }
-                        Stored?.Invoke(this, EventArgs.Empty);
-                    }
-                    catch (OperationCanceledException)
-                        when (_changingContext && !run.Cancellation.IsCancellationRequested)
-                    {
-                        System.Diagnostics.Debug.WriteLine(
-                            "Metadata batch lookup cancelled: provider context changed."
-                        );
-                    }
-                    catch (Exception error)
-                        when (error
-                                is ProviderException { RetryAt: not null }
-                                    or RequestBlockedException { Block.RetryAt: not null }
-                        )
-                    {
-                        var retry = error is ProviderException provider
-                            ? provider.RetryAt
-                            : ((RequestBlockedException)error).Block.RetryAt;
-                        lock (_gate)
-                            if (!run.Cancellation.IsCancellationRequested)
-                            {
-                                var failed = run.Queue.Dequeue();
-                                run.Queue.Enqueue(
-                                    error is ProviderException
-                                        ? failed with
-                                        {
-                                            RetryAt = retry,
-                                            Command = null,
-                                        }
-                                        : failed with
-                                        {
-                                            RetryAt = retry,
-                                        }
-                                );
-                            }
-                    }
+                    _working = false;
+                    return;
                 }
             }
+            if (sweep is not null)
+                await ServeSweep(sweep).ConfigureAwait(false);
+            else if (run is not null)
+                await ServeBatch(run).ConfigureAwait(false);
+        }
+    }
+
+    // Identifies the batch's next file whose hold has ended, or waits for the
+    // earliest hold when every file waits.
+    private async Task ServeBatch(BatchRun run)
+    {
+        BatchItem item;
+        DateTimeOffset? next = null;
+        Context context;
+        CancellationTokenSource request;
+        lock (_gate)
+        {
+            if (run.Cancellation.IsCancellationRequested)
+                return;
+            run.Running = true;
+            request = CancellationTokenSource.CreateLinkedTokenSource(
+                run.Cancellation.Token,
+                _lifetime.Token,
+                _context.Token
+            );
+            var now = DateTimeOffset.UtcNow;
+            for (var remaining = run.Queue.Count; remaining > 0; remaining--)
+            {
+                item = run.Queue.Peek();
+                if (item.RetryAt is not { } due || due <= now)
+                {
+                    next = null;
+                    break;
+                }
+                next = next is null || due < next ? due : next;
+                run.Queue.Enqueue(run.Queue.Dequeue());
+            }
+            item = run.Queue.Peek();
+            context = Bind(item.Source, request.Token) with
+            {
+                Scope = item.Scope,
+                Accepted = item.Accepted,
+                Command = item.Command,
+            };
+            if (next is not null)
+                ReportBatch(run, new WorkExecution.Waiting { RetryAt = next });
+        }
+        var ends = false;
+        try
+        {
+            if (next is { } due)
+            {
+                await Wait(due, request.Token).ConfigureAwait(false);
+                return;
+            }
+            var (outcome, block) = await Execute(
+                    context,
+                    current =>
+                        Collect(
+                            current,
+                            new VideoTarget(
+                                item.Entry,
+                                current.Option.ProviderId,
+                                item.Scope == FetchScope.All ? LookupKind.Refresh : LookupKind.Batch
+                            ),
+                            null,
+                            item.Scope == FetchScope.All
+                        ),
+                    execution =>
+                    {
+                        lock (_gate)
+                            ReportBatch(run, execution);
+                    }
+                )
+                .ConfigureAwait(false);
+            lock (_gate)
+            {
+                if (run.Cancellation.IsCancellationRequested)
+                    return;
+                run.Queue.Dequeue();
+                run.Entries.Remove(item.Entry.EntryId);
+                run.Done++;
+                if (outcome == IdentificationOutcome.Matched)
+                    run.Found++;
+                ReportBatch(run, new WorkExecution.Running());
+                if (block is { Kind: RequestBlockKind.Limit })
+                {
+                    run.Operation.Error = new RequestBlockedException(block);
+                    run.Limited++;
+                }
+            }
+            Stored?.Invoke(this, EventArgs.Empty);
+        }
+        catch (OperationCanceledException)
+            when (_changingContext && !run.Cancellation.IsCancellationRequested)
+        {
+            System.Diagnostics.Debug.WriteLine(
+                "Metadata batch lookup cancelled: provider context changed."
+            );
         }
         catch (OperationCanceledException)
         {
+            ends = true;
             System.Diagnostics.Debug.WriteLine("Metadata batch cancelled.");
         }
         catch (Exception error)
+            when (error
+                    is ProviderException { RetryAt: not null }
+                        or RequestBlockedException { Block.RetryAt: not null }
+            )
         {
+            var retry = error is ProviderException provider
+                ? provider.RetryAt
+                : ((RequestBlockedException)error).Block.RetryAt;
+            lock (_gate)
+                if (!run.Cancellation.IsCancellationRequested)
+                {
+                    var failed = run.Queue.Dequeue();
+                    run.Queue.Enqueue(
+                        error is ProviderException
+                            ? failed with
+                            {
+                                RetryAt = retry,
+                                Command = null,
+                            }
+                            : failed with
+                            {
+                                RetryAt = retry,
+                            }
+                    );
+                }
+        }
+        catch (Exception error)
+        {
+            ends = true;
             run.Operation.Error = error;
             BatchFailed?.Invoke(this, error);
         }
         finally
         {
-            if (!suspended)
-                await FinishBatch(run).ConfigureAwait(false);
+            request.Dispose();
+            bool finished;
             lock (_gate)
             {
                 run.Running = false;
-                _batchRunning = false;
-                if (suspended && run.Cancellation.IsCancellationRequested && !run.Ended)
-                    Track(FinishBatch(run));
-                StartBatch();
-                Refresh(_connected, _language);
+                finished =
+                    !run.Ended
+                    && (ends || run.Cancellation.IsCancellationRequested || run.Queue.Count == 0);
+                if (finished)
+                {
+                    if (run.Queue.Count == 0 && !run.Cancellation.IsCancellationRequested)
+                        run.Operation.Outcome = run.Operation.Error is null
+                            ? WorkOutcome.Completed
+                            : WorkOutcome.Failed;
+                    run.Ended = true;
+                    if (ReferenceEquals(_batch, run))
+                        _batch = null;
+                }
             }
-            Changed?.Invoke(this, EventArgs.Empty);
-            if (limited > 0)
-                BatchLimited?.Invoke(this, limited);
+            if (finished)
+            {
+                await FinishBatch(run).ConfigureAwait(false);
+                Changed?.Invoke(this, EventArgs.Empty);
+                if (run.Limited > 0)
+                    BatchLimited?.Invoke(this, run.Limited);
+                lock (_gate)
+                    Refresh(_connected, _language);
+            }
         }
+    }
+
+    // Waits until a hold ends or new work arrives. Each wait is bounded,
+    // because a valid provider delay can exceed the timer's supported duration.
+    private async Task Wait(DateTimeOffset retryAt, CancellationToken cancellation)
+    {
+        var delay = retryAt - DateTimeOffset.UtcNow;
+        if (delay > TimeSpan.Zero)
+            await _wake
+                .WaitAsync(
+                    delay < TimeSpan.FromDays(1) ? delay : TimeSpan.FromDays(1),
+                    cancellation
+                )
+                .ConfigureAwait(false);
     }
 
     private sealed class BatchRun
@@ -962,6 +1016,9 @@ internal sealed class VideoLookup(
         internal int Done;
         internal int Found;
         internal int Total;
+
+        /// <summary>How many files the search limit left unidentified.</summary>
+        internal int Limited;
         internal bool Running;
         internal bool Ended;
 
@@ -1016,7 +1073,7 @@ internal sealed class VideoLookup(
                 _context.Token
             );
             _interactive++;
-            _background?.Cancel();
+            CancelSweep();
             var bound = Bind(option, request.Token);
             var command =
                 scope == FetchScope.New
@@ -1123,628 +1180,214 @@ internal sealed class VideoLookup(
         }
     }
 
-    private async Task<bool> Collect(
-        Context context,
-        VideoTarget target,
-        VideoChoice? choice,
-        bool refresh
-    )
-    {
-        var language = context.Option.IsLocalized ? context.Language : null;
-        // A refused explicit request says so, because its caller would
-        // otherwise report that no match exists.
-        var attempt = await store.Begin(target, language, context.Token).ConfigureAwait(false);
-        if (attempt is null)
-            return target.Kind == LookupKind.Explicit
-                ? throw new VideoException(VideoFailure.FileChanged)
-                : false;
-        VideoInformation? video = null;
-        var unanswered = false;
-        context.Block = null;
-        context.BlockedRequest = null;
-        bool accepted;
-        try
-        {
-            refresh =
-                refresh
-                || target.Kind == LookupKind.Explicit
-                    && choice is null
-                    && attempt.Choice is not null;
-            var release = FileName.Interpret(target.Entry.Name);
-            var request = new VideoRequest(
-                release,
-                context.Language,
-                (path, download, token) => Read(context, path, download, refresh, token),
-                Get(context, "detail", context.Fresh(SearchRequest(context, release.Title).Key))
-            );
-            try
-            {
-                if (context.Option.IsOnline && choice is null && attempt.Choice is null && !refresh)
-                    video = await store
-                        .Saved(target, context.Language, context.Token)
-                        .ConfigureAwait(false);
-                if (video is null)
-                {
-                    choice ??= attempt.Choice;
-                    if (choice is not null)
-                    {
-                        if (choice.Kind == VideoKind.Series && request.Release.Episodes.Count == 0)
-                            throw new VideoException(VideoFailure.EpisodeRequired);
-                        video = await Describe(context, choice, request).ConfigureAwait(false);
-                    }
-                    else
-                    {
-                        var series = request.Release.Season is not null
-                            ? await store
-                                .Series(target, request.Release, context.Token)
-                                .ConfigureAwait(false)
-                            : null;
-                        video = await Match(context, request, series).ConfigureAwait(false);
-                    }
-                }
-            }
-            catch (RequestBlockedException error)
-                when (target.Kind != LookupKind.Explicit
-                    && error.Block.Kind
-                        is RequestBlockKind.Missing
-                            or RequestBlockKind.Unusable
-                            or RequestBlockKind.Limit
-                            or RequestBlockKind.NoMatch
-                )
-            {
-                context.Block = error.Block;
-            }
-            // An individual unusable record must not stop unrelated lookups.
-            catch (VideoException error)
-                when (error is not ProviderException && target.Kind != LookupKind.Explicit)
-            {
-                unanswered = true;
-            }
-            // Another title is no answer for the title the file already has.
-            if (attempt.AddsTo is { } title && video?.ImdbId != title)
-                video = null;
-            var outcome =
-                video is not null ? "complete"
-                : context.Block is { Kind: not RequestBlockKind.Missing } ? "blocked"
-                : unanswered ? "unanswered"
-                : "no_match";
-            accepted = await store
-                .Complete(
-                    attempt with
-                    {
-                        BlockedRequest = context.BlockedRequest,
-                    },
-                    video,
-                    outcome,
-                    context.Token
-                )
-                .ConfigureAwait(false);
-        }
-        catch (Exception error)
-        {
-            // A provider that cannot serve any request has not answered for
-            // this file, so the attempt leaves it eligible for a later lookup.
-            var outcome =
-                context.Token.IsCancellationRequested
-                || error
-                    is OperationCanceledException
-                        or ProviderException
-                        or RequestBlockedException
-                    ? "cancelled"
-                    : "failed";
-            await store
-                .Complete(
-                    attempt with
-                    {
-                        BlockedRequest = context.BlockedRequest,
-                    },
-                    null,
-                    outcome,
-                    CancellationToken.None
-                )
-                .ConfigureAwait(false);
-            context.Token.ThrowIfCancellationRequested();
-            throw;
-        }
-        if (!accepted)
-            return target.Kind == LookupKind.Explicit
-                ? throw new VideoException(VideoFailure.FileChanged)
-                : false;
-        Stored?.Invoke(this, EventArgs.Empty);
-        return video is not null;
-    }
-
-    /// <summary>
-    /// Finds the provider's unambiguous match for a release, or null. A search
-    /// result alone is weak evidence, so its description must agree with it.
-    /// </summary>
-    private async Task<VideoInformation?> Match(
-        Context context,
-        VideoRequest request,
-        VideoChoice? series
-    )
-    {
-        var release = request.Release;
-        var kind = release.Season is null ? VideoKind.Movie : VideoKind.Series;
-        if (!CanMatch(context.Option, release))
-            return null;
-        if (series is not null)
-            return await Describe(context, series, request).ConfigureAwait(false);
-        var matches = Matches(
-            release,
-            (await Search(context, release.Title).ConfigureAwait(false)).Choices
-        );
-        if (matches.Length != 1)
-        {
-            if (context.Option.IsOnline)
-                await store
-                    .RejectSearch(SearchRequest(context, release.Title).Key)
-                    .ConfigureAwait(false);
-            return null;
-        }
-        var match = matches[0];
-        var video = await Describe(context, match, request).ConfigureAwait(false);
-        var year = kind == VideoKind.Movie ? video.Year ?? match.Year : match.Year ?? video.Year;
-        if (
-            FileName.Normalize(video.Title) == FileName.Normalize(match.Title)
-            && (release.Year is null || year == release.Year)
-        )
-            return video;
-        if (context.Option.IsOnline)
-            await store
-                .RejectSearch(SearchRequest(context, release.Title).Key)
-                .ConfigureAwait(false);
-        return null;
-    }
-
-    private async Task<VideoSearch> Search(
-        Context context,
-        string query,
-        int? year = null,
-        bool automatic = true
-    )
-    {
-        var queries = Queries(context, query, year, automatic).ToArray();
-        for (var index = 0; index < queries.Length; index++)
-        {
-            context.Token.ThrowIfCancellationRequested();
-            var answer = await SearchOne(context, queries[index].Text, queries[index].Year)
-                .ConfigureAwait(false);
-            if (!answer.Empty || index == queries.Length - 1)
-                return answer with { Broadened = year is not null && queries[index].Year is null };
-        }
-        return new([], false);
-    }
-
-    private static IEnumerable<(string Text, int? Year)> Queries(
-        Context context,
-        string query,
-        int? year = null,
-        bool automatic = true
-    )
-    {
-        query = context.Provider.Prepare(query);
-        if (query.Length == 0)
-            yield break;
-        yield return (query, year);
-        if (!automatic)
-            yield break;
-        if (year is not null)
-            yield return (query, null);
-        if (context.Access is null)
-            yield break;
-        var plain = context.Provider.Prepare(string.Join(' ', Words(query)));
-        if (plain.Length > 0 && plain != query)
-            yield return (plain, null);
-    }
-
-    private static string[] Words(string value) =>
-        Regex.Split(value, @"[^\p{L}\p{N}]+").Where(word => word.Length > 0).ToArray();
-
-    private async Task<VideoSearch> SearchOne(Context context, string query, int? year = null)
-    {
-        if (context.Access is not { } access)
-            return await context
-                .Provider.Search(
-                    new(query, context.Language, Offline) { Year = year },
-                    context.Token
-                )
-                .ConfigureAwait(false);
-        var request = SearchRequest(context, query, year);
-        var since = context.Scope == FetchScope.New ? 0 : context.Accepted ?? 0;
-        if (
-            await store.Search(request.Key, context.Token, since).ConfigureAwait(false) is { } saved
-        )
-            return new(
-                saved,
-                saved.Count == 0
-                    && (await policy.Read(request, context.Token).ConfigureAwait(false))?.Kind
-                        == RequestBlockKind.Missing
-            );
-        if (context.Scope == FetchScope.New || context.Command is null)
-        {
-            if (await policy.Read(request, context.Token).ConfigureAwait(false) is { } block)
-                throw new RequestBlockedException(block);
-        }
-        VideoSearch answer;
-        try
-        {
-            answer = await context
-                .Provider.Search(
-                    new(query, context.Language, Get(context, "search", context.Fresh(request.Key)))
-                    {
-                        Year = year,
-                    },
-                    context.Token
-                )
-                .ConfigureAwait(false);
-        }
-        catch (VideoException error) when (error is not ProviderException)
-        {
-            var hold = await policy
-                .Fail(access with { Operation = "search" }, new(RequestBlockKind.Backoff))
-                .ConfigureAwait(false);
-            throw new ProviderException(VideoFailure.InvalidResult, hold.RetryAt, error);
-        }
-        await store.SaveSearch(request, answer, CancellationToken.None).ConfigureAwait(false);
-        await policy.Succeed(access with { Operation = "search" }).ConfigureAwait(false);
-        await Recovered(context, access).ConfigureAwait(false);
-        context.Token.ThrowIfCancellationRequested();
-        return answer;
-    }
-
-    private static LookupRequest SearchRequest(Context context, string query, int? year = null)
-    {
-        var option = context.Option;
-        query = context.Provider.Prepare(query);
-        var parts = new List<string>
-        {
-            query,
-            option.IsLocalized ? context.Language : string.Empty,
-        };
-        if (year is { } requested)
-            parts.Add(requested.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        return new(
-            RequestKey.Create(option.ProviderId, "search", parts),
-            RequestKey.Create(
-                option.ProviderId,
-                "search-count",
-                [FileName.Normalize(string.Join(' ', Words(query)))]
-            )
-        );
-    }
-
-    // Sends an online provider's request with the protection of its key and
-    // the operation Library runs; a 404 for a detail means the video is gone.
-    private ProviderGet Get(Context context, string operation, FreshRequest? fresh) =>
-        context.Access is not { } access
-            ? Offline
-            : (message, cancellation, refusal) =>
-                ProviderJson.Get(
-                    http,
-                    new ProviderCall(message, policy, new(access with { Operation = operation }))
-                    {
-                        Fresh = fresh,
-                    },
-                    cancellation,
-                    missingResource: operation == "detail",
-                    refusal
-                );
-
-    // A provider that answers from downloaded data sends no request.
-    private static readonly ProviderGet Offline = (_, _, _) =>
-        throw new InvalidOperationException();
-
-    private async Task<VideoRecord> Read(
-        Context context,
-        string path,
-        Func<CancellationToken, Task<VideoRecord>> download,
-        bool refresh,
-        CancellationToken cancellation
-    )
-    {
-        var catalog = context.Option.ProviderId;
-        var language = context.Option.IsLocalized ? context.Language : null;
-        var request = new LookupRequest(
-            RequestKey.Create(catalog, "detail", [path, language ?? string.Empty])
-        );
-        var since = context.Scope == FetchScope.New ? 0 : context.Command?.Accepted ?? 0;
-        if (
-            await store
-                .Record(
-                    catalog,
-                    path,
-                    language,
-                    cancellation,
-                    refresh ? context.Accepted ?? long.MaxValue : 0
-                )
-                .ConfigureAwait(false) is
-            { } saved
-        )
-            return saved;
-        if (await policy.Read(request, cancellation, since).ConfigureAwait(false) is { } block)
-        {
-            context.BlockedRequest = request.Key;
-            throw new RequestBlockedException(block);
-        }
-        VideoRecord record;
-        try
-        {
-            record = await download(cancellation).ConfigureAwait(false);
-        }
-        catch (VideoException error) when (error is not ProviderException)
-        {
-            var outcome =
-                error is MissingVideoException ? RequestOutcome.Missing : RequestOutcome.Unusable;
-            await policy.Record(request, outcome).ConfigureAwait(false);
-            context.BlockedRequest = request.Key;
-            throw new RequestBlockedException(
-                new(
-                    outcome == RequestOutcome.Missing
-                        ? RequestBlockKind.Missing
-                        : RequestBlockKind.Unusable
-                )
-            );
-        }
-        await store.SaveRecord(request, record, language).ConfigureAwait(false);
-        if (context.Access is { } access)
-        {
-            await policy.Succeed(access with { Operation = "detail" }).ConfigureAwait(false);
-            await Recovered(context, access).ConfigureAwait(false);
-        }
-        return record;
-    }
-
-    private async Task Recovered(Context context, ProviderAccess access)
-    {
-        if (context.Command?.Recheck == true)
-            await policy.Succeed(access).ConfigureAwait(false);
-        lock (_gate)
-            if (ReferenceEquals(Provider, context.Provider))
-            {
-                _failure = null;
-                _recheck = null;
-            }
-        Changed?.Invoke(this, EventArgs.Empty);
-    }
-
-    private async Task<VideoInformation> Describe(
-        Context context,
-        VideoChoice choice,
-        VideoRequest request
-    )
-    {
-        var video = await context
-            .Provider.Describe(choice, request, context.Token)
-            .ConfigureAwait(false);
-        await store.SaveChoices(video, CancellationToken.None).ConfigureAwait(false);
-        context.Token.ThrowIfCancellationRequested();
-        return video;
-    }
-
-    // A season without an episode number names no episode a provider can describe.
-    private static bool CanMatch(ProviderOption option, Release release) =>
-        !release.IsExtra
-        && release.Title.Length > 0
-        && option.Kinds.Contains(release.Season is null ? VideoKind.Movie : VideoKind.Series)
-        && (release.Season is null || release.Episodes.Count > 0);
-
-    private static VideoChoice[] Matches(Release release, IEnumerable<VideoChoice> choices) =>
-        choices
-            .Where(choice =>
-                choice.Kind == (release.Season is null ? VideoKind.Movie : VideoKind.Series)
-                && Confidence(release, choice) > 0.8
-            )
-            .ToArray();
-
-    private static double Confidence(Release release, VideoChoice choice)
-    {
-        if (release.Year is { } year && choice.Year is { } candidate && year != candidate)
-            return 0;
-        var title = Words(FileName.Normalize(release.Title)).ToHashSet();
-        var numbers = title.Where(word => word.All(char.IsDigit)).ToHashSet();
-        double Similarity(string value)
-        {
-            var words = Words(FileName.Normalize(value)).ToHashSet();
-            if (!numbers.SetEquals(words.Where(word => word.All(char.IsDigit))))
-                return 0;
-            return title.Count + words.Count == 0
-                ? 0
-                : 2.0 * title.Intersect(words).Count() / (title.Count + words.Count);
-        }
-        return Math.Max(
-            Similarity(choice.Title),
-            choice.Original is { } original ? Similarity(original) : 0
-        );
-    }
-
     private readonly HashSet<VideoTarget> _cancelled = [];
 
-    private async Task Run(Context context, CancellationTokenSource cancellation)
+    // Callers hold _gate. Waking the work loop ends a stopped sweep at once,
+    // even while the batch waits for a hold.
+    private void CancelSweep()
     {
-        BackgroundWork.Operation? operation = null;
-        var signalling = Task.CompletedTask;
+        if (_sweep is null)
+            return;
+        _sweep.Cancellation.Cancel();
+        Wake();
+    }
+
+    private async Task<BackgroundWork.Operation?> PrepareSweep(Sweep sweep)
+    {
+        var context = sweep.Context;
+        await settled.WaitAsync(context.Token).ConfigureAwait(false);
+        lock (_gate)
+            _again = false;
+        var pending = await store
+            .Pending(context.Option.ProviderId, context.Token)
+            .ConfigureAwait(false);
+        lock (_gate)
+        {
+            // A sweep stopped before this point never shows an operation.
+            context.Token.ThrowIfCancellationRequested();
+            sweep.Targets = pending.Where(target => !_cancelled.Contains(target)).ToArray();
+            if (sweep.Targets.Length == 0)
+                return null;
+            sweep.Operation = Work.Begin(sweep.Observation, () => StopSweep(sweep));
+            ReportSweep(sweep, new WorkExecution.Waiting());
+            return sweep.Operation;
+        }
+    }
+
+    // Identifies the sweep's next file, or waits for the hold that stopped it.
+    private async Task ServeSweep(Sweep sweep)
+    {
+        var context = sweep.Context;
+        var operation = sweep.Operation;
         var ended = false;
-        var done = 0;
-        var found = 0;
-        var total = 0;
-        var observation = new WorkObservation(
-            new WorkDescription.Metadata(MetadataScope.Automatic),
-            new WorkProgress.Unknown(),
-            new WorkExecution.Waiting()
-        );
         try
         {
-            await settled.WaitAsync(context.Token).ConfigureAwait(false);
-            lock (_gate)
-                _again = false;
-            var pending = await store
-                .Pending(context.Option.ProviderId, context.Token)
-                .ConfigureAwait(false);
-            VideoTarget[] accepted;
-            lock (_gate)
+            context.Token.ThrowIfCancellationRequested();
+            operation ??= await PrepareSweep(sweep).ConfigureAwait(false);
+            if (operation is null)
             {
-                accepted = pending.Where(target => !_cancelled.Contains(target)).ToArray();
-            }
-            if (accepted.Length == 0)
+                ended = true;
                 return;
-            total = accepted.Length;
-            lock (_gate)
-            {
-                operation = Work.Begin(
-                    observation,
-                    () =>
-                    {
-                        lock (_gate)
-                        {
-                            if (!ended && !cancellation.IsCancellationRequested)
-                            {
-                                foreach (var target in accepted.Skip(done))
-                                    _cancelled.Add(target);
-                                observation = observation with
-                                {
-                                    Execution = new WorkExecution.Cancelling(),
-                                };
-                                operation?.Report(observation);
-                                signalling = cancellation.CancelAsync();
-                            }
-                            return signalling;
-                        }
-                    }
-                );
             }
-            foreach (var target in accepted)
+            if (sweep.RetryAt is { } due && due > DateTimeOffset.UtcNow)
             {
-                while (true)
+                lock (_gate)
+                    ReportSweep(sweep, new WorkExecution.Waiting { RetryAt = due });
+                await Wait(due, context.Token).ConfigureAwait(false);
+                return;
+            }
+            sweep.RetryAt = null;
+            try
+            {
+                var (outcome, block) = await Execute(
+                        context,
+                        current => Collect(current, sweep.Targets[sweep.Done], null, false),
+                        execution =>
+                        {
+                            lock (_gate)
+                                ReportSweep(sweep, execution);
+                        }
+                    )
+                    .ConfigureAwait(false);
+                lock (_gate)
                 {
-                    context.Token.ThrowIfCancellationRequested();
-                    Task? batch;
-                    lock (_gate)
-                    {
-                        batch = _batchRunning ? _batchWork : null;
-                        observation = observation with
-                        {
-                            Progress = new WorkProgress.Fraction(
-                                done,
-                                accepted.Length,
-                                WorkUnit.Files
-                            ),
-                            Execution = new WorkExecution.Waiting(),
-                        };
-                        if (!cancellation.IsCancellationRequested)
-                            operation.Report(observation);
-                    }
-                    if (batch is not null)
-                    {
-                        await batch.WaitAsync(context.Token).ConfigureAwait(false);
-                        continue;
-                    }
-                    DateTimeOffset? retry;
-                    try
-                    {
-                        var identified = await Execute(
-                                context,
-                                current => Collect(current, target, null, false),
-                                execution =>
-                                {
-                                    lock (_gate)
-                                    {
-                                        if (ended || cancellation.IsCancellationRequested)
-                                            return;
-                                        observation = observation with { Execution = execution };
-                                        operation.Report(observation);
-                                    }
-                                }
-                            )
-                            .ConfigureAwait(false);
-                        lock (_gate)
-                        {
-                            done++;
-                            if (identified)
-                                found++;
-                            else if (context.Block is { Kind: RequestBlockKind.Limit } block)
-                                operation.Error = new RequestBlockedException(block);
-                        }
-                        break;
-                    }
-                    catch (ProviderException error) when (error.RetryAt is not null)
-                    {
-                        retry = error.RetryAt;
-                    }
-                    catch (RequestBlockedException error) when (error.Block.RetryAt is not null)
-                    {
-                        retry = error.Block.RetryAt;
-                    }
-                    lock (_gate)
-                    {
-                        if (!cancellation.IsCancellationRequested)
-                        {
-                            observation = observation with
-                            {
-                                Execution = new WorkExecution.Waiting { RetryAt = retry },
-                            };
-                            operation.Report(observation);
-                        }
-                    }
-                    var delay = retry.Value - DateTimeOffset.UtcNow;
-                    if (delay > TimeSpan.Zero)
-                        await Task.Delay(
-                                delay < TimeSpan.FromDays(1) ? delay : TimeSpan.FromDays(1),
-                                context.Token
-                            )
-                            .ConfigureAwait(false);
+                    sweep.Done++;
+                    if (outcome == IdentificationOutcome.Matched)
+                        sweep.Found++;
+                    if (block is { Kind: RequestBlockKind.Limit })
+                        operation.Error = new RequestBlockedException(block);
+                    ReportSweep(sweep, new WorkExecution.Waiting());
                 }
             }
-            operation.Outcome = operation.Error is null ? WorkOutcome.Completed : WorkOutcome.Failed;
-            // Automatic enrichment runs by itself; matches appear in the list.
-            operation.ReportsSuccess = false;
+            catch (ProviderException error) when (error.RetryAt is not null)
+            {
+                sweep.RetryAt = error.RetryAt;
+            }
+            catch (RequestBlockedException error) when (error.Block.RetryAt is not null)
+            {
+                sweep.RetryAt = error.Block.RetryAt;
+            }
+            if (sweep.Done == sweep.Targets.Length)
+            {
+                operation.Outcome = operation.Error is null
+                    ? WorkOutcome.Completed
+                    : WorkOutcome.Failed;
+                // Automatic enrichment runs by itself; matches appear in the list.
+                operation.ReportsSuccess = false;
+                ended = true;
+            }
         }
         catch (OperationCanceledException)
         {
             if (operation is not null)
                 operation.Outcome = WorkOutcome.Cancelled;
+            ended = true;
             System.Diagnostics.Debug.WriteLine(
                 $"Automatic metadata lookup cancelled ({context.Option.ProviderId})."
             );
         }
-        catch (ProviderException error)
+        catch (Exception error) when (error is ProviderException or RequestBlockedException)
         {
             if (operation is not null)
                 operation.Error = error;
-        }
-        catch (RequestBlockedException error)
-        {
-            if (operation is not null)
-                operation.Error = error;
+            ended = true;
         }
         catch (Exception error)
         {
             if (operation is not null)
                 operation.Error = error;
+            ended = true;
             Failed?.Invoke(this, error);
         }
         finally
         {
-            lock (_gate)
-            {
-                ended = true;
-                if (ReferenceEquals(_background, cancellation))
-                    _background = null;
-            }
-            try
-            {
-                await signalling.ConfigureAwait(false);
-            }
-            finally
-            {
-                cancellation.Dispose();
-                operation?.Summarize("metadata_result", found, done, total);
-                operation?.Dispose();
-                lock (_gate)
-                    if (_again)
-                        Refresh(_connected, _language);
-            }
+            if (ended)
+                await FinishSweep(sweep).ConfigureAwait(false);
         }
+    }
+
+    private void ReportSweep(Sweep sweep, WorkExecution execution)
+    {
+        if (
+            sweep.Ended
+            || sweep.Cancellation.IsCancellationRequested
+            || sweep.Operation is not { } operation
+        )
+            return;
+        sweep.Observation = sweep.Observation with
+        {
+            Progress = new WorkProgress.Fraction(sweep.Done, sweep.Targets.Length, WorkUnit.Files),
+            Execution = execution,
+        };
+        operation.Report(sweep.Observation);
+    }
+
+    private Task StopSweep(Sweep sweep)
+    {
+        lock (_gate)
+        {
+            if (!sweep.Ended && !sweep.Cancellation.IsCancellationRequested)
+            {
+                foreach (var target in sweep.Targets.Skip(sweep.Done))
+                    _cancelled.Add(target);
+                ReportSweep(sweep, new WorkExecution.Cancelling());
+                sweep.Signalling = sweep.Cancellation.CancelAsync();
+                Wake();
+            }
+            return sweep.Signalling;
+        }
+    }
+
+    private async Task FinishSweep(Sweep sweep)
+    {
+        Task signalling;
+        lock (_gate)
+        {
+            sweep.Ended = true;
+            signalling = sweep.Signalling;
+            if (ReferenceEquals(_sweep, sweep))
+                _sweep = null;
+        }
+        try
+        {
+            await signalling.ConfigureAwait(false);
+        }
+        finally
+        {
+            sweep.Cancellation.Dispose();
+            sweep.Operation?.Summarize(
+                "metadata_result",
+                sweep.Found,
+                sweep.Done,
+                sweep.Targets.Length
+            );
+            sweep.Operation?.Dispose();
+            lock (_gate)
+                if (_again)
+                    Refresh(_connected, _language);
+        }
+    }
+
+    /// <summary>The background sweep, which looks up every pending file automatically.</summary>
+    private sealed class Sweep(Context context, CancellationTokenSource cancellation)
+    {
+        internal Context Context { get; } = context;
+        internal CancellationTokenSource Cancellation { get; } = cancellation;
+        internal VideoTarget[] Targets { get; set; } = [];
+        internal BackgroundWork.Operation? Operation { get; set; }
+        internal WorkObservation Observation { get; set; } =
+            new(
+                new WorkDescription.Metadata(MetadataScope.Automatic),
+                new WorkProgress.Unknown(),
+                new WorkExecution.Waiting()
+            );
+        internal Task Signalling { get; set; } = Task.CompletedTask;
+
+        /// <summary>When the hold that stopped the next file ends.</summary>
+        internal DateTimeOffset? RetryAt { get; set; }
+        internal int Done;
+        internal int Found;
+        internal bool Ended;
     }
 
     public async ValueTask DisposeAsync()
@@ -1756,8 +1399,8 @@ internal sealed class VideoLookup(
             EndBatch();
             _lifetime.Cancel();
             _context.Cancel();
-            _background?.Cancel();
-            requests = [.. _requests, _work, _batchWork];
+            CancelSweep();
+            requests = [.. _requests, _work];
         }
         try
         {
@@ -1783,8 +1426,6 @@ internal sealed class VideoLookup(
     {
         /// <summary>The protection that an online provider's requests with this key share.</summary>
         internal ProviderAccess? Access { get; init; }
-        internal RequestBlock? Block { get; set; }
-        internal RequestKey? BlockedRequest { get; set; }
         internal FetchScope Scope { get; init; }
         internal long? Accepted { get; init; }
         internal RetryCommand? Command { get; init; }

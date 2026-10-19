@@ -18,7 +18,7 @@ public sealed partial class SpeedLimits : UserControl
     internal LimitSelector Selector { get; }
     internal event EventHandler? ConnectionRequested;
 
-    internal SpeedLimits(MainViewModel main, Action<TextBox> register, bool inline = false)
+    internal SpeedLimits(MainViewModel main, bool inline = false)
     {
         Main = main;
         InitializeComponent();
@@ -31,8 +31,6 @@ public sealed partial class SpeedLimits : UserControl
             AddRate(AlternativeRows, Model.AlternativeDownload, "AlternativeDownload"),
             AddRate(AlternativeRows, Model.AlternativeUpload, "AlternativeUpload"),
         ];
-        foreach (var row in _rows)
-            register((TextBox)row.Content);
         if (inline)
         {
             ModeCard.Visibility = Visibility.Collapsed;
@@ -65,7 +63,6 @@ public sealed partial class SpeedLimits : UserControl
         var editor = new TextBox
         {
             Width = 100,
-            Tag = setting,
             InputScope = new InputScope
             {
                 Names = { new InputScopeName(InputScopeNameValue.Number) },
@@ -81,15 +78,7 @@ public sealed partial class SpeedLimits : UserControl
                 UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged,
             }
         );
-        editor.SetBinding(
-            IsEnabledProperty,
-            new Binding { Source = setting, Path = new PropertyPath(nameof(Setting.CanEdit)) }
-        );
-        var row = new SettingsRow { Content = editor };
-        row.SetBinding(
-            SettingsRow.ErrorProperty,
-            new Binding { Source = setting, Path = new PropertyPath(nameof(Setting.Message)) }
-        );
+        var row = new SettingsRow { Content = editor, Setting = setting };
         panel.Children.Add(row);
         AutomationProperties.SetAutomationId(editor, automationId);
         RefreshRate(row);
@@ -106,7 +95,7 @@ public sealed partial class SpeedLimits : UserControl
     private void RefreshRate(SettingsRow row)
     {
         var editor = (TextBox)row.Content;
-        var setting = (Setting)editor.Tag;
+        var setting = row.Setting!;
         row.Unit = setting.RateUnit;
         row.Header =
             setting == Model.Download || setting == Model.AlternativeDownload
@@ -121,9 +110,7 @@ public sealed partial class SpeedLimits : UserControl
         {
             "limit_mode" => Selector,
             "connection_setup" => Connection,
-            _ => _rows
-                .Select(row => (TextBox)row.Content)
-                .FirstOrDefault(editor => ((Setting)editor.Tag).Name == name),
+            _ => _rows.FirstOrDefault(row => row.Setting!.Name == name)?.Content as Control,
         };
 
     internal void FocusConnection() => Connection.Focus(FocusState.Programmatic);

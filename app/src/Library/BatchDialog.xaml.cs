@@ -42,6 +42,7 @@ public sealed partial class BatchDialog : UserControl, IDraft
     public bool IsPending => false;
     public bool HasDraft => false;
     public bool CanSubmit => Chosen.Count > 0;
+    public ClosePolicy ClosePolicy => new ClosePolicy.Discard();
 
     private (CheckBox Box, TextBlock Label, TextBlock Count, ProviderAnswer Answer)[] Groups =>
         [
@@ -104,4 +105,8 @@ public sealed partial class BatchDialog : UserControl, IDraft
         _library.Fetch(_entries, _source, Chosen);
         return Task.FromResult(true);
     }
+
+    public Task Discard() => Task.CompletedTask;
+
+    public void Stop() { }
 }

@@ -15,7 +15,7 @@ public sealed partial class MainWindow
 {
     private async Task CaptureSettings(List<object> outcomes, List<string> completed)
     {
-        Model.CanStartFeatures = true;
+        Model.Features.CanStart = true;
         Model.RequestSnapshot();
         await CaptureReady(Model, () => Model.Subtitles is not null);
         var acquisition =
@@ -288,7 +288,7 @@ public sealed partial class MainWindow
                 ((ContentControl)page.FindName("SubtitlesContent")).Content;
             var languages = (RadioButtons)subtitles.Field("subtitle_languages")!;
             languages.SelectedIndex = 1;
-            await subtitles.Saving;
+            await acquisition.Saving;
             await CaptureLayout();
             var list = CaptureElements(subtitles).OfType<ListView>().Single();
             var choices = list.Items.Cast<ListViewItem>().ToArray();
@@ -298,7 +298,7 @@ public sealed partial class MainWindow
                 if (!list.SelectedItems.Contains(choice))
                     list.SelectedItems.Add(choice);
             }
-            await subtitles.Saving;
+            await acquisition.Saving;
             list.ScrollIntoView(choices[0]);
             list.StartBringIntoView();
             await CaptureLayout();
@@ -354,14 +354,14 @@ public sealed partial class MainWindow
             var automatic = (ToggleSwitch)subtitles.Field("subtitle_automatic")!;
             automatic.IsOn = true;
             automatic.IsOn = false;
-            await subtitles.Saving;
+            await acquisition.Saving;
             if (acquisition.Enabled || automatic.IsOn)
                 throw new InvalidOperationException(
                     "Rapid subtitle changes lost the final choice."
                 );
             filter.Text = string.Empty;
             languages.SelectedIndex = 0;
-            await subtitles.Saving;
+            await acquisition.Saving;
             if (acquisition.Languages.Length != 0)
                 throw new InvalidOperationException(
                     "The default subtitle language was not restored."
@@ -491,17 +491,17 @@ public sealed partial class MainWindow
         try
         {
             input.Text = "0";
-            await Model.Settings.Commit(setting);
+            await setting.Commit();
             if (!setting.HasDraft || setting.IsPending || Model.LookupLimit != saved)
                 throw new InvalidOperationException("An invalid lookup limit changed the saved policy.");
             setting.Cancel();
             var changed = saved == 1 ? 2 : 1;
             input.Text = changed.ToString(System.Globalization.CultureInfo.CurrentCulture);
-            await Model.Settings.Commit(setting);
+            await setting.Commit();
             if (Model.LookupLimit != changed || setting.HasDraft || setting.IsPending)
                 throw new InvalidOperationException("The lookup limit did not save through the settings editor.");
             input.Text = saved.ToString(System.Globalization.CultureInfo.CurrentCulture);
-            await Model.Settings.Depart(setting);
+            await setting.Depart();
             if (Model.LookupLimit != saved || setting.HasDraft || setting.IsPending)
                 throw new InvalidOperationException("Leaving the lookup limit did not restore the saved policy.");
             outcomes.Add(new { journey = "lookup limit validation, commit and departure", restored = true });
@@ -509,7 +509,7 @@ public sealed partial class MainWindow
         finally
         {
             setting.Cancel();
-            await Model.SaveLookupLimit(saved);
+            await Model.Features.SaveLookupLimit(saved);
         }
     }
 
@@ -601,26 +601,28 @@ public sealed partial class MainWindow
                 "The notice review could not focus the window Back button."
             );
         await CaptureLayout();
-        Model.Report(new IOException("Proxy connection review"));
+        var notices = Model.Notifications.Notices;
+        var editor = (TextBox)page.FindName("LookupLimit");
+        Model.Notifications.Report(new IOException("Proxy connection review"));
         await CaptureLayout();
-        var shown = Model.Notices.Single(notice => notice.Kind == NoticeKind.CommandError);
-        if (!_shownNotices.Contains(shown))
+        var error = notices.Single(notice => notice.Kind == NoticeKind.CommandError);
+        if (NoticeStack.Visibility != Visibility.Visible)
             throw new InvalidOperationException(
                 "The proxy-error review did not display its notice."
             );
-        if (!((TextBox)page.FindName("LookupLimit")).Focus(FocusState.Programmatic))
+        if (!editor.Focus(FocusState.Programmatic))
             throw new InvalidOperationException(
                 "The notice review could not focus the search-limit editor."
             );
         await CaptureLayout();
-        if (Model.Notices.Contains(shown))
+        if (NoticeStack.Visibility == Visibility.Visible || !notices.Contains(error))
             throw new InvalidOperationException(
-                "A displayed proxy error survived hiding for editor focus."
+                "A displayed proxy error did not survive hiding for editor focus."
             );
-        Model.ShowOutcome("subtitles", "connected", string.Empty);
-        var unseen = Model.Notices.Last();
+        Model.Notifications.ShowOutcome("subtitles", "connected", string.Empty);
+        var unseen = notices.Last();
         await CaptureLayout();
-        if (!Model.Notices.Contains(unseen) || _shownNotices.Contains(unseen))
+        if (!notices.Contains(unseen))
             throw new InvalidOperationException(
                 "A notice received while editing did not wait unseen."
             );
@@ -629,16 +631,39 @@ public sealed partial class MainWindow
                 "The notice review could not leave the search-limit editor."
             );
         await CaptureLayout();
-        if (Model.Notices.Contains(shown) || !_shownNotices.Contains(unseen))
+        if (
+            NoticeStack.Visibility != Visibility.Visible
+            || !notices.Contains(error)
+            || !notices.Contains(unseen)
+        )
             throw new InvalidOperationException(
-                $"Notice reveal failed: previousRetained={Model.Notices.Contains(shown)}, "
-                    + $"unseenRetained={Model.Notices.Contains(unseen)}, unseenShown={_shownNotices.Contains(unseen)}, "
+                $"Notice reveal failed: errorRetained={notices.Contains(error)}, "
+                    + $"unseenRetained={notices.Contains(unseen)}, "
                     + $"editorFocused={HasEditorFocus()}, focusedElement={(FocusManager.GetFocusedElement(Root.XamlRoot) as FrameworkElement)?.Name}, "
                     + $"stackVisibility={NoticeStack.Visibility}, popupOpen={NoticeLayer.IsOpen}."
             );
-        Model.DismissNotice(unseen);
+        if (!editor.Focus(FocusState.Programmatic))
+            throw new InvalidOperationException(
+                "The notice review could not focus the search-limit editor again."
+            );
+        await CaptureLayout();
+        if (notices.Contains(unseen) || !notices.Contains(error))
+            throw new InvalidOperationException(
+                $"Hiding the stack again kept the shown outcome ({notices.Contains(unseen)}) "
+                    + $"or retired the error ({!notices.Contains(error)})."
+            );
+        Model.Notifications.ClearError();
+        if (!BackButton.Focus(FocusState.Programmatic))
+            throw new InvalidOperationException(
+                "The notice review could not leave the search-limit editor."
+            );
+        await CaptureLayout();
         outcomes.Add(
-            new { journey = "shown proxy error retires; unseen notice waits", retained = true }
+            new
+            {
+                journey = "shown error survives a hide; unseen notice waits; seen timed one retires",
+                retained = true,
+            }
         );
     }
 

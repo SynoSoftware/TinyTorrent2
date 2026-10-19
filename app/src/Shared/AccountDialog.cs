@@ -51,6 +51,9 @@ internal sealed class AccountDialog : UserControl, IDraft
     public bool IsPending { get; private set; }
     public bool CanSubmit => !IsPending;
     public bool HasDraft => Input != _saved;
+
+    // Account details are stored only by the person's own Save.
+    public ClosePolicy ClosePolicy => new ClosePolicy.Discard();
     public event PropertyChangedEventHandler? PropertyChanged;
 
     /// <param name="title">The provider or supplier name, which the key hint also names.</param>
@@ -180,7 +183,7 @@ internal sealed class AccountDialog : UserControl, IDraft
 
     private void Changed()
     {
-        CancelCheck();
+        Stop();
         _saveFailure = null;
         _incomplete = false;
         RefreshText();
@@ -218,7 +221,7 @@ internal sealed class AccountDialog : UserControl, IDraft
     {
         if (IsPending)
             return false;
-        CancelCheck();
+        Stop();
         if (!IsComplete)
         {
             _incomplete = true;
@@ -251,13 +254,14 @@ internal sealed class AccountDialog : UserControl, IDraft
         }
     }
 
-    internal void CancelCheck() => _checking?.Cancel();
+    public void Stop() => _checking?.Cancel();
 
-    // Discards the typed secret, which ResolveDraft does when the window closes.
-    internal void Clear()
+    // Drops the typed secret.
+    public Task Discard()
     {
-        CancelCheck();
+        Stop();
         _own.IsChecked = _saved.KeepSecret;
         _secret.Password = string.Empty;
+        return Task.CompletedTask;
     }
 }

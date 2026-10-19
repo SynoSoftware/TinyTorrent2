@@ -7,8 +7,10 @@ using Syno.TinyTorrent.Settings;
 using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Shared.Desktop;
 using Syno.TinyTorrent.Shared.Engine;
+using Syno.TinyTorrent.Shared.Network;
 using Syno.TinyTorrent.Torrents;
 using LibraryBrowser = Syno.TinyTorrent.Library.Browser;
+using SubtitleAcquisition = Syno.TinyTorrent.Subtitles.Acquisition;
 
 namespace Syno.TinyTorrent.Shell;
 
@@ -27,18 +29,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     private bool _refreshDetail;
     private Torrent[] _selected = [];
     private Torrent? _current;
-    private Exception? _error;
-
-    // How the error notice describes _error: a title key from the
-    // notifications text, the torrent it names, the reason when the
-    // engine sent one instead of an error code, the folder where the
-    // person finishes a failed deletion, and the engine's word for the
-    // Settings switch that turns off a problem the engine reports.
-    private string _errorTitle = string.Empty;
-    private Func<string>? _errorSubject;
-    private Func<string>? _errorReason;
-    private string? _errorFolder;
-    private string? _errorSwitch;
     private double _downloadRate;
     private double _uploadRate;
     private double? _moveRate;
@@ -64,13 +54,17 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     private bool _closed;
     private bool _closing;
     private bool _picking;
-    private bool _addOpen;
     private bool _dark;
     private bool _toolbarOpen = true;
     private bool _showsSettingsIndex = true;
     private bool _applyingSnapshot;
     private long _limitsMinute;
-    private (bool CanClose, bool CanExit, bool HasDraft)? _taskState;
+    private (bool CanClose, bool CanExit, bool HasDraft, bool AddOpen)? _taskState;
+    private (SubtitleAcquisition? Subtitles, int LookupLimit)? _featureState;
+
+    // The update check uses it with or without the Library database.
+    private readonly ProviderHttp _providerHttp = new();
+    private bool _applyingSettings;
 
     public Strings Text { get; }
     internal BackgroundWork Work { get; }
@@ -93,6 +87,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     // person hid the index.
     public SettingsCategory? SettingsHome => ShowsSettingsIndex ? null : SettingsCategory.General;
     public LibraryBrowser Library { get; }
+    internal Features Features { get; }
+    internal Updates Updates { get; }
+    internal SubtitleAcquisition? Subtitles => Features.Subtitles;
+    internal Geolocation Geolocation { get; }
+    internal int LookupLimit => Features.LookupLimit;
     public string Theme =>
         Settings.Theme.ConfirmedText.Length > 0 ? Settings.Theme.ConfirmedText : "system";
     public bool ShowsTitleSpeeds => Settings.ShowTitleSpeeds.IsOn;
@@ -116,11 +115,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool IsStorageFailed => _storageFailed;
     public bool IsEmptyVisible => !_storageFailed;
     public bool IsClosing => _closing;
+    internal bool IsClosed => _closed;
     public bool CanClose =>
         !_changingLanguage
         && !_picking
         && !_receivingActivations
-        && _arrivals.IsCompleted
         && !AddDraft.IsBusy
         && !Inspector.IsPending
         && !Settings.IsPending
@@ -141,21 +140,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             if (_picking == value)
                 return;
             _picking = value;
-            Refresh();
-        }
-    }
-    public bool IsAddOpen
-    {
-        get => _addOpen;
-        set
-        {
-            if (_addOpen == value)
-                return;
-            _addOpen = value;
-            if (value)
-                AddDraft.StartPolling();
-            else
-                AddDraft.StopPolling();
             Refresh();
         }
     }
@@ -264,7 +248,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 );
             if (_loading)
                 return null;
-            if (FeatureFailure is { } featureFailure)
+            if (Features.Failure is { } featureFailure)
                 return FeatureStatus(featureFailure);
             if (
                 Subtitles is { Failure: var failure } subtitles
@@ -308,10 +292,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             return null;
         }
     }
-    public string CommandError =>
-        _error is null ? string.Empty : _errorReason?.Invoke() ?? Text.Error(_error);
-    public bool HasCommandError => _error is not null;
-
     public event PropertyChangedEventHandler? PropertyChanged;
     public event EventHandler? TextChanged;
     internal event EventHandler<SnapshotAppliedEventArgs>? SnapshotApplied;
@@ -320,9 +300,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     public event EventHandler? AddRequested;
     public event EventHandler? ActivateRequested;
     public event EventHandler? ShowRequested;
-    public event EventHandler<bool>? CloseRequested;
+    internal event EventHandler<CloseRequest>? CloseRequested;
     public event EventHandler? ConfirmExitRequested;
-    public event EventHandler<string>? AnnouncementRequested;
     public ICommand Restart { get; }
     public bool CanRestart => IsDisconnected && _disconnection is { IsOtherVersion: false };
     public bool IsDisconnected => !_connected && _disconnection is not null;
@@ -330,8 +309,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     private ICommand RetryFeatures { get; }
     private ICommand DeleteDatabase { get; }
     private ICommand RepairDatabase { get; }
-    private ICommand ShowSubtitleSettings { get; }
-    private ICommand OpenErrorFolder { get; }
+    internal ICommand ShowSubtitleSettings { get; }
     private ICommand RetrySubtitleWork { get; }
     public ICommand OpenDataFolder { get; }
 
@@ -344,26 +322,34 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 RefreshNavigation();
         };
         Text = strings;
+        Notifications = new Notifications(this, strings);
         _dispatcher = dispatcher;
         Work = new(dispatcher);
-        Work.Completed += (_, result) => ShowWorkResult(result);
         _client = new PipeClient(strings);
+        Library = new LibraryBrowser(strings, dispatcher, Work);
+        // Before Settings, whose lookup limit field reads LookupLimit.
+        Features = new Features(this, _client, _providerHttp, dispatcher);
+        Features.Changed += OnFeaturesChanged;
+        Work.Completed += (_, result) =>
+        {
+            if (!_closing && !Features.IsClosed)
+                Notifications.ShowWorkResult(result);
+        };
         Settings = new Editor(this, _client);
         AddDraft = new AddDraft(this, _client, strings);
         FileDraft = new FileDraft(this, _client);
         SpeedLimit = new SpeedLimit(this, _client);
         Geolocation = new Geolocation(_providerHttp, Work);
-        Geolocation.Failed += (_, error) => Report(error);
+        Geolocation.Failed += (_, error) => Notifications.Report(error);
         Inspector = new Inspector(this, _client);
-        Library = new LibraryBrowser(strings, dispatcher, Work);
+        Updates = new Updates(_providerHttp, Work, _client, Settings.Updates);
+        Updates.Changed += (_, _) => Changed(nameof(HasUpdate));
         Settings.AttachLibrary();
         Library.RetryRequested += (_, _) => RequestSnapshot();
         Library.FiltersRequested += (_, _) => IsFilterOpen = true;
         Library.PropertiesRequested += (_, _) => OpenInspector();
         Library.PropertyChanged += (_, args) =>
         {
-            if (args.PropertyName is nameof(Library.Failure) or "")
-                RefreshFeedback();
             if (args.PropertyName is nameof(Library.Providers) or "")
                 RefreshProtectionScopes();
             if (Page != WindowPage.Library)
@@ -385,8 +371,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         };
         Settings.PropertyChanged += (sender, args) =>
         {
-            if (!_closed && !_applyingSettings && _providerRoute is not null)
-                _ = ConfigureRoute();
+            if (!_closed && !_applyingSettings && Features.HasRoute)
+                _ = Features.ConfigureRoute();
             OnTaskChanged(sender, args);
         };
         FileDraft.PropertyChanged += OnTaskChanged;
@@ -396,29 +382,34 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             {
                 try
                 {
-                    _client.LaunchEngine();
-                    ClearError();
+                    EngineProcess.Launch(Text, _client.DataDirectory);
+                    // Restart starts a process instead of sending a command,
+                    // so no reply clears the error.
+                    Notifications.ClearError();
                 }
                 catch (Exception error)
                 {
-                    Report(error);
+                    Notifications.Report(error);
                 }
                 return Task.CompletedTask;
             },
             () => CanRestart
         );
-        RetryFeatures = new RelayCommand(RecoverFeatures, () => _connected && HasFeatureFailure);
+        RetryFeatures = new RelayCommand(
+            Features.Retry,
+            () => _connected && Features.Failure is not null
+        );
         DeleteDatabase = new RelayCommand(
             () =>
             {
                 DatabaseDeletionRequested?.Invoke(this, EventArgs.Empty);
                 return Task.CompletedTask;
             },
-            () => _connected && HasIncompatibleDatabase
+            () => _connected && Features.Failure is { Database: DatabaseCondition.Incompatible }
         );
         RepairDatabase = new RelayCommand(
-            ClearDatabaseReadOnly,
-            () => _connected && HasFeatureFailure
+            Features.Repair,
+            () => _connected && Features.Failure is not null
         );
         Add = new RelayCommand(
             () =>
@@ -426,7 +417,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 FilesRequested?.Invoke(this, EventArgs.Empty);
                 return Task.CompletedTask;
             },
-            () => CanEdit && !_addOpen
+            () => CanEdit && !AddDraft.IsOpen
         );
         Pause = new RelayCommand(
             () => ActOnSelection("pause"),
@@ -440,18 +431,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         CloseWindow = new RelayCommand(
             () =>
             {
-                CloseRequested?.Invoke(this, false);
+                CloseRequested?.Invoke(this, CloseRequest.Close);
                 return Task.CompletedTask;
             },
             () => true
         );
         SwitchTheme = new RelayCommand(
-            async () =>
-            {
-                await Settings.SelectTheme(_dark ? "light" : "dark");
-                if (Settings.Theme.Failure is null)
-                    ClearError();
-            },
+            () => Settings.SelectTheme(_dark ? "light" : "dark"),
             () => CanEdit
         );
         AddMagnet = new RelayCommand(
@@ -557,25 +543,16 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             () => RequestSettings(new(SettingsCategory.Plugins)),
             () => true
         );
-        OpenErrorFolder = new RelayCommand(
-            () =>
-            {
-                if (_errorFolder is { } folder)
-                    OpenRequested?.Invoke(this, new(folder));
-                return Task.CompletedTask;
-            },
-            () => true
-        );
         RetrySubtitleWork = new RelayCommand(
             async () =>
             {
                 try
                 {
-                    await RetrySubtitles();
+                    await Features.RetrySubtitles();
                 }
                 catch (Exception error)
                 {
-                    ReportFeature(error);
+                    Features.Report(error);
                 }
             },
             () => true
@@ -602,7 +579,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             () =>
             {
                 if (DataDirectory is { } directory)
-                    OpenRequested?.Invoke(this, new(directory));
+                    RequestOpen(directory);
                 return Task.CompletedTask;
             },
             () => true
@@ -632,7 +609,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             },
             () => true
         );
-        InstallUpdate = new RelayCommand(StartInstall, () => CanInstallUpdate);
         _commands =
         [
             Add,
@@ -665,7 +641,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             ShowSettings,
             ShowTorrents,
             ShowAbout,
-            InstallUpdate,
             Exit,
             SwitchTheme,
             Restart,
@@ -673,16 +648,16 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             DeleteDatabase,
             RepairDatabase,
         ];
-        Settings.Updates.PropertyChanged += (_, _) =>
-        {
-            ObserveUpdates();
-            Changed(nameof(HasUpdate));
-            ((RelayCommand)InstallUpdate).Refresh();
-        };
+        Settings.Updates.PropertyChanged += (_, _) => ObserveUpdates();
         _client.Snapshot += QueueSnapshot;
         _client.Detail += detail => QueueDetail(detail);
-        _client.CommandCompleted += () => QueueDetail(null);
-        _client.Notice += notice => _dispatcher.TryEnqueue(() => ReceiveNotice(notice));
+        _client.CommandReplied += reply =>
+        {
+            QueueDetail(null);
+            if (reply is { Succeeded: true, Requester: Requester.Person })
+                _dispatcher.TryEnqueue(Notifications.ClearError);
+        };
+        _client.Notice += notice => _dispatcher.TryEnqueue(() => Notifications.Receive(notice));
         // Every card the engine opens is on the General page.
         _client.SettingsRequested += setting =>
             _dispatcher.TryEnqueue(() =>
@@ -720,7 +695,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 else if (control == "confirm_exit")
                     ConfirmExitRequested?.Invoke(this, EventArgs.Empty);
                 else
-                    CloseRequested?.Invoke(this, true);
+                    CloseRequested?.Invoke(this, CloseRequest.Exit);
             });
         PropertyChanged += (_, _) =>
         {
@@ -820,7 +795,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 snapshot.GetProperty("proxy"),
                 snapshot.GetProperty("proxy_check")
             );
-            _ = ConfigureRoute();
+            _ = Features.ConfigureRoute();
         }
         finally
         {
@@ -984,7 +959,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         ObserveUpdates();
         if (first)
             ShowRequested?.Invoke(this, EventArgs.Empty);
-        ObserveFiles(snapshot);
+        Features.Observe(snapshot);
         Inspector.Observe(
             sessionId,
             inspectedChanged
@@ -1008,12 +983,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     {
         try
         {
-            await _client.Send("ready");
+            await _client.Send("ready", null, Requester.Window);
             return true;
         }
         catch (Exception error)
         {
-            Report(error);
+            Notifications.Report(error);
             return false;
         }
     }
@@ -1087,16 +1062,16 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         try
         {
             await _client.Send(command, new { torrent_ids = torrentIds });
-            _error = null;
             _waiting = command is "resume" or "force" && IsSessionPaused ? torrents : null;
+            Changed(nameof(HasResumeNotice));
             if (HasResumeNotice)
-                Announce(ResumeNotice);
+                Notifications.Announce(ResumeNotice);
             else
-                AnnounceAccepted("commands", command);
+                Notifications.AnnounceAccepted("commands", command);
         }
         catch (Exception error)
         {
-            Report(error);
+            Notifications.Report(error);
         }
     }
 
@@ -1110,7 +1085,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         }
         catch (Exception error)
         {
-            Report(error);
+            Notifications.Report(error);
         }
     }
 
@@ -1133,7 +1108,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 return;
             // The failed language stays requested, so later snapshots that
             // carry the same saved language do not load it and report again.
-            Report(error);
+            Notifications.Report(error);
         }
     }
 
@@ -1174,7 +1149,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                     await Settings.SaveLanguage(language);
                     if (revision != _languageRevision)
                         continue;
-                    _error = null;
                     break;
                 }
                 catch (Exception error)
@@ -1184,7 +1158,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                     if (!published)
                     {
                         _requestedLanguage = Text.Language;
-                        Report(error);
+                        Notifications.Report(error);
                     }
                     break;
                 }
@@ -1205,160 +1179,19 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         AddDraft.Refresh();
         Inspector.RefreshText();
         Library.RefreshText();
-        _ = RefreshFeatures();
+        _ = Features.Refresh();
         Settings.RefreshText();
         FileDraft.Refresh();
         Refresh();
         TextChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    // Requests queued before this one reach the engine first, so a command that
-    // sends one request needs no wait before the window closes.
-    public async Task Close(bool exiting)
-    {
-        if (_connected)
-            await _client.Send(
-                exiting ? "close_reply" : "window_closed",
-                new { state = "closing" }
-            );
-    }
-
-    // Instead of `window_closed`, which shows the background notice: the engine
-    // asks this closing window to activate, is told it cannot, and opens a new
-    // window once this one has exited. A refusal, such as from an engine that
-    // is exiting, still lets this window close, because its features already
-    // have.
-    internal async Task Reopen()
-    {
-        try
-        {
-            if (_connected)
-                await _client.Send("open");
-        }
-        catch (Exception error)
-        {
-            System.Diagnostics.Debug.WriteLine(error);
-        }
-    }
-
-    public async Task CancelClose()
-    {
-        if (_connected)
-            await _client.Send("close_reply", new { state = "cancelled" });
-    }
-
-    public async Task DeferClose()
-    {
-        try
-        {
-            if (_connected)
-                await _client.Send("close_reply", new { state = "waiting" });
-        }
-        catch (Exception error)
-        {
-            Report(error);
-        }
-    }
-
-    internal async Task ReplyExit(ExitAnswer answer)
-    {
-        try
-        {
-            await _client.Send(
-                "exit_reply",
-                new
-                {
-                    answer = answer switch
-                    {
-                        ExitAnswer.Confirmed => "confirmed",
-                        ExitAnswer.Cancelled => "cancelled",
-                        _ => "unavailable",
-                    },
-                }
-            );
-        }
-        catch (Exception error)
-        {
-            Report(error);
-        }
-    }
-
-    internal async Task ReplyActivation(bool available)
-    {
-        try
-        {
-            await _client.Send("activate_reply", new { available });
-        }
-        catch (Exception error)
-        {
-            Report(error);
-        }
-    }
-
     public async Task CancelDraft()
     {
-        await AddDraft.Cancel();
+        await AddDraft.Discard();
         Inspector.CancelDraft();
         await Settings.CancelDraft();
-        FileDraft.Cancel();
-    }
-
-    public void Report(Exception error) => Report(error, ErrorTitle(error), null, null);
-
-    internal void Report(
-        Exception error,
-        string title,
-        Func<string>? subject,
-        Func<string>? reason,
-        string? folder = null,
-        string? notices = null
-    )
-    {
-        if (_closed)
-            return;
-        _error = error;
-        _errorTitle = title;
-        _errorSubject = subject;
-        _errorReason = reason;
-        _errorFolder = folder;
-        _errorSwitch = notices;
-        Refresh();
-        Announce(CommandError);
-    }
-
-    private string ErrorTitle(Exception error) =>
-        error is CommandException { Command: { } command }
-        && Text.Find("notifications", "failed_" + command) is not null
-            ? "failed_" + command
-            : "failed";
-
-    internal void AnnounceAccepted(string group, string key) =>
-        Announce(Text.Format("outcomes", "accepted", Text.Get(group, key)));
-
-    internal void Announce(string message)
-    {
-        if (!_closed)
-            AnnouncementRequested?.Invoke(this, message);
-    }
-
-    // Stops new operations while the window closes. Accepted work still
-    // finishes, and CanClose reports when it has.
-    internal bool BeginClose()
-    {
-        if (_closing)
-            return false;
-        _closing = true;
-        Refresh();
-        return true;
-    }
-
-    internal void EndClose()
-    {
-        _closing = false;
-        _ = RefreshFeatures();
-        Refresh();
-        if (_activationsPending)
-            _ = ReceiveActivations();
+        await FileDraft.Discard();
     }
 
     internal void Reveal(string[] torrentIds)
@@ -1367,7 +1200,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             return;
         Filter = TorrentFilter.All;
         _revealIds = torrentIds;
-        _error = null;
         RevealPending();
     }
 
@@ -1412,12 +1244,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         Changed(nameof(ShowsFreeSpace));
     }
 
-    internal void ClearError()
-    {
-        _error = null;
-        RefreshWindow();
-    }
-
     private void Refresh()
     {
         if (_closed)
@@ -1436,7 +1262,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             return;
         foreach (var choice in Filters)
             choice.Refresh();
-        _taskState = (CanClose, CanExit, HasDraft);
+        _taskState = (CanClose, CanExit, HasDraft, AddDraft.IsOpen);
         Changed(string.Empty);
         foreach (RelayCommand command in _commands)
             command.Refresh();
@@ -1459,7 +1285,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             RefreshLimits();
             RefreshRates();
         }
-        var state = (CanClose, CanExit, HasDraft);
+        var state = (CanClose, CanExit, HasDraft, AddOpen: AddDraft.IsOpen);
         var previous = _taskState;
         _taskState = state;
         if (previous?.CanClose != state.CanClose)
@@ -1471,6 +1297,23 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         }
         if (previous?.HasDraft != state.HasDraft)
             Changed(nameof(HasDraft));
+        if (previous?.AddOpen != state.AddOpen)
+            ((RelayCommand)Add).Refresh();
+    }
+
+    private void OnFeaturesChanged(object? sender, EventArgs args)
+    {
+        var state = (Subtitles, LookupLimit);
+        var previous = _featureState;
+        _featureState = state;
+        if (!ReferenceEquals(previous?.Subtitles, state.Subtitles))
+        {
+            Changed(nameof(Subtitles));
+            RefreshProtectionScopes();
+        }
+        if (previous?.LookupLimit != state.LookupLimit)
+            Changed(nameof(LookupLimit));
+        RefreshFeedback();
     }
 
     private void RefreshRates()
@@ -1527,9 +1370,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     public void Dispose()
     {
         _closed = true;
-        _updateRequest?.Cancel();
-        AddDraft.StopPolling();
+        _ = Updates.Close();
+        AddDraft.Close();
         Library.Dispose();
+        Geolocation.Dispose();
         Work.Dispose();
         _client.Dispose();
         lock (_snapshotGate)

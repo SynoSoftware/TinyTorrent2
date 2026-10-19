@@ -1,22 +1,15 @@
-using System.Collections.ObjectModel;
-using System.ComponentModel;
-using System.Runtime.CompilerServices;
-using System.Text.Json;
 using System.Windows.Input;
+using Microsoft.Data.Sqlite;
 using Microsoft.UI.Xaml.Controls;
+using SQLitePCL;
 using Syno.TinyTorrent.Shared;
-using Syno.TinyTorrent.Shared.Engine;
+using Syno.TinyTorrent.Shared.Storage;
 using Syno.TinyTorrent.Torrents;
 
 namespace Syno.TinyTorrent.Shell;
 
 public sealed partial class MainViewModel
 {
-    // Fluent 2 toasts: at most four show, and one closes after seven seconds.
-    // A finished download stays visible in the list after its notice goes.
-    private const int MaxTimedNotices = 4;
-    private static readonly TimeSpan NoticeLifetime = TimeSpan.FromSeconds(7);
-
     // The torrents the person resumed, which start once every transfer may
     // run, or none after Resume all; null when no such notice shows.
     private Torrent[]? _waiting;
@@ -42,12 +35,8 @@ public sealed partial class MainViewModel
     private Status? _dismissedStatus;
     private bool _showsStatus;
 
-    private Subtitles.FileFailure? _subtitleFailure;
-    private int _subtitleFailureCount;
-
-    // The events the window reports as toasts, oldest first, so the newest
-    // notice sits nearest the window corner.
-    public ObservableCollection<Notice> Notices { get; } = [];
+    // The events the window reports as toasts.
+    public Notifications Notifications { get; }
 
     // The message bar's content; ShowsStatus says whether it shows.
     public Notice AppStatus { get; } = new(NoticeKind.Status);
@@ -98,81 +87,12 @@ public sealed partial class MainViewModel
         return Text.FormatCount("notifications", key, torrents.Length, torrents[0].Name, detail);
     }
 
-    internal void ReceiveNotice(JsonElement notice)
-    {
-        if (_closed)
-            return;
-        var kind = notice.GetProperty("kind").GetString();
-        var name = notice.GetProperty("name").GetString() ?? string.Empty;
-        var torrentId = notice.GetProperty("torrent_id").GetString() ?? string.Empty;
-        var count = notice.TryGetProperty("count", out var total) ? total.GetInt32() : 1;
-        var notices = notice.GetProperty("switch").GetString();
-        if (kind == "completed")
-            ShowCompletion(torrentId, name, notices);
-        else if (kind is "error" or "add_failed" or "delete_failed")
-        {
-            var detail = notice.GetProperty("detail").GetString() ?? string.Empty;
-            var code =
-                notice.GetProperty("code").GetString() is { Length: > 0 } problem ? problem
-                : kind == "error"
-                    ? torrentId.Length == 0 ? "unknown"
-                        : "torrent_error"
-                : kind;
-            var error = new CommandException(code, detail, Text);
-            // The title already says what failed, so the engine's reason
-            // alone is the body; without one, the error code's text is.
-            string Reason()
-            {
-                var reason =
-                    kind == "delete_failed" && detail == "recycle_failed"
-                        ? Text.Get("errors", "recycle_failed")
-                    : detail.Length > 0 ? detail
-                    : Text.Error(error);
-                return count > 1
-                    ? Text.Format(
-                        "errors",
-                        "detail",
-                        reason,
-                        Text.Format("errors", "additional_problems", count - 1)
-                    )
-                    : reason;
-            }
-            var title = kind switch
-            {
-                "add_failed" => "not_added",
-                "delete_failed" => "not_deleted",
-                _ => "torrent_stopped",
-            };
-            var folder = notice.GetProperty("folder").GetString();
-            Report(
-                error,
-                title,
-                () => name,
-                Reason,
-                folder is { Length: > 0 } ? folder : null,
-                notices
-            );
-        }
-    }
-
-    // A notice for a condition shows while the condition holds. Each change
-    // of the model can change a condition, so every change syncs the stack
-    // instead of each place that changes the state.
     private void SyncNotices()
     {
         if (_closed)
             return;
         SyncStatus();
-        SyncCondition(NoticeKind.Resume, HasResumeNotice);
-        SyncCondition(NoticeKind.CommandError, HasCommandError);
-        var close = Text.Get("commands", "close");
-        foreach (var notice in Notices)
-        {
-            notice.CloseText = close;
-            Describe(notice);
-            if (notice.Kind == NoticeKind.Completion)
-                ((RelayCommand)notice.Action!).Refresh();
-        }
+        Notifications.Sync();
     }
 
     // Raising ShowsStatus runs this sync again, which then finds nothing new.
@@ -208,274 +128,78 @@ public sealed partial class MainViewModel
         SyncStatus();
     }
 
-    private void SyncCondition(NoticeKind kind, bool shows)
+    private void RefreshFeedback()
     {
-        var shown = Notices.FirstOrDefault(notice => notice.Kind == kind);
-        if (shows && shown is null)
-            Notices.Add(new Notice(kind));
-        else if (!shows && shown is not null)
-            Notices.Remove(shown);
+        if (_closed || Features.IsClosed)
+            return;
+        Changed(nameof(CurrentStatus));
+        ((RelayCommand)RetryFeatures).Refresh();
+        ((RelayCommand)DeleteDatabase).Refresh();
+        ((RelayCommand)RepairDatabase).Refresh();
+        ((RelayCommand)DownloadSubtitles).Refresh();
     }
 
-    private void Describe(Notice notice)
+    // The message bar names the cause. It offers the fix the app can make,
+    // or Open folder beside Retry when the person fixes the file outside the
+    // app.
+    private Status FeatureStatus(FeatureFailure failure)
     {
-        switch (notice.Kind)
+        var title = Text.Get(
+            "notifications",
+            failure.SubtitlesOnly ? "subtitles_unavailable" : "library_unavailable"
+        );
+        var error = failure.Cause;
+        // An incompatible database fails both features, whichever reports
+        // first, but a failed deletion of it says why it failed.
+        if (failure.Database == DatabaseCondition.Incompatible)
+            return new(
+                title,
+                error is IOException or UnauthorizedAccessException
+                    ? Text.Error(error)
+                    : Text.Get("errors", "database_incompatible"),
+                InfoBarSeverity.Error,
+                DeleteDatabase,
+                Text.Get("file_action", "delete"),
+                Syno.Lucide.Trash2,
+                Text.Get("window", "delete_database_tip")
+            );
+        if (failure.Database == DatabaseCondition.ReadOnlyFile)
+            return new(
+                title,
+                Text.Format("window", "database_read_only", Database.FileName),
+                InfoBarSeverity.Error,
+                RepairDatabase,
+                Text.Get("window", "repair_database"),
+                Syno.Lucide.Wrench,
+                Text.Get("window", "repair_database_tip")
+            );
+        if (error is not SqliteException { SqliteErrorCode: var code })
+            return Retry(Text.Error(error));
+        var cause = code switch
         {
-            case NoticeKind.WorkResult:
-            {
-                var result = notice.Result!;
-                notice.Title = Text.Get(
-                    "work",
-                    "result_" + result.Outcome.ToString().ToLowerInvariant()
-                );
-                notice.Subject = Text.Get(result.Observation.Description);
-                var progress = result.Observation.Progress;
-                var summary = result.SummaryKey is { } key
-                    ? Text.Format("work", key, result.Arguments)
-                    : progress is WorkProgress.Fraction { Unit: WorkUnit.Files or WorkUnit.Folders } fraction
-                        ? Text.Format(
-                            "work",
-                            fraction.Unit == WorkUnit.Folders ? "folders" : "processed",
-                            fraction.Completed,
-                            fraction.Total
-                        )
-                        : string.Empty;
-                var detail = result.Error is { } error ? Text.Error(error) : string.Empty;
-                notice.Message =
-                    detail.Length == 0 ? summary
-                    : summary.Length == 0 ? detail
-                    : Text.Format("errors", "detail", summary, detail);
-                break;
-            }
-            case NoticeKind.Outcome:
-                notice.Title = Text.Get(notice.Group, notice.Key);
-                break;
-            case NoticeKind.SearchLimit:
-                notice.Title = Text.Get("notifications", "search_limit");
-                notice.Message = Text.FormatCount(
-                    "notifications",
-                    "search_limit_files",
-                    notice.Count
-                );
-                notice.ActionText = Text.Get("notifications", "settings");
-                notice.ActionTip = Text.Get("notifications", "search_limit_tip");
-                break;
-            case NoticeKind.Resume:
-                notice.Severity = InfoBarSeverity.Informational;
-                notice.Title = Text.Get("notifications", "delayed");
-                notice.Message = ResumeNotice;
-                notice.Action = ResolvePause;
-                notice.ActionText = PauseAction;
-                notice.ActionTip = PauseActionTip;
-                notice.ActionGlyph = PauseActionGlyph;
-                break;
-            case NoticeKind.CommandError:
-                notice.Severity = InfoBarSeverity.Error;
-                notice.Title = Text.Get("notifications", _errorTitle);
-                notice.Subject = _errorSubject?.Invoke() ?? string.Empty;
-                notice.Message = CommandError;
-                notice.Action = _errorFolder is null ? null : OpenErrorFolder;
-                notice.ActionText = Text.Get("commands", "open_folder");
-                notice.ActionTip = Text.Get("notifications", "files_folder_tip");
-                notice.ActionGlyph = Syno.Lucide.FolderOpen;
-                notice.Switch = _errorSwitch;
-                break;
-            case NoticeKind.SubtitleError:
-                var latest = _subtitleFailure!;
-                var reason = Text.Get(
-                    "subtitles",
-                    "failure_" + latest.Reason.ToString().ToLowerInvariant()
-                );
-                notice.Severity = InfoBarSeverity.Error;
-                notice.Title = Text.Get(
-                    "notifications",
-                    latest.Reason == SubtitleFailure.Delete
-                        ? "subtitle_not_deleted"
-                        : "subtitle_not_saved"
-                );
-                notice.Subject = Path.GetFileName(latest.Path);
-                notice.Message =
-                    _subtitleFailureCount == 1
-                        ? reason
-                        : Text.Format(
-                            "errors",
-                            "detail",
-                            reason,
-                            Text.Format("errors", "additional_problems", _subtitleFailureCount - 1)
-                        );
-                notice.Action = ShowSubtitleSettings;
-                notice.ActionText = Text.Get("notifications", "settings");
-                notice.ActionTip = Text.Get("notifications", "subtitles_tip");
-                notice.ActionGlyph = Syno.Lucide.Settings;
-                break;
-            case NoticeKind.Completion:
-                notice.Severity = InfoBarSeverity.Success;
-                notice.Title = Text.Get("notifications", "finished");
-                notice.ActionText = Text.Get("commands", "open_folder");
-                notice.ActionTip = Text.Format("notifications", "open_folder_tip", notice.Subject);
-                notice.ActionGlyph = Syno.Lucide.FolderOpen;
-                break;
-        }
-        notice.MoreText = Text.Get("notifications", "more");
-    }
-
-    // A torrent that finishes again replaces its earlier notice, and beyond
-    // the limit the oldest timed notice gives way to the new one.
-    private void ShowCompletion(string torrentId, string name, string? notices)
-    {
-        if (
-            Notices.FirstOrDefault(shown =>
-                shown.Kind == NoticeKind.Completion && shown.TorrentId == torrentId
-            ) is
-            { } earlier
-        )
-            Notices.Remove(earlier);
-        var notice = new Notice(NoticeKind.Completion, torrentId, NoticeLifetime)
-        {
-            Subject = name,
-            CloseText = Text.Get("commands", "close"),
-            Switch = notices,
+            raw.SQLITE_READONLY or raw.SQLITE_PERM or raw.SQLITE_CANTOPEN => "database_denied",
+            raw.SQLITE_IOERR => "database_disk",
+            raw.SQLITE_FULL => "database_full",
+            raw.SQLITE_BUSY or raw.SQLITE_LOCKED => "database_in_use",
+            _ => null,
         };
-        notice.Action = new RelayCommand(
-            () => OpenCompletion(notice),
-            () => CanEdit && _byId.ContainsKey(notice.TorrentId)
-        );
-        Describe(notice);
-        Notices.Add(notice);
-        if (
-            Notices.Where(shown => shown.Remaining is not null).ToArray() is
-            { Length: > MaxTimedNotices } timed
-        )
-            Notices.Remove(timed[0]);
-        Announce(Text.Format("notifications", "completed", name));
-    }
+        // Any other code is a defect, and SQLite's own message is what a
+        // report of it needs.
+        return cause is null
+            ? Retry(Text.Error(error))
+            : Retry(Text.Format("window", cause, Database.FileName), offersDataFolder: true);
 
-    // A result the person asked for, such as a passed check. It closes by
-    // itself like a finished download, because nothing remains to do.
-    internal void ShowOutcome(string group, string key, string subject) =>
-        ShowTimed(
-            new Notice(NoticeKind.Outcome, lifetime: NoticeLifetime)
-            {
-                Severity = InfoBarSeverity.Success,
-                Group = group,
-                Key = key,
-                Subject = subject,
-            }
-        );
-
-    private void ShowWorkResult(WorkResult result)
-    {
-        if (_closed || _closing || _featuresClosed)
-            return;
-        ShowTimed(
-            new Notice(NoticeKind.WorkResult, lifetime: NoticeLifetime)
-            {
-                Result = result,
-                Severity = result.Outcome switch
-                {
-                    WorkOutcome.Completed => InfoBarSeverity.Success,
-                    WorkOutcome.Cancelled => InfoBarSeverity.Informational,
-                    _ => InfoBarSeverity.Error,
-                },
-            }
-        );
-    }
-
-    // Fetch metadata leaves a file unidentified when its title reached the
-    // search limit, which only raising the limit lets the batch search again.
-    internal void ShowSearchLimit(int files)
-    {
-        var notice = new Notice(NoticeKind.SearchLimit, lifetime: NoticeLifetime)
-        {
-            Severity = InfoBarSeverity.Warning,
-            Count = files,
-            ActionGlyph = Syno.Lucide.Settings,
-        };
-        // Changing the limit is what the notice offers, so it closes with it.
-        notice.Action = new RelayCommand(
-            () =>
-            {
-                Notices.Remove(notice);
-                return RequestSettings(new(SettingsCategory.Plugins, "lookups"));
-            },
-            () => true
-        );
-        ShowTimed(notice);
-    }
-
-    private void ShowTimed(Notice notice)
-    {
-        if (_closed)
-            return;
-        Describe(notice);
-        notice.CloseText = Text.Get("commands", "close");
-        Notices.Add(notice);
-        if (
-            Notices.Where(shown => shown.Remaining is not null).ToArray() is
-            { Length: > MaxTimedNotices } timed
-        )
-            Notices.Remove(timed[0]);
-        Announce(
-            notice.Kind == NoticeKind.WorkResult
-                ? string.Join(
-                    Environment.NewLine,
-                    new[] { notice.Title, notice.Subject, notice.Message }.Where(value => value.Length > 0)
-                )
-                : notice.Title
-        );
-    }
-
-    // Subtitle work fails in the background, often for several movies at
-    // once, so one notice names the latest file and counts the others.
-    internal void ShowSubtitleFailure(Subtitles.FileFailure failure)
-    {
-        if (_closed)
-            return;
-        _subtitleFailure = failure;
-        _subtitleFailureCount++;
-        var notice = Notices.FirstOrDefault(shown => shown.Kind == NoticeKind.SubtitleError);
-        if (notice is null)
-        {
-            notice = new Notice(NoticeKind.SubtitleError)
-            {
-                CloseText = Text.Get("commands", "close"),
-            };
-            Notices.Add(notice);
-        }
-        Describe(notice);
-        Announce(notice.Message);
-    }
-
-    // Closing a condition's notice ends what it reports, so the condition
-    // does not bring the notice back.
-    public void DismissNotice(Notice notice)
-    {
-        switch (notice.Kind)
-        {
-            case NoticeKind.Resume:
-                DismissResume();
-                break;
-            case NoticeKind.CommandError:
-                ClearError();
-                break;
-            case NoticeKind.SubtitleError:
-                _subtitleFailure = null;
-                _subtitleFailureCount = 0;
-                Notices.Remove(notice);
-                break;
-            default:
-                Notices.Remove(notice);
-                break;
-        }
-    }
-
-    // Opening the folder is what the notice offers, so the notice closes with it.
-    private async Task OpenCompletion(Notice notice)
-    {
-        if (!CanEdit || !_byId.TryGetValue(notice.TorrentId, out var torrent))
-            return;
-        Notices.Remove(notice);
-        await OpenTorrent(torrent, true);
+        Status Retry(string body, bool offersDataFolder = false) =>
+            new(
+                title,
+                body,
+                InfoBarSeverity.Error,
+                RetryFeatures,
+                Text.Get("inspector", "retry"),
+                Syno.Lucide.RotateCcw,
+                Text.Get("window", "retry_features_tip"),
+                offersDataFolder
+            );
     }
 
     // A toast's More menu offers what the engine's popup menu offers, and the
@@ -490,169 +214,20 @@ public sealed partial class MainViewModel
     {
         if (!CanEdit)
             return;
-        DismissNotice(notice);
+        Notifications.Dismiss(notice);
         try
         {
             await _client.Send("turn_off", new { @switch = notices });
         }
         catch (Exception error)
         {
-            Report(error);
+            Notifications.Report(error);
         }
     }
 
     internal Task ShowNotificationSettings(Notice notice)
     {
-        DismissNotice(notice);
+        Notifications.Dismiss(notice);
         return RequestSettings(new(SettingsCategory.General, "notifications"));
     }
-}
-
-// One message in the window's toast stack, or the message bar's content.
-// MainViewModel describes it again on every change, so its text follows the
-// state and the language.
-public sealed class Notice : INotifyPropertyChanged
-{
-    private InfoBarSeverity _severity;
-    private string _title = string.Empty;
-    private string _subject = string.Empty;
-    private string _message = string.Empty;
-    private ICommand? _action;
-    private string _actionText = string.Empty;
-    private string _actionTip = string.Empty;
-    private string _actionGlyph = string.Empty;
-    private string _closeText = string.Empty;
-    private string _moreText = string.Empty;
-    private string? _switch;
-
-    internal Notice(NoticeKind kind, string torrentId = "", TimeSpan? lifetime = null)
-    {
-        Kind = kind;
-        TorrentId = torrentId;
-        Remaining = lifetime;
-    }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    internal NoticeKind Kind { get; }
-    internal string Group { get; init; } = string.Empty;
-    internal string Key { get; init; } = string.Empty;
-    internal int Count { get; init; }
-    internal WorkResult? Result { get; init; }
-
-    // The torrent of a Completion notice; empty for every other kind.
-    internal string TorrentId { get; }
-
-    // The time on screen before the notice closes by itself; null for a
-    // notice that stays until it is closed or its condition ends. The
-    // window counts only time in which the person can see it.
-    internal TimeSpan? Remaining { get; set; }
-
-    public InfoBarSeverity Severity
-    {
-        get => _severity;
-        internal set
-        {
-            if (!Set(ref _severity, value))
-                return;
-            Changed(nameof(IsSuccess));
-            Changed(nameof(IsInformational));
-            Changed(nameof(IsWarning));
-            Changed(nameof(IsError));
-        }
-    }
-    public bool IsSuccess => Severity == InfoBarSeverity.Success;
-    public bool IsInformational => Severity == InfoBarSeverity.Informational;
-    public bool IsWarning => Severity == InfoBarSeverity.Warning;
-    public bool IsError => Severity == InfoBarSeverity.Error;
-
-    // Fluent 2 toast text: Title says what happened in one line, Subject
-    // names what it happened to, such as a torrent, in one line, and Message
-    // gives the reason or the next step.
-    public string Title
-    {
-        get => _title;
-        internal set => Set(ref _title, value);
-    }
-    public string Subject
-    {
-        get => _subject;
-        internal set
-        {
-            if (Set(ref _subject, value))
-                Changed(nameof(HasSubject));
-        }
-    }
-    public bool HasSubject => Subject.Length > 0;
-    public string Message
-    {
-        get => _message;
-        internal set
-        {
-            if (Set(ref _message, value))
-                Changed(nameof(HasMessage));
-        }
-    }
-    public bool HasMessage => Message.Length > 0;
-    public ICommand? Action
-    {
-        get => _action;
-        internal set
-        {
-            if (Set(ref _action, value))
-                Changed(nameof(HasAction));
-        }
-    }
-    public bool HasAction => Action is not null;
-    public string ActionText
-    {
-        get => _actionText;
-        internal set => Set(ref _actionText, value);
-    }
-    public string ActionTip
-    {
-        get => _actionTip;
-        internal set => Set(ref _actionTip, value);
-    }
-    public string ActionGlyph
-    {
-        get => _actionGlyph;
-        internal set => Set(ref _actionGlyph, value);
-    }
-    public string CloseText
-    {
-        get => _closeText;
-        internal set => Set(ref _closeText, value);
-    }
-    public string MoreText
-    {
-        get => _moreText;
-        internal set => Set(ref _moreText, value);
-    }
-
-    // The engine's word for the Settings switch that turns off notices like
-    // this one, which the More menu offers; null when none does, such as for
-    // a failure of the person's own command.
-    internal string? Switch
-    {
-        get => _switch;
-        set
-        {
-            if (Set(ref _switch, value))
-                Changed(nameof(HasSwitch));
-        }
-    }
-    public bool HasSwitch => Switch is not null;
-
-    private bool Set<T>(ref T field, T value, [CallerMemberName] string property = "")
-    {
-        if (EqualityComparer<T>.Default.Equals(field, value))
-            return false;
-        field = value;
-        Changed(property);
-        return true;
-    }
-
-    private void Changed(string property) =>
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(property));
 }

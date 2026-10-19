@@ -22,8 +22,8 @@ public sealed partial class MainWindow
     {
         AppIcon.Loaded += WatchNavigationPress;
         Model.Library.ShowsFacets = Model.IsFilterOpen;
-        Model.Library.CommandFailed += (_, error) => Model.Report(error);
-        Model.Library.BatchLimited += (_, files) => Model.ShowSearchLimit(files);
+        Model.Library.CommandFailed += (_, error) => Model.Notifications.Report(error);
+        Model.Library.BatchLimited += (_, files) => Model.Notifications.ShowSearchLimit(files);
         // A submenu has no command, so the menu bar's Fetch metadata follows it here.
         Model.Library.FetchMetadata.CanExecuteChanged += (_, _) =>
         {
@@ -73,7 +73,7 @@ public sealed partial class MainWindow
         {
             var failure = await OpenPath(path);
             if (failure is not null)
-                Model.Report(failure);
+                Model.Notifications.Report(failure);
         };
         Model.Library.TorrentRequested += async (_, origin) =>
         {
@@ -429,7 +429,7 @@ public sealed partial class MainWindow
         }
         catch (Exception error)
         {
-            Model.Report(error);
+            Model.Notifications.Report(error);
         }
     }
 
@@ -439,8 +439,6 @@ public sealed partial class MainWindow
         await Interact(async interaction =>
         {
             interaction.Restore = () => FetchMetadata(content);
-            interaction.ResolveDraft = () =>
-                SaveOnClose(interaction, content, canSave: !content.RequiresForce);
             var dialog = new Dialog
             {
                 Content = content,
@@ -481,7 +479,7 @@ public sealed partial class MainWindow
                     {
                         if (!await content.Submit())
                             return false;
-                        Model.Announce(Model.Text.Get("library", "metadata_saved"));
+                        Model.Notifications.Announce(Model.Text.Get("library", "metadata_saved"));
                         return true;
                     }
                 );
@@ -490,7 +488,6 @@ public sealed partial class MainWindow
             {
                 content.SettingsRequested -= OpenSettings;
                 content.PropertyChanged -= UpdateSubmit;
-                content.Cancel();
             }
             return true;
         });

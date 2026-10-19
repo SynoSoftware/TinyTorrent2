@@ -22,8 +22,9 @@ public sealed class SpeedLimit : IDraft
     private bool _invalid;
     public bool IsPending { get; private set; }
     public bool HasDraft => _downloadInput != _download.Input || _uploadInput != _upload.Input;
-    private bool CanSave => _owner.CanSave && !IsPending;
-    public bool CanSubmit => CanSave && !_owner.IsClosing;
+    public bool CanSubmit => _owner.CanSave && !IsPending;
+    public ClosePolicy ClosePolicy =>
+        _owner.CanSave ? new ClosePolicy.Save() : new ClosePolicy.Discard();
     public string Subject =>
         _torrentIds.Length > 1
             ? _owner.Text.Format("window", "selected", _torrentIds.Length)
@@ -84,12 +85,12 @@ public sealed class SpeedLimit : IDraft
         _download = Start(torrents.Select(torrent => torrent.DownloadLimit));
         _upload = Start(torrents.Select(torrent => torrent.UploadLimit));
         _failure = null;
-        Cancel();
+        Discard();
     }
 
     public async Task<bool> Submit()
     {
-        if (!CanSave)
+        if (!CanSubmit)
             return false;
         if (
             !TryLimit(_downloadInput, _download, out var download)
@@ -112,9 +113,9 @@ public sealed class SpeedLimit : IDraft
         try
         {
             await _client.Send("speed_limit", arguments);
-            _owner.AnnounceAccepted("speed_limit", "title");
+            _owner.Notifications.AnnounceAccepted("speed_limit", "title");
             _failure = null;
-            Cancel();
+            await Discard();
             return true;
         }
         catch (Exception error)
@@ -129,13 +130,16 @@ public sealed class SpeedLimit : IDraft
         }
     }
 
-    internal void Cancel()
+    public Task Discard()
     {
         _downloadInput = _download.Input;
         _uploadInput = _upload.Input;
         _invalid = false;
         Refresh();
+        return Task.CompletedTask;
     }
+
+    public void Stop() { }
 
     internal void Refresh() =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));

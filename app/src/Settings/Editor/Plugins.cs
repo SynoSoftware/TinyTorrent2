@@ -126,7 +126,7 @@ public sealed partial class Editor
             Changed(nameof(VideoCoverage), nameof(SubtitleCoverage));
             if (includeSize)
             {
-                _databaseSize = await _owner.ReadDatabaseSize();
+                _databaseSize = await _owner.Features.ReadDatabaseSize();
                 Changed(nameof(DatabaseSize));
             }
         }
@@ -141,7 +141,7 @@ public sealed partial class Editor
 
     private async Task ReadStatistics()
     {
-        _statistics = await _owner.ReadStatistics();
+        _statistics = await _owner.Features.ReadStatistics();
         Changed(nameof(LibraryFiles), nameof(StoredInformation), nameof(StoredSubtitles));
     }
 }

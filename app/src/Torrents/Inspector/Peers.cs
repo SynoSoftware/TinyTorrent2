@@ -18,8 +18,13 @@ public sealed partial class Inspector
 
     internal MapModel Map => field ??= new MapModel(this);
 
-    internal void UpdateMap(bool cities) =>
+    internal void UpdateMap(bool cities)
+    {
+        // A chosen place belongs to one map detail.
+        if (Map.Cities != cities)
+            Place = null;
         Map.Update(IsAvailable ? Peers : null, Origin, Text, cities);
+    }
 
     /// <summary>
     /// The peer map place whose peers the table shows, in every connection

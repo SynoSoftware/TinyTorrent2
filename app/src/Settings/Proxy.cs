@@ -126,6 +126,8 @@ public sealed class Proxy : IDraft
     public bool IsPending { get; private set; }
     public bool IsChecking { get; private set; }
     public bool CanSubmit => _owner.CanSave && !IsPending;
+    public ClosePolicy ClosePolicy =>
+        _owner.CanSave ? new ClosePolicy.Save() : new ClosePolicy.Discard();
 
     // Check stays enabled while it runs, so focus stays on it; Check ignores
     // a second press until the first ends.
@@ -219,6 +221,12 @@ public sealed class Proxy : IDraft
         }
     }
 
+    // Begin reads the saved proxy each time the dialog opens, so closing it
+    // leaves nothing to drop. A check keeps running and reports its outcome.
+    public Task Discard() => Task.CompletedTask;
+
+    public void Stop() { }
+
     public async Task Check()
     {
         if (!CanCheck || IsChecking)
@@ -240,7 +248,7 @@ public sealed class Proxy : IDraft
                 return;
             IsChecking = false;
             Refresh();
-            _main.Report(error, "failed_proxy_check", () => Label(server), null);
+            _main.Notifications.Report(error, "failed_proxy_check", () => Label(server), null);
         }
     }
 
@@ -293,7 +301,7 @@ public sealed class Proxy : IDraft
         var server = requested.Server;
         if (!reported)
         {
-            _main.Report(
+            _main.Notifications.Report(
                 new CommandException("unknown", null, Text),
                 "failed_proxy_check",
                 () => Label(server),
@@ -304,12 +312,12 @@ public sealed class Proxy : IDraft
         var result = ParseOutcome(outcome.GetString()) ?? ProxyOutcome.WrongType;
         if (result == ProxyOutcome.Connected)
         {
-            _main.ShowOutcome("settings", "proxy_connected", Label(server));
+            _main.Notifications.ShowOutcome("settings", "proxy_connected", Label(server));
             return;
         }
         // The engine reports an outcome rather than an error, so the outcome's
         // reason is the toast's text.
-        _main.Report(
+        _main.Notifications.Report(
             new CommandException(Word(result), null, Text, "check_proxy"),
             "failed_proxy_check",
             () => Label(server),

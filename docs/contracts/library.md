@@ -701,11 +701,12 @@ change. This prevents a blocked provider receiving the same request for every
 file. An on-demand failure ends the attempt without scheduling another request.
 A later explicit request before a retry deadline reports the remaining wait
 without contacting the provider. Library owns these decisions and cancellable
-waits; adapters own no retry loop. The shared HTTP reply reader parses the
-Retry-After fact once, and Library and Subtitles keep their own retry defaults
-and quota and reset decisions. The full retry deadline is kept and each
-cancellable worker wait is bounded, because a valid long provider delay can
-exceed the platform timer's supported duration.
+waits; adapters own no retry loop. The shared HTTP path reads each reply and
+records its hold once, as
+[search protection](search-protection.md#answers-holds-and-recovery) lists,
+and a failure's retry time is that hold's. The full retry deadline is kept and
+each cancellable worker wait is bounded, because a valid long provider delay
+can exceed the platform timer's supported duration.
 
 VideoLookup cancels and drains background and interactive requests before the
 application disposes storage or shared HTTP access. Library Browser cancels its

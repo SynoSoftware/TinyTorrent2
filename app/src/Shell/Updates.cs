@@ -6,59 +6,103 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Windows.Input;
+using Syno.TinyTorrent.Settings;
 using Syno.TinyTorrent.Shared;
+using Syno.TinyTorrent.Shared.Engine;
 using Syno.TinyTorrent.Shared.Network;
 
 namespace Syno.TinyTorrent.Shell;
 
-public sealed partial class MainViewModel
+/// <summary>
+/// Checks GitHub once a day for a newer TinyTorrent and installs it from
+/// Help &gt; Update.
+/// </summary>
+internal sealed class Updates
 {
     private const string LatestRelease =
         "https://api.github.com/repos/SynoSoftware/TinyTorrent2/releases/latest";
+    private readonly ProviderHttp _http;
+    private readonly BackgroundWork _work;
+    private readonly PipeClient _client;
+    private readonly Setting _setting;
+    private bool _allowed;
+    private bool _closed;
     private ReleaseCheck? _releaseCheck;
-    private string? _updatesPath;
-    private Task? _updateCheck;
+    private string? _cachePath;
+    private Task? _check;
     private Task? _installation;
-    private CancellationTokenSource? _updateRequest;
+    private CancellationTokenSource? _request;
 
-    public bool HasUpdate =>
-        Settings.Updates.IsOn && _releaseCheck?.Version is { } version && version > App.Version;
-    public string UpdateText => Text.Get("about", "update");
-    public ICommand InstallUpdate { get; }
-    private bool CanInstallUpdate => HasUpdate && _installation is not { IsCompleted: false };
-    private bool CanCheckUpdates =>
-        !_closed
-        && !_featuresClosed
-        && _connected
-        && !_loading
-        && !_storageFailed
-        && _providerRoute is not null
-        && Settings.Updates.IsOn;
-
-    private void ObserveUpdates()
+    /// <param name="client">Gives the data directory that holds the check's cache.</param>
+    /// <param name="setting">The Check for updates setting; while it is off, no update shows.</param>
+    internal Updates(ProviderHttp http, BackgroundWork work, PipeClient client, Setting setting)
     {
-        if (!CanCheckUpdates)
-        {
-            _updateRequest?.Cancel();
-            return;
-        }
-        if (_applyingSettings)
-            return;
-        if (_updateCheck is { IsCompleted: false })
-            return;
-        _updateCheck = CheckUpdates();
+        _http = http;
+        _work = work;
+        _client = client;
+        _setting = setting;
+        Install = new RelayCommand(
+            StartInstall,
+            () => HasUpdate && _installation is not { IsCompleted: false }
+        );
+        _setting.PropertyChanged += (_, _) => Raise();
     }
 
-    private async Task CheckUpdates()
+    /// <summary>Raised on the UI thread when <see cref="HasUpdate"/> may have changed.</summary>
+    internal event EventHandler? Changed;
+
+    internal bool HasUpdate =>
+        _setting.IsOn && _releaseCheck?.Version is { } version && version > App.Version;
+
+    internal ICommand Install { get; }
+
+    private bool CanCheck => _allowed && !_closed;
+
+    /// <summary>
+    /// Starts the daily check when <paramref name="allowed"/>, or stops a
+    /// running one when not. The caller passes false while the saved proxy or
+    /// adapter does not apply yet, so no request leaves without it.
+    /// </summary>
+    internal void Observe(bool allowed)
+    {
+        _allowed = allowed;
+        if (!CanCheck)
+        {
+            _request?.Cancel();
+            return;
+        }
+        if (_check is { IsCompleted: false })
+            return;
+        _check = Check();
+    }
+
+    /// <summary>
+    /// Stops the check for good. The returned task completes when the check
+    /// has ended, after which the caller may dispose the HTTP client.
+    /// </summary>
+    internal Task Close()
+    {
+        _closed = true;
+        _request?.Cancel();
+        return _check ?? Task.CompletedTask;
+    }
+
+    private void Raise()
+    {
+        Changed?.Invoke(this, EventArgs.Empty);
+        ((RelayCommand)Install).Refresh();
+    }
+
+    private async Task Check()
     {
         if (_client.DataDirectory is not { } directory)
             return;
-        if (_updatesPath is null)
+        if (_cachePath is null)
         {
-            _updatesPath = Path.Combine(directory, "updates.json");
+            _cachePath = Path.Combine(directory, "updates.json");
             try
             {
-                var input = await File.ReadAllTextAsync(_updatesPath);
+                var input = await File.ReadAllTextAsync(_cachePath);
                 _releaseCheck = JsonSerializer.Deserialize<ReleaseCheck>(input);
             }
             catch (FileNotFoundException) { }
@@ -68,12 +112,11 @@ public sealed partial class MainViewModel
             {
                 Debug.WriteLine($"Update check cache could not be read: {error.Message}");
             }
-            Changed(nameof(HasUpdate));
-            ((RelayCommand)InstallUpdate).Refresh();
+            Raise();
         }
         // A check saved in the future, after the clock was wrong, counts as old.
         if (
-            !CanCheckUpdates
+            !CanCheck
             || _releaseCheck is { } previous
                 && previous.CheckedAt <= DateTimeOffset.UtcNow
                 && DateTimeOffset.UtcNow - previous.CheckedAt < TimeSpan.FromDays(1)
@@ -81,10 +124,10 @@ public sealed partial class MainViewModel
             return;
         _releaseCheck = new(DateTimeOffset.UtcNow, _releaseCheck?.Version);
         await SaveCheck();
-        if (!CanCheckUpdates)
+        if (!CanCheck)
             return;
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(8));
-        _updateRequest = cancellation;
+        _request = cancellation;
         var observation = new WorkObservation(
             new WorkDescription.Update(UpdatePhase.Checking),
             new WorkProgress.Unknown(),
@@ -93,11 +136,11 @@ public sealed partial class MainViewModel
         BackgroundWork.Operation? operation = null;
         var signalling = Task.CompletedTask;
         var cancelled = false;
-        operation = Work.Begin(
+        operation = _work.Begin(
             observation,
             () =>
             {
-                if (ReferenceEquals(_updateRequest, cancellation))
+                if (ReferenceEquals(_request, cancellation))
                 {
                     cancelled = true;
                     operation?.Report(
@@ -116,7 +159,7 @@ public sealed partial class MainViewModel
             using var release = await FetchRelease(cancellation.Token);
             if (release is null)
                 return;
-            if (!CanCheckUpdates)
+            if (!CanCheck)
             {
                 operation.Outcome = WorkOutcome.Cancelled;
                 return;
@@ -130,8 +173,7 @@ public sealed partial class MainViewModel
                 Math.Max(0, version.Revision)
             );
             _releaseCheck = new(_releaseCheck.CheckedAt, version);
-            Changed(nameof(HasUpdate));
-            ((RelayCommand)InstallUpdate).Refresh();
+            Raise();
             await SaveCheck();
             operation.Summarize(HasUpdate ? "update_available" : "up_to_date", version);
             // The check runs by itself, so only a new version is news.
@@ -156,7 +198,7 @@ public sealed partial class MainViewModel
         }
         finally
         {
-            _updateRequest = null;
+            _request = null;
             try
             {
                 await signalling;
@@ -170,22 +212,22 @@ public sealed partial class MainViewModel
 
     private async Task StartInstall()
     {
-        _installation = Install();
-        ((RelayCommand)InstallUpdate).Refresh();
+        _installation = InstallLatest();
+        ((RelayCommand)Install).Refresh();
         try
         {
             await _installation;
         }
         finally
         {
-            ((RelayCommand)InstallUpdate).Refresh();
+            ((RelayCommand)Install).Refresh();
         }
     }
 
     // Downloads the latest release's installer, checks it and runs it. Setup
     // exits TinyTorrent through its coordinated Exit, replaces the program and
     // opens the window again, so this returns only when Setup fails.
-    private async Task Install()
+    private async Task InstallLatest()
     {
         using var cancellation = new CancellationTokenSource();
         var observation = new WorkObservation(
@@ -195,7 +237,7 @@ public sealed partial class MainViewModel
         );
         BackgroundWork.Operation? operation = null;
         var signalling = Task.CompletedTask;
-        operation = Work.Begin(
+        operation = _work.Begin(
             observation,
             () =>
             {
@@ -233,7 +275,7 @@ public sealed partial class MainViewModel
                     await Locate(installer, cancellation.Token)
                 )
             )
-                await _providerHttp.Download(
+                await _http.Download(
                     request,
                     path,
                     progress =>
@@ -325,7 +367,7 @@ public sealed partial class MainViewModel
             HttpMethod.Get,
             await Locate(checksum, cancellation)
         );
-        var reply = await _providerHttp.Send(request, ProviderHttp.JsonLimit, cancellation);
+        var reply = await _http.Send(request, ProviderHttp.JsonLimit, cancellation);
         if (reply.Status != HttpStatusCode.OK)
             throw new HttpRequestException("The checksum was refused.", null, reply.Status);
         var expected = Encoding.ASCII.GetString(reply.Bytes).Split(' ', 2)[0].Trim();
@@ -342,7 +384,7 @@ public sealed partial class MainViewModel
         using var request = new HttpRequestMessage(HttpMethod.Get, LatestRelease);
         request.Headers.Accept.ParseAdd("application/vnd.github+json");
         request.Headers.Add("X-GitHub-Api-Version", "2026-03-10");
-        var reply = await _providerHttp.Send(request, ProviderHttp.JsonLimit, cancellation);
+        var reply = await _http.Send(request, ProviderHttp.JsonLimit, cancellation);
         return reply.Status == HttpStatusCode.OK ? JsonDocument.Parse(reply.Bytes) : null;
     }
 
@@ -377,7 +419,7 @@ public sealed partial class MainViewModel
     private async Task<Uri> Locate(Uri asset, CancellationToken cancellation)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, asset);
-        var reply = await _providerHttp.Send(request, ProviderHttp.JsonLimit, cancellation);
+        var reply = await _http.Send(request, ProviderHttp.JsonLimit, cancellation);
         if (
             reply.Status
                 is HttpStatusCode.Found
@@ -392,13 +434,13 @@ public sealed partial class MainViewModel
 
     private async Task SaveCheck()
     {
-        if (_updatesPath is null)
+        if (_cachePath is null)
             return;
         try
         {
-            var temporary = _updatesPath + ".tmp";
+            var temporary = _cachePath + ".tmp";
             await File.WriteAllTextAsync(temporary, JsonSerializer.Serialize(_releaseCheck));
-            File.Move(temporary, _updatesPath, true);
+            File.Move(temporary, _cachePath, true);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {

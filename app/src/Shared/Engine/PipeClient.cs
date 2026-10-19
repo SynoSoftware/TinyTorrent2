@@ -1,13 +1,9 @@
 using System.Buffers;
 using System.Buffers.Binary;
-using System.ComponentModel;
 using System.Diagnostics;
 using System.IO.Pipes;
-using System.Reflection;
-using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text.Json;
-using Microsoft.Win32.SafeHandles;
 using Syno.TinyTorrent.Shell;
 
 namespace Syno.TinyTorrent.Shared.Engine;
@@ -20,12 +16,6 @@ internal sealed partial class PipeClient : IDisposable
     private const int CommandLimit = 32;
     private const int ReadLimit = 32;
     internal static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(15);
-
-    // TinyTorrent.csproj records the engine's file name from the shared build properties.
-    private static readonly string EngineFile = typeof(PipeClient)
-        .Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
-        .Single(metadata => metadata.Key == "EngineFile")
-        .Value!;
     private readonly Strings _strings;
     private readonly object _gate = new();
     private readonly CancellationTokenSource _lifetime = new();
@@ -61,55 +51,6 @@ internal sealed partial class PipeClient : IDisposable
         }
     }
 
-    internal static string LogonSid { get; } = ReadLogonSid();
-
-    private static string ReadLogonSid()
-    {
-        using var identity = WindowsIdentity.GetCurrent();
-        const int tokenLogonSid = 28;
-        GetTokenInformation(identity.AccessToken, tokenLogonSid, IntPtr.Zero, 0, out var length);
-        if (length == 0)
-            throw new Win32Exception(Marshal.GetLastWin32Error());
-        var buffer = Marshal.AllocHGlobal(checked((int)length));
-        try
-        {
-            if (!GetTokenInformation(identity.AccessToken, tokenLogonSid, buffer, length, out _))
-                throw new Win32Exception(Marshal.GetLastWin32Error());
-            var groups = Marshal.PtrToStructure<TokenGroups>(buffer);
-            if (groups.Count != 1)
-                throw new InvalidDataException("The token has no unique logon SID.");
-            return new SecurityIdentifier(groups.Group.Sid).Value;
-        }
-        finally
-        {
-            Marshal.FreeHGlobal(buffer);
-        }
-    }
-
-    [DllImport("advapi32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetTokenInformation(
-        SafeAccessTokenHandle token,
-        int informationClass,
-        IntPtr information,
-        uint length,
-        out uint requiredLength
-    );
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct SidAttributes
-    {
-        internal IntPtr Sid;
-        internal uint Attributes;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct TokenGroups
-    {
-        internal uint Count;
-        internal SidAttributes Group;
-    }
-
     internal event Action<JsonElement>? Snapshot;
     internal event Action<Disconnection>? Disconnected;
     internal event Action<string>? Control;
@@ -118,8 +59,7 @@ internal sealed partial class PipeClient : IDisposable
     internal event Action<string>? SettingsRequested;
     internal event Action<JsonElement>? Notice;
     internal event Action<JsonElement>? Detail;
-    internal event Action? CommandCompleted;
-    internal event Action<JsonElement?>? FilesChanged;
+    internal event Action<CommandReply>? CommandReplied;
 
     internal PipeClient(Strings strings) => _strings = strings;
 
@@ -133,7 +73,11 @@ internal sealed partial class PipeClient : IDisposable
         }
     }
 
-    internal Task<JsonElement> Send(string name, object? arguments = null)
+    internal Task<JsonElement> Send(
+        string name,
+        object? arguments = null,
+        Requester requester = Requester.Person
+    )
     {
         lock (_gate)
         {
@@ -145,7 +89,7 @@ internal sealed partial class PipeClient : IDisposable
                 return Task.FromException<JsonElement>(
                     new IOException(_strings.Get("connection", "overload"))
                 );
-            var request = new Request(name, arguments);
+            var request = new Request(name, arguments) { Requester = requester };
             _commands.Enqueue(request);
             _commandCount++;
             _queued.Release();
@@ -233,7 +177,7 @@ internal sealed partial class PipeClient : IDisposable
                 {
                     // Without a running engine, waiting for its pipe only
                     // delays the start.
-                    if (launchedAt is null && !_hasConnected && !IsEngineRunning())
+                    if (launchedAt is null && !_hasConnected && !EngineProcess.IsRunning())
                         Launch();
                     // An engine this window started is awaited for the rest of
                     // its grace, so the window connects once the pipe exists.
@@ -262,7 +206,7 @@ internal sealed partial class PipeClient : IDisposable
                     // Preserve this engine's store before replacing its process.
                     // Another build's engine stops before its version is
                     // checked, because a different version is the usual case.
-                    if (!_hasConnected && StopOtherEngine(pipe))
+                    if (!_hasConnected && EngineProcess.StopOther(pipe))
                     {
                         _dataDirectory = store ?? _dataDirectory;
                         continue;
@@ -277,12 +221,7 @@ internal sealed partial class PipeClient : IDisposable
                     lock (_gate)
                     {
                         token.ThrowIfCancellationRequested();
-                        _processId = GetNamedPipeServerProcessId(
-                            pipe.SafePipeHandle,
-                            out var processId
-                        )
-                            ? (int)processId
-                            : null;
+                        _processId = EngineProcess.ProcessId(pipe);
                         _connected = true;
                     }
                     launchFailure = null;
@@ -341,7 +280,7 @@ internal sealed partial class PipeClient : IDisposable
             launchedAt = Environment.TickCount64;
             try
             {
-                LaunchEngine();
+                EngineProcess.Launch(_strings, _dataDirectory);
             }
             catch (Exception error)
             {
@@ -445,10 +384,10 @@ internal sealed partial class PipeClient : IDisposable
         var requestId = Interlocked.Increment(ref _requestId);
         try
         {
+            var arguments = JsonSerializer.SerializeToElement(request.Arguments);
             var fields = request.Arguments is null
                 ? new Dictionary<string, JsonElement>()
-                : JsonSerializer
-                    .SerializeToElement(request.Arguments)
+                : arguments
                     .EnumerateObject()
                     .ToDictionary(property => property.Name, property => property.Value);
             long? context = fields.TryGetValue("context", out var value) ? value.GetInt64() : null;
@@ -456,12 +395,7 @@ internal sealed partial class PipeClient : IDisposable
                 return;
             fields["request_id"] = JsonSerializer.SerializeToElement(requestId);
             fields["command"] = JsonSerializer.SerializeToElement(request.Name);
-            var changesFiles =
-                request.Name is "add" or "remove" or "delete_files" or "move" or "verify"
-                || request.Name == "edit"
-                    && fields.TryGetValue("changes", out var changes)
-                    && changes.TryGetProperty("priorities", out _);
-            var pending = new PendingReply(request, changesFiles);
+            var pending = new PendingReply(request, arguments);
             lock (_gate)
                 _replies.Add(requestId, pending);
             await Write(pipe, fields, deadline.Token);
@@ -545,20 +479,7 @@ internal sealed partial class PipeClient : IDisposable
                     )
                         Publish(message.GetProperty("data"));
                     if (pending.Request.Consumer is null && pending.Request.Name != "snapshot")
-                        CommandCompleted?.Invoke();
-                    if (pending.ChangesFiles && message.GetProperty("ok").GetBoolean())
-                    {
-                        var confirmed = message
-                            .GetProperty("data")
-                            .GetProperty("snapshot_sequence")
-                            .GetInt64();
-                        FilesChanged?.Invoke(
-                            snapshot is { } latest
-                            && latest.GetProperty("sequence").GetInt64() >= confirmed
-                                ? latest
-                                : null
-                        );
-                    }
+                        CommandReplied?.Invoke(Reply(pending, message));
                     pending.Completion.TrySetResult(message);
                 }
             }
@@ -592,22 +513,34 @@ internal sealed partial class PipeClient : IDisposable
             snapshot = data;
             Snapshot?.Invoke(data);
         }
+
+        CommandReply Reply(PendingReply pending, JsonElement message)
+        {
+            var succeeded = message.GetProperty("ok").GetBoolean();
+            JsonElement? confirmed = null;
+            if (
+                succeeded
+                && message.TryGetProperty("data", out var data)
+                && data.ValueKind == JsonValueKind.Object
+                && data.TryGetProperty("snapshot_sequence", out var sequence)
+                && snapshot is { } latest
+                && latest.GetProperty("sequence").GetInt64() >= sequence.GetInt64()
+            )
+                confirmed = latest;
+            return new(
+                pending.Request.Name,
+                pending.Arguments,
+                pending.Request.Requester,
+                succeeded,
+                confirmed
+            );
+        }
     }
 
-    // Every engine process opens this mutex, so when it does not exist no
-    // engine is running.
-    private static bool IsEngineRunning()
-    {
-        if (!Mutex.TryOpenExisting("Local\\TinyTorrent.Engine." + LogonSid, out var mutex))
-            return false;
-        mutex.Dispose();
-        return true;
-    }
-
-    private static NamedPipeClientStream CreatePipe() =>
+    internal static NamedPipeClientStream CreatePipe() =>
         new(
             ".",
-            "TinyTorrent." + LogonSid,
+            "TinyTorrent." + EngineProcess.LogonSid,
             PipeDirection.InOut,
             PipeOptions.Asynchronous,
             TokenImpersonationLevel.Identification
@@ -650,48 +583,11 @@ internal sealed partial class PipeClient : IDisposable
         }
     }
 
-    // Another version stays unusable however often the window retries, so the
-    // message says where that engine runs: another folder's engine exits from
-    // the tray, while a folder holding both versions needs reinstalling.
     private static void CheckVersion(NamedPipeClientStream pipe, JsonElement hello, Strings strings)
     {
         if (hello.TryGetProperty("version", out var version) && version.GetInt32() == 22)
             return;
-        var message = EnginePath(pipe) switch
-        {
-            null => strings.Get("connection", "version_hidden"),
-            { } path when IsAdjacent(path) => strings.Get("connection", "version"),
-            { } path => strings.Format(
-                "connection",
-                "version_elsewhere",
-                Path.GetDirectoryName(path)!
-            ),
-        };
-        throw new VersionException(message);
-    }
-
-    private static string AdjacentEngine => Path.Combine(AppContext.BaseDirectory, EngineFile);
-
-    private static bool IsAdjacent(string path) =>
-        string.Equals(path, AdjacentEngine, StringComparison.OrdinalIgnoreCase);
-
-    // The executable of the engine serving `pipe`, compared as launched, which
-    // matches because the window starts the engine beside it. Windows hides the
-    // path of an engine running as administrator.
-    private static string? EnginePath(NamedPipeClientStream pipe)
-    {
-        if (!GetNamedPipeServerProcessId(pipe.SafePipeHandle, out var id))
-            return null;
-        try
-        {
-            using var engine = Process.GetProcessById((int)id);
-            return engine.MainModule?.FileName;
-        }
-        catch (Exception error)
-            when (error is ArgumentException or Win32Exception or InvalidOperationException)
-        {
-            return null;
-        }
+        throw new VersionException(EngineProcess.VersionMessage(pipe, strings));
     }
 
     internal static async Task ForwardOpen(Strings strings)
@@ -717,102 +613,6 @@ internal sealed partial class PipeClient : IDisposable
             Debug.WriteLine("Forwarding the open request to the engine timed out.");
             throw new IOException(strings.Get("connection", "unavailable"), error);
         }
-    }
-
-    // A restart keeps the store the engine last reported.
-    internal void LaunchEngine()
-    {
-        if (_dataDirectory is null)
-            StartEngine(_strings, "--background");
-        else
-            StartEngine(_strings, "--background", "--data", _dataDirectory);
-    }
-
-    // Starts the engine from the same build, which is always beside the window,
-    // rather than a path a pipe peer reported.
-    internal static void StartEngine(Strings strings, params string[] arguments)
-    {
-        if (!File.Exists(AdjacentEngine))
-            throw new FileNotFoundException(strings.Format("connection", "missing", EngineFile));
-        var start = new ProcessStartInfo(AdjacentEngine)
-        {
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
-        foreach (var argument in arguments)
-            start.ArgumentList.Add(argument);
-        Process.Start(start);
-    }
-
-#if DEBUG
-    // Every engine in a logon session serves this pipe, so a development window
-    // would use another build's engine. Stops the engine that owns the pipe
-    // unless it runs from beside this window, so the window starts its own. A
-    // running executable is locked and the build stops that engine before
-    // replacing it, so its path identifies this build; identical bytes do not,
-    // because the capture output's copy may serve a review's disposable store.
-    private static bool StopOtherEngine(NamedPipeClientStream pipe)
-    {
-        // An engine running as administrator hides its path, so it keeps running.
-        if (
-            EnginePath(pipe) is not { } path
-            || IsAdjacent(path)
-            || !GetNamedPipeServerProcessId(pipe.SafePipeHandle, out var id)
-        )
-            return false;
-        try
-        {
-            using var engine = Process.GetProcessById((int)id);
-            engine.Kill();
-            return engine.WaitForExit(5000);
-        }
-        catch (Exception error)
-            when (error is ArgumentException or Win32Exception or InvalidOperationException)
-        {
-            return false;
-        }
-    }
-
-    // For a window that hands off to the engine and never connects itself.
-    internal static async Task StopOtherEngine()
-    {
-        using var pipe = CreatePipe();
-        try
-        {
-            await pipe.ConnectAsync(1000);
-        }
-        catch (TimeoutException)
-        {
-            return;
-        }
-        StopOtherEngine(pipe);
-    }
-#endif
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetNamedPipeServerProcessId(SafePipeHandle pipe, out uint processId);
-
-    // Runs the engine beside the window as an administrator to remove the
-    // all-users open commands of `classes` that start a missing program. A
-    // declined prompt, a failed start or a failed repair all leave those
-    // handlers reported, which is the person's evidence that they remain.
-    internal async Task RepairMachine(IEnumerable<string> classes)
-    {
-        var start = new ProcessStartInfo(AdjacentEngine) { UseShellExecute = true, Verb = "runas" };
-        start.ArgumentList.Add("--headless");
-        foreach (var progId in classes)
-        {
-            start.ArgumentList.Add("--repair-class");
-            start.ArgumentList.Add(progId);
-        }
-        try
-        {
-            using var process = Process.Start(start);
-            if (process is not null)
-                await process.WaitForExitAsync();
-        }
-        catch (Win32Exception) { }
     }
 
     private static async Task<JsonElement> Read(Stream pipe, CancellationToken token)
@@ -883,9 +683,20 @@ internal sealed partial class PipeClient : IDisposable
     // so restarting the window's own engine cannot replace it.
     internal readonly record struct Disconnection(string Reason, bool IsOtherVersion);
 
+    // Snapshot is the received snapshot that already holds a successful
+    // command's effect. It is null when that snapshot arrives later, through
+    // the Snapshot event, or when the command publishes none.
+    internal readonly record struct CommandReply(
+        string Command,
+        JsonElement Arguments,
+        Requester Requester,
+        bool Succeeded,
+        JsonElement? Snapshot
+    );
+
     private sealed class VersionException(string message) : Exception(message);
 
-    private sealed record PendingReply(Request Request, bool ChangesFiles)
+    private sealed record PendingReply(Request Request, JsonElement Arguments)
     {
         internal TaskCompletionSource<JsonElement> Completion { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -896,6 +707,7 @@ internal sealed partial class PipeClient : IDisposable
         internal string Name { get; private set; } = name;
         internal object? Arguments { get; private set; } = arguments;
         internal Consumer? Consumer { get; } = consumer;
+        internal Requester Requester { get; init; }
         internal TaskCompletionSource Written { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource<JsonElement> Completion { get; } =

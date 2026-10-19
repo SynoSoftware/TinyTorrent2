@@ -416,7 +416,9 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
             var previousFailure = _testFailure;
             _testFailure = value.GetProperty("failure").GetString() ?? string.Empty;
             if (_testFailure == "connection_test_restore_failed" && previousFailure != _testFailure)
-                _main.Report(new IOException(Text.Get("connection_setup", _testFailure)));
+                _main.Notifications.Report(
+                    new IOException(Text.Get("connection_setup", _testFailure))
+                );
             if (
                 (_phase is ConnectionPhase.Holding or ConnectionPhase.Completed)
                 && _complete
@@ -442,7 +444,7 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
             && _phase != ConnectionPhase.Idle
             && _testFailure != "connection_test_restore_failed"
         )
-            _main.Announce(TestStatus);
+            _main.Notifications.Announce(TestStatus);
     }
 
     public async Task Test()
@@ -469,15 +471,19 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
     {
         if (IsPending)
             return false;
-        if (CanRelease && !await Execute(() => SendTest("release")))
+        if (CanRelease && !await Execute(() => SendTest("release", Requester.Window)))
             return false;
         return true;
     }
 
-    private async Task SendTest(string action)
+    private async Task SendTest(string action, Requester requester = Requester.Person)
     {
         var session = _sessionId;
-        var reply = await _client.Send("connection_test", new { action, profile = LongerTest ? "longer" : "quick" });
+        var reply = await _client.Send(
+            "connection_test",
+            new { action, profile = LongerTest ? "longer" : "quick" },
+            requester
+        );
         if (session == _sessionId)
             Observe(reply);
     }
@@ -520,7 +526,7 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
             finally
             {
                 if (CanRelease)
-                    await SendTest("release");
+                    await SendTest("release", Requester.Window);
             }
         });
     }

@@ -4,25 +4,26 @@ using System.Reflection;
 using System.Text.Json;
 using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Shared.Network;
+using static Syno.TinyTorrent.Subtitles.Supplier;
 
 namespace Syno.TinyTorrent.Subtitles.Suppliers;
 
-internal sealed partial class SubSource(RequestPolicy policy) : Supplier(policy)
+internal sealed partial class SubSource : ISupplier
 {
     private static readonly Uri Origin = new("https://api.subsource.net");
-    protected override IReadOnlyList<RateWindow> RateWindows { get; } =
+    public IReadOnlyList<RateWindow> RateWindows { get; } =
     [
         new(TimeSpan.FromMinutes(1), 60),
         new(TimeSpan.FromHours(1), 1800),
         new(TimeSpan.FromDays(1), 7200),
     ];
 
-    internal override SubtitleSupplier SupplierId => SubtitleSupplier.SubSource;
-    internal override Uri Privacy { get; } = new("https://subsource.net/policy");
-    internal override Uri Terms { get; } = new("https://subsource.net/terms");
-    protected override IReadOnlyDictionary<string, string> Codes => LanguageCodes;
+    public SubtitleSupplier SupplierId => SubtitleSupplier.SubSource;
+    public Uri Privacy { get; } = new("https://subsource.net/policy");
+    public Uri Terms { get; } = new("https://subsource.net/terms");
+    public IReadOnlyDictionary<string, string> Codes => LanguageCodes;
 
-    internal override string Question(SubtitleLookup lookup)
+    public string Question(SubtitleLookup lookup)
     {
         var release = FileName.Interpret(lookup.FileName);
         return JsonSerializer.Serialize(
@@ -36,19 +37,19 @@ internal sealed partial class SubSource(RequestPolicy policy) : Supplier(policy)
         );
     }
 
-    protected override string? BuiltInKey { get; } =
+    public string? BuiltInKey { get; } =
         typeof(SubSource)
             .Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
             .FirstOrDefault(value => value.Key == "SubSourceKey")
             ?.Value;
 
-    protected override void Authenticate(HttpRequestMessage request, Account account) =>
-        request.Headers.Add("X-API-Key", ApiKey(account));
+    public void Authenticate(HttpRequestMessage request, string key) =>
+        request.Headers.Add("X-API-Key", key);
 
-    protected override async Task Check(Operation operation, CancellationToken cancellation)
+    public async Task Check(SupplierClient client, CancellationToken cancellation)
     {
-        var response = await Get(
-                operation,
+        var reply = await client
+            .Get(
                 new Uri(
                     Origin,
                     "/api/v1/movies/search?searchType=text&q=TinyTorrentConnectionCheck"
@@ -56,71 +57,65 @@ internal sealed partial class SubSource(RequestPolicy policy) : Supplier(policy)
                 cancellation
             )
             .ConfigureAwait(false);
-        using var document = Parse(response.Bytes);
+        using var document = Parse(reply.Bytes);
         Data(document.RootElement);
     }
 
-    protected override async Task<SubtitleSearch> Search(
-        Operation operation,
-        SubtitleLookup lookup,
-        Release release,
-        string language,
+    public async Task<SubtitleSearch> Search(
+        SubtitleQuery query,
+        SupplierClient client,
         CancellationToken cancellation
     )
     {
+        var release = query.Release;
         var candidates = new List<SubtitleCandidate>();
         var total = 0;
-        var query =
+        var address =
             "/api/v1/movies/search?searchType=text&q=" + Uri.EscapeDataString(release.Title);
         if (release.Season is { } season)
-            query += "&season=" + season.ToString(CultureInfo.InvariantCulture);
-        var response = await Get(operation, new Uri(Origin, query), cancellation)
-            .ConfigureAwait(false);
-        using var movies = Parse(response.Bytes);
-        long? movieId = null;
+            address += "&season=" + season.ToString(CultureInfo.InvariantCulture);
+        var reply = await client.Get(new Uri(Origin, address), cancellation).ConfigureAwait(false);
+        using var movies = Parse(reply.Bytes);
+        var listings = new Dictionary<long, Listing>();
         foreach (var movie in Data(movies.RootElement).EnumerateArray())
         {
+            // A series listing is one season of the show.
+            var type = Text(movie, "type");
+            var series = type == "tvseries";
             if (
-                Text(movie, "type") != (release.Season is null ? "movie" : "tvseries")
-                || release.Season is not null && Number(movie, "season") is null
-                || !Matches(
-                    release,
-                    Text(movie, "title") ?? string.Empty,
-                    Number(movie, "releaseYear"),
-                    release.Season is not null ? Number(movie, "season") : null
-                )
+                type is not ("movie" or "tvseries")
+                || Text(movie, "title") is not { } title
+                || series && Number(movie, "season") is null
                 || Number(movie, "movieId") is not { } id
                 || id <= 0
             )
                 continue;
-            if (movieId is not null && movieId != id)
-                return new(candidates);
-            movieId = id;
+            listings[id] = new(series ? VideoKind.Series : VideoKind.Movie, [title])
+            {
+                Year = (int?)Number(movie, "releaseYear"),
+                Season = series ? (int?)Number(movie, "season") : null,
+            };
         }
-        if (movieId is null)
+        if (Choose(release, listings) is not { } movieId)
             return new(candidates, Data(movies.RootElement).GetArrayLength() == 0);
 
         for (var page = 1; ; page++)
         {
-            query =
+            address =
                 "/api/v1/subtitles?movieId="
-                + movieId.Value.ToString(CultureInfo.InvariantCulture)
+                + movieId.ToString(CultureInfo.InvariantCulture)
                 + "&language="
-                + Uri.EscapeDataString(language)
+                + Uri.EscapeDataString(query.Code)
                 + "&sort=rating&limit=100&page="
                 + page.ToString(CultureInfo.InvariantCulture);
-            response = await Get(operation, new Uri(Origin, query), cancellation)
-                .ConfigureAwait(false);
-            using var subtitles = Parse(response.Bytes);
+            reply = await client.Get(new Uri(Origin, address), cancellation).ConfigureAwait(false);
+            using var subtitles = Parse(reply.Bytes);
             foreach (var subtitle in Data(subtitles.RootElement).EnumerateArray())
             {
                 total++;
                 if (
                     Number(subtitle, "movieId") != movieId
-                    || Text(subtitle, "language") != language
-                    || !subtitle.TryGetProperty("foreignParts", out var foreign)
-                    || foreign.ValueKind != JsonValueKind.False
-                    || Text(subtitle, "productionType") == "forced"
+                    || Text(subtitle, "language") != query.Code
                     || Number(subtitle, "files") != 1
                     || Number(subtitle, "subtitleId") is not { } id
                     || id <= 0
@@ -128,16 +123,22 @@ internal sealed partial class SubSource(RequestPolicy policy) : Supplier(policy)
                     || releases.ValueKind != JsonValueKind.Array
                 )
                     continue;
+                // Only an explicit false says that the subtitle is full.
+                var forced =
+                    !subtitle.TryGetProperty("foreignParts", out var foreign)
+                    || foreign.ValueKind != JsonValueKind.False
+                    || Text(subtitle, "productionType") == "forced";
                 var names = releases
                     .EnumerateArray()
                     .Where(value => value.ValueKind == JsonValueKind.String)
-                    .Select(value => value.GetString()!)
-                    .ToArray();
-                if (names.Length == 0)
-                    continue;
+                    .Select(value => value.GetString()!);
                 foreach (var name in names)
                     candidates.Add(
-                        new(lookup.Language, name, name, id.ToString(CultureInfo.InvariantCulture))
+                        new(query.Language, name, name, id.ToString(CultureInfo.InvariantCulture))
+                        {
+                            Season = listings[movieId].Season,
+                            Forced = forced,
+                        }
                     );
             }
             if (
@@ -151,18 +152,22 @@ internal sealed partial class SubSource(RequestPolicy policy) : Supplier(policy)
         }
     }
 
-    protected override async Task<byte[]> Download(
-        Operation operation,
+    public async Task<ProviderReply> Download(
         SubtitleCandidate candidate,
+        SupplierClient client,
         CancellationToken cancellation
     )
     {
-        var download = new Uri(Origin, "/api/v1/subtitles/" + candidate.Reference + "/download");
-        var response = await Get(operation, download, cancellation, ProviderHttp.FileLimit)
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            new Uri(Origin, "/api/v1/subtitles/" + candidate.Reference + "/download")
+        );
+        var reply = await client
+            .Send(request, SupplierRequest.File, cancellation)
             .ConfigureAwait(false);
-        if (!response.Bytes.AsSpan().StartsWith("PK"u8))
-            throw new SubtitleException(SubtitleFailure.Format);
-        return await Decode(response, cancellation).ConfigureAwait(false);
+        return reply.Bytes.AsSpan().StartsWith("PK"u8)
+            ? reply
+            : throw new SubtitleException(SubtitleFailure.Format);
     }
 
     private static JsonElement Data(JsonElement root)

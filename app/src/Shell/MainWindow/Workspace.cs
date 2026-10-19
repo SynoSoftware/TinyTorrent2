@@ -137,8 +137,6 @@ public sealed partial class MainWindow
                 && !await Model.Settings.Connection.Depart()
             )
                 return false;
-            if (_settingsPage is { } settings)
-                _ = settings.SaveFeatures();
             _ = Model.Settings.PrepareLeave();
         }
         if (HasDialog || Model.IsClosing || _allowClose)
@@ -303,11 +301,8 @@ public sealed partial class MainWindow
         return false;
     }
 
-    // Only Add and Move still ask, because applying them on close would start
-    // a download or a file move that the person has not confirmed.
-    private async Task<bool> ResolveDraft(string editor)
+    private async Task<bool> Ask(IDraft draft, ClosePolicy.Ask question)
     {
-        var isAdd = editor == "add";
         var focused = FocusManager.GetFocusedElement(Root.XamlRoot) as Control;
         return await Interact(
             async interaction =>
@@ -315,6 +310,8 @@ public sealed partial class MainWindow
                 var prompt = new Dialog
                 {
                     DefaultButton = ContentDialogButton.Close,
+                    Glyph = question.Glyph,
+                    PrimaryGlyph = question.Glyph,
                     SecondaryGlyph = Syno.Lucide.Undo2,
                 };
                 var choice = await ShowDialog(
@@ -322,38 +319,26 @@ public sealed partial class MainWindow
                     prompt,
                     () =>
                     {
-                        prompt.Title = Model.Text.Get("changes", editor + "_title");
-                        (prompt.Content, prompt.PrimaryButtonText, prompt.Glyph) = isAdd
-                            ? (
-                                Lines([Model.AddDraft.Heading]),
-                                Model.AddDraft.SubmitText,
-                                Syno.Lucide.CirclePlus
-                            )
-                            : (
-                                Lines([Model.FileDraft.Destination]),
-                                Model.FileDraft.SubmitText,
-                                Syno.Lucide.FolderInput
-                            );
-                        prompt.PrimaryGlyph = prompt.Glyph;
-                        prompt.PrimaryToolTip = Model.Text.Get("changes", editor + "_save_tip");
+                        prompt.Title = Model.Text.Get("changes", question.Key + "_title");
+                        prompt.Content = Lines([question.Subject()]);
+                        prompt.PrimaryButtonText = question.Submit();
+                        prompt.PrimaryToolTip = Model.Text.Get(
+                            "changes",
+                            question.Key + "_save_tip"
+                        );
                         prompt.SecondaryButtonText = Model.Text.Get("changes", "discard");
                         prompt.SecondaryToolTip = Model.Text.Get(
                             "changes",
-                            editor + "_discard_tip"
+                            question.Key + "_discard_tip"
                         );
                     }
                 );
                 var resolved = false;
                 if (choice == ContentDialogResult.Primary)
-                    resolved = isAdd
-                        ? await Model.AddDraft.Submit()
-                        : await Model.FileDraft.Submit();
+                    resolved = await draft.Submit();
                 else if (choice == ContentDialogResult.Secondary)
                 {
-                    if (isAdd)
-                        await Model.AddDraft.Cancel();
-                    else
-                        Model.FileDraft.Cancel();
+                    await draft.Discard();
                     resolved = true;
                 }
                 if (!resolved && focused is { IsLoaded: true })
@@ -569,11 +554,11 @@ public sealed partial class MainWindow
             if (folder is null)
                 return;
             setting.Input = folder;
-            await Model.Settings.Commit(setting);
+            await setting.Commit();
         }
         catch (Exception error)
         {
-            Model.Report(error);
+            Model.Notifications.Report(error);
         }
     }
 }

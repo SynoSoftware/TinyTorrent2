@@ -141,9 +141,9 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
                 )
                 .ConfigureAwait(false);
         }
-        catch (HttpRouteException error)
+        catch (ReplyException error)
         {
-            throw new RouteException(error);
+            throw DataDownload.Failure(error);
         }
         // A damaged or changed archive would fail again, so it is not kept.
         catch (InvalidDataException error)
@@ -164,12 +164,7 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
             throw new VideoException(VideoFailure.DiskFull, error);
         }
         catch (Exception error)
-            when (error
-                    is HttpRequestException
-                        or IOException
-                        or UnauthorizedAccessException
-                        or SqliteException
-            )
+            when (error is IOException or UnauthorizedAccessException or SqliteException)
         {
             throw new VideoException(VideoFailure.DownloadFailed, error);
         }
@@ -498,16 +493,7 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
         var call = new ProviderCall(request, policy, new(Access)) { Fresh = fresh };
         try
         {
-            await http.Download(
-                    call with
-                    {
-                        Observe = reply => ProviderJson.Observe(call, reply),
-                    },
-                    part,
-                    progress,
-                    cancellation
-                )
-                .ConfigureAwait(false);
+            await http.Download(call, part, progress, cancellation).ConfigureAwait(false);
             File.Move(part, archive, overwrite: true);
         }
         finally

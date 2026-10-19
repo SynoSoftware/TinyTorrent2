@@ -435,12 +435,13 @@ applicable requirement, recorded with evidence in the
    Once that language is satisfied, stop searching for upgrades so background
    work cannot replace a subtitle the person is already using.
 
-OpenSubtitles finds the movie or show first and then lists only its
-subtitles. A title text search matches every title sharing its words and the API
-refuses to page past 1,000 results, so searching subtitles by title text fails
-for common words. A file name can shorten the title, as `Brandywine` for
-*Death on the Brandywine*, so when no title matches exactly, the one title of
-the same year that holds the file's title words is the file's.
+OpenSubtitles and SubSource find the movie or show first and then list only
+its subtitles. On OpenSubtitles, a title text search matches every title sharing
+its words and the API refuses to page past 1,000 results, so searching
+subtitles by title text fails for common words. A file name can shorten the
+title, as `Brandywine` for *Death on the Brandywine*, so when no title matches
+exactly, the one title of the same year that holds the file's title words is
+the file's.
 
 ### Best guess
 
@@ -604,19 +605,26 @@ instead of adding C++ feature code or a cross-process transaction.
 
 The [product code rules](../../AGENTS.md#code-style) govern reuse and ownership.
 The table below identifies the existing owners for subtitle work; supplier
-implementations add only the request and decoding behavior that differs.
+implementations add only the requests and the reading of answers that differ.
 
 Supplier's operation carries the account, HTTP access and acquisition validity
-through each adapter call. The shared send path validates it before reserving
-allowance, including login, retries and redirects, so adapters cannot accidentally
-spend requests for obsolete work. Account Check carries no movie membership;
-its cancellation and network route still apply.
+through each supplier call. The shared send path validates it before reserving
+allowance, including sign-in, retries and redirects, so suppliers cannot
+accidentally spend requests for obsolete work. Account Check carries no movie
+membership; its cancellation and network route still apply.
 
 The subtitle module keeps scheduling, matching policy, cancellation and storage
 for every supplier, and the Settings and dialog owners keep drafts, focus and
-presentation. A supplier adapter keeps only what differs:
-request shapes, language mappings, authentication, matching evidence and
-response decoding. Three real alternatives sit behind the supplier interface,
+presentation. The host [Supplier](../../app/src/Subtitles/Supplier.cs) sends
+every request a supplier builds, adds the account's key, accounts for the
+sign-in request apart from the operation it serves, follows the redirects the
+supplier allows and decodes subtitle files. It also decides what fits the
+file: which listing of a supplier's catalogue the file names, and which
+subtitles to drop because they are forced or report another season, episode or
+year. An [ISupplier](../../app/src/Subtitles/ISupplier.cs) keeps only what
+differs: request shapes, language mappings, how it signs in, and reading its
+answers into facts, such as a listing's title or whether a subtitle is forced.
+Three real alternatives sit behind the supplier interface,
 so it earns its place. The release name is interpreted, and empty titles and
 extras are rejected, once before a request reaches a supplier. The shared HTTP
 owner holds platform HTTP, proxy and TLS configuration, request limits, route

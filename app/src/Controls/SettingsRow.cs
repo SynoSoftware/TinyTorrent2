@@ -1,6 +1,9 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Data;
+using Syno.TinyTorrent.Settings;
 
 namespace Syno.TinyTorrent.Controls;
 
@@ -19,10 +22,37 @@ public sealed partial class SettingsRow : ContentControl
         nameof(UnitSelector),
         typeof(ComboBox),
         typeof(SettingsRow),
-        new PropertyMetadata(null, (row, _) => ((SettingsRow)row).Update())
+        new PropertyMetadata(
+            null,
+            (row, _) =>
+            {
+                ((SettingsRow)row).Connect();
+                ((SettingsRow)row).Update();
+            }
+        )
+    );
+    public static readonly DependencyProperty SettingProperty = DependencyProperty.Register(
+        nameof(Setting),
+        typeof(Setting),
+        typeof(SettingsRow),
+        new PropertyMetadata(null, (row, _) => ((SettingsRow)row).Attach())
     );
     public bool IsAdvanced { get; set; }
     private double _unitWidth;
+    private Control? _editor;
+    private ComboBox? _unitEditor;
+
+    /// <summary>
+    /// The setting this row edits. The row shows its label, unless the row
+    /// sets its own header, and its error. It enables and names its content
+    /// control and unit selector, and saves a switch, a selection or a unit
+    /// through the setting. The page owns typed input.
+    /// </summary>
+    public Setting? Setting
+    {
+        get => (Setting?)GetValue(SettingProperty);
+        set => SetValue(SettingProperty, value);
+    }
 
     internal void Align(double unitWidth)
     {
@@ -113,11 +143,85 @@ public sealed partial class SettingsRow : ContentControl
             old.IsEnabledChanged -= OnContentEnabled;
         if (newContent is Control control)
             control.IsEnabledChanged += OnContentEnabled;
+        Connect();
         Update();
     }
 
     private void OnContentEnabled(object sender, DependencyPropertyChangedEventArgs args) =>
         Update();
+
+    // A header or automation name set locally wins, whether it arrives before
+    // or after the setting, because a local value replaces a binding.
+    private void Attach()
+    {
+        if (Setting is null)
+            return;
+        if (ReadLocalValue(HeaderProperty) == DependencyProperty.UnsetValue)
+            SetBinding(HeaderProperty, Bind(nameof(Setting.Label)));
+        SetBinding(ErrorProperty, Bind(nameof(Setting.Message)));
+        Connect();
+    }
+
+    private void Connect()
+    {
+        var editor = Setting is null ? null : Content as Control;
+        if (!ReferenceEquals(editor, _editor))
+        {
+            if (_editor is ToggleSwitch previousSwitch)
+                previousSwitch.Toggled -= OnToggled;
+            if (_editor is Selector previousChoice)
+                previousChoice.SelectionChanged -= OnSelected;
+            _editor = editor;
+            if (editor is not null)
+            {
+                Enable(editor, nameof(Setting.Label));
+                if (editor is ToggleSwitch toggle)
+                    toggle.Toggled += OnToggled;
+                if (editor is Selector choice)
+                    choice.SelectionChanged += OnSelected;
+            }
+        }
+        var unit = Setting is null ? null : UnitSelector;
+        if (!ReferenceEquals(unit, _unitEditor))
+        {
+            if (_unitEditor is not null)
+                _unitEditor.SelectionChanged -= OnUnit;
+            _unitEditor = unit;
+            if (unit is not null)
+            {
+                Enable(unit, nameof(Setting.UnitLabel));
+                unit.SelectionChanged += OnUnit;
+            }
+        }
+    }
+
+    private void Enable(Control control, string label)
+    {
+        control.SetBinding(Control.IsEnabledProperty, Bind(nameof(Setting.CanEdit)));
+        if (control.ReadLocalValue(AutomationProperties.NameProperty) == DependencyProperty.UnsetValue)
+            control.SetBinding(AutomationProperties.NameProperty, Bind(label));
+    }
+
+    private Binding Bind(string path) => new() { Source = Setting, Path = new PropertyPath(path) };
+
+    private async void OnToggled(object sender, RoutedEventArgs args)
+    {
+        if (Setting is { } setting)
+            await setting.Toggle(((ToggleSwitch)sender).IsOn);
+    }
+
+    // A selection the binding makes equals the setting, so Select saves nothing for it.
+    private async void OnSelected(object sender, SelectionChangedEventArgs args)
+    {
+        if (Setting is { } setting && ((Selector)sender).SelectedItem is FrameworkElement { Tag: string value })
+            await setting.Select(value);
+    }
+
+    private void OnUnit(object sender, SelectionChangedEventArgs args)
+    {
+        if (Setting is { } setting && ((Selector)sender).SelectedValue is string unit)
+            setting.SelectUnit(unit);
+    }
 
     private void Update()
     {

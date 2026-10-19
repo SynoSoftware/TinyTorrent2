@@ -66,6 +66,9 @@ public sealed partial class SettingsPage : UserControl
         BodyContent.LayoutUpdated += (_, _) => PositionOutline();
         _outlineTimer.Tick += (_, _) => ClearOutline();
         _pages.Show(PageContent);
+        GotFocus += OnFieldFocus;
+        PreviewKeyDown += OnFieldKey;
+        LostFocus += OnFieldDeparture;
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
         RefreshText();
@@ -200,14 +203,6 @@ public sealed partial class SettingsPage : UserControl
     private async void OnProtectionReset(object sender, RoutedEventArgs args) =>
         await Main.ResetProtection();
 
-    internal async Task SaveFeatures()
-    {
-        if (SubtitlesContent?.Content is SubtitleSettings subtitles)
-            await subtitles.Saving;
-        if (_automatic is not null)
-            await _automatic.Saving;
-    }
-
     private void OnMain(object? sender, PropertyChangedEventArgs args)
     {
         if (
@@ -315,8 +310,10 @@ public sealed partial class SettingsPage : UserControl
         foreach (
             var choice in CategoryPanels
                 .SelectMany(panel => Elements(panel))
+                .OfType<SettingsRow>()
+                .Where(row => row.Setting is not null)
+                .SelectMany(row => new[] { row.Content, row.UnitSelector })
                 .OfType<ComboBox>()
-                .Where(choice => choice.Tag is Setting)
         )
         {
             var item = choice.SelectedItem;
@@ -479,16 +476,11 @@ public sealed partial class SettingsPage : UserControl
             InitializeHome();
         else if (_category == GeneralCategory)
             IntegrationContent.Content = _integration = new WindowsIntegration(Model);
-        else if (_category == TransfersCategory)
-        {
-            Watch(Destination);
-            Watch(IncompleteFolder);
-        }
         else if (_category == AppearanceCategory)
             ThemeContent.Content = _themes = new ThemePicker(Model);
         else if (_category == LimitsCategory)
         {
-            _speedLimits = new SpeedLimits(Main, RegisterProfile);
+            _speedLimits = new SpeedLimits(Main);
             _speedLimits.ConnectionRequested += OnConnection;
             SpeedContent.Content = _speedLimits;
             AddLink(
@@ -512,7 +504,7 @@ public sealed partial class SettingsPage : UserControl
                 Model.Schedule,
                 new LimitSelector(Main)
             );
-            _scheduleLimits = new SpeedLimits(Main, RegisterProfile, inline: true);
+            _scheduleLimits = new SpeedLimits(Main, inline: true);
             _scheduleLimits.ConnectionRequested += OnConnection;
             ScheduleSpeedContent.Content = _scheduleLimits;
         }
@@ -525,7 +517,11 @@ public sealed partial class SettingsPage : UserControl
                 row.DeleteRequested += (_, dataset) => DeleteRequested?.Invoke(this, dataset);
             }
             CityRow.Show(Main.Geolocation, Model.Text);
-            var subtitles = new SubtitleSettings(Model.Text, Main.RetrySubtitles, ReportSubtitles);
+            var subtitles = new SubtitleSettings(
+                Model.Text,
+                Main.Features.RetrySubtitles,
+                ReportSubtitles
+            );
             subtitles.SupplierRequested += (_, supplier) =>
                 SupplierRequested?.Invoke(this, supplier);
             SubtitlesContent.Content = subtitles;
@@ -534,7 +530,7 @@ public sealed partial class SettingsPage : UserControl
     }
 
     private void ReportSubtitles(Exception error, string title) =>
-        Main.Report(error, title, null, null);
+        Main.Notifications.Report(error, title, null, null);
 
     internal void ShowAdvanced(bool show)
     {
@@ -780,6 +776,7 @@ public sealed partial class SettingsPage : UserControl
             "network_interface" => Adapters,
             "proxy" => ProxyEdit,
             "connection_setup" => CurrentProfiles?.Field("connection_setup"),
+            "encryption" => EncryptionChoices,
             "language" => Languages,
             "theme" => _themes?.Choices,
             "video_provider" => ProviderChoice,
@@ -792,19 +789,15 @@ public sealed partial class SettingsPage : UserControl
             or "subtitle_scan" => (SubtitlesContent?.Content as SubtitleSettings)?.Field(
                 settingName
             ),
+            // The first control in the setting's row, which is its editor.
             _ => CategoryPanels
                 .SelectMany(panel => Elements(panel))
+                .OfType<SettingsRow>()
+                .Where(row => row.Setting?.Name == settingName)
+                .SelectMany(row => Elements(row).Skip(1))
                 .OfType<Control>()
-                .FirstOrDefault(control =>
-                    control.Tag is Setting setting && setting.Name == settingName
-                ),
+                .FirstOrDefault(),
         };
-
-    private async void OnToggle(object sender, RoutedEventArgs args)
-    {
-        if (sender is ToggleSwitch { Tag: Setting setting } control)
-            await Model.Toggle(setting, control.IsOn);
-    }
 
     private string SlowDescription(bool enabled, string key) =>
         Model.Text.Get("settings", enabled ? key : "enable_slow");
@@ -812,37 +805,20 @@ public sealed partial class SettingsPage : UserControl
     private void OnIndexSwitch(object sender, RoutedEventArgs args) =>
         Main.ShowsSettingsIndex = IndexSwitch.IsOn;
 
-    // Selectors show their setting one way. A selection the binding makes
-    // equals the setting, so CommitSelection saves nothing for it.
-    private async void OnSelection(object sender, SelectionChangedEventArgs args)
+    private async void OnEncryption(object sender, SelectionChangedEventArgs args)
     {
-        var selected = sender switch
-        {
-            ComboBox choice => choice.SelectedItem,
-            RadioButtons choice => choice.SelectedItem,
-            _ => null,
-        };
-        if (sender is FrameworkElement { Tag: Setting setting } && selected is FrameworkElement { Tag: string value })
-            await Model.CommitSelection(setting, value);
+        if (EncryptionChoices.SelectedItem is FrameworkElement { Tag: string value })
+            await Model.Encryption.Select(value);
     }
 
     private async void OnAdapter(object sender, SelectionChangedEventArgs args)
     {
         if (Adapters.SelectedItem is AdapterChoice choice)
-            await Model.CommitSelection(Model.Adapter, choice.AdapterId);
+            await Model.Adapter.Select(choice.AdapterId);
     }
 
     private void OnProvider(object sender, SelectionChangedEventArgs args) =>
         Main.Library.ChooseProvider(ProviderChoice.SelectedIndex);
-
-    private void OnUnit(object sender, SelectionChangedEventArgs args)
-    {
-        if (sender is ComboBox { Tag: Setting setting, SelectedValue: string unit })
-        {
-            setting.SelectUnit(unit);
-            AlignCategory();
-        }
-    }
 
     private void OnLanguage(object sender, SelectionChangedEventArgs args)
     {
@@ -853,40 +829,47 @@ public sealed partial class SettingsPage : UserControl
 
     private void OnFolder(object sender, RoutedEventArgs args)
     {
-        if (sender is FrameworkElement { Tag: Setting setting })
+        if (RowOf((DependencyObject)sender)?.Setting is { } setting)
             FolderRequested?.Invoke(this, setting);
     }
 
     private void OnProxy(object sender, RoutedEventArgs args) =>
         ProxyRequested?.Invoke(this, EventArgs.Empty);
 
-    private void Watch(TextBox editor)
+    private static SettingsRow? RowOf(DependencyObject element)
     {
-        editor.TextCompositionStarted += (_, _) => _composing.Add(editor);
-        editor.TextCompositionEnded += (_, _) => _composing.Remove(editor);
+        for (
+            var current = element;
+            current is not null;
+            current = VisualTreeHelper.GetParent(current)
+        )
+            if (current is SettingsRow row)
+                return row;
+        return null;
     }
 
-    private void RegisterProfile(TextBox editor)
+    // Text fields of every setting row, including the speed limit rows, save
+    // through the handlers below. Composition starts only in a focused field,
+    // so a field is watched from its first focus.
+    private void OnFieldFocus(object sender, RoutedEventArgs args)
     {
-        if (!_editors.Add(editor))
-            return;
-        Watch(editor);
-        editor.PreviewKeyDown += OnFieldKey;
-        editor.LostFocus += OnFieldDeparture;
-    }
-
-    private void OnTextLoaded(object sender, RoutedEventArgs args)
-    {
-        if (sender is TextBox editor && _editors.Add(editor))
-            Watch(editor);
+        if (
+            args.OriginalSource is TextBox editor
+            && RowOf(editor)?.Setting is not null
+            && _editors.Add(editor)
+        )
+        {
+            editor.TextCompositionStarted += (_, _) => _composing.Add(editor);
+            editor.TextCompositionEnded += (_, _) => _composing.Remove(editor);
+        }
     }
 
     private async void OnFieldKey(object sender, KeyRoutedEventArgs args)
     {
         if (
-            sender is not Control { Tag: Setting setting } control
-            || TextEditor.Find(control) is not { } editor
+            args.OriginalSource is not TextBox editor
             || _composing.Contains(editor)
+            || RowOf(editor)?.Setting is not { } setting
         )
             return;
         if (args.Key == VirtualKey.Escape)
@@ -899,37 +882,32 @@ public sealed partial class SettingsPage : UserControl
         {
             args.Handled = true;
             setting.Input = editor.Text;
-            await Model.Commit(setting);
+            await setting.Commit();
         }
     }
 
+    // Focus on the row's browse button or unit selector stays with the field.
+    // Focus outside Settings leaves the draft for Settings to save on leaving.
     private void OnFieldDeparture(object sender, RoutedEventArgs args)
     {
         if (
-            sender is not Control { Tag: Setting setting } control
-            || TextEditor.Find(control) is not { } editor
+            args.OriginalSource is not TextBox editor
             || _composing.Contains(editor)
-        )
-            return;
-        var focused = FocusManager.GetFocusedElement(XamlRoot) as DependencyObject;
-        if (
-            focused is Control { Tag: Setting target }
-            && ReferenceEquals(target, setting)
-            && (focused is Button || setting.IsDuration && focused is ComboBox)
+            || RowOf(editor) is not { Setting: { } setting } row
         )
             return;
         for (
-            var current = focused;
+            var current = FocusManager.GetFocusedElement(XamlRoot) as DependencyObject;
             current is not null;
             current = VisualTreeHelper.GetParent(current)
         )
         {
-            if (current == control)
+            if (current == row)
                 return;
             if (current == this)
             {
                 setting.Input = editor.Text;
-                _ = Model.Depart(setting);
+                _ = setting.Depart();
                 return;
             }
         }

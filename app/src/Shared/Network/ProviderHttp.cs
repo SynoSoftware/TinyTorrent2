@@ -36,8 +36,12 @@ internal sealed partial class ProviderHttp : IDisposable
         }
     }
 
-    // Redirects return to the supplier, which authorizes the next origin and
-    // creates fresh headers; credentials never follow a redirect implicitly.
+    /// <summary>
+    /// Sends <paramref name="call"/> and returns its successful reply. Any
+    /// other outcome records its hold and throws <see cref="ReplyException"/>.
+    /// Redirects return to the caller, which authorizes the next origin and
+    /// creates fresh headers; credentials never follow a redirect implicitly.
+    /// </summary>
     internal Task<ProviderReply> Send(
         ProviderCall call,
         int maximum,
@@ -58,26 +62,38 @@ internal sealed partial class ProviderHttp : IDisposable
                 async (response, deadline) =>
                 {
                     var headers = Headers(response);
-                    if (call?.Observe is { } observe)
-                        await observe(new(response.StatusCode, [], headers)).ConfigureAwait(false);
-                    if (response.Content.Headers.ContentLength > maximum)
-                        throw new InvalidDataException("Provider response exceeds its size limit.");
-                    await using var stream = await response
-                        .Content.ReadAsStreamAsync(deadline.Token)
-                        .ConfigureAwait(false);
                     byte[] bytes;
                     try
                     {
+                        if (response.Content.Headers.ContentLength > maximum)
+                            throw new InvalidDataException(
+                                "Provider response exceeds its size limit."
+                            );
+                        await using var stream = await response
+                            .Content.ReadAsStreamAsync(deadline.Token)
+                            .ConfigureAwait(false);
                         bytes = await Read(stream, maximum, deadline.Token).ConfigureAwait(false);
                     }
-                    catch (IOException) when (call is not null)
+                    // A wait that the status or headers report holds even when
+                    // the body cannot be read.
+                    catch (Exception error)
+                        when (call is not null && error is IOException or InvalidDataException)
                     {
-                        await call
-                            .Policy.Fail(call.Request.Access, new(RequestBlockKind.Backoff))
+                        await Classify(call, new(response.StatusCode, [], headers))
                             .ConfigureAwait(false);
-                        throw;
+                        throw await Fail(
+                                call,
+                                error is InvalidDataException
+                                    ? ReplyFailure.Invalid
+                                    : ReplyFailure.Unavailable,
+                                inner: error
+                            )
+                            .ConfigureAwait(false);
                     }
-                    return new ProviderReply(response.StatusCode, bytes, headers);
+                    var reply = new ProviderReply(response.StatusCode, bytes, headers);
+                    if (call is not null)
+                        await Classify(call, reply).ConfigureAwait(false);
+                    return reply;
                 },
                 cancellation,
                 call
@@ -90,7 +106,8 @@ internal sealed partial class ProviderHttp : IDisposable
     /// received so far, as a fraction of the length the response declares
     /// when it declares one, and returns the file's length. Unlike
     /// <see cref="Send"/>, it fails only when no bytes arrive for a minute, so
-    /// a slow line can finish a large file.
+    /// a slow line can finish a large file. A reply other than a success
+    /// records its hold and throws <see cref="ReplyException"/>.
     /// </summary>
     internal Task<long> Download(
         ProviderCall call,
@@ -111,10 +128,10 @@ internal sealed partial class ProviderHttp : IDisposable
                 request,
                 async (response, deadline) =>
                 {
-                    if (call?.Observe is { } observe)
-                        await observe(new(response.StatusCode, [], Headers(response)))
+                    if (call is not null)
+                        await Classify(call, new(response.StatusCode, [], Headers(response)))
                             .ConfigureAwait(false);
-                    if (response.StatusCode != HttpStatusCode.OK)
+                    else if (response.StatusCode != HttpStatusCode.OK)
                         throw new HttpRequestException(
                             "The download was refused.",
                             null,
@@ -143,12 +160,10 @@ internal sealed partial class ProviderHttp : IDisposable
                                 .ReadAsync(buffer, deadline.Token)
                                 .ConfigureAwait(false);
                         }
-                        catch (IOException) when (call is not null)
+                        catch (IOException error) when (call is not null)
                         {
-                            await call
-                                .Policy.Fail(call.Request.Access, new(RequestBlockKind.Backoff))
+                            throw await Fail(call, ReplyFailure.Unavailable, inner: error)
                                 .ConfigureAwait(false);
-                            throw;
                         }
                         if (count == 0)
                             break;
@@ -175,13 +190,33 @@ internal sealed partial class ProviderHttp : IDisposable
             .ConfigureAwait(false);
     }
 
-    // Sends on the confirmed route and lets read consume the response before
-    // the deadline, which a timeout, the caller or a route change cancels.
+    // A call's route failure records no hold, because the person fixes the
+    // route instead of waiting for the provider.
     private async Task<T> Exchange<T>(
         HttpRequestMessage request,
         Func<HttpResponseMessage, CancellationTokenSource, Task<T>> read,
         CancellationToken cancellation,
         ProviderCall? call = null
+    )
+    {
+        try
+        {
+            return await Transfer(request, read, cancellation, call).ConfigureAwait(false);
+        }
+        catch (Exception error)
+            when (call is not null && error is not ReplyException && IsRoute(error))
+        {
+            throw new ReplyException(ReplyFailure.Route, null, error);
+        }
+    }
+
+    // Sends on the confirmed route and lets read consume the response before
+    // the deadline, which a timeout, the caller or a route change cancels.
+    private async Task<T> Transfer<T>(
+        HttpRequestMessage request,
+        Func<HttpResponseMessage, CancellationTokenSource, Task<T>> read,
+        CancellationToken cancellation,
+        ProviderCall? call
     )
     {
         if (request.RequestUri is not { IsAbsoluteUri: true, Scheme: "https", UserInfo: "" })
@@ -250,20 +285,22 @@ internal sealed partial class ProviderHttp : IDisposable
                 $"Provider request timed out or was interrupted ({request.RequestUri?.Host})."
             );
             if (call is not null)
-                await call
-                    .Policy.Fail(call.Request.Access, new(RequestBlockKind.Backoff))
+                throw await Fail(call, ReplyFailure.Unavailable, inner: error)
                     .ConfigureAwait(false);
             throw new HttpRequestException("Provider request was interrupted.", error);
         }
-        catch (HttpRequestException error) when (error.StatusCode is null)
+        catch (HttpRequestException error)
+            when (error.StatusCode is null && call is not null && !IsRoute(error))
         {
-            if (call is not null)
-                await call
-                    .Policy.Fail(call.Request.Access, new(RequestBlockKind.Backoff))
-                    .ConfigureAwait(false);
-            throw;
+            throw await Fail(call, ReplyFailure.Unavailable, inner: error).ConfigureAwait(false);
         }
     }
+
+    // The confirmed route cannot carry the request: its proxy or adapter
+    // fails, or the request is one it never sends, such as plain HTTP.
+    private static bool IsRoute(Exception error) =>
+        error is HttpRouteException
+        || error.GetBaseException() is InvalidOperationException and not ObjectDisposedException;
 
     private static Dictionary<string, string> Headers(HttpResponseMessage response) =>
         response
@@ -466,7 +503,27 @@ internal sealed record ProviderCall(
 )
 {
     internal FreshRequest? Fresh { get; init; }
-    internal Func<ProviderReply, Task>? Observe { get; init; }
+
+    /// <summary>Whether a 3xx reply is a success that the caller follows itself.</summary>
+    internal bool CanRedirect { get; init; }
+
+    /// <summary>
+    /// Whether the request sends a session that the caller renews when the
+    /// provider refuses it, so a 401 or 403 holds nothing.
+    /// </summary>
+    internal bool Renewable { get; init; }
+
+    /// <summary>
+    /// Whether the request names one resource, so a 404 or 410 means that the
+    /// resource does not exist rather than that the endpoint is broken.
+    /// </summary>
+    internal bool NamesResource { get; init; }
+
+    /// <summary>
+    /// The used-up allowance that a reply reports in the provider's own way,
+    /// such as in its body, or null when it reports none.
+    /// </summary>
+    internal Func<ProviderReply, Quota?>? Quota { get; init; }
 }
 
 internal sealed record ProviderReply(
@@ -477,35 +534,50 @@ internal sealed record ProviderReply(
 {
     internal string? Header(string name) => Headers.GetValueOrDefault(name);
 
+    /// <summary>
+    /// When the provider asks for the next request: Retry-After, or else
+    /// X-RateLimit-Reset, which MDBList and the subtitle suppliers send in
+    /// Unix seconds. Either can be a date; null when neither names a later time.
+    /// </summary>
     internal DateTimeOffset? RetryAt
     {
         get
         {
             var now = DateTimeOffset.UtcNow;
-            var value = Header("Retry-After");
-            if (
-                long.TryParse(
-                    value,
-                    NumberStyles.None,
-                    CultureInfo.InvariantCulture,
-                    out var seconds
+            return Time(
+                    "Retry-After",
+                    seconds =>
+                        seconds <= (DateTimeOffset.MaxValue - now).Ticks / TimeSpan.TicksPerSecond
+                            ? now.AddSeconds(seconds)
+                            : null
                 )
-            )
-                return
-                    seconds > 0
-                    && seconds <= (DateTimeOffset.MaxValue - now).Ticks / TimeSpan.TicksPerSecond
-                    ? now.AddSeconds(seconds)
-                    : null;
-            return
-                DateTimeOffset.TryParse(
-                    value,
-                    CultureInfo.InvariantCulture,
-                    DateTimeStyles.AssumeUniversal,
-                    out var date
-                )
-                && date > now
-                ? date
-                : null;
+                ?? Time(
+                    "X-RateLimit-Reset",
+                    seconds =>
+                        seconds > now.ToUnixTimeSeconds()
+                        && seconds <= DateTimeOffset.MaxValue.ToUnixTimeSeconds()
+                            ? DateTimeOffset.FromUnixTimeSeconds(seconds)
+                            : null
+                );
         }
+    }
+
+    // Reads a header that holds a positive number, which time converts, or a
+    // date, which counts only when it is later than now.
+    private DateTimeOffset? Time(string name, Func<long, DateTimeOffset?> time)
+    {
+        var value = Header(name);
+        if (long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var number))
+            return number > 0 ? time(number) : null;
+        return
+            DateTimeOffset.TryParse(
+                value,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal,
+                out var date
+            )
+            && date > DateTimeOffset.UtcNow
+            ? date
+            : null;
     }
 }

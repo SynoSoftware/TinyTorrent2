@@ -35,14 +35,17 @@ public sealed class FileDraft : IDraft
     // Removal does not need the scope, so a failed scope neither blocks it nor
     // shows an error: the dialog lists the save folders, and the engine still
     // keeps files that other torrents use.
-    private bool CanSave =>
+    public bool CanSubmit =>
         _owner.CanSave
         && !IsPending
         && _torrentIds.Length > 0
         && (IsRemoval || _loaded && HasDestination && (!HasShared || IncludeShared));
-    public bool CanSubmit => CanSave && !_owner.IsClosing;
     public bool CanRefresh => _owner.CanEdit && !_reading && !_submitting && _torrentIds.Length > 0;
     public bool IsMove => Action == FileAction.Move;
+    public ClosePolicy ClosePolicy =>
+        IsMove
+            ? new ClosePolicy.Ask("move", Lucide.FolderInput, () => Destination, () => SubmitText)
+            : new ClosePolicy.Discard();
     public bool HasShared => _shared.Length > 0;
 
     // Move asks about the shared files. Removal names them only when it
@@ -239,7 +242,11 @@ public sealed class FileDraft : IDraft
         Refresh();
         try
         {
-            var scope = await _client.Send("file_scope", new { torrent_ids = torrentIds });
+            var scope = await _client.Send(
+                "file_scope",
+                new { torrent_ids = torrentIds },
+                Requester.Window
+            );
             var torrents = await Task.Run(() =>
                 MeasureTorrentFiles(ReadLocations(scope.GetProperty("torrents")))
             );
@@ -277,7 +284,7 @@ public sealed class FileDraft : IDraft
 
     public async Task<bool> Submit()
     {
-        if (!CanSave)
+        if (!CanSubmit)
             return false;
         _submitting = true;
         Refresh();
@@ -312,7 +319,7 @@ public sealed class FileDraft : IDraft
                         torrent_files = DeleteTorrentFiles,
                     }
                 );
-            _owner.AnnounceAccepted("commands", IsMove ? "move" : "remove");
+            _owner.Notifications.AnnounceAccepted("commands", IsMove ? "move" : "remove");
             if (subtitleDeletion is not null && subtitles is not null)
                 subtitles.Delete(subtitleDeletion, _deletion);
             if (deletesDownloaded)
@@ -323,10 +330,12 @@ public sealed class FileDraft : IDraft
                     && count.TryGetInt32(out var kept)
                     && kept > 0
                 )
-                    _owner.Announce(_owner.Text.FormatCount("file_action", "kept", kept));
+                    _owner.Notifications.Announce(
+                        _owner.Text.FormatCount("file_action", "kept", kept)
+                    );
             }
             _failure = null;
-            Cancel();
+            await Discard();
             return true;
         }
         catch (Exception error)
@@ -353,7 +362,7 @@ public sealed class FileDraft : IDraft
         return choices.Count > 0 ? settings.Save(choices) : Task.CompletedTask;
     }
 
-    internal void Cancel()
+    public Task Discard()
     {
         _torrentIds = [];
         _selection = [];
@@ -367,7 +376,10 @@ public sealed class FileDraft : IDraft
         _originalDestination = string.Empty;
         _includeShared = false;
         Refresh();
+        return Task.CompletedTask;
     }
+
+    public void Stop() { }
 
     internal void Refresh() =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));

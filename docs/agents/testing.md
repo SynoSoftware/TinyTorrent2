@@ -145,10 +145,15 @@ Deleting a test because it is red is the failure mode, not this.
 ## Windows evidence
 
 `app/tests/AddSourceChecks.ps1 -BinaryDirectory <built-app-folder>` checks that
-duplicate recovery preserves file choices and that Add's opt-out queues a change
-only for the submitted source kind. It exercises the compiled preferences and
-command queue without connecting to an engine, so a magnet opt-out cannot silently
-disable torrent-file dialogs. It does not exercise native checkbox input.
+duplicate recovery preserves file choices and that a dialog's opt-out turns off
+the settings passed to it in one save. It reads the settings command the
+`Editor` queues instead of connecting to an engine. It does not exercise native
+checkbox input or which setting Add passes for a magnet link or a torrent file.
+
+`app/tests/SettingChecks.ps1 -BinaryDirectory <built-app-folder>` checks that a
+refused earlier save neither discards newer input nor marks it as refused. It
+completes the save's reply itself through a recording `SettingStore`, so it
+needs no pipe, engine or WinUI.
 
 `app/tests/NavigationChecks.ps1 -BinaryDirectory <built-app-folder>` exercises
 the compiled window navigation owner without starting WinUI or the engine.
@@ -159,6 +164,14 @@ focus, animation, or the editor guards themselves.
 They also check that a temporary layout visit restores once after accepted
 departure, survives a secondary page and a refused departure, and can be kept
 without restoring the old layout.
+
+`app/tests/NotificationChecks.ps1 -BinaryDirectory <built-app-folder>` exercises
+the compiled toast owner without starting WinUI or the engine. It watches a
+timed toast closing after its lifetime, a fifth timed toast removing the oldest,
+a command error and a failed background result staying through the countdown
+and a hidden stack, the same work failing again replacing its earlier failure,
+and a seen timed toast retiring when the stack hides. It
+does not cover the window's pause conditions, such as hover or editor focus.
 
 `Capture.ps1 -Review connections` exercises the connections-map toolbar and View
 menu commands, selected and all-transfer scopes, Back restoration, Properties

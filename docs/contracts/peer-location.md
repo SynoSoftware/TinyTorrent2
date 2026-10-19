@@ -45,9 +45,11 @@ fetches this month's archive, or the previous month's when this month's does
 not exist yet, unpacks it beside the installed file, checks that the result
 opens as a database, flushes it to disk and moves it over the installed copy
 under the lookup lock. Failure or cancellation before that keeps the previous
-copy. A route change or a protection reset interrupts the download and
-reports it, as it does the IMDb download. The status bar shows the phases:
-downloading, unpacking, installing.
+copy. A reply that asks the app to wait, such as HTTP 429, records the hold:
+the failure names the time to try again, and Download sends nothing until
+then. A route change or a protection reset interrupts the download and
+reports it. Both behave as they do for the IMDb download. The status bar
+shows the phases: downloading, unpacking, installing.
 
 A copy from the current month counts as current, so Update warns that the
 download would most likely transfer the same file.
@@ -78,13 +80,14 @@ text block uses the font; the name beside it stays in the app's font.
 
 `Inspector.Place` is the chosen filter for both views. Its `MapModel` owns
 grouped peer facts, descriptions and estimated distribution; the control keeps
-only the exact inspected destination and table-selection highlights. Renderer
-layout supplies screen-dependent regions to that distribution. `MapViewport`
+only the exact inspected destination and table-selection highlights. The
+control gives the model the fitted map scale when it prepares the map, and the
+model merges places into regions at that scale. `MapViewport`
 provides one transform for drawing, hit testing and navigation, and
 `MapRenderer` retains route resources by destination identity. Changed peer
 inputs and resize prepare the retained presentation; drawing and pan alone do
 not regroup peers or publish model changes. Unload disposes the renderer and
-releases its geography, while Inspector retains plain map state.
+releases the geography, while Inspector retains plain map state.
 
 The Peers inspector's ellipsis menu selects Map only, Table only or Map and table.
 Its Map detail group selects Countries or Cities. Countries aggregates every
@@ -103,7 +106,7 @@ person need not leave the inspector. It is disabled during a download and omitte
 once the data is installed. The chosen map detail is saved with the peer view;
 Countries is the default and the fallback when city data is removed.
 When both are visible, the inspector compares the fitted map scale in each
-arrangement and uses the larger one. The renderer owns that scale calculation,
+arrangement and uses the larger one. `MapViewport` owns that scale calculation,
 so layout and projection agree. Combined views retain separate split proportions,
 using the same accessible Splitter as the inspector frame. Coordinates
 from the installed city database are grouped at identical positions. A city name or

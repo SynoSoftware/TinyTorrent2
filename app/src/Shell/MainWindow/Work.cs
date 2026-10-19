@@ -61,7 +61,7 @@ public sealed partial class MainWindow
             WorkItems.Children.Add(divider);
             WorkItems.Children.Add(inline);
             WorkList.Items.Add(expanded);
-            Model.Announce(
+            Model.Notifications.Announce(
                 WorkStatus.Describe(operation.Current, Model.Text, Model.Page == WindowPage.Library)
             );
         }
@@ -92,7 +92,7 @@ public sealed partial class MainWindow
             var library = Model.Page == WindowPage.Library;
             var description = WorkStatus.Describe(operation.Current, Model.Text, library);
             if (description != WorkStatus.Describe(previous, Model.Text, library))
-                Model.Announce(description);
+                Model.Notifications.Announce(description);
         }
         QueueStatus();
     }

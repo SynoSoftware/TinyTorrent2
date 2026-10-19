@@ -1278,7 +1278,7 @@ executable image using Windows process queries, including on reconnect. The
 engine binds its first connection to the process returned by launch; the UI
 binds to the engine's ready `ProcessIdentity`. For alternate-admin use the helper
 grants the original logon SID only `PROCESS_QUERY_LIMITED_INFORMATION` on its
-process object. Use `QueryFullProcessImageName`; the existing `EnginePath` path
+process object. Use `QueryFullProcessImageName`; the existing `EngineProcess.Executable` path
 that tolerates inaccessible elevated `MainModule` information is insufficient.
 Grant no process mutation, handle duplication, memory access or token access.
 Unverifiable identity means discovery unavailable, not weaker validation.

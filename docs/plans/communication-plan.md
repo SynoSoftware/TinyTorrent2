@@ -152,7 +152,7 @@ Target shape: three deep modules at two seams.
   `Observation` event carrying context, torrent, section, readiness and facts.
   The `Consumer` enum, the file-read gate and negative contexts go.
   `Withdraw` goes only once `Read` takes a cancellation token that withdraws
-  an unsent read, because `AddDraft.StopPolling` cancels queued preview reads
+  an unsent read, because `AddDraft.Close` cancels queued preview reads
   with it today and the next poll must not wait for the previous one; a read
   already sent completes and its caller ignores the outcome, as now. One
   unsent summary read at a time stays, as a property of `RefreshSnapshot`.

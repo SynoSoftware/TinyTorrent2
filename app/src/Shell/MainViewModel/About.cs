@@ -10,6 +10,25 @@ public sealed partial class MainViewModel
     private long? _memoryChecked;
     private Task? _memoryRead;
 
+    public bool HasUpdate => Updates.HasUpdate;
+    public string UpdateText => Text.Get("about", "update");
+
+    private bool CanCheckUpdates =>
+        !_closed
+        && _connected
+        && !_loading
+        && !_storageFailed
+        && Features.HasRoute
+        && Settings.Updates.IsOn;
+
+    private void ObserveUpdates()
+    {
+        // Settings apply before the route does, so the snapshot starts a
+        // check only after both.
+        if (!_applyingSettings || !CanCheckUpdates)
+            Updates.Observe(CanCheckUpdates);
+    }
+
     public string AboutTitle => Text.Get("window", "title");
     public string AboutDescription => Text.Get("about", "description");
     public string AboutPromises => Text.Get("about", "promises");

@@ -14,6 +14,7 @@ public sealed partial class Editor : INotifyPropertyChanged
 {
     private readonly MainViewModel _owner;
     private readonly PipeClient _client;
+    private readonly List<Setting> _all = [];
     private JsonElement _registration;
     private bool _registering;
     private AdapterChoice? _unavailableAdapter;
@@ -104,6 +105,14 @@ public sealed partial class Editor : INotifyPropertyChanged
     // Peers cannot connect in through a proxy, so the port and its forwarding
     // have no effect while one is in use.
     private bool CanListen() => !Proxy.IsInUse;
+
+    private bool UsesIncompleteFolder() => UseIncompleteFolder.IsOn;
+
+    // The seed rule says how seeding limits combine, so it needs two of them.
+    private bool CombinesSeedLimits() =>
+        new[] { Ratio, SeedingMinutes, InactiveTime }.Count(setting =>
+            setting.ConfirmedNumber > 0
+        ) > 1;
 
     public string PortHint => Text.Get("settings", Proxy.IsInUse ? "proxy_port_hint" : "port_hint");
     public string MappingHint =>
@@ -305,7 +314,7 @@ public sealed partial class Editor : INotifyPropertyChanged
 
     private string LimitText(Setting setting) => Text.SpeedLimit(setting.ConfirmedNumber);
 
-    public IReadOnlyList<Setting> All { get; }
+    public IReadOnlyList<Setting> All => _all;
     public bool IsPending =>
         All.Any(setting => setting.IsPending)
         || _registering
@@ -315,10 +324,14 @@ public sealed partial class Editor : INotifyPropertyChanged
     public bool CanEdit => _owner.CanEdit;
     internal bool CanSave => _owner.CanSave;
 
-    // Where a setting saves unless it names another store.
-    internal SettingStore Engine { get; }
+    // Where the engine's settings save.
+    private SettingStore Engine { get; }
 
-    internal void Report(Exception error) => _owner.Report(error, "failed_settings", null, null);
+    internal void Report(Exception error) =>
+        _owner.Notifications.Report(error, "failed_settings", null, null);
+
+    private void Report(Setting setting, Exception error) =>
+        _owner.Notifications.Report(error, "failed_settings", () => setting.Label, null);
 
     internal LimitProfile? FixedLimits => _owner.FixedLimits;
     public bool CanRegister => CanEdit && !_registering;
@@ -444,7 +457,7 @@ public sealed partial class Editor : INotifyPropertyChanged
             Theme.Cancel();
             return;
         }
-        await Commit(Theme);
+        await Theme.Commit();
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -462,463 +475,474 @@ public sealed partial class Editor : INotifyPropertyChanged
             error => error is CommandException
         );
         Overview = new(this, owner);
-        LookupLimit = new(this, "lookups", SettingKind.Integer, SettingsCategory.Plugins, 1)
-        {
-            Section = "plugins",
-            ValidationKey = "invalid_lookups",
-            Store = new(
-                () => _owner.Library.IsAvailable,
-                () => _owner.Library.IsAvailable,
-                (_, value) => _owner.SaveLookupLimit((int)value),
-                // A failed SQLite save keeps the earlier value.
-                _ => true
-            ),
-        };
-        ConfirmLookupLimit();
-        _owner.PropertyChanged += OnOwner;
-        Destination = new(
-            this,
-            "default_destination",
-            SettingKind.Text,
-            SettingsCategory.Transfers
-        );
-        UseIncompleteFolder = new(
-            this,
-            "use_incomplete_folder",
-            SettingKind.Boolean,
-            SettingsCategory.Transfers
-        );
-        IncompleteFolder = new(
-            this,
-            "incomplete_folder",
-            SettingKind.Text,
-            SettingsCategory.Transfers
-        )
-        {
-            Condition = () => UseIncompleteFolder.IsOn,
-        };
-        AppendSuffix = new(this, "append_suffix", SettingKind.Boolean, SettingsCategory.Transfers);
-        ConfirmExit = new(this, "confirm_exit", SettingKind.Boolean, SettingsCategory.General);
-        ShowExternalIp = new(
-            this,
-            "show_external_ip",
-            SettingKind.Boolean,
-            SettingsCategory.Appearance
-        );
-        ShowTitleSpeeds = new(
-            this,
-            "show_title_speeds",
-            SettingKind.Boolean,
-            SettingsCategory.Appearance
-        );
-        ShowFreeSpace = new(
-            this,
-            "show_free_space",
-            SettingKind.Boolean,
-            SettingsCategory.Appearance
-        );
-        ShowMemory = new(this, "show_memory", SettingKind.Boolean, SettingsCategory.Appearance);
-        RefreshInterval = new(
-            this,
-            "refresh_interval",
-            SettingKind.Integer,
-            SettingsCategory.Advanced,
-            1000,
-            10000
-        );
-        RecentInterval = new(
-            this,
-            "recent_interval",
-            SettingKind.Integer,
-            SettingsCategory.Advanced,
-            1,
-            10
-        );
-        HistoryInterval = new(
-            this,
-            "history_interval",
-            SettingKind.Integer,
-            SettingsCategory.Advanced,
-            10,
-            300
-        );
-        CapacityDownload = new(
-            this,
-            "capacity_download",
-            SettingKind.Number,
-            SettingsCategory.Limits
-        );
-        CapacityUpload = new(this, "capacity_upload", SettingKind.Number, SettingsCategory.Limits);
-        DiskBuffer = new(
-            this,
-            "disk_buffer_mib",
-            SettingKind.Integer,
-            SettingsCategory.Advanced,
-            1,
-            1024
-        );
-        CheckingMemory = new(
-            this,
-            "checking_memory_mib",
-            SettingKind.Integer,
-            SettingsCategory.Advanced,
-            1,
-            1024
-        );
-        HashingThreads = new(
-            this,
-            "hashing_threads",
-            SettingKind.Integer,
-            SettingsCategory.Advanced,
-            1,
-            64
-        );
-        FilePool = new(
-            this,
-            "file_pool_size",
-            SettingKind.Integer,
-            SettingsCategory.Advanced,
-            1,
-            10000
-        );
-        TorrentDialog = new(this, "torrent_dialog", SettingKind.Boolean, SettingsCategory.General);
-        MagnetDialog = new(this, "magnet_dialog", SettingKind.Boolean, SettingsCategory.General);
-        StartDownload = new(
-            this,
-            "starts_download",
-            SettingKind.Boolean,
-            SettingsCategory.Transfers
-        );
-        QueueTop = new(this, "queue_top", SettingKind.Boolean, SettingsCategory.Transfers);
-        UseLastFolder = new(
-            this,
-            "use_last_folder",
-            SettingKind.Boolean,
-            SettingsCategory.Transfers
-        );
-        StartPaused = new(this, "start_paused", SettingKind.Boolean, SettingsCategory.General);
-        RaiseAdd = new(this, "raise_add", SettingKind.Boolean, SettingsCategory.General)
-        {
-            Condition = () => TorrentDialog.IsOn || MagnetDialog.IsOn,
-        };
-        Layout = new(this, "layout", SettingKind.Text, SettingsCategory.Transfers);
-        Duplicates = new(this, "duplicates", SettingKind.Text, SettingsCategory.Transfers);
-        Exclude = new(this, "exclude", SettingKind.Boolean, SettingsCategory.Transfers);
-        Patterns = new(this, "patterns", SettingKind.Text, SettingsCategory.Transfers)
-        {
-            Condition = () => Exclude.IsOn,
-        };
-        ConfirmDelete = new(this, "confirm_delete", SettingKind.Boolean, SettingsCategory.General);
-        DeleteDownloaded = new(
-            this,
-            "delete_downloaded",
-            SettingKind.Boolean,
-            SettingsCategory.General
-        );
-        DeleteTorrentFile = new(
-            this,
-            "delete_torrent_file",
-            SettingKind.Boolean,
-            SettingsCategory.General
-        );
-        InactiveTime = new(
-            this,
-            "inactive_time",
-            SettingKind.Integer,
-            SettingsCategory.Transfers,
-            0,
-            525600
-        )
-        {
-            IsDuration = true,
-        };
-        Watch = new(this, "watch", SettingKind.Boolean, SettingsCategory.Transfers);
-        WatchPath = new(this, "watch_path", SettingKind.Text, SettingsCategory.Transfers);
-        WatchRecursive = new(
-            this,
-            "watch_recursive",
-            SettingKind.Boolean,
-            SettingsCategory.Transfers
-        )
-        {
-            Condition = () => Watch.IsOn,
-        };
-        WatchDestination = new(
-            this,
-            "watch_destination",
-            SettingKind.Text,
-            SettingsCategory.Transfers
-        )
-        {
-            Condition = () => Watch.IsOn,
-        };
-        RecheckFinished = new(
-            this,
-            "recheck_finished",
-            SettingKind.Boolean,
-            SettingsCategory.Advanced
-        );
-        ShowSplash = new(this, "show_splash", SettingKind.Boolean, SettingsCategory.General);
-        StartInTray = new(this, "start_in_tray", SettingKind.Boolean, SettingsCategory.General);
-        Download = new(this, "download_limit", SettingKind.Rate, SettingsCategory.Limits);
-        Upload = new(this, "upload_limit", SettingKind.Rate, SettingsCategory.Limits);
-        AlternativeDownload = new(
-            this,
-            "alternative_download_limit",
-            SettingKind.Rate,
-            SettingsCategory.Limits
-        );
-        AlternativeUpload = new(
-            this,
-            "alternative_upload_limit",
-            SettingKind.Rate,
-            SettingsCategory.Limits
-        );
-        ActiveDownloads = new(
-            this,
-            "active_downloads",
-            SettingKind.Integer,
-            SettingsCategory.Transfers
-        );
-        ActiveSeeds = new(this, "active_seeds", SettingKind.Integer, SettingsCategory.Transfers);
-        ConnectionLimit = new(
-            this,
-            "connection_limit",
-            SettingKind.Integer,
-            SettingsCategory.Network
-        );
-        Encryption = new(this, "encryption", SettingKind.Text, SettingsCategory.Network);
-        ActiveTotal = new(this, "active_total", SettingKind.Integer, SettingsCategory.Transfers);
-        TorrentConnections = new(
-            this,
-            "per_torrent_connections",
-            SettingKind.Integer,
-            SettingsCategory.Network,
-            2,
-            10000
-        )
-        {
-            HasUnlimited = true,
-        };
-        IgnoreSlow = new(this, "ignore_slow", SettingKind.Boolean, SettingsCategory.Transfers);
-        SlowDownload = new(
-            this,
-            "slow_download",
-            SettingKind.Rate,
-            SettingsCategory.Transfers,
-            0,
-            1073741824
-        )
-        {
-            HasUnlimited = false,
-            RateScale = RateScale.KibPerSecond,
-            Condition = () => IgnoreSlow.IsOn,
-        };
-        SlowUpload = new(
-            this,
-            "slow_upload",
-            SettingKind.Rate,
-            SettingsCategory.Transfers,
-            0,
-            1073741824
-        )
-        {
-            HasUnlimited = false,
-            RateScale = RateScale.KibPerSecond,
-            Condition = () => IgnoreSlow.IsOn,
-        };
-        SlowWait = new(this, "slow_wait", SettingKind.Integer, SettingsCategory.Transfers, 1, 86400)
-        {
-            Condition = () => IgnoreSlow.IsOn,
-        };
-        ActiveChecking = new(
-            this,
-            "active_checking",
-            SettingKind.Integer,
-            SettingsCategory.Advanced,
-            1,
-            64
-        );
-        Transport = new(this, "transport", SettingKind.Text, SettingsCategory.Network);
-        IpFamily = new(this, "ip_family", SettingKind.Text, SettingsCategory.Network)
-        {
-            Condition = CanListen,
-        };
-        OutgoingRate = new(
-            this,
-            "outgoing_rate",
-            SettingKind.Integer,
-            SettingsCategory.Network,
-            1,
-            1000
-        );
-        Dht = new(this, "dht", SettingKind.Boolean, SettingsCategory.Network);
-        Pex = new(this, "pex", SettingKind.Boolean, SettingsCategory.Network);
-        Lsd = new(this, "lsd", SettingKind.Boolean, SettingsCategory.Network);
-        IncludeOverhead = new(
-            this,
-            "include_overhead",
-            SettingKind.Boolean,
-            SettingsCategory.Limits
-        );
-        LimitLan = new(this, "limit_lan", SettingKind.Boolean, SettingsCategory.Limits);
         Proxy = new(this, owner, client);
         Proxy.PropertyChanged += (_, _) =>
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsPending)));
-        Ratio = new(this, "ratio_limit", SettingKind.Number, SettingsCategory.Transfers);
-        SeedingMinutes = new(
-            this,
-            "seeding_minutes",
-            SettingKind.Integer,
-            SettingsCategory.Transfers
-        )
-        {
-            IsDuration = true,
-        };
-        SeedRule = new(this, "seed_rule", SettingKind.Text, SettingsCategory.Transfers)
-        {
-            Condition = () =>
-                new[] { Ratio, SeedingMinutes, InactiveTime }.Count(setting =>
-                    setting.ConfirmedNumber > 0
-                ) > 1,
-        };
-        Adapter = new(this, "network_interface", SettingKind.Text, SettingsCategory.Network);
-        Adapters = [new(string.Empty, Text.Get("settings", "any_adapter"))];
-        Adapter.PropertyChanged += (_, _) => UpdateAdapter();
-        PortMapping = new(this, "port_mapping", SettingKind.Boolean, SettingsCategory.Network)
-        {
-            Condition = CanListen,
-        };
-        Port = new(this, "listen_port", SettingKind.Integer, SettingsCategory.Network, 1, 65535)
-        {
-            Condition = CanListen,
-        };
-        ProblemNotifications = new(
-            this,
-            "notify_problems",
-            SettingKind.Boolean,
-            SettingsCategory.General
-        );
-        FinishedNotifications = new(
-            this,
-            "notifications_enabled",
-            SettingKind.Boolean,
-            SettingsCategory.General
-        );
-        AddedNotifications = new(
-            this,
-            "notify_added",
-            SettingKind.Boolean,
-            SettingsCategory.General
-        );
-        BackgroundNotifications = new(
-            this,
-            "notify_background",
-            SettingKind.Boolean,
-            SettingsCategory.General
-        );
-        PreventSleep = new(this, "prevent_sleep", SettingKind.Boolean, SettingsCategory.General);
-        // Seeding only extends Prevent sleep, so it has no effect while that is off.
-        SeedingSleep = new(
-            this,
-            "prevent_sleep_seeding",
-            SettingKind.Boolean,
-            SettingsCategory.General
-        )
-        {
-            Condition = () => PreventSleep.IsOn,
-        };
-        Updates = new(this, "check_for_updates", SettingKind.Boolean, SettingsCategory.General);
         Schedule = new(this);
-        Language = new(this, "language", SettingKind.Text, SettingsCategory.Appearance);
-        Theme = new(this, "theme", SettingKind.Text, SettingsCategory.Appearance);
         Schedule.PropertyChanged += (_, _) =>
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsPending)));
-        All =
-        [
-            LookupLimit,
-            Destination,
-            TorrentDialog,
-            MagnetDialog,
-            StartDownload,
-            QueueTop,
-            UseLastFolder,
-            StartPaused,
-            RaiseAdd,
-            Layout,
-            Duplicates,
-            Exclude,
-            Patterns,
-            ConfirmDelete,
-            DeleteDownloaded,
-            DeleteTorrentFile,
-            InactiveTime,
-            SeedRule,
-            Watch,
-            WatchPath,
-            WatchRecursive,
-            WatchDestination,
-            RecheckFinished,
-            Download,
-            Upload,
-            AlternativeDownload,
-            AlternativeUpload,
-            ActiveDownloads,
-            ActiveSeeds,
-            ActiveTotal,
-            TorrentConnections,
-            IgnoreSlow,
-            SlowDownload,
-            SlowUpload,
-            SlowWait,
-            ActiveChecking,
-            Transport,
-            IpFamily,
-            OutgoingRate,
-            Dht,
-            Pex,
-            Lsd,
-            IncludeOverhead,
-            LimitLan,
-            ConnectionLimit,
-            Encryption,
-            Ratio,
-            SeedingMinutes,
-            Adapter,
-            PortMapping,
-            Port,
-            ProblemNotifications,
-            FinishedNotifications,
-            AddedNotifications,
-            BackgroundNotifications,
-            PreventSleep,
-            SeedingSleep,
-            Updates,
-            ShowSplash,
-            StartInTray,
-            Language,
-            Theme,
-            IncompleteFolder,
-            UseIncompleteFolder,
-            AppendSuffix,
-            ConfirmExit,
-            ShowExternalIp,
-            ShowTitleSpeeds,
-            ShowFreeSpace,
-            ShowMemory,
-            RefreshInterval,
-            RecentInterval,
-            HistoryInterval,
-            CapacityDownload,
-            CapacityUpload,
-            DiskBuffer,
-            CheckingMemory,
-            HashingThreads,
-            FilePool,
-        ];
+        // Settings register in the order search lists them.
+        var library = new SettingStore(
+            () => _owner.Library.IsAvailable,
+            () => _owner.Library.IsAvailable,
+            (_, value) => _owner.Features.SaveLookupLimit((int)value),
+            // A failed SQLite save keeps the earlier value.
+            _ => true
+        );
+        LookupLimit = Add(
+            new(library, Text, "lookups", SettingKind.Integer, SettingsCategory.Plugins)
+            {
+                Minimum = 1,
+                Section = "plugins",
+                ValidationKey = "invalid_lookups",
+            }
+        );
+        ConfirmLookupLimit();
+        _owner.PropertyChanged += OnOwner;
+        Destination = Add(
+            new(Engine, Text, "default_destination", SettingKind.Text, SettingsCategory.Transfers)
+        );
+        TorrentDialog = Add(
+            new(Engine, Text, "torrent_dialog", SettingKind.Boolean, SettingsCategory.General)
+        );
+        MagnetDialog = Add(
+            new(Engine, Text, "magnet_dialog", SettingKind.Boolean, SettingsCategory.General)
+        );
+        StartDownload = Add(
+            new(Engine, Text, "starts_download", SettingKind.Boolean, SettingsCategory.Transfers)
+        );
+        QueueTop = Add(
+            new(Engine, Text, "queue_top", SettingKind.Boolean, SettingsCategory.Transfers)
+        );
+        UseLastFolder = Add(
+            new(Engine, Text, "use_last_folder", SettingKind.Boolean, SettingsCategory.Transfers)
+        );
+        StartPaused = Add(
+            new(Engine, Text, "start_paused", SettingKind.Boolean, SettingsCategory.General)
+        );
+        RaiseAdd = Add(
+            new(Engine, Text, "raise_add", SettingKind.Boolean, SettingsCategory.General)
+            {
+                Condition = () => TorrentDialog.IsOn || MagnetDialog.IsOn,
+            }
+        );
+        Layout = Add(new(Engine, Text, "layout", SettingKind.Text, SettingsCategory.Transfers));
+        Duplicates = Add(
+            new(Engine, Text, "duplicates", SettingKind.Text, SettingsCategory.Transfers)
+        );
+        Exclude = Add(
+            new(Engine, Text, "exclude", SettingKind.Boolean, SettingsCategory.Transfers)
+        );
+        Patterns = Add(
+            new(Engine, Text, "patterns", SettingKind.Text, SettingsCategory.Transfers)
+            {
+                Condition = () => Exclude.IsOn,
+            }
+        );
+        ConfirmDelete = Add(
+            new(Engine, Text, "confirm_delete", SettingKind.Boolean, SettingsCategory.General)
+        );
+        DeleteDownloaded = Add(
+            new(Engine, Text, "delete_downloaded", SettingKind.Boolean, SettingsCategory.General)
+        );
+        DeleteTorrentFile = Add(
+            new(Engine, Text, "delete_torrent_file", SettingKind.Boolean, SettingsCategory.General)
+        );
+        InactiveTime = Add(
+            new(
+                Engine,
+                Text,
+                "inactive_time",
+                SettingKind.Integer,
+                SettingsCategory.Transfers
+            )
+            {
+                Maximum = 525600,
+                IsDuration = true,
+            }
+        );
+        SeedRule = Add(
+            new(Engine, Text, "seed_rule", SettingKind.Text, SettingsCategory.Transfers)
+            {
+                Condition = CombinesSeedLimits,
+            }
+        );
+        Watch = Add(new(Engine, Text, "watch", SettingKind.Boolean, SettingsCategory.Transfers));
+        WatchPath = Add(
+            new(Engine, Text, "watch_path", SettingKind.Text, SettingsCategory.Transfers)
+        );
+        WatchRecursive = Add(
+            new(Engine, Text, "watch_recursive", SettingKind.Boolean, SettingsCategory.Transfers)
+            {
+                Condition = () => Watch.IsOn,
+            }
+        );
+        WatchDestination = Add(
+            new(Engine, Text, "watch_destination", SettingKind.Text, SettingsCategory.Transfers)
+            {
+                Condition = () => Watch.IsOn,
+            }
+        );
+        RecheckFinished = Add(
+            new(Engine, Text, "recheck_finished", SettingKind.Boolean, SettingsCategory.Advanced)
+        );
+        Download = Add(
+            new(Engine, Text, "download_limit", SettingKind.Rate, SettingsCategory.Limits)
+        );
+        Upload = Add(new(Engine, Text, "upload_limit", SettingKind.Rate, SettingsCategory.Limits));
+        AlternativeDownload = Add(
+            new(
+                Engine,
+                Text,
+                "alternative_download_limit",
+                SettingKind.Rate,
+                SettingsCategory.Limits
+            )
+        );
+        AlternativeUpload = Add(
+            new(Engine, Text, "alternative_upload_limit", SettingKind.Rate, SettingsCategory.Limits)
+        );
+        ActiveDownloads = Add(
+            new(Engine, Text, "active_downloads", SettingKind.Integer, SettingsCategory.Transfers)
+        );
+        ActiveSeeds = Add(
+            new(Engine, Text, "active_seeds", SettingKind.Integer, SettingsCategory.Transfers)
+        );
+        ActiveTotal = Add(
+            new(Engine, Text, "active_total", SettingKind.Integer, SettingsCategory.Transfers)
+        );
+        TorrentConnections = Add(
+            new(
+                Engine,
+                Text,
+                "per_torrent_connections",
+                SettingKind.Integer,
+                SettingsCategory.Network
+            )
+            {
+                Minimum = 2,
+                Maximum = 10000,
+                HasUnlimited = true,
+            }
+        );
+        IgnoreSlow = Add(
+            new(Engine, Text, "ignore_slow", SettingKind.Boolean, SettingsCategory.Transfers)
+        );
+        SlowDownload = Add(
+            new(
+                Engine,
+                Text,
+                "slow_download",
+                SettingKind.Rate,
+                SettingsCategory.Transfers
+            )
+            {
+                Maximum = 1073741824,
+                HasUnlimited = false,
+                RateScale = RateScale.KibPerSecond,
+                Condition = () => IgnoreSlow.IsOn,
+            }
+        );
+        SlowUpload = Add(
+            new(
+                Engine,
+                Text,
+                "slow_upload",
+                SettingKind.Rate,
+                SettingsCategory.Transfers
+            )
+            {
+                Maximum = 1073741824,
+                HasUnlimited = false,
+                RateScale = RateScale.KibPerSecond,
+                Condition = () => IgnoreSlow.IsOn,
+            }
+        );
+        SlowWait = Add(
+            new(
+                Engine,
+                Text,
+                "slow_wait",
+                SettingKind.Integer,
+                SettingsCategory.Transfers
+            )
+            {
+                Minimum = 1,
+                Maximum = 86400,
+                Condition = () => IgnoreSlow.IsOn,
+            }
+        );
+        ActiveChecking = Add(
+            new(
+                Engine,
+                Text,
+                "active_checking",
+                SettingKind.Integer,
+                SettingsCategory.Advanced
+            )
+            {
+                Minimum = 1,
+                Maximum = 64,
+            }
+        );
+        Transport = Add(new(Engine, Text, "transport", SettingKind.Text, SettingsCategory.Network));
+        IpFamily = Add(
+            new(Engine, Text, "ip_family", SettingKind.Text, SettingsCategory.Network)
+            {
+                Condition = CanListen,
+            }
+        );
+        OutgoingRate = Add(
+            new(
+                Engine,
+                Text,
+                "outgoing_rate",
+                SettingKind.Integer,
+                SettingsCategory.Network
+            )
+            {
+                Minimum = 1,
+                Maximum = 1000,
+            }
+        );
+        Dht = Add(new(Engine, Text, "dht", SettingKind.Boolean, SettingsCategory.Network));
+        Pex = Add(new(Engine, Text, "pex", SettingKind.Boolean, SettingsCategory.Network));
+        Lsd = Add(new(Engine, Text, "lsd", SettingKind.Boolean, SettingsCategory.Network));
+        IncludeOverhead = Add(
+            new(Engine, Text, "include_overhead", SettingKind.Boolean, SettingsCategory.Limits)
+        );
+        LimitLan = Add(
+            new(Engine, Text, "limit_lan", SettingKind.Boolean, SettingsCategory.Limits)
+        );
+        ConnectionLimit = Add(
+            new(Engine, Text, "connection_limit", SettingKind.Integer, SettingsCategory.Network)
+        );
+        Encryption = Add(
+            new(Engine, Text, "encryption", SettingKind.Text, SettingsCategory.Network)
+        );
+        Ratio = Add(
+            new(Engine, Text, "ratio_limit", SettingKind.Number, SettingsCategory.Transfers)
+        );
+        SeedingMinutes = Add(
+            new(Engine, Text, "seeding_minutes", SettingKind.Integer, SettingsCategory.Transfers)
+            {
+                IsDuration = true,
+            }
+        );
+        Adapter = Add(
+            new(Engine, Text, "network_interface", SettingKind.Text, SettingsCategory.Network)
+        );
+        Adapters = [new(string.Empty, Text.Get("settings", "any_adapter"))];
+        Adapter.PropertyChanged += (_, _) => UpdateAdapter();
+        PortMapping = Add(
+            new(Engine, Text, "port_mapping", SettingKind.Boolean, SettingsCategory.Network)
+            {
+                Condition = CanListen,
+            }
+        );
+        Port = Add(
+            new(
+                Engine,
+                Text,
+                "listen_port",
+                SettingKind.Integer,
+                SettingsCategory.Network
+            )
+            {
+                Minimum = 1,
+                Maximum = 65535,
+                Condition = CanListen,
+            }
+        );
+        ProblemNotifications = Add(
+            new(Engine, Text, "notify_problems", SettingKind.Boolean, SettingsCategory.General)
+        );
+        FinishedNotifications = Add(
+            new(
+                Engine,
+                Text,
+                "notifications_enabled",
+                SettingKind.Boolean,
+                SettingsCategory.General
+            )
+        );
+        AddedNotifications = Add(
+            new(Engine, Text, "notify_added", SettingKind.Boolean, SettingsCategory.General)
+        );
+        BackgroundNotifications = Add(
+            new(Engine, Text, "notify_background", SettingKind.Boolean, SettingsCategory.General)
+        );
+        PreventSleep = Add(
+            new(Engine, Text, "prevent_sleep", SettingKind.Boolean, SettingsCategory.General)
+        );
+        // Seeding only extends Prevent sleep, so it has no effect while that is off.
+        SeedingSleep = Add(
+            new(
+                Engine,
+                Text,
+                "prevent_sleep_seeding",
+                SettingKind.Boolean,
+                SettingsCategory.General
+            )
+            {
+                Condition = () => PreventSleep.IsOn,
+            }
+        );
+        Updates = Add(
+            new(Engine, Text, "check_for_updates", SettingKind.Boolean, SettingsCategory.General)
+        );
+        ShowSplash = Add(
+            new(Engine, Text, "show_splash", SettingKind.Boolean, SettingsCategory.General)
+        );
+        StartInTray = Add(
+            new(Engine, Text, "start_in_tray", SettingKind.Boolean, SettingsCategory.General)
+        );
+        Language = Add(
+            new(Engine, Text, "language", SettingKind.Text, SettingsCategory.Appearance)
+        );
+        Theme = Add(new(Engine, Text, "theme", SettingKind.Text, SettingsCategory.Appearance));
+        IncompleteFolder = Add(
+            new(Engine, Text, "incomplete_folder", SettingKind.Text, SettingsCategory.Transfers)
+            {
+                Condition = UsesIncompleteFolder,
+            }
+        );
+        UseIncompleteFolder = Add(
+            new(
+                Engine,
+                Text,
+                "use_incomplete_folder",
+                SettingKind.Boolean,
+                SettingsCategory.Transfers
+            )
+        );
+        AppendSuffix = Add(
+            new(Engine, Text, "append_suffix", SettingKind.Boolean, SettingsCategory.Transfers)
+        );
+        ConfirmExit = Add(
+            new(Engine, Text, "confirm_exit", SettingKind.Boolean, SettingsCategory.General)
+        );
+        ShowExternalIp = Add(
+            new(Engine, Text, "show_external_ip", SettingKind.Boolean, SettingsCategory.Appearance)
+        );
+        ShowTitleSpeeds = Add(
+            new(Engine, Text, "show_title_speeds", SettingKind.Boolean, SettingsCategory.Appearance)
+        );
+        ShowFreeSpace = Add(
+            new(Engine, Text, "show_free_space", SettingKind.Boolean, SettingsCategory.Appearance)
+        );
+        ShowMemory = Add(
+            new(Engine, Text, "show_memory", SettingKind.Boolean, SettingsCategory.Appearance)
+        );
+        RefreshInterval = Add(
+            new(
+                Engine,
+                Text,
+                "refresh_interval",
+                SettingKind.Integer,
+                SettingsCategory.Advanced
+            )
+            {
+                Minimum = 1000,
+                Maximum = 10000,
+            }
+        );
+        RecentInterval = Add(
+            new(
+                Engine,
+                Text,
+                "recent_interval",
+                SettingKind.Integer,
+                SettingsCategory.Advanced
+            )
+            {
+                Minimum = 1,
+                Maximum = 10,
+            }
+        );
+        HistoryInterval = Add(
+            new(
+                Engine,
+                Text,
+                "history_interval",
+                SettingKind.Integer,
+                SettingsCategory.Advanced
+            )
+            {
+                Minimum = 10,
+                Maximum = 300,
+            }
+        );
+        CapacityDownload = Add(
+            new(Engine, Text, "capacity_download", SettingKind.Number, SettingsCategory.Limits)
+        );
+        CapacityUpload = Add(
+            new(Engine, Text, "capacity_upload", SettingKind.Number, SettingsCategory.Limits)
+        );
+        DiskBuffer = Add(
+            new(
+                Engine,
+                Text,
+                "disk_buffer_mib",
+                SettingKind.Integer,
+                SettingsCategory.Advanced
+            )
+            {
+                Minimum = 1,
+                Maximum = 1024,
+            }
+        );
+        CheckingMemory = Add(
+            new(
+                Engine,
+                Text,
+                "checking_memory_mib",
+                SettingKind.Integer,
+                SettingsCategory.Advanced
+            )
+            {
+                Minimum = 1,
+                Maximum = 1024,
+            }
+        );
+        HashingThreads = Add(
+            new(
+                Engine,
+                Text,
+                "hashing_threads",
+                SettingKind.Integer,
+                SettingsCategory.Advanced
+            )
+            {
+                Minimum = 1,
+                Maximum = 64,
+            }
+        );
+        FilePool = Add(
+            new(
+                Engine,
+                Text,
+                "file_pool_size",
+                SettingKind.Integer,
+                SettingsCategory.Advanced
+            )
+            {
+                Minimum = 1,
+                Maximum = 10000,
+            }
+        );
         FixHandlers = new RelayCommand(() => RegisterHandlers(), () => CanRegister);
         Connection = new(this, owner, client);
         UseStartup = new RelayCommand(() => Register("enable_startup"), () => CanRegister);
+    }
+
+    // Snapshots confirm, departure saves and search lists only registered settings.
+    private Setting Add(Setting setting)
+    {
+        setting.Changed += (_, _) => Changed();
+        setting.Failed += (_, error) => Report(setting, error);
+        _all.Add(setting);
+        return setting;
     }
 
     public Task RefreshAdapters() =>
@@ -941,7 +965,7 @@ public sealed partial class Editor : INotifyPropertyChanged
         }
         catch (NetworkInformationException error)
         {
-            _owner.Report(error);
+            _owner.Notifications.Report(error);
         }
     }
 
@@ -980,7 +1004,7 @@ public sealed partial class Editor : INotifyPropertyChanged
         if (settings.TryGetProperty("schedule", out var schedule))
             Schedule.Apply(schedule);
         if (changed)
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+            Changed();
     }
 
     internal Setting AddPreference(string source) =>
@@ -1008,7 +1032,7 @@ public sealed partial class Editor : INotifyPropertyChanged
     internal async Task SaveLanguage(string language)
     {
         Language.Input = language;
-        await Submit(Language, language);
+        await Language.Commit();
         if (Language.Failure is { } error)
             throw error;
     }
@@ -1041,11 +1065,11 @@ public sealed partial class Editor : INotifyPropertyChanged
         Changed(nameof(CanRegister), nameof(IsPending));
         try
         {
-            await _client.RepairMachine(classes);
+            await EngineProcess.RepairMachine(classes);
         }
         catch (Exception error)
         {
-            _owner.Report(error, "failed_registration", null, null);
+            _owner.Notifications.Report(error, "failed_registration", null, null);
         }
         finally
         {
@@ -1073,16 +1097,24 @@ public sealed partial class Editor : INotifyPropertyChanged
         Changed(nameof(CanRegister), nameof(IsPending));
         try
         {
-            _registration = await _client.Send("registration", new { action });
+            _registration = await _client.Send(
+                "registration",
+                new { action },
+                action == "observe" ? Requester.Window : Requester.Person
+            );
             return true;
         }
         catch (Exception error)
         {
-            _owner.Report(error, "failed_registration", null, null);
+            _owner.Notifications.Report(error, "failed_registration", null, null);
             if (error is CommandException && action != "observe")
                 try
                 {
-                    _registration = await _client.Send("registration", new { action = "observe" });
+                    _registration = await _client.Send(
+                        "registration",
+                        new { action = "observe" },
+                        Requester.Window
+                    );
                 }
                 catch (Exception) { }
             return false;
@@ -1094,182 +1126,12 @@ public sealed partial class Editor : INotifyPropertyChanged
         }
     }
 
-    /// <summary>
-    /// Saves the value a choice control selected, which is its item's tag:
-    /// "true" or "false" for an on/off setting, otherwise the input. The
-    /// current value saves nothing.
-    /// </summary>
-    public async Task CommitSelection(Setting setting, string value)
-    {
-        if (value == setting.SelectedValue)
-            return;
-        if (setting.Kind == SettingKind.Boolean)
-        {
-            await Toggle(setting, value == "true");
-            return;
-        }
-        setting.Input = value;
-        await Commit(setting);
-    }
-
-    public async Task Commit(Setting setting)
-    {
-        if (!setting.CanEdit || !setting.IsPending && !setting.HasDraft)
-            return;
-        if (!TryValue(setting, out var value))
-        {
-            setting.MarkInvalid();
-            return;
-        }
-        await Submit(setting, value);
-    }
-
     public async Task PrepareLeave()
     {
-        var saves = All.Select(Depart).ToArray();
+        var saves = All.Select(setting => setting.Depart()).ToArray();
         var schedule = Schedule.Depart();
         await Task.WhenAll(saves);
         await schedule;
-    }
-
-    public async Task Depart(Setting setting)
-    {
-        if (setting.IsCancelled || !setting.IsPending && !setting.HasDraft)
-        {
-            await setting.Saving;
-            return;
-        }
-        // A draft that its condition has disabled can be neither corrected nor
-        // saved, so leaving discards it like invalid input.
-        if (!TryValue(setting, out var value) || setting.Condition?.Invoke() == false)
-        {
-            setting.Cancel();
-            return;
-        }
-        if (!setting.Store.CanSave())
-            return;
-        if (setting.Failure is null)
-            await Submit(setting, value);
-    }
-
-    public async Task Toggle(Setting setting, bool value)
-    {
-        if (!setting.CanEdit || setting.IsOn == value)
-            return;
-        setting.Choose(value);
-        if (!setting.HasDraft && !setting.IsPending)
-        {
-            setting.Cancel();
-            return;
-        }
-        await Submit(setting, value);
-    }
-
-    private async Task Submit(Setting setting, object value)
-    {
-        if (!setting.Store.CanSave())
-        {
-            var error = new IOException(Text.Get("connection", "unavailable"));
-            setting.Reject(error);
-            _owner.Report(error, "failed_settings", () => setting.Label, null);
-            return;
-        }
-        var submitted = setting.Capture(value);
-        if (setting.IsPending)
-        {
-            setting.Defer(submitted);
-            await setting.Saving;
-            return;
-        }
-        setting.Begin();
-        Changed();
-        try
-        {
-            while (true)
-            {
-                Exception? failure = null;
-                try
-                {
-                    await setting.Store.Save(setting, submitted.Value);
-                    setting.Accept(JsonSerializer.SerializeToElement(submitted.Value), submitted);
-                }
-                catch (Exception error)
-                {
-                    failure = error;
-                    _owner.Report(error, "failed_settings", () => setting.Label, null);
-                }
-                if (
-                    setting.Store.CanSave()
-                    && (failure is null || setting.Store.Refused(failure))
-                    && setting.TakeIntent() is { } next
-                    && next != submitted
-                )
-                {
-                    submitted = next;
-                    continue;
-                }
-                if (failure is not null)
-                    setting.Reject(failure, submitted);
-                break;
-            }
-        }
-        finally
-        {
-            setting.End();
-            Changed();
-        }
-    }
-
-    private static bool TryValue(Setting setting, out object value)
-    {
-        value = setting.Input.Trim();
-        if (setting.Kind == SettingKind.Text)
-            return true;
-        if (setting.Kind == SettingKind.Boolean)
-        {
-            value = setting.IsOn;
-            return true;
-        }
-        if (setting.HasUnlimited && setting.Input.Trim().Length == 0)
-        {
-            value = setting.Kind == SettingKind.Number ? 0.0 : (object)0;
-            return true;
-        }
-        if (setting.IsRate)
-        {
-            if (
-                !TryRate(setting.Input, out var bytes, setting.RateScale)
-                || bytes > setting.Maximum
-            )
-                return false;
-            value = bytes;
-            return true;
-        }
-        double number;
-        if (setting.Kind == SettingKind.Integer && !setting.IsDuration)
-        {
-            if (!TryInteger(setting.Input, out var integer))
-                return false;
-            number = integer;
-        }
-        else if (!TryNumber(setting.Input, out number))
-            return false;
-        if (setting.IsDuration)
-            number = Math.Round(number * setting.DurationScale, 8);
-        if (setting.Kind == SettingKind.Number)
-        {
-            value = number;
-            return true;
-        }
-        if (
-            number != Math.Truncate(number)
-            || number > int.MaxValue
-            || number < setting.Minimum && !(setting.HasUnlimited && number == 0)
-            || number > setting.Maximum
-        )
-            return false;
-        value = (int)number;
-        return true;
     }
 
     internal static bool TryInteger(string input, out int number) =>
@@ -1342,291 +1204,17 @@ public sealed partial class Editor : INotifyPropertyChanged
     internal void Changed(params string[] names)
     {
         Schedule?.Refresh();
+        // A condition reads other state, so a row bound to its setting needs
+        // the setting's own notice to enable or disable its control.
+        if (names.Length == 0)
+            foreach (var setting in All.Where(setting => setting.Condition is not null))
+                setting.Refresh();
         foreach (var name in names.Length == 0 ? new[] { string.Empty } : names)
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
         foreach (RelayCommand command in new[] { FixHandlers, UseStartup })
             command.Refresh();
     }
 }
-
-public sealed class Setting(
-    Editor owner,
-    string name,
-    SettingKind kind,
-    SettingsCategory category,
-    int minimum = 0,
-    int maximum = int.MaxValue
-) : INotifyPropertyChanged
-{
-    private string _input = string.Empty;
-    private string _confirmedInput = string.Empty;
-    private JsonElement _confirmed;
-    private Exception? _failure;
-    private bool _invalid;
-    private bool? _choice;
-    private TaskCompletionSource? _saving;
-    private Submission? _intent;
-    private Submission? _uncertain;
-    private bool _cancelled;
-    public string Name { get; } = name;
-    public SettingKind Kind { get; } = kind;
-    public SettingsCategory Category { get; } = category;
-    public int Minimum { get; } = minimum;
-    public int Maximum { get; } = maximum;
-    public string Section { get; init; } = kind == SettingKind.Rate ? "limits" : "settings";
-    public string? ValidationKey { get; init; }
-    public bool IsDuration { get; init; }
-
-    public string DurationUnit { get; private set; } = "minutes";
-    internal int DurationScale => IsDuration && DurationUnit == "hours" ? 60 : 1;
-
-    // Other state that must hold before the setting can be edited.
-    internal Func<bool>? Condition { get; init; }
-    internal SettingStore Store { get; init; } = owner.Engine;
-    public bool IsRate => Kind == SettingKind.Rate;
-    internal RateScale RateScale { get; init; } = RateScale.MbPerSecond;
-    public string RateUnit => owner.Text.RateUnit(RateScale);
-
-    // Empty limits save 0, which the engine reads as unlimited.
-    public bool HasUnlimited { get; init; } =
-        kind is SettingKind.Rate or SettingKind.Integer or SettingKind.Number && minimum == 0;
-    internal string ConfirmedText => _confirmedInput;
-    internal double ConfirmedNumber =>
-        _confirmed.ValueKind == JsonValueKind.Number ? _confirmed.GetDouble() : 0;
-    internal bool ConfirmedOn => _confirmed.ValueKind == JsonValueKind.True;
-    public string Label => owner.Text.Get(Section, Name);
-
-    // Names the duration's unit selector after its setting, so each one reads
-    // differently in Narrator.
-    public string UnitLabel => owner.Text.Format("settings", "duration_unit", Label);
-    public string Input
-    {
-        get => _input;
-        set
-        {
-            if (_input == value)
-                return;
-            _input = value;
-            _cancelled = false;
-            _failure = null;
-            _invalid = false;
-            Refresh();
-            owner.Changed();
-        }
-    }
-    public bool IsOn => _choice ?? _confirmed.ValueKind == JsonValueKind.True;
-
-    // The tag of the item a selector shows, as Editor.CommitSelection reads it.
-    public string SelectedValue =>
-        Kind == SettingKind.Boolean ? IsOn ? "true" : "false"
-        : Input;
-    public bool HasDraft =>
-        _input != _confirmedInput
-        || _choice is { } choice && choice != (_confirmed.ValueKind == JsonValueKind.True)
-        || !_cancelled
-            && _uncertain is { } submitted
-            && (_input != submitted.Input || _choice != submitted.Choice);
-    public bool IsPending => _saving is not null;
-    internal bool IsCancelled => _cancelled;
-    internal Exception? Failure => _failure;
-    internal Task Saving => _saving?.Task ?? Task.CompletedTask;
-
-    // A save keeps its control enabled so later input keeps focus.
-    public bool CanEdit => Store.CanEdit() && (Condition?.Invoke() ?? true);
-    public string Message
-    {
-        get
-        {
-            if (!_invalid)
-                return string.Empty;
-            if (ValidationKey is { } key)
-                return owner.Text.Get(Section, key);
-            if (IsDuration)
-                return owner.Text.Get("settings", "invalid_duration");
-            if (IsRate)
-                return owner.Text.Format(
-                    "settings",
-                    "invalid_rate",
-                    Maximum / (double)RateScale,
-                    RateUnit
-                );
-            if (Minimum > 0)
-                return owner.Text.Format("settings", "invalid_range", Minimum, Maximum);
-            return owner.Text.Get(
-                "settings",
-                Kind == SettingKind.Integer ? "invalid_count" : "invalid_number"
-            );
-        }
-    }
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    internal bool Confirm(JsonElement value)
-    {
-        var changed =
-            _confirmed.ValueKind != value.ValueKind || !JsonElement.DeepEquals(_confirmed, value);
-        if (changed)
-        {
-            var preserve = HasDraft || IsPending || _uncertain is not null;
-            // Cloning a child of the snapshot's clone retains the whole snapshot.
-            _confirmed = JsonSerializer.SerializeToElement(value);
-            _confirmedInput =
-                value.ValueKind == JsonValueKind.String ? value.GetString()!
-                : value.ValueKind != JsonValueKind.Number || HasUnlimited && value.GetDouble() == 0
-                    ? string.Empty
-                : IsRate ? Editor.RateInput(value.GetInt32(), RateScale)
-                : (value.GetDouble() / DurationScale).ToString("G", CultureInfo.CurrentCulture);
-            if (!preserve)
-            {
-                _input = _confirmedInput;
-                _choice = null;
-            }
-        }
-        if (
-            !IsPending
-            && _uncertain is { } submitted
-            && JsonElement.DeepEquals(value, JsonSerializer.SerializeToElement(submitted.Value))
-        )
-        {
-            Settle(submitted);
-            changed = true;
-        }
-        if (changed)
-            Refresh();
-        return changed;
-    }
-
-    internal sealed record Submission(object Value, string Input, bool? Choice);
-
-    public void SelectUnit(string unit)
-    {
-        if (DurationUnit == unit)
-            return;
-        var scale = DurationScale;
-        DurationUnit = unit;
-        if (Editor.TryNumber(_input, out var number))
-            _input = (number * scale / DurationScale).ToString("G", CultureInfo.CurrentCulture);
-        _confirmedInput =
-            ConfirmedNumber == 0
-                ? string.Empty
-                : (ConfirmedNumber / DurationScale).ToString("G", CultureInfo.CurrentCulture);
-        Refresh();
-        owner.Changed();
-    }
-
-    internal Submission Capture(object value)
-    {
-        _cancelled = false;
-        return new(value, _input, _choice);
-    }
-
-    internal void Defer(Submission submitted) => _intent = submitted;
-
-    internal Submission? TakeIntent()
-    {
-        var intent = _intent;
-        _intent = null;
-        return intent;
-    }
-
-    internal void Accept(JsonElement value, Submission submitted)
-    {
-        Confirm(value);
-        Settle(submitted);
-        Refresh();
-    }
-
-    private void Settle(Submission submitted)
-    {
-        var preserve = !_cancelled && (_input != submitted.Input || _choice != submitted.Choice);
-        if (!preserve)
-        {
-            _input = _confirmedInput;
-            _choice = null;
-            _invalid = false;
-        }
-        _cancelled = false;
-        _failure = null;
-        _uncertain = null;
-    }
-
-    internal void Begin()
-    {
-        _saving = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        _failure = null;
-        _uncertain = null;
-        _invalid = false;
-        Refresh();
-    }
-
-    internal void End()
-    {
-        var saving = _saving;
-        _saving = null;
-        _intent = null;
-        if (_uncertain is null)
-            _cancelled = false;
-        Refresh();
-        saving?.TrySetResult();
-    }
-
-    internal void Reject(Exception error, Submission? submitted = null)
-    {
-        var current =
-            submitted is null
-            || !_cancelled && _input == submitted.Input && _choice == submitted.Choice;
-        var refused = Store.Refused(error);
-        if (_cancelled && submitted is not null && refused)
-            Settle(submitted);
-        _failure = current ? error : null;
-        // A lost reply still needs confirmation, even after the input changes
-        // or is cancelled; Settle preserves any newer input when it arrives.
-        _uncertain = refused ? null : submitted;
-        Refresh();
-    }
-
-    internal void MarkInvalid()
-    {
-        _invalid = true;
-        Refresh();
-    }
-
-    internal void Choose(bool value)
-    {
-        _choice = value;
-        _cancelled = false;
-        _failure = null;
-        _invalid = false;
-        Refresh();
-        owner.Changed();
-    }
-
-    public void Cancel()
-    {
-        _intent = null;
-        _cancelled = IsPending || _uncertain is not null;
-        _input = _confirmedInput;
-        _choice = null;
-        _failure = null;
-        _invalid = false;
-        Refresh();
-        owner.Changed();
-    }
-
-    internal void Refresh() =>
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
-}
-
-/// <summary>
-/// Where a <see cref="Setting"/> saves: whether it can be edited and saved
-/// now, the save of a submitted value, and whether a failed save proves the
-/// value is unsaved. Otherwise the setting waits for a confirmed value.
-/// </summary>
-internal sealed record SettingStore(
-    Func<bool> CanEdit,
-    Func<bool> CanSave,
-    Func<Setting, object, Task> Save,
-    Func<Exception, bool> Refused
-);
 
 public sealed class AdapterChoice(string adapterId, string text) : INotifyPropertyChanged
 {

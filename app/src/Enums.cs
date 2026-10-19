@@ -76,6 +76,19 @@ internal enum WorkOutcome
     Failed,
 }
 
+// What the window shows after AddDraft receives sources.
+internal enum ArrivalOutcome
+{
+    // Nothing: the sources were added, joined the open Add dialog, or wait in
+    // the draft for a later Add dialog.
+    Settled,
+    Dialog,
+
+    // Every source is already listed, and one has trackers its listed
+    // torrent lacks.
+    Merge,
+}
+
 internal enum MaintenanceWork
 {
     Recovery,
@@ -153,6 +166,15 @@ public enum Consumer
     Inspector,
     Draft,
     Files,
+}
+
+// Who requested an engine command. Only an accepted command the person
+// requested ends the command error; the window requests reads, which change
+// nothing, and the messages it sends on its own, such as its handshakes.
+internal enum Requester
+{
+    Person,
+    Window,
 }
 
 public enum PieceOrder
@@ -243,6 +265,39 @@ internal enum SubtitleSupplier
     OpenSubtitles,
     SubDL,
     SubSource,
+}
+
+/// <summary>
+/// What one of a subtitle supplier's requests is, which decides how the
+/// subtitle host signs it, where its failures hold and how large its reply
+/// may be. Only <see cref="File"/> and <see cref="Link"/> answer with a
+/// subtitle file; the others answer with JSON.
+/// </summary>
+internal enum SupplierRequest
+{
+    /// <summary>A request to the supplier's API, signed with the account's key.</summary>
+    Api,
+
+    /// <summary>An API request whose reply is the subtitle file.</summary>
+    File,
+
+    /// <summary>
+    /// An API request that also sends the account's session, which the
+    /// supplier renews once when it is refused, so a refusal holds nothing.
+    /// </summary>
+    Session,
+
+    /// <summary>
+    /// The request that signs the account in. Its failures hold sign-in, not
+    /// the operation it serves.
+    /// </summary>
+    SignIn,
+
+    /// <summary>
+    /// A link that the supplier handed out and that carries its own
+    /// permission, so it is sent without the key and holds only its server.
+    /// </summary>
+    Link,
 }
 
 internal enum SubtitleStage
@@ -440,11 +495,49 @@ internal enum ExitAnswer
     Unavailable,
 }
 
+// What started the window's close.
+internal enum CloseRequest
+{
+    // The person closed the window; the engine keeps running.
+    Close,
+
+    // The engine is exiting and waits for the window's reply.
+    Exit,
+
+    // Reset all settings: the window closes and a new one opens.
+    Reset,
+}
+
 public enum VideoKind
 {
     Movie,
     Series,
     Episode,
+}
+
+/// <summary>How Library's identification of one file ended.</summary>
+internal enum IdentificationOutcome
+{
+    /// <summary>The provider's video is saved for the file.</summary>
+    Matched,
+
+    /// <summary>The provider has no confident match for the file.</summary>
+    NoMatch,
+
+    /// <summary>A page or record about the file could not be read.</summary>
+    Unanswered,
+
+    /// <summary>
+    /// Search protection held the lookup back, such as the search limit or a
+    /// page known to be unusable.
+    /// </summary>
+    Blocked,
+
+    /// <summary>
+    /// The file changed or a newer decision won, so the attempt saved
+    /// nothing.
+    /// </summary>
+    Superseded,
 }
 
 internal enum RequestOutcome
@@ -501,6 +594,26 @@ internal enum RequestBlockKind
     NoMatch,
 }
 
+/// <summary>
+/// Why a provider call failed, as the shared HTTP path reads the reply.
+/// Library and Subtitles turn it into their own failures.
+/// </summary>
+internal enum ReplyFailure
+{
+    // The call names one resource, and the provider has no such resource.
+    Missing,
+    Refused,
+
+    // The provider refused a session that the caller renews; nothing is held.
+    Expired,
+    Wait,
+    Unavailable,
+
+    // The reply exceeds its size limit, or its body is not what the call reads.
+    Invalid,
+    Route,
+}
+
 internal enum FetchScope
 {
     New,
@@ -546,6 +659,19 @@ internal enum LibraryReadiness
 
     // Every current origin has had a read attempt; workers check file confirmation.
     Ready,
+}
+
+// What a feature failure says about the Library database file, which decides
+// the fix the message bar offers.
+internal enum DatabaseCondition
+{
+    Other,
+
+    // An earlier or later version created it; Delete replaces it.
+    Incompatible,
+
+    // The file is marked read-only; Repair clears the mark.
+    ReadOnlyFile,
 }
 
 internal enum PauseReason

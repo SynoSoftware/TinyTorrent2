@@ -303,22 +303,45 @@ from owning edits.
   selection, command availability and connection facts, through one concrete
   pipe client. It publishes a completed visible list only when membership or
   order changes; routine snapshots refresh window state, and connection and
-  language transitions reach the affected child owners.
-- `Settings.Editor` owns confirmed settings, ordinary field drafts, adapter
-  choices, conversion and submission. Its `Schedule` owns period editing and
-  whole-list saves. The lookup limit uses the same field lifecycle and saves
-  through the Library request policy rather than the engine. Editor also owns
-  plugin coverage and database summary reads and their retained results, so
-  those operations do not depend on a page's controls. Views request loading
-  when the relevant content becomes visible and bind to the results.
+  language transitions reach the affected child owners. It owns the model
+  steps of close, Exit and reset in their order, and whether the close exits
+  or reopens. One private `Reply` sends every engine reply of the close, Exit
+  and activation handshakes: it reports a failure and never throws, and only
+  a failed close reply keeps the window open.
+- `Settings.Editor` owns the collection of settings, applies confirmed
+  snapshots to them, and owns adapter choices and the operations that cross
+  settings: leaving Settings, search and reset. Each `Setting` owns its field
+  lifecycle: its draft, conversion and its message, submission, and the replies
+  to its saves. A `SettingsRow` given a setting shows its label and error,
+  enables its control, and saves a switch, a selection or a unit; the page
+  keeps the keys and focus of text fields. Editor's `Schedule` owns period
+  editing and whole-list saves. The lookup limit uses the same field lifecycle
+  and saves through the Library request policy rather than the engine. Editor
+  also owns plugin coverage and database summary reads and their retained
+  results, so those operations do not depend on a page's controls. Views
+  request loading when the relevant content becomes visible and bind to the
+  results.
 - `AddDraft`, `Inspector` and `FileDraft` own their unfinished operations.
-  `AddDraft` holds addition choices and preview state; `Inspector` keeps peer
-  and tracker row identity within the current session and target.
+  `AddDraft` holds addition choices and preview state. It also receives
+  dropped, pasted, picked and activated sources: it takes them in arrival
+  order, adds several together without a dialog, and tells `MainViewModel`
+  whether the Add dialog or the merge question opens. `MainWindow` tells it
+  when its dialog opens and closes. `Inspector` keeps peer and tracker row
+  identity within the current session and target.
 - Views bind to those owners. `MainWindow` keeps native pickers, dialogs,
   window chrome, control-specific focus and scrolling, and TableView gestures.
+  Around the model's close steps it hides and shows the window, suspends the
+  open dialog and resolves drafts by their close policy, saves or forgets the
+  placement once the close has succeeded, and restores focus when it fails.
   The model accepts or refuses a selection before the window reflects it.
   Connection conditions and command failures have separate app-level messages;
-  field and editor failures stay at their owners.
+  field and editor failures stay at their owners. `MainViewModel` owns the
+  message bar; `Notifications` owns the toast stack, how long each toast
+  stays, what closing it means, the command error and the screen-reader
+  announcements. `MainWindow` tells it when time on screen passes and when
+  the stack shows. The code that sends an engine command says whether the
+  person requested it or the window did, for a read or on its own, and only
+  an accepted command the person requested clears the command error.
 
 In the engine, one private `CommitEdit` derives, persists and applies tracker
 and priority changes for explicit edits and merges; each entry point keeps its
@@ -384,17 +407,26 @@ issues own actionable work and its status.
   reply. Background file reads settle there; Inspector alone decides whether
   its current presentation accepts a result. The
   [pipe API contract](pipe-api.md#snapshots-and-detail) owns that lifetime.
-- `Settings.Editor` owns the engine setting fields and the Plugins search
-  limit; `Library.Browser` owns the provider and automatic download choices, and
-  `Subtitles.Settings` owns the subtitle choices. In Editor's fields, Escape
-  discards unsubmitted intent while accepted work settles; later deliberate
-  input stays distinct from cancellation, including input equal to the former
-  confirmed value.
-- [Supplier](../../app/src/Subtitles/Supplier.cs) owns validity before every send and
-  allowance reservation. Its operation carries account, HTTP access and the
-  acquisition validity callback through login, retries and redirects. Account
-  Check has no movie membership requirement. Acquisition keeps file-work and
-  publication checks; ProviderHttp stays the network-route owner.
+- `Settings.Editor` holds the engine setting fields and the Plugins search
+  limit as `Setting`s; `Library.Browser` owns the provider and automatic
+  download choices. `Subtitles.Settings` presents the subtitle choices, and
+  `Subtitles.Acquisition` saves every one through a single queue that the UI
+  thread appends to, so saves apply in click order and closing waits for them
+  instead of for a Settings view. In a
+  `Setting`, Escape discards unsubmitted intent while accepted work settles;
+  later deliberate input stays distinct from cancellation, including input
+  equal to the former confirmed value.
+- [Supplier](../../app/src/Subtitles/Supplier.cs) hosts each
+  [ISupplier](../../app/src/Subtitles/ISupplier.cs). It owns validity before
+  every send and allowance reservation, the key on each request, the sign-in
+  request's accounting, redirects, subtitle decoding and which subtitles fit
+  a file. Its operation carries account, HTTP access and the acquisition
+  validity callback through sign-in, retries and redirects. A supplier builds
+  its requests, reads the answers into facts and declares its sign-in style
+  and quota facts; it reaches the network only through the host's send
+  delegate. Account Check has no movie membership requirement. Acquisition
+  keeps file-work and publication checks; ProviderHttp stays the
+  network-route owner.
 - Table resolves saved visibility and sort before publishing the layout, and
   accepts held rows and release intentions only after comparison succeeds.
   A changed saved sort uses the same full-source presentation as explicit Sort;
@@ -407,10 +439,36 @@ issues own actionable work and its status.
   blocking those saves or losing the previous credentials.
   [Acquisition.Load](../../app/src/Subtitles/Acquisition/Storage.cs) publishes settings
   and supplier allowance only after its SQLite transaction commits.
+- `MainWindow` orders close, Exit and reset, because hiding, dialog suspension,
+  draft prompts, placement and focus interleave with the model steps;
+  `MainViewModel` supplies those steps and the engine's close replies. A
+  separate departure owner would call back into the window for most steps, so
+  its interface would be as wide as the sequence.
+- Child owners such as `AddDraft`, `Inspector` and `Editor` take their
+  `MainViewModel`, because each uses a different set of its members. A shared
+  object of window-access facts would sit beside that reference in every child
+  except `SpeedLimit`.
+- `Inspector` keeps the wanted-file draft beside its tracker draft, because both
+  share its pending edit, failure and departure. `FileSelection` shows the
+  choices and is told whether to keep them across a snapshot.
+- `Week` keeps its pointer and keyboard gestures, and `PeriodSpan` owns
+  snapping and clamping. A pixel-free gesture model would have no caller
+  besides `Week`.
+- `PipeClient` creates its own named pipe. Connecting needs the pipe handle
+  itself, for the server process, the engine path in the version message and a
+  Debug build's stop of another engine, and no second production transport
+  exists. A stream or connect-function seam would serve only tests.
+- Each feature owner keeps its cancellation source, accepts a stop and reports
+  Cancelling or Finishing under its own publication gate, as
+  [Cancellation has one path](background-work.md#cancellation-has-one-path)
+  requires. `BackgroundWork` cannot tell a stop that loses to publication, so
+  moving the source or the late-report filter into its handle would be the
+  shared cancellation machinery that
+  [search protection](search-protection.md#ownership-and-interface) rejects.
 
 Each `Setting` saves through a `SettingStore`. A store says whether its value
 can be edited and saved, saves it, and says whether a failed save proves the
-value is unsaved; the field lifecycle stays in `Editor`. The default store sends
+value is unsaved; the field lifecycle stays in `Setting`. The default store sends
 the value to the engine. Only an engine refusal proves the value is unsaved,
 because any other failure can lose the reply to an applied save, so the setting
 waits for a snapshot to confirm the value. The lookup limit's store saves one

@@ -15,7 +15,6 @@ internal sealed class Automatic : UserControl
     private readonly SettingsRow _row;
     private Acquisition? _model;
     private bool _refreshing;
-    internal Task Saving { get; private set; } = Task.CompletedTask;
     internal Control Field => _toggle;
 
     internal Automatic(Strings text, Action<Exception, string> report, bool home = false)
@@ -64,7 +63,7 @@ internal sealed class Automatic : UserControl
             _home ? "home_automatic_hint" : "automatic_hint"
         );
         AutomationProperties.SetName(_toggle, _row.Header);
-        if (Saving.IsCompleted)
+        if (_model?.Saving.IsCompleted != false)
             _toggle.IsOn = _model?.Enabled == true;
         _toggle.IsEnabled = _model is not null;
         _row.StateText = SettingsRow.State(
@@ -77,12 +76,6 @@ internal sealed class Automatic : UserControl
 
     private async Task Save(Acquisition model, bool enabled)
     {
-        var previous = Saving;
-        var completion = new TaskCompletionSource(
-            TaskCreationOptions.RunContinuationsAsynchronously
-        );
-        Saving = completion.Task;
-        await previous;
         try
         {
             if (model.IsDisposed)
@@ -100,7 +93,6 @@ internal sealed class Automatic : UserControl
         }
         finally
         {
-            completion.SetResult();
             Refresh();
         }
     }

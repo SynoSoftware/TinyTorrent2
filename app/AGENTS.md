@@ -39,9 +39,11 @@ content, buttons and outcome:
 - `ShowDialog` sets the window root, the theme and the Cancel text, and
   refreshes the dialog's text when the language changes.
 - `ShowEditor` takes the dialog's `IDraft`. It enables the primary button from
-  `CanSubmit`, submits the draft, and keeps the dialog open while the draft is
-  pending or after a refused submit. `SaveOnClose` saves an editor's typed
-  input when the window closes.
+  `CanSubmit` except while the window closes, submits the draft, and keeps the
+  dialog open while the draft is pending or after a refused submit. When the
+  dialog closes, it stops the draft's running work and discards the draft.
+  When the window closes, it applies the draft's `ClosePolicy`: save, discard,
+  or ask, as Add and Move do.
 
 A view other than `MainWindow` raises an event and lets `MainWindow` open its
 dialog, as `SettingsPage.ProxyRequested` does, so the one-dialog rule holds.

@@ -1,4 +1,6 @@
 
+using Syno.TinyTorrent.Shared.Network;
+
 namespace Syno.TinyTorrent.Shared;
 
 /// <summary>
@@ -34,6 +36,19 @@ internal sealed class DataDownload
     // Windows reports a full disk as ERROR_DISK_FULL or ERROR_HANDLE_DISK_FULL.
     internal static bool IsDiskFull(IOException error) =>
         error.HResult is unchecked((int)0x80070070) or unchecked((int)0x80070027);
+
+    /// <summary>
+    /// The failure that a download reports for a reply that failed: a route
+    /// failure points to Network settings, a remote wait names its time, and
+    /// any other reply fails the download.
+    /// </summary>
+    internal static Exception Failure(ReplyException error) =>
+        error switch
+        {
+            { Failure: ReplyFailure.Route } => new Library.RouteException(error),
+            { Failure: ReplyFailure.Wait, Hold: { } hold } => new RequestBlockedException(hold),
+            _ => new Library.VideoException(VideoFailure.DownloadFailed, error),
+        };
 
     /// <summary>
     /// Runs the download: <paramref name="build"/> fetches the data, then

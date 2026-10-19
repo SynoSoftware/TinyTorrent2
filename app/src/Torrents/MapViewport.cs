@@ -38,11 +38,17 @@ internal sealed class MapViewport
     }
 
     // Geometry stays in geographic coordinates so resizing retains its GPU caches.
-    internal Vector2 Coordinates(GeoPoint point) =>
-        new(Wrap((float)(point.Longitude - Meridian), 0), (float)-point.Latitude);
+    internal Vector2 Coordinates(GeoPoint point) => Coordinates(point, Meridian);
 
-    internal Vector2 Project(GeoPoint point) =>
-        Offset + Coordinates(point) * new Vector2(OverviewRatio, 1) * Scale;
+    internal static Vector2 Coordinates(GeoPoint point, float meridian) =>
+        new(Wrap((float)(point.Longitude - meridian), 0), (float)-point.Latitude);
+
+    /// <summary>
+    /// The point on the fitted map centred on <paramref name="meridian"/>, in
+    /// DIPs from the map's centre at <paramref name="scale"/> DIPs per degree.
+    /// </summary>
+    internal static Vector2 Project(GeoPoint point, float meridian, float scale) =>
+        Coordinates(point, meridian) * new Vector2(OverviewRatio, 1) * scale;
 
     /// <summary>The longitude, moved by whole turns to within 180° of centre.</summary>
     internal static float Wrap(float longitude, float centre) =>

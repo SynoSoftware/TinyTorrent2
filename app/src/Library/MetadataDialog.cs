@@ -73,6 +73,11 @@ internal sealed class MetadataDialog : UserControl, IDraft
             ? _library.Text.Protection(block)
             : _library.Text.Get("library", "save_metadata_tip");
     public bool HasDraft => _results.SelectedItem is VideoChoice;
+
+    // Only the person's own Force passes search protection, so closing the
+    // window drops a choice that needs it.
+    public ClosePolicy ClosePolicy =>
+        RequiresForce ? new ClosePolicy.Discard() : new ClosePolicy.Save();
     public event PropertyChangedEventHandler? PropertyChanged;
 
     /// <summary>
@@ -239,7 +244,7 @@ internal sealed class MetadataDialog : UserControl, IDraft
 
     private async Task Changed()
     {
-        Cancel();
+        Stop();
         _block = null;
         _failure = null;
         _broadened = false;
@@ -319,7 +324,7 @@ internal sealed class MetadataDialog : UserControl, IDraft
             : FetchScope.New;
         var query = _input.Text;
         var year = Year;
-        Cancel();
+        Stop();
         using var request = new CancellationTokenSource();
         _failure = null;
         _broadened = false;
@@ -375,7 +380,7 @@ internal sealed class MetadataDialog : UserControl, IDraft
             || IsPending
         )
             return false;
-        Cancel();
+        Stop();
         using var request = new CancellationTokenSource();
         IsPending = true;
         _failure = null;
@@ -433,10 +438,13 @@ internal sealed class MetadataDialog : UserControl, IDraft
         RefreshText();
     }
 
-    internal void Cancel()
+    public void Stop()
     {
         _revision++;
         _request?.Cancel();
         _protection?.Cancel();
     }
+
+    // Fetching again creates a new dialog, so a closed one holds nothing to drop.
+    public Task Discard() => Task.CompletedTask;
 }

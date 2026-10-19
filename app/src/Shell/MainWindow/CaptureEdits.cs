@@ -66,9 +66,7 @@ public sealed partial class MainWindow
                 ?? throw new InvalidOperationException(
                     "The edit review settings page did not open."
                 );
-            var editor = CaptureElements(page)
-                .OfType<TextBox>()
-                .Single(control => ReferenceEquals(control.Tag, setting));
+            var editor = Field<TextBox>(page, setting);
             if (!editor.IsEnabled || !editor.Focus(FocusState.Programmatic))
                 throw new InvalidOperationException(
                     "The native numeric editor cannot receive input."
@@ -197,7 +195,7 @@ public sealed partial class MainWindow
                 );
             completed.Add("edits-back-departure");
 
-            await settings.Toggle(settings.IgnoreSlow, true);
+            await settings.IgnoreSlow.Toggle(true);
             await Edit(threshold, "1.5");
             if (!await Leave())
                 throw new InvalidOperationException(
@@ -210,15 +208,13 @@ public sealed partial class MainWindow
                 );
             await ShowSettings(new(threshold.Category, threshold.Name));
             await CaptureLayout();
-            var thresholdEditor = CaptureElements(_settingsPage!)
-                .OfType<TextBox>()
-                .Single(control => ReferenceEquals(control.Tag, threshold));
+            var thresholdEditor = Field<TextBox>(_settingsPage!, threshold);
             if (thresholdEditor.Text != "1.5")
                 throw new InvalidOperationException(
                     "The saved KiB/s threshold changed when reopened."
                 );
             await Edit(threshold, "1048577");
-            await settings.Commit(threshold);
+            await threshold.Commit();
             if (
                 threshold.Message.Length == 0
                 || threshold.ConfirmedNumber != 1536
@@ -347,9 +343,7 @@ public sealed partial class MainWindow
             }
 
             var invalidEditor = await Edit(port, "70000");
-            var mapping = CaptureElements(_settingsPage!)
-                .OfType<ToggleSwitch>()
-                .Single(control => ReferenceEquals(control.Tag, settings.PortMapping));
+            var mapping = Field<ToggleSwitch>(_settingsPage!, settings.PortMapping);
             if (!mapping.Focus(FocusState.Programmatic))
                 throw new InvalidOperationException(
                     "The native port mapping field cannot receive focus."
@@ -397,7 +391,7 @@ public sealed partial class MainWindow
             var concurrent = rate.Input == "96" ? "97" : "96";
             await Edit(rate, concurrent);
             await CapturePage("edits-pending-rate-before-leaving");
-            var save = settings.Commit(rate);
+            var save = rate.Commit();
             var pending = rate.IsPending;
             departure = ShowTorrents();
             await Task.WhenAll(save, departure).WaitAsync(TimeSpan.FromSeconds(20));
@@ -430,7 +424,7 @@ public sealed partial class MainWindow
             completed.Add("edits-pending-rate-departure");
 
             var unsavedEditor = await Edit(rate, "128");
-            var first = settings.Commit(rate);
+            var first = rate.Commit();
             if (!rate.IsPending)
                 throw new InvalidOperationException(
                     "The newer-input review did not start a pending save."
@@ -468,13 +462,13 @@ public sealed partial class MainWindow
             completed.Add("edits-pending-newer-input");
 
             var queuedEditor = await Edit(rate, "256");
-            var active = settings.Commit(rate);
+            var active = rate.Commit();
             if (!rate.IsPending)
                 throw new InvalidOperationException(
                     "The queued-input review did not start a pending save."
                 );
             rate.Input = "257";
-            var queued = settings.Commit(rate);
+            var queued = rate.Commit();
             rate.Input = "258";
             await Task.WhenAll(active, queued).WaitAsync(TimeSpan.FromSeconds(20));
             await CaptureLayout();
@@ -509,7 +503,7 @@ public sealed partial class MainWindow
             completed.Add("edits-pending-explicit-save");
 
             var cancelEditor = await Edit(rate, "512");
-            var cancelledSave = settings.Commit(rate);
+            var cancelledSave = rate.Commit();
             if (!rate.IsPending)
                 throw new InvalidOperationException(
                     "The pending Cancel review did not start a save."
@@ -540,7 +534,7 @@ public sealed partial class MainWindow
             completed.Add("edits-pending-cancel");
 
             await Edit(rate, originalRate);
-            await settings.Commit(rate);
+            await rate.Commit();
             if (rate.Input != originalRate || rate.HasDraft)
                 throw new InvalidOperationException("The original rate was not restored.");
 
@@ -628,18 +622,18 @@ public sealed partial class MainWindow
             if (threshold.Input != originalThreshold)
             {
                 threshold.Input = originalThreshold;
-                await settings.Commit(threshold);
+                await threshold.Commit();
             }
-            await settings.Toggle(settings.IgnoreSlow, originalExclusion);
+            await settings.IgnoreSlow.Toggle(originalExclusion);
             if (rate.Input != originalRate)
             {
                 await Edit(rate, originalRate);
-                await settings.Commit(rate);
+                await rate.Commit();
             }
             if (upload.Input != originalUpload)
             {
                 await Edit(upload, originalUpload);
-                await settings.Commit(upload);
+                await upload.Commit();
             }
             if (originalLimits >= 0)
                 await Model.ChooseLimits((LimitMode)originalLimits);
@@ -749,11 +743,11 @@ public sealed partial class MainWindow
 
         var transport = await Reveal<ComboBox>(
             settings.Transport.Name,
-            control => ReferenceEquals(control.Tag, settings.Transport)
+            control => AutomationProperties.GetAutomationId(control) == "Transport"
         );
         var encryption = await Reveal<RadioButtons>(
             "connection_encryption",
-            control => ReferenceEquals(control.Tag, settings.Encryption)
+            control => AutomationProperties.GetAutomationId(control) == "Encryption"
         );
         await CaptureReady(settings, () => settings.Adapters.Count > 1);
         var adapters = await Reveal<ComboBox>(

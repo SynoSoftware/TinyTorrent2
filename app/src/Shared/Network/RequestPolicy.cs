@@ -217,4 +217,10 @@ internal sealed record RequestBlock(RequestBlockKind Kind, DateTimeOffset? Retry
 internal sealed class RequestBlockedException(RequestBlock block) : Exception(block.Kind.ToString())
 {
     internal RequestBlock Block { get; } = block;
+
+    /// <summary>
+    /// The resource request that the block refused, which Library records
+    /// with the lookup it held back; null when the block is not one resource's.
+    /// </summary>
+    internal RequestKey? Request { get; init; }
 }

@@ -76,8 +76,7 @@ internal sealed class Settings : UserControl
     // Reports a failed action to the window's notifications, with the
     // notification title key that names the action.
     private readonly Action<Exception, string> _report;
-    private Task _saving = Task.CompletedTask;
-    internal Task Saving => Task.WhenAll(_saving, _automatic.Saving);
+    private bool Saving => _model?.Saving.IsCompleted == false;
     private bool _refreshing;
     private bool _visible;
     private Strings Text { get; }
@@ -218,7 +217,7 @@ internal sealed class Settings : UserControl
                 && _model is { } model
                 && _extras.SelectedItem is ComboBoxItem { Tag: int extras }
             )
-                await Save(() => model.SetExtras(extras));
+                await Save(model.SetExtras(extras));
         };
         _edit.Click += (_, _) =>
         {
@@ -233,16 +232,13 @@ internal sealed class Settings : UserControl
                 || _supplier.SelectedItem is not SubtitleSupplier chosen
             )
                 return;
-            await Save(() =>
-                chosen == model.SupplierId ? Task.CompletedTask : model.SelectSupplier(chosen)
-            );
+            await Save(model.SelectSupplier(chosen));
         };
         _languageMode.SelectionChanged += async (_, _) =>
         {
             if (_refreshing || _model is not { } model)
                 return;
-            var followsLanguage = _languageMode.SelectedIndex == 0;
-            await Save(() => model.SetLanguages(followsLanguage ? [] : model.EffectiveLanguages));
+            await Save(model.FollowLanguage(_languageMode.SelectedIndex == 0));
         };
         _language.TextChanged += (_, _) => FilterLanguages();
         _language.QuerySubmitted += (_, args) =>
@@ -360,7 +356,7 @@ internal sealed class Settings : UserControl
         if (!_visible)
             return;
         _refreshing = true;
-        if (_saving.IsCompleted)
+        if (!Saving)
             _extras.SelectedItem = _extras
                 .Items.Cast<ComboBoxItem>()
                 .FirstOrDefault(item => (int)item.Tag == _model?.Extras);
@@ -376,13 +372,13 @@ internal sealed class Settings : UserControl
             scanned,
             scanned
         );
-        _check.IsEnabled = _saving.IsCompleted && _model?.CanCheck == true;
-        _edit.IsEnabled = _saving.IsCompleted && _model is not null && !_checking;
+        _check.IsEnabled = !Saving && _model?.CanCheck == true;
+        _edit.IsEnabled = !Saving && _model is not null && !_checking;
         _language.IsEnabled = _languageMode.IsEnabled = _model is not null;
         _supplier.ItemsSource ??= _model
             ?.Suppliers.Select(supplier => supplier.SupplierId)
             .ToArray();
-        if (_saving.IsCompleted)
+        if (!Saving)
             _supplier.SelectedItem = _model?.SupplierId;
         _supplier.IsEnabled = _model is not null && !_checking;
         _progress.IsActive = _checking;
@@ -405,7 +401,7 @@ internal sealed class Settings : UserControl
     {
         var selected = _model?.EffectiveLanguages ?? [];
         _languageDefault.Content = Text.LanguageName(Text.Language);
-        if (_saving.IsCompleted)
+        if (!Saving)
             _languageMode.SelectedIndex = _model?.Languages.Length > 0 ? 1 : 0;
         _languageChoices.Visibility =
             _languageMode.SelectedIndex == 1 ? Visibility.Visible : Visibility.Collapsed;
@@ -445,7 +441,7 @@ internal sealed class Settings : UserControl
         foreach (var choice in _languages.Items.Cast<ListViewItem>())
         {
             var tag = (string)choice.Tag;
-            if (_saving.IsCompleted)
+            if (!Saving)
             {
                 if (selected.Contains(tag, StringComparer.OrdinalIgnoreCase))
                 {
@@ -511,53 +507,30 @@ internal sealed class Settings : UserControl
             .RemovedItems.Cast<ListViewItem>()
             .Select(choice => (string)choice.Tag)
             .ToArray();
-        await Save(async () =>
-        {
-            var wanted = model
-                .EffectiveLanguages.Where(tag =>
-                    !removed.Contains(tag, StringComparer.OrdinalIgnoreCase)
-                )
-                .Concat(added)
-                .ToArray();
-            // An empty list means "follow the interface language", which only
-            // the mode buttons choose. Save refreshes afterwards, which checks
-            // the refused language again.
-            if (wanted.Length > 0)
-                await model.SetLanguages(wanted);
-        });
+        // Save refreshes afterwards, which checks a refused language again.
+        await Save(model.ChangeLanguages(added, removed));
     }
 
-    private async Task<bool> Save(Func<Task> action)
+    // Waits for a write the model queued, and reports its failure.
+    private async Task Save(Task saving)
     {
         var model = _model;
-        var previous = _saving;
-        var completion = new TaskCompletionSource<bool>(
-            TaskCreationOptions.RunContinuationsAsynchronously
-        );
-        _saving = completion.Task;
         try
         {
             Refresh();
-            await previous;
-            if (model is null || model.IsDisposed)
-                return false;
-            await action();
-            return true;
+            await saving;
         }
         catch (OperationCanceledException)
         {
             System.Diagnostics.Debug.WriteLine("Subtitle settings save cancelled.");
-            return false;
         }
         catch (Exception error)
         {
             if (CanReport(model))
                 _report(error, "failed_settings");
-            return false;
         }
         finally
         {
-            completion.SetResult(true);
             Refresh();
         }
     }

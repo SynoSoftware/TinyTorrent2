@@ -67,11 +67,11 @@ public partial class App : Application
             // The engine started here would pass the window to another build's
             // engine, so that build stops first, as for a window started here.
             await Task.Run(StopOtherWindow);
-            await PipeClient.StopOtherEngine();
+            await EngineProcess.StopOther();
 #endif
             try
             {
-                PipeClient.StartEngine(text);
+                EngineProcess.Start(text);
                 Exit();
                 return;
             }
@@ -82,7 +82,7 @@ public partial class App : Application
                 System.Diagnostics.Debug.WriteLine($"The engine did not start: {error.Message}");
             }
         }
-        _instance = new Mutex(false, "Local\\TinyTorrent.Window." + PipeClient.LogonSid);
+        _instance = new Mutex(false, "Local\\TinyTorrent.Window." + EngineProcess.LogonSid);
         var owned = Acquire(_instance, 0);
 #if CAPTURE
         if (!owned && MainWindow.IsCaptureReview)

@@ -4,60 +4,59 @@ using System.Net.Http.Headers;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Shared.Network;
+using static Syno.TinyTorrent.Subtitles.Supplier;
 
 namespace Syno.TinyTorrent.Subtitles.Suppliers;
 
-internal sealed partial class SubDL(RequestPolicy policy) : Supplier(policy)
+internal sealed partial class SubDL : ISupplier
 {
     private static readonly Uri Origin = new("https://api.subdl.com");
 
-    internal override SubtitleSupplier SupplierId => SubtitleSupplier.SubDL;
-    internal override Uri Privacy { get; } = new("https://subdl.com/privacy");
-    internal override Uri Terms { get; } = new("https://subdl.com/terms");
-    protected override IReadOnlyDictionary<string, string> Codes => LanguageCodes;
-    protected override string? BuiltInKey { get; } =
+    public SubtitleSupplier SupplierId => SubtitleSupplier.SubDL;
+    public Uri Privacy { get; } = new("https://subdl.com/privacy");
+    public Uri Terms { get; } = new("https://subdl.com/terms");
+    public IReadOnlyDictionary<string, string> Codes => LanguageCodes;
+    public string? BuiltInKey { get; } =
         typeof(SubDL)
             .Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
             .FirstOrDefault(value => value.Key == "SubDLKey")
             ?.Value;
 
-    protected override void Authenticate(HttpRequestMessage request, Account account) =>
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ApiKey(account));
+    public void Authenticate(HttpRequestMessage request, string key) =>
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
 
-    protected override async Task Check(Operation operation, CancellationToken cancellation)
+    public async Task Check(SupplierClient client, CancellationToken cancellation)
     {
-        var response = await Get(operation, new Uri(Origin, "/api/v2/me"), cancellation)
+        var reply = await client
+            .Get(new Uri(Origin, "/api/v2/me"), cancellation)
             .ConfigureAwait(false);
-        using var document = Parse(response.Bytes);
+        using var document = Parse(reply.Bytes);
     }
 
-    protected override async Task<SubtitleSearch> Search(
-        Operation operation,
-        SubtitleLookup lookup,
-        Release release,
-        string language,
+    public async Task<SubtitleSearch> Search(
+        SubtitleQuery query,
+        SupplierClient client,
         CancellationToken cancellation
     )
     {
         var candidates = new List<SubtitleCandidate>();
         var total = 0;
-        var codes = language.Split(',');
-        var query =
+        var codes = query.Code.Split(',');
+        var address =
             "/api/v2/files/search?engine=local&episode_scope=exact&unpack=1&subs_per_page=30&filename="
-            + Uri.EscapeDataString(lookup.FileName)
+            + Uri.EscapeDataString(query.FileName)
             + "&languages="
-            + Uri.EscapeDataString(language);
+            + Uri.EscapeDataString(query.Code);
         for (var page = 1; ; page++)
         {
-            var response = await Get(
-                    operation,
-                    new Uri(Origin, query + "&page=" + page.ToString(CultureInfo.InvariantCulture)),
+            var reply = await client
+                .Get(
+                    new Uri(Origin, address + "&page=" + page.ToString(CultureInfo.InvariantCulture)),
                     cancellation
                 )
                 .ConfigureAwait(false);
-            using var document = Parse(response.Bytes);
+            using var document = Parse(reply.Bytes);
             var root = document.RootElement;
             if (!root.TryGetProperty("match", out var match))
                 throw new SubtitleException(SubtitleFailure.Format);
@@ -65,16 +64,25 @@ internal sealed partial class SubDL(RequestPolicy policy) : Supplier(policy)
                 return page == 1
                     ? new(candidates, true)
                     : throw new SubtitleException(SubtitleFailure.Format);
+            // SubDL matches the file name to one title and answers every page
+            // for it. When the first page's title is not the file's, nothing
+            // is; when a later page's is not, the answer contradicts itself.
+            var type = Text(match, "type");
+            var series = type == "tv";
+            int? season = series ? (int?)Number(match, "season") : null;
+            int? episode = series ? (int?)Number(match, "episode") : null;
             if (
-                Text(match, "type") != (release.Season is null ? "movie" : "tv")
-                || release.Season is not null && Number(match, "season") is null
-                || release.Episodes.Count == 1 && Number(match, "episode") is null
+                type is not ("movie" or "tv")
+                || Text(match, "title") is not { } title
+                || series && season is null
                 || !Matches(
-                    release,
-                    Text(match, "title") ?? string.Empty,
-                    Number(match, "year"),
-                    release.Season is not null ? Number(match, "season") : null,
-                    release.Episodes.Count == 1 ? Number(match, "episode") : null
+                    query.Release,
+                    new(series ? VideoKind.Series : VideoKind.Movie, [title])
+                    {
+                        Year = (int?)Number(match, "year"),
+                        Season = season,
+                        Episode = episode,
+                    }
                 )
             )
                 return page == 1
@@ -94,7 +102,6 @@ internal sealed partial class SubDL(RequestPolicy policy) : Supplier(policy)
                 if (
                     Text(subtitle, "language") is not { } code
                     || !codes.Contains(code, StringComparer.OrdinalIgnoreCase)
-                    || IsForced(subtitle)
                     || !subtitle.TryGetProperty("unpack_files", out var files)
                     || files.ValueKind != JsonValueKind.Array
                 )
@@ -109,7 +116,6 @@ internal sealed partial class SubDL(RequestPolicy policy) : Supplier(policy)
                             "srt",
                             StringComparison.OrdinalIgnoreCase
                         )
-                        || IsForced(file)
                         || Text(file, "release_name") is not { } name
                     )
                         continue;
@@ -128,7 +134,14 @@ internal sealed partial class SubDL(RequestPolicy policy) : Supplier(policy)
                         Query = string.Empty,
                         Fragment = string.Empty,
                     }.Uri;
-                    candidates.Add(new(lookup.Language, name, name, download.AbsoluteUri));
+                    candidates.Add(
+                        new(query.Language, name, name, download.AbsoluteUri)
+                        {
+                            Season = season,
+                            Episode = episode,
+                            Forced = IsForced(subtitle) || IsForced(file),
+                        }
+                    );
                 }
             }
             if (page >= pages)
@@ -136,22 +149,17 @@ internal sealed partial class SubDL(RequestPolicy policy) : Supplier(policy)
         }
     }
 
-    protected override async Task<byte[]> Download(
-        Operation operation,
+    public async Task<ProviderReply> Download(
         SubtitleCandidate candidate,
+        SupplierClient client,
         CancellationToken cancellation
     )
     {
-        var response = await Get(
-                operation,
-                new Uri(candidate.Reference),
-                cancellation,
-                ProviderHttp.FileLimit
-            )
-            .ConfigureAwait(false);
-        return await Decode(response, cancellation).ConfigureAwait(false);
+        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(candidate.Reference));
+        return await client.Send(request, SupplierRequest.File, cancellation).ConfigureAwait(false);
     }
 
+    // SubDL has no field for forced subtitles, so their labels say it.
     private static bool IsForced(JsonElement value) =>
         new[] { "release_name", "name", "comment" }.Any(field =>
             ForcedLabel().IsMatch(Text(value, field) ?? string.Empty)

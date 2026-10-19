@@ -91,6 +91,13 @@ internal static partial class FileName
         return folded.ToString().Normalize(NormalizationForm.FormC);
     }
 
+    /// <summary>
+    /// The runs of letters and digits in <paramref name="text"/>, as written.
+    /// A caller that compares words normalizes the text first.
+    /// </summary>
+    internal static string[] Words(string text) =>
+        Separators().Split(text).Where(word => word.Length > 0).ToArray();
+
     internal static Release Interpret(string path)
     {
         var stem = Path.GetFileNameWithoutExtension(path);
@@ -154,6 +161,9 @@ internal static partial class FileName
 
     [GeneratedRegex(@"\s+", RegexOptions.CultureInvariant)]
     private static partial Regex Spaces();
+
+    [GeneratedRegex(@"[^\p{L}\p{N}]+", RegexOptions.CultureInvariant)]
+    private static partial Regex Separators();
 }
 
 internal sealed record Release(string Title, string Name)

@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Windows.Input;
+using Syno.TinyTorrent.Library;
 using Syno.TinyTorrent.Shared;
-using Syno.TinyTorrent.Shared.Engine;
 using Syno.TinyTorrent.Torrents;
 
 namespace Syno.TinyTorrent.Shell;
@@ -10,7 +10,9 @@ public sealed partial class MainViewModel
 {
     private bool _receivingActivations;
     private bool _activationsPending;
-    private Task _arrivals = Task.CompletedTask;
+    private bool _resettingProtection;
+    private IReadOnlyList<ProtectionScope> _protectionScopes = [];
+    private string? _protectionProviderId;
     public bool IsPaused { get; private set; }
     public bool HasIncoming { get; private set; }
     private string _externalIpv4 = string.Empty;
@@ -177,127 +179,19 @@ public sealed partial class MainViewModel
             torrent.Hashes.Intersect(hashes, StringComparer.OrdinalIgnoreCase).Any()
         );
 
-    // Dropped or pasted sources.
-    public Task AddSources(IEnumerable<string> sources) => AddSources(sources.ToArray(), false);
+    internal Torrent? Find(string torrentId) => _byId.GetValueOrDefault(torrentId);
 
-    // Picked sources: Add torrent file opens one Add dialog however many files
-    // the person picks, unless they turned the dialog off.
-    public Task AddPicked(IEnumerable<string> sources) => AddSources(sources.ToArray(), true);
+    internal void RequestOpen(string folder) => OpenRequested?.Invoke(this, new(folder));
 
-    // Later arrivals stay outside the draft until the preceding batch has
-    // finished its cleanup; closing waits for the last accepted arrival.
-    private async Task AddSources(string[] sources, bool picked)
+    // Picked sources come from Add torrent file; the others are dropped,
+    // pasted or sent by another instance.
+    public async Task AddSources(IEnumerable<string> sources, bool picked)
     {
-        if (sources.All(string.IsNullOrWhiteSpace))
-            return;
-        var previous = _arrivals;
-        var completed = new TaskCompletionSource(
-            TaskCreationOptions.RunContinuationsAsynchronously
-        );
-        _arrivals = completed.Task;
-        RefreshWindow();
-        try
-        {
-            await previous;
-            AddDraft.Own(sources);
-            if (picked)
-                await AddOwnedSources();
-            else
-                await AddArrived();
-        }
-        catch (Exception error)
-        {
-            Report(error);
-        }
-        finally
-        {
-            completed.SetResult();
-            RefreshWindow();
-        }
-    }
-
-    private Task AddArrived() =>
-        !IsAddOpen && AddDraft.Sources.Count > 1 ? AddTogether() : AddOwnedSources();
-
-    // Several sources arriving at once are added without the Add dialog or any
-    // question, so one drop never opens a cascade of dialogs. A torrent already
-    // in the list is shown where it is, and a source that fails is reported and
-    // dropped rather than left for a later Add dialog. Sources that could not be
-    // tried stay in the draft, so none is lost silently.
-    private async Task AddTogether()
-    {
-        await using var addition = AddDraft.BeginAddition();
-        await AddDraft.PrepareAll();
-        if (!AddDraft.CanEdit || IsAddOpen || AddDraft.IsAdditionCancelled)
-            return;
-        Exception? failure = null;
-        var rejected = AddDraft.Sources.Where(source => source.NeedsFiles).ToArray();
-        if (rejected.Length > 0)
-        {
-            failure = new CommandException("invalid_priorities", null, Text, "add");
-            await AddDraft.Cancel(rejected);
-        }
-        if (
-            AddDraft.CanEdit
-            && !IsAddOpen
-            && AddDraft.HasDraft
-            && !await AddDraft.Submit()
-            && AddDraft.Failure is { } error
-        )
-        {
-            failure = error;
-            await AddDraft.Cancel(
-                AddDraft
-                    .Sources.Where(source => source.Failure is not null && !source.Uncertain)
-                    .ToArray()
-            );
-        }
-        if (failure is not null)
-            Report(failure);
-    }
-
-    private async Task AddOwnedSources()
-    {
-        if (AddDraft.Sources.Count == 0)
-            return;
-        if (IsAddOpen)
-        {
-            await AddDraft.PrepareAll();
-            return;
-        }
-        var showDialog = AddDraft.Sources.Any(source =>
-            Settings.AddPreference(source.Source).ConfirmedOn
-        );
-        var merge = false;
-        await using (var addition = AddDraft.BeginAddition())
-        {
-            await AddDraft.PrepareAll();
-            if (IsAddOpen || AddDraft.IsAdditionCancelled)
-                return;
-            // A torrent already in the list needs no Add dialog: Submit shows it where
-            // it is, and only trackers it lacks are worth a question.
-            if (AddDraft.Sources.All(source => source.IsDuplicate))
-            {
-                merge = AddDraft.Sources.Any(source => source.MergeAvailable);
-                if (!merge)
-                {
-                    if (await AddDraft.Submit())
-                        Announce(Text.Get("errors", "duplicate"));
-                    return;
-                }
-            }
-            else if (!showDialog)
-            {
-                if (!AddDraft.Sources.Any(source => source.MergeAvailable))
-                    await AddDraft.Submit();
-                if (AddDraft.IsAdditionCancelled)
-                    return;
-            }
-        }
-        if (merge)
-            MergeRequested?.Invoke(this, EventArgs.Empty);
-        else if (AddDraft.Sources.Count > 0)
+        var outcome = await AddDraft.Receive([.. sources], picked);
+        if (outcome == ArrivalOutcome.Dialog)
             AddRequested?.Invoke(this, EventArgs.Empty);
+        else if (outcome == ArrivalOutcome.Merge)
+            MergeRequested?.Invoke(this, EventArgs.Empty);
     }
 
     // The engine keeps offered sources until activations_received, so sources the
@@ -313,7 +207,7 @@ public sealed partial class MainViewModel
             while (_activationsPending && _ready && _connected && !_closing)
             {
                 _activationsPending = false;
-                var pending = await _client.Send("pending_activations");
+                var pending = await _client.Send("pending_activations", null, Requester.Window);
                 if (_closing)
                 {
                     _activationsPending = true;
@@ -330,7 +224,7 @@ public sealed partial class MainViewModel
                             .Select(source => source.GetString()!)
                     )
                     .ToArray();
-                var arrival = AddSources(sources);
+                var arrival = AddSources(sources, picked: false);
                 await _client.Send(
                     "activations_received",
                     new
@@ -340,14 +234,15 @@ public sealed partial class MainViewModel
                                 activation.GetProperty("activation_id").GetString()
                             )
                             .ToArray(),
-                    }
+                    },
+                    Requester.Window
                 );
                 await arrival;
             }
         }
         catch (Exception error)
         {
-            Report(error);
+            Notifications.Report(error);
         }
         finally
         {
@@ -384,12 +279,11 @@ public sealed partial class MainViewModel
         try
         {
             await _client.Send("queue", arguments);
-            AnnounceAccepted("outcomes", "queue");
-            ClearError();
+            Notifications.AnnounceAccepted("outcomes", "queue");
         }
         catch (Exception error)
         {
-            Report(error);
+            Notifications.Report(error);
         }
     }
 
@@ -420,12 +314,11 @@ public sealed partial class MainViewModel
         try
         {
             await _client.Send("piece_order", arguments);
-            AnnounceAccepted("commands", PieceOrderKey(order, enabled));
-            ClearError();
+            Notifications.AnnounceAccepted("commands", PieceOrderKey(order, enabled));
         }
         catch (Exception error)
         {
-            Report(error);
+            Notifications.Report(error);
         }
     }
 
@@ -439,20 +332,20 @@ public sealed partial class MainViewModel
             // Resume all cannot lift a missing adapter's pause, so the notice
             // says why nothing starts.
             _waiting = !paused && MissingAdapter.Length > 0 ? [] : null;
+            Changed(nameof(HasResumeNotice));
             if (HasResumeNotice)
-                Announce(ResumeNotice);
+                Notifications.Announce(ResumeNotice);
             else
-                AnnounceAccepted("commands", paused ? "pause_all" : "resume_all");
-            ClearError();
+                Notifications.AnnounceAccepted("commands", paused ? "pause_all" : "resume_all");
         }
         catch (Exception error)
         {
-            Report(error);
+            Notifications.Report(error);
         }
     }
 
     private async Task<JsonElement> Detail(Torrent torrent) =>
-        await _client.Send("torrent", new { torrent_id = torrent.TorrentId });
+        await _client.Send("torrent", new { torrent_id = torrent.TorrentId }, Requester.Window);
 
     private Task OpenTorrent(bool folder) =>
         _selected.Length == 1 ? OpenTorrent(_selected[0], folder) : Task.CompletedTask;
@@ -484,7 +377,7 @@ public sealed partial class MainViewModel
         }
         catch (Exception error)
         {
-            Report(error);
+            Notifications.Report(error);
         }
     }
 
@@ -496,7 +389,8 @@ public sealed partial class MainViewModel
         {
             var detail = await _client.Send(
                 "torrent",
-                new { torrent_id = _selected[0].TorrentId, view = "general" }
+                new { torrent_id = _selected[0].TorrentId, view = "general" },
+                Requester.Window
             );
             await Copy(
                 hashes
@@ -512,7 +406,7 @@ public sealed partial class MainViewModel
         }
         catch (Exception error)
         {
-            Report(error);
+            Notifications.Report(error);
         }
     }
 
@@ -568,6 +462,113 @@ public sealed partial class MainViewModel
         );
         Library.WatchInspector(HasInspector && !IsInspectorCompact && Page == WindowPage.Library);
     }
+
+    internal event EventHandler? DatabaseDeletionRequested;
+    internal ICommand DownloadSubtitles { get; }
+    internal event EventHandler<IReadOnlySet<long>>? SubtitlesRequested;
+    private bool CanDownloadSubtitles =>
+        Subtitles is { Ready: true }
+        && Library.IsAvailable
+        && Library.Selection.Items.Cast<LibraryRow>().Any(row => row.Entry.Kind == FileKind.Video);
+
+    internal Task DownloadData(IDataset dataset) => AnnounceData(dataset, dataset.Download());
+
+    /// <summary>
+    /// Downloads the data of the provider the person chose, which the
+    /// installed data selects.
+    /// </summary>
+    internal Task PrepareAutomaticDownload() =>
+        AnnounceData(Library, Library.Download(enableAutomaticDownload: true));
+
+    private async Task AnnounceData(IDataset dataset, Task<bool> download)
+    {
+        if (await download)
+            Notifications.Announce(Text.Get(dataset.Section, "ready"));
+    }
+
+    /// <summary>All providers and suppliers first, then each one, for the Settings reset.</summary>
+    public IReadOnlyList<ProtectionScope> ProtectionScopes
+    {
+        get
+        {
+            ProtectionScope[] scopes =
+            [
+                new(null, Text.Get("request_protection", "reset_all")),
+                .. Library.Providers.Select(provider => new ProtectionScope(
+                    provider.ProviderId,
+                    provider.Name
+                )),
+                .. (Subtitles?.Suppliers ?? []).Select(supplier => new ProtectionScope(
+                    supplier.ProviderId,
+                    supplier.SupplierId.ToString()
+                )),
+            ];
+            // A new list clears the choice's selection, so an equal list is kept.
+            if (!_protectionScopes.SequenceEqual(scopes))
+                _protectionScopes = scopes;
+            return _protectionScopes;
+        }
+    }
+
+    /// <summary>
+    /// The scope that <see cref="ResetProtection"/> resets; all of them until
+    /// the person chooses one.
+    /// </summary>
+    public ProtectionScope ProtectionScope
+    {
+        get =>
+            ProtectionScopes.FirstOrDefault(scope => scope.ProviderId == _protectionProviderId)
+            ?? ProtectionScopes[0];
+        set
+        {
+            // The choice clears its selection while its list is replaced.
+            if (value is not null)
+                _protectionProviderId = value.ProviderId;
+        }
+    }
+
+    // The scope follows, because a replaced list clears the choice's selection.
+    private void RefreshProtectionScopes()
+    {
+        Changed(nameof(ProtectionScopes));
+        Changed(nameof(ProtectionScope));
+    }
+
+    public bool CanResetProtection => !_resettingProtection;
+
+    /// <summary>
+    /// Resets request protection for <see cref="ProtectionScope"/>, and
+    /// reports a failure.
+    /// </summary>
+    internal async Task ResetProtection()
+    {
+        if (_resettingProtection)
+            return;
+        _resettingProtection = true;
+        Changed(nameof(CanResetProtection));
+        try
+        {
+            await Features.ResetProtection(ProtectionScope.ProviderId);
+        }
+        catch (Exception error)
+        {
+            Notifications.Report(error);
+        }
+        finally
+        {
+            _resettingProtection = false;
+            Changed(nameof(CanResetProtection));
+        }
+    }
+}
+
+/// <summary>
+/// A choice of the request-protection reset: one provider or subtitle
+/// supplier, or every one of them when <see cref="ProviderId"/> is null.
+/// </summary>
+public sealed record ProtectionScope(string? ProviderId, string Name)
+{
+    public override string ToString() => Name;
 }
 
 public sealed class OpenRequestedEventArgs(string path, string? extension = null) : EventArgs

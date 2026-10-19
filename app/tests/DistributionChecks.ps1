@@ -16,7 +16,7 @@ function Require([bool] $Condition, [string] $Failure) {
     if (!$Condition) { throw $Failure }
 }
 
-# Regions most populous first, as MapRenderer.Regions returns them.
+# Regions most populous first, as MapModel.Regions returns them.
 function New-Regions([double[]] $Populations) {
     $regions = [Array]::CreateInstance($areaType, $Populations.Count)
     for ($index = 0; $index -lt $Populations.Count; $index++) {

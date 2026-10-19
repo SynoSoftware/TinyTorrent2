@@ -128,14 +128,12 @@ internal sealed class MapRenderer : IDisposable
     internal void Prepare()
     {
         var canvas = _canvas;
-        var origin = MapModel.Locate(_model.Origin, _world);
-        var meridian = (float)(origin?.Longitude ?? 0);
-        if (meridian != _viewport.Meridian)
+        var origin = _model.OriginPoint;
+        if (_model.Meridian != _viewport.Meridian)
         {
             ReleaseGeometry();
-            _viewport.Meridian = meridian;
+            _viewport.Meridian = _model.Meridian;
         }
-        _model.Arrange(_world, Regions);
         _arrangement++;
         var previous = _routes.ToDictionary(route => route.Destination.Key);
         _routes.Clear();
@@ -183,40 +181,6 @@ internal sealed class MapRenderer : IDisposable
         // visible countries, within its rebuild allowance.
         if (_viewport.ViewScale > 0)
             _detail = MathF.Pow(2, MathF.Round(MathF.Log2(.5f / _viewport.ViewScale)));
-    }
-
-    // Bundled places closer than this, in DIPs on the fitted map, form one region.
-    private const float Spacing = 25;
-
-    /// <summary>
-    /// A country's populated places, with places that would overlap on the
-    /// fitted map merged into regions, most populous first.
-    /// </summary>
-    private Geography.Area[] Regions(Geography.Area[] areas)
-    {
-        List<Geography.Area> regions = [];
-        List<Vector2> positions = [];
-        foreach (var area in areas)
-        {
-            var position = _viewport.Project(area.Point);
-            var nearby = -1;
-            for (var index = 0; index < positions.Count && nearby < 0; index++)
-            {
-                if (Vector2.Distance(positions[index], position) < Spacing)
-                    nearby = index;
-            }
-            if (nearby < 0)
-            {
-                regions.Add(area);
-                positions.Add(position);
-            }
-            else
-                regions[nearby] = regions[nearby] with
-                {
-                    Population = regions[nearby].Population + area.Population,
-                };
-        }
-        return [.. regions.OrderByDescending(region => region.Population)];
     }
 
     // A ring never jumps across 180°, so it moves whole to within a turn of

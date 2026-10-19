@@ -210,7 +210,7 @@ public sealed partial class MainViewModel
         return Task.CompletedTask;
     }
 
-    private Task RequestSettings(SettingTarget target)
+    internal Task RequestSettings(SettingTarget target)
     {
         SettingsRequested?.Invoke(this, target);
         return Task.CompletedTask;
@@ -291,7 +291,7 @@ public sealed partial class MainViewModel
             ShowAbout
         );
         if (HasUpdate)
-            yield return new(UpdateText, string.Empty, SuggestionScope.Command, InstallUpdate);
+            yield return new(UpdateText, string.Empty, SuggestionScope.Command, Updates.Install);
         yield return new(
             Text.Get("commands", "add_file"),
             string.Empty,

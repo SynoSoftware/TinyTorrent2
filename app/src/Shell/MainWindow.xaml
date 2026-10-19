@@ -816,7 +816,7 @@
         Width="400"
         Visibility="Collapsed"
         IsTabStop="False"
-        ItemsSource="{x:Bind Model.Notices}"
+        ItemsSource="{x:Bind Model.Notifications.Notices}"
         PointerEntered="OnNoticePointerEntered"
         PointerExited="OnNoticePointerExited"
         PointerCanceled="OnNoticePointerExited"

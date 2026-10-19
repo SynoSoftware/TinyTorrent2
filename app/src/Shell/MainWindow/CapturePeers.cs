@@ -155,13 +155,13 @@ public sealed partial class MainWindow
         var client = (PipeClient)typeof(Inspector)
             .GetField("_client", BindingFlags.Instance | BindingFlags.NonPublic)!
             .GetValue(inspector)!;
-        var completion = typeof(PipeClient).GetField(
-            nameof(PipeClient.CommandCompleted),
+        var replied = typeof(PipeClient).GetField(
+            nameof(PipeClient.CommandReplied),
             BindingFlags.Instance | BindingFlags.NonPublic
         )!;
-        var onCompleted = completion.GetValue(client);
+        var onReplied = replied.GetValue(client);
         // Theme and layout saves otherwise refresh the empty engine peer list over the fixture.
-        completion.SetValue(client, null);
+        replied.SetValue(client, null);
         await CaptureLayout();
         typeof(Inspector)
             .GetMethod("Invalidate", BindingFlags.Instance | BindingFlags.NonPublic)!
@@ -849,7 +849,7 @@ public sealed partial class MainWindow
         }
         finally
         {
-            completion.SetValue(client, onCompleted);
+            replied.SetValue(client, onReplied);
             typeof(Inspector).GetProperty(nameof(Inspector.Peers))!.SetValue(inspector, original);
             originField.SetValue(inspector, originalOrigin);
             originKey.SetValue(inspector, originalKey);

@@ -46,7 +46,7 @@ if (!$source.NeedsFiles -or $source.Files.HasWanted) {
 
 Write-Output 'PASS: duplicate recovery initializes file choices and preserves later edits.'
 
-# Inspect queued settings commands without starting a pipe or touching the user's engine.
+# Inspect the queued settings command without starting a pipe or touching the user's engine.
 $settingsType = $assembly.GetType('Syno.TinyTorrent.Settings.Editor', $true)
 $settingType = $assembly.GetType('Syno.TinyTorrent.Settings.Setting', $true)
 $preferenceType = $assembly.GetType('Syno.TinyTorrent.Shared.DialogPreference', $true)
@@ -58,37 +58,46 @@ $settingsType.GetField('_client', $flags).SetValue($settings, $client)
 $kind = [Enum]::Parse($assembly.GetType('Syno.TinyTorrent.SettingKind'), 'Boolean')
 $category = [Enum]::Parse($assembly.GetType('Syno.TinyTorrent.SettingsCategory'), 'General')
 $document = [Text.Json.JsonDocument]::Parse('true')
-$enabled = $document.RootElement.Clone()
-$document.Dispose()
-foreach ($entry in @{ TorrentDialog = 'torrent_dialog'; MagnetDialog = 'magnet_dialog' }.GetEnumerator()) {
-    $setting = $settingType.GetConstructors($flags)[0].Invoke(
-        [object[]]@($settings, $entry.Value, $kind, $category, 0, [int]::MaxValue))
-    $settingType.GetField('_confirmed', $flags).SetValue($setting, $enabled)
-    $settingsType.GetField("<$($entry.Key)>k__BackingField", $flags).SetValue($settings, $setting)
-}
-$queue = $clientType.GetField('_commands', $flags).GetValue($client)
 try {
-    foreach ($entry in @{ 'MAGNET:?xt=urn:btih:example' = 'magnet_dialog'; 'source.torrent' = 'torrent_dialog' }.GetEnumerator()) {
-        $preference = [Activator]::CreateInstance($preferenceType, [object[]]@($settings))
-        $choice = $settingsType.GetMethod('AddPreference', $flags).Invoke($settings, [object[]]@($entry.Key))
-        $choices = [Array]::CreateInstance($settingType, 1)
-        $choices.SetValue($choice, 0)
-        $save = $preferenceType.GetMethod('Save', $flags)
-        $save.Invoke($preference, [object[]]@(,$choices)).GetAwaiter().GetResult()
-        if ($queue.Count -ne 0) { throw 'An unchecked opt-out changed a preference.' }
-        $preference.NeverShow = $true
-        $pending = $save.Invoke($preference, [object[]]@(,$choices))
-        if ($queue.Count -ne 1) { throw 'The opt-out did not queue one settings command.' }
-        $command = $queue.Dequeue()
-        $arguments = $command.GetType().GetProperty('Arguments', $flags).GetValue($command)
-        $changes = $arguments.GetType().GetProperty('changes').GetValue($arguments)
-        if ($changes.Count -ne 1 -or !$changes.ContainsKey($entry.Value) -or $changes[$entry.Value]) {
-            throw "Opting out of $($entry.Key) changed the wrong dialog preference."
-        }
-        $completion = $command.GetType().GetProperty('Completion', $flags).GetValue($command)
-        $null = $completion.TrySetCanceled()
-        try { $pending.GetAwaiter().GetResult() } catch [OperationCanceledException] { }
+    # The preference saves through the Editor, so the settings need no store.
+    $dialogs = @{}
+    foreach ($name in 'torrent_dialog', 'magnet_dialog', 'confirm_delete') {
+        $dialogs[$name] = $settingType.GetConstructors($flags)[0].Invoke(
+            [object[]]@($null, $strings, $name, $kind, $category))
+    }
+    foreach ($name in 'torrent_dialog', 'magnet_dialog') {
+        $null = $settingType.GetMethod('Confirm', $flags).Invoke($dialogs[$name], [object[]]@($document.RootElement))
     }
 }
+finally { $document.Dispose() }
+# Add passes the setting of each source, so one setting can repeat.
+$order = 'torrent_dialog', 'magnet_dialog', 'torrent_dialog', 'confirm_delete'
+$choices = [Array]::CreateInstance($settingType, $order.Count)
+for ($index = 0; $index -lt $order.Count; $index++) {
+    $choices.SetValue($dialogs[$order[$index]], $index)
+}
+$queue = $clientType.GetField('_commands', $flags).GetValue($client)
+$save = $preferenceType.GetMethod('Save', $flags)
+try {
+    $preference = [Activator]::CreateInstance($preferenceType, [object[]]@($settings))
+    $save.Invoke($preference, [object[]]@(,$choices)).GetAwaiter().GetResult()
+    if ($queue.Count -ne 0) { throw 'An unchecked opt-out changed a preference.' }
+    $preference.NeverShow = $true
+    $pending = $save.Invoke($preference, [object[]]@(,$choices))
+    if ($queue.Count -ne 1) { throw 'The opt-out did not queue one settings command.' }
+    $command = $queue.Dequeue()
+    $arguments = $command.GetType().GetProperty('Arguments', $flags).GetValue($command)
+    $changes = $arguments.GetType().GetProperty('changes').GetValue($arguments)
+    if (
+        $changes.Count -ne 2 -or
+        !$changes.ContainsKey('torrent_dialog') -or $changes['torrent_dialog'] -or
+        !$changes.ContainsKey('magnet_dialog') -or $changes['magnet_dialog']
+    ) {
+        throw 'The opt-out changed the wrong dialog preferences.'
+    }
+    $completion = $command.GetType().GetProperty('Completion', $flags).GetValue($command)
+    $null = $completion.TrySetCanceled()
+    try { $pending.GetAwaiter().GetResult() } catch [OperationCanceledException] { }
+}
 finally { $client.Dispose() }
-Write-Output 'PASS: Add opt-out changes only its source kind; an unchecked opt-out changes neither.'
+Write-Output 'PASS: an opt-out turns off the given dialog settings that are on, in one save; an unchecked opt-out changes nothing.'

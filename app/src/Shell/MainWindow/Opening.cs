@@ -12,7 +12,7 @@ public sealed partial class MainWindow
     private async void Open(OpenRequestedEventArgs args)
     {
         if (await OpenPath(args.Path, args.Extension) is { } failure)
-            Model.Report(failure);
+            Model.Notifications.Report(failure);
     }
 
     private Task<Exception?> OpenPath(string path, string? extension = null)

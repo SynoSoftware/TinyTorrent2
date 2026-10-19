@@ -29,10 +29,6 @@ public sealed partial class MainWindow : Window
 
     private AddDialog? _addDialog;
     private bool _allowClose;
-    private bool _exiting;
-    // Reset all settings closes the window this way and the engine opens a
-    // new one, which starts as a new installation does.
-    private bool _reopening;
     private bool _loaded;
     private readonly Dictionary<ICommand, KeyboardAccelerator> _shortcuts = [];
 
@@ -43,7 +39,7 @@ public sealed partial class MainWindow : Window
     {
         Model = new MainViewModel(strings, DispatcherQueue, new Navigation(PrepareNavigation));
 #if CAPTURE
-        Model.CanStartFeatures = !IsCaptureReview;
+        Model.Features.CanStart = !IsCaptureReview;
 #endif
         Back = new RelayCommand(GoBack, () => Model.Navigation.CanGoBack);
         SelectedMap = new RelayCommand(() => ShowConnections(false), () => CanShowMap(false));
@@ -101,7 +97,7 @@ public sealed partial class MainWindow : Window
         };
         Model.PropertyChanged += OnModelChanged;
         Model.TextChanged += (_, _) => RefreshText();
-        Model.AnnouncementRequested += (_, message) =>
+        Model.Notifications.AnnouncementRequested += (_, message) =>
             FrameworkElementAutomationPeer
                 .CreatePeerForElement(Torrents)
                 ?.RaiseNotificationEvent(
@@ -145,7 +141,7 @@ public sealed partial class MainWindow : Window
             }
             catch (Exception error)
             {
-                Model.Report(error);
+                Model.Notifications.Report(error);
             }
         };
         Model.FilesRequested += async (_, _) => await PickSources();
@@ -176,7 +172,7 @@ public sealed partial class MainWindow : Window
             }
             catch (Exception error)
             {
-                Model.Report(error);
+                Model.Notifications.Report(error);
             }
         };
         Model.ActivateRequested += async (_, _) =>
@@ -202,7 +198,7 @@ public sealed partial class MainWindow : Window
                 await Model.Settings.ObserveRegistration();
         };
         Model.ShowRequested += async (_, _) => await ShowWhenReady();
-        Model.CloseRequested += async (_, exiting) => await CloseWindow(exiting);
+        Model.CloseRequested += async (_, request) => await CloseWindow(request);
         Model.ConfirmExitRequested += async (_, _) => await ConfirmExit();
         // No limit sorts as the highest, so ascending lists limited torrents first.
         static long Rank(int limit) => limit > 0 ? limit : long.MaxValue;
@@ -570,8 +566,6 @@ public sealed partial class MainWindow : Window
         await Interact(async interaction =>
         {
             interaction.Restore = ShowAdd;
-            interaction.ResolveDraft = async () =>
-                !Model.AddDraft.HasDraft || (interaction.IsResolved = await ResolveDraft("add"));
             _addDialog = new AddDialog(Model, Root.XamlRoot);
             _addDialog.DestinationRequested += async (_, _) => await PickDestination();
             _addDialog.AllowDrop = true;
@@ -585,7 +579,7 @@ public sealed partial class MainWindow : Window
             };
             dialog.SizeToContent();
             _addDialog.CloseRequested += (_, _) => dialog.Hide();
-            Model.IsAddOpen = true;
+            Model.AddDraft.Open();
             BindAddDraft(
                 dialog,
                 ContentDialog.PrimaryButtonTextProperty,
@@ -593,7 +587,6 @@ public sealed partial class MainWindow : Window
             );
             BindAddDraft(dialog, Dialog.PrimaryToolTipProperty, nameof(AddDraft.SubmitToolTip));
             dialog.Opened += (_, _) => _addDialog?.FocusError();
-            var completed = false;
             try
             {
                 await ShowEditor(
@@ -613,26 +606,14 @@ public sealed partial class MainWindow : Window
                         return submitted;
                     }
                 );
-                completed = true;
             }
             finally
             {
                 _addDialog?.Dispose();
-                Model.IsAddOpen = false;
-                if (!Model.IsClosing && completed)
-                {
-                    try
-                    {
-                        await Model.AddDraft.Cancel();
-                    }
-                    catch (Exception error)
-                    {
-                        Model.Report(error);
-                    }
-                }
+                Model.AddDraft.Close();
                 _addDialog = null;
             }
-            return completed;
+            return true;
         });
     }
 
@@ -652,11 +633,11 @@ public sealed partial class MainWindow : Window
             var files = await picker.PickMultipleFilesAsync();
             Model.IsPicking = false;
             if (files.Count > 0)
-                await Model.AddPicked(files.Select(file => file.Path));
+                await Model.AddSources(files.Select(file => file.Path), picked: true);
         }
         catch (Exception error)
         {
-            Model.Report(error);
+            Model.Notifications.Report(error);
         }
         finally
         {
@@ -689,7 +670,7 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception error)
         {
-            Model.Report(error);
+            Model.Notifications.Report(error);
         }
         finally
         {
@@ -703,7 +684,7 @@ public sealed partial class MainWindow : Window
         if (_allowClose)
             return;
         args.Cancel = true;
-        await CloseWindow(exiting: false);
+        await CloseWindow(CloseRequest.Close);
     }
 
     private void BringToFront()
@@ -796,18 +777,20 @@ public sealed partial class MainWindow : Window
         // A close that began while the dialog was open owns the window.
         if (!confirmed || Model.IsClosing)
             return;
-        _reopening = true;
-        await CloseWindow(exiting: false);
+        // The engine opens a new window, which starts as a new installation
+        // does.
+        await CloseWindow(CloseRequest.Reset);
     }
 
-    private async Task CloseWindow(bool exiting)
+    // Orders the native steps around the model's: hiding, the open dialog,
+    // draft prompts, placement and focus.
+    private async Task CloseWindow(CloseRequest request)
     {
         var focused = FocusManager.GetFocusedElement(Root.XamlRoot) as Control;
         var focusName = focused?.Name;
-        _exiting |= exiting;
-        if (!Model.BeginClose())
+        if (!Model.BeginClose(request))
         {
-            if (exiting)
+            if (request == CloseRequest.Exit)
                 await Model.DeferClose();
             return;
         }
@@ -819,110 +802,60 @@ public sealed partial class MainWindow : Window
             // make keeps it visible, and a failed close shows it again.
             if (!HasDialog && !Model.HasDraft && !Model.IsPicking)
                 AppWindow.Hide();
-            if (_exiting)
+            if (Model.IsExiting)
                 await Model.DeferClose();
             if (
                 _interaction is { IsDraftDecision: true } decision
                 && !await decision.Completion.Task
             )
                 return;
-            if (!Model.CanClose)
-            {
-                if (_exiting && Model.IsPicking)
-                    await Model.DeferClose();
-                var idle = new TaskCompletionSource(
-                    TaskCreationOptions.RunContinuationsAsynchronously
-                );
-                void OnIdle(object? sender, PropertyChangedEventArgs args)
-                {
-                    if (Model.CanClose)
-                        idle.TrySetResult();
-                }
-                Model.PropertyChanged += OnIdle;
-                try
-                {
-                    if (Model.CanClose)
-                        idle.TrySetResult();
-                    await idle.Task;
-                }
-                finally
-                {
-                    Model.PropertyChanged -= OnIdle;
-                }
-            }
-            if (!await Model.Settings.Connection.Depart())
+            if (!await Model.PrepareClose())
                 return;
-            await Model.Settings.PrepareLeave();
             suspended = _interaction;
-            suspended?.Dialog?.Hide();
             if (suspended is not null)
+            {
+                suspended.IsSuspended = true;
+                suspended.Dialog?.Hide();
                 await suspended.Completion.Task;
+            }
             if (suspended?.ResolveDraft is { } resolve && !await resolve())
                 return;
             while (Model.HasDraft)
             {
                 if (!AppWindow.IsVisible)
                     AppWindow.Show();
-                if (_exiting)
+                if (Model.IsExiting)
                     await Model.DeferClose();
                 if (!await ResolveRemainingDraft())
                     return;
             }
             AppWindow.Hide();
-            // After the drafts are saved, so none is saved over the defaults.
-            if (_reopening)
-                await Model.Settings.ResetAll();
-            Model.DisconnectFeatures();
-            if (_settingsPage is { } settings)
-                await settings.SaveFeatures();
-            if (_reopening)
+            if (!await Model.FinishClose())
+                return;
+            if (request == CloseRequest.Reset)
                 await ForgetPlacement();
             else
                 await SavePlacement();
-            // Exit can arrive during a reset; the engine then waits for this
-            // reply rather than a new window.
-            if (!_reopening || _exiting)
-                await Model.Close(_exiting);
-            await Model.CloseFeatures();
-            if (_reopening)
-                await Model.ResetFeatureSettings();
-            if (_reopening && !_exiting)
-                await Model.Reopen();
             _settingsPage?.Release();
             _allowClose = true;
             Close();
         }
         catch (Exception error)
         {
-            Model.Report(error);
+            Model.Notifications.Report(error);
         }
         finally
         {
-            if (!_allowClose && !AppWindow.IsVisible)
-                AppWindow.Show();
-            if (!_allowClose && _exiting)
-            {
-                try
-                {
-                    await Model.CancelClose();
-                }
-                catch (Exception failure)
-                {
-                    Model.Report(failure);
-                }
-            }
-            _exiting = false;
-            _reopening = false;
-            if (!_allowClose)
-                Model.EndClose();
             if (!_allowClose)
             {
+                if (!AppWindow.IsVisible)
+                    AppWindow.Show();
+                await Model.CancelClose();
                 if (suspended?.Restore is { } restore)
                 {
                     if (!suspended.IsResolved)
                         _ = restore();
                 }
-                await Model.ReplyActivation(true);
                 ShowDeferredAdd();
                 // A page the person is already on stays as they left it, and
                 // Recover moves only to the error.
@@ -955,9 +888,9 @@ public sealed partial class MainWindow : Window
     private Task<bool> ResolveRemainingDraft()
     {
         if (Model.AddDraft.HasDraft)
-            return ResolveDraft("add");
+            return ResolveDraft(Model.AddDraft);
         if (Model.FileDraft.HasDraft)
-            return ResolveDraft("move");
+            return ResolveDraft(Model.FileDraft);
         if (!Model.Inspector.HasDraft)
             return Task.FromResult(true);
         // As with Settings, an edit that cannot be saved, because the engine or

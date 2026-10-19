@@ -1,6 +1,6 @@
+using System.ComponentModel;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Data;
 using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Torrents;
 
@@ -19,6 +19,9 @@ public sealed partial class MainWindow
         public Func<Task<bool>>? ResolveDraft { get; set; }
         public bool IsResolved { get; set; }
         public bool IsDraftDecision { get; init; }
+
+        // CloseWindow hid the dialog, rather than the person closing it.
+        public bool IsSuspended { get; set; }
         public TaskCompletionSource<bool> Completion { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
@@ -42,7 +45,7 @@ public sealed partial class MainWindow
         }
         catch (Exception error)
         {
-            Model.Report(error);
+            Model.Notifications.Report(error);
             return false;
         }
         finally
@@ -114,9 +117,12 @@ public sealed partial class MainWindow
         }
     }
 
-    // An editor's primary button submits its draft. The dialog stays open while
-    // the draft or a picker is pending, and after a refused submit. A dialog
-    // passes `submit` only to add a step to the draft's own.
+    // An editor's primary button submits its draft, and nothing submits while
+    // the window closes. The dialog stays open while the draft or a picker is
+    // pending, and after a refused submit. A dialog passes `submit` only to add
+    // a step to the draft's own. The person closing the dialog drops the
+    // draft, also while the window waits to close; a dialog that the window's
+    // close hides leaves the draft to its ClosePolicy.
     private async Task ShowEditor(
         DialogInteraction interaction,
         Dialog dialog,
@@ -125,30 +131,57 @@ public sealed partial class MainWindow
         Func<Task<bool>>? submit = null
     )
     {
-        dialog.SetBinding(
-            ContentDialog.IsPrimaryButtonEnabledProperty,
-            new Binding
-            {
-                Source = draft,
-                Path = new PropertyPath(nameof(IDraft.CanSubmit)),
-                Mode = BindingMode.OneWay,
-            }
-        );
+        void EnableSubmit(object? sender = null, PropertyChangedEventArgs? args = null) =>
+            dialog.IsPrimaryButtonEnabled = draft.CanSubmit && !Model.IsClosing;
+        EnableSubmit();
+        draft.PropertyChanged += EnableSubmit;
+        Model.PropertyChanged += EnableSubmit;
         dialog.PrimaryButtonClick += async (_, args) =>
             await Submit(interaction, args, submit ?? draft.Submit);
         dialog.Closing += (_, args) =>
         {
-            if ((draft.IsPending || Model.IsPicking) && !Model.IsClosing)
+            if ((draft.IsPending || Model.IsPicking) && !interaction.IsSuspended)
                 args.Cancel = true;
         };
         try
         {
             await ShowDialog(interaction, dialog, refreshText);
-            interaction.IsResolved |= !Model.IsClosing;
+            if (interaction.IsSuspended && draft.ClosePolicy is not ClosePolicy.Discard)
+            {
+                // CloseWindow resolves the draft after the dialog has closed.
+                // An unchanged draft stays unresolved, so a failed close
+                // reopens its dialog.
+                interaction.ResolveDraft = async () =>
+                    !draft.HasDraft || (interaction.IsResolved = await ResolveDraft(draft));
+            }
+            else
+            {
+                interaction.IsResolved = true;
+                await draft.Discard();
+            }
         }
         finally
         {
+            draft.PropertyChanged -= EnableSubmit;
+            Model.PropertyChanged -= EnableSubmit;
+            draft.Stop();
             dialog.Content = null;
+        }
+    }
+
+    // Applies the draft's ClosePolicy while the window closes. False keeps the
+    // window open.
+    private async Task<bool> ResolveDraft(IDraft draft)
+    {
+        switch (draft.ClosePolicy)
+        {
+            case ClosePolicy.Save:
+                return await draft.Submit();
+            case ClosePolicy.Ask question:
+                return await Ask(draft, question);
+            default:
+                await draft.Discard();
+                return true;
         }
     }
 
@@ -157,12 +190,6 @@ public sealed partial class MainWindow
         await Interact(async interaction =>
         {
             interaction.Restore = () => ShowAccount(content);
-            interaction.ResolveDraft = () =>
-            {
-                content.Clear();
-                interaction.IsResolved = true;
-                return Task.FromResult(true);
-            };
             var dialog = new Dialog
             {
                 Content = content,
@@ -188,20 +215,11 @@ public sealed partial class MainWindow
             }
             finally
             {
-                content.CancelCheck();
                 dialog.Footer = null;
-                if (interaction.IsResolved)
-                    content.Clear();
             }
             return true;
         });
     }
-
-    private static async Task<bool> SaveOnClose(
-        DialogInteraction interaction,
-        IDraft draft,
-        bool canSave
-    ) => !draft.HasDraft || !canSave || (interaction.IsResolved = await draft.Submit());
 
     private async Task ConfirmDatabaseDeletion()
     {
@@ -221,7 +239,7 @@ public sealed partial class MainWindow
             );
             if (choice != ContentDialogResult.Primary)
                 return false;
-            await Model.RecreateDatabase();
+            await Model.Features.Delete();
             return true;
         });
     }

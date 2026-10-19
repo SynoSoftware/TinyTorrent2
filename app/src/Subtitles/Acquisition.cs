@@ -19,6 +19,7 @@ internal sealed partial class Acquisition(
 
     private readonly SemaphoreSlim _operation = new(1);
     private readonly CancellationTokenSource _lifetime = new();
+    private Task _saves = Task.CompletedTask;
     private readonly object _requestSync = new();
     private CancellationTokenSource _requests = new();
     private Task? _worker;
@@ -232,7 +233,42 @@ internal sealed partial class Acquisition(
         );
     }
 
-    internal async Task SetEnabled(bool enabled)
+    // Completes when every settings write queued so far has been applied or
+    // has failed. Until then a view keeps the person's choices instead of
+    // showing the saved values.
+    internal Task Saving => _saves;
+
+    // Applies settings writes one at a time in the order the person made them,
+    // whichever view made them. Callers are on the UI thread, and
+    // DisposeAsync applies every queued write before the lifetime ends.
+    private Task Queue(Func<Task> write)
+    {
+        var previous = _saves;
+        // Completes before the returned task, so a caller that resumes after
+        // its write sees Saving finished when nothing else is queued.
+        var written = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _saves = written.Task;
+        return Write();
+
+        async Task Write()
+        {
+            try
+            {
+                await previous.ConfigureAwait(false);
+                if (_disposed)
+                    throw new OperationCanceledException();
+                await write().ConfigureAwait(false);
+            }
+            finally
+            {
+                written.SetResult();
+            }
+        }
+    }
+
+    internal Task SetEnabled(bool enabled) => Queue(() => WriteEnabled(enabled));
+
+    private async Task WriteEnabled(bool enabled)
     {
         Invalidate();
         await _operation.WaitAsync(_lifetime.Token).ConfigureAwait(false);
@@ -281,7 +317,29 @@ internal sealed partial class Acquisition(
         await Reconcile().ConfigureAwait(false);
     }
 
-    internal async Task SetLanguages(IEnumerable<string> languages)
+    internal Task SetLanguages(IEnumerable<string> languages) =>
+        Queue(() => WriteLanguages(languages));
+
+    // Follows the interface language, or keeps the languages in effect when
+    // the write runs.
+    internal Task FollowLanguage(bool follows) =>
+        Queue(() => WriteLanguages(follows ? [] : EffectiveLanguages));
+
+    // Adds and removes languages from the ones in effect when the write runs.
+    // An empty result would follow the interface language, which only
+    // FollowLanguage chooses.
+    internal Task ChangeLanguages(string[] added, string[] removed) =>
+        Queue(async () =>
+        {
+            var wanted = EffectiveLanguages
+                .Where(tag => !removed.Contains(tag, StringComparer.OrdinalIgnoreCase))
+                .Concat(added)
+                .ToArray();
+            if (wanted.Length > 0)
+                await WriteLanguages(wanted).ConfigureAwait(false);
+        });
+
+    private async Task WriteLanguages(IEnumerable<string> languages)
     {
         var values = languages.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         if (
@@ -333,7 +391,9 @@ internal sealed partial class Acquisition(
         await Reconcile().ConfigureAwait(false);
     }
 
-    internal async Task SetExtras(int extras)
+    internal Task SetExtras(int extras) => Queue(() => WriteExtras(extras));
+
+    private async Task WriteExtras(int extras)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(extras);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(extras, MaximumExtras);
@@ -381,10 +441,15 @@ internal sealed partial class Acquisition(
         return RequireSupplier(draft.SupplierId).Interpret(draft, secret);
     }
 
+    // Choosing the saved supplier again keeps its account.
     internal Task SelectSupplier(SubtitleSupplier supplierId) =>
-        SaveAccount(new Account(supplierId, string.Empty, string.Empty));
+        Queue(() =>
+            supplierId == SupplierId
+                ? Task.CompletedTask
+                : SaveAccount(new Account(supplierId, string.Empty, string.Empty))
+        );
 
-    internal Task Save(Draft draft) => SaveAccount(Interpret(draft));
+    internal Task Save(Draft draft) => Queue(() => SaveAccount(Interpret(draft)));
 
     private async Task SaveAccount(Account account)
     {
@@ -582,6 +647,7 @@ internal sealed partial class Acquisition(
 
     public async ValueTask DisposeAsync()
     {
+        await _saves.ConfigureAwait(false);
         _disposed = true;
         _lifetime.Cancel();
         Task? reconciling;

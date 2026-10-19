@@ -1,8 +1,8 @@
 # Search protection
 
 This contract covers remote calls from TMDB, Wikidata, OMDb, MDBList,
-OpenSubtitles, SubDL, SubSource and IMDb dataset downloads. IMDb movie searches
-read local data under the rules below.
+OpenSubtitles, SubDL, SubSource, IMDb dataset downloads and DB-IP city data
+downloads. IMDb movie searches read local data under the rules below.
 
 ## Decision and scope
 
@@ -42,10 +42,10 @@ explicit recovery.
 | Subtitle workflow, matching, successful candidates and files | Subtitles | Candidates still need language, release and destination rules. |
 | Suppression, access recovery, pacing and reset semantics | RequestPolicy | Every adapter needs the same protection decisions. |
 | Request parameters, parsing and provider-specific quota facts | Adapter | Remote contracts differ; common policy does not. |
-| HTTP connections, confirmed route and transport cancellation | ProviderHttp, including its streaming Download path | Protection must not create a second transport or route authority. |
+| HTTP connections, confirmed route, transport cancellation and reply classification | ProviderHttp, including its streaming Download path | Protection must not create a second transport or route authority, and the same reply must give the same failure and hold in every feature. |
 | IMDb download/import and replaceable data | Imdb.Dataset; Library coordinates lookup drain | A dataset update must preserve the installed file until a complete replacement is ready. |
 | Schema initialization and transaction execution | Database | Feature data and protection need one commit authority. |
-| Construction, lifetime and cross-feature reset coordination | MainViewModel | Neither feature owns the other's lifetime. |
+| Construction, lifetime and cross-feature reset coordination | [Features](../../app/src/Shell/Features.cs), a host that is neither feature | Neither feature owns the other's lifetime. |
 
 ```mermaid
 flowchart TD
@@ -75,6 +75,16 @@ controls which credentials are sent, not whether pacing applies to an
 unauthenticated download. Library's `SaveSearch` and `SaveResponse` commit
 related data together and finish after caller cancellation; protection extends
 those paths and adds no parallel operation or persistence layer.
+
+`ProviderHttp` classifies every reply on the common outbound path once, as
+[answers, holds and recovery](#answers-holds-and-recovery) lists. Anything but
+a success records its hold through RequestPolicy and throws a
+`ReplyException`, which names its `ReplyFailure` and that hold. Library,
+Subtitles and the data downloads each turn it into their own failure in one
+switch, and the failure's retry time is the hold's. An adapter states its
+provider's facts on the `ProviderCall`: whether a 3xx is a redirect it
+follows, whether a refused session is one it renews, whether a 404 names the
+requested resource, and a quota that its reply reports in its own way.
 
 Library serializes execution through `VideoLookup._access`; Subtitles uses
 `Acquisition._operation`, including account checks. Each workflow keeps its
@@ -176,6 +186,23 @@ failed record for every movie. A 404/410 is a missing item only when the adapter
 knows it identifies the requested resource rather than a broken endpoint.
 Unsupported input and local filtering never create a remote miss.
 
+`ProviderHttp` reads every reply to Library, Subtitles and the IMDb and city
+data downloads with the same rules:
+
+| Reply | Failure | Hold |
+| --- | --- | --- |
+| 2xx, or 3xx when the call follows redirects itself | None | None, unless it also reports a used-up allowance |
+| 429, `X-RateLimit-Remaining: 0` or a quota the adapter reads, such as a subtitle supplier's 402 | Wait | Remote wait on the allowance scope, or on every operation of the access; an adapter's quota names its own scope |
+| 401 or 403 to a request with an authentication scope, which every Library request and supplier API request has | Refused, or Expired for a session the caller renews | Access needs attention on the authentication scope; Expired holds nothing |
+| 404 or 410 when the call names one resource | Missing | None |
+| Any other status, a transport failure or a timeout | Unavailable | Backoff on the operation |
+| A reply over its size limit, or JSON that Library cannot parse | Invalid | Backoff on the operation |
+| A proxy or adapter that cannot carry the request | Route | None |
+
+A wait that the status or headers report is recorded even when the body cannot
+be read. Retry-After, or else `X-RateLimit-Reset` in Unix seconds or as
+a date, gives the wait or backoff its requested time.
+
 The last valid answer is stored separately from later failed attempts. A timeout
 during Force fetch must neither replace good metadata nor erase a remembered miss
 and reopen automatic searching. An explicit refresh reports its failure even
@@ -247,9 +274,11 @@ usable deadline, the supplier's documented reset rule applies, or a one-hour
 fallback followed by one probe. Missing headers never create permanent waits.
 These policy constants are not user settings.
 
-The streaming dataset download path uses the same outbound admission and
-records status and Retry-After facts before reading the body or starting the
-next transfer. Remote transfer failures are classified there; local file writes,
+The streaming download path, which the IMDb and city data downloads use, has
+the same outbound admission and reply classification, and records status and
+wait headers before reading the body or starting the next transfer. A remote
+wait refuses the next Download until it ends, and the download's failure names
+its time. Remote transfer failures are classified there; local file writes,
 import failures and dataset SQLite errors remain Dataset recovery and create no
 remote service backoff. The path keeps its idle timeout and streaming writes: it
 does not buffer a large dataset or impose the JSON path's whole-request timeout.
@@ -461,7 +490,7 @@ diagnostics page.
 
 Reset's coordination:
 
-1. MainViewModel serializes resets with feature lifetime changes and pauses
+1. Features serializes resets with feature lifetime changes and pauses
    admission at the affected feature owners.
 2. Active operations are cancelled and drained, including their outcome/cache
    writes. Execution gates are obtained in fixed order: Library, then Subtitles

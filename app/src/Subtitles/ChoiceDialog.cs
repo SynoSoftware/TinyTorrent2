@@ -43,6 +43,7 @@ internal sealed class ChoiceDialog : UserControl, IDraft
     private bool TargetChanged => _failure is SubtitleException { Reason: SubtitleFailure.Changed };
     public bool CanSubmit => !IsPending && !IsSearching && HasDraft;
     public bool HasDraft => !TargetChanged && _results.SelectedItem is SubtitleCandidate;
+    public ClosePolicy ClosePolicy => new ClosePolicy.Save();
     internal bool CanSearch =>
         !IsSearching
         && !IsPending
@@ -141,7 +142,7 @@ internal sealed class ChoiceDialog : UserControl, IDraft
                 ? new RetryCommand(DateTimeOffset.UtcNow.UtcTicks)
                 : null;
         _command = command;
-        Cancel();
+        Stop();
         using var request = new CancellationTokenSource();
         _request = request;
         _results.ItemsSource = null;
@@ -196,7 +197,7 @@ internal sealed class ChoiceDialog : UserControl, IDraft
     {
         if (!CanSubmit || _results.SelectedItem is not SubtitleCandidate candidate)
             return false;
-        Cancel();
+        Stop();
         using var request = new CancellationTokenSource();
         _request = request;
         IsPending = true;
@@ -229,7 +230,10 @@ internal sealed class ChoiceDialog : UserControl, IDraft
         }
     }
 
-    internal void Cancel() => _request?.Cancel();
+    public void Stop() => _request?.Cancel();
+
+    // Choosing again creates a new dialog, so a closed one holds nothing to drop.
+    public Task Discard() => Task.CompletedTask;
 
     // A cancellation the dialog did not start means a settings change or the
     // video leaving its torrent stopped the request.

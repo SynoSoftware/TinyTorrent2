@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Numerics;
 using Syno.TinyTorrent.Shared;
 
 namespace Syno.TinyTorrent.Torrents;
@@ -11,6 +12,10 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
     internal List<Destination> Destinations { get; } = [];
     internal Location? Origin { get; private set; }
     internal GeoPoint? OriginPoint { get; private set; }
+
+    /// <summary>The longitude at the map's centre: the origin's, or 0° while it is unknown.</summary>
+    internal float Meridian => (float)(OriginPoint?.Longitude ?? 0);
+
     internal Strings? Text { get; private set; }
     internal bool Cities { get; private set; }
     internal PeerPlace? Place => owner.Place;
@@ -27,8 +32,6 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
             return;
         _observations = peers.Select(peer =>
             new Observation(peer, peer.DownloadRate, peer.UploadRate, peer.Location)).ToArray();
-        if (Cities != cities)
-            owner.Place = null;
         Origin = origin;
         Text = text;
         _language = text.Language;
@@ -38,10 +41,11 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
 
     internal IEnumerable<Peer> Peers => _observations.Select(observation => observation.Peer);
 
-    internal void Arrange(
-        IReadOnlyDictionary<string, Geography.Country> world,
-        Func<Geography.Area[], Geography.Area[]> regions
-    )
+    /// <summary>
+    /// Groups the observed peers and places their destinations on the map
+    /// fitted at <paramref name="scale"/> DIPs per degree.
+    /// </summary>
+    internal void Arrange(IReadOnlyDictionary<string, Geography.Country> world, float scale)
     {
         Destinations.Clear();
         OriginPoint = Locate(Origin, world);
@@ -91,7 +95,7 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
                 Destinations.Add(new Destination(group, group.Point, 1, null));
                 continue;
             }
-            group.Regions = regions(country.Areas);
+            group.Regions = Regions(country.Areas, Meridian, scale);
             var rank = 0;
             // Idle peers are placed like one connection, at the most likely region.
             foreach (var (region, share) in Distribute(group.Regions, Math.Max(group.Active, 1)))
@@ -99,8 +103,69 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
         }
     }
 
-    internal static GeoPoint? Locate(Location? location, IReadOnlyDictionary<string, Geography.Country> world) =>
+    private static GeoPoint? Locate(Location? location, IReadOnlyDictionary<string, Geography.Country> world) =>
         location?.Point ?? (location is null ? null : world.GetValueOrDefault(location.Code)?.Anchor);
+
+    /// <summary>
+    /// How many destinations of each place the <paramref name="selected"/>
+    /// peers mark.
+    /// </summary>
+    internal Dictionary<PeerPlace, int> Marks(IReadOnlyList<Peer> selected)
+    {
+        if (selected.Count == 0)
+            return [];
+        Dictionary<PeerPlace, int> counts = [];
+        foreach (var peer in selected)
+        {
+            if (peer.Location is { } location)
+            {
+                var place = PeerPlace.Of(location, Cities);
+                counts[place] = counts.GetValueOrDefault(place) + 1;
+            }
+        }
+        Dictionary<PeerPlace, int> marks = [];
+        foreach (var destination in Destinations)
+        {
+            var group = destination.Group;
+            if (!marks.ContainsKey(group.Place) && counts.TryGetValue(group.Place, out var count))
+                marks[group.Place] = group.Regions.Length == 0 ? 1 : Reach(group.Regions, count);
+        }
+        return marks;
+    }
+
+    // Bundled places closer than this, in DIPs on the fitted map, form one region.
+    private const float Spacing = 25;
+
+    /// <summary>
+    /// A country's populated places, with places that would overlap on the
+    /// fitted map merged into regions, most populous first.
+    /// </summary>
+    private static Geography.Area[] Regions(Geography.Area[] areas, float meridian, float scale)
+    {
+        List<Geography.Area> regions = [];
+        List<Vector2> positions = [];
+        foreach (var area in areas)
+        {
+            var position = MapViewport.Project(area.Point, meridian, scale);
+            var nearby = -1;
+            for (var index = 0; index < positions.Count && nearby < 0; index++)
+            {
+                if (Vector2.Distance(positions[index], position) < Spacing)
+                    nearby = index;
+            }
+            if (nearby < 0)
+            {
+                regions.Add(area);
+                positions.Add(position);
+            }
+            else
+                regions[nearby] = regions[nearby] with
+                {
+                    Population = regions[nearby].Population + area.Population,
+                };
+        }
+        return [.. regions.OrderByDescending(region => region.Population)];
+    }
 
     internal string Describe(Destination? destination)
     {

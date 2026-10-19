@@ -236,7 +236,7 @@ public sealed partial class MainViewModel
         _restriction = restriction;
         if (previous is not { } was || was == restriction)
             return;
-        Announce(
+        Notifications.Announce(
             HasRestriction
                 ? RestrictionTip
                 : Text.Get("window", was.Paused ? "resumed_status" : "alternative_off")
@@ -266,7 +266,7 @@ public sealed partial class MainViewModel
         catch (Exception error)
         {
             _limitsChoice = null;
-            Report(error);
+            Notifications.Report(error);
         }
         finally
         {

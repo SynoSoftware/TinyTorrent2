@@ -32,7 +32,7 @@ internal sealed class TorrentSource : IAsyncDisposable
         _sources = sources;
         client.Snapshot += Observe;
         client.Disconnected += Disconnect;
-        client.FilesChanged += Reread;
+        client.CommandReplied += Reread;
     }
 
     internal void Observe(JsonElement snapshot)
@@ -70,12 +70,20 @@ internal sealed class TorrentSource : IAsyncDisposable
                 _work = Task.Run(Run);
     }
 
-    // A successful torrent command can change the files of any torrent. The
+    // A successful command that adds, removes, moves or verifies torrents, or
+    // changes file priorities, can change the files of any torrent. The
     // listed files stay confirmed while every torrent is read again from a
     // snapshot taken after the command. Published lets Library show what the
     // read that Restart ended saved but did not report.
-    private void Reread(JsonElement? snapshot)
+    private void Reread(PipeClient.CommandReply reply)
     {
+        var changesFiles =
+            reply.Command is "add" or "remove" or "delete_files" or "move" or "verify"
+            || reply.Command == "edit"
+                && reply.Arguments.TryGetProperty("changes", out var changes)
+                && changes.TryGetProperty("priorities", out _);
+        if (!reply.Succeeded || !changesFiles)
+            return;
         bool current;
         lock (_gate)
         {
@@ -83,9 +91,9 @@ internal sealed class TorrentSource : IAsyncDisposable
                 return;
             Restart();
             _reread = true;
-            _latest = snapshot;
+            _latest = reply.Snapshot;
             current = IsCurrent;
-            if (snapshot is not null && (_work is null || _work.IsCompleted))
+            if (reply.Snapshot is not null && (_work is null || _work.IsCompleted))
                 _work = Task.Run(Run);
         }
         if (current)
@@ -420,7 +428,7 @@ internal sealed class TorrentSource : IAsyncDisposable
     {
         _client.Snapshot -= Observe;
         _client.Disconnected -= Disconnect;
-        _client.FilesChanged -= Reread;
+        _client.CommandReplied -= Reread;
         Task? work;
         lock (_gate)
         {

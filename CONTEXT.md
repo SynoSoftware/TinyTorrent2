@@ -142,6 +142,11 @@ the person's recovery choice or validated adoption authorized by movement tracki
 not an ordinary Start or scheduled resume. Reusing existing files does not
 authorize downloading missing payload.
 
+**Recovery marker**: a torrent's move destination, saved before its files move
+and cleared when its own move ends. After an interruption it keeps the torrent
+paused with Move interrupted until the move continues or the person chooses a
+folder.
+
 **Session totals**: payload bytes downloaded and uploaded since TinyTorrent's
 engine started, including transfers while its window was closed.
 

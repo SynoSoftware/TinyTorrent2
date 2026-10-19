@@ -16,7 +16,7 @@ public sealed partial class MainWindow
             interaction.Restore = () => DownloadSubtitles(entries);
             var content = new Batch(
                 Model.Text,
-                (error, key) => Model.Report(error, key, null, null),
+                (error, key) => Model.Notifications.Report(error, key, null, null),
                 entries
             )
             {
@@ -49,7 +49,7 @@ public sealed partial class MainWindow
                         content.Refresh();
                     }
                 );
-                interaction.IsResolved |= !Model.IsClosing;
+                interaction.IsResolved |= !interaction.IsSuspended;
             }
             finally
             {
@@ -90,11 +90,11 @@ public sealed partial class MainWindow
                     await subtitles.Save(Read(input));
                     try
                     {
-                        await Model.RetrySubtitles();
+                        await Model.Features.RetrySubtitles();
                     }
                     catch (Exception error)
                     {
-                        Model.Report(error);
+                        Model.Notifications.Report(error);
                     }
                 },
                 supplier.Available
@@ -104,7 +104,7 @@ public sealed partial class MainWindow
                         {
                             await subtitles.Check(Read(input), cancellation);
                             if (!cancellation.IsCancellationRequested)
-                                Model.ShowOutcome("subtitles", "connected", name);
+                                Model.Notifications.ShowOutcome("subtitles", "connected", name);
                         }
                         catch (OperationCanceledException)
                         {
@@ -114,7 +114,12 @@ public sealed partial class MainWindow
                         }
                         catch (Exception error) when (!cancellation.IsCancellationRequested)
                         {
-                            Model.Report(error, "failed_subtitle_check", () => name, null);
+                            Model.Notifications.Report(
+                                error,
+                                "failed_subtitle_check",
+                                () => name,
+                                null
+                            );
                         }
                     }
                     : null
@@ -130,7 +135,6 @@ public sealed partial class MainWindow
         await Interact(async interaction =>
         {
             interaction.Restore = () => ChooseSubtitle(entryId, content);
-            interaction.ResolveDraft = () => SaveOnClose(interaction, content, canSave: true);
             var dialog = new Dialog
             {
                 Content = content,
@@ -184,7 +188,6 @@ public sealed partial class MainWindow
             finally
             {
                 content.PropertyChanged -= RefreshActions;
-                content.Cancel();
             }
             return true;
         });

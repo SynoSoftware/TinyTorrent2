@@ -34,12 +34,17 @@ public sealed class AddDraft : IDraft
     private readonly FileSelection _emptyFiles;
     private AdditionPhase _phase;
     private Addition? _addition;
+    private Task _arrivals = Task.CompletedTask;
 
     // A submit holds the dialog open; preparing a source does not, because
     // AcceptMagnet releases a preview whose dialog has closed. Closing the
-    // window waits for both.
+    // window waits for both, and for sources still arriving.
     public bool IsPending => _phase == AdditionPhase.Submitting;
-    internal bool IsBusy => _phase != AdditionPhase.Idle;
+    internal bool IsBusy => _phase != AdditionPhase.Idle || !_arrivals.IsCompleted;
+
+    // Whether the Add dialog shows this draft. Sources that arrive then join
+    // the dialog, and its previews refresh every second.
+    internal bool IsOpen => _polling is not null;
     public ObservableCollection<AddSource> Sources { get; } = [];
     public bool HasSources => Sources.Count > 0;
     public FileSelection Files => Sources.Count == 1 ? Sources[0].Files : _emptyFiles;
@@ -208,7 +213,7 @@ public sealed class AddDraft : IDraft
                     : string.Empty;
     public bool HasError => Message.Length > 0;
     public InfoBarSeverity Severity => InfoBarSeverity.Error;
-    private bool CanSave => _owner.CanSave && !IsBusy;
+    private bool CanSave => _owner.CanSave && _phase == AdditionPhase.Idle;
     public bool CanEdit => CanSave && !_owner.IsClosing;
     public bool CanSubmit => CanEdit && IsValid;
     private bool IsValid =>
@@ -225,6 +230,8 @@ public sealed class AddDraft : IDraft
         )
         && !Sources.Any(source => source.NeedsFiles);
     public bool HasDraft => Sources.Count > 0 || !string.IsNullOrWhiteSpace(Magnet);
+    public ClosePolicy ClosePolicy =>
+        new ClosePolicy.Ask("add", Lucide.CirclePlus, () => Heading, () => SubmitText);
     public event PropertyChangedEventHandler? PropertyChanged;
 
     internal AddDraft(MainViewModel owner, PipeClient client, Strings strings)
@@ -237,7 +244,109 @@ public sealed class AddDraft : IDraft
         _emptyFiles = new FileSelection(strings);
     }
 
-    internal void Own(IEnumerable<string> sources)
+    // Sources dropped, pasted, picked or sent by another instance. Picked
+    // sources open one Add dialog however many files the person picks, unless
+    // they turned the dialog off. Later arrivals stay outside the draft until
+    // the preceding one has finished its cleanup.
+    internal async Task<ArrivalOutcome> Receive(string[] sources, bool picked)
+    {
+        if (sources.All(string.IsNullOrWhiteSpace))
+            return ArrivalOutcome.Settled;
+        var previous = _arrivals;
+        var completed = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        _arrivals = completed.Task;
+        Refresh();
+        try
+        {
+            await previous;
+            Own(sources);
+            if (picked || IsOpen || Sources.Count <= 1)
+                return await AddOwned();
+            await AddTogether();
+            return ArrivalOutcome.Settled;
+        }
+        catch (Exception error)
+        {
+            _owner.Notifications.Report(error);
+            return ArrivalOutcome.Settled;
+        }
+        finally
+        {
+            completed.SetResult();
+            Refresh();
+        }
+    }
+
+    // Several sources arriving at once are added without the Add dialog or any
+    // question, so one drop never opens a cascade of dialogs. A torrent already
+    // in the list is shown where it is, and a source that fails is reported and
+    // dropped rather than left for a later Add dialog. Sources that could not be
+    // tried stay in the draft, so none is lost silently.
+    private async Task AddTogether()
+    {
+        await using var addition = BeginAddition();
+        await PrepareAll();
+        if (!CanEdit || IsOpen || IsAdditionCancelled)
+            return;
+        Exception? failure = null;
+        var rejected = Sources.Where(source => source.NeedsFiles).ToArray();
+        if (rejected.Length > 0)
+        {
+            failure = new CommandException("invalid_priorities", null, _strings, "add");
+            await Discard(rejected);
+        }
+        if (CanEdit && !IsOpen && HasDraft && !await Submit() && Failure is { } error)
+        {
+            failure = error;
+            await Discard(
+                Sources.Where(source => source.Failure is not null && !source.Uncertain).ToArray()
+            );
+        }
+        if (failure is not null)
+            _owner.Notifications.Report(failure);
+    }
+
+    private async Task<ArrivalOutcome> AddOwned()
+    {
+        if (Sources.Count == 0)
+            return ArrivalOutcome.Settled;
+        if (IsOpen)
+        {
+            await PrepareAll();
+            return ArrivalOutcome.Settled;
+        }
+        var showDialog = Sources.Any(source =>
+            _owner.Settings.AddPreference(source.Source).ConfirmedOn
+        );
+        await using (var addition = BeginAddition())
+        {
+            await PrepareAll();
+            if (IsOpen || IsAdditionCancelled)
+                return ArrivalOutcome.Settled;
+            // A torrent already in the list needs no Add dialog: Submit shows it where
+            // it is, and only trackers it lacks are worth a question.
+            if (Sources.All(source => source.IsDuplicate))
+            {
+                if (Sources.Any(source => source.MergeAvailable))
+                    return ArrivalOutcome.Merge;
+                if (await Submit())
+                    _owner.Notifications.Announce(_strings.Get("errors", "duplicate"));
+                return ArrivalOutcome.Settled;
+            }
+            if (!showDialog)
+            {
+                if (!Sources.Any(source => source.MergeAvailable))
+                    await Submit();
+                if (IsAdditionCancelled)
+                    return ArrivalOutcome.Settled;
+            }
+        }
+        return Sources.Count > 0 ? ArrivalOutcome.Dialog : ArrivalOutcome.Settled;
+    }
+
+    private void Own(IEnumerable<string> sources)
     {
         foreach (var source in sources.Where(source => !string.IsNullOrWhiteSpace(source)))
             if (!Sources.Any(existing => existing.Inputs.Contains(source, StringComparer.Ordinal)))
@@ -280,7 +389,7 @@ public sealed class AddDraft : IDraft
             var source = new AddSource(value, _strings, this);
             var destination = _destination;
             var preview = await PreviewSource(source, destination);
-            if (Magnet != input || !_owner.IsAddOpen && !_owner.IsClosing)
+            if (Magnet != input || !IsOpen && !_owner.IsClosing)
             {
                 await Release(preview.GetProperty("preview_id").GetString()!);
                 return false;
@@ -294,7 +403,7 @@ public sealed class AddDraft : IDraft
             if (Magnet == input)
             {
                 _magnetFailure = error;
-                _owner.Announce(MagnetMessage);
+                _owner.Notifications.Announce(MagnetMessage);
             }
             return false;
         }
@@ -305,7 +414,7 @@ public sealed class AddDraft : IDraft
         }
     }
 
-    internal async Task PrepareAll()
+    private async Task PrepareAll()
     {
         if (!CanEdit)
             return;
@@ -330,12 +439,12 @@ public sealed class AddDraft : IDraft
         }
     }
 
-    internal bool IsAdditionCancelled => _addition?.IsCancelled == true;
+    private bool IsAdditionCancelled => _addition?.IsCancelled == true;
 
-    internal Addition? BeginAddition() =>
-        _owner.IsAddOpen || Sources.Count == 0 ? null : _addition = new Addition(this);
+    private Addition? BeginAddition() =>
+        IsOpen || Sources.Count == 0 ? null : _addition = new Addition(this);
 
-    internal sealed class Addition : IAsyncDisposable
+    private sealed class Addition : IAsyncDisposable
     {
         private readonly AddDraft _draft;
         private readonly AddSource[] _accepted;
@@ -410,7 +519,7 @@ public sealed class AddDraft : IDraft
                 // reply stays in the draft so cancellation cannot hide an added torrent.
                 if (IsCancelled)
                 {
-                    await _draft.Cancel(
+                    await _draft.Discard(
                         _accepted
                             .Where(source => _draft.Sources.Contains(source) && !source.Uncertain)
                             .ToArray()
@@ -421,14 +530,14 @@ public sealed class AddDraft : IDraft
                         )
                         ?.Failure;
                     if (failure is not null)
-                        _draft._owner.Report(failure);
+                        _draft._owner.Notifications.Report(failure);
                 }
             }
             catch (Exception error)
             {
                 _operation.Outcome = WorkOutcome.Failed;
                 _operation.Error = error;
-                _draft._owner.Report(error);
+                _draft._owner.Notifications.Report(error);
             }
             finally
             {
@@ -463,9 +572,17 @@ public sealed class AddDraft : IDraft
 
     private async Task<JsonElement> PreviewSource(AddSource source, string destination)
     {
-        var preview = await _client.Send("preview", new { source = source.Source, destination });
+        var preview = await _client.Send(
+            "preview",
+            new { source = source.Source, destination },
+            Requester.Window
+        );
         foreach (var input in source.Inputs.Skip(1))
-            preview = await _client.Send("preview", new { source = input, destination });
+            preview = await _client.Send(
+                "preview",
+                new { source = input, destination },
+                Requester.Window
+            );
         return preview;
     }
 
@@ -614,7 +731,8 @@ public sealed class AddDraft : IDraft
                         source.Apply(
                             await _client.Send(
                                 "preview_detail",
-                                new { preview_id = previewId, destination }
+                                new { preview_id = previewId, destination },
+                                Requester.Window
                             ),
                             destination
                         );
@@ -627,7 +745,6 @@ public sealed class AddDraft : IDraft
                     continue;
                 }
                 Sources.Remove(source);
-                _owner.ClearError();
                 revealed.Add(addition.GetProperty("torrent_id").GetString()!);
             }
             _owner.Reveal([.. revealed]);
@@ -638,17 +755,17 @@ public sealed class AddDraft : IDraft
                     .FirstOrDefault(error => error is not null);
                 var message = Message.Length > 0 ? Message : DestinationMessage;
                 if (message.Length > 0)
-                    _owner.Announce(message);
+                    _owner.Notifications.Announce(message);
                 return false;
             }
             Clear();
-            _owner.AnnounceAccepted("add", "title");
+            _owner.Notifications.AnnounceAccepted("add", "title");
             return true;
         }
         catch (Exception error)
         {
             _failure = error;
-            _owner.Announce(_strings.Error(error));
+            _owner.Notifications.Announce(_strings.Error(error));
             return false;
         }
         finally
@@ -658,21 +775,27 @@ public sealed class AddDraft : IDraft
         }
     }
 
-    internal void StartPolling()
+    // The Add dialog opened.
+    internal void Open()
     {
-        if (_polling is not null)
+        if (IsOpen)
             return;
         _polling = new CancellationTokenSource();
         RefreshSpace();
         _poller = Poll(_poller, _polling);
+        Refresh();
     }
 
-    internal void StopPolling()
+    // The Add dialog closed.
+    internal void Close()
     {
-        _polling?.Cancel();
+        if (_polling is not { } polling)
+            return;
+        polling.Cancel();
         _polling = null;
         _space = null;
         _client.Withdraw(Consumer.Draft);
+        Refresh();
     }
 
     private void RefreshSpace()
@@ -771,9 +894,13 @@ public sealed class AddDraft : IDraft
         Refresh();
     }
 
-    public Task Cancel() => Cancel(Sources.ToArray());
+    public Task Discard() => Discard(Sources.ToArray());
 
-    internal async Task Cancel(IEnumerable<AddSource> sources)
+    // Previews keep loading until Discard releases them, because the draft
+    // can still be added after its dialog closes.
+    public void Stop() { }
+
+    private async Task Discard(IEnumerable<AddSource> sources)
     {
         var cancelled = sources.ToArray();
         foreach (var source in cancelled)
@@ -797,7 +924,7 @@ public sealed class AddDraft : IDraft
     {
         if (!_owner.IsConnected || Sources.Any(source => source.PreviewId == previewId))
             return;
-        await _client.Send("cancel_preview", new { preview_id = previewId });
+        await _client.Send("cancel_preview", new { preview_id = previewId }, Requester.Window);
     }
 
     internal void ApplyDefaults(string destination, bool startsDownload, bool queueTop)
