@@ -3,11 +3,15 @@
 #include "Engine.h"
 #include <condition_variable>
 #include <deque>
+#include <expected>
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
+#include <type_traits>
 
 namespace tt
 {
@@ -27,6 +31,24 @@ public:
     explicit Store(std::function<void()> wake);
     ~Store();
     void Run(std::function<void()> work, std::function<void(StorageOutcome)> completion);
+    // Hands the value `work` returns to `completion`, or the failure when the
+    // store refused the work or the work threw.
+    template <typename Work, typename Completion>
+        requires (!std::is_void_v<std::invoke_result_t<Work&>>)
+    void Run(Work work, Completion completion)
+    {
+        using Value = std::invoke_result_t<Work&>;
+        using Result = std::expected<Value, StorageOutcome>;
+        auto value = std::make_shared<std::optional<Value>>();
+        Run([work = std::move(work), value]() mutable { value->emplace(work()); },
+            [completion = std::move(completion), value](StorageOutcome outcome) mutable
+        {
+            if (outcome.failure)
+                completion(Result(std::unexpect, std::move(outcome)));
+            else
+                completion(Result(std::in_place, std::move(**value)));
+        });
+    }
     void Write(std::filesystem::path path, std::function<std::string()> encode,
         std::function<void(StorageOutcome)> completion);
     void Drain();

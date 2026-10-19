@@ -1,4 +1,5 @@
 #include "Torrent.h"
+#include "Store.h"
 #include <Windows.h>
 #include <libtorrent/hex.hpp>
 #include <libtorrent/magnet_uri.hpp>
@@ -8,6 +9,7 @@
 #include <stdexcept>
 #include <sstream>
 #include <unordered_set>
+#include <utility>
 
 namespace tt
 {
@@ -17,6 +19,12 @@ namespace
 constexpr lt::resume_data_flags_t dirty = lt::torrent_handle::if_download_progress |
     lt::torrent_handle::if_config_changed | lt::torrent_handle::if_state_changed |
     lt::torrent_handle::if_metadata_changed;
+
+// libtorrent checks the torrent's files in this state.
+bool Checks(lt::torrent_status::state_t state)
+{
+    return state == lt::torrent_status::checking_files || state == lt::torrent_status::checking_resume_data;
+}
 
 char const* ToString(Status status)
 {
@@ -41,6 +49,18 @@ bool IsPriority(Json const& value)
 {
     return value.is_number_integer() && value >= 0 && value <= 255;
 }
+}
+
+Problem Problem::From(Outcome const& failure, ProblemKind kind)
+{
+    return failure.error == ErrorCode::Overloaded ? Problem{ProblemKind::StorageOverloaded} : Problem{kind, failure.detail};
+}
+
+// ToOutcome reports a refused job as Overloaded; the error code it gives any
+// other failure is not read.
+Problem Problem::From(StorageOutcome const& failure, ProblemKind kind)
+{
+    return From(failure.ToOutcome(ErrorCode::StorageFailed), kind);
 }
 
 char const* Problem::Code() const
@@ -226,8 +246,8 @@ Json Facts::ToJson() const
         {"append_suffix", appendsSuffix},
         {"layout", static_cast<int>(layout)},
         {"skip_patterns", skipPatterns},
-        {"move_destination", moveDestination},
-        {"move_stage", static_cast<int>(moveStage)},
+        {"move_destination", marker ? marker->destination : std::string()},
+        {"move_stage", static_cast<int>(marker ? marker->stage : MoveStage::Staged)},
         {"torrent_file", torrentFile},
         {"verify_files", verifyFiles},
         {"paused", intent == Intent::Paused},
@@ -262,13 +282,16 @@ Facts Facts::Read(Json const& saved)
     auto layout = ReadSaved(saved, "layout", 0);
     if (layout >= 0 && layout <= static_cast<int>(Layout::Strip))
         facts.layout = static_cast<Layout>(layout);
-    if (auto patterns = ReadSaved(saved, "skip_patterns", std::string()); patterns.size() <= 4096)
+    if (auto patterns = ReadSaved(saved, "skip_patterns", std::string()); patterns.size() <= patternLimit)
         facts.skipPatterns = std::move(patterns);
-    facts.moveDestination = ReadSaved(saved, "move_destination", std::string());
-    // A move saved without a stage counts as unchecked.
-    auto stage = ReadSaved(saved, "move_stage", 0);
-    if (!facts.moveDestination.empty() && stage >= 0 && stage <= static_cast<int>(MoveStage::Waiting))
-        facts.moveStage = static_cast<MoveStage>(stage);
+    if (auto destination = ReadSaved(saved, "move_destination", std::string()); !destination.empty())
+    {
+        facts.marker = Facts::Marker{std::move(destination)};
+        // A move saved without a valid stage counts as unchecked.
+        auto stage = ReadSaved(saved, "move_stage", 0);
+        if (stage >= 0 && stage <= static_cast<int>(MoveStage::Waiting))
+            facts.marker->stage = static_cast<MoveStage>(stage);
+    }
     facts.torrentFile = ReadSaved(saved, "torrent_file", std::string());
     facts.verifyFiles = ReadSaved(saved, "verify_files", false);
     if (ReadSaved(saved, "paused", false))
@@ -397,9 +420,10 @@ std::optional<Problem> Torrent::Error() const
     {
         return moveError;
     }
-    if (!moving && !facts.moveDestination.empty() && !ResumesMove())
+    // A waiting move the person asked for replaces the interrupted one.
+    if (!moving && !waitingMove && facts.marker && !ResumesMove())
     {
-        return Problem{ProblemKind::MoveInterrupted, facts.moveDestination};
+        return Problem{ProblemKind::MoveInterrupted, facts.marker->destination};
     }
     if (!conflict.empty())
     {
@@ -432,12 +456,24 @@ std::optional<Problem> Torrent::Diagnose() const
 
 bool Torrent::ResumesMove() const
 {
-    return !moving && !facts.moveDestination.empty() && facts.moveStage == MoveStage::Placing;
+    return !moving && facts.marker && facts.marker->stage == MoveStage::Placing;
+}
+
+bool Torrent::MoveWaits() const
+{
+    return !moving && (ResumesMove() || waitingMove) && !Error();
 }
 
 bool Torrent::FilesBusy() const
 {
-    return moving || namePhase == NamePhase::Preparing || namePhase == NamePhase::Recovering || !renaming.empty();
+    return moving || namePhase == NamePhase::Preparing || namePhase == NamePhase::Recovering ||
+        !renaming.empty() || !marking.empty();
+}
+
+bool Torrent::IsHeld(bool hasMetadata) const
+{
+    return deleted || !conflict.empty() || moving || facts.marker || cacheWrite == CacheWrite::Flushing ||
+        (hasMetadata && namePhase != NamePhase::Ready);
 }
 
 bool Torrent::MoveBlocked() const
@@ -447,18 +483,18 @@ bool Torrent::MoveBlocked() const
 
 Status Torrent::Classify(bool sessionPaused) const
 {
-    if (moving)
+    if (moving || MoveWaits())
     {
         return Status::Moving;
     }
-    // A move that continues on its own shows the reason that delays it.
+    return ClassifyTransfer(sessionPaused);
+}
+
+Status Torrent::ClassifyTransfer(bool sessionPaused) const
+{
     if (Error())
     {
         return Status::Error;
-    }
-    if (ResumesMove())
-    {
-        return Status::Moving;
     }
     if (facts.intent == Intent::Paused)
     {
@@ -468,8 +504,7 @@ Status Torrent::Classify(bool sessionPaused) const
     {
         return Status::AllPaused;
     }
-    if (completionPhase == CompletionPhase::Checking || status.state == lt::torrent_status::checking_files ||
-        status.state == lt::torrent_status::checking_resume_data)
+    if (completion.IsChecking() || Checks(status.state))
     {
         return Status::Checking;
     }
@@ -477,11 +512,13 @@ Status Torrent::Classify(bool sessionPaused) const
     {
         return Status::Metadata;
     }
-    if (bool(status.flags & lt::torrent_flags::paused))
+    // A torrent the engine holds keeps the status its choice gives it, because
+    // Queued would claim that a queue limit holds it.
+    if (bool(status.flags & lt::torrent_flags::paused) && !IsHeld(status.has_metadata))
     {
         return Status::Queued;
     }
-    if (completionPhase == CompletionPhase::Downloading || completionPhase == CompletionPhase::Flushing)
+    if (completion.IsDownloading())
     {
         return Status::Downloading;
     }
@@ -503,9 +540,134 @@ bool Torrent::IsChanged() const
 
 void Torrent::Update(lt::torrent_status latest)
 {
-    receivedPayload |= completionPhase == CompletionPhase::Downloading &&
-        latest.total_payload_download > status.total_payload_download;
+    completion.Sampled(status, latest);
     status = std::move(latest);
+}
+
+bool Completion::Changed(State state, State previous)
+{
+    origin_ = state;
+    if (state == lt::torrent_status::downloading)
+    {
+        if (phase_ != CompletionPhase::Checking)
+            phase_ = CompletionPhase::Downloading;
+        received_ = false;
+    }
+    if (Checks(state))
+    {
+        received_ = false;
+        if (phase_ == CompletionPhase::Downloading)
+            phase_ = CompletionPhase::Idle;
+    }
+    if (state == lt::torrent_status::finished && previous == lt::torrent_status::downloading &&
+        (phase_ == CompletionPhase::Downloading || phase_ == CompletionPhase::Idle || received_))
+    {
+        phase_ = CompletionPhase::Downloading;
+        requested_ = true;
+        return true;
+    }
+    return false;
+}
+
+void Completion::Sampled(lt::torrent_status const& previous, lt::torrent_status const& latest)
+{
+    received_ |= phase_ == CompletionPhase::Downloading &&
+        latest.total_payload_download > previous.total_payload_download;
+}
+
+bool Completion::Observed(lt::torrent_status const& previous, lt::torrent_status const& latest)
+{
+    requested_ = false;
+    bool checking = Checks(latest.state);
+    if (phase_ == CompletionPhase::Checking && !checking)
+        phase_ = latest.is_finished ? CompletionPhase::Checked : CompletionPhase::Idle;
+    if (latest.state == lt::torrent_status::downloading)
+        phase_ = CompletionPhase::Downloading;
+    // Restarting resets the counter. This fresh read can recognize a download
+    // that finishes between samples; a routine status cannot establish a reset.
+    received_ |= phase_ == CompletionPhase::Downloading && latest.total_payload_download > 0 &&
+        latest.total_payload_download != previous.total_payload_download;
+    if (checking)
+    {
+        received_ = false;
+        if (phase_ == CompletionPhase::Downloading)
+            phase_ = CompletionPhase::Idle;
+        return false;
+    }
+    if (latest.is_finished && phase_ == CompletionPhase::Downloading)
+        phase_ = std::exchange(received_, false) ? CompletionPhase::Flushing : CompletionPhase::Idle;
+    return phase_ == CompletionPhase::Flushing;
+}
+
+bool Completion::FileFinished()
+{
+    if (origin_ != lt::torrent_status::downloading)
+        return false;
+    received_ = true;
+    return true;
+}
+
+void Completion::Checked()
+{
+    if (phase_ == CompletionPhase::Checking)
+        requested_ = true;
+}
+
+bool Completion::Flushed()
+{
+    if (phase_ != CompletionPhase::Flushing)
+        return false;
+    phase_ = CompletionPhase::Settling;
+    return true;
+}
+
+void Completion::Rechecked()
+{
+    received_ = false;
+}
+
+void Completion::Lost(bool stateChanges)
+{
+    requested_ = true;
+    if (stateChanges)
+        origin_.reset();
+}
+
+bool Completion::BeginCheck()
+{
+    if (phase_ != CompletionPhase::Settling)
+        return false;
+    phase_ = CompletionPhase::Checking;
+    return true;
+}
+
+void Completion::FailCheck()
+{
+    if (phase_ == CompletionPhase::Checking)
+        phase_ = CompletionPhase::Settling;
+}
+
+bool Completion::Finish()
+{
+    if (phase_ != CompletionPhase::Settling && phase_ != CompletionPhase::Checked)
+        return false;
+    phase_ = CompletionPhase::Idle;
+    return true;
+}
+
+bool Completion::IsReached(lt::torrent_status const& status) const
+{
+    return status.has_metadata && status.is_finished && !IsWorking();
+}
+
+bool Completion::IsWorking() const
+{
+    return IsDownloading() || phase_ == CompletionPhase::Checking;
+}
+
+bool Completion::IsDownloading() const
+{
+    return phase_ == CompletionPhase::Downloading || phase_ == CompletionPhase::Flushing;
 }
 
 std::vector<lt::announce_entry> const& Torrent::Trackers() const
@@ -802,8 +964,11 @@ Json DescribeFiles(Torrent const& torrent, std::shared_ptr<lt::torrent_info cons
                 lt::file_index_t(static_cast<int>(index)))) : Json();
         file["downloaded"] = detail.Has(DetailKind::Progress, since) && index < detail.progress.size() ?
             Json(detail.progress[index]) : Json();
-        file["priority"] = detail.Has(DetailKind::Priorities, since) && index < detail.priorities.size() ?
-            Json(static_cast<std::uint8_t>(detail.priorities[index])) : Json();
+        // Choices that wait for busy files are saved, so they show before
+        // libtorrent has them.
+        auto const& priorities = torrent.prioritiesPending ? torrent.facts.priorities : detail.priorities;
+        file["priority"] = (torrent.prioritiesPending || detail.Has(DetailKind::Priorities, since)) &&
+            index < priorities.size() ? Json(static_cast<std::uint8_t>(priorities[index])) : Json();
     }
     return data;
 }
@@ -916,10 +1081,9 @@ Json Torrent::Describe(TorrentView view, bool includeFiles, Detail const& detail
 Json Torrent::Row(bool sessionPaused, int queue, std::optional<double> moveProgress) const
 {
     auto problem = Diagnose();
-    auto complete = status.has_metadata && status.is_finished && completionPhase != CompletionPhase::Downloading &&
-        completionPhase != CompletionPhase::Flushing && completionPhase != CompletionPhase::Checking;
+    auto complete = completion.IsReached(status);
     return {{"torrent_id", torrentId}, {"save_path", facts.savePath}, {"final_folder", facts.finalFolder},
-        {"moving", moving}, {"move_destination", facts.moveDestination},
+        {"moving", moving}, {"move_destination", facts.marker ? facts.marker->destination : std::string()},
         {"paused", facts.intent == Intent::Paused}, {"forced", facts.intent == Intent::Forced},
         {"sequential", facts.sequential}, {"first_last", facts.firstLast},
         {"download_limit", facts.downloadLimit}, {"upload_limit", facts.uploadLimit},
@@ -964,8 +1128,7 @@ void Torrent::ApplyIntent()
     handle.set_download_limit(facts.downloadLimit);
     handle.set_upload_limit(facts.uploadLimit);
     auto metadata = handle.torrent_file();
-    if (deleted || !conflict.empty() || moving || !facts.moveDestination.empty() ||
-        (metadata && namePhase != NamePhase::Ready))
+    if (IsHeld(bool(metadata)))
     {
         handle.unset_flags(lt::torrent_flags::auto_managed);
         handle.pause();

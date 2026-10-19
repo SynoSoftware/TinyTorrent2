@@ -36,7 +36,12 @@ essential data-integrity checks and state what remains unverified.
 
 The engine checks that start the Transfer peer download real payload and take
 minutes, so they run only when the owner asks for them. `engine/tests/Checks.ps1`
-refuses them without `-Transfer`.
+refuses them without `-Transfer`. Checks that each guard one defect already
+fixed, such as `WaitingMove`, also run only when the owner asks, so a run of
+every check skips them; `Checks.ps1` refuses them without `-OptIn`.
+`WaitingMove` checks that a Move waiting for another torrent's metadata
+replies at once, sends one notice, and starts once the metadata is no longer
+missing.
 
 ## What earns a test
 

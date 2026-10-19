@@ -1,4 +1,5 @@
 #pragma once
+#include "Enums.h"
 #include <optional>
 #include <string>
 #include <windows.h>
@@ -17,9 +18,9 @@ public:
     ~Acrylic();
     Acrylic(Acrylic const&) = delete;
     Acrylic& operator=(Acrylic const&) = delete;
-    // Follows `theme`, the app's "light", "dark" or "system" choice, and
-    // Windows' high contrast and transparency settings.
-    void Apply(HWND window, std::string const& theme);
+    // Follows the app's theme choice and Windows' high contrast and
+    // transparency settings.
+    void Apply(HWND window, Theme theme);
     COLORREF Foreground() const { return foreground_; }
     COLORREF Disabled() const { return disabled_; }
     // The keyboard focus ring.

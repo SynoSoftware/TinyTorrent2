@@ -21,9 +21,6 @@ public:
     // Encodes the captured document on the storage worker; a change calls
     // this at most once.
     void Commit(std::function<Json()> encode, std::function<void(Outcome)> completion);
-    // Commits a command's change. Only after the write succeeds does `apply`
-    // change the state to match; its result is the reply.
-    void Commit(std::function<Json()> encode, Reply reply, std::function<Json()> apply);
     bool IsIdle() const;
 
 private:

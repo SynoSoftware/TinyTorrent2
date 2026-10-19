@@ -590,6 +590,26 @@ pending additions and outside torrents still acquiring metadata: an unknown
 path cannot establish that the move reaches no other torrent's files. Other
 torrents and settings remain usable.
 
+**Owner ruling:** No command is refused because files are busy, and the person
+never has to try again. Waiting for other file work is the engine's job, not a
+problem for the person. Each command replies once its choice is saved:
+
+- Pause, Resume, Force start, Reorder, speed limits, download order, trackers
+  and Reannounce change no files and apply at once. A torrent whose own files
+  are busy stays paused until they are free, then follows its choice.
+- Verify, a change of the wanted files, and Remove that keeps the files wait
+  for the torrent's own busy files and then apply. A removed torrent leaves the
+  list at once, as a deleted one does.
+- A Move that cannot start yet waits its turn, and its torrents show Moving.
+  Busy files and another torrent's missing metadata only delay it; the second
+  shows on the torrents. Any other refusal at its start shows on the torrents.
+  A waiting move lives only in memory, because no file has changed yet: after
+  an exit the person chooses Move again. A later Move replaces a waiting one,
+  and a waiting move keeps the move to the final folder from starting.
+- The Add dialog does not wait for other torrents' file names. Until they are
+  read, it compares only their final names, so a file renamed on disk can be
+  missed for that moment.
+
 **Owner ruling:** Delete files never waits for other work and never refuses
 because files are busy. A person who deletes a torrent wants it gone, not a
 problem to solve. A deletion runs beside a move, a rename or another deletion,
@@ -678,6 +698,11 @@ choice, so changing the default does not rename an existing library.
   mapping. Finishing is always a rename and never a copy. If another program
   has the file open, Windows refuses the rename; the file keeps its suffix and
   the engine tries again later, without reporting a download error.
+- Before that rename, the engine pauses the torrent and waits for libtorrent
+  to write the data it still holds in memory, without holding any files busy.
+  Releasing the files for the rename waits for that write, which takes
+  minutes on a slow network drive, and every other torrent's file work would
+  otherwise wait with it.
 - libtorrent saves the current names in the resume data, so they survive a
   restart.
 - After a lost rename result, release that storage on the payload worker and
@@ -1034,8 +1059,8 @@ Exit is in the tray menu and in the window's File menu; the window's Close
 only closes the window. The optional active-transfer
 confirmation is on by default and belongs to the desktop host, so tray Exit and
 window Exit use one check even when WinUI is closed. While the window is open,
-the host asks it to show the prompt in the app's dialog style; the host shows a
-native prompt when the window is closed or cannot show a dialog at that moment.
+the host asks it to show the prompt in the app's dialog style; the host asks in
+its popup when the window is closed or cannot show a dialog at that moment.
 Windows shutdown and headless operation bypass it. After confirmation, engine Exit closes
 the window by the same rules as Close: a prompt appears only for actual unfinished
 input, and Cancel in that prompt cancels Exit. If a move or file deletion is running, Exit

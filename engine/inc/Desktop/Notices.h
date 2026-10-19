@@ -15,6 +15,9 @@ namespace tt::desktop
 bool UsesWindow(NoticeKind kind);
 // The Settings switch that turns off notices of `kind`, wherever they show.
 std::optional<NoticeSwitch> Switch(NoticeKind kind);
+// The product icon with Windows' error mark, which the tray and the popups
+// show for problems. The caller destroys it.
+HICON ErrorIcon();
 
 // The popups above the notification area: which notices and failures show,
 // which share a popup, and what selecting each part of a popup does.
@@ -30,6 +33,8 @@ public:
         // The folder that holds a torrent's files; empty when it has none.
         std::function<std::string(std::string const& torrentId)> folder;
         std::function<void(std::vector<NoticeSwitch> notices)> turnOff;
+        // Shows a notice in the product window; false when none is connected.
+        std::function<bool(Notice const& notice)> window;
     };
 
     // Something the person asked the desktop host to do that failed, such as
@@ -65,9 +70,12 @@ public:
     // Whether the switch that governs `kind` is on, wherever the notice shows.
     // A kind without a switch is always on.
     bool IsOn(NoticeKind kind) const;
+    // Shows a notice whose switch is on in the window when it uses one, and
+    // otherwise in a popup. A headless engine writes it to the debug output.
     void Queue(Notice notice);
     // A failure with the code of one that waits replaces it, and one that is
-    // on screen is not shown again.
+    // on screen is not shown again. A headless engine writes it to the debug
+    // output.
     void Report(Failure failure);
     // Shows the first failure, or else the batch of notices that is due first,
     // once the shown popup has closed.
@@ -76,6 +84,9 @@ public:
     // Shows a failure at once, even while Windows holds notifications back,
     // because it answers something the person just did.
     void ShowFailure(Failure failure);
+    // Replaces the shown popup with a prompt. A failure it shows and later
+    // notices wait behind the prompt.
+    void Ask(Popup::Prompt prompt);
     bool IsOpen() const { return popup_.IsOpen(); }
     // The buttons that failures and prompts offer, so each looks and reads the
     // same wherever it shows.
@@ -94,13 +105,14 @@ private:
         unsigned count;
         ULONGLONG due;
     };
-    bool Accepts(NoticeKind kind) const;
     void ShowBackground();
     // Offers the More menu when there is a switch that turns `notices` off.
     void Show(Popup::Content content, std::optional<NoticeSwitch> notices);
     Popup::Content Message(Notice const& notice) const;
     Popup::Content Problems(Notice const& first, unsigned count) const;
-    std::wstring ErrorText(std::string const& code) const;
+    // The code's sentence. A code without one gets the generic sentence,
+    // unless `explained`, because a detail follows that says what failed.
+    std::wstring ErrorText(std::string const& code, bool explained = false) const;
     // What selecting the message of a popup that shows `notice` does.
     std::function<void()> Selection(Notice const& notice) const;
     Strings const& strings_;
@@ -111,9 +123,8 @@ private:
     std::map<NoticeKind, Batch> batches_;
     // In the order they were reported, one per code.
     std::vector<Failure> failures_;
-    // The code of the failure that the open popup shows; none while it shows
-    // a notice.
-    std::optional<std::string> shownFailure_;
+    // The failure that the open popup shows; none while it shows a notice.
+    std::optional<Failure> shownFailure_;
     Popup popup_;
 };
 }

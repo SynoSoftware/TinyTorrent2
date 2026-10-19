@@ -1,5 +1,6 @@
 #include "Desktop/Notices.h"
 #include "Engine.h"
+#include "Resources.h"
 #include <algorithm>
 #include <shellapi.h>
 
@@ -55,6 +56,34 @@ std::optional<NoticeSwitch> Switch(NoticeKind kind)
     return std::nullopt;
 }
 
+HICON ErrorIcon()
+{
+    ICONINFO icon{};
+    if (!GetIconInfo(LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_TINYTORRENT)), &icon))
+    {
+        return nullptr;
+    }
+    HICON result = nullptr;
+    auto target = CreateCompatibleDC(nullptr);
+    BITMAP color{};
+    if (target && icon.hbmColor && GetObjectW(icon.hbmColor, static_cast<int>(sizeof(color)), &color))
+    {
+        auto previous = SelectObject(target, icon.hbmColor);
+        auto width = static_cast<int>(color.bmWidth / 2);
+        auto height = static_cast<int>(color.bmHeight / 2);
+        auto drawn = DrawIconEx(target, width, height, LoadIconW(nullptr, IDI_ERROR), width, height, 0, nullptr, DI_NORMAL);
+        SelectObject(target, previous);
+        if (drawn)
+        {
+            result = CreateIconIndirect(&icon);
+        }
+    }
+    if (target) DeleteDC(target);
+    DeleteObject(icon.hbmColor);
+    DeleteObject(icon.hbmMask);
+    return result;
+}
+
 Notices::Notices(Strings const& strings, bool headless, HICON errorIcon, Commands commands)
     : strings_(strings), headless_(headless), errorIcon_(errorIcon), commands_(std::move(commands)),
       popup_(strings)
@@ -72,37 +101,28 @@ void Notices::Close()
     popup_.Close();
 }
 
-bool Notices::Accepts(NoticeKind kind) const
-{
-    return !headless_ && IsOn(kind);
-}
-
 bool Notices::IsOn(NoticeKind kind) const
 {
     auto notices = Switch(kind);
-    if (!notices)
-    {
-        return true;
-    }
-    switch (*notices)
-    {
-    case NoticeSwitch::Finished:
-        return activity_.notificationsEnabled;
-    case NoticeSwitch::Added:
-        return activity_.notifiesAdded;
-    case NoticeSwitch::Problems:
-        return activity_.notifiesProblems;
-    case NoticeSwitch::Background:
-        return activity_.notifiesBackground;
-    }
-    return false;
+    return !notices || activity_.notices.contains(*notices);
 }
 
 void Notices::Queue(Notice notice)
 {
     auto kind = notice.kind;
-    if (!Accepts(kind))
+    if (!IsOn(kind))
     {
+        return;
+    }
+    if (UsesWindow(kind) && commands_.window && commands_.window(notice))
+    {
+        return;
+    }
+    if (headless_)
+    {
+        auto content = Message(notice);
+        auto message = content.title + L"\n" + content.body + L"\n";
+        OutputDebugStringW(message.c_str());
         return;
     }
     if (kind == NoticeKind::Background)
@@ -121,7 +141,18 @@ void Notices::Queue(Notice notice)
 
 void Notices::Report(Failure failure)
 {
-    if (headless_ || (popup_.IsOpen() && shownFailure_ == failure.code))
+    if (headless_)
+    {
+        auto message = ErrorText(failure.code);
+        if (!failure.detail.empty())
+        {
+            message += L"\n\n" + failure.detail;
+        }
+        message += L"\n";
+        OutputDebugStringW(message.c_str());
+        return;
+    }
+    if (popup_.IsOpen() && shownFailure_ && shownFailure_->code == failure.code)
     {
         return;
     }
@@ -178,7 +209,7 @@ void Notices::Notify()
     auto batch = std::move(next->second);
     batches_.erase(next);
     auto kind = batch.first.kind;
-    if (!Accepts(kind))
+    if (!IsOn(kind))
     {
         return;
     }
@@ -199,11 +230,24 @@ void Notices::Notify()
 // Selecting the message opens the window, where the person can act on it.
 void Notices::ShowFailure(Failure failure)
 {
-    shownFailure_ = failure.code;
+    shownFailure_ = failure;
     popup_.Show({.title = failure.title.value_or(strings_.Text("notification", "failure")),
         .body = ErrorText(failure.code), .select = failure.opens ? commands_.open : nullptr,
         .detail = std::move(failure.detail), .actions = std::move(failure.actions), .icon = errorIcon_,
         .stay = failure.interactive ? NoticeStay::Interactive : NoticeStay::Persistent});
+}
+
+void Notices::Ask(Popup::Prompt prompt)
+{
+    // A failure stays until the person closes it, so it shows again after
+    // the prompt.
+    if (popup_.IsOpen() && shownFailure_)
+    {
+        shownFailure_->interactive = false;
+        failures_.insert(failures_.begin(), std::move(*shownFailure_));
+    }
+    shownFailure_.reset();
+    popup_.Ask(std::move(prompt));
 }
 
 Popup::Content Notices::Message(Notice const& notice) const
@@ -223,7 +267,7 @@ Popup::Content Notices::Message(Notice const& notice) const
     {
         content.title = strings_.Text("notification", ToString(notice.kind));
         content.body = Wide(notice.name);
-        auto problem = ErrorText(notice.code);
+        auto problem = ErrorText(notice.code, !notice.detail.empty());
         if (!notice.detail.empty())
         {
             if (!problem.empty())
@@ -270,18 +314,13 @@ Popup::Content Notices::Problems(Notice const& first, unsigned count) const
     return content;
 }
 
-std::wstring Notices::ErrorText(std::string const& code) const
+std::wstring Notices::ErrorText(std::string const& code, bool explained) const
 {
     if (code.empty())
     {
         return {};
     }
-    auto message = strings_.Text("error", code);
-    if (message == Wide("error." + code))
-    {
-        message = strings_.Text("error", "unknown");
-    }
-    return message;
+    return strings_.Find("error", code).value_or(explained ? std::wstring() : strings_.Text("error", "unknown"));
 }
 
 // A completed torrent opens its folder; a missing program opens its Settings

@@ -289,6 +289,19 @@ execute.
 If physical names are still being observed, the reply describes the known
 scope and `kept_files` is null. Unknown names cannot authorize payload deletion.
 
+No command is refused because files are busy, following
+[the busy-files ruling](engine.md#removal-and-moves). A command on torrents
+whose own files are being prepared, renamed or moved replies once its choice
+is saved. `verify`, a file priority `edit` and `remove` then wait for those
+files and apply when they are free; the other commands change no files and
+apply at once. A `move` that waits for busy files replies at once, and its rows
+show the `moving` status with progress 0 until the move starts; a refusal then
+shows on the rows. A `move` that waits for another torrent's metadata also
+replies at once, and its rows show the error `metadata_unavailable` until it
+starts. `preview` and `preview_detail` do not wait for other
+torrents' file names: until they are read, `shared_with` compares only final
+names.
+
 `move` reads `torrent_ids` and the destination parent folder. Its engine preflight
 detects files already at the destination. It replies after the recovery marker
 commits, without occupying the pipe while files move. Rows carry `moving` and
@@ -346,7 +359,7 @@ keeps the same store for explicit Restart, which starts the engine beside the
 window rather than a path a pipe peer reports. Requests are
 `{request_id:signed-64-bit-integer,command:string,...}`. Replies repeat `request_id` and have
 `ok:boolean`, either `data` or `error:{code:string,detail:string}`. Native control
-notifications are `{type:"activate"}`, `{type:"close"}`, `{type:"confirm_exit"}`, and `{type:"sources"}`.
+notifications are `{type:"activate"}`, `{type:"close"}`, `{type:"confirm_exit"}`, and `{type:"activations"}`.
 `{type:"settings",setting}` opens Settings at that card of the General page and
 highlights it, as search does. The pipe
 passes the engine each request's connection beside the request, so no request field

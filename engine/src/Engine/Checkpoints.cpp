@@ -61,10 +61,7 @@ void Engine::State::FailCheckpoint(Torrent& torrent, Problem problem)
     {
         log.Write("checkpoint", torrent.torrentId, ToString(problem.kind));
     }
-    if (IsShuttingDown())
-    {
-        saveFailure = problem.detail;
-    }
+    FailFinalSave(problem.detail);
     torrent.unsaved = true;
     torrent.checkpointError = std::move(problem);
     torrent.retryAt = std::chrono::steady_clock::now() + checkpointRetry;
@@ -103,8 +100,7 @@ void Engine::State::SaveCheckpoint(Torrent& torrent, lt::add_torrent_params para
         auto& torrent = found->second;
         if (outcome.failure)
         {
-            FailCheckpoint(torrent, *outcome.failure == StorageFailure::Overloaded ?
-                Problem{ProblemKind::StorageOverloaded} : Problem{ProblemKind::StorageFailed, outcome.detail});
+            FailCheckpoint(torrent, Problem::From(outcome, ProblemKind::StorageFailed));
             FinishCheckpoint(torrent);
             return;
         }
@@ -116,26 +112,25 @@ void Engine::State::SaveCheckpoint(Torrent& torrent, lt::add_torrent_params para
             return;
         }
         auto handle = torrent.handle;
-        auto verified = std::make_shared<bool>(false);
-        payload.Run([handle, pieces, verified]
+        payload.Run([handle, pieces]
         {
             auto current = handle.status(lt::torrent_handle::query_pieces);
             if (current.state == lt::torrent_status::checking_files ||
                 current.state == lt::torrent_status::checking_resume_data)
-                return;
+                return false;
             for (int index = 0; index < pieces.size(); ++index)
             {
                 auto piece = lt::piece_index_t(index);
                 if (pieces[piece] && (index >= current.pieces.size() || !current.pieces[piece]))
-                    return;
+                    return false;
             }
-            *verified = true;
-        }, [this, id, path, handle, generation = torrent.generation, verified](StorageOutcome observed)
+            return true;
+        }, [this, id, path, handle, generation = torrent.generation](std::expected<bool, StorageOutcome> verified)
         {
             auto found = torrents.find(id);
             if (found == torrents.end())
                 return;
-            if (observed.failure || !*verified || found->second.pendingCheckpoint)
+            if (!verified.value_or(false) || found->second.pendingCheckpoint)
             {
                 FinishCheckpoint(found->second);
                 return;
@@ -150,21 +145,18 @@ void Engine::State::SaveCheckpoint(Torrent& torrent, lt::add_torrent_params para
                 auto& torrent = found->second;
                 if (torrent.handle != handle || torrent.generation != generation || torrent.pendingCheckpoint ||
                     torrent.deleted || !torrent.facts.verifyFiles || torrent.namePhase != NamePhase::Ready || torrent.moving ||
-                    !torrent.facts.moveDestination.empty() || !SameFolder(path, torrent.facts.savePath))
+                    torrent.facts.marker || !SameFolder(path, torrent.facts.savePath))
                 {
                     FinishCheckpoint(torrent);
                     return;
                 }
-                auto document = Saved();
-                document.torrents.at(id).verifyFiles = false;
-                changes.Commit([document = std::move(document)] { return document.ToJson(); },
-                    [this, id](Outcome saved)
+                CommitFacts({id}, [](std::string const&, Facts& facts) { facts.verifyFiles = false; },
+                    [this, id](Outcome saved, auto const&)
                 {
                     auto& torrent = torrents.at(id);
                     bool refresh = !saved.error && torrent.pendingCheckpoint.has_value();
                     if (!saved.error)
                     {
-                        torrent.facts.verifyFiles = false;
                         // A coalesced snapshot can predate the proof. Keep the proved
                         // file on disk and force a fresh successor instead.
                         torrent.pendingCheckpoint.reset();

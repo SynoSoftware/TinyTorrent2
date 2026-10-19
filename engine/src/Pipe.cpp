@@ -1,6 +1,8 @@
 #include "Pipe.h"
 #include "Owned.h"
+#include <algorithm>
 #include <limits>
+#include <span>
 #include <stdexcept>
 
 namespace tt
@@ -16,6 +18,12 @@ constexpr std::size_t requestLimit = 64;
 // One engine turn can forward every notice while a reply is being written.
 // Leave room for outstanding replies and control messages, then disconnect a slow client.
 constexpr std::size_t outputLimit = Notice::limit + requestLimit + 8;
+
+// The fields that the refusal of an oversized message keeps from it, so the
+// client can tell which message was refused.
+constexpr char const* replyIdentity[] = {"request_id"};
+constexpr char const* detailIdentity[] = {"request_id", "type", "session_id", "torrent_id", "context"};
+constexpr char const* snapshotIdentity[] = {"request_id", "type"};
 
 // Durations in milliseconds, as GetTickCount64 counts.
 constexpr ULONGLONG forwardTimeout = 5000;
@@ -111,47 +119,63 @@ bool Write(Io const& io, std::string& bytes)
 }
 }
 
+Pipe::Connection::Connection(ULONG processId, std::string connectionId)
+    : processId(processId), connectionId(std::move(connectionId))
+{
+}
+
 void Pipe::Connection::Send(Json message)
 {
-    std::lock_guard lock(mutex);
-    if (closed)
+    std::lock_guard lock(mutex_);
+    if (closed_ || std::ranges::find(output_, message) != output_.end())
     {
         return;
     }
-    if (message.value("type", std::string()) == "detail")
+    Queue(std::move(message));
+}
+
+void Pipe::Connection::Answer(std::int64_t requestId, Json message)
+{
+    message["request_id"] = requestId;
+    std::lock_guard lock(mutex_);
+    if (closed_)
     {
-        detail = std::move(message);
-        changed.notify_one();
         return;
     }
-    if (message.value("type", std::string()) == "snapshot")
+    auto type = message.value("type", std::string());
+    if (type == "detail")
     {
-        snapshot = std::move(message);
-        changed.notify_one();
+        detail_ = std::move(message);
+        changed_.notify_one();
+    }
+    else if (type == "snapshot")
+    {
+        snapshot_ = std::move(message);
+        changed_.notify_one();
+    }
+    else
+    {
+        requests_.erase(requestId);
+        Queue(std::move(message));
+    }
+}
+
+void Pipe::Connection::Queue(Json message)
+{
+    if (output_.size() >= outputLimit)
+    {
+        Close();
         return;
     }
-    if (message.contains("type"))
-    {
-        for (auto const& queued : output)
-        {
-            if (queued == message)
-            {
-                return;
-            }
-        }
-    }
-    if (output.size() >= outputLimit)
-    {
-        closed = true;
-        SetEvent(cancel);
-    }
-    if (message.contains("request_id"))
-        requests.erase(message["request_id"].get<std::int64_t>());
-    if (!closed)
-    {
-        output.push_back(std::move(message));
-    }
-    changed.notify_one();
+    output_.push_back(std::move(message));
+    changed_.notify_one();
+}
+
+void Pipe::Connection::Close()
+{
+    closed_ = true;
+    SetEvent(cancel_);
+    changed_.notify_one();
 }
 
 std::wstring Pipe::Name(std::wstring const& sid)
@@ -249,13 +273,14 @@ void Pipe::Serve(HANDLE handle)
         {
             break;
         }
-        auto client = std::make_shared<Connection>();
-        GetNamedPipeClientProcessId(handle, &client->processId);
-        client->connectionId = std::to_string(++sequence_);
+        ULONG processId = 0;
+        GetNamedPipeClientProcessId(handle, &processId);
+        auto client = std::make_shared<Connection>(processId, std::to_string(++sequence_));
         client->Send(hello_);
         std::thread writer([this, client, handle] { Deliver(client, handle); });
+        bool dispatched = false;
         Json request;
-        while (!stopping_ && Read(Io{handle, stop_, client->cancel}, request))
+        while (!stopping_ && Read(Io{handle, stop_, client->cancel_}, request))
         {
             if (!request.is_object() || !request.contains("request_id") ||
                 !request["request_id"].is_number_integer() || !request.contains("command") ||
@@ -269,66 +294,68 @@ void Pipe::Serve(HANDLE handle)
             auto requestId = request["request_id"].get<std::int64_t>();
             bool occupied;
             {
-                std::lock_guard lock(client->mutex);
-                occupied = client->requests.size() >= requestLimit ||
-                    !client->requests.insert(requestId).second;
+                std::lock_guard lock(client->mutex_);
+                occupied = client->requests_.size() >= requestLimit ||
+                    !client->requests_.insert(requestId).second;
             }
             if (occupied)
             {
                 break;
             }
-            auto reply = [client, requestId](Json response)
-            {
-                response["request_id"] = requestId;
-                client->Send(std::move(response));
-            };
+            auto reply = [client, requestId](Json response) { client->Answer(requestId, std::move(response)); };
             dispatch_(client, std::move(request), std::move(reply));
+            dispatched = true;
         }
         {
-            std::lock_guard lock(client->mutex);
-            client->closed = true;
-            SetEvent(client->cancel);
-            client->changed.notify_one();
+            std::lock_guard lock(client->mutex_);
+            client->Close();
         }
         writer.join();
-        dispatch_(client, nullptr, nullptr);
+        if (dispatched)
+        {
+            dispatch_(client, nullptr, nullptr);
+        }
         DisconnectNamedPipe(handle);
     }
 }
 
 void Pipe::Deliver(std::shared_ptr<Connection> client, HANDLE handle)
 {
-    std::unique_lock lock(client->mutex);
+    std::unique_lock lock(client->mutex_);
     bool sentReply = false;
     bool sentSnapshot = false;
-    while (!client->closed)
+    while (!client->closed_)
     {
-        client->changed.wait(lock, [&]
+        client->changed_.wait(lock, [&]
         {
-            return client->closed || !client->output.empty() || client->detail || client->snapshot;
+            return client->closed_ || !client->output_.empty() || client->detail_ || client->snapshot_;
         });
-        if (client->closed)
+        if (client->closed_)
         {
             break;
         }
         Json message;
-        if (!client->output.empty() && (!sentReply || (!client->detail && !client->snapshot)))
+        std::span<char const* const> identity;
+        if (!client->output_.empty() && (!sentReply || (!client->detail_ && !client->snapshot_)))
         {
-            message = std::move(client->output.front());
-            client->output.pop_front();
+            message = std::move(client->output_.front());
+            client->output_.pop_front();
+            identity = replyIdentity;
             sentReply = true;
         }
-        else if (client->detail && (!client->snapshot || sentSnapshot))
+        else if (client->detail_ && (!client->snapshot_ || sentSnapshot))
         {
-            message = std::move(*client->detail);
-            client->detail.reset();
+            message = std::move(*client->detail_);
+            client->detail_.reset();
+            identity = detailIdentity;
             sentReply = false;
             sentSnapshot = false;
         }
         else
         {
-            message = std::move(*client->snapshot);
-            client->snapshot.reset();
+            message = std::move(*client->snapshot_);
+            client->snapshot_.reset();
+            identity = snapshotIdentity;
             sentReply = false;
             sentSnapshot = true;
         }
@@ -337,22 +364,15 @@ void Pipe::Deliver(std::shared_ptr<Connection> client, HANDLE handle)
         if (bytes.size() > messageLimit)
         {
             auto refusal = Failure(ErrorCode::ResponseTooLarge);
-            refusal["request_id"] = message.value("request_id", Json());
-            if (message.value("type", std::string()) == "detail")
-            {
-                for (auto key : {"type", "session_id", "torrent_id", "context"})
-                    refusal[key] = message.at(key);
-            }
-            else if (message.value("type", std::string()) == "snapshot")
-                refusal["type"] = "snapshot";
+            for (auto key : identity)
+                refusal[key] = message.value(key, Json());
             bytes = refusal.dump();
         }
-        bool success = Write(Io{handle, stop_, client->cancel}, bytes);
+        bool success = Write(Io{handle, stop_, client->cancel_}, bytes);
         lock.lock();
         if (!success)
         {
-            client->closed = true;
-            SetEvent(client->cancel);
+            client->Close();
         }
     }
 }

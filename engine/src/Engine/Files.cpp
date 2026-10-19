@@ -1,7 +1,5 @@
 #include "Engine/State.h"
 #include <Windows.h>
-#include <Shellapi.h>
-#include <ShlObj.h>
 #include <libtorrent/torrent_info.hpp>
 #include <libtorrent/aux_/session_impl.hpp>
 #include <libtorrent/aux_/torrent.hpp>
@@ -9,12 +7,21 @@
 #include <algorithm>
 #include <future>
 #include <set>
-#include <system_error>
 
 namespace tt
 {
-// Called on the payload worker after pausing every owner. The pinned native
-// interface supplies the disk callback that public, untagged flush alerts lack.
+namespace
+{
+// Marks the file of an unfinished download until its rename to its final
+// name.
+constexpr char unfinishedSuffix[] = ".!tt";
+// How long a failed rename, or a failed read of the names before one, waits
+// before it runs again.
+constexpr auto renameRetry = std::chrono::seconds(30);
+}
+
+// Called on a worker after pausing every owner. The pinned native interface
+// supplies the disk callback that public, untagged flush alerts lack.
 void Engine::State::ReleaseFiles(std::vector<lt::torrent_handle> const& handles)
 {
     for (auto const& handle : handles)
@@ -44,6 +51,29 @@ void Engine::State::ReleaseFiles(std::vector<lt::torrent_handle> const& handles)
         });
         ready.get();
     }
+}
+
+// Called on a worker: runs `work` on libtorrent's network thread, waits for
+// it and rethrows what it throws.
+void Engine::State::SyncCall(lt::session& session, std::function<void()> work)
+{
+    // Shared, because the worker can return from get() while the network
+    // thread is still inside set_value.
+    auto done = std::make_shared<std::promise<void>>();
+    auto ready = done->get_future();
+    boost::asio::post(session.get_context(), [work = std::move(work), done]
+    {
+        try
+        {
+            work();
+            done->set_value();
+        }
+        catch (...)
+        {
+            done->set_exception(std::current_exception());
+        }
+    });
+    ready.get();
 }
 
 std::filesystem::path Engine::State::FullPath(std::filesystem::path const& path)
@@ -85,7 +115,8 @@ bool Engine::State::FilesBusy() const
 bool Engine::State::RemovingOrRenaming() const
 {
     return !deletions.empty() || rename.has_value() ||
-        std::any_of(torrents.begin(), torrents.end(), [](auto const& entry) { return entry.second.deleted; });
+        std::any_of(torrents.begin(), torrents.end(),
+            [](auto const& entry) { return entry.second.deleted && entry.second.deletionMode; });
 }
 
 void Engine::State::ContinueNames()
@@ -119,37 +150,42 @@ void Engine::State::ContinueNames()
         torrent.namePhase = NamePhase::Preparing;
         torrent.needsRecheck |= torrent.facts.verifyFiles;
         torrent.ApplyIntent();
-        auto prepared = std::make_shared<lt::add_torrent_params>();
-        auto current = std::make_shared<lt::renamed_files>();
-        prepared->ti = metadata;
-        prepared->save_path = torrent.facts.savePath;
-        payload.Run([this, prepared, current, handle = torrent.handle,
-            appendsSuffix = torrent.facts.appendsSuffix, layout = torrent.facts.layout]
+        lt::add_torrent_params params;
+        params.ti = metadata;
+        params.save_path = torrent.facts.savePath;
+        payload.Run([this, params = std::move(params), handle = torrent.handle,
+            appendsSuffix = torrent.facts.appendsSuffix, layout = torrent.facts.layout]() mutable
         {
             ReleaseFiles({handle});
-            *current = handle.get_renamed_files();
-            prepared->renamed_files = current->export_filenames(prepared->ti->layout());
-            PrepareNames(*prepared, appendsSuffix, layout);
+            auto current = handle.get_renamed_files();
+            params.renamed_files = current.export_filenames(params.ti->layout());
+            PrepareNames(params, appendsSuffix, layout);
+            return NameChoice{std::move(params), std::move(current)};
         },
-            [this, id, prepared, current](StorageOutcome outcome)
+            [this, id](std::expected<NameChoice, StorageOutcome> choice)
         {
             auto found = torrents.find(id);
             if (found == torrents.end())
                 return;
             auto& torrent = found->second;
-            if (outcome.failure)
+            if (!choice)
             {
                 torrent.namePhase = NamePhase::Pending;
-                torrent.renameAt = std::chrono::steady_clock::now() + std::chrono::seconds(30);
-                log.Write("rename", id, outcome.detail);
+                torrent.renameAt = std::chrono::steady_clock::now() + renameRetry;
+                log.Write("rename", id, choice.error().detail);
                 ContinueNames();
                 return;
             }
-            torrent.needsRecheck |= ApplyNames(torrent.handle, *prepared, *current, torrent.renaming);
+            torrent.needsRecheck |= ApplyNames(torrent.handle, choice->params, choice->current, torrent.renaming);
             if (torrent.renaming.empty())
                 FinishNames(torrent);
         });
     }
+}
+
+bool Engine::State::IsUnfinished(std::string const& actual, std::string const& name)
+{
+    return SamePath(FullPath(Wide(actual)), FullPath(Wide(name + unfinishedSuffix)));
 }
 
 void Engine::State::PrepareNames(lt::add_torrent_params& params, bool appendsSuffix, Layout layout)
@@ -166,7 +202,7 @@ void Engine::State::PrepareNames(lt::add_torrent_params& params, bool appendsSuf
         auto path = root / Wide(name);
         if (auto renamed = params.renamed_files.find(index); renamed != params.renamed_files.end())
         {
-            if (SamePath(FullPath(Wide(renamed->second)), FullPath(Wide(name + ".!tt"))) &&
+            if (IsUnfinished(renamed->second, name) &&
                 std::filesystem::symlink_status(root / Wide(renamed->second)).type() ==
                     std::filesystem::file_type::not_found &&
                 std::filesystem::symlink_status(path).type() != std::filesystem::file_type::not_found)
@@ -180,7 +216,7 @@ void Engine::State::PrepareNames(lt::add_torrent_params& params, bool appendsSuf
         }
         if (appendsSuffix && std::filesystem::symlink_status(path).type() == std::filesystem::file_type::not_found)
         {
-            params.renamed_files[index] = name + ".!tt";
+            params.renamed_files[index] = name + unfinishedSuffix;
         }
         else if (!SamePath(FullPath(Wide(name)), FullPath(Wide(files.file_path(index)))))
             params.renamed_files[index] = name;
@@ -211,11 +247,9 @@ void Engine::State::FinishNames(Torrent& torrent)
     if (torrent.needsRecheck)
     {
         torrent.needsRecheck = false;
-        torrent.completedFiles.clear();
-        if (torrent.completionPhase == CompletionPhase::Settling && torrent.facts.finalFolder.empty())
-            torrent.completionPhase = CompletionPhase::Checking;
-        torrent.handle.force_recheck();
-        Invalidate(torrent.torrentId);
+        if (torrent.facts.finalFolder.empty())
+            torrent.completion.BeginCheck();
+        Recheck(torrent);
         queuePending = true;
     }
     torrent.ApplyIntent();
@@ -263,30 +297,19 @@ void Engine::State::QueryFiles()
     payload.Run([this, observations, recovering]
     {
         ReleaseFiles(recovering);
-        auto collected = std::make_shared<std::promise<void>>();
-        auto ready = collected->get_future();
-        boost::asio::post(session->get_context(), [observations, collected]
+        SyncCall(*session, [observations]
         {
-            try
+            for (auto& observation : *observations)
             {
-                for (auto& observation : *observations)
-                {
-                    if (!observation.handle.is_valid())
-                        continue;
-                    auto status = observation.handle.status(
-                        lt::torrent_handle::query_torrent_file | lt::torrent_handle::query_renamed_files);
-                    observation.names = {status.torrent_file.lock(), std::move(status.renamed_files)};
-                    if (observation.names.metadata)
-                        observation.progress = observation.handle.file_progress(lt::torrent_handle::piece_granularity);
-                }
-                collected->set_value();
-            }
-            catch (...)
-            {
-                collected->set_exception(std::current_exception());
+                if (!observation.handle.is_valid())
+                    continue;
+                auto status = observation.handle.status(
+                    lt::torrent_handle::query_torrent_file | lt::torrent_handle::query_renamed_files);
+                observation.names = {status.torrent_file.lock(), std::move(status.renamed_files)};
+                if (observation.names.metadata)
+                    observation.progress = observation.handle.file_progress(lt::torrent_handle::piece_granularity);
             }
         });
-        ready.get();
     }, [this, observations](StorageOutcome outcome)
     {
         queryingFiles = false;
@@ -298,7 +321,7 @@ void Engine::State::QueryFiles()
             auto& torrent = found->second;
             if (outcome.failure)
             {
-                torrent.renameAt = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+                torrent.renameAt = std::chrono::steady_clock::now() + renameRetry;
                 log.Write("files", torrent.torrentId, outcome.detail);
                 continue;
             }
@@ -322,8 +345,7 @@ void Engine::State::CompleteFiles(Torrent& torrent, lt::span<std::int64_t const>
         return;
     for (auto index : files.file_range())
     {
-        if (SamePath(FullPath(Wide(torrent.names->mappings.file_path(files, index))),
-                FullPath(Wide(ContentPath(files, index, torrent.facts.layout) + ".!tt"))) &&
+        if (IsUnfinished(torrent.names->mappings.file_path(files, index), ContentPath(files, index, torrent.facts.layout)) &&
             progress[static_cast<int>(index)] >= files.file_size(index))
             torrent.completedFiles.insert(index);
     }
@@ -344,11 +366,11 @@ void Engine::State::FinishFiles(Torrent& torrent, std::optional<lt::file_index_t
         next != torrent.completedFiles.end(); ++next)
     {
         auto index = *next;
-        if (torrent.renaming.contains(index))
+        if (torrent.renaming.contains(index) || torrent.marking.contains(index))
             continue;
         auto name = ContentPath(files, index, torrent.facts.layout);
         auto actual = renames.file_path(files, index);
-        if (!SamePath(FullPath(Wide(actual)), FullPath(Wide(name + ".!tt"))))
+        if (!IsUnfinished(actual, name))
             continue;
         auto path = FullPath(std::filesystem::path(Wide(torrent.facts.savePath)) / Wide(actual));
         auto target = FullPath(std::filesystem::path(Wide(torrent.facts.savePath)) / Wide(name));
@@ -363,7 +385,7 @@ void Engine::State::FinishFiles(Torrent& torrent, std::optional<lt::file_index_t
                 continue;
             if (outside.restore)
             {
-                auto paths = FilePaths(outside, {}, false);
+                auto paths = FilePaths(outside, std::nullopt, false);
                 ready &= !Overlaps(torrent.Hashes(), outside.Hashes()) &&
                     !std::binary_search(paths.begin(), paths.end(), path, PathBefore);
                 continue;
@@ -377,13 +399,26 @@ void Engine::State::FinishFiles(Torrent& torrent, std::optional<lt::file_index_t
                 auto full = FullPath(Wide(mappings.file_path(other->layout(), file, outside.facts.savePath)));
                 if (other->layout().pad_file_at(file) || !SamePath(full, path))
                     continue;
-                ready &= outside.renaming.empty() && outside.namePhase != NamePhase::Preparing;
+                ready &= outside.renaming.empty() && outside.marking.empty() &&
+                    outside.namePhase != NamePhase::Preparing;
                 auto relative = target.lexically_relative(Wide(outside.facts.savePath));
                 operation.owners.push_back({id, file, Utf8((relative.empty() ? target : relative).wstring())});
             }
         }
+        if (ready && torrent.cacheWrite != CacheWrite::Written)
+        {
+            if (torrent.cacheWrite == CacheWrite::Pending)
+            {
+                torrent.cacheWrite = CacheWrite::Flushing;
+                torrent.ApplyIntent();
+                torrent.handle.flush_cache();
+            }
+            return;
+        }
         if (ready)
         {
+            // Later downloads write new data, which the next rename waits for.
+            torrent.cacheWrite = CacheWrite::Pending;
             rename = std::move(operation);
             for (auto const& owner : rename->owners)
             {
@@ -405,15 +440,12 @@ void Engine::State::FinishDownload(Torrent& torrent)
     // move problems wait for the person.
     bool waits = torrent.moveError && !torrent.MoveBlocked();
     // A torrent that downloads again has no move to wait for, unless an
-    // interrupted move continues it.
-    if (waits && !torrent.status.is_finished && torrent.facts.moveDestination.empty())
+    // interrupted move continues it or a move the person asked for waits.
+    if (waits && !torrent.status.is_finished && !torrent.facts.marker && !torrent.waitingMove)
         torrent.moveError.reset();
-    if (IsShuttingDown() || torrent.deleted || torrent.restore || torrent.filesPending || torrent.completionPending ||
-        torrent.completionPhase == CompletionPhase::Downloading ||
-        torrent.completionPhase == CompletionPhase::Flushing ||
-        torrent.completionPhase == CompletionPhase::Checking ||
-        !torrent.status.is_finished || torrent.namePhase != NamePhase::Ready || torrent.FilesBusy() ||
-        !torrent.completedFiles.empty() || !torrent.facts.moveDestination.empty())
+    if (IsShuttingDown() || torrent.deleted || torrent.restore || torrent.filesPending ||
+        torrent.completion.NeedsSample() || torrent.completion.IsWorking() || !torrent.status.is_finished || torrent.namePhase != NamePhase::Ready || torrent.FilesBusy() ||
+        !torrent.completedFiles.empty() || torrent.facts.marker || torrent.waitingMove)
         return;
     if (!torrent.facts.finalFolder.empty())
     {
@@ -429,38 +461,25 @@ void Engine::State::FinishDownload(Torrent& torrent)
             {
                 if (!outcome.error || *outcome.error == ErrorCode::FilesBusy)
                     return;
-                auto& torrent = torrents.at(id);
-                bool shown = torrent.moveError && torrent.moveError->refusal == outcome.error;
-                torrent.moveError = Problem{ProblemKind::MoveFailed, outcome.detail, outcome.error};
-                // A wait that now names another torrent is the same problem,
-                // so the status update does not report it again.
-                torrent.notifiedError = outcome.detail;
-                if (!shown)
-                {
-                    Notify(NoticeKind::Error, torrent, outcome.detail, torrent.moveError->Code());
-                }
+                RefuseMove(torrents.at(id), outcome);
             });
         });
         return;
     }
-    if (torrent.completionPhase == CompletionPhase::Settling && settings.rechecksFinished)
+    if (settings.rechecksFinished && torrent.completion.BeginCheck())
     {
-        torrent.completionPhase = CompletionPhase::Checking;
-        Verify({torrent.torrentId}, [this, id = torrent.torrentId](Json result)
+        Verify({torrent.torrentId}, [this, id = torrent.torrentId](Outcome outcome)
         {
-            if (!result.at("ok").get<bool>())
+            if (outcome.error)
             {
-                torrents.at(id).completionPhase = CompletionPhase::Settling;
+                torrents.at(id).completion.FailCheck();
                 log.Write("verify", id, "completion_failed");
             }
         });
         return;
     }
-    if (torrent.completionPhase == CompletionPhase::Settling || torrent.completionPhase == CompletionPhase::Checked)
-    {
-        torrent.completionPhase = CompletionPhase::Idle;
+    if (torrent.completion.Finish())
         Notify(NoticeKind::Completed, torrent);
-    }
 }
 
 void Engine::State::ContinueRename()
@@ -474,20 +493,18 @@ void Engine::State::ContinueRename()
     if (rename->phase == RenamePhase::Recovering)
     {
         rename->phase = RenamePhase::Observing;
-        auto names = std::make_shared<FileNames>();
-        payload.Run([this, handle = torrent.handle, names]
+        payload.Run([this, handle = torrent.handle]
         {
             ReleaseFiles({handle});
-            names->metadata = handle.torrent_file();
-            names->mappings = handle.get_renamed_files();
-        }, [this, names, generation = torrent.generation](StorageOutcome outcome)
+            return FileNames{handle.torrent_file(), handle.get_renamed_files()};
+        }, [this, generation = torrent.generation](std::expected<FileNames, StorageOutcome> names)
         {
             auto const& owner = rename->owners.at(rename->current);
             auto& torrent = torrents.at(owner.torrentId);
-            if (outcome.failure)
+            if (!names)
             {
-                torrent.renameAt = std::chrono::steady_clock::now() + std::chrono::seconds(30);
-                log.Write("rename", owner.torrentId, outcome.detail);
+                torrent.renameAt = std::chrono::steady_clock::now() + renameRetry;
+                log.Write("rename", owner.torrentId, names.error().detail);
                 rename->phase = RenamePhase::Recovering;
                 return;
             }
@@ -532,18 +549,18 @@ void Engine::State::ContinueRename()
             if (std::find(handles.begin(), handles.end(), handle) == handles.end())
                 handles.push_back(handle);
         }
-        auto complete = std::make_shared<std::vector<bool>>(files.size(), false);
         rename->phase = RenamePhase::Moving;
-        payload.Run([this, handles, files, complete, source = rename->source, target = rename->target]
+        payload.Run([this, handles, files, source = rename->source, target = rename->target]
         {
             ReleaseFiles(handles);
+            std::vector<bool> complete(files.size(), false);
             for (auto const& handle : handles)
             {
                 auto status = handle.status(lt::torrent_handle::query_save_path |
                     lt::torrent_handle::query_torrent_file | lt::torrent_handle::query_renamed_files);
                 auto metadata = status.torrent_file.lock();
                 if (!metadata)
-                    return;
+                    return complete;
                 auto progress = handle.file_progress(lt::torrent_handle::piece_granularity);
                 for (std::size_t item = 0; item < files.size(); ++item)
                 {
@@ -551,21 +568,22 @@ void Engine::State::ContinueRename()
                     if (owner != handle)
                         continue;
                     auto path = FullPath(Wide(status.renamed_files.file_path(metadata->layout(), index, status.save_path)));
-                    (*complete)[item] = static_cast<std::size_t>(static_cast<int>(index)) < progress.size() &&
+                    complete[item] = static_cast<std::size_t>(static_cast<int>(index)) < progress.size() &&
                         progress[static_cast<int>(index)] >= metadata->layout().file_size(index) && SamePath(path, source);
                 }
             }
-            if (std::find(complete->begin(), complete->end(), false) != complete->end())
-                return;
+            if (std::find(complete.begin(), complete.end(), false) != complete.end())
+                return complete;
             if (!MoveFileExW(source.c_str(), target.c_str(), 0))
                 throw std::runtime_error(std::to_string(GetLastError()));
-        }, [this, complete](StorageOutcome outcome)
+            return complete;
+        }, [this](std::expected<std::vector<bool>, StorageOutcome> complete)
         {
-            if (outcome.failure)
+            if (!complete)
             {
                 auto const& id = rename->owners.front().torrentId;
-                torrents.at(id).renameAt = std::chrono::steady_clock::now() + std::chrono::seconds(30);
-                log.Write("rename", id, outcome.detail);
+                torrents.at(id).renameAt = std::chrono::steady_clock::now() + renameRetry;
+                log.Write("rename", id, complete.error().detail);
                 EndRename();
                 return;
             }
@@ -618,7 +636,7 @@ void Engine::State::On(lt::file_completed_alert const& alert)
     {
         auto const& files = torrent->names->metadata->layout();
         auto name = torrent->names->mappings.file_path(files, alert.index);
-        if (SamePath(FullPath(Wide(name)), FullPath(Wide(ContentPath(files, alert.index, torrent->facts.layout) + ".!tt"))))
+        if (IsUnfinished(name, ContentPath(files, alert.index, torrent->facts.layout)))
             torrent->completedFiles.insert(alert.index);
     }
     else
@@ -628,13 +646,12 @@ void Engine::State::On(lt::file_completed_alert const& alert)
     }
     // File completion is also posted by checking; the ordered state alerts
     // identify its cause even when the latest sampled status is already seeding.
-    if (torrent->transferState != lt::torrent_status::downloading)
+    if (!torrent->completion.FileFinished())
     {
         FinishFiles(*torrent);
         return;
     }
-    torrent->receivedPayload = true;
-    torrent->renaming.insert(alert.index);
+    torrent->marking.insert(alert.index);
     payload.Run([handle = alert.handle, index = alert.index]
     {
         auto status = handle.status(lt::torrent_handle::query_save_path |
@@ -670,7 +687,7 @@ void Engine::State::On(lt::file_completed_alert const& alert)
             log.Write("mark_of_the_web", id, outcome.detail);
         if (auto found = torrents.find(id); found != torrents.end())
         {
-            found->second.renaming.erase(index);
+            found->second.marking.erase(index);
             FinishFiles(found->second);
         }
     });
@@ -723,7 +740,7 @@ void Engine::State::On(lt::file_rename_failed_alert const& alert)
             rename->phase = RenamePhase::Recovering;
         if (expected && torrent->namePhase == NamePhase::Preparing)
             RecoverNames(*torrent);
-        torrent->renameAt = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+        torrent->renameAt = std::chrono::steady_clock::now() + renameRetry;
         log.Write("rename", torrent->torrentId, alert.error.message());
         return;
     }
@@ -755,23 +772,23 @@ std::vector<std::filesystem::path> Engine::State::FilePaths(lt::torrent_info con
 }
 
 std::vector<std::filesystem::path> Engine::State::FilePaths(Torrent const& torrent,
-    std::string const& destination, bool logical) const
+    std::optional<std::string> const& folder, bool logical) const
 {
-    auto at = [&torrent, logical](std::string const& folder)
+    auto at = [&torrent, logical](std::string const& root)
     {
         std::vector<std::filesystem::path> files;
         for (auto const& path : torrent.Paths(logical))
-            files.push_back(FullPath(std::filesystem::path(Wide(folder)) / path));
+            files.push_back(FullPath(std::filesystem::path(Wide(root)) / path));
         std::sort(files.begin(), files.end(), PathBefore);
         files.erase(std::unique(files.begin(), files.end(), SamePath), files.end());
         return files;
     };
-    if (!destination.empty())
-        return at(destination);
+    if (folder)
+        return at(*folder);
     auto files = at(torrent.facts.savePath);
-    if (!torrent.facts.moveDestination.empty())
+    if (torrent.facts.marker)
     {
-        auto staged = at(torrent.facts.moveDestination);
+        auto staged = at(torrent.facts.marker->destination);
         files.insert(files.end(), staged.begin(), staged.end());
         std::sort(files.begin(), files.end(), PathBefore);
         files.erase(std::unique(files.begin(), files.end(), SamePath), files.end());
@@ -779,23 +796,24 @@ std::vector<std::filesystem::path> Engine::State::FilePaths(Torrent const& torre
     return files;
 }
 
-bool Engine::State::NamesReady()
+std::vector<std::filesystem::path> Engine::State::Footprint(Torrent const& torrent) const
 {
-    bool ready = true;
-    for (auto& [id, torrent] : torrents)
+    auto paths = FilePaths(torrent);
+    auto physical = FilePaths(torrent, std::nullopt, false);
+    paths.insert(paths.end(), physical.begin(), physical.end());
+    std::sort(paths.begin(), paths.end(), PathBefore);
+    paths.erase(std::unique(paths.begin(), paths.end(), SamePath), paths.end());
+    return paths;
+}
+
+bool Engine::State::NamesReady() const
+{
+    return std::none_of(torrents.begin(), torrents.end(), [](auto const& entry)
     {
-        if (torrent.namePhase == NamePhase::Recovering)
-        {
-            ready = false;
-            continue;
-        }
-        if (!torrent.restore && torrent.handle.torrent_file() && !torrent.names)
-        {
-            torrent.filesPending = true;
-            ready = false;
-        }
-    }
-    return ready;
+        auto const& torrent = entry.second;
+        return torrent.namePhase == NamePhase::Recovering ||
+            (!torrent.restore && torrent.handle.torrent_file() && !torrent.names);
+    });
 }
 
 Outcome Engine::State::FilesReady(std::vector<std::string> const& ids)
@@ -811,7 +829,7 @@ Outcome Engine::State::FilesReady(std::vector<std::string> const& ids)
             return {ErrorCode::MetadataUnavailable, torrent.Name()};
         }
         if (torrent.FilesBusy() ||
-            (Contains(ids, id) && torrent.priorityReply))
+            (Contains(ids, id) && torrent.priorityCompletion))
         {
             return {ErrorCode::FilesBusy};
         }
@@ -823,15 +841,6 @@ Engine::State::Scope Engine::State::FileScope(std::vector<std::string> const& id
 {
     Scope scope;
     std::vector<std::pair<std::filesystem::path, std::filesystem::path>> names;
-    auto keys = [this](Torrent const& torrent)
-    {
-        auto paths = FilePaths(torrent);
-        auto physical = FilePaths(torrent, {}, false);
-        paths.insert(paths.end(), physical.begin(), physical.end());
-        std::sort(paths.begin(), paths.end(), PathBefore);
-        paths.erase(std::unique(paths.begin(), paths.end(), SamePath), paths.end());
-        return paths;
-    };
     for (auto const& id : ids)
     {
         auto const& torrent = torrents.at(id);
@@ -839,11 +848,14 @@ Engine::State::Scope Engine::State::FileScope(std::vector<std::string> const& id
         // finish there is unknown, and it can be someone else's file.
         auto files = FilePaths(torrent, torrent.facts.savePath, false);
         scope.files.insert(scope.files.end(), files.begin(), files.end());
-        auto held = keys(torrent);
+        auto held = Footprint(torrent);
         scope.holds.insert(scope.holds.end(), held.begin(), held.end());
         auto physical = torrent.Paths();
         auto logical = torrent.Paths(true);
-        for (auto const& folder : {torrent.facts.savePath, torrent.facts.moveDestination})
+        std::vector<std::string> folders{torrent.facts.savePath};
+        if (torrent.facts.marker)
+            folders.push_back(torrent.facts.marker->destination);
+        for (auto const& folder : folders)
         {
             if (folder.empty())
                 continue;
@@ -868,14 +880,14 @@ Engine::State::Scope Engine::State::FileScope(std::vector<std::string> const& id
             {
                 continue;
             }
-            auto files = keys(torrent);
+            auto files = Footprint(torrent);
             if (torrent.restore && !torrent.restore->ti)
             {
                 for (auto const& selected : ids)
                 {
                     if (Overlaps(torrent.Hashes(), torrents.at(selected).Hashes()))
                     {
-                        auto held = keys(torrents.at(selected));
+                        auto held = Footprint(torrents.at(selected));
                         files.insert(files.end(), held.begin(), held.end());
                     }
                 }
@@ -977,224 +989,6 @@ std::vector<std::string> Engine::State::Holders(std::shared_ptr<lt::torrent_info
     return names;
 }
 
-void Engine::State::ContinueDeletion()
-{
-    // libtorrent destroys a removed torrent only after it releases the files.
-    // This also releases holds when disk-stop fails without posting an alert.
-    for (auto& deletion : deletions)
-    {
-        if (deletion.phase == DeletionPhase::Unknown ||
-            (!deletion.mode && deletion.phase == DeletionPhase::Waiting))
-        {
-            std::erase_if(deletion.waiting, [](auto const& handle) { return !handle.is_valid(); });
-        }
-    }
-    auto released = [](Deletion const& deletion)
-    {
-        return deletion.waiting.empty() &&
-            (deletion.phase == DeletionPhase::Waiting || deletion.phase == DeletionPhase::Unknown);
-    };
-    // A removal that keeps the files has nothing to delete once they are released.
-    std::erase_if(deletions, [&released](auto const& deletion) { return !deletion.mode && released(deletion); });
-    for (auto deletion = deletions.begin(); deletion != deletions.end(); ++deletion)
-    {
-        if (released(*deletion))
-        {
-            // Another removed handle can still flush writes to a shared file.
-            bool held = std::any_of(deletions.begin(), deletions.end(), [&deletion](auto const& other)
-            {
-                return (other.phase == DeletionPhase::Saving || !other.waiting.empty()) &&
-                    std::any_of(deletion->files.begin(), deletion->files.end(), [&other](auto const& file)
-                    {
-                        return std::binary_search(other.holds.begin(), other.holds.end(), file, PathBefore);
-                    });
-            });
-            if (!held)
-            {
-                Delete(deletion);
-            }
-        }
-    }
-}
-
-namespace
-{
-// Sends the files to the Recycle Bin and throws the first failure. A file that
-// is already gone counts as deleted.
-void Recycle(std::vector<std::filesystem::path> const& files)
-{
-    auto initialized = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-    IFileOperation* operation = nullptr;
-    auto result = FAILED(initialized) ? initialized : CoCreateInstance(CLSID_FileOperation, nullptr,
-        CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&operation));
-    if (SUCCEEDED(result))
-        result = operation->SetOperationFlags(FOFX_RECYCLEONDELETE | FOFX_EARLYFAILURE |
-            FOF_NOERRORUI | FOF_SILENT | FOF_NOCONFIRMATION | FOF_NO_CONNECTED_ELEMENTS);
-    for (auto const& file : files)
-    {
-        if (FAILED(result))
-            break;
-        std::error_code error;
-        auto type = std::filesystem::symlink_status(file, error).type();
-        if (type == std::filesystem::file_type::not_found)
-            continue;
-        if (error || type == std::filesystem::file_type::directory)
-        {
-            result = E_FAIL;
-            break;
-        }
-        IShellItem* item = nullptr;
-        result = SHCreateItemFromParsingName(file.c_str(), nullptr, IID_PPV_ARGS(&item));
-        if (SUCCEEDED(result))
-            result = operation->DeleteItem(item, nullptr);
-        if (item)
-            item->Release();
-    }
-    if (SUCCEEDED(result))
-        result = operation->PerformOperations();
-    BOOL aborted = FALSE;
-    if (SUCCEEDED(result))
-        result = operation->GetAnyOperationsAborted(&aborted);
-    if (operation)
-        operation->Release();
-    if (SUCCEEDED(initialized))
-        CoUninitialize();
-    if (FAILED(result))
-        throw std::system_error(
-            HRESULT_FACILITY(result) == FACILITY_WIN32 ? HRESULT_CODE(result) : result,
-            std::system_category(), "HRESULT " + std::to_string(result));
-    if (aborted)
-        throw std::runtime_error("recycle_failed");
-}
-}
-
-void Engine::State::Erase(std::vector<std::filesystem::path> const& files, DeletionMode mode,
-    std::vector<std::filesystem::path> const& roots)
-{
-    std::exception_ptr failure;
-    try
-    {
-        if (mode == DeletionMode::Recycle)
-            Recycle(files);
-        else
-            Payload::Delete(files);
-    }
-    catch (...)
-    {
-        failure = std::current_exception();
-    }
-    std::set<std::filesystem::path, decltype(&PathBefore)> parents(PathBefore);
-    for (auto const& file : files)
-        parents.insert(file.parent_path());
-    for (auto const& parent : parents)
-    {
-        for (auto const& root : roots)
-        {
-            auto relative = parent.lexically_relative(root);
-            if (relative.empty() || *relative.begin() == L"..")
-            {
-                continue;
-            }
-            for (auto folder = parent; !SamePath(folder, root); folder = folder.parent_path())
-            {
-                std::error_code ignored;
-                if (!std::filesystem::remove(folder, ignored))
-                {
-                    break;
-                }
-            }
-        }
-    }
-    if (failure)
-    {
-        std::rethrow_exception(failure);
-    }
-}
-
-void Engine::State::Delete(std::list<Deletion>::iterator deletion)
-{
-    auto deleting = *deletion;
-    deletion->phase = DeletionPhase::Deleting;
-    payload.Run([deleting]
-    {
-        Erase(deleting.files, *deleting.mode, deleting.roots);
-    }, [this, deletion](StorageOutcome outcome)
-    {
-        if (outcome.failure)
-        {
-            ReportDeletion(outcome, deletion->names, deletion->roots.front());
-        }
-        deletions.erase(deletion);
-    });
-}
-
-// The .torrent files hold no torrent's data, so they need not wait for
-// libtorrent to release anything.
-void Engine::State::DeleteTorrentFiles(std::vector<std::filesystem::path> files, DeletionMode mode, std::string names)
-{
-    // A recorded .torrent file is the add source as it arrived, which can be
-    // relative or use forward slashes.
-    for (auto& file : files)
-        file = FullPath(file);
-    auto folder = files.front().parent_path();
-    payload.Run([files = std::move(files), mode]
-    {
-        Erase(files, mode, {});
-    }, [this, names = std::move(names), folder = std::move(folder)](StorageOutcome outcome)
-    {
-        if (outcome.failure)
-        {
-            ReportDeletion(outcome, names, folder);
-        }
-    });
-}
-
-// The notice offers the folder, where the person deletes the rest in File
-// Explorer.
-void Engine::State::ReportDeletion(StorageOutcome const& outcome, std::string names,
-    std::filesystem::path const& folder)
-{
-    // A busy store refused the deletion before it began, so it has no detail.
-    std::string code = outcome.failure == StorageFailure::Overloaded ? ToString(ErrorCode::Overloaded) : "";
-    log.Write("delete", "", code.empty() ? outcome.detail : code);
-    Notify(NoticeKind::DeleteFailed, std::move(names), outcome.detail, {}, code, Utf8(folder.wstring()));
-}
-
-void Engine::State::On(lt::torrent_deleted_alert const& alert)
-{
-    for (auto& deletion : deletions)
-    {
-        std::erase(deletion.waiting, alert.handle);
-    }
-    ContinueDeletion();
-}
-
-void Engine::State::On(lt::torrent_removed_alert const& alert)
-{
-    for (auto& deletion : deletions)
-    {
-        // Ordinary Remove keeps the files, but holds their ownership until
-        // libtorrent's disk-stop callback has finished all outstanding writes.
-        if (!deletion.mode)
-            std::erase(deletion.waiting, alert.handle);
-    }
-    ContinueDeletion();
-}
-
-void Engine::State::On(lt::torrent_delete_failed_alert const& alert)
-{
-    for (auto& deletion : deletions)
-    {
-        if (std::erase(deletion.waiting, alert.handle))
-        {
-            log.Write("delete", "", "partfile_delete_failed");
-            Notify(NoticeKind::DeleteFailed, deletion.names, alert.error.message(), {}, {},
-                Utf8(deletion.roots.front().wstring()));
-        }
-    }
-    ContinueDeletion();
-}
-
 // After libtorrent dropped alerts, each file operation that waited for one
 // waits instead for a sign that comes after the drop.
 void Engine::State::RecoverFiles()
@@ -1217,13 +1011,6 @@ void Engine::State::RecoverFiles()
         }
     }
     RecoverMove();
-    for (auto& deletion : deletions)
-    {
-        if (!deletion.waiting.empty())
-        {
-            deletion.phase = DeletionPhase::Unknown;
-        }
-    }
-    ContinueDeletion();
+    RecoverDeletions();
 }
 }

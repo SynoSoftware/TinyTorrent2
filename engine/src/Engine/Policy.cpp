@@ -174,14 +174,27 @@ ScheduleMode Engine::State::ScheduledMode() const
     return mode;
 }
 
-bool Engine::State::IsPaused() const
+std::optional<PauseReason> Engine::State::Paused() const
 {
-    return IsPausedByChoice() || adapterMissing || SuspendsForConnectionTest();
+    return Paused(IsAdapterMissing());
 }
 
-bool Engine::State::IsPausedByChoice() const
+std::optional<PauseReason> Engine::State::Paused(bool adapterMissing) const
 {
-    return settings.allPaused || launchPaused || (scheduledMode == ScheduleMode::Paused && !bypassesScheduledPause);
+    if (settings.allPaused || launchPaused)
+        return PauseReason::Manual;
+    if (scheduledMode == ScheduleMode::Paused && !bypassesScheduledPause)
+        return PauseReason::Schedule;
+    if (adapterMissing)
+        return PauseReason::Adapter;
+    if (SuspendsForConnectionTest())
+        return PauseReason::ConnectionTest;
+    return std::nullopt;
+}
+
+bool Engine::State::IsAdapterMissing() const
+{
+    return applied && applied->route.adapterMissing;
 }
 
 LimitMode Engine::State::CurrentLimits() const
@@ -197,42 +210,8 @@ LimitMode Engine::State::CurrentLimits() const
     return scheduledMode == ScheduleMode::Alternative ? LimitMode::Alternative : LimitMode::Speed;
 }
 
-void Engine::State::RefreshPolicy(Settings const* previous)
+Engine::State::Policy::Policy(Settings const& settings, Environment const& environment)
 {
-    bool initial = !appliedProxy;
-    bool connectionChanged = initial || (previous &&
-        (previous->proxy != settings.proxy || previous->networkAdapter != settings.networkAdapter ||
-        previous->listenPort != settings.listenPort || previous->mapsPorts != settings.mapsPorts ||
-        previous->encryption != settings.encryption || previous->transport != settings.transport ||
-        previous->ipFamily != settings.ipFamily || previous->limitsLan != settings.limitsLan));
-    bool sessionChanged = initial || (previous &&
-        (previous->activeDownloads != settings.activeDownloads || previous->activeSeeds != settings.activeSeeds ||
-        previous->activeTotal != settings.activeTotal || previous->activeChecking != settings.activeChecking ||
-        previous->diskBufferMib != settings.diskBufferMib || previous->checkingMib != settings.checkingMib ||
-        previous->hashingThreads != settings.hashingThreads || previous->fileLimit != settings.fileLimit ||
-        previous->ignoresSlow != settings.ignoresSlow || previous->slowDownload != settings.slowDownload ||
-        previous->slowUpload != settings.slowUpload || previous->slowWait != settings.slowWait ||
-        previous->outgoingRate != settings.outgoingRate || previous->connections != settings.connections ||
-        previous->dht != settings.dht || previous->lsd != settings.lsd ||
-        previous->includesOverhead != settings.includesOverhead));
-    bool torrentsChanged = initial || (previous &&
-        (previous->torrentConnections != settings.torrentConnections || previous->pex != settings.pex));
-    bool historyChanged = initial || (previous &&
-        (previous->recentInterval != settings.recentInterval || previous->historyInterval != settings.historyInterval));
-    bool limitsChanged = initial || (previous &&
-        (previous->limits != settings.limits || previous->alternative != settings.alternative ||
-        previous->limitMode != settings.limitMode || previous->allPaused != settings.allPaused ||
-        previous->scheduleEnabled != settings.scheduleEnabled || previous->schedule != settings.schedule));
-    if (previous && !connectionChanged && !sessionChanged && !torrentsChanged && !historyChanged && !limitsChanged)
-        return;
-
-    auto mode = ScheduledMode();
-    if (scheduledMode != mode)
-    {
-        scheduledMode = mode;
-        bypassesScheduledPause = false;
-        limitOverride.reset();
-    }
     auto adapter = AdapterName(settings.networkAdapter);
     auto family = settings.proxy.type == ProxyType::None ? settings.ipFamily : IpFamily::Both;
     std::vector<std::string> interfaces;
@@ -243,26 +222,16 @@ void Engine::State::RefreshPolicy(Settings const* previous)
         if (family != IpFamily::Ipv4)
             interfaces.push_back("::");
     }
-    else if (auto selected = FindAdapter(adapter))
+    else if (environment.adapter)
     {
         if (family == IpFamily::Both)
             interfaces.push_back(adapter);
         else
-            for (auto const& address : selected->addresses)
+            for (auto const& address : environment.adapter->addresses)
                 if ((address.find(':') != std::string::npos) == (family == IpFamily::Ipv6))
                     interfaces.push_back(address);
     }
-    auto wasMissing = adapterMissing;
-    adapterMissing = interfaces.empty();
-    bool routeChanged = appliedProxy != settings.proxy || appliedAdapter != adapter || wasMissing != adapterMissing;
-    if (routeChanged)
-    {
-        std::lock_guard lock(checkGate);
-        checkStop.request_stop();
-        checkStop = std::stop_source{};
-        requestedCheck.reset();
-        proxyOutcome.reset();
-    }
+    route = {settings.proxy, adapter, interfaces.empty()};
     auto port = std::to_string(settings.listenPort);
     std::string listen;
     std::string outgoing;
@@ -280,67 +249,103 @@ void Engine::State::RefreshPolicy(Settings const* previous)
     {
         outgoing.clear();
     }
-    if (adapterMissing)
+    if (route.adapterMissing)
     {
         outgoing = adapter;
     }
-    auto paused = IsPaused();
-    auto limits = CurrentLimits();
-    bool proxyChanged = appliedProxy != settings.proxy;
+    connection = {std::move(listen), std::move(outgoing), settings.transport, family, settings.limitsLan,
+        settings.encryption};
+    // Peers cannot connect in through a proxy, so there is no port to forward.
+    maps = settings.mapsPorts && !route.adapterMissing && settings.proxy.type == ProxyType::None;
+    session = {settings.activeDownloads, settings.activeSeeds, settings.activeTotal, settings.activeChecking,
+        settings.diskBufferMib, settings.checkingMib, settings.hashingThreads, settings.fileLimit,
+        settings.ignoresSlow, settings.slowDownload, settings.slowUpload, settings.slowWait,
+        settings.outgoingRate, settings.connections, settings.dht, settings.lsd, settings.includesOverhead};
+    torrents = {settings.torrentConnections, settings.pex};
+    intervals = {settings.recentInterval, settings.historyInterval};
+    rates = settings.Caps(environment.limits);
+    paused = environment.paused || route.adapterMissing;
+}
+
+void Engine::State::RefreshPolicy()
+{
+    auto mode = ScheduledMode();
+    if (scheduledMode != mode)
+    {
+        scheduledMode = mode;
+        bypassesScheduledPause = false;
+        limitOverride.reset();
+    }
+    Policy::Environment environment{.paused = Paused(false).has_value(), .limits = CurrentLimits()};
+    if (auto adapter = AdapterName(settings.networkAdapter); !adapter.empty())
+        environment.adapter = FindAdapter(adapter);
+    Policy next(settings, environment);
+    if (applied == next)
+        return;
+    bool initial = !applied;
+    bool routeChanged = initial || applied->route != next.route;
+    bool connectionChanged = initial || applied->connection != next.connection;
+    bool familyChanged = initial || applied->connection.family != next.connection.family;
+    bool lanChanged = initial || applied->connection.limitsLan != next.connection.limitsLan;
+    bool mapsChanged = initial || applied->maps != next.maps;
+    bool sessionChanged = initial || applied->session != next.session;
+    bool torrentsChanged = initial || applied->torrents != next.torrents;
+    bool intervalsChanged = initial || applied->intervals != next.intervals;
+    bool ratesChanged = initial || applied->rates != next.rates;
+    bool pauseChanged = initial || applied->paused != next.paused;
     // Connection policy and peer classes apply to new peers, so changing them
     // reconnects existing peers too.
-    bool networkChanged = appliedListen != listen || routeChanged || appliedEncryption != settings.encryption ||
-        appliedTransport != settings.transport || appliedFamily != family || appliedLan != settings.limitsLan;
-    if (!connectionChanged && !sessionChanged && !torrentsChanged && !historyChanged &&
-        !limitsChanged && !networkChanged && appliedPause == paused && appliedLimits == limits)
+    bool reconnects = routeChanged || connectionChanged;
+    if (routeChanged)
     {
-        return;
+        std::lock_guard lock(checkGate);
+        checkStop.request_stop();
+        checkStop = std::stop_source{};
+        requestedCheck.reset();
+        proxyOutcome.reset();
     }
-    if (appliedListen != listen || proxyChanged)
+    if (initial || applied->connection.listen != next.connection.listen || applied->route.proxy != next.route.proxy)
     {
         externalIpv4.clear();
         externalIpv6.clear();
     }
-    if (networkChanged)
+    if (reconnects)
     {
         session->pause();
     }
     lt::settings_pack pack;
-    if (connectionChanged || networkChanged)
+    if (reconnects || mapsChanged)
     {
-        auto const& proxy = settings.proxy;
-        // Peers cannot connect in through a proxy, so there is no port to
-        // forward.
-        auto maps = settings.mapsPorts && !adapterMissing && proxy.type == ProxyType::None;
-        pack.set_bool(lt::settings_pack::enable_upnp, maps);
-        pack.set_bool(lt::settings_pack::enable_natpmp, maps);
-        pack.set_str(lt::settings_pack::listen_interfaces, listen);
-        pack.set_str(lt::settings_pack::outgoing_interfaces, outgoing);
-        pack.set_bool(lt::settings_pack::enable_incoming_tcp, settings.transport != Transport::Utp);
-        pack.set_bool(lt::settings_pack::enable_outgoing_tcp, settings.transport != Transport::Utp);
-        pack.set_bool(lt::settings_pack::enable_incoming_utp, settings.transport != Transport::Tcp);
-        pack.set_bool(lt::settings_pack::enable_outgoing_utp, settings.transport != Transport::Tcp);
-        if (appliedFamily != family)
+        auto const& connection = next.connection;
+        pack.set_bool(lt::settings_pack::enable_upnp, next.maps);
+        pack.set_bool(lt::settings_pack::enable_natpmp, next.maps);
+        pack.set_str(lt::settings_pack::listen_interfaces, connection.listen);
+        pack.set_str(lt::settings_pack::outgoing_interfaces, connection.outgoing);
+        pack.set_bool(lt::settings_pack::enable_incoming_tcp, connection.transport != Transport::Utp);
+        pack.set_bool(lt::settings_pack::enable_outgoing_tcp, connection.transport != Transport::Utp);
+        pack.set_bool(lt::settings_pack::enable_incoming_utp, connection.transport != Transport::Tcp);
+        pack.set_bool(lt::settings_pack::enable_outgoing_utp, connection.transport != Transport::Tcp);
+        if (familyChanged)
         {
             lt::ip_filter filter;
-            if (family == IpFamily::Ipv4)
+            if (connection.family == IpFamily::Ipv4)
             {
                 filter.add_rule(lt::address_v6(), lt::make_address_v6("ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"),
                     lt::ip_filter::blocked);
             }
-            else if (family == IpFamily::Ipv6)
+            else if (connection.family == IpFamily::Ipv6)
             {
                 filter.add_rule(lt::address_v4(), lt::address_v4(0xffffffff), lt::ip_filter::blocked);
             }
             session->set_ip_filter(filter);
         }
         pack.set_bool(lt::settings_pack::apply_ip_filter_to_trackers, true);
-        if (appliedLan != settings.limitsLan)
+        if (lanChanged)
         {
             for (int type = 0; type < lt::peer_class_type_filter::num_socket_types; ++type)
             {
                 auto socket = static_cast<lt::peer_class_type_filter::socket_type_t>(type);
-                if (settings.limitsLan)
+                if (connection.limitsLan)
                 {
                     peerClasses.add(socket, lt::session::global_peer_class_id);
                 }
@@ -351,7 +356,7 @@ void Engine::State::RefreshPolicy(Settings const* previous)
             }
             session->set_peer_class_type_filter(peerClasses);
         }
-        auto encryption = settings.encryption;
+        auto encryption = connection.encryption;
         auto policy = encryption == Encryption::Required ? lt::settings_pack::pe_forced :
             encryption == Encryption::Disabled ? lt::settings_pack::pe_disabled : lt::settings_pack::pe_enabled;
         pack.set_int(lt::settings_pack::out_enc_policy, policy);
@@ -362,6 +367,7 @@ void Engine::State::RefreshPolicy(Settings const* previous)
             encryption == Encryption::Required ? lt::settings_pack::pe_rc4 : lt::settings_pack::pe_both);
         pack.set_bool(lt::settings_pack::prefer_rc4,
             encryption == Encryption::Preferred || encryption == Encryption::Required);
+        auto const& proxy = next.route.proxy;
         auto signsIn = !proxy.username.empty();
         auto type = proxy.type == ProxyType::Socks5 ? (signsIn ? lt::settings_pack::socks5_pw : lt::settings_pack::socks5) :
             proxy.type == ProxyType::Socks4 ? lt::settings_pack::socks4 :
@@ -375,35 +381,36 @@ void Engine::State::RefreshPolicy(Settings const* previous)
     }
     if (sessionChanged)
     {
-        pack.set_int(lt::settings_pack::active_downloads, settings.activeDownloads ? settings.activeDownloads : -1);
-        pack.set_int(lt::settings_pack::max_queued_disk_bytes, settings.diskBufferMib * 1024 * 1024);
+        auto const& chosen = next.session;
+        pack.set_int(lt::settings_pack::active_downloads, chosen.activeDownloads ? chosen.activeDownloads : -1);
+        pack.set_int(lt::settings_pack::max_queued_disk_bytes, chosen.diskBufferMib * 1024 * 1024);
         // libtorrent counts checking memory in 16 KiB blocks.
-        pack.set_int(lt::settings_pack::checking_mem_usage, settings.checkingMib * 64);
-        pack.set_int(lt::settings_pack::hashing_threads, settings.hashingThreads);
-        pack.set_int(lt::settings_pack::file_pool_size, settings.fileLimit);
-        pack.set_int(lt::settings_pack::active_seeds, settings.activeSeeds ? settings.activeSeeds : -1);
-        pack.set_int(lt::settings_pack::active_limit, settings.activeTotal ? settings.activeTotal : -1);
-        pack.set_bool(lt::settings_pack::dont_count_slow_torrents, settings.ignoresSlow);
-        pack.set_int(lt::settings_pack::inactive_down_rate, settings.slowDownload);
-        pack.set_int(lt::settings_pack::inactive_up_rate, settings.slowUpload);
-        pack.set_int(lt::settings_pack::auto_manage_startup, settings.slowWait);
-        pack.set_int(lt::settings_pack::active_checking, settings.activeChecking);
-        pack.set_int(lt::settings_pack::connection_speed, settings.outgoingRate);
-        pack.set_bool(lt::settings_pack::enable_dht, settings.dht);
-        pack.set_bool(lt::settings_pack::enable_lsd, settings.lsd);
-        pack.set_bool(lt::settings_pack::rate_limit_ip_overhead, settings.includesOverhead);
+        pack.set_int(lt::settings_pack::checking_mem_usage, chosen.checkingMib * 64);
+        pack.set_int(lt::settings_pack::hashing_threads, chosen.hashingThreads);
+        pack.set_int(lt::settings_pack::file_pool_size, chosen.fileLimit);
+        pack.set_int(lt::settings_pack::active_seeds, chosen.activeSeeds ? chosen.activeSeeds : -1);
+        pack.set_int(lt::settings_pack::active_limit, chosen.activeTotal ? chosen.activeTotal : -1);
+        pack.set_bool(lt::settings_pack::dont_count_slow_torrents, chosen.ignoresSlow);
+        pack.set_int(lt::settings_pack::inactive_down_rate, chosen.slowDownload);
+        pack.set_int(lt::settings_pack::inactive_up_rate, chosen.slowUpload);
+        pack.set_int(lt::settings_pack::auto_manage_startup, chosen.slowWait);
+        pack.set_int(lt::settings_pack::active_checking, chosen.activeChecking);
+        pack.set_int(lt::settings_pack::connection_speed, chosen.outgoingRate);
+        pack.set_bool(lt::settings_pack::enable_dht, chosen.dht);
+        pack.set_bool(lt::settings_pack::enable_lsd, chosen.lsd);
+        pack.set_bool(lt::settings_pack::rate_limit_ip_overhead, chosen.includesOverhead);
         pack.set_int(lt::settings_pack::active_dht_limit, -1);
         pack.set_int(lt::settings_pack::active_lsd_limit, -1);
         pack.set_int(lt::settings_pack::active_tracker_limit, -1);
-        pack.set_int(lt::settings_pack::connections_limit, settings.connections ? settings.connections : INT_MAX);
+        pack.set_int(lt::settings_pack::connections_limit, chosen.connections ? chosen.connections : INT_MAX);
     }
-    if (historyChanged)
+    if (intervalsChanged)
     {
-        history.Configure(settings.recentInterval, settings.historyInterval);
+        history.Configure(next.intervals.recent, next.intervals.history);
         for (auto& [id, torrent] : torrents)
         {
             if (!torrent.deleted)
-                torrent.history.Configure(settings.recentInterval, settings.historyInterval);
+                torrent.history.Configure(next.intervals.recent, next.intervals.history);
         }
     }
     if (torrentsChanged)
@@ -422,30 +429,21 @@ void Engine::State::RefreshPolicy(Settings const* previous)
             ApplyPolicy(addition.handle);
         }
     }
-    if (limitsChanged || appliedLimits != limits)
+    if (ratesChanged)
     {
-        auto caps = settings.Caps(limits);
-        pack.set_int(lt::settings_pack::download_rate_limit, caps.download);
-        pack.set_int(lt::settings_pack::upload_rate_limit, caps.upload);
+        pack.set_int(lt::settings_pack::download_rate_limit, next.rates.download);
+        pack.set_int(lt::settings_pack::upload_rate_limit, next.rates.upload);
     }
-    if (connectionChanged || networkChanged || sessionChanged || limitsChanged || appliedLimits != limits)
+    if (reconnects || mapsChanged || sessionChanged || ratesChanged)
         session->apply_settings(pack);
-    if (networkChanged || appliedPause != paused)
+    if (reconnects || pauseChanged)
     {
-        if (paused)
+        if (next.paused)
             session->pause();
         else
             session->resume();
     }
-    appliedListen = std::move(listen);
-    appliedAdapter = adapter;
-    appliedProxy = settings.proxy;
-    appliedEncryption = settings.encryption;
-    appliedTransport = settings.transport;
-    appliedFamily = family;
-    appliedLan = settings.limitsLan;
-    appliedPause = paused;
-    appliedLimits = limits;
+    applied = std::move(next);
     // libtorrent cannot tell a proxy that fails from peers that are offline,
     // so the engine checks the proxy itself.
     if (routeChanged && settings.proxy.type != ProxyType::None)
@@ -518,26 +516,26 @@ void Engine::State::LimitSeeds()
         return;
     }
     limitingSeeds.insert(limitingSeeds.end(), ids.begin(), ids.end());
-    Act(ids, [this, ids](Json outcome)
+    Act(ids, [this, ids](Outcome outcome)
     {
         for (auto const& id : ids)
         {
             std::erase(limitingSeeds, id);
         }
-        if (!outcome.at("ok").get<bool>())
+        if (outcome.error)
         {
             log.Write("seeding_limit", "", "pause_failed");
         }
-    }, [this](auto const& ids, Reply reply)
+    }, [this](auto const& ids, auto done)
     {
         auto seeds = ids;
         std::erase_if(seeds, [this](auto const& id) { return !ReachedSeedLimit(torrents.at(id)); });
         if (seeds.empty())
         {
-            reply(Success());
+            done({});
             return;
         }
-        SetIntent(seeds, Intent::Paused, reply);
+        SetIntent(seeds, Intent::Paused, done);
     });
 }
 
@@ -562,19 +560,17 @@ void Engine::State::QuerySeeds()
             continue;
         }
         seedQueries.insert(handle);
-        // The metadata weak pointer distinguishes this answer from routine
-        // updates, which must not release an outstanding seed query.
-        handle.post_status(lt::torrent_handle::query_name | lt::torrent_handle::query_torrent_file);
+        handle.post_status(seedQuery);
     }
 }
 
 bool Engine::State::ReachedSeedLimit(Torrent const& torrent) const
 {
-    bool blockedMove = torrent.completionPhase == CompletionPhase::Settling &&
-        !torrent.facts.finalFolder.empty() && torrent.facts.moveDestination.empty() &&
+    bool blockedMove = torrent.completion.IsSettling() &&
+        !torrent.facts.finalFolder.empty() && !torrent.facts.marker &&
         !torrent.FilesBusy() && torrent.MoveBlocked();
     if ((settings.ratio == 0 && settings.seedingMinutes == 0 && settings.inactiveMinutes == 0) ||
-        !torrent.status.is_finished || (torrent.completionPhase != CompletionPhase::Idle && !blockedMove) ||
+        !torrent.status.is_finished || (!torrent.completion.IsIdle() && !blockedMove) ||
         torrent.facts.intent == Intent::Paused ||
         torrent.facts.ignoresSeedLimits)
     {

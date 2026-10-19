@@ -54,6 +54,11 @@ void Check(bool succeeded)
         throw std::system_error(GetLastError(), std::system_category(), "WinHTTP request");
 }
 
+// Thrown at a request's deadline, which ends a direction's transfers normally.
+struct Expired
+{
+};
+
 class ConnectionRequest
 {
 public:
@@ -112,7 +117,7 @@ private:
         if (error)
             throw std::system_error(error, std::system_category(), "WinHTTP request");
         if (!completed || completedAt >= deadline)
-            throw std::runtime_error("connection_test_timeout");
+            throw Expired{};
         finished = false;
         return transferred;
     }
@@ -213,18 +218,17 @@ void Transfer(HINTERNET connection, bool upload, ConnectionMeasurement& measurem
                 throw std::runtime_error("Incomplete connection test response");
         }
     }
-    catch (std::exception const& failure)
+    catch (Expired const&)
     {
-        if (std::string_view(failure.what()) != "connection_test_timeout")
-            throw;
     }
 }
 
 // The rate is the average after the warm-up, so connection set-up and an
 // ISP's short burst above the line's sustained speed do not count. Upload
 // counts bytes the socket accepted; over the measured seconds the socket
-// buffer stays full, so it does not change the average.
-void Measure(HINTERNET connection, bool upload, ConnectionMeasurement& measurement, std::stop_token stop)
+// buffer stays full, so it does not change the average. Returns false when no
+// rate was measured after the warm-up.
+bool Measure(HINTERNET connection, bool upload, ConnectionMeasurement& measurement, std::stop_token stop)
 {
     if (stop.stop_requested())
         throw std::runtime_error("connection_test_cancelled");
@@ -279,8 +283,7 @@ void Measure(HINTERNET connection, bool upload, ConnectionMeasurement& measureme
         throw std::runtime_error("connection_test_cancelled");
     if (failure)
         std::rethrow_exception(failure);
-    if (!warmed || measurement.rate <= 0)
-        throw std::runtime_error("connection_test_sample");
+    return warmed && measurement.rate > 0;
 }
 
 std::string_view PhaseName(ConnectionPhase phase)
@@ -299,6 +302,18 @@ std::string_view PhaseName(ConnectionPhase phase)
     }
     return "idle";
 }
+
+std::string_view FailureName(ConnectionFailure failure)
+{
+    switch (failure)
+    {
+    case ConnectionFailure::Network: return "connection_test_network";
+    case ConnectionFailure::Timeout: return "connection_test_timeout";
+    case ConnectionFailure::Sample: return "connection_test_sample";
+    case ConnectionFailure::Restore: return "connection_test_restore_failed";
+    }
+    return "connection_test_network";
+}
 }
 
 bool Engine::State::SuspendsForConnectionTest() const
@@ -313,7 +328,7 @@ bool Engine::State::SuspendsForConnectionTest() const
 Json Engine::State::ConnectionTestSnapshot() const
 {
     if (!connectionTest)
-        return {{"session_id", sessionId}, {"sequence", snapshotSequence}, {"phase", "idle"}};
+        return {{"session_id", sessionId}, {"sequence", snapshotSequence}, {"phase", PhaseName(ConnectionPhase::Idle)}};
     auto const& test = *connectionTest;
     auto seconds = test.phase == ConnectionPhase::Holding ?
         std::max(0LL, std::chrono::duration_cast<std::chrono::seconds>(test.deadline - Clock::now()).count()) : 0;
@@ -326,7 +341,8 @@ Json Engine::State::ConnectionTestSnapshot() const
     };
     return {{"session_id", sessionId}, {"sequence", snapshotSequence},
         {"id", test.id}, {"phase", PhaseName(test.phase)}, {"download", test.download.rate.load()},
-        {"upload", test.upload.rate.load()}, {"remaining", seconds}, {"failure", test.failure},
+        {"upload", test.upload.rate.load()}, {"remaining", seconds},
+        {"failure", test.failure ? FailureName(*test.failure) : std::string_view()},
         {"download_bytes", test.download.bytes.load()}, {"upload_bytes", test.upload.bytes.load()},
         {"download_seconds", duration(test.download)},
         {"upload_seconds", duration(test.upload)},
@@ -369,13 +385,16 @@ void Engine::State::MaintainConnectionTest()
     if (connectionTest && connectionTest->phase == ConnectionPhase::Restoring)
     {
         auto& test = *connectionTest;
-        if (session->is_paused() == IsPaused())
+        if (session->is_paused() == Paused().has_value())
             test.phase = test.outcome;
         else if (Clock::now() >= test.deadline)
         {
-            appliedPause.reset();
-            RefreshPolicy();
-            test.failure = "connection_test_restore_failed";
+            // The session did not follow the pause, so it is told once more.
+            if (Paused())
+                session->pause();
+            else
+                session->resume();
+            test.failure = ConnectionFailure::Restore;
             test.phase = ConnectionPhase::Failed;
         }
         return;
@@ -389,7 +408,7 @@ void Engine::State::MaintainConnectionTest()
             ReleaseConnectionTest(test.connectionId);
         else
         {
-            test.failure = "connection_test_timeout";
+            test.failure = ConnectionFailure::Timeout;
             ReleaseConnectionTest(test.connectionId, ConnectionPhase::Failed);
         }
         return;
@@ -410,12 +429,11 @@ void Engine::State::ObserveConnectionTest(lt::session_stats_alert const& alert)
         MaintainConnectionTest();
         return;
     }
-    if (values[connected] != 0 || values[halfOpen] != 0 || transferred.uploaded != test.sent || transferred.downloaded != test.received)
+    if (values[connected] != 0 || values[halfOpen] != 0 || test.sampled != transferred)
         test.quietSince.reset();
     else if (!test.quietSince)
         test.quietSince = now;
-    test.sent = transferred.uploaded;
-    test.received = transferred.downloaded;
+    test.sampled = transferred;
     if (test.quietSince && now - *test.quietSince >= std::chrono::seconds(1))
         MeasureConnection(connectionTest);
 }
@@ -436,14 +454,15 @@ void Engine::State::MeasureConnection(std::shared_ptr<ConnectionTest> const& tes
         DWORD connections = parallelConnections;
         Check(WinHttpSetOption(internet.Get(), WINHTTP_OPTION_MAX_CONNS_PER_SERVER, &connections, sizeof(connections)));
         InternetHandle connection(WinHttpConnect(internet.Get(), L"speed.cloudflare.com", INTERNET_DEFAULT_HTTPS_PORT, 0));
-        Measure(connection.Get(), false, test->download, stop);
+        if (!Measure(connection.Get(), false, test->download, stop))
+            return false;
         if (stop.stop_requested())
             throw std::runtime_error("connection_test_cancelled");
         auto phase = ConnectionPhase::Downloading;
         if (!test->phase.compare_exchange_strong(phase, ConnectionPhase::Uploading))
             throw std::runtime_error("connection_test_cancelled");
-        Measure(connection.Get(), true, test->upload, stop);
-    }, [this, test, deadline](StorageOutcome outcome)
+        return Measure(connection.Get(), true, test->upload, stop);
+    }, [this, test, deadline](std::expected<bool, StorageOutcome> measured)
     {
         if (connectionTest != test || test->stop.stop_requested())
             return;
@@ -452,11 +471,11 @@ void Engine::State::MeasureConnection(std::shared_ptr<ConnectionTest> const& tes
             MaintainConnectionTest();
             return;
         }
-        if (outcome.failure)
+        if (!measured.value_or(false))
         {
-            log.Write("connection_test", "", outcome.detail);
-            test->failure = outcome.detail == "connection_test_sample" ? "connection_test_sample"
-                : outcome.detail == "connection_test_timeout" ? "connection_test_timeout" : "connection_test_network";
+            auto failure = measured ? ConnectionFailure::Sample : ConnectionFailure::Network;
+            log.Write("connection_test", "", measured ? std::string(FailureName(failure)) : measured.error().detail);
+            test->failure = failure;
             ReleaseConnectionTest(test->connectionId, ConnectionPhase::Failed);
             return;
         }

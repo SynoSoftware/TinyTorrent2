@@ -149,13 +149,13 @@ void Splash::Translate()
 }
 
 // The splash follows the app's theme choice, like the window that replaces it.
-void Splash::SetTheme(std::string theme)
+void Splash::SetTheme(Theme theme)
 {
     if (theme == theme_)
     {
         return;
     }
-    theme_ = std::move(theme);
+    theme_ = theme;
     if (shownAt_)
     {
         acrylic_.Apply(window_, theme_);

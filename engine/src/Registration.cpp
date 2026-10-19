@@ -50,13 +50,6 @@ constexpr Kind kinds[] = {
     {L"magnet", AT_URLPROTOCOL, L"URLAssociations", magnetClass,
         L"Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\magnet\\UserChoice"}};
 
-constexpr std::pair<std::string_view, RegistrationAction> actions[] = {
-    {"observe", RegistrationAction::Observe},
-    {"register_handlers", RegistrationAction::RegisterHandlers},
-    {"unregister_handlers", RegistrationAction::UnregisterHandlers},
-    {"enable_startup", RegistrationAction::EnableStartup},
-    {"disable_startup", RegistrationAction::DisableStartup}};
-
 bool Same(std::wstring const& first, std::wstring const& second)
 {
     return CompareStringOrdinal(first.c_str(), -1, second.c_str(), -1, TRUE) == CSTR_EQUAL;
@@ -883,16 +876,11 @@ void Registration::UnregisterHandlers() const
     SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
 }
 
-Json Registration::Execute(std::string const& name) const
+Outcome Registration::Execute(RegistrationAction action) const
 {
-    auto action = Parse(actions, name);
-    if (!action)
-    {
-        return Failure(ErrorCode::InvalidRequest, "Unknown registration action.");
-    }
     try
     {
-        switch (*action)
+        switch (action)
         {
         case RegistrationAction::RegisterHandlers:
             RemoveBroken();
@@ -925,13 +913,11 @@ Json Registration::Execute(std::string const& name) const
         case RegistrationAction::Observe:
             break;
         }
-        return Success(Observe());
+        return {};
     }
     catch (std::exception const& error)
     {
-        auto reply = Failure(ErrorCode::RegistrationFailed, error.what());
-        reply["data"] = Observe();
-        return reply;
+        return {ErrorCode::RegistrationFailed, error.what()};
     }
 }
 }

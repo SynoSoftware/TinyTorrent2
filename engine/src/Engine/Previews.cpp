@@ -15,7 +15,8 @@ constexpr std::size_t previewLimit = 256;
 }
 
 // The torrents in the list that already use a file this content would use
-// at the destination.
+// at the destination. A torrent whose names are still being read counts only
+// with its final names, so the Add dialog never waits for them.
 std::vector<std::string> Engine::State::SharedFiles(std::shared_ptr<lt::torrent_info const> const& metadata,
     std::string const& destination) const
 {
@@ -32,10 +33,7 @@ std::vector<std::string> Engine::State::SharedFiles(std::shared_ptr<lt::torrent_
         {
             continue;
         }
-        auto paths = FilePaths(torrent);
-        auto physical = FilePaths(torrent, {}, false);
-        paths.insert(paths.end(), physical.begin(), physical.end());
-        for (auto const& full : paths)
+        for (auto const& full : Footprint(torrent))
         {
             if (std::binary_search(wanted.begin(), wanted.end(), full, PathBefore))
             {
@@ -119,9 +117,9 @@ void Engine::State::Merge(Preview& existing, Preview const& source)
 bool Engine::State::CanMerge(Preview const& preview) const
 {
     auto duplicate = FindDuplicate(preview.InfoHashes());
-    return !duplicate.empty() &&
-        !torrents.at(duplicate).restore &&
-        !Missing(preview.params.trackers, Urls(torrents.at(duplicate).Trackers())).empty();
+    return duplicate &&
+        !torrents.at(*duplicate).restore &&
+        !Missing(preview.params.trackers, Urls(torrents.at(*duplicate).Trackers())).empty();
 }
 
 Json Engine::State::Describe(Preview const& preview, std::string const& destination) const
@@ -143,7 +141,7 @@ Json Engine::State::Describe(Preview const& preview, std::string const& destinat
     return {{"preview_id", preview.previewId},
         {"name", tt::Name(params.ti ? params.ti->name() : params.name, Hashes(hashes))},
         {"size", params.ti ? params.ti->total_size() : 0}, {"files", std::move(files)},
-        {"torrent_id", duplicate}, {"hashes", Hashes(hashes)}, {"trackers", params.trackers},
+        {"torrent_id", duplicate.value_or("")}, {"hashes", Hashes(hashes)}, {"trackers", params.trackers},
         {"merge_available", CanMerge(preview)}, {"metadata_ready", bool(params.ti)},
         {"error", preview.error}, {"shared_with", SharedFiles(params.ti, settings.SavePath(destination))}};
 }
@@ -165,20 +163,15 @@ void Engine::State::Inspect(std::string source, std::string connectionId,
     auto preview = std::make_shared<Preview>();
     preview->previewId = NewId();
     preview->connectionId = std::move(connectionId);
-    sources.Run([preview, source]
+    sources.Run([source]
     {
         if (IsMagnet(source))
         {
-            preview->params = lt::parse_magnet_uri(source);
+            return lt::parse_magnet_uri(source);
         }
-        else
-        {
-            auto bytes = Store::Read(std::filesystem::path(Wide(source)));
-            preview->params = lt::load_torrent_buffer(
-                lt::span<char const>(bytes.data(), bytes.size()));
-            preview->torrentFile = source;
-        }
-    }, [this, preview, completion](StorageOutcome outcome)
+        auto bytes = Store::Read(std::filesystem::path(Wide(source)));
+        return lt::load_torrent_buffer(lt::span<char const>(bytes.data(), bytes.size()));
+    }, [this, preview, completion, source](std::expected<lt::add_torrent_params, StorageOutcome> parsed)
     {
         std::erase(parsing, preview);
         if (preview->cancelled)
@@ -190,11 +183,14 @@ void Engine::State::Inspect(std::string source, std::string connectionId,
             completion({ErrorCode::ShuttingDown}, nullptr);
             return;
         }
-        if (outcome.failure)
+        if (!parsed)
         {
-            completion(outcome.ToOutcome(ErrorCode::InvalidSource), nullptr);
+            completion(parsed.error().ToOutcome(ErrorCode::InvalidSource), nullptr);
             return;
         }
+        preview->params = std::move(*parsed);
+        if (!IsMagnet(source))
+            preview->torrentFile = source;
         preview->params.info_hashes = preview->InfoHashes();
         auto merge = [this, preview, completion]
         {
@@ -214,18 +210,20 @@ void Engine::State::Inspect(std::string source, std::string connectionId,
         };
         if (merge())
             return;
-        if (!preview->params.ti && FindDuplicate(preview->params.info_hashes).empty())
+        if (!preview->params.ti && !FindDuplicate(preview->params.info_hashes))
         {
             Guard(preview->params);
             preview->params.flags &= ~lt::torrent_flags::paused;
             preview->params.save_path = Utf8((directory / L"previews").wstring());
             parsing.push_back(preview);
-            sources.Run([preview, session = session.get()]
+            sources.Run([params = preview->params, session = session.get()]
             {
-                preview->handle = session->add_torrent(preview->params);
-            }, [this, preview, completion, merge](StorageOutcome outcome)
+                return session->add_torrent(params);
+            }, [this, preview, completion, merge](std::expected<lt::torrent_handle, StorageOutcome> added)
             {
                 std::erase(parsing, preview);
+                if (added)
+                    preview->handle = *added;
                 if (preview->cancelled || IsShuttingDown())
                 {
                     if (preview->handle.is_valid())
@@ -237,9 +235,9 @@ void Engine::State::Inspect(std::string source, std::string connectionId,
                 UpdatePreview(*preview);
                 if (merge())
                     return;
-                if (outcome.failure)
+                if (!added)
                 {
-                    completion(outcome.ToOutcome(ErrorCode::PreviewFailed), nullptr);
+                    completion(added.error().ToOutcome(ErrorCode::PreviewFailed), nullptr);
                     return;
                 }
                 ApplyPolicy(preview->handle);

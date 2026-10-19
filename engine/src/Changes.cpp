@@ -50,15 +50,6 @@ void Changes::Commit(std::function<Json()> encode, std::function<void(Outcome)> 
     });
 }
 
-void Changes::Commit(std::function<Json()> encode, Reply reply, std::function<Json()> apply)
-{
-    Commit(std::move(encode),
-        [reply = std::move(reply), apply = std::move(apply)](Outcome outcome)
-    {
-        reply(outcome.error ? Failure(*outcome.error, outcome.detail) : apply());
-    });
-}
-
 bool Changes::IsIdle() const
 {
     return !committing_ && queue_.empty();

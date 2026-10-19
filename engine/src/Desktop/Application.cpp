@@ -2,12 +2,6 @@
 #include "Registration.h"
 #include "Resources.h"
 #include <algorithm>
-#include <commctrl.h>
-#include <dwmapi.h>
-#include <shellapi.h>
-#include <shobjidl.h>
-#include <propkey.h>
-#include <propvarutil.h>
 #include <stdexcept>
 
 namespace tt::desktop
@@ -15,10 +9,8 @@ namespace tt::desktop
 namespace
 {
 constexpr UINT dispatch = WM_APP + 1;
-constexpr UINT tray = WM_APP + 2;
-constexpr UINT wake = WM_APP + 3;
+constexpr UINT wake = WM_APP + 2;
 constexpr UINT_PTR tickTimer = 1;
-constexpr UINT_PTR trayTimer = 2;
 
 constexpr std::pair<std::string_view, Command> commands[] = {
     {"registration", Command::Registration},
@@ -48,18 +40,11 @@ constexpr std::pair<std::string_view, ExitAnswer> exitAnswers[] = {
 
 // Durations in milliseconds, as GetTickCount64 counts.
 constexpr UINT tickInterval = 1000;
-// How long the window may take to open or to close before reporting a failure.
-constexpr ULONGLONG windowTimeout = 30'000;
 // How long session end waits for the final save before the process ends.
 constexpr ULONGLONG sessionEndTimeout = 4000;
 
 // Pipe requests that wait for this thread; more are refused as overloaded.
 constexpr std::size_t requestLimit = 128;
-// The most sources that wait to be added at one time.
-constexpr std::size_t sourceLimit = 256;
-
-// WinUI 3 gives its top-level windows this class.
-constexpr wchar_t winUiWindowClass[] = L"WinUIDesktopWin32WindowClass";
 
 LRESULT CALLBACK Broadcast(HWND window, UINT message, WPARAM first, LPARAM second)
 {
@@ -86,133 +71,10 @@ LRESULT CALLBACK Broadcast(HWND window, UINT message, WPARAM first, LPARAM secon
     }
     return DefWindowProcW(window, message, first, second);
 }
-
-// The product icon with Windows' error mark, which the tray and the popups
-// show for problems.
-HICON ErrorIcon()
-{
-    ICONINFO icon{};
-    if (!GetIconInfo(LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_TINYTORRENT)), &icon))
-    {
-        return nullptr;
-    }
-    HICON result = nullptr;
-    auto target = CreateCompatibleDC(nullptr);
-    BITMAP color{};
-    if (target && icon.hbmColor && GetObjectW(icon.hbmColor, static_cast<int>(sizeof(color)), &color))
-    {
-        auto previous = SelectObject(target, icon.hbmColor);
-        auto width = static_cast<int>(color.bmWidth / 2);
-        auto height = static_cast<int>(color.bmHeight / 2);
-        auto drawn = DrawIconEx(target, width, height, LoadIconW(nullptr, IDI_ERROR), width, height, 0, nullptr, DI_NORMAL);
-        SelectObject(target, previous);
-        if (drawn)
-        {
-            result = CreateIconIndirect(&icon);
-        }
-    }
-    if (target) DeleteDC(target);
-    DeleteObject(icon.hbmColor);
-    DeleteObject(icon.hbmMask);
-    return result;
-}
-
-// The window from the same build, which is always beside the engine.
-std::filesystem::path WindowExecutable()
-{
-    return std::filesystem::path(Executable()).parent_path() / TT_WINDOW_FILE;
-}
-
-HWND FindWinUiWindow(DWORD processId)
-{
-    struct Target
-    {
-        DWORD processId;
-        HWND window = nullptr;
-    } target{processId};
-    EnumWindows([](HWND window, LPARAM parameter) -> BOOL
-    {
-        auto& target = *reinterpret_cast<Target*>(parameter);
-        DWORD processId = 0;
-        GetWindowThreadProcessId(window, &processId);
-        if (processId != target.processId)
-        {
-            return TRUE;
-        }
-        wchar_t name[128]{};
-        GetClassNameW(window, name, static_cast<int>(std::size(name)));
-        if (wcscmp(name, winUiWindowClass) != 0)
-        {
-            return TRUE;
-        }
-        target.window = window;
-        return FALSE;
-    }, reinterpret_cast<LPARAM>(&target));
-    return target.window;
-}
-
-// The window stays cloaked until it is ready or has a connection failure to show.
-bool IsShown(HWND window)
-{
-    DWORD cloaked = 0;
-    return window && IsWindowVisible(window) &&
-        SUCCEEDED(DwmGetWindowAttribute(window, DWMWA_CLOAKED, &cloaked, sizeof(cloaked))) && !cloaked;
-}
-
-// Makes the taskbar relaunch the engine, under the product's name and icon,
-// when the person pins the window of `processId`.
-void SetRelaunch(DWORD processId)
-{
-    auto window = FindWinUiWindow(processId);
-    if (!window)
-    {
-        return;
-    }
-    auto executable = Executable();
-    auto initialized = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-    IPropertyStore* properties = nullptr;
-    auto outcome = SHGetPropertyStoreForWindow(window, IID_PPV_ARGS(&properties));
-    if (SUCCEEDED(outcome))
-    {
-        auto set = [properties, &outcome](PROPERTYKEY const& key, std::wstring const& value)
-        {
-            if (FAILED(outcome))
-            {
-                return;
-            }
-            PROPVARIANT property{};
-            outcome = InitPropVariantFromString(value.c_str(), &property);
-            if (SUCCEEDED(outcome))
-            {
-                outcome = properties->SetValue(key, property);
-            }
-            PropVariantClear(&property);
-        };
-        set(PKEY_AppUserModel_RelaunchCommand, L"\"" + executable + L"\"");
-        set(PKEY_AppUserModel_RelaunchDisplayNameResource,
-            L"@" + executable + L",-" + std::to_wstring(IDS_PRODUCT_NAME));
-        set(PKEY_AppUserModel_RelaunchIconResource, executable + L",-" + std::to_wstring(IDI_TINYTORRENT));
-        set(PKEY_AppUserModel_ID, appId);
-        if (SUCCEEDED(outcome))
-        {
-            outcome = properties->Commit();
-        }
-        properties->Release();
-    }
-    if (FAILED(outcome))
-    {
-        OutputDebugStringW(L"TinyTorrent could not set taskbar relaunch properties.\n");
-    }
-    if (SUCCEEDED(initialized))
-    {
-        CoUninitialize();
-    }
-}
 }
 
 Application::Application(std::filesystem::path directory, std::wstring sid, bool headless)
     : headless_(headless),
-      splash_(strings_),
       power_(strings_)
 {
     auto module = GetModuleHandleW(nullptr);
@@ -252,15 +114,25 @@ Application::Application(std::filesystem::path directory, std::wstring sid, bool
     {
         errorIcon_.reset(ErrorIcon());
     }
-    tray_ = std::make_unique<Tray>(owner_.get(), tray, broadcast_.get(), strings_, headless_, errorIcon_.get());
+    tray_ = std::make_unique<Tray>(owner_.get(), broadcast_.get(), strings_, headless_, errorIcon_.get(),
+        Tray::Commands{
+            .open = [this] { window_->Open(); },
+            .pause = [this] { Pause(); },
+            .exit = [this] { Exit(); },
+            .refresh = [this] { Refresh(); }});
     notices_ = std::make_unique<Notices>(strings_, headless_, errorIcon_.get(), Notices::Commands{
-        .open = [this] { Open(); },
-        .openSettings = [this](std::string card) { OpenSettings(std::move(card)); },
+        .open = [this] { window_->Open(); },
+        .openSettings = [this](std::string card) { window_->OpenSettings(std::move(card)); },
         .folder = [this](std::string const& torrentId) { return engine_->Folder(torrentId); },
-        .turnOff = [this](std::vector<NoticeSwitch> notices) { TurnOff(std::move(notices)); }});
+        .turnOff = [this](std::vector<NoticeSwitch> notices) { TurnOff(std::move(notices)); },
+        .window = [this](Notice const& notice) { return window_->Notify(notice); }});
     auto data = directory.wstring();
     engine_ = std::make_unique<Engine>(std::move(directory),
         [this] { PostMessageW(owner_.get(), wake, 0, 0); });
+    window_ = std::make_unique<Window>(strings_, *engine_, *notices_, headless_, Window::Commands{
+        .shutdown = [this] { Shutdown(); },
+        .cancelExit = [this] { CancelExit(); },
+        .answer = [this](ExitAnswer answer) { Answer(answer); }});
     Json hello{
         {"type", "hello"},
         {"version", Pipe::version},
@@ -295,7 +167,7 @@ int Application::Run(bool background, std::vector<std::string> sources)
         auto response = Activate(std::move(sources));
         if (!response.value("ok", false))
         {
-            ShowError({.code = "source", .detail = Wide(response.at("error").dump()), .interactive = true});
+            notices_->Report({.code = "source", .detail = Wide(response.at("error").dump()), .interactive = true});
             return 1;
         }
     }
@@ -321,6 +193,13 @@ LRESULT CALLBACK Application::Procedure(HWND window, UINT message, WPARAM first,
         application->owner_.reset(window);
         SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(application));
     }
+    // The window is destroyed after the tray and the other members that
+    // Handle reads, so its destruction messages must not reach Handle.
+    if (message == WM_DESTROY)
+    {
+        SetWindowLongPtrW(window, GWLP_USERDATA, 0);
+        application = nullptr;
+    }
     if (!application)
     {
         return DefWindowProcW(window, message, first, second);
@@ -330,6 +209,11 @@ LRESULT CALLBACK Application::Procedure(HWND window, UINT message, WPARAM first,
 
 LRESULT Application::Handle(UINT message, WPARAM first, LPARAM second)
 {
+    // The window receives messages while it is created, before the tray exists.
+    if (auto result = tray_ ? tray_->Handle(message, first, second) : std::nullopt)
+    {
+        return *result;
+    }
     switch (message)
     {
     case dispatch:
@@ -348,28 +232,12 @@ LRESULT Application::Handle(UINT message, WPARAM first, LPARAM second)
     case wake:
         Tick();
         return 0;
-    case tray:
-        OnTray(first, second);
-        return 0;
     case WM_TIMER:
         if (first == tickTimer)
         {
             OnTimer();
         }
-        else if (first == trayTimer)
-        {
-            KillTimer(owner_.get(), trayTimer);
-            if (trayClick_ == TrayClick::Waiting)
-            {
-                trayClick_ = TrayClick::Idle;
-                ShowMenu(trayPoint_);
-            }
-        }
         return 0;
-    case WM_MEASUREITEM:
-        return tray_->Measure(*reinterpret_cast<MEASUREITEMSTRUCT*>(second));
-    case WM_DRAWITEM:
-        return tray_->Draw(*reinterpret_cast<DRAWITEMSTRUCT const*>(second));
     case WM_ENDSESSION:
         if (first)
         {
@@ -380,56 +248,7 @@ LRESULT Application::Handle(UINT message, WPARAM first, LPARAM second)
         Tick();
         return TRUE;
     }
-    if (message == taskbarCreated_)
-    {
-        KillTimer(owner_.get(), trayTimer);
-        trayClick_ = TrayClick::Idle;
-        tray_->Add();
-        Refresh();
-        return 0;
-    }
     return DefWindowProcW(owner_.get(), message, first, second);
-}
-
-void Application::OnTray(WPARAM first, LPARAM second)
-{
-    auto notification = LOWORD(second);
-    if (notification == WM_LBUTTONDOWN)
-    {
-        KillTimer(owner_.get(), trayTimer);
-        trayClick_ = TrayClick::Idle;
-    }
-    else if (notification == NIN_SELECT)
-    {
-        if (trayClick_ == TrayClick::Double)
-        {
-            trayClick_ = TrayClick::Idle;
-            return;
-        }
-        trayPoint_ = {static_cast<short>(LOWORD(first)), static_cast<short>(HIWORD(first))};
-        trayClick_ = TrayClick::Waiting;
-        // The first release may belong to a double-click; do not open a menu under its second click.
-        SetTimer(owner_.get(), trayTimer, GetDoubleClickTime(), nullptr);
-    }
-    else if (notification == WM_LBUTTONDBLCLK)
-    {
-        KillTimer(owner_.get(), trayTimer);
-        trayClick_ = TrayClick::Double;
-        Open();
-    }
-    else if (notification == NIN_KEYSELECT)
-    {
-        KillTimer(owner_.get(), trayTimer);
-        trayClick_ = TrayClick::Idle;
-        Open();
-    }
-    else if (notification == WM_CONTEXTMENU)
-    {
-        KillTimer(owner_.get(), trayTimer);
-        trayClick_ = TrayClick::Idle;
-        POINT point{static_cast<short>(LOWORD(first)), static_cast<short>(HIWORD(first))};
-        ShowMenu(point);
-    }
 }
 
 void Application::TurnOff(std::vector<NoticeSwitch> notices)
@@ -438,101 +257,26 @@ void Application::TurnOff(std::vector<NoticeSwitch> notices)
     {
         if (outcome.error)
         {
-            ShowError({.code = "notification", .detail = Wide(outcome.detail), .interactive = true});
+            notices_->Report({.code = "notification", .detail = Wide(outcome.detail), .interactive = true});
         }
         Refresh();
     });
 }
 
-void Application::ShowMenu(POINT point)
-{
-    Refresh();
-    auto item = tray_->ShowMenu(point);
-    if (item == TrayItem::Open)
-    {
-        Open();
-    }
-    else if (item == TrayItem::Pause)
-    {
-        Pause();
-    }
-    else if (item == TrayItem::Exit)
-    {
-        Exit();
-    }
-}
-
 void Application::OnTimer()
 {
     Tick();
-    if (waitingSince_ && process_ && WaitForSingleObject(process_.get(), 0) == WAIT_OBJECT_0 && !windowClient_)
-    {
-        if (IsExiting())
-        {
-            Shutdown();
-        }
-        else
-        {
-            DWORD code = 0;
-            GetExitCodeProcess(process_.get(), &code);
-            if (code != 0)
-            {
-                waitingSince_ = 0;
-                reopen_ = false;
-                settingsCard_.reset();
-                splash_.Close();
-                ShowStartError({.code = "startup", .detail = std::to_wstring(code)});
-            }
-            else if (reopen_)
-            {
-                waitingSince_ = 0;
-            }
-        }
-    }
-    // A launched window that appears without `ready` shows its own failure,
-    // so the splash closes and the engine reports nothing.
-    if (waitingSince_ && exit_ == ExitPhase::Idle && ShownWindow())
-    {
-        waitingSince_ = 0;
-        reopen_ = false;
-        launchedAt_ = 0;
-        splash_.Close();
-    }
-    if (waitingSince_ && GetTickCount64() - waitingSince_ > windowTimeout)
-    {
-        waitingSince_ = 0;
-        reopen_ = false;
-        settingsCard_.reset();
-        if (!IsExiting() && exit_ != ExitPhase::WindowConfirming)
-        {
-            splash_.Close();
-            ShowStartError({.code = "startup"});
-        }
-        else if (headless_)
-        {
-            Shutdown();
-        }
-        else
-        {
-            CancelExit();
-            ShowError({.code = "unresponsive"});
-        }
-    }
+    window_->OnTimer();
 }
 
 void Application::Dispatch(std::shared_ptr<Pipe::Connection> client, Json request, Reply reply)
 {
     std::lock_guard lock(mutex_);
-    if (request.is_null() && !client->dispatched)
-    {
-        return;
-    }
     if (requests_.size() >= requestLimit && !request.is_null())
     {
         reply(Failure(ErrorCode::Overloaded));
         return;
     }
-    client->dispatched = true;
     requests_.push_back(
         [this, client = std::move(client), request = std::move(request), reply = std::move(reply)]
     {
@@ -547,7 +291,8 @@ void Application::Receive(std::shared_ptr<Pipe::Connection> const& client, Json 
 {
     if (request.is_null())
     {
-        Disconnect(client);
+        engine_->Disconnect(client->connectionId);
+        window_->Disconnect(client);
         return;
     }
     auto command = Parse(commands, request.at("command").get<std::string>());
@@ -558,7 +303,7 @@ void Application::Receive(std::shared_ptr<Pipe::Connection> const& client, Json 
     }
     // Only the window reports that it closed; the engine answers the same
     // command from any other client as unknown.
-    if (command == Command::WindowClosed && windowClient_ != client)
+    if (command == Command::WindowClosed && !window_->Owns(client))
     {
         command.reset();
     }
@@ -578,16 +323,28 @@ void Application::Receive(std::shared_ptr<Pipe::Connection> const& client, Json 
         switch (*command)
         {
         case Command::Registration:
-            reply(registration_.Execute(request.at("action").get<std::string>()));
+        {
+            auto action = Parse(registrationActions, request.at("action").get<std::string>());
+            if (!action)
+            {
+                reply(Failure(ErrorCode::InvalidRequest, "Unknown registration action."));
+                break;
+            }
+            auto outcome = registration_.Execute(*action);
+            // A failure also reports what Windows holds, which it kept.
+            auto response = outcome.error ? Failure(*outcome.error, outcome.detail) : Success();
+            response["data"] = registration_.Observe();
+            reply(std::move(response));
             break;
+        }
         case Command::Ready:
-            OnReady(client, reply);
+            window_->OnReady(client, reply);
             break;
         case Command::WindowClosed:
-            OnClosed(reply);
+            window_->OnClosed(reply);
             break;
         case Command::ActivateReply:
-            OnActivateReply(client, request.at("available").get<bool>(), reply);
+            window_->OnActivateReply(client, request.at("available").get<bool>(), reply);
             break;
         case Command::CloseReply:
         {
@@ -597,7 +354,7 @@ void Application::Receive(std::shared_ptr<Pipe::Connection> const& client, Json 
                 reply(Failure(ErrorCode::InvalidRequest));
                 break;
             }
-            OnCloseReply(client, *state, reply);
+            window_->OnCloseReply(client, *state, reply);
             break;
         }
         case Command::ExitReply:
@@ -608,21 +365,21 @@ void Application::Receive(std::shared_ptr<Pipe::Connection> const& client, Json 
                 reply(Failure(ErrorCode::InvalidRequest));
                 break;
             }
-            OnExitReply(client, *answer, reply);
+            window_->OnExitReply(client, *answer, reply);
             break;
         }
         case Command::ActivateSources:
             reply(Activate(request.at("sources").get<std::vector<std::string>>()));
             break;
         case Command::PendingActivations:
-            OnPendingActivations(client, reply);
+            window_->OnPendingActivations(client, reply);
             break;
         case Command::ActivationsReceived:
-            OnActivationsReceived(client,
+            window_->OnActivationsReceived(client,
                 request.value("activation_ids", std::vector<std::string>{}), reply);
             break;
         case Command::Open:
-            if (!Open())
+            if (!window_->Open())
             {
                 reply(Failure(ErrorCode::ShuttingDown));
                 break;
@@ -645,308 +402,6 @@ void Application::Receive(std::shared_ptr<Pipe::Connection> const& client, Json 
     {
         reply(Failure(ErrorCode::InvalidRequest, error.what()));
     }
-}
-
-// The window has drawn its first state and waits to appear.
-void Application::OnReady(std::shared_ptr<Pipe::Connection> const& client, Reply const& reply)
-{
-    if (windowClient_)
-    {
-        reply(Failure(ErrorCode::WindowConnected));
-        return;
-    }
-    windowClient_ = client;
-    if (auto processId = client->processId)
-    {
-        auto actual = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, processId);
-        if (actual)
-        {
-            process_.reset(actual);
-        }
-        SetRelaunch(processId);
-    }
-    waitingSince_ = 0;
-    reopen_ = false;
-    if (launchedAt_)
-    {
-        splash_.Record(GetTickCount64() - launchedAt_);
-        launchedAt_ = 0;
-    }
-    // The reply lets the drawn window appear, and its activate reply closes
-    // the splash.
-    splash_.Finish([this, client, reply]
-    {
-        if (client->processId)
-        {
-            AllowSetForegroundWindow(client->processId);
-        }
-        reply(Success());
-        if (windowClient_ != client)
-        {
-            return;
-        }
-        if (!offered_.empty())
-        {
-            windowClient_->Send(Json{{"type", "activations"}});
-        }
-        ShowSettings();
-        if (IsExiting())
-        {
-            windowClient_->Send(Json{{"type", "close"}});
-            waitingSince_ = GetTickCount64();
-        }
-    });
-}
-
-void Application::OnClosed(Reply const& reply)
-{
-    reply(Success());
-    ForgetWindow();
-    if (!IsExiting())
-    {
-        Notify({.kind = NoticeKind::Background});
-    }
-}
-
-// The window answers `activate`: whether it could show itself.
-void Application::OnActivateReply(std::shared_ptr<Pipe::Connection> const& client, bool available, Reply const& reply)
-{
-    if (windowClient_ != client)
-    {
-        reply(Failure(ErrorCode::InvalidRequest));
-        return;
-    }
-    if (IsExiting() || engine_->IsShuttingDown())
-    {
-        reply(Success());
-        return;
-    }
-    reopen_ = !available;
-    if (!reopen_)
-    {
-        waitingSince_ = 0;
-        splash_.Close();
-    }
-    reply(Success());
-}
-
-void Application::OnCloseReply(std::shared_ptr<Pipe::Connection> const& client, CloseState state, Reply const& reply)
-{
-    if (windowClient_ != client || (!IsExiting() &&
-        !(exit_ == ExitPhase::WindowConfirming && state == CloseState::Waiting)))
-    {
-        reply(Failure(ErrorCode::InvalidRequest));
-        return;
-    }
-    reply(Success());
-    if (state == CloseState::Waiting)
-    {
-        waitingSince_ = 0;
-        splash_.Close();
-        return;
-    }
-    if (state == CloseState::Closing)
-    {
-        waitingSince_ = GetTickCount64();
-        return;
-    }
-    splash_.Close();
-    CancelExit();
-}
-
-void Application::OnExitReply(std::shared_ptr<Pipe::Connection> const& client, ExitAnswer answer, Reply const& reply)
-{
-    if (windowClient_ != client || exit_ != ExitPhase::WindowConfirming)
-    {
-        reply(Failure(ErrorCode::InvalidRequest));
-        return;
-    }
-    reply(Success());
-    exit_ = ExitPhase::Idle;
-    waitingSince_ = 0;
-    if (engine_->IsShuttingDown())
-    {
-        return;
-    }
-    if (answer == ExitAnswer::Confirmed || (answer == ExitAnswer::Unavailable && ConfirmExit()))
-    {
-        BeginExit();
-    }
-}
-
-void Application::OnPendingActivations(std::shared_ptr<Pipe::Connection> const& client, Reply const& reply)
-{
-    if (windowClient_ != client)
-    {
-        reply(Failure(ErrorCode::InvalidRequest));
-        return;
-    }
-    auto activations = Json::array();
-    for (auto const& activation : offered_)
-    {
-        activations.push_back({{"activation_id", activation.activationId}, {"sources", activation.sources}});
-    }
-    reply(Success({{"activations", std::move(activations)}}));
-}
-
-// The window has taken these activations, so they stop waiting.
-void Application::OnActivationsReceived(std::shared_ptr<Pipe::Connection> const& client, std::vector<std::string> const& ids,
-    Reply const& reply)
-{
-    if (windowClient_ != client || ids.size() > sourceLimit)
-    {
-        reply(Failure(ErrorCode::InvalidRequest));
-        return;
-    }
-    std::erase_if(offered_, [&ids](Activation const& activation)
-    {
-        return std::find(ids.begin(), ids.end(), activation.activationId) != ids.end();
-    });
-    reply(Success());
-}
-
-void Application::Disconnect(std::shared_ptr<Pipe::Connection> const& client)
-{
-    engine_->Disconnect(client->connectionId);
-    if (windowClient_ == client)
-    {
-        if (IsExiting() && IsWindowRunning())
-        {
-            windowClient_.reset();
-            waitingSince_ = GetTickCount64();
-            return;
-        }
-        ForgetWindow();
-    }
-}
-
-void Application::ForgetWindow()
-{
-    windowClient_.reset();
-    if (exit_ == ExitPhase::WindowConfirming)
-    {
-        exit_ = ExitPhase::Idle;
-    }
-    waitingSince_ = 0;
-    splash_.Close();
-    if (IsExiting())
-    {
-        Shutdown();
-    }
-}
-
-bool Application::Open()
-{
-    if (IsExiting() || engine_->IsShuttingDown())
-    {
-        return false;
-    }
-    reopen_ = true;
-    if (windowClient_)
-    {
-        if (windowClient_->processId)
-        {
-            AllowSetForegroundWindow(windowClient_->processId);
-        }
-        windowClient_->Send(Json{{"type", "activate"}});
-        waitingSince_ = GetTickCount64();
-        return true;
-    }
-    if (IsWindowRunning())
-    {
-        // It will not send `ready`, so waiting would only end in a false report.
-        if (auto window = ShownWindow())
-        {
-            reopen_ = false;
-            if (IsIconic(window))
-            {
-                ShowWindow(window, SW_RESTORE);
-            }
-            SetForegroundWindow(window);
-            return true;
-        }
-        if (!waitingSince_)
-        {
-            waitingSince_ = GetTickCount64();
-            launch_ = engine_->IsLoading() ? Launch::Cold : Launch::Warm;
-            ShowSplash();
-        }
-        return true;
-    }
-    process_.reset();
-    reopen_ = false;
-    // Starting the window process takes time, so the splash appears first.
-    waitingSince_ = GetTickCount64();
-    launch_ = engine_->IsLoading() ? Launch::Cold : Launch::Warm;
-    ShowSplash();
-    auto executable = WindowExecutable();
-    std::wstring arguments = L"\"" + executable.wstring() + L"\" --engine";
-    STARTUPINFOW startup{sizeof(startup)};
-    PROCESS_INFORMATION process{};
-    // Only a warm launch times the window alone; a cold one also waits for the
-    // engine to load.
-    launchedAt_ = launch_ == Launch::Warm ? GetTickCount64() : 0;
-    if (!CreateProcessW(executable.c_str(), arguments.data(), nullptr, nullptr, FALSE, 0, nullptr,
-        executable.parent_path().c_str(), &startup, &process))
-    {
-        auto error = GetLastError();
-        waitingSince_ = 0;
-        settingsCard_.reset();
-        splash_.Close();
-        auto key = "launch";
-        switch (error)
-        {
-        case ERROR_FILE_NOT_FOUND:
-        case ERROR_PATH_NOT_FOUND:
-            key = "window_missing";
-            break;
-        case ERROR_ACCESS_DENIED:
-            key = "window_denied";
-            break;
-        case ERROR_BAD_EXE_FORMAT:
-        case ERROR_EXE_MACHINE_TYPE_MISMATCH:
-            key = "window_invalid";
-            break;
-        case ERROR_MOD_NOT_FOUND:
-        case ERROR_DLL_NOT_FOUND:
-            key = "window_dependency";
-            break;
-        }
-        wchar_t reason[2048]{};
-        auto name = executable.filename().wstring();
-        DWORD_PTR inserts[]{reinterpret_cast<DWORD_PTR>(name.c_str())};
-        auto format = FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_MAX_WIDTH_MASK;
-        format |= error == ERROR_BAD_EXE_FORMAT || error == ERROR_EXE_MACHINE_TYPE_MISMATCH ?
-            FORMAT_MESSAGE_ARGUMENT_ARRAY : FORMAT_MESSAGE_IGNORE_INSERTS;
-        FormatMessageW(format, nullptr, error, 0, reason, static_cast<DWORD>(std::size(reason)),
-            reinterpret_cast<va_list*>(inserts));
-        auto detail = strings_.Format("notification", "windows_error", {std::to_wstring(error)});
-        if (*reason)
-        {
-            detail += L" \u00B7 " + std::wstring(reason);
-        }
-        ShowStartError({.code = key, .detail = executable.wstring() + L"\n" + detail, .interactive = true});
-        return true;
-    }
-    CloseHandle(process.hThread);
-    process_.reset(process.hProcess);
-    AllowSetForegroundWindow(process.dwProcessId);
-    return true;
-}
-
-bool Application::IsWindowRunning() const
-{
-    return process_ && WaitForSingleObject(process_.get(), 0) == WAIT_TIMEOUT;
-}
-
-HWND Application::ShownWindow() const
-{
-    if (windowClient_ || !IsWindowRunning())
-    {
-        return nullptr;
-    }
-    auto window = FindWinUiWindow(GetProcessId(process_.get()));
-    return IsShown(window) ? window : nullptr;
 }
 
 void Application::Exit()
@@ -972,15 +427,9 @@ void Application::Exit()
         return;
     }
     // The open window asks in its own style; the host asks only without one.
-    if (windowClient_)
+    if (window_->Confirm())
     {
-        if (windowClient_->processId)
-        {
-            AllowSetForegroundWindow(windowClient_->processId);
-        }
         exit_ = ExitPhase::WindowConfirming;
-        waitingSince_ = GetTickCount64();
-        windowClient_->Send(Json{{"type", "confirm_exit"}});
         return;
     }
     if (ConfirmExit())
@@ -989,66 +438,53 @@ void Application::Exit()
     }
 }
 
+void Application::Answer(ExitAnswer answer)
+{
+    exit_ = ExitPhase::Idle;
+    if (engine_->IsShuttingDown())
+    {
+        return;
+    }
+    if (answer == ExitAnswer::Confirmed || (answer == ExitAnswer::Unavailable && ConfirmExit()))
+    {
+        BeginExit();
+    }
+}
+
 bool Application::ConfirmExit()
 {
-    auto title = strings_.Text("exit", "title");
-    auto detail = strings_.Text("exit", "active");
-    auto label = strings_.Text("tray", "exit");
-    TASKDIALOG_BUTTON button{IDOK, label.c_str()};
-    TASKDIALOGCONFIG dialog{sizeof(dialog)};
-    auto window = windowClient_ ? FindWinUiWindow(windowClient_->processId) : nullptr;
-    dialog.hwndParent = window && IsWindowVisible(window) && !IsIconic(window) ? window : nullptr;
-    dialog.dwCommonButtons = TDCBF_CANCEL_BUTTON;
-    dialog.pszWindowTitle = productName;
-    dialog.pszMainInstruction = title.c_str();
-    dialog.pszContent = detail.c_str();
-    dialog.cButtons = 1;
-    dialog.pButtons = &button;
-    dialog.nDefaultButton = IDOK;
-    // A task dialog has no field for its title bar icon, so it would show the
-    // generic one.
-    dialog.pfCallback = [](HWND window, UINT notification, WPARAM, LPARAM, LONG_PTR) -> HRESULT
-    {
-        if (notification == TDN_CREATED)
-        {
-            auto set = [window](WPARAM kind, int width, int height)
-            {
-                auto icon = LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_TINYTORRENT), IMAGE_ICON,
-                    GetSystemMetrics(width), GetSystemMetrics(height), LR_SHARED);
-                SendMessageW(window, WM_SETICON, kind, reinterpret_cast<LPARAM>(icon));
-            };
-            set(ICON_SMALL, SM_CXSMICON, SM_CYSMICON);
-            set(ICON_BIG, SM_CXICON, SM_CYICON);
-        }
-        return S_OK;
-    };
-    int chosen = IDCANCEL;
+    bool confirmed = false;
     exit_ = ExitPhase::Confirming;
-    auto outcome = TaskDialogIndirect(&dialog, &chosen, nullptr, nullptr);
-    // Windows can end the session while the dialog is open.
+    // Lucide's power glyph, as the tray's Exit shows.
+    notices_->Ask({.title = strings_.Text("exit", "title"), .body = strings_.Text("exit", "active"),
+        .answer = {.glyph = L'\uE140', .label = strings_.Text("tray", "exit"),
+            .run = [&confirmed] { confirmed = true; }, .automationId = L"Exit"}});
+    MSG message{};
+    while (notices_->IsOpen() && exit_ == ExitPhase::Confirming && GetMessageW(&message, nullptr, 0, 0) > 0)
+    {
+        TranslateMessage(&message);
+        DispatchMessageW(&message);
+    }
+    if (message.message == WM_QUIT)
+    {
+        PostQuitMessage(static_cast<int>(message.wParam));
+    }
+    notices_->Close();
+    // Windows can end the session while the prompt is open.
     if (exit_ != ExitPhase::Confirming)
     {
         return false;
     }
     exit_ = ExitPhase::Idle;
-    return SUCCEEDED(outcome) && chosen == IDOK && !engine_->IsShuttingDown();
+    return confirmed && !engine_->IsShuttingDown();
 }
 
 void Application::BeginExit()
 {
-    splash_.Close();
     exit_ = ExitPhase::Exiting;
+    auto closing = window_->Close();
     Refresh();
-    if (windowClient_)
-    {
-        windowClient_->Send(Json{{"type", "close"}});
-        waitingSince_ = GetTickCount64();
-    }
-    else if (IsWindowRunning())
-    {
-        waitingSince_ = GetTickCount64();
-    }
-    else
+    if (!closing)
     {
         Shutdown();
     }
@@ -1056,7 +492,6 @@ void Application::BeginExit()
 
 void Application::Shutdown()
 {
-    waitingSince_ = 0;
     engine_->Shutdown([this](std::optional<std::string> failure)
     {
         if (exit_ == ExitPhase::SessionEnding)
@@ -1093,7 +528,7 @@ void Application::Shutdown()
 void Application::EndSession()
 {
     exit_ = ExitPhase::SessionEnding;
-    splash_.Close();
+    window_->End();
     Refresh();
     Shutdown();
     auto deadline = GetTickCount64() + sessionEndTimeout;
@@ -1148,14 +583,10 @@ void Application::Tick()
         pendingStart_ = false;
         if (!engine_->StartsInTray())
         {
-            Open();
+            window_->Open();
         }
     }
-    if (reopen_ && !waitingSince_ && !windowClient_ && !IsWindowRunning())
-    {
-        reopen_ = false;
-        Open();
-    }
+    window_->Reopen();
     if (!programsChecked_ && !headless_ && !engine_->IsLoading())
     {
         programsChecked_ = true;
@@ -1163,7 +594,7 @@ void Application::Tick()
     }
     for (auto& notice : engine_->TakeNotices())
     {
-        Notify(std::move(notice));
+        notices_->Queue(std::move(notice));
     }
     notices_->Notify();
     ticking_ = false;
@@ -1181,7 +612,6 @@ void Application::CancelExit()
     {
         exit_ = ExitPhase::Idle;
     }
-    waitingSince_ = 0;
     Refresh();
 }
 
@@ -1194,8 +624,7 @@ void Application::Refresh()
     tray_->Update(activity_, loading, !loading && !engine_->HasStorageFailure() && !IsExiting());
     notices_->Update(activity_);
     power_.Update(activity_, IsExiting() || engine_->IsShuttingDown());
-    splash_.SetTheme(activity_.theme);
-    ShowSplash();
+    window_->Refresh(activity_.theme);
     auto language = engine_->Language();
     if (language == strings_.Language())
     {
@@ -1203,21 +632,8 @@ void Application::Refresh()
     }
     strings_ = Strings(language);
     tray_->Translate();
-    splash_.Translate();
+    window_->Translate();
     power_.Translate();
-}
-
-// The splash covers the wait for a window to appear when the saved choice
-// allows it. Before startup has read the settings that choice is unknown, and
-// Refresh asks again once they are read.
-void Application::ShowSplash()
-{
-    if (!waitingSince_ || windowClient_ || IsExiting() || headless_ || !engine_->HasSettings() ||
-        !engine_->ShowsSplash())
-    {
-        return;
-    }
-    splash_.Show(launch_);
 }
 
 void Application::Pause()
@@ -1226,28 +642,18 @@ void Application::Pause()
     {
         if (outcome.error)
         {
-            ShowError({.code = "pause", .detail = Wide(outcome.detail), .interactive = true});
+            notices_->Report({.code = "pause", .detail = Wide(outcome.detail), .interactive = true});
         }
         Refresh();
     });
-}
-
-bool Application::ValidSources(std::vector<std::string> const& sources)
-{
-    return !sources.empty() && sources.size() <= sourceLimit &&
-        std::all_of(sources.begin(), sources.end(), Engine::IsSource);
 }
 
 // Accepts sources from a second launch or from the shell. They wait until
 // AddSources hands them to the window or adds them directly.
 Json Application::Activate(std::vector<std::string> sources)
 {
-    std::size_t count = 0;
+    auto count = window_->Offered();
     for (auto const& activation : incoming_)
-    {
-        count += activation.sources.size();
-    }
-    for (auto const& activation : offered_)
     {
         count += activation.sources.size();
     }
@@ -1280,7 +686,7 @@ void Application::AddSources()
         {
             for (auto const& source : activation.sources)
             {
-                Notify({.kind = NoticeKind::AddFailed, .name = source, .detail = detail});
+                notices_->Queue({.kind = NoticeKind::AddFailed, .name = source, .detail = detail});
             }
         }
         incoming_.clear();
@@ -1288,14 +694,8 @@ void Application::AddSources()
     }
     if (!incoming_.front().batch && engine_->ShowsAdd(incoming_.front().sources.front()))
     {
-        offered_.push_back(std::move(incoming_.front()));
+        window_->Offer(std::move(incoming_.front()));
         incoming_.pop_front();
-        if (windowClient_)
-        {
-            windowClient_->Send(Json{{"type", "activations"}});
-        }
-        if (!windowClient_ || engine_->RaisesAdd())
-            Open();
         return;
     }
     adding_ = true;
@@ -1311,22 +711,15 @@ void Application::FinishSource(Outcome const& outcome, Added const& added)
     auto const& source = activation.sources.front();
     if (outcome.error)
     {
-        if (headless_)
-        {
-            ShowError({.code = "source", .detail = Wide(source) + L"\n" + Wide(outcome.detail)});
-        }
-        else
-        {
-            // The detail explains the failure; without one, such as when the
-            // engine is busy, the code's sentence does.
-            Notify({.kind = NoticeKind::AddFailed, .name = source, .detail = outcome.detail,
-                .code = outcome.detail.empty() ? ToString(*outcome.error) : ""});
-        }
+        // The notice shows the code's sentence, then the detail when there
+        // is one.
+        notices_->Queue({.kind = NoticeKind::AddFailed, .name = source, .detail = outcome.detail,
+            .code = ToString(*outcome.error)});
     }
     else
     {
         auto kind = added.kind == AdditionKind::Duplicate ? NoticeKind::Duplicate : NoticeKind::Added;
-        Notify({.kind = kind, .name = engine_->Name(added.torrentId), .torrentId = added.torrentId});
+        notices_->Queue({.kind = kind, .name = engine_->Name(added.torrentId), .torrentId = added.torrentId});
     }
     activation.sources.erase(activation.sources.begin());
     if (activation.sources.empty())
@@ -1346,7 +739,7 @@ void Application::FinishSource(Outcome const& outcome, Added const& added)
 // broken.
 void Application::CheckPrograms()
 {
-    if (!activity_.notifiesProblems)
+    if (!activity_.notices.contains(NoticeSwitch::Problems))
     {
         return;
     }
@@ -1370,113 +763,9 @@ void Application::CheckPrograms()
     {
         if (!outcome.error)
         {
-            Notify(notice);
+            notices_->Queue(notice);
         }
     });
-}
-
-void Application::OpenSettings(std::string card)
-{
-    // Set first, so a launch failure inside Open can clear it.
-    settingsCard_ = std::move(card);
-    if (!Open())
-    {
-        settingsCard_.reset();
-    }
-    ShowSettings();
-}
-
-void Application::ShowSettings()
-{
-    if (settingsCard_ && windowClient_)
-    {
-        windowClient_->Send(Json{{"type", "settings"}, {"setting", *settingsCard_}});
-        settingsCard_.reset();
-    }
-}
-
-void Application::Notify(Notice notice)
-{
-    if (!notices_->IsOn(notice.kind))
-    {
-        return;
-    }
-    if (windowClient_ && UsesWindow(notice.kind))
-    {
-        auto notices = Switch(notice.kind);
-        windowClient_->Send(Json{{"type", "notice"}, {"kind", ToString(notice.kind)},
-            {"torrent_id", notice.torrentId}, {"name", notice.name}, {"detail", notice.detail}, {"code", notice.code},
-            {"folder", notice.folder}, {"count", notice.count},
-            {"switch", notices ? Json(ToString(*notices)) : Json(nullptr)}});
-        return;
-    }
-    notices_->Queue(std::move(notice));
-}
-
-void Application::ShowError(Notices::Failure failure)
-{
-    if (headless_)
-    {
-        auto message = strings_.Text("error", failure.code);
-        if (!failure.detail.empty())
-        {
-            message += L"\n\n" + failure.detail;
-        }
-        OutputDebugStringW(message.c_str());
-        return;
-    }
-    // The window may be the one that stopped responding.
-    notices_->Report(std::move(failure));
-}
-
-void Application::ShowRefusal(Strings const& strings, Refusal refusal)
-{
-    OwnedIcon icon(ErrorIcon());
-    // Without commands, selecting the message does nothing, so it never
-    // starts the launch again unasked. The refusal answers the person's
-    // launch, so it takes the focus.
-    Notices notices(strings, false, icon.get(), {});
-    Notices::Failure failure{.code = std::move(refusal.key), .detail = std::move(refusal.detail),
-        .interactive = true};
-    if (refusal.retry)
-    {
-        failure.actions.push_back(Notices::Retry(strings, strings.Text("notification", "retry_request_tip"), []
-        {
-            std::wstring command = GetCommandLineW();
-            STARTUPINFOW startup{sizeof(startup)};
-            PROCESS_INFORMATION process{};
-            // The person's click lets this launch take the foreground.
-            AllowSetForegroundWindow(ASFW_ANY);
-            if (CreateProcessW(Executable().c_str(), command.data(), nullptr, nullptr, FALSE, 0, nullptr,
-                nullptr, &startup, &process))
-            {
-                CloseHandle(process.hThread);
-                CloseHandle(process.hProcess);
-            }
-        }));
-    }
-    if (refusal.folder)
-    {
-        failure.actions.push_back(
-            Notices::OpenFolder(strings, *refusal.folder, strings.Text("notification", "open_folder_tip")));
-    }
-    notices.ShowFailure(std::move(failure));
-    MSG message{};
-    while (notices.IsOpen() && GetMessageW(&message, nullptr, 0, 0) > 0)
-    {
-        TranslateMessage(&message);
-        DispatchMessageW(&message);
-    }
-}
-
-// The window did not start: Retry opens it again, and Open folder shows the
-// folder that holds the window program.
-void Application::ShowStartError(Notices::Failure failure)
-{
-    failure.actions.push_back(Notices::Retry(strings_, strings_.Text("notification", "retry_tip"), [this] { Open(); }));
-    failure.actions.push_back(Notices::OpenFolder(strings_, WindowExecutable().parent_path(),
-        strings_.Text("notification", "open_folder_tip")));
-    ShowError(std::move(failure));
 }
 
 // A stalled torrent may never let the save succeed, so Force exit ends the
@@ -1489,7 +778,7 @@ void Application::ShowSaveFailure()
         tray_->Remove();
         TerminateProcess(GetCurrentProcess(), 1);
     });
-    ShowError({.code = "save", .title = strings_.Text("notification", "save_failure"), .detail = *saveFailure_,
+    notices_->Report({.code = "save", .title = strings_.Text("notification", "save_failure"), .detail = *saveFailure_,
         .actions = {std::move(forceExit)}, .interactive = true, .opens = false});
 }
 }

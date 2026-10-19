@@ -17,10 +17,107 @@ UINT Id(TrayItem item)
 }
 }
 
-Tray::Tray(HWND window, UINT callback, HWND broadcast, Strings const& strings, bool headless, HICON errorIcon)
-    : window_(window), callback_(callback), broadcast_(broadcast), strings_(strings), headless_(headless),
-      errorIcon_(errorIcon)
+Tray::Tray(HWND window, HWND broadcast, Strings const& strings, bool headless, HICON errorIcon, Commands commands)
+    : window_(window), broadcast_(broadcast), strings_(strings), headless_(headless),
+      commands_(std::move(commands)), errorIcon_(errorIcon)
 {
+}
+
+std::optional<LRESULT> Tray::Handle(UINT message, WPARAM first, LPARAM second)
+{
+    // The tray's own address tells its timer apart from the window's others.
+    auto timer = reinterpret_cast<UINT_PTR>(this);
+    if (message == callback_)
+    {
+        OnClick(first, second);
+        return 0;
+    }
+    if (message == WM_TIMER && first == timer)
+    {
+        KillTimer(window_, timer);
+        if (click_ == TrayClick::Waiting)
+        {
+            click_ = TrayClick::Idle;
+            Menu(point_);
+        }
+        return 0;
+    }
+    if (message == WM_MEASUREITEM)
+    {
+        return Measure(*reinterpret_cast<MEASUREITEMSTRUCT*>(second));
+    }
+    if (message == WM_DRAWITEM)
+    {
+        return Draw(*reinterpret_cast<DRAWITEMSTRUCT const*>(second));
+    }
+    if (message == taskbarCreated_)
+    {
+        KillTimer(window_, timer);
+        click_ = TrayClick::Idle;
+        Add();
+        commands_.refresh();
+        return 0;
+    }
+    return std::nullopt;
+}
+
+void Tray::OnClick(WPARAM first, LPARAM second)
+{
+    auto timer = reinterpret_cast<UINT_PTR>(this);
+    auto notification = LOWORD(second);
+    if (notification == WM_LBUTTONDOWN)
+    {
+        KillTimer(window_, timer);
+        click_ = TrayClick::Idle;
+    }
+    else if (notification == NIN_SELECT)
+    {
+        if (click_ == TrayClick::Double)
+        {
+            click_ = TrayClick::Idle;
+            return;
+        }
+        point_ = {static_cast<short>(LOWORD(first)), static_cast<short>(HIWORD(first))};
+        click_ = TrayClick::Waiting;
+        // The first release may belong to a double-click; do not open a menu under its second click.
+        SetTimer(window_, timer, GetDoubleClickTime(), nullptr);
+    }
+    else if (notification == WM_LBUTTONDBLCLK)
+    {
+        KillTimer(window_, timer);
+        click_ = TrayClick::Double;
+        commands_.open();
+    }
+    else if (notification == NIN_KEYSELECT)
+    {
+        KillTimer(window_, timer);
+        click_ = TrayClick::Idle;
+        commands_.open();
+    }
+    else if (notification == WM_CONTEXTMENU)
+    {
+        KillTimer(window_, timer);
+        click_ = TrayClick::Idle;
+        Menu({static_cast<short>(LOWORD(first)), static_cast<short>(HIWORD(first))});
+    }
+}
+
+void Tray::Menu(POINT point)
+{
+    commands_.refresh();
+    auto item = ShowMenu(point);
+    if (item == TrayItem::Open)
+    {
+        commands_.open();
+    }
+    else if (item == TrayItem::Pause)
+    {
+        commands_.pause();
+    }
+    else if (item == TrayItem::Exit)
+    {
+        commands_.exit();
+    }
 }
 
 Tray::~Tray()
@@ -49,7 +146,7 @@ void Tray::Apply(DWORD action)
     icon.uID = iconId;
     icon.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP | NIF_SHOWTIP;
     icon.uCallbackMessage = callback_;
-    icon.hIcon = activity_.notifiesProblems && activity_.errorCount && errorIcon_ ? errorIcon_ :
+    icon.hIcon = ShowsError() && errorIcon_ ? errorIcon_ :
         LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_TINYTORRENT));
     tooltip_ = Tooltip();
     wcsncpy_s(icon.szTip, tooltip_.c_str(), _TRUNCATE);
@@ -62,7 +159,7 @@ void Tray::Apply(DWORD action)
 
 void Tray::Update(Activity activity, bool loading, bool pausable)
 {
-    bool hadError = activity_.notifiesProblems && activity_.errorCount;
+    bool hadError = ShowsError();
     activity_ = std::move(activity);
     loading_ = loading;
     pausable_ = pausable;
@@ -73,7 +170,7 @@ void Tray::Update(Activity activity, bool loading, bool pausable)
         Rename(TrayItem::Pause, PauseText());
         EnableMenuItem(menu_, Id(TrayItem::Pause), MF_BYCOMMAND | (pausable_ ? MF_ENABLED : MF_GRAYED));
     }
-    if (Tooltip() != tooltip_ || hadError != (activity_.notifiesProblems && activity_.errorCount))
+    if (Tooltip() != tooltip_ || hadError != ShowsError())
     {
         Apply(NIM_MODIFY);
     }
@@ -249,6 +346,11 @@ std::wstring Tray::Counts() const
     return strings_.Format("tray", "counts", {active, queued});
 }
 
+bool Tray::ShowsError() const
+{
+    return activity_.notices.contains(NoticeSwitch::Problems) && activity_.errorCount;
+}
+
 std::wstring Tray::Tooltip() const
 {
     auto errors = activity_.errorCount ?
@@ -259,9 +361,9 @@ std::wstring Tray::Tooltip() const
     }
     if (activity_.paused)
     {
-        if (!activity_.missingAdapter.empty())
+        if (activity_.missingAdapter)
         {
-            return errors + strings_.Format("tray", "missing_adapter", {Wide(activity_.missingAdapter)});
+            return errors + strings_.Format("tray", "missing_adapter", {Wide(*activity_.missingAdapter)});
         }
         return errors + Counts();
     }

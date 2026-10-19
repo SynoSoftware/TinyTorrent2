@@ -3,10 +3,22 @@
 
 namespace tt
 {
+// The word of each registration action in the protocol and on the command
+// line.
+inline constexpr std::pair<std::string_view, RegistrationAction> registrationActions[] = {
+    {"observe", RegistrationAction::Observe},
+    {"register_handlers", RegistrationAction::RegisterHandlers},
+    {"unregister_handlers", RegistrationAction::UnregisterHandlers},
+    {"enable_startup", RegistrationAction::EnableStartup},
+    {"disable_startup", RegistrationAction::DisableStartup}};
+
 class Registration
 {
 public:
-    Json Execute(std::string const& name) const;
+    Outcome Execute(RegistrationAction action) const;
+    // Who holds the handlers and startup entry, and the broken handlers, as
+    // Settings shows them.
+    Json Observe() const;
     void Repair() const;
     // The programs that torrent or magnet handlers start but that are
     // missing, whichever application registered them.
@@ -15,7 +27,6 @@ public:
     // missing program; needs an administrator.
     void RepairMachine(std::vector<std::wstring> const& classes) const;
 private:
-    Json Observe() const;
     void RegisterHandlers() const;
     void UnregisterHandlers() const;
 };

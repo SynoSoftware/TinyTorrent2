@@ -124,7 +124,7 @@ void Engine::State::CollectDetail(Reading::Read read)
     auto& torrent = found->second;
     if (torrent.restore)
     {
-        read.reply(Failure(ProblemKind::AliasConflict, torrent.conflict));
+        read.reply(Failure(ErrorCode::AliasConflict, torrent.conflict));
         return;
     }
     if (reading && reading->torrentId != torrent.torrentId)
@@ -173,10 +173,7 @@ void Engine::State::Query(Torrent& torrent, DetailKind kind)
         handle.post_file_priorities();
         break;
     case DetailKind::Status:
-        // The routine updates never ask for the save path, so it marks this
-        // status as the answer.
-        handle.post_status(lt::torrent_handle::query_name | lt::torrent_handle::query_save_path | lt::torrent_handle::query_renamed_files |
-            lt::torrent_handle::query_pieces | lt::torrent_handle::query_torrent_file);
+        handle.post_status(detailQuery);
         break;
     case DetailKind::Availability:
         handle.post_piece_availability();
@@ -394,15 +391,15 @@ void Engine::State::On(lt::file_priorities_alert const& alert)
         return;
     }
     auto metadata = torrent->handle.torrent_file();
-    if ((torrent->priorityReply || torrent->piecesPending) &&
+    if ((torrent->priorityCompletion || torrent->piecesPending) &&
         (!metadata || alert.priorities != torrent->ChosenPriorities(metadata)))
         return;
     if (std::exchange(torrent->piecesPending, false))
         torrent->PrioritizePieces(alert.priorities);
-    if (torrent->priorityReply)
+    if (torrent->priorityCompletion)
     {
         torrent->unsaved = true;
-        std::exchange(torrent->priorityReply, nullptr)(Success());
+        std::exchange(torrent->priorityCompletion, nullptr)({});
     }
 }
 

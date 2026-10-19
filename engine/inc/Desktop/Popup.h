@@ -118,7 +118,7 @@ public:
     // enabled, so the focus ring shows where Enter goes.
     void Ask(Prompt prompt);
     void Close();
-    void SetTheme(std::string theme);
+    void SetTheme(Theme theme);
     bool IsOpen() const { return window_ != nullptr; }
     bool IsPersistent() const { return window_ && content_.stay != NoticeStay::Timed; }
     bool IsMenuOpen() const { return menu_ != nullptr; }
@@ -145,6 +145,13 @@ private:
         std::wstring defaultAction;
         // In client coordinates.
         RECT bounds{};
+    };
+    // A slide that began at `start`, and takes the popup away from its place
+    // when `leaving`.
+    struct Sliding
+    {
+        ULONGLONG start;
+        bool leaving;
     };
     static LRESULT CALLBACK Procedure(HWND window, UINT message, WPARAM first, LPARAM second);
     LRESULT Handle(HWND window, UINT message, WPARAM first, LPARAM second);
@@ -212,7 +219,7 @@ private:
     void DeleteFonts();
     Strings const& strings_;
     Acrylic acrylic_;
-    std::string theme_ = "system";
+    Theme theme_ = Theme::System;
     HWND window_ = nullptr;
     Content content_;
     // The popup asks a prompt, which has a taskbar button and stays below the
@@ -235,12 +242,9 @@ private:
     RECT more_{};
     HWND tooltip_ = nullptr;
     Accessibility* accessibility_ = nullptr;
-    // Where Layout places the popup, and when its current slide began; zero
-    // when it is not sliding.
+    // Where Layout places the popup.
     POINT place_{};
-    ULONGLONG slideStart_ = 0;
-    // The current slide takes the popup away from its place.
-    bool leaving_ = false;
+    std::optional<Sliding> sliding_;
     // The pointer is over the popup, which then stays open.
     bool tracking_ = false;
     HWND menu_ = nullptr;

@@ -122,6 +122,7 @@
     <ClCompile Include="SpeedHistory.cpp" />
     <ClCompile Include="Engine\Files.cpp" />
     <ClCompile Include="Engine\Move.cpp" />
+    <ClCompile Include="Engine\Removal.cpp" />
     <ClCompile Include="Engine\Previews.cpp" />
     <ClCompile Include="Engine\Additions.cpp" />
     <ClCompile Include="Engine\Watching.cpp" />
@@ -140,9 +141,7 @@
     <ClCompile Include="Registration.cpp" />
     <ClCompile Include="Pipe.cpp" />
     <ClCompile Include="Desktop\Acrylic.cpp" />
-    <ClCompile Include="Desktop\Application.cpp">
-      <PreprocessorDefinitions>TT_WINDOW_FILE=L&quot;$(WindowTargetName).exe&quot;;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-    </ClCompile>
+    <ClCompile Include="Desktop\Application.cpp" />
     <ClCompile Include="Desktop\Instance.cpp">
       <PreprocessorDefinitions>TT_WINDOW_FILE=L&quot;$(WindowTargetName).exe&quot;;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
@@ -151,6 +150,9 @@
     <ClCompile Include="Desktop\PowerRequest.cpp" />
     <ClCompile Include="Desktop\Splash.cpp" />
     <ClCompile Include="Desktop\Tray.cpp" />
+    <ClCompile Include="Desktop\Window.cpp">
+      <PreprocessorDefinitions>TT_WINDOW_FILE=L&quot;$(WindowTargetName).exe&quot;;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
     <ResourceCompile Include="Resources.rc" />
   </ItemGroup>
   <!-- The notice menu's icons. The window's output has its own copy from Lucide.csproj

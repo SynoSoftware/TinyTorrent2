@@ -1,22 +1,29 @@
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('Frames', 'Summaries', 'Targets', 'Facts', 'Restore', 'Exit', 'Conflict', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames', 'Pause', 'History', 'Accounting')]
+    [ValidateSet('Frames', 'Summaries', 'Targets', 'Facts', 'Restore', 'Exit', 'Conflict', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames', 'Pause', 'History', 'Accounting', 'WaitingMove')]
     [string] $Check,
-    # Every check but Conflict, which makes its own torrents.
+    # Every check but Conflict and WaitingMove, which make their own torrents.
     [string] $TorrentFile,
     [string] $EnginePath,
-    [switch] $Transfer
+    [switch] $Transfer,
+    [switch] $OptIn
 )
 
 $ErrorActionPreference = 'Stop'
 # These checks start the Transfer peer and download real payload, which takes
 # minutes of the owner's machine, so they run only when the owner asks.
 $transferChecks = 'MagnetDownload', 'SelectedTransfer', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles'
-if (-not $TorrentFile -and $Check -ne 'Conflict') {
+# These checks each guard one defect that was already fixed, so a run of every
+# check skips them; the owner asks for them when that code changes.
+$optInChecks = 'WaitingMove'
+if (-not $TorrentFile -and $Check -notin 'Conflict', 'WaitingMove') {
     throw "$Check needs -TorrentFile."
 }
 if ($Check -in $transferChecks -and -not $Transfer) {
     throw "$Check runs a real transfer. Run it only when the owner asks, with -Transfer."
+}
+if ($Check -in $optInChecks -and -not $OptIn) {
+    throw "$Check runs only when the owner asks, with -OptIn."
 }
 $repository = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $engineName = ([xml](Get-Content (Join-Path $repository 'Directory.Build.props'))).Project.PropertyGroup.EngineTargetName | Where-Object { $_ }
@@ -33,6 +40,7 @@ $stalled = $null
 $heldFile = $null
 $peer = $null
 $peerDirectory = Join-Path $directory 'peer'
+$window = $null
 
 function Preview {
     $reply = Send-Command @{ command = 'preview'; source = $TorrentFile; destination = $payload }
@@ -404,14 +412,10 @@ try {
                 $snapshot = Start-Engine
                 Assert ($snapshot.torrents.Count -eq 2) 'Restart lost an unfinished-file owner'
                 if ($restart -eq 1) {
-                    $until = [DateTime]::UtcNow.AddSeconds(15)
-                    do {
-                        $reply = Send-Command @{ command = 'verify'; torrent_ids = $identities }
-                        if ($reply.ok) { break }
-                        Assert ($reply.error.code -eq 'files_busy') 'The copied-in fixture bytes could not be verified'
-                        Start-Sleep -Milliseconds 100
-                    } while ([DateTime]::UtcNow -lt $until)
-                    Assert $reply.ok 'Restored filename preparation did not admit verification'
+                    # Restored names are still being prepared, so Verify waits
+                    # for them instead of asking the person to try again.
+                    $reply = Send-Command @{ command = 'verify'; torrent_ids = $identities }
+                    Assert $reply.ok 'Verification was refused while restored filenames were prepared'
                 }
                 $until = [DateTime]::UtcNow.AddSeconds(15)
                 do {
@@ -1150,6 +1154,98 @@ try {
             } while ([DateTime]::UtcNow -lt $until)
             Assert (($order -join ',') -eq $expected) 'Saved queue order was lost after restart'
         }
+        'WaitingMove' {
+            # A Move that waits for another torrent's metadata once repeated
+            # its notice every second. The engine sends notices only to the
+            # window, so a second process stands in for it. That process ends
+            # before Exit, because Exit waits for the window's process.
+            $windowScript = @'
+param([string] $Name, [string] $Frames, [string] $Stop)
+$stream = [IO.Pipes.NamedPipeClientStream]::new('.', $Name, [IO.Pipes.PipeDirection]::InOut, [IO.Pipes.PipeOptions]::Asynchronous)
+$stream.Connect(10000)
+function Read-Exactly([int] $count) {
+    $bytes = [byte[]]::new($count)
+    $offset = 0
+    while ($offset -lt $count) {
+        $read = $stream.ReadAsync($bytes, $offset, $count - $offset)
+        while (-not $read.Wait(250)) { if (Test-Path -LiteralPath $Stop) { exit 0 } }
+        if ($read.Result -eq 0) { exit 0 }
+        $offset += $read.Result
+    }
+    return ,$bytes
+}
+function Read-Frame { [Text.Encoding]::UTF8.GetString((Read-Exactly ([BitConverter]::ToInt32((Read-Exactly 4), 0)))) }
+$null = Read-Frame
+$bytes = [Text.Encoding]::UTF8.GetBytes('{"request_id":1,"command":"ready"}')
+$stream.Write([BitConverter]::GetBytes([int]$bytes.Length), 0, 4)
+$stream.Write($bytes, 0, $bytes.Length)
+while ($true) { Add-Content -LiteralPath $Frames -Value (Read-Frame) }
+'@
+            $windowFile = Join-Path $directory 'window.ps1'
+            $frames = Join-Path $directory 'window.json'
+            Set-Content -LiteralPath $windowFile -Value $windowScript
+            $window = Start-Process -FilePath (Get-Process -Id $PID).Path -WindowStyle Hidden -PassThru -ArgumentList @(
+                '-NoProfile', '-File', ('"' + $windowFile + '"'), '-Name', "TinyTorrent.$logon",
+                '-Frames', ('"' + $frames + '"'), '-Stop', ('"' + (Join-Path $directory 'window-stop') + '"'))
+            function Read-Window {
+                if (-not (Test-Path -LiteralPath $frames)) { return @() }
+                $stream = [IO.File]::Open($frames, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+                $reader = [IO.StreamReader]::new($stream)
+                try { return @($reader.ReadToEnd().Split("`n", [StringSplitOptions]::RemoveEmptyEntries) | ForEach-Object { $_ | ConvertFrom-Json }) }
+                finally { $reader.Dispose() }
+            }
+            $until = [DateTime]::UtcNow.AddSeconds(15)
+            do {
+                Start-Sleep -Milliseconds 100
+                $ready = Read-Window | Where-Object request_id -eq 1
+            } while (-not $ready -and [DateTime]::UtcNow -lt $until)
+            Assert ($ready -and $ready.ok) 'The stand-in window could not connect'
+            # Paused, so nothing reaches the network. The torrent has no data,
+            # so it is not finished, which is the case that repeated.
+            $reply = Send-Command @{ command = 'session_pause'; paused = $true }
+            Assert $reply.ok 'The waiting-move session could not pause'
+            $content = [Text.Encoding]::ASCII.GetBytes(('x' * 2048))
+            $digest = [Security.Cryptography.SHA1]::HashData($content)
+            $fixture = Join-Path $directory 'waiting.torrent'
+            $prefix = [Text.Encoding]::ASCII.GetBytes('d4:infod6:lengthi2048e4:name11:waiting.bin12:piece lengthi16384e6:pieces20:')
+            $suffix = [Text.Encoding]::ASCII.GetBytes('7:privatei1eee')
+            [IO.File]::WriteAllBytes($fixture, [byte[]]($prefix + $digest + $suffix))
+            $preview = Send-Command @{ command = 'preview'; source = $fixture; destination = $payload }
+            Assert $preview.ok 'The waiting-move fixture did not preview'
+            $reply = Send-Command @{ command = 'add'; preview_id = $preview.data.preview_id; destination = $payload; paused = $false }
+            Assert $reply.ok 'The waiting-move fixture could not be added'
+            $torrentId = $reply.data.torrent_id
+            $preview = Send-Command @{ command = 'preview'; source = 'magnet:?xt=urn:btih:0123456789012345678901234567890123456789'; destination = $payload }
+            Assert $preview.ok 'The metadata-less magnet did not preview'
+            $reply = Send-Command @{ command = 'add'; preview_id = $preview.data.preview_id; destination = $payload; paused = $true }
+            Assert $reply.ok 'The metadata-less magnet could not be added'
+            $magnetId = $reply.data.torrent_id
+
+            $destination = Join-Path $directory 'moved'
+            $reply = Send-Command @{ command = 'move'; torrent_ids = @($torrentId); destination = $destination }
+            Assert $reply.ok "A Move that waits for metadata was refused: $($reply.error.code)"
+            # Twelve seconds are twelve engine ticks, and each one repeated it.
+            Start-Sleep -Seconds 12
+            $row = (Send-Command @{ command = 'snapshot' }).data.torrents | Where-Object torrent_id -eq $torrentId
+            Assert (-not $row.complete -and $row.error -eq 'metadata_unavailable' -and $row.save_path -eq $payload) `
+                "The waiting Move shows '$($row.error)' at '$($row.save_path)'"
+            $notices = @(Read-Window | Where-Object { $_.type -eq 'notice' -and $_.torrent_id -eq $torrentId })
+            Assert ($notices.Count -eq 1 -and $notices[0].code -eq 'metadata_unavailable') "The waiting Move sent $($notices.Count) notices"
+
+            $reply = Send-Command @{ command = 'remove'; torrent_ids = @($magnetId) }
+            Assert $reply.ok 'The metadata-less magnet could not be removed'
+            $until = [DateTime]::UtcNow.AddSeconds(20)
+            do {
+                Start-Sleep -Milliseconds 250
+                $row = (Send-Command @{ command = 'snapshot' }).data.torrents | Where-Object torrent_id -eq $torrentId
+            } while (($row.save_path -ne $destination -or $row.moving -or $row.move_destination) -and [DateTime]::UtcNow -lt $until)
+            Assert ($row.save_path -eq $destination -and -not $row.moving -and -not $row.error) `
+                "The waiting Move did not start: '$($row.save_path)', moving $($row.moving), error '$($row.error)'"
+            $notices = @(Read-Window | Where-Object { $_.type -eq 'notice' -and $_.torrent_id -eq $torrentId })
+            Assert ($notices.Count -eq 1) "The Move sent $($notices.Count) notices in total"
+            $null = New-Item -ItemType File -Path (Join-Path $directory 'window-stop') -Force
+            Assert ($window.WaitForExit(15000)) 'The stand-in window did not end'
+        }
     }
     Stop-Engine
     if ($stalled) { $stalled.Dispose(); $stalled = $null }
@@ -1162,6 +1258,10 @@ finally {
         if (-not $peer.WaitForExit(15000)) { $peer.Kill(); $peer.WaitForExit() }
     }
     if ($stalled) { $stalled.Dispose() }
+    if ($window -and -not $window.HasExited) {
+        $null = New-Item -ItemType File -Path (Join-Path $directory 'window-stop') -Force
+        if (-not $window.WaitForExit(15000)) { $window.Kill(); $window.WaitForExit() }
+    }
     if ($script:process -and -not $script:process.HasExited) {
         try {
             if (-not $script:pipe) { $script:pipe = Connect-Pipe }

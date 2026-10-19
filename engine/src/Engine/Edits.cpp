@@ -7,11 +7,11 @@
 
 namespace tt
 {
-void Engine::State::Edit(std::string const& id, Json const& choices, Reply reply)
+void Engine::State::Edit(std::string const& id, Json const& choices, std::function<void(Outcome)> completion)
 {
     if (!choices.is_object() || choices.empty())
     {
-        reply(Failure(ErrorCode::InvalidRequest));
+        completion({ErrorCode::InvalidRequest});
         return;
     }
     std::map<int, lt::download_priority_t> priorities;
@@ -27,14 +27,14 @@ void Engine::State::Edit(std::string const& id, Json const& choices, Reply reply
                     !entry["priority"].is_number_integer() || entry["priority"] < 0 ||
                     entry["priority"] > static_cast<std::uint8_t>(lt::top_priority))
                 {
-                    reply(Failure(ErrorCode::InvalidPriorities));
+                    completion({ErrorCode::InvalidPriorities});
                     return;
                 }
                 auto index = entry["index"].get<int>();
                 auto priority = lt::download_priority_t(entry["priority"].get<std::uint8_t>());
                 if (!IsChoice(priority) || !priorities.emplace(index, priority).second)
                 {
-                    reply(Failure(ErrorCode::InvalidPriorities));
+                    completion({ErrorCode::InvalidPriorities});
                     return;
                 }
             }
@@ -49,7 +49,7 @@ void Engine::State::Edit(std::string const& id, Json const& choices, Reply reply
                     !entry.contains("tier") || !entry["tier"].is_number_integer() ||
                     entry["tier"] < 0 || entry["tier"] > 255)
                 {
-                    reply(Failure(ErrorCode::InvalidTrackers));
+                    completion({ErrorCode::InvalidTrackers});
                     return;
                 }
                 auto url = entry["url"].get<std::string>();
@@ -58,7 +58,7 @@ void Engine::State::Edit(std::string const& id, Json const& choices, Reply reply
                     !lt::aux::string_begins_no_case("udp://", url)) ||
                     !lt::aux::is_valid_tracker_url(url))
                 {
-                    reply(Failure(ErrorCode::InvalidTrackers));
+                    completion({ErrorCode::InvalidTrackers});
                     return;
                 }
                 if (!urls.insert(url).second)
@@ -73,30 +73,30 @@ void Engine::State::Edit(std::string const& id, Json const& choices, Reply reply
         }
         else
         {
-            reply(Failure(ErrorCode::InvalidRequest));
+            completion({ErrorCode::InvalidRequest});
             return;
         }
     }
-    Act({id}, reply, [this, priorities = std::move(priorities), trackers = std::move(trackers)]
-        (auto const& ids, Reply reply)
+    Act({id}, completion, [this, priorities = std::move(priorities), trackers = std::move(trackers)]
+        (auto const& ids, auto done)
     {
-        CommitEdit(ids.front(), priorities, trackers, reply);
+        CommitEdit(ids.front(), priorities, trackers, done);
     });
 }
 
 void Engine::State::CommitEdit(std::string const& id,
     std::map<int, lt::download_priority_t> const& priorities,
-    std::optional<std::vector<lt::announce_entry>> const& trackers, Reply reply)
+    std::optional<std::vector<lt::announce_entry>> const& trackers, std::function<void(Outcome)> completion)
 {
     auto& torrent = torrents.at(id);
     if (torrent.restore)
     {
-        reply(Failure(ProblemKind::AliasConflict, torrent.conflict));
+        completion({ErrorCode::AliasConflict, torrent.conflict});
         return;
     }
-    if (!priorities.empty() && torrent.priorityReply)
+    if (!priorities.empty() && torrent.priorityCompletion)
     {
-        reply(Failure(ErrorCode::Overloaded));
+        completion({ErrorCode::Overloaded});
         return;
     }
     auto facts = torrent.facts;
@@ -105,7 +105,7 @@ void Engine::State::CommitEdit(std::string const& id,
         auto metadata = torrent.handle.torrent_file();
         if (!metadata)
         {
-            reply(Failure(ErrorCode::MetadataUnavailable));
+            completion({ErrorCode::MetadataUnavailable});
             return;
         }
         if (facts.priorities.empty())
@@ -116,7 +116,7 @@ void Engine::State::CommitEdit(std::string const& id,
         {
             if (index >= metadata->num_files())
             {
-                reply(Failure(ErrorCode::InvalidPriorities));
+                completion({ErrorCode::InvalidPriorities});
                 return;
             }
             facts.priorities[index] = priority;
@@ -124,59 +124,59 @@ void Engine::State::CommitEdit(std::string const& id,
         auto chosen = Priorities(facts.priorities, metadata);
         if (!chosen)
         {
-            reply(Failure(ErrorCode::InvalidPriorities));
+            completion({ErrorCode::InvalidPriorities});
             return;
         }
         facts.priorities = std::move(*chosen);
     }
-    if (trackers)
+    bool hasPriorities = !priorities.empty();
+    CommitFacts({id}, [hasPriorities, chosen = std::move(facts.priorities), trackers](std::string const&, Facts& saved)
     {
-        facts.trackers = trackers;
-    }
-    auto apply = [this, id, facts, hasPriorities = !priorities.empty(), hasTrackers = bool(trackers), reply]
+        if (hasPriorities)
+        {
+            saved.priorities = chosen;
+        }
+        if (trackers)
+        {
+            saved.trackers = trackers;
+        }
+    }, [this, id, hasPriorities, hasTrackers = trackers.has_value(), completion](Outcome outcome, auto const&)
     {
+        if (outcome.error)
+        {
+            completion(std::move(outcome));
+            return;
+        }
         auto& torrent = torrents.at(id);
-        torrent.facts = facts;
         torrent.unsaved = true;
         if (hasTrackers)
         {
-            torrent.handle.replace_trackers(*facts.trackers);
+            torrent.handle.replace_trackers(*torrent.facts.trackers);
         }
-        if (hasPriorities)
+        // Changing which files download can move data between files, so it
+        // waits for the torrent's busy files; the choice is already saved.
+        if (hasPriorities && torrent.FilesBusy())
         {
-            torrent.priorityReply = reply;
-            torrent.handle.prioritize_files(facts.priorities);
+            torrent.prioritiesPending = true;
+            completion({});
+        }
+        else if (hasPriorities)
+        {
+            torrent.priorityCompletion = completion;
+            torrent.handle.prioritize_files(torrent.facts.priorities);
             Invalidate(id);
             QueryPriorities(torrent);
         }
         else
         {
-            reply(Success());
-        }
-    };
-    if (facts.ToJson() == torrent.facts.ToJson())
-    {
-        apply();
-        return;
-    }
-    auto document = Saved();
-    document.torrents.at(id) = facts;
-    changes.Commit([document = std::move(document)] { return document.ToJson(); }, [apply, reply](Outcome outcome)
-    {
-        if (!outcome.error)
-        {
-            apply();
-        }
-        else
-        {
-            reply(Failure(*outcome.error, outcome.detail));
+            completion({});
         }
     });
 }
 
 void Engine::State::QueryPriorities(Torrent& torrent)
 {
-    if (!torrent.restore && (torrent.priorityReply || torrent.piecesPending) && torrent.handle.torrent_file())
+    if (!torrent.restore && (torrent.priorityCompletion || torrent.piecesPending) && torrent.handle.torrent_file())
     {
         Query(torrent, DetailKind::Priorities);
     }

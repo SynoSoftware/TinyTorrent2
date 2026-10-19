@@ -403,28 +403,29 @@ void Engine::State::CheckProxy(Settings::Proxy proxy, std::function<void(std::op
         completion(ProxyCheck{ProxyOutcome::Unreachable});
         return;
     }
-    auto check = std::make_shared<ProxyCheck>();
     auto stop = checkStop.get_token();
-    checks.Run([this, proxy = std::move(proxy), check, stop, adapter = std::move(adapter)]
+    checks.Run([this, proxy = std::move(proxy), stop, adapter = std::move(adapter)]
     {
         auto started = Clock::now();
         Winsock winsock;
         Connection connection(stop, started + checkLimit, checkGate, adapter);
+        ProxyCheck check;
         try
         {
             connection.Open(proxy.host, proxy.port);
-            check->outcome = proxy.type == ProxyType::Socks4 ? Socks4(connection) :
+            check.outcome = proxy.type == ProxyType::Socks4 ? Socks4(connection) :
                 proxy.type == ProxyType::Http ? Http(connection, proxy.username, proxy.password) :
                 Socks5(connection, proxy.username, proxy.password);
         }
         catch (ProxyOutcome outcome)
         {
-            check->outcome = outcome;
+            check.outcome = outcome;
         }
-        check->elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - started);
-    }, [check, completion, stop](StorageOutcome outcome)
+        check.elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - started);
+        return check;
+    }, [completion, stop](std::expected<ProxyCheck, StorageOutcome> check)
     {
-        completion(!outcome.failure && !stop.stop_requested() ? std::optional(*check) : std::nullopt);
+        completion(check && !stop.stop_requested() ? std::optional(*check) : std::nullopt);
     });
 }
 }

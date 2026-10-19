@@ -9,6 +9,7 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -107,21 +108,17 @@ struct Activity
     bool paused = false;
     // The tray's Pause item offers Resume only for a pause Resume can lift.
     bool pausedByChoice = false;
-    std::string missingAdapter;
+    std::optional<std::string> missingAdapter;
     bool downloading = false;
     bool seeding = false;
     bool hasIncoming = false;
-    bool notificationsEnabled = false;
-    bool notifiesProblems = true;
-    bool notifiesAdded = false;
-    bool notifiesBackground = true;
+    // The notification switches that are on.
+    std::set<NoticeSwitch> notices;
     bool preventsSleep = true;
     bool preventsSleepSeeding = false;
     std::vector<std::string> reportedPrograms;
-    bool filesBusy = false;
     bool confirmsExit = true;
-    // The app's "light", "dark" or "system" choice.
-    std::string theme;
+    Theme theme = Theme::System;
 };
 
 class Engine
@@ -151,7 +148,6 @@ public:
     void RecordPrograms(std::vector<std::string> programs, std::function<void(Outcome)> completion);
     // Adds a source to the default destination with the default file choices.
     void Add(std::string const& source, std::function<void(Outcome, Added)> completion);
-    Json Snapshot();
     tt::Activity Activity() const;
     std::vector<Notice> TakeNotices();
     std::string Name(std::string const& torrentId) const;
@@ -255,9 +251,6 @@ char const* ToString(NoticeKind kind);
 std::string ToString(NoticeSwitch notices);
 std::vector<NoticeSwitch> AllNoticeSwitches();
 char const* ToString(ErrorCode code);
-std::optional<ErrorCode> ParseError(std::string_view word);
 Json Success(Json data = Json::object());
 Json Failure(ErrorCode code, std::string detail = {});
-// A request refused because of a torrent's problem reports that problem.
-Json Failure(ProblemKind kind, std::string detail = {});
 }

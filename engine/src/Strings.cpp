@@ -120,7 +120,7 @@ bool Strings::Supports(std::string_view language)
     return Parse(catalogues, language).has_value();
 }
 
-std::wstring Strings::Text(std::string const& group, std::string const& key) const
+std::optional<std::wstring> Strings::Find(std::string const& group, std::string const& key) const
 {
     auto messages = catalogue_.find(group);
     if (messages != catalogue_.end())
@@ -131,7 +131,12 @@ std::wstring Strings::Text(std::string const& group, std::string const& key) con
             return Wide(message->get<std::string>());
         }
     }
-    return Wide(group + "." + key);
+    return std::nullopt;
+}
+
+std::wstring Strings::Text(std::string const& group, std::string const& key) const
+{
+    return Find(group, key).value_or(Wide(group + "." + key));
 }
 
 std::wstring Strings::Format(std::string const& group, std::string const& key,

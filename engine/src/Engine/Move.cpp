@@ -1,19 +1,22 @@
 #include "Engine/State.h"
 #include <algorithm>
+#include <iterator>
 
 namespace tt
 {
 void Engine::State::StartMove(std::vector<std::string> const& ids, std::string const& destination, MoveStart start,
     std::function<void(Outcome)> accepted)
 {
-    if (auto ready = FilesReady(ids); ready.error)
-    {
-        accepted(std::move(ready));
-        return;
-    }
+    // Checked before busy files, so a move that waits for them has a folder
+    // it can use.
     if (!IsAbsolute(destination))
     {
         accepted({ErrorCode::InvalidDestination});
+        return;
+    }
+    if (auto ready = FilesReady(ids); ready.error)
+    {
+        accepted(std::move(ready));
         return;
     }
     if (!FileScope(ids).shared.empty())
@@ -35,10 +38,10 @@ void Engine::State::StartMove(std::vector<std::string> const& ids, std::string c
     for (auto const& id : ids)
     {
         auto const& torrent = torrents.at(id);
-        if (!torrent.facts.moveDestination.empty())
+        auto const& marker = torrent.facts.marker;
+        if (marker)
             moving.recovering.push_back(id);
-        if (!torrent.facts.moveDestination.empty() && torrent.facts.moveStage != MoveStage::Staged &&
-            SameFolder(torrent.facts.moveDestination, destination))
+        if (marker && marker->stage != MoveStage::Staged && SameFolder(marker->destination, destination))
             continued.push_back(id);
         auto physical = torrent.Paths();
         auto from = FilePaths(torrent, torrent.facts.savePath, false);
@@ -73,9 +76,7 @@ void Engine::State::StartMove(std::vector<std::string> const& ids, std::string c
         {
             continue;
         }
-        auto outside = FilePaths(other);
-        auto actual = FilePaths(other, {}, false);
-        outside.insert(outside.end(), actual.begin(), actual.end());
+        auto outside = Footprint(other);
         if (std::any_of(outside.begin(), outside.end(), [&destinations](auto const& path)
             { return std::binary_search(destinations.begin(), destinations.end(), path, PathBefore); }))
         {
@@ -90,14 +91,11 @@ void Engine::State::StartMove(std::vector<std::string> const& ids, std::string c
     auto checked = start == MoveStart::Resumed ? MoveStage::Waiting : MoveStage::Placing;
     auto stage = [continued, checked](std::string const& id)
         { return Contains(continued, id) ? checked : MoveStage::Staged; };
-    auto document = Saved();
-    for (auto const& id : ids)
-    {
-        document.torrents.at(id).moveDestination = destination;
-        document.torrents.at(id).moveStage = stage(id);
-    }
     move = std::move(moving);
-    changes.Commit([document = std::move(document)] { return document.ToJson(); }, [this, accepted, stage](Outcome outcome)
+    CommitFacts(ids, [destination, stage](std::string const& id, Facts& facts)
+    {
+        facts.marker = Facts::Marker{destination, stage(id)};
+    }, [this, accepted](Outcome outcome, auto const&)
     {
         if (outcome.error)
         {
@@ -108,15 +106,87 @@ void Engine::State::StartMove(std::vector<std::string> const& ids, std::string c
         for (auto const& id : move->ids)
         {
             auto& torrent = torrents.at(id);
-            torrent.facts.moveDestination = move->destination;
-            torrent.facts.moveStage = stage(id);
             torrent.moving = true;
+            // The latest move the person asked for replaces one that waited.
+            torrent.waitingMove.reset();
             torrent.moveError.reset();
             torrent.ApplyIntent();
         }
         PrepareMove();
         accepted({});
     });
+}
+
+// Starts the moves the person asked for while files were busy, the torrents
+// with one destination together, once the files are free.
+void Engine::State::MoveWaiting()
+{
+    if (startup != Startup::Ready || IsShuttingDown() || !changes.IsIdle())
+        return;
+    auto waits = [](Torrent const& torrent) { return !torrent.deleted && torrent.waitingMove; };
+    auto first = std::find_if(torrents.begin(), torrents.end(), [&waits](auto const& entry)
+        { return waits(entry.second); });
+    if (first == torrents.end())
+        return;
+    auto destination = *first->second.waitingMove;
+    std::vector<std::string> ids;
+    for (auto const& [id, torrent] : torrents)
+    {
+        if (waits(torrent) && SameFolder(*torrent.waitingMove, destination))
+            ids.push_back(id);
+    }
+    auto ready = FilesReady(ids);
+    if (ready.error == ErrorCode::MetadataUnavailable)
+    {
+        for (auto const& id : ids)
+            RefuseMove(torrents.at(id), ready);
+    }
+    if (DelaysMove(ready))
+        return;
+    changes.Queue([this, waits, ids, destination]
+    {
+        std::vector<std::string> present;
+        for (auto const& id : ids)
+        {
+            auto found = torrents.find(id);
+            if (found != torrents.end() && waits(found->second) && SameFolder(*found->second.waitingMove, destination))
+                present.push_back(id);
+        }
+        if (present.empty())
+            return;
+        StartMove(present, destination, MoveStart::Requested, [this, present](Outcome outcome)
+        {
+            if (DelaysMove(outcome))
+                return;
+            for (auto const& id : present)
+            {
+                auto found = torrents.find(id);
+                if (found == torrents.end())
+                    continue;
+                found->second.waitingMove.reset();
+                if (outcome.error)
+                    RefuseMove(found->second, outcome);
+            }
+        });
+    });
+}
+
+bool Engine::State::DelaysMove(Outcome const& outcome)
+{
+    return outcome.error == ErrorCode::FilesBusy || outcome.error == ErrorCode::MetadataUnavailable;
+}
+
+// Shows on the torrent, and once as a notice, why a move that the person is
+// not waiting on could not start.
+void Engine::State::RefuseMove(Torrent& torrent, Outcome const& outcome)
+{
+    bool shown = torrent.moveError && torrent.moveError->refusal == outcome.error;
+    torrent.moveError = Problem{ProblemKind::MoveFailed, outcome.detail, outcome.error};
+    // A wait that now names another torrent is the same problem, so the
+    // status update does not report it again.
+    torrent.notifiedError = outcome.detail;
+    if (!shown)
+        Notify(NoticeKind::Error, torrent, outcome.detail, torrent.moveError->Code());
 }
 
 // A crash, power loss or forced exit interrupts a move the person asked for,
@@ -126,22 +196,23 @@ void Engine::State::ResumeMove()
 {
     if (startup != Startup::Ready || IsShuttingDown() || !changes.IsIdle())
         return;
+    // A waiting move the person asked for replaces the interrupted one.
     auto waits = [](Torrent const& torrent)
-        { return !torrent.deleted && !torrent.restore && torrent.ResumesMove(); };
+        { return !torrent.deleted && !torrent.restore && !torrent.waitingMove && torrent.ResumesMove(); };
     auto first = std::find_if(torrents.begin(), torrents.end(), [&waits](auto const& entry)
         { return waits(entry.second); });
     if (first == torrents.end())
         return;
-    auto destination = first->second.facts.moveDestination;
+    auto destination = first->second.facts.marker->destination;
     std::vector<std::string> ids;
     for (auto const& [id, torrent] : torrents)
     {
-        if (waits(torrent) && SameFolder(torrent.facts.moveDestination, destination))
+        if (waits(torrent) && SameFolder(torrent.facts.marker->destination, destination))
             ids.push_back(id);
     }
-    // A refusal shows on the torrents, as a move to the final folder does.
-    // Busy files and another torrent's missing metadata only delay the move,
-    // which tries again at a later tick without queuing a change each time.
+    // A refusal shows on the torrents, as a move to the final folder does. A
+    // delayed move tries again at a later tick without queuing a change each
+    // time.
     // Any other refusal waits for the person: Waiting is set at once, so this
     // run does not try again, and saved, so the next launch does not either.
     auto refuse = [this, ids](Outcome const& outcome)
@@ -155,13 +226,9 @@ void Engine::State::ResumeMove()
             if (found == torrents.end())
                 continue;
             auto& torrent = found->second;
-            bool shown = torrent.moveError && torrent.moveError->refusal == outcome.error;
-            torrent.moveError = Problem{ProblemKind::MoveFailed, outcome.detail, outcome.error};
-            torrent.notifiedError = outcome.detail;
-            if (!shown)
-                Notify(NoticeKind::Error, torrent, outcome.detail, torrent.moveError->Code());
-            if (!delays)
-                torrent.facts.moveStage = MoveStage::Waiting;
+            RefuseMove(torrent, outcome);
+            if (!delays && torrent.facts.marker)
+                torrent.facts.marker->stage = MoveStage::Waiting;
         }
         if (delays)
             return;
@@ -171,8 +238,7 @@ void Engine::State::ResumeMove()
         });
         log.Write("move", ids.front(), "resume_refused");
     };
-    if (auto ready = FilesReady(ids); ready.error == ErrorCode::FilesBusy ||
-        ready.error == ErrorCode::MetadataUnavailable)
+    if (auto ready = FilesReady(ids); DelaysMove(ready))
     {
         refuse(ready);
         return;
@@ -182,7 +248,7 @@ void Engine::State::ResumeMove()
         if (!std::all_of(ids.begin(), ids.end(), [this, &waits](auto const& id)
             { auto found = torrents.find(id); return found != torrents.end() && waits(found->second); }))
             return;
-        StartMove(ids, torrents.at(ids.front()).facts.moveDestination, MoveStart::Resumed,
+        StartMove(ids, torrents.at(ids.front()).facts.marker->destination, MoveStart::Resumed,
             [refuse](Outcome outcome)
         {
             if (outcome.error)
@@ -220,7 +286,7 @@ void Engine::State::PrepareMove()
         auto physical = torrent.Paths();
         auto logical = torrent.Paths(true);
         // Only a continued member starts with its destination checked.
-        bool continued = torrent.facts.moveStage != MoveStage::Staged;
+        bool continued = torrent.facts.marker->stage != MoveStage::Staged;
         for (std::size_t index = 0; index < physical.size(); ++index)
         {
             auto source = std::filesystem::path(Wide(torrent.facts.savePath));
@@ -230,9 +296,8 @@ void Engine::State::PrepareMove()
         }
     }
     move->phase = MovePhase::Preflight;
-    auto problem = std::make_shared<std::optional<Problem>>();
-    auto existing = std::make_shared<std::vector<std::filesystem::path>>();
-    payload.Run([this, handles, files, problem, existing]
+    using Checked = std::expected<std::vector<std::filesystem::path>, Problem>;
+    payload.Run([this, handles, files]() -> Checked
     {
         ReleaseFiles(handles);
         auto present = [](auto const& path)
@@ -244,6 +309,7 @@ void Engine::State::PrepareMove()
         {
             return present(path) && (!std::filesystem::is_regular_file(path) || std::filesystem::file_size(path) != 0);
         };
+        std::vector<std::filesystem::path> existing;
         std::vector<std::filesystem::path> stale;
         for (auto const& file : files)
         {
@@ -257,15 +323,12 @@ void Engine::State::PrepareMove()
             bool alone = SamePath(file.destination, file.logicalDestination) || !present(file.logicalDestination);
             if (file.continued && alone && Payload::IsCopy({file.source, file.destination}))
             {
-                existing->push_back(file.destination);
+                existing.push_back(file.destination);
                 continue;
             }
             if (!SamePath(file.source, file.destination) && sourced)
-            {
-                *problem = Problem{ProblemKind::DestinationExists, Utf8(file.destination.wstring())};
-                return;
-            }
-            existing->push_back(file.destination);
+                return std::unexpected(Problem{ProblemKind::DestinationExists, Utf8(file.destination.wstring())});
+            existing.push_back(file.destination);
         }
         // An empty unfinished name would mask the final file after a partial move.
         for (auto const& file : files)
@@ -275,38 +338,37 @@ void Engine::State::PrepareMove()
                 stale.push_back(file.source);
         }
         Payload::Delete(stale);
-    }, [this, problem, existing](StorageOutcome outcome)
+        return existing;
+    }, [this](std::expected<Checked, StorageOutcome> checked)
     {
-        if (outcome.failure)
-            *problem = *outcome.failure == StorageFailure::Overloaded ?
-                Problem{ProblemKind::StorageOverloaded} : Problem{ProblemKind::MoveFailed, outcome.detail};
-        if (*problem)
+        if (!checked)
         {
-            FailMove(**problem);
+            FailMove(Problem::From(checked.error(), ProblemKind::MoveFailed));
             return;
         }
-        move->moved = std::move(*existing);
+        if (!*checked)
+        {
+            FailMove(checked->error());
+            return;
+        }
+        move->moved = std::move(**checked);
         // The checked destination is saved before any file changes, so the
         // next launch may continue this move and keep its complete copies.
         if (!changes.Queue([this]
         {
-            auto document = Saved();
-            for (auto const& id : move->ids)
+            std::vector<std::string> members;
+            std::copy_if(move->ids.begin(), move->ids.end(), std::back_inserter(members),
+                [this](std::string const& id) { return !torrents.at(id).deleted; });
+            CommitFacts(members, [](std::string const&, Facts& facts)
             {
-                if (!torrents.at(id).deleted && document.torrents.at(id).moveStage == MoveStage::Staged)
-                    document.torrents.at(id).moveStage = MoveStage::Placing;
-            }
-            changes.Commit([document = std::move(document)] { return document.ToJson(); }, [this](Outcome outcome)
+                if (facts.marker && facts.marker->stage == MoveStage::Staged)
+                    facts.marker->stage = MoveStage::Placing;
+            }, [this](Outcome outcome, auto const&)
             {
                 if (outcome.error)
                 {
                     FailMove(Problem{ProblemKind::MoveFailed, outcome.detail});
                     return;
-                }
-                for (auto const& id : move->ids)
-                {
-                    if (torrents.at(id).facts.moveStage == MoveStage::Staged)
-                        torrents.at(id).facts.moveStage = MoveStage::Placing;
                 }
                 move->phase = MovePhase::Ready;
                 ContinueMove();
@@ -338,8 +400,7 @@ void Engine::State::ContinueMove()
             continue;
         }
         torrent.moving = false;
-        torrent.facts.moveDestination.clear();
-        torrent.facts.moveStage = MoveStage::Staged;
+        torrent.facts.marker.reset();
         member = move->ids.erase(member);
     }
     if (move->phase != MovePhase::Ready)
@@ -366,24 +427,21 @@ void Engine::State::ContinueMove()
     move->progress = std::make_shared<Payload::Progress>();
     move->sampled = 0;
     move->phase = MovePhase::Copying;
-    auto failure = std::make_shared<std::optional<Payload::Failure>>();
-    copies.Run([this, handles, files = std::move(files), progress = move->progress, failure]
+    copies.Run([this, handles, files = std::move(files), progress = move->progress]
     {
         ReleaseFiles(handles);
-        if (auto placed = Payload::Move(files, *progress); !placed)
-            *failure = std::move(placed.error());
-    }, [this, failure, split](StorageOutcome outcome)
+        return Payload::Move(files, *progress);
+    }, [this, split](std::expected<std::expected<void, Payload::Failure>, StorageOutcome> placed)
     {
-        if (outcome.failure)
+        if (!placed)
         {
-            FailMove(*outcome.failure == StorageFailure::Overloaded ?
-                Problem{ProblemKind::StorageOverloaded} : Problem{ProblemKind::MoveFailed, outcome.detail});
+            FailMove(Problem::From(placed.error(), ProblemKind::MoveFailed));
             return;
         }
-        if (*failure)
+        if (!*placed)
         {
-            auto interrupted = split || (*failure)->kind == MoveFailure::Split;
-            FailMove(Problem{interrupted ? ProblemKind::MoveInterrupted : ProblemKind::MoveFailed, (*failure)->detail});
+            auto interrupted = split || placed->error().kind == MoveFailure::Split;
+            FailMove(Problem{interrupted ? ProblemKind::MoveInterrupted : ProblemKind::MoveFailed, placed->error().detail});
             return;
         }
         move->phase = MovePhase::Moving;
@@ -419,17 +477,16 @@ void Engine::State::FinishMove(lt::torrent_handle const& handle, std::string fai
     // Results can outlive recovery and arrive during another move of this
     // handle. Establish its current location instead of trusting that event.
     move->phase = MovePhase::Observing;
-    auto status = std::make_shared<lt::torrent_status>();
-    payload.Run([this, handle, status]
+    payload.Run([this, handle]
     {
         ReleaseFiles({handle});
-        *status = handle.status(lt::torrent_handle::query_save_path);
-    }, [this, status, failure](StorageOutcome outcome)
+        return handle.status(lt::torrent_handle::query_save_path);
+    }, [this, failure](std::expected<lt::torrent_status, StorageOutcome> status)
     {
-        if (outcome.failure || status->moving_storage)
+        if (!status || status->moving_storage)
         {
-            if (outcome.failure)
-                log.Write("move", move->ids.at(move->current), outcome.detail);
+            if (!status)
+                log.Write("move", move->ids.at(move->current), status.error().detail);
             move->phase = MovePhase::Moving;
             RecoverMove();
             return;
@@ -453,40 +510,37 @@ void Engine::State::SaveMove()
 {
     move->phase = MovePhase::Saving;
     auto id = move->ids.at(move->current);
-    auto relocate = [destination = move->destination](Facts& facts)
-    {
-        facts.savePath = destination;
-        facts.finalFolder.clear();
-        facts.moveDestination.clear();
-        facts.moveStage = MoveStage::Staged;
-        facts.verifyFiles = true;
-    };
     // The member ends at once, and its sources go after the new folder is
     // saved. A copied source that a later member also uses stays until that
     // member's own sources go, so its old folder stays complete until then.
-    auto settle = [this, id, relocate]
+    std::set<std::filesystem::path, decltype(&PathBefore)> later(PathBefore);
+    for (auto member = move->ids.begin() + move->current + 1; move->shared && member != move->ids.end(); ++member)
+    {
+        for (auto const& file : Relocated(torrents.at(*member)))
+            later.insert(file.source);
+    }
+    std::vector<std::filesystem::path> sources;
+    for (auto const& file : Relocated(torrents.at(id)))
+    {
+        if (!later.contains(file.source))
+            sources.push_back(file.source);
+    }
+    auto relocate = [destination = move->destination](std::string const&, Facts& facts)
+    {
+        facts.savePath = destination;
+        facts.finalFolder.clear();
+        facts.marker.reset();
+        facts.verifyFiles = true;
+    };
+    auto settle = [this, id, sources = std::move(sources), origin = FullPath(Wide(torrents.at(id).facts.savePath))]
     {
         auto& torrent = torrents.at(id);
-        std::set<std::filesystem::path, decltype(&PathBefore)> later(PathBefore);
-        for (auto member = move->ids.begin() + move->current + 1; move->shared && member != move->ids.end(); ++member)
-        {
-            for (auto const& file : Relocated(torrents.at(*member)))
-                later.insert(file.source);
-        }
-        std::vector<std::filesystem::path> sources;
-        for (auto const& file : Relocated(torrent))
-        {
-            if (!later.contains(file.source))
-                sources.push_back(file.source);
-        }
-        auto origin = FullPath(Wide(torrent.facts.savePath));
-        relocate(torrent.facts);
         torrent.unsaved = true;
         torrent.completedFiles.clear();
         torrent.namePhase = NamePhase::Pending;
         torrent.renameAt = {};
         EndMove(torrent, std::nullopt);
-        CleanMove(std::move(sources), std::move(origin));
+        CleanMove(sources, origin);
     };
     if (!changes.Queue([this, id, relocate, settle]
     {
@@ -494,12 +548,11 @@ void Engine::State::SaveMove()
         // only where its removal deletes its files.
         if (torrents.at(id).deleted)
         {
+            relocate(id, torrents.at(id).facts);
             settle();
             return;
         }
-        auto document = Saved();
-        relocate(document.torrents.at(id));
-        changes.Commit([document = std::move(document)] { return document.ToJson(); }, [this, settle](Outcome outcome)
+        CommitFacts({id}, relocate, [this, settle](Outcome outcome, auto const&)
         {
             if (outcome.error)
             {
@@ -574,12 +627,11 @@ void Engine::State::FailMove(Problem problem)
     {
         if (clear)
         {
-            facts.moveDestination.clear();
-            facts.moveStage = MoveStage::Staged;
+            facts.marker.reset();
         }
-        else if (facts.moveStage == MoveStage::Placing)
+        else if (facts.marker && facts.marker->stage == MoveStage::Placing)
         {
-            facts.moveStage = MoveStage::Waiting;
+            facts.marker->stage = MoveStage::Waiting;
         }
     };
     // A marker whose clearing was not saved stays, and waits like a kept one.
@@ -630,7 +682,7 @@ void Engine::State::EndMove(Torrent& torrent, std::optional<Problem> problem)
 
 std::optional<double> Engine::State::MoveProgress(Torrent const& torrent) const
 {
-    if (torrent.ResumesMove() && !torrent.Error())
+    if (torrent.MoveWaits())
         return 0.0;
     if (!move || !torrent.moving)
         return std::nullopt;

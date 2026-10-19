@@ -70,6 +70,14 @@ public:
 
     struct Addition
     {
+        // The watch folder's file that an addition reads, with the stamp the
+        // engine records once it is added, so later scans skip it.
+        struct Watch
+        {
+            std::string source;
+            std::string stamp;
+        };
+
         struct Choices
         {
             std::string destination;
@@ -78,16 +86,14 @@ public:
             bool sequential = false;
             bool firstLast = false;
             bool queueTop = false;
-            std::string watchSource;
-            std::string watchStamp;
+            std::optional<Watch> watch;
         };
 
         std::string torrentId;
         lt::add_torrent_params params;
         Facts facts;
         bool queueTop = false;
-        std::string watchSource;
-        std::string watchStamp;
+        std::optional<Watch> watch;
         std::function<void(Outcome, Added)> completion;
         lt::torrent_handle handle;
         AdditionPhase phase = AdditionPhase::Adding;
@@ -131,6 +137,9 @@ public:
             std::string password;
 
             bool operator==(Proxy const&) const = default;
+            // A proxy works only with its address, so a chosen type needs
+            // its host and port.
+            bool IsComplete() const { return type == ProxyType::None || (!host.empty() && port != 0); }
         };
 
         std::string destination;
@@ -167,8 +176,8 @@ public:
         int checkingMib = 4;
         int hashingThreads = 1;
         int fileLimit = 40;
-        // Only the window and the splash act on the theme.
-        std::string theme = "system";
+        // The window, the splash and the popup follow the theme.
+        Theme theme = Theme::System;
         bool mapsPorts = true;
         int listenPort = 6881;
         std::string networkAdapter;
@@ -245,6 +254,13 @@ public:
         // The mode's name in settings.json, the settings command and the snapshot.
         static char const* Name(LimitMode mode);
         static std::optional<LimitMode> Named(Json const& value);
+        // The setting that holds each notification switch.
+        static auto Switch(NoticeSwitch notice) -> bool Settings::*;
+    private:
+        // Visits each setting that settings.json, the settings reply and the
+        // settings command share, with its key and the values it accepts.
+        template <typename Self, typename Visit>
+        static void Fields(Self& settings, Visit&& visit);
     };
 
     struct PathLess
@@ -290,8 +306,107 @@ public:
         std::optional<ProxyCheck> result;
     };
 
+    // What the saved settings and the environment ask of the session, in the
+    // parts that apply separately.
+    struct Policy
+    {
+        // What the policy depends on besides the saved settings.
+        struct Environment
+        {
+            // The chosen adapter, when one is chosen and Windows has it.
+            std::optional<NetworkAdapter> adapter;
+            // The session pauses for a reason other than a missing adapter,
+            // which the policy finds itself.
+            bool paused = false;
+            LimitMode limits = LimitMode::None;
+        };
+        // How traffic leaves the computer. A change cancels the proxy checks
+        // and reconnects.
+        struct Route
+        {
+            Settings::Proxy proxy;
+            // The adapter's name as libtorrent matches it; empty for any.
+            std::string adapter;
+            bool adapterMissing = false;
+
+            bool operator==(Route const&) const = default;
+        };
+        // A change reconnects, because these apply only to new peers.
+        struct Connection
+        {
+            std::string listen;
+            std::string outgoing;
+            Transport transport = Transport::Both;
+            IpFamily family = IpFamily::Both;
+            bool limitsLan = false;
+            Encryption encryption = Encryption::Preferred;
+
+            bool operator==(Connection const&) const = default;
+        };
+        struct Session
+        {
+            int activeDownloads = 0;
+            int activeSeeds = 0;
+            int activeTotal = 0;
+            int activeChecking = 0;
+            int diskBufferMib = 0;
+            int checkingMib = 0;
+            int hashingThreads = 0;
+            int fileLimit = 0;
+            bool ignoresSlow = false;
+            int slowDownload = 0;
+            int slowUpload = 0;
+            int slowWait = 0;
+            int outgoingRate = 0;
+            int connections = 0;
+            bool dht = false;
+            bool lsd = false;
+            bool includesOverhead = false;
+
+            bool operator==(Session const&) const = default;
+        };
+        struct Torrents
+        {
+            int connections = 0;
+            bool pex = false;
+
+            bool operator==(Torrents const&) const = default;
+        };
+        // The sample intervals of the speed histories.
+        struct Intervals
+        {
+            int recent = 0;
+            int history = 0;
+
+            bool operator==(Intervals const&) const = default;
+        };
+
+        Policy(Settings const& settings, Environment const& environment);
+        bool operator==(Policy const&) const = default;
+
+        Route route;
+        Connection connection;
+        // Port mapping, which applies without reconnecting.
+        bool maps = false;
+        Session session;
+        Torrents torrents;
+        Intervals intervals;
+        Settings::Limits rates;
+        bool paused = false;
+    };
+
     // A command's work on a list of torrents that all exist.
-    using Action = std::function<void(std::vector<std::string> const& ids, Reply reply)>;
+    using Action = std::function<void(std::vector<std::string> const& ids, std::function<void(Outcome)> done)>;
+
+    // Routine updates, seed limit queries and detail queries all answer in a
+    // state_update_alert. Answered tells the answers apart by what only some
+    // queries ask for: only a detail query asks for the save path, and only
+    // seed and detail queries ask for the metadata.
+    static constexpr lt::status_flags_t routineQuery = lt::torrent_handle::query_name;
+    static constexpr lt::status_flags_t seedQuery = routineQuery | lt::torrent_handle::query_torrent_file;
+    static constexpr lt::status_flags_t detailQuery = seedQuery | lt::torrent_handle::query_save_path |
+        lt::torrent_handle::query_renamed_files | lt::torrent_handle::query_pieces;
+    static StatusQuery Answered(lt::torrent_status const& status);
 
     // Declared before the members that they initialize, because IntelliSense
     // cannot find them otherwise.
@@ -325,12 +440,11 @@ public:
         std::stop_source stop;
         std::chrono::steady_clock::time_point deadline;
         std::optional<std::chrono::steady_clock::time_point> quietSince;
-        std::int64_t sent = -1;
-        std::int64_t received = -1;
+        std::optional<TransferTotals> sampled;
         ConnectionMeasurement download;
         ConnectionMeasurement upload;
         bool complete = false;
-        std::string failure;
+        std::optional<ConnectionFailure> failure;
     };
     std::shared_ptr<ConnectionTest> connectionTest;
     Log log{store, directory};
@@ -375,6 +489,7 @@ public:
     // Set during shutdown when the final save cannot complete: its cause, or
     // empty when the cause is unknown.
     std::optional<std::string> saveFailure;
+    // Why startup failed, as the person sees it; it may be empty.
     std::string startupError;
     std::function<void(std::optional<std::string> failure)> shutdown;
     std::chrono::steady_clock::time_point checkpointAt = std::chrono::steady_clock::now();
@@ -391,22 +506,14 @@ public:
     std::optional<ScheduleMode> scheduledMode;
     bool bypassesScheduledPause = false;
     std::optional<LimitMode> limitOverride;
-    bool adapterMissing = false;
-    std::string appliedListen;
-    std::string appliedAdapter;
-    std::optional<Settings::Proxy> appliedProxy;
-    std::optional<Encryption> appliedEncryption;
-    std::optional<Transport> appliedTransport;
-    std::optional<IpFamily> appliedFamily;
-    std::optional<bool> appliedLan;
+    // The policy the session last received; nothing before the first.
+    std::optional<Policy> applied;
     lt::peer_class_type_filter peerClasses;
     // The check of the proxy in use; nothing until it ends.
     std::optional<ProxyOutcome> proxyOutcome;
     // The check that check_proxy started last. The snapshot reports it,
     // because a check can take longer than the client waits for a reply.
     std::optional<RequestedCheck> requestedCheck;
-    std::optional<bool> appliedPause;
-    std::optional<LimitMode> appliedLimits;
     std::vector<std::string> limitingSeeds;
     std::vector<lt::torrent_handle> seedQueue;
     std::set<lt::torrent_handle> seedQueries;
@@ -516,6 +623,14 @@ public:
     void RestorePending();
     std::filesystem::path ResumeFile(std::string const& id) const;
     Document Saved() const;
+    // Saves `edit` applied to the facts of `ids`, then applies it to the live
+    // facts of each torrent whose saved facts changed and calls `done` with
+    // those ids. With no change nothing is written and `done` runs at once.
+    // `edit` runs twice, so it reads only the facts and what it captures.
+    // Call once, inside a queued change.
+    void CommitFacts(std::vector<std::string> const& ids,
+        std::function<void(std::string const& id, Facts& facts)> edit,
+        std::function<void(Outcome outcome, std::vector<std::string> const& changed)> done);
     TransferTotals TotalTransfers() const;
     void SaveTransfers();
     void Tick();
@@ -537,19 +652,25 @@ public:
     Json Snapshot();
     void PublishSnapshot();
     void RequestStatus(bool immediate = true);
-    std::string FindDuplicate(lt::info_hash_t const& hashes, std::string const& excluded = {}) const;
+    std::optional<std::string> FindDuplicate(lt::info_hash_t const& hashes, std::string const& excluded = {}) const;
     static bool Overlaps(std::vector<std::string> const& hashes, std::vector<std::string> const& others);
     void RecordHashes(Torrent& torrent);
     void RecordHashes(Torrent& torrent, lt::info_hash_t const& hashes);
 
-    void RefreshPolicy(Settings const* previous = nullptr);
+    // Applies the parts of the policy that changed since the last call.
+    void RefreshPolicy();
     static std::optional<NetworkAdapter> FindAdapter(std::string const& name);
     void ApplyPolicy(lt::torrent_handle const& handle);
     ScheduleMode ScheduledMode() const;
-    bool IsPaused() const;
-    // Paused by the person or their schedule, which Resume all lifts; a missing
-    // adapter pauses transfers too, but Resume all cannot lift that.
-    bool IsPausedByChoice() const;
+    // Why the session is paused, or nothing when it is not. A pause that Resume
+    // all lifts, the person's and then the schedule's, comes first; Resume all
+    // cannot lift the other reasons.
+    std::optional<PauseReason> Paused() const;
+    // As Paused, with the adapter missing or not as given, for the policy that
+    // finds that out itself.
+    std::optional<PauseReason> Paused(bool adapterMissing) const;
+    // The chosen adapter is missing, so transfers wait for it.
+    bool IsAdapterMissing() const;
     LimitMode CurrentLimits() const;
     void LimitSeeds();
     void QuerySeeds();
@@ -587,8 +708,10 @@ public:
     void On(lt::metadata_failed_alert const& alert);
 
     void Add(Preview& preview, Addition::Choices choices, std::function<void(Outcome, Added)> completion);
+    // A `watchStamp` marks a file from the watch folder, which saves to the
+    // watch destination when one is set.
     void AddSource(std::string source, std::function<void(Outcome, Added)> completion,
-        std::string destination = {}, std::string watchStamp = {});
+        std::optional<std::string> watchStamp = std::nullopt);
     void WatchFolder();
     void RecordWatch(std::string source, std::string stamp, std::function<void(Outcome)> completion);
     static void Guard(lt::add_torrent_params& params);
@@ -599,7 +722,7 @@ public:
     void PrepareAddition(std::string const& id, lt::torrent_handle handle);
     void CommitAddition(std::string const& id);
     void Abandon(std::string id, Outcome outcome, Added added = {});
-    std::string MovingAddition(lt::torrent_handle const& handle) const;
+    std::optional<std::string> MovingAddition(lt::torrent_handle const& handle) const;
     void RecoverAdditions();
     void On(lt::add_torrent_alert const& alert);
     void On(lt::storage_moved_alert const& alert);
@@ -607,15 +730,23 @@ public:
 
     std::optional<ErrorCode> Refusal() const;
     void Execute(Json const& request, std::string const& connectionId, Reply reply);
-    void MergeTrackers(Preview& preview, std::string const& torrentId, Reply reply);
-    void Act(std::vector<std::string> ids, Reply reply, Action action, BusyFiles busy = BusyFiles::Refused);
-    void Verify(std::vector<std::string> const& ids, Reply reply);
-    void Remove(std::vector<std::string> const& ids, Reply reply, std::optional<DeletionMode> mode,
-        std::optional<DeletionMode> torrentFiles);
+    void MergeTrackers(Preview& preview, std::string const& torrentId, std::function<void(Outcome)> completion);
+    void Act(std::vector<std::string> ids, std::function<void(Outcome)> completion, Action action);
+    // Rechecks each torrent now, or once its files are no longer busy.
+    void Verify(std::vector<std::string> const& ids, std::function<void(Outcome)> completion);
+    void Recheck(Torrent& torrent);
+    // Runs a torrent's verification and file choices that waited for its
+    // files.
+    void ApplyWaiting(Torrent& torrent);
+    // `kept` counts the files a deletion keeps because other torrents use
+    // them: 0 without a deletion, and nothing while names are not ready.
+    void Remove(std::vector<std::string> const& ids,
+        std::function<void(Outcome, std::optional<std::size_t> kept)> completion,
+        std::optional<DeletionMode> mode, std::optional<DeletionMode> torrentFiles);
     std::list<Deletion>::iterator PrepareDeletion(std::vector<std::string> const& ids,
         std::optional<DeletionMode> mode, Scope scope);
     void RemoveHandles(std::vector<std::string> const& ids, std::list<Deletion>::iterator deletion);
-    bool CanRemove(Torrent const& torrent) const;
+    bool CanRemove(Torrent const& torrent, std::optional<DeletionMode> mode) const;
     void RemoveDeferred();
     static std::filesystem::path FullPath(std::filesystem::path const& path);
     static bool PathBefore(std::filesystem::path const& left, std::filesystem::path const& right);
@@ -626,17 +757,27 @@ public:
     bool RemovingOrRenaming() const;
     static std::vector<std::filesystem::path> FilePaths(lt::torrent_info const& metadata,
         std::string const& folder, Layout layout = Layout::Keep);
+    // The torrent's files at `folder`, or without one at its save folder and
+    // its recovery marker's destination.
     std::vector<std::filesystem::path> FilePaths(Torrent const& torrent,
-        std::string const& destination = {}, bool logical = true) const;
+        std::optional<std::string> const& folder = std::nullopt, bool logical = true) const;
+    // Every path the torrent's files can have, logical and physical, at its
+    // save folder and at its recovery marker's destination, sorted, each once.
+    std::vector<std::filesystem::path> Footprint(Torrent const& torrent) const;
     Scope FileScope(std::vector<std::string> const& ids) const;
     Json Describe(std::vector<std::string> const& ids, Scope const& scope) const;
-    bool NamesReady();
+    bool NamesReady() const;
     Outcome FilesReady(std::vector<std::string> const& ids);
     void StartMove(std::vector<std::string> const& ids, std::string const& destination, MoveStart start,
         std::function<void(Outcome)> accepted);
     // Continues each interrupted move once, together with the torrents
     // whose interrupted move had the same destination.
     void ResumeMove();
+    // Busy files and another torrent's missing metadata only delay a move,
+    // because they clear by themselves; the second shows on the torrents.
+    static bool DelaysMove(Outcome const& outcome);
+    void MoveWaiting();
+    void RefuseMove(Torrent& torrent, Outcome const& outcome);
     void ContinueMove();
     // `failure` is libtorrent's reason when it reports that the move failed.
     void FinishMove(lt::torrent_handle const& handle, std::string failure);
@@ -659,7 +800,19 @@ public:
     void On(lt::torrent_removed_alert const& alert);
     void On(lt::torrent_delete_failed_alert const& alert);
     void RecoverFiles();
+    void RecoverDeletions();
     void ReleaseFiles(std::vector<lt::torrent_handle> const& handles);
+    static void SyncCall(lt::session& session, std::function<void()> work);
+    // The names a worker chose for a torrent's files in `params`, and the names
+    // the files had when it chose them.
+    struct NameChoice
+    {
+        lt::add_torrent_params params;
+        lt::renamed_files current;
+    };
+    // Whether a file named `actual` still carries the suffix of an unfinished
+    // download of the file `name`.
+    static bool IsUnfinished(std::string const& actual, std::string const& name);
     static void PrepareNames(lt::add_torrent_params& params, bool appendsSuffix, Layout layout);
     // Returns whether any rename was requested.
     static bool ApplyNames(lt::torrent_handle const& handle, lt::add_torrent_params const& prepared,
@@ -678,18 +831,19 @@ public:
     void On(lt::file_rename_failed_alert const& alert);
     std::vector<std::string> Holders(std::shared_ptr<lt::torrent_info const> const& metadata,
         std::string const& destination) const;
-    void SetIntent(std::vector<std::string> const& ids, Intent intent, Reply reply);
+    void SetIntent(std::vector<std::string> const& ids, Intent intent, std::function<void(Outcome)> completion);
     // Saves `change` to each listed torrent's facts, then applies them.
     void ChangeFacts(std::vector<std::string> const& ids, std::function<void(Facts&)> const& change,
-        Reply reply);
-    void Edit(std::string const& id, Json const& choices, Reply reply);
+        std::function<void(Outcome)> completion);
+    void Edit(std::string const& id, Json const& choices, std::function<void(Outcome)> completion);
     void QueryPriorities(Torrent& torrent);
 
     static bool IsQueued(lt::queue_position_t position);
     void AwaitQueueStatus(Torrent& torrent);
     std::vector<std::string> CurrentQueue() const;
     void ApplyQueue();
-    void Queue(std::vector<std::string> const& ids, QueueMove move, std::string const& before, Reply reply);
+    void Queue(std::vector<std::string> const& ids, QueueMove move, std::string const& before,
+        std::function<void(Outcome)> completion);
     static std::vector<std::string> Reorder(std::vector<std::string> order,
         std::vector<std::string> const& ids, QueueMove move, std::string const& before);
 
@@ -698,7 +852,6 @@ public:
     void CheckpointUnsaved();
     void SaveCheckpoint(Torrent& torrent, lt::add_torrent_params params);
     void FinishCheckpoint(Torrent& torrent);
-    void QueryCompletion(Torrent& torrent);
     void QueryCompletions();
     void ObserveCompletion(Torrent& torrent, lt::torrent_status latest);
     void FailCheckpoint(Torrent& torrent, Problem problem);
@@ -737,8 +890,10 @@ public:
     void On(lt::piece_info_alert const& alert);
 
     bool IsShuttingDown() const { return shutdownPhase != ShutdownPhase::Idle; }
+    bool IsLoading() const { return startup == Startup::Settings || startup == Startup::Transfers; }
     void Shutdown(std::function<void(std::optional<std::string> failure)> report);
     void StartFinalSave();
+    void FailFinalSave(std::optional<std::string> cause = std::nullopt);
     void ContinueShutdown();
     void RetryFinalSave();
     void Finish();
@@ -771,6 +926,6 @@ private:
 
     void CommitEdit(std::string const& id,
         std::map<int, lt::download_priority_t> const& priorities,
-        std::optional<std::vector<lt::announce_entry>> const& trackers, Reply reply);
+        std::optional<std::vector<lt::announce_entry>> const& trackers, std::function<void(Outcome)> completion);
 };
 }

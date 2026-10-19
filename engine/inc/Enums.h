@@ -33,6 +33,17 @@ enum class Command
     TurnOff
 };
 
+// Who publishes the snapshot after a command succeeds.
+enum class Publication
+{
+    // The command changes nothing.
+    None,
+    // Execute publishes it.
+    Execute,
+    // The operation publishes it itself, because it also serves tray actions.
+    Operation
+};
+
 enum class ConnectionPhase
 {
     Idle,
@@ -44,6 +55,17 @@ enum class ConnectionPhase
     Completed,
     Cancelled,
     Failed
+};
+
+// Why a connection test failed, which the window explains to the person.
+enum class ConnectionFailure
+{
+    Network,
+    Timeout,
+    // Neither direction measured a rate after the warm-up.
+    Sample,
+    // The session did not return to its pause state when the test ended.
+    Restore
 };
 
 enum class TorrentView
@@ -90,6 +112,15 @@ enum class DetailKind
     Status,
     Availability,
     Downloading
+};
+
+// Which query a libtorrent status answers: the routine update, a seed limit
+// query, or a detail query.
+enum class StatusQuery
+{
+    Routine,
+    Seed,
+    Detail
 };
 
 enum class QueueMove
@@ -203,6 +234,18 @@ enum class CompletionPhase
     Checked
 };
 
+// How far libtorrent has written a torrent's downloaded data before the
+// engine renames its finished files. Releasing the files waits for that
+// write, which takes minutes on a slow drive, so the rename waits for it
+// first, without holding the files of any other torrent.
+enum class CacheWrite
+{
+    // Data can still be in libtorrent's memory.
+    Pending,
+    Flushing,
+    Written
+};
+
 // libtorrent queues a new addition only once its chosen files apply, because
 // it is added with none wanted. Until a status after that, the addition
 // counts as queued at its accepted place.
@@ -221,13 +264,6 @@ enum class DeletionPhase
     Waiting,
     Deleting,
     Unknown
-};
-
-// Whether a command accepts torrents whose own files are busy.
-enum class BusyFiles
-{
-    Refused,
-    Accepted
 };
 
 enum class AdditionKind
@@ -269,7 +305,9 @@ enum class Startup
 {
     Settings,
     Transfers,
-    Ready
+    Ready,
+    // Reading the saved settings or transfers failed, so there is no session.
+    Failed
 };
 
 // What the person last asked a torrent to do. A resumed torrent waits in
@@ -301,6 +339,16 @@ enum class ScheduleMode
     Normal,
     Alternative,
     Paused
+};
+
+// Why the session is paused, when it is.
+enum class PauseReason
+{
+    // Pause all, or the setting that starts transfers paused at launch.
+    Manual,
+    Schedule,
+    Adapter,
+    ConnectionTest
 };
 
 enum class LimitMode
@@ -338,6 +386,13 @@ enum class IpFamily
     Both,
     Ipv4,
     Ipv6
+};
+
+enum class Theme
+{
+    System,
+    Light,
+    Dark
 };
 
 enum class Layout
@@ -414,12 +469,12 @@ enum class ErrorCode
     SharedFiles,
     DestinationConflict,
     DestinationInUse,
-    MoveInterrupted,
     MetadataUnavailable,
     PreviewExpired,
     PreviewFailed,
     TorrentRemoved,
     AliasConflict,
+    TorrentError,
     AddFailed,
     RegistrationFailed
 };
@@ -487,6 +542,19 @@ enum class Launch
     Warm
 };
 
+// What the desktop host waits for from the product window.
+enum class WindowWait
+{
+    // `ready` from a window that starts or reconnects.
+    Ready,
+    // The reply to `activate`.
+    Activation,
+    // The answer to `confirm_exit`.
+    Confirmation,
+    // The window ending for Exit.
+    Closing
+};
+
 enum class TrayClick
 {
     Idle,
@@ -538,7 +606,7 @@ enum class ExitAnswer
 {
     Confirmed,
     Cancelled,
-    // The window could not show the prompt, so the host asks natively.
+    // The window could not show the prompt, so the host asks in its popup.
     Unavailable
 };
 

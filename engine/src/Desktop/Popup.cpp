@@ -820,13 +820,13 @@ void Popup::ScheduleClose()
     }
 }
 
-void Popup::SetTheme(std::string theme)
+void Popup::SetTheme(Theme theme)
 {
     if (theme == theme_)
     {
         return;
     }
-    theme_ = std::move(theme);
+    theme_ = theme;
     if (window_)
     {
         acrylic_.Apply(window_, theme_);
@@ -952,7 +952,7 @@ void Popup::Layout()
     // A slide keeps moving the popup toward or away from its new place. A
     // prompt keeps its place in the z-order, so asking again never raises it
     // over a window the person turned to.
-    auto move = slideStart_ ? SWP_NOMOVE : 0;
+    auto move = sliding_ ? SWP_NOMOVE : 0;
     auto order = asking_ ? SWP_NOZORDER : 0;
     SetWindowPos(window_, HWND_TOPMOST, place_.x, place_.y, width, height, SWP_NOACTIVATE | move | order);
     InvalidateRect(window_, nullptr, FALSE);
@@ -979,8 +979,7 @@ bool Popup::Slides() const
 
 void Popup::StartSlide(bool leaving)
 {
-    leaving_ = leaving;
-    slideStart_ = GetTickCount64();
+    sliding_ = Sliding{GetTickCount64(), leaving};
     Slide();
     SetTimer(window_, slideTimer, slideInterval, nullptr);
 }
@@ -988,17 +987,16 @@ void Popup::StartSlide(bool leaving)
 void Popup::StopSlide()
 {
     KillTimer(window_, slideTimer);
-    slideStart_ = 0;
-    leaving_ = false;
+    sliding_.reset();
 }
 
 // Moves the popup between its place and beyond the work area's edge, easing
 // toward rest as Windows' own motion does. A popup that has left closes.
 void Popup::Slide()
 {
-    auto elapsed = GetTickCount64() - slideStart_;
+    auto elapsed = GetTickCount64() - sliding_->start;
     auto progress = std::min(1.0, static_cast<double>(elapsed) / slideDuration);
-    auto away = leaving_ ? progress * progress * progress : std::pow(1 - progress, 3);
+    auto away = sliding_->leaving ? progress * progress * progress : std::pow(1 - progress, 3);
     auto distance = Taskbar().rcWork.right - place_.x;
     SetWindowPos(window_, nullptr, place_.x + static_cast<int>(distance * away), place_.y, 0, 0,
         SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
@@ -1006,7 +1004,7 @@ void Popup::Slide()
     {
         return;
     }
-    if (leaving_)
+    if (sliding_->leaving)
     {
         Close();
         return;
@@ -1555,7 +1553,7 @@ LRESULT Popup::Handle(HWND window, UINT message, WPARAM first, LPARAM second)
                 Close();
             }
         }
-        else if (first == slideTimer && slideStart_)
+        else if (first == slideTimer && sliding_)
         {
             Slide();
         }
@@ -1570,7 +1568,7 @@ LRESULT Popup::Handle(HWND window, UINT message, WPARAM first, LPARAM second)
             tracking_ = TrackMouseEvent(&track) != FALSE;
             KillTimer(window, closeTimer);
         }
-        if (leaving_)
+        if (sliding_ && sliding_->leaving)
         {
             StopSlide();
             SetWindowPos(window, nullptr, place_.x, place_.y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
@@ -1669,8 +1667,7 @@ LRESULT Popup::Handle(HWND window, UINT message, WPARAM first, LPARAM second)
         pressed_.reset();
         focused_.reset();
         asking_ = false;
-        slideStart_ = 0;
-        leaving_ = false;
+        sliding_.reset();
         break;
     }
     return DefWindowProcW(window, message, first, second);

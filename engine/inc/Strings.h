@@ -13,6 +13,7 @@ public:
     // language setting must.
     static bool Supports(std::string_view language);
     std::string const& Language() const { return language_; }
+    std::optional<std::wstring> Find(std::string const& group, std::string const& key) const;
     std::wstring Text(std::string const& group, std::string const& key) const;
     std::wstring Format(std::string const& group, std::string const& key,
         std::vector<std::wstring> const& values) const;

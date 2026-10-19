@@ -98,19 +98,14 @@ constexpr std::pair<std::string_view, ErrorCode> errors[] = {
     {"shared_files", ErrorCode::SharedFiles},
     {"destination_conflict", ErrorCode::DestinationConflict},
     {"destination_in_use", ErrorCode::DestinationInUse},
-    {"move_interrupted", ErrorCode::MoveInterrupted},
     {"metadata_unavailable", ErrorCode::MetadataUnavailable},
     {"preview_expired", ErrorCode::PreviewExpired},
     {"preview_failed", ErrorCode::PreviewFailed},
     {"torrent_removed", ErrorCode::TorrentRemoved},
     {"alias_conflict", ErrorCode::AliasConflict},
+    {"torrent_error", ErrorCode::TorrentError},
     {"add_failed", ErrorCode::AddFailed},
     {"registration_failed", ErrorCode::RegistrationFailed}};
-
-Json Error(char const* code, std::string detail)
-{
-    return {{"ok", false}, {"error", {{"code", code}, {"detail", std::move(detail)}}}};
-}
 }
 
 char const* ToString(ErrorCode code)
@@ -119,19 +114,9 @@ char const* ToString(ErrorCode code)
     return word.empty() ? "" : word.data();
 }
 
-std::optional<ErrorCode> ParseError(std::string_view word)
-{
-    return Parse(errors, word);
-}
-
 Json Failure(ErrorCode code, std::string detail)
 {
-    return Error(ToString(code), std::move(detail));
-}
-
-Json Failure(ProblemKind kind, std::string detail)
-{
-    return Error(ToString(kind), std::move(detail));
+    return {{"ok", false}, {"error", {{"code", ToString(code)}, {"detail", std::move(detail)}}}};
 }
 
 std::wstring Executable()
@@ -252,7 +237,6 @@ void Engine::Add(std::string const& source, std::function<void(Outcome, Added)> 
     }
     state_->AddSource(source, std::move(completion));
 }
-Json Engine::Snapshot() { return state_->Snapshot(); }
 Activity Engine::Activity() const { return state_->Activity(); }
 std::vector<Notice> Engine::TakeNotices() { return std::exchange(state_->notices, {}); }
 std::string Engine::Name(std::string const& torrentId) const
@@ -275,8 +259,8 @@ bool Engine::IsSource(std::string const& source)
 }
 
 bool Engine::IsShuttingDown() const { return state_->IsShuttingDown(); }
-bool Engine::IsLoading() const { return state_->startup != Startup::Ready; }
-bool Engine::HasStorageFailure() const { return !state_->startupError.empty(); }
+bool Engine::IsLoading() const { return state_->IsLoading(); }
+bool Engine::HasStorageFailure() const { return state_->startup == Startup::Failed; }
 std::string Engine::StartupError() const { return state_->startupError; }
 std::string Engine::SessionId() const { return state_->sessionId; }
 bool Engine::ShowsAdd(std::string const& source) const

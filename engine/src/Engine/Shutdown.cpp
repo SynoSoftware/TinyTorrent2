@@ -30,6 +30,9 @@ void Engine::State::Shutdown(std::function<void(std::optional<std::string> failu
 void Engine::State::StartFinalSave()
 {
     saveFailure.reset();
+    // Set first, so a hash save that is refused at once fails this attempt.
+    shutdownPhase = ShutdownPhase::Draining;
+    phaseStarted.reset();
     for (auto& [id, torrent] : torrents)
     {
         if (torrent.hashError)
@@ -37,8 +40,25 @@ void Engine::State::StartFinalSave()
             RecordHashes(torrent);
         }
     }
-    shutdownPhase = ShutdownPhase::Draining;
-    phaseStarted.reset();
+}
+
+// Records that the current final save failed; it does nothing before
+// shutdown. A failure without a cause keeps a cause already recorded, so the
+// notice still names the file and Windows' reason.
+void Engine::State::FailFinalSave(std::optional<std::string> cause)
+{
+    if (!IsShuttingDown())
+    {
+        return;
+    }
+    if (cause)
+    {
+        saveFailure = std::move(cause);
+    }
+    else if (!saveFailure)
+    {
+        saveFailure.emplace();
+    }
 }
 
 // Shutdown waits for queued changes and additions, pauses every torrent,
@@ -52,7 +72,7 @@ void Engine::State::ContinueShutdown()
     }
     if (!session)
     {
-        if (startup == Startup::Ready && store.IsIdle() && log.IsFlushed())
+        if (startup == Startup::Failed && store.IsIdle() && log.IsFlushed())
         {
             Finish();
         }
@@ -80,7 +100,7 @@ void Engine::State::ContinueShutdown()
                 phaseStarted = std::chrono::steady_clock::now();
             if (std::chrono::steady_clock::now() - *phaseStarted >= phaseTimeout)
             {
-                saveFailure.emplace();
+                FailFinalSave();
                 log.Write("shutdown", "", "rename_pending");
                 RetryFinalSave();
                 return;
@@ -98,7 +118,7 @@ void Engine::State::ContinueShutdown()
         for (auto& [id, torrent] : torrents)
         {
             QueryPriorities(torrent);
-            if (!torrent.priorityReply)
+            if (!torrent.priorityCompletion)
             {
                 continue;
             }
@@ -107,8 +127,8 @@ void Engine::State::ContinueShutdown()
                 pending = true;
                 continue;
             }
-            std::exchange(torrent.priorityReply, nullptr)(Failure(ErrorCode::RecoveryRequired));
-            saveFailure.emplace();
+            std::exchange(torrent.priorityCompletion, nullptr)({ErrorCode::RecoveryRequired});
+            FailFinalSave();
             log.Write("edit", id, "recovery_required");
         }
         if (pending)
@@ -149,7 +169,7 @@ void Engine::State::ContinueShutdown()
         // The torrents left in `pausing` did not confirm their pause in time.
         if (!pausing.empty())
         {
-            saveFailure.emplace();
+            FailFinalSave();
             for (auto const& handle : pausing)
             {
                 log.Write("shutdown", handles.at(handle)->torrentId, "pause_timeout");
@@ -164,17 +184,13 @@ void Engine::State::ContinueShutdown()
         {
             torrent.unsaved = true;
             torrent.retryAt = {};
-            if (torrent.hashError)
-            {
-                saveFailure = torrent.hashError->detail;
-            }
         }
     }
     if (shutdownPhase == ShutdownPhase::Sampling)
     {
         if (std::chrono::steady_clock::now() - *phaseStarted < phaseTimeout)
             return;
-        saveFailure.emplace();
+        FailFinalSave();
         log.Write("shutdown", "", "recovery_required");
         shutdownPhase = ShutdownPhase::Saving;
     }

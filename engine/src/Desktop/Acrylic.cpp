@@ -122,7 +122,7 @@ Acrylic::~Acrylic()
     }
 }
 
-void Acrylic::Apply(HWND window, std::string const& theme)
+void Acrylic::Apply(HWND window, Theme theme)
 {
     HIGHCONTRASTW contrast{sizeof(contrast)};
     SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(contrast), &contrast, 0);
@@ -130,7 +130,7 @@ void Acrylic::Apply(HWND window, std::string const& theme)
     foreground_ = GetSysColor(COLOR_WINDOWTEXT);
     background_ = GetSysColor(COLOR_WINDOW);
     BOOL dark = !highContrast &&
-        (theme == "dark" || (theme != "light" && !IsEnabled(L"AppsUseLightTheme")));
+        (theme == Theme::Dark || (theme == Theme::System && !IsEnabled(L"AppsUseLightTheme")));
     if (highContrast)
     {
         disabled_ = GetSysColor(COLOR_GRAYTEXT);

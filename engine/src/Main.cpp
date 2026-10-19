@@ -5,7 +5,6 @@
 #include <sddl.h>
 #include <shlobj.h>
 #include <shobjidl.h>
-#include <shellapi.h>
 #include <stdexcept>
 
 #pragma comment(linker, "/manifestdependency:\"type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
@@ -152,23 +151,6 @@ void Restart()
     CloseHandle(process.hProcess);
 }
 
-// Another version keeps this launch out until that engine closes, and so does
-// another data folder for a headless launch, which cannot ask to exit it. Its
-// folder identifies it, and Retry starts this launch again once it has closed.
-tt::desktop::Refusal OtherEngine(tt::Forwarded const& forwarded)
-{
-    tt::desktop::Refusal refusal{
-        .key = forwarded.outcome == tt::Forwarding::OtherVersion ? "version" : "other_store", .retry = true};
-    // The detail line shortens a path in its middle, so the folder rather than
-    // the program path keeps the folder that tells engines apart in view.
-    if (forwarded.engine)
-    {
-        refusal.folder = forwarded.engine->parent_path();
-        refusal.detail = refusal.folder->wstring();
-    }
-    return refusal;
-}
-
 // MSVC's system and file system errors describe themselves in the ANSI code
 // page rather than UTF-8, so text that is not UTF-8 is read in that page.
 std::wstring Describe(std::exception const& error)
@@ -184,6 +166,49 @@ std::wstring Describe(std::exception const& error)
         std::wstring wide(size, L'\0');
         MultiByteToWideChar(CP_ACP, 0, text.data(), static_cast<int>(text.size()), wide.data(), size);
         return wide;
+    }
+}
+
+// Shows why this launch cannot start in the failure popup, without an engine
+// of its own, and returns once the person closes it.
+void ShowRefusal(tt::Strings const& strings, tt::desktop::Refusal refusal)
+{
+    using tt::desktop::Notices;
+    tt::OwnedIcon icon(tt::desktop::ErrorIcon());
+    // Without commands, selecting the message does nothing, so it never
+    // starts the launch again unasked. The refusal answers the person's
+    // launch, so it takes the focus.
+    Notices notices(strings, false, icon.get(), {});
+    Notices::Failure failure{.code = std::move(refusal.key), .detail = std::move(refusal.detail),
+        .interactive = true};
+    if (refusal.retry)
+    {
+        failure.actions.push_back(Notices::Retry(strings, strings.Text("notification", "retry_request_tip"), []
+        {
+            std::wstring command = GetCommandLineW();
+            STARTUPINFOW startup{sizeof(startup)};
+            PROCESS_INFORMATION process{};
+            // The person's click lets this launch take the foreground.
+            AllowSetForegroundWindow(ASFW_ANY);
+            if (CreateProcessW(tt::Executable().c_str(), command.data(), nullptr, nullptr, FALSE, 0, nullptr,
+                nullptr, &startup, &process))
+            {
+                CloseHandle(process.hThread);
+                CloseHandle(process.hProcess);
+            }
+        }));
+    }
+    if (refusal.folder)
+    {
+        failure.actions.push_back(
+            Notices::OpenFolder(strings, *refusal.folder, strings.Text("notification", "open_folder_tip")));
+    }
+    notices.ShowFailure(std::move(failure));
+    MSG message{};
+    while (notices.IsOpen() && GetMessageW(&message, nullptr, 0, 0) > 0)
+    {
+        TranslateMessage(&message);
+        DispatchMessageW(&message);
     }
 }
 
@@ -210,7 +235,7 @@ int Report(tt::desktop::Refusal refusal, bool headless)
     }
     else
     {
-        tt::desktop::Application::ShowRefusal(strings, std::move(refusal));
+        ShowRefusal(strings, std::move(refusal));
     }
     return 1;
 }
@@ -218,6 +243,7 @@ int Report(tt::desktop::Refusal refusal, bool headless)
 
 int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
 {
+    using tt::desktop::Arguments;
     // Prevent Windows from reporting application crashes to Microsoft.
     SetErrorMode(GetErrorMode() | SEM_NOGPFAULTERRORBOX);
     // The popup's accessibility objects reach other processes through COM,
@@ -235,7 +261,7 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
             }
         }
     } apartment;
-    tt::OwnedHandle mutex;
+    tt::OwnedHandle lock;
     bool headless = false;
     try
     {
@@ -244,109 +270,22 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
         {
             throw std::runtime_error("Cannot set the application's Windows identity.");
         }
-        int count = 0;
-        auto arguments = CommandLineToArgvW(GetCommandLineW(), &count);
-        bool background = false;
-#ifdef _DEBUG
-        bool notice = false;
-#endif
-        bool exiting = false;
-        bool literal = false;
-        std::string registration;
-        std::vector<std::string> sources;
-        std::vector<std::wstring> repairClasses;
-        std::filesystem::path directory;
-        for (int index = 1; index < count; ++index)
+        auto arguments = Arguments::Read(GetCommandLineW());
+        headless = arguments.headless;
+        if (auto refusal = std::get_if<tt::desktop::Refusal>(&arguments.request))
         {
-            std::wstring argument(arguments[index]);
-            if (!literal && argument == tt::option::literal)
-            {
-                literal = true;
-            }
-            else if (!literal && argument == tt::option::headless)
-            {
-                headless = true;
-            }
-            else if (!literal && argument == tt::option::background)
-            {
-                background = true;
-            }
-            else if (!literal && argument == tt::option::exit)
-            {
-                exiting = true;
-            }
-            else if (!literal && argument == tt::option::registration)
-            {
-                if (++index == count)
-                {
-                    throw tt::desktop::Refusal{.key = "argument_registration"};
-                }
-                registration = tt::Utf8(arguments[index]);
-                if (registration.empty())
-                {
-                    throw tt::desktop::Refusal{.key = "argument_registration"};
-                }
-            }
-            else if (!literal && argument == tt::option::data)
-            {
-                if (++index == count || std::wstring(arguments[index]) == tt::option::literal)
-                {
-                    throw tt::desktop::Refusal{.key = "argument_folder"};
-                }
-                directory = arguments[index];
-            }
-#ifdef _DEBUG
-            else if (!literal && argument == tt::option::notice)
-            {
-                notice = true;
-                background = true;
-            }
-#endif
-            else if (!literal && argument == tt::option::repairClass)
-            {
-                if (++index == count)
-                {
-                    throw tt::desktop::Refusal{.key = "argument_class"};
-                }
-                repairClasses.push_back(arguments[index]);
-            }
-            else
-            {
-                auto source = tt::Utf8(argument);
-                tt::NormaliseMagnet(source);
-                if (!argument.empty() && !tt::IsMagnet(source))
-                {
-                    source = tt::Utf8(std::filesystem::absolute(std::filesystem::path(argument)).wstring());
-                }
-                sources.push_back(std::move(source));
-            }
-        }
-        LocalFree(arguments);
-        if (!registration.empty() && !sources.empty())
-        {
-            throw tt::desktop::Refusal{.key = "argument_sources"};
-        }
-        if (exiting && (!registration.empty() || !sources.empty() || background || !directory.empty()))
-        {
-            throw tt::desktop::Refusal{.key = "argument_exit"};
-        }
-        if (!sources.empty() && !tt::desktop::Application::ValidSources(sources))
-        {
-            throw tt::desktop::Refusal{.key = "sources_limit"};
+            throw *refusal;
         }
         // The window starts this repair as an administrator, and forwarding
         // would hand it to the person's own engine, which cannot change
         // all-users entries. It changes nothing an engine owns, so it needs no
         // instance ownership.
-        if (!repairClasses.empty())
+        if (auto repair = std::get_if<Arguments::Repair>(&arguments.request))
         {
-            if (!registration.empty() || !sources.empty() || exiting || background || !directory.empty())
-            {
-                throw tt::desktop::Refusal{.key = "argument_repair"};
-            }
-            tt::Registration().RepairMachine(repairClasses);
+            tt::Registration().RepairMachine(repair->classes);
             return 0;
         }
+        bool exiting = std::holds_alternative<Arguments::Exit>(arguments.request);
         std::filesystem::path standard;
         PWSTR local = nullptr;
         if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_NO_PACKAGE_REDIRECTION, nullptr, &local)))
@@ -354,18 +293,18 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
             standard = std::filesystem::path(local) / tt::productName;
         }
         CoTaskMemFree(local);
-        if (directory.empty())
+        if (arguments.directory.empty())
         {
             if (standard.empty())
             {
                 throw std::runtime_error("Cannot locate the local application data folder.");
             }
-            directory = standard;
+            arguments.directory = standard;
         }
         // An engine with its own store, such as a test's, is not the person's
         // copy, so only the default store moves the registrations to it. A
         // restart names the default store explicitly, so compare the folders.
-        bool personal = tt::SameFolder(directory, standard);
+        bool personal = tt::SameFolder(arguments.directory, standard);
         if (personal && !exiting)
         {
             if (IsAppContainer())
@@ -385,133 +324,49 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
         }
         SetEnvironmentVariableW(breakaway, nullptr);
         auto sid = LogonSid();
+        auto ownership = tt::desktop::Claim(sid, arguments);
+        if (!ownership.lock)
         {
-            tt::Security security(sid);
-            mutex.reset(CreateMutexW(&security.Attributes(), FALSE, tt::desktop::EngineLockName(sid).c_str()));
+            return ownership.code;
         }
-        if (!mutex)
+        lock = std::move(ownership.lock);
+        int result = 0;
+        if (auto request = std::get_if<Arguments::Register>(&arguments.request))
         {
-            throw std::runtime_error("Cannot claim engine instance ownership.");
-        }
-        auto acquired = WaitForSingleObject(mutex.get(), 0);
-        while (acquired == WAIT_TIMEOUT)
-        {
-            tt::Forwarded forwarded{tt::Forwarding::Accepted};
-            if (exiting)
+            auto outcome = tt::Registration().Execute(request->action);
+            if (outcome.error)
             {
-                forwarded = tt::Pipe::Forward(sid, {{"command", "exit"}});
-            }
-            else if (!registration.empty())
-            {
-                // An engine of another store, such as a test's, would register
-                // its own program with Windows.
-                forwarded = tt::Pipe::Forward(
-                    sid, {{"command", "registration"}, {"action", registration}}, directory);
-            }
-            else if (!sources.empty())
-            {
-                forwarded = tt::Pipe::Forward(
-                    sid, {{"command", "activate_sources"}, {"sources", sources}}, directory);
-            }
-#ifdef _DEBUG
-            // The running engine shows the sample, as it takes another
-            // launch's sources.
-            else if (notice)
-            {
-                forwarded = tt::Pipe::Forward(sid, {{"command", "sample_notice"}});
-            }
-#endif
-            else if (!background && !headless)
-            {
-                forwarded = tt::Pipe::Forward(sid, {{"command", "open"}}, directory);
-            }
-            if (forwarded.outcome == tt::Forwarding::OtherStore && !headless)
-            {
-                // Exit and Force exit need the identified process and program.
-                if (!forwarded.process || !forwarded.engine)
-                {
-                    throw tt::desktop::Refusal{.key = "other_store_unidentified", .retry = true};
-                }
-                if (!tt::desktop::ExitOther(tt::Strings(), sid, forwarded))
-                {
-                    return 1;
-                }
-                acquired = WaitForSingleObject(mutex.get(), 0);
-                continue;
-            }
-            if (forwarded.outcome == tt::Forwarding::OtherVersion || forwarded.outcome == tt::Forwarding::OtherStore)
-            {
-                throw OtherEngine(forwarded);
-            }
-            if (exiting)
-            {
-                acquired = WaitForSingleObject(mutex.get(), 30'000);
-                if (acquired != WAIT_OBJECT_0 && acquired != WAIT_ABANDONED)
-                {
-                    throw tt::desktop::Refusal{.key = "engine_running", .retry = true};
-                }
-            }
-            else
-            {
-                mutex.reset();
-                if (forwarded.outcome == tt::Forwarding::Refused)
-                {
-                    throw tt::desktop::Refusal{.key = "activation_refused", .retry = true};
-                }
-                return 0;
-            }
-        }
-        if (acquired != WAIT_OBJECT_0 && acquired != WAIT_ABANDONED)
-        {
-            throw std::runtime_error("Cannot acquire engine instance ownership.");
-        }
-        if (exiting)
-        {
-            if (tt::desktop::HasWindow(sid))
-            {
-                throw tt::desktop::Refusal{.key = "window_open", .retry = true};
-            }
-            ReleaseMutex(mutex.get());
-            return 0;
-        }
-        int result;
-        if (!registration.empty())
-        {
-            auto response = tt::Registration().Execute(registration);
-            result = response.value("ok", false) ? 0 : 1;
-            if (result)
-            {
-                throw tt::desktop::Refusal{.key = "registration_failed",
-                    .detail = tt::Wide(response.at("error").at("detail").get<std::string>())};
+                throw tt::desktop::Refusal{.key = "registration_failed", .detail = tt::Wide(outcome.detail)};
             }
         }
         else
         {
+            auto& open = std::get<Arguments::Open>(arguments.request);
             if (personal)
             {
                 tt::Registration().Repair();
             }
-            tt::desktop::Application application(directory, sid, headless);
+            tt::desktop::Application application(arguments.directory, sid, headless);
 #ifdef _DEBUG
-            if (notice)
+            if (open.sample)
             {
                 application.ShowSampleNotice();
             }
 #endif
-            result = application.Run(background, std::move(sources));
+            result = application.Run(open.background, std::move(open.sources));
         }
-        ReleaseMutex(mutex.get());
+        ReleaseMutex(lock.get());
         return result;
     }
     catch (tt::desktop::Refusal& refusal)
     {
         // Another launch can start while this one waits for the person.
-        mutex.reset();
+        lock.reset();
         return Report(std::move(refusal), headless);
     }
     catch (std::exception const& error)
     {
-        mutex.reset();
+        lock.reset();
         return Report({.key = "start", .detail = Describe(error)}, headless);
     }
 }

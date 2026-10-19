@@ -79,36 +79,39 @@ void Engine::State::ApplyQueue()
 }
 
 void Engine::State::Queue(std::vector<std::string> const& ids, QueueMove move, std::string const& before,
-    Reply reply)
+    std::function<void(Outcome)> completion)
 {
     auto order = CurrentQueue();
     for (auto const& id : ids)
     {
         if (!Contains(order, id))
         {
-            reply(Failure(ErrorCode::InvalidTorrents));
+            completion({ErrorCode::InvalidTorrents});
             return;
         }
     }
-    bool unknownTarget = !before.empty() && (!torrents.contains(before) || torrents.at(before).deleted);
-    if (move == QueueMove::Before && (unknownTarget || Contains(ids, before)))
+    if (move == QueueMove::Before &&
+        (!torrents.contains(before) || torrents.at(before).deleted || Contains(ids, before)))
     {
-        reply(Failure(ErrorCode::InvalidTorrents));
+        completion({ErrorCode::InvalidTorrents});
         return;
     }
     order = Reorder(std::move(order), ids, move, before);
     auto document = Saved();
     document.queueOrder = order;
-    changes.Commit([document = std::move(document)] { return document.ToJson(); }, reply, [this, order]
+    changes.Commit([document = std::move(document)] { return document.ToJson(); },
+        [this, order, completion](Outcome outcome)
     {
-        queueOrder = order;
-        ApplyQueue();
-        return Success();
+        if (!outcome.error)
+        {
+            queueOrder = order;
+            ApplyQueue();
+        }
+        completion(std::move(outcome));
     });
 }
 
-// Moves the selected torrents and keeps their order among themselves. An
-// empty `before` moves them to the end.
+// Moves the selected torrents and keeps their order among themselves.
 std::vector<std::string> Engine::State::Reorder(std::vector<std::string> order,
     std::vector<std::string> const& ids, QueueMove move, std::string const& before)
 {

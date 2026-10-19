@@ -126,7 +126,7 @@ void Engine::State::WatchFolder()
                         if (*outcome.error != ErrorCode::Overloaded &&
                             !file->second.reported)
                         {
-                            Notify(NoticeKind::AddFailed, source, outcome.detail);
+                            Notify(NoticeKind::AddFailed, source, outcome.detail, {}, ToString(*outcome.error));
                             file->second.reported = true;
                         }
                     }
@@ -135,7 +135,7 @@ void Engine::State::WatchFolder()
                 if (auto found = torrents.find(added.torrentId);
                     added.kind == AdditionKind::New && found != torrents.end() && !found->second.deleted)
                     Notify(NoticeKind::Added, found->second);
-            }, settings.watchDestination, stamp);
+            }, stamp);
             break;
         }
     });

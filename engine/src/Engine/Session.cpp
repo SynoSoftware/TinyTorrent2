@@ -15,6 +15,12 @@ namespace
 constexpr auto statusInterval = std::chrono::seconds(1);
 constexpr auto checkpointInterval = std::chrono::seconds(30);
 
+constexpr std::pair<std::string_view, PauseReason> pauseReasons[] = {
+    {"manual", PauseReason::Manual},
+    {"schedule", PauseReason::Schedule},
+    {"adapter", PauseReason::Adapter},
+    {"connection_test", PauseReason::ConnectionTest}};
+
 // Torrent::Hashes lists the torrent's own hashes first, so the first saved
 // hash of each version is its own.
 lt::info_hash_t SavedHashes(std::vector<std::string> const& hashes)
@@ -40,23 +46,23 @@ Engine::State::State(std::filesystem::path path, std::function<void()> wake) :
     wake(std::move(wake)), language(settings.language)
 {
     // Without a saved document the engine starts from the default settings.
-    auto saved = std::make_shared<Document>();
-    saved->settings = settings;
-    store.Run([this, saved]
+    Document defaults;
+    defaults.settings = settings;
+    store.Run([this, saved = std::move(defaults)]() mutable
     {
         std::filesystem::create_directories(directory);
         auto file = directory / L"settings.json";
-        if (!std::filesystem::exists(file))
+        if (std::filesystem::exists(file))
         {
-            return;
+            saved.Read(Json::parse(Store::Read(file)));
         }
-        saved->Read(Json::parse(Store::Read(file)));
-    }, [this, saved](StorageOutcome outcome)
+        return std::move(saved);
+    }, [this](std::expected<Document, StorageOutcome> saved)
     {
-        if (outcome.failure)
+        if (!saved)
         {
-            startupError = outcome.detail;
-            startup = Startup::Ready;
+            startupError = saved.error().detail;
+            startup = Startup::Failed;
             log.Write("startup", "", "storage_failed");
             PublishSnapshot();
             return;
@@ -65,35 +71,39 @@ Engine::State::State(std::filesystem::path path, std::function<void()> wake) :
         language = settings.language;
         startup = Startup::Transfers;
         PublishSnapshot();
+        std::vector<std::string> ids;
+        for (auto const& [id, facts] : saved->torrents)
+            ids.push_back(id);
         // Queued only now, so the settings completion drains alone and the
         // desktop shows the splash before Start loads the transfers on the
         // same thread.
-        auto resumes = std::make_shared<Resumes>();
-        store.Run([this, saved, resumes]
+        store.Run([this, ids = std::move(ids)]
         {
-            for (auto const& [id, facts] : saved->torrents)
+            Resumes resumes;
+            for (auto const& id : ids)
             {
                 try
                 {
                     auto bytes = Store::Read(ResumeFile(id));
-                    (*resumes)[id] = lt::read_resume_data(lt::span<char const>(bytes.data(), bytes.size()));
+                    resumes[id] = lt::read_resume_data(lt::span<char const>(bytes.data(), bytes.size()));
                 }
                 catch (std::exception const&)
                 {
                     // Start adds this torrent again from its saved hashes.
                 }
             }
-        }, [this, saved, resumes](StorageOutcome outcome)
+            return resumes;
+        }, [this, document = std::move(*saved)](std::expected<Resumes, StorageOutcome> resumes)
         {
-            if (outcome.failure)
+            if (!resumes)
             {
-                startupError = outcome.detail;
-                startup = Startup::Ready;
+                startupError = resumes.error().detail;
+                startup = Startup::Failed;
                 log.Write("startup", "", "storage_failed");
                 PublishSnapshot();
                 return;
             }
-            Start(*saved, *resumes);
+            Start(document, *resumes);
         });
     });
 }
@@ -248,7 +258,7 @@ void Engine::State::RestorePending()
     }
     for (auto& [id, torrent] : torrents)
     {
-        if (!torrent.restore || torrent.deleted || !FindDuplicate(torrent.status.info_hashes, id).empty())
+        if (!torrent.restore || torrent.deleted || FindDuplicate(torrent.status.info_hashes, id))
         {
             continue;
         }
@@ -289,15 +299,14 @@ void Engine::State::SaveTransfers()
             transfersPending = false;
             if (!outcome.error)
                 savedTransfers = totals;
-            else if (IsShuttingDown())
-                saveFailure = outcome.detail;
+            else
+                FailFinalSave(outcome.detail);
         });
     }))
     {
         transfersPending = false;
         log.Write("checkpoint", "", "storage_overloaded");
-        if (IsShuttingDown())
-            saveFailure.emplace();
+        FailFinalSave();
     }
 }
 
@@ -381,7 +390,41 @@ Engine::State::Document Engine::State::Saved() const
     return document;
 }
 
-std::string Engine::State::FindDuplicate(lt::info_hash_t const& hashes, std::string const& excluded) const
+void Engine::State::CommitFacts(std::vector<std::string> const& ids,
+    std::function<void(std::string const& id, Facts& facts)> edit,
+    std::function<void(Outcome outcome, std::vector<std::string> const& changed)> done)
+{
+    auto document = Saved();
+    std::vector<std::string> changed;
+    for (auto const& id : ids)
+    {
+        auto& facts = document.torrents.at(id);
+        edit(id, facts);
+        if (facts.ToJson() != torrents.at(id).facts.ToJson())
+        {
+            changed.push_back(id);
+        }
+    }
+    if (changed.empty())
+    {
+        done({}, changed);
+        return;
+    }
+    changes.Commit([document = std::move(document)] { return document.ToJson(); },
+        [this, changed, edit = std::move(edit), done = std::move(done)](Outcome outcome)
+    {
+        if (!outcome.error)
+        {
+            for (auto const& id : changed)
+            {
+                edit(id, torrents.at(id).facts);
+            }
+        }
+        done(std::move(outcome), changed);
+    });
+}
+
+std::optional<std::string> Engine::State::FindDuplicate(lt::info_hash_t const& hashes, std::string const& excluded) const
 {
     auto values = Hashes(hashes);
     for (auto const& [id, torrent] : torrents)
@@ -391,7 +434,7 @@ std::string Engine::State::FindDuplicate(lt::info_hash_t const& hashes, std::str
             return id;
         }
     }
-    return {};
+    return std::nullopt;
 }
 
 bool Engine::State::Overlaps(std::vector<std::string> const& hashes, std::vector<std::string> const& others)
@@ -403,6 +446,7 @@ bool Engine::State::Overlaps(std::vector<std::string> const& hashes, std::vector
 tt::Activity Engine::State::Activity() const
 {
     tt::Activity activity;
+    auto paused = Paused();
     for (auto const& [id, torrent] : torrents)
     {
         if (torrent.deleted)
@@ -417,7 +461,14 @@ tt::Activity Engine::State::Activity() const
         {
             ++activity.errorCount;
         }
-        switch (torrent.Classify(IsPaused()))
+        auto status = torrent.Classify(paused.has_value());
+        // A torrent whose move waits transfers until the move starts and the
+        // engine holds it.
+        if (status == Status::Moving && !torrent.IsHeld(torrent.status.has_metadata))
+        {
+            status = torrent.ClassifyTransfer(paused.has_value());
+        }
+        switch (status)
         {
         case Status::Downloading:
             activity.downloading = true;
@@ -444,17 +495,20 @@ tt::Activity Engine::State::Activity() const
     }
     activity.downloading = activity.downloading && !IsShuttingDown();
     activity.seeding = activity.seeding && !IsShuttingDown();
-    activity.paused = IsPaused();
-    activity.pausedByChoice = IsPausedByChoice();
-    activity.missingAdapter = adapterMissing ? settings.networkAdapter : std::string();
-    activity.notificationsEnabled = settings.notificationsEnabled;
-    activity.notifiesProblems = settings.notifiesProblems;
-    activity.notifiesAdded = settings.notifiesAdded;
-    activity.notifiesBackground = settings.notifiesBackground;
+    activity.paused = paused.has_value();
+    activity.pausedByChoice = paused == PauseReason::Manual || paused == PauseReason::Schedule;
+    if (IsAdapterMissing())
+        activity.missingAdapter = settings.networkAdapter;
+    for (auto const& [word, notice] : noticeSwitches)
+    {
+        if (settings.*Settings::Switch(notice))
+        {
+            activity.notices.insert(notice);
+        }
+    }
     activity.preventsSleep = settings.preventsSleep;
     activity.preventsSleepSeeding = settings.preventsSleepSeeding;
     activity.reportedPrograms = settings.reportedPrograms;
-    activity.filesBusy = FilesBusy();
     activity.confirmsExit = settings.confirmsExit;
     activity.theme = settings.theme;
     return activity;
@@ -470,13 +524,15 @@ Json Engine::State::Snapshot()
     {
         queue[id] = position++;
     }
+    auto paused = Paused();
     Json rows = Json::array();
     for (auto const& [id, torrent] : torrents)
     {
         if (!torrent.deleted)
         {
             auto queued = queue.find(id);
-            rows.push_back(torrent.Row(IsPaused(), queued == queue.end() ? -1 : queued->second, MoveProgress(torrent)));
+            rows.push_back(torrent.Row(paused.has_value(), queued == queue.end() ? -1 : queued->second,
+                MoveProgress(torrent)));
         }
     }
     auto current = settings.ToJson();
@@ -485,29 +541,29 @@ Json Engine::State::Snapshot()
     auto mode = CurrentLimits();
     auto caps = settings.Caps(mode);
     auto origin = !settings.scheduleEnabled ? "manual" : limitOverride ? "override" : "schedule";
-    // A pause that Resume all lifts comes first, so "adapter" means that only the
-    // missing adapter pauses transfers and the window offers Settings instead.
-    auto pause = !IsPaused() ? "" : settings.allPaused || launchPaused ? "manual" : IsPausedByChoice() ? "schedule" :
-        adapterMissing ? "adapter" : "connection_test";
+    // Paused puts a pause that Resume all lifts first, so "adapter" means that
+    // only the missing adapter pauses transfers and the window offers Settings
+    // instead.
+    auto pause = paused ? Word(pauseReasons, *paused) : std::string_view();
     return {{"session_id", sessionId}, {"sequence", ++snapshotSequence},
         {"torrents", std::move(rows)}, {"settings", std::move(current)},
         {"language_saved", language == settings.language},
         {"download_rate", activity.downloadRate}, {"upload_rate", activity.uploadRate},
         {"move_rate", move ? Json(move->rate) : Json()},
         {"transfers", {{"session", transferred.ToJson()}, {"all_time", TotalTransfers().ToJson()}}},
-        {"session_paused", IsPaused()},
+        {"session_paused", paused.has_value()},
         {"connection_test", ConnectionTestSnapshot()},
         {"limits", {{"origin", origin}, {"mode", Settings::Name(mode)},
             {"download", caps.download}, {"upload", caps.upload}, {"pause", pause}}},
-        {"missing_adapter", activity.missingAdapter},
+        {"missing_adapter", activity.missingAdapter.value_or("")},
         {"has_incoming", activity.hasIncoming},
-        {"external_ipv4", adapterMissing ? "" : externalIpv4},
-        {"external_ipv6", adapterMissing ? "" : externalIpv6},
+        {"external_ipv4", IsAdapterMissing() ? "" : externalIpv4},
+        {"external_ipv6", IsAdapterMissing() ? "" : externalIpv6},
         {"proxy", proxyOutcome ? Json(std::string(Name(*proxyOutcome))) : Json()},
         {"proxy_check", !requestedCheck ? Json() : Json{{"check_id", requestedCheck->checkId},
             {"outcome", requestedCheck->result ? Json(std::string(Name(requestedCheck->result->outcome))) : Json()},
             {"milliseconds", requestedCheck->result ? Json(requestedCheck->result->elapsed.count()) : Json()}}},
-        {"shutting_down", IsShuttingDown()}, {"loading", startup != Startup::Ready}, {"storage_failed", !startupError.empty()},
+        {"shutting_down", IsShuttingDown()}, {"loading", IsLoading()}, {"storage_failed", startup == Startup::Failed},
         {"startup_error", startupError}};
 }
 
@@ -607,33 +663,24 @@ void Engine::State::RecordHashes(Torrent& torrent)
         {
             return;
         }
-        auto document = Saved();
-        document.torrents.at(id).hashes = hashes;
-        changes.Commit([document = std::move(document)] { return document.ToJson(); }, [this, id, hashes](Outcome outcome)
+        CommitFacts({id}, [hashes](std::string const&, Facts& facts) { facts.hashes = hashes; },
+            [this, id](Outcome outcome, auto const&)
         {
             auto& torrent = torrents.at(id);
             if (!outcome.error)
             {
-                torrent.facts.hashes = hashes;
                 torrent.hashError.reset();
             }
             else
             {
-                torrent.hashError = outcome.error == ErrorCode::Overloaded ?
-                    Problem{ProblemKind::StorageOverloaded} : Problem{ProblemKind::StorageFailed, outcome.detail};
-                if (IsShuttingDown())
-                {
-                    saveFailure = outcome.detail;
-                }
+                torrent.hashError = Problem::From(outcome, ProblemKind::StorageFailed);
+                FailFinalSave(outcome.detail);
             }
         });
     }))
     {
         torrent.hashError = Problem{ProblemKind::StorageOverloaded};
-        if (IsShuttingDown())
-        {
-            saveFailure.emplace();
-        }
+        FailFinalSave();
     }
 }
 
@@ -708,12 +755,14 @@ void Engine::State::Maintain()
         history.Sample(time, double(activity.downloadRate), double(activity.uploadRate));
         ContinueNames();
         ResumeMove();
+        MoveWaiting();
         for (auto& [id, torrent] : torrents)
         {
             if (!torrent.deleted)
                 torrent.history.Sample(time, double(torrent.status.download_payload_rate),
                     double(torrent.status.upload_payload_rate));
             QueryPriorities(torrent);
+            ApplyWaiting(torrent);
             FinishFiles(torrent);
             FinishDownload(torrent);
         }
@@ -755,7 +804,6 @@ void Engine::State::RequestStatus(bool immediate)
         return;
     statusOutstanding = true;
     statusPending = false;
-    // The save path and metadata pointer distinguish detail and seed queries.
-    session->post_torrent_updates(lt::torrent_handle::query_name);
+    session->post_torrent_updates(routineQuery);
 }
 }

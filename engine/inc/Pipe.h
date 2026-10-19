@@ -54,28 +54,46 @@ struct Forwarded
 class Pipe
 {
 public:
-    struct Connection
+    // One client's connection. Its writer sends replies and control messages
+    // in order, and keeps only the latest unsent detail update and snapshot.
+    class Connection
     {
+    public:
+        Connection(ULONG processId, std::string connectionId);
+        ~Connection() { CloseHandle(cancel_); }
+        Connection(Connection const&) = delete;
+        Connection& operator=(Connection const&) = delete;
+        // Queues a control message, unless the same message is still unsent.
+        void Send(Json message);
+
         // Read when the client connects, because the pipe instance serves
         // other clients after this one disconnects.
-        ULONG processId = 0;
-        HANDLE cancel = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-        std::string connectionId;
-        std::mutex mutex;
-        std::condition_variable changed;
-        std::deque<Json> output;
-        std::optional<Json> detail;
-        std::optional<Json> snapshot;
-        bool closed = false;
-        bool dispatched = false;
-        std::set<std::int64_t> requests;
-        ~Connection() { CloseHandle(cancel); }
-        void Send(Json message);
+        ULONG const processId;
+        std::string const connectionId;
+
+    private:
+        friend class Pipe;
+        // Answers request `requestId`. The engine pushes a detail update or a
+        // snapshot through the reply of the request that asked for it, so
+        // these replace the unsent one instead of queueing.
+        void Answer(std::int64_t requestId, Json message);
+        // Each of these requires the lock.
+        void Queue(Json message);
+        void Close();
+
+        HANDLE cancel_ = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        std::mutex mutex_;
+        std::condition_variable changed_;
+        std::deque<Json> output_;
+        std::optional<Json> detail_;
+        std::optional<Json> snapshot_;
+        bool closed_ = false;
+        std::set<std::int64_t> requests_;
     };
     // The protocol version that the hello message announces.
     static constexpr int version = 22;
     // Receives each request with the reply that answers it, and a null request
-    // with no reply when the client disconnects.
+    // with no reply when a client that sent a request disconnects.
     using Dispatch = std::function<void(std::shared_ptr<Connection>, Json, Reply)>;
 
     Pipe(std::wstring const& sid, SECURITY_ATTRIBUTES& security, Json hello, Dispatch dispatch);

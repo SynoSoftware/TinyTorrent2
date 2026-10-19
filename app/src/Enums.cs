@@ -436,7 +436,7 @@ internal enum ExitAnswer
     Confirmed,
     Cancelled,
 
-    // The window cannot show the prompt now, so the engine asks natively.
+    // The window cannot show the prompt now, so the engine asks in its popup.
     Unavailable,
 }
 

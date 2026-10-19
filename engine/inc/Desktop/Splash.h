@@ -21,7 +21,7 @@ public:
     void Finish(std::function<void()> show);
     void Close();
     void Translate();
-    void SetTheme(std::string theme);
+    void SetTheme(Theme theme);
 private:
     static LRESULT CALLBACK Procedure(HWND window, UINT message, WPARAM first, LPARAM second);
     LRESULT Handle(HWND window, UINT message, WPARAM first, LPARAM second);
@@ -34,6 +34,6 @@ private:
     ULONGLONG shownAt_ = 0;
     std::function<void()> show_;
     std::deque<ULONGLONG> launches_;
-    std::string theme_ = "system";
+    Theme theme_ = Theme::System;
 };
 }

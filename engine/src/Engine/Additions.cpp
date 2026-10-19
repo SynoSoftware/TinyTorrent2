@@ -1,9 +1,7 @@
 #include "Engine/State.h"
 #include <libtorrent/torrent_info.hpp>
-#include <boost/asio/post.hpp>
 #include <algorithm>
 #include <chrono>
-#include <future>
 
 namespace tt
 {
@@ -65,10 +63,9 @@ bool Engine::State::IsChoice(lt::download_priority_t priority)
 void Engine::State::Add(Preview& preview, Addition::Choices choices, std::function<void(Outcome, Added)> completion)
 {
     UpdatePreview(preview);
-    auto duplicate = FindDuplicate(preview.InfoHashes());
-    if (!duplicate.empty())
+    if (auto duplicate = FindDuplicate(preview.InfoHashes()))
     {
-        completion({}, {AdditionKind::Duplicate, duplicate});
+        completion({}, {AdditionKind::Duplicate, *duplicate});
         return;
     }
     if (!IsAbsolute(choices.destination))
@@ -108,8 +105,7 @@ void Engine::State::Add(Preview& preview, Addition::Choices choices, std::functi
     addition.facts.priorities = std::move(*chosen);
     addition.facts.hashes = Hashes(preview.InfoHashes());
     addition.queueTop = choices.queueTop;
-    addition.watchSource = std::move(choices.watchSource);
-    addition.watchStamp = std::move(choices.watchStamp);
+    addition.watch = std::move(choices.watch);
     addition.completion = std::move(completion);
     auto& pending = additions.emplace(addition.torrentId, std::move(addition)).first->second;
     if (preview.handle.is_valid())
@@ -121,17 +117,19 @@ void Engine::State::Add(Preview& preview, Addition::Choices choices, std::functi
     }
     else
     {
-        auto prepared = std::make_shared<lt::add_torrent_params>(pending.params);
-        sources.Run([prepared, appendsSuffix = pending.facts.appendsSuffix, layout = pending.facts.layout]
-            { PrepareNames(*prepared, appendsSuffix, layout); },
-            [this, id = pending.torrentId, prepared](StorageOutcome outcome)
+        sources.Run([params = pending.params, appendsSuffix = pending.facts.appendsSuffix,
+            layout = pending.facts.layout]() mutable
+        {
+            PrepareNames(params, appendsSuffix, layout);
+            return std::move(params);
+        }, [this, id = pending.torrentId](std::expected<lt::add_torrent_params, StorageOutcome> prepared)
         {
             auto found = additions.find(id);
             if (found == additions.end())
                 return;
-            if (outcome.failure)
+            if (!prepared)
             {
-                Abandon(id, outcome.ToOutcome(ErrorCode::AddFailed));
+                Abandon(id, prepared.error().ToOutcome(ErrorCode::AddFailed));
                 return;
             }
             auto& addition = found->second;
@@ -149,39 +147,40 @@ void Engine::State::PrepareAddition(std::string const& id, lt::torrent_handle ha
     addition.handle = handle;
     ApplyPolicy(handle);
     addition.phase = AdditionPhase::Naming;
-    auto prepared = std::make_shared<lt::add_torrent_params>(addition.params);
-    if (!prepared->ti)
-        prepared->ti = handle.torrent_file();
+    auto params = addition.params;
+    if (!params.ti)
+        params.ti = handle.torrent_file();
     // A rename or removal can change the destination's files while the names
     // are chosen, so the torrent then joins the list without them and
     // ContinueNames chooses them once that work ends. It stays paused until
     // then, so it writes nothing under a wrong name.
-    if (!prepared->ti || RemovingOrRenaming())
+    if (!params.ti || RemovingOrRenaming())
     {
         SaveAddition(id, handle);
         return;
     }
-    auto current = std::make_shared<lt::renamed_files>();
-    sources.Run([this, prepared, current, handle, appendsSuffix = addition.facts.appendsSuffix, layout = addition.facts.layout]
+    sources.Run([this, params = std::move(params), handle, appendsSuffix = addition.facts.appendsSuffix,
+        layout = addition.facts.layout]() mutable
     {
         ReleaseFiles({handle});
-        *current = handle.get_renamed_files();
-        prepared->renamed_files = current->export_filenames(prepared->ti->layout());
-        PrepareNames(*prepared, appendsSuffix, layout);
-    }, [this, id, prepared, current](StorageOutcome outcome)
+        auto current = handle.get_renamed_files();
+        params.renamed_files = current.export_filenames(params.ti->layout());
+        PrepareNames(params, appendsSuffix, layout);
+        return NameChoice{std::move(params), std::move(current)};
+    }, [this, id](std::expected<NameChoice, StorageOutcome> choice)
     {
         auto found = additions.find(id);
         if (found == additions.end() || found->second.phase != AdditionPhase::Naming)
             return;
-        if (outcome.failure)
+        if (!choice)
         {
-            Abandon(id, outcome.ToOutcome(ErrorCode::AddFailed));
+            Abandon(id, choice.error().ToOutcome(ErrorCode::AddFailed));
             return;
         }
         auto& addition = found->second;
-        addition.params.ti = prepared->ti;
-        addition.params.renamed_files = prepared->renamed_files;
-        ApplyNames(addition.handle, *prepared, *current, addition.renaming);
+        addition.params.ti = choice->params.ti;
+        addition.params.renamed_files = choice->params.renamed_files;
+        ApplyNames(addition.handle, choice->params, choice->current, addition.renaming);
         addition.named = true;
         if (addition.renaming.empty())
             SaveAddition(id, addition.handle);
@@ -192,22 +191,22 @@ void Engine::State::PrepareAddition(std::string const& id, lt::torrent_handle ha
 // defaults. The source has its own connection, so its preview merges with no
 // other and ends with the addition.
 void Engine::State::AddSource(std::string source, std::function<void(Outcome, Added)> completion,
-    std::string destination, std::string watchStamp)
+    std::optional<std::string> watchStamp)
 {
     auto connectionId = NewId();
-    auto watchSource = watchStamp.empty() ? std::string() : source;
-    auto finish = [this, connectionId, watchSource, watchStamp, completion](Outcome outcome, Added added)
+    auto watch = watchStamp ? std::optional(Addition::Watch{source, std::move(*watchStamp)}) : std::nullopt;
+    auto finish = [this, connectionId, watch, completion](Outcome outcome, Added added)
     {
         Disconnect(connectionId);
-        if (outcome.error || watchSource.empty() || added.kind == AdditionKind::New)
+        if (outcome.error || !watch || added.kind == AdditionKind::New)
             completion(std::move(outcome), std::move(added));
         else
-            RecordWatch(watchSource, watchStamp, [completion, added](Outcome outcome)
+            RecordWatch(watch->source, watch->stamp, [completion, added](Outcome outcome)
             {
                 completion(std::move(outcome), added);
             });
     };
-    Inspect(std::move(source), connectionId, [this, finish, destination, watchSource, watchStamp](Outcome outcome, Preview* preview)
+    Inspect(std::move(source), connectionId, [this, finish, watch](Outcome outcome, Preview* preview)
     {
         if (outcome.error)
         {
@@ -215,27 +214,23 @@ void Engine::State::AddSource(std::string source, std::function<void(Outcome, Ad
             return;
         }
         auto duplicate = FindDuplicate(preview->InfoHashes());
-        if (!duplicate.empty() && settings.duplicates == DuplicatePolicy::Merge && CanMerge(*preview))
+        if (duplicate && settings.duplicates == DuplicatePolicy::Merge && CanMerge(*preview))
         {
-            MergeTrackers(*preview, duplicate, [finish, duplicate](Json reply)
+            MergeTrackers(*preview, *duplicate, [finish, duplicate](Outcome outcome)
             {
-                if (!reply.at("ok").get<bool>())
-                {
-                    auto const& error = reply.at("error");
-                    finish({ParseError(error.at("code").get<std::string>()).value_or(ErrorCode::Unavailable),
-                        error.at("detail").get<std::string>()}, {});
-                }
+                if (outcome.error)
+                    finish(std::move(outcome), {});
                 else
-                    finish({}, {AdditionKind::Duplicate, duplicate});
+                    finish({}, {AdditionKind::Duplicate, *duplicate});
             });
             return;
         }
         Addition::Choices choices;
-        choices.destination = destination.empty() ? settings.AdditionFolder() : destination;
+        choices.destination = watch && !settings.watchDestination.empty() ?
+            settings.watchDestination : settings.AdditionFolder();
         choices.intent = settings.startsDownload ? Intent::Resumed : Intent::Paused;
         choices.queueTop = settings.queueTop;
-        choices.watchSource = watchSource;
-        choices.watchStamp = watchStamp;
+        choices.watch = watch;
         Add(*preview, std::move(choices), finish);
     });
 }
@@ -296,8 +291,8 @@ void Engine::State::CommitAddition(std::string const& id)
     auto const& addition = additions.at(id);
     auto document = Saved();
     document.torrents.emplace(id, addition.facts);
-    if (!addition.watchSource.empty())
-        document.watchedSources[addition.watchSource] = addition.watchStamp;
+    if (addition.watch)
+        document.watchedSources[addition.watch->source] = addition.watch->stamp;
     document.settings.lastFolder = addition.facts.finalFolder.empty() ?
         addition.facts.savePath : addition.facts.finalFolder;
     if (addition.queueTop)
@@ -363,7 +358,7 @@ void Engine::State::Abandon(std::string id, Outcome outcome, Added added)
     completion(std::move(outcome), std::move(added));
 }
 
-std::string Engine::State::MovingAddition(lt::torrent_handle const& handle) const
+std::optional<std::string> Engine::State::MovingAddition(lt::torrent_handle const& handle) const
 {
     for (auto const& [id, addition] : additions)
     {
@@ -372,7 +367,7 @@ std::string Engine::State::MovingAddition(lt::torrent_handle const& handle) cons
             return id;
         }
     }
-    return {};
+    return std::nullopt;
 }
 
 // After libtorrent dropped alerts: saves each addition whose torrent was
@@ -413,43 +408,32 @@ void Engine::State::RecoverAdditions()
         accepted.insert(handle);
     payload.Run([session = session.get(), observations, accepted = std::move(accepted)]
     {
-        auto collected = std::make_shared<std::promise<void>>();
-        auto ready = collected->get_future();
-        boost::asio::post(session->get_context(), [session, observations, accepted, collected]
+        SyncCall(*session, [session, observations, accepted]
         {
-            try
+            // Accepted torrents can retain an address reused by a later addition.
+            std::map<Addition const*, lt::torrent_handle> added;
+            for (auto const& handle : session->get_torrents())
             {
-                // Accepted torrents can retain an address reused by a later addition.
-                std::map<Addition const*, lt::torrent_handle> added;
-                for (auto const& handle : session->get_torrents())
-                {
-                    if (accepted.contains(handle))
-                        continue;
-                    if (auto identity = handle.userdata().get<Addition>())
-                        added.emplace(identity, handle);
-                }
-                for (auto& observation : *observations)
-                {
-                    if (observation.phase == AdditionPhase::Adding)
-                    {
-                        if (auto found = added.find(observation.identity); found != added.end())
-                            observation.handle = found->second;
-                    }
-                    else if (observation.handle.is_valid())
-                    {
-                        auto status = observation.handle.status(lt::torrent_handle::query_save_path);
-                        observation.savePath = std::move(status.save_path);
-                        observation.moving = status.moving_storage;
-                    }
-                }
-                collected->set_value();
+                if (accepted.contains(handle))
+                    continue;
+                if (auto identity = handle.userdata().get<Addition>())
+                    added.emplace(identity, handle);
             }
-            catch (...)
+            for (auto& observation : *observations)
             {
-                collected->set_exception(std::current_exception());
+                if (observation.phase == AdditionPhase::Adding)
+                {
+                    if (auto found = added.find(observation.identity); found != added.end())
+                        observation.handle = found->second;
+                }
+                else if (observation.handle.is_valid())
+                {
+                    auto status = observation.handle.status(lt::torrent_handle::query_save_path);
+                    observation.savePath = std::move(status.save_path);
+                    observation.moving = status.moving_storage;
+                }
             }
         });
-        ready.get();
     }, [this, observations](StorageOutcome outcome)
     {
         for (auto const& observation : *observations)
@@ -495,23 +479,21 @@ void Engine::State::On(lt::add_torrent_alert const& alert)
         PrepareAddition(found->first, alert.handle);
         return;
     }
-    auto duplicate = FindDuplicate(alert.params.info_hashes);
-    if (duplicate.empty())
+    if (auto duplicate = FindDuplicate(alert.params.info_hashes))
     {
-        Abandon(found->first, {ErrorCode::AddFailed, alert.error.message()});
+        Abandon(found->first, {}, {AdditionKind::Duplicate, *duplicate});
     }
     else
     {
-        Abandon(found->first, {}, {AdditionKind::Duplicate, duplicate});
+        Abandon(found->first, {ErrorCode::AddFailed, alert.error.message()});
     }
 }
 
 void Engine::State::On(lt::storage_moved_alert const& alert)
 {
-    auto id = MovingAddition(alert.handle);
-    if (!id.empty())
+    if (auto id = MovingAddition(alert.handle))
     {
-        PrepareAddition(id, alert.handle);
+        PrepareAddition(*id, alert.handle);
         return;
     }
     FinishMove(alert.handle, {});
@@ -519,10 +501,9 @@ void Engine::State::On(lt::storage_moved_alert const& alert)
 
 void Engine::State::On(lt::storage_moved_failed_alert const& alert)
 {
-    auto id = MovingAddition(alert.handle);
-    if (!id.empty())
+    if (auto id = MovingAddition(alert.handle))
     {
-        Abandon(id, {ErrorCode::AddFailed, alert.error.message()});
+        Abandon(*id, {ErrorCode::AddFailed, alert.error.message()});
         return;
     }
     FinishMove(alert.handle, alert.error.message());

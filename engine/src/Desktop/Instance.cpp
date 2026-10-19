@@ -1,8 +1,12 @@
 #include "Desktop/Instance.h"
+#include "Registration.h"
+#include "Desktop/Window.h"
 #include "Desktop/Notices.h"
 #include "Desktop/Popup.h"
+#include <algorithm>
 #include <chrono>
 #include <future>
+#include <shellapi.h>
 #include <system_error>
 #include <tlhelp32.h>
 
@@ -106,6 +110,20 @@ bool Held(std::wstring const& name)
         "Cannot check instance ownership");
 }
 
+// The name of the engine lock, the mutex that the running engine of the logon
+// session `sid` holds.
+std::wstring EngineLockName(std::wstring const& sid)
+{
+    return L"Local\\TinyTorrent.Engine." + sid;
+}
+
+// Whether a product window of the logon session `sid` runs, including one
+// that outlived its engine. Throws std::system_error when Windows cannot tell.
+bool HasWindow(std::wstring const& sid)
+{
+    return Held(L"Local\\TinyTorrent.Window." + sid);
+}
+
 // The prompt that asks whether to exit the other engine, and what its
 // answers do.
 class Conflict
@@ -116,6 +134,9 @@ public:
     {
     }
 
+    // True once the other engine has ended and either its window has ended
+    // too or another engine holds the engine lock; false when the person
+    // cancels.
     bool Resolve();
 
 private:
@@ -255,20 +276,261 @@ void Conflict::Check()
     // can cancel.
     Ask();
 }
+
+// Another version keeps this launch out until that engine closes, and so does
+// another data folder for a headless launch, which cannot ask to exit it. Its
+// folder identifies it, and Retry starts this launch again once it has closed.
+Refusal OtherEngine(Forwarded const& forwarded)
+{
+    Refusal refusal{.key = forwarded.outcome == Forwarding::OtherVersion ? "version" : "other_store", .retry = true};
+    // The detail line shortens a path in its middle, so the folder rather than
+    // the program path keeps the folder that tells engines apart in view.
+    if (forwarded.engine)
+    {
+        refusal.folder = forwarded.engine->parent_path();
+        refusal.detail = refusal.folder->wstring();
+    }
+    return refusal;
 }
 
-std::wstring EngineLockName(std::wstring const& sid)
+// Hands the launch's request to the running engine. A launch that only starts
+// the engine in the background asks nothing of a running one.
+Forwarded Forward(std::wstring const& sid, Arguments const& arguments)
 {
-    return L"Local\\TinyTorrent.Engine." + sid;
+    auto const& store = arguments.directory;
+    if (std::holds_alternative<Arguments::Exit>(arguments.request))
+    {
+        return Pipe::Forward(sid, {{"command", "exit"}});
+    }
+    if (auto request = std::get_if<Arguments::Register>(&arguments.request))
+    {
+        auto action = std::ranges::find(registrationActions, request->action,
+            &std::pair<std::string_view, RegistrationAction>::second);
+        // An engine of another store, such as a test's, would register its
+        // own program with Windows.
+        return Pipe::Forward(sid, {{"command", "registration"}, {"action", std::string(action->first)}}, store);
+    }
+    auto const& open = std::get<Arguments::Open>(arguments.request);
+    if (!open.sources.empty())
+    {
+        return Pipe::Forward(sid, {{"command", "activate_sources"}, {"sources", open.sources}}, store);
+    }
+#ifdef _DEBUG
+    // The running engine shows the sample, as it takes another launch's
+    // sources.
+    if (open.sample)
+    {
+        return Pipe::Forward(sid, {{"command", "sample_notice"}});
+    }
+#endif
+    if (!open.background && !arguments.headless)
+    {
+        return Pipe::Forward(sid, {{"command", "open"}}, store);
+    }
+    return {Forwarding::Accepted};
+}
 }
 
-bool HasWindow(std::wstring const& sid)
+Arguments Arguments::Read(wchar_t const* line)
 {
-    return Held(L"Local\\TinyTorrent.Window." + sid);
+    int count = 0;
+    auto values = CommandLineToArgvW(line, &count);
+    // The first value names the program.
+    std::vector<std::wstring> words(values + (count ? 1 : 0), values + count);
+    LocalFree(values);
+    Arguments result;
+    auto refuse = [&result](char const* key)
+    {
+        result.request = Refusal{.key = key};
+        return result;
+    };
+    // The first option with a missing or unknown value. It is refused once
+    // the whole line is read, so a `--headless` after it still applies.
+    char const* invalid = nullptr;
+    auto note = [&invalid](char const* key)
+    {
+        invalid = invalid ? invalid : key;
+    };
+    bool literal = false;
+    bool background = false;
+    bool exiting = false;
+#ifdef _DEBUG
+    bool sample = false;
+#endif
+    std::optional<RegistrationAction> registration;
+    std::vector<std::string> sources;
+    std::vector<std::wstring> classes;
+    for (std::size_t index = 0; index < words.size(); ++index)
+    {
+        auto const& word = words[index];
+        if (!literal && word == option::literal)
+        {
+            literal = true;
+        }
+        else if (!literal && word == option::headless)
+        {
+            result.headless = true;
+        }
+        else if (!literal && word == option::background)
+        {
+            background = true;
+        }
+        else if (!literal && word == option::exit)
+        {
+            exiting = true;
+        }
+        else if (!literal && word == option::registration)
+        {
+            registration = ++index < words.size() ? Parse(registrationActions, Utf8(words[index])) : std::nullopt;
+            if (!registration)
+            {
+                note("argument_registration");
+            }
+        }
+        else if (!literal && word == option::data)
+        {
+            if (index + 1 == words.size() || words[index + 1] == option::literal)
+            {
+                note("argument_folder");
+            }
+            else
+            {
+                result.directory = words[++index];
+            }
+        }
+#ifdef _DEBUG
+        else if (!literal && word == option::notice)
+        {
+            sample = true;
+            background = true;
+        }
+#endif
+        else if (!literal && word == option::repairClass)
+        {
+            if (++index == words.size())
+            {
+                note("argument_class");
+            }
+            else
+            {
+                classes.push_back(words[index]);
+            }
+        }
+        else
+        {
+            auto source = Utf8(word);
+            NormaliseMagnet(source);
+            if (!word.empty() && !IsMagnet(source))
+            {
+                source = Utf8(std::filesystem::absolute(std::filesystem::path(word)).wstring());
+            }
+            sources.push_back(std::move(source));
+        }
+    }
+    if (invalid)
+    {
+        return refuse(invalid);
+    }
+    if (registration && !sources.empty())
+    {
+        return refuse("argument_sources");
+    }
+    if (exiting && (registration || !sources.empty() || background || !result.directory.empty()))
+    {
+        return refuse("argument_exit");
+    }
+    if (!sources.empty() && !ValidSources(sources))
+    {
+        return refuse("sources_limit");
+    }
+    if (!classes.empty())
+    {
+        if (registration || !sources.empty() || exiting || background || !result.directory.empty())
+        {
+            return refuse("argument_repair");
+        }
+        result.request = Repair{std::move(classes)};
+    }
+    else if (exiting)
+    {
+        result.request = Exit{};
+    }
+    else if (registration)
+    {
+        result.request = Register{*registration};
+    }
+    else
+    {
+        Open open{.background = background, .sources = std::move(sources)};
+#ifdef _DEBUG
+        open.sample = sample;
+#endif
+        result.request = std::move(open);
+    }
+    return result;
 }
 
-bool ExitOther(Strings const& strings, std::wstring const& sid, Forwarded const& other)
+Ownership Claim(std::wstring const& sid, Arguments const& arguments)
 {
-    return Conflict(strings, sid, other).Resolve();
+    OwnedHandle lock;
+    {
+        Security security(sid);
+        lock.reset(CreateMutexW(&security.Attributes(), FALSE, EngineLockName(sid).c_str()));
+    }
+    if (!lock)
+    {
+        throw std::runtime_error("Cannot claim engine instance ownership.");
+    }
+    auto exiting = std::holds_alternative<Arguments::Exit>(arguments.request);
+    auto acquired = WaitForSingleObject(lock.get(), 0);
+    while (acquired == WAIT_TIMEOUT)
+    {
+        auto forwarded = Forward(sid, arguments);
+        if (forwarded.outcome == Forwarding::OtherStore && !arguments.headless)
+        {
+            // Exit and Force exit need the identified process and program.
+            if (!forwarded.process || !forwarded.engine)
+            {
+                throw Refusal{.key = "other_store_unidentified", .retry = true};
+            }
+            if (!Conflict(Strings(), sid, forwarded).Resolve())
+            {
+                return {.code = 1};
+            }
+            acquired = WaitForSingleObject(lock.get(), 0);
+            continue;
+        }
+        if (forwarded.outcome == Forwarding::OtherVersion || forwarded.outcome == Forwarding::OtherStore)
+        {
+            throw OtherEngine(forwarded);
+        }
+        if (!exiting)
+        {
+            if (forwarded.outcome == Forwarding::Refused)
+            {
+                throw Refusal{.key = "activation_refused", .retry = true};
+            }
+            return {};
+        }
+        acquired = WaitForSingleObject(lock.get(), 30'000);
+        if (acquired != WAIT_OBJECT_0 && acquired != WAIT_ABANDONED)
+        {
+            throw Refusal{.key = "engine_running", .retry = true};
+        }
+    }
+    if (acquired != WAIT_OBJECT_0 && acquired != WAIT_ABANDONED)
+    {
+        throw std::runtime_error("Cannot acquire engine instance ownership.");
+    }
+    if (exiting)
+    {
+        if (HasWindow(sid))
+        {
+            throw Refusal{.key = "window_open", .retry = true};
+        }
+        ReleaseMutex(lock.get());
+        return {};
+    }
+    return {.lock = std::move(lock)};
 }
 }

@@ -142,28 +142,8 @@ void Engine::State::On(lt::state_changed_alert const& alert)
     {
         return;
     }
-    if (alert.state == lt::torrent_status::downloading)
-    {
-        if (torrent->completionPhase != CompletionPhase::Checking)
-            torrent->completionPhase = CompletionPhase::Downloading;
-        torrent->receivedPayload = false;
-    }
-    if (alert.state == lt::torrent_status::checking_files ||
-        alert.state == lt::torrent_status::checking_resume_data)
-    {
-        torrent->receivedPayload = false;
-        if (torrent->completionPhase == CompletionPhase::Downloading)
-            torrent->completionPhase = CompletionPhase::Idle;
-    }
-    if (alert.state == lt::torrent_status::finished &&
-        alert.prev_state == lt::torrent_status::downloading &&
-        (torrent->completionPhase == CompletionPhase::Downloading ||
-            torrent->completionPhase == CompletionPhase::Idle || torrent->receivedPayload))
-    {
-        torrent->completionPhase = CompletionPhase::Downloading;
-        QueryCompletion(*torrent);
-    }
-    torrent->transferState = alert.state;
+    if (torrent->completion.Changed(alert.state, alert.prev_state))
+        Invalidate(torrent->torrentId);
     if (alert.state == lt::torrent_status::downloading)
         queuePending = true;
 }
@@ -177,7 +157,7 @@ void Engine::State::On(lt::file_prio_alert const& alert)
     }
     AwaitQueueStatus(*torrent);
     torrent->piecesPending |= torrent->facts.firstLast;
-    if (torrent->priorityReply || torrent->piecesPending)
+    if (torrent->priorityCompletion || torrent->piecesPending)
     {
         Invalidate(torrent->torrentId);
         QueryPriorities(*torrent);
@@ -191,14 +171,8 @@ void Engine::State::On(lt::torrent_checked_alert const& alert)
     {
         return;
     }
-    if (torrent->completionPhase == CompletionPhase::Checking)
-    {
-        QueryCompletion(*torrent);
-    }
-    else
-    {
-        Invalidate(torrent->torrentId);
-    }
+    torrent->completion.Checked();
+    Invalidate(torrent->torrentId);
     torrent->filesPending = true;
     if (torrent->facts.firstLast)
     {
@@ -212,19 +186,27 @@ void Engine::State::On(lt::torrent_paused_alert const& alert)
     std::erase(pausing, alert.handle);
 }
 
+StatusQuery Engine::State::Answered(lt::torrent_status const& status)
+{
+    if (!status.save_path.empty())
+        return StatusQuery::Detail;
+    return status.torrent_file.expired() ? StatusQuery::Routine : StatusQuery::Seed;
+}
+
 void Engine::State::On(lt::state_update_alert const& alert)
 {
     bool changed = false;
     for (auto const& status : alert.status)
     {
-        if (status.save_path.empty() && !status.torrent_file.expired())
+        switch (Answered(status))
         {
+        case StatusQuery::Routine:
+            break;
+        case StatusQuery::Seed:
             seedQueries.erase(status.handle);
             QuerySeeds();
-        }
-        // The save path marks an explicit query; routine status updates never request it.
-        if (!status.save_path.empty())
-        {
+            break;
+        case StatusQuery::Detail:
             Receive(status.handle, DetailKind::Status, [&status](Detail& detail)
             {
                 detail.status = status;
@@ -236,7 +218,7 @@ void Engine::State::On(lt::state_update_alert const& alert)
                     if (auto metadata = status.torrent_file.lock())
                         torrent.names = FileNames{std::move(metadata), status.renamed_files};
                 }
-                if (torrent.completionPending)
+                if (torrent.completion.NeedsSample())
                 {
                     changed |= !torrent.deleted &&
                         IsQueued(torrent.status.queue_position) != IsQueued(status.queue_position);
@@ -272,10 +254,9 @@ void Engine::State::On(lt::state_update_alert const& alert)
     }
     if (changed)
         queuePending = true;
-    // Seed and detail queries share this alert type, but never this shape.
     bool routine = std::all_of(alert.status.begin(), alert.status.end(), [](auto const& status)
     {
-        return status.save_path.empty() && status.torrent_file.expired();
+        return Answered(status) == StatusQuery::Routine;
     });
     if (routine)
     {
@@ -292,12 +273,6 @@ void Engine::State::On(lt::state_update_alert const& alert)
     }
 }
 
-void Engine::State::QueryCompletion(Torrent& torrent)
-{
-    torrent.completionPending = true;
-    Invalidate(torrent.torrentId);
-}
-
 void Engine::State::QueryCompletions()
 {
     if (IsShuttingDown())
@@ -312,7 +287,7 @@ void Engine::State::QueryCompletions()
     {
         if (pending >= 64)
             break;
-        if (!torrent.completionPending || torrent.deleted || torrent.restore ||
+        if (!torrent.completion.NeedsSample() || torrent.deleted || torrent.restore ||
             torrent.queries.contains(DetailKind::Status))
             continue;
         Query(torrent, DetailKind::Status);
@@ -322,37 +297,15 @@ void Engine::State::QueryCompletions()
 
 void Engine::State::ObserveCompletion(Torrent& torrent, lt::torrent_status latest)
 {
-    torrent.completionPending = false;
-    bool checking = latest.state == lt::torrent_status::checking_files ||
-        latest.state == lt::torrent_status::checking_resume_data;
-    if (torrent.completionPhase == CompletionPhase::Checking && !checking)
-        torrent.completionPhase = latest.is_finished ? CompletionPhase::Checked : CompletionPhase::Idle;
-    if (latest.state == lt::torrent_status::downloading)
-        torrent.completionPhase = CompletionPhase::Downloading;
-    // Restarting resets the counter. This fresh read can recognize a download
-    // that finishes between samples; a routine status cannot establish a reset.
-    torrent.receivedPayload |= torrent.completionPhase == CompletionPhase::Downloading &&
-        latest.total_payload_download > 0 && latest.total_payload_download != torrent.status.total_payload_download;
+    bool flushes = torrent.completion.Observed(torrent.status, latest);
     latest.pieces = {};
     latest.verified_pieces = {};
     latest.renamed_files = {};
     latest.torrent_file.reset();
     latest.save_path.clear();
     torrent.Update(std::move(latest));
-    if (checking)
-    {
-        torrent.receivedPayload = false;
-        if (torrent.completionPhase == CompletionPhase::Downloading)
-            torrent.completionPhase = CompletionPhase::Idle;
-        return;
-    }
-    if (torrent.status.is_finished && torrent.completionPhase == CompletionPhase::Downloading)
-    {
-        torrent.completionPhase = std::exchange(torrent.receivedPayload, false) ?
-            CompletionPhase::Flushing : CompletionPhase::Idle;
-    }
     // The natural flush may precede this observation, or its alert may be lost.
-    if (torrent.completionPhase == CompletionPhase::Flushing)
+    if (flushes)
         torrent.handle.flush_cache();
 }
 
@@ -363,12 +316,21 @@ void Engine::State::On(lt::cache_flushed_alert const& alert)
 {
     FinishMove(alert.handle, {});
     auto torrent = Find(alert.handle);
-    if (!torrent || torrent->completionPhase != CompletionPhase::Flushing)
-    {
+    if (!torrent)
         return;
+    if (torrent->cacheWrite == CacheWrite::Flushing)
+    {
+        torrent->cacheWrite = CacheWrite::Written;
+        FinishFiles(*torrent);
+        // Work that began during the write delays the rename, and the
+        // resumed download writes again, so the next attempt flushes again.
+        if (torrent->cacheWrite == CacheWrite::Written)
+            torrent->cacheWrite = CacheWrite::Pending;
+        if (!IsShuttingDown())
+            torrent->ApplyIntent();
     }
-    torrent->completionPhase = CompletionPhase::Settling;
-    FinishDownload(*torrent);
+    if (torrent->completion.Flushed())
+        FinishDownload(*torrent);
 }
 
 // Two torrents added under different info hashes turned out to be the
@@ -418,6 +380,10 @@ void Engine::State::On(lt::metadata_received_alert const& alert)
     }
     if (auto torrent = Find(alert.handle))
     {
+        // The next file query reads its names, which every file check waits
+        // for.
+        if (!torrent->restore && !torrent->names)
+            torrent->filesPending = true;
         ContinueNames();
         torrent->ApplyIntent();
         RecordHashes(*torrent, alert.handle.info_hashes());
@@ -440,9 +406,9 @@ void Engine::State::On(lt::file_error_alert const& alert)
         torrent->diskError = alert.error.message();
         // A failed file priority job raises this instead of file_prio_alert.
         AwaitQueueStatus(*torrent);
-        if (torrent->priorityReply)
+        if (torrent->priorityCompletion)
         {
-            std::exchange(torrent->priorityReply, nullptr)(Failure(ProblemKind::TorrentError, torrent->diskError));
+            std::exchange(torrent->priorityCompletion, nullptr)({ErrorCode::TorrentError, torrent->diskError});
         }
         log.Write("file", torrent->torrentId, Code(alert.error));
     }
@@ -466,7 +432,7 @@ void Engine::State::On(lt::alerts_dropped_alert const& alert)
     RecoverFiles();
     if (IsShuttingDown() && !pausing.empty())
     {
-        saveFailure.emplace();
+        FailFinalSave();
         pausing.clear();
         log.Write("shutdown", "", "recovery_required");
     }
@@ -476,9 +442,9 @@ void Engine::State::On(lt::alerts_dropped_alert const& alert)
         {
             continue;
         }
-        if (torrent.priorityReply)
+        if (torrent.priorityCompletion)
         {
-            std::exchange(torrent.priorityReply, nullptr)(Failure(ErrorCode::RecoveryRequired));
+            std::exchange(torrent.priorityCompletion, nullptr)({ErrorCode::RecoveryRequired});
         }
         QueryPriorities(torrent);
         if (alert.dropped_alerts[lt::file_prio_alert::alert_type] ||
@@ -490,16 +456,18 @@ void Engine::State::On(lt::alerts_dropped_alert const& alert)
         {
             torrent.Checkpoint(true);
         }
+        if (torrent.cacheWrite == CacheWrite::Flushing &&
+            alert.dropped_alerts[lt::cache_flushed_alert::alert_type])
+            torrent.handle.flush_cache();
         torrent.unsaved = true;
-        QueryCompletion(torrent);
         // Only a lost state transition breaks the provenance of file alerts.
         // A sampled status cannot recover their original cause. File
         // completions earlier in this batch are unaffected: libtorrent drops
         // a high-priority state change only after the queue has passed the
         // limit for normal-priority file completions, so every completion
         // that arrived was posted before the lost transition.
-        if (alert.dropped_alerts[lt::state_changed_alert::alert_type])
-            torrent.transferState.reset();
+        torrent.completion.Lost(alert.dropped_alerts[lt::state_changed_alert::alert_type]);
+        Invalidate(torrent.torrentId);
         if (!IsShuttingDown())
         {
             torrent.ApplyIntent();

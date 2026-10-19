@@ -614,7 +614,6 @@
   },
   "errors": {
     "database_incompatible": "The Library database is damaged or belongs to another version of TinyTorrent.",
-    "files_busy": "Files are busy. Wait for the current file operation or addition, then try again.",
     "shared_files": "Other torrents use these files. Refresh the list and include them in the move.",
     "destination_conflict": "These torrents would put different files at one path, or one file at two paths. Choose another folder or move these torrents separately.",
     "destination_in_use": "Another torrent uses files at this destination. Choose another folder to keep its files unchanged.",
@@ -647,7 +646,9 @@
     "invalid_priorities": "Choose at least one file and a valid download priority.",
     "metadata_unavailable": "Metadata isn't available yet.",
     "alias_conflict": "This torrent conflicts with another download. Review the existing torrent before adding it.",
-    "preview_failed": "Couldn't get the torrent metadata. Try again."
+    "preview_failed": "Couldn't get the torrent metadata. Try again.",
+    "torrent_removed": "The torrent is no longer in the list.",
+    "shutting_down": "TinyTorrent is closing."
   },
   "connection": {
     "restart": "Restart",
