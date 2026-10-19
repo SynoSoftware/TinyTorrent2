@@ -126,14 +126,27 @@ enum class AdditionPhase
     Saving
 };
 
+// A move's current member: its worker places the files (Copying), libtorrent
+// takes the new folder (Moving), the engine confirms it (Observing), saves the
+// outcome (Saving) and deletes the sources (Cleaning).
 enum class MovePhase
 {
     Staging,
     Preflight,
     Ready,
+    Copying,
     Moving,
     Observing,
-    Saving
+    Saving,
+    Cleaning
+};
+
+// Where the files of a failed move are: back in their source folder
+// (Restored), or split between both folders because a rename back failed.
+enum class MoveFailure
+{
+    Restored,
+    Split
 };
 
 enum class RenamePhase

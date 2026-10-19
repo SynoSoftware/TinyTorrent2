@@ -36,8 +36,8 @@ lt::info_hash_t SavedHashes(std::vector<std::string> const& hashes)
 }
 
 Engine::State::State(std::filesystem::path path, std::function<void()> wake) :
-    directory(std::move(path)), store(wake), payload(wake), sources(wake), checks(wake), wake(std::move(wake)),
-    language(settings.language)
+    directory(std::move(path)), store(wake), payload(wake), copies(wake), sources(wake), checks(wake),
+    wake(std::move(wake)), language(settings.language)
 {
     // Without a saved document the engine starts from the default settings.
     auto saved = std::make_shared<Document>();
@@ -477,7 +477,7 @@ Json Engine::State::Snapshot()
         if (!torrent.deleted)
         {
             auto queued = queue.find(id);
-            rows.push_back(torrent.Row(IsPaused(), queued == queue.end() ? -1 : queued->second));
+            rows.push_back(torrent.Row(IsPaused(), queued == queue.end() ? -1 : queued->second, MoveProgress(torrent)));
         }
     }
     auto current = settings.ToJson();
@@ -653,6 +653,7 @@ void Engine::State::Tick()
 {
     store.Drain();
     payload.Drain();
+    copies.Drain();
     sources.Drain();
     checks.Drain();
     if (session)

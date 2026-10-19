@@ -64,6 +64,10 @@ It also owns the native peer map and its estimated country distribution.
 [Licences](contracts/licences.md) holds release rights, provider attribution and the
 unresolved distribution questions.
 
+The [ring copy research](plans/ring-copy-plan.md) keeps the evidence and the
+design of a copy engine of the engine's own, for moves between hard disks. It
+will not be implemented.
+
 The [communication plan](plans/communication-plan.md) is paused. It holds the
 scoped-subscription design for torrent detail, which the owner has not decided
 to implement; its implemented first stage lives in the protocol and engine

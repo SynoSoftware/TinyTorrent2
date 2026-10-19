@@ -580,7 +580,6 @@
                               Style="{x:Bind controls:Progress.SelectStyle(IsProgressMuted), Mode=OneWay}"
                               Value="{x:Bind Progress, Mode=OneWay}"
                               ShowError="{x:Bind IsError, Mode=OneWay}"
-                              Visibility="{x:Bind ShowsProgress, Mode=OneWay}"
                               AutomationProperties.AccessibilityView="Raw"
                             />
                           </controls:Overlay>

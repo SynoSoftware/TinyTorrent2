@@ -3,6 +3,7 @@
 #include "Changes.h"
 #include "Engine.h"
 #include "Log.h"
+#include "Payload.h"
 #include "SpeedHistory.h"
 #include "Store.h"
 #include "Torrent.h"
@@ -299,6 +300,9 @@ public:
     std::unique_ptr<lt::session> session;
     Store store;
     Store payload;
+    // Moves torrent files, which can take many minutes, so the payload
+    // worker's checkpoints and renames do not wait for it.
+    Store copies;
     // Reads preview sources, which can block on a slow share.
     Store sources;
     // Checks proxies, which can wait for one that does not answer.
@@ -422,6 +426,11 @@ public:
         std::size_t current = 0;
         std::vector<std::filesystem::path> holds;
         std::vector<std::filesystem::path> moved;
+        // Files that earlier members put at the destination. On one volume,
+        // a member that shares one no longer has it in its old folder.
+        std::vector<std::filesystem::path> placed;
+        // The current member's bytes, which its worker writes while it copies.
+        std::shared_ptr<Payload::Progress> progress;
         MovePhase phase = MovePhase::Staging;
     };
     struct Deletion
@@ -599,6 +608,8 @@ public:
     static bool SamePath(std::filesystem::path const& left, std::filesystem::path const& right);
     static bool SameFolder(std::string const& left, std::string const& right);
     bool FilesBusy() const;
+    // A deletion or rename runs, or a deleted torrent waits for its removal.
+    bool RemovingOrRenaming() const;
     static std::vector<std::filesystem::path> FilePaths(lt::torrent_info const& metadata,
         std::string const& folder, Layout layout = Layout::Keep);
     std::vector<std::filesystem::path> FilePaths(Torrent const& torrent,
@@ -610,9 +621,18 @@ public:
     void StartMove(std::vector<std::string> const& ids, std::string const& destination,
         std::function<void(Outcome)> accepted);
     void ContinueMove();
-    void FinishMove(lt::torrent_handle const& handle, std::optional<Problem> problem);
+    // `failure` is libtorrent's reason when it reports that the move failed.
+    void FinishMove(lt::torrent_handle const& handle, std::string failure);
     void RecoverMove();
+    // The share of the torrent's bytes that its move has placed: 0 while it
+    // waits for its turn, and nothing when no move holds it.
+    std::optional<double> MoveProgress(Torrent const& torrent) const;
     void ContinueDeletion();
+    // Deletes the files in the mode, then the folders that leaves empty up to
+    // the nearest of `roots`, even after a failure, and throws the first
+    // failure. A file that is already gone counts as deleted.
+    static void Erase(std::vector<std::filesystem::path> const& files, DeletionMode mode,
+        std::vector<std::filesystem::path> const& roots);
     void Delete(std::list<Deletion>::iterator deletion);
     void DeleteTorrentFiles(std::vector<std::filesystem::path> files, DeletionMode mode, std::string names);
     void ReportDeletion(StorageOutcome const& outcome, std::string names, std::filesystem::path const& folder);
@@ -721,9 +741,12 @@ public:
 
 private:
     void PrepareMove();
+    // The torrent's physical files whose path changes at the move's destination.
+    std::vector<Payload::File> Relocated(Torrent const& torrent) const;
     void SaveMove();
+    void CleanMove(std::vector<std::filesystem::path> sources, std::filesystem::path origin);
     void FailMove(Problem problem);
-    void EndMove(std::optional<Problem> problem);
+    void EndMove(Torrent& torrent, std::optional<Problem> problem);
 
     SpeedHistory history;
 

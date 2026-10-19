@@ -75,13 +75,22 @@ bool Engine::State::SameFolder(std::string const& left, std::string const& right
 
 bool Engine::State::FilesBusy() const
 {
-    return move.has_value() || !deletions.empty() || rename.has_value() ||
+    return move.has_value() || RemovingOrRenaming();
+}
+
+bool Engine::State::RemovingOrRenaming() const
+{
+    return !deletions.empty() || rename.has_value() ||
         std::any_of(torrents.begin(), torrents.end(), [](auto const& entry) { return entry.second.deleted; });
 }
 
 void Engine::State::ContinueNames()
 {
-    if (!changes.IsIdle() || FilesBusy())
+    // A move keeps each member busy until that member's own move ends, so a
+    // member that has ended prepares its names while the rest of its group
+    // moves. The move preflight keeps the move's paths apart from every other
+    // torrent's.
+    if (!changes.IsIdle() || RemovingOrRenaming())
         return;
     constexpr std::ptrdiff_t limit = 8;
     auto pending = std::count_if(torrents.begin(), torrents.end(),
@@ -1000,69 +1009,96 @@ void Engine::State::ContinueDeletion()
 
 namespace
 {
-// Deletes the files in the mode and throws the first failure. A file that is
-// already gone counts as deleted.
-void Erase(std::vector<std::filesystem::path> const& files, DeletionMode mode)
+// Sends the files to the Recycle Bin and throws the first failure. A file that
+// is already gone counts as deleted.
+void Recycle(std::vector<std::filesystem::path> const& files)
 {
-    if (mode == DeletionMode::Recycle)
+    auto initialized = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    IFileOperation* operation = nullptr;
+    auto result = FAILED(initialized) ? initialized : CoCreateInstance(CLSID_FileOperation, nullptr,
+        CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&operation));
+    if (SUCCEEDED(result))
+        result = operation->SetOperationFlags(FOFX_RECYCLEONDELETE | FOFX_EARLYFAILURE |
+            FOF_NOERRORUI | FOF_SILENT | FOF_NOCONFIRMATION | FOF_NO_CONNECTED_ELEMENTS);
+    for (auto const& file : files)
     {
-        auto initialized = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-        IFileOperation* operation = nullptr;
-        auto result = FAILED(initialized) ? initialized : CoCreateInstance(CLSID_FileOperation, nullptr,
-            CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&operation));
-        if (SUCCEEDED(result))
-            result = operation->SetOperationFlags(FOFX_RECYCLEONDELETE | FOFX_EARLYFAILURE |
-                FOF_NOERRORUI | FOF_SILENT | FOF_NOCONFIRMATION | FOF_NO_CONNECTED_ELEMENTS);
-        for (auto const& file : files)
-        {
-            if (FAILED(result))
-                break;
-            std::error_code error;
-            auto type = std::filesystem::symlink_status(file, error).type();
-            if (type == std::filesystem::file_type::not_found)
-                continue;
-            if (error || type == std::filesystem::file_type::directory)
-            {
-                result = E_FAIL;
-                break;
-            }
-            IShellItem* item = nullptr;
-            result = SHCreateItemFromParsingName(file.c_str(), nullptr, IID_PPV_ARGS(&item));
-            if (SUCCEEDED(result))
-                result = operation->DeleteItem(item, nullptr);
-            if (item)
-                item->Release();
-        }
-        if (SUCCEEDED(result))
-            result = operation->PerformOperations();
-        BOOL aborted = FALSE;
-        if (SUCCEEDED(result))
-            result = operation->GetAnyOperationsAborted(&aborted);
-        if (operation)
-            operation->Release();
-        if (SUCCEEDED(initialized))
-            CoUninitialize();
         if (FAILED(result))
-            throw std::system_error(
-                HRESULT_FACILITY(result) == FACILITY_WIN32 ? HRESULT_CODE(result) : result,
-                std::system_category(), "HRESULT " + std::to_string(result));
-        if (aborted)
-            throw std::runtime_error("recycle_failed");
-    }
-    else
-    {
-        std::string failure;
-        for (auto const& file : files)
+            break;
+        std::error_code error;
+        auto type = std::filesystem::symlink_status(file, error).type();
+        if (type == std::filesystem::file_type::not_found)
+            continue;
+        if (error || type == std::filesystem::file_type::directory)
         {
-            std::error_code error;
-            std::filesystem::remove(file, error);
-            if (error && failure.empty())
-                failure = Utf8(file.wstring()) + ": " + error.message();
+            result = E_FAIL;
+            break;
         }
-        if (!failure.empty())
-            throw std::runtime_error(failure);
+        IShellItem* item = nullptr;
+        result = SHCreateItemFromParsingName(file.c_str(), nullptr, IID_PPV_ARGS(&item));
+        if (SUCCEEDED(result))
+            result = operation->DeleteItem(item, nullptr);
+        if (item)
+            item->Release();
     }
+    if (SUCCEEDED(result))
+        result = operation->PerformOperations();
+    BOOL aborted = FALSE;
+    if (SUCCEEDED(result))
+        result = operation->GetAnyOperationsAborted(&aborted);
+    if (operation)
+        operation->Release();
+    if (SUCCEEDED(initialized))
+        CoUninitialize();
+    if (FAILED(result))
+        throw std::system_error(
+            HRESULT_FACILITY(result) == FACILITY_WIN32 ? HRESULT_CODE(result) : result,
+            std::system_category(), "HRESULT " + std::to_string(result));
+    if (aborted)
+        throw std::runtime_error("recycle_failed");
 }
+}
+
+void Engine::State::Erase(std::vector<std::filesystem::path> const& files, DeletionMode mode,
+    std::vector<std::filesystem::path> const& roots)
+{
+    std::exception_ptr failure;
+    try
+    {
+        if (mode == DeletionMode::Recycle)
+            Recycle(files);
+        else
+            Payload::Delete(files);
+    }
+    catch (...)
+    {
+        failure = std::current_exception();
+    }
+    std::set<std::filesystem::path, decltype(&PathBefore)> parents(PathBefore);
+    for (auto const& file : files)
+        parents.insert(file.parent_path());
+    for (auto const& parent : parents)
+    {
+        for (auto const& root : roots)
+        {
+            auto relative = parent.lexically_relative(root);
+            if (relative.empty() || *relative.begin() == L"..")
+            {
+                continue;
+            }
+            for (auto folder = parent; !SamePath(folder, root); folder = folder.parent_path())
+            {
+                std::error_code ignored;
+                if (!std::filesystem::remove(folder, ignored))
+                {
+                    break;
+                }
+            }
+        }
+    }
+    if (failure)
+    {
+        std::rethrow_exception(failure);
+    }
 }
 
 void Engine::State::Delete(std::list<Deletion>::iterator deletion)
@@ -1071,40 +1107,7 @@ void Engine::State::Delete(std::list<Deletion>::iterator deletion)
     deletion->phase = DeletionPhase::Deleting;
     payload.Run([deleting]
     {
-        // Folders the deletion emptied go too, even after a failure.
-        std::exception_ptr failure;
-        try
-        {
-            Erase(deleting.files, *deleting.mode);
-        }
-        catch (...)
-        {
-            failure = std::current_exception();
-        }
-        for (auto const& file : deleting.files)
-        {
-            auto parent = file.parent_path();
-            for (auto const& root : deleting.roots)
-            {
-                auto relative = parent.lexically_relative(root);
-                if (relative.empty() || *relative.begin() == L"..")
-                {
-                    continue;
-                }
-                for (auto folder = parent; !SamePath(folder, root); folder = folder.parent_path())
-                {
-                    std::error_code ignored;
-                    if (!std::filesystem::remove(folder, ignored))
-                    {
-                        break;
-                    }
-                }
-            }
-        }
-        if (failure)
-        {
-            std::rethrow_exception(failure);
-        }
+        Erase(deleting.files, *deleting.mode, deleting.roots);
     }, [this, deletion](StorageOutcome outcome)
     {
         if (outcome.failure)
@@ -1119,10 +1122,14 @@ void Engine::State::Delete(std::list<Deletion>::iterator deletion)
 // libtorrent to release anything.
 void Engine::State::DeleteTorrentFiles(std::vector<std::filesystem::path> files, DeletionMode mode, std::string names)
 {
+    // A recorded .torrent file is the add source as it arrived, which can be
+    // relative or use forward slashes.
+    for (auto& file : files)
+        file = FullPath(file);
     auto folder = files.front().parent_path();
     payload.Run([files = std::move(files), mode]
     {
-        Erase(files, mode);
+        Erase(files, mode, {});
     }, [this, names = std::move(names), folder = std::move(folder)](StorageOutcome outcome)
     {
         if (outcome.failure)

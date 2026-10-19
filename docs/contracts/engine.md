@@ -463,22 +463,81 @@ waits only for the membership commit and uses the payload's deletion mode. A
 recorded file that has moved or gone counts as deleted, because the person
 wanted it gone.
 
-A move takes only the torrent's own files, as libtorrent's
+Permanent deletion and a move's cleanup share `Payload::Delete`. It runs one
+worker per logical processor, as rmbrr and FastDelete do, each taking at most
+256 files of one folder, so workers in different folders do not wait for each
+other. Each file goes in one call with POSIX semantics, which also ignores the
+read-only attribute; on FAT, where Windows uses the classic delete, a read-only
+file is made writable first. Antivirus scanners and indexers hold files open
+for a moment, so a refused delete is tried again for up to 200 ms, as rimraf
+does. The Recycle Bin mode uses `IFileOperation`, because only Explorer can
+recycle files.
+
+A move takes only the torrent's own files: other files in its folder, such as
+added subtitles, stay where they are, and only folders left empty are removed.
+The engine moves the files itself, because libtorrent's
 [`move_storage`](https://github.com/arvidn/libtorrent/blob/v2.1.2/include/libtorrent/torrent_handle.hpp)
-does: other files in its folder, such as added subtitles, stay where they are,
-and only folders left empty are removed. Use `fail_if_exist`, so a file already
-at the destination is reported as a collision instead of replaced; the default
-replaces it. The flag's documented race, another program creating a destination
-file during the move, is rare and needs no further mechanism.
+reports no bytes, so the row could show no percentage. Afterwards
+`move_storage` with `dont_replace` finds every file already at the destination:
+libtorrent moves only its own part file, takes the new folder and checks the
+files there. The engine cannot move the part file itself, because libtorrent
+keeps the part file's folder in memory. A move never replaces a file, so a file
+that another program creates at the destination during the move fails that
+torrent's move.
+
+`Payload::Move` chooses the method for each file:
+
+- On one volume, a rename (`MoveFileExW` without `MOVEFILE_COPY_ALLOWED`),
+  which takes milliseconds whatever the file's size.
+- Across volumes, `CopyFile2`. It keeps alternate data streams such as
+  `Zone.Identifier`, uses SMB server-side copy and ODX by itself, and reports
+  each chunk, which gives the percentage.
+- Files of 32 MiB and more between local volumes skip the system cache
+  (`COPY_FILE_NO_BUFFERING`), as AngelCOPY's engine does.
+- Files under 32 MiB between two volumes without a seek penalty copy on 16
+  workers, each taking at most 256 files of one folder, which AngelCOPY
+  measured as fastest on NVMe. Every other copy runs alone, because parallel
+  copies make a hard disk seek. A volume whose seek penalty is unknown counts as
+  a hard disk.
+- A sparse file stays sparse where `CopyFile2` supports it (Windows 11 22H2,
+  build 22621) and the destination volume supports sparse files. Elsewhere it
+  takes its full size, so before it copies, the move refuses a destination
+  volume without the space its copies need. An unfinished download therefore
+  cannot fill the destination.
+
+The [ring copy research](../plans/ring-copy-plan.md) keeps the evidence and
+the design of a copy engine of the engine's own, which will not be
+implemented.
+
+Each member of a move moves on its own, in this order: its files are placed,
+libtorrent takes the new folder, the folder is saved with its marker cleared,
+and then the sources that a copy left are deleted, with the folders that leaves
+empty up to the old save folder. The member leaves Moving when its folder is
+saved, so its verification and transfers continue while the rest of the group
+moves. Sources are deleted only after that save, so a crash never leaves a
+saved folder whose files are partly gone. A source that a later member of the
+group also uses stays until that member's sources go. After a crash during a
+copy, the sources are complete, and choosing the old folder through Move resumes the
+torrent there. After a crash during renames, each file is in one of the two
+folders, and choosing the destination counts the renamed files as moved and
+renames the rest. A failed cleanup is logged; it leaves only files that the
+destination also holds.
+
+A failed copy deletes the copies it made and renames files back. The member
+reports Move failed, its new marker clears, and the rest of the group still
+moves. If a rename back fails, the files are split between the two folders, so
+the member keeps its marker and reports Move interrupted. The same applies to a
+member that shares a file an earlier member placed, because on one volume that
+file has left its old folder. A failed save, or a
+libtorrent failure after the files are placed, also keeps the marker.
 
 The move preflight checks both physical and final names at source and destination.
 When the source is absent or an empty placeholder and the destination exists,
 it counts that file as already moved. A source containing data and an existing
 destination remain a collision; choosing the current save folder is allowed.
 An empty unfinished placeholder is removed after preflight so it cannot mask a
-completed destination file. The existing group move chooses `reset_save_path` when
-all files are already there and `dont_replace` for a mix of present and unmoved
-files. Verification checks the destination before transfer resumes, so a person
+completed destination file. Files already at the destination are not placed
+again. Verification checks the destination before transfer resumes, so a person
 who moved files or whose drive letter changed needs only to choose their folder.
 Pieces that do not match are downloaded again over those files.
 
@@ -505,27 +564,22 @@ replies, so it does not return after a restart; if the engine stops before
 removing it, its files stay on disk.
 
 Before moving or renaming shared files, pause every owner and wait for each
-storage's disk-release callback on the payload worker. A paused flag or an
+storage's disk-release callback on the worker that changes the files. A paused flag or an
 untagged flush alert cannot establish that those owners have stopped using the
 files. `ReleaseFiles` contains the pinned libtorrent native-interface access:
 it posts onto the network thread and retains the torrent until its disk callback
 completes, so the engine thread remains free while the worker waits.
 
 For a group with partially overlapping file lists, check the whole destination
-before moving anything. The first member uses `fail_if_exist`; later members
-whose files are already moved by that group use `reset_save_path`. A member with
-both shared and distinct files uses `dont_replace`; the group preflight has
-already checked its distinct destination paths. This preserves the already
-moved group files while moving its remaining files. Every member is verified
-before its saved intent resumes.
-Two distinct source files cannot map to one destination path. An external
-program creating a destination during a move retains the existing documented
-race; no second file transaction or rollback mechanism is added.
+before moving anything. A member skips the files that an earlier member of the
+group has already placed. Every member is verified before its saved intent
+resumes.
+Two distinct source files cannot map to one destination path.
 A member removed during preflight can leave a destination conflict in that
 check; the person retries the surviving group instead of the engine rechecking it.
 
 Before a move starts, save its destination with the torrent and clear it when
-the entire selected group's move ends. Reserve its paths before that commit,
+that torrent's own move ends. Reserve its paths before that commit,
 so an addition cannot enter while the write is pending. If no disk move began,
 a failed destination preflight clears the newly staged markers through the
 same writer. Choosing a location through Move also resolves an interrupted move;

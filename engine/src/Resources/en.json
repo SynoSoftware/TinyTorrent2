@@ -94,7 +94,7 @@
     "destination_conflict": "Different source files would occupy the same destination. Choose another folder or move these torrents separately.",
     "destination_in_use": "Another torrent uses files at this destination. Choose another folder to keep its files unchanged.",
     "move_interrupted": "The move was interrupted. Choose the folder that now holds the files and try Move again.",
-    "move_failed": "The files could not be moved. Choose the folder that now holds them and try Move again.",
+    "move_failed": "The files could not be moved. They are still in their original folder.",
     "destination_exists": "Files exist at both locations. Choose another destination to keep both copies.",
     "alias_conflict": "Other torrents use these files with different names. Resolve the file names before continuing.",
     "torrent_error": "The torrent stopped because of an error.",

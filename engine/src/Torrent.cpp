@@ -898,7 +898,7 @@ Json Torrent::Describe(TorrentView view, bool includeFiles, Detail const& detail
     return data;
 }
 
-Json Torrent::Row(bool sessionPaused, int queue) const
+Json Torrent::Row(bool sessionPaused, int queue, std::optional<double> moveProgress) const
 {
     auto problem = Diagnose();
     auto complete = status.has_metadata && status.is_finished && completionPhase != CompletionPhase::Downloading &&
@@ -910,7 +910,7 @@ Json Torrent::Row(bool sessionPaused, int queue) const
         {"download_limit", facts.downloadLimit}, {"upload_limit", facts.uploadLimit},
         {"added", facts.added}, {"name", Name()}, {"size", status.total_wanted},
         {"completed", status.total_wanted_done},
-        {"progress", status.progress}, {"status", ToString(Classify(sessionPaused))},
+        {"progress", moveProgress.value_or(status.progress)}, {"status", ToString(Classify(sessionPaused))},
         {"download_rate", status.download_payload_rate}, {"upload_rate", status.upload_payload_rate},
         {"error", !problem ? "" : problem->Code()},
         {"detail", problem ? problem->detail : ""},

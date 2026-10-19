@@ -361,7 +361,7 @@ void Engine::State::ObserveCompletion(Torrent& torrent, lt::torrent_status lates
 // so a person who opens a completed file never finds it incomplete.
 void Engine::State::On(lt::cache_flushed_alert const& alert)
 {
-    FinishMove(alert.handle, std::nullopt);
+    FinishMove(alert.handle, {});
     auto torrent = Find(alert.handle);
     if (!torrent || torrent->completionPhase != CompletionPhase::Flushing)
     {

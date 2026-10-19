@@ -618,7 +618,7 @@
     "destination_conflict": "Different source files would occupy the same destination. Choose another folder or move these torrents separately.",
     "destination_in_use": "Another torrent uses files at this destination. Choose another folder to keep its files unchanged.",
     "destination_exists": "Files exist at both locations. Choose another destination to keep both copies.",
-    "move_failed": "Couldn't move the files. Choose the folder that now holds them and try Move again.",
+    "move_failed": "Couldn't move the files. They're still in their original folder.",
     "move_interrupted": "The move was interrupted. Choose the folder that now holds the files and try Move again.",
     "recovery_required": "The operation couldn't be confirmed. Check the torrent's current state before you try again.",
     "registration_failed": "Windows couldn't change TinyTorrent's startup or file-handling registration.",

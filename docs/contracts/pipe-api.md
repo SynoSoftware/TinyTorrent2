@@ -292,8 +292,10 @@ scope and `kept_files` is null. Unknown names cannot authorize payload deletion.
 `move` reads `torrent_ids` and the destination parent folder. Its engine preflight
 detects files already at the destination. It replies after the recovery marker
 commits, without occupying the pipe while files move. Rows carry `moving` and
-`move_destination`; completion clears the group markers and failures remain
-visible on the torrents. Source sharing and destination use by an outside
+`move_destination`. While a row is `moving`, its `progress` is the share of its
+bytes that the move has placed, and 0 while it waits for its turn. Each torrent
+leaves `moving` and clears its marker when its own move ends, and failures
+remain visible on the torrents. Source sharing and destination use by an outside
 torrent have distinct refusals, so each offers an action that can resolve it.
 An interrupted saved move stays stopped until the person chooses its location
 through Move; the engine checks that location before resuming.

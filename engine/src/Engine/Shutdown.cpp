@@ -188,8 +188,8 @@ void Engine::State::ContinueShutdown()
         bool checkpointing = torrent.checkpointPhase != CheckpointPhase::Idle;
         pending |= checkpointing || (torrent.unsaved && !saveFailure);
     }
-    // A payload job may still use the session, so it ends before the session.
-    if (pending || !store.IsIdle() || !payload.IsIdle() || !log.IsFlushed())
+    // A payload or move job may still use the session, so it ends first.
+    if (pending || !store.IsIdle() || !payload.IsIdle() || !copies.IsIdle() || !log.IsFlushed())
     {
         return;
     }

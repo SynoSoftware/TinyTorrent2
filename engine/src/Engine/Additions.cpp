@@ -512,7 +512,7 @@ void Engine::State::On(lt::storage_moved_alert const& alert)
         PrepareAddition(id, alert.handle);
         return;
     }
-    FinishMove(alert.handle, std::nullopt);
+    FinishMove(alert.handle, {});
 }
 
 void Engine::State::On(lt::storage_moved_failed_alert const& alert)
@@ -523,8 +523,6 @@ void Engine::State::On(lt::storage_moved_failed_alert const& alert)
         Abandon(id, {ErrorCode::AddFailed, alert.error.message()});
         return;
     }
-    auto kind = alert.error == boost::system::errc::file_exists ?
-        ProblemKind::DestinationExists : ProblemKind::MoveFailed;
-    FinishMove(alert.handle, Problem{kind, alert.error.message()});
+    FinishMove(alert.handle, alert.error.message());
 }
 }
