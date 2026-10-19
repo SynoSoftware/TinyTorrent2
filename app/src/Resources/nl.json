@@ -1374,6 +1374,7 @@
     "saturday_short": "Za",
     "sunday_short": "Zo",
     "language": "Weergavetaal",
+    "language_choice": "{0} ({1})",
     "theme": "App-thema",
     "system_theme": "Systeem",
     "light_theme": "Licht",
@@ -1807,5 +1808,13 @@
     "alternative_upload_limit": "Alternatieve uploadlimiet",
     "slow_download": "Drempel voor trage downloads",
     "slow_upload": "Drempel voor trage uploads"
+  },
+  "languages": {
+    "en": "Engels",
+    "es": "Spaans",
+    "nl": "Nederlands",
+    "zh": "Chinees",
+    "pt": "Portugees",
+    "fr": "Frans"
   }
 }

@@ -32,6 +32,14 @@ public sealed class Strings
         return char.ToUpperInvariant(name[0]) + name[1..];
     }
 
+    // A language as the language lists name it: in the window's language, with
+    // its own name after it, so a person can find their language from any
+    // other. The window's language needs only its own name.
+    internal string LanguageChoice(CultureInfo language) =>
+        language.Name == Language
+            ? NativeName(language)
+            : Format("settings", "language_choice", Get("languages", language.Name), NativeName(language));
+
     // The region whose flag stands for the language. English text uses British
     // spelling, so it shows the UK flag rather than its default region's.
     internal static string FlagRegion(CultureInfo language) =>

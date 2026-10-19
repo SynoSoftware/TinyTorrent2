@@ -267,7 +267,7 @@ public sealed partial class SettingsPage : UserControl
         [
             .. Strings.Languages.Select(language =>
             {
-                var name = Strings.NativeName(language);
+                var name = Model.Text.LanguageChoice(language);
                 var flag = new TextBlock
                 {
                     Text = Flags.Glyph(Strings.FlagRegion(language)),
@@ -298,11 +298,30 @@ public sealed partial class SettingsPage : UserControl
             }),
         ];
 
+    // The language items name every other language in the window's language.
+    // They exist once the Appearance panel has loaded.
+    private void ShowLanguageNames()
+    {
+        if (_languageItems is null)
+            return;
+        foreach (var (item, language) in _languageItems.Zip(Strings.Languages))
+        {
+            var name = Model.Text.LanguageChoice(language);
+            ((TextBlock)((StackPanel)item.Content).Children[1]).Text = name;
+            AutomationProperties.SetName(item, name);
+        }
+        // The box keeps the text its item had when it was selected.
+        var selected = Languages.SelectedItem;
+        Languages.SelectedItem = null;
+        Languages.SelectedItem = selected;
+    }
+
     internal void RefreshText()
     {
         ShowImdb();
         CityRow?.RefreshText();
         Bindings.Update();
+        ShowLanguageNames();
         RefreshSubtitles();
         RefreshAdvancedMode();
         // A ComboBox keeps the text its item had when it was selected, so each

@@ -1379,6 +1379,7 @@
     "saturday_short": "Sat",
     "sunday_short": "Sun",
     "language": "Display language",
+    "language_choice": "{0} ({1})",
     "theme": "App theme",
     "system_theme": "System",
     "light_theme": "Light",
@@ -1822,5 +1823,13 @@
     "alternative_upload_limit": "Alternative upload limit",
     "slow_download": "Slow download threshold",
     "slow_upload": "Slow upload threshold"
+  },
+  "languages": {
+    "en": "English",
+    "es": "Spanish",
+    "nl": "Dutch",
+    "zh": "Chinese",
+    "pt": "Portuguese",
+    "fr": "French"
   }
 }

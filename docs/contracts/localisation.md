@@ -84,10 +84,12 @@ because tray text must work with WinUI closed. First use matches the Windows
 language against shipped catalogues, falling back to English. The engine's
 `Strings` owns its list of shipped catalogues and how a tag matches one;
 setting validation asks it instead of keeping a second list. Preserve an explicit
-selection across UI and engine restarts. Show languages by their own names so a
-user can recover from an unfamiliar selection, each after its region's flag.
-The flag shows the region, so the name leaves it out: Português, not
-Português (Brasil).
+selection across UI and engine restarts. Name each language in the window's
+language with its own name after it, such as Dutch (Nederlands), each after its
+region's flag. The own name lets a user recover from an unfamiliar selection;
+the window's language needs only its own name. The flag shows the region, so
+the name leaves it out: Portuguese (Português), not Portuguese (Português
+(Brasil)).
 
 One localisation component in the UI process supplies text to both application
 views and owned controls. Selecting a language updates existing visible content

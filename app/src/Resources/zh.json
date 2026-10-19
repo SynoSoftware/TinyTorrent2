@@ -1377,6 +1377,7 @@
     "saturday_short": "周六",
     "sunday_short": "周日",
     "language": "显示语言",
+    "language_choice": "{0}（{1}）",
     "theme": "应用主题",
     "system_theme": "跟随系统",
     "light_theme": "浅色",
@@ -1810,5 +1811,13 @@
     "alternative_upload_limit": "备用上传限速",
     "slow_download": "低速下载阈值",
     "slow_upload": "低速上传阈值"
+  },
+  "languages": {
+    "en": "英语",
+    "es": "西班牙语",
+    "nl": "荷兰语",
+    "zh": "中文",
+    "pt": "葡萄牙语",
+    "fr": "法语"
   }
 }

@@ -1377,6 +1377,7 @@
     "saturday_short": "Sam.",
     "sunday_short": "Dim.",
     "language": "Langue d’affichage",
+    "language_choice": "{0} ({1})",
     "theme": "Thème de l’application",
     "system_theme": "Système",
     "light_theme": "Clair",
@@ -1810,5 +1811,13 @@
     "alternative_upload_limit": "Limite d’envoi alternative",
     "slow_download": "Seuil de téléchargement lent",
     "slow_upload": "Seuil d’envoi lent"
+  },
+  "languages": {
+    "en": "Anglais",
+    "es": "Espagnol",
+    "nl": "Néerlandais",
+    "zh": "Chinois",
+    "pt": "Portugais",
+    "fr": "Français"
   }
 }

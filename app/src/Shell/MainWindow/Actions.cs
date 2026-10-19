@@ -28,7 +28,7 @@ public sealed partial class MainWindow
     private IReadOnlyList<MenuEntry> LanguageMenu() =>
         [
             .. Strings.Languages.Select(language => new MenuChoice(
-                Strings.NativeName(language),
+                Model.Text.LanguageChoice(language),
                 null,
                 Model.Text.Language == language.Name,
                 new RelayCommand(
