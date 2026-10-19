@@ -104,6 +104,7 @@ public sealed partial class MainWindow
             uploadTip
         );
         SetStatus(MoveLabel, Model.MoveSpeed, Model.MoveTip);
+        SetStatus(CheckLabel, Model.CheckSpeed, Model.CheckTip);
         SetStatus(
             TransferLabel,
             about
@@ -151,6 +152,7 @@ public sealed partial class MainWindow
         ShowStatus(DownloadRate, about || transfers);
         ShowStatus(UploadRate, about || transfers);
         ShowStatus(MoveRate, !about && current && Model.MoveSpeed.Length > 0);
+        ShowStatus(CheckRate, !about && current && Model.CheckSpeed.Length > 0);
         ShowStatus(RestrictionStatus, !about && current && Model.HasRestriction);
         ShowStatus(
             TransferLabel,
@@ -174,6 +176,7 @@ public sealed partial class MainWindow
         ReserveDigits(DownloadRate, DownloadLabel);
         ReserveDigits(UploadRate, UploadLabel);
         ReserveDigits(MoveRate, MoveLabel);
+        ReserveDigits(CheckRate, CheckLabel);
         if (StatusFits())
             return;
 
@@ -212,6 +215,7 @@ public sealed partial class MainWindow
         ShowStatus(DownloadRate, false);
         ShowStatus(UploadRate, false);
         ShowStatus(MoveRate, false);
+        ShowStatus(CheckRate, false);
         ShowStatus(LimitsLabel, false);
         ShowStatus(TransferLabel, library && RestrictionStatus.Visibility == Visibility.Visible);
         if (StatusFits())

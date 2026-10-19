@@ -479,10 +479,13 @@ added subtitles, stay where they are, and only folders left empty are removed.
 The engine moves the files itself, because libtorrent's
 [`move_storage`](https://github.com/arvidn/libtorrent/blob/v2.1.2/include/libtorrent/torrent_handle.hpp)
 reports no bytes, so the row could show no percentage. Afterwards
-`move_storage` with `dont_replace` finds every file already at the destination:
-libtorrent moves only its own part file, takes the new folder and checks the
-files there. The engine cannot move the part file itself, because libtorrent
-keeps the part file's folder in memory. A move never replaces a file, so a file
+`move_storage` with `reset_save_path_unchecked` makes libtorrent take the new
+folder without checking the files there. A torrent with a skipped file uses
+`dont_replace` instead: libtorrent keeps a part file for the pieces of skipped
+files, and only that mode moves it. That mode also checks every file it finds
+at the destination, which after the engine's move is every file. The engine
+cannot move the part file itself, because libtorrent keeps the part file's
+folder in memory. A move never replaces a file, so a file
 that another program creates at the destination during the move fails that
 torrent's move.
 
@@ -565,6 +568,9 @@ The move preflight checks both physical and final names at source and destinatio
 When the source is absent or an empty placeholder and the destination exists,
 it counts that file as already moved. A source containing data and an existing
 destination remain a collision; choosing the current save folder is allowed.
+A destination that is the source file under another path, such as through a
+link, stops the move with `same_location`, because moving the file onto itself
+would delete the only copy as its source.
 An empty unfinished placeholder is removed after preflight so it cannot mask a
 completed destination file. Files already at the destination are not placed
 again.
@@ -575,7 +581,8 @@ interrupted move, whose files can be in two folders. So a person who moved
 files or whose drive letter changed needs only to choose their folder, and
 pieces that do not match are downloaded again over those files. The files a
 move places itself hold the pieces the torrent already verified, so checking
-them again would only make the person wait.
+them again would only make the person wait. A torrent with a skipped file is
+still checked, because only that check moves libtorrent's part file.
 
 One payload operation runs at a time. Its source and destination paths stay held
 until disk work has a known outcome.

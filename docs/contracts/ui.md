@@ -969,8 +969,10 @@ While torrents move, the move's copy rate follows the upload rate with the
 rows' Moving folder icon, such as `1,233.4 MiB/s`. It belongs with the rates,
 not with background work, because a move happens to torrents and its progress
 stays in their rows. It reads in KiB/s, or MiB/s from 1 MiB/s, never GiB/s,
-counts copied bytes only, because a rename moves none, and yields with the
-rates.
+counts copied bytes only, because a rename moves none and a sparse file's holes
+copy at once, and yields with the rates. While torrents are verified, the rate
+libtorrent checks their files follows in the same way, with the rows'
+Checking icon.
 
 Each rate keeps aligned digits and a compact width measured for the active
 format, units and cap, recomputed when language, scale, unit range or cap
@@ -1286,7 +1288,7 @@ message cannot be the only explanation of unfinished or failed work.
 | A language choice that could not be saved | The message bar as a warning, with Settings. |
 | The selected torrent has an error | The details pane shows the error in its summary and progress bar; the window adds no message for it. |
 | A finished download | A success toast for each download, titled Download finished, with the torrent name below it and Open folder, as the [notification policy](engine.md#notifications-and-sleep) defines a finished download. It closes by itself. |
-| A torrent stopped by an error, or a deletion that failed after removal | The error toast of a failed command; a stopped torrent also stays in the Errors count. With the window closed, the engine's [notification policy](engine.md#notifications-and-sleep) shows its native popup instead. |
+| A torrent stopped by an error, a move that failed, or a deletion that failed after removal | The error toast of a failed command, titled Torrent stopped, Move failed or Files not deleted. A failed move's body gives the reason, then the file it concerns, because the engine's detail for it is only that file. A stopped torrent also stays in the Errors count. With the window closed, the engine's [notification policy](engine.md#notifications-and-sleep) shows its native popup instead. |
 | A decision requiring consent | The existing dialog for that operation. |
 
 **Owner ruling: a message bar or toast never repeats itself.** The person

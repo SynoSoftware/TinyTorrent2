@@ -581,6 +581,8 @@ public:
         DeletionPhase phase = DeletionPhase::Saving;
     };
     std::optional<Move> move;
+    // Nothing while no torrent's files are being checked.
+    std::optional<double> checkRate;
     std::list<Deletion> deletions;
     struct Rename
     {
@@ -833,6 +835,9 @@ public:
     std::optional<double> MoveProgress(Torrent const& torrent) const;
     // Samples the move's copy rate over the time since the last sample.
     void SampleMove(std::chrono::steady_clock::duration elapsed);
+    // Samples the bytes per second libtorrent checks across every torrent
+    // whose files it checks, over the time since the last sample.
+    void SampleChecks(std::chrono::steady_clock::duration elapsed);
     void ContinueDeletion();
     // Deletes the files in the mode, then the folders that leaves empty up to
     // the nearest of `roots`, even after a failure, and throws the first

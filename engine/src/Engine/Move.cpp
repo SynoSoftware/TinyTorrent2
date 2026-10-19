@@ -313,16 +313,22 @@ void Engine::State::PrepareMove()
                 stale.push_back(partial);
             if (!present(file.destination) && !present(file.logicalDestination))
                 continue;
+            if (SamePath(file.source, file.destination))
+            {
+                destination.existing.push_back(file.destination);
+                continue;
+            }
+            // A link can give one file two paths. Moving it would delete the
+            // only copy as its source, so the move stops and says why.
+            std::error_code ignored;
+            if (std::filesystem::equivalent(file.source, file.destination, ignored) ||
+                std::filesystem::equivalent(file.logicalSource, file.logicalDestination, ignored))
+                return std::unexpected(Problem{ProblemKind::SameLocation, Utf8(file.destination.wstring())});
             bool sourced = occupied(file.source) || occupied(file.logicalSource);
             // An interrupted move's complete copy stays. Any other file beside
             // a source that holds data belongs to someone else.
             bool alone = SamePath(file.destination, file.logicalDestination) || !present(file.logicalDestination);
             if (file.continued && alone && Payload::IsCopy({file.source, file.destination}))
-            {
-                destination.existing.push_back(file.destination);
-                continue;
-            }
-            if (SamePath(file.source, file.destination))
             {
                 destination.existing.push_back(file.destination);
                 continue;
@@ -450,10 +456,15 @@ void Engine::State::ContinueMove()
             return;
         }
         move->phase = MovePhase::Moving;
-        // Every file is already at the destination, so libtorrent moves only
-        // its own part file, takes the new folder and checks the files there.
-        Working(move->ids.at(move->current)).handle.move_storage(move->destination,
-            lt::move_flags_t::dont_replace);
+        // Every file is already at the destination, so libtorrent only takes
+        // the new folder, without checking the files there. It keeps a part
+        // file for skipped files, which only dont_replace moves, and that
+        // mode checks every file it finds at the destination.
+        auto const& handle = Working(move->ids.at(move->current)).handle;
+        auto priorities = handle.get_file_priorities();
+        bool skips = std::find(priorities.begin(), priorities.end(), lt::dont_download) != priorities.end();
+        handle.move_storage(move->destination,
+            skips ? lt::move_flags_t::dont_replace : lt::move_flags_t::reset_save_path_unchecked);
     });
 }
 

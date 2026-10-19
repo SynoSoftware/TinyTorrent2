@@ -539,6 +539,7 @@ Json Engine::State::Snapshot()
         {"language_saved", language == settings.language},
         {"download_rate", activity.downloadRate}, {"upload_rate", activity.uploadRate},
         {"move_rate", move ? Json(move->rate) : Json()},
+        {"check_rate", checkRate ? Json(*checkRate) : Json()},
         {"transfers", {{"session", transferred.ToJson()}, {"all_time", TotalTransfers().ToJson()}}},
         {"session_paused", paused.has_value()},
         {"connection_test", ConnectionTestSnapshot()},
@@ -756,12 +757,36 @@ void Engine::State::Tick()
     log.Flush();
 }
 
+void Engine::State::SampleChecks(std::chrono::steady_clock::duration elapsed)
+{
+    // While libtorrent checks the files, a torrent's progress is the share of
+    // its bytes checked. A check counts from its second sample, so a torrent
+    // that starts checking does not add the bytes it checked before.
+    std::optional<double> rate;
+    auto seconds = std::chrono::duration<double>(elapsed).count();
+    for (auto& [id, torrent] : torrents)
+    {
+        if (torrent.status.state != lt::torrent_status::checking_files)
+        {
+            torrent.checked.reset();
+            continue;
+        }
+        auto checked = static_cast<std::uint64_t>(torrent.status.total) *
+            static_cast<std::uint64_t>(torrent.status.progress_ppm) / 1'000'000;
+        auto previous = std::exchange(torrent.checked, checked);
+        auto bytes = previous && checked > *previous ? checked - *previous : 0;
+        rate = rate.value_or(0) + double(bytes) / seconds;
+    }
+    checkRate = rate;
+}
+
 void Engine::State::Maintain()
 {
     auto now = std::chrono::steady_clock::now();
     if (now - statusAt >= statusInterval)
     {
         SampleMove(now - statusAt);
+        SampleChecks(now - statusAt);
         statusAt = now;
         session->post_session_stats();
         if (SuspendsForConnectionTest() ||

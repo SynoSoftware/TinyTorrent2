@@ -437,6 +437,8 @@ enum class ProblemKind
     MoveInterrupted,
     MoveFailed,
     DestinationExists,
+    // The destination is another path, such as a link, to the files' folder.
+    SameLocation,
     AliasConflict,
     TorrentError,
     StorageFailed,

@@ -19,6 +19,8 @@ struct File
 };
 
 // The bytes of one move. Its worker writes them while the engine reads them.
+// A copy that keeps a sparse file's holes counts only the bytes that hold
+// data, because it skips the holes at once.
 struct Progress
 {
     std::atomic<std::uint64_t> total{0};

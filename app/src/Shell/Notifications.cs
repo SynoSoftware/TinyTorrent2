@@ -116,12 +116,16 @@ public sealed class Notifications
                 : kind;
             var error = new CommandException(code, detail, _text);
             // The title already says what failed, so the engine's reason
-            // alone is the body; without one, the error code's text is.
+            // alone is the body; without one, the error code's text is. A
+            // torrent problem's detail only names what it concerns, such as a
+            // file, so its code's text comes first, except for a torrent
+            // error, whose detail is the reason libtorrent gave.
             string Reason()
             {
                 var reason =
                     kind == "delete_failed" && detail == "recycle_failed"
                         ? _text.Get("errors", "recycle_failed")
+                    : kind == "error" && code != "torrent_error" ? _text.Error(error)
                     : detail.Length > 0 ? detail
                     : _text.Error(error);
                 return count > 1
@@ -137,7 +141,11 @@ public sealed class Notifications
             {
                 "add_failed" => "not_added",
                 "delete_failed" => "not_deleted",
-                _ => "torrent_stopped",
+                // Only these stop the torrent. Every other torrent problem
+                // comes from a move, after which the torrent keeps running in
+                // its old folder.
+                _ when code is "torrent_error" or "alias_conflict" or "unknown" => "torrent_stopped",
+                _ => "failed_move",
             };
             var folder = message.GetProperty("folder").GetString();
             Report(

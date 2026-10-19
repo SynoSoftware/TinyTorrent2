@@ -136,6 +136,57 @@ std::uint64_t Allocated(std::filesystem::path const& file, std::uint64_t size)
     return (std::uint64_t(high) << 32) | low;
 }
 
+// The byte ranges of a sparse file that hold data, in order, or nothing when
+// Windows cannot list them.
+std::optional<std::vector<FILE_ALLOCATED_RANGE_BUFFER>> DataRanges(std::filesystem::path const& file,
+    std::uint64_t size)
+{
+    auto handle = CreateFileW(Extended(file).c_str(), FILE_READ_DATA,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (handle == INVALID_HANDLE_VALUE)
+        return std::nullopt;
+    OwnedHandle owned(handle);
+    std::vector<FILE_ALLOCATED_RANGE_BUFFER> ranges;
+    FILE_ALLOCATED_RANGE_BUFFER query{};
+    query.Length.QuadPart = static_cast<LONGLONG>(size);
+    FILE_ALLOCATED_RANGE_BUFFER found[64];
+    while (true)
+    {
+        DWORD returned = 0;
+        bool complete = DeviceIoControl(handle, FSCTL_QUERY_ALLOCATED_RANGES, &query, sizeof(query), found,
+            sizeof(found), &returned, nullptr);
+        if (!complete && GetLastError() != ERROR_MORE_DATA)
+            return std::nullopt;
+        auto count = returned / sizeof(found[0]);
+        ranges.insert(ranges.end(), found, found + count);
+        if (complete || count == 0)
+            return ranges;
+        auto end = ranges.back().FileOffset.QuadPart + ranges.back().Length.QuadPart;
+        query.FileOffset.QuadPart = end;
+        query.Length.QuadPart = static_cast<LONGLONG>(size) - end;
+    }
+}
+
+// The data bytes of `ranges` between `from` and `to`. `next` is the first
+// range that can end after `from`, so a copy passes each range once.
+std::uint64_t DataBetween(std::vector<FILE_ALLOCATED_RANGE_BUFFER> const& ranges, std::size_t& next,
+    std::uint64_t from, std::uint64_t to)
+{
+    std::uint64_t bytes = 0;
+    for (; next < ranges.size(); ++next)
+    {
+        auto start = static_cast<std::uint64_t>(ranges[next].FileOffset.QuadPart);
+        auto end = start + static_cast<std::uint64_t>(ranges[next].Length.QuadPart);
+        if (start >= to)
+            break;
+        if (end > from)
+            bytes += std::min(end, to) - std::max(start, from);
+        if (end > to)
+            break;
+    }
+    return bytes;
+}
+
 // The paths' indices in groups from one folder, at most `batch` each.
 std::vector<std::vector<std::size_t>> Batches(std::vector<std::filesystem::path> const& paths)
 {
@@ -225,6 +276,10 @@ struct Copying
     Progress& progress;
     std::atomic<bool> const& stop;
     std::uint64_t size;
+    // The data ranges of a copy that keeps its holes, which it skips at once,
+    // so only these bytes count as copied.
+    std::vector<FILE_ALLOCATED_RANGE_BUFFER> const* data = nullptr;
+    std::size_t next = 0;
     std::uint64_t reported = 0;
 };
 
@@ -238,8 +293,10 @@ COPYFILE2_MESSAGE_ACTION CALLBACK Report(COPYFILE2_MESSAGE const* message, void*
             copying.size);
         if (transferred > copying.reported)
         {
-            copying.progress.done += transferred - copying.reported;
-            copying.progress.copied += transferred - copying.reported;
+            auto bytes = copying.data ? DataBetween(*copying.data, copying.next, copying.reported, transferred)
+                                      : transferred - copying.reported;
+            copying.progress.done += bytes;
+            copying.progress.copied += bytes;
             copying.reported = transferred;
         }
     }
@@ -264,6 +321,8 @@ private:
         std::uint64_t size;
         DWORD flags;
         bool parallel;
+        // The source's data ranges when the copy keeps its holes.
+        std::optional<std::vector<FILE_ALLOCATED_RANGE_BUFFER>> data;
         // This move created the copy, so a failure deletes it.
         bool owned = false;
         // The copy has its final name.
@@ -347,7 +406,17 @@ std::optional<std::string> Placement::Place(std::vector<File> const& files)
         // An unfinished torrent's sparse file takes its full size where it
         // cannot stay sparse, which can be far more than it holds.
         needed[to.root] += keepsSparse ? Allocated(file->source, size) : size;
-        copies_.push_back({file, size, flags, local && !from.seeks && !to.seeks && size < large});
+        std::optional<std::vector<FILE_ALLOCATED_RANGE_BUFFER>> data;
+        if (keepsSparse)
+            data = DataRanges(file->source, size);
+        if (data)
+        {
+            std::uint64_t bytes = 0;
+            for (auto const& range : *data)
+                bytes += static_cast<std::uint64_t>(range.Length.QuadPart);
+            progress_.total -= size - std::min(bytes, size);
+        }
+        copies_.push_back({file, size, flags, local && !from.seeks && !to.seeks && size < large, std::move(data)});
     }
     for (auto const& [root, bytes] : needed)
     {
@@ -393,7 +462,7 @@ void Placement::Run(Copy& copy)
 {
     if (stop_)
         return;
-    Copying copying{progress_, stop_, copy.size};
+    Copying copying{progress_, stop_, copy.size, copy.data ? &*copy.data : nullptr};
     COPYFILE2_EXTENDED_PARAMETERS parameters{sizeof(parameters), copy.flags, nullptr, &Report, &copying};
     auto partial = Extended(Partial(copy.file->destination));
     auto result = CopyFile2(Extended(copy.file->source).c_str(), partial.c_str(), &parameters);

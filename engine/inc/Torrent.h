@@ -212,6 +212,9 @@ struct Torrent
     // The torrent stays paused while Flushing.
     CacheWrite cacheWrite = CacheWrite::Pending;
     Completion completion;
+    // The bytes libtorrent had checked at the last status sample, and
+    // nothing while it does not check the files.
+    std::optional<std::uint64_t> checked;
     std::function<void(Outcome)> priorityCompletion;
     bool piecesPending = false;
     // A move or the suffix rename is changing the torrent's file paths. The

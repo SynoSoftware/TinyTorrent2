@@ -103,6 +103,7 @@
     "move_interrupted": "The move was interrupted. Choose the folder that now holds the files and try Move again.",
     "move_failed": "The files could not be moved. They are still in their original folder.",
     "destination_exists": "Files exist at both locations. Choose another destination to keep both copies.",
+    "same_location": "The files are already there, under another path.",
     "alias_conflict": "Other torrents use these files with different names. Resolve the file names before continuing.",
     "torrent_error": "The torrent stopped because of an error.",
     "storage_failed": "Saved download state could not be read or written. Check the engine data folder and try again.",

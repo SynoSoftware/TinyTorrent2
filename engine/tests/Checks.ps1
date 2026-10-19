@@ -1,15 +1,20 @@
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('Frames', 'Summaries', 'Targets', 'Facts', 'Restore', 'Exit', 'Conflict', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames', 'Pause', 'History', 'Accounting', 'WaitingMove', 'RemoveDuringMove')]
+    [ValidateSet('Frames', 'Summaries', 'Targets', 'Facts', 'Restore', 'Exit', 'Conflict', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames', 'Pause', 'History', 'Accounting', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify')]
     [string] $Check,
-    # Every check but Conflict, WaitingMove and RemoveDuringMove, which make
-    # their own torrents.
+    # Every check but Conflict, WaitingMove, RemoveDuringMove and
+    # MoveAndVerify, which make their own torrents.
     [string] $TorrentFile,
     [string] $EnginePath,
     [switch] $Transfer,
     [switch] $OptIn,
     # RemoveDuringMove moves its payload into this folder, on another volume.
-    [string] $Folder
+    # MoveAndVerify also moves its payload there when it is given, to check a
+    # copy between volumes.
+    [string] $Folder,
+    # MoveAndVerify moves a small payload into this folder, on a network share,
+    # when it is given.
+    [string] $Network
 )
 
 $ErrorActionPreference = 'Stop'
@@ -19,7 +24,7 @@ $transferChecks = 'MagnetDownload', 'SelectedTransfer', 'DiskError', 'PreviewGua
 # These checks each guard one defect that was already fixed, so a run of every
 # check skips them; the owner asks for them when that code changes.
 $optInChecks = 'WaitingMove', 'RemoveDuringMove'
-if (-not $TorrentFile -and $Check -notin 'Conflict', 'WaitingMove', 'RemoveDuringMove') {
+if (-not $TorrentFile -and $Check -notin 'Conflict', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify') {
     throw "$Check needs -TorrentFile."
 }
 if ($Check -in $transferChecks -and -not $Transfer) {
@@ -60,9 +65,14 @@ $null = New-Item -ItemType Directory -Path $directory
 $payload = Join-Path $directory 'payload'
 $null = New-Item -ItemType Directory -Path $payload
 $volumeFolder = $null
-if ($Check -eq 'RemoveDuringMove') {
+if ($Check -eq 'RemoveDuringMove' -or ($Check -eq 'MoveAndVerify' -and $Folder)) {
     $volumeFolder = Join-Path ([IO.Path]::GetFullPath($Folder)) ('TinyTorrent-' + $Check + '-' + [guid]::NewGuid())
     $null = New-Item -ItemType Directory -Path $volumeFolder
+}
+$networkFolder = $null
+if ($Check -eq 'MoveAndVerify' -and $Network) {
+    $networkFolder = Join-Path $Network ('TinyTorrent-' + $Check + '-' + [guid]::NewGuid())
+    $null = New-Item -ItemType Directory -Path $networkFolder
 }
 . (Join-Path $PSScriptRoot 'Engine.ps1')
 $stalled = $null
@@ -582,6 +592,24 @@ try {
             } while (($row.moving -or $row.error -ne 'destination_exists') -and [DateTime]::UtcNow -lt $until)
             Assert (-not $row.moving -and $row.error -eq 'destination_exists' -and -not $row.move_destination) 'Collision did not finish safely without an interrupted marker'
             Assert ((Payload-Hash $sourceFile) -eq $originalHash -and (Payload-Hash $collisionFile) -eq $collisionHash) 'A destination collision replaced existing bytes'
+            # A link to the payload folder gives its file a second path.
+            $alias = Join-Path $directory 'alias'
+            $null = New-Item -ItemType Junction -Path $alias -Target $payload
+            try {
+                $reply = Send-Command @{ command = 'move'; torrent_ids = @($remaining); destination = $alias }
+                Assert $reply.ok 'The move to a link was not accepted for preflight'
+                $until = [DateTime]::UtcNow.AddSeconds(15)
+                do {
+                    Start-Sleep -Milliseconds 100
+                    $row = (Send-Command @{ command = 'snapshot' }).data.torrents[0]
+                } while (($row.moving -or $row.error -ne 'same_location') -and [DateTime]::UtcNow -lt $until)
+                Assert (-not $row.moving -and $row.error -eq 'same_location' -and -not $row.move_destination) 'A move onto the same file through a link was not refused as same_location'
+                Assert ((Payload-Hash $sourceFile) -eq $originalHash) 'A move onto the same file through a link changed its bytes'
+            }
+            finally {
+                # Removes the link only, never the folder it points to.
+                (Get-Item -LiteralPath $alias).Delete()
+            }
             $reply = Send-Command @{ command = 'delete_files'; torrent_ids = @($remaining) }
             Assert $reply.ok 'A failed no-op move prevented deletion of its original files'
             Stop-Engine
@@ -646,6 +674,164 @@ try {
             Stop-Engine
             $snapshot = Start-Engine
             Assert ($snapshot.torrents.Count -eq 0 -and -not (Test-Path -LiteralPath $sourceFile) -and (Test-Path -LiteralPath $unrelated)) 'Deferred shared-file cleanup lost deletion or restored removed membership'
+        }
+        'MoveAndVerify' {
+            # A torrent of zeros: its sparse file takes no disk space and every
+            # piece of it hashes alike, so a large one checks for seconds.
+            function New-Zeros([string] $name, [long] $length) {
+                $pieceLength = 4MB
+                $digest = [Security.Cryptography.SHA1]::HashData([byte[]]::new($pieceLength))
+                $pieces = [byte[]]::new(20 * [int]($length / $pieceLength))
+                for ($offset = 0; $offset -lt $pieces.Length; $offset += 20) { [Array]::Copy($digest, 0, $pieces, $offset, 20) }
+                $fixture = Join-Path $directory "$name.torrent"
+                $prefix = [Text.Encoding]::ASCII.GetBytes("d4:infod6:lengthi$($length)e4:name$($name.Length + 4):$name.bin12:piece lengthi$($pieceLength)e6:pieces$($pieces.Length):")
+                $suffix = [Text.Encoding]::ASCII.GetBytes('7:privatei1eee')
+                [IO.File]::WriteAllBytes($fixture, [byte[]]($prefix + $pieces + $suffix))
+                $file = Join-Path $payload "$name.bin"
+                $null = New-Item -ItemType File -Path $file
+                $null = & fsutil sparse setflag $file
+                Assert ($LASTEXITCODE -eq 0) "The $name payload could not be made sparse"
+                $stream = [IO.File]::Open($file, 'Open', 'ReadWrite')
+                try { $stream.SetLength($length) } finally { $stream.Dispose() }
+                $preview = Send-Command @{ command = 'preview'; source = $fixture; destination = $payload }
+                Assert $preview.ok "The $name fixture did not preview"
+                $reply = Send-Command @{ command = 'add'; preview_id = $preview.data.preview_id; destination = $payload }
+                Assert $reply.ok "The $name fixture could not be added"
+                return $reply.data.torrent_id
+            }
+            function Row-Of([string] $id) {
+                (Send-Command @{ command = 'snapshot' }).data.torrents | Where-Object torrent_id -eq $id
+            }
+            # Waits until a check that `started` says has begun ends, and
+            # returns the highest check rate the snapshots reported.
+            function Wait-Check([string] $id, [scriptblock] $started) {
+                $rate = 0
+                $seen = $false
+                $until = [DateTime]::UtcNow.AddSeconds(300)
+                do {
+                    Start-Sleep -Milliseconds 200
+                    $snapshot = (Send-Command @{ command = 'snapshot' }).data
+                    $row = $snapshot.torrents | Where-Object torrent_id -eq $id
+                    $seen = $seen -or $row.status -eq 'checking' -or (& $started $row)
+                    if ($row.status -eq 'checking' -and $snapshot.check_rate) { $rate = [Math]::Max($rate, $snapshot.check_rate) }
+                } while ((-not $seen -or $row.status -eq 'checking') -and [DateTime]::UtcNow -lt $until)
+                Assert ($seen -and $row.status -ne 'checking') 'A check did not end'
+                return $rate
+            }
+            # One changed byte fails its piece, which the torrent still counts
+            # until something checks the file again.
+            function Set-Changed([string] $id, [string] $name, [long] $offset) {
+                $file = Join-Path (Row-Of $id).save_path "$name.bin"
+                $stream = [IO.File]::Open($file, 'Open', 'ReadWrite', 'ReadWrite')
+                try {
+                    $stream.Position = $offset
+                    $stream.WriteByte(1)
+                }
+                finally { $stream.Dispose() }
+            }
+            # Verify finds the changed byte, so a check during the moves before
+            # it would have shown as fewer completed bytes too.
+            function Assert-Found([string] $id, [string] $label) {
+                $before = (Row-Of $id).completed
+                $reply = Send-Command @{ command = 'verify'; torrent_ids = @($id) }
+                Assert $reply.ok "$label could not be verified"
+                $null = Wait-Check $id { param($row) $row.completed -lt $before }
+                Assert ((Row-Of $id).completed -lt $before) "Verify did not find the changed byte, so the $label moves were not shown to skip a check"
+            }
+            function Move-Unchecked([string] $id, [string] $name, [string] $destination, [string] $label) {
+                $before = Row-Of $id
+                $reply = Send-Command @{ command = 'move'; torrent_ids = @($id); destination = $destination }
+                Assert $reply.ok "$label`: the move to $destination was refused"
+                $checked = $false
+                $until = [DateTime]::UtcNow.AddSeconds(120)
+                do {
+                    Start-Sleep -Milliseconds 100
+                    $row = Row-Of $id
+                    $checked = $checked -or $row.status -eq 'checking'
+                } while (($row.moving -or $row.save_path -ne $destination) -and [DateTime]::UtcNow -lt $until)
+                Assert (-not $row.moving -and $row.save_path -eq $destination -and -not $row.error) "$label`: the move to $destination did not finish: $($row.error)"
+                $until = [DateTime]::UtcNow.AddSeconds(3)
+                do {
+                    Start-Sleep -Milliseconds 100
+                    $row = Row-Of $id
+                    $checked = $checked -or $row.status -eq 'checking'
+                } while ([DateTime]::UtcNow -lt $until)
+                Assert (-not $checked -and $row.completed -eq $before.completed) "$label`: the move to $destination checked the files it placed itself"
+                Assert ($row.status -eq $before.status -and $row.paused -eq $before.paused) "$label`: the move to $destination left the torrent $($row.status) instead of $($before.status)"
+                Assert ((Get-Item -LiteralPath (Join-Path $destination "$name.bin")).Length -eq $row.size) "$label`: the move to $destination changed the payload's size"
+            }
+            # Moves the torrent along every route while it seeds, while it is
+            # stopped and while it downloads.
+            function Test-Routes([string] $id, [string] $name, [scriptblock] $routes) {
+                Set-Changed $id $name 0
+                foreach ($destination in (& $routes 'seeding')) { Move-Unchecked $id $name $destination 'Seeding' }
+                $reply = Send-Command @{ command = 'pause'; torrent_ids = @($id) }
+                Assert $reply.ok "The $name torrent could not be stopped"
+                foreach ($destination in (& $routes 'stopped')) { Move-Unchecked $id $name $destination 'Stopped' }
+                $reply = Send-Command @{ command = 'resume'; torrent_ids = @($id) }
+                Assert $reply.ok "The $name torrent could not be started"
+                Assert-Found $id 'seeding and stopped'
+                # The failed first piece leaves the torrent downloading, with no
+                # peer to download it from.
+                Set-Changed $id $name 4MB
+                $until = [DateTime]::UtcNow.AddSeconds(10)
+                while ((Row-Of $id).status -ne 'downloading' -and [DateTime]::UtcNow -lt $until) { Start-Sleep -Milliseconds 100 }
+                Assert ((Row-Of $id).status -eq 'downloading') "The $name torrent did not download after its piece failed"
+                foreach ($destination in (& $routes 'downloading')) { Move-Unchecked $id $name $destination 'Downloading' }
+                Assert-Found $id 'downloading'
+            }
+
+            $zeros = New-Zeros 'zeros' 8GB
+            $rate = Wait-Check $zeros { param($row) $row.progress -eq 1 }
+            Assert ((Row-Of $zeros).progress -eq 1) 'The zero fixture was not verified complete'
+            Assert ($rate -gt 0) 'Verification reported no check rate'
+            $until = [DateTime]::UtcNow.AddSeconds(3)
+            do {
+                Start-Sleep -Milliseconds 200
+                $snapshot = (Send-Command @{ command = 'snapshot' }).data
+            } while ($null -ne $snapshot.check_rate -and [DateTime]::UtcNow -lt $until)
+            Assert ($null -eq $snapshot.check_rate) 'The check rate stayed after verification ended'
+
+            # V: is the volume of the evidence folder and C: the one of -Folder.
+            # The link on C: leads back to V:, as C:\temp leads to V:\temp.
+            $link = $null
+            if ($volumeFolder) {
+                $linked = Join-Path $directory 'linked'
+                $null = New-Item -ItemType Directory -Path $linked
+                $link = Join-Path $volumeFolder 'link'
+                $null = New-Item -ItemType Junction -Path $link -Target $linked
+            }
+            try {
+                Test-Routes $zeros 'zeros' {
+                    param($state)
+                    Join-Path $directory "$state-v"
+                    if ($volumeFolder) {
+                        Join-Path $volumeFolder "$state-c"
+                        Join-Path $volumeFolder "$state-cc"
+                        Join-Path $directory "$state-cv"
+                        Join-Path $link "$state-link"
+                        Join-Path $directory "$state-back"
+                    }
+                }
+                if ($networkFolder) {
+                    $small = New-Zeros 'small' 16MB
+                    $null = Wait-Check $small { param($row) $row.progress -eq 1 }
+                    Test-Routes $small 'small' {
+                        param($state)
+                        Join-Path $networkFolder "$state-y"
+                        Join-Path $networkFolder "$state-yy"
+                        if ($volumeFolder) {
+                            Join-Path $volumeFolder "$state-yc"
+                            Join-Path $networkFolder "$state-cy"
+                        }
+                        Join-Path $directory "$state-yv"
+                    }
+                }
+            }
+            finally {
+                # Removes the link only, never the folder it leads to.
+                if ($link -and (Test-Path -LiteralPath $link)) { (Get-Item -LiteralPath $link).Delete() }
+            }
         }
         'CommittedFiles' {
             $reply = Send-Command @{ command = 'session_pause'; paused = $true }
@@ -1389,6 +1575,7 @@ finally {
     }
     if ($script:pipe) { $script:pipe.Dispose() }
     if ($volumeFolder) { Remove-Item -LiteralPath $volumeFolder -Recurse -Force -ErrorAction Continue }
+    if ($networkFolder) { Remove-Item -LiteralPath $networkFolder -Recurse -Force -ErrorAction Continue }
     # A run keeps only its logs and reports. Its payload, peer seed and engine
     # state are worthless once the check has ended.
     $evidence = [IO.Path]::GetFullPath((Join-Path $repository 'artifacts/evidence')) + [IO.Path]::DirectorySeparatorChar

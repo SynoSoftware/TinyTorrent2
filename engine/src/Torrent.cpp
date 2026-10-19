@@ -75,6 +75,7 @@ char const* ToString(ProblemKind kind)
     case ProblemKind::MoveInterrupted: return "move_interrupted";
     case ProblemKind::MoveFailed: return "move_failed";
     case ProblemKind::DestinationExists: return "destination_exists";
+    case ProblemKind::SameLocation: return "same_location";
     case ProblemKind::AliasConflict: return "alias_conflict";
     case ProblemKind::TorrentError: return "torrent_error";
     case ProblemKind::StorageFailed: return "storage_failed";
