@@ -285,7 +285,14 @@ void Engine::State::PrepareMove()
         }
     }
     move->phase = MovePhase::Preflight;
-    using Checked = std::expected<std::vector<std::filesystem::path>, Problem>;
+    // The files already at the destination, and of those the ones that no
+    // copy of the torrent's own files put there.
+    struct Destination
+    {
+        std::vector<std::filesystem::path> existing;
+        std::vector<std::filesystem::path> found;
+    };
+    using Checked = std::expected<Destination, Problem>;
     payload.Run([this, handles, files]() -> Checked
     {
         ReleaseFiles(handles);
@@ -298,7 +305,7 @@ void Engine::State::PrepareMove()
         {
             return present(path) && (!std::filesystem::is_regular_file(path) || std::filesystem::file_size(path) != 0);
         };
-        std::vector<std::filesystem::path> existing;
+        Destination destination;
         std::vector<std::filesystem::path> stale;
         for (auto const& file : files)
         {
@@ -312,12 +319,20 @@ void Engine::State::PrepareMove()
             bool alone = SamePath(file.destination, file.logicalDestination) || !present(file.logicalDestination);
             if (file.continued && alone && Payload::IsCopy({file.source, file.destination}))
             {
-                existing.push_back(file.destination);
+                destination.existing.push_back(file.destination);
                 continue;
             }
-            if (!SamePath(file.source, file.destination) && sourced)
+            if (SamePath(file.source, file.destination))
+            {
+                destination.existing.push_back(file.destination);
+                continue;
+            }
+            if (sourced)
                 return std::unexpected(Problem{ProblemKind::DestinationExists, Utf8(file.destination.wstring())});
-            existing.push_back(file.destination);
+            // A file put there by the person or found after a drive letter
+            // changed, so only verification can say what it holds.
+            destination.existing.push_back(file.destination);
+            destination.found.push_back(file.destination);
         }
         // An empty unfinished name would mask the final file after a partial move.
         for (auto const& file : files)
@@ -327,7 +342,8 @@ void Engine::State::PrepareMove()
                 stale.push_back(file.source);
         }
         Payload::Delete(stale);
-        return existing;
+        std::sort(destination.found.begin(), destination.found.end(), PathBefore);
+        return destination;
     }, [this](std::expected<Checked, StorageOutcome> checked)
     {
         if (!checked)
@@ -340,7 +356,8 @@ void Engine::State::PrepareMove()
             FailMove(checked->error());
             return;
         }
-        move->moved = std::move(**checked);
+        move->moved = std::move((*checked)->existing);
+        move->found = std::move((*checked)->found);
         // The checked destination is saved before any file changes, so the
         // next launch may continue this move and keep its complete copies.
         if (!changes.Queue([this]
@@ -513,18 +530,27 @@ void Engine::State::SaveMove()
         if (!later.contains(file.source))
             sources.push_back(file.source);
     }
-    auto relocate = [destination = move->destination](std::string const&, Facts& facts)
+    // The files a move places are the ones the torrent already had, so only
+    // files found at the destination, or an interrupted move's files that can
+    // be in two folders, need verification.
+    auto paths = FilePaths(Working(id), move->destination, false);
+    bool verifies = Contains(move->recovering, id) || std::any_of(paths.begin(), paths.end(), [this](auto const& path)
+        { return std::binary_search(move->found.begin(), move->found.end(), path, PathBefore); });
+    auto relocate = [destination = move->destination, verifies](std::string const&, Facts& facts)
     {
         facts.savePath = destination;
         facts.finalFolder.clear();
         facts.marker.reset();
-        facts.verifyFiles = true;
+        facts.verifyFiles |= verifies;
     };
     auto settle = [this, id, sources = std::move(sources), origin = FullPath(Wide(Working(id).facts.savePath))]
     {
         auto& torrent = Working(id);
         torrent.unsaved = true;
+        // Without a recheck to report them, the finished files are read again
+        // at the new folder.
         torrent.completedFiles.clear();
+        torrent.filesPending = true;
         torrent.namePhase = NamePhase::Pending;
         torrent.renameAt = {};
         EndMove(torrent, std::nullopt);

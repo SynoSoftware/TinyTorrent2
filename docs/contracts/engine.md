@@ -435,8 +435,8 @@ with the files of the torrents in the list that the command does not include, so
 a command that includes every torrent using a file can delete or move it. Delete
 files keeps a file that a torrent outside the command uses, and reports it. Move
 refuses when its scope contains such a file, names those torrents, and offers to
-move them together. A move of several torrents places a shared file once, and
-each member verifies it at the new folder. It refuses a group in which
+move them together. A move of several torrents places a shared file once for
+every member that uses it. It refuses a group in which
 different files would take one path, or one file two paths, because a member
 would lose that file when another member's move takes it. libtorrent permits
 [re-addition before work on an old handle has ended](https://www.libtorrent.org/reference-Session.html#remove-torrent()),
@@ -514,10 +514,10 @@ Each member of a move moves on its own, in this order: its files are placed,
 libtorrent takes the new folder, the folder is saved with its marker cleared,
 and then the sources that a copy left are deleted, with the folders that leaves
 empty up to the old save folder. The member leaves Moving when its folder is
-saved, so its verification and transfers continue while the rest of the group
-moves. Sources are deleted only after that save, so a crash never leaves a
-saved folder whose files are partly gone. A source that a later member of the
-group also uses stays until that member's sources go. A failed cleanup is
+saved, so its transfers, or the verification it needs first, continue while
+the rest of the group moves. Sources are deleted only after that save, so a
+crash never leaves a saved folder whose files are partly gone. A source that a
+later member of the group also uses stays until that member's sources go. A failed cleanup is
 logged; it leaves only files that the destination also holds.
 
 An interrupted move continues once on its own. A crash, power loss or forced
@@ -567,9 +567,15 @@ it counts that file as already moved. A source containing data and an existing
 destination remain a collision; choosing the current save folder is allowed.
 An empty unfinished placeholder is removed after preflight so it cannot mask a
 completed destination file. Files already at the destination are not placed
-again. Verification checks the destination before transfer resumes, so a person
-who moved files or whose drive letter changed needs only to choose their folder.
-Pieces that do not match are downloaded again over those files.
+again.
+
+A moved torrent is verified at its new folder before transfer resumes only
+when the move found files of it there, or when the move recovers an
+interrupted move, whose files can be in two folders. So a person who moved
+files or whose drive letter changed needs only to choose their folder, and
+pieces that do not match are downloaded again over those files. The files a
+move places itself hold the pieces the torrent already verified, so checking
+them again would only make the person wait.
 
 One payload operation runs at a time. Its source and destination paths stay held
 until disk work has a known outcome.
@@ -647,8 +653,8 @@ completes, so the engine thread remains free while the worker waits.
 
 For a group with partially overlapping file lists, check the whole destination
 before moving anything. A member skips the files that an earlier member of the
-group has already placed. Every member is verified before its saved intent
-resumes.
+group has already placed. A member that needs verification is verified before
+its saved intent resumes.
 Two distinct source files cannot map to one destination path.
 A member removed during preflight can leave a destination conflict in that
 check; the person retries the surviving group instead of the engine rechecking it.
@@ -675,9 +681,9 @@ a later move of the same torrent, so that path checks that libtorrent is no
 longer moving storage and observes its actual save path. That observation runs
 on the payload worker with the current member and paths still held;
 a failed observation requests another acknowledgement and keeps those holds.
-The requested location still requires verification, including Use the files
-there in the same folder;
-location alone never establishes valid content. A deletion whose release alert
+Files found at the requested location still require verification, including
+Use the files there in the same folder; location alone never establishes valid
+content. A deletion whose release alert
 was lost waits for its removed handle to expire, because libtorrent retains the
 torrent until its disk work ends. Both operations continue during shutdown;
 missing evidence never releases their files or implies success.

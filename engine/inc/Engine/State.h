@@ -557,6 +557,9 @@ public:
         std::size_t current = 0;
         std::vector<std::filesystem::path> holds;
         std::vector<std::filesystem::path> moved;
+        // The files in `moved` that no copy of a member's own files put
+        // there, sorted.
+        std::vector<std::filesystem::path> found;
         // Files that earlier members put at the destination, kept while
         // members share files. On one volume, a member that shares one no
         // longer has it in its old folder.
