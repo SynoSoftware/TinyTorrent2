@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
+#include <cstdlib>
 #include <exception>
 #include <map>
 #include <mutex>
@@ -238,6 +239,7 @@ COPYFILE2_MESSAGE_ACTION CALLBACK Report(COPYFILE2_MESSAGE const* message, void*
         if (transferred > copying.reported)
         {
             copying.progress.done += transferred - copying.reported;
+            copying.progress.copied += transferred - copying.reported;
             copying.reported = transferred;
         }
     }
@@ -252,7 +254,7 @@ public:
 
     // Places every file and returns the first failure.
     std::optional<std::string> Place(std::vector<File> const& files);
-    // Deletes the copies this move made and renames files back.
+    // Deletes the copies and folders this move made and renames files back.
     MoveFailure Undo();
 
 private:
@@ -262,8 +264,10 @@ private:
         std::uint64_t size;
         DWORD flags;
         bool parallel;
-        // This move created the destination, so a failure deletes it.
+        // This move created the copy, so a failure deletes it.
         bool owned = false;
+        // The copy has its final name.
+        bool complete = false;
     };
 
     std::optional<std::string> CopyAll();
@@ -272,6 +276,7 @@ private:
     Progress& progress_;
     std::vector<File const*> renamed_;
     std::vector<Copy> copies_;
+    std::set<std::filesystem::path> created_;
     std::atomic<bool> stop_{false};
     std::mutex gate_;
     std::optional<std::string> failure_;
@@ -306,6 +311,9 @@ std::optional<std::string> Placement::Place(std::vector<File> const& files)
     for (auto const& folder : folders)
     {
         std::error_code error;
+        for (auto missing = folder; missing.has_relative_path() &&
+            !std::filesystem::exists(Extended(missing), error) && !error; missing = missing.parent_path())
+            created_.insert(missing);
         std::filesystem::create_directories(Extended(folder), error);
         if (error)
             return Describe(folder, error);
@@ -387,21 +395,33 @@ void Placement::Run(Copy& copy)
         return;
     Copying copying{progress_, stop_, copy.size};
     COPYFILE2_EXTENDED_PARAMETERS parameters{sizeof(parameters), copy.flags, nullptr, &Report, &copying};
-    auto result = CopyFile2(Extended(copy.file->source).c_str(), Extended(copy.file->destination).c_str(),
-        &parameters);
+    auto partial = Extended(Partial(copy.file->destination));
+    auto result = CopyFile2(Extended(copy.file->source).c_str(), partial.c_str(), &parameters);
     auto error = SUCCEEDED(result) ? ERROR_SUCCESS :
         HRESULT_FACILITY(result) == FACILITY_WIN32 ? DWORD(HRESULT_CODE(result)) : DWORD(result);
-    // A destination that already existed belongs to another program and stays.
-    copy.owned = error != ERROR_FILE_EXISTS;
+    // A file that already had the name belongs to another program and stays.
+    // CopyFile2 reports it with either code, and with access denied when that
+    // file is hidden or read-only.
+    copy.owned = error != ERROR_FILE_EXISTS && error != ERROR_ALREADY_EXISTS && error != ERROR_ACCESS_DENIED;
+    auto failed = copy.file->source;
     if (error == ERROR_SUCCESS)
     {
         progress_.done += copy.size - copying.reported;
-        return;
+        progress_.copied += copy.size - copying.reported;
+        // A rename without a flag refuses a file that took the name meanwhile.
+        if (MoveFileExW(partial.c_str(), Extended(copy.file->destination).c_str(), 0))
+        {
+            copy.complete = true;
+            return;
+        }
+        error = GetLastError();
+        failed = copy.file->destination;
     }
     std::lock_guard lock(gate_);
     // A copy that another failure cancelled reports nothing of its own.
     if (!failure_)
-        failure_ = Describe(error == ERROR_FILE_EXISTS ? copy.file->destination : copy.file->source, error);
+        failure_ = Describe(error == ERROR_FILE_EXISTS || error == ERROR_ALREADY_EXISTS ? copy.file->destination :
+            failed, error);
     stop_ = true;
 }
 
@@ -411,7 +431,7 @@ MoveFailure Placement::Undo()
     for (auto const& copy : copies_)
     {
         if (copy.owned)
-            copies.push_back(copy.file->destination);
+            copies.push_back(copy.complete ? copy.file->destination : Partial(copy.file->destination));
     }
     try
     {
@@ -426,6 +446,13 @@ MoveFailure Placement::Undo()
     {
         if (!MoveFileExW(Extended(file->destination).c_str(), Extended(file->source).c_str(), 0))
             failure = MoveFailure::Split;
+    }
+    // A subfolder sorts after its parent, so it goes first. A folder that
+    // still holds a file stays.
+    for (auto folder = created_.rbegin(); folder != created_.rend(); ++folder)
+    {
+        std::error_code ignored;
+        std::filesystem::remove(Extended(*folder), ignored);
     }
     return failure;
 }
@@ -469,5 +496,30 @@ void Delete(std::vector<std::filesystem::path> const& files)
     });
     if (failure)
         throw std::runtime_error(*failure);
+}
+
+std::filesystem::path Partial(std::filesystem::path const& destination)
+{
+    return destination.native() + L".!ttcopy";
+}
+
+bool IsCopy(File const& file)
+{
+    WIN32_FILE_ATTRIBUTE_DATA source;
+    WIN32_FILE_ATTRIBUTE_DATA destination;
+    if (!GetFileAttributesExW(Extended(file.source).c_str(), GetFileExInfoStandard, &source) ||
+        !GetFileAttributesExW(Extended(file.destination).c_str(), GetFileExInfoStandard, &destination))
+        return false;
+    // CopyFile2 keeps the last write time, and the source of a moving
+    // torrent stays unchanged because the torrent stays paused. FAT keeps
+    // the time to 2 seconds, in local time that Windows converts with the
+    // current offset, so a copy there also differs by an hour after a
+    // daylight saving change.
+    auto time = [](FILETIME const& value) { return (std::int64_t(value.dwHighDateTime) << 32) | value.dwLowDateTime; };
+    constexpr std::int64_t second = 10'000'000;
+    auto difference = std::abs(time(source.ftLastWriteTime) - time(destination.ftLastWriteTime));
+    return !(destination.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) &&
+        source.nFileSizeHigh == destination.nFileSizeHigh && source.nFileSizeLow == destination.nFileSizeLow &&
+        (difference <= 2 * second || std::abs(difference - 3600 * second) <= 2 * second);
 }
 }

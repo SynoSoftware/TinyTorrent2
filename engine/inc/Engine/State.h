@@ -92,6 +92,9 @@ public:
         lt::torrent_handle handle;
         AdditionPhase phase = AdditionPhase::Adding;
         std::set<lt::file_index_t> renaming;
+        // Whether the addition chose its file names. One that did not, such
+        // as a magnet without metadata, leaves them to ContinueNames.
+        bool named = false;
     };
 
     // The person's settings, saved in the document. A setting that the
@@ -303,7 +306,9 @@ public:
     // Moves torrent files, which can take many minutes, so the payload
     // worker's checkpoints and renames do not wait for it.
     Store copies;
-    // Reads preview sources, which can block on a slow share.
+    // Reads preview sources, which can block on a slow share, and does the
+    // disk work of previews and additions, which touches no other torrent's
+    // files, so an addition never waits behind another torrent's file work.
     Store sources;
     // Checks proxies, which can wait for one that does not answer.
     Store checks;
@@ -422,15 +427,24 @@ public:
     {
         std::vector<std::string> ids;
         std::string destination;
-        bool recovering = false;
+        // Members that had a marker before this move, so their files can
+        // still be in two folders.
+        std::vector<std::string> recovering;
+        // Two members use one file, so a member's move can change the other's.
+        bool shared = false;
         std::size_t current = 0;
         std::vector<std::filesystem::path> holds;
         std::vector<std::filesystem::path> moved;
-        // Files that earlier members put at the destination. On one volume,
-        // a member that shares one no longer has it in its old folder.
+        // Files that earlier members put at the destination, kept while
+        // members share files. On one volume, a member that shares one no
+        // longer has it in its old folder.
         std::vector<std::filesystem::path> placed;
         // The current member's bytes, which its worker writes while it copies.
         std::shared_ptr<Payload::Progress> progress;
+        // Bytes per second copied between the last two status samples, and
+        // the current member's copied bytes at the last one.
+        double rate = 0;
+        std::uint64_t sampled = 0;
         MovePhase phase = MovePhase::Staging;
     };
     struct Deletion
@@ -618,8 +632,11 @@ public:
     Json Describe(std::vector<std::string> const& ids, Scope const& scope) const;
     bool NamesReady();
     Outcome FilesReady(std::vector<std::string> const& ids);
-    void StartMove(std::vector<std::string> const& ids, std::string const& destination,
+    void StartMove(std::vector<std::string> const& ids, std::string const& destination, MoveStart start,
         std::function<void(Outcome)> accepted);
+    // Continues each interrupted move once, together with the torrents
+    // whose interrupted move had the same destination.
+    void ResumeMove();
     void ContinueMove();
     // `failure` is libtorrent's reason when it reports that the move failed.
     void FinishMove(lt::torrent_handle const& handle, std::string failure);
@@ -627,6 +644,8 @@ public:
     // The share of the torrent's bytes that its move has placed: 0 while it
     // waits for its turn, and nothing when no move holds it.
     std::optional<double> MoveProgress(Torrent const& torrent) const;
+    // Samples the move's copy rate over the time since the last sample.
+    void SampleMove(std::chrono::steady_clock::duration elapsed);
     void ContinueDeletion();
     // Deletes the files in the mode, then the folders that leaves empty up to
     // the nearest of `roots`, even after a failure, and throws the first

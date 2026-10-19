@@ -65,11 +65,6 @@ bool Engine::State::IsChoice(lt::download_priority_t priority)
 void Engine::State::Add(Preview& preview, Addition::Choices choices, std::function<void(Outcome, Added)> completion)
 {
     UpdatePreview(preview);
-    if (FilesBusy())
-    {
-        completion({ErrorCode::FilesBusy}, {});
-        return;
-    }
     auto duplicate = FindDuplicate(preview.InfoHashes());
     if (!duplicate.empty())
     {
@@ -127,7 +122,7 @@ void Engine::State::Add(Preview& preview, Addition::Choices choices, std::functi
     else
     {
         auto prepared = std::make_shared<lt::add_torrent_params>(pending.params);
-        payload.Run([prepared, appendsSuffix = pending.facts.appendsSuffix, layout = pending.facts.layout]
+        sources.Run([prepared, appendsSuffix = pending.facts.appendsSuffix, layout = pending.facts.layout]
             { PrepareNames(*prepared, appendsSuffix, layout); },
             [this, id = pending.torrentId, prepared](StorageOutcome outcome)
         {
@@ -157,13 +152,17 @@ void Engine::State::PrepareAddition(std::string const& id, lt::torrent_handle ha
     auto prepared = std::make_shared<lt::add_torrent_params>(addition.params);
     if (!prepared->ti)
         prepared->ti = handle.torrent_file();
-    if (!prepared->ti)
+    // A rename or removal can change the destination's files while the names
+    // are chosen, so the torrent then joins the list without them and
+    // ContinueNames chooses them once that work ends. It stays paused until
+    // then, so it writes nothing under a wrong name.
+    if (!prepared->ti || RemovingOrRenaming())
     {
         SaveAddition(id, handle);
         return;
     }
     auto current = std::make_shared<lt::renamed_files>();
-    payload.Run([this, prepared, current, handle, appendsSuffix = addition.facts.appendsSuffix, layout = addition.facts.layout]
+    sources.Run([this, prepared, current, handle, appendsSuffix = addition.facts.appendsSuffix, layout = addition.facts.layout]
     {
         ReleaseFiles({handle});
         *current = handle.get_renamed_files();
@@ -183,6 +182,7 @@ void Engine::State::PrepareAddition(std::string const& id, lt::torrent_handle ha
         addition.params.ti = prepared->ti;
         addition.params.renamed_files = prepared->renamed_files;
         ApplyNames(addition.handle, *prepared, *current, addition.renaming);
+        addition.named = true;
         if (addition.renaming.empty())
             SaveAddition(id, addition.handle);
     });
@@ -321,6 +321,8 @@ void Engine::State::CommitAddition(std::string const& id)
         }
         auto found = additions.find(id);
         auto& torrent = Install(id, found->second.handle, found->second.facts, found->second.params);
+        if (found->second.named)
+            torrent.namePhase = NamePhase::Ready;
         torrent.queueReport = QueueReport::AwaitingFiles;
         queueOrder = order;
         settings.lastFolder = folder;

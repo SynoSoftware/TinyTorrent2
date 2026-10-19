@@ -126,6 +126,30 @@ enum class AdditionPhase
     Saving
 };
 
+// Who starts a move: a request, or the engine continuing an interrupted move
+// on its own, which it does once.
+enum class MoveStart
+{
+    Requested,
+    Resumed
+};
+
+// How far a saved move got, which decides what the engine may do with it at
+// the next launch.
+enum class MoveStage
+{
+    // Its destination was not checked yet, so a file there can be someone
+    // else's, and the move waits for the person.
+    Staged,
+    // Its destination was checked before any file changed, so a file there
+    // beside a source that holds data is the move's own copy, and the engine
+    // continues the move once.
+    Placing,
+    // Its destination was checked, and it waits for the person: the engine
+    // already continued it once, or it failed.
+    Waiting
+};
+
 // A move's current member: its worker places the files (Copying), libtorrent
 // takes the new folder (Moving), the engine confirms it (Observing), saves the
 // outcome (Saving) and deletes the sources (Cleaning).

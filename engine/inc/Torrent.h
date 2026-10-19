@@ -41,6 +41,8 @@ struct Facts
     Layout layout = Layout::Keep;
     std::string skipPatterns;
     std::string moveDestination;
+    // How far the move to `moveDestination` got; Staged without one.
+    MoveStage moveStage = MoveStage::Staged;
     // The .torrent file it was added from, which Removal can delete; empty
     // for a magnet. The file may have moved or gone since.
     std::string torrentFile;
@@ -158,6 +160,9 @@ struct Torrent
     std::vector<std::filesystem::path> Paths(bool logical = false) const;
     std::optional<Problem> Error() const;
     std::optional<Problem> Diagnose() const;
+    // Its interrupted move waits to continue on its own, so it is moving,
+    // not a problem for the person.
+    bool ResumesMove() const;
     // The torrent's own files are being prepared, renamed or moved.
     bool FilesBusy() const;
     bool MoveBlocked() const;

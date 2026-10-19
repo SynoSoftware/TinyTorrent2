@@ -240,6 +240,16 @@ public sealed class Strings
         };
     }
 
+    /// <summary>Formats a move's copy rate in KiB/s, or MiB/s from 1 MiB/s, never GiB/s.</summary>
+    public string CopyRate(double bytes) =>
+        Format(
+            "units",
+            "rate",
+            bytes < 1024 * 1024
+                ? Format("units", "kib", bytes / 1024)
+                : Format("units", "mib", bytes / (1024 * 1024))
+        );
+
     public string Bytes(double value)
     {
         var unit = 0;

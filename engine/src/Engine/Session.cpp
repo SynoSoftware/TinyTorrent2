@@ -234,7 +234,6 @@ void Engine::State::Restore(std::string const& id, Facts facts, lt::add_torrent_
         throw lt::system_error(error);
     }
     auto& torrent = Install(id, handle, std::move(facts), params);
-    torrent.namePhase = NamePhase::Pending;
     if (torrent.facts.trackers)
     {
         handle.replace_trackers(*torrent.facts.trackers);
@@ -494,6 +493,7 @@ Json Engine::State::Snapshot()
         {"torrents", std::move(rows)}, {"settings", std::move(current)},
         {"language_saved", language == settings.language},
         {"download_rate", activity.downloadRate}, {"upload_rate", activity.uploadRate},
+        {"move_rate", move ? Json(move->rate) : Json()},
         {"transfers", {{"session", transferred.ToJson()}, {"all_time", TotalTransfers().ToJson()}}},
         {"session_paused", IsPaused()},
         {"connection_test", ConnectionTestSnapshot()},
@@ -554,7 +554,7 @@ Torrent& Engine::State::Install(std::string const& id, lt::torrent_handle handle
     torrent.status.queue_position = lt::queue_position_t{-1};
     torrent.status.all_time_download = params.total_downloaded;
     torrent.status.all_time_upload = params.total_uploaded;
-    torrent.namePhase = params.ti ? NamePhase::Ready : NamePhase::Pending;
+    torrent.namePhase = NamePhase::Pending;
     torrent.savedUploaded = params.total_uploaded;
     torrent.filesPending = true;
     handles.emplace(handle, &torrent);
@@ -692,6 +692,7 @@ void Engine::State::Maintain()
     auto now = std::chrono::steady_clock::now();
     if (now - statusAt >= statusInterval)
     {
+        SampleMove(now - statusAt);
         statusAt = now;
         session->post_session_stats();
         if (SuspendsForConnectionTest() ||
@@ -706,6 +707,7 @@ void Engine::State::Maintain()
         auto activity = Activity();
         history.Sample(time, double(activity.downloadRate), double(activity.uploadRate));
         ContinueNames();
+        ResumeMove();
         for (auto& [id, torrent] : torrents)
         {
             if (!torrent.deleted)

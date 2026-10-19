@@ -1182,6 +1182,24 @@
           />
         </StackPanel>
         <StackPanel
+          x:Name="MoveRate"
+          Orientation="Horizontal"
+          Spacing="6"
+          VerticalAlignment="Center"
+        >
+          <FontIcon
+            Style="{StaticResource TinyTorrentStatusIconStyle}"
+            FontFamily="{x:Bind icons:Lucide.Font}"
+            Glyph="{x:Bind icons:Lucide.Folder}"
+            AutomationProperties.AccessibilityView="Raw"
+          />
+          <TextBlock
+            x:Name="MoveLabel"
+            Style="{StaticResource TinyTorrentStatusTextStyle}"
+            TextTrimming="CharacterEllipsis"
+          />
+        </StackPanel>
+        <StackPanel
           x:Name="RestrictionStatus"
           Orientation="Horizontal"
           Spacing="6"

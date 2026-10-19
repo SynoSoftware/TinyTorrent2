@@ -220,7 +220,7 @@ void Engine::State::Inspect(std::string source, std::string connectionId,
             preview->params.flags &= ~lt::torrent_flags::paused;
             preview->params.save_path = Utf8((directory / L"previews").wstring());
             parsing.push_back(preview);
-            payload.Run([preview, session = session.get()]
+            sources.Run([preview, session = session.get()]
             {
                 preview->handle = session->add_torrent(preview->params);
             }, [this, preview, completion, merge](StorageOutcome outcome)

@@ -84,11 +84,12 @@ do not define this product.
 
 ## Working rules
 
-- **Owner ruling: filename discovery.** Use only `C:\Program Files\goz\goz.exe`,
-  with the narrowest known `-path`, a specific name/pattern and `-n 20`, so
-  broad results do not flood agent context. If 20 rows return, refine the query
-  rather than treating the list as complete. Never run `es.exe`. If goz cannot
-  answer after a refined query, report that. For a sandbox pipe denial, retry
+- **Owner ruling: filename discovery.** Use only
+  `C:\Program Files\gozler\gozler.exe`, with the narrowest known `-path`, a
+  specific name/pattern and `-n 20`, so broad results do not flood agent
+  context. If it exits 10 because `-n` cut the list off, refine the query
+  rather than treating the list as complete. Never run `es.exe` or `goz.exe`.
+  If gozler cannot answer after a refined query, report that. For a sandbox pipe denial, retry
   the same read-only command outside the sandbox before treating the tool as
   unavailable. Use `rg` for file contents.
 - **Owner ruling: user steers are cumulative.** Keep earlier requirements and
@@ -120,12 +121,14 @@ do not define this product.
   behavior unverified. Respect explicit user restrictions and protect the
   owner's data and running applications. Close what you launched and report
   the evidence and any remaining gaps.
-- **Owner ruling: never end a TinyTorrent that holds a lock.** A TinyTorrent
-  engine or window that holds the instance or pipe lock is in use by the owner
-  or by another session, and ending it loses that work or breaks that run.
-  When a check needs a held lock, report it instead of ending the process. A
-  TinyTorrent process that holds no lock, such as one left behind after its
-  run ended, serves nobody and may be ended with `Stop-Process`.
+- **Owner ruling: end a TinyTorrent that blocks you, unless it is capturing.**
+  A capture run belongs to another session taking screenshots, and ending it
+  breaks that run, so leave it and wait for it. A capture run starts from a
+  `_capture` output folder, such as
+  `artifacts\bin\TinyTorrent\debug_win-x64_capture`. Any other TinyTorrent
+  engine or window that blocks a build, check or test is usually a daemon
+  someone forgot open. End it with `Stop-Process` and continue, because a
+  session that stops to report it blocked delivers nothing.
 - Do not report or change line endings on disk. Files there mix CRLF and LF
   because Windows editors and tools write CRLF, and `.gitattributes` converts
   every text file to LF on commit, so the mix never reaches a diff or history.

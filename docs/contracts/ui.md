@@ -965,6 +965,13 @@ disappears with the rates. A cap describes the applied policy, not proof of why
 a transfer is slow. Disconnection shows `Last known · 84 torrents`, `—` for
 rates, and suppresses stale restrictions and healthy connection icons.
 
+While torrents move, the move's copy rate follows the upload rate with the
+rows' Moving folder icon, such as `1,233.4 MiB/s`. It belongs with the rates,
+not with background work, because a move happens to torrents and its progress
+stays in their rows. It reads in KiB/s, or MiB/s from 1 MiB/s, never GiB/s,
+counts copied bytes only, because a rename moves none, and yields with the
+rates.
+
 Each rate keeps aligned digits and a compact width measured for the active
 format, units and cap, recomputed when language, scale, unit range or cap
 changes. The bar reserves no two fixed 216-DIP speed fields and does not size
@@ -2224,8 +2231,8 @@ when the command executes. The engine detects files already at the destination
 and verifies them, following [engine moves](engine.md#removal-and-moves), so the
 dialog needs no file-location checkbox or repeated resulting path. A refusal
 keeps the destination and choices. Accepted
-work appears as Moving files without a file-copy percentage; row errors direct
-the person to reopen Move files and choose the folder holding the files.
+work appears as Moving files with the share of bytes placed; a row error says
+where the files are.
 
 The Speed view shows the [selected torrent's speed history](engine.md#state-and-work),
 combined history for multiple selected torrents, or session history when nothing is selected,

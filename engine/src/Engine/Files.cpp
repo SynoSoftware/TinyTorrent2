@@ -48,7 +48,11 @@ void Engine::State::ReleaseFiles(std::vector<lt::torrent_handle> const& handles)
 
 std::filesystem::path Engine::State::FullPath(std::filesystem::path const& path)
 {
-    return std::filesystem::absolute(path).lexically_normal();
+    auto full = std::filesystem::absolute(path).lexically_normal();
+    // A folder typed with a trailing separator names the same folder, and
+    // comparisons and folder pruning must find it equal. A root keeps its
+    // separator.
+    return full.has_filename() || !full.has_relative_path() ? full : full.parent_path();
 }
 
 // Windows compares file names without case.
@@ -400,8 +404,9 @@ void Engine::State::FinishDownload(Torrent& torrent)
     // A move that waits for another torrent's metadata tries again; other
     // move problems wait for the person.
     bool waits = torrent.moveError && !torrent.MoveBlocked();
-    // A torrent that downloads again has no move to wait for.
-    if (waits && !torrent.status.is_finished)
+    // A torrent that downloads again has no move to wait for, unless an
+    // interrupted move continues it.
+    if (waits && !torrent.status.is_finished && torrent.facts.moveDestination.empty())
         torrent.moveError.reset();
     if (IsShuttingDown() || torrent.deleted || torrent.restore || torrent.filesPending || torrent.completionPending ||
         torrent.completionPhase == CompletionPhase::Downloading ||
@@ -420,7 +425,7 @@ void Engine::State::FinishDownload(Torrent& torrent)
             auto found = torrents.find(id);
             if (found == torrents.end() || found->second.deleted)
                 return;
-            StartMove({id}, found->second.facts.finalFolder, [this, id](Outcome outcome)
+            StartMove({id}, found->second.facts.finalFolder, MoveStart::Requested, [this, id](Outcome outcome)
             {
                 if (!outcome.error || *outcome.error == ErrorCode::FilesBusy)
                     return;
@@ -954,10 +959,15 @@ std::vector<std::string> Engine::State::Holders(std::shared_ptr<lt::torrent_info
         for (auto const& owner : rename->owners)
             names.push_back(torrents.at(owner.torrentId).Name());
     }
+    // A member leaves the session once its own move has ended, also while
+    // its sources are deleted.
     if (move && holds(move->holds))
     {
         for (auto const& id : move->ids)
-            names.push_back(torrents.at(id).Name());
+        {
+            if (auto found = torrents.find(id); found != torrents.end())
+                names.push_back(found->second.Name());
+        }
     }
     for (auto const& deleting : deletions)
     {

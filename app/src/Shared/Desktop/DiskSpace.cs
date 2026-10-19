@@ -6,7 +6,9 @@ internal static class DiskSpace
     {
         try
         {
-            if (!Path.IsPathFullyQualified(path))
+            // DriveInfo takes only drive letters; a path such as
+            // \\server\share is a network share, which counts as unknown below.
+            if (!Path.IsPathFullyQualified(path) || path.StartsWith(@"\\", StringComparison.Ordinal))
                 return null;
             var drive = new DriveInfo(path);
             // A disconnected network drive can block its caller for seconds.

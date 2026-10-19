@@ -227,6 +227,7 @@ Json Facts::ToJson() const
         {"layout", static_cast<int>(layout)},
         {"skip_patterns", skipPatterns},
         {"move_destination", moveDestination},
+        {"move_stage", static_cast<int>(moveStage)},
         {"torrent_file", torrentFile},
         {"verify_files", verifyFiles},
         {"paused", intent == Intent::Paused},
@@ -264,6 +265,10 @@ Facts Facts::Read(Json const& saved)
     if (auto patterns = ReadSaved(saved, "skip_patterns", std::string()); patterns.size() <= 4096)
         facts.skipPatterns = std::move(patterns);
     facts.moveDestination = ReadSaved(saved, "move_destination", std::string());
+    // A move saved without a stage counts as unchecked.
+    auto stage = ReadSaved(saved, "move_stage", 0);
+    if (!facts.moveDestination.empty() && stage >= 0 && stage <= static_cast<int>(MoveStage::Waiting))
+        facts.moveStage = static_cast<MoveStage>(stage);
     facts.torrentFile = ReadSaved(saved, "torrent_file", std::string());
     facts.verifyFiles = ReadSaved(saved, "verify_files", false);
     if (ReadSaved(saved, "paused", false))
@@ -392,7 +397,7 @@ std::optional<Problem> Torrent::Error() const
     {
         return moveError;
     }
-    if (!moving && !facts.moveDestination.empty())
+    if (!moving && !facts.moveDestination.empty() && !ResumesMove())
     {
         return Problem{ProblemKind::MoveInterrupted, facts.moveDestination};
     }
@@ -425,6 +430,11 @@ std::optional<Problem> Torrent::Diagnose() const
     return checkpointError;
 }
 
+bool Torrent::ResumesMove() const
+{
+    return !moving && !facts.moveDestination.empty() && facts.moveStage == MoveStage::Placing;
+}
+
 bool Torrent::FilesBusy() const
 {
     return moving || namePhase == NamePhase::Preparing || namePhase == NamePhase::Recovering || !renaming.empty();
@@ -441,9 +451,14 @@ Status Torrent::Classify(bool sessionPaused) const
     {
         return Status::Moving;
     }
+    // A move that continues on its own shows the reason that delays it.
     if (Error())
     {
         return Status::Error;
+    }
+    if (ResumesMove())
+    {
+        return Status::Moving;
     }
     if (facts.intent == Intent::Paused)
     {

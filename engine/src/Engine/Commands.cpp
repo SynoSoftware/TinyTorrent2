@@ -459,7 +459,7 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
     case Command::Move:
         Act(TorrentIds(request), reply, [this, destination = request.at("destination").get<std::string>()](auto const& ids, Reply reply)
         {
-            StartMove(ids, destination, [reply](Outcome outcome)
+            StartMove(ids, destination, MoveStart::Requested, [reply](Outcome outcome)
             {
                 reply(outcome.error ? Failure(*outcome.error, outcome.detail) : Success());
             });

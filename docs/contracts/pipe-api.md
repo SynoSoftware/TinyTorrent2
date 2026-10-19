@@ -293,12 +293,15 @@ scope and `kept_files` is null. Unknown names cannot authorize payload deletion.
 detects files already at the destination. It replies after the recovery marker
 commits, without occupying the pipe while files move. Rows carry `moving` and
 `move_destination`. While a row is `moving`, its `progress` is the share of its
-bytes that the move has placed, and 0 while it waits for its turn. Each torrent
+bytes that the move has placed, and 0 while it waits for its turn. The
+snapshot's `move_rate` is the bytes per second the move copied over the last
+second, which leaves renames out, and null while no move runs. Each torrent
 leaves `moving` and clears its marker when its own move ends, and failures
 remain visible on the torrents. Source sharing and destination use by an outside
 torrent have distinct refusals, so each offers an action that can resolve it.
-An interrupted saved move stays stopped until the person chooses its location
-through Move; the engine checks that location before resuming.
+An interrupted saved move continues once at the next launch, and otherwise waits
+until the person chooses its location through Move, as
+[engine moves](engine.md#removal-and-moves) describes.
 `recovery_required` remains the general unconfirmed-operation code for other
 commands, so file-specific instructions cannot misdirect an Add or priority
 edit.
@@ -336,9 +339,9 @@ isolation guarantee; an extra token would not create a stronger boundary.
 
 ## Wire representation
 
-Protocol version 21 uses a four-byte little-endian UTF-8 JSON frame length,
+Protocol version 22 uses a four-byte little-endian UTF-8 JSON frame length,
 bounded to 16 MiB. The endpoint is `TinyTorrent.<logon SID>`; each connecting
-client first receives `{type:"hello",version:21,session_id:"...",data_directory:"..."}`. The absolute data directory
+client first receives `{type:"hello",version:22,session_id:"...",data_directory:"..."}`. The absolute data directory
 keeps the same store for explicit Restart, which starts the engine beside the
 window rather than a path a pipe peer reports. Requests are
 `{request_id:signed-64-bit-integer,command:string,...}`. Replies repeat `request_id` and have
@@ -465,7 +468,7 @@ metadata without creating a payload handle; destination is applied at Add.
 Another instance of the storage worker reads and parses preview sources, so a
 slow share cannot hold up metadata commits; destruction cancels its blocked read.
 Snapshot contains session_id, torrents, settings, language_saved, download_rate,
-upload_rate, paused, limits, has_incoming, proxy, proxy_check, stopping, loading, storage_failed, and startup_error.
+upload_rate, move_rate, paused, limits, has_incoming, proxy, proxy_check, stopping, loading, storage_failed, and startup_error.
 Protocol version 7 adds `proxy` and `proxy_check`. A proxy check's outcome is
 `connected`, `sign_in_failed`, `unreachable`, `not_found`, `wrong_type` or
 `timed_out`. `proxy` is the outcome of the engine's check of the proxy in use,

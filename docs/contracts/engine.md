@@ -435,9 +435,10 @@ with the files of the torrents in the list that the command does not include, so
 a command that includes every torrent using a file can delete or move it. Delete
 files keeps a file that a torrent outside the command uses, and reports it. Move
 refuses when its scope contains such a file, names those torrents, and offers to
-move them together. A move of several torrents moves the files once and points
-the other torrents at the new folder with libtorrent's `reset_save_path` move
-flag, which verifies there instead of moving again. libtorrent permits
+move them together. A move of several torrents places a shared file once, and
+each member verifies it at the new folder. It refuses a group in which
+different files would take one path, or one file two paths, because a member
+would lose that file when another member's move takes it. libtorrent permits
 [re-addition before work on an old handle has ended](https://www.libtorrent.org/reference-Session.html#remove-torrent()),
 so a deletion or move that has not finished stays in this comparison after its
 torrent leaves the list.
@@ -516,20 +517,49 @@ empty up to the old save folder. The member leaves Moving when its folder is
 saved, so its verification and transfers continue while the rest of the group
 moves. Sources are deleted only after that save, so a crash never leaves a
 saved folder whose files are partly gone. A source that a later member of the
-group also uses stays until that member's sources go. After a crash during a
-copy, the sources are complete, and choosing the old folder through Move resumes the
-torrent there. After a crash during renames, each file is in one of the two
-folders, and choosing the destination counts the renamed files as moved and
-renames the rest. A failed cleanup is logged; it leaves only files that the
-destination also holds.
+group also uses stays until that member's sources go. A failed cleanup is
+logged; it leaves only files that the destination also holds.
 
-A failed copy deletes the copies it made and renames files back. The member
-reports Move failed, its new marker clears, and the rest of the group still
-moves. If a rename back fails, the files are split between the two folders, so
-the member keeps its marker and reports Move interrupted. The same applies to a
-member that shares a file an earlier member placed, because on one volume that
-file has left its old folder. A failed save, or a
-libtorrent failure after the files are placed, also keeps the marker.
+An interrupted move continues once on its own. A crash, power loss or forced
+exit does not mean the person changed their mind, so at the next launch the
+engine moves the torrents with that saved destination there again, together,
+without asking. Each saved destination records how far its move got. It is
+staged until the preflight passes, and placing once that is saved, before any
+file changes; only a placing move continues. A continued move is saved as
+waiting before it changes a file, so a move interrupted again waits for the
+person, because a move that itself ends the engine would otherwise repeat at
+every launch. A failure that keeps a marker also waits, because continuing it
+would repeat the failure. A staged move waits as well: its destination was
+never checked, so a file there can be someone else's. A continued move decides
+each file from the disk, because the engine does not know where it stopped: a
+file only at the destination was renamed and counts as moved; a file only at
+the source moves now. A copy has its file's name with `.!ttcopy` added until it
+is complete, so a file with that name is an unfinished copy, and every move
+deletes it at its destination. A file at the destination's name beside a source
+that holds data stays as the interrupted move's complete copy when its size and
+last write time match the source, which `CopyFile2` keeps and the paused
+torrent does not change. Any other such file can be someone else's, so the move
+refuses it and never deletes it. Choosing a checked destination through Move
+does the same. Busy files delay a continued move, and the torrent shows Moving
+while it waits. Another torrent that still acquires metadata also delays it,
+and the torrent shows that reason with the other torrent's name, as a move to
+the final folder does. Any other refusal shows on the torrent and waits for
+the person. A FAT volume keeps a time to 2 seconds, in local time, so a copy
+there matches its source's time within 2 seconds, or one hour after a daylight
+saving change.
+
+A failed copy deletes the copies and folders it made and renames files back.
+The member reports Move failed, its new marker clears, and the rest of the
+group still moves. If a rename back fails, the files are split between the two
+folders, so the member keeps its marker and reports Move interrupted. The same
+applies to a member that shares a file an earlier member placed, because on
+one volume that file has left its old folder, and to a member with files
+already at the destination, which stay there. A member that recovers an
+interrupted move keeps its marker after any failure. A failed save, or a
+libtorrent failure after the files are placed, also keeps the marker. A
+waiting member that shares a file with a failed member fails with it and
+reports the same problem, because moving it would take that file from the
+failed member's folder.
 
 The move preflight checks both physical and final names at source and destination.
 When the source is absent or an empty placeholder and the destination exists,
@@ -542,8 +572,20 @@ who moved files or whose drive letter changed needs only to choose their folder.
 Pieces that do not match are downloaded again over those files.
 
 One payload operation runs at a time. Its source and destination paths stay held
-until disk work has a known outcome. Add confirmations wait by reporting Files
-busy, including magnets whose paths are still unknown. A move also waits for
+until disk work has a known outcome.
+
+**Owner ruling:** Adding a torrent never waits for, and is never refused
+because of, another torrent's file work. A person adding a torrent wants it in
+the list now; a rename, move or deletion of other files is not their problem.
+The addition does its disk work on its own worker. While another torrent's
+files are being renamed or removed, the new torrent joins the list without
+choosing its file names and stays paused, writing nothing, until that work ends
+and its names are chosen, as a magnet's are once its metadata arrives. A move
+that places a file where a new torrent writes the same name fails for that
+member and keeps both files, which only happens when two torrents share a file
+name in one folder.
+
+A move also waits for
 pending additions and outside torrents still acquiring metadata: an unknown
 path cannot establish that the move reaches no other torrent's files. Other
 torrents and settings remain usable.
@@ -587,11 +629,11 @@ a failed preflight retains its recovery marker. Delete
 files deletes only in the save folder, never at an interrupted destination,
 because a held destination is not proof that existing files there belong to
 the torrent.
-After a crash during a move, that saved destination keeps the
-torrent paused with a Move interrupted error, so it does not download again
-into the old folder. Moving it to the folder that holds the files offers Use the
-files there, and verification establishes what is there. The user's running or
-paused intent does not change, and the move is neither rolled back nor repeated.
+Until its move continues or the person chooses a folder, that saved
+destination keeps the torrent paused with a Move interrupted error, so it does
+not download again into the old folder. Moving it to the folder that holds the
+files offers Use the files there, and verification establishes what is there.
+The user's running or paused intent does not change.
 
 Lost move alerts leave the operation pending with its paths held. Request a
 flush to obtain another acknowledgement after the disk work, then resolve it
@@ -655,8 +697,8 @@ An optional incomplete-download folder applies to new torrents. Each torrent
 retains its chosen final folder separately from its current save path. After
 its wanted files finish and their names settle, the owner of moves
 takes them to that final folder before notifying completion. Collisions and
-interrupted moves use the same refusal and recovery as a manual move; no file
-is replaced automatically. A refused move shows its reason on the torrent.
+interrupted moves use the same refusal and recovery as a manual move. A refused
+move shows its reason on the torrent.
 While another torrent still acquires metadata, the torrent shows that reason
 with the other torrent's name, and the move starts once the metadata arrives,
 so one magnet that never gets metadata cannot hold every finished torrent back

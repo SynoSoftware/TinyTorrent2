@@ -41,6 +41,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     private string? _errorSwitch;
     private double _downloadRate;
     private double _uploadRate;
+    private double? _moveRate;
     private long? _freeSpace;
     private Task? _spaceRead;
     private string? _spacePath;
@@ -103,6 +104,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             : Text.Get("window", "space_unknown");
     public string DownloadSpeed => Rate(_downloadRate);
     public string UploadSpeed => Rate(_uploadRate);
+    // Empty while no move runs.
+    public string MoveSpeed => _moveRate is { } rate ? Text.CopyRate(rate) : string.Empty;
+    public string MoveTip => Text.Format("window", "move_rate", MoveSpeed);
     public bool IsConnected => _connected;
     internal double DownloadRate => _downloadRate;
     internal double UploadRate => _uploadRate;
@@ -772,7 +776,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             Settings.Proxy.Route
         );
         var previousIp = (_externalIpv4, _externalIpv6);
-        var previousRates = (_downloadRate, _uploadRate);
+        var previousRates = (_downloadRate, _uploadRate, _moveRate);
         var previousTotals = (SessionTotals, LifetimeTotals);
         var previousCount = Torrents.Count;
         var previousSelection = _selected.Length;
@@ -894,6 +898,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         );
         _downloadRate = snapshot.GetProperty("download_rate").GetDouble();
         _uploadRate = snapshot.GetProperty("upload_rate").GetDouble();
+        var moveRate = snapshot.GetProperty("move_rate");
+        _moveRate = moveRate.ValueKind == JsonValueKind.Null ? null : moveRate.GetDouble();
         var transfers = snapshot.GetProperty("transfers");
         SessionTotals = ReadTotals(transfers.GetProperty("session"));
         LifetimeTotals = ReadTotals(transfers.GetProperty("all_time"));
@@ -952,7 +958,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             if (limitsChanged || minute != _limitsMinute)
                 RefreshLimits();
             _limitsMinute = minute;
-            if (limitsChanged || previousRates != (_downloadRate, _uploadRate))
+            if (limitsChanged || previousRates != (_downloadRate, _uploadRate, _moveRate))
                 RefreshRates();
             if (
                 previousIncoming
@@ -1471,6 +1477,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     {
         Changed(nameof(DownloadSpeed));
         Changed(nameof(UploadSpeed));
+        Changed(nameof(MoveSpeed));
         Changed(nameof(DownloadStatus));
         Changed(nameof(UploadStatus));
         Changed(nameof(DownloadTip));

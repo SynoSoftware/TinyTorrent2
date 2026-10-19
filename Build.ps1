@@ -204,7 +204,8 @@ try {
         logs = $logs; binaries = Get-Binaries $root $parts.Keys
     }
     Add-Content -LiteralPath $history -Value ($build | ConvertTo-Json -Compress -Depth 3) -Encoding utf8NoBOM
-    $stray = & "$env:ProgramFiles\Everything\es.exe" -path $repository /ad 'wfn:bin|wfn:obj|wfn:bin-fl|wfn:TestResults' '!*\artifacts\*' '!*\3rdParty\*' '!*\.claude\*'
+    $stray = & "$env:ProgramFiles\gozler\gozler.exe" -path $repository -ad 'regex:^(bin|obj|bin-fl|TestResults)$' '!*\artifacts\*' '!*\3rdParty\*' '!*\.claude\*' -n all
+    if ($LASTEXITCODE -ne 0) { Write-Warning "gozler could not check for generated output outside artifacts/ (exit $LASTEXITCODE)." }
     if ($stray) { Write-Warning "Generated output appeared outside artifacts/; find the project that wrote it:`n$($stray -join "`n")" }
     if (-not $succeeded) {
         Write-Host "Build failed. Logs: $($logs -join ', ')"

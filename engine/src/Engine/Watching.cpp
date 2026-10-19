@@ -111,7 +111,7 @@ void Engine::State::WatchFolder()
             auto [candidate, fresh] = watchedFiles.try_emplace(source, WatchedFile{stamp, now + std::chrono::seconds(5)});
             if (!fresh && candidate->second.stamp != stamp)
                 candidate->second = {stamp, now + std::chrono::seconds(5)};
-            if (now < candidate->second.readyAt || FilesBusy())
+            if (now < candidate->second.readyAt)
                 continue;
             watchPhase = WatchPhase::Adding;
             AddSource(source, [this, source, stamp](Outcome outcome, Added added)
@@ -123,7 +123,7 @@ void Engine::State::WatchFolder()
                     if (file != watchedFiles.end() && file->second.stamp == stamp)
                     {
                         file->second.readyAt = std::chrono::steady_clock::now() + std::chrono::seconds(30);
-                        if (*outcome.error != ErrorCode::FilesBusy && *outcome.error != ErrorCode::Overloaded &&
+                        if (*outcome.error != ErrorCode::Overloaded &&
                             !file->second.reported)
                         {
                             Notify(NoticeKind::AddFailed, source, outcome.detail);
