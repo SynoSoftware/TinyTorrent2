@@ -109,10 +109,10 @@ bool Engine::State::SameFolder(std::string const& left, std::string const& right
 
 bool Engine::State::FilesBusy() const
 {
-    return move.has_value() || RemovingOrRenaming();
+    return move.has_value() || DeletingOrRenaming();
 }
 
-bool Engine::State::RemovingOrRenaming() const
+bool Engine::State::DeletingOrRenaming() const
 {
     return !deletions.empty() || rename.has_value();
 }
@@ -123,7 +123,7 @@ void Engine::State::ContinueNames()
     // member that has ended prepares its names while the rest of its group
     // moves. The move preflight keeps the move's paths apart from every other
     // torrent's.
-    if (!changes.IsIdle() || RemovingOrRenaming())
+    if (!changes.IsIdle() || DeletingOrRenaming())
         return;
     constexpr std::ptrdiff_t limit = 8;
     auto pending = std::count_if(torrents.begin(), torrents.end(),
@@ -825,18 +825,18 @@ Outcome Engine::State::FilesReady(std::vector<std::string> const& ids)
     {
         return {ErrorCode::FilesBusy};
     }
-    std::optional<Outcome> refusal;
+    Outcome refusal;
     EachWorking([&ids, &refusal](Torrent const& torrent)
     {
-        if (refusal)
+        if (refusal.error)
             return;
         if (torrent.restore || !torrent.handle.torrent_file())
             refusal = Outcome{ErrorCode::MetadataUnavailable, torrent.Name()};
         else if (torrent.FilesBusy() || (Contains(ids, torrent.torrentId) && torrent.priorityCompletion))
             refusal = Outcome{ErrorCode::FilesBusy};
     });
-    if (refusal)
-        return std::move(*refusal);
+    if (refusal.error)
+        return refusal;
     return NamesReady() ? Outcome{} : Outcome{ErrorCode::FilesBusy};
 }
 

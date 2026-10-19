@@ -8,8 +8,8 @@ param(
     [string] $EnginePath,
     [switch] $Transfer,
     [switch] $OptIn,
-    # RemoveDuringMove moves its payload to a folder here, on another volume.
-    [string] $Volume
+    # RemoveDuringMove moves its payload into this folder, on another volume.
+    [string] $Folder
 )
 
 $ErrorActionPreference = 'Stop'
@@ -46,8 +46,8 @@ function Path-Volume([string] $path) {
 # starts under artifacts.
 if ($Check -eq 'RemoveDuringMove') {
     $payloadVolume = Path-Volume (Join-Path $repository 'artifacts')
-    if (-not ($Volume -and (Test-Path -LiteralPath $Volume -PathType Container) -and (Path-Volume $Volume) -ne $payloadVolume)) {
-        throw "RemoveDuringMove needs -Volume, an existing folder on another volume than $payloadVolume, which holds the check's payload."
+    if (-not ($Folder -and (Test-Path -LiteralPath $Folder -PathType Container) -and (Path-Volume $Folder) -ne $payloadVolume)) {
+        throw "RemoveDuringMove needs -Folder, an existing folder on another volume than $payloadVolume, which holds the check's payload."
     }
 }
 $engineName = ([xml](Get-Content (Join-Path $repository 'Directory.Build.props'))).Project.PropertyGroup.EngineTargetName | Where-Object { $_ }
@@ -61,7 +61,7 @@ $payload = Join-Path $directory 'payload'
 $null = New-Item -ItemType Directory -Path $payload
 $volumeFolder = $null
 if ($Check -eq 'RemoveDuringMove') {
-    $volumeFolder = Join-Path ([IO.Path]::GetFullPath($Volume)) ('TinyTorrent-' + $Check + '-' + [guid]::NewGuid())
+    $volumeFolder = Join-Path ([IO.Path]::GetFullPath($Folder)) ('TinyTorrent-' + $Check + '-' + [guid]::NewGuid())
     $null = New-Item -ItemType Directory -Path $volumeFolder
 }
 . (Join-Path $PSScriptRoot 'Engine.ps1')

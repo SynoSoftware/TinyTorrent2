@@ -631,18 +631,18 @@ are still kept. Such a torrent also leaves the saved list before Delete
 replies, so it does not return after a restart; if the engine stops before
 removing it, its files stay on disk.
 
-A removed torrent whose own files are still busy is out of the list, the saved
-list and every command at once. Until the engine gives it to libtorrent for
-removal, a preview or Add of the same content is refused with
-`torrent_removing`, because libtorrent cannot hold two copies of one torrent.
-This lasts while the torrent's own move, rename, name preparation or
-Zone.Identifier write runs. Delete files also waits while an addition runs or
-while another torrent's file names are still being read, because only then can
-it find the files other torrents use. After that the content can be added
-again, and the Add dialog names a deletion that still holds files at the
-destination. Such a waiting removal does not by itself stop other torrents
-from preparing their names or finishing their renames: the deletion compares
-every other torrent's names when it starts, so a shared file is still kept.
+Remove, like Delete files, takes a torrent out of the list, the saved list and
+every command at once, even while its own files are busy. The engine gives it
+to libtorrent for removal when its own move, rename, name preparation, file
+name check or Zone.Identifier write ends. Delete files also waits until
+another torrent's file names are read, because only then can it find the files
+other torrents use. Until the engine gives it to libtorrent, a preview or Add of
+the same content is refused with `torrent_removing`, because libtorrent cannot
+hold two copies of one torrent. After that the content can be added again, and
+the Add dialog names a deletion that still holds files at the destination. A
+waiting removal does not stop other torrents from preparing their names or
+finishing their renames: the deletion compares every other torrent's names when
+it starts, so a shared file is still kept.
 
 Before moving or renaming shared files, pause every owner and wait for each
 storage's disk-release callback on the worker that changes the files. A paused flag or an

@@ -160,7 +160,7 @@ void Engine::State::PrepareAddition(std::string const& id, lt::torrent_handle ha
     // are chosen, so the torrent then joins the list without them and
     // ContinueNames chooses them once that work ends. It stays paused until
     // then, so it writes nothing under a wrong name.
-    if (!params.ti || RemovingOrRenaming())
+    if (!params.ti || DeletingOrRenaming())
     {
         SaveAddition(id, handle);
         return;
@@ -352,9 +352,9 @@ void Engine::State::Abandon(std::string id, Outcome outcome, Added added)
     if (found->second.phase == AdditionPhase::Saving)
     {
         store.Run([file = ResumeFile(id)] { std::filesystem::remove(file); },
-            [this, id](StorageOutcome removed)
+            [this, id](StorageOutcome cleanup)
         {
-            if (removed.failure)
+            if (cleanup.failure)
             {
                 log.Write("add", id, "metadata_cleanup_failed");
             }

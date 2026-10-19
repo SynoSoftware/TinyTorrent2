@@ -648,7 +648,7 @@
     "alias_conflict": "This torrent conflicts with another download. Review the existing torrent before adding it.",
     "preview_failed": "Couldn't get the torrent metadata. Try again.",
     "torrent_removed": "The torrent is no longer in the list.",
-    "torrent_removing": "This torrent is still being removed. Add it again after that if you want it.",
+    "torrent_removing": "This torrent is still being removed. You can add it again when the removal has finished.",
     "shutting_down": "TinyTorrent is closing."
   },
   "connection": {

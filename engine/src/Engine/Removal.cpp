@@ -7,11 +7,11 @@
 
 namespace tt
 {
-// Removes the torrents from the list. With a mode it also deletes their
-// files. A torrent that CanRemove refuses, or whose deletion waits for other
-// torrents' names, leaves the list at once and its handle goes to libtorrent
-// later. With a torrentFiles mode it deletes the .torrent files they were
-// added from once the list no longer holds them.
+// Removes the torrents from the list once the saved list no longer holds
+// them. With a mode it also deletes their files. CanRemove and NamesReady
+// decide only when each handle goes to libtorrent: now, or later from
+// RemoveDeferred. With a torrentFiles mode it deletes the .torrent files they
+// were added from once the list no longer holds them.
 void Engine::State::Remove(std::vector<std::string> const& ids,
     std::function<void(Outcome, std::optional<std::size_t> kept)> completion,
     std::optional<DeletionMode> mode, std::optional<DeletionMode> torrentFiles)
@@ -157,9 +157,9 @@ void Engine::State::RemoveHandles(std::vector<std::string> const& ids, std::list
         }
         if (failure)
             throw std::system_error(failure);
-    }, [this](StorageOutcome removed)
+    }, [this](StorageOutcome cleanup)
     {
-        if (removed.failure)
+        if (cleanup.failure)
         {
             log.Write("remove", "", "metadata_cleanup_failed");
         }
@@ -175,7 +175,7 @@ bool Engine::State::CanRemove(Torrent const& torrent, std::optional<DeletionMode
     return !torrent.FilesBusy() && (!mode || additions.empty());
 }
 
-// Runs once the removal's document commit has succeeded. The torrent stays
+// Runs once the removal's document commit has succeeded. The torrent is
 // paused, and its edit and detail reading end now, so nothing that answers the
 // window waits for its files.
 void Engine::State::Extract(std::string const& id, std::optional<DeletionMode> mode)
@@ -189,9 +189,6 @@ void Engine::State::Extract(std::string const& id, std::optional<DeletionMode> m
     {
         FailReading(Failure(ErrorCode::TorrentRemoved));
     }
-    torrent.needsRecheck = false;
-    torrent.prioritiesPending = false;
-    torrent.waitingMove.reset();
     torrent.facts.intent = Intent::Paused;
     torrent.ApplyIntent();
     handles.erase(torrent.handle);

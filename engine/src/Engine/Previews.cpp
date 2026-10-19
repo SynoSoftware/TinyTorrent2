@@ -15,8 +15,9 @@ constexpr std::size_t previewLimit = 256;
 }
 
 // The torrents, listed or still being removed, that already use a file this
-// content would use at the destination. A torrent whose names are still being read counts only
-// with its final names, so the Add dialog never waits for them.
+// content would use at the destination. A torrent whose names are still being
+// read counts only with its final names, so the Add dialog never waits for
+// them.
 std::vector<std::string> Engine::State::SharedFiles(std::shared_ptr<lt::torrent_info const> const& metadata,
     std::string const& destination) const
 {

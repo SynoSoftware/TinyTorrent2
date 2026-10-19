@@ -6,6 +6,7 @@
 #include <libtorrent/settings_pack.hpp>
 #include <libtorrent/fingerprint.hpp>
 #include <algorithm>
+#include <stdexcept>
 #include <utility>
 
 namespace tt
@@ -568,8 +569,9 @@ Torrent& Engine::State::Working(std::string const& id)
 
 Torrent const& Engine::State::Working(std::string const& id) const
 {
-    auto found = torrents.find(id);
-    return found != torrents.end() ? found->second : removed.at(id).torrent;
+    if (auto torrent = FindWorking(id))
+        return *torrent;
+    throw std::out_of_range("No torrent " + id);
 }
 
 Torrent* Engine::State::FindWorking(std::string const& id)

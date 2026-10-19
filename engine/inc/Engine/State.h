@@ -475,14 +475,12 @@ public:
     std::vector<std::string> queueOrder;
     bool queuePending = false;
     std::string language;
-    // The list: rows, the saved document and commands.
+    // Listed torrents: they have rows, are saved, and accept commands.
     std::map<std::string, Torrent> torrents;
-    // A torrent the person removed whose own files are still busy: the
-    // running member of a move, an owner of the running rename, name
-    // preparation, a Zone.Identifier write, or a deletion that waits for a
-    // running addition. It is out of the list and the saved document. Its
-    // handle goes to libtorrent for removal when that work ends, at once for
-    // a torrent whose files are free.
+    // A torrent the person removed, out of the list and the saved document. It
+    // stays until RemoveHandles gives its handle to libtorrent: in the
+    // removal's own commit when nothing holds it, otherwise from
+    // RemoveDeferred once CanRemove and, with a mode, NamesReady allow it.
     struct Removal
     {
         Torrent torrent;
@@ -802,7 +800,7 @@ public:
     static bool SameFolder(std::string const& left, std::string const& right);
     bool FilesBusy() const;
     // A deletion or rename runs.
-    bool RemovingOrRenaming() const;
+    bool DeletingOrRenaming() const;
     static std::vector<std::filesystem::path> FilePaths(lt::torrent_info const& metadata,
         std::string const& folder, Layout layout = Layout::Keep);
     // The torrent's files at `folder`, or without one at its save folder and
