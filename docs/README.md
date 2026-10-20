@@ -69,6 +69,11 @@ The [ring copy research](plans/ring-copy-plan.md) keeps the evidence and the
 design of a copy engine of the engine's own, for moves between hard disks. It
 will not be implemented.
 
+The [drive work plan](plans/drive-work-plan.md) is a nice-to-have feature,
+probably not built if it proves too complicated: disk work on different
+physical drives runs at the same time, one job per drive. It holds the
+specification and the implementation plan, for checks and moves together.
+
 The [communication plan](plans/communication-plan.md) is paused. It holds the
 scoped-subscription design for torrent detail, which the owner has not decided
 to implement; its implemented first stage lives in the protocol and engine
