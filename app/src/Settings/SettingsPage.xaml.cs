@@ -23,6 +23,10 @@ public sealed partial class SettingsPage : UserControl
     private readonly HashSet<TextBox> _editors = [];
     private bool _refreshing;
     private IReadOnlyList<ComboBoxItem>? _languageItems;
+    // The text that names each language item. The box moves the selected
+    // item's content into its own presenter, so the item's Content is null
+    // while it is selected.
+    private readonly List<TextBlock> _languageNames = [];
     private bool _showAdvanced;
     private ThemePicker? _themes;
     private WindowsIntegration? _integration;
@@ -267,7 +271,8 @@ public sealed partial class SettingsPage : UserControl
         [
             .. Strings.Languages.Select(language =>
             {
-                var name = Model.Text.LanguageChoice(language);
+                var name = new TextBlock { Text = Model.Text.LanguageChoice(language) };
+                _languageNames.Add(name);
                 var flag = new TextBlock
                 {
                     Text = Flags.Glyph(Strings.FlagRegion(language)),
@@ -281,10 +286,10 @@ public sealed partial class SettingsPage : UserControl
                     {
                         Orientation = Orientation.Horizontal,
                         Spacing = 6,
-                        Children = { flag, new TextBlock { Text = name } },
+                        Children = { flag, name },
                     },
                 };
-                AutomationProperties.SetName(item, name);
+                AutomationProperties.SetName(item, name.Text);
                 AutomationProperties.SetAutomationId(
                     item,
                     language.Name switch
@@ -299,17 +304,19 @@ public sealed partial class SettingsPage : UserControl
         ];
 
     // The language items name every other language in the window's language.
-    // They exist once the Appearance panel has loaded.
     private void ShowLanguageNames()
     {
-        if (_languageItems is null)
-            return;
-        foreach (var (item, language) in _languageItems.Zip(Strings.Languages))
+        var items = LanguageItems;
+        for (var i = 0; i < items.Count; i++)
         {
-            var name = Model.Text.LanguageChoice(language);
-            ((TextBlock)((StackPanel)item.Content).Children[1]).Text = name;
-            AutomationProperties.SetName(item, name);
+            var name = Model.Text.LanguageChoice(Strings.Languages[i]);
+            _languageNames[i].Text = name;
+            AutomationProperties.SetName(items[i], name);
         }
+        // The bindings build the items before the Appearance panel loads the
+        // box, which happens when the person first opens that panel.
+        if (Languages is null)
+            return;
         // The box keeps the text its item had when it was selected.
         var selected = Languages.SelectedItem;
         Languages.SelectedItem = null;

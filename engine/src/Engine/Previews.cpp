@@ -14,10 +14,12 @@ namespace
 constexpr std::size_t previewLimit = 256;
 }
 
-// The torrents, listed or still being removed, that already use a file this
-// content would use at the destination. A torrent whose names are still being
-// read counts only with its final names, so the Add dialog never waits for
-// them.
+// The torrents that already use a file this content would use at the
+// destination: the listed ones, and the removed ones whose files are being
+// deleted. A torrent removed with its files kept never touches them again, so
+// adding the same content back right after its removal is not a conflict. A
+// torrent whose names are still being read counts only with its final names,
+// so the Add dialog never waits for them.
 std::vector<std::string> Engine::State::SharedFiles(std::shared_ptr<lt::torrent_info const> const& metadata,
     std::string const& destination) const
 {
@@ -27,7 +29,7 @@ std::vector<std::string> Engine::State::SharedFiles(std::shared_ptr<lt::torrent_
         return names;
     }
     auto wanted = FilePaths(*metadata, destination, settings.layout);
-    EachWorking([this, &wanted, &names](Torrent const& torrent)
+    auto visit = [this, &wanted, &names](Torrent const& torrent)
     {
         auto other = torrent.restore ? torrent.restore->ti : torrent.handle.torrent_file();
         if (!other)
@@ -42,7 +44,18 @@ std::vector<std::string> Engine::State::SharedFiles(std::shared_ptr<lt::torrent_
                 break;
             }
         }
-    });
+    };
+    for (auto const& [id, torrent] : torrents)
+    {
+        visit(torrent);
+    }
+    for (auto const& [id, removal] : removed)
+    {
+        if (removal.mode)
+        {
+            visit(removal.torrent);
+        }
+    }
     auto holders = Holders(metadata, destination);
     names.insert(names.end(), holders.begin(), holders.end());
     return names;

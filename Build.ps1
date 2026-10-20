@@ -7,7 +7,8 @@ param(
     # Builds only the engine and leaves the app folder alone, because the
     # window there may not speak this engine's protocol.
     [switch] $Engine,
-    # Builds only the app and copies the engine's last build beside it.
+    # Builds only the app, with an engine of the current sources beside it:
+    # one already built in any output folder, or one compiled when none is.
     [switch] $App,
     # Further projects to build last, such as the TableView tests.
     [string[]] $Project = @()
@@ -27,8 +28,9 @@ $engineName = $properties.EngineTargetName | Where-Object { $_ }
 $windowName = $properties.WindowTargetName | Where-Object { $_ }
 # The parts this build compiles. Each excludes what only the other part reads,
 # so an edit to one part does not rebuild the other.
+$engineInputs = @(':(exclude)app', ':(exclude)lib/TableView', ':(exclude)dotnet-tools.json')
 $parts = [ordered]@{}
-if (-not $App) { $parts.engine = @(':(exclude)app', ':(exclude)lib/TableView', ':(exclude)dotnet-tools.json') }
+if (-not $App) { $parts.engine = $engineInputs }
 if (-not $Engine) { $parts.app = @(':(exclude)engine') }
 if (-not $parts.Count) { $parts.engine = @(); $parts.app = @() }
 if ($extras) { $parts.projects = @() }
@@ -81,9 +83,35 @@ function Get-Binaries([string] $Root, [string[]] $Built) {
     return $binaries
 }
 
+# Returns the hash of each output root's engine whose latest build is the
+# current engine source and still in place, keyed by root. Both flavours of
+# this configuration put the engine in the same place.
+function Find-Engines([string] $Source) {
+    $latest = @{}
+    if (Test-Path -LiteralPath $history) {
+        foreach ($line in Get-Content -LiteralPath $history) {
+            $build = $line | ConvertFrom-Json
+            if ($build.flavour -like "$($configuration.ToLowerInvariant())_*" -and $build.sources.engine) {
+                $latest[$build.root] = $build
+            }
+        }
+    }
+    $engines = @{}
+    foreach ($root in $latest.Keys) {
+        $build = $latest[$root]
+        if ($build.result -eq 'succeeded' -and $build.sources.engine -eq $Source -and
+            (Get-Binaries $root 'engine').engine -eq $build.binaries.engine) {
+            $engines[$root] = $build.binaries.engine
+        }
+    }
+    return $engines
+}
+
 # Returns the output root where the latest build of each requested part, in
 # this flavour, is that part's current source, so a repeated request costs no
-# compilation. Extra projects count only with the same extra projects.
+# compilation. The app's folder must also hold a current engine, because the
+# app copied whichever engine its root had when it was built. Extra projects
+# count only with the same extra projects.
 function Find-Current([hashtable] $Sources) {
     if (-not (Test-Path -LiteralPath $history)) { return }
     $latest = @{}
@@ -104,6 +132,11 @@ function Find-Current([hashtable] $Sources) {
                 $current = $false
                 break
             }
+        }
+        if ($current -and $Sources.Contains('app')) {
+            $copy = Join-Path (Get-Folder $root) "$engineName.exe"
+            $current = (Test-Path -LiteralPath $copy) -and
+                $engines.Values -contains (Get-FileHash -LiteralPath $copy -Algorithm SHA256).Hash
         }
         if ($current) { return $root }
     }
@@ -166,6 +199,8 @@ try {
     # Read after the lock, so a build that finished while this one waited counts.
     $sources = @{}
     foreach ($part in $parts.Keys) { $sources[$part] = Get-Source $parts[$part] }
+    $engineSource = if ($parts.Contains('engine')) { $sources.engine } else { Get-Source $engineInputs }
+    $engines = Find-Engines $engineSource
     $current = Find-Current $sources
     if ($current) {
         Write-Host "Up to date: $(Get-Output $current)"
@@ -173,6 +208,27 @@ try {
         exit 0
     }
     $root = Find-Free
+    # The app build copies its root's engine beside itself, so that engine must
+    # be a build of the current engine source. A current build in another root
+    # is copied in; only when none exists is the engine compiled.
+    if ($parts.Contains('app') -and -not $parts.Contains('engine') -and -not $engines.ContainsKey($root)) {
+        $donor = @($engines.Keys)[0]
+        if ($donor) {
+            $source = Get-Product $donor 'engine'
+            $target = Get-Product $root 'engine'
+            $null = New-Item -ItemType Directory -Path (Split-Path $target) -Force
+            foreach ($extension in '.exe', '.pdb') {
+                $file = [IO.Path]::ChangeExtension($source, $extension)
+                if (Test-Path -LiteralPath $file) { Copy-Item -LiteralPath $file -Destination ([IO.Path]::ChangeExtension($target, $extension)) -Force }
+            }
+            # The root's incremental-link state describes its old engine, so
+            # its next engine build links in full.
+            Remove-Item -LiteralPath ([IO.Path]::ChangeExtension($target, '.ilk')) -ErrorAction SilentlyContinue
+            Write-Host "Copied the current engine from $donor"
+        }
+        else { $parts.Insert(0, 'engine', $engineInputs) }
+        $sources.engine = $engineSource
+    }
     $common = @("/p:Configuration=$configuration", '/p:Platform=x64')
     if ($root -ne $artifacts) { $common += "/p:ArtifactsPath=$root" }
     $managed = @('/restore') + $common
@@ -183,11 +239,6 @@ try {
     if ($parts.Contains('engine')) { $steps += @{ project = 'engine/src/Engine.vcxproj'; arguments = $common } }
     if ($parts.Contains('app')) { $steps += @{ project = 'app/src/TinyTorrent.csproj'; arguments = $managed } }
     $steps += @($extras | ForEach-Object { @{ project = $_; arguments = $managed } })
-    # The app build copies the engine beside itself.
-    if (-not $parts.Contains('engine') -and -not (Test-Path -LiteralPath (Get-Product $root 'engine'))) {
-        Write-Host "$root has no engine build for the app; build without -App once."
-        exit 1
-    }
     $logs = @()
     $succeeded = $true
     Write-Host "Building $($parts.Keys -join ', ') ($flavour) into $root"
@@ -201,7 +252,7 @@ try {
         result = if ($succeeded) { 'succeeded' } else { 'failed' }
         flavour = $flavour; projects = $extras; root = $root; checkout = $repository; sources = $sources
         commit = (git -C $repository rev-parse --short HEAD); changed = @(git -C $repository status --porcelain).Count
-        logs = $logs; binaries = Get-Binaries $root $parts.Keys
+        logs = $logs; binaries = Get-Binaries $root $sources.Keys
     }
     Add-Content -LiteralPath $history -Value ($build | ConvertTo-Json -Compress -Depth 3) -Encoding utf8NoBOM
     $stray = & "$env:ProgramFiles\gozler\gozler.exe" -path $repository -ad 'regex:^(bin|obj|bin-fl|TestResults)$' '!*\artifacts\*' '!*\3rdParty\*' '!*\.claude\*' -n all

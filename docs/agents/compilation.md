@@ -34,7 +34,10 @@ covers the whole list:
   engine and prints its path. It leaves the app folder alone, because the
   window there may not speak this engine's protocol; to run the window with a
   changed engine, build without `-Engine`. Add `-App` when only app code
-  changed: it compiles the app and copies the engine's last build beside it.
+  changed: it compiles the app and puts an engine of the current sources
+  beside it, copied from any output folder that has one, so the window always
+  speaks its engine's protocol. It compiles the engine only when no output
+  folder has a current one.
   Without either, both build. Each part ignores edits that only the other part
   reads, so another agent's work on the other part does not rebuild yours.
 - Add `-Capture` when the list includes a capture. The capture build compiles

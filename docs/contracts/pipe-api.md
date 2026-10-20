@@ -507,7 +507,9 @@ whether it matches the saved preference. The store retains only saved settings;
 a failed save leaves the live choice selected and reports the failure.
 Preview replies contain preview_id, name, size, files (index, path, size,
 priority, padding), metadata_ready, hashes (full v1/v2 hexadecimal strings),
-trackers (URLs), merge_available, error, shared_with (torrent names), and
+trackers (URLs), merge_available, error, shared_with (the names of listed
+torrents, and of removed torrents whose files are being deleted, that use a
+file of this content at the destination), and
 torrent_id of the existing torrent when the source is a duplicate. Add returns torrent_id after storage
 commit with duplicate:false, or the existing torrent_id with duplicate:true.
 `preview` and `add` fail with `torrent_removing` while a removed torrent with

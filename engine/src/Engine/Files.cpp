@@ -1065,9 +1065,11 @@ std::vector<std::string> Engine::State::Holders(std::shared_ptr<lt::torrent_info
                 names.push_back(found->Name());
         }
     }
+    // A removal that keeps the files holds them only until libtorrent lets go
+    // and never changes them, so it shares nothing with new content.
     for (auto const& deleting : deletions)
     {
-        if (holds(deleting.holds))
+        if (deleting.mode && holds(deleting.holds))
             names.push_back(deleting.names);
     }
     return names;
