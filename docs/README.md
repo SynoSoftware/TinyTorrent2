@@ -16,7 +16,9 @@ here so moving a topic does not require renaming its links.
 
 Before compiling, launching a built executable or resolving build failures,
 read [compilation](agents/compilation.md). It owns when a task compiles, the shared
-build script and failure handling.
+build script and failure handling. Before planning work that other agents
+will do, read [coordination](agents/coordination.md). It owns how a lead plans,
+splits, briefs and checks work across agents.
 
 The architecture's [ownership decisions](contracts/architecture.md#ownership-decisions)
 record settled ownership and deferred design choices. GitHub issues own actionable work,
@@ -86,7 +88,8 @@ has three folders:
 
 - `contracts/` describes how the product works now. It is the authority for
   product behavior and changes alongside it.
-- `agents/` holds the working rules for building, testing, naming and comments.
+- `agents/` holds the working rules for building, testing, naming, comments
+  and coordinating agents.
 - `plans/` holds only work that is open or in progress. A plan's filename
   starts with a two-digit number, given when its work starts, so the folder
   lists plans in order of implementation. When the work is done, its live

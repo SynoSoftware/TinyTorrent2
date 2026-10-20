@@ -66,6 +66,8 @@ permanent design, code, and review cost that the user never sees.
   [TableView instructions](lib/TableView/AGENTS.md).
 - Before writing, changing, deleting, choosing, or running tests, read
   [testing](docs/agents/testing.md). It decides whether a test is worth writing.
+- Before planning work that other agents will do, briefing them, or checking
+  their results, read [coordination](docs/agents/coordination.md).
 - Before designing or changing a type, an enum, an interface, or where a seam
   goes, use the `/codebase-design` skill. It gives every session the same design
   vocabulary and principles, so a design is judged by one standard instead of
