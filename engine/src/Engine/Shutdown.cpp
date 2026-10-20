@@ -1,15 +1,18 @@
 #include "Engine/State.h"
+#include <algorithm>
 
 namespace tt
 {
 namespace
 {
-// Bound pending priority edits, torrent pauses and the final transfer sample
-// so a lost acknowledgement cannot leave Exit waiting indefinitely.
-constexpr auto phaseTimeout = std::chrono::seconds(30);
+// Bounds the wait for the moves to stop, pending priority edits, torrent
+// pauses and the final transfer sample, so that a lost acknowledgement or a
+// drive that stopped responding cannot keep Exit from saving well within the
+// 10 seconds after which the desktop ends the process.
+constexpr auto phaseTimeout = std::chrono::seconds(2);
 }
 
-void Engine::State::Shutdown(std::function<void(std::optional<std::string> failure)> report)
+void Engine::State::Shutdown(std::function<void(ShutdownEnd end)> report)
 {
     if (shutdown)
     {
@@ -17,16 +20,40 @@ void Engine::State::Shutdown(std::function<void(std::optional<std::string> failu
     }
     if (connectionTest)
         ReleaseConnectionTest(connectionTest->connectionId, ConnectionPhase::Cancelled);
+    // Taken before the cancel, which ends the jobs that the tasks name.
+    bool ready = startup == Startup::Ready;
+    if (ready)
+        exitTasks = Tasks();
     StartFinalSave();
+    CancelFileWork();
     FailReading(Failure(ErrorCode::ShuttingDown));
     Discard([](Preview const&) { return true; });
     log.Write("shutdown", "", "requested");
     shutdown = std::move(report);
+    // The tasks are saved before anything waits, so an end at 10 seconds
+    // loses none of them.
+    if (ready && !changes.Queue([this]
+    {
+        changes.Commit([document = Saved()] { return document.ToJson(); }, [this](Outcome outcome)
+        {
+            if (outcome.error)
+                FailFinalSave(outcome.detail);
+        });
+    }))
+        FailFinalSave();
 }
 
-// Starts the shutdown phases, also again after a failed final save. A new
-// attempt keeps `pausing`, so it waits again for torrents that never confirmed
-// their pause instead of saving while their disk work may still run.
+void Engine::State::CancelFileWork()
+{
+    for (auto const& moving : moves)
+    {
+        auto none = MoveCancel::None;
+        if (moving.progress && StopsAtExit(moving))
+            moving.progress->cancel.compare_exchange_strong(none, MoveCancel::Keep);
+    }
+    exitStop.request_stop();
+}
+
 void Engine::State::StartFinalSave()
 {
     saveFailure.reset();
@@ -42,9 +69,8 @@ void Engine::State::StartFinalSave()
     }
 }
 
-// Records that the current final save failed; it does nothing before
-// shutdown. A failure without a cause keeps a cause already recorded, so the
-// toast still names the file and Windows' reason.
+// Records that a save during shutdown failed; it does nothing before
+// shutdown. A failure without a cause keeps a cause already recorded.
 void Engine::State::FailFinalSave(std::optional<std::string> cause)
 {
     if (!IsShuttingDown())
@@ -61,9 +87,10 @@ void Engine::State::FailFinalSave(std::optional<std::string> cause)
     }
 }
 
-// Shutdown waits for queued changes and additions, pauses every torrent,
-// waits for outstanding checkpoints, and then saves every torrent a
-// final time.
+// Shutdown waits for queued changes and additions and for the moves to stop,
+// saves the proofs of their copies, pauses every torrent, saves every torrent
+// a final time, and then waits for the file work that may still use the
+// session.
 void Engine::State::ContinueShutdown()
 {
     if (!shutdown)
@@ -78,43 +105,41 @@ void Engine::State::ContinueShutdown()
         }
         return;
     }
-    if (shutdownPhase == ShutdownPhase::Retrying)
+    // A save that fails now would fail again, so Exit ends as after a crash.
+    // The tasks and markers saved before it still hold the work.
+    if (saveFailure)
     {
-        if (std::chrono::steady_clock::now() - *phaseStarted < checkpointRetry)
-        {
-            return;
-        }
-        StartFinalSave();
+        EndAbruptly("save_failed");
+        return;
     }
     if (!changes.IsIdle() || !additions.empty())
     {
         return;
     }
-    if (!payload.IsIdle())
-        return;
-    // A removed torrent has already left the saved list, so nothing after
-    // Exit would delete its files or its resume file.
-    if (FilesBusy() || !removed.empty())
+    // A move has stopped once its worker is idle, or once its copy waits,
+    // parked, for the process to end. The move of a removed torrent has no
+    // task, so Exit waits for it to finish its current member.
+    auto stopped = [this](Move const& moving)
     {
-        if (rename)
-        {
-            if (!phaseStarted)
-                phaseStarted = std::chrono::steady_clock::now();
-            if (std::chrono::steady_clock::now() - *phaseStarted >= phaseTimeout)
-            {
-                FailFinalSave();
-                log.Write("shutdown", "", "rename_pending");
-                RetryFinalSave();
-                return;
-            }
-        }
-        return;
+        return StopsAtExit(moving) && (moving.worker->IsIdle() || (moving.progress && moving.progress->parked));
+    };
+    auto finishing = [this](Move const& moving) { return !StopsAtExit(moving); };
+    auto now = std::chrono::steady_clock::now();
+    if (!phaseStarted)
+    {
+        phaseStarted = now;
     }
+    bool expired = now - *phaseStarted >= phaseTimeout;
     if (shutdownPhase == ShutdownPhase::Draining)
     {
-        if (!phaseStarted)
+        if ((!expired && !std::all_of(moves.begin(), moves.end(), stopped)) ||
+            std::any_of(moves.begin(), moves.end(), finishing))
         {
-            phaseStarted = std::chrono::steady_clock::now();
+            return;
+        }
+        if (RecordCopies())
+        {
+            return;
         }
         bool pending = false;
         for (auto& [id, torrent] : torrents)
@@ -124,13 +149,12 @@ void Engine::State::ContinueShutdown()
             {
                 continue;
             }
-            if (std::chrono::steady_clock::now() - *phaseStarted < phaseTimeout)
+            if (!expired)
             {
                 pending = true;
                 continue;
             }
             std::exchange(torrent.priorityCompletion, nullptr)({ErrorCode::RecoveryRequired});
-            FailFinalSave();
             log.Write("edit", id, "recovery_required");
         }
         if (pending)
@@ -138,12 +162,16 @@ void Engine::State::ContinueShutdown()
             return;
         }
         shutdownPhase = ShutdownPhase::Pausing;
-        phaseStarted = std::chrono::steady_clock::now();
+        phaseStarted = now;
+        expired = false;
+        // A check confirms its pause only after its reads return, which a
+        // drive that stopped responding may never do.
         if (!session->is_paused())
         {
             for (auto const& [id, torrent] : torrents)
             {
-                if (!torrent.restore && !bool(torrent.handle.flags() & lt::torrent_flags::paused))
+                if (!torrent.restore && !bool(torrent.handle.flags() & lt::torrent_flags::paused) &&
+                    torrent.status.state != lt::torrent_status::checking_files)
                 {
                     pausing.push_back(torrent.handle);
                 }
@@ -153,7 +181,7 @@ void Engine::State::ContinueShutdown()
     }
     if (shutdownPhase == ShutdownPhase::Pausing)
     {
-        if (!pausing.empty() && std::chrono::steady_clock::now() - *phaseStarted < phaseTimeout)
+        if (!pausing.empty() && !expired)
         {
             return;
         }
@@ -168,17 +196,15 @@ void Engine::State::ContinueShutdown()
         {
             return;
         }
-        // The torrents left in `pausing` did not confirm their pause in time.
-        if (!pausing.empty())
+        // The torrents left in `pausing` did not confirm their pause in time;
+        // their resume data still records what they have.
+        for (auto const& handle : pausing)
         {
-            FailFinalSave();
-            for (auto const& handle : pausing)
-            {
-                log.Write("shutdown", handles.at(handle)->torrentId, "pause_timeout");
-            }
+            log.Write("shutdown", handles.at(handle)->torrentId, "pause_timeout");
         }
         shutdownPhase = ShutdownPhase::Sampling;
-        phaseStarted = std::chrono::steady_clock::now();
+        phaseStarted = now;
+        expired = false;
         transfersRequested = lt::clock_type::now();
         session->post_session_stats();
         log.Write("shutdown", "", "checkpoint");
@@ -190,30 +216,45 @@ void Engine::State::ContinueShutdown()
     }
     if (shutdownPhase == ShutdownPhase::Sampling)
     {
-        if (std::chrono::steady_clock::now() - *phaseStarted < phaseTimeout)
+        if (!expired)
             return;
-        FailFinalSave();
-        log.Write("shutdown", "", "recovery_required");
+        // The transfers keep the totals of the last sample.
+        log.Write("shutdown", "", "sample_timeout");
         shutdownPhase = ShutdownPhase::Saving;
     }
-    if (!saveFailure)
+    if (shutdownPhase == ShutdownPhase::Saving)
     {
         CheckpointUnsaved();
+        bool pending = std::any_of(torrents.begin(), torrents.end(), [](auto const& entry)
+            { return entry.second.checkpointPhase != CheckpointPhase::Idle || entry.second.unsaved; });
+        if (pending || !store.IsIdle())
+        {
+            return;
+        }
+        shutdownPhase = ShutdownPhase::Ending;
+        log.Write("shutdown", "", "saved");
     }
-    bool pending = false;
-    for (auto const& [id, torrent] : torrents)
+    // A payload, move or abandon job may still use the session, so it ends
+    // first. A parked copy waits for the process to end, so nothing waits for
+    // it.
+    for (auto const& moving : moves)
     {
-        bool checkpointing = torrent.checkpointPhase != CheckpointPhase::Idle;
-        pending |= checkpointing || (torrent.unsaved && !saveFailure);
+        if (moving.progress && moving.progress->parked)
+            moving.worker->Detach();
     }
-    // A payload or move job may still use the session, so it ends first.
-    if (pending || !store.IsIdle() || !payload.IsIdle() || !copies.IsIdle() || !log.IsFlushed())
+    auto abandoned = [](Abandonment const& abandonment)
+        { return !abandonment.worker || abandonment.worker->IsIdle(); };
+    if (!std::all_of(moves.begin(), moves.end(), stopped) ||
+        !std::all_of(abandonments.begin(), abandonments.end(), abandoned) || !payload.IsIdle() ||
+        !store.IsIdle() || !log.IsFlushed())
     {
         return;
     }
-    if (saveFailure)
+    // libtorrent's teardown waits for a stalled check's reads, which may
+    // never return, so the saved engine ends at once instead.
+    if (StalledCheck())
     {
-        RetryFinalSave();
+        EndAbruptly("teardown_skipped");
         return;
     }
     // Reporting first lets the desktop leave the screen before the teardown
@@ -222,18 +263,15 @@ void Engine::State::ContinueShutdown()
     session.reset();
 }
 
-// Reports the failed attempt and starts the final save again after
-// checkpointRetry, so Exit ends once a save succeeds.
-void Engine::State::RetryFinalSave()
-{
-    shutdown(saveFailure);
-    shutdownPhase = ShutdownPhase::Retrying;
-    phaseStarted = std::chrono::steady_clock::now();
-}
-
 void Engine::State::Finish()
 {
     auto report = std::exchange(shutdown, nullptr);
-    report(std::nullopt);
+    report(ShutdownEnd::Saved);
+}
+
+void Engine::State::EndAbruptly(std::string const& reason)
+{
+    log.Write("shutdown", "", reason);
+    std::exchange(shutdown, nullptr)(ShutdownEnd::Abrupt);
 }
 }

@@ -257,8 +257,11 @@ Engine::State::Policy::Policy(Settings const& settings, Environment const& envir
         settings.encryption};
     // Peers cannot connect in through a proxy, so there is no port to forward.
     maps = settings.mapsPorts && !route.adapterMissing && settings.proxy.type == ProxyType::None;
-    session = {settings.activeDownloads, settings.activeSeeds, settings.activeTotal, settings.activeChecking,
-        settings.diskBufferMib, settings.checkingMib, settings.hashingThreads, settings.fileLimit,
+    // libtorrent reads and hashes every check's pieces on its checking threads,
+    // so with fewer threads a check would wait for one on another drive.
+    session = {settings.activeDownloads, settings.activeSeeds, settings.activeTotal,
+        settings.diskBufferMib, settings.checkingMib, settings.hashingThreads * std::max(1, environment.checks),
+        settings.fileLimit,
         settings.ignoresSlow, settings.slowDownload, settings.slowUpload, settings.slowWait,
         settings.outgoingRate, settings.connections, settings.dht, settings.lsd, settings.includesOverhead};
     torrents = {settings.torrentConnections, settings.pex};
@@ -276,7 +279,13 @@ void Engine::State::RefreshPolicy()
         bypassesScheduledPause = false;
         limitOverride.reset();
     }
-    Policy::Environment environment{.paused = Paused(false).has_value(), .limits = CurrentLimits()};
+    auto sessionPaused = Paused().has_value();
+    Policy::Environment environment{.paused = Paused(false).has_value(), .limits = CurrentLimits(),
+        .checks = static_cast<int>(std::count_if(torrents.begin(), torrents.end(),
+            [sessionPaused](auto const& entry)
+            {
+                return entry.second.ChecksFiles(sessionPaused) || entry.second.checkReads != CheckReads::None;
+            }))};
     if (auto adapter = AdapterName(settings.networkAdapter); !adapter.empty())
         environment.adapter = FindAdapter(adapter);
     Policy next(settings, environment);
@@ -394,7 +403,9 @@ void Engine::State::RefreshPolicy()
         pack.set_int(lt::settings_pack::inactive_down_rate, chosen.slowDownload);
         pack.set_int(lt::settings_pack::inactive_up_rate, chosen.slowUpload);
         pack.set_int(lt::settings_pack::auto_manage_startup, chosen.slowWait);
-        pack.set_int(lt::settings_pack::active_checking, chosen.activeChecking);
+        // libtorrent starts every check and the drive pass decides which wait.
+        // A limit of 0 or less would pause every check.
+        pack.set_int(lt::settings_pack::active_checking, INT_MAX);
         pack.set_int(lt::settings_pack::connection_speed, chosen.outgoingRate);
         pack.set_bool(lt::settings_pack::enable_dht, chosen.dht);
         pack.set_bool(lt::settings_pack::enable_lsd, chosen.lsd);

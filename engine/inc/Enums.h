@@ -30,7 +30,8 @@ enum class Command
     SpeedLimit,
     CheckProxy,
     ConnectionTest,
-    TurnOff
+    TurnOff,
+    UnfinishedTasks
 };
 
 // Who publishes the snapshot after a command succeeds.
@@ -157,28 +158,51 @@ enum class AdditionPhase
     Saving
 };
 
-// Who starts a move: a request, or the engine continuing an interrupted move
-// on its own, which it does once.
+// Who starts a move: a request, or the engine starting a move that waited for
+// its turn.
 enum class MoveStart
 {
     Requested,
-    Resumed
+    Waited
 };
 
-// How far a saved move got, which decides what the engine may do with it at
-// the next launch.
+// How far a saved move got, which decides what continuing or abandoning it
+// may do with the files at its destination.
 enum class MoveStage
 {
     // Its destination was not checked yet, so a file there can be someone
-    // else's, and the move waits for the person.
+    // else's.
     Staged,
     // Its destination was checked before any file changed, so a file there
-    // beside a source that holds data is the move's own copy, and the engine
-    // continues the move once.
-    Placing,
-    // Its destination was checked, and it waits for the person: the engine
-    // already continued it once, or it failed.
-    Waiting
+    // beside a source that holds data is the move's own copy.
+    Placing
+};
+
+// How the engine stops a move's placement: not at all; cancelling it and
+// undoing what it placed, as for a copy that stalled; or cancelling it and
+// leaving what it placed, so that a move Exit stops can continue later.
+enum class MoveCancel
+{
+    None,
+    Undo,
+    Keep
+};
+
+// The work of a torrent that the last end left unfinished: a move to another
+// folder, or a check of its files.
+enum class TaskKind
+{
+    Move,
+    Check
+};
+
+// What the engine does at start with the work that the last end left
+// unfinished: ask the person, or continue or abandon it all.
+enum class TaskAnswer
+{
+    Ask,
+    Continue,
+    Abandon
 };
 
 // A move's current member: its worker places the files (Copying), libtorrent
@@ -197,7 +221,8 @@ enum class MovePhase
 };
 
 // Where the files of a failed move are: back in their source folder
-// (Restored), or split between both folders because a rename back failed.
+// (Restored), or split between both folders, because a rename back failed or
+// Exit stopped the move to continue it later.
 enum class MoveFailure
 {
     Restored,
@@ -272,6 +297,16 @@ enum class AdditionKind
     Duplicate
 };
 
+// The reads libtorrent may still have queued for a torrent's check. Reads
+// that stalled stay Stalled until libtorrent reports them done, whatever the
+// person does with the torrent, because every other check waits behind them.
+enum class CheckReads
+{
+    None,
+    Reading,
+    Stalled
+};
+
 // Where a torrent's checkpoint is: waiting for libtorrent's resume data, or
 // writing that data to the resume file.
 enum class CheckpointPhase
@@ -281,7 +316,8 @@ enum class CheckpointPhase
     Writing
 };
 
-// Retrying waits before a failed final save starts again.
+// Saving waits for the final checkpoints; Ending waits for the file work
+// that Exit cancelled to stop.
 enum class ShutdownPhase
 {
     Idle,
@@ -289,7 +325,18 @@ enum class ShutdownPhase
     Pausing,
     Sampling,
     Saving,
-    Retrying
+    Ending
+};
+
+// How a shutdown ended.
+enum class ShutdownEnd
+{
+    // The final save succeeded and the file work stopped.
+    Saved,
+    // The final save failed, or libtorrent's teardown would wait on a drive
+    // that stopped responding, so the process must end at once, as after a
+    // crash.
+    Abrupt
 };
 
 enum class WatchPhase
@@ -327,6 +374,10 @@ enum class Status
     // The torrent would transfer, but a session pause holds every torrent.
     AllPaused,
     Checking,
+    // The check waits until no other job uses its drive.
+    WaitingCheck,
+    // The move waits for its drives or for busy files to start.
+    WaitingMove,
     Metadata,
     Queued,
     Seeding,
@@ -435,6 +486,9 @@ enum class ProxyOutcome
 enum class ProblemKind
 {
     MoveInterrupted,
+    // An interrupted move waits for the person to continue or abandon the
+    // work that the last end left unfinished.
+    MoveUnfinished,
     MoveFailed,
     DestinationExists,
     // The destination is another path, such as a link, to the files' folder.
@@ -443,7 +497,9 @@ enum class ProblemKind
     TorrentError,
     StorageFailed,
     StorageOverloaded,
-    CheckpointFailed
+    CheckpointFailed,
+    // A check or a move made no progress for too long.
+    DriveStalled
 };
 
 // The error code of a failed reply. The window reads these words, so
@@ -501,7 +557,10 @@ enum class ToastKind
     // A torrent or magnet handler starts a program that is missing.
     MissingProgram,
     // Several toasts that arrived together, shown as one popup.
-    Aggregate
+    Aggregate,
+    // Work that the last end left unfinished waits for the person's answer,
+    // which the window asks for.
+    Unfinished
 };
 
 // The Settings switches that each turn off one kind of toast.

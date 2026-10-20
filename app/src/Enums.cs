@@ -495,6 +495,14 @@ internal enum ExitAnswer
     Unavailable,
 }
 
+// The person's answer for all the disk work that Exit or a crash left
+// unfinished. The engine's words are these names in lower case.
+internal enum UnfinishedAnswer
+{
+    Continue,
+    Abandon,
+}
+
 // What started the window's close.
 internal enum CloseRequest
 {

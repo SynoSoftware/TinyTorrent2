@@ -63,6 +63,7 @@ public sealed partial class MainWindow
         }
         var ready = await Model.SendReady();
         Reveal();
+        ShowDeferredUnfinished();
         if (!ready)
             return;
         // The window is on screen, so the engine closes its splash.

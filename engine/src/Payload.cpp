@@ -31,6 +31,15 @@ constexpr unsigned copiers = 16;
 constexpr std::size_t batch = 256;
 // The first Windows build whose CopyFile2 keeps a sparse file sparse.
 constexpr DWORD sparseBuild = 22621;
+// Every this many bytes a copy flushes its file and records its proof, so a
+// crash copies at most this much again. A flush took up to 15 ms locally and
+// 50 ms over SMB for a gibibyte that copies in 2 to 9 seconds.
+constexpr std::uint64_t proofInterval = 1ull << 30;
+// A continued copy trusts its proof once these bytes before it match the
+// source, because a crash can leave cached writes on disk out of order.
+constexpr std::uint64_t proofCheck = 4ull << 20;
+// The bytes that a continued copy reads, compares and writes at a time.
+constexpr DWORD block = 1u << 20;
 
 // Windows takes a path longer than MAX_PATH only with this prefix, and
 // libtorrent creates such paths. The paths are full and normalized.
@@ -275,12 +284,17 @@ struct Copying
 {
     Progress& progress;
     std::atomic<bool> const& stop;
+    std::filesystem::path const& destination;
     std::uint64_t size;
     // The data ranges of a copy that keeps its holes, which it skips at once,
     // so only these bytes count as copied.
     std::vector<FILE_ALLOCATED_RANGE_BUFFER> const* data = nullptr;
+    // The copy proves its bytes and parks when Exit cancels it. A parallel
+    // copy is small, so it is cancelled and copied again instead.
+    bool proves = false;
     std::size_t next = 0;
     std::uint64_t reported = 0;
+    std::uint64_t proven = 0;
 };
 
 COPYFILE2_MESSAGE_ACTION CALLBACK Report(COPYFILE2_MESSAGE const* message, void* context)
@@ -288,9 +302,9 @@ COPYFILE2_MESSAGE_ACTION CALLBACK Report(COPYFILE2_MESSAGE const* message, void*
     auto& copying = *static_cast<Copying*>(context);
     if (message->Type == COPYFILE2_CALLBACK_CHUNK_FINISHED)
     {
+        auto const& chunk = message->Info.ChunkFinished;
         // The total also counts alternate data streams, which the size leaves out.
-        auto transferred = std::min<std::uint64_t>(message->Info.ChunkFinished.uliTotalBytesTransferred.QuadPart,
-            copying.size);
+        auto transferred = std::min<std::uint64_t>(chunk.uliTotalBytesTransferred.QuadPart, copying.size);
         if (transferred > copying.reported)
         {
             auto bytes = copying.data ? DataBetween(*copying.data, copying.next, copying.reported, transferred)
@@ -299,8 +313,94 @@ COPYFILE2_MESSAGE_ACTION CALLBACK Report(COPYFILE2_MESSAGE const* message, void*
             copying.progress.copied += bytes;
             copying.reported = transferred;
         }
+        // The data stream goes first, so a later stream finds it complete.
+        auto written = chunk.dwStreamNumber == 1 ?
+            std::min<std::uint64_t>(chunk.uliStreamBytesTransferred.QuadPart, copying.size) : copying.size;
+        bool parks = copying.proves && copying.progress.cancel == MoveCancel::Keep;
+        // A flush during a later stream would prove nothing of the data
+        // stream, which it may not reach.
+        if (chunk.dwStreamNumber == 1 && copying.proves && (written >= copying.proven + proofInterval || parks))
+        {
+            // The flush writes every byte CopyFile2 has written to the file
+            // so far, through CopyFile2's own handle.
+            if (FlushFileBuffers(chunk.hDestinationFile))
+            {
+                copying.proven = written;
+                copying.progress.Prove({copying.destination, written});
+            }
+        }
+        if (parks)
+        {
+            copying.progress.parked = true;
+            Sleep(INFINITE);
+        }
     }
-    return copying.stop ? COPYFILE2_PROGRESS_CANCEL : COPYFILE2_PROGRESS_CONTINUE;
+    // CopyFile2 deletes the file it cancels, so a cancel that keeps the copy
+    // never cancels it: the copy parks at its next chunk, or a parallel copy
+    // finishes.
+    auto cancel = copying.progress.cancel.load();
+    bool cancels = cancel == MoveCancel::Undo || (cancel == MoveCancel::None && copying.stop);
+    return cancels ? COPYFILE2_PROGRESS_CANCEL : COPYFILE2_PROGRESS_CONTINUE;
+}
+
+// Writes the file's cached bytes to the disk. Returns the Windows error, or
+// ERROR_SUCCESS.
+DWORD Flush(std::wstring const& path)
+{
+    auto file = CreateFileW(path.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (file == INVALID_HANDLE_VALUE)
+        return GetLastError();
+    OwnedHandle owned(file);
+    return FlushFileBuffers(file) ? ERROR_SUCCESS : GetLastError();
+}
+
+bool ReadAt(HANDLE file, std::uint64_t offset, std::byte* buffer, DWORD count)
+{
+    OVERLAPPED at{};
+    at.Offset = static_cast<DWORD>(offset);
+    at.OffsetHigh = static_cast<DWORD>(offset >> 32);
+    DWORD read = 0;
+    return ReadFile(file, buffer, count, &read, &at) && read == count;
+}
+
+bool WriteAt(HANDLE file, std::uint64_t offset, std::byte const* buffer, DWORD count)
+{
+    OVERLAPPED at{};
+    at.Offset = static_cast<DWORD>(offset);
+    at.OffsetHigh = static_cast<DWORD>(offset >> 32);
+    DWORD written = 0;
+    return WriteFile(file, buffer, count, &written, &at) && written == count;
+}
+
+// Copies the source's alternate data streams, such as its Mark of the Web, as
+// CopyFile2 does. They are small, and a stream that fails to copy is left out.
+void CopyStreams(std::filesystem::path const& source, std::wstring const& target)
+{
+    WIN32_FIND_STREAM_DATA stream{};
+    auto find = FindFirstStreamW(Extended(source).c_str(), FindStreamInfoStandard, &stream, 0);
+    if (find == INVALID_HANDLE_VALUE)
+        return;
+    do
+    {
+        std::wstring name = stream.cStreamName;
+        if (name == L"::$DATA" || stream.StreamSize.QuadPart > 16ll << 20)
+            continue;
+        // ":name:$DATA" opens as ":name".
+        auto suffix = name.substr(0, name.rfind(L':'));
+        auto from = CreateFileW((Extended(source) + suffix).c_str(), GENERIC_READ,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, 0, nullptr);
+        if (from == INVALID_HANDLE_VALUE)
+            continue;
+        OwnedHandle reading(from);
+        auto to = CreateFileW((target + suffix).c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, 0, nullptr);
+        if (to == INVALID_HANDLE_VALUE)
+            continue;
+        OwnedHandle writing(to);
+        std::vector<std::byte> bytes(static_cast<std::size_t>(stream.StreamSize.QuadPart));
+        if (!bytes.empty() && ReadAt(from, 0, bytes.data(), static_cast<DWORD>(bytes.size())))
+            WriteAt(to, 0, bytes.data(), static_cast<DWORD>(bytes.size()));
+    } while (FindNextStreamW(find, &stream));
+    FindClose(find);
 }
 
 // The disk changes of one Move, so a failure can undo them.
@@ -331,6 +431,9 @@ private:
 
     std::optional<std::string> CopyAll();
     void Run(Copy& copy);
+    // Finishes the unfinished copy at `partial`, which an earlier move left,
+    // and returns the Windows error, or ERROR_SUCCESS.
+    DWORD Continue(Copy const& copy, std::wstring const& partial);
 
     Progress& progress_;
     std::vector<File const*> renamed_;
@@ -357,7 +460,10 @@ std::optional<std::string> Placement::Place(std::vector<File> const& files)
         if (!GetFileAttributesExW(Extended(file.source).c_str(), GetFileExInfoStandard, &data))
         {
             auto error = GetLastError();
-            if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND)
+            // Without its source, an unfinished copy cannot be checked, and
+            // it may hold the only copy of the bytes, so the move stops.
+            bool unfinished = GetFileAttributesW(Extended(Partial(file.destination)).c_str()) != INVALID_FILE_ATTRIBUTES;
+            if ((error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND) && !unfinished)
                 continue;
             return Describe(file.source, error);
         }
@@ -404,8 +510,13 @@ std::optional<std::string> Placement::Place(std::vector<File> const& files)
         if (keepsSparse)
             flags |= COPY_FILE_ENABLE_SPARSE_COPY;
         // An unfinished torrent's sparse file takes its full size where it
-        // cannot stay sparse, which can be far more than it holds.
-        needed[to.root] += keepsSparse ? Allocated(file->source, size) : size;
+        // cannot stay sparse, which can be far more than it holds. An
+        // unfinished copy already holds part of it.
+        auto partial = Extended(Partial(file->destination));
+        auto space = keepsSparse ? Allocated(file->source, size) : size;
+        if (GetFileAttributesW(partial.c_str()) != INVALID_FILE_ATTRIBUTES)
+            space -= std::min(space, Allocated(partial, 0));
+        needed[to.root] += space;
         std::optional<std::vector<FILE_ALLOCATED_RANGE_BUFFER>> data;
         if (keepsSparse)
             data = DataRanges(file->source, size);
@@ -462,23 +573,42 @@ void Placement::Run(Copy& copy)
 {
     if (stop_)
         return;
-    Copying copying{progress_, stop_, copy.size, copy.data ? &*copy.data : nullptr};
-    COPYFILE2_EXTENDED_PARAMETERS parameters{sizeof(parameters), copy.flags, nullptr, &Report, &copying};
     auto partial = Extended(Partial(copy.file->destination));
-    auto result = CopyFile2(Extended(copy.file->source).c_str(), partial.c_str(), &parameters);
-    auto error = SUCCEEDED(result) ? ERROR_SUCCESS :
-        HRESULT_FACILITY(result) == FACILITY_WIN32 ? DWORD(HRESULT_CODE(result)) : DWORD(result);
-    // A file that already had the name belongs to another program and stays.
-    // CopyFile2 reports it with either code, and with access denied when that
-    // file is hidden or read-only.
-    copy.owned = error != ERROR_FILE_EXISTS && error != ERROR_ALREADY_EXISTS && error != ERROR_ACCESS_DENIED;
+    DWORD error = ERROR_SUCCESS;
+    // A copy that a cancel finds not started stays unstarted.
+    if (progress_.cancel != MoveCancel::None)
+        error = ERROR_REQUEST_ABORTED;
+    // A file with the copy's name is one that an earlier move left
+    // unfinished.
+    else if (GetFileAttributesW(partial.c_str()) != INVALID_FILE_ATTRIBUTES)
+    {
+        copy.owned = true;
+        error = Continue(copy, partial);
+    }
+    else
+    {
+        Copying copying{progress_, stop_, copy.file->destination, copy.size, copy.data ? &*copy.data : nullptr,
+            !copy.parallel};
+        COPYFILE2_EXTENDED_PARAMETERS parameters{sizeof(parameters), copy.flags, nullptr, &Report, &copying};
+        auto result = CopyFile2(Extended(copy.file->source).c_str(), partial.c_str(), &parameters);
+        error = SUCCEEDED(result) ? ERROR_SUCCESS :
+            HRESULT_FACILITY(result) == FACILITY_WIN32 ? DWORD(HRESULT_CODE(result)) : DWORD(result);
+        // A file that took the name meanwhile belongs to another program and
+        // stays. CopyFile2 reports it with either code, and with access
+        // denied when that file is hidden or read-only.
+        copy.owned = error != ERROR_FILE_EXISTS && error != ERROR_ALREADY_EXISTS && error != ERROR_ACCESS_DENIED;
+        if (error == ERROR_SUCCESS)
+        {
+            progress_.done += copy.size - copying.reported;
+            progress_.copied += copy.size - copying.reported;
+            error = Flush(partial);
+        }
+    }
     auto failed = copy.file->source;
     if (error == ERROR_SUCCESS)
     {
-        progress_.done += copy.size - copying.reported;
-        progress_.copied += copy.size - copying.reported;
         // A rename without a flag refuses a file that took the name meanwhile.
-        if (MoveFileExW(partial.c_str(), Extended(copy.file->destination).c_str(), 0))
+        if (MoveFileExW(partial.c_str(), Extended(copy.file->destination).c_str(), MOVEFILE_WRITE_THROUGH))
         {
             copy.complete = true;
             return;
@@ -492,6 +622,139 @@ void Placement::Run(Copy& copy)
         failure_ = Describe(error == ERROR_FILE_EXISTS || error == ERROR_ALREADY_EXISTS ? copy.file->destination :
             failed, error);
     stop_ = true;
+}
+
+DWORD Placement::Continue(Copy const& copy, std::wstring const& partial)
+{
+    auto const& file = *copy.file;
+    auto source = CreateFileW(Extended(file.source).c_str(), GENERIC_READ,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN,
+        nullptr);
+    if (source == INVALID_HANDLE_VALUE)
+        return GetLastError();
+    OwnedHandle reading(source);
+    auto target = CreateFileW(partial.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+        0, nullptr);
+    if (target == INVALID_HANDLE_VALUE)
+        return GetLastError();
+    OwnedHandle writing(target);
+    LARGE_INTEGER length{};
+    if (!GetFileSizeEx(target, &length))
+        return GetLastError();
+    auto size = copy.size;
+    auto present = std::min<std::uint64_t>(static_cast<std::uint64_t>(length.QuadPart), size);
+    std::vector<std::byte> left(block);
+    std::vector<std::byte> right(block);
+    // Whether the copy holds the source's bytes from `offset` to `end`. A read
+    // that fails counts as different, so the bytes are copied again.
+    auto same = [&](std::uint64_t offset, std::uint64_t end)
+    {
+        auto count = static_cast<DWORD>(end - offset);
+        bool equal = ReadAt(source, offset, left.data(), count) && ReadAt(target, offset, right.data(), count) &&
+            std::equal(left.begin(), left.begin() + count, right.begin());
+        progress_.compared += count;
+        return equal;
+    };
+    // The bytes of the move's total between two offsets, which leaves out
+    // the holes of a copy that keeps them. Offsets increase from call to call.
+    std::size_t counted = 0;
+    auto bytes = [&](std::uint64_t from, std::uint64_t to)
+    {
+        return copy.data ? DataBetween(*copy.data, counted, from, to) : to - from;
+    };
+    // The ranges of the copy to write from the source, in order.
+    std::vector<std::pair<std::uint64_t, std::uint64_t>> missing;
+    bool proven = file.proven > 0 && file.proven <= present;
+    for (auto offset = file.proven - std::min(file.proven, proofCheck); proven && offset < file.proven; offset += block)
+        proven = same(offset, std::min<std::uint64_t>(offset + block, file.proven));
+    if (proven)
+    {
+        progress_.done += bytes(0, file.proven);
+        missing.push_back({file.proven, size});
+    }
+    else
+    {
+        for (std::uint64_t offset = 0; offset < present; offset += block)
+        {
+            if (progress_.cancel != MoveCancel::None)
+                return ERROR_REQUEST_ABORTED;
+            auto end = std::min<std::uint64_t>(offset + block, present);
+            if (same(offset, end))
+                progress_.done += bytes(offset, end);
+            else if (!missing.empty() && missing.back().second == offset)
+                missing.back().second = end;
+            else
+                missing.push_back({offset, end});
+        }
+        if (present < size)
+            missing.push_back({present, size});
+    }
+    // A copy that keeps its holes leaves the source's holes as holes.
+    if (copy.data)
+    {
+        DWORD returned = 0;
+        DeviceIoControl(target, FSCTL_SET_SPARSE, nullptr, 0, nullptr, 0, &returned, nullptr);
+    }
+    std::size_t next = 0;
+    std::uint64_t unproven = 0;
+    for (auto const& [first, last] : missing)
+    {
+        for (auto offset = first; offset < last;)
+        {
+            // Every byte before `offset` holds the source's bytes.
+            if (progress_.cancel != MoveCancel::None)
+            {
+                if (FlushFileBuffers(target))
+                    progress_.Prove({file.destination, offset});
+                return ERROR_REQUEST_ABORTED;
+            }
+            auto end = std::min<std::uint64_t>(offset + block, last);
+            auto count = static_cast<DWORD>(end - offset);
+            auto data = copy.data ? DataBetween(*copy.data, next, offset, end) : count;
+            if (data == 0)
+            {
+                FILE_ZERO_DATA_INFORMATION hole{};
+                hole.FileOffset.QuadPart = static_cast<LONGLONG>(offset);
+                hole.BeyondFinalZero.QuadPart = static_cast<LONGLONG>(end);
+                DWORD returned = 0;
+                if (!DeviceIoControl(target, FSCTL_SET_ZERO_DATA, &hole, sizeof(hole), nullptr, 0, &returned, nullptr))
+                    return GetLastError();
+            }
+            else
+            {
+                if (!ReadAt(source, offset, left.data(), count) || !WriteAt(target, offset, left.data(), count))
+                    return GetLastError();
+                progress_.copied += data;
+            }
+            progress_.done += data;
+            offset = end;
+            unproven += count;
+            if (unproven >= proofInterval && FlushFileBuffers(target))
+            {
+                progress_.Prove({file.destination, offset});
+                unproven = 0;
+            }
+        }
+    }
+    // The size, the streams, the last write time and the attributes as
+    // CopyFile2 leaves them. A stream write changes the last write time, so
+    // the time comes after the streams.
+    FILE_END_OF_FILE_INFO end{};
+    end.EndOfFile.QuadPart = static_cast<LONGLONG>(size);
+    if (!SetFileInformationByHandle(target, FileEndOfFileInfo, &end, sizeof(end)))
+        return GetLastError();
+    CopyStreams(file.source, partial);
+    FILE_BASIC_INFO from{};
+    if (!GetFileInformationByHandleEx(source, FileBasicInfo, &from, sizeof(from)))
+        return GetLastError();
+    FILE_BASIC_INFO to{};
+    to.LastWriteTime = from.LastWriteTime;
+    constexpr DWORD kept = FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM |
+        FILE_ATTRIBUTE_ARCHIVE | FILE_ATTRIBUTE_NOT_CONTENT_INDEXED;
+    to.FileAttributes = from.FileAttributes & kept ? from.FileAttributes & kept : FILE_ATTRIBUTE_NORMAL;
+    if (!SetFileInformationByHandle(target, FileBasicInfo, &to, sizeof(to)) || !FlushFileBuffers(target))
+        return GetLastError();
+    return ERROR_SUCCESS;
 }
 
 MoveFailure Placement::Undo()
@@ -541,10 +804,12 @@ std::expected<void, Failure> Move(std::vector<File> const& files, Progress& prog
     }
     if (!failure)
         return {};
+    if (progress.cancel == MoveCancel::Keep)
+        return std::unexpected(Failure{MoveFailure::Split, std::move(*failure)});
     return std::unexpected(Failure{placement.Undo(), std::move(*failure)});
 }
 
-void Delete(std::vector<std::filesystem::path> const& files)
+void Delete(std::vector<std::filesystem::path> const& files, std::stop_token stop)
 {
     auto batches = Batches(files);
     std::mutex gate;
@@ -555,6 +820,8 @@ void Delete(std::vector<std::filesystem::path> const& files)
     {
         for (auto item : batches[index])
         {
+            if (stop.stop_requested())
+                return;
             if (auto error = Remove(files[item]))
             {
                 std::lock_guard lock(gate);

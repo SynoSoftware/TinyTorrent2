@@ -627,6 +627,7 @@
                           <TextBlock
                             Grid.Column="1"
                             Text="{x:Bind Status, Mode=OneWay}"
+                            ToolTipService.ToolTip="{x:Bind StatusTip, Mode=OneWay}"
                             VerticalAlignment="Center"
                             TextTrimming="CharacterEllipsis"
                           />

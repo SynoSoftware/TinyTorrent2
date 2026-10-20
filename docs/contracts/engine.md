@@ -410,7 +410,11 @@ its torrent is downloading, by writing the internet zone to the file's
 `Zone.Identifier` stream, as browsers do. Windows then shows its SmartScreen or
 Protected View warning before the person runs or edits a file from a torrent.
 Files that verification finds already complete are not marked, because they may
-be the person's own files. There is no setting: the protection shows nothing
+be the person's own files. A file that has the unfinished suffix is marked, and
+the mark flushed, before its rename to its final name, so a cut never leaves a
+final-named file without its mark. Without the suffix, a file is marked when it
+completes, so a crash in the moment between the two leaves that file
+unmarked. There is no setting: the protection shows nothing
 until it is needed, and a person who trusts a file unblocks it in its
 Properties, as for any download. Marking is best effort. A volume, network
 share, or permission that refuses the stream is written to diagnostics and
@@ -447,10 +451,11 @@ torrent leaves the list.
 
 For delete-data, commit membership removal before deleting payload. If that
 commit fails, do not delete files. Removal and deletion have separate outcomes:
-a failed deletion is notified after the row is gone. A deletion
-interrupted by a crash is not repeated, because repeating an uncertain
-destructive action is unsafe; the remaining files stay on disk, and recovery
-does not restore the removed torrent.
+a failed deletion is notified after the row is gone. The commit that removes
+the torrents also saves their deletion as a task, so a deletion that Exit or a
+crash cuts off is offered at the next start as an
+[unfinished task](#unfinished-tasks); recovery does not restore the removed
+torrent.
 
 Ordinary Remove also retains a transient file hold until libtorrent reports
 that its disk work has stopped. It keeps payload and partfiles, and removes the
@@ -496,6 +501,15 @@ torrent's move.
 - Across volumes, `CopyFile2`. It keeps alternate data streams such as
   `Zone.Identifier`, uses SMB server-side copy and ODX by itself, and reports
   each chunk, which gives the percentage.
+- A copy that runs alone proves its bytes every gibibyte: it flushes the
+  file through the handle that `CopyFile2` passes to its progress callback
+  and saves the offset in the torrent's marker, so a crash copies at most a
+  gibibyte again. A flush took up to 15 ms on a local disk and 50 ms over SMB,
+  for a gibibyte that copies in 2 to 9 seconds. `CopyFile2` deletes the file
+  it cancels or stops, and its restartable mode does not resume a local copy,
+  so Exit parks the copy instead: the callback flushes and proves the offset,
+  then waits until the process ends, and the file keeps its bytes. A parallel
+  copy is small, so Exit cancels it and the next move copies it again.
 - Files of 32 MiB and more between local volumes skip the system cache
   (`COPY_FILE_NO_BUFFERING`), as AngelCOPY's engine does.
 - Files under 32 MiB between two volumes without a seek penalty copy on 16
@@ -518,38 +532,53 @@ libtorrent takes the new folder, the folder is saved with its marker cleared,
 and then the sources that a copy left are deleted, with the folders that leaves
 empty up to the old save folder. The member leaves Moving when its folder is
 saved, so its transfers, or the verification it needs first, continue while
-the rest of the group moves. Sources are deleted only after that save, so a
+the rest of the group moves. Each complete copy is flushed to the disk before
+it takes its final name, and the rename is written through, so the saved
+folder never names a copy whose bytes a power loss could still lose. Sources
+are deleted only after that save, so a
 crash never leaves a saved folder whose files are partly gone. A source that a
 later member of the group also uses stays until that member's sources go. A failed cleanup is
 logged; it leaves only files that the destination also holds.
 
-An interrupted move continues once on its own. A crash, power loss or forced
-exit does not mean the person changed their mind, so at the next launch the
-engine moves the torrents with that saved destination there again, together,
-without asking. Each saved destination records how far its move got. It is
+A move that Exit or a crash cuts off is an [unfinished task](#unfinished-tasks)
+at the next start. Each saved destination records how far its move got. It is
 staged until the preflight passes, and placing once that is saved, before any
-file changes; only a placing move continues. A continued move is saved as
-waiting before it changes a file, so a move interrupted again waits for the
-person, because a move that itself ends the engine would otherwise repeat at
-every launch. A failure that keeps a marker also waits, because continuing it
-would repeat the failure. A staged move waits as well: its destination was
-never checked, so a file there can be someone else's. A continued move decides
-each file from the disk, because the engine does not know where it stopped: a
-file only at the destination was renamed and counts as moved; a file only at
-the source moves now. A copy has its file's name with `.!ttcopy` added until it
-is complete, so a file with that name is an unfinished copy, and every move
-deletes it at its destination. A file at the destination's name beside a source
-that holds data stays as the interrupted move's complete copy when its size and
-last write time match the source, which `CopyFile2` keeps and the paused
-torrent does not change. Any other such file can be someone else's, so the move
-refuses it and never deletes it. Choosing a checked destination through Move
-does the same. Busy files delay a continued move, and the torrent shows Moving
-while it waits. Another torrent that still acquires metadata also delays it,
-and the torrent shows that reason with the other torrent's name, as a move to
-the final folder does. Any other refusal shows on the torrent and waits for
-the person. A FAT volume keeps a time to 2 seconds, in local time, so a copy
-there matches its source's time within 2 seconds, or one hour after a daylight
-saving change.
+file changes. A continued move decides each file from the disk, because the
+engine does not know where it stopped: a file only at the destination was
+renamed and counts as moved; a file only at the source moves now. A copy has
+its file's name with `.!ttcopy` added until it is complete, so a file with that
+name is an unfinished copy. A move that continues a placing move to the same
+destination continues that copy; every other move deletes it. A file at the
+destination's name beside a source that holds data stays as the interrupted
+move's complete copy when its size and last write time match the source, which
+`CopyFile2` keeps and the paused torrent does not change. Any other such file
+can be someone else's, so the move refuses it and never deletes it. Choosing a
+checked destination through Move does the same. A FAT volume keeps a time to 2
+seconds, in local time, so a copy there matches its source's time within 2
+seconds, or one hour after a daylight saving change.
+
+A continued copy ends byte for byte equal to its source, and copies only what
+it lacks. It compares the 4 MiB before its saved proof with the source, and
+when they match it copies from the proof on, because a crash can leave the
+bytes before a flush on disk while later cached writes are lost. Without a
+proof, or when those bytes differ, it compares the whole unfinished copy with
+the source in 1 MiB blocks and copies only the blocks that differ, which is
+cheaper than copying again where reading is faster than writing. It copies
+with its own loop of reads and writes, proves its bytes every gibibyte as
+`CopyFile2` does, makes the holes of a sparse source holes again, and then
+gives the copy the source's size, alternate data streams, last write time and
+attributes and flushes it before it takes its final name. Comparing counts as
+progress, so a long comparison is not taken for a drive that stopped
+responding, as [drive turns](#drive-turns) describe. A
+source that is gone while its
+unfinished copy exists fails the move, because the copy may hold the only
+bytes and cannot be checked; the torrent keeps its marker.
+
+Busy files and busy drives delay a continued move, and the torrent shows
+Waiting to move while it waits. Another torrent that still acquires metadata
+also delays it, and the torrent shows that reason with the other torrent's
+name, as a move to the final folder does. Any other refusal shows on the
+torrent and waits for the person.
 
 A failed copy deletes the copies and folders it made and renames files back.
 The member reports Move failed, its new marker clears, and the rest of the
@@ -584,8 +613,11 @@ move places itself hold the pieces the torrent already verified, so checking
 them again would only make the person wait. A torrent with a skipped file is
 still checked, because only that check moves libtorrent's part file.
 
-One payload operation runs at a time. Its source and destination paths stay held
-until disk work has a known outcome.
+Moves that share no drive run at the same time, each with its own copy worker,
+and [drive turns](#drive-turns) decide when each one starts. Renames of
+finished files, restoring and Exit wait until no move runs. A payload
+operation's source and destination paths stay held until its disk work has a
+known outcome.
 
 **Owner ruling:** Adding a torrent never waits for, and is never refused
 because of, another torrent's file work. A person adding a torrent wants it in
@@ -598,10 +630,17 @@ that places a file where a new torrent writes the same name fails for that
 member and keeps both files, which only happens when two torrents share a file
 name in one folder.
 
-A move also waits for
-pending additions and outside torrents still acquiring metadata: an unknown
-path cannot establish that the move reaches no other torrent's files. Other
-torrents and settings remain usable.
+Another torrent's file work delays a move only where it can reach the move's
+files. A pending addition, a deletion, a rename, or names still being read
+delay it when that torrent's save folder is the move's destination or a
+member's save folder, lies inside one or contains one: a torrent's files lie
+under its save folder, and the shared-files refusal reads the names of the
+torrents in the members' folders. An outside torrent still acquiring metadata
+delays it only when its save folder overlaps the destination, because its
+unknown files could only be written there. The moving torrents' own busy files
+and the shared-files refusal always apply. The rows of a move that waits for
+such work name the torrent whose files it waits for. Other torrents and
+settings remain usable.
 
 **Owner ruling:** No command is refused because files are busy, and the person
 never has to try again. Waiting for other file work is the engine's job, not a
@@ -613,12 +652,12 @@ problem for the person. Each command replies once its choice is saved:
 - Verify, a change of the wanted files, and Remove that keeps the files wait
   for the torrent's own busy files and then apply. A removed torrent leaves the
   list at once, as a deleted one does.
-- A Move that cannot start yet waits its turn, and its torrents show Moving.
-  Busy files and another torrent's missing metadata only delay it; the second
-  shows on the torrents. Any other refusal at its start shows on the torrents.
-  A waiting move lives only in memory, because no file has changed yet: after
-  an exit the person chooses Move again. A later Move replaces a waiting one,
-  and a waiting move keeps the move to the final folder from starting.
+- A Move that cannot start yet waits its turn, and its torrents show Waiting
+  to move. Busy files, busy drives and another torrent's missing metadata only
+  delay it; the last shows on the torrents. Any other refusal at its start shows on the torrents.
+  A waiting move is saved as an [unfinished task](#unfinished-tasks). A later
+  Move replaces a waiting one, and a waiting move keeps the move to the final
+  folder from starting.
 - The Add dialog does not wait for other torrents' file names. Until they are
   read, it compares only their final names, so a file renamed on disk can be
   missed for that moment.
@@ -677,7 +716,9 @@ because a held destination is not proof that existing files there belong to
 the torrent.
 Until its move continues or the person chooses a folder, that saved
 destination keeps the torrent paused with a Move interrupted error, so it does
-not download again into the old folder. Moving it to the folder that holds the
+not download again into the old folder. While the answer about
+[unfinished tasks](#unfinished-tasks) waits, the error is `move_unfinished`
+instead, which points to that question. Moving it to the folder that holds the
 files offers Use the files there, and verification establishes what is there.
 The user's running or paused intent does not change.
 
@@ -707,6 +748,161 @@ path. Clear this requirement only after the saved destination checkpoint claims
 no pieces that the current checked torrent lacks, and checking has ended. This
 also covers Use the files there in the same folder: matching names and sizes do
 not establish that the bytes match the torrent.
+
+### Unfinished tasks
+
+The engine saves its disk work as tasks in `settings.json`, in the order it
+runs them, so that the next start finds the work that Exit, the end at 10
+seconds or a crash left unfinished. Every saved file is written whole and then
+renamed into place, so a cut leaves the old or the new file, never part of
+one. The tasks are:
+
+- A running move, and its members that wait, with the proof of its current
+  copy in the torrent's marker. A marker that no task holds, such as one
+  saved before a crash and before its task, is a running move too. A move
+  that failed by itself and kept its marker is no task: it shows Move failed
+  until the person acts, because continuing it on its own would repeat the
+  failure.
+- The old files of a moved torrent whose new folder is saved but whose old
+  files are not deleted yet.
+- A check that runs or waits for its drive, and a move that waits for its
+  turn, in the order of their turns. A move to the final folder that waits for
+  its turn is one of these.
+- A Verify that waits for the torrent's files.
+- The files of removed torrents that a deletion has not deleted yet, from the
+  commit that removes the torrents. A removal that waits until libtorrent can
+  take its torrents saves its files only once every torrent's names are read,
+  because only then does it know which files other torrents keep.
+
+The engine saves the tasks again whenever they change, together with any
+other change to `settings.json`, and once more at Exit, before it cancels
+anything. Renames to final names are not tasks: they follow from each
+torrent's state at every start.
+
+At start, the `unfinished_tasks` setting decides: `ask`, the default,
+`continue` or `abandon`. With `ask`, the engine keeps the tasks and reports
+how many torrents' moves, checks and deletions wait; the window asks once for
+all of them. Until the answer, the work waits and holds no drive: a moved
+torrent stays where it was and shows `move_unfinished`, a waiting move shows
+Waiting to move, a check stays paused and shows Waiting to check, and a move to
+the final folder does not start. Without a window, a notice says that the work
+waits and opens the window when selected. With `continue`, work that the
+engine continued at start without asking and that a crash cut off again is
+asked for instead, because work that crashes the engine would otherwise run
+again at every start. The save at Exit clears that record.
+
+Continue runs the work in the saved order:
+
+- A move waits for its turn again, keeps its complete copies and continues an
+  unfinished copy byte for byte, as [moves](#removal-and-moves) describe. A
+  moved torrent is verified at its new folder, because its files were in two
+  folders.
+- A check runs again from the start as a Verify, because a check that
+  stopped keeps no position. Checks take their turns as they start, after the
+  continued moves.
+- A deletion deletes the files that remain. The old files of a moved torrent
+  are deleted the same way.
+
+Abandon drops the work:
+
+- A move gives back what it placed. Each unfinished copy and each complete
+  copy beside its source is deleted, a file the move renamed is renamed back,
+  folders it left empty go, and the marker clears, so the torrent stays where
+  it was. It leaves the files that its preflight found at the destination,
+  which are the person's own, and every file that another torrent uses there,
+  such as one that an earlier member of the same move placed. A staged move
+  changed no file, so only its marker clears. Giving back takes its drives
+  as a move does and gives up as a move does when it stops making progress.
+  When the destination does not answer, nothing changes, and the marker and
+  the task stay, so the next start asks again. A move whose files cannot be
+  given back keeps its marker and shows Move interrupted.
+- A move to the final folder that had not started clears the final folder, so
+  it does not start again when the download finishes.
+- A check leaves its torrent stopped with its check pending: the torrent
+  checks its files once the person starts it.
+- A deletion leaves its remaining files on disk.
+- A move cut after its new folder was saved, while it deleted the old files,
+  is complete at its destination. Abandon leaves the old files there, and
+  Continue deletes them.
+
+### Drive turns
+
+Disk jobs on different physical drives run at the same time, and jobs on one
+drive take turns, so two jobs never slow each other down on one disk. A job is
+a check of a torrent's files or a move. A check uses the drive of its
+torrent's folder. A move uses the drive of its destination and of each torrent
+it moves. Checks and moves follow one rule, and neither kind goes first.
+
+- A drive does one job at a time, and nobody takes it from a running job. A
+  job keeps its drives until it finishes, fails or stalls; a check also ends
+  when the person stops its torrent or libtorrent stops it with a torrent
+  error. A move keeps its source drives until it
+  ends, also while it deletes the sources.
+- A job starts only when all its drives are free. A waiting job holds and
+  reserves no drive, so no job waits for a job that cannot start yet, and two
+  moves never each hold one drive and wait for the other's.
+- A free drive goes to the first waiting job whose drives are all free. Waiting
+  jobs go in turn order: forced torrents' checks first, then the others. A job
+  takes its turn when it starts to wait, and a waiting check takes a new one
+  when the person forces it, so a later force goes after an earlier one. A
+  later job may use a drive that an earlier waiting job also needs, so a move
+  that needs two drives can be overtaken by checks on one of them; it starts
+  when both are free.
+- Pause all stops every check, and their drives are free while it lasts. Each
+  check keeps its place: after Pause all, a check that ran continues first, or
+  waits in its place for a move that started on its drive meanwhile. A
+  person's Stop and then Start puts a check at the back.
+- A running job whose progress does not change for 2 minutes gives up with
+  `drive_stalled`. A stalled check stops its torrent until Start or Verify.
+  Verify of a stalled check whose reads remain lets that check continue,
+  where it can stall again, and rechecks once the reads return. A
+  stalled move's copy is cancelled, and the move fails as after any failed
+  copy, which gives back what it placed and shows Move failed. Nothing
+  restarts either one. Only a move's placement is timed, not the wait for
+  libtorrent to release the files.
+
+The once-a-second maintenance pass decides. It works out which drives are in
+use from the jobs that run, on every pass, and never stores that as a loan a
+job must give back, because a job ends in many ways and a forgotten return
+would block its drive until the engine restarts. The only stored fact is each
+job's turn number. libtorrent starts every check, and the pass holds a check
+whose drive is busy by pausing its torrent, so such a check runs for up to one
+second first and continues from its piece when it is released. A Move the
+person asks for starts at once when its drives are free and otherwise waits
+its turn. A move to the final folder waits its turn in the same way. A move
+that continues after a restart waits for its drives too, and shows Waiting to
+move meanwhile; one destination's group that cannot start does not hold back
+another's.
+
+A drive is freed only when its job has really stopped. A copy or a read stuck
+inside a Windows call keeps its drive until Windows returns. A check that
+stops, by Stop, Pause all or the drive rule, keeps its drive until libtorrent
+reports that it has no read left (`torrent_paused_alert`).
+
+libtorrent hashes every check on one shared queue of threads. Checking threads
+is multiplied by the number of checks that run or still read, but each check
+keeps at least twice as many reads queued as there are threads, so a check on
+a slow drive slows a check on a fast drive to its pace. A read that never
+returns stops every check, so while a stalled check's reads remain, only that
+check gives up with `drive_stalled`, and every other check shows Waiting to
+check for the stalled check's drive. Their queued reads touch no drive, so
+they claim none, and moves on their drives go on.
+
+`Drives::Of` names the drives of a folder after following the links in its
+path, so `C:\temp`, a link to `V:\temp`, has V:'s drives:
+
+- A local volume: the disks its extents lie on, and for a virtual disk such as
+  a VHDX also the disks of the volume that holds its file, because its work
+  reaches that disk.
+- A network folder: its server, because the engine cannot see the server's
+  disks.
+- A folder that cannot be identified: a drive of its own, so its jobs run
+  beside the others.
+
+A folder that does not exist uses its nearest existing parent. The lookup runs
+on a worker of its letter or server, because it can stall on a network share,
+and its answer is kept until the engine exits. A job whose drives are not known yet waits. A
+storage pool or a hardware RAID reports one disk, so its jobs take turns.
 
 ### Unfinished files
 
@@ -750,7 +946,8 @@ its wanted files finish and their names settle, the owner of moves
 takes them to that final folder before notifying completion. Collisions and
 interrupted moves use the same refusal and recovery as a manual move. A refused
 move shows its reason on the torrent.
-While another torrent still acquires metadata, the torrent shows that reason
+While another torrent whose save folder overlaps the final folder still
+acquires metadata, the torrent shows that reason
 with the other torrent's name, and the move starts once the metadata arrives,
 so one magnet that never gets metadata cannot hold every finished torrent back
 without a sign. A successful manual move supersedes the final folder.
@@ -1062,9 +1259,9 @@ used to install a prerequisite.
 
 Setup requests the existing coordinated Exit through the engine's `--exit`
 command. It succeeds without starting an engine when none is running, and waits
-up to 30 seconds for a running engine to release instance ownership. A prompt,
-unfinished operation, or failed save that keeps it alive prevents file replacement;
-setup reports the condition and can be retried. No process is force-terminated.
+up to 30 seconds for a running engine to release instance ownership. A prompt
+that keeps it alive prevents file replacement; setup reports the condition and
+can be retried. Setup force-terminates no process.
 
 Closing WinUI normally exits without confirmation. Resolve actual unfinished
 edits according to [the UI](ui.md#committing-edits), and do not
@@ -1074,8 +1271,7 @@ before it waits for anything, unless a draft, dialog or picker needs the person,
 because a window that stays on screen while it closes looks frozen and holds the
 screen for no one. Show it again only if an edit decision or failed close needs
 the person's attention. Waiting for accepted work, saving and shutdown happen
-with the window hidden; the tray icon stays until the final save succeeds,
-because a failed save is reported there.
+with the window hidden; the tray icon stays until the final save ends.
 Accepted operations and transfers continue in the engine. Window-only snapshots and
 detail collection stop or are released with their last consumer; tray status,
 queue policy, swarm activity, [speed history](#state-and-work), and persistence
@@ -1089,11 +1285,30 @@ the host asks it to show the prompt in the app's dialog style; the host asks in
 its popup when the window is closed or cannot show a dialog at that moment.
 Windows shutdown and headless operation bypass it. After confirmation, engine Exit closes
 the window by the same rules as Close: a prompt appears only for actual unfinished
-input, and Cancel in that prompt cancels Exit. If a move, a file deletion or a removal
-is running, Exit waits for it to finish without a second prompt, because stopping it
-midway leaves files in two places. A removed torrent has already left the saved list,
-so nothing after Exit would delete its resume file or, with Delete files, its files.
-Then:
+input, and Cancel in that prompt cancels Exit.
+
+**Owner ruling: Exit ends within 10 seconds.** The person who chooses Exit
+wants the program gone, so Exit never waits for file work. It saves the work
+in progress as [unfinished tasks](#unfinished-tasks) before it waits for
+anything, then cancels that work: a copy parks with its proof, and a
+permanent deletion stops between files. A move of a removed torrent has no
+task that could finish it, so Exit lets it finish its current torrent, and a
+move that is giving its files back finishes too. A deletion to the
+Recycle Bin is one Windows operation, which cannot stop between files, so
+Exit waits for one that runs and starts no other. The moves get 2 seconds to
+stop, and then their proofs are saved. Pending priority edits, the torrents'
+pauses and the final transfer sample get 2 seconds each; one that times out
+is logged and Exit continues, because the resume data still records what each
+torrent has. The desktop host ends the process with exit code 2 when Exit has
+not ended 10 seconds after the person chose it, also when a thread waits on a
+drive that stopped responding; cancelling Exit in the window stops that
+clock. A normal Exit ends well before that, so the end at 10 seconds firing
+during one is a defect. The end at 10 seconds can also cut the teardown after
+the final save, which loses nothing, because everything is saved by then. A failed save ends Exit at once, as
+after a crash, because saving again would fail again; the tasks and markers
+saved before it still hold the work. When the final save succeeded but a
+stalled check's reads remain, libtorrent's teardown would wait for them, so the
+engine logs `teardown_skipped` and ends at once as well. Then:
 
 1. Stop accepting new commands and settle accepted state changes and writes.
 2. Pause the session and await transfer/disk quiescence without changing each
@@ -1103,9 +1318,10 @@ Then:
    failure outcomes. Obtain final resume data and await application storage
    commit; a resume-data alert alone does not prove payload writes have flushed.
 4. Remove the tray icon and its popup, then destroy/join libtorrent, close the
-   pipe, and release data-directory ownership last. The join waits seconds for
-   trackers to acknowledge the stop, and an icon left on screen during it looks
-   like an exit that did nothing.
+   pipe, and release data-directory ownership last. The join waits up to 1
+   second (`stop_tracker_timeout`) for trackers to acknowledge the stop, so a
+   tracker that does not answer cannot bring Exit near its 10 seconds, and an
+   icon left on screen during it looks like an exit that did nothing.
 
 An active draft prompt is not an unresponsive window. WinUI acknowledges when
 Exit is waiting for that choice; the window timeout pauses for the person and
@@ -1115,20 +1331,6 @@ acknowledged and discarded. Reopening a disconnected but living window retains i
 process and starts the same bounded readiness wait used for a new window; a
 window already on screen is raised instead.
 
-If the final save fails, report it once in a toast and keep the engine alive:
-
-- The engine saves again after the checkpoint retry delay, and exits once a
-  save succeeds. The person does not have to retry.
-- Each attempt waits again for torrents that never confirmed their pause,
-  because a save while their disk work runs can record pieces that are not on
-  disk. The engine log names each torrent whose pause wait timed out.
-- The toast offers Force exit, which ends the process at once without the
-  final save, because a stalled torrent may never let a save succeed. Its
-  message says that the changes since the last save are lost and that
-  downloaded files stay on disk, and its detail names the file that could not
-  be written and Windows' reason.
-- Choosing Exit again shows the toast again. The toast never keeps the
-  engine running.
 
 Do not discard unsaved state automatically or offer recovery buttons on the
 splash.
@@ -1341,7 +1543,7 @@ including network protocol choices, queue and seeding policy,
 and the memory and checking controls in [Disk write caching](#disk-write-caching).
 The [wire representation](pipe-api.md#wire-representation) owns their fields and ranges.
 The disk backend stays at its
-default ([Disk write caching](#disk-write-caching)). The engine changes three
+default ([Disk write caching](#disk-write-caching)). The engine changes four
 more defaults:
 
 - `user_agent` is `TinyTorrent/<version>`, and `peer_fingerprint` is
@@ -1357,6 +1559,10 @@ more defaults:
 - `active_dht_limit`, `active_lsd_limit` and `active_tracker_limit` are `-1`,
   as `active_limit` already is. Running torrents are auto-managed, so the
   default limits would stop all but 88 of them announcing on DHT.
+- `active_checking` is the largest `int`, so libtorrent starts every check in
+  its queue and
+  [drive turns](#drive-turns) decide which ones run. libtorrent pauses every
+  check when the limit is 0 or less.
 
 ## Notifications and sleep
 
@@ -1504,10 +1710,13 @@ Advanced also exposes three controls for verification and large seeding librarie
   outstanding reads per checking torrent, not all checking memory: libtorrent
   keeps at least two pieces outstanding per hashing thread, so large pieces
   can exceed the target.
-- Checking threads (`hashing_threads`): 1–64, default 1. A single thread suits
-  sequential hard-drive access; extra threads allow parallel verification on
-  faster storage at the cost of CPU and memory. Download-time hashing retains
-  the regular disk threads.
+- Checking threads (`hashing_threads`): 1–64, default 1, per running check.
+  libtorrent gets this many threads for each check that runs or still reads,
+  counting at least one check, because all checks share its threads and
+  checks on different drives would otherwise take turns on one thread. A single thread
+  suits sequential hard-drive access; extra threads allow parallel
+  verification on faster storage at the cost of CPU and memory. Download-time
+  hashing retains the regular disk threads.
 - Open-file limit (`file_pool_size`): 1–10000, default 40. A larger pool reduces
   reopen work across many active files but retains more operating-system resources.
 

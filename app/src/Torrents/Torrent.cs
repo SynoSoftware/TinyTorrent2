@@ -5,7 +5,9 @@ using Syno.TinyTorrent.Shared;
 
 namespace Syno.TinyTorrent.Torrents;
 
-public sealed class Torrent(string torrentId, Strings strings) : INotifyPropertyChanged
+// `nameOf` finds another torrent's name, or null when the list lacks it.
+public sealed class Torrent(string torrentId, Strings strings, Func<string, string?> nameOf)
+    : INotifyPropertyChanged
 {
     private bool _connected;
     private DateTimeOffset _ageRefresh;
@@ -56,7 +58,24 @@ public sealed class Torrent(string torrentId, Strings strings) : INotifyProperty
     public bool IsPaused => StatusCode is "paused" or "all_paused";
     public bool IsError => StatusCode == "error" || ErrorCode.Length > 0;
     public bool IsProgressMuted =>
-        !IsError && !IsMoving && (IsPaused || (Progress >= 1 && StatusCode != "checking"));
+        !IsError
+        && !IsMoving
+        && (IsPaused || (Progress >= 1 && StatusCode is not ("checking" or "waiting_check")));
+
+    // The drive a waiting check or move waits for, as its own folder names it,
+    // and the torrent whose job uses it; empty while the engine does not
+    // know them.
+    public string WaitingDrive { get; private set; } = string.Empty;
+    public string WaitingTorrentId { get; private set; } = string.Empty;
+    // The name of the torrent whose file work a waiting move waits for, when
+    // its drives are free.
+    public string WaitingFiles { get; private set; } = string.Empty;
+    public string? StatusTip =>
+        WaitingDrive.Length == 0
+            ? WaitingFiles.Length == 0 ? null : strings.Format("status", "waiting_for_files", WaitingFiles)
+        : nameOf(WaitingTorrentId) is { } holder
+            ? strings.Format("status", "waiting_for_torrent", WaitingDrive, holder)
+        : strings.Format("status", "waiting_for", WaitingDrive);
     public bool IsDownloading => StatusCode == "downloading" && !IsError;
     public bool IsStatusNeutral => !IsDownloading && !IsError;
     public string StatusGlyph =>
@@ -67,8 +86,8 @@ public sealed class Torrent(string torrentId, Strings strings) : INotifyProperty
             "paused" => Syno.Lucide.Square,
             "all_paused" => Syno.Lucide.Pause,
             "completed" => Syno.Lucide.CircleCheck,
-            "checking" => Syno.Lucide.RefreshCw,
-            "moving" => Syno.Lucide.Folder,
+            "checking" or "waiting_check" => Syno.Lucide.RefreshCw,
+            "moving" or "waiting_move" => Syno.Lucide.Folder,
             "metadata" => Syno.Lucide.Hourglass,
             "queued" => Syno.Lucide.Clock,
             "error" => Syno.Lucide.CircleAlert,
@@ -201,6 +220,9 @@ public sealed class Torrent(string torrentId, Strings strings) : INotifyProperty
         UploadLimit = Set(UploadLimit, row.GetProperty("upload_limit").GetInt32());
         Progress = Set(Progress, row.GetProperty("progress").GetDouble());
         StatusCode = ReadText("status", StatusCode);
+        WaitingDrive = ReadText("waiting_drive", WaitingDrive);
+        WaitingTorrentId = ReadText("waiting_torrent_id", WaitingTorrentId);
+        WaitingFiles = ReadText("waiting_files", WaitingFiles);
         DownloadRate = Set(DownloadRate, row.GetProperty("download_rate").GetDouble());
         UploadRate = Set(UploadRate, row.GetProperty("upload_rate").GetDouble());
         ErrorCode = ReadText("error", ErrorCode);

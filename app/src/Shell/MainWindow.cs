@@ -200,6 +200,7 @@ public sealed partial class MainWindow : Window
         Model.ShowRequested += async (_, _) => await ShowWhenReady();
         Model.CloseRequested += async (_, request) => await CloseWindow(request);
         Model.ConfirmExitRequested += async (_, _) => await ConfirmExit();
+        Model.UnfinishedRequested += (_, _) => ShowDeferredUnfinished();
         // No limit sorts as the highest, so ascending lists limited torrents first.
         static long Rank(int limit) => limit > 0 ? limit : long.MaxValue;
         Torrents
@@ -850,6 +851,7 @@ public sealed partial class MainWindow : Window
                     if (!suspended.IsResolved)
                         _ = restore();
                 }
+                ShowDeferredUnfinished();
                 ShowDeferredAdd();
                 // A page the person is already on stays as they left it, and
                 // Recover moves only to the error.

@@ -51,6 +51,7 @@ std::optional<ToastSwitch> Switch(ToastKind kind)
     case ToastKind::Background:
         return ToastSwitch::Background;
     case ToastKind::Aggregate:
+    case ToastKind::Unfinished:
         return std::nullopt;
     }
     return std::nullopt;
@@ -262,6 +263,13 @@ Popup::Content Toasts::Message(Toast const& toast) const
         content.title = strings_.Text("notification", "missing_title");
         content.body = strings_.Format("notification", toast.count > 1 ? "missing_programs" : "missing_program",
             {Wide(toast.name), Strings::Number(toast.count - 1)});
+    }
+    // The work waits until the person answers, so the notice stays.
+    else if (toast.kind == ToastKind::Unfinished)
+    {
+        content.title = strings_.Text("notification", "unfinished_title");
+        content.body = strings_.Text("notification", "unfinished");
+        content.stay = ToastStay::Persistent;
     }
     else
     {

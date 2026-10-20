@@ -91,7 +91,8 @@ Store::~Store()
         stopping_ = true;
     }
     ready_.notify_one();
-    worker_.join();
+    if (worker_.joinable())
+        worker_.join();
 }
 
 void Store::Run(std::function<void()> work, std::function<void(StorageOutcome)> completion)
@@ -197,6 +198,22 @@ void Store::Abandon()
         idle_.wait_for(lock, std::chrono::milliseconds(10));
     }
     completed_.clear();
+}
+
+void Store::Interrupt()
+{
+    std::lock_guard lock(mutex_);
+    if (working_)
+        CancelSynchronousIo(worker_.native_handle());
+}
+
+void Store::Detach()
+{
+    std::lock_guard lock(mutex_);
+    jobs_.clear();
+    completed_.clear();
+    if (worker_.joinable())
+        worker_.detach();
 }
 
 std::string Store::Read(std::filesystem::path const& path)

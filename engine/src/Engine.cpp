@@ -158,6 +158,7 @@ char const* ToString(ToastKind kind)
     case ToastKind::Background: return "background";
     case ToastKind::MissingProgram: return "missing_program";
     case ToastKind::Aggregate: return "aggregate";
+    case ToastKind::Unfinished: return "unfinished";
     }
     return "";
 }
@@ -201,7 +202,7 @@ void Engine::Execute(Json const& request, std::string const& connectionId, Reply
 }
 void Engine::Tick() { state_->Tick(); }
 void Engine::Disconnect(std::string const& connectionId) { state_->Disconnect(connectionId); }
-void Engine::Shutdown(std::function<void(std::optional<std::string> failure)> report) { state_->Shutdown(std::move(report)); }
+void Engine::Shutdown(std::function<void(ShutdownEnd end)> report) { state_->Shutdown(std::move(report)); }
 void Engine::PauseSession(bool paused, std::function<void(Outcome)> completion)
 {
     if (auto refusal = state_->Refusal())
@@ -260,6 +261,7 @@ bool Engine::IsSource(std::string const& source)
 }
 
 bool Engine::IsShuttingDown() const { return state_->IsShuttingDown(); }
+bool Engine::AwaitsAnswer() const { return !state_->asked.empty(); }
 bool Engine::IsLoading() const { return state_->IsLoading(); }
 bool Engine::HasStorageFailure() const { return state_->startup == Startup::Failed; }
 std::string Engine::StartupError() const { return state_->startupError; }

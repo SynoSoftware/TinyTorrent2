@@ -35,6 +35,8 @@ char const* ToString(Status status)
     case Status::Paused: return "paused";
     case Status::AllPaused: return "all_paused";
     case Status::Checking: return "checking";
+    case Status::WaitingCheck: return "waiting_check";
+    case Status::WaitingMove: return "waiting_move";
     case Status::Metadata: return "metadata";
     case Status::Queued: return "queued";
     case Status::Seeding: return "seeding";
@@ -73,6 +75,7 @@ char const* ToString(ProblemKind kind)
     switch (kind)
     {
     case ProblemKind::MoveInterrupted: return "move_interrupted";
+    case ProblemKind::MoveUnfinished: return "move_unfinished";
     case ProblemKind::MoveFailed: return "move_failed";
     case ProblemKind::DestinationExists: return "destination_exists";
     case ProblemKind::SameLocation: return "same_location";
@@ -81,6 +84,7 @@ char const* ToString(ProblemKind kind)
     case ProblemKind::StorageFailed: return "storage_failed";
     case ProblemKind::StorageOverloaded: return "storage_overloaded";
     case ProblemKind::CheckpointFailed: return "checkpoint_failed";
+    case ProblemKind::DriveStalled: return "drive_stalled";
     }
     return "";
 }
@@ -249,6 +253,10 @@ Json Facts::ToJson() const
         {"skip_patterns", skipPatterns},
         {"move_destination", marker ? marker->destination : std::string()},
         {"move_stage", static_cast<int>(marker ? marker->stage : MoveStage::Staged)},
+        {"move_copy", marker && marker->copy ? marker->copy->path : std::string()},
+        {"move_copy_bytes", marker && marker->copy ? marker->copy->bytes : 0},
+        {"move_found", marker ? marker->found : std::vector<std::string>{}},
+        {"move_failed", marker && marker->failed},
         {"torrent_file", torrentFile},
         {"verify_files", verifyFiles},
         {"paused", intent == Intent::Paused},
@@ -288,10 +296,23 @@ Facts Facts::Read(Json const& saved)
     if (auto destination = ReadSaved(saved, "move_destination", std::string()); !destination.empty())
     {
         facts.marker = Facts::Marker{std::move(destination)};
-        // A move saved without a valid stage counts as unchecked.
+        // A move saved without a valid stage counts as unchecked. Earlier
+        // versions saved 2 for a checked move that waited for the person.
         auto stage = ReadSaved(saved, "move_stage", 0);
-        if (stage >= 0 && stage <= static_cast<int>(MoveStage::Waiting))
-            facts.marker->stage = static_cast<MoveStage>(stage);
+        if (stage == 1 || stage == 2)
+            facts.marker->stage = MoveStage::Placing;
+        facts.marker->failed = stage == 2 || ReadSaved(saved, "move_failed", false);
+        if (auto found = saved.find("move_found"); found != saved.end() && found->is_array())
+        {
+            for (auto const& path : *found)
+            {
+                if (path.is_string())
+                    facts.marker->found.push_back(path.get<std::string>());
+            }
+        }
+        if (auto copy = ReadSaved(saved, "move_copy", std::string()); !copy.empty())
+            facts.marker->copy = Facts::Marker::Copy{std::move(copy), ReadSaved(saved, "move_copy_bytes",
+                std::uint64_t(0))};
     }
     facts.torrentFile = ReadSaved(saved, "torrent_file", std::string());
     facts.verifyFiles = ReadSaved(saved, "verify_files", false);
@@ -421,10 +442,15 @@ std::optional<Problem> Torrent::Error() const
     {
         return moveError;
     }
-    // A waiting move the person asked for replaces the interrupted one.
-    if (!moving && !waitingMove && facts.marker && !ResumesMove())
+    if (checkError)
     {
-        return Problem{ProblemKind::MoveInterrupted, facts.marker->destination};
+        return checkError;
+    }
+    // A waiting move the person asked for replaces the interrupted one.
+    if (!moving && !waitingMove && facts.marker)
+    {
+        return Problem{unfinished ? ProblemKind::MoveUnfinished : ProblemKind::MoveInterrupted,
+            facts.marker->destination};
     }
     if (!conflict.empty())
     {
@@ -455,14 +481,9 @@ std::optional<Problem> Torrent::Diagnose() const
     return checkpointError;
 }
 
-bool Torrent::ResumesMove() const
-{
-    return !moving && facts.marker && facts.marker->stage == MoveStage::Placing;
-}
-
 bool Torrent::MoveWaits() const
 {
-    return !moving && (ResumesMove() || waitingMove) && !Error();
+    return !moving && (waitingMove || unfinished == TaskKind::Move) && !Error();
 }
 
 bool Torrent::FilesBusy() const
@@ -473,8 +494,24 @@ bool Torrent::FilesBusy() const
 
 bool Torrent::IsHeld(bool hasMetadata) const
 {
-    return !conflict.empty() || moving || facts.marker || cacheWrite == CacheWrite::Flushing ||
-        (hasMetadata && namePhase != NamePhase::Ready);
+    return !conflict.empty() || moving || facts.marker || cacheWrite == CacheWrite::Flushing || CheckWaits() ||
+        checkError || unfinished == TaskKind::Check || (hasMetadata && namePhase != NamePhase::Ready);
+}
+
+bool Torrent::CheckWaits() const
+{
+    return checkTurn && !checkTurn->running;
+}
+
+bool Torrent::NamesKnown() const
+{
+    return namePhase != NamePhase::Recovering && (restore || !handle.torrent_file() || names);
+}
+
+bool Torrent::ChecksFiles(bool sessionPaused) const
+{
+    return !sessionPaused && status.state == lt::torrent_status::checking_files &&
+        !(status.flags & lt::torrent_flags::paused) && !moving && !CheckWaits();
 }
 
 bool Torrent::MoveBlocked() const
@@ -484,9 +521,13 @@ bool Torrent::MoveBlocked() const
 
 Status Torrent::Classify(bool sessionPaused) const
 {
-    if (moving || MoveWaits())
+    if (moving)
     {
         return Status::Moving;
+    }
+    if (MoveWaits())
+    {
+        return Status::WaitingMove;
     }
     return ClassifyTransfer(sessionPaused);
 }
@@ -505,9 +546,9 @@ Status Torrent::ClassifyTransfer(bool sessionPaused) const
     {
         return Status::AllPaused;
     }
-    if (completion.IsChecking() || Checks(status.state))
+    if (completion.IsChecking() || Checks(status.state) || unfinished == TaskKind::Check)
     {
-        return Status::Checking;
+        return CheckWaits() || unfinished == TaskKind::Check ? Status::WaitingCheck : Status::Checking;
     }
     if (!status.has_metadata)
     {
@@ -1079,7 +1120,7 @@ Json Torrent::Describe(TorrentView view, bool includeFiles, Detail const& detail
     return data;
 }
 
-Json Torrent::Row(bool sessionPaused, int queue, std::optional<double> moveProgress) const
+Json Torrent::Row(bool sessionPaused, int queue, std::optional<double> moveProgress, DriveWait const& wait) const
 {
     auto problem = Diagnose();
     auto complete = completion.IsReached(status);
@@ -1091,6 +1132,8 @@ Json Torrent::Row(bool sessionPaused, int queue, std::optional<double> moveProgr
         {"added", facts.added}, {"name", Name()}, {"size", status.total_wanted},
         {"completed", status.total_wanted_done},
         {"progress", moveProgress.value_or(status.progress)}, {"status", ToString(Classify(sessionPaused))},
+        {"waiting_drive", wait.drive}, {"waiting_torrent_id", wait.holderId},
+        {"waiting_files", wait.files},
         {"download_rate", status.download_payload_rate}, {"upload_rate", status.upload_payload_rate},
         {"error", !problem ? "" : problem->Code()},
         {"detail", problem ? problem->detail : ""},

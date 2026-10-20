@@ -54,6 +54,13 @@ public:
     void Drain();
     bool IsIdle() const;
     void Abandon();
+    // Cancels the Windows call that the job in progress waits in, so a job
+    // stuck on a drive that stopped responding fails and its completion runs.
+    void Interrupt();
+    // Drops queued work and stops waiting for the job in progress, which
+    // waits until the process ends, such as a parked copy. Its completion
+    // never runs, and the destructor returns at once.
+    void Detach();
     static std::string Read(std::filesystem::path const& path);
 
 private:

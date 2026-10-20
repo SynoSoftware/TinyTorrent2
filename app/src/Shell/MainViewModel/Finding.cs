@@ -173,7 +173,7 @@ public sealed partial class MainViewModel
             TorrentFilter.Downloading => torrent.StatusCode is "downloading" or "metadata",
             TorrentFilter.Seeding => torrent.StatusCode is "seeding" or "completed",
             TorrentFilter.Paused => torrent.StatusCode == "paused",
-            TorrentFilter.Queued => torrent.StatusCode == "queued",
+            TorrentFilter.Queued => torrent.StatusCode is "queued" or "waiting_check" or "waiting_move",
             TorrentFilter.Errors => torrent.IsError,
             _ => false,
         };

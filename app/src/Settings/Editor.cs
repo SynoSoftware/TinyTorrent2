@@ -69,6 +69,7 @@ public sealed partial class Editor : INotifyPropertyChanged
     public Setting RecheckFinished { get; }
     public Setting ShowSplash { get; }
     public Setting StartInTray { get; }
+    public Setting UnfinishedTasks { get; }
     public Setting Download { get; }
     public Setting Upload { get; }
     public Setting AlternativeDownload { get; }
@@ -81,7 +82,6 @@ public sealed partial class Editor : INotifyPropertyChanged
     public Setting SlowDownload { get; }
     public Setting SlowUpload { get; }
     public Setting SlowWait { get; }
-    public Setting ActiveChecking { get; }
     public Setting Transport { get; }
     public Setting IpFamily { get; }
     public Setting OutgoingRate { get; }
@@ -259,9 +259,7 @@ public sealed partial class Editor : INotifyPropertyChanged
                 )
             : Text.Get("settings", "watch_off_summary");
     public string CheckingSummary =>
-        Text.FormatCount("settings", "checking_count", (int)ActiveChecking.ConfirmedNumber)
-        + " · "
-        + Text.FormatCount("settings", "checking_threads", (int)HashingThreads.ConfirmedNumber);
+        Text.FormatCount("settings", "checking_threads", (int)HashingThreads.ConfirmedNumber);
     public string HistorySummary =>
         Text.Format(
             "settings",
@@ -672,19 +670,6 @@ public sealed partial class Editor : INotifyPropertyChanged
                 Condition = () => IgnoreSlow.IsOn,
             }
         );
-        ActiveChecking = Add(
-            new(
-                Engine,
-                Text,
-                "active_checking",
-                SettingKind.Integer,
-                SettingsCategory.Advanced
-            )
-            {
-                Minimum = 1,
-                Maximum = 64,
-            }
-        );
         Transport = Add(new(Engine, Text, "transport", SettingKind.Text, SettingsCategory.Network));
         IpFamily = Add(
             new(Engine, Text, "ip_family", SettingKind.Text, SettingsCategory.Network)
@@ -796,6 +781,9 @@ public sealed partial class Editor : INotifyPropertyChanged
         );
         StartInTray = Add(
             new(Engine, Text, "start_in_tray", SettingKind.Boolean, SettingsCategory.General)
+        );
+        UnfinishedTasks = Add(
+            new(Engine, Text, "unfinished_tasks", SettingKind.Text, SettingsCategory.General)
         );
         Language = Add(
             new(Engine, Text, "language", SettingKind.Text, SettingsCategory.Appearance)

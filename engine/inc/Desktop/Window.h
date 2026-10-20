@@ -69,6 +69,8 @@ public:
     std::size_t Offered() const;
     // Shows a toast in the connected window; false without one.
     bool Notify(Toast const& toast);
+    // Whether a window is connected or starting.
+    bool IsPresent() const;
     bool Owns(std::shared_ptr<Pipe::Connection> const& client) const { return client == client_; }
     void OnReady(std::shared_ptr<Pipe::Connection> const& client, Reply const& reply);
     void OnClosed(Reply const& reply);

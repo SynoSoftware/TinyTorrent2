@@ -40,9 +40,10 @@ constexpr CommandEntry commands[] = {
     {"speed_limit", Command::SpeedLimit, Publication::Execute},
     {"check_proxy", Command::CheckProxy, Publication::Execute},
     {"connection_test", Command::ConnectionTest, Publication::Execute},
-    {"turn_off", Command::TurnOff, Publication::Operation}};
+    {"turn_off", Command::TurnOff, Publication::Operation},
+    {"unfinished_tasks", Command::UnfinishedTasks, Publication::Execute}};
 
-constexpr std::pair<std::string_view, QueueMove> moves[] = {
+constexpr std::pair<std::string_view, QueueMove> queueMoves[] = {
     {"up", QueueMove::Up},
     {"down", QueueMove::Down},
     {"top", QueueMove::Top},
@@ -208,6 +209,17 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
     case Command::SessionPause:
         PauseSession(request.at("paused").get<bool>(), Acknowledge(reply));
         break;
+    case Command::UnfinishedTasks:
+    {
+        auto action = request.at("action").get<std::string>();
+        if (action != "continue" && action != "abandon")
+        {
+            reply(Failure(ErrorCode::InvalidRequest));
+            break;
+        }
+        Answer(action == "continue" ? TaskAnswer::Continue : TaskAnswer::Abandon, Acknowledge(reply));
+        break;
+    }
     case Command::TurnOff:
     {
         auto word = request.at("switch").get<std::string>();
@@ -470,10 +482,11 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
                 // The move waits its turn and replaces an earlier problem.
                 if (DelaysMove(outcome))
                 {
+                    auto turn = ++turns;
                     for (auto const& id : ids)
                     {
                         auto& torrent = torrents.at(id);
-                        torrent.waitingMove = destination;
+                        torrent.waitingMove = WaitingMove{destination, turn};
                         torrent.moveError.reset();
                         if (outcome.error == ErrorCode::MetadataUnavailable)
                             RefuseMove(torrent, outcome);
@@ -490,7 +503,7 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
         // A queue command names either a direction or the torrent to move
         // before; a null torrent moves them to the end.
         auto target = request.value("before_torrent_id", Json());
-        auto move = !request.contains("before_torrent_id") ? Parse(moves, request.value("direction", "")) :
+        auto move = !request.contains("before_torrent_id") ? Parse(queueMoves, request.value("direction", "")) :
             std::optional(target.is_null() ? QueueMove::Bottom : QueueMove::Before);
         if (!move)
         {
@@ -633,10 +646,18 @@ void Engine::State::Verify(std::vector<std::string> const& ids, std::function<vo
     for (auto const& id : ids)
     {
         auto& torrent = torrents.at(id);
-        if (torrent.FilesBusy())
+        // A recheck queues behind the reads of a stalled check, so it waits
+        // until they return; meanwhile the stalled check continues and can
+        // stall again.
+        if (torrent.FilesBusy() || torrent.checkReads == CheckReads::Stalled)
             torrent.needsRecheck = true;
         else
             Recheck(torrent);
+        if (torrent.checkError)
+        {
+            torrent.checkError.reset();
+            torrent.ApplyIntent();
+        }
     }
     statusPending = true;
     ApplyQueue();
@@ -661,7 +682,7 @@ void Engine::State::ApplyWaiting(Torrent& torrent)
         torrent.handle.prioritize_files(torrent.facts.priorities);
         Invalidate(torrent.torrentId);
     }
-    if (torrent.needsRecheck)
+    if (torrent.needsRecheck && torrent.checkReads == CheckReads::None)
     {
         torrent.needsRecheck = false;
         Recheck(torrent);
@@ -719,6 +740,7 @@ void Engine::State::SetIntent(std::vector<std::string> const& ids, Intent intent
                     torrent.moveError.reset();
                 }
                 torrent.conflict.clear();
+                torrent.checkError.reset();
                 if (!torrent.restore)
                 {
                     torrent.handle.clear_error();
@@ -726,6 +748,9 @@ void Engine::State::SetIntent(std::vector<std::string> const& ids, Intent intent
                 }
                 torrent.diskError.clear();
             }
+            // A later force goes after the checks forced before it.
+            if (intent == Intent::Forced && torrent.CheckWaits())
+                torrent.checkTurn->turn = ++turns;
             torrent.ApplyIntent();
         }
         statusPending = true;

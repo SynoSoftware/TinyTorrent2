@@ -720,6 +720,30 @@
                             AutomationProperties.AutomationId="StartPaused"
                           />
                         </controls:SettingsRow>
+                        <controls:SettingsRow
+                          Setting="{x:Bind Model.UnfinishedTasks}"
+                          Description="{x:Bind Model.Text.Get('settings', 'unfinished_tasks_hint'), Mode=OneWay}"
+                        >
+                          <ComboBox
+                            Width="260"
+                            SelectedValuePath="Tag"
+                            SelectedValue="{x:Bind Model.UnfinishedTasks.SelectedValue, Mode=OneWay}"
+                            AutomationProperties.AutomationId="UnfinishedTasks"
+                          >
+                            <ComboBoxItem
+                              Tag="ask"
+                              Content="{x:Bind Model.Text.Get('settings', 'unfinished_ask'), Mode=OneWay}"
+                            />
+                            <ComboBoxItem
+                              Tag="continue"
+                              Content="{x:Bind Model.Text.Get('settings', 'unfinished_continue'), Mode=OneWay}"
+                            />
+                            <ComboBoxItem
+                              Tag="abandon"
+                              Content="{x:Bind Model.Text.Get('settings', 'unfinished_abandon'), Mode=OneWay}"
+                            />
+                          </ComboBox>
+                        </controls:SettingsRow>
                       </StackPanel>
                     </controls:SettingsSection>
                     <controls:SettingsSection
@@ -1910,17 +1934,6 @@
                             Width="160"
                             Text="{x:Bind Model.HashingThreads.Input, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                             AutomationProperties.AutomationId="HashingThreads"
-                          />
-                        </controls:SettingsRow>
-                        <controls:SettingsRow
-                          Setting="{x:Bind Model.ActiveChecking}"
-                          Description="{x:Bind Model.Text.Get('settings', 'active_checking_hint'), Mode=OneWay}"
-                        >
-                          <TextBox
-                            InputScope="Number"
-                            Width="160"
-                            Text="{x:Bind Model.ActiveChecking.Input, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                            AutomationProperties.AutomationId="ActiveChecking"
                           />
                         </controls:SettingsRow>
                         <controls:SettingsRow

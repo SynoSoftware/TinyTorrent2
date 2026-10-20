@@ -9,11 +9,18 @@
 #include "Desktop/Tray.h"
 #include "Desktop/Window.h"
 #include <optional>
+#include <thread>
 
 namespace tt::desktop
 {
 class Application
 {
+    // Ends the process 10 seconds after Exit starts, also when a thread waits
+    // on a drive that stopped responding; cancelling Exit stops it. The first
+    // member, so it is released last, and it still ends a teardown that runs
+    // out of time.
+    std::jthread watchdog_;
+
 public:
     Application(std::filesystem::path directory, std::wstring sid, bool headless);
     ~Application() = default;
@@ -34,6 +41,7 @@ private:
     void Answer(ExitAnswer answer);
     bool ConfirmExit();
     void BeginExit();
+    void StartWatchdog();
     void Shutdown();
     bool IsExiting() const;
     void CancelExit();
@@ -45,7 +53,6 @@ private:
     void AddSources();
     void FinishSource(Outcome const& outcome, Added const& added);
     void CheckPrograms();
-    void ShowSaveFailure();
     bool headless_;
     ExitPhase exit_ = ExitPhase::Idle;
     bool ticking_ = false;
@@ -53,11 +60,9 @@ private:
     // A plain start opens the window once startup has read whether the person
     // chose to start in the tray.
     bool pendingStart_ = false;
-    std::optional<bool> endSaved_;
-    // Why the final save failed most recently, which Exit shows again while
-    // the engine keeps saving.
-    std::optional<std::wstring> saveFailure_;
+    bool endSaved_ = false;
     bool programsChecked_ = false;
+    bool unfinishedNotified_ = false;
 #ifdef _DEBUG
     bool showsSample_ = false;
 #endif

@@ -49,9 +49,25 @@ struct Facts
     // The recovery marker of a move.
     struct Marker
     {
+        // The bytes at the start of an unfinished copy that a flush proved on
+        // disk, which a later move continues from; see `Payload::Move`.
+        struct Copy
+        {
+            // The copy's final path.
+            std::string path;
+            std::uint64_t bytes = 0;
+        };
+
         std::string destination;
         // How far the move got.
         MoveStage stage = MoveStage::Staged;
+        std::optional<Copy> copy;
+        // The files that the preflight found at the destination before the
+        // move changed any file there, which are the person's own.
+        std::vector<std::string> found;
+        // The move failed by itself and left files in both folders, so it
+        // waits for the person, not for the next start.
+        bool failed = false;
     };
 
     std::string savePath;
@@ -112,6 +128,42 @@ struct FileNames
 {
     std::shared_ptr<lt::torrent_info const> metadata;
     lt::renamed_files mappings;
+};
+
+// A move that waits for busy files or its drives: one the person asked for,
+// or the move to the final folder. The torrents of one request share its turn,
+// their place among the jobs that wait for drives.
+struct WaitingMove
+{
+    std::string destination;
+    std::uint64_t turn = 0;
+};
+
+// What a waiting check or move waits for: a drive, named by the letter or
+// server of the job's own folder, and the torrent whose running job uses it;
+// or, for a move whose drives are free, the name of the torrent whose file
+// work it waits for.
+struct DriveWait
+{
+    std::string drive;
+    std::string holderId;
+    std::string files;
+};
+
+// A running job's progress at the last drive pass, and when the pass saw it
+// change, so a job that stops making progress gives up.
+struct Pulse
+{
+    std::uint64_t done = 0;
+    std::chrono::steady_clock::time_point changed;
+};
+
+// A check's place among the jobs that use drives, and its progress while the
+// drive pass lets it run. A check that does not run waits for its drive.
+struct CheckTurn
+{
+    std::uint64_t turn = 0;
+    std::optional<Pulse> running;
 };
 
 // Whether a torrent's download has finished and reached the disk, from
@@ -200,8 +252,21 @@ struct Torrent
     // Verification and file choices that wait until the files are not busy.
     bool needsRecheck = false;
     bool prioritiesPending = false;
-    // The folder of a move the person asked for, which waits for busy files.
-    std::optional<std::string> waitingMove;
+    std::optional<WaitingMove> waitingMove;
+    // The kind of its work that the last end left unfinished, while that work
+    // waits for the person to continue or abandon it: a move, which leaves
+    // the torrent where it is, or a check, which the engine holds.
+    std::optional<TaskKind> unfinished;
+    // The check that libtorrent started keeps its turn, also while Pause all
+    // lasts, until it ends or the person stops it.
+    std::optional<CheckTurn> checkTurn;
+    // Whether libtorrent may still read the files for this torrent's check:
+    // from a status that shows the check running until libtorrent reports
+    // that its paused check has no read left, or until the check ends.
+    CheckReads checkReads = CheckReads::None;
+    // The check stopped making progress, so the engine keeps the torrent
+    // stopped until the person starts or verifies it.
+    std::optional<Problem> checkError;
     std::set<lt::file_index_t> completedFiles;
     bool filesPending = false;
     // The files whose rename_file request waits for its alert.
@@ -236,19 +301,23 @@ struct Torrent
     std::vector<std::filesystem::path> Paths(bool logical = false) const;
     std::optional<Problem> Error() const;
     std::optional<Problem> Diagnose() const;
-    // Its interrupted move waits to continue on its own, so it is moving,
-    // not a problem for the person.
-    bool ResumesMove() const;
-    // A move continues on its own or waits for busy files, with no problem
-    // that delays it.
+    // A move waits for its turn, or for the person's answer about the work
+    // that the last end left unfinished, with no problem that delays it.
     bool MoveWaits() const;
     // The torrent's own files are being prepared, renamed or moved.
     bool FilesBusy() const;
     bool MoveBlocked() const;
     // The engine keeps it paused for its own work, whatever the person chose:
-    // a conflict, a move, the write before a rename, or names that wait for
+    // a conflict, a move, the write before a rename, a check that waits for
+    // its drive, for the person's answer or stalled, or names that wait for
     // preparation once it has `hasMetadata`.
     bool IsHeld(bool hasMetadata) const;
+    // The engine holds its check, because another job uses its drive.
+    bool CheckWaits() const;
+    // Its current file names are read, or it has no metadata to name files.
+    bool NamesKnown() const;
+    // libtorrent checks its files now, as the last status reports.
+    bool ChecksFiles(bool sessionPaused) const;
     Status Classify(bool sessionPaused) const;
     // The status without a move that runs or waits.
     Status ClassifyTransfer(bool sessionPaused) const;
@@ -262,7 +331,7 @@ struct Torrent
         std::chrono::steady_clock::time_point since = {}) const;
     // `queue` is the torrent's place in the download queue, or -1 outside it.
     // `moveProgress` replaces the progress while the torrent's files move.
-    Json Row(bool sessionPaused, int queue, std::optional<double> moveProgress) const;
+    Json Row(bool sessionPaused, int queue, std::optional<double> moveProgress, DriveWait const& wait) const;
     std::vector<lt::download_priority_t> ChosenPriorities(
         std::shared_ptr<lt::torrent_info const> const& metadata) const;
     std::vector<lt::announce_entry> const& Trackers() const;

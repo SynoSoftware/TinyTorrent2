@@ -1,20 +1,25 @@
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('Frames', 'Summaries', 'Targets', 'Facts', 'Restore', 'Exit', 'Conflict', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames', 'Pause', 'History', 'Accounting', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify')]
+    [ValidateSet('Frames', 'Summaries', 'Targets', 'Facts', 'Restore', 'Exit', 'Conflict', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames', 'Pause', 'History', 'Accounting', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify', 'DriveTurns', 'UnfinishedTasks')]
     [string] $Check,
-    # Every check but Conflict, WaitingMove, RemoveDuringMove and
-    # MoveAndVerify, which make their own torrents.
+    # Every check but Conflict, WaitingMove, RemoveDuringMove, MoveAndVerify,
+    # DriveTurns and UnfinishedTasks, which make their own torrents.
     [string] $TorrentFile,
     [string] $EnginePath,
     [switch] $Transfer,
     [switch] $OptIn,
     # RemoveDuringMove moves its payload into this folder, on another volume.
     # MoveAndVerify also moves its payload there when it is given, to check a
-    # copy between volumes.
+    # copy between volumes. DriveTurns and UnfinishedTasks need it on the
+    # drive that holds the evidence folder, as C: holds V:.
     [string] $Folder,
     # MoveAndVerify moves a small payload into this folder, on a network share,
-    # when it is given.
-    [string] $Network
+    # when it is given. DriveTurns and UnfinishedTasks need it.
+    [string] $Network,
+    # DriveTurns moves between these two folders, on drives that -Folder and
+    # -Network do not use, such as two USB drives. When either is missing, it
+    # skips the cases that need them and says so.
+    [string[]] $OtherFolders = @('D:\', 'E:\')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -24,7 +29,7 @@ $transferChecks = 'MagnetDownload', 'SelectedTransfer', 'DiskError', 'PreviewGua
 # These checks each guard one defect that was already fixed, so a run of every
 # check skips them; the owner asks for them when that code changes.
 $optInChecks = 'WaitingMove', 'RemoveDuringMove'
-if (-not $TorrentFile -and $Check -notin 'Conflict', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify') {
+if (-not $TorrentFile -and $Check -notin 'Conflict', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify', 'DriveTurns', 'UnfinishedTasks') {
     throw "$Check needs -TorrentFile."
 }
 if ($Check -in $transferChecks -and -not $Transfer) {
@@ -55,6 +60,9 @@ if ($Check -eq 'RemoveDuringMove') {
         throw "RemoveDuringMove needs -Folder, an existing folder on another volume than $payloadVolume, which holds the check's payload."
     }
 }
+if ($Check -in 'DriveTurns', 'UnfinishedTasks' -and -not ($Folder -and $Network)) {
+    throw "$Check needs -Folder, on the drive that holds the evidence folder, and -Network, on a network share."
+}
 $engineName = ([xml](Get-Content (Join-Path $repository 'Directory.Build.props'))).Project.PropertyGroup.EngineTargetName | Where-Object { $_ }
 $configuration = if ($Check -eq 'Pause') { 'Debug' } else { 'Release' }
 $executable = Join-Path $repository "artifacts/bin/Engine/$configuration/$engineName.exe"
@@ -65,14 +73,26 @@ $null = New-Item -ItemType Directory -Path $directory
 $payload = Join-Path $directory 'payload'
 $null = New-Item -ItemType Directory -Path $payload
 $volumeFolder = $null
-if ($Check -eq 'RemoveDuringMove' -or ($Check -eq 'MoveAndVerify' -and $Folder)) {
+if ($Check -eq 'RemoveDuringMove' -or ($Check -in 'MoveAndVerify', 'DriveTurns', 'UnfinishedTasks' -and $Folder)) {
     $volumeFolder = Join-Path ([IO.Path]::GetFullPath($Folder)) ('TinyTorrent-' + $Check + '-' + [guid]::NewGuid())
     $null = New-Item -ItemType Directory -Path $volumeFolder
 }
 $networkFolder = $null
-if ($Check -eq 'MoveAndVerify' -and $Network) {
+if ($Check -in 'MoveAndVerify', 'DriveTurns', 'UnfinishedTasks' -and $Network) {
     $networkFolder = Join-Path $Network ('TinyTorrent-' + $Check + '-' + [guid]::NewGuid())
     $null = New-Item -ItemType Directory -Path $networkFolder
+}
+$others = @()
+if ($Check -eq 'DriveTurns') {
+    if ($OtherFolders.Count -eq 2 -and -not ($OtherFolders | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Container) })) {
+        foreach ($other in $OtherFolders) {
+            $others += Join-Path $other ('TinyTorrent-' + $Check + '-' + [guid]::NewGuid())
+            $null = New-Item -ItemType Directory -Path $others[-1]
+        }
+    }
+    else {
+        Write-Warning "DriveTurns skips the moves between $($OtherFolders -join ' and '), because those folders are missing."
+    }
 }
 . (Join-Path $PSScriptRoot 'Engine.ps1')
 $stalled = $null
@@ -108,6 +128,59 @@ function Assert-Paused([string] $torrentId) {
             'Pause all lost the accepted magnet or its individual paused intent'
         Start-Sleep -Milliseconds 100
     } while ([DateTime]::UtcNow -lt $until)
+}
+
+# A torrent of zeros: its sparse file takes no disk space and every piece of it
+# hashes alike, so a large one checks for seconds. A sparse file's holes copy at
+# once, so a move that must take time uses a dense file. The file goes into
+# `$folder`, which is the incomplete folder when the torrent has one.
+# Adds the torrent of one file, `name.bin`, with 4 MiB pieces whose SHA-1
+# hashes are `pieces`, and returns its identity.
+function Add-Fixture([string] $name, [long] $length, [byte[]] $pieces, [string] $destination) {
+    $fixture = Join-Path $directory "$name.torrent"
+    $prefix = [Text.Encoding]::ASCII.GetBytes("d4:infod6:lengthi$($length)e4:name$($name.Length + 4):$name.bin12:piece lengthi$(4MB)e6:pieces$($pieces.Length):")
+    $suffix = [Text.Encoding]::ASCII.GetBytes('7:privatei1eee')
+    [IO.File]::WriteAllBytes($fixture, [byte[]]($prefix + $pieces + $suffix))
+    $preview = Send-Command @{ command = 'preview'; source = $fixture; destination = $destination }
+    Assert $preview.ok "The $name fixture did not preview"
+    $reply = Send-Command @{ command = 'add'; preview_id = $preview.data.preview_id; destination = $destination }
+    Assert $reply.ok "The $name fixture could not be added"
+    return $reply.data.torrent_id
+}
+
+function New-Zeros([string] $name, [long] $length, [string] $destination = $payload, [switch] $Dense, [string] $folder = $destination) {
+    $digest = [Security.Cryptography.SHA1]::HashData([byte[]]::new(4MB))
+    $pieces = [byte[]]::new(20 * [int]($length / 4MB))
+    for ($offset = 0; $offset -lt $pieces.Length; $offset += 20) { [Array]::Copy($digest, 0, $pieces, $offset, 20) }
+    $file = Join-Path $folder "$name.bin"
+    $null = New-Item -ItemType File -Path $file
+    if (-not $Dense) {
+        $null = & fsutil sparse setflag $file
+        Assert ($LASTEXITCODE -eq 0) "The $name payload could not be made sparse"
+    }
+    $stream = [IO.File]::Open($file, 'Open', 'ReadWrite')
+    try { $stream.SetLength($length) } finally { $stream.Dispose() }
+    return Add-Fixture $name $length $pieces $destination
+}
+
+# A payload whose every byte depends on its offset, so a copy that writes a
+# block at the wrong place changes the file's hash: random bytes, with each
+# 4 MiB piece starting with its own number.
+function New-Pattern([string] $name, [long] $length, [string] $destination) {
+    $block = [byte[]]::new(4MB)
+    [Security.Cryptography.RandomNumberGenerator]::Fill($block)
+    $count = [int]($length / 4MB)
+    $pieces = [byte[]]::new(20 * $count)
+    $stream = [IO.File]::Open((Join-Path $destination "$name.bin"), 'CreateNew', 'Write')
+    try {
+        for ($index = 0; $index -lt $count; $index++) {
+            [BitConverter]::GetBytes([long]$index).CopyTo($block, 0)
+            $stream.Write($block, 0, $block.Length)
+            [Array]::Copy([Security.Cryptography.SHA1]::HashData($block), 0, $pieces, 20 * $index, 20)
+        }
+    }
+    finally { $stream.Dispose() }
+    return Add-Fixture $name $length $pieces $destination
 }
 
 try {
@@ -630,7 +703,7 @@ try {
             do {
                 Start-Sleep -Milliseconds 100
                 $rows = (Send-Command @{ command = 'snapshot' }).data.torrents
-            } while (@($rows | Where-Object { $_.moving -or $_.move_destination }).Count -gt 0 -and [DateTime]::UtcNow -lt $until)
+            } while (@($rows | Where-Object { $_.moving -or $_.move_destination -or $_.status -eq 'waiting_move' }).Count -gt 0 -and [DateTime]::UtcNow -lt $until)
             $movedFile = Join-Path $destination 'shared.bin'
             Assert (@($rows | Where-Object { $_.save_path -ne $destination -or $_.moving -or $_.move_destination }).Count -eq 0 -and (Payload-Hash $movedFile) -eq $originalHash) 'The cross-seeded group did not establish one destination'
             Assert (-not (Test-Path -LiteralPath $sourceFile) -and (Test-Path -LiteralPath $unrelated)) 'Move affected unrelated files or left its payload behind'
@@ -640,14 +713,14 @@ try {
             foreach ($torrent in $saved.torrents) { $torrent.move_destination = $collision }
             [IO.File]::WriteAllBytes($settingsFile, [Text.Encoding]::UTF8.GetBytes(($saved | ConvertTo-Json -Depth 30 -Compress)))
             $snapshot = Start-Engine
-            Assert (@($snapshot.torrents | Where-Object error -ne 'move_interrupted').Count -eq 0) 'An interrupted move resumed as ordinary transfer state'
+            Assert (@($snapshot.torrents | Where-Object error -ne 'move_unfinished').Count -eq 0) 'An interrupted move resumed as ordinary transfer state'
             $reply = Send-Command @{ command = 'move'; torrent_ids = $identities; destination = $destination }
             Assert $reply.ok 'Move could not recover the files at their known folder'
             $until = [DateTime]::UtcNow.AddSeconds(15)
             do {
                 Start-Sleep -Milliseconds 100
                 $rows = (Send-Command @{ command = 'snapshot' }).data.torrents
-            } while (@($rows | Where-Object { $_.moving -or $_.move_destination }).Count -gt 0 -and [DateTime]::UtcNow -lt $until)
+            } while (@($rows | Where-Object { $_.moving -or $_.move_destination -or $_.status -eq 'waiting_move' }).Count -gt 0 -and [DateTime]::UtcNow -lt $until)
             Assert (@($rows | Where-Object { $_.moving -or $_.move_destination }).Count -eq 0) 'Explicit move recovery never completed'
             Stop-Engine
             $saved = [IO.File]::ReadAllText($settingsFile) | ConvertFrom-Json
@@ -676,29 +749,6 @@ try {
             Assert ($snapshot.torrents.Count -eq 0 -and -not (Test-Path -LiteralPath $sourceFile) -and (Test-Path -LiteralPath $unrelated)) 'Deferred shared-file cleanup lost deletion or restored removed membership'
         }
         'MoveAndVerify' {
-            # A torrent of zeros: its sparse file takes no disk space and every
-            # piece of it hashes alike, so a large one checks for seconds.
-            function New-Zeros([string] $name, [long] $length) {
-                $pieceLength = 4MB
-                $digest = [Security.Cryptography.SHA1]::HashData([byte[]]::new($pieceLength))
-                $pieces = [byte[]]::new(20 * [int]($length / $pieceLength))
-                for ($offset = 0; $offset -lt $pieces.Length; $offset += 20) { [Array]::Copy($digest, 0, $pieces, $offset, 20) }
-                $fixture = Join-Path $directory "$name.torrent"
-                $prefix = [Text.Encoding]::ASCII.GetBytes("d4:infod6:lengthi$($length)e4:name$($name.Length + 4):$name.bin12:piece lengthi$($pieceLength)e6:pieces$($pieces.Length):")
-                $suffix = [Text.Encoding]::ASCII.GetBytes('7:privatei1eee')
-                [IO.File]::WriteAllBytes($fixture, [byte[]]($prefix + $pieces + $suffix))
-                $file = Join-Path $payload "$name.bin"
-                $null = New-Item -ItemType File -Path $file
-                $null = & fsutil sparse setflag $file
-                Assert ($LASTEXITCODE -eq 0) "The $name payload could not be made sparse"
-                $stream = [IO.File]::Open($file, 'Open', 'ReadWrite')
-                try { $stream.SetLength($length) } finally { $stream.Dispose() }
-                $preview = Send-Command @{ command = 'preview'; source = $fixture; destination = $payload }
-                Assert $preview.ok "The $name fixture did not preview"
-                $reply = Send-Command @{ command = 'add'; preview_id = $preview.data.preview_id; destination = $payload }
-                Assert $reply.ok "The $name fixture could not be added"
-                return $reply.data.torrent_id
-            }
             function Row-Of([string] $id) {
                 (Send-Command @{ command = 'snapshot' }).data.torrents | Where-Object torrent_id -eq $id
             }
@@ -712,10 +762,10 @@ try {
                     Start-Sleep -Milliseconds 200
                     $snapshot = (Send-Command @{ command = 'snapshot' }).data
                     $row = $snapshot.torrents | Where-Object torrent_id -eq $id
-                    $seen = $seen -or $row.status -eq 'checking' -or (& $started $row)
+                    $seen = $seen -or $row.status -in 'checking', 'waiting_check' -or (& $started $row)
                     if ($row.status -eq 'checking' -and $snapshot.check_rate) { $rate = [Math]::Max($rate, $snapshot.check_rate) }
-                } while ((-not $seen -or $row.status -eq 'checking') -and [DateTime]::UtcNow -lt $until)
-                Assert ($seen -and $row.status -ne 'checking') 'A check did not end'
+                } while ((-not $seen -or $row.status -in 'checking', 'waiting_check') -and [DateTime]::UtcNow -lt $until)
+                Assert ($seen -and $row.status -notin 'checking', 'waiting_check') 'A check did not end'
                 return $rate
             }
             # One changed byte fails its piece, which the torrent still counts
@@ -747,14 +797,14 @@ try {
                 do {
                     Start-Sleep -Milliseconds 100
                     $row = Row-Of $id
-                    $checked = $checked -or $row.status -eq 'checking'
+                    $checked = $checked -or $row.status -in 'checking', 'waiting_check'
                 } while (($row.moving -or $row.save_path -ne $destination) -and [DateTime]::UtcNow -lt $until)
                 Assert (-not $row.moving -and $row.save_path -eq $destination -and -not $row.error) "$label`: the move to $destination did not finish: $($row.error)"
                 $until = [DateTime]::UtcNow.AddSeconds(3)
                 do {
                     Start-Sleep -Milliseconds 100
                     $row = Row-Of $id
-                    $checked = $checked -or $row.status -eq 'checking'
+                    $checked = $checked -or $row.status -in 'checking', 'waiting_check'
                 } while ([DateTime]::UtcNow -lt $until)
                 Assert (-not $checked -and $row.completed -eq $before.completed) "$label`: the move to $destination checked the files it placed itself"
                 Assert ($row.status -eq $before.status -and $row.paused -eq $before.paused) "$label`: the move to $destination left the torrent $($row.status) instead of $($before.status)"
@@ -874,6 +924,442 @@ try {
             finally {
                 # Removes the link only, never the folder it leads to.
                 if ($link -and (Test-Path -LiteralPath $link)) { (Get-Item -LiteralPath $link).Delete() }
+            }
+        }
+        'DriveTurns' {
+            $busy = 'checking', 'waiting_check', 'moving', 'waiting_move'
+            # One snapshot gives the rows of all these torrents at one moment.
+            function Rows-Of([string[]] $ids) {
+                $rows = @{}
+                foreach ($row in (Send-Command @{ command = 'snapshot' }).data.torrents) {
+                    if ($row.torrent_id -in $ids) { $rows[$row.torrent_id] = $row }
+                }
+                return $rows
+            }
+            # Verifies a torrent and waits until its check runs. A check that
+            # libtorrent starts holds its drive from the next once-a-second
+            # pass, so a job sent before then can go first.
+            function Start-Check([string] $id, [string] $label) {
+                $reply = Send-Command @{ command = 'verify'; torrent_ids = @($id) }
+                Assert $reply.ok "$label`: Verify was refused"
+                $until = [DateTime]::UtcNow.AddSeconds(30)
+                do {
+                    Start-Sleep -Milliseconds 100
+                    $row = (Rows-Of $id)[$id]
+                } while (-not ($row.status -eq 'checking' -and $row.progress -gt 0) -and [DateTime]::UtcNow -lt $until)
+                Start-Sleep -Milliseconds 1500
+                $row = (Rows-Of $id)[$id]
+                Assert ($row.status -eq 'checking' -and $row.progress -gt 0 -and $row.progress -lt 1) "$label`: the check of $($row.name) did not run"
+            }
+            function Send-Move([string] $id, [string] $destination, [string] $label) {
+                $reply = Send-Command @{ command = 'move'; torrent_ids = @($id); destination = $destination }
+                Assert $reply.ok "$label`: the move to $destination was refused"
+            }
+            # Waits until the torrent's job waits for the drive that `holder`
+            # uses, named as the drive of the waiting torrent's folder.
+            function Wait-Turn([string] $id, [string] $status, [string] $holder, [string] $drive, [string] $label) {
+                $until = [DateTime]::UtcNow.AddSeconds(10)
+                do {
+                    Start-Sleep -Milliseconds 100
+                    $row = (Rows-Of $id)[$id]
+                } while (-not ($row.status -eq $status -and $row.waiting_drive) -and [DateTime]::UtcNow -lt $until)
+                Assert ($row.status -eq $status -and $row.waiting_drive -eq $drive -and $row.waiting_torrent_id -eq $holder) `
+                    "$label`: $($row.name) is $($row.status) for '$($row.waiting_drive)' used by '$($row.waiting_torrent_id)', not $status for $drive used by $holder"
+            }
+            # Samples the torrents every 200 ms until each has had its job and
+            # none runs or waits any more, and returns the samples.
+            function Watch-Jobs([string[]] $ids, [string] $label) {
+                $samples = [Collections.Generic.List[hashtable]]::new()
+                $seen = @{}
+                $until = [DateTime]::UtcNow.AddSeconds(600)
+                do {
+                    Start-Sleep -Milliseconds 200
+                    $rows = Rows-Of $ids
+                    $samples.Add($rows)
+                    $working = @($ids | Where-Object { $rows[$_].status -in $busy })
+                    foreach ($id in $working) { $seen[$id] = $true }
+                } while (($working.Count -or $seen.Count -lt $ids.Count) -and [DateTime]::UtcNow -lt $until)
+                Assert ($seen.Count -eq $ids.Count -and -not $working.Count) "$label`: the jobs did not end"
+                foreach ($id in $ids) {
+                    $row = $rows[$id]
+                    Assert ($row.progress -eq 1 -and -not $row.error) "$label`: $($row.name) ended $($row.status) at $($row.progress) $($row.error)"
+                }
+                return ,$samples
+            }
+            # Both jobs ran, and both progressed between two samples.
+            function Assert-Together($samples, [string[]] $ids, [string] $label) {
+                $first = $null
+                foreach ($rows in $samples) {
+                    if (@($ids | Where-Object { $rows[$_].status -in 'checking', 'moving' }).Count -ne $ids.Count) { continue }
+                    if (-not $first) { $first = $rows; continue }
+                    if (-not ($ids | Where-Object { $rows[$_].progress -le $first[$_].progress })) { return }
+                }
+                throw "$label`: the jobs did not progress at the same time"
+            }
+            # A job that waited for its drive never runs beside another job.
+            # A check that libtorrent starts on a busy drive runs until the
+            # next pass holds it, so two jobs may run together before one of
+            # them waited. Returns the torrents in the order their jobs ended.
+            function Assert-Turns($samples, [string[]] $ids, [int] $waits, [string] $label) {
+                $waited = @{}
+                $last = @{}
+                for ($index = 0; $index -lt $samples.Count; $index++) {
+                    $rows = $samples[$index]
+                    $running = @($ids | Where-Object { $rows[$_].status -in 'checking', 'moving' })
+                    Assert ($running.Count -lt 2 -or -not ($running | Where-Object { $waited[$_] })) "$label`: a job that waited ran beside another"
+                    foreach ($id in $ids) {
+                        if ($rows[$id].status -in 'waiting_check', 'waiting_move') { $waited[$id] = $true }
+                        if ($rows[$id].status -in $busy) { $last[$id] = $index }
+                    }
+                }
+                Assert ($waited.Count -ge $waits) "$label`: $($waited.Count) jobs waited, not $waits"
+                return @($ids | Sort-Object { $last[$_] })
+            }
+            function Assert-Order($samples, [string[]] $order, [string] $label) {
+                $ended = Assert-Turns $samples $order ($order.Count - 1) $label
+                Assert (($ended -join ',') -eq ($order -join ',')) "$label`: the jobs ran in another order"
+            }
+
+            # -Folder is on C:, and the evidence folder on V:, the virtual disk
+            # that C: holds. The link on C: leads to V:, as C:\temp leads to
+            # V:\temp.
+            $drive = Split-Path -Qualifier $volumeFolder
+            $linked = Join-Path $directory 'linked'
+            $null = New-Item -ItemType Directory -Path $linked
+            $link = Join-Path $volumeFolder 'link'
+            $null = New-Item -ItemType Junction -Path $link -Target $linked
+            try {
+                # The long check outlasts the commands that make others wait
+                # behind it.
+                $long = New-Zeros 'long' 16GB $volumeFolder
+                $first = New-Zeros 'first' 4GB $volumeFolder
+                $second = New-Zeros 'second' 4GB $volumeFolder
+                $third = New-Zeros 'third' 4GB $volumeFolder
+                $onV = New-Zeros 'onv' 4GB
+                $onLink = New-Zeros 'onlink' 4GB $link
+                $onY = New-Zeros 'ony' 512MB $networkFolder
+                # The moves take seconds, so a second job can be sent while
+                # the first one runs.
+                $moved = New-Zeros 'moved' 512MB $volumeFolder -Dense
+                $all = @($long, $first, $second, $third, $onV, $onLink, $onY, $moved)
+                $other = $null
+                if ($others) {
+                    $other = New-Zeros 'other' 1GB $others[0] -Dense
+                    $all += $other
+                }
+                $watch = [Diagnostics.Stopwatch]::StartNew()
+                $until = [DateTime]::UtcNow.AddSeconds(600)
+                do {
+                    Start-Sleep -Milliseconds 500
+                    $rows = Rows-Of $all
+                    $pending = @($all | Where-Object { $rows[$_].status -in $busy -or $rows[$_].progress -ne 1 })
+                } while ($pending.Count -and [DateTime]::UtcNow -lt $until)
+                Assert (-not $pending.Count) 'The added torrents were not checked complete'
+                Write-Host ('The added torrents were checked in {0:N0} s' -f $watch.Elapsed.TotalSeconds)
+
+                $reply = Send-Command @{ command = 'settings'; changes = @{ active_checking = 2 } }
+                Assert (-not $reply.ok) 'The removed active_checking setting was accepted'
+
+                $reply = Send-Command @{ command = 'verify'; torrent_ids = @($first, $onY) }
+                Assert $reply.ok 'C: and Y: could not be verified'
+                Assert-Together (Watch-Jobs @($first, $onY) 'C: and Y:') @($first, $onY) 'C: and Y:'
+
+                foreach ($pair in @(@($first, $onV, 'C: and V:'), @($onLink, $onV, 'The link and V:'))) {
+                    $reply = Send-Command @{ command = 'verify'; torrent_ids = $pair[0..1] }
+                    Assert $reply.ok "$($pair[2]) could not be verified"
+                    $null = Assert-Turns (Watch-Jobs $pair[0..1] $pair[2]) $pair[0..1] 1 $pair[2]
+                }
+
+                Start-Check $long 'A move behind a check'
+                Send-Move $moved $networkFolder 'A move behind a check'
+                Wait-Turn $moved 'waiting_move' $long $drive 'A move behind a check'
+                Assert-Order (Watch-Jobs @($long, $moved) 'A move behind a check') @($long, $moved) 'A move behind a check'
+                Assert ((Rows-Of $moved)[$moved].save_path -eq $networkFolder) 'The move behind a check did not reach Y:'
+
+                $back = Join-Path $volumeFolder 'back'
+                Start-Check $long 'Check, move, check'
+                Send-Move $moved $back 'Check, move, check'
+                Wait-Turn $moved 'waiting_move' $long $drive 'Check, move, check'
+                $reply = Send-Command @{ command = 'verify'; torrent_ids = @($first) }
+                Assert $reply.ok 'Check, move, check: the second check was refused'
+                Wait-Turn $first 'waiting_check' $long $drive 'Check, move, check'
+                Assert-Order (Watch-Jobs @($long, $moved, $first) 'Check, move, check') @($long, $moved, $first) 'Check, move, check'
+
+                # A stopped check stays stopped when its drive is free.
+                Start-Check $long 'Stop a waiting check'
+                $reply = Send-Command @{ command = 'verify'; torrent_ids = @($first) }
+                Assert $reply.ok 'Stop a waiting check: Verify was refused'
+                Wait-Turn $first 'waiting_check' $long $drive 'Stop a waiting check'
+                $reply = Send-Command @{ command = 'pause'; torrent_ids = @($first) }
+                Assert $reply.ok 'Stop a waiting check: the torrent could not be stopped'
+                $null = Watch-Jobs @($long) 'Stop a waiting check'
+                $stopped = (Rows-Of $first)[$first]
+                Assert ($stopped.status -eq 'paused' -and $stopped.progress -lt 1) "Stop a waiting check: the stopped torrent is $($stopped.status) at $($stopped.progress)"
+                $until = [DateTime]::UtcNow.AddSeconds(3)
+                do {
+                    Start-Sleep -Milliseconds 200
+                    $row = (Rows-Of $first)[$first]
+                    Assert ($row.status -eq 'paused' -and $row.progress -eq $stopped.progress) "Stop a waiting check: the stopped torrent is $($row.status) at $($row.progress)"
+                } while ([DateTime]::UtcNow -lt $until)
+                $reply = Send-Command @{ command = 'resume'; torrent_ids = @($first) }
+                Assert $reply.ok 'Stop a waiting check: the torrent could not be started'
+                $null = Watch-Jobs @($first) 'Stop a waiting check'
+
+                # Forced checks go first, in the order they were forced.
+                foreach ($case in @(
+                    @{ label = 'Force the second'; waiting = @($first, $second); forced = @($second); order = @($long, $second, $first) },
+                    @{ label = 'Force the third, then the first'; waiting = @($first, $second, $third); forced = @($third, $first); order = @($long, $third, $first, $second) })) {
+                    Start-Check $long $case.label
+                    foreach ($id in $case.waiting) {
+                        $reply = Send-Command @{ command = 'verify'; torrent_ids = @($id) }
+                        Assert $reply.ok "$($case.label): Verify was refused"
+                        Wait-Turn $id 'waiting_check' $long $drive $case.label
+                    }
+                    foreach ($id in $case.forced) {
+                        $reply = Send-Command @{ command = 'force'; torrent_ids = @($id) }
+                        Assert $reply.ok "$($case.label): Force start was refused"
+                    }
+                    Assert-Order (Watch-Jobs $case.order $case.label) $case.order $case.label
+                    $reply = Send-Command @{ command = 'resume'; torrent_ids = $case.forced }
+                    Assert $reply.ok "$($case.label): the forced torrents could not be started normally"
+                }
+
+                # Pause all keeps each check's place.
+                Start-Check $long 'Pause all'
+                $reply = Send-Command @{ command = 'verify'; torrent_ids = @($first) }
+                Assert $reply.ok 'Pause all: Verify was refused'
+                Wait-Turn $first 'waiting_check' $long $drive 'Pause all'
+                $reply = Send-Command @{ command = 'session_pause'; paused = $true }
+                Assert $reply.ok 'Pause all was refused'
+                Start-Sleep -Seconds 3
+                $reply = Send-Command @{ command = 'session_pause'; paused = $false }
+                Assert $reply.ok 'Pause all could not end'
+                Assert-Order (Watch-Jobs @($long, $first) 'Pause all') @($long, $first) 'Pause all'
+
+                # A magnet without metadata in an unrelated folder does not
+                # hold a move back.
+                $label = 'A move beside a magnet'
+                $preview = Send-Command @{ command = 'preview'; source = 'magnet:?xt=urn:btih:0123456789012345678901234567890123456789'; destination = $payload }
+                Assert $preview.ok "$label`: the magnet did not preview"
+                $reply = Send-Command @{ command = 'add'; preview_id = $preview.data.preview_id; destination = $payload; paused = $true }
+                Assert $reply.ok "$label`: the magnet could not be added"
+                $magnet = $reply.data.torrent_id
+                Send-Move $moved $networkFolder $label
+                $null = Watch-Jobs @($moved) $label
+                Assert ((Rows-Of $moved)[$moved].save_path -eq $networkFolder) "$label`: the move did not reach Y:"
+                Send-Move $moved $back $label
+                $null = Watch-Jobs @($moved) $label
+                $reply = Send-Command @{ command = 'remove'; torrent_ids = @($magnet) }
+                Assert $reply.ok "$label`: the magnet could not be removed"
+
+                # A move that waits for the metadata of a magnet in its
+                # destination holds no drive, and names the drive's user once
+                # only the drive holds it.
+                $label = 'A move behind a magnet'
+                $preview = Send-Command @{ command = 'preview'; source = 'magnet:?xt=urn:btih:0123456789012345678901234567890123456788'; destination = $networkFolder }
+                Assert $preview.ok "$label`: the magnet did not preview"
+                $reply = Send-Command @{ command = 'add'; preview_id = $preview.data.preview_id; destination = $networkFolder; paused = $true }
+                Assert $reply.ok "$label`: the magnet could not be added"
+                $magnet = $reply.data.torrent_id
+                Send-Move $moved $networkFolder $label
+                $until = [DateTime]::UtcNow.AddSeconds(10)
+                do {
+                    Start-Sleep -Milliseconds 100
+                    $row = (Rows-Of $moved)[$moved]
+                } while ($row.error -ne 'metadata_unavailable' -and [DateTime]::UtcNow -lt $until)
+                Assert ($row.error -eq 'metadata_unavailable') "$label`: the move is $($row.status) $($row.error)"
+                Start-Check $long $label
+                $reply = Send-Command @{ command = 'remove'; torrent_ids = @($magnet) }
+                Assert $reply.ok "$label`: the magnet could not be removed"
+                Wait-Turn $moved 'waiting_move' $long $drive $label
+                Assert-Order (Watch-Jobs @($long, $moved) $label) @($long, $moved) $label
+                Assert ((Rows-Of $moved)[$moved].save_path -eq $networkFolder) "$label`: the move did not reach Y:"
+                Send-Move $moved $back $label
+                $null = Watch-Jobs @($moved) $label
+
+                # The move to the final folder waits its turn for C:.
+                $label = 'The move to the final folder'
+                $reply = Send-Command @{ command = 'settings'; changes = @{ use_incomplete_folder = $true; incomplete_folder = $networkFolder } }
+                Assert $reply.ok "$label`: the incomplete folder could not be set"
+                try {
+                    Start-Check $long $label
+                    $finished = New-Zeros 'finished' 512MB $volumeFolder -folder $networkFolder
+                    $until = [DateTime]::UtcNow.AddSeconds(60)
+                    do {
+                        Start-Sleep -Milliseconds 100
+                        $row = (Rows-Of $finished)[$finished]
+                    } while ($row.status -ne 'waiting_move' -and [DateTime]::UtcNow -lt $until)
+                    Wait-Turn $finished 'waiting_move' $long $drive $label
+                    Assert-Order (Watch-Jobs @($long, $finished) $label) @($long, $finished) $label
+                    Assert ((Rows-Of $finished)[$finished].save_path -eq $volumeFolder) "$label`: the torrent did not reach its final folder"
+                }
+                finally {
+                    $reply = Send-Command @{ command = 'settings'; changes = @{ use_incomplete_folder = $false } }
+                    Assert $reply.ok "$label`: the incomplete folder could not be turned off"
+                }
+
+                if ($other) {
+                    Send-Move $moved $networkFolder 'Two moves'
+                    Send-Move $other $others[1] 'Two moves'
+                    Assert-Together (Watch-Jobs @($moved, $other) 'Two moves') @($moved, $other) 'Two moves'
+
+                    Start-Check $onY 'A move beside a check on Y:'
+                    Send-Move $other $others[0] 'A move beside a check on Y:'
+                    Assert-Together (Watch-Jobs @($onY, $other) 'A move beside a check on Y:') @($onY, $other) 'A move beside a check on Y:'
+
+                    Send-Move $moved $back 'A move to a busy C:'
+                    Send-Move $other $volumeFolder 'A move to a busy C:'
+                    Wait-Turn $other 'waiting_move' $moved $drive 'A move to a busy C:'
+                    Assert-Order (Watch-Jobs @($moved, $other) 'A move to a busy C:') @($moved, $other) 'A move to a busy C:'
+                }
+            }
+            finally {
+                # Removes the link only, never the folder it leads to.
+                if (Test-Path -LiteralPath $link) { (Get-Item -LiteralPath $link).Delete() }
+            }
+        }
+        'UnfinishedTasks' {
+            function Row-Of([string] $id) {
+                (Send-Command @{ command = 'snapshot' }).data.torrents | Where-Object torrent_id -eq $id
+            }
+            function Wait-Row([string] $id, [scriptblock] $done, [string] $label, [int] $seconds = 300) {
+                $until = [DateTime]::UtcNow.AddSeconds($seconds)
+                do {
+                    Start-Sleep -Milliseconds 100
+                    $row = Row-Of $id
+                } while (-not (& $done $row) -and [DateTime]::UtcNow -lt $until)
+                Assert (& $done $row) "$label`: the torrent is $($row.status) at $($row.progress) $($row.error)"
+                return $row
+            }
+            # Moves the torrent and returns once the move has placed half of
+            # its bytes.
+            function Start-Half([string] $id, [string] $destination, [string] $label) {
+                $reply = Send-Command @{ command = 'move'; torrent_ids = @($id); destination = $destination }
+                Assert $reply.ok "$label`: the move to $destination was refused"
+                $null = Wait-Row $id { param($row) $row.moving -and $row.progress -ge 0.5 } $label 120
+            }
+            function Saved-Marker([string] $id) {
+                $saved = [IO.File]::ReadAllText((Join-Path $directory 'settings.json')) | ConvertFrom-Json
+                return @{ torrent = $saved.torrents | Where-Object torrent_id -eq $id; tasks = @($saved.tasks) }
+            }
+            # Waits for the continued move and its verification, and checks
+            # that the copy is the source byte for byte and that the move
+            # copied only about what it lacked.
+            function Finish-Continued([string] $id, [string] $destination, [string] $hash, [double] $kept, [string] $label) {
+                $first = $null
+                $until = [DateTime]::UtcNow.AddSeconds(300)
+                do {
+                    Start-Sleep -Milliseconds 50
+                    $row = Row-Of $id
+                    if ($null -eq $first -and $row.moving -and $row.progress -gt 0) { $first = $row.progress }
+                } while (($row.moving -or $row.save_path -ne $destination -or $row.status -in 'checking', 'waiting_check' -or $row.progress -lt 1) -and [DateTime]::UtcNow -lt $until)
+                Assert ($row.save_path -eq $destination -and -not $row.moving -and -not $row.error -and $row.progress -eq 1) "$label`: the continued move ended $($row.status) at $($row.progress) in $($row.save_path) $($row.error)"
+                Assert ($null -ne $first -and $first -ge $kept) "$label`: the continued move started at $first, not at $kept or more, so it copied again what it had"
+                $file = Join-Path $destination 'big.bin'
+                Assert ((Payload-Hash $file) -eq $hash) "$label`: the continued copy differs from its source"
+                Assert (-not (Test-Path -LiteralPath "$file.!ttcopy") -and -not (Test-Path -LiteralPath (Join-Path $volumeFolder 'big.bin'))) "$label`: the move left its unfinished copy or its source"
+            }
+            function Stop-Timed([string] $label) {
+                $watch = [Diagnostics.Stopwatch]::StartNew()
+                Stop-Engine
+                Write-Host ('{0}: Exit took {1:N1} s' -f $label, $watch.Elapsed.TotalSeconds)
+                Assert ($watch.Elapsed.TotalSeconds -lt 10) "$label`: Exit took $($watch.Elapsed.TotalSeconds) s"
+            }
+            function Move-Back([string] $id, [string] $label) {
+                $reply = Send-Command @{ command = 'move'; torrent_ids = @($id); destination = $volumeFolder }
+                Assert $reply.ok "$label`: the move back to C: was refused"
+                $null = Wait-Row $id { param($row) -not $row.moving -and $row.save_path -eq $volumeFolder -and -not $row.error } "$label`: the move back"
+            }
+
+            # -Folder is on C:, and the evidence folder on V:, the virtual disk
+            # that C: holds.
+            $big = New-Pattern 'big' 3GB $volumeFolder
+            $null = Wait-Row $big { param($row) $row.progress -eq 1 -and $row.status -notin 'checking', 'waiting_check' } 'The pattern fixture'
+            $source = Join-Path $volumeFolder 'big.bin'
+            $hash = Payload-Hash $source
+            foreach ($target in @(@{ name = 'V:'; folder = (Join-Path $directory 'moved') }, @{ name = 'Y:'; folder = $networkFolder })) {
+                $destination = $target.folder
+                $partial = Join-Path $destination 'big.bin.!ttcopy'
+
+                # Exit parks the copy with its proof. The work waits for the
+                # answer, holds the torrent where it was, and continues from
+                # the proof.
+                $label = "Exit and continue to $($target.name)"
+                Start-Half $big $destination $label
+                Stop-Timed $label
+                $saved = Saved-Marker $big
+                Assert ($saved.torrent.move_destination -eq $destination -and $saved.torrent.move_copy_bytes -gt 0) "$label`: the proof of the copy was not saved"
+                Assert (@($saved.tasks | Where-Object { $_.kind -eq 'move' -and $big -in $_.ids }).Count -eq 1) "$label`: the move was not saved as a task"
+                Assert ((Get-Item -LiteralPath $partial).Length -ge $saved.torrent.move_copy_bytes) "$label`: the unfinished copy is shorter than its proof"
+                $proven = $saved.torrent.move_copy_bytes
+                $snapshot = Start-Engine
+                Assert ($snapshot.unfinished_tasks.moves -eq 1 -and $snapshot.unfinished_tasks.checks -eq 0 -and $snapshot.unfinished_tasks.deletions -eq 0) "$label`: the snapshot reports $($snapshot.unfinished_tasks | ConvertTo-Json -Compress)"
+                $written = (Get-Item -LiteralPath $partial).LastWriteTimeUtc
+                Start-Sleep -Seconds 3
+                $row = Row-Of $big
+                Assert (-not $row.moving -and $row.error -eq 'move_unfinished' -and $row.save_path -eq $volumeFolder) "$label`: while the answer waits, the torrent is $($row.status) $($row.error)"
+                Assert ((Get-Item -LiteralPath $partial).LastWriteTimeUtc -eq $written) "$label`: the copy changed before the answer"
+                $reply = Send-Command @{ command = 'unfinished_tasks'; action = 'continue' }
+                Assert $reply.ok "$label`: Continue was refused"
+                Finish-Continued $big $destination $hash ($proven / 3GB - 0.02) $label
+                Assert ($null -eq (Send-Command @{ command = 'snapshot' }).data.unfinished_tasks) "$label`: the work still waits after the answer"
+                Move-Back $big $label
+
+                # Abandon deletes what the move copied and leaves the torrent
+                # where it was.
+                $label = "Exit and abandon to $($target.name)"
+                Start-Half $big $destination $label
+                Stop-Timed $label
+                $null = Start-Engine
+                $reply = Send-Command @{ command = 'unfinished_tasks'; action = 'abandon' }
+                Assert $reply.ok "$label`: Abandon was refused"
+                $row = Wait-Row $big { param($row) -not $row.moving -and -not $row.move_destination -and -not $row.error } $label 60
+                Assert ($row.save_path -eq $volumeFolder -and -not (Test-Path -LiteralPath $partial) -and -not (Test-Path -LiteralPath (Join-Path $destination 'big.bin'))) "$label`: the move left its copy or moved the torrent"
+                Assert ((Payload-Hash $source) -eq $hash) "$label`: the source changed"
+
+                # A crash leaves the copy without a parked proof, and the
+                # stored setting continues it at the next start without
+                # asking.
+                $label = "A crash and the stored Continue to $($target.name)"
+                $reply = Send-Command @{ command = 'settings'; changes = @{ unfinished_tasks = 'continue' } }
+                Assert $reply.ok "$label`: the setting was refused"
+                Start-Half $big $destination $label
+                Start-Sleep -Seconds 2
+                Stop-Process -Id $script:process.Id -Force
+                $null = $script:process.WaitForExit(15000)
+                $script:pipe.Dispose(); $script:pipe = $null
+                $script:process.Dispose(); $script:process = $null
+                $saved = Saved-Marker $big
+                Assert ($saved.torrent.move_copy_bytes -ge 1GB) "$label`: no periodic proof was saved"
+                $proven = $saved.torrent.move_copy_bytes
+                $snapshot = Start-Engine
+                Assert ($null -eq $snapshot.unfinished_tasks) "$label`: the engine asked although the setting says continue"
+                Finish-Continued $big $destination $hash ($proven / 3GB - 0.02) $label
+                $reply = Send-Command @{ command = 'settings'; changes = @{ unfinished_tasks = 'ask' } }
+                Assert $reply.ok "$label`: the setting could not return to ask"
+                Move-Back $big $label
+
+                # Bytes changed just before the proof make the proof
+                # untrusted, so the continued copy compares itself with the
+                # source and copies again the blocks that differ, also those
+                # changed in the middle.
+                $label = "A changed copy to $($target.name)"
+                Start-Half $big $destination $label
+                Stop-Timed $label
+                $proven = (Saved-Marker $big).torrent.move_copy_bytes
+                $stream = [IO.File]::Open($partial, 'Open', 'ReadWrite', 'None')
+                try {
+                    foreach ($offset in @(($proven - 1000), ([long]($proven / 2)), ([long]($proven / 2) + 5MB))) {
+                        $stream.Position = $offset
+                        $stream.Write([byte[]](1, 2, 3, 4), 0, 4)
+                    }
+                }
+                finally { $stream.Dispose() }
+                $null = Start-Engine
+                $reply = Send-Command @{ command = 'unfinished_tasks'; action = 'continue' }
+                Assert $reply.ok "$label`: Continue was refused"
+                Finish-Continued $big $destination $hash 0 $label
+                Move-Back $big $label
             }
         }
         'CommittedFiles' {
@@ -1619,6 +2105,7 @@ finally {
     if ($script:pipe) { $script:pipe.Dispose() }
     if ($volumeFolder) { Remove-Item -LiteralPath $volumeFolder -Recurse -Force -ErrorAction Continue }
     if ($networkFolder) { Remove-Item -LiteralPath $networkFolder -Recurse -Force -ErrorAction Continue }
+    foreach ($other in $others) { Remove-Item -LiteralPath $other -Recurse -Force -ErrorAction Continue }
     # A run keeps only its logs and reports. Its payload, peer seed and engine
     # state are worthless once the check has ended.
     $evidence = [IO.Path]::GetFullPath((Join-Path $repository 'artifacts/evidence')) + [IO.Path]::DirectorySeparatorChar

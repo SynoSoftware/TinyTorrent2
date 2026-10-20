@@ -135,12 +135,12 @@ public:
     void Execute(Json const& request, std::string const& connectionId, Reply reply);
     void Tick();
     void Disconnect(std::string const& connectionId);
-    // A failed final save runs again until it succeeds, and `report` receives
-    // each failure's cause, which is empty when the cause is unknown. Once a
-    // save succeeds, `report` receives nothing, before libtorrent's teardown,
-    // which waits seconds for trackers to acknowledge the stop. A second call
-    // while saving changes nothing.
-    void Shutdown(std::function<void(std::optional<std::string> failure)> report);
+    // Cancels the file work, saves it as tasks for the next start, and saves
+    // every torrent. Once the saves succeed, `report` receives Saved, before
+    // libtorrent's teardown, which waits seconds for trackers to acknowledge
+    // the stop. Abrupt, after a failed save, asks the caller to end the
+    // process at once. A second call while saving changes nothing.
+    void Shutdown(std::function<void(ShutdownEnd end)> report);
     void PauseSession(bool paused, std::function<void(Outcome)> completion);
     // Saves the switches that turn `toasts` off, in one settings change.
     void TurnOff(std::vector<ToastSwitch> const& toasts, std::function<void(Outcome)> completion);
@@ -154,6 +154,9 @@ public:
     std::string Folder(std::string const& torrentId) const;
     std::string Language() const;
     bool IsShuttingDown() const;
+    // Whether work that the last end left unfinished waits for the person's
+    // answer.
+    bool AwaitsAnswer() const;
     bool IsLoading() const;
     bool HasStorageFailure() const;
     std::string StartupError() const;

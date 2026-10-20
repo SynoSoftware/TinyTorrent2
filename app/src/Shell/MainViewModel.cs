@@ -677,6 +677,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                     _limitsChoice = null;
                 _waiting = null;
                 _restriction = null;
+                Unfinished = null;
+                _unfinishedAnswered = false;
                 _disconnection = disconnection;
                 _ready = false;
                 AddDraft.Invalidate();
@@ -829,7 +831,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             present.Add(torrentId);
             if (!_byId.TryGetValue(torrentId, out var torrent))
             {
-                torrent = new Torrent(torrentId, Text);
+                torrent = new Torrent(
+                    torrentId,
+                    Text,
+                    id => _byId.TryGetValue(id, out var other) ? other.Name : null
+                );
                 _byId.Add(torrentId, torrent);
                 _torrents.Add(torrent);
                 rowsChanged = true;
@@ -964,6 +970,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         if (first)
             ShowRequested?.Invoke(this, EventArgs.Empty);
         Features.Observe(snapshot);
+        ObserveUnfinished(snapshot);
         Inspector.Observe(
             sessionId,
             inspectedChanged

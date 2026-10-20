@@ -600,6 +600,11 @@ bool Window::IsClosing() const
     return wait_ && wait_->kind == WindowWait::Closing;
 }
 
+bool Window::IsPresent() const
+{
+    return client_ || IsRunning();
+}
+
 bool Window::IsRunning() const
 {
     return process_ && WaitForSingleObject(process_.get(), 0) == WAIT_TIMEOUT;

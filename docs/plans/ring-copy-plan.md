@@ -10,10 +10,10 @@ a rename on one volume, otherwise `CopyFile2`.
 ## Why it is not implemented
 
 The ring engine would write the torrent's data itself, with sector padding,
-alignment, sparse ranges and streams. Every move is verified afterwards, so a
-defect in the ring would be found, but only as pieces that fail their hash
-check. The torrent would then download those pieces again, so the defect would
-cost data that the person already had. `CopyFile2` is the copy code that
+alignment, sparse ranges and streams. A move that places the files itself is
+not verified afterwards, so a defect in the ring would go unnoticed until a
+Verify found the bad pieces. The torrent would then download those
+pieces again, so the defect would cost data that the person already had. `CopyFile2` is the copy code that
 Explorer and robocopy use on every Windows machine.
 
 The ring is clearly faster only in cases that are rare for torrent payload, or

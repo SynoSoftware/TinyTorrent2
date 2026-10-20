@@ -294,11 +294,22 @@ No command is refused because files are busy, following
 whose own files are being prepared, renamed or moved replies once its choice
 is saved. `verify`, a file priority `edit` and `remove` then wait for those
 files and apply when they are free; the other commands change no files and
-apply at once. A `move` that waits for busy files replies at once, and its rows
-show the `moving` status with progress 0 until the move starts; a refusal then
-shows on the rows. A `move` that waits for another torrent's metadata also
-replies at once, and its rows show the error `metadata_unavailable` until it
-starts. `preview` and `preview_detail` do not wait for other
+apply at once. A `move` that waits for busy files or for its
+[drives](engine.md#drive-turns) replies at once, and its rows show the
+`waiting_move` status until the move starts; a refusal then shows on the rows.
+A check that waits for its drive shows `waiting_check`. The rows of both carry
+`waiting_drive`, the drive letter or server of the waiting torrent's own folder
+that the job waits for, and `waiting_torrent_id`, the torrent whose running
+job uses that drive. Both are empty on every other row, and on a waiting row
+whose job waits only for busy files. While the engine still looks up the
+drives of the folder, `waiting_drive` names the folder's drive letter or
+server and `waiting_torrent_id` is empty. A waiting move whose drives are free carries `waiting_files`, the name
+of the torrent whose file work it waits for; it is empty on every other row. A move that continues after a restart shows `waiting_move` while it
+waits. A check or a move whose drive stops responding shows the error `drive_stalled`.
+A check that waits because a stalled check's reads block every check names
+that stalled check and its drive. A `move` that waits for the metadata of a
+torrent whose save folder overlaps its destination also replies at once, and
+its rows show the error `metadata_unavailable` until it starts. `preview` and `preview_detail` do not wait for other
 torrents' file names: until they are read, `shared_with` compares only final
 names.
 
@@ -307,17 +318,19 @@ detects files already at the destination. It replies after the recovery marker
 commits, without occupying the pipe while files move. Rows carry `moving` and
 `move_destination`. While a row is `moving`, its `progress` is the share of its
 bytes that the move has placed, and 0 while it waits for its turn. The
-snapshot's `move_rate` is the bytes per second the move copied over the last
-second, which leaves out renames and the holes of a sparse file, and null while
-no move runs. Its `check_rate` is the bytes per second libtorrent checked over
+snapshot's `move_rate` is the bytes per second all running moves copied over
+the last second, which leaves out renames and the holes of a sparse file, and
+null while no move runs. Its `check_rate` is the bytes per second libtorrent checked over
 the last second across the torrents whose files it checks, and null while it
 checks none. Each torrent
 leaves `moving` and clears its marker when its own move ends, and failures
 remain visible on the torrents. Source sharing and destination use by an outside
 torrent have distinct refusals, so each offers an action that can resolve it.
-An interrupted saved move continues once at the next launch, and otherwise waits
-until the person chooses its location through Move, as
-[engine moves](engine.md#removal-and-moves) describes.
+A saved move that Exit or a crash cut off is an
+[unfinished task](engine.md#unfinished-tasks) at the next start. A move whose
+files a failure left in two folders waits until the person chooses its
+location through Move, as [engine moves](engine.md#removal-and-moves)
+describes.
 `recovery_required` remains the general unconfirmed-operation code for other
 commands, so file-specific instructions cannot misdirect an Add or priority
 edit.
@@ -355,9 +368,9 @@ isolation guarantee; an extra token would not create a stronger boundary.
 
 ## Wire representation
 
-Protocol version 23 uses a four-byte little-endian UTF-8 JSON frame length,
+Protocol version 25 uses a four-byte little-endian UTF-8 JSON frame length,
 bounded to 16 MiB. The endpoint is `TinyTorrent.<logon SID>`; each connecting
-client first receives `{type:"hello",version:23,session_id:"...",data_directory:"..."}`. The absolute data directory
+client first receives `{type:"hello",version:25,session_id:"...",data_directory:"..."}`. The absolute data directory
 keeps the same store for explicit Restart, which starts the engine beside the
 window rather than a path a pipe peer reports. Requests are
 `{request_id:signed-64-bit-integer,command:string,...}`. Replies repeat `request_id` and have
@@ -415,7 +428,7 @@ absent one keeps each torrent's choice),
 notification settings as off, as the popup's More menu does), `check_proxy` (proxy), `open`, `ready`,
 `window_closed`, `activate_reply` (available boolean), `close_reply` (state:
 waiting/closing/cancelled), `exit_reply` (answer: confirmed/cancelled/unavailable),
-and `exit`. Activation acknowledgement lets Open wait through an
+`unfinished_tasks` (action: continue/abandon), and `exit`. Activation acknowledgement lets Open wait through an
 old window's close path without losing the request. Current settings changes accept language (`en`, `es`)
 and theme (`system`, `light`, `dark`); unknown fields or values are refused. A
 settings acknowledgement confirms the same durable replacement as membership.
@@ -453,13 +466,31 @@ Settings also accept `incomplete_folder` (absolute path), `use_incomplete_folder
 default 100). Each added torrent saves `append_suffix` and, when using a separate
 incomplete folder, `final_folder`; `save_path` remains its current location.
 Advanced also accepts `checking_memory_mib` (integer 1–1024, default 4),
-`hashing_threads` (integer 1–64, default 1), and `file_pool_size` (integer
-1–10000, default 40). The existing `disk_buffer_mib` key is unchanged when
+`hashing_threads` (integer 1–64, default 1, threads per running check), and
+`file_pool_size` (integer 1–10000, default 40). The existing `disk_buffer_mib` key is unchanged when
 its control moves to Advanced. These settings use the existing settings reply
 and snapshot object.
 Existing saved notification choices keep their value.
 Session pause is persisted as `all_paused` through
 its command and preserves individual torrent intent.
+Settings also accept `unfinished_tasks` (`ask`, the default, `continue` or
+`abandon`): what the engine does at start with the disk work that Exit, the
+10-second end of Exit or a crash left unfinished, as
+[unfinished tasks](engine.md#unfinished-tasks) describes. With `ask`, the
+snapshot's `unfinished_tasks` is `{moves, checks, deletions}` while that work
+waits for the person's answer: the number of torrents whose move, check or
+file deletion waits, each 0 or more. It is null at every other time,
+including while the engine continues or abandons the work by itself. The
+`unfinished_tasks` command takes `action`, `continue` or `abandon`, and
+answers for all of that work together. It replies once the answer is saved;
+moves, checks and deletions then continue or are abandoned without the pipe
+waiting, and their failures show on the rows and as toasts. With nothing
+waiting it replies success and changes nothing. The command does not change
+the setting: Don't ask again sends the chosen word as `unfinished_tasks` in a
+`settings` change. While the answer waits, that work uses no drive: a torrent
+whose move started stays stopped and shows the error `move_unfinished`, a move
+that waited for its turn shows `waiting_move`, and a check stays stopped and
+shows `waiting_check`.
 `registration` takes an `action` string: `observe`, `register_handlers`,
 `unregister_handlers`, `enable_startup`, or `disable_startup`. Its data contains
 `handlers`, `handlers_target`, `startup`, `startup_target`, `startup_disabled`,
@@ -487,7 +518,7 @@ metadata without creating a payload handle; destination is applied at Add.
 Another instance of the storage worker reads and parses preview sources, so a
 slow share cannot hold up metadata commits; destruction cancels its blocked read.
 Snapshot contains session_id, torrents, settings, language_saved, download_rate,
-upload_rate, move_rate, check_rate, paused, limits, has_incoming, proxy, proxy_check, stopping, loading, storage_failed, and startup_error.
+upload_rate, move_rate, check_rate, paused, limits, has_incoming, proxy, proxy_check, stopping, loading, storage_failed, startup_error, and unfinished_tasks.
 Protocol version 7 adds `proxy` and `proxy_check`. A proxy check's outcome is
 `connected`, `sign_in_failed`, `unreachable`, `not_found`, `wrong_type` or
 `timed_out`. `proxy` is the outcome of the engine's check of the proxy in use,

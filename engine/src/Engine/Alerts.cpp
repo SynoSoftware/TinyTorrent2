@@ -184,6 +184,9 @@ void Engine::State::On(lt::torrent_checked_alert const& alert)
 void Engine::State::On(lt::torrent_paused_alert const& alert)
 {
     std::erase(pausing, alert.handle);
+    // libtorrent posts this for a paused check only after its last read.
+    if (auto torrent = Find(alert.handle))
+        torrent->checkReads = CheckReads::None;
 }
 
 StatusQuery Engine::State::Answered(lt::torrent_status const& status)
@@ -231,6 +234,13 @@ void Engine::State::On(lt::state_update_alert const& alert)
             changed |= torrent->queueReport == QueueReport::Reported &&
                 IsQueued(torrent->status.queue_position) != IsQueued(status.queue_position);
             torrent->Update(status);
+            // A recheck passes through checking_resume_data while the reads of
+            // the check it replaces may remain.
+            if (status.state != lt::torrent_status::checking_files &&
+                status.state != lt::torrent_status::checking_resume_data)
+                torrent->checkReads = CheckReads::None;
+            else if (torrent->ChecksFiles(Paused().has_value()) && torrent->checkReads == CheckReads::None)
+                torrent->checkReads = CheckReads::Reading;
             auto problem = torrent->Error();
             auto error = problem ? problem->detail : std::string();
             if (problem && !error.empty() && error != torrent->notifiedError)
@@ -429,9 +439,10 @@ void Engine::State::On(lt::alerts_dropped_alert const& alert)
     }
     RecoverDetail(alert);
     RecoverFiles();
+    // The lost pause confirmations end the wait for them, as their timeout
+    // does.
     if (IsShuttingDown() && !pausing.empty())
     {
-        FailFinalSave();
         pausing.clear();
         log.Write("shutdown", "", "recovery_required");
     }

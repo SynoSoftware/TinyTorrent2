@@ -48,6 +48,11 @@ void Engine::State::Remove(std::vector<std::string> const& ids,
     }
     auto selected = [&ids](std::string const& id) { return Contains(ids, id); };
     auto document = Saved();
+    // The torrents that leave libtorrent later keep their deletion as a task
+    // from this save on. Without every torrent's names, the files they keep
+    // are unknown, so their deletion is a task only once it starts.
+    if (mode && !later.empty() && namesReady)
+        document.tasks.push_back({DeferredDeletion(later, *mode)});
     std::erase_if(document.torrents, [&selected](auto const& entry) { return selected(entry.first); });
     std::erase_if(document.queueOrder, selected);
     auto order = document.queueOrder;
@@ -66,6 +71,7 @@ void Engine::State::Remove(std::vector<std::string> const& ids,
             return;
         }
         queueOrder = order;
+        Unask(ids);
         for (auto const& id : ids)
         {
             Extract(id, mode);
@@ -73,7 +79,7 @@ void Engine::State::Remove(std::vector<std::string> const& ids,
         RemoveHandles(ready, deletion);
         if (!sources.empty())
             DeleteTorrentFiles(sources, *torrentFiles, sourceNames);
-        ContinueMove();
+        ContinueMoves();
         completion({}, kept);
     });
 }
@@ -86,6 +92,7 @@ std::list<Engine::State::Deletion>::iterator Engine::State::PrepareDeletion(std:
         return deletions.end();
     }
     Deletion deleting;
+    deleting.ids = ids;
     deleting.mode = mode;
     if (mode)
     {
@@ -259,7 +266,8 @@ void Engine::State::ContinueDeletion()
                         return std::binary_search(other.holds.begin(), other.holds.end(), file, PathBefore);
                     });
             });
-            if (!held)
+            // Exit leaves the deletion to the saved task.
+            if (!held && !IsShuttingDown())
             {
                 Delete(deletion);
             }
@@ -319,15 +327,20 @@ void Recycle(std::vector<std::filesystem::path> const& files)
 }
 
 void Engine::State::Erase(std::vector<std::filesystem::path> const& files, DeletionMode mode,
-    std::vector<std::filesystem::path> const& roots)
+    std::vector<std::filesystem::path> const& roots, std::stop_token stop)
 {
     std::exception_ptr failure;
     try
     {
+        // The Recycle Bin takes the files in one operation, which cannot stop
+        // between files.
         if (mode == DeletionMode::Recycle)
-            Recycle(files);
+        {
+            if (!stop.stop_requested())
+                Recycle(files);
+        }
         else
-            Payload::Delete(files);
+            Payload::Delete(files, stop);
     }
     catch (...)
     {
@@ -365,9 +378,9 @@ void Engine::State::Delete(std::list<Deletion>::iterator deletion)
 {
     auto deleting = *deletion;
     deletion->phase = DeletionPhase::Deleting;
-    payload.Run([deleting]
+    payload.Run([deleting, stop = exitStop.get_token()]
     {
-        Erase(deleting.files, *deleting.mode, deleting.roots);
+        Erase(deleting.files, *deleting.mode, deleting.roots, stop);
     }, [this, deletion](StorageOutcome outcome)
     {
         if (outcome.failure)

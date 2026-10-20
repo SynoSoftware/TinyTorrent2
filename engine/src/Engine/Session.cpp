@@ -43,7 +43,7 @@ lt::info_hash_t SavedHashes(std::vector<std::string> const& hashes)
 }
 
 Engine::State::State(std::filesystem::path path, std::function<void()> wake) :
-    directory(std::move(path)), store(wake), payload(wake), copies(wake), sources(wake), checks(wake),
+    directory(std::move(path)), store(wake), payload(wake), sources(wake), checks(wake),
     wake(std::move(wake)), language(settings.language)
 {
     // Without a saved document the engine starts from the default settings.
@@ -140,6 +140,9 @@ void Engine::State::Start(Document const& saved, Resumes& resumes)
     pack.set_bool(lt::settings_pack::enable_upnp, false);
     pack.set_bool(lt::settings_pack::enable_natpmp, false);
     pack.set_str(lt::settings_pack::user_agent, "TinyTorrent/" TT_VERSION);
+    // The teardown at Exit waits this long for trackers to acknowledge the
+    // stop, within Exit's 10 seconds.
+    pack.set_int(lt::settings_pack::stop_tracker_timeout, 1);
     pack.set_str(lt::settings_pack::peer_fingerprint,
         lt::generate_fingerprint("TY", TT_VERSION_MAJOR, TT_VERSION_MINOR, TT_VERSION_BUILD));
     pack.set_str(lt::settings_pack::dht_bootstrap_nodes,
@@ -209,6 +212,7 @@ void Engine::State::Start(Document const& saved, Resumes& resumes)
     ContinueNames();
     queueOrder = saved.queueOrder;
     ApplyQueue();
+    Unfinished(saved.tasks, saved.tasksContinued);
     for (auto& [id, torrent] : torrents)
     {
         torrent.ApplyIntent();
@@ -321,7 +325,8 @@ Json Engine::State::Document::ToJson() const
         list.push_back(std::move(entry));
     }
     return {{"format", format}, {"settings", settings.ToFile()}, {"torrents", std::move(list)},
-        {"queue_order", queueOrder}, {"watched_sources", watchedSources}, {"transfers", transfers.ToJson()}};
+        {"queue_order", queueOrder}, {"watched_sources", watchedSources}, {"transfers", transfers.ToJson()},
+        {"tasks", SavedTasks()}, {"tasks_continued", tasksContinued}};
 }
 
 // Refuses a document of another format, which a save must not rewrite, or
@@ -367,6 +372,15 @@ void Engine::State::Document::Read(Json const& saved)
             }
         }
     }
+    tasksContinued = ReadSaved(saved, "tasks_continued", false);
+    if (auto found = saved.find("tasks"); found != saved.end() && found->is_array())
+    {
+        for (auto const& entry : *found)
+        {
+            if (auto task = Task::Read(entry))
+                tasks.push_back(std::move(*task));
+        }
+    }
 }
 
 // Choices change only after their commit succeeds; cumulative transfers also
@@ -383,6 +397,9 @@ Engine::State::Document Engine::State::Saved() const
     }
     document.queueOrder = queueOrder;
     std::erase_if(document.queueOrder, [&document](auto const& id) { return !document.torrents.contains(id); });
+    document.tasks = Tasks();
+    // The save at Exit records that Exit, not a crash, cut the work off.
+    document.tasksContinued = tasksContinued && !exitTasks;
     return document;
 }
 
@@ -456,7 +473,8 @@ tt::Activity Engine::State::Activity() const
         auto status = torrent.Classify(paused.has_value());
         // A torrent whose move waits transfers until the move starts and the
         // engine holds it.
-        if (status == Status::Moving && !torrent.IsHeld(torrent.status.has_metadata))
+        if ((status == Status::Moving || status == Status::WaitingMove) &&
+            !torrent.IsHeld(torrent.status.has_metadata))
         {
             status = torrent.ClassifyTransfer(paused.has_value());
         }
@@ -476,12 +494,14 @@ tt::Activity Engine::State::Activity() const
             ++activity.activeCount;
             break;
         case Status::Queued:
+        case Status::WaitingCheck:
             ++activity.queuedCount;
             break;
         case Status::Error:
         case Status::Paused:
         case Status::AllPaused:
         case Status::Moving:
+        case Status::WaitingMove:
             break;
         }
     }
@@ -517,12 +537,16 @@ Json Engine::State::Snapshot()
         queue[id] = position++;
     }
     auto paused = Paused();
+    auto inUse = DrivesInUse();
     Json rows = Json::array();
     for (auto const& [id, torrent] : torrents)
     {
         auto queued = queue.find(id);
+        auto status = torrent.Classify(paused.has_value());
+        auto wait = status == Status::WaitingCheck || status == Status::WaitingMove ?
+            WaitOf(torrent, status, inUse) : DriveWait{};
         rows.push_back(torrent.Row(paused.has_value(), queued == queue.end() ? -1 : queued->second,
-            MoveProgress(torrent)));
+            MoveProgress(torrent), wait));
     }
     auto current = settings.ToJson();
     current["language"] = language;
@@ -534,11 +558,14 @@ Json Engine::State::Snapshot()
     // only the missing adapter pauses transfers and the window offers Settings
     // instead.
     auto pause = paused ? Word(pauseReasons, *paused) : std::string_view();
+    std::optional<double> moveRate;
+    for (auto const& moving : moves)
+        moveRate = moveRate.value_or(0) + moving.rate;
     return {{"session_id", sessionId}, {"sequence", ++snapshotSequence},
         {"torrents", std::move(rows)}, {"settings", std::move(current)},
         {"language_saved", language == settings.language},
         {"download_rate", activity.downloadRate}, {"upload_rate", activity.uploadRate},
-        {"move_rate", move ? Json(move->rate) : Json()},
+        {"move_rate", moveRate ? Json(*moveRate) : Json()},
         {"check_rate", checkRate ? Json(*checkRate) : Json()},
         {"transfers", {{"session", transferred.ToJson()}, {"all_time", TotalTransfers().ToJson()}}},
         {"session_paused", paused.has_value()},
@@ -554,7 +581,7 @@ Json Engine::State::Snapshot()
             {"outcome", requestedCheck->result ? Json(std::string(Name(requestedCheck->result->outcome))) : Json()},
             {"milliseconds", requestedCheck->result ? Json(requestedCheck->result->elapsed.count()) : Json()}}},
         {"shutting_down", IsShuttingDown()}, {"loading", IsLoading()}, {"storage_failed", startup == Startup::Failed},
-        {"startup_error", startupError}};
+        {"startup_error", startupError}, {"unfinished_tasks", AskedCounts()}};
 }
 
 Torrent* Engine::State::Find(lt::torrent_handle const& handle)
@@ -710,6 +737,8 @@ void Engine::State::RecordHashes(Torrent& torrent)
 Engine::State::~State()
 {
     sources.Abandon();
+    for (auto const& [root, worker] : volumes)
+        worker->Abandon();
     {
         std::lock_guard lock(checkGate);
         checkStop.request_stop();
@@ -723,7 +752,20 @@ void Engine::State::Tick()
 {
     store.Drain();
     payload.Drain();
-    copies.Drain();
+    // A completion can end its move, which releases the move's worker, so
+    // the drain keeps every worker until it has finished.
+    std::vector<std::shared_ptr<Store>> workers;
+    for (auto const& moving : moves)
+        workers.push_back(moving.worker);
+    for (auto const& abandonment : abandonments)
+    {
+        if (abandonment.worker)
+            workers.push_back(abandonment.worker);
+    }
+    for (auto const& worker : workers)
+        worker->Drain();
+    for (auto const& [root, worker] : volumes)
+        worker->Drain();
     sources.Drain();
     checks.Drain();
     if (session)
@@ -763,7 +805,7 @@ void Engine::State::SampleChecks(std::chrono::steady_clock::duration elapsed)
     // its bytes checked. A check counts from its second sample, so a torrent
     // that starts checking does not add the bytes it checked before. A paused
     // torrent keeps the checking state but checks nothing: it is stopped,
-    // waits for a check slot, or every transfer is paused.
+    // waits for its drive, or every transfer is paused.
     std::optional<double> rate;
     auto seconds = std::chrono::duration<double>(elapsed).count();
     bool sessionPaused = Paused().has_value();
@@ -789,7 +831,7 @@ void Engine::State::Maintain()
     auto now = std::chrono::steady_clock::now();
     if (now - statusAt >= statusInterval)
     {
-        SampleMove(now - statusAt);
+        SampleMoves(now - statusAt);
         SampleChecks(now - statusAt);
         statusAt = now;
         session->post_session_stats();
@@ -805,8 +847,9 @@ void Engine::State::Maintain()
         auto activity = Activity();
         history.Sample(time, double(activity.downloadRate), double(activity.uploadRate));
         ContinueNames();
-        ResumeMove();
-        MoveWaiting();
+        AbandonMoves();
+        StopStalledJobs();
+        AssignDrives();
         for (auto& [id, torrent] : torrents)
         {
             torrent.history.Sample(time, double(torrent.status.download_payload_rate),
@@ -816,6 +859,8 @@ void Engine::State::Maintain()
             FinishFiles(torrent);
             FinishDownload(torrent);
         }
+        RecordCopies();
+        RecordTasks();
         RequestStatus(false);
     }
     if (now - checkpointAt >= checkpointInterval)

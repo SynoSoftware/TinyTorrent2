@@ -18,6 +18,35 @@ constexpr char unfinishedSuffix[] = ".!tt";
 // How long a failed rename, or a failed read of the names before one, waits
 // before it runs again.
 constexpr auto renameRetry = std::chrono::seconds(30);
+
+// Marks a downloaded file as coming from the internet, as browsers do, so
+// Windows warns before it runs. The mark reaches the disk before this
+// returns, so a rename after it cannot outlast it in a crash. Returns the
+// Windows error, or ERROR_SUCCESS.
+DWORD Mark(std::filesystem::path const& path)
+{
+    // Opening the stream would create a missing file.
+    auto base = CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE,
+        nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (base == INVALID_HANDLE_VALUE)
+        return GetLastError();
+    auto stream = path.wstring() + L":Zone.Identifier";
+    auto file = CreateFileW(stream.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+        nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    auto error = file == INVALID_HANDLE_VALUE ? GetLastError() : ERROR_SUCCESS;
+    if (file != INVALID_HANDLE_VALUE)
+    {
+        constexpr char zone[] = "[ZoneTransfer]\r\nZoneId=3\r\n";
+        DWORD written = 0;
+        if (!WriteFile(file, zone, sizeof(zone) - 1, &written, nullptr) || !FlushFileBuffers(file))
+            error = GetLastError();
+        else if (written != sizeof(zone) - 1)
+            error = ERROR_WRITE_FAULT;
+        CloseHandle(file);
+    }
+    CloseHandle(base);
+    return error;
+}
 }
 
 // Called on a worker after pausing every owner. The pinned native interface
@@ -107,9 +136,27 @@ bool Engine::State::SameFolder(std::string const& left, std::string const& right
     return SamePath(FullPath(Wide(left)), FullPath(Wide(right)));
 }
 
+bool Engine::State::FoldersOverlap(std::string const& left, std::string const& right)
+{
+    auto inside = [](std::filesystem::path folder, std::filesystem::path const& outer)
+    {
+        while (true)
+        {
+            if (SamePath(folder, outer))
+                return true;
+            if (!folder.has_relative_path())
+                return false;
+            folder = folder.parent_path();
+        }
+    };
+    auto first = FullPath(Wide(left));
+    auto second = FullPath(Wide(right));
+    return inside(first, second) || inside(second, first);
+}
+
 bool Engine::State::FilesBusy() const
 {
-    return move.has_value() || DeletingOrRenaming();
+    return !moves.empty() || DeletingOrRenaming();
 }
 
 bool Engine::State::DeletingOrRenaming() const
@@ -445,26 +492,14 @@ void Engine::State::FinishDownload(Torrent& torrent)
         torrent.moveError.reset();
     if (IsShuttingDown() || torrent.restore || torrent.filesPending ||
         torrent.completion.NeedsSample() || torrent.completion.IsWorking() || !torrent.status.is_finished || torrent.namePhase != NamePhase::Ready || torrent.FilesBusy() ||
-        !torrent.completedFiles.empty() || torrent.facts.marker || torrent.waitingMove)
+        !torrent.completedFiles.empty() || torrent.facts.marker || torrent.waitingMove || torrent.unfinished)
         return;
     if (!torrent.facts.finalFolder.empty())
     {
-        if (torrent.MoveBlocked() || FilesBusy() || !additions.empty() || !changes.IsIdle())
-            return;
-        auto id = torrent.torrentId;
-        changes.Queue([this, id]
-        {
-            auto found = torrents.find(id);
-            if (found == torrents.end())
-                return;
-            StartMove({id}, found->second.facts.finalFolder, MoveStart::Requested, [this, id](Outcome outcome)
-            {
-                if (!outcome.error || *outcome.error == ErrorCode::FilesBusy)
-                    return;
-                if (auto found = torrents.find(id); found != torrents.end())
-                    RefuseMove(found->second, outcome);
-            });
-        });
+        // The move waits its turn for its drives and busy files, as a move
+        // the person asks for does.
+        if (!torrent.MoveBlocked())
+            torrent.waitingMove = WaitingMove{torrent.facts.finalFolder, ++turns};
         return;
     }
     if (settings.rechecksFinished && torrent.completion.BeginCheck())
@@ -552,17 +587,25 @@ void Engine::State::ContinueRename()
                 handles.push_back(handle);
         }
         rename->phase = RenamePhase::Moving;
+        // Which owners' files were complete, and the error of the mark that
+        // the file gets before its rename.
+        struct Renamed
+        {
+            std::vector<bool> complete;
+            DWORD marked = ERROR_SUCCESS;
+        };
         payload.Run([this, handles, files, source = rename->source, target = rename->target]
         {
             ReleaseFiles(handles);
-            std::vector<bool> complete(files.size(), false);
+            Renamed renamed{std::vector<bool>(files.size(), false)};
+            auto& complete = renamed.complete;
             for (auto const& handle : handles)
             {
                 auto status = handle.status(lt::torrent_handle::query_save_path |
                     lt::torrent_handle::query_torrent_file | lt::torrent_handle::query_renamed_files);
                 auto metadata = status.torrent_file.lock();
                 if (!metadata)
-                    return complete;
+                    return renamed;
                 auto progress = handle.file_progress(lt::torrent_handle::piece_granularity);
                 for (std::size_t item = 0; item < files.size(); ++item)
                 {
@@ -575,12 +618,18 @@ void Engine::State::ContinueRename()
                 }
             }
             if (std::find(complete.begin(), complete.end(), false) != complete.end())
-                return complete;
+                return renamed;
+            renamed.marked = Mark(source);
             if (!MoveFileExW(source.c_str(), target.c_str(), 0))
                 throw std::runtime_error(std::to_string(GetLastError()));
-            return complete;
-        }, [this](std::expected<std::vector<bool>, StorageOutcome> complete)
+            return renamed;
+        }, [this](std::expected<Renamed, StorageOutcome> renamed)
         {
+            auto complete = renamed.transform([](Renamed const& value) { return value.complete; });
+            // A drive without streams, such as FAT32, cannot hold the mark, so
+            // the file still takes its final name.
+            if (renamed && renamed->marked != ERROR_SUCCESS)
+                log.Write("mark_of_the_web", rename->owners.front().torrentId, std::to_string(renamed->marked));
             if (!complete)
             {
                 auto const& id = rename->owners.front().torrentId;
@@ -634,11 +683,15 @@ void Engine::State::On(lt::file_completed_alert const& alert)
     auto metadata = alert.handle.torrent_file();
     if (!metadata || metadata->layout().pad_file_at(alert.index))
         return;
+    // A file that keeps its unfinished name is marked before its rename, so
+    // a crash before the rename leaves it to be marked at the next start.
+    bool renames = false;
     if (torrent->names)
     {
         auto const& files = torrent->names->metadata->layout();
         auto name = torrent->names->mappings.file_path(files, alert.index);
-        if (IsUnfinished(name, ContentPath(files, alert.index, torrent->facts.layout)))
+        renames = IsUnfinished(name, ContentPath(files, alert.index, torrent->facts.layout));
+        if (renames)
             torrent->completedFiles.insert(alert.index);
     }
     else
@@ -648,7 +701,8 @@ void Engine::State::On(lt::file_completed_alert const& alert)
     }
     // File completion is also posted by checking; the ordered state alerts
     // identify its cause even when the latest sampled status is already seeding.
-    if (!torrent->completion.FileFinished())
+    bool downloaded = torrent->completion.FileFinished();
+    if (!downloaded || renames)
     {
         FinishFiles(*torrent);
         return;
@@ -662,26 +716,7 @@ void Engine::State::On(lt::file_completed_alert const& alert)
         if (!metadata)
             return;
         auto path = FullPath(Wide(status.renamed_files.file_path(metadata->layout(), index, status.save_path)));
-        auto base = CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE,
-            nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-        if (base == INVALID_HANDLE_VALUE)
-            throw std::runtime_error(std::to_string(GetLastError()));
-        auto stream = path.wstring() + L":Zone.Identifier";
-        auto file = CreateFileW(stream.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
-            nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-        auto error = file == INVALID_HANDLE_VALUE ? GetLastError() : ERROR_SUCCESS;
-        if (file != INVALID_HANDLE_VALUE)
-        {
-            constexpr char zone[] = "[ZoneTransfer]\r\nZoneId=3\r\n";
-            DWORD written = 0;
-            if (!WriteFile(file, zone, sizeof(zone) - 1, &written, nullptr))
-                error = GetLastError();
-            else if (written != sizeof(zone) - 1)
-                error = ERROR_WRITE_FAULT;
-            CloseHandle(file);
-        }
-        CloseHandle(base);
-        if (error != ERROR_SUCCESS)
+        if (auto error = Mark(path); error != ERROR_SUCCESS)
             throw std::runtime_error(std::to_string(error));
     }, [this, id = torrent->torrentId, index = alert.index](StorageOutcome outcome)
     {
@@ -811,33 +846,76 @@ std::vector<std::filesystem::path> Engine::State::Footprint(Torrent const& torre
 bool Engine::State::NamesReady() const
 {
     bool ready = true;
-    EachWorking([&ready](Torrent const& torrent)
-    {
-        ready &= torrent.namePhase != NamePhase::Recovering &&
-            (torrent.restore || !torrent.handle.torrent_file() || torrent.names);
-    });
+    EachWorking([&ready](Torrent const& torrent) { ready &= torrent.NamesKnown(); });
     return ready;
 }
 
-Outcome Engine::State::FilesReady(std::vector<std::string> const& ids)
+Outcome Engine::State::FilesReady(std::vector<std::string> const& ids, std::string const& destination) const
 {
-    if (FilesBusy() || !additions.empty())
+    // Other torrents' renames and name preparation delay the move where they
+    // can reach the move's files: under the destination, or under a member's
+    // save folder, where the shared-files refusal reads the other torrents'
+    // file names. A deletion or an addition changes only its own files, which
+    // the move can meet only at the destination.
+    auto folders = Folders(ids, destination);
+    auto overlaps = [&folders](std::string const& folder)
     {
-        return {ErrorCode::FilesBusy};
+        return std::any_of(folders.begin(), folders.end(), [&folder](auto const& used)
+            { return FoldersOverlap(folder, used); });
+    };
+    auto reaches = [&ids, &overlaps](Torrent const& torrent)
+    {
+        return Contains(ids, torrent.torrentId) || overlaps(torrent.facts.savePath) ||
+            (torrent.facts.marker && overlaps(torrent.facts.marker->destination));
+    };
+    for (auto const& deletion : deletions)
+    {
+        if (std::any_of(deletion.roots.begin(), deletion.roots.end(), [&destination](auto const& root)
+            { return FoldersOverlap(Utf8(root.wstring()), destination); }))
+            return {ErrorCode::FilesBusy, deletion.names};
+    }
+    if (rename)
+    {
+        for (auto const& owner : rename->owners)
+        {
+            auto torrent = FindWorking(owner.torrentId);
+            if (!torrent || reaches(*torrent))
+                return {ErrorCode::FilesBusy, torrent ? torrent->Name() : std::string()};
+        }
+    }
+    for (auto const& [id, addition] : additions)
+    {
+        if (FoldersOverlap(addition.facts.savePath, destination))
+            return {ErrorCode::FilesBusy, addition.params.ti ? addition.params.ti->name() : addition.params.name};
+    }
+    // A torrent is in another move from before its saved marker sets
+    // `moving`.
+    for (auto const& moving : moves)
+    {
+        auto member = std::find_if(ids.begin(), ids.end(), [&moving](auto const& id) { return Contains(moving.ids, id); });
+        if (member != ids.end())
+            return {ErrorCode::FilesBusy, Working(*member).Name()};
     }
     Outcome refusal;
-    EachWorking([&ids, &refusal](Torrent const& torrent)
+    EachWorking([&ids, &destination, &reaches, &refusal](Torrent const& torrent)
     {
         if (refusal.error)
             return;
-        if (torrent.restore || !torrent.handle.torrent_file())
+        bool own = Contains(ids, torrent.torrentId);
+        // A torrent in another move does not hold this move back, because
+        // moves share no drive and so never reach the same files.
+        bool elsewhere = torrent.moving && !own;
+        // Files whose names are unknown lie under their torrent's save folder,
+        // so only a save folder that overlaps the destination can hold one
+        // the move would write.
+        bool unknown = torrent.restore || !torrent.handle.torrent_file();
+        if (unknown && (own || FoldersOverlap(torrent.facts.savePath, destination)))
             refusal = Outcome{ErrorCode::MetadataUnavailable, torrent.Name()};
-        else if (torrent.FilesBusy() || (Contains(ids, torrent.torrentId) && torrent.priorityCompletion))
-            refusal = Outcome{ErrorCode::FilesBusy};
+        else if ((((torrent.FilesBusy() && !elsewhere) || !torrent.NamesKnown()) && reaches(torrent)) ||
+            (own && torrent.priorityCompletion))
+            refusal = Outcome{ErrorCode::FilesBusy, torrent.Name()};
     });
-    if (refusal.error)
-        return refusal;
-    return NamesReady() ? Outcome{} : Outcome{ErrorCode::FilesBusy};
+    return refusal;
 }
 
 Engine::State::Scope Engine::State::FileScope(std::vector<std::string> const& ids) const
@@ -977,9 +1055,11 @@ std::vector<std::string> Engine::State::Holders(std::shared_ptr<lt::torrent_info
     }
     // A member leaves the session once its own move has ended, also while
     // its sources are deleted.
-    if (move && holds(move->holds))
+    for (auto const& moving : moves)
     {
-        for (auto const& id : move->ids)
+        if (!holds(moving.holds))
+            continue;
+        for (auto const& id : moving.ids)
         {
             if (auto found = FindWorking(id))
                 names.push_back(found->Name());
@@ -1014,7 +1094,7 @@ void Engine::State::RecoverFiles()
             torrent.filesPending = true;
         }
     });
-    RecoverMove();
+    RecoverMoves();
     RecoverDeletions();
 }
 }

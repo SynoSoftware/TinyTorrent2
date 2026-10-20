@@ -337,7 +337,7 @@ internal sealed class TorrentSource : IAsyncDisposable
         var settled =
             !row.GetProperty("moving").GetBoolean()
             && row.GetProperty("move_destination").GetString() is not { Length: > 0 }
-            && row.GetProperty("status").GetString() != "checking";
+            && row.GetProperty("status").GetString() is not ("checking" or "waiting_check");
         var path = row.GetProperty("save_path").GetString()!;
         var complete = row.GetProperty("complete").GetBoolean();
         var origin = row.GetProperty("torrent_id").GetString()!;

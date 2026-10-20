@@ -2,6 +2,8 @@
 #include "Registration.h"
 #include "Resources.h"
 #include <algorithm>
+#include <condition_variable>
+#include <mutex>
 #include <stdexcept>
 
 namespace tt::desktop
@@ -42,6 +44,9 @@ constexpr std::pair<std::string_view, ExitAnswer> exitAnswers[] = {
 constexpr UINT tickInterval = 1000;
 // How long session end waits for the final save before the process ends.
 constexpr ULONGLONG sessionEndTimeout = 4000;
+// How long Exit may take before the watchdog ends the process. A normal Exit
+// ends well within it.
+constexpr auto exitLimit = std::chrono::seconds(10);
 
 // Pipe requests that wait for this thread; more are refused as overloaded.
 constexpr std::size_t requestLimit = 128;
@@ -406,14 +411,8 @@ void Application::Receive(std::shared_ptr<Pipe::Connection> const& client, Json 
 
 void Application::Exit()
 {
-    // The engine saves again by itself, so Exit shows again why it has not
-    // ended, which brings back Force exit after the person closed the toast.
     if (engine_->IsShuttingDown())
     {
-        if (saveFailure_)
-        {
-            ShowSaveFailure();
-        }
         return;
     }
     if (exit_ != ExitPhase::Idle)
@@ -481,6 +480,7 @@ bool Application::ConfirmExit()
 
 void Application::BeginExit()
 {
+    StartWatchdog();
     exit_ = ExitPhase::Exiting;
     auto closing = window_->Close();
     Refresh();
@@ -490,36 +490,41 @@ void Application::BeginExit()
     }
 }
 
+void Application::StartWatchdog()
+{
+    if (watchdog_.joinable())
+        return;
+    watchdog_ = std::jthread([](std::stop_token stop)
+    {
+        std::mutex gate;
+        std::condition_variable_any ended;
+        std::unique_lock lock(gate);
+        ended.wait_for(lock, stop, exitLimit, [] { return false; });
+        if (!stop.stop_requested())
+            TerminateProcess(GetCurrentProcess(), 2);
+    });
+}
+
 void Application::Shutdown()
 {
-    engine_->Shutdown([this](std::optional<std::string> failure)
+    StartWatchdog();
+    engine_->Shutdown([this](ShutdownEnd end)
     {
+        // A save failed, or the engine's teardown would wait on a drive that
+        // stopped responding. The saved tasks hold the work that remains.
+        if (end == ShutdownEnd::Abrupt)
+        {
+            tray_->Remove();
+            TerminateProcess(GetCurrentProcess(), 1);
+        }
         if (exit_ == ExitPhase::SessionEnding)
         {
-            endSaved_ = !failure;
+            endSaved_ = true;
             return;
         }
-        if (!failure)
-        {
-            toasts_->Close();
-            tray_->Remove();
-            PostQuitMessage(0);
-        }
-        else if (headless_)
-        {
-            PostQuitMessage(1);
-        }
-        else
-        {
-            // The engine saves again by itself, so only its first failure
-            // interrupts the person.
-            bool first = !saveFailure_;
-            saveFailure_ = Wide(*failure);
-            if (first)
-            {
-                ShowSaveFailure();
-            }
-        }
+        toasts_->Close();
+        tray_->Remove();
+        PostQuitMessage(0);
     });
 }
 
@@ -532,7 +537,7 @@ void Application::EndSession()
     Refresh();
     Shutdown();
     auto deadline = GetTickCount64() + sessionEndTimeout;
-    while (!endSaved_.has_value())
+    while (!endSaved_)
     {
         auto now = GetTickCount64();
         if (now >= deadline)
@@ -552,11 +557,11 @@ void Application::EndSession()
             DispatchMessageW(&message);
         }
     }
-    if (!endSaved_.has_value())
+    if (!endSaved_)
     {
         TerminateProcess(GetCurrentProcess(), 1);
     }
-    PostQuitMessage(*endSaved_ ? 0 : 1);
+    PostQuitMessage(0);
 }
 
 void Application::Tick()
@@ -592,6 +597,14 @@ void Application::Tick()
         programsChecked_ = true;
         CheckPrograms();
     }
+    // The window asks about the unfinished work; without one, a notice
+    // leads the person to it.
+    if (!unfinishedNotified_ && !engine_->IsLoading() && engine_->AwaitsAnswer())
+    {
+        unfinishedNotified_ = true;
+        if (!window_->IsPresent())
+            toasts_->Queue({.kind = ToastKind::Unfinished});
+    }
     for (auto& toast : engine_->TakeToasts())
     {
         toasts_->Queue(std::move(toast));
@@ -611,6 +624,9 @@ void Application::CancelExit()
     if (exit_ == ExitPhase::Exiting || exit_ == ExitPhase::WindowConfirming)
     {
         exit_ = ExitPhase::Idle;
+        // Replacing the watchdog stops it and waits for its thread.
+        if (!engine_->IsShuttingDown())
+            watchdog_ = std::jthread();
     }
     Refresh();
 }
@@ -768,17 +784,4 @@ void Application::CheckPrograms()
     });
 }
 
-// A stalled torrent may never let the save succeed, so Force exit ends the
-// process at once, without the final save. Changes since the last checkpoint
-// are lost, as after any abrupt end.
-void Application::ShowSaveFailure()
-{
-    auto forceExit = Toasts::ForceExit(strings_, [this]
-    {
-        tray_->Remove();
-        TerminateProcess(GetCurrentProcess(), 1);
-    });
-    toasts_->Report({.code = "save", .title = strings_.Text("notification", "save_failure"), .detail = *saveFailure_,
-        .actions = {std::move(forceExit)}, .interactive = true, .opens = false});
-}
 }

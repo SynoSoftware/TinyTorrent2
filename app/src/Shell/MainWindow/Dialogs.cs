@@ -53,8 +53,17 @@ public sealed partial class MainWindow
             _interaction = null;
             interaction.Completion.TrySetResult(completed);
         }
+        ShowDeferredUnfinished();
         ShowDeferredAdd();
         return completed;
+    }
+
+    // The engine holds the unfinished work until it is answered, so this dialog
+    // opens as soon as the window can show it, before the Add draft.
+    private void ShowDeferredUnfinished()
+    {
+        if (Model.Unfinished is not null && !_cloaked && !_allowClose && !Model.IsPicking)
+            _ = AskUnfinished();
     }
 
     private void ShowDeferredAdd()
@@ -243,6 +252,74 @@ public sealed partial class MainWindow
             if (choice != ContentDialogResult.Primary)
                 return false;
             await Model.Features.Delete();
+            return true;
+        });
+    }
+
+    // One question for all the disk work that Exit or a crash left unfinished.
+    // Neither answer is Cancel, and the engine keeps the work waiting, so the
+    // dialog has no Close button and Escape leaves it open until the engine
+    // is unavailable.
+    private async Task AskUnfinished()
+    {
+        if (Model.Unfinished is not { } work)
+            return;
+        await Interact(async interaction =>
+        {
+            var preference = new DialogPreference(Model.Settings);
+            var dialog = new Dialog
+            {
+                Glyph = Lucide.ListChecks,
+                PrimaryGlyph = Lucide.Play,
+                SecondaryGlyph = Lucide.Undo2,
+                Footer = new DialogFooter.OptOut(preference),
+            };
+            async Task<bool> Answer(UnfinishedAnswer answer)
+            {
+                if (!await Model.AnswerUnfinished(answer))
+                    return false;
+                if (preference.NeverShow)
+                    await Model.RememberUnfinished(answer);
+                return true;
+            }
+            dialog.PrimaryButtonClick += async (_, args) =>
+                await Submit(interaction, args, () => Answer(UnfinishedAnswer.Continue));
+            dialog.SecondaryButtonClick += async (_, args) =>
+                await Submit(interaction, args, () => Answer(UnfinishedAnswer.Abandon));
+            dialog.Closing += (_, args) =>
+            {
+                if (
+                    args.Result == ContentDialogResult.None
+                    && !interaction.IsSuspended
+                    && Model.Unfinished is not null
+                )
+                    args.Cancel = true;
+            };
+            await ShowDialog(
+                interaction,
+                dialog,
+                () =>
+                {
+                    dialog.Title = Model.Text.Get("unfinished", "title");
+                    dialog.CloseButtonText = string.Empty;
+                    dialog.PrimaryButtonText = Model.Text.Get("unfinished", "continue");
+                    dialog.PrimaryToolTip = Model.Text.Get("unfinished", "continue_tip");
+                    dialog.SecondaryButtonText = Model.Text.Get("unfinished", "abandon");
+                    dialog.SecondaryToolTip = Model.Text.Get("unfinished", "abandon_tip");
+                    dialog.Content = Lines(
+                        new[]
+                        {
+                            (Key: "moves", Count: work.Moves),
+                            (Key: "checks", Count: work.Checks),
+                            (Key: "deletions", Count: work.Deletions),
+                        }
+                            .Where(fact => fact.Count > 0)
+                            .Select(fact =>
+                                Model.Text.FormatCount("unfinished", fact.Key, fact.Count)
+                            )
+                    );
+                }
+            );
             return true;
         });
     }

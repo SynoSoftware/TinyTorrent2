@@ -719,7 +719,8 @@ Escape closes the drawer when focus is inside it. Clear filters lives inside
 the drawer and calls the existing filter owner. Downloading includes metadata
 acquisition and Seeding includes completed torrents. Stopped holds only
 torrents with the Stopped status, because a torrent that a session pause holds
-starts again by itself. One shared owner keeps pane visibility and its expanded or compact
+starts again by itself. Queued also includes Waiting to check and Waiting to
+move, because those torrents wait for their turn too. One shared owner keeps pane visibility and its expanded or compact
 presentation in both modes. Hiding preserves that presentation for the next show.
 Close hides the pane completely and unchecks View > Filters. Minimize uses the
 Lucide Pin icon and collapses the pane to a ten-pixel bar with a vertically
@@ -796,6 +797,17 @@ Added and Completed read as elapsed time, such as 3 hours ago, because
 how long ago a torrent arrived or finished is what the person compares; the
 exact date and time is the tooltip. Completed shows a dash until the torrent
 is complete.
+
+A check or a move that waits for its [drive](engine.md#drive-turns) shows
+Waiting to check or Waiting to move, with the Checking or Moving files icon. A
+state is named by what ends it: this one ends by itself, so the person has
+nothing to do, while Checking and Moving files would claim that the work runs
+and Queued already means the download queue. The Status tooltip names what the
+job waits for, such as "Waiting for C:, used by Ubuntu 24.04": the drive by the
+letter or server of the torrent's own folder, because the person does not know
+disk numbers. A move that waits only for another torrent's file work names
+that torrent instead, such as "Waiting for the files of Ubuntu 24.04". No
+queue position shows, because each drive has its own order.
 
 Natural order follows the engine's download queue. The Queue column shows
 one-based queue positions and a dash for torrents outside the queue. The engine
@@ -1239,14 +1251,46 @@ torrent's .torrent file still exists, with n of m when only some do. As in File 
 deletion mode and the dialog never asks it: Delete, or a click on Remove, sends
 ticked files to the Recycle Bin, and Shift with either deletes them permanently.
 The check box labels state that mode, so the button stays Remove. Only Remove
-saves the check boxes for the next removal. Add, Remove torrents and the
-window's Exit confirmation use the shared dialog footer's Don't show this
+saves the check boxes for the next removal. Add, Remove torrents, the
+window's Exit confirmation and the [unfinished tasks](#unfinished-tasks) question
+use the shared dialog footer's Don't show this
 dialog again checkbox; only submitting saves that preference. Delete and
 Shift+Delete then remove directly with the saved check boxes, and a refused
 operation opens the dialog with its error.
 Settings can restore confirmation. The dialog's default,
 focus and buttons follow the ruling in [Buttons](#buttons).
 Routine stop, start, and applied settings need no confirmation.
+
+<a id="unfinished-tasks"></a>**Unfinished tasks.** Exit, its 10-second end or a
+crash can leave disk work unfinished: moves, checks and file deletions. The
+Unfinished tasks setting decides what the engine does with all of it at start:
+Ask (the default), Continue or Abandon. It is a ComboBox in General's Startup
+and closing group, because it decides what happens at start, and choosing Ask
+restores the question after Don't show this dialog again. The
+[pipe contract](pipe-api.md) owns its words and the snapshot field that reports
+the waiting work.
+
+With Ask, the window opens one Continue unfinished tasks? dialog for all the
+waiting work, never one per torrent. Its body lists what waits, one line for
+each kind that has work, with its count, such as 3 moves, 1 check, 1 deletion.
+The title is short because a dialog title never wraps, and the list says what
+the title does not. Its buttons are Continue, the default, and Abandon. It
+is Abandon and not Cancel because in Windows Cancel means change nothing, while
+this button deletes the files that moves copied; the tooltips say what each
+button does to each kind of work. The dialog has no Close button, because
+nothing is not an answer here: the engine keeps the work waiting and the torrents
+stopped until the person answers. Escape therefore leaves the dialog open. Only
+an unavailable engine closes it, because the dialog could not answer anything;
+it opens again when the engine reports the same waiting work.
+
+The dialog opens once for each time the engine starts waiting. It waits until
+the window is on screen and no other dialog or file picker is open, and then it
+opens before a waiting Add draft, because the engine holds drive work until it is
+answered. A snapshot that was sent before the answer does not open it again. A
+failed answer is reported and leaves the dialog open. The Don't show this dialog
+again check box saves the pressed button as the setting, Continue or Abandon,
+after the engine accepted the answer; a failed save is reported like any other
+setting.
 
 Retain recognizable identity and last-known read-only values on disconnect, mark
 them stale, and disable writes until the engine is available. Current speed is
@@ -1973,7 +2017,8 @@ one is known. A changed network clears the old addresses; no external lookup
 service is needed. Appearance also offers the application language and Follow Windows, Light, and Dark
 through the existing theme owner. General's Windows integration group holds
 Start when I sign in. Startup and closing holds Start in the notification area,
-Start with transfers paused, and the splash setting. Exit confirmation belongs
+Start with transfers paused, the splash setting, and
+[Unfinished tasks](#unfinished-tasks). Exit confirmation belongs
 to Dialogs and confirmations. Start in the
 notification area, off by default, makes
 starting TinyTorrent start only the engine in the tray; opening TinyTorrent

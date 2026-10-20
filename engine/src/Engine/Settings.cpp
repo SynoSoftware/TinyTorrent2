@@ -190,6 +190,8 @@ constexpr std::pair<std::string_view, SeedRule> seedRules[] = {
     {"any", SeedRule::Any}, {"all", SeedRule::All}};
 constexpr std::pair<std::string_view, Theme> themes[] = {
     {"system", Theme::System}, {"light", Theme::Light}, {"dark", Theme::Dark}};
+constexpr std::pair<std::string_view, TaskAnswer> taskAnswers[] = {
+    {"ask", TaskAnswer::Ask}, {"continue", TaskAnswer::Continue}, {"abandon", TaskAnswer::Abandon}};
 
 constexpr int recentIntervals[] = {1, 5, 10};
 constexpr int historyIntervals[] = {10, 30, 60, 300};
@@ -369,7 +371,6 @@ void Engine::State::Settings::Fields(Self& settings, Visit&& visit)
     visit("slow_download", settings.slowDownload, Range{0, 1024 * 1024 * 1024});
     visit("slow_upload", settings.slowUpload, Range{0, 1024 * 1024 * 1024});
     visit("slow_wait", settings.slowWait, Range{1, 86400});
-    visit("active_checking", settings.activeChecking, Range{1, 64});
     visit("transport", settings.transport, Words{transports});
     visit("ip_family", settings.ipFamily, Words{ipFamilies});
     visit("outgoing_rate", settings.outgoingRate, Range{1, 1000});
@@ -404,6 +405,7 @@ void Engine::State::Settings::Fields(Self& settings, Visit&& visit)
     visit("notify_background", settings.notifiesBackground, Bool{});
     visit("prevent_sleep", settings.preventsSleep, Bool{});
     visit("prevent_sleep_seeding", settings.preventsSleepSeeding, Bool{});
+    visit("unfinished_tasks", settings.unfinished, Words{taskAnswers});
 }
 
 Json Engine::State::Settings::ToJson() const
