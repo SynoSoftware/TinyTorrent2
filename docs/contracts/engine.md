@@ -593,6 +593,12 @@ waiting member that shares a file with a failed member fails with it and
 reports the same problem, because moving it would take that file from the
 failed member's folder.
 
+Start, Stop and Verify clear a move problem that left no marker, because the
+torrent's files are where they were and the person has answered it. A move
+problem with a marker stays, because the files can be in two folders. Other
+commands, such as a speed limit or the queue order, keep the problem, because
+they do not answer it.
+
 The move preflight checks both physical and final names at source and destination.
 When the source is absent or an empty placeholder and the destination exists,
 it counts that file as already moved. A source containing data and an existing

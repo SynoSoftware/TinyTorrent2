@@ -665,6 +665,9 @@ try {
             } while (($row.moving -or $row.error -ne 'destination_exists') -and [DateTime]::UtcNow -lt $until)
             Assert (-not $row.moving -and $row.error -eq 'destination_exists' -and -not $row.move_destination) 'Collision did not finish safely without an interrupted marker'
             Assert ((Payload-Hash $sourceFile) -eq $originalHash -and (Payload-Hash $collisionFile) -eq $collisionHash) 'A destination collision replaced existing bytes'
+            $reply = Send-Command @{ command = 'verify'; torrent_ids = @($remaining) }
+            $row = (Send-Command @{ command = 'snapshot' }).data.torrents[0]
+            Assert ($reply.ok -and -not $row.error) 'Verify did not clear a refused move'
             # A link to the payload folder gives its file a second path.
             $alias = Join-Path $directory 'alias'
             $null = New-Item -ItemType Junction -Path $alias -Target $payload
@@ -678,6 +681,9 @@ try {
                 } while (($row.moving -or $row.error -ne 'same_location') -and [DateTime]::UtcNow -lt $until)
                 Assert (-not $row.moving -and $row.error -eq 'same_location' -and -not $row.move_destination) 'A move onto the same file through a link was not refused as same_location'
                 Assert ((Payload-Hash $sourceFile) -eq $originalHash) 'A move onto the same file through a link changed its bytes'
+                $reply = Send-Command @{ command = 'pause'; torrent_ids = @($remaining) }
+                $row = (Send-Command @{ command = 'snapshot' }).data.torrents[0]
+                Assert ($reply.ok -and -not $row.error) 'Stop did not clear a refused move'
             }
             finally {
                 # Removes the link only, never the folder it points to.

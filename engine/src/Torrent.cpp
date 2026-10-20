@@ -519,6 +519,14 @@ bool Torrent::MoveBlocked() const
     return moveError && moveError->refusal != ErrorCode::MetadataUnavailable;
 }
 
+void Torrent::AnswerMoveProblem()
+{
+    if (!facts.marker)
+    {
+        moveError.reset();
+    }
+}
+
 Status Torrent::Classify(bool sessionPaused) const
 {
     if (moving)

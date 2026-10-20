@@ -653,9 +653,10 @@ void Engine::State::Verify(std::vector<std::string> const& ids, std::function<vo
             torrent.needsRecheck = true;
         else
             Recheck(torrent);
-        if (torrent.checkError)
+        if (torrent.checkError || torrent.moveError)
         {
             torrent.checkError.reset();
+            torrent.AnswerMoveProblem();
             torrent.ApplyIntent();
         }
     }
@@ -733,12 +734,9 @@ void Engine::State::SetIntent(std::vector<std::string> const& ids, Intent intent
         for (auto const& id : ids)
         {
             auto& torrent = torrents.at(id);
+            torrent.AnswerMoveProblem();
             if (intent != Intent::Paused)
             {
-                if (!torrent.facts.marker)
-                {
-                    torrent.moveError.reset();
-                }
                 torrent.conflict.clear();
                 torrent.checkError.reset();
                 if (!torrent.restore)

@@ -307,6 +307,9 @@ struct Torrent
     // The torrent's own files are being prepared, renamed or moved.
     bool FilesBusy() const;
     bool MoveBlocked() const;
+    // The person's Start, Stop or Verify answers a move problem. One that
+    // left no interrupted move clears, because its files are where they were.
+    void AnswerMoveProblem();
     // The engine keeps it paused for its own work, whatever the person chose:
     // a conflict, a move, the write before a rename, a check that waits for
     // its drive, for the person's answer or stalled, or names that wait for
