@@ -968,14 +968,19 @@
     "tip": "Remover os torrents da lista. Os arquivos baixados permanecem no disco.",
     "recycle_tip": "Remover os torrents da lista e mover os arquivos marcados para a Lixeira",
     "delete_tip": "Remover os torrents da lista e excluir permanentemente os arquivos marcados",
-    "recycle_downloaded": "Também mover os arquivos para a Lixeira ({0})",
-    "delete_downloaded": "Também excluir os arquivos permanentemente ({0})",
-    "recycle_torrent_files_one": "Também mover o arquivo torrent para a Lixeira ({1})",
-    "recycle_torrent_files_other": "Também mover os arquivos torrent para a Lixeira ({1})",
-    "recycle_some_torrent_files": "Também mover {0:N0} de {2:N0} arquivos torrent para a Lixeira ({1})",
-    "delete_torrent_files_one": "Também excluir o arquivo torrent permanentemente ({1})",
-    "delete_torrent_files_other": "Também excluir os arquivos torrent permanentemente ({1})",
-    "delete_some_torrent_files": "Também excluir permanentemente {0:N0} de {2:N0} arquivos torrent ({1})"
+    "files": "Excluir arquivos",
+    "torrent_files_one": "Excluir arquivo torrent",
+    "torrent_files_other": "Excluir arquivos torrent",
+    "some_torrent_files": "Excluir {0:N0} de {1:N0} arquivos torrent",
+    "size": "({0})",
+    "keeps_files_one": "Nenhum arquivo é excluído. Remove apenas a entrada do TinyTorrent.",
+    "keeps_files_other": "Nenhum arquivo é excluído. Remove apenas as entradas do TinyTorrent.",
+    "recycles": "Move {0} para a Lixeira.",
+    "recycles_torrent_files_one": "Move o arquivo torrent para a Lixeira.",
+    "recycles_torrent_files_other": "Move os arquivos torrent para a Lixeira.",
+    "deletes": "Exclui {0} permanentemente.",
+    "recycles_except_shared": "Move os arquivos para a Lixeira, exceto os que outros torrents usam.",
+    "deletes_except_shared": "Exclui os arquivos permanentemente, exceto os que outros torrents usam."
   },
   "file_action": {
     "current": "De",
@@ -984,7 +989,6 @@
     "move_title_one": "Mover torrent",
     "move_title_other": "Mover torrents",
     "move_shared": "Estes outros torrents compartilham os arquivos e precisam ser movidos juntos:\n{0}",
-    "delete_shared": "Os arquivos usados por {0} serão mantidos.",
     "include_shared": "Incluir estes torrents na movimentação",
     "refresh": "Atualizar",
     "kept_one": "{0:N0} arquivo compartilhado será mantido.",
@@ -1840,8 +1844,7 @@
     "download_choice": "Baixar",
     "downloading_choice": "Baixando legenda…",
     "search_again": "Pesquisar novamente",
-    "search_again_hint": "Pesquisar novamente legendas para este vídeo no idioma atual",
-    "setup": "Configurar legendas"
+    "search_again_hint": "Pesquisar novamente legendas para este vídeo no idioma atual"
   },
   "limits": {
     "download_limit": "Limite de download",

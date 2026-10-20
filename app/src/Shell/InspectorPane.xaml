@@ -248,10 +248,14 @@
                     <ColumnDefinition Width="Auto" MinWidth="112" />
                     <ColumnDefinition Width="Auto" MinWidth="112" />
                   </Grid.ColumnDefinitions>
+                  <!-- An error adds its file on a second line, which tight line
+                       bounds would draw over the first. -->
                   <TextBlock
                     x:Name="Summary"
                     Text="{x:Bind Model.Summary, Mode=OneWay}"
                     Style="{StaticResource InspectorValueStyle}"
+                    TextLineBounds="Full"
+                    VerticalAlignment="Top"
                     ToolTipService.ToolTip="{x:Bind Model.Summary, Mode=OneWay}"
                   />
                   <StackPanel
@@ -260,6 +264,7 @@
                     Orientation="Horizontal"
                     Spacing="4"
                     HorizontalAlignment="Right"
+                    VerticalAlignment="Top"
                     Background="Transparent"
                     ToolTipService.ToolTip="{x:Bind Model.Text.Get('columns', 'down')}"
                   >
@@ -273,6 +278,7 @@
                     <TextBlock
                       Text="{x:Bind Model.Target.DownloadText, Mode=OneWay}"
                       Style="{StaticResource InspectorValueStyle}"
+                      TextLineBounds="Full"
                       Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
                       AutomationProperties.Name="{x:Bind Model.Target.DownloadName, Mode=OneWay}"
                       ToolTipService.ToolTip="{x:Bind Model.Target.DownloadText, Mode=OneWay}"
@@ -284,6 +290,7 @@
                     Orientation="Horizontal"
                     Spacing="4"
                     HorizontalAlignment="Right"
+                    VerticalAlignment="Top"
                     Background="Transparent"
                     ToolTipService.ToolTip="{x:Bind Model.Text.Get('columns', 'up')}"
                   >
@@ -297,6 +304,7 @@
                     <TextBlock
                       Text="{x:Bind Model.Target.UploadText, Mode=OneWay}"
                       Style="{StaticResource InspectorValueStyle}"
+                      TextLineBounds="Full"
                       Foreground="{ThemeResource TinyTorrentUploadBrush}"
                       AutomationProperties.Name="{x:Bind Model.Target.UploadName, Mode=OneWay}"
                       ToolTipService.ToolTip="{x:Bind Model.Target.UploadText, Mode=OneWay}"

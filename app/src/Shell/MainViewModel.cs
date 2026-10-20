@@ -542,7 +542,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         Library.ClearFilters.CanExecuteChanged += (_, _) => ((RelayCommand)ClearFilters).Refresh();
         ShowSettings = new RelayCommand(() => RequestSettings(new()), () => true);
         ShowSubtitleSettings = new RelayCommand(
-            () => RequestSettings(new(SettingsCategory.Plugins)),
+            () => RequestSettings(new(SettingsCategory.Plugins, "subtitle_supplier")),
             () => true
         );
         RetrySubtitleWork = new RelayCommand(

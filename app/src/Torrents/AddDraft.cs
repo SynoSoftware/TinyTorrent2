@@ -506,13 +506,20 @@ public sealed class AddDraft : IDraft
         {
             _ended = true;
             var remaining = _accepted.Where(_draft.Sources.Contains).ToArray();
+            // A source left without a failure waits for the Add dialog or the
+            // merge question, so it has not failed.
             _operation.Outcome =
                 IsCancelled ? WorkOutcome.Cancelled
-                : remaining.Length == 0 ? WorkOutcome.Completed : WorkOutcome.Failed;
+                : remaining.Any(source => source.Failure is not null) ? WorkOutcome.Failed
+                : WorkOutcome.Completed;
             _operation.Error = remaining
                 .Select(source => source.Failure)
                 .FirstOrDefault(error => error is not null);
-            _operation.Summarize("sources_result", _accepted.Length - remaining.Length, _accepted.Length);
+            _operation.Summarize(
+                "sources_result",
+                _accepted.Length - remaining.Length,
+                _accepted.Length
+            );
             try
             {
                 // An in-flight add is reconciled before this cleanup. An uncertain

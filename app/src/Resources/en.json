@@ -965,14 +965,19 @@
     "tip": "Remove the torrents from the list. Downloaded files stay on disk.",
     "recycle_tip": "Remove the torrents from the list and move the ticked files to the Recycle Bin",
     "delete_tip": "Remove the torrents from the list and permanently delete the ticked files",
-    "recycle_downloaded": "Also move the files to the Recycle Bin ({0})",
-    "delete_downloaded": "Also permanently delete the files ({0})",
-    "recycle_torrent_files_one": "Also move the torrent file to the Recycle Bin ({1})",
-    "recycle_torrent_files_other": "Also move the torrent files to the Recycle Bin ({1})",
-    "recycle_some_torrent_files": "Also move {0:N0} of {2:N0} torrent files to the Recycle Bin ({1})",
-    "delete_torrent_files_one": "Also permanently delete the torrent file ({1})",
-    "delete_torrent_files_other": "Also permanently delete the torrent files ({1})",
-    "delete_some_torrent_files": "Also permanently delete {0:N0} of {2:N0} torrent files ({1})"
+    "files": "Delete files",
+    "torrent_files_one": "Delete torrent file",
+    "torrent_files_other": "Delete torrent files",
+    "some_torrent_files": "Delete {0:N0} of {1:N0} torrent files",
+    "size": "({0})",
+    "keeps_files_one": "No files are deleted. Removes only the entry from TinyTorrent.",
+    "keeps_files_other": "No files are deleted. Removes only the entries from TinyTorrent.",
+    "recycles": "Moves {0} to the Recycle Bin.",
+    "recycles_torrent_files_one": "Moves the torrent file to the Recycle Bin.",
+    "recycles_torrent_files_other": "Moves the torrent files to the Recycle Bin.",
+    "deletes": "Permanently deletes {0}.",
+    "recycles_except_shared": "Moves the files to the Recycle Bin, except files other torrents use.",
+    "deletes_except_shared": "Permanently deletes the files, except files other torrents use."
   },
   "file_action": {
     "current": "From",
@@ -981,7 +986,6 @@
     "move_title_one": "Move torrent",
     "move_title_other": "Move torrents",
     "move_shared": "These other torrents share the files and must move together:\n{0}",
-    "delete_shared": "Files used by {0} will be kept.",
     "include_shared": "Include these torrents in the move",
     "refresh": "Refresh",
     "kept_one": "{0:N0} shared file will be kept.",
@@ -1837,8 +1841,7 @@
     "download_choice": "Download",
     "downloading_choice": "Downloading subtitle…",
     "search_again": "Search again",
-    "search_again_hint": "Search for subtitles for this video in the current language again",
-    "setup": "Set up subtitles"
+    "search_again_hint": "Search for subtitles for this video in the current language again"
   },
   "limits": {
     "download_limit": "Download limit",

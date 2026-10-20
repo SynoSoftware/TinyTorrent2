@@ -968,14 +968,19 @@
     "tip": "Retirer les torrents de la liste. Les fichiers téléchargés restent sur le disque.",
     "recycle_tip": "Retirer les torrents de la liste et mettre les fichiers cochés dans la Corbeille",
     "delete_tip": "Retirer les torrents de la liste et supprimer définitivement les fichiers cochés",
-    "recycle_downloaded": "Mettre aussi les fichiers dans la Corbeille ({0})",
-    "delete_downloaded": "Supprimer aussi définitivement les fichiers ({0})",
-    "recycle_torrent_files_one": "Mettre aussi le fichier torrent dans la Corbeille ({1})",
-    "recycle_torrent_files_other": "Mettre aussi les fichiers torrent dans la Corbeille ({1})",
-    "recycle_some_torrent_files": "Mettre aussi {0:N0} fichiers torrent sur {2:N0} dans la Corbeille ({1})",
-    "delete_torrent_files_one": "Supprimer aussi définitivement le fichier torrent ({1})",
-    "delete_torrent_files_other": "Supprimer aussi définitivement les fichiers torrent ({1})",
-    "delete_some_torrent_files": "Supprimer aussi définitivement {0:N0} fichiers torrent sur {2:N0} ({1})"
+    "files": "Supprimer les fichiers",
+    "torrent_files_one": "Supprimer le fichier torrent",
+    "torrent_files_other": "Supprimer les fichiers torrent",
+    "some_torrent_files": "Supprimer {0:N0} fichiers torrent sur {1:N0}",
+    "size": "({0})",
+    "keeps_files_one": "Aucun fichier n’est supprimé. Seule l’entrée est retirée de TinyTorrent.",
+    "keeps_files_other": "Aucun fichier n’est supprimé. Seules les entrées sont retirées de TinyTorrent.",
+    "recycles": "Met {0} dans la Corbeille.",
+    "recycles_torrent_files_one": "Met le fichier torrent dans la Corbeille.",
+    "recycles_torrent_files_other": "Met les fichiers torrent dans la Corbeille.",
+    "deletes": "Supprime définitivement {0}.",
+    "recycles_except_shared": "Met les fichiers dans la Corbeille, sauf ceux qu’utilisent d’autres torrents.",
+    "deletes_except_shared": "Supprime définitivement les fichiers, sauf ceux qu’utilisent d’autres torrents."
   },
   "file_action": {
     "current": "De",
@@ -984,7 +989,6 @@
     "move_title_one": "Déplacer le torrent",
     "move_title_other": "Déplacer les torrents",
     "move_shared": "Ces autres torrents partagent les fichiers et doivent être déplacés ensemble :\n{0}",
-    "delete_shared": "Les fichiers utilisés par {0} seront conservés.",
     "include_shared": "Inclure ces torrents dans le déplacement",
     "refresh": "Actualiser",
     "kept_one": "{0:N0} fichier partagé sera conservé.",
@@ -1840,8 +1844,7 @@
     "download_choice": "Télécharger",
     "downloading_choice": "Téléchargement du sous-titre…",
     "search_again": "Rechercher à nouveau",
-    "search_again_hint": "Relancer la recherche de sous-titres pour cette vidéo dans la langue actuelle",
-    "setup": "Configurer les sous-titres"
+    "search_again_hint": "Relancer la recherche de sous-titres pour cette vidéo dans la langue actuelle"
   },
   "limits": {
     "download_limit": "Limite de téléchargement",

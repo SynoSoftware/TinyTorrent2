@@ -965,14 +965,19 @@
     "tip": "De torrents uit de lijst verwijderen. Gedownloade bestanden blijven op schijf staan.",
     "recycle_tip": "De torrents uit de lijst verwijderen en de aangevinkte bestanden naar de Prullenbak verplaatsen",
     "delete_tip": "De torrents uit de lijst verwijderen en de aangevinkte bestanden definitief verwijderen",
-    "recycle_downloaded": "Ook de bestanden naar de Prullenbak verplaatsen ({0})",
-    "delete_downloaded": "Ook de bestanden definitief verwijderen ({0})",
-    "recycle_torrent_files_one": "Ook het torrentbestand naar de Prullenbak verplaatsen ({1})",
-    "recycle_torrent_files_other": "Ook de torrentbestanden naar de Prullenbak verplaatsen ({1})",
-    "recycle_some_torrent_files": "Ook {0:N0} van {2:N0} torrentbestanden naar de Prullenbak verplaatsen ({1})",
-    "delete_torrent_files_one": "Ook het torrentbestand definitief verwijderen ({1})",
-    "delete_torrent_files_other": "Ook de torrentbestanden definitief verwijderen ({1})",
-    "delete_some_torrent_files": "Ook {0:N0} van {2:N0} torrentbestanden definitief verwijderen ({1})"
+    "files": "Bestanden verwijderen",
+    "torrent_files_one": "Torrentbestand verwijderen",
+    "torrent_files_other": "Torrentbestanden verwijderen",
+    "some_torrent_files": "{0:N0} van {1:N0} torrentbestanden verwijderen",
+    "size": "({0})",
+    "keeps_files_one": "Er worden geen bestanden verwijderd. Alleen het item wordt uit TinyTorrent verwijderd.",
+    "keeps_files_other": "Er worden geen bestanden verwijderd. Alleen de items worden uit TinyTorrent verwijderd.",
+    "recycles": "Verplaatst {0} naar de Prullenbak.",
+    "recycles_torrent_files_one": "Verplaatst het torrentbestand naar de Prullenbak.",
+    "recycles_torrent_files_other": "Verplaatst de torrentbestanden naar de Prullenbak.",
+    "deletes": "Verwijdert {0} definitief.",
+    "recycles_except_shared": "Verplaatst de bestanden naar de Prullenbak, behalve bestanden die andere torrents gebruiken.",
+    "deletes_except_shared": "Verwijdert de bestanden definitief, behalve bestanden die andere torrents gebruiken."
   },
   "file_action": {
     "current": "Van",
@@ -981,7 +986,6 @@
     "move_title_one": "Torrent verplaatsen",
     "move_title_other": "Torrents verplaatsen",
     "move_shared": "Deze andere torrents delen de bestanden en moeten samen worden verplaatst:\n{0}",
-    "delete_shared": "Bestanden die door {0} worden gebruikt, blijven behouden.",
     "include_shared": "Deze torrents ook verplaatsen",
     "refresh": "Vernieuwen",
     "kept_one": "{0:N0} gedeeld bestand blijft behouden.",
@@ -1837,8 +1841,7 @@
     "download_choice": "Downloaden",
     "downloading_choice": "Ondertitel downloaden…",
     "search_again": "Opnieuw zoeken",
-    "search_again_hint": "Opnieuw ondertitels voor deze video in de huidige taal zoeken",
-    "setup": "Ondertitels instellen"
+    "search_again_hint": "Opnieuw ondertitels voor deze video in de huidige taal zoeken"
   },
   "limits": {
     "download_limit": "Downloadlimiet",

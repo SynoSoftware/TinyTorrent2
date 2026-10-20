@@ -8,6 +8,7 @@ using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.Windows.Storage.Pickers;
 using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Settings;
 using Syno.TinyTorrent.Shared;
@@ -15,7 +16,6 @@ using Syno.TinyTorrent.Torrents;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Graphics;
 using Windows.Storage;
-using Windows.Storage.Pickers;
 using Windows.System;
 
 namespace Syno.TinyTorrent.Shell;
@@ -625,12 +625,8 @@ public sealed partial class MainWindow : Window
         Model.IsPicking = true;
         try
         {
-            var picker = new FileOpenPicker();
+            var picker = new FileOpenPicker(AppWindow.Id);
             picker.FileTypeFilter.Add(".torrent");
-            WinRT.Interop.InitializeWithWindow.Initialize(
-                picker,
-                WinRT.Interop.WindowNative.GetWindowHandle(this)
-            );
             var files = await picker.PickMultipleFilesAsync();
             Model.IsPicking = false;
             if (files.Count > 0)
@@ -648,24 +644,29 @@ public sealed partial class MainWindow : Window
 
     private async Task PickDestination()
     {
-        var folder = await PickFolder();
+        var folder = await PickFolder(Model.AddDraft.Destination);
         if (folder is not null)
             Model.AddDraft.Destination = folder;
     }
 
-    private async Task<string?> PickFolder()
+    // Opens at the first of `starts` that exists, as a field's Browse opens
+    // at the folder the field names. The share check runs off the UI thread,
+    // because an unreachable share takes seconds to answer.
+    private async Task<string?> PickFolder(params string?[] starts)
     {
         if (!Model.CanEdit)
             return null;
         Model.IsPicking = true;
         try
         {
-            var picker = new FolderPicker();
-            picker.FileTypeFilter.Add("*");
-            WinRT.Interop.InitializeWithWindow.Initialize(
-                picker,
-                WinRT.Interop.WindowNative.GetWindowHandle(this)
+            var picker = new FolderPicker(AppWindow.Id);
+            var start = await Task.Run(() =>
+                starts.FirstOrDefault(folder =>
+                    !string.IsNullOrWhiteSpace(folder) && Directory.Exists(folder)
+                )
             );
+            if (start is not null)
+                picker.SuggestedFolder = start;
             var folder = await picker.PickSingleFolderAsync();
             return folder?.Path;
         }

@@ -39,6 +39,22 @@
     </DataTemplate>
   </UserControl.Resources>
   <Grid>
+    <VisualStateManager.VisualStateGroups>
+      <VisualStateGroup>
+        <VisualState x:Name="Normal" />
+        <!-- Only a permanent deletion draws attention; the Recycle Bin can
+             restore what the other outcomes delete. -->
+        <VisualState x:Name="Permanent">
+          <VisualState.StateTriggers>
+            <StateTrigger IsActive="{x:Bind Model.FileDraft.DeletesPermanently, Mode=OneWay}" />
+          </VisualState.StateTriggers>
+          <VisualState.Setters>
+            <Setter Target="ConsequenceIcon.Foreground" Value="{ThemeResource SystemFillColorCautionBrush}" />
+            <Setter Target="ConsequenceText.Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
+          </VisualState.Setters>
+        </VisualState>
+      </VisualStateGroup>
+    </VisualStateManager.VisualStateGroups>
     <Grid.RowDefinitions>
       <RowDefinition Height="*" />
       <RowDefinition Height="Auto" />
@@ -123,33 +139,67 @@
          visible, as Move's From and To rows do. -->
     <StackPanel
       Grid.Row="1"
-      Spacing="12"
+      Spacing="8"
       Padding="0,16,0,0"
       Margin="0,16,0,0"
       BorderThickness="0,1,0,0"
       BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
       Visibility="{x:Bind Model.FileDraft.IsRemoval, Mode=OneWay}"
     >
-      <CheckBox
-        Content="{x:Bind Model.FileDraft.DownloadedText, Mode=OneWay}"
-        AutomationProperties.AutomationId="DeleteDownloaded"
-        IsChecked="{x:Bind Model.FileDraft.DeleteDownloaded, Mode=TwoWay}"
-        IsEnabled="{x:Bind Model.FileDraft.CanEdit, Mode=OneWay}"
-      />
-      <CheckBox
-        Content="{x:Bind Model.FileDraft.TorrentFilesText, Mode=OneWay}"
-        AutomationProperties.AutomationId="DeleteTorrentFiles"
-        IsChecked="{x:Bind Model.FileDraft.DeleteTorrentFiles, Mode=TwoWay}"
-        IsEnabled="{x:Bind Model.FileDraft.CanEdit, Mode=OneWay}"
-        Visibility="{x:Bind Model.FileDraft.HasTorrentFiles, Mode=OneWay}"
-      />
-      <TextBlock
-        Text="{x:Bind Model.FileDraft.SharedText, Mode=OneWay}"
-        Visibility="{x:Bind Model.FileDraft.ShowsKeptShared, Mode=OneWay}"
-        Style="{StaticResource TinyTorrentBodyTextStyle}"
-        IsTextSelectionEnabled="True"
-        ToolTipService.ToolTip="{x:Bind Model.FileDraft.SharedText, Mode=OneWay}"
-      />
+      <controls:WrapPanel Orientation="Horizontal" ColumnSpacing="24">
+        <CheckBox
+          AutomationProperties.AutomationId="DeleteDownloaded"
+          AutomationProperties.HelpText="{x:Bind Model.FileDraft.Consequence, Mode=OneWay}"
+          IsChecked="{x:Bind Model.FileDraft.DeleteDownloaded, Mode=TwoWay}"
+          IsEnabled="{x:Bind Model.FileDraft.CanEdit, Mode=OneWay}"
+        >
+          <TextBlock>
+            <Run Text="{x:Bind Model.FileDraft.DownloadedText, Mode=OneWay}" />
+            <Run
+              Text="{x:Bind Model.FileDraft.DownloadedSize, Mode=OneWay}"
+              Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+            />
+          </TextBlock>
+        </CheckBox>
+        <CheckBox
+          AutomationProperties.AutomationId="DeleteTorrentFiles"
+          AutomationProperties.HelpText="{x:Bind Model.FileDraft.Consequence, Mode=OneWay}"
+          IsChecked="{x:Bind Model.FileDraft.DeleteTorrentFiles, Mode=TwoWay}"
+          IsEnabled="{x:Bind Model.FileDraft.CanEdit, Mode=OneWay}"
+          Visibility="{x:Bind Model.FileDraft.HasTorrentFiles, Mode=OneWay}"
+        >
+          <TextBlock>
+            <Run Text="{x:Bind Model.FileDraft.TorrentFilesText, Mode=OneWay}" />
+            <Run
+              Text="{x:Bind Model.FileDraft.TorrentFilesSize, Mode=OneWay}"
+              Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+            />
+          </TextBlock>
+        </CheckBox>
+      </controls:WrapPanel>
+      <Grid ColumnSpacing="8">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <FontIcon
+          x:Name="ConsequenceIcon"
+          FontFamily="{x:Bind icons:Lucide.Font}"
+          Glyph="{x:Bind Model.FileDraft.ConsequenceGlyph, Mode=OneWay}"
+          FontSize="{StaticResource TinyTorrentInlineIconSize}"
+          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+          VerticalAlignment="Top"
+          Margin="0,2,0,0"
+        />
+        <TextBlock
+          x:Name="ConsequenceText"
+          Grid.Column="1"
+          Text="{x:Bind Model.FileDraft.Consequence, Mode=OneWay}"
+          Style="{StaticResource TinyTorrentBodyTextStyle}"
+          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+          TextWrapping="Wrap"
+        />
+      </Grid>
     </StackPanel>
     <Border
       Grid.Row="1"

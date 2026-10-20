@@ -219,8 +219,6 @@ public sealed partial class MainViewModel
     internal Task ShowSetting(Setting setting) =>
         RequestSettings(new(setting.Category, setting.Name));
 
-    internal Task ShowProxySetting() => RequestSettings(new(SettingsCategory.Network, "proxy"));
-
     public IReadOnlyList<Suggestion> FindSuggestions(string query)
     {
         var words = FileName

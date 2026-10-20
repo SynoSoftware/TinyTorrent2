@@ -78,9 +78,9 @@ public sealed partial class MainWindow
     {
         if (!_cloaked)
             return;
-        // The window renders while cloaked, so restoring the saved page starts
-        // a transition the person did not make. Finish it before the first
-        // visible frame, or the outgoing page shows behind the new one.
+        // The window renders while cloaked, so restoring the saved layout can
+        // start a transition the person did not make. Finish it before the
+        // first visible frame, or the outgoing part shows behind the new one.
         StopMotion();
         SetCloak(false);
         Activate();

@@ -731,11 +731,6 @@ public sealed partial class SettingsPage : UserControl
                 )
                     return;
                 UpdateLayout();
-                if (target.Name == "add_period")
-                {
-                    _scheduler?.FocusAdd();
-                    return;
-                }
                 if (target.Category is null || target.Name is null)
                 {
                     PageHeader.FocusHeading(FocusState.Programmatic);
@@ -775,6 +770,8 @@ public sealed partial class SettingsPage : UserControl
             "patterns" when !Model.Exclude.IsOn => FindControl("exclude"),
             "queue" => QueueSection,
             "weekly_schedule" => _scheduler?.Map,
+            "add_period" when _scheduler?.Model.FollowsSchedule != true => _scheduler?.Selector,
+            "add_period" => _scheduler?.Add,
             "seeding" => SeedingSection,
             "adding" => AddingSection,
             "download_locations" => DownloadsSection,

@@ -49,10 +49,9 @@ public sealed class FileDraft : IDraft
             : new ClosePolicy.Discard();
     public bool HasShared => _shared.Length > 0;
 
-    // Move asks about the shared files. Removal names them only when it
+    // Move asks about the shared files. Removal mentions them only when it
     // deletes the downloaded files, because otherwise every file stays.
     public bool ShowsMoveShared => IsMove && HasShared;
-    public bool ShowsKeptShared => DeleteDownloaded && HasShared;
     public bool HasDestination => !string.IsNullOrWhiteSpace(Destination);
     public string Title =>
         IsMove
@@ -62,7 +61,7 @@ public sealed class FileDraft : IDraft
     public bool IsRemoval => !IsMove;
 
     // Removal's check boxes. The key that opened the dialog chose the
-    // deletion mode, so the labels state it instead of asking.
+    // deletion mode, so the consequence line states it instead of asking.
     public bool DeleteDownloaded
     {
         get => _deleteDownloaded;
@@ -92,31 +91,53 @@ public sealed class FileDraft : IDraft
     public bool HasTorrentFiles => TorrentFileCount > 0;
     private int TorrentFileCount => _torrents.Count(torrent => torrent.TorrentFile.Length > 0);
     private bool Recycles => _deletion == DeletionMode.Recycle;
-    public string DownloadedText =>
-        _owner.Text.Format(
-            "remove",
-            Recycles ? "recycle_downloaded" : "delete_downloaded",
-            _owner.Text.Bytes(_torrents.Sum(torrent => Selected(torrent).Size))
-        );
-    public string TorrentFilesText
+
+    private long DownloadedBytes => _torrents.Sum(torrent => Selected(torrent).Size);
+    private long TorrentFileBytes => _torrents.Sum(torrent => torrent.TorrentFileSize);
+    public string DownloadedText => _owner.Text.Get("remove", "files");
+    public string DownloadedSize =>
+        _owner.Text.Format("remove", "size", _owner.Text.Bytes(DownloadedBytes));
+    public string TorrentFilesText =>
+        TorrentFileCount == _torrents.Length
+            ? _owner.Text.FormatCount("remove", "torrent_files", TorrentFileCount)
+            : _owner.Text.Format(
+                "remove",
+                "some_torrent_files",
+                TorrentFileCount,
+                _torrents.Length
+            );
+    public string TorrentFilesSize =>
+        _owner.Text.Format("remove", "size", _owner.Text.Bytes(TorrentFileBytes));
+
+    // The line under the check boxes says what Remove does to the files, so
+    // the person need not know which key chose the deletion mode.
+    private bool DeletesFiles => DeleteDownloaded || DeletesTorrentFiles;
+    public bool DeletesPermanently => DeletesFiles && !Recycles;
+    private bool DeletesTorrentFiles => DeleteTorrentFiles && HasTorrentFiles;
+    public string ConsequenceGlyph =>
+        !DeletesFiles ? Lucide.Info
+        : Recycles ? Lucide.Trash2
+        : Lucide.TriangleAlert;
+    public string Consequence
     {
         get
         {
-            var size = _owner.Text.Bytes(_torrents.Sum(torrent => torrent.TorrentFileSize));
-            return TorrentFileCount == _torrents.Length
-                ? _owner.Text.FormatCount(
+            if (!DeletesFiles)
+                return _owner.Text.FormatCount("remove", "keeps_files", _torrents.Length);
+            // The engine keeps the files other torrents use, so the total
+            // would overstate what goes.
+            if (DeleteDownloaded && HasShared)
+                return _owner.Text.Get(
                     "remove",
-                    Recycles ? "recycle_torrent_files" : "delete_torrent_files",
-                    TorrentFileCount,
-                    size
-                )
-                : _owner.Text.Format(
-                    "remove",
-                    Recycles ? "recycle_some_torrent_files" : "delete_some_torrent_files",
-                    TorrentFileCount,
-                    size,
-                    _torrents.Length
+                    Recycles ? "recycles_except_shared" : "deletes_except_shared"
                 );
+            var size = _owner.Text.Bytes(
+                (DeleteDownloaded ? DownloadedBytes : 0)
+                    + (DeletesTorrentFiles ? TorrentFileBytes : 0)
+            );
+            return !Recycles ? _owner.Text.Format("remove", "deletes", size)
+                : DeleteDownloaded ? _owner.Text.Format("remove", "recycles", size)
+                : _owner.Text.FormatCount("remove", "recycles_torrent_files", TorrentFileCount);
         }
     }
     public DialogPreference Confirmation { get; }
@@ -125,16 +146,18 @@ public sealed class FileDraft : IDraft
     public string SubmitGlyph => IsMove ? Lucide.FolderInput : Lucide.ListX;
     public string SubmitToolTip =>
         IsMove ? _owner.Text.Get("file_action", "move_tip")
-        : DeleteDownloaded || DeleteTorrentFiles && HasTorrentFiles
-            ? _owner.Text.Get("remove", Recycles ? "recycle_tip" : "delete_tip")
+        : DeletesFiles ? _owner.Text.Get("remove", Recycles ? "recycle_tip" : "delete_tip")
         : _owner.Text.Get("remove", "tip");
-    public string Locations =>
+
+    // The one folder that holds the torrents, or null when they are in several.
+    public string? Location =>
         _torrents
             .Select(torrent => torrent.SavePath)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Count() == 1
             ? _torrents[0].SavePath
-            : _owner.Text.Get("file_action", "multiple_locations");
+            : null;
+    public string Locations => Location ?? _owner.Text.Get("file_action", "multiple_locations");
     public Torrent[] Torrents { get; private set; } = [];
     public FolderGroup[] Folders { get; private set; } = [];
     public string Total =>
@@ -147,17 +170,11 @@ public sealed class FileDraft : IDraft
                 _owner.Text.Bytes(_torrents.Sum(torrent => Selected(torrent).Size))
             );
     public string SharedText =>
-        IsMove
-            ? _owner.Text.Format(
-                "file_action",
-                "move_shared",
-                string.Join(Environment.NewLine, _shared.Select(torrent => torrent.Name))
-            )
-            : _owner.Text.Format(
-                "file_action",
-                "delete_shared",
-                string.Join(", ", _shared.Select(torrent => torrent.Name))
-            );
+        _owner.Text.Format(
+            "file_action",
+            "move_shared",
+            string.Join(Environment.NewLine, _shared.Select(torrent => torrent.Name))
+        );
     public string DestinationError =>
         IsMove && _failure is { } failure && AddDraft.IsDestinationError(failure)
             ? _owner.Text.Error(failure)

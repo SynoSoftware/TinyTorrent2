@@ -968,14 +968,19 @@
     "tip": "Quitar los torrents de la lista. Los archivos descargados se quedan en el disco.",
     "recycle_tip": "Quitar los torrents de la lista y mover los archivos marcados a la Papelera de reciclaje",
     "delete_tip": "Quitar los torrents de la lista y eliminar permanentemente los archivos marcados",
-    "recycle_downloaded": "Enviar también los archivos a la Papelera de reciclaje ({0})",
-    "delete_downloaded": "Eliminar también los archivos permanentemente ({0})",
-    "recycle_torrent_files_one": "Enviar también el archivo .torrent a la Papelera de reciclaje ({1})",
-    "recycle_torrent_files_other": "Enviar también los archivos .torrent a la Papelera de reciclaje ({1})",
-    "recycle_some_torrent_files": "Enviar también {0:N0} de {2:N0} archivos .torrent a la Papelera de reciclaje ({1})",
-    "delete_torrent_files_one": "Eliminar también el archivo .torrent permanentemente ({1})",
-    "delete_torrent_files_other": "Eliminar también los archivos .torrent permanentemente ({1})",
-    "delete_some_torrent_files": "Eliminar también {0:N0} de {2:N0} archivos .torrent permanentemente ({1})"
+    "files": "Eliminar archivos",
+    "torrent_files_one": "Eliminar archivo .torrent",
+    "torrent_files_other": "Eliminar archivos .torrent",
+    "some_torrent_files": "Eliminar {0:N0} de {1:N0} archivos .torrent",
+    "size": "({0})",
+    "keeps_files_one": "No se elimina ningún archivo. Solo se quita la entrada de TinyTorrent.",
+    "keeps_files_other": "No se elimina ningún archivo. Solo se quitan las entradas de TinyTorrent.",
+    "recycles": "Envía {0} a la Papelera de reciclaje.",
+    "recycles_torrent_files_one": "Envía el archivo .torrent a la Papelera de reciclaje.",
+    "recycles_torrent_files_other": "Envía los archivos .torrent a la Papelera de reciclaje.",
+    "deletes": "Elimina {0} permanentemente.",
+    "recycles_except_shared": "Envía los archivos a la Papelera de reciclaje, salvo los que usan otros torrents.",
+    "deletes_except_shared": "Elimina los archivos permanentemente, salvo los que usan otros torrents."
   },
   "file_action": {
     "current": "De",
@@ -984,7 +989,6 @@
     "move_title_one": "Mover torrent",
     "move_title_other": "Mover torrents",
     "move_shared": "Estos otros torrents comparten los archivos y deben moverse juntos:\n{0}",
-    "delete_shared": "Se conservarán los archivos compartidos con {0}.",
     "include_shared": "Incluir estos torrents en el traslado",
     "refresh": "Actualizar",
     "kept_one": "Se conservará {0:N0} archivo compartido.",
@@ -1840,8 +1844,7 @@
     "download_choice": "Descargar",
     "downloading_choice": "Descargando subtítulo…",
     "search_again": "Volver a buscar",
-    "search_again_hint": "Volver a buscar subtítulos para este vídeo en el idioma actual",
-    "setup": "Configurar subtítulos"
+    "search_again_hint": "Volver a buscar subtítulos para este vídeo en el idioma actual"
   },
   "limits": {
     "download_limit": "Límite de descarga",

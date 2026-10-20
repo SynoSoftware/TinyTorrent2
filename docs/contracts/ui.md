@@ -1244,13 +1244,20 @@ the application.
 Remove keeps data unless the person ticks a check box. One Remove torrents
 dialog confirms every removal, by default, with the affected torrents, a Remove
 button and a safe Cancel action. Remove confirms because a removed torrent
-cannot be restored without its torrent file or magnet link. Two check boxes say
-what else goes: the downloaded files, with their total size, and the .torrent
-files the torrents were added from, with their size, shown only when a selected
-torrent's .torrent file still exists, with n of m when only some do. As in File Explorer, the key chooses the
+cannot be restored without its torrent file or magnet link. Two check boxes on
+one line say what else goes: the downloaded files, with their total size, and
+the .torrent files the torrents were added from, with their size, shown only
+when a selected torrent's .torrent file still exists, with n of m when only some
+do. As in File Explorer, the key chooses the
 deletion mode and the dialog never asks it: Delete, or a click on Remove, sends
 ticked files to the Recycle Bin, and Shift with either deletes them permanently.
-The check box labels state that mode, so the button stays Remove. Only Remove
+A line under the check boxes states the result, so the button stays Remove:
+with nothing ticked, that no files are deleted and the torrents leave only
+TinyTorrent, because people read Remove as deleting files; otherwise what goes
+to the Recycle Bin, or what is deleted permanently. When other torrents use some
+of the files, the line says those are kept and gives no size, because the engine
+keeps them and the total would overstate what goes. Only a permanent deletion
+takes the caution icon, because the Recycle Bin can restore the rest. Only Remove
 saves the check boxes for the next removal. Add, Remove torrents, the
 window's Exit confirmation and the [unfinished tasks](#unfinished-tasks) question
 use the shared dialog footer's Don't show this
@@ -1328,7 +1335,7 @@ message cannot be the only explanation of unfinished or failed work.
 | Shared Library/subtitle source or database failure | The message bar, which names the cause from SQLite's error code. A read-only `library.db` offers Repair, which clears the Read-only attribute; an incompatible database offers Delete. Denied access, a disk error, a full drive or another program using the file offers Open folder beside Retry, because the person fixes it outside the app. Any other failure shows its own message with Retry, through the existing source and feature recovery paths. A table or supplier card does not repeat this shared condition. |
 | A lasting subtitle supplier problem while Automatic subtitles is On or requested manual work waits, such as refused access | The message bar as a warning, titled Subtitles paused, with Settings, or with Retry when the download folder refused a file, because that is fixed outside the app. Subtitle Settings shows state only, never the problem again. |
 | Fetch metadata left files unidentified because the search limit refused their search | One timed warning toast when the batch ends, titled Search limit reached, counting those files, with Settings, which opens the search limit. |
-| A subtitle that could not be downloaded or saved | One error toast, titled Subtitle not saved, naming the latest subtitle file and counting the others, with Settings. It stays until the person closes it. |
+| A subtitle that could not be downloaded or saved | One error toast, titled Subtitle not saved, naming the latest subtitle file and counting the others, with Settings, which opens the Subtitles card. It stays until the person closes it. |
 | A language choice that could not be saved | The message bar as a warning, with Settings. |
 | The selected torrent has an error | The details pane shows the error in its summary and progress bar; the window adds no message for it. |
 | A finished download | A success toast for each download, titled Download finished, with the torrent name below it and Open folder, as the [notification policy](engine.md#notifications-and-sleep) defines a finished download. It closes by itself. |
@@ -1611,6 +1618,10 @@ with no page-wide Save step or confirmation on close. Keep dependent fields
 visible and disable them while inapplicable, so changing a switch does not move
 later rows. One Advanced mode switch reveals advanced rows and cards
 across categories. Search includes those settings and reveals the chosen row.
+Every search result, link or toast action that names a setting reveals it the
+same way: the setting's card is outlined for three seconds and its row takes
+focus, so the person sees where they arrived. One owner in the Settings page
+draws that outline. A target that names only a page focuses the page heading.
 **Owner ruling: Settings uses the title-bar search and has no search box of its
 own.** The title-bar search already finds settings, including advanced settings;
 a second box duplicates the task and takes a row away from the settings. Keep

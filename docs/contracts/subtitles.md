@@ -353,9 +353,9 @@ owns the cap and access holds in the existing database.
 ### Discovery and permission
 
 The Settings index carries the Download subtitles automatically switch, the
-same saved setting as on the Subtitles card, and a link to that card. Set up
-subtitles, in the Help menu, opens the Plugins page only; it never turns the
-feature on.
+same saved setting as on the Subtitles card, and a link to that card. The Help
+menu has no setup entry, because subtitles, the IMDb data and city-level peer
+locations are all optional and Settings already leads to each of them.
 
 Each supplier owns its disclosure and privacy/terms links, shown in an
 information flyout from the supplier name; never show OpenSubtitles terms for

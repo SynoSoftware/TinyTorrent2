@@ -37,6 +37,9 @@ public sealed partial class SettingsPage
                 break;
             }
         }
+        // A row outside any card, such as the schedule's periods, is outlined
+        // itself.
+        block ??= focus as SettingsRow;
         if (block is null)
             return;
         _highlight = new(block, focus, focus.IsTabStop, focus.UseSystemFocusVisuals);

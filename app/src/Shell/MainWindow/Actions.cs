@@ -22,7 +22,6 @@ public sealed partial class MainWindow
     private FileDialog? _fileDialog;
     private MenuFlyout? _selectionMenu;
     private RelayCommand? _switchInspector;
-    private RelayCommand? _subtitlesSetup;
     private bool _menusPending;
 
     private IReadOnlyList<MenuEntry> LanguageMenu() =>
@@ -218,15 +217,6 @@ public sealed partial class MainWindow
             HelpMenu.Items,
             [
                 new MenuCommand(
-                    Model.Text.Get("subtitles", "setup"),
-                    Syno.Lucide.Captions,
-                    _subtitlesSetup ??= new RelayCommand(
-                        () => ShowSettings(new(SettingsCategory.Plugins)),
-                        () => true
-                    )
-                ),
-                new MenuSeparator(),
-                new MenuCommand(
                     Model.UpdateText,
                     Syno.Lucide.CircleFadingArrowUp,
                     Model.Updates.Install
@@ -404,7 +394,7 @@ public sealed partial class MainWindow
             var content = new FileDialog(Model);
             content.DestinationRequested += async (_, _) =>
             {
-                var folder = await PickFolder();
+                var folder = await PickFolder(Model.FileDraft.Destination, Model.FileDraft.Location);
                 if (folder is not null)
                     Model.FileDraft.Destination = folder;
             };

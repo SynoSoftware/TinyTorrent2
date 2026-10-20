@@ -968,14 +968,19 @@
     "tip": "从列表中移除种子，已下载的文件将保留在磁盘上。",
     "recycle_tip": "从列表中移除种子，并将勾选的文件移到回收站",
     "delete_tip": "从列表中移除种子，并永久删除勾选的文件",
-    "recycle_downloaded": "同时将文件移到回收站（{0}）",
-    "delete_downloaded": "同时永久删除文件（{0}）",
-    "recycle_torrent_files_one": "同时将种子文件移到回收站（{1}）",
-    "recycle_torrent_files_other": "同时将种子文件移到回收站（{1}）",
-    "recycle_some_torrent_files": "同时将 {2:N0} 个种子文件中的 {0:N0} 个移到回收站（{1}）",
-    "delete_torrent_files_one": "同时永久删除种子文件（{1}）",
-    "delete_torrent_files_other": "同时永久删除种子文件（{1}）",
-    "delete_some_torrent_files": "同时永久删除 {2:N0} 个种子文件中的 {0:N0} 个（{1}）"
+    "files": "删除文件",
+    "torrent_files_one": "删除种子文件",
+    "torrent_files_other": "删除种子文件",
+    "some_torrent_files": "删除 {1:N0} 个种子文件中的 {0:N0} 个",
+    "size": "（{0}）",
+    "keeps_files_one": "不会删除任何文件，只从微种下载器中移除该条目。",
+    "keeps_files_other": "不会删除任何文件，只从微种下载器中移除这些条目。",
+    "recycles": "将 {0} 移到回收站。",
+    "recycles_torrent_files_one": "将种子文件移到回收站。",
+    "recycles_torrent_files_other": "将种子文件移到回收站。",
+    "deletes": "永久删除 {0}。",
+    "recycles_except_shared": "将文件移到回收站，其他种子使用的文件除外。",
+    "deletes_except_shared": "永久删除文件，其他种子使用的文件除外。"
   },
   "file_action": {
     "current": "当前位置",
@@ -984,7 +989,6 @@
     "move_title_one": "移动种子",
     "move_title_other": "移动种子",
     "move_shared": "以下种子也使用这些文件，必须一起移动：\n{0}",
-    "delete_shared": "将保留 {0} 使用的文件。",
     "include_shared": "同时移动这些种子",
     "refresh": "刷新",
     "kept_one": "将保留 {0:N0} 个共享文件。",
@@ -1840,8 +1844,7 @@
     "download_choice": "下载",
     "downloading_choice": "正在下载字幕…",
     "search_again": "重新搜索",
-    "search_again_hint": "按当前语言为此视频重新搜索字幕",
-    "setup": "设置字幕"
+    "search_again_hint": "按当前语言为此视频重新搜索字幕"
   },
   "limits": {
     "download_limit": "下载限速",

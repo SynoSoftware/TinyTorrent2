@@ -14,6 +14,7 @@ public sealed partial class Scheduler : UserControl
     public Schedule Model { get; }
     internal Control Map => Timeline;
     internal Control Selector => (Control)Mode.Content;
+    internal Control Add => AddPeriod;
 
     internal Scheduler(Schedule model, LimitSelector selector)
     {
@@ -74,7 +75,7 @@ public sealed partial class Scheduler : UserControl
         ToolTipService.SetToolTip(Now, Now.Text);
     }
 
-    internal void FocusAdd()
+    private void FocusAdd()
     {
         AddPeriod.StartBringIntoView();
         AddPeriod.Focus(FocusState.Programmatic);

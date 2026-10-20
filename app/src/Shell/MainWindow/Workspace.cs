@@ -254,7 +254,13 @@ public sealed partial class MainWindow
         TorrentMenu.IsEnabled = Model.Page is WindowPage.Torrents or WindowPage.Library;
         ViewMenu.IsEnabled = TorrentMenu.IsEnabled;
         UpdateLibraryPage();
-        _pages.Show(content, forward: Model.Page >= _page);
+        // A page restored while the window is still hidden replaces the
+        // workspace at once: a transition the person did not start would show
+        // both pages in the first visible frames.
+        if (_cloaked)
+            _pages.Replace(content);
+        else
+            _pages.Show(content, forward: Model.Page >= _page);
         _page = Model.Page;
     }
 
@@ -402,7 +408,13 @@ public sealed partial class MainWindow
         ShowSuggestions();
     }
 
-    private void OnSearchFocus(object sender, RoutedEventArgs args) => ShowSuggestions();
+    // A click on a suggestion moves focus into the open list; replacing the
+    // list then would remove the item before the click completes.
+    private void OnSearchFocus(object sender, RoutedEventArgs args)
+    {
+        if (!Search.IsSuggestionListOpen)
+            ShowSuggestions();
+    }
 
     private void ShowSuggestions()
     {
@@ -550,7 +562,7 @@ public sealed partial class MainWindow
             return;
         try
         {
-            var folder = await PickFolder();
+            var folder = await PickFolder(setting.Input);
             if (folder is null)
                 return;
             setting.Input = folder;
