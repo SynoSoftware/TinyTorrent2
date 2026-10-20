@@ -761,12 +761,16 @@ void Engine::State::SampleChecks(std::chrono::steady_clock::duration elapsed)
 {
     // While libtorrent checks the files, a torrent's progress is the share of
     // its bytes checked. A check counts from its second sample, so a torrent
-    // that starts checking does not add the bytes it checked before.
+    // that starts checking does not add the bytes it checked before. A paused
+    // torrent keeps the checking state but checks nothing: it is stopped,
+    // waits for a check slot, or every transfer is paused.
     std::optional<double> rate;
     auto seconds = std::chrono::duration<double>(elapsed).count();
+    bool sessionPaused = Paused().has_value();
     for (auto& [id, torrent] : torrents)
     {
-        if (torrent.status.state != lt::torrent_status::checking_files)
+        if (sessionPaused || torrent.status.state != lt::torrent_status::checking_files ||
+            (torrent.status.flags & lt::torrent_flags::paused))
         {
             torrent.checked.reset();
             continue;

@@ -792,6 +792,49 @@ try {
             } while ($null -ne $snapshot.check_rate -and [DateTime]::UtcNow -lt $until)
             Assert ($null -eq $snapshot.check_rate) 'The check rate stayed after verification ended'
 
+            # A stopped torrent keeps its check until it starts, and checks
+            # nothing meanwhile.
+            $reply = Send-Command @{ command = 'pause'; torrent_ids = @($zeros) }
+            Assert $reply.ok 'The zero torrent could not be stopped'
+            $reply = Send-Command @{ command = 'verify'; torrent_ids = @($zeros) }
+            Assert $reply.ok 'The stopped zero torrent could not be verified'
+            $until = [DateTime]::UtcNow.AddSeconds(3)
+            do {
+                Start-Sleep -Milliseconds 200
+                $snapshot = (Send-Command @{ command = 'snapshot' }).data
+                Assert ($null -eq $snapshot.check_rate) 'A stopped torrent reported a check rate'
+            } while ([DateTime]::UtcNow -lt $until)
+            $reply = Send-Command @{ command = 'resume'; torrent_ids = @($zeros) }
+            Assert $reply.ok 'The zero torrent could not be started'
+            $null = Wait-Check $zeros { param($row) $false }
+            Assert ((Row-Of $zeros).progress -eq 1) 'The started torrent did not finish its check'
+
+            # A move during a check pauses it, and the check ends at the new
+            # folder with every piece found.
+            $reply = Send-Command @{ command = 'verify'; torrent_ids = @($zeros) }
+            Assert $reply.ok 'The zero torrent could not be verified again'
+            $until = [DateTime]::UtcNow.AddSeconds(30)
+            do {
+                Start-Sleep -Milliseconds 100
+                $row = Row-Of $zeros
+            } while (-not ($row.status -eq 'checking' -and $row.progress -gt 0) -and [DateTime]::UtcNow -lt $until)
+            Assert ($row.status -eq 'checking' -and $row.progress -gt 0 -and $row.progress -lt 1) 'The check did not run before the move'
+            $during = Join-Path $directory 'during-check'
+            $reply = Send-Command @{ command = 'move'; torrent_ids = @($zeros); destination = $during }
+            Assert $reply.ok 'The move during a check was refused'
+            $until = [DateTime]::UtcNow.AddSeconds(60)
+            do {
+                Start-Sleep -Milliseconds 100
+                $row = Row-Of $zeros
+            } while (($row.moving -or $row.save_path -ne $during) -and [DateTime]::UtcNow -lt $until)
+            Assert (-not $row.moving -and $row.save_path -eq $during -and -not $row.error) 'The move during a check did not finish'
+            $until = [DateTime]::UtcNow.AddSeconds(300)
+            do {
+                Start-Sleep -Milliseconds 200
+                $row = Row-Of $zeros
+            } while (($row.status -eq 'checking' -or $row.progress -lt 1) -and [DateTime]::UtcNow -lt $until)
+            Assert ($row.progress -eq 1 -and $row.status -eq 'seeding') "The check stopped by a move did not end complete at the new folder: $($row.status) at $($row.progress)"
+
             # V: is the volume of the evidence folder and C: the one of -Folder.
             # The link on C: leads back to V:, as C:\temp leads to V:\temp.
             $link = $null
