@@ -187,12 +187,6 @@ public sealed class AddDraft : IDraft
         Sources.Select(source => source.Failure).Prepend(_failure).OfType<Exception>();
     internal Exception? Failure => Failures.FirstOrDefault();
 
-    internal void Report(Exception error)
-    {
-        _failure = error;
-        Refresh();
-    }
-
     internal static bool IsDestinationError(Exception? error) =>
         error is CommandException { Code: "invalid_destination" };
 
@@ -206,7 +200,7 @@ public sealed class AddDraft : IDraft
             ? status.Body.Length == 0
                 ? status.Title
                 : _strings.Format("errors", "detail", status.Title, status.Body)
-            : Failures.FirstOrDefault(error => !IsDestinationError(error)) is { } failure
+            : _failure is { } failure && !IsDestinationError(failure)
                 ? _strings.Error(failure)
                 : HasFiles && !Files.HasWanted
                     ? _strings.Get("add", "no_files")
@@ -431,6 +425,13 @@ public sealed class AddDraft : IDraft
                 await Acquire(source);
             }
             _failure = null;
+            if (
+                IsOpen
+                && Sources.Select(source => source.Failure)
+                    .OfType<Exception>()
+                    .FirstOrDefault(error => !IsDestinationError(error)) is { } failure
+            )
+                _owner.Notifications.Report(failure);
         }
         finally
         {
@@ -854,7 +855,7 @@ public sealed class AddDraft : IDraft
         }
         catch (Exception error)
         {
-            _failure = error;
+            _owner.Notifications.Report(error);
             Refresh();
         }
     }
@@ -865,26 +866,33 @@ public sealed class AddDraft : IDraft
         {
             if (token.IsCancellationRequested || !CanEdit)
                 return;
-            if (source.PreviewId is null)
-            {
-                if (!source.Uncertain)
-                    await Acquire(source);
+            if (
+                source.PreviewId is not null
+                && source.MetadataReady
+                && source.SharedDestination == _destination
+            )
                 continue;
-            }
-            if (source.MetadataReady && source.SharedDestination == _destination)
-                continue;
+            var hadFailure = source.Failure is { } previous && !IsDestinationError(previous);
             try
             {
-                var destination = _destination;
-                var preview = await _client.Read(
-                    Consumer.Draft,
-                    "preview_detail",
-                    new { preview_id = source.PreviewId, destination }
-                );
-                if (token.IsCancellationRequested)
-                    return;
-                if (Sources.Contains(source))
-                    source.Apply(preview, destination);
+                if (source.PreviewId is null)
+                {
+                    if (!source.Uncertain)
+                        await Acquire(source);
+                }
+                else
+                {
+                    var destination = _destination;
+                    var preview = await _client.Read(
+                        Consumer.Draft,
+                        "preview_detail",
+                        new { preview_id = source.PreviewId, destination }
+                    );
+                    if (token.IsCancellationRequested)
+                        return;
+                    if (Sources.Contains(source))
+                        source.Apply(preview, destination);
+                }
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
             {
@@ -898,6 +906,15 @@ public sealed class AddDraft : IDraft
                 source.Failure = error;
                 source.Refresh();
             }
+            if (token.IsCancellationRequested)
+                return;
+            if (
+                !hadFailure
+                && Sources.Contains(source)
+                && source.Failure is { } failure
+                && !IsDestinationError(failure)
+            )
+                _owner.Notifications.Report(failure);
         }
         RefreshSpace();
         Refresh();

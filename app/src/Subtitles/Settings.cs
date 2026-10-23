@@ -53,7 +53,13 @@ internal sealed class Settings : UserControl
     {
         Style = (Style)Application.Current.Resources["TinyTorrentTitleDetailTextStyle"],
     };
-    private readonly SettingsSection _existing;
+    private readonly SelectorBar _tasks = new();
+    private readonly SelectorBarItem _preferencesTab = new();
+    private readonly SelectorBarItem _searchTab = new();
+    private readonly SelectorBarItem _filesTab = new();
+    private readonly Grid _pages = new() { MinHeight = 320 };
+    private readonly StackPanel _preferences;
+    private readonly Motion _motion = new();
     private readonly TextBlock _status = new()
     {
         Style = (Style)Application.Current.Resources["TinyTorrentBodyTextStyle"],
@@ -82,17 +88,22 @@ internal sealed class Settings : UserControl
     private Strings Text { get; }
     internal event EventHandler<SubtitleSupplier>? SupplierRequested;
 
-    internal Control? Field(string name) =>
-        name switch
+    internal Control? Field(string name)
+    {
+        (SelectorBarItem? task, Control? field) = name switch
         {
-            "subtitle_automatic" => _automatic.Field,
-            "subtitle_extras" => _extras,
-            "subtitle_supplier" => _supplier,
-            "subtitle_languages" => _languageMode,
-            "subtitle_batch" => _find,
-            "subtitle_scan" => _scan,
-            _ => null,
+            "subtitle_automatic" => (_preferencesTab, _automatic.Field),
+            "subtitle_extras" => (_preferencesTab, _extras),
+            "subtitle_supplier" => (_preferencesTab, _supplier),
+            "subtitle_languages" => (_preferencesTab, _languageMode),
+            "subtitle_batch" => (_searchTab, _find),
+            "subtitle_scan" => (_filesTab, _scan),
+            _ => (null, null),
         };
+        if (task is not null)
+            _tasks.SelectedItem = task;
+        return field;
+    }
 
     internal Settings(Strings text, Func<Task> retry, Action<Exception, string> report)
     {
@@ -124,7 +135,7 @@ internal sealed class Settings : UserControl
         _automatic = new Automatic(text, report);
         for (var count = 0; count <= Acquisition.MaximumExtras; count++)
             _extras.Items.Add(new ComboBoxItem { Tag = count });
-        _extrasRow = new SettingsRow { Content = _extras };
+        _extrasRow = new SettingsRow { Content = _extras, BorderThickness = new Thickness(0) };
         _supplierRow = new SettingsRow
         {
             Content = Pair(
@@ -166,9 +177,8 @@ internal sealed class Settings : UserControl
                 Children = { _languageMode, _languageChoices },
             },
         };
-        _wanted.Resources["ExpanderHeaderBackground"] = new Microsoft.UI.Xaml.Media.SolidColorBrush(
-            Microsoft.UI.Colors.Transparent
-        );
+        _wanted.Resources["ExpanderHeaderBackground"] =
+            new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
         _wanted.Resources["ExpanderContentBackground"] =
             new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
         _wanted.Resources["ExpanderHeaderBorderThickness"] = new Thickness(0);
@@ -193,22 +203,42 @@ internal sealed class Settings : UserControl
         {
             Content = Pair(_scanStatus, _scan),
             BorderThickness = new Thickness(0),
+            VerticalAlignment = VerticalAlignment.Top,
         };
-        _existing = new SettingsSection
+        _preferences = new StackPanel
         {
-            Style = (Style)Application.Current.Resources["TinyTorrentSettingsGroupStyle"],
-            Content = _scanRow,
+            VerticalAlignment = VerticalAlignment.Top,
+            Children = { _supplierRow, _accessRow, _wanted, _automatic, _extrasRow },
         };
+        _batch.VerticalAlignment = VerticalAlignment.Top;
+        AutomationProperties.SetAutomationId(_tasks, "SubtitleTasks");
+        AutomationProperties.SetAutomationId(_preferencesTab, "SubtitlePreferencesTab");
+        AutomationProperties.SetAutomationId(_searchTab, "SubtitleSearchTab");
+        AutomationProperties.SetAutomationId(_filesTab, "SubtitleFilesTab");
+        AutomationProperties.SetAutomationId(_preferences, "SubtitlePreferencesPanel");
+        AutomationProperties.SetAutomationId(_batch, "SubtitleSearchPanel");
+        AutomationProperties.SetAutomationId(_scanRow, "SubtitleFilesPanel");
+        _tasks.Items.Add(_preferencesTab);
+        _tasks.Items.Add(_searchTab);
+        _tasks.Items.Add(_filesTab);
+        _pages.Children.Add(_preferences);
+        _pages.Children.Add(_batch);
+        _pages.Children.Add(_scanRow);
+        _batch.Visibility = _scanRow.Visibility = Visibility.Collapsed;
+        _pages.SizeChanged += Motion.Clip;
+        _motion.Replace(_preferences);
+        _tasks.SelectedItem = _preferencesTab;
+        _tasks.SelectionChanged += OnTask;
         _section = new SettingsSection
         {
             Glyph = Lucide.Captions,
-            Style = (Style)Application.Current.Resources["TinyTorrentSettingsGroupStyle"],
             Content = new StackPanel
             {
-                Children = { _supplierRow, _accessRow, _wanted, _automatic, _extrasRow },
+                Spacing = 8,
+                Children = { _tasks, _pages },
             },
         };
-        Content = new StackPanel { Spacing = 24, Children = { _section, _batch, _existing } };
+        Content = _section;
         _check.Click += async (_, _) => await Check();
         _extras.SelectionChanged += async (_, _) =>
         {
@@ -262,6 +292,7 @@ internal sealed class Settings : UserControl
         };
         Unloaded += (_, _) =>
         {
+            _motion.Stop();
             SetVisible(false);
             Attach(null);
         };
@@ -295,13 +326,28 @@ internal sealed class Settings : UserControl
             else
                 _model.Changed -= OnChanged;
         }
-        _batch.SetVisible(visible);
+        _batch.SetVisible(visible && _tasks.SelectedItem == _searchTab);
         _automatic.Attach(visible ? _model : null);
+        if (!visible)
+            _motion.Stop();
         if (visible)
             RefreshText();
     }
 
     private void OnChanged(object? sender, EventArgs args) => DispatcherQueue.TryEnqueue(Refresh);
+
+    private void OnTask(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
+    {
+        if (sender.SelectedItem is not { } selected)
+            return;
+        FrameworkElement content = selected == _searchTab ? _batch
+            : selected == _filesTab ? _scanRow
+            : _preferences;
+        var previous = _motion.Current is { } current ? _pages.Children.IndexOf(current) : -1;
+        var forward = _pages.Children.IndexOf(content) >= previous;
+        _batch.SetVisible(_visible && selected == _searchTab);
+        _motion.Show(content, forward);
+    }
 
     private string T(string key) => Text.Get("subtitles", key);
 
@@ -309,7 +355,11 @@ internal sealed class Settings : UserControl
 
     internal void RefreshText()
     {
-        _section.Header = T("title");
+        _section.Header = Text.Get("plugins", "subtitles");
+        _preferencesTab.Text = T("preferences");
+        _searchTab.Text = T("library_search");
+        _filesTab.Text = T("existing_files");
+        AutomationProperties.SetName(_tasks, _section.Header);
         _automatic.Refresh();
         foreach (ComboBoxItem item in _extras.Items)
             item.Content = (int)item.Tag switch
@@ -326,7 +376,6 @@ internal sealed class Settings : UserControl
         _languageRow.Header = T("language_selection");
         _languageRow.Description = T("languages_hint");
         AutomationProperties.SetName(_wanted, T("language_selection"));
-        _existing.Header = T("existing_files");
         AutomationProperties.SetName(_languageMode, T("language_selection"));
         AutomationProperties.SetName(_languages, T("language_selection"));
         _languageCustom.Content = T("choose_languages");
@@ -394,6 +443,14 @@ internal sealed class Settings : UserControl
         ToolTipService.SetToolTip(_status, _status.Text);
         AutomationProperties.SetHelpText(_status, _status.Text);
         RefreshLanguages();
+        _section.Summary = _model is { } model
+            ? F(
+                "preferences_summary",
+                model.SupplierId,
+                _selection.Text,
+                Text.Get("settings", model.Enabled ? "on" : "off")
+            )
+            : "—";
         _refreshing = false;
     }
 

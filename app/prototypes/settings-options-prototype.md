@@ -244,7 +244,7 @@ catalog for the suppliers, so it does not show this case. Unsupported choices
 stay visible but are excluded from actionable Find counts and requests.
 
 Problems do not appear on the Subtitles page, its Supplier card or the index
-card. They use the window's [feedback placement](../../docs/contracts/ui.md#feedback-placement):
+card. They use the window's [feedback placement](../../docs/contracts/ui/feedback.md#feedback-placement):
 the message bar for a lasting supplier problem and an error toast for a subtitle
 that could not be saved. The Supplier card shows only access and allowance
 state in secondary text. Only a language that cannot be added shows as a field
@@ -427,7 +427,7 @@ granularity requires real engine work. Coarser storage loses detail; choosing a
 finer interval later cannot recreate it. The treatment of already stored samples
 when the interval changes remains to be specified at that owner.
 
-Follow [disk-write caching](../../docs/contracts/engine.md#disk-write-caching) rather than
+Follow [disk-write caching](../../docs/contracts/engine/settings.md#disk-write-caching) rather than
 copying a qBittorrent memory setting by name. The pinned libtorrent 2.1 design
 does not provide the old configurable disk-cache size. Lowering a write buffer
 can reduce queued-write memory, with a throughput tradeoff; it cannot promise a
@@ -450,7 +450,7 @@ editor, Add/Remove/Undo, and sample data do **not** cover the production
 scheduler's complete interaction.
 Keep the existing drag creation/move/resize, keyboard routes, save ordering,
 validation, and focus behavior described in the
-[UI contract](../../docs/contracts/ui.md#settings). Reuse the existing scheduler
+[UI contract](../../docs/contracts/ui/settings.md). Reuse the existing scheduler
 and period editor rather than rewriting them from this browser demo.
 
 ## Differences to reconcile during implementation

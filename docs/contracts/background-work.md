@@ -7,12 +7,11 @@ whether progress is measurable, and how to cancel it. Work remains visible
 through cancellation and cleanup. IMDb preparation runs off the UI thread at
 low priority ([import execution](imdb-datasets.md#import-execution-and-sql-design)).
 
-**Owner ruling, 2026-10-13:** app-wide long operations share one reporting
+**Owner ruling:** app-wide long operations share one reporting
 owner and expose progress and cancellation in the status bar. Torrent downloads
-and checks keep their existing row presentation. This extends the earlier
-metadata-only cancellation exception in [UI](ui.md).
+and checks keep their existing row presentation.
 
-The [UI contract](ui.md) owns the status bar's product behavior.
+The [status-bar contract](ui/feedback.md#status-bar) owns product presentation.
 This contract owns the reporting interface and which work registers. The
 ordinary Library query is ready on opening; there is no Library loading screen.
 
@@ -283,7 +282,7 @@ setting exists for this reporting.
 
 ## Consumer contract for the status bar
 
-The [UI contract](ui.md) owns the footer's layout, work list and
+The [status-bar contract](ui/feedback.md#status-bar) owns the footer's layout, work list and
 overflow behavior. The reporting side of that contract:
 
 - The footer observes one collection on the UI thread. It never reads feature

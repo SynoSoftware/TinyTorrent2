@@ -171,7 +171,7 @@ Successful deletion creates fresh owners through normal startup. Rebuilding a
 search snapshot never requires deleting durable data.
 
 Filesystem operations and SQLite cannot share one transaction. Subtitle saving
-and moves retain the existing [best-effort file contract](subtitles.md#saving-and-following-the-movie):
+and moves retain the existing [best-effort file contract](subtitles/files.md#saving-and-following-the-movie):
 a crash or database failure after a file operation can leave a file for later
 discovery. Discovery does not guess created ownership or delete a found file.
 Post-publication bookkeeping applies the same membership cleanup as source

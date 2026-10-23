@@ -18,7 +18,7 @@ The IMDb data goes into SQLite, in a separate file, `imdb.db`, beside
   person asks for it.
 
 IMDb offline is managed only in Settings
-([owner ruling](search-protection.md#imdb-datasets-and-local-answers)).
+([owner ruling](search-protection/local.md#imdb-datasets-and-local-answers)).
 Download and Update obtain the complete dataset as one operation: the import
 builds the one installed database from the basics, ratings and episode archives
 below, and lookups only read it. There are no small per-movie IMDb downloads.
@@ -26,7 +26,7 @@ Dataset transfers follow the shared search protection without an IMDb-specific
 bypass. A provider that answers from a local file declares its `Dataset` in
 `ProviderOption`; only a provider that answers over the network fetches an
 individual movie (`ProviderOption.IsOnline`, owned by the same
-[search protection section](search-protection.md#imdb-datasets-and-local-answers)).
+[search protection section](search-protection/local.md#imdb-datasets-and-local-answers)).
 Installing IMDb data does not enable per-movie downloads.
 
 The result: IMDb titles, years, genres and ratings for every movie, read in
@@ -395,7 +395,7 @@ The folder is `app/src/Library/Imdb/`.
   selected provider keeps its failure. A running batch keeps its waiting
   files.
 
-[Search protection](search-protection.md#imdb-datasets-and-local-answers) owns
+[Search protection](search-protection/local.md#imdb-datasets-and-local-answers) owns
 how remote requests, local dataset reads, installation, reset and Settings'
 Download and Update relate: local reads are not remote requests, Download and
 Update follow the standard search protection, and an installation makes local
@@ -552,7 +552,7 @@ Library owns this rule, because it applies to every provider.
 ### Rating by file name
 
 **Owner ruling: downloaded IMDb data rates every video it can name, whatever
-the provider** ([Library](library.md#identification-and-early-enrichment)).
+the provider** ([Library](library/providers.md#identification-and-early-enrichment)).
 A video without an IMDb ID gets its IMDb rating from the title, year, season
 and episode that its file name gives. Nothing is saved: `Store.Rate` asks
 `Dataset.RatingsByName` each time it reads the rows, in one query for all of

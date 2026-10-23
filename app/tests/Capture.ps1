@@ -1,6 +1,6 @@
 param(
     [ValidateSet('1', 'smoke', 'shell', 'schedule', 'desktop', 'details', 'details-files', 'files', 'files-layout',
-        'search', 'library', 'library-files', 'traffic', 'peers', 'connections', 'edits', 'add-layout', 'settings-layout', 'settings-prototype', 'memory', 'footer')]
+        'search', 'library', 'library-files', 'traffic', 'peers', 'connections', 'edits', 'add-layout', 'settings-layout', 'settings-prototype', 'subtitle-tasks', 'memory', 'footer')]
     [string] $Review = '1',
     [ValidateSet('en', 'es')]
     [string] $Language,
@@ -9,7 +9,9 @@ param(
     [string] $Configuration = 'Debug',
     [ValidateSet(0, 10000, 100000)]
     [int] $LibraryFiles = 0,
-    [switch] $Transfer
+    [switch] $Transfer,
+    [ValidateSet('light', 'dark')]
+    [string] $Theme
 )
 
 $ErrorActionPreference = 'Stop'
@@ -143,6 +145,7 @@ $document.settings.default_destination = $payload
 $document.settings.all_paused = $Review -notin 'add-layout', 'traffic', 'library-files'
 if ($Review -eq 'settings-prototype') { $document.settings.exclude = $true }
 if ($Language) { $document.settings.language = $Language }
+if ($Theme) { $document.settings.theme = $Theme }
 foreach ($torrent in $document.torrents) { $torrent.save_path = $payload }
 if ($Review -eq 'traffic') {
     $adapter = [Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces() |

@@ -3,9 +3,9 @@
 The Peers table shows where each peer is in separate Country and City columns:
 its country as a flag and name, and its city when the downloaded data provides
 a name. This document owns the data, the lookup and the build step; the
-[UI contract](ui.md) owns the columns and the Settings row,
-and [licences](licences.md#db-ip) owns the
-attribution.
+[torrent interaction contract](ui/torrents.md#peers-and-connections-map) owns the
+columns, [Settings](ui/settings.md#cards-and-categories) owns the dataset row,
+and [licences](licences.md#db-ip) owns the attribution.
 
 ## Data
 

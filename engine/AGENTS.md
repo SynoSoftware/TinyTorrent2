@@ -1,7 +1,8 @@
 # Engine
 
 Follow the [root instructions](../AGENTS.md). The engine's contract is the
-[engine contract](../docs/contracts/engine.md); its words and catalogue follow
+[engine contract](../docs/contracts/engine.md): read its shared rules and the
+references its change index selects. Its words and catalogue follow
 [localisation](../docs/contracts/localisation.md).
 
 ## Engine UI ownership

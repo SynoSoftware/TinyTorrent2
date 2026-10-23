@@ -7,11 +7,10 @@
   xmlns:local="using:Syno.TinyTorrent.Torrents"
 >
   <Grid>
-    <!-- The last row keeps the error bar's height, so showing the bar moves nothing. -->
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
-      <RowDefinition Height="Auto" MinHeight="64" />
+      <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
     <Grid ColumnSpacing="12">
       <Grid.ColumnDefinitions>
@@ -267,60 +266,68 @@
       <controls:Splitter
         x:Name="Split"
         Grid.Column="1"
-        Margin="4,0"
         Orientation="Vertical"
         AutomationProperties.Name="{x:Bind Model.Text.Get('add', 'resize'), Mode=OneWay}"
       />
-      <Border Grid.Column="2" Style="{StaticResource TinyTorrentSectionStyle}">
-        <Grid RowSpacing="12">
+      <Border Grid.Column="2" Style="{StaticResource TinyTorrentSectionStyle}" Padding="0">
+        <Grid>
           <Grid.RowDefinitions>
             <RowDefinition Height="{x:Bind local:AddDialog.PaneHeight(Model.AddDraft.EditingMagnet), Mode=OneWay}" />
             <RowDefinition Height="{x:Bind local:AddDialog.PaneHeight(Model.AddDraft.HasSources), Mode=OneWay}" />
           </Grid.RowDefinitions>
-          <Grid RowSpacing="12" Visibility="{x:Bind Model.AddDraft.EditingMagnet, Mode=OneWay}">
+          <Grid Visibility="{x:Bind Model.AddDraft.EditingMagnet, Mode=OneWay}">
             <Grid.RowDefinitions>
-              <RowDefinition Height="Auto" />
               <RowDefinition Height="*" />
               <RowDefinition Height="Auto" />
-              <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
-            <StackPanel Orientation="Horizontal" Spacing="8">
-              <FontIcon
-                Style="{StaticResource TinyTorrentGroupIconStyle}"
-                Glyph="{x:Bind icons:Lucide.Link}"
-                FontFamily="{x:Bind icons:Lucide.Font}"
+            <Grid Margin="16,16,16,0">
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+              </Grid.RowDefinitions>
+              <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,12">
+                <FontIcon
+                  Style="{StaticResource TinyTorrentGroupIconStyle}"
+                  Glyph="{x:Bind icons:Lucide.Link}"
+                  FontFamily="{x:Bind icons:Lucide.Font}"
+                />
+                <TextBlock
+                  x:Name="MagnetLabel"
+                  Text="{x:Bind Model.Text.Get('add', 'magnet'), Mode=OneWay}"
+                  Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
+                  AutomationProperties.HeadingLevel="Level2"
+                />
+              </StackPanel>
+              <TextBox
+                x:Name="MagnetInput"
+                AccessKey="{x:Bind Model.Text.Get('add', 'magnet_key'), Mode=OneWay}"
+                Grid.Row="1"
+                TextWrapping="Wrap"
+                AcceptsReturn="False"
+                ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                ScrollViewer.VerticalScrollBarVisibility="Auto"
+                Text="{x:Bind Model.AddDraft.Magnet, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                IsEnabled="{x:Bind Model.AddDraft.CanEdit, Mode=OneWay}"
+                AutomationProperties.LabeledBy="{x:Bind MagnetLabel}"
+                AutomationProperties.HelpText="{x:Bind Model.AddDraft.MagnetMessage, Mode=OneWay}"
               />
-              <TextBlock
-                x:Name="MagnetLabel"
-                Text="{x:Bind Model.Text.Get('add', 'magnet'), Mode=OneWay}"
-                Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
-                AutomationProperties.HeadingLevel="Level2"
+              <controls:FieldHeader
+                Grid.Row="2"
+                Margin="0,12,0,0"
+                Error="{x:Bind Model.AddDraft.MagnetMessage, Mode=OneWay}"
               />
-            </StackPanel>
-            <TextBox
-              x:Name="MagnetInput"
-              AccessKey="{x:Bind Model.Text.Get('add', 'magnet_key'), Mode=OneWay}"
-              Grid.Row="1"
-              TextWrapping="Wrap"
-              AcceptsReturn="False"
-              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-              ScrollViewer.VerticalScrollBarVisibility="Auto"
-              Text="{x:Bind Model.AddDraft.Magnet, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-              IsEnabled="{x:Bind Model.AddDraft.CanEdit, Mode=OneWay}"
-              AutomationProperties.LabeledBy="{x:Bind MagnetLabel}"
-              AutomationProperties.HelpText="{x:Bind Model.AddDraft.MagnetMessage, Mode=OneWay}"
-            />
-            <controls:FieldHeader
-              Grid.Row="2"
-              Error="{x:Bind Model.AddDraft.MagnetMessage, Mode=OneWay}"
-            />
-            <Grid Grid.Row="3" HorizontalAlignment="Center">
+            </Grid>
+            <Grid Grid.Row="1" Padding="{ThemeResource ContentDialogPadding}">
               <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="{ThemeResource ContentDialogButtonSpacing}" />
                 <ColumnDefinition Width="Auto" />
               </Grid.ColumnDefinitions>
               <controls:ActionButton
+                Grid.Column="1"
+                MinWidth="{ThemeResource ContentDialogButtonMinWidth}"
                 Glyph="{x:Bind icons:Lucide.ClipboardPaste}"
                 ToolTipService.ToolTip="{x:Bind Model.Text.Get('add', 'paste_tip'), Mode=OneWay}"
                 x:Name="Paste"
@@ -330,7 +337,8 @@
                 Click="OnPaste"
               />
               <controls:ActionButton
-                Grid.Column="2"
+                Grid.Column="3"
+                MinWidth="{ThemeResource ContentDialogButtonMinWidth}"
                 Glyph="{x:Bind icons:Lucide.ScanSearch}"
                 ToolTipService.ToolTip="{x:Bind Model.Text.Get('add', 'review_tip'), Mode=OneWay}"
                 x:Name="Preview"
@@ -341,7 +349,7 @@
               />
             </Grid>
           </Grid>
-          <Grid Grid.Row="1" Visibility="{x:Bind Model.AddDraft.HasSources, Mode=OneWay}">
+          <Grid Grid.Row="1" Padding="{ThemeResource ContentDialogPadding}" Visibility="{x:Bind Model.AddDraft.HasSources, Mode=OneWay}">
             <ListView
               ItemsSource="{x:Bind Model.AddDraft.Sources}"
               SelectionMode="None"

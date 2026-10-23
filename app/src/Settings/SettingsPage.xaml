@@ -21,6 +21,12 @@
           <x:Double x:Key="SettingsMarkOpacity">0</x:Double>
         </ResourceDictionary>
       </ResourceDictionary.ThemeDictionaries>
+      <!-- SettingsRow supplies 12 DIPs; the remaining gap aligns labels with
+           expander headers. -->
+      <Style x:Key="SettingsIconStyle" TargetType="FontIcon" BasedOn="{StaticResource TinyTorrentGroupIconStyle}">
+        <Setter Property="FontFamily" Value="{ThemeResource LucideFont}" />
+        <Setter Property="Margin" Value="0,0,12,0" />
+      </Style>
       <Style x:Key="SettingsMarkStyle" TargetType="FontIcon">
         <Setter Property="FontSize" Value="320" />
         <Setter Property="Foreground" Value="{ThemeResource AccentTextFillColorSecondaryBrush}" />
@@ -477,11 +483,11 @@
                   </Grid>
                 </StackPanel>
                 <Grid x:Name="CategoryContent">
-                  <StackPanel x:Name="Plugins" x:Load="False" Spacing="24" Visibility="Collapsed">
+                  <StackPanel x:Name="Plugins" x:Load="False" Spacing="8" Visibility="Collapsed">
                     <controls:SettingsSection
                       Header="{x:Bind Model.Text.Get('settings', 'video_information'), Mode=OneWay}"
+                      Summary="{x:Bind Model.VideoSummary, Mode=OneWay}"
                       Glyph="{x:Bind icons:Lucide.Film}"
-                      Style="{StaticResource TinyTorrentSettingsGroupStyle}"
                     >
                       <StackPanel>
                         <controls:SettingsRow
@@ -564,7 +570,8 @@
                     />
                     <controls:SettingsSection
                       Header="{x:Bind Model.Text.Get('request_protection', 'title'), Mode=OneWay}"
-                      Style="{StaticResource TinyTorrentSettingsGroupStyle}"
+                      Summary="{x:Bind Model.ProtectionSummary, Mode=OneWay}"
+                      Glyph="{x:Bind icons:Lucide.ShieldCheck}"
                     >
                       <StackPanel>
                         <controls:SettingsRow
@@ -610,15 +617,16 @@
                         </controls:SettingsRow>
                       </StackPanel>
                     </controls:SettingsSection>
-                    <controls:SettingsSection
-                      Header="{x:Bind Model.Text.Get('settings', 'peer_locations'), Mode=OneWay}"
-                      Style="{StaticResource TinyTorrentSettingsGroupStyle}"
-                      Glyph="{x:Bind icons:Lucide.MapPin}"
+                    <Border
+                      Style="{StaticResource TinyTorrentSettingsCardStyle}"
+                      Visibility="{x:Bind CityRow.Visibility, Mode=OneWay}"
                     >
-                      <StackPanel>
-                        <shared:DatasetRow x:Name="CityRow" />
-                      </StackPanel>
-                    </controls:SettingsSection>
+                      <shared:DatasetRow x:Name="CityRow">
+                        <shared:DatasetRow.Icon>
+                          <FontIcon Style="{StaticResource SettingsIconStyle}" Glyph="{x:Bind icons:Lucide.MapPin}" />
+                        </shared:DatasetRow.Icon>
+                      </shared:DatasetRow>
+                    </Border>
                     <controls:SettingsExpander
                       x:Name="DatabaseSummary"
                       Visibility="Collapsed"
@@ -831,6 +839,9 @@
                         Description="{x:Bind Model.Text.Get('settings', 'settings_index_hint'), Mode=OneWay}"
                         StateText="{x:Bind controls:SettingsRow.State(Main.ShowsSettingsIndex, Model.OnText, Model.OffText), Mode=OneWay}"
                       >
+                        <controls:SettingsRow.Icon>
+                          <FontIcon Style="{StaticResource SettingsIconStyle}" Glyph="{x:Bind icons:Lucide.House}" />
+                        </controls:SettingsRow.Icon>
                         <ToggleSwitch
                           x:Name="IndexSwitch"
                           IsOn="{x:Bind Main.ShowsSettingsIndex, Mode=OneWay}"
@@ -899,28 +910,19 @@
                       </StackPanel>
                     </controls:SettingsSection>
                     <Border Style="{StaticResource TinyTorrentSettingsCardStyle}">
-                      <Grid ColumnSpacing="24">
-                        <Grid.ColumnDefinitions>
-                          <ColumnDefinition Width="20" />
-                          <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <FontIcon
-                          FontFamily="{x:Bind icons:Lucide.Font}"
-                          Glyph="{x:Bind icons:Lucide.RefreshCw}"
-                          FontSize="{StaticResource TinyTorrentHeaderIconSize}"
+                      <controls:SettingsRow
+                        BorderThickness="0"
+                        Setting="{x:Bind Model.Updates}"
+                        StateText="{x:Bind controls:SettingsRow.State(Model.Updates.IsOn, Model.OnText, Model.OffText), Mode=OneWay}"
+                      >
+                        <controls:SettingsRow.Icon>
+                          <FontIcon Style="{StaticResource SettingsIconStyle}" Glyph="{x:Bind icons:Lucide.RefreshCw}" />
+                        </controls:SettingsRow.Icon>
+                        <ToggleSwitch
+                          IsOn="{x:Bind Model.Updates.IsOn, Mode=OneWay}"
+                          AutomationProperties.AutomationId="CheckUpdates"
                         />
-                        <controls:SettingsRow
-                          Grid.Column="1"
-                          BorderThickness="0"
-                          Setting="{x:Bind Model.Updates}"
-                          StateText="{x:Bind controls:SettingsRow.State(Model.Updates.IsOn, Model.OnText, Model.OffText), Mode=OneWay}"
-                        >
-                          <ToggleSwitch
-                            IsOn="{x:Bind Model.Updates.IsOn, Mode=OneWay}"
-                            AutomationProperties.AutomationId="CheckUpdates"
-                          />
-                        </controls:SettingsRow>
-                      </Grid>
+                      </controls:SettingsRow>
                     </Border>
                   </StackPanel>
                   <StackPanel x:Name="Transfers" x:Load="False" Spacing="8" Visibility="Collapsed">
@@ -1494,95 +1496,77 @@
                   </StackPanel>
                   <StackPanel x:Name="Network" x:Load="False" Spacing="8" Visibility="Collapsed">
                     <Border Style="{StaticResource TinyTorrentSettingsCardStyle}">
-                      <Grid ColumnSpacing="24">
-                        <Grid.ColumnDefinitions>
-                          <ColumnDefinition Width="20" />
-                          <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <FontIcon
-                          FontFamily="{x:Bind icons:Lucide.Font}"
-                          Glyph="{x:Bind icons:Lucide.Network}"
-                          FontSize="{StaticResource TinyTorrentHeaderIconSize}"
-                        />
-                        <controls:SettingsRow
-                          Grid.Column="1"
-                          BorderThickness="0"
-                          Description="{x:Bind Model.Text.Get('settings', 'adapter_hint'), Mode=OneWay}"
-                          Header="{x:Bind Model.Adapter.Label, Mode=OneWay}"
-                          Error="{x:Bind Model.Adapter.Message, Mode=OneWay}"
+                      <controls:SettingsRow
+                        BorderThickness="0"
+                        Description="{x:Bind Model.Text.Get('settings', 'adapter_hint'), Mode=OneWay}"
+                        Header="{x:Bind Model.Adapter.Label, Mode=OneWay}"
+                        Error="{x:Bind Model.Adapter.Message, Mode=OneWay}"
+                      >
+                        <controls:SettingsRow.Icon>
+                          <FontIcon Style="{StaticResource SettingsIconStyle}" Glyph="{x:Bind icons:Lucide.Network}" />
+                        </controls:SettingsRow.Icon>
+                        <ComboBox
+                          x:Name="Adapters"
+                          Width="260"
+                          ItemsSource="{x:Bind Model.Adapters, Mode=OneWay}"
+                          SelectedItem="{x:Bind Model.SelectedAdapter, Mode=OneWay}"
+                          SelectionChanged="OnAdapter"
+                          IsEnabled="{x:Bind Model.Adapter.CanEdit, Mode=OneWay}"
+                          AutomationProperties.Name="{x:Bind Model.Adapter.Label, Mode=OneWay}"
+                          AutomationProperties.AutomationId="NetworkAdapter"
                         >
-                          <ComboBox
-                            x:Name="Adapters"
-                            Width="260"
-                            ItemsSource="{x:Bind Model.Adapters, Mode=OneWay}"
-                            SelectedItem="{x:Bind Model.SelectedAdapter, Mode=OneWay}"
-                            SelectionChanged="OnAdapter"
-                            IsEnabled="{x:Bind Model.Adapter.CanEdit, Mode=OneWay}"
-                            AutomationProperties.Name="{x:Bind Model.Adapter.Label, Mode=OneWay}"
-                            AutomationProperties.AutomationId="NetworkAdapter"
-                          >
-                            <ComboBox.ItemTemplate>
-                              <DataTemplate x:DataType="local:AdapterChoice">
-                                <TextBlock Text="{x:Bind Text, Mode=OneWay}" />
-                              </DataTemplate>
-                            </ComboBox.ItemTemplate>
-                          </ComboBox>
-                        </controls:SettingsRow>
-                      </Grid>
+                          <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="local:AdapterChoice">
+                              <TextBlock Text="{x:Bind Text, Mode=OneWay}" />
+                            </DataTemplate>
+                          </ComboBox.ItemTemplate>
+                        </ComboBox>
+                      </controls:SettingsRow>
                     </Border>
                     <Border Style="{StaticResource TinyTorrentSettingsCardStyle}">
-                      <Grid ColumnSpacing="24">
-                        <Grid.ColumnDefinitions>
-                          <ColumnDefinition Width="20" />
-                          <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <FontIcon
-                          FontFamily="{x:Bind icons:Lucide.Font}"
-                          Glyph="{x:Bind icons:Lucide.Globe}"
-                          FontSize="{StaticResource TinyTorrentHeaderIconSize}"
-                        />
-                        <controls:SettingsRow
-                          Grid.Column="1"
-                          BorderThickness="0"
-                          Header="{x:Bind Model.Text.Get('settings', 'proxy'), Mode=OneWay}"
-                          Description="{x:Bind Model.Text.Get('settings', 'proxy_hint'), Mode=OneWay}"
-                        >
-                          <StackPanel Orientation="Horizontal" Spacing="12">
-                            <FontIcon
-                              FontFamily="{x:Bind icons:Lucide.Font}"
-                              Glyph="{x:Bind icons:Lucide.CircleCheck}"
-                              FontSize="{StaticResource TinyTorrentInlineIconSize}"
-                              Foreground="{ThemeResource SystemFillColorSuccessBrush}"
-                              Visibility="{x:Bind Model.Proxy.IsWorking, Mode=OneWay}"
-                              ToolTipService.ToolTip="{x:Bind Model.Proxy.StatusText, Mode=OneWay}"
-                              AutomationProperties.Name="{x:Bind Model.Proxy.StatusText, Mode=OneWay}"
-                            />
-                            <FontIcon
-                              FontFamily="{x:Bind icons:Lucide.Font}"
-                              Glyph="{x:Bind icons:Lucide.CircleX}"
-                              FontSize="{StaticResource TinyTorrentInlineIconSize}"
-                              Foreground="{ThemeResource SystemFillColorCriticalBrush}"
-                              Visibility="{x:Bind Model.Proxy.IsFailing, Mode=OneWay}"
-                              ToolTipService.ToolTip="{x:Bind Model.Proxy.StatusText, Mode=OneWay}"
-                              AutomationProperties.Name="{x:Bind Model.Proxy.StatusText, Mode=OneWay}"
-                            />
-                            <TextBlock
-                              Text="{x:Bind Model.Proxy.Summary, Mode=OneWay}"
-                              Style="{StaticResource TinyTorrentBodyTextStyle}"
-                              VerticalAlignment="Center"
-                            />
-                            <controls:ActionButton
-                              x:Name="ProxyEdit"
-                              Glyph="{x:Bind icons:Lucide.Pencil}"
-                              Text="{x:Bind Model.Text.Get('settings', 'edit'), Mode=OneWay}"
-                              ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'proxy_edit_tip'), Mode=OneWay}"
-                              Click="OnProxy"
-                              IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}"
-                              AutomationProperties.AutomationId="EditProxy"
-                            />
-                          </StackPanel>
-                        </controls:SettingsRow>
-                      </Grid>
+                      <controls:SettingsRow
+                        BorderThickness="0"
+                        Header="{x:Bind Model.Text.Get('settings', 'proxy'), Mode=OneWay}"
+                        Description="{x:Bind Model.Text.Get('settings', 'proxy_hint'), Mode=OneWay}"
+                      >
+                        <controls:SettingsRow.Icon>
+                          <FontIcon Style="{StaticResource SettingsIconStyle}" Glyph="{x:Bind icons:Lucide.Globe}" />
+                        </controls:SettingsRow.Icon>
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                          <FontIcon
+                            FontFamily="{x:Bind icons:Lucide.Font}"
+                            Glyph="{x:Bind icons:Lucide.CircleCheck}"
+                            FontSize="{StaticResource TinyTorrentInlineIconSize}"
+                            Foreground="{ThemeResource SystemFillColorSuccessBrush}"
+                            Visibility="{x:Bind Model.Proxy.IsWorking, Mode=OneWay}"
+                            ToolTipService.ToolTip="{x:Bind Model.Proxy.StatusText, Mode=OneWay}"
+                            AutomationProperties.Name="{x:Bind Model.Proxy.StatusText, Mode=OneWay}"
+                          />
+                          <FontIcon
+                            FontFamily="{x:Bind icons:Lucide.Font}"
+                            Glyph="{x:Bind icons:Lucide.CircleX}"
+                            FontSize="{StaticResource TinyTorrentInlineIconSize}"
+                            Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                            Visibility="{x:Bind Model.Proxy.IsFailing, Mode=OneWay}"
+                            ToolTipService.ToolTip="{x:Bind Model.Proxy.StatusText, Mode=OneWay}"
+                            AutomationProperties.Name="{x:Bind Model.Proxy.StatusText, Mode=OneWay}"
+                          />
+                          <TextBlock
+                            Text="{x:Bind Model.Proxy.Summary, Mode=OneWay}"
+                            Style="{StaticResource TinyTorrentBodyTextStyle}"
+                            VerticalAlignment="Center"
+                          />
+                          <controls:ActionButton
+                            x:Name="ProxyEdit"
+                            Glyph="{x:Bind icons:Lucide.Pencil}"
+                            Text="{x:Bind Model.Text.Get('settings', 'edit'), Mode=OneWay}"
+                            ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'proxy_edit_tip'), Mode=OneWay}"
+                            Click="OnProxy"
+                            IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}"
+                            AutomationProperties.AutomationId="EditProxy"
+                          />
+                        </StackPanel>
+                      </controls:SettingsRow>
                     </Border>
                     <controls:SettingsSection
                       x:Name="EncryptionSection"
@@ -2035,6 +2019,9 @@
                         BorderThickness="0"
                         StateText="{x:Bind controls:SettingsRow.State(Model.ShowFreeSpace.IsOn, Model.OnText, Model.OffText), Mode=OneWay}"
                       >
+                        <controls:SettingsRow.Icon>
+                          <FontIcon Style="{StaticResource SettingsIconStyle}" Glyph="{x:Bind icons:Lucide.HardDrive}" />
+                        </controls:SettingsRow.Icon>
                         <ToggleSwitch
                           IsOn="{x:Bind Model.ShowFreeSpace.IsOn, Mode=OneWay}"
                           AutomationProperties.AutomationId="ShowFreeSpace"
@@ -2053,6 +2040,9 @@
                         Description="{x:Bind Model.Text.Get('settings', 'external_ip_hint'), Mode=OneWay}"
                         StateText="{x:Bind controls:SettingsRow.State(Model.ShowExternalIp.IsOn, Model.OnText, Model.OffText), Mode=OneWay}"
                       >
+                        <controls:SettingsRow.Icon>
+                          <FontIcon Style="{StaticResource SettingsIconStyle}" Glyph="{x:Bind icons:Lucide.Globe}" />
+                        </controls:SettingsRow.Icon>
                         <ToggleSwitch
                           IsOn="{x:Bind Model.ShowExternalIp.IsOn, Mode=OneWay}"
                           AutomationProperties.AutomationId="ShowExternalIp"
@@ -2071,6 +2061,9 @@
                         Description="{x:Bind Model.Text.Get('settings', 'memory_usage_hint'), Mode=OneWay}"
                         StateText="{x:Bind controls:SettingsRow.State(Model.ShowMemory.IsOn, Model.OnText, Model.OffText), Mode=OneWay}"
                       >
+                        <controls:SettingsRow.Icon>
+                          <FontIcon Style="{StaticResource SettingsIconStyle}" Glyph="{x:Bind icons:Lucide.MemoryStick}" />
+                        </controls:SettingsRow.Icon>
                         <ToggleSwitch
                           IsOn="{x:Bind Model.ShowMemory.IsOn, Mode=OneWay}"
                           AutomationProperties.AutomationId="ShowMemory"
@@ -2084,6 +2077,9 @@
                         BorderThickness="0"
                         StateText="{x:Bind controls:SettingsRow.State(Model.ShowTitleSpeeds.IsOn, Model.OnText, Model.OffText), Mode=OneWay}"
                       >
+                        <controls:SettingsRow.Icon>
+                          <FontIcon Style="{StaticResource SettingsIconStyle}" Glyph="{x:Bind icons:Lucide.Gauge}" />
+                        </controls:SettingsRow.Icon>
                         <ToggleSwitch
                           IsOn="{x:Bind Model.ShowTitleSpeeds.IsOn, Mode=OneWay}"
                           AutomationProperties.AutomationId="ShowTitleSpeeds"
@@ -2101,6 +2097,9 @@
                         Description="{x:Bind Model.Text.Get('settings', 'reset_all_hint'), Mode=OneWay}"
                         BorderThickness="0"
                       >
+                        <controls:SettingsRow.Icon>
+                          <FontIcon Style="{StaticResource SettingsIconStyle}" Glyph="{x:Bind icons:Lucide.RotateCcw}" />
+                        </controls:SettingsRow.Icon>
                         <controls:ActionButton
                           Click="OnResetAll"
                           Glyph="{x:Bind icons:Lucide.RotateCcw}"

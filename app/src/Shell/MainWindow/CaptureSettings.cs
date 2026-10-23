@@ -33,6 +33,15 @@ public sealed partial class MainWindow
                 error
             );
         }
+        if (ReviewMode == CaptureMode.SubtitleTasks)
+        {
+            await ShowSettings(new(SettingsCategory.Plugins, "subtitle_supplier"));
+            var page = _settingsPage ?? throw new InvalidOperationException("Settings did not open.");
+            var prefix = $"settings-{Model.Text.Language}-{Model.Theme}";
+            await CaptureSubtitleTasks(prefix, page, outcomes);
+            completed.Add(prefix);
+            return;
+        }
         var resizeScale = Root.XamlRoot.RasterizationScale;
         AppWindow.Resize(new SizeInt32((int)(1920 * resizeScale), (int)(680 * resizeScale)));
         await CaptureFill(outcomes);
@@ -370,6 +379,7 @@ public sealed partial class MainWindow
                 new { journey = "subtitle language filtering and rapid changes", retained = true }
             );
 
+            await CaptureSubtitleTasks(prefix, page, outcomes);
             await CapturePlugins(prefix, page);
 
             await ShowSettings(new(SettingsCategory.Limits));
@@ -594,7 +604,7 @@ public sealed partial class MainWindow
 
     private async Task CaptureToastReplay(List<object> outcomes)
     {
-        await ShowSettings(new(SettingsCategory.Plugins));
+        await ShowSettings(new(SettingsCategory.Plugins, Model.Settings.LookupLimit.Name));
         var page = _settingsPage ?? throw new InvalidOperationException("Settings did not open.");
         if (!BackButton.Focus(FocusState.Programmatic))
             throw new InvalidOperationException(
@@ -667,7 +677,12 @@ public sealed partial class MainWindow
         );
     }
 
-    private async Task CaptureMotion(string journey, Func<Task> change, List<object> outcomes)
+    private async Task CaptureMotion(
+        string journey,
+        Func<Task> change,
+        List<object> outcomes,
+        FrameworkElement? content = null
+    )
     {
         var page = _settingsPage ?? throw new InvalidOperationException("Settings did not open.");
         var surface = (FrameworkElement)page.FindName("PageContent");
@@ -685,6 +700,7 @@ public sealed partial class MainWindow
                     page.Category,
                     pageX = (surface.RenderTransform as TranslateTransform)?.X ?? 0,
                     childX = (child.RenderTransform as TranslateTransform)?.X ?? 0,
+                    contentX = (content?.RenderTransform as TranslateTransform)?.X,
                     drawers = CaptureElements(page, includeCollapsed: true)
                         .Where(element => element.Name == "ExpanderContentClip" && element.IsLoaded)
                         .Select(element => new
@@ -821,6 +837,91 @@ public sealed partial class MainWindow
                 );
                 bar.Value = state.Value;
             }
+        }
+    }
+
+    private async Task CaptureSubtitleTasks(string prefix, SettingsPage page, List<object> outcomes)
+    {
+        await ShowSettings(new(SettingsCategory.Plugins, "subtitle_languages"));
+        await CaptureLayout();
+        var subtitles = (Subtitles.Settings)
+            ((ContentControl)page.FindName("SubtitlesContent")).Content;
+        var elements = CaptureElements(subtitles, includeCollapsed: true).ToArray();
+        var tasks = elements.OfType<SelectorBar>().Single();
+        var panels = new[] { "SubtitlePreferencesPanel", "SubtitleSearchPanel", "SubtitleFilesPanel" }
+            .Select(id =>
+                elements.Single(element => AutomationProperties.GetAutomationId(element) == id)
+            )
+            .ToArray();
+        foreach (
+            var expander in elements.OfType<Expander>().Where(expander => expander.Header is SettingsRow)
+        )
+            expander.IsExpanded = false;
+        await Task.Delay(350);
+        var filter = elements.OfType<AutoSuggestBox>().Single();
+        var saved = filter.Text;
+        filter.Text = "en";
+        try
+        {
+            foreach (var index in new[] { 1, 2, 0 })
+            {
+                await CaptureMotion(
+                    prefix + "-subtitle-task-" + index,
+                    () =>
+                    {
+                        tasks.SelectedItem = tasks.Items[index];
+                        return Task.CompletedTask;
+                    },
+                    outcomes,
+                    panels[index]
+                );
+                if (panels[index].Visibility != Visibility.Visible || !tasks.Items[index].IsSelected)
+                    throw new InvalidOperationException("The selected subtitle task is not shown.");
+                if (!tasks.Items[index].Focus(FocusState.Keyboard))
+                    throw new InvalidOperationException("The selected subtitle task cannot receive keyboard focus.");
+                subtitles.StartBringIntoView(
+                    new BringIntoViewOptions
+                    {
+                        VerticalAlignmentRatio = 0,
+                        AnimationDesired = false,
+                    }
+                );
+                await CapturePage(prefix + "-subtitle-task-" + index, subtitles);
+            }
+            tasks.SelectedItem = tasks.Items[1];
+            tasks.SelectedItem = tasks.Items[2];
+            tasks.SelectedItem = tasks.Items[0];
+            await Task.Delay(350);
+            if (
+                filter.Text != "en"
+                || panels.Skip(1).Any(panel => panel.Visibility != Visibility.Collapsed)
+            )
+                throw new InvalidOperationException(
+                    "Rapid task switching lost input or left an outgoing task visible."
+                );
+            await ShowSettings(new(SettingsCategory.Plugins, "subtitle_scan"));
+            await CaptureLayout();
+            if (tasks.SelectedItem != tasks.Items[2])
+                throw new InvalidOperationException("Settings search did not reveal the subtitle scan task.");
+            await ShowSettings(new(SettingsCategory.Plugins, "subtitle_extras"));
+            await CaptureLayout();
+            var extras = CaptureElements(subtitles)
+                .OfType<ComboBox>()
+                .Single(control =>
+                    AutomationProperties.GetAutomationId(control) == "SubtitleExtras"
+                );
+            if (tasks.SelectedItem != tasks.Items[0] || !extras.Focus(FocusState.Keyboard))
+                throw new InvalidOperationException(
+                    "Settings search did not reveal additional automatic matches."
+                );
+            outcomes.Add(
+                new { journey = "subtitle task input retention and Settings destinations", retained = true }
+            );
+        }
+        finally
+        {
+            filter.Text = saved;
+            tasks.SelectedItem = tasks.Items[0];
         }
     }
 

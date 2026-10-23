@@ -184,7 +184,7 @@ public sealed partial class AddDialog : UserControl, IDisposable
         }
         catch (Exception error)
         {
-            Model.AddDraft.Report(error);
+            Model.Notifications.Report(error);
         }
     }
 

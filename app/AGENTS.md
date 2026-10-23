@@ -10,18 +10,41 @@ Table design belongs to the
 The app consumes that design rather than defining another table appearance,
 so its tables remain consistent with every other library host.
 
-Before changing product screens, read the [UI contract](../docs/contracts/ui.md).
+Before changing product UI, read the [shared UI contract](../docs/contracts/ui.md)
+and the sections linked from its [change index](../docs/contracts/ui.md#read-for-the-change)
+for the affected surfaces and interactions.
 Text and formatting follow [localisation](../docs/contracts/localisation.md); test scope
 follows [testing](../docs/agents/testing.md).
 
 Before changing Settings navigation, read its
-[icon and label owner ruling](../docs/contracts/ui.md#settings-navigation), so the shared
+[icon and label owner ruling](../docs/contracts/ui/settings.md#settings-navigation), so the shared
 24-DIP icons and visually centred labels survive styling and template changes.
 
 Reference [TableView.csproj](../lib/TableView/src/TableView.csproj). Keep torrent
 commands, persistence, and product settings in their product owners; the
 library owns generic table mechanics. Build through
 [compilation](../docs/agents/compilation.md).
+
+## Design and review
+
+Describe the affected layout, information order, commands, states, sizing, and
+keyboard paths before writing production UI. Review them from user,
+product-design, Microsoft Fluent, and keyboard-only perspectives, with depth
+matched to the magnitude of the change: a wording fix needs no new screen
+design, and a substantial new journey gets independent review, because
+building in the wrong direction costs far more than the review. Resolve
+concrete findings before implementation.
+
+Review both clutter and missing essentials: every visible element should support
+a decision, and every required task needs a discoverable path. A successful build
+cannot establish usability or visual conformance. Screenshots can verify a
+design later; they do not replace understanding its interactions. Runtime checks
+follow [testing](../docs/agents/testing.md) and the root instructions.
+
+Verify the affected journey at relevant sizes, themes, text scales, and input
+methods under [testing](../docs/agents/testing.md). Review native semantics, reachable actions,
+focus return, automation, live text, and bounded hidden work. State the evidence
+and gaps explicitly; a static screenshot cannot establish all of them.
 
 ## Dialogs
 

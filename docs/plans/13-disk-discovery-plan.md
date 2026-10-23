@@ -765,7 +765,7 @@ and cannot inherit the old movie's identification merely through the path.
 | Subtitle disappears | Remove its file location and update associations/language counts through the existing owner. |
 
 This extends saved-list browsing for volumes covered by disk discovery. The
-previous [file-access limitation](../contracts/library.md#file-access-and-unavailable-entries)
+previous [file-access limitation](../contracts/library/files.md#file-access-and-unavailable-entries)
 left stale paths until Open failed; completed filesystem reconciliation now
 removes them automatically. The observation gap remains explicit. Torrent-only/
 uncovered sources retain their existing policy. No history browser or new

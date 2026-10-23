@@ -239,6 +239,8 @@ A second review window exits without activating an existing
 application. Normal launches perform no automatic capture.
 Use `TINYTORRENT_CAPTURE_REVIEW=smoke` to rerun the recovery journeys without
 repeating the Settings viewport or full themes-and-sizes batches.
+`Capture.ps1 -Review smoke -Theme light` selects the fixture's initial theme,
+so a focused dialog color review does not need the full layout matrix.
 Use `Capture.ps1 -Review peers` for the native peer map, header toggles, adaptive
 arrangement, internal splitters and inspector height in Light and Dark. It checks global peers and
 empty-selection Speed against the disposable engine before supplying synthetic
@@ -310,6 +312,12 @@ first fact caption.
 Its rendering-frame samples record category and Connection motion, rapid
 navigation, and drawer height and clipping during expansion and collapse;
 settled screenshots alone do not establish animation timing.
+It also visits all three subtitle task tabs, records their slide offsets,
+checks rapid switching preserves input, and follows Settings search destinations
+to the scan task and the additional automatic matches row in Preferences.
+Use `TINYTORRENT_CAPTURE_REVIEW=subtitle-tasks` for only that journey, with the
+launcher's `-Language` and `-Theme` choices, so a task-tab layout adjustment does
+not repeat the full Settings tour.
 Its Queue destination visit also captures a 280-DIP header to inspect stacked
 facts and trimmed values, then restores its automatic width. That constraint
 applies only to the header within the review window.
@@ -343,7 +351,7 @@ No live traffic is implied by this paused fixture.
 `TINYTORRENT_CAPTURE_REVIEW=library-files` visits the Library page and file
 properties with its disposable two-file fixture across English/Spanish and
 Light/Dark. Its separate `library-timing.json` branch is the retained timing
-diagnostic; the [cancelled Library validation programme](../contracts/library.md#measurement-gates--cancelled)
+diagnostic; the [cancelled Library validation programme](../contracts/library/lifecycle.md#measurement-gates--cancelled)
 does not authorize running it. Existing `app/tests/SourceChecks.ps1` and
 `ProviderChecks.ps1` are focused source-membership and provider checks, not a
 standing requirement to rerun them for every edit. Preserve their earlier

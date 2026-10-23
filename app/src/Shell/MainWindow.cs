@@ -468,6 +468,7 @@ public sealed partial class MainWindow : Window
             FiltersPane.IsCompact = Model.FilterPane == FilterPane.Compact;
             FiltersPane.Visibility =
                 Model.FilterPane == FilterPane.Hidden ? Visibility.Collapsed : Visibility.Visible;
+            InspectorSurface.Margin = new Thickness(Model.IsFilterOpen ? 0 : 4, 0, 0, 0);
             if (
                 args.PropertyName == nameof(MainViewModel.FilterPane)
                 && Model.IsFilterOpen

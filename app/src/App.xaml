@@ -12,6 +12,18 @@
       </ResourceDictionary.MergedDictionaries>
       <ResourceDictionary.ThemeDictionaries>
         <ResourceDictionary x:Key="Light">
+          <StaticResource
+            x:Key="TinyTorrentDialogBodyBrush"
+            ResourceKey="SolidBackgroundFillColorTertiaryBrush"
+          />
+          <StaticResource
+            x:Key="TinyTorrentDialogBrush"
+            ResourceKey="SolidBackgroundFillColorSecondaryBrush"
+          />
+          <StaticResource
+            x:Key="TinyTorrentSectionBrush"
+            ResourceKey="SolidBackgroundFillColorBaseBrush"
+          />
           <SolidColorBrush x:Key="TinyTorrentUploadBrush" Color="#7756A3" />
           <SolidColorBrush
             x:Key="ListViewItemBackgroundSelected"
@@ -49,6 +61,18 @@
           />
         </ResourceDictionary>
         <ResourceDictionary x:Key="Dark">
+          <StaticResource
+            x:Key="TinyTorrentDialogBodyBrush"
+            ResourceKey="ContentDialogTopOverlay"
+          />
+          <StaticResource
+            x:Key="TinyTorrentDialogBrush"
+            ResourceKey="ContentDialogBackground"
+          />
+          <StaticResource
+            x:Key="TinyTorrentSectionBrush"
+            ResourceKey="CardBackgroundFillColorSecondaryBrush"
+          />
           <SolidColorBrush x:Key="TinyTorrentUploadBrush" Color="#C5A3E6" />
           <SolidColorBrush
             x:Key="ListViewItemBackgroundSelected"
@@ -90,6 +114,18 @@
           />
         </ResourceDictionary>
         <ResourceDictionary x:Key="HighContrast">
+          <StaticResource
+            x:Key="TinyTorrentDialogBodyBrush"
+            ResourceKey="SystemColorWindowColorBrush"
+          />
+          <StaticResource
+            x:Key="TinyTorrentDialogBrush"
+            ResourceKey="SystemColorWindowColorBrush"
+          />
+          <StaticResource
+            x:Key="TinyTorrentSectionBrush"
+            ResourceKey="SystemColorWindowColorBrush"
+          />
           <SolidColorBrush
             x:Key="TinyTorrentUploadBrush"
             Color="{ThemeResource SystemColorWindowTextColor}"
@@ -137,6 +173,8 @@
           />
         </ResourceDictionary>
       </ResourceDictionary.ThemeDictionaries>
+      <Thickness x:Key="ContentDialogPadding">16</Thickness>
+      <x:Double x:Key="ContentDialogButtonMinWidth">120</x:Double>
       <x:Double x:Key="TinyTorrentCaptionHeight">48</x:Double>
       <x:Double x:Key="TinyTorrentSettingsWidth">1200</x:Double>
       <x:Double x:Key="TinyTorrentTitleDetailSpacing">12</x:Double>
@@ -1026,12 +1064,11 @@
           </Setter.Value>
         </Setter>
       </Style>
-      <!-- A group at dialog density: a quiet surface, lighter than a card. -->
       <Style x:Key="TinyTorrentSectionStyle" TargetType="Border">
         <Setter Property="Padding" Value="16" />
         <Setter
           Property="Background"
-          Value="{ThemeResource CardBackgroundFillColorSecondaryBrush}"
+          Value="{ThemeResource TinyTorrentSectionBrush}"
         />
         <Setter Property="CornerRadius" Value="{ThemeResource OverlayCornerRadius}" />
       </Style>
@@ -1653,13 +1690,10 @@
           </Setter.Value>
         </Setter>
       </Style>
-      <!-- WinUI's DefaultContentDialogStyle template, changed only in the title
-                 and in CommandSpace with the column numbers and widths its button
-                 states set. The title is one line after the Glyph icon. The buttons
-                 keep their natural width, at the right with Footer filling the
-                 space at their left, or centred when there is no Footer; the row
-                 has 16 pixels of padding above and below instead of 24. -->
+      <!-- Retain WinUI's button-state column numbers and widths; its visual
+           states target those parts even though the actions keep natural widths. -->
       <Style TargetType="shared:Dialog" BasedOn="{StaticResource DefaultContentDialogStyle}">
+        <Setter Property="Background" Value="{ThemeResource TinyTorrentDialogBrush}" />
         <Setter Property="TitleTemplate">
           <Setter.Value>
             <DataTemplate>
@@ -1925,7 +1959,7 @@
                         IsTabStop="False"
                       >
                         <Grid
-                          Background="{ThemeResource ContentDialogTopOverlay}"
+                          Background="{ThemeResource TinyTorrentDialogBodyBrush}"
                           Padding="{ThemeResource ContentDialogPadding}"
                           BorderThickness="{ThemeResource ContentDialogSeparatorThickness}"
                           BorderBrush="{ThemeResource ContentDialogSeparatorBorderBrush}"
@@ -1991,7 +2025,7 @@
                         HorizontalAlignment="Stretch"
                         VerticalAlignment="Bottom"
                         XYFocusKeyboardNavigation="Enabled"
-                        Padding="24,16"
+                        Padding="{ThemeResource ContentDialogPadding}"
                         Background="{TemplateBinding Background}"
                       >
                         <Grid.ColumnDefinitions>
@@ -2019,7 +2053,7 @@
                           ToolTipService.ToolTip="{TemplateBinding PrimaryToolTip}"
                           IsTabStop="False"
                           Grid.Column="1"
-                          MinWidth="120"
+                          MinWidth="{ThemeResource ContentDialogButtonMinWidth}"
                           MinHeight="{ThemeResource ContentDialogButtonMinHeight}"
                           VerticalContentAlignment="Center"
                           Text="{TemplateBinding PrimaryButtonText}"
@@ -2034,7 +2068,7 @@
                           ToolTipService.ToolTip="{TemplateBinding SecondaryToolTip}"
                           IsTabStop="False"
                           Grid.Column="1"
-                          MinWidth="120"
+                          MinWidth="{ThemeResource ContentDialogButtonMinWidth}"
                           MinHeight="{ThemeResource ContentDialogButtonMinHeight}"
                           VerticalContentAlignment="Center"
                           Text="{TemplateBinding SecondaryButtonText}"
@@ -2049,7 +2083,7 @@
                           ToolTipService.ToolTip="{TemplateBinding CloseToolTip}"
                           IsTabStop="False"
                           Grid.Column="5"
-                          MinWidth="120"
+                          MinWidth="{ThemeResource ContentDialogButtonMinWidth}"
                           MinHeight="{ThemeResource ContentDialogButtonMinHeight}"
                           VerticalContentAlignment="Center"
                           Text="{TemplateBinding CloseButtonText}"

@@ -50,8 +50,10 @@ permanent design, code, and review cost that the user never sees.
 
 - Before changing ownership, dependencies, or project structure, read
   [architecture](docs/contracts/architecture.md).
-- Before changing engine state, persistence, activation, or shutdown, read the
-  [engine contract](docs/contracts/engine.md).
+- Before changing engine behavior, read the shared rules and change index in the
+  [engine contract](docs/contracts/engine.md), then its references for the affected
+  behavior. This keeps state and persistence safeguards in scope without loading
+  unrelated engine policies.
 - Before changing communication, read the [pipe API contract](docs/contracts/pipe-api.md).
 - Before changing the Library database schema, read the
   [database contract](docs/contracts/database.md). Every change from the current

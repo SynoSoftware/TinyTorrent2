@@ -429,6 +429,39 @@ public class ColumnFitTests
         });
 
     [TestMethod]
+    public Task FillingPreservesProtectedContentAndHeaders() =>
+        TestHost.RunAsync(async () =>
+        {
+            Column name = Column("name", 300);
+            name.Header = new Border { Width = 1000, Height = 20 };
+            Column value = Column("value", 200);
+            value.CanShrink = false;
+            Column empty = Column("empty", 200);
+            empty.Header = new Border { Width = 180, Height = 20 };
+            empty.CellTemplate = EmptyTemplate;
+            empty.CanShrink = false;
+            Table table = await LoadAsync(Rows(20, 100), name, value, empty);
+
+            table.FillWidth();
+
+            double edge = Descendants<Header.Strip>(table).First().ActualWidth;
+            Assert.AreEqual(100 + Inset(table), TableHarness.EffectiveWidth(table, "value"), 0.001);
+            Assert.AreEqual(180 + Inset(table), TableHarness.EffectiveWidth(table, "empty"), 0.001);
+            Assert.AreEqual(
+                edge - 280 - 2 * Inset(table),
+                TableHarness.EffectiveWidth(table, "name"),
+                0.001
+            );
+
+            table.Width = 200;
+            await SettleAsync(table);
+
+            Assert.AreEqual(100 + Inset(table), TableHarness.EffectiveWidth(table, "value"), 0.001);
+            Assert.AreEqual(180 + Inset(table), TableHarness.EffectiveWidth(table, "empty"), 0.001);
+            Assert.AreEqual(10d, TableHarness.EffectiveWidth(table, "name"), 0.001);
+        });
+
+    [TestMethod]
     public Task FillingGivesSpareWidthOnlyToColumnsWithContent() =>
         TestHost.RunAsync(async () =>
         {

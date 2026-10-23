@@ -626,8 +626,6 @@ public sealed partial class SettingsPage : UserControl
             foreach (var row in rows)
                 row.Align(width);
         }
-        if (_category == PluginsCategory)
-            ActionButton.Align(Elements(panel).OfType<ActionButton>());
     }
 
     private static IEnumerable<FrameworkElement> Elements(

@@ -40,7 +40,7 @@ the [UI](ui.md#committing-edits) owns that behavior. A window whose
 user keeps unfinished input replies that Exit is cancelled. The same close reply
 distinguishes waiting for the person from continuing closure, so an unanswered
 draft or Exit confirmation cannot trigger an unresponsive-window warning. The engine's
-[shutdown sequence](engine.md#closing-and-shutdown) owns the rest. Do not add
+[shutdown sequence](engine/lifetime.md#closing-and-shutdown) owns the rest. Do not add
 another transport or event bus.
 
 Commands take priority over optional refreshes. Bound the command queue and
@@ -105,7 +105,7 @@ safe. Never repeat one automatically after an uncertain reply. The list read
 after reconnecting shows whether it was accepted: a deleted torrent has left the
 list, and a moving torrent shows its move. A missing row does not prove the files
 were deleted; a deletion failure arrives as a
-[notification](engine.md#notifications-and-sleep), and a move failure shows on
+[notification](engine/notifications.md#notifications-and-sleep), and a move failure shows on
 its torrent.
 
 Edit commands carry the intended fields and target identity defined by
@@ -135,13 +135,19 @@ The same coherence, cancellation and payload bounds below apply to those reads.
 
 Start with complete summary snapshots while WinUI is open, and request only the
 visible detail section. Fetching files must not also fetch all peers and pieces.
-Pieces replies include a `wanted` boolean per piece, derived from the chosen
-non-padding files. A boundary piece shared with a wanted file remains wanted,
-so completion conclusions exclude skipped content without hiding required bytes.
 Publish a snapshot only when it is coherent and complete; no caller observes a
 copy another thread is still filling. Membership and application state form one
 consistent copy; transfer telemetry is sampled, not a promise to freeze every
 swarm at one instant.
+
+<a id="pieces-detail"></a>While the Pieces map is visible, its detail replies
+include verified pieces, the connected-peer count per piece and downloading
+pieces with their received share. Opening the map also supplies where each
+file starts in the piece sequence. Hidden maps request no piece detail, because
+a large torrent has tens of thousands of per-piece availability counts.
+Replies include a `wanted` boolean per piece, derived from the chosen
+non-padding files. A boundary piece shared with a wanted file remains wanted,
+so completion conclusions exclude skipped content without hiding required bytes.
 
 The window's initial summary read subscribes to pushed snapshots and replies
 immediately with known state. The engine publishes fresh summaries at the saved
@@ -271,7 +277,7 @@ including unfinished requests. The matching `download_seconds` and
 direction's length in seconds. `complete` becomes
 true only after both directions finish successfully, so a cancelled live reading
 never populates the capacity fields. The engine owns the
-[lifecycle and restoration](engine.md#connection-measurement); losing the
+[lifecycle and restoration](engine/settings.md#connection-measurement); losing the
 connection releases its temporary restriction. A start whose reply was lost is
 not automatically replayed: observe the next snapshot before offering another
 test, because testing consumes network traffic. Results do not commit settings.
@@ -290,12 +296,12 @@ If physical names are still being observed, the reply describes the known
 scope and `kept_files` is null. Unknown names cannot authorize payload deletion.
 
 No command is refused because files are busy, following
-[the busy-files ruling](engine.md#removal-and-moves). A command on torrents
+[the busy-files ruling](engine/files.md#removal-and-moves). A command on torrents
 whose own files are being prepared, renamed or moved replies once its choice
 is saved. `verify`, a file priority `edit` and `remove` then wait for those
 files and apply when they are free; the other commands change no files and
 apply at once. A `move` that waits for busy files or for its
-[drives](engine.md#drive-turns) replies at once, and its rows show the
+[drives](engine/files.md#drive-turns) replies at once, and its rows show the
 `waiting_move` status until the move starts; a refusal then shows on the rows.
 A check that waits for its drive shows `waiting_check`. The rows of both carry
 `waiting_drive`, the drive letter or server of the waiting torrent's own folder
@@ -327,9 +333,9 @@ leaves `moving` and clears its marker when its own move ends, and failures
 remain visible on the torrents. Source sharing and destination use by an outside
 torrent have distinct refusals, so each offers an action that can resolve it.
 A saved move that Exit or a crash cut off is an
-[unfinished task](engine.md#unfinished-tasks) at the next start. A move whose
+[unfinished task](engine/files.md#unfinished-tasks) at the next start. A move whose
 files a failure left in two folders waits until the person chooses its
-location through Move, as [engine moves](engine.md#removal-and-moves)
+location through Move, as [engine moves](engine/files.md#removal-and-moves)
 describes.
 `recovery_required` remains the general unconfirmed-operation code for other
 commands, so file-specific instructions cannot misdirect an Add or priority
@@ -347,7 +353,7 @@ deletion failure is.
 deletion then continues without the removed rows; failures
 are notified and logged, and the toast carries the `folder` that Open folder
 shows. It never refuses because files are busy, following
-[the deletion ruling](engine.md#removal-and-moves): a torrent whose own
+[the deletion ruling](engine/files.md#removal-and-moves): a torrent whose own
 files are moving or being renamed, or that is deleted while an addition runs,
 leaves the snapshot at once and is removed when that work ends. Cancellation or disconnect cannot undo
 accepted file work, and reconnect never repeats an uncertain destructive command.
@@ -437,7 +443,7 @@ Settings also accept `default_destination` (absolute path), `torrent_dialog` and
 `confirm_delete` (boolean, default true, added in protocol version 12) and
 `limit_mode` (`none`, `speed` or `alternative` for a manual choice, default
 `none`, or null to clear its temporary override while scheduling is enabled).
-The product's [mode selector](ui.md#main-window) commits
+The product's [mode selector](ui/settings.md#speed-limits) commits
 `schedule_enabled: false` with a fixed `limit_mode`; Weekly schedule commits
 `schedule_enabled: true` with `limit_mode: null`. The nullable wire value does
 not make a fixed UI choice expire at the next schedule boundary.
@@ -476,7 +482,7 @@ its command and preserves individual torrent intent.
 Settings also accept `unfinished_tasks` (`ask`, the default, `continue` or
 `abandon`): what the engine does at start with the disk work that Exit, the
 10-second end of Exit or a crash left unfinished, as
-[unfinished tasks](engine.md#unfinished-tasks) describes. With `ask`, the
+[unfinished tasks](engine/files.md#unfinished-tasks) describes. With `ask`, the
 snapshot's `unfinished_tasks` is `{moves, checks, deletions}` while that work
 waits for the person's answer: the number of torrents whose move, check or
 file deletion waits, each 0 or more. It is null at every other time,
@@ -514,7 +520,7 @@ torrent_id of the existing torrent when the source is a duplicate. Add returns t
 commit with duplicate:false, or the existing torrent_id with duplicate:true.
 `preview` and `add` fail with `torrent_removing` while a removed torrent with
 the same content has not yet been given to libtorrent for removal, as
-[Removal and moves](engine.md#removal-and-moves) describes.
+[Removal and moves](engine/files.md#removal-and-moves) describes.
 File preview parses
 metadata without creating a payload handle; destination is applied at Add.
 Another instance of the storage worker reads and parses preview sources, so a

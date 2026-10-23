@@ -33,6 +33,12 @@ public sealed partial class DatasetRow : UserControl
     private FileInfo? _installed;
     private Task<long>? _count;
 
+    public UIElement? Icon
+    {
+        get => _row.Icon;
+        set => _row.Icon = value;
+    }
+
     internal event EventHandler<IDataset>? DownloadRequested;
     internal event EventHandler<IDataset>? UpdateRequested;
     internal event EventHandler<IDataset>? DeleteRequested;

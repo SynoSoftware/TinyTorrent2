@@ -387,7 +387,7 @@ properties in an in-process cache alone do not establish that experience.
 
 ## Files browser integration
 
-The product's [Files policy](../../../docs/contracts/ui.md#add) owns its columns,
+The product's [Files policy](../../../docs/contracts/ui/torrents.md#file-browser) owns its columns,
 priority actions, command targets and wanted choices. The shared `FileBrowser`
 uses a hierarchy column whose host content is the checkbox, file-type icon and
 name; TableView supplies the indent and arrow. Column widths, first fill,

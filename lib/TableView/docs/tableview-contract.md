@@ -675,6 +675,7 @@ public sealed class Column : DependencyObject
     public bool IsVisible { get; set; } = true;
     public bool CanHide { get; set; } = true;
     public bool CanResize { get; set; } = true;
+    public bool CanShrink { get; set; } = true;
 
 
     public HorizontalAlignment CellAlignment { get; set; } =
@@ -720,6 +721,9 @@ Required invariants:
 - at least one column remains visible, which a table declaring no columns at
   all does not satisfy;
 - `CanHide == false` prevents hiding that column;
+- `CanShrink == false` keeps fills from reducing that column below its fitted
+  width, so an essential value or embedded control stays whole; direct resizing
+  still stops at `MinWidth`;
 - a column is sortable exactly when the schema gave it a sort key, and that key
   is pure and defines a consistent total ordering for the host's rows;
 - at most one numbered order is configured, and its column belongs to the table;
@@ -845,8 +849,9 @@ Text overflow is intentional. A generated textual header keeps a stable
 one-line header treatment, trims its visible label when necessary, and exposes
 the full localized DisplayName through its native accessible name and tooltip.
 A host header or cell template deliberately chooses wrapping, trimming, or
-clipping for its content and declares a sufficient MinWidth when it contains a
-control or essential value that must remain directly usable. The table does not
+clipping for its content and declares a sufficient MinWidth for direct resizing.
+For a control or essential value that fills must keep whole, the host sets
+`CanShrink` to false so the fitted content supplies the fill minimum. The table does not
 make a rich cell reachable merely by shrinking it below its usable width.
 Header content follows the column's `CellAlignment`, with `Stretch` using left
 alignment, so numeric headings line up with their right-aligned values.
@@ -1120,14 +1125,17 @@ header.
   its header width, because it has nothing to show in more.
 - A shortfall comes from the empty columns first, because cutting an empty
   column's header hides less than cutting a value. Only once they reach their
-  `MinWidth` do the columns with content give up width.
+  fill minimum do the columns with content give up width.
 - When no column is empty, or every column is, all of them scale together.
 
 Each step scales its columns by one factor and takes only the width that is
 missing. One factor keeps the fitted proportions, so the widest fitted columns
 keep the most room. Taking only the missing width keeps a window resize from
-making a column jump. A column the factor would take below its `MinWidth`
-stays at `MinWidth` and the others in its step share what is left; when even
+making a column jump. A column the factor would take below its fill minimum
+stays there and the others in its step share what is left. That minimum is
+`MinWidth`, or the fitted width when `CanShrink` is false. The empty-column step
+uses the same minimum when counting the width it can give up, so a protected
+header never hides a shortfall that the other columns must absorb. When even
 the minimums do not fit, the columns run past the edge as section 8
 describes. It produces at most one `LayoutChanged` event, of kind `Fit`, and
 like any fit creates width overrides.

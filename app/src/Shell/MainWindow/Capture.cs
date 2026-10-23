@@ -53,6 +53,7 @@ public sealed partial class MainWindow
         "add-layout" => CaptureMode.AddLayout,
         "settings-layout" => CaptureMode.SettingsLayout,
         "settings-prototype" => CaptureMode.SettingsPrototype,
+        "subtitle-tasks" => CaptureMode.SubtitleTasks,
         "memory" => CaptureMode.Memory,
         "footer" => CaptureMode.Footer,
         _ => CaptureMode.None,
@@ -241,6 +242,16 @@ public sealed partial class MainWindow
                             width = control.ActualWidth,
                             height = control.ActualHeight,
                             enabled = control is not Control command || command.IsEnabled,
+                            background = (
+                                control switch
+                                {
+                                    Control target => target.Background,
+                                    Panel target => target.Background,
+                                    Border target => target.Background,
+                                    ContentPresenter target => target.Background,
+                                    _ => null,
+                                } as SolidColorBrush
+                            )?.Color.ToString(),
                         }
                     );
                 }
@@ -1824,6 +1835,28 @@ public sealed partial class MainWindow
             var table = CaptureElements(dialog)
                 .OfType<Syno.TableView.Table>()
                 .Single(control => control.Name == "Files");
+            var width = table.Width;
+            var originalLanguage = Model.Text.Language;
+            try
+            {
+                table.Width = 240;
+                foreach (var previewLanguage in new[] { "en", "es" })
+                {
+                    Model.SelectLanguage(previewLanguage);
+                    await CaptureReady(Model, () => Model.Text.Language == previewLanguage);
+                    table.FillWidth();
+                    await CapturePage(
+                        "details-add-file-preview-narrow-" + previewLanguage,
+                        dialog.Content as FrameworkElement
+                    );
+                }
+            }
+            finally
+            {
+                table.Width = width;
+                Model.SelectLanguage(originalLanguage);
+                await CaptureReady(Model, () => Model.Text.Language == originalLanguage);
+            }
             var sourceRetained = ReferenceEquals(table.ItemsSource, Model.AddDraft.Files.Roots);
             var fileDisplayed = CaptureElements(table)
                 .OfType<TextBlock>()
@@ -2142,7 +2175,7 @@ public sealed partial class MainWindow
                 await CaptureMemory(outcomes);
                 return;
             }
-            if (ReviewMode == CaptureMode.SettingsPrototype)
+            if (ReviewMode is CaptureMode.SettingsPrototype or CaptureMode.SubtitleTasks)
             {
                 await CaptureSettings(outcomes, completed);
                 return;

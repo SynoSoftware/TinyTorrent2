@@ -764,6 +764,7 @@ internal enum CaptureMode
     AddLayout,
     SettingsLayout,
     SettingsPrototype,
+    SubtitleTasks,
     Memory,
     Footer,
 }

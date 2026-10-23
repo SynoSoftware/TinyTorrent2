@@ -30,15 +30,15 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
     private bool _visible;
     private bool _reading;
     private int _queued;
-    private SettingsSection? _section;
+    private SettingsRow? _coverage;
     private SettingsRow? _scopeRow;
     private SettingsRow? _downloadRow;
     internal string Coverage
     {
         set
         {
-            if (_section is not null)
-                _section.Description = value;
+            if (_coverage is not null)
+                _coverage.Header = value;
         }
     }
 
@@ -133,13 +133,12 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
         choices.Children.Add(_download);
         choices.Children.Add(action);
         _scopeRow = new SettingsRow { Content = _scope };
-        _downloadRow = new SettingsRow { Content = choices };
-        _section = new SettingsSection
+        _downloadRow = new SettingsRow { Content = choices, BorderThickness = new Thickness(0) };
+        _coverage = new SettingsRow { BorderThickness = new Thickness(0) };
+        Content = new StackPanel
         {
-            Style = (Style)Application.Current.Resources["TinyTorrentSettingsGroupStyle"],
-            Content = new StackPanel { Children = { _scopeRow, _downloadRow } },
+            Children = { _coverage, _scopeRow, _downloadRow },
         };
-        Content = _section;
         Present();
     }
 
@@ -191,10 +190,9 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
     {
         _refreshing = true;
         var download = _download.SelectedIndex < 0 ? 2 : _download.SelectedIndex;
-        if (_scopeRow is not null && _downloadRow is not null && _section is not null)
+        if (_scopeRow is not null && _downloadRow is not null)
         {
             _scope.Header = _download.Header = null;
-            _section.Header = T("library_search");
             _scopeRow.Header = T("movies_to_search");
             _downloadRow.Header = T("matches_to_download");
             _downloadRow.Description = T("matches_hint");

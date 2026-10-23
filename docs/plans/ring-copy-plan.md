@@ -4,7 +4,7 @@
 work. It keeps the evidence about copy engines and the design that one of the
 engine's own would need, so that a later question about faster moves starts
 from that evidence instead of repeating it. The
-[engine contract](../contracts/engine.md#removal-and-moves) owns how moves work:
+[engine contract](../contracts/engine/files.md#removal-and-moves) owns how moves work:
 a rename on one volume, otherwise `CopyFile2`.
 
 ## Why it is not implemented

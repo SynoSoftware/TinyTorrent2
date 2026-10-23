@@ -527,7 +527,7 @@
                   </Grid>
                 </table:Table.EmptyContent>
                 <table:Table.Columns>
-                  <table:Column x:Name="QueueColumn" Id="queue" Width="48" CellAlignment="Right">
+                  <table:Column x:Name="QueueColumn" Id="queue" Width="48" CanShrink="False" CellAlignment="Right">
                     <table:Column.CellTemplate>
                       <DataTemplate x:DataType="torrents:Torrent">
                         <TextBlock
@@ -551,7 +551,7 @@
                       </DataTemplate>
                     </table:Column.CellTemplate>
                   </table:Column>
-                  <table:Column x:Name="SizeColumn" Id="size" Width="110" CellAlignment="Right">
+                  <table:Column x:Name="SizeColumn" Id="size" Width="110" CanShrink="False" CellAlignment="Right">
                     <table:Column.CellTemplate>
                       <DataTemplate x:DataType="torrents:Torrent">
                         <TextBlock
@@ -566,6 +566,7 @@
                     x:Name="ProgressColumn"
                     Id="progress"
                     Width="148"
+                    CanShrink="False"
                     CellAlignment="Stretch"
                   >
                     <table:Column.CellTemplate>
@@ -588,12 +589,13 @@
                             Text="{x:Bind ProgressText, Mode=OneWay}"
                             Style="{StaticResource CaptionTextBlockStyle}"
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            TextWrapping="NoWrap"
                           />
                         </Grid>
                       </DataTemplate>
                     </table:Column.CellTemplate>
                   </table:Column>
-                  <table:Column x:Name="StatusColumn" Id="status" Width="160">
+                  <table:Column x:Name="StatusColumn" Id="status" Width="160" CanShrink="False">
                     <table:Column.CellTemplate>
                       <DataTemplate x:DataType="torrents:Torrent">
                         <Grid VerticalAlignment="Center" ColumnSpacing="6">
@@ -635,7 +637,7 @@
                       </DataTemplate>
                     </table:Column.CellTemplate>
                   </table:Column>
-                  <table:Column x:Name="DownColumn" Id="down" Width="130" CellAlignment="Right">
+                  <table:Column x:Name="DownColumn" Id="down" Width="130" CanShrink="False" CellAlignment="Right">
                     <table:Column.CellTemplate>
                       <DataTemplate x:DataType="torrents:Torrent">
                         <TextBlock
@@ -647,7 +649,7 @@
                       </DataTemplate>
                     </table:Column.CellTemplate>
                   </table:Column>
-                  <table:Column x:Name="UpColumn" Id="up" Width="130" CellAlignment="Right">
+                  <table:Column x:Name="UpColumn" Id="up" Width="130" CanShrink="False" CellAlignment="Right">
                     <table:Column.CellTemplate>
                       <DataTemplate x:DataType="torrents:Torrent">
                         <TextBlock
@@ -671,7 +673,7 @@
                       </DataTemplate>
                     </table:Column.CellTemplate>
                   </table:Column>
-                  <table:Column x:Name="EtaColumn" Id="eta" Width="90" CellAlignment="Right">
+                  <table:Column x:Name="EtaColumn" Id="eta" Width="90" CanShrink="False" CellAlignment="Right">
                     <table:Column.CellTemplate>
                       <DataTemplate x:DataType="torrents:Torrent">
                         <TextBlock
@@ -681,7 +683,7 @@
                       </DataTemplate>
                     </table:Column.CellTemplate>
                   </table:Column>
-                  <table:Column x:Name="RatioColumn" Id="ratio" Width="80" CellAlignment="Right">
+                  <table:Column x:Name="RatioColumn" Id="ratio" Width="80" CanShrink="False" CellAlignment="Right">
                     <table:Column.CellTemplate>
                       <DataTemplate x:DataType="torrents:Torrent">
                         <TextBlock
@@ -691,7 +693,7 @@
                       </DataTemplate>
                     </table:Column.CellTemplate>
                   </table:Column>
-                  <table:Column x:Name="SeedsColumn" Id="seeds" Width="100" CellAlignment="Right">
+                  <table:Column x:Name="SeedsColumn" Id="seeds" Width="100" CanShrink="False" CellAlignment="Right">
                     <table:Column.CellTemplate>
                       <DataTemplate x:DataType="torrents:Torrent">
                         <TextBlock
@@ -711,7 +713,7 @@
                       </DataTemplate>
                     </table:Column.CellTemplate>
                   </table:Column>
-                  <table:Column x:Name="AddedColumn" Id="added" Width="140">
+                  <table:Column x:Name="AddedColumn" Id="added" Width="140" CanShrink="False">
                     <table:Column.CellTemplate>
                       <DataTemplate x:DataType="torrents:Torrent">
                         <TextBlock
@@ -722,7 +724,7 @@
                       </DataTemplate>
                     </table:Column.CellTemplate>
                   </table:Column>
-                  <table:Column x:Name="CompletedOnColumn" Id="completed_on" Width="140">
+                  <table:Column x:Name="CompletedOnColumn" Id="completed_on" Width="140" CanShrink="False">
                     <table:Column.CellTemplate>
                       <DataTemplate x:DataType="torrents:Torrent">
                         <TextBlock

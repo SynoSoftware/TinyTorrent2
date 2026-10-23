@@ -47,6 +47,10 @@ public sealed partial class ActionButton : Button
 
     public ActionButton()
     {
+        Resources = new ResourceDictionary
+        {
+            Source = new Uri("ms-appx:///Controls/ButtonResources.xaml"),
+        };
         AutomationProperties.SetAccessibilityView(
             _icon,
             Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw

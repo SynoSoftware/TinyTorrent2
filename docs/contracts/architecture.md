@@ -79,7 +79,7 @@ key's allowance. TinyTorrent funds no paid package and never upgrades access aut
 provider limits delay optional work instead. Applicable free terms must cover
 the integration; a working key alone does not establish that. SubDL's terms
 forbid a shared free key that powers a commercial service, so its built-in key
-holds only while TinyTorrent is not one ([SubDL access](subtitles.md#subdl)).
+holds only while TinyTorrent is not one ([SubDL access](subtitles/suppliers.md#subdl)).
 Local features remain usable without provider access.
 
 A Library provider or subtitle supplier declares only what it asks the person
@@ -125,7 +125,7 @@ program when a download finishes need an identified user requirement before
 they become implementation work. The approved Settings scope includes one
 watched torrent folder, configurable speed-history intervals, addition and
 seeding defaults, and protocol and storage choices.
-These serve the workflows in [Settings](ui.md#settings); they do not
+These serve the workflows in [Settings](ui/settings.md); they do not
 authorize a general automation system or arbitrary engine tuning.
 The product includes automatic port mapping (UPnP/NAT-PMP), an
 editable listen port, binding torrent traffic to one network adapter such as a
@@ -146,7 +146,7 @@ and its saved key is permanent.
 
 Several torrents can use the same files, so the same content can be seeded from
 several trackers, as established clients allow. The
-[shared-files policy](engine.md#shared-files) keeps file deletion and moves
+[shared-files policy](engine/files.md#shared-files) keeps file deletion and moves
 from reaching another torrent's files. Automatic replacement of an existing
 torrent is outside the initial scope.
 
@@ -178,7 +178,7 @@ TinyTorrent must not add usage analytics, diagnostic uploads, crash uploads or
 installation identifiers sent to any third party, including Microsoft, because
 download activity and application use are private. Apply supported app-level
 controls to prevent dependency reporting. Diagnostics remain in
-[local logs](engine.md#diagnostics).
+[local logs](engine/lifetime.md#diagnostics).
 
 **Owner ruling: retain the shared Microsoft runtimes and make the best effort
 available through supported app-level controls.** Shared-runtime deployment and
@@ -394,7 +394,7 @@ sequenceDiagram
     UI->>Engine: Reconnect and reconcile snapshot
 ```
 
-Application Exit follows the coordinated [shutdown](engine.md#closing-and-shutdown)
+Application Exit follows the coordinated [shutdown](engine/lifetime.md#closing-and-shutdown)
 path.
 
 ## Ownership decisions
@@ -558,7 +558,7 @@ for engine implementation. When updating dependencies, check the latest stable
 [upstream release](https://github.com/arvidn/libtorrent/releases/latest)
 independently of `../TinyTorrent`, pin the selected version and feature set,
 and recheck version-sensitive engine assumptions. Pinning keeps builds reproducible.
-The automatic disk policy is recorded in [engine settings](engine.md#disk-write-caching).
+The automatic disk policy is recorded in [engine settings](engine/settings.md#disk-write-caching).
 Runtime packages need a concrete job; test frameworks and build tools stay out
 of the shipped dependency graph.
 
@@ -662,7 +662,7 @@ expect a torrent client to start and upload at sign-in unless they asked for it.
 Setup performs the registration and, when
 Windows requires the person's default-app choice, takes them to that choice.
 Declining it leaves the application installed and usable. The installer calls
-the engine's [registration actions](engine.md#windows-registration);
+the engine's [registration actions](engine/lifetime.md#windows-registration);
 Settings calls the same owner. Upgrades preserve disabled registrations and
 existing default-app choices without repeating setup prompts. The installer owns
 the engine-targeting shortcut and Installed apps entry, not a second handler writer.
@@ -680,7 +680,7 @@ or account permissions. Continue using available outgoing connections when
 inbound access is blocked. Port mapping does not bypass the host firewall.
 
 Updates use the same release installer, after the coordinated
-[Exit](engine.md#closing-and-shutdown). When TinyTorrent was running before the
+[Exit](engine/lifetime.md#closing-and-shutdown). When TinyTorrent was running before the
 update, the installer starts it again, so downloads do not stay stopped until
 the person remembers to open it. It starts in the tray, or with its window when
 Help > Update passed `/OPEN=1`, because that person was using the window. If the installed executable cannot start,

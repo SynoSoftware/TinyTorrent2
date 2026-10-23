@@ -96,7 +96,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         Settings.Theme.ConfirmedText.Length > 0 ? Settings.Theme.ConfirmedText : "system";
     public bool ShowsTitleSpeeds => Settings.ShowTitleSpeeds.IsOn;
     public bool ShowsFreeSpace =>
-        _connected && !_loading && !_storageFailed && Settings.ShowFreeSpace.IsOn;
+        _connected
+        && !_loading
+        && !_storageFailed
+        && Settings.ShowFreeSpace.IsOn
+        && _spacePath == Settings.Destination.ConfirmedText
+        && _freeSpace.HasValue;
     public string FreeSpaceStatus =>
         _spacePath == Settings.Destination.ConfirmedText && _freeSpace is { } space
             ? Text.Format("window", "free_space", Text.Bytes(space))

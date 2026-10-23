@@ -119,14 +119,14 @@
             </DataTemplate>
           </table:Column.CellTemplate>
         </table:Column>
-        <table:Column x:Name="SizeColumn" Id="size" Width="110" CellAlignment="Right">
+        <table:Column x:Name="SizeColumn" Id="size" Width="110" CanShrink="False" CellAlignment="Right">
           <table:Column.CellTemplate>
             <DataTemplate x:DataType="local:FileNode">
               <TextBlock Text="{x:Bind SizeText, Mode=OneWay}" VerticalAlignment="Center" />
             </DataTemplate>
           </table:Column.CellTemplate>
         </table:Column>
-        <table:Column x:Name="ProgressColumn" Id="progress" Width="148" CellAlignment="Stretch">
+        <table:Column x:Name="ProgressColumn" Id="progress" Width="148" CanShrink="False" CellAlignment="Stretch">
           <table:Column.CellTemplate>
             <DataTemplate x:DataType="local:FileNode">
               <Grid VerticalAlignment="Center" RowSpacing="4">
@@ -147,12 +147,13 @@
                   Text="{x:Bind ProgressText, Mode=OneWay}"
                   Style="{StaticResource CaptionTextBlockStyle}"
                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                  TextWrapping="NoWrap"
                 />
               </Grid>
             </DataTemplate>
           </table:Column.CellTemplate>
         </table:Column>
-        <table:Column x:Name="PriorityColumn" Id="priority" Width="200" CellAlignment="Stretch">
+        <table:Column x:Name="PriorityColumn" Id="priority" Width="200" CanShrink="False" CellAlignment="Stretch">
           <table:Column.CellTemplate>
             <DataTemplate x:DataType="local:FileNode">
               <ComboBox

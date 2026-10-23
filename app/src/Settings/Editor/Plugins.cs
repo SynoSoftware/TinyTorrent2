@@ -20,6 +20,13 @@ public sealed partial class Editor
     private bool _databaseVisible;
 
     public string VideoProvider => _owner.Library.Option?.Name ?? "—";
+    public string VideoSummary => Text.Format(
+        "plugins",
+        "video_summary",
+        VideoProvider,
+        _owner.Library.IsAutomaticDownloadEnabled ? OnText : OffText
+    );
+    public string ProtectionSummary => Text.FormatCount("plugins", "search_limit", _owner.LookupLimit);
 
     public string VideoCoverage => _coverage is { } coverage
         ? Text.Format("plugins", "coverage", coverage.Informed, coverage.Total)
@@ -61,8 +68,12 @@ public sealed partial class Editor
             if (args.PropertyName is nameof(_owner.Library.Status)
                 or nameof(_owner.Library.Option)
                 or nameof(_owner.Library.Providers)
+                or nameof(_owner.Library.IsAutomaticDownloadEnabled)
                 or "")
+            {
+                Changed(nameof(VideoSummary));
                 Overview.Refresh();
+            }
         };
     }
 
@@ -72,7 +83,10 @@ public sealed partial class Editor
     private void OnOwner(object? sender, PropertyChangedEventArgs args)
     {
         if (args.PropertyName is nameof(MainViewModel.LookupLimit) or "")
+        {
             ConfirmLookupLimit();
+            Changed(nameof(ProtectionSummary));
+        }
         if (args.PropertyName is nameof(MainViewModel.Subtitles) or "")
             Changed(nameof(SubtitleCoverage));
     }

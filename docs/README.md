@@ -7,10 +7,10 @@ here so moving a topic does not require renaming its links.
 | Order | Document | Authority |
 | --- | --- | --- |
 | 1 | [Architecture](contracts/architecture.md) | Product scope, process responsibilities, projects and source layout, dependencies, and installation. |
-| 2 | [Engine](contracts/engine.md) | Torrent state, durable changes, activation, and process lifetime. |
+| 2 | [Engine](contracts/engine.md) | Shared state and persistence rules, with conditional references for addition, files and recovery, lifetime, settings and notifications. |
 | 3 | [Pipe API](contracts/pipe-api.md) | Local communication, snapshots, and connection outcomes. |
 | 4 | [Localisation](contracts/localisation.md) | Text sources, language selection, live updates, and formatting. |
-| 5 | [UI](contracts/ui.md) | Product journeys and native Windows interaction and presentation. |
+| 5 | [UI](contracts/ui.md) | Shared UI policy and conditional references for workspace, Settings, torrent interaction and feedback. |
 | 6 | [Testing](agents/testing.md) | Which evidence earns its cost and what it establishes. |
 | 7 | [Naming and structure](agents/naming.md) | Names and placement of types, files, folders, namespaces, and resource keys. |
 
@@ -28,18 +28,21 @@ are not a second backlog.
 The architecture owns the [live decision list](contracts/architecture.md#decisions-still-open).
 Update it as choices are made; historical reviews do not supply active requirements.
 
-For automatic subtitle downloading, read the [subtitle contract](contracts/subtitles.md):
-its workflow, configuration, supplier records and file handling.
+For subtitle work, read the [subtitle contract](contracts/subtitles.md) for shared
+outcome, ownership and recovery rules, then its change index for configuration,
+matching, file handling or supplier details.
 
-For Library work, read the [Library contract](contracts/library.md): data-source
-membership, cached video information, providers, search and interaction. Its
-[prototype implementation review](contracts/library.md#prototype-implementation-review)
+For Library work, read the [Library contract](contracts/library.md) for shared
+ownership, membership and SQLite rules, then follow its change index for file
+search, providers, presentation or lifecycle. Its
+[prototype implementation review](contracts/library/presentation.md#prototype-implementation-review)
 tracks the pending Inspector and navigation choices. Library and subtitles
 share one window-lifetime SQLite owner; the [database contract](contracts/database.md)
 owns schema initialization, versioning, connection lifetime and the rationale
 for durable and reconstructed state.
-[Search protection](contracts/search-protection.md) owns suppression, pacing, explicit
-retries and Settings reset for Library and subtitle requests.
+[Search protection](contracts/search-protection.md) owns shared suppression, pacing
+and storage rules for Library and subtitle requests. Its change index selects
+the retry/reset and IMDb local-data references.
 
 The [disk discovery plan](plans/13-disk-discovery-plan.md) defines the optional NTFS
 C++ helper for video, music and subtitles, plus targeted lookup of missing torrent
