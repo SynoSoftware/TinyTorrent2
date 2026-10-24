@@ -494,12 +494,9 @@ public sealed class FilterChoice(MainViewModel owner, TorrentFilter filter) : IN
     public string Glyph =>
         Filter switch
         {
-            TorrentFilter.Downloading => Lucide.ArrowDownToLine,
-            TorrentFilter.Seeding => Lucide.ArrowUpFromLine,
-            TorrentFilter.Paused => Lucide.Square,
-            TorrentFilter.Queued => Lucide.Clock,
-            TorrentFilter.Errors => Lucide.CircleAlert,
-            _ => Lucide.List,
+            TorrentFilter.All => Lucide.List,
+            TorrentFilter.Errors => Torrent.GetGlyph("error"),
+            _ => Torrent.GetGlyph(Filter.ToString().ToLowerInvariant()),
         };
     public string Label => owner.Text.Get("filters", Filter.ToString().ToLowerInvariant());
     public int Count => _count;

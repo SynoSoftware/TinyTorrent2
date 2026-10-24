@@ -54,7 +54,15 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
                 : double.PositiveInfinity
             : (double)Uploaded / Downloaded;
     public string StatusCode { get; private set; } = string.Empty;
-    public string Status => strings.Status(StatusCode);
+    public string Status =>
+        strings.Status(
+            StatusCode switch
+            {
+                "waiting_check" => "check",
+                "waiting_move" => "move",
+                _ => StatusCode,
+            }
+        );
     public bool IsPaused => StatusCode is "paused" or "all_paused";
     public bool IsError => StatusCode == "error" || ErrorCode.Length > 0;
     public bool IsProgressMuted =>
@@ -70,26 +78,38 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
     // The name of the torrent whose file work a waiting move waits for, when
     // its drives are free.
     public string WaitingFiles { get; private set; } = string.Empty;
-    public string? StatusTip =>
-        WaitingDrive.Length == 0
-            ? WaitingFiles.Length == 0 ? null : strings.Format("status", "waiting_for_files", WaitingFiles)
-        : nameOf(WaitingTorrentId) is { } holder
-            ? strings.Format("status", "waiting_for_torrent", WaitingDrive, holder)
-        : strings.Format("status", "waiting_for", WaitingDrive);
+    public string? StatusTip
+    {
+        get
+        {
+            var detail = WaitingDrive.Length == 0
+                ? WaitingFiles.Length == 0
+                    ? null
+                    : strings.Format("status", "waiting_for_files", WaitingFiles)
+                : nameOf(WaitingTorrentId) is { } holder
+                    ? strings.Format("status", "waiting_for_torrent", WaitingDrive, holder)
+                    : strings.Format("status", "waiting_for", WaitingDrive);
+            if (!IsWaiting)
+                return detail;
+            var waiting = strings.Status(StatusCode);
+            return detail is null ? waiting : waiting + " · " + detail;
+        }
+    }
     public bool IsDownloading => StatusCode == "downloading" && !IsError;
     public bool IsStatusNeutral => !IsDownloading && !IsError;
-    public string StatusGlyph =>
-        StatusCode switch
+    private bool IsWaiting => StatusCode is "queued" or "waiting_check" or "waiting_move";
+    public string StatusGlyph => GetGlyph(StatusCode);
+    public static string GetGlyph(string status) =>
+        status switch
         {
             "downloading" => Syno.Lucide.ArrowDownToLine,
-            "seeding" => Syno.Lucide.ArrowUpFromLine,
+            "seeding" => Syno.Lucide.Sprout,
             "paused" => Syno.Lucide.Square,
             "all_paused" => Syno.Lucide.Pause,
             "completed" => Syno.Lucide.CircleCheck,
-            "checking" or "waiting_check" => Syno.Lucide.RefreshCw,
-            "moving" or "waiting_move" => Syno.Lucide.Folder,
-            "metadata" => Syno.Lucide.Hourglass,
-            "queued" => Syno.Lucide.Clock,
+            "checking" => Syno.Lucide.RefreshCw,
+            "moving" => Syno.Lucide.Folder,
+            "queued" or "waiting_check" or "waiting_move" or "metadata" => Syno.Lucide.Hourglass,
             "error" => Syno.Lucide.CircleAlert,
             _ => Syno.Lucide.CircleQuestionMark,
         };
@@ -104,9 +124,9 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
     public string RemainingText => strings.Bytes(Remaining);
     public string ProgressText => Progress.ToString("P1", CultureInfo.CurrentCulture);
     public string DownloadText =>
-        _connected ? strings.Format("units", "rate", strings.Bytes(DownloadRate)) : "—";
+        _connected ? strings.Rate(DownloadRate) : "—";
     public string UploadText =>
-        _connected ? strings.Format("units", "rate", strings.Bytes(UploadRate)) : "—";
+        _connected ? strings.Rate(UploadRate) : "—";
     public string DownloadName =>
         strings.Format("units", "detail", strings.Get("columns", "down"), DownloadText);
     public string UploadName =>
@@ -126,7 +146,7 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
     public string CompletedOnText => Ago(CompletedOn);
     public string? CompletedOnTip => Time(CompletedOn);
     public string QueueText => IsQueued ? (Queue + 1).ToString(CultureInfo.CurrentCulture) : "—";
-    internal string SearchText => _searchText ??= FileName.Normalize(Name + " " + Status);
+    internal string SearchText => _searchText ??= FileName.Normalize(Name + " " + strings.Status(StatusCode));
 
     // The limits that are set, such as "↓ 0.5 MB/s"; empty without one.
     public string LimitText => Limits(string.Empty);

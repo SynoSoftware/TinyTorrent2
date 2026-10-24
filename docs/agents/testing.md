@@ -182,6 +182,12 @@ transfers. It saves the original layout and full-map view for inspection.
 This off-screen journey uses real controls and a disposable engine store. It
 does not synthesize OS keyboard input or create live remote peer connections.
 
+`app/tests/SpeedChecks.ps1 -BinaryDirectory <built-app-folder>` checks the actual
+plotted coverage at 6-hour and 24-hour ranges. Contiguous observations remain
+one run, and a four-second missing interval is neither filled nor widened by
+bucket-centre averaging. It runs the pure graph geometry without opening WinUI.
+The Peers capture also renders that brief-gap case in both themes.
+
 `app/tests/DistributionChecks.ps1 -BinaryDirectory <built-app-folder>` checks
 the peer map's estimated distribution without starting WinUI. It watches the
 most probable placement, where a second connection stays in a 90% region

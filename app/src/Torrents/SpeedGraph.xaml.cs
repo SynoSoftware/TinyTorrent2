@@ -263,6 +263,7 @@ public sealed partial class SpeedGraph : UserControl
             time = 0,
             download = 0,
             upload = 0;
+        long firstTime = 0, lastTime = 0;
         long bucket = -1;
         SpeedSample? previous = null;
         foreach (var sample in samples)
@@ -286,6 +287,9 @@ public sealed partial class SpeedGraph : UserControl
                 bucket = index;
                 var next = Math.Min(limit, (index + 1) * width);
                 var represented = sample.Weight * (next - first) / (sample.Time - sample.Start + 1);
+                if (weight == 0)
+                    firstTime = first;
+                lastTime = next - 1;
                 weight += represented;
                 time += (first + next - 1) / 2.0 * represented;
                 download += sample.DownloadRate * represented;
@@ -303,7 +307,11 @@ public sealed partial class SpeedGraph : UserControl
             {
                 return;
             }
-            runs[^1].Add(new Average(time / weight, download / weight, upload / weight));
+            runs[^1].Add(new Average(time / weight, download / weight, upload / weight)
+            {
+                Start = firstTime,
+                End = lastTime,
+            });
             weight = time = download = upload = 0;
         }
     }
@@ -341,14 +349,8 @@ public sealed partial class SpeedGraph : UserControl
         var upload = new PathGeometry();
         foreach (var run in runs)
         {
-            var downloads = Widen(
-                run.Select(average => extent.At(average.Time, average.Download)).ToArray(),
-                extent.Width
-            );
-            var uploads = Widen(
-                run.Select(average => extent.At(average.Time, average.Upload)).ToArray(),
-                extent.Width
-            );
+            var downloads = Points(run, extent, average => average.Download);
+            var uploads = Points(run, extent, average => average.Upload);
             var fill = new PathFigure
             {
                 StartPoint = new Point(downloads[0].X, extent.Height),
@@ -366,6 +368,18 @@ public sealed partial class SpeedGraph : UserControl
         DownloadArea.Data = area;
         DownloadLine.Data = download;
         UploadLine.Data = upload;
+    }
+
+    private static Point[] Points(List<Average> run, Extent extent, Func<Average, double> rate)
+    {
+        var points = run.Select(average => extent.At(average.Time, rate(average))).ToList();
+        // Bucket centres describe the trend; run ends retain the observed
+        // coverage so a brief sampling gap does not become half a bucket wide.
+        if (run[0].Start < run[0].Time)
+            points.Insert(0, extent.At(run[0].Start, rate(run[0])));
+        if (run[^1].End > run[^1].Time)
+            points.Add(extent.At(run[^1].End, rate(run[^1])));
+        return Widen(points.ToArray(), extent.Width);
     }
 
     // A lone average needs a visible stroke, but a bucket-wide stroke would
@@ -756,7 +770,11 @@ public sealed partial class SpeedGraph : UserControl
         public void SetValue(string value) => throw new InvalidOperationException();
     }
 
-    private sealed record Average(double Time, double Download, double Upload);
+    private sealed record Average(double Time, double Download, double Upload)
+    {
+        public long Start { get; init; }
+        public long End { get; init; }
+    }
 
     // Where a drag started and where the view ended then. Panning from the
     // start, not from the last move, keeps rounding from adding up.

@@ -113,6 +113,12 @@ sorting, scrolling, and gesture feedback do not create a hidden measurement tree
 Rich cell templates receive row items directly. Live values use live bindings;
 formatting can stay lazy so invisible cells do not allocate display strings.
 
+`Header.Cell` owns generated full/short label selection. Its fit uses the short
+label when provided; normal layout uses the full label whenever it fits.
+`Header.Content` measures the label and glyph together and allocates a trailing
+glyph slot only when the chosen label leaves room. This keeps fitting independent of sorting while retaining an
+indicator wherever the actual column width permits one.
+
 The native container paints selection and keyboard focus. The row template
 adds only drag opacity; it does not paint an additional selected-row stripe.
 Actual contrast, Narrator,

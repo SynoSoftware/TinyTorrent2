@@ -185,7 +185,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private string Rate(double rate) =>
         _connected && !_loading && !_storageFailed
-            ? Text.Format("units", "rate", Text.Bytes(rate))
+            ? Text.Rate(rate)
             : "—";
 
 #if CAPTURE

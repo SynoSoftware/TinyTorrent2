@@ -26,10 +26,8 @@ exact date and time is the tooltip. Completed shows a dash until the torrent
 is complete.
 
 A check or a move that waits for its [drive](../engine/files.md#drive-turns) shows
-Waiting to check or Waiting to move, with the Checking or Moving files icon. A
-state is named by what ends it: this one ends by itself, so the person has
-nothing to do, while Checking and Moving files would claim that the work runs
-and Queued already means the download queue. The Status tooltip names what the
+Check or Move beside Hourglass. Queued downloads use Hourglass too. The tooltip
+retains the full waiting state, which remains searchable, and names what the
 job waits for, such as "Waiting for C:, used by Ubuntu 24.04": the drive by the
 letter or server of the torrent's own folder, because the person does not know
 disk numbers. A move that waits only for another torrent's file work names
@@ -429,6 +427,30 @@ transfer.
 Peers starts with Address, Download speed, Upload speed, Progress and State,
 so current transfer activity stays visible before secondary connection details.
 Client, Country, City, Connection, Downloaded and Uploaded follow.
+Connection uses the existing transfer-direction arrows and theme colours for
+incoming and outgoing beside the transport, followed by ShieldCheck for RC4,
+ShieldPlus for TLS, or ShieldOff for unencrypted payload. Unknown encryption
+has no icon. The shields give the encryption state a compact,
+recognizable context; the tooltip and accessible name retain the full direction
+and explanation. A retained address without a connection shows a dash without
+direction or encryption icons.
+The generated Download and Upload headers in Torrents and Peers supply Down
+and Up as TableView `ShortName` alternatives. Torrents also supplies Q for Queue
+and ETA for Time left, so a long heading alone need not keep these columns wide.
+Peers supplies Down total for Downloaded and Up total for Uploaded, keeping
+cumulative amounts distinct from the rate columns.
+Seeding uses Sprout. Numeric transfer cells use the shared inline field styles:
+download and downloaded values have the download arrow and accent colour;
+upload and uploaded values have the upload arrow and upload colour. The same
+glyph resources identify rates in the title bar, status bar and Inspector.
+Zero rates display a dash through the shared rate formatter. Counts retain
+numeric zero; inline seed and peer counts dim each standalone zero, including
+its parentheses when present, with the theme's secondary text brush.
+Seeds have Sprout, peers and tracker leechers have UsersRoundCollaboration, and cities have
+BuildingComplex before their values. Column headers retain plain text.
+State uses Unplug for a known address without a current connection, PlugZap
+while connecting, Handshake during negotiation, Cable when connected, and
+CircleQuestionMark only when the state is unavailable or unrecognized.
 Country and City are separate sortable columns after Client.
 Country shows the country's flag at the cell's text size followed by its name;
 City shows the city name when the installed data provides one. The flag is
@@ -601,6 +623,8 @@ combined history for multiple selected torrents, or session history when nothing
 and replaces its graph when the selected torrent changes. It continues while WinUI
 is closed, so reopening shows what happened meanwhile. Unknown gaps, such as the
 time before an engine restart, are not interpolated into invented history.
+Each observed run reaches its actual first and last sample times, so averaging
+does not widen a brief missing interval into half a bucket on either side.
 
 The person can look at any time in the retained day. The mouse wheel over the
 chart zooms between 5 minutes and 24 hours around the time under the pointer,

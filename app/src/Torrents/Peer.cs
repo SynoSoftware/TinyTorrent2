@@ -33,9 +33,9 @@ public sealed class Peer : INotifyPropertyChanged
     public string ProgressText =>
         State == PeerState.Known ? "—" : Progress.ToString("P1", CultureInfo.CurrentCulture);
     public string DownloadText =>
-        State == PeerState.Known ? "—" : _text.Format("units", "rate", _text.Bytes(DownloadRate));
+        State == PeerState.Known ? "—" : _text.Rate(DownloadRate);
     public string UploadText =>
-        State == PeerState.Known ? "—" : _text.Format("units", "rate", _text.Bytes(UploadRate));
+        State == PeerState.Known ? "—" : _text.Rate(UploadRate);
     public string DownloadedText => State == PeerState.Known ? "—" : _text.Bytes(Downloaded);
     public string UploadedText => State == PeerState.Known ? "—" : _text.Bytes(Uploaded);
     public string ClientText => string.IsNullOrEmpty(Client) ? "—" : Client;
@@ -63,9 +63,10 @@ public sealed class Peer : INotifyPropertyChanged
     public string StateGlyph =>
         State switch
         {
-            PeerState.Connecting => Syno.Lucide.Plug,
+            PeerState.Known => Syno.Lucide.Unplug,
+            PeerState.Connecting => Syno.Lucide.PlugZap,
             PeerState.Handshake => Syno.Lucide.Handshake,
-            PeerState.Connected => Syno.Lucide.CircleCheck,
+            PeerState.Connected => Syno.Lucide.Cable,
             _ => Syno.Lucide.CircleQuestionMark,
         };
     public string StateHint => _text.Format("peers", "state_hint", StateExplanation, SourcesText);
@@ -76,18 +77,38 @@ public sealed class Peer : INotifyPropertyChanged
                 _transport == PeerTransport.Http ? "web_client_unknown" : "client_unknown"
             )
             : Client;
-    public string ConnectionHint =>
-        _text.Get(
-            "peers",
-            _encryption switch
+    public string DirectionGlyph =>
+        State == PeerState.Known ? string.Empty : Incoming ? Syno.Lucide.ArrowDown : Syno.Lucide.ArrowUp;
+    public string EncryptionGlyph =>
+        State == PeerState.Known
+            ? string.Empty
+            : _encryption switch
             {
-                PeerEncryption.Plain => "plain_hint",
-                PeerEncryption.Handshake => "handshake_encryption_hint",
-                PeerEncryption.Rc4 => "rc4_hint",
-                PeerEncryption.Tls => "tls_hint",
-                _ => "encryption_unknown",
-            }
-        );
+                PeerEncryption.Plain or PeerEncryption.Handshake => Syno.Lucide.ShieldOff,
+                PeerEncryption.Rc4 => Syno.Lucide.ShieldCheck,
+                PeerEncryption.Tls => Syno.Lucide.ShieldPlus,
+                _ => string.Empty,
+            };
+    public string ConnectionHint =>
+        State == PeerState.Known
+            ? StateExplanation
+            : _text.Format(
+                "peers",
+                "connection",
+                TransportText,
+                _text.Get("peers", Incoming ? "incoming" : "outgoing"),
+                _text.Get(
+                    "peers",
+                    _encryption switch
+                    {
+                        PeerEncryption.Plain => "plain_hint",
+                        PeerEncryption.Handshake => "handshake_encryption_hint",
+                        PeerEncryption.Rc4 => "rc4_hint",
+                        PeerEncryption.Tls => "tls_hint",
+                        _ => "encryption_unknown",
+                    }
+                )
+            );
     public string DownloadHint
     {
         get
@@ -125,30 +146,7 @@ public sealed class Peer : INotifyPropertyChanged
             );
         }
     }
-    public string ConnectionText
-    {
-        get
-        {
-            if (State == PeerState.Known)
-                return "—";
-            var transport =
-                _transport == PeerTransport.Unknown
-                    ? _text.Get("peers", "unknown")
-                    : _transport.ToString().ToUpperInvariant();
-            var direction = _text.Get("peers", Incoming ? "incoming" : "outgoing");
-            var encryption = _text.Get(
-                "peers",
-                _encryption switch
-                {
-                    PeerEncryption.Plain or PeerEncryption.Handshake => "plain",
-                    PeerEncryption.Rc4 => "rc4",
-                    PeerEncryption.Tls => "tls",
-                    _ => "unknown",
-                }
-            );
-            return _text.Format("peers", "connection", transport, direction, encryption);
-        }
-    }
+    public string ConnectionText => State == PeerState.Known ? "—" : TransportText;
     public event PropertyChangedEventHandler? PropertyChanged;
 
     internal Peer(
@@ -205,13 +203,15 @@ public sealed class Peer : INotifyPropertyChanged
             nameof(ClientHint),
             nameof(DownloadHint),
             nameof(UploadHint),
+            nameof(ConnectionHint),
             nameof(ConnectionText)
         );
         Incoming = Set(
             Incoming,
             !known && data.GetProperty("incoming").GetBoolean(),
             nameof(Incoming),
-            nameof(ConnectionText)
+            nameof(DirectionGlyph),
+            nameof(ConnectionHint)
         );
         State = Set(
             State,
@@ -232,6 +232,9 @@ public sealed class Peer : INotifyPropertyChanged
             nameof(UploadText),
             nameof(DownloadedText),
             nameof(UploadedText),
+            nameof(DirectionGlyph),
+            nameof(EncryptionGlyph),
+            nameof(ConnectionHint),
             nameof(ConnectionText),
             nameof(DownloadHint),
             nameof(UploadHint)
@@ -246,8 +249,8 @@ public sealed class Peer : INotifyPropertyChanged
                 "tls" => PeerEncryption.Tls,
                 _ => PeerEncryption.Unknown,
             },
-            nameof(ConnectionHint),
-            nameof(ConnectionText)
+            nameof(EncryptionGlyph),
+            nameof(ConnectionHint)
         );
         var sources = PeerSource.None;
         foreach (var source in data.GetProperty("sources").EnumerateArray())
@@ -347,6 +350,11 @@ public sealed class Peer : INotifyPropertyChanged
 
     internal void RefreshText() =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+
+    private string TransportText =>
+        _transport == PeerTransport.Unknown
+            ? _text.Get("peers", "unknown")
+            : _transport.ToString().ToUpperInvariant();
 
     private string StateExplanation =>
         _text.Get(

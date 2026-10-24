@@ -17,12 +17,14 @@ public sealed partial class PeerMap
     );
     private const VirtualKey Plus = (VirtualKey)0xBB;
     private const VirtualKey Minus = (VirtualKey)0xBD;
+    private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _navigationTimer;
     private Drag? _drag;
 
     private void ZoomAt(float factor, Vector2 anchor)
     {
         EndDrag(false);
         _viewport.ZoomAt(factor, anchor);
+        ShowNavigation();
     }
 
     private void Fit()
@@ -50,12 +52,20 @@ public sealed partial class PeerMap
             return;
         if (_viewport.IsFitted && FitButton.FocusState != FocusState.Unfocused)
             Focus(FocusState.Programmatic);
-        Navigation.Visibility = _viewport.IsFitted ? Visibility.Collapsed : Visibility.Visible;
+        ShowNavigation();
         ZoomLabel.Text = text.Format("peer_map", "zoom", _viewport.Zoom);
         var fit = text.Get("peer_map", "fit");
         var shortcut = text.Get("shortcuts", "control") + "+" + text.Get("shortcuts", "number_0");
         AutomationProperties.SetName(FitButton, fit);
         ToolTipService.SetToolTip(FitButton, text.Format("shortcuts", "tip", fit, shortcut));
+    }
+
+    private void ShowNavigation()
+    {
+        _navigationTimer.Stop();
+        Navigation.Visibility = IsLoaded && !_viewport.IsFitted ? Visibility.Visible : Visibility.Collapsed;
+        if (Navigation.Visibility == Visibility.Visible && FitButton.FocusState == FocusState.Unfocused)
+            _navigationTimer.Start();
     }
 
     private void OnWheel(object sender, PointerRoutedEventArgs args)
@@ -84,6 +94,7 @@ public sealed partial class PeerMap
         if (!point.Properties.IsLeftButtonPressed || _drag is not null)
             return;
         Focus(FocusState.Pointer);
+        ShowNavigation();
         var start = new Vector2((float)point.Position.X, (float)point.Position.Y);
         _drag = new Drag(args.Pointer.PointerId, start, _viewport.ToMap(start), _viewport.Center, _viewport.Ratio);
         args.Handled = true;

@@ -258,6 +258,8 @@ public sealed class Strings
                 : Format("units", "mib", bytes / (1024 * 1024))
         );
 
+    public string Rate(double value) => value == 0 ? "—" : Format("units", "rate", Bytes(value));
+
     public string Bytes(double value)
     {
         var unit = 0;

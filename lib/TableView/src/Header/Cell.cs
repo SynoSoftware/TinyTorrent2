@@ -9,7 +9,7 @@ namespace Syno.TableView.Header;
 
 /// <summary>
 /// One header cell. It shows the column's own header content when the host supplied any, and a
-/// trimmed one-line label from <see cref="Column.DisplayName"/> when it did not.
+/// one-line label from <see cref="Column.DisplayName"/>, or its optional short name, otherwise.
 /// </summary>
 public sealed partial class Cell : Control
 {
@@ -50,7 +50,7 @@ public sealed partial class Cell : Control
     private FontIcon? _sortGlyph;
     private SortDirection? _sort;
     private Strings _strings = Strings.English;
-    private TextBlock? _label;
+    private FrameworkElement? _label;
 
     public Cell() => DefaultStyleKey = typeof(Cell);
 
@@ -77,33 +77,6 @@ public sealed partial class Cell : Control
             dragging ? "Dragging" : "NotDragging",
             useTransitions: false
         );
-
-    /// <summary>
-    /// Section 10's fit includes the sort glyph. A column that can sort shows no glyph while
-    /// another column is the sorted one, so the measure reveals it and puts it back.
-    /// </summary>
-    internal Size MeasureWithSortGlyph(Size available)
-    {
-        FontIcon? revealed =
-            Column?.CanSort == true && _sortGlyph?.Visibility == Visibility.Collapsed
-                ? _sortGlyph
-                : null;
-
-        if (revealed is not null)
-        {
-            revealed.Visibility = Visibility.Visible;
-        }
-
-        Measure(available);
-        Size desired = DesiredSize;
-
-        if (revealed is not null)
-        {
-            revealed.Visibility = Visibility.Collapsed;
-        }
-
-        return desired;
-    }
 
     internal void SetColumn(Column column)
     {
@@ -189,17 +162,75 @@ public sealed partial class Cell : Control
         }
 
         _presenter.ContentTemplate = null;
-        _label ??= new TextBlock
+        if (Column.ShortName is { Length: > 0 } shortName)
         {
-            TextTrimming = TextTrimming.CharacterEllipsis,
-            TextWrapping = TextWrapping.NoWrap,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        _label.Text = Column.DisplayName;
+            if (_label is not Label label)
+                _label = label = new Label { VerticalAlignment = VerticalAlignment.Center };
+            label.SetNames(Column.DisplayName, shortName);
+        }
+        else
+        {
+            if (_label is not TextBlock label)
+                _label = label = new TextBlock
+                {
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    TextWrapping = TextWrapping.NoWrap,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+            label.Text = Column.DisplayName;
+        }
         ToolTipService.SetToolTip(_label, Column.DisplayName);
         if (!ReferenceEquals(_presenter.Content, _label))
         {
             _presenter.Content = _label;
+        }
+    }
+
+    private sealed partial class Label : Panel
+    {
+        private readonly TextBlock _full = new();
+        private readonly TextBlock _short = new();
+
+        internal Label()
+        {
+            foreach (var label in new[] { _full, _short })
+            {
+                label.TextTrimming = TextTrimming.CharacterEllipsis;
+                label.TextWrapping = TextWrapping.NoWrap;
+                AutomationProperties.SetAccessibilityView(label, AccessibilityView.Raw);
+                Children.Add(label);
+            }
+        }
+
+        internal void SetNames(string full, string shortName)
+        {
+            _full.Text = full;
+            _short.Text = shortName;
+        }
+
+        protected override Size MeasureOverride(Size availableSize)
+        {
+            var natural = new Size(double.PositiveInfinity, availableSize.Height);
+            _full.Measure(natural);
+            _short.Measure(natural);
+            // Fits have no width constraint; the short name keeps the header from
+            // widening a column whose values need less room.
+            var width = double.IsPositiveInfinity(availableSize.Width)
+                || _full.DesiredSize.Width > availableSize.Width
+                ? _short.DesiredSize.Width
+                : _full.DesiredSize.Width;
+            return new Size(width, Math.Max(_full.DesiredSize.Height, _short.DesiredSize.Height));
+        }
+
+        protected override Size ArrangeOverride(Size finalSize)
+        {
+            var full = _full.DesiredSize.Width <= finalSize.Width;
+            _full.Opacity = full ? 1 : 0;
+            _short.Opacity = full ? 0 : 1;
+            var bounds = new Rect(new Point(), finalSize);
+            _full.Arrange(bounds);
+            _short.Arrange(bounds);
+            return finalSize;
         }
     }
 }

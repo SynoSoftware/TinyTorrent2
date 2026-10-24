@@ -133,37 +133,32 @@
                 <Setter Property="VerticalAlignment" Value="Center" />
               </Style>
             </Grid.Resources>
-            <Grid Padding="{TemplateBinding Padding}">
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-              </Grid.ColumnDefinitions>
-
-              <ContentPresenter
-                x:Name="PART_Header"
-                Grid.Column="0"
-                Foreground="{TemplateBinding Foreground}"
-                HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                VerticalAlignment="Center"
-              />
+            <Border Padding="{TemplateBinding Padding}">
+              <header:Content>
+                <ContentPresenter
+                  x:Name="PART_Header"
+                  Foreground="{TemplateBinding Foreground}"
+                  HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                  VerticalAlignment="Center"
+                />
 
               <!--
                                 Section 9's direction glyph on the active header. The state itself is
                                 on the cell as AutomationProperties.ItemStatus, so the glyph is a
                                 decoration the automation tree does not need to repeat.
                             -->
-              <FontIcon
-                x:Name="PART_SortGlyph"
-                Grid.Column="1"
-                Margin="4,0,0,0"
-                FontSize="14"
-                Glyph="&#xE70E;"
-                Foreground="{ThemeResource TextFillColorPrimaryBrush}"
-                VerticalAlignment="Center"
-                AutomationProperties.AccessibilityView="Raw"
-                Visibility="Collapsed"
-              />
-            </Grid>
+                <FontIcon
+                  x:Name="PART_SortGlyph"
+                  Margin="4,0,0,0"
+                  FontSize="14"
+                  Glyph="&#xE70E;"
+                  Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                  VerticalAlignment="Center"
+                  AutomationProperties.AccessibilityView="Raw"
+                  Visibility="Collapsed"
+                />
+              </header:Content>
+            </Border>
 
             <!--
                             The visible half of section 10's resize separator; the strip's grab

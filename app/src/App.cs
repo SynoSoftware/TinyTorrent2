@@ -53,6 +53,8 @@ public partial class App : Application
     {
         Resources["LucideFont"] = Syno.Lucide.Font;
         Resources["FlagsFont"] = Syno.Flags.Font;
+        Resources["TinyTorrentDownloadGlyph"] = Syno.Lucide.ArrowDown;
+        Resources["TinyTorrentUploadGlyph"] = Syno.Lucide.ArrowUp;
         Marshal.ThrowExceptionForHR(SetCurrentProcessExplicitAppUserModelID("Syno.TinyTorrent"));
         // The engine owns startup isolation; only its window starts here.
         var fromEngine = Environment.GetCommandLineArgs().Contains("--engine");

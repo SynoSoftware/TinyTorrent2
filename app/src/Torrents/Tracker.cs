@@ -22,7 +22,7 @@ public sealed class Tracker : INotifyPropertyChanged
     public string StatusGlyph =>
         Status switch
         {
-            TrackerStatus.Waiting => Syno.Lucide.Clock,
+            TrackerStatus.Waiting => Syno.Lucide.Hourglass,
             TrackerStatus.Announcing => Syno.Lucide.RadioTower,
             TrackerStatus.Working => Syno.Lucide.CircleCheck,
             TrackerStatus.Error => Syno.Lucide.CircleAlert,

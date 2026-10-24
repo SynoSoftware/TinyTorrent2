@@ -271,7 +271,7 @@
                     <FontIcon
                       Style="{StaticResource TinyTorrentStatusIconStyle}"
                       FontFamily="{x:Bind icons:Lucide.Font}"
-                      Glyph="{x:Bind icons:Lucide.ArrowDown}"
+                      Glyph="{ThemeResource TinyTorrentDownloadGlyph}"
                       Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
                       AutomationProperties.AccessibilityView="Raw"
                     />
@@ -297,7 +297,7 @@
                     <FontIcon
                       Style="{StaticResource TinyTorrentStatusIconStyle}"
                       FontFamily="{x:Bind icons:Lucide.Font}"
-                      Glyph="{x:Bind icons:Lucide.ArrowUp}"
+                      Glyph="{ThemeResource TinyTorrentUploadGlyph}"
                       Foreground="{ThemeResource TinyTorrentUploadBrush}"
                       AutomationProperties.AccessibilityView="Raw"
                     />
@@ -651,7 +651,7 @@
                 x:Name="EndpointColumn"
                 Id="endpoint"
                 Width="220"
-                MinWidth="160"
+                CanShrink="False"
                 CanHide="False"
               >
                 <table:Column.CellTemplate>
@@ -668,17 +668,16 @@
                 x:Name="PeerDownColumn"
                 Id="down"
                 Width="120"
-                MinWidth="96"
+                CanShrink="False"
                 CellAlignment="Right"
               >
                 <table:Column.CellTemplate>
                   <DataTemplate x:DataType="torrents:Peer">
-                    <TextBlock
-                      Text="{x:Bind DownloadText, Mode=OneWay}"
+                    <controls:Field
+                      Style="{StaticResource TinyTorrentDownloadFieldStyle}"
+                      Label="{x:Bind DownloadText, Mode=OneWay}"
                       ToolTipService.ToolTip="{x:Bind DownloadHint, Mode=OneWay}"
                       AutomationProperties.HelpText="{x:Bind DownloadHint, Mode=OneWay}"
-                      Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
-                      VerticalAlignment="Center"
                     />
                   </DataTemplate>
                 </table:Column.CellTemplate>
@@ -687,17 +686,16 @@
                 x:Name="PeerUpColumn"
                 Id="up"
                 Width="120"
-                MinWidth="96"
+                CanShrink="False"
                 CellAlignment="Right"
               >
                 <table:Column.CellTemplate>
                   <DataTemplate x:DataType="torrents:Peer">
-                    <TextBlock
-                      Text="{x:Bind UploadText, Mode=OneWay}"
+                    <controls:Field
+                      Style="{StaticResource TinyTorrentUploadFieldStyle}"
+                      Label="{x:Bind UploadText, Mode=OneWay}"
                       ToolTipService.ToolTip="{x:Bind UploadHint, Mode=OneWay}"
                       AutomationProperties.HelpText="{x:Bind UploadHint, Mode=OneWay}"
-                      Foreground="{ThemeResource TinyTorrentUploadBrush}"
-                      VerticalAlignment="Center"
                     />
                   </DataTemplate>
                 </table:Column.CellTemplate>
@@ -706,7 +704,7 @@
                 x:Name="PeerProgressColumn"
                 Id="progress"
                 Width="100"
-                MinWidth="80"
+                CanShrink="False"
                 CellAlignment="Right"
               >
                 <table:Column.CellTemplate>
@@ -718,7 +716,7 @@
                   </DataTemplate>
                 </table:Column.CellTemplate>
               </table:Column>
-              <table:Column x:Name="PeerStateColumn" Id="state" Width="120" MinWidth="112">
+              <table:Column x:Name="PeerStateColumn" Id="state" Width="120" CanShrink="False">
                 <table:Column.CellTemplate>
                   <DataTemplate x:DataType="torrents:Peer">
                     <Grid
@@ -747,7 +745,7 @@
                   </DataTemplate>
                 </table:Column.CellTemplate>
               </table:Column>
-              <table:Column x:Name="ClientColumn" Id="client" Width="180" MinWidth="96">
+              <table:Column x:Name="ClientColumn" Id="client" Width="180" CanShrink="False">
                 <table:Column.CellTemplate>
                   <DataTemplate x:DataType="torrents:Peer">
                     <TextBlock
@@ -761,7 +759,7 @@
                 </table:Column.CellTemplate>
               </table:Column>
               <!-- Keep the saved location column's identity for Country. -->
-              <table:Column x:Name="CountryColumn" Id="location" Width="180" MinWidth="140">
+              <table:Column x:Name="CountryColumn" Id="location" Width="180" CanShrink="False">
                 <table:Column.CellTemplate>
                   <DataTemplate x:DataType="torrents:Peer">
                     <Grid
@@ -790,27 +788,58 @@
                   </DataTemplate>
                 </table:Column.CellTemplate>
               </table:Column>
-              <table:Column x:Name="CityColumn" Id="city" Width="160" MinWidth="112">
+              <table:Column x:Name="CityColumn" Id="city" Width="160" CanShrink="False">
                 <table:Column.CellTemplate>
                   <DataTemplate x:DataType="torrents:Peer">
-                    <TextBlock
-                      Text="{x:Bind CityText, Mode=OneWay}"
+                    <controls:Field
+                      Style="{StaticResource TinyTorrentInlineFieldStyle}"
+                      Glyph="{x:Bind icons:Lucide.BuildingComplex}"
+                      Label="{x:Bind CityText, Mode=OneWay}"
                       ToolTipService.ToolTip="{x:Bind CityText, Mode=OneWay}"
-                      VerticalAlignment="Center"
-                      TextTrimming="CharacterEllipsis"
                     />
                   </DataTemplate>
                 </table:Column.CellTemplate>
               </table:Column>
-              <table:Column x:Name="ConnectionColumn" Id="connection" Width="220" MinWidth="120">
+              <table:Column x:Name="ConnectionColumn" Id="connection" Width="220" CanShrink="False">
                 <table:Column.CellTemplate>
                   <DataTemplate x:DataType="torrents:Peer">
-                    <TextBlock
-                      Text="{x:Bind ConnectionText, Mode=OneWay}"
+                    <StackPanel
+                      Orientation="Horizontal"
+                      Spacing="6"
                       ToolTipService.ToolTip="{x:Bind ConnectionHint, Mode=OneWay}"
-                      AutomationProperties.HelpText="{x:Bind ConnectionHint, Mode=OneWay}"
                       VerticalAlignment="Center"
-                    />
+                    >
+                      <Grid Visibility="{x:Bind controls:Visibilities.HasText(DirectionGlyph), Mode=OneWay}">
+                        <FontIcon
+                          FontFamily="{StaticResource LucideFont}"
+                          Glyph="{x:Bind DirectionGlyph, Mode=OneWay}"
+                          Visibility="{x:Bind Incoming, Mode=OneWay}"
+                          FontSize="{StaticResource TinyTorrentInlineIconSize}"
+                          Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                          AutomationProperties.AccessibilityView="Raw"
+                        />
+                        <FontIcon
+                          FontFamily="{StaticResource LucideFont}"
+                          Glyph="{x:Bind DirectionGlyph, Mode=OneWay}"
+                          Visibility="{x:Bind controls:Visibilities.Unless(Incoming), Mode=OneWay}"
+                          FontSize="{StaticResource TinyTorrentInlineIconSize}"
+                          Foreground="{ThemeResource TinyTorrentUploadBrush}"
+                          AutomationProperties.AccessibilityView="Raw"
+                        />
+                      </Grid>
+                      <TextBlock
+                        Text="{x:Bind ConnectionText, Mode=OneWay}"
+                        AutomationProperties.Name="{x:Bind ConnectionHint, Mode=OneWay}"
+                        VerticalAlignment="Center"
+                      />
+                      <FontIcon
+                        FontFamily="{StaticResource LucideFont}"
+                        Glyph="{x:Bind EncryptionGlyph, Mode=OneWay}"
+                        Visibility="{x:Bind controls:Visibilities.HasText(EncryptionGlyph), Mode=OneWay}"
+                        FontSize="{StaticResource TinyTorrentInlineIconSize}"
+                        AutomationProperties.AccessibilityView="Raw"
+                      />
+                    </StackPanel>
                   </DataTemplate>
                 </table:Column.CellTemplate>
               </table:Column>
@@ -818,14 +847,14 @@
                 x:Name="PeerDownloadedColumn"
                 Id="downloaded"
                 Width="120"
-                MinWidth="96"
+                CanShrink="False"
                 CellAlignment="Right"
               >
                 <table:Column.CellTemplate>
                   <DataTemplate x:DataType="torrents:Peer">
-                    <TextBlock
-                      Text="{x:Bind DownloadedText, Mode=OneWay}"
-                      VerticalAlignment="Center"
+                    <controls:Field
+                      Style="{StaticResource TinyTorrentDownloadFieldStyle}"
+                      Label="{x:Bind DownloadedText, Mode=OneWay}"
                     />
                   </DataTemplate>
                 </table:Column.CellTemplate>
@@ -834,14 +863,14 @@
                 x:Name="PeerUploadedColumn"
                 Id="uploaded"
                 Width="120"
-                MinWidth="96"
+                CanShrink="False"
                 CellAlignment="Right"
               >
                 <table:Column.CellTemplate>
                   <DataTemplate x:DataType="torrents:Peer">
-                    <TextBlock
-                      Text="{x:Bind UploadedText, Mode=OneWay}"
-                      VerticalAlignment="Center"
+                    <controls:Field
+                      Style="{StaticResource TinyTorrentUploadFieldStyle}"
+                      Label="{x:Bind UploadedText, Mode=OneWay}"
                     />
                   </DataTemplate>
                 </table:Column.CellTemplate>
@@ -924,14 +953,14 @@
                   </DataTemplate>
                 </table:Column.CellTemplate>
               </table:Column>
-              <table:Column x:Name="TierColumn" Id="tier" Width="64" CellAlignment="Right">
+              <table:Column x:Name="TierColumn" Id="tier" Width="64" CanShrink="False" CellAlignment="Right">
                 <table:Column.CellTemplate>
                   <DataTemplate x:DataType="torrents:Tracker">
                     <TextBlock Text="{x:Bind TierText, Mode=OneWay}" VerticalAlignment="Center" />
                   </DataTemplate>
                 </table:Column.CellTemplate>
               </table:Column>
-              <table:Column x:Name="TrackerStatusColumn" Id="status" Width="120">
+              <table:Column x:Name="TrackerStatusColumn" Id="status" Width="120" CanShrink="False">
                 <table:Column.CellTemplate>
                   <DataTemplate x:DataType="torrents:Tracker">
                     <Grid
@@ -970,19 +999,26 @@
                   </DataTemplate>
                 </table:Column.CellTemplate>
               </table:Column>
-              <table:Column x:Name="SeedsColumn" Id="seeds" Width="90" CellAlignment="Right">
+              <table:Column x:Name="SeedsColumn" Id="seeds" Width="90" CanShrink="False" CellAlignment="Right">
                 <table:Column.CellTemplate>
                   <DataTemplate x:DataType="torrents:Tracker">
-                    <TextBlock Text="{x:Bind SeedsText, Mode=OneWay}" VerticalAlignment="Center" />
+                    <controls:Field
+                      Style="{StaticResource TinyTorrentInlineFieldStyle}"
+                      Glyph="{x:Bind icons:Lucide.Sprout}"
+                      DimsZeros="True"
+                      Label="{x:Bind SeedsText, Mode=OneWay}"
+                    />
                   </DataTemplate>
                 </table:Column.CellTemplate>
               </table:Column>
-              <table:Column x:Name="LeechersColumn" Id="leechers" Width="90" CellAlignment="Right">
+              <table:Column x:Name="LeechersColumn" Id="leechers" Width="90" CanShrink="False" CellAlignment="Right">
                 <table:Column.CellTemplate>
                   <DataTemplate x:DataType="torrents:Tracker">
-                    <TextBlock
-                      Text="{x:Bind LeechersText, Mode=OneWay}"
-                      VerticalAlignment="Center"
+                    <controls:Field
+                      Style="{StaticResource TinyTorrentInlineFieldStyle}"
+                      Glyph="{x:Bind icons:Lucide.UsersRoundCollaboration}"
+                      DimsZeros="True"
+                      Label="{x:Bind LeechersText, Mode=OneWay}"
                     />
                   </DataTemplate>
                 </table:Column.CellTemplate>
@@ -991,6 +1027,7 @@
                 x:Name="DownloadsColumn"
                 Id="downloads"
                 Width="100"
+                CanShrink="False"
                 CellAlignment="Right"
               >
                 <table:Column.Header>
@@ -1013,7 +1050,7 @@
                   </DataTemplate>
                 </table:Column.CellTemplate>
               </table:Column>
-              <table:Column x:Name="NextColumn" Id="next" Width="140">
+              <table:Column x:Name="NextColumn" Id="next" Width="140" CanShrink="False">
                 <table:Column.Header>
                   <TextBlock
                     Text="{x:Bind Model.Text.Get('trackers', 'next')}"

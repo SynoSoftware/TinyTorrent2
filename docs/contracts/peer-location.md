@@ -271,8 +271,10 @@ wheel deltas. A drag does not select a location. Show the SizeAll cursor only
 after the drag threshold is crossed, restoring the normal cursor when the drag
 ends or is cancelled. Input moves the view directly, without added easing,
 inertia or a zoom animation. A compact control at the bottom centre
-shows the zoom factor, such as 2×, and a Lucide Fit button whenever the view is zoomed
-or panned. Fit shows the whole world with the origin in the centre and returns
+shows the zoom factor, such as 2×, and a Lucide Fit button when the view is zoomed
+or panned. It hides after three seconds of inactivity and returns on pointer
+interaction, focus or navigation. The Fit button stays visible while focused.
+Fit shows the whole world with the origin in the centre and returns
 focus to the map when its button disappears. The menu exposes Zoom in, Zoom out
 and Fit, including shortcut text. No permanent toolbar or on-map hint is added.
 

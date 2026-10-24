@@ -59,6 +59,7 @@ public class ColumnFitTests
         TestHost.RunAsync(async () =>
         {
             Column column = Column("a", 400);
+            column.ShortName = "Q";
             column.Header = new Border { Width = 140, Height = 20 };
             Table table = await LoadAsync(Rows(20, 40), column);
 
@@ -70,6 +71,77 @@ public class ColumnFitTests
                 0d,
                 "the separator line is drawn over the inset and adds no width"
             );
+        });
+
+    [TestMethod]
+    public Task AShortNameDoesNotLetTheFullHeaderWidenAFit() =>
+        TestHost.RunAsync(async () =>
+        {
+            Column column = Column("a", 400);
+            column.DisplayName = new string('W', 40);
+            column.ShortName = "Q";
+            column.MinWidth = 100;
+            Table table = await LoadAsync(Rows(20, 40), column);
+
+            table.Fit(column);
+
+            Assert.AreEqual(100d, TableHarness.EffectiveWidth(table, "a"), 0d);
+        });
+
+    [TestMethod]
+    public Task SortingUsesSpareSpaceWithoutChangingAFittedWidth() =>
+        TestHost.RunAsync(async () =>
+        {
+            Column tight = Column("tight", 400);
+            tight.MinWidth = 124;
+            Column spare = Column("spare", 400);
+            spare.MinWidth = 200;
+            foreach (var column in new[] { tight, spare })
+                column.Header = new Border { Width = 100, Height = 20 };
+            Table table = Build(tight, spare);
+            table.Schema<FitRow>()
+                .SortKey(tight, row => row.CellWidth)
+                .SortKey(spare, row => row.CellWidth);
+            table.ItemsSource = Rows(20, 40);
+            await TableHarness.LoadAsync(table);
+            await SettleAsync(table);
+
+            table.FitColumns();
+            table.Sort = new Sort(tight);
+            await SettleAsync(table);
+            var headers = Descendants<Header.Cell>(table).ToArray();
+            var tightHeader = headers[0];
+            var tightGlyph = Descendants<FontIcon>(tightHeader).Single();
+            Assert.AreEqual(124d, TableHarness.EffectiveWidth(table, "tight"), 0d);
+            Assert.AreEqual(0d, tightGlyph.Opacity, 0d);
+            Assert.AreEqual(0d, GlyphSpace(tightGlyph), 0d);
+            Assert.AreSame(tight, table.Sort?.Column);
+
+            TableHarness.SetWidth(table, "tight", 160);
+            await SettleAsync(table);
+            Assert.AreEqual(1d, tightGlyph.Opacity, 0d);
+            Assert.IsTrue(GlyphSpace(tightGlyph) > 0);
+            Assert.AreEqual(160d, TableHarness.EffectiveWidth(table, "tight"), 0d);
+
+            table.Fit(tight);
+            await SettleAsync(table);
+            Assert.AreEqual(124d, TableHarness.EffectiveWidth(table, "tight"), 0d);
+            Assert.AreEqual(0d, tightGlyph.Opacity, 0d);
+            Assert.AreEqual(0d, GlyphSpace(tightGlyph), 0d);
+            Assert.AreSame(tight, table.Sort?.Column);
+
+            table.Sort = new Sort(spare, SortDirection.Descending);
+            await SettleAsync(table);
+            var spareHeader = headers[1];
+            var spareGlyph = Descendants<FontIcon>(spareHeader).Single();
+            Assert.AreEqual(200d, TableHarness.EffectiveWidth(table, "spare"), 0d);
+            Assert.AreEqual(1d, spareGlyph.Opacity, 0d);
+            Assert.IsTrue(GlyphSpace(spareGlyph) > 0);
+            Assert.AreEqual(Visibility.Collapsed, tightGlyph.Visibility);
+
+            table.Sort = null;
+            await SettleAsync(table);
+            Assert.AreEqual(0d, GlyphSpace(spareGlyph), 0d);
         });
 
     [TestMethod]
@@ -625,6 +697,13 @@ public class ColumnFitTests
     }
 
     private static ListView Surface(Table table) => Descendants<ListView>(table).First();
+
+    private static double GlyphSpace(FontIcon glyph)
+    {
+        var panel = (Panel)Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(glyph);
+        var label = (FrameworkElement)panel.Children[0];
+        return panel.ActualWidth - Microsoft.UI.Xaml.Controls.Primitives.LayoutInformation.GetLayoutSlot(label).Width;
+    }
 
     private static IEnumerable<T> Descendants<T>(DependencyObject root)
         where T : DependencyObject

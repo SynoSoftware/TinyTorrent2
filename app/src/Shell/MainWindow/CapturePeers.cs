@@ -19,6 +19,49 @@ namespace Syno.TinyTorrent.Shell;
 
 public sealed partial class MainWindow
 {
+    private async Task CaptureSpeedCoverage(Inspector inspector, InspectorPane pane, string theme, List<string> completed)
+    {
+        inspector.Select(InspectorSection.Speed);
+        await CaptureLayout();
+        var graph = (SpeedGraph)pane.FindName("Speed");
+        var history = typeof(Inspector).GetProperty(nameof(Inspector.History))!;
+        var original = inspector.History;
+        typeof(Inspector).GetMethod("Invalidate", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(inspector, null);
+        typeof(Inspector).GetField("_fetching", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(inspector, true);
+        try
+        {
+            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            foreach (var hours in new[] { 6, 24 })
+            {
+                var start = now - hours * 3600;
+                var samples = Enumerable.Range(0, hours * 60)
+                    .Select(minute =>
+                    {
+                        var first = start + minute * 60;
+                        var gap = minute == hours * 30 ? 3 : 0;
+                        return new SpeedSample(first + 59, 0,
+                            minute % 120 < 6 ? 65536 : 0, first + gap, 60 - gap);
+                    }).ToArray();
+                history.SetValue(inspector, samples);
+                inspector.Refresh();
+                var ranges = (SelectorBar)graph.FindName("Ranges");
+                ranges.SelectedItem = (SelectorBarItem)graph.FindName(hours == 6 ? "SixHours" : "Day");
+                var name = $"speed-{theme}-{hours}h-brief-gap";
+                await CaptureUi(name);
+                completed.Add(name);
+            }
+        }
+        finally
+        {
+            history.SetValue(inspector, original);
+            inspector.Select(InspectorSection.Peers);
+            inspector.Refresh();
+            await CaptureLayout();
+        }
+    }
+
     private async Task CapturePeers(Torrent target, List<object> outcomes, List<string> completed)
     {
         await ShowTorrents();
@@ -112,10 +155,23 @@ public sealed partial class MainWindow
                         {
                             client = "Capture fixture",
                             transport = "tcp",
-                            incoming = false,
-                            state = index % 3 == 0 ? "known" : "connected",
+                            incoming = index % 2 == 0,
+                            state = index switch
+                            {
+                                1 => "connecting",
+                                2 => "handshake",
+                                4 => "unknown",
+                                _ => index % 3 == 0 ? "known" : "connected",
+                            },
                             role = index % 3 == 0 ? "unknown" : index % 3 == 1 ? "seed" : "leecher",
-                            encryption = "rc4",
+                            encryption = (index % 5) switch
+                            {
+                                0 => "unknown",
+                                1 => "plain",
+                                2 => "handshake",
+                                3 => "rc4",
+                                _ => "tls",
+                            },
                             sources = new[] { "tracker" },
                             interested = true,
                             choked = false,
@@ -163,16 +219,26 @@ public sealed partial class MainWindow
         // Theme and layout saves otherwise refresh the empty engine peer list over the fixture.
         replied.SetValue(client, null);
         await CaptureLayout();
-        typeof(Inspector)
-            .GetMethod("Invalidate", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .Invoke(inspector, null);
-        fetching.SetValue(inspector, true);
-        locating.SetValue(inspector, true);
-        originField.SetValue(inspector, origin);
-        originKey.SetValue(inspector, (Model.PublicAddress, Model.Geolocation.Version));
+        void RestorePeers()
+        {
+            typeof(Inspector)
+                .GetMethod("Invalidate", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .Invoke(inspector, null);
+            fetching.SetValue(inspector, true);
+            locating.SetValue(inspector, true);
+            originField.SetValue(inspector, origin);
+            originKey.SetValue(inspector, (Model.PublicAddress, Model.Geolocation.Version));
+            typeof(Inspector).GetProperty(nameof(Inspector.Peers))!.SetValue(inspector, peers);
+            inspector.Refresh();
+        }
         try
         {
-            typeof(Inspector).GetProperty(nameof(Inspector.Peers))!.SetValue(inspector, peers);
+            var connections = (Syno.TableView.Table)pane.FindName("Peers");
+            connections.Layout = connections.Layout with
+            {
+                Order = ["connection", "state", "down", "up", "downloaded", "uploaded", "city", "endpoint"],
+            };
+            RestorePeers();
             if (ReviewMode == CaptureMode.Memory)
             {
                 await CaptureTableMemory(inspector, pane, outcomes);
@@ -182,6 +248,30 @@ public sealed partial class MainWindow
             {
                 await Model.Settings.SelectTheme(theme);
                 await CaptureReady(Model, () => Model.Theme == theme && Model.CanClose);
+                pane.Layout = pane.Layout with { View = pane.Layout.View with { Layout = PeerLayout.Table } };
+                AppWindow.Resize(new SizeInt32(1040, 680));
+                await CaptureLayout();
+                connections.FillWidth();
+                await CaptureUi($"peers-{theme}-connection-icons");
+                outcomes.Add(new
+                {
+                    journey = "zero-count presentation",
+                    theme,
+                    fields = CaptureElements(Root).OfType<Field>().Where(field => field.DimsZeros)
+                        .Select(field => new
+                        {
+                            field.Label,
+                            ranges = CaptureElements(field).OfType<TextBlock>()
+                                .SelectMany(block => block.TextHighlighters)
+                                .Select(highlighter => new
+                                {
+                                    color = (highlighter.Foreground as Microsoft.UI.Xaml.Media.SolidColorBrush)?.Color.ToString(),
+                                    spans = highlighter.Ranges.Select(range => new { range.StartIndex, range.Length }).ToArray(),
+                                }).ToArray(),
+                        }).ToArray(),
+                });
+                await CaptureSpeedCoverage(inspector, pane, theme, completed);
+                RestorePeers();
                 foreach (var precision in new[] { "countries", "coordinates", "mixed" })
                 {
                     for (var index = 0; index < peers.Length; index++)
@@ -371,6 +461,39 @@ public sealed partial class MainWindow
             // The journeys use the ratio that zooming or panning to the view gives.
             void View(float zoom, Vector2 focus) =>
                 viewport.SetView(zoom, focus, viewport.CalculateRatio(zoom, focus.Y));
+            var navigation = (StackPanel)centred.FindName("Navigation");
+            var hidden = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var token = navigation.RegisterPropertyChangedCallback(
+                Microsoft.UI.Xaml.UIElement.VisibilityProperty,
+                (_, _) =>
+                {
+                    if (navigation.Visibility == Microsoft.UI.Xaml.Visibility.Collapsed)
+                        hidden.TrySetResult();
+                }
+            );
+            try
+            {
+                View(2f, Vector2.Zero);
+                await CaptureUi("peers-navigation-visible");
+                await hidden.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                await CaptureUi("peers-navigation-idle");
+                Torrents.Focus(Microsoft.UI.Xaml.FocusState.Keyboard);
+                await CaptureLayout();
+                centred.Focus(Microsoft.UI.Xaml.FocusState.Keyboard);
+                await CaptureLayout();
+                var fit = (Button)centred.FindName("FitButton");
+                if (!fit.Focus(Microsoft.UI.Xaml.FocusState.Keyboard))
+                    throw new InvalidOperationException("The map Fit button could not receive keyboard focus.");
+                await CaptureLayout();
+                await Task.Delay(TimeSpan.FromSeconds(3));
+                await CaptureUi("peers-navigation-focused");
+                centred.Focus(Microsoft.UI.Xaml.FocusState.Programmatic);
+                completed.Add("peer map navigation idle and focus");
+            }
+            finally
+            {
+                navigation.UnregisterPropertyChangedCallback(Microsoft.UI.Xaml.UIElement.VisibilityProperty, token);
+            }
             List<(string Name, Location Origin)> homes =
             [
                 ("tokyo", new Location("JP", new Place("JP", null), null, new GeoPoint(139.69, 35.69))),

@@ -4,7 +4,7 @@ namespace Syno.TableView;
 
 /// <summary>
 /// One column definition. Setup-only schema: <see cref="Table"/> captures every value here
-/// at its first <c>Loaded</c>. Header content and DisplayName remain live afterwards.
+/// at its first <c>Loaded</c>. Header content and names remain live afterwards.
 /// </summary>
 public sealed partial class Column : DependencyObject
 {
@@ -28,6 +28,23 @@ public sealed partial class Column : DependencyObject
     {
         get => (string)GetValue(DisplayNameProperty);
         set => SetValue(DisplayNameProperty, value);
+    }
+
+    /// <summary>
+    /// Optional shorter header label. Fits use it as the header minimum; menus and
+    /// accessibility retain DisplayName. Custom header content takes precedence.
+    /// </summary>
+    public static readonly DependencyProperty ShortNameProperty = DependencyProperty.Register(
+        nameof(ShortName),
+        typeof(string),
+        typeof(Column),
+        new PropertyMetadata(null, OnHeaderChanged)
+    );
+
+    public string? ShortName
+    {
+        get => (string?)GetValue(ShortNameProperty);
+        set => SetValue(ShortNameProperty, value);
     }
 
     internal event EventHandler? TextChanged;
@@ -71,7 +88,7 @@ public sealed partial class Column : DependencyObject
     public double Width { get; set; } = 150;
 
     /// <summary>Lower width bound in DIPs. Finite and non-negative.</summary>
-    public double MinWidth { get; set; } = 48;
+    public double MinWidth { get; set; }
 
     /// <summary>Whether the column is shown before the user or a restored layout says otherwise.</summary>
     public bool IsVisible { get; set; } = true;

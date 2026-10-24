@@ -78,11 +78,11 @@ public sealed partial class Inspector
         : _owner.Selected;
 
     public string DownloadText =>
-        IsAvailable ? Text.Format("units", "rate", Text.Bytes(Scope.Sum(torrent => torrent.DownloadRate)))
+        IsAvailable ? Text.Rate(Scope.Sum(torrent => torrent.DownloadRate))
         : "—";
 
     public string UploadText =>
-        IsAvailable ? Text.Format("units", "rate", Text.Bytes(Scope.Sum(torrent => torrent.UploadRate)))
+        IsAvailable ? Text.Rate(Scope.Sum(torrent => torrent.UploadRate))
         : "—";
 
     public bool IsGlobal

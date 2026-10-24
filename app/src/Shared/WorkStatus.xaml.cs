@@ -167,7 +167,7 @@ public sealed partial class WorkStatus : UserControl
         Count.MinWidth = _probe.DesiredSize.Width;
         Icon.Glyph =
             observation.Execution is WorkExecution.Waiting
-                ? Lucide.Clock
+                ? Lucide.Hourglass
                 : observation.Description switch
                 {
                     WorkDescription.Imdb => Lucide.Database,

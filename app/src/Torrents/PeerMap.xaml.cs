@@ -39,6 +39,15 @@ public sealed partial class PeerMap : UserControl
     {
         _model = model;
         InitializeComponent();
+        _navigationTimer = DispatcherQueue.CreateTimer();
+        _navigationTimer.Interval = TimeSpan.FromSeconds(3);
+        _navigationTimer.IsRepeating = false;
+        _navigationTimer.Tick += (_, _) => Navigation.Visibility = Visibility.Collapsed;
+        PointerEntered += (_, _) => ShowNavigation();
+        AddHandler(PointerMovedEvent, new PointerEventHandler((_, _) => ShowNavigation()), true);
+        GotFocus += (_, _) => ShowNavigation();
+        PreviewKeyDown += (_, _) => ShowNavigation();
+        FitButton.RegisterPropertyChangedCallback(FocusStateProperty, (_, _) => ShowNavigation());
         Loaded += OnLoaded;
         Unloaded += (_, _) => Stop();
         ActualThemeChanged += (_, _) => _canvas?.Invalidate();
@@ -112,6 +121,7 @@ public sealed partial class PeerMap : UserControl
     private async void OnLoaded(object sender, RoutedEventArgs args)
     {
         _model.PropertyChanged += OnModelChanged;
+        RefreshNavigation();
         RefreshPlace();
         try
         {
@@ -227,6 +237,8 @@ public sealed partial class PeerMap : UserControl
         CompositionTarget.Rendering -= OnPreparing;
         _queued = false;
         EndDrag(true);
+        _navigationTimer.Stop();
+        Navigation.Visibility = Visibility.Collapsed;
         ContextFlyout?.Hide();
         _ready = false;
         _renderer?.Dispose();

@@ -187,8 +187,8 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
                 group.Name,
                 group.Count,
                 group.Active,
-                text.Format("units", "rate", text.Bytes(group.Down)),
-                text.Format("units", "rate", text.Bytes(group.Up)),
+                text.Rate(group.Down),
+                text.Rate(group.Up),
                 group.Seeds,
                 group.Leechers,
                 group.Unknown
@@ -201,8 +201,8 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
                         "peer_map",
                         "estimated",
                         area,
-                        text.Format("units", "rate", text.Bytes(group.Down * destination.Share)),
-                        text.Format("units", "rate", text.Bytes(group.Up * destination.Share))
+                        text.Rate(group.Down * destination.Share),
+                        text.Rate(group.Up * destination.Share)
                     );
             }
             else

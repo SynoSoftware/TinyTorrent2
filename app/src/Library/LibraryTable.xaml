@@ -191,54 +191,61 @@
             Id="title"
             CellTemplate="{StaticResource Title}"
             Width="300"
-            MinWidth="160"
             CanHide="False"
           />
-          <table:Column Id="type" CellTemplate="{StaticResource Type}" />
-          <table:Column Id="year" CellTemplate="{StaticResource Year}" />
+          <table:Column Id="type" CellTemplate="{StaticResource Type}" CanShrink="False" />
+          <table:Column Id="year" CellTemplate="{StaticResource Year}" CanShrink="False" />
           <table:Column
             Id="duration"
+            CanShrink="False"
             CellTemplate="{StaticResource Duration}"
             CellAlignment="Right"
           />
           <table:Column
             Id="resolution"
+            CanShrink="False"
             CellTemplate="{StaticResource Resolution}"
             IsVisible="False"
           />
           <table:Column
             Id="bitrate"
+            CanShrink="False"
             CellTemplate="{StaticResource Bitrate}"
             CellAlignment="Right"
             IsVisible="False"
           />
-          <table:Column Id="subtitles" CellTemplate="{StaticResource Subtitles}" />
+          <table:Column Id="subtitles" CellTemplate="{StaticResource Subtitles}" CanShrink="False" />
           <table:Column
             Id="imdb"
+            CanShrink="False"
             CellTemplate="{StaticResource ImdbRating}"
             Width="110"
             CellAlignment="Right"
           />
           <table:Column
             Id="tmdb"
+            CanShrink="False"
             CellTemplate="{StaticResource TmdbRating}"
             Width="110"
             CellAlignment="Right"
           />
           <table:Column
             Id="rottentomatoes"
+            CanShrink="False"
             CellTemplate="{StaticResource RottenTomatoesRating}"
             Width="140"
             CellAlignment="Right"
           />
           <table:Column
             Id="popcornmeter"
+            CanShrink="False"
             CellTemplate="{StaticResource PopcornmeterRating}"
             Width="120"
             CellAlignment="Right"
           />
           <table:Column
             Id="metacritic"
+            CanShrink="False"
             CellTemplate="{StaticResource MetacriticRating}"
             Width="110"
             CellAlignment="Right"
@@ -248,6 +255,7 @@
           <table:Column Id="cast" CellTemplate="{StaticResource Cast}" IsVisible="False" />
           <table:Column
             Id="size"
+            CanShrink="False"
             CellTemplate="{StaticResource Size}"
             Width="110"
             CellAlignment="Right"
@@ -265,7 +273,7 @@
             Width="300"
             IsVisible="False"
           />
-          <table:Column Id="modified" CellTemplate="{StaticResource Modified}" IsVisible="False" />
+          <table:Column Id="modified" CellTemplate="{StaticResource Modified}" CanShrink="False" IsVisible="False" />
         </table:Table.Columns>
       </table:Table>
     </DataTemplate>
@@ -276,20 +284,21 @@
             Id="title"
             CellTemplate="{StaticResource Title}"
             Width="300"
-            MinWidth="160"
             CanHide="False"
           />
           <table:Column Id="artist" CellTemplate="{StaticResource Artist}" />
           <table:Column Id="album" CellTemplate="{StaticResource Album}" />
-          <table:Column Id="track" CellTemplate="{StaticResource Track}" />
+          <table:Column Id="track" CellTemplate="{StaticResource Track}" CanShrink="False" />
           <table:Column
             Id="duration"
+            CanShrink="False"
             CellTemplate="{StaticResource Duration}"
             CellAlignment="Right"
           />
-          <table:Column Id="year" CellTemplate="{StaticResource Year}" />
+          <table:Column Id="year" CellTemplate="{StaticResource Year}" CanShrink="False" />
           <table:Column
             Id="bitrate"
+            CanShrink="False"
             CellTemplate="{StaticResource Bitrate}"
             CellAlignment="Right"
             IsVisible="False"
@@ -309,12 +318,13 @@
           />
           <table:Column
             Id="size"
+            CanShrink="False"
             CellTemplate="{StaticResource Size}"
             Width="110"
             CellAlignment="Right"
             IsVisible="False"
           />
-          <table:Column Id="modified" CellTemplate="{StaticResource Modified}" IsVisible="False" />
+          <table:Column Id="modified" CellTemplate="{StaticResource Modified}" CanShrink="False" IsVisible="False" />
         </table:Table.Columns>
       </table:Table>
     </DataTemplate>
@@ -325,18 +335,18 @@
             Id="name"
             CellTemplate="{StaticResource Name}"
             Width="300"
-            MinWidth="160"
             CanHide="False"
           />
           <table:Column Id="folder" CellTemplate="{StaticResource Folder}" Width="300" />
           <table:Column
             Id="size"
+            CanShrink="False"
             CellTemplate="{StaticResource Size}"
             Width="110"
             CellAlignment="Right"
           />
-          <table:Column Id="modified" CellTemplate="{StaticResource Modified}" />
-          <table:Column Id="kind" CellTemplate="{StaticResource Kind}" IsVisible="False" />
+          <table:Column Id="modified" CellTemplate="{StaticResource Modified}" CanShrink="False" />
+          <table:Column Id="kind" CellTemplate="{StaticResource Kind}" CanShrink="False" IsVisible="False" />
           <table:Column
             Id="title"
             CellTemplate="{StaticResource Title}"
@@ -345,17 +355,20 @@
           />
           <table:Column
             Id="duration"
+            CanShrink="False"
             CellTemplate="{StaticResource Duration}"
             CellAlignment="Right"
             IsVisible="False"
           />
           <table:Column
             Id="resolution"
+            CanShrink="False"
             CellTemplate="{StaticResource Resolution}"
             IsVisible="False"
           />
           <table:Column
             Id="bitrate"
+            CanShrink="False"
             CellTemplate="{StaticResource Bitrate}"
             CellAlignment="Right"
             IsVisible="False"

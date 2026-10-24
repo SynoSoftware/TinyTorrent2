@@ -329,6 +329,16 @@ Label wording and icon use follow
 
 ## Windows, layout, and themes
 
+**Owner ruling: automatic column sizing protects compact facts; manual resizing
+may crop them.** Product tables use TableView's default minimum rather than
+larger per-column minimums, so a deliberate drag is not stopped to preserve
+readability. Compact fields use `CanShrink="False"`; names and titles remain
+flexible. Tracker and Message in Trackers, and folder paths, artist and album
+names, genres and cast in Library also remain flexible, because fitting long
+descriptive text in full can push the other fields off the right edge. The
+shared file browser keeps File flexible and protects Size, Progress and
+Priority. TableView owns the sizing and resize mechanics.
+
 Design against available window space and content pressure, using effective
 pixels. Support monitor/DPI changes, long translations, text scaling, and the
 minimum usable window size. Essential actions remain reachable when content

@@ -549,10 +549,14 @@ public sealed partial class MainWindow
         ProgressColumn.DisplayName = Model.Text.Get("columns", "progress");
         StatusColumn.DisplayName = Model.Text.Get("columns", "status");
         DownColumn.DisplayName = Model.Text.Get("columns", "down");
+        DownColumn.ShortName = Model.Text.Get("columns", "down_short");
         UpColumn.DisplayName = Model.Text.Get("columns", "up");
+        UpColumn.ShortName = Model.Text.Get("columns", "up_short");
         LimitColumn.DisplayName = Model.Text.Get("columns", "limit");
         QueueColumn.DisplayName = Model.Text.Get("columns", "queue");
+        QueueColumn.ShortName = Model.Text.Get("columns", "queue_short");
         EtaColumn.DisplayName = Model.Text.Get("columns", "eta");
+        EtaColumn.ShortName = Model.Text.Get("columns", "eta_short");
         RatioColumn.DisplayName = Model.Text.Get("columns", "ratio");
         SeedsColumn.DisplayName = Model.Text.Get("columns", "seeds");
         PeersColumn.DisplayName = Model.Text.Get("columns", "peers");

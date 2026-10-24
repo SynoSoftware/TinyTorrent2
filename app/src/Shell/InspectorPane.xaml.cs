@@ -185,7 +185,7 @@ public sealed partial class InspectorPane : UserControl
                     .SortKey(CountryColumn, peer => peer.CountryText)
                     .SortKey(CityColumn, peer => peer.CityText)
                     .SortKey(PeerStateColumn, peer => peer.State)
-                    .SortKey(ConnectionColumn, peer => peer.ConnectionText)
+                    .SortKey(ConnectionColumn, peer => peer.ConnectionHint)
                     .SortKey(PeerProgressColumn, peer => peer.Progress)
                     .SortKey(PeerDownColumn, peer => peer.DownloadRate)
                     .SortKey(PeerUpColumn, peer => peer.UploadRate)
@@ -487,9 +487,13 @@ public sealed partial class InspectorPane : UserControl
             ConnectionColumn.DisplayName = text.Get("peers", "connection_label");
             PeerProgressColumn.DisplayName = text.Get("columns", "progress");
             PeerDownColumn.DisplayName = text.Get("columns", "down");
+            PeerDownColumn.ShortName = text.Get("columns", "down_short");
             PeerUpColumn.DisplayName = text.Get("columns", "up");
+            PeerUpColumn.ShortName = text.Get("columns", "up_short");
             PeerDownloadedColumn.DisplayName = text.Get("inspector", "downloaded");
+            PeerDownloadedColumn.ShortName = text.Get("columns", "downloaded_short");
             PeerUploadedColumn.DisplayName = text.Get("peers", "uploaded");
+            PeerUploadedColumn.ShortName = text.Get("columns", "uploaded_short");
         }
         if (Trackers is not null)
         {

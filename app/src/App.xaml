@@ -1642,6 +1642,59 @@
           </Setter.Value>
         </Setter>
       </Style>
+      <Style x:Key="TinyTorrentInlineFieldStyle" TargetType="controls:Field">
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="controls:Field">
+              <Grid ColumnSpacing="6" Background="Transparent">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto" />
+                  <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <FontIcon
+                  FontFamily="{ThemeResource LucideFont}"
+                  Glyph="{TemplateBinding Glyph}"
+                  Foreground="{TemplateBinding Foreground}"
+                  Style="{StaticResource TinyTorrentStatusIconStyle}"
+                  AutomationProperties.AccessibilityView="Raw"
+                />
+                <TextBlock
+                  x:Name="PART_Label"
+                  Grid.Column="1"
+                  Text="{TemplateBinding Label}"
+                  Foreground="{TemplateBinding Foreground}"
+                  TextTrimming="CharacterEllipsis"
+                >
+                  <TextBlock.TextHighlighters>
+                    <TextHighlighter
+                      Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                      Background="Transparent"
+                    />
+                  </TextBlock.TextHighlighters>
+                </TextBlock>
+              </Grid>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
+      <Style
+        x:Key="TinyTorrentDownloadFieldStyle"
+        TargetType="controls:Field"
+        BasedOn="{StaticResource TinyTorrentInlineFieldStyle}"
+      >
+        <Setter Property="Glyph" Value="{ThemeResource TinyTorrentDownloadGlyph}" />
+        <Setter Property="Foreground" Value="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+      </Style>
+      <Style
+        x:Key="TinyTorrentUploadFieldStyle"
+        TargetType="controls:Field"
+        BasedOn="{StaticResource TinyTorrentInlineFieldStyle}"
+      >
+        <Setter Property="Glyph" Value="{ThemeResource TinyTorrentUploadGlyph}" />
+        <Setter Property="Foreground" Value="{ThemeResource TinyTorrentUploadBrush}" />
+      </Style>
       <Style x:Key="TinyTorrentFactStyle" TargetType="controls:Field">
         <Setter Property="IsTabStop" Value="False" />
         <Setter Property="Template">

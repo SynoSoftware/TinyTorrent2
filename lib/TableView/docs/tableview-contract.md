@@ -664,13 +664,14 @@ public sealed class Column : DependencyObject
 {
     public string? Id { get; set; }
     public string DisplayName { get; set; } = string.Empty;
+    public string? ShortName { get; set; }
 
     public object? Header { get; set; }
     public DataTemplate? HeaderTemplate { get; set; }
     public DataTemplate? CellTemplate { get; set; }
 
     public double Width { get; set; } = 150; // DIPs, the baseline
-    public double MinWidth { get; set; } = 48;
+    public double MinWidth { get; set; }
 
     public bool IsVisible { get; set; } = true;
     public bool CanHide { get; set; } = true;
@@ -739,10 +740,17 @@ key after that point is unsupported and is a configuration error. Values bound
 inside a cell or header template remain live, as does localized presentation
 text. Column identity, templates, comparers, and layout defaults remain fixed.
 
-`Column.DisplayName` and `Column.Header` are live dependency properties; templates
+`Column.DisplayName`, `Column.ShortName` and `Column.Header` are live dependency properties; templates
 and structural column settings remain setup-only. Bind changing presentation with
 `Mode=OneWay`. Updating text preserves existing header elements, including custom
 content whose instance has not changed.
+
+`Column.ShortName` is an optional shorter label for generated headers. A fit
+uses it as the header minimum, so the full name does not widen a column whose
+values need less room. The header shows `DisplayName` whenever its available
+space permits, otherwise `ShortName`, with ordinary trimming if neither fits.
+Menus, tooltips and accessibility retain `DisplayName`. A custom `Header` or
+`HeaderTemplate` takes precedence. Without `ShortName`, header behavior is unchanged.
 
 Prepare control text with `Strings.Load(language)`, then
 publish `Table.Strings` on the UI thread with the host's prepared text, language
@@ -761,7 +769,8 @@ Regional formatting remains separate from UI language. The desktop
 composition protection; the library does not persist a language preference.
 
 The declared defaults are: visible, hideable, resizable, non-sortable,
-left-aligned, a `Width` of 150 DIPs, and a `MinWidth` of 48 DIPs. A host SHOULD explicitly declare width and minimum policy
+left-aligned, a `Width` of 150 DIPs, and a `MinWidth` of 0 DIPs, so manual resizing
+has no implicit floor. A host SHOULD explicitly declare width and minimum policy
 for rich cells whose footprint is meaningful—such as progress, button clusters,
 sparklines, or status pills—rather than treating the generic default as domain
 policy.
@@ -918,7 +927,8 @@ Mouse/pen click or touch tap on a passive header that does not become another
 gesture uses this cycle. A non-sortable header has no sort action.
 
 Only one column is sorted at a time. The active header shows direction using a
-native, theme-aware glyph and exposes the state through UI Automation. Each
+native, theme-aware glyph when spare header space permits, and always exposes
+the state through UI Automation. Each
 passive header participates in the header strip's composite focus model;
 primary keyboard activation (Enter or Space) sorts only when that column is
 sortable.
@@ -1109,11 +1119,17 @@ where auto-repeat does the work, and not as a menu item invoked once per step.
 automatic sizing mode. A fit considers only the header, visible rows, and one
 already-realized row above and below the viewport. This keeps longer off-screen
 values from taking space from the values the person is reading while allowing
-for a small scroll. It includes normal padding and the sort glyph,
+for a small scroll. It includes normal padding,
 and raises the result to that column's `MinWidth`. It MUST NOT enumerate source data
 solely to size columns, instantiate off-screen row templates, or maintain a
 hidden measurement table. A per-column fit changes only that column; it MUST
 NOT fall back to a fit of other columns when its result is unchanged.
+For a generated header with `ShortName`, that shorter label supplies the header's
+width; row content still participates normally. Fits do not reserve space for
+a sort glyph. The active header shows its arrow only when its chosen label and
+the arrow fit within the actual column width. Spare space is considered even at
+`MinWidth`; a minimum is not a reason to hide an arrow that fits. The sort state
+and its accessibility metadata remain independent of whether the arrow fits.
 
 `FillWidth()` runs the same fit as `FitColumns()` and then scales the
 visible resizable columns so the visible columns end at the table's right

@@ -623,17 +623,8 @@ public sealed partial class Table
             && VisualTreeHelper.GetChild(presenter, 0) is UIElement { DesiredSize.Width: > 0 }
         );
 
-    /// <summary>
-    /// Section 10: the fit includes the sort glyph, so a fitted column still shows its whole header
-    /// once it becomes the sorted one. Only a header cell has a glyph to include.
-    /// </summary>
     private static double UnboundedWidth(UIElement cell)
     {
-        if (cell is Header.Cell header)
-        {
-            return header.MeasureWithSortGlyph(Unbounded).Width;
-        }
-
         cell.Measure(Unbounded);
         return cell.DesiredSize.Width;
     }

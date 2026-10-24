@@ -186,7 +186,7 @@ try {
             $unrelated = Join-Path $payload 'keep.txt'
             $destination = Join-Path $run 'moved'
             Write-File $source $shared[0].bytes
-            Write-File $clash ([Text.Encoding]::ASCII.GetBytes('z' * 2048))
+            Write-File $clash ([Text.Encoding]::ASCII.GetBytes('z' * 1024))
             Write-File $unrelated ([Text.Encoding]::ASCII.GetBytes('keep'))
             $null = New-Item -ItemType Directory -Path $destination
             $torrents = foreach ($size in 16384, 32768, 65536) { Add-Torrent (New-Torrent 'shared.bin' $shared $size) $payload }

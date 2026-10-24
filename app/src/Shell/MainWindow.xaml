@@ -186,7 +186,7 @@
           >
             <FontIcon
               FontFamily="{x:Bind icons:Lucide.Font}"
-              Glyph="{x:Bind icons:Lucide.ArrowDown}"
+              Glyph="{ThemeResource TinyTorrentDownloadGlyph}"
               Style="{StaticResource TinyTorrentStatusIconStyle}"
               Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
             />
@@ -206,7 +206,7 @@
           >
             <FontIcon
               FontFamily="{x:Bind icons:Lucide.Font}"
-              Glyph="{x:Bind icons:Lucide.ArrowUp}"
+              Glyph="{ThemeResource TinyTorrentUploadGlyph}"
               Style="{StaticResource TinyTorrentStatusIconStyle}"
               Foreground="{ThemeResource TinyTorrentUploadBrush}"
             />
@@ -538,7 +538,7 @@
                       </DataTemplate>
                     </table:Column.CellTemplate>
                   </table:Column>
-                  <table:Column x:Name="NameColumn" Id="name" Width="280" MinWidth="160">
+                  <table:Column x:Name="NameColumn" Id="name" Width="280">
                     <table:Column.CellTemplate>
                       <DataTemplate x:DataType="torrents:Torrent">
                         <TextBlock
@@ -640,11 +640,9 @@
                   <table:Column x:Name="DownColumn" Id="down" Width="130" CanShrink="False" CellAlignment="Right">
                     <table:Column.CellTemplate>
                       <DataTemplate x:DataType="torrents:Torrent">
-                        <TextBlock
-                          Text="{x:Bind DownloadText, Mode=OneWay}"
-                          Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
-                          VerticalAlignment="Center"
-                          TextAlignment="Right"
+                        <controls:Field
+                          Style="{StaticResource TinyTorrentDownloadFieldStyle}"
+                          Label="{x:Bind DownloadText, Mode=OneWay}"
                         />
                       </DataTemplate>
                     </table:Column.CellTemplate>
@@ -652,16 +650,14 @@
                   <table:Column x:Name="UpColumn" Id="up" Width="130" CanShrink="False" CellAlignment="Right">
                     <table:Column.CellTemplate>
                       <DataTemplate x:DataType="torrents:Torrent">
-                        <TextBlock
-                          Text="{x:Bind UploadText, Mode=OneWay}"
-                          Foreground="{ThemeResource TinyTorrentUploadBrush}"
-                          VerticalAlignment="Center"
-                          TextAlignment="Right"
+                        <controls:Field
+                          Style="{StaticResource TinyTorrentUploadFieldStyle}"
+                          Label="{x:Bind UploadText, Mode=OneWay}"
                         />
                       </DataTemplate>
                     </table:Column.CellTemplate>
                   </table:Column>
-                  <table:Column x:Name="LimitColumn" Id="limit" Width="180" IsVisible="False">
+                  <table:Column x:Name="LimitColumn" Id="limit" Width="180" CanShrink="False" IsVisible="False">
                     <table:Column.CellTemplate>
                       <DataTemplate x:DataType="torrents:Torrent">
                         <TextBlock
@@ -696,19 +692,23 @@
                   <table:Column x:Name="SeedsColumn" Id="seeds" Width="100" CanShrink="False" CellAlignment="Right">
                     <table:Column.CellTemplate>
                       <DataTemplate x:DataType="torrents:Torrent">
-                        <TextBlock
-                          Text="{x:Bind SeedsText, Mode=OneWay}"
-                          VerticalAlignment="Center"
+                        <controls:Field
+                          Style="{StaticResource TinyTorrentInlineFieldStyle}"
+                          Glyph="{x:Bind icons:Lucide.Sprout}"
+                          DimsZeros="True"
+                          Label="{x:Bind SeedsText, Mode=OneWay}"
                         />
                       </DataTemplate>
                     </table:Column.CellTemplate>
                   </table:Column>
-                  <table:Column x:Name="PeersColumn" Id="peers" Width="100" CellAlignment="Right">
+                  <table:Column x:Name="PeersColumn" Id="peers" Width="100" CanShrink="False" CellAlignment="Right">
                     <table:Column.CellTemplate>
                       <DataTemplate x:DataType="torrents:Torrent">
-                        <TextBlock
-                          Text="{x:Bind PeersText, Mode=OneWay}"
-                          VerticalAlignment="Center"
+                        <controls:Field
+                          Style="{StaticResource TinyTorrentInlineFieldStyle}"
+                          Glyph="{x:Bind icons:Lucide.UsersRoundCollaboration}"
+                          DimsZeros="True"
+                          Label="{x:Bind PeersText, Mode=OneWay}"
                         />
                       </DataTemplate>
                     </table:Column.CellTemplate>
@@ -1153,7 +1153,7 @@
           <FontIcon
             Style="{StaticResource TinyTorrentStatusIconStyle}"
             FontFamily="{x:Bind icons:Lucide.Font}"
-            Glyph="{x:Bind icons:Lucide.ArrowDown}"
+            Glyph="{ThemeResource TinyTorrentDownloadGlyph}"
             Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
             AutomationProperties.AccessibilityView="Raw"
           />
@@ -1173,7 +1173,7 @@
           <FontIcon
             Style="{StaticResource TinyTorrentStatusIconStyle}"
             FontFamily="{x:Bind icons:Lucide.Font}"
-            Glyph="{x:Bind icons:Lucide.ArrowUp}"
+            Glyph="{ThemeResource TinyTorrentUploadGlyph}"
             Foreground="{ThemeResource TinyTorrentUploadBrush}"
             AutomationProperties.AccessibilityView="Raw"
           />
