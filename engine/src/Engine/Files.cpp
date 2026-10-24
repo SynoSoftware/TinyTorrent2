@@ -1,9 +1,11 @@
 #include "Engine/State.h"
 #include <Windows.h>
 #include <libtorrent/torrent_info.hpp>
+#include <libtorrent/disk_buffer_holder.hpp>
 #include <libtorrent/aux_/session_impl.hpp>
 #include <libtorrent/aux_/torrent.hpp>
 #include <boost/asio/post.hpp>
+#include <boost/asio/error.hpp>
 #include <algorithm>
 #include <future>
 #include <set>
@@ -80,6 +82,77 @@ void Engine::State::ReleaseFiles(std::vector<lt::torrent_handle> const& handles)
         });
         ready.get();
     }
+}
+
+std::optional<std::vector<std::byte>> Engine::State::ReadPiece(lt::torrent_handle handle, lt::piece_index_t piece)
+{
+    struct Read
+    {
+        std::vector<std::byte> bytes;
+        std::promise<void> done;
+        std::exception_ptr failure;
+        int pending = 1;
+        bool present = true;
+
+        void Finish()
+        {
+            if (--pending == 0)
+                done.set_value();
+        }
+    };
+    auto read = std::make_shared<Read>();
+    auto ready = read->done.get_future();
+    boost::asio::post(session->get_context(), [native = session->native_handle(), handle, piece, read]
+    {
+        try
+        {
+            auto torrent = handle.native_handle();
+            if (!torrent || !torrent->has_storage())
+                throw lt::system_error(lt::errors::invalid_torrent_handle);
+            auto const& metadata = torrent->torrent_file();
+            read->bytes.resize(metadata.piece_size(piece));
+            constexpr int block = 16 * 1024;
+            for (int offset = 0; offset < static_cast<int>(read->bytes.size()); offset += block)
+            {
+                auto count = std::min(block, static_cast<int>(read->bytes.size()) - offset);
+                ++read->pending;
+                try
+                {
+                    native->disk_thread().async_read(torrent->storage(), {piece, offset, count},
+                        [torrent, read, offset, count](lt::disk_buffer_holder bytes, lt::storage_error const& error)
+                    {
+                        if (error)
+                        {
+                            read->present = false;
+                            if (error.ec != boost::system::errc::no_such_file_or_directory &&
+                                error.ec != lt::errors::file_too_short && error.ec != boost::asio::error::eof)
+                                read->failure = std::make_exception_ptr(lt::system_error(error.ec));
+                        }
+                        else
+                            std::memcpy(read->bytes.data() + offset, bytes.data(), count);
+                        read->Finish();
+                    });
+                }
+                catch (...)
+                {
+                    --read->pending;
+                    throw;
+                }
+            }
+        }
+        catch (...)
+        {
+            read->failure = std::current_exception();
+        }
+        native->disk_thread().submit_jobs();
+        read->Finish();
+    });
+    ready.get();
+    if (read->failure)
+        std::rethrow_exception(read->failure);
+    if (!read->present)
+        return std::nullopt;
+    return std::move(read->bytes);
 }
 
 // Called on a worker: runs `work` on libtorrent's network thread, waits for

@@ -1,20 +1,20 @@
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('Frames', 'Summaries', 'Targets', 'Facts', 'Restore', 'Exit', 'Conflict', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames', 'Pause', 'History', 'Accounting', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify', 'DriveTurns', 'UnfinishedTasks')]
+    [ValidateSet('Frames', 'Summaries', 'Targets', 'Facts', 'Restore', 'Exit', 'Conflict', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames', 'Pause', 'History', 'Accounting', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify', 'MoveExisting', 'DriveTurns', 'UnfinishedTasks')]
     [string] $Check,
-    # Every check but Conflict, WaitingMove, RemoveDuringMove, MoveAndVerify,
-    # DriveTurns and UnfinishedTasks, which make their own torrents.
+    # Every check but Conflict, FilesSafety, WaitingMove, RemoveDuringMove, MoveAndVerify,
+    # MoveExisting, DriveTurns and UnfinishedTasks, which make their own torrents.
     [string] $TorrentFile,
     [string] $EnginePath,
     [switch] $Transfer,
     [switch] $OptIn,
     # RemoveDuringMove moves its payload into this folder, on another volume.
-    # MoveAndVerify also moves its payload there when it is given, to check a
-    # copy between volumes. DriveTurns and UnfinishedTasks need it on the
+    # MoveAndVerify and MoveExisting also use it for copies between volumes.
+    # DriveTurns and UnfinishedTasks need it on the
     # drive that holds the evidence folder, as C: holds V:.
     [string] $Folder,
-    # MoveAndVerify moves a small payload into this folder, on a network share,
-    # when it is given. DriveTurns and UnfinishedTasks need it.
+    # MoveAndVerify and MoveExisting also use this network share when given.
+    # DriveTurns and UnfinishedTasks need it.
     [string] $Network,
     # DriveTurns moves between these two folders, on drives that -Folder and
     # -Network do not use, such as two USB drives. When either is missing, it
@@ -29,7 +29,7 @@ $transferChecks = 'MagnetDownload', 'SelectedTransfer', 'DiskError', 'PreviewGua
 # These checks each guard one defect that was already fixed, so a run of every
 # check skips them; the owner asks for them when that code changes.
 $optInChecks = 'WaitingMove', 'RemoveDuringMove'
-if (-not $TorrentFile -and $Check -notin 'Conflict', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify', 'DriveTurns', 'UnfinishedTasks') {
+if (-not $TorrentFile -and $Check -notin 'Conflict', 'FilesSafety', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify', 'MoveExisting', 'DriveTurns', 'UnfinishedTasks') {
     throw "$Check needs -TorrentFile."
 }
 if ($Check -in $transferChecks -and -not $Transfer) {
@@ -73,12 +73,12 @@ $null = New-Item -ItemType Directory -Path $directory
 $payload = Join-Path $directory 'payload'
 $null = New-Item -ItemType Directory -Path $payload
 $volumeFolder = $null
-if ($Check -eq 'RemoveDuringMove' -or ($Check -in 'MoveAndVerify', 'DriveTurns', 'UnfinishedTasks' -and $Folder)) {
+if ($Check -eq 'RemoveDuringMove' -or ($Check -in 'MoveAndVerify', 'MoveExisting', 'DriveTurns', 'UnfinishedTasks' -and $Folder)) {
     $volumeFolder = Join-Path ([IO.Path]::GetFullPath($Folder)) ('TinyTorrent-' + $Check + '-' + [guid]::NewGuid())
     $null = New-Item -ItemType Directory -Path $volumeFolder
 }
 $networkFolder = $null
-if ($Check -in 'MoveAndVerify', 'DriveTurns', 'UnfinishedTasks' -and $Network) {
+if ($Check -in 'MoveAndVerify', 'MoveExisting', 'DriveTurns', 'UnfinishedTasks' -and $Network) {
     $networkFolder = Join-Path $Network ('TinyTorrent-' + $Check + '-' + [guid]::NewGuid())
     $null = New-Item -ItemType Directory -Path $networkFolder
 }
@@ -653,7 +653,7 @@ try {
             $collision = Join-Path $directory 'collision'
             $null = New-Item -ItemType Directory -Path $collision
             $collisionFile = Join-Path $collision 'shared.bin'
-            [IO.File]::WriteAllBytes($collisionFile, [Text.Encoding]::ASCII.GetBytes(('z' * 2048)))
+            [IO.File]::WriteAllBytes($collisionFile, [Text.Encoding]::ASCII.GetBytes(('z' * 1024)))
             $collisionHash = Payload-Hash $collisionFile
             $remaining = $identities[1]
             $reply = Send-Command @{ command = 'move'; torrent_ids = @($remaining); destination = $collision }
@@ -753,6 +753,244 @@ try {
             Stop-Engine
             $snapshot = Start-Engine
             Assert ($snapshot.torrents.Count -eq 0 -and -not (Test-Path -LiteralPath $sourceFile) -and (Test-Path -LiteralPath $unrelated)) 'Deferred shared-file cleanup lost deletion or restored removed membership'
+        }
+        'MoveExisting' {
+            $reply = Send-Command @{ command = 'session_pause'; paused = $true }
+            Assert $reply.ok 'The existing-file session could not pause'
+            $destination = Join-Path $(if ($networkFolder) { $networkFolder } else { $directory }) 'destination'
+            $other = Join-Path $(if ($volumeFolder) { $volumeFolder } else { $directory }) 'other'
+            $origin = Join-Path $(if ($networkFolder) { $networkFolder } else { $directory }) 'origin'
+            $null = New-Item -ItemType Directory -Path $destination, $other, $origin
+            $same = New-Pattern 'same' 4MB $payload
+            $different = New-Pattern 'different' 4MB $other
+            $fresh = New-Pattern 'fresh' 4MB $other
+            $local = New-Pattern 'local' 4MB $payload
+            $neighbor = New-Pattern 'neighbor' 4MB $origin
+            $there = New-Pattern 'there' 4MB $destination
+            $short = New-Pattern 'short' 4MB $other
+            $source = Join-Path $payload 'same.bin'
+            $existing = Join-Path $destination 'same.bin'
+            Copy-Item -LiteralPath $source -Destination $existing
+            $stamp = [DateTime]::new(2001, 1, 1, 0, 0, 0, [DateTimeKind]::Utc)
+            [IO.File]::SetLastWriteTimeUtc($existing, $stamp)
+            $sameHash = Payload-Hash $source
+            $differentSource = Join-Path $other 'different.bin'
+            $differentTarget = Join-Path $destination 'different.bin'
+            $differentHash = Payload-Hash $differentSource
+            $bytes = [byte[]]::new(4MB)
+            $stream = [IO.File]::Open($differentSource, 'Open', 'Read', 'ReadWrite')
+            try { $stream.ReadExactly($bytes) } finally { $stream.Dispose() }
+            $bytes[2MB] = $bytes[2MB] -bxor 1
+            [IO.File]::WriteAllBytes($differentTarget, $bytes)
+            $shortSource = Join-Path $other 'short.bin'
+            $shortTarget = Join-Path $destination 'short.bin'
+            $shortHash = Payload-Hash $shortSource
+            [IO.File]::WriteAllBytes($shortTarget, [byte[]]::new(1KB))
+            $shortTargetHash = Payload-Hash $shortTarget
+            $freshHash = Payload-Hash (Join-Path $other 'fresh.bin')
+            $localHash = Payload-Hash (Join-Path $payload 'local.bin')
+            $neighborHash = Payload-Hash (Join-Path $origin 'neighbor.bin')
+            $thereHash = Payload-Hash (Join-Path $destination 'there.bin')
+            $ids = @($same, $different, $fresh, $local, $neighbor, $there, $short)
+            # A failed source piece must never replace a good destination,
+            # including after an earlier failure switched the move to merging.
+            $cases = @(
+                @{ name = 'source-bad'; source = @(0, 1, 2, 3); target = @(); missing = 0 },
+                @{ name = 'target-bad'; source = @(); target = @(0, 1, 2, 3); missing = 0 },
+                @{ name = 'both-bad'; source = @(0, 1, 2, 3); target = @(0, 1, 2, 3); missing = 4 },
+                @{ name = 'disjoint'; source = @(1, 3); target = @(0, 2); missing = 0 },
+                @{ name = 'overlap'; source = @(1, 2); target = @(0, 2); missing = 1 },
+                @{ name = 'late-failure'; source = @(3); target = @(2); missing = 0 }
+            )
+            foreach ($case in $cases) {
+                $case.length = 16MB
+                $case.id = New-Pattern $case.name 16MB $other
+                $case.origin = Join-Path $other "$($case.name).bin"
+                $case.destination = Join-Path $destination "$($case.name).bin"
+                $expected = [byte[]]::new(16MB)
+                $stream = [IO.File]::Open($case.origin, 'Open', 'Read', 'ReadWrite')
+                try { $stream.ReadExactly($expected) } finally { $stream.Dispose() }
+                Copy-Item -LiteralPath $case.origin -Destination $case.destination
+                foreach ($side in 'source', 'target') {
+                    $file = if ($side -eq 'source') { $case.origin } else { $case.destination }
+                    $stream = [IO.File]::Open($file, 'Open', 'ReadWrite', 'ReadWrite')
+                    try {
+                        foreach ($piece in $case[$side]) {
+                            $offset = $piece * 4MB + 1024
+                            $stream.Position = $offset
+                            $stream.WriteByte($expected[$offset] -bxor 1)
+                        }
+                    }
+                    finally { $stream.Dispose() }
+                }
+                foreach ($piece in $case.source) {
+                    if ($piece -in $case.target) {
+                        $offset = $piece * 4MB + 1024
+                        $expected[$offset] = $expected[$offset] -bxor 1
+                    }
+                }
+                $case.hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($expected))
+                $ids += $case.id
+            }
+            function Get-Root([byte[]] $bytes, [int] $width) {
+                $hash = [Security.Cryptography.SHA256]::Create()
+                try {
+                    $layer = [Collections.Generic.List[byte[]]]::new()
+                    for ($index = 0; $index -lt $width; $index++) {
+                        $offset = $index * 16KB
+                        $layer.Add($(if ($offset -lt $bytes.Length) {
+                            $hash.ComputeHash($bytes, $offset, [Math]::Min(16KB, $bytes.Length - $offset))
+                        } else { [byte[]]::new(32) }))
+                    }
+                    while ($layer.Count -gt 1) {
+                        $parents = [Collections.Generic.List[byte[]]]::new()
+                        for ($index = 0; $index -lt $layer.Count; $index += 2) {
+                            $parents.Add($hash.ComputeHash([byte[]]($layer[$index] + $layer[$index + 1])))
+                        }
+                        $layer = $parents
+                    }
+                    return ,$layer[0]
+                }
+                finally { $hash.Dispose() }
+            }
+            foreach ($format in 'v2', 'hybrid', 'v2-small') {
+                $name = "$format.bin"
+                $length = if ($format -eq 'v2-small') { 40000 } else { 4MB + 123 }
+                $bytes = [byte[]]::new($length)
+                [Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+                $layer = [byte[]]::new(0)
+                if ($length -gt 4MB) {
+                    $head = [byte[]]::new(4MB)
+                    $tail = [byte[]]::new(123)
+                    [Array]::Copy($bytes, 0, $head, 0, $head.Length)
+                    [Array]::Copy($bytes, 4MB, $tail, 0, $tail.Length)
+                    $first = Get-Root $head 256
+                    $last = Get-Root $tail 256
+                    $layer = [byte[]]($first + $last)
+                    $root = [Security.Cryptography.SHA256]::HashData($layer)
+                } else {
+                    $root = Get-Root $bytes 4
+                }
+                $text = [Text.Encoding]::ASCII
+                $info = [byte[]]($text.GetBytes("d9:file treed$($name.Length):$($name)d0:d6:lengthi$($length)e11:pieces root32:") +
+                    $root + $text.GetBytes('eee'))
+                if ($format -eq 'hybrid') { $info += $text.GetBytes("6:lengthi$($length)e") }
+                $info += $text.GetBytes("12:meta versioni2e4:name$($name.Length):$($name)12:piece lengthi$(4MB)e")
+                if ($format -eq 'hybrid') {
+                    $hash = [Security.Cryptography.SHA1]::Create()
+                    try { $sha1 = [byte[]]($hash.ComputeHash($bytes, 0, 4MB) + $hash.ComputeHash($bytes, 4MB, 123)) }
+                    finally { $hash.Dispose() }
+                    $info += $text.GetBytes('6:pieces40:') + $sha1
+                }
+                $info += $text.GetBytes('7:privatei1ee')
+                $fixture = [byte[]]($text.GetBytes('d4:info') + $info + $text.GetBytes('12:piece layersd'))
+                if ($layer.Length) { $fixture += $text.GetBytes('32:') + $root + $text.GetBytes('64:') + $layer }
+                $fixture += $text.GetBytes('ee')
+                $file = Join-Path $directory "$format.torrent"
+                [IO.File]::WriteAllBytes($file, $fixture)
+                $case = @{ name = $format; origin = (Join-Path $other $name); destination = (Join-Path $destination $name);
+                    length = $length; missing = 0; hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)) }
+                [IO.File]::WriteAllBytes($case.origin, $bytes)
+                $bytes[1024] = $bytes[1024] -bxor 1
+                [IO.File]::WriteAllBytes($case.destination, $bytes)
+                $bytes[1024] = $bytes[1024] -bxor 1
+                $preview = Send-Command @{ command = 'preview'; source = $file; destination = $other }
+                Assert $preview.ok "The $format fixture did not preview"
+                $added = Send-Command @{ command = 'add'; preview_id = $preview.data.preview_id; destination = $other }
+                Assert $added.ok "The $format fixture could not be added"
+                $case.id = $added.data.torrent_id
+                if ($length -gt 4MB) {
+                    $stream = [IO.File]::Open($case.origin, 'Open', 'Write', 'ReadWrite')
+                    try {
+                        $stream.Position = 4MB + 10
+                        $stream.WriteByte($bytes[4MB + 10] -bxor 1)
+                    }
+                    finally { $stream.Dispose() }
+                }
+                $cases += $case
+                $ids += $case.id
+            }
+            $reply = Send-Command @{ command = 'move'; torrent_ids = $ids; destination = $destination }
+            Assert $reply.ok 'The mixed move was refused'
+            $until = [DateTime]::UtcNow.AddSeconds(20)
+            do {
+                Start-Sleep -Milliseconds 100
+                $rows = @((Send-Command @{ command = 'snapshot' }).data.torrents | Where-Object torrent_id -in $ids)
+            } while (@($rows | Where-Object { $_.moving -or $_.move_destination -or $_.status -eq 'waiting_move' }).Count -gt 0 -and [DateTime]::UtcNow -lt $until)
+            $moved = @($rows | Where-Object torrent_id -ne $short)
+            $refused = $rows | Where-Object torrent_id -eq $short
+            Assert (@($moved | Where-Object { $_.save_path -ne $destination -or $_.moving -or $_.move_destination -or $_.error }).Count -eq 0) `
+                ('An existing destination blocked the mixed move: ' + (($rows | ForEach-Object { "$($_.name): $($_.error) $($_.detail)" }) -join '; '))
+            Assert (-not (Test-Path -LiteralPath $source) -and (Payload-Hash $existing) -eq $sameHash) 'An identical destination was recopied, damaged or left its source behind'
+            Assert ([IO.File]::GetLastWriteTimeUtc($existing) -eq $stamp) 'The move rewrote a destination copy that was already there'
+            Assert (-not (Test-Path -LiteralPath $differentSource) -and (Payload-Hash $differentTarget) -eq $differentHash) 'The move did not repair the damaged destination from its source'
+            Assert ($refused.error -eq 'destination_exists' -and $refused.save_path -eq $other -and -not $refused.move_destination) 'The wrong-size destination was accepted or left an interrupted move'
+            Assert ((Payload-Hash $shortSource) -eq $shortHash -and (Payload-Hash $shortTarget) -eq $shortTargetHash) 'The wrong-size destination changed either copy'
+            Assert (-not (Test-Path -LiteralPath (Join-Path $other 'fresh.bin')) -and (Payload-Hash (Join-Path $destination 'fresh.bin')) -eq $freshHash) 'The unrelated member did not move intact'
+            Assert (-not (Test-Path -LiteralPath (Join-Path $payload 'local.bin')) -and (Payload-Hash (Join-Path $destination 'local.bin')) -eq $localHash) 'The local member did not move intact'
+            Assert (-not (Test-Path -LiteralPath (Join-Path $origin 'neighbor.bin')) -and (Payload-Hash (Join-Path $destination 'neighbor.bin')) -eq $neighborHash) 'The member on the destination share did not move intact'
+            Assert ((Payload-Hash (Join-Path $destination 'there.bin')) -eq $thereHash) 'The already-located member lost its file'
+            foreach ($case in $cases) {
+                Assert (-not (Test-Path -LiteralPath $case.origin) -and (Payload-Hash $case.destination) -eq $case.hash) `
+                    "$($case.name): reconciliation lost a valid piece or left its source behind"
+            }
+            $reply = Send-Command @{ command = 'session_pause'; paused = $false }
+            Assert $reply.ok 'The reconciled torrents could not verify'
+            $until = [DateTime]::UtcNow.AddSeconds(30)
+            do {
+                Start-Sleep -Milliseconds 100
+                $rows = @((Send-Command @{ command = 'snapshot' }).data.torrents)
+                $pending = @($cases | Where-Object {
+                    $case = $_
+                    $row = $rows | Where-Object torrent_id -eq $case.id
+                    $row.status -in 'checking', 'waiting_check' -or $row.completed -ne $case.length - $case.missing * 4MB
+                })
+            } while ($pending.Count -and [DateTime]::UtcNow -lt $until)
+            Assert (-not $pending.Count) ('Reconciliation left stale piece state: ' + ($pending.name -join ', '))
+            Stop-Engine
+            $snapshot = Start-Engine
+            Assert (@($snapshot.torrents | Where-Object { $_.torrent_id -ne $short -and ($_.save_path -ne $destination -or $_.move_destination -or $_.error) }).Count -eq 0) 'Restart lost a mixed move destination or left an interrupted move'
+            Assert ((Payload-Hash $shortSource) -eq $shortHash -and (Payload-Hash $shortTarget) -eq $shortTargetHash) 'Restart deleted either copy of the refused member'
+            foreach ($case in $cases) {
+                $until = [DateTime]::UtcNow.AddSeconds(10)
+                do {
+                    $detail = (Send-Command @{ command = 'torrent'; torrent_id = $case.id; view = 'pieces' }).data
+                    if ($null -ne $detail.verified) { break }
+                    Start-Sleep -Milliseconds 100
+                } while ([DateTime]::UtcNow -lt $until)
+                Assert ($null -ne $detail.verified) "$($case.name): the restored piece map is unavailable"
+                for ($index = 0; $index -lt $detail.verified.Count; $index++) {
+                    $valid = -not ($index -in $case.source -and $index -in $case.target)
+                    Assert ($detail.verified[$index] -eq $valid) "$($case.name): restart changed piece $index"
+                }
+            }
+            # Exit during reconciliation must save the interrupted move and
+            # its source checkpoint, rather than wait forever for a busy row.
+            $interrupted = New-Zeros 'interrupted' 64MB $other
+            $originFile = Join-Path $other 'interrupted.bin'
+            $targetFile = Join-Path $destination 'interrupted.bin'
+            $hash = Payload-Hash $originFile
+            $null = New-Item -ItemType File -Path $targetFile
+            $null = & fsutil sparse setflag $targetFile
+            Assert ($LASTEXITCODE -eq 0) 'The interrupted destination could not be made sparse'
+            $stream = [IO.File]::Open($targetFile, 'Open', 'Write')
+            try { $stream.SetLength(64MB); $stream.WriteByte(1) } finally { $stream.Dispose() }
+            $reply = Send-Command @{ command = 'move'; torrent_ids = @($interrupted); destination = $destination }
+            Assert $reply.ok 'The interrupted reconciliation could not start'
+            Stop-Engine
+            $snapshot = Start-Engine
+            if ($snapshot.unfinished_tasks.moves) {
+                $reply = Send-Command @{ command = 'unfinished_tasks'; action = 'continue' }
+                Assert $reply.ok 'The interrupted reconciliation could not continue'
+            }
+            $until = [DateTime]::UtcNow.AddSeconds(20)
+            do {
+                Start-Sleep -Milliseconds 100
+                $row = (Send-Command @{ command = 'snapshot' }).data.torrents | Where-Object torrent_id -eq $interrupted
+            } while (($row.moving -or $row.move_destination -or $row.save_path -ne $destination) -and [DateTime]::UtcNow -lt $until)
+            Assert ($row.save_path -eq $destination -and -not $row.move_destination -and -not $row.error -and
+                -not (Test-Path -LiteralPath $originFile) -and (Payload-Hash $targetFile) -eq $hash) `
+                'Exit and continuation lost reconciliation data or left the source behind'
         }
         'MoveAndVerify' {
             function Row-Of([string] $id) {

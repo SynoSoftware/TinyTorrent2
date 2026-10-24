@@ -134,8 +134,8 @@ name is an unfinished copy. A move that continues a placing move to the same
 destination continues that copy; every other move deletes it. A file at the
 destination's name beside a source that holds data stays as the interrupted
 move's complete copy when its size and last write time match the source, which
-`CopyFile2` keeps and the paused torrent does not change. Any other such file
-can be someone else's, so the move refuses it and never deletes it. Choosing a
+`CopyFile2` keeps and the paused torrent does not change. Another existing file
+is reused when its size matches the torrent's metadata, as below. Choosing a
 checked destination through Move does the same. A FAT volume keeps a time to 2
 seconds, in local time, so a copy there matches its source's time within 2
 seconds, or one hour after a daylight saving change.
@@ -184,8 +184,22 @@ they do not answer it.
 
 The move preflight checks both physical and final names at source and destination.
 When the source is absent or an empty placeholder and the destination exists,
-it counts that file as already moved. A source containing data and an existing
-destination remain a collision; choosing the current save folder is allowed.
+it counts that file as already moved when its size matches the torrent's
+metadata. **Owner ruling:** an existing destination of the expected size is
+verified against the torrent piece hashes, in order. The first failed piece
+switches that torrent to merging for the rest of its pieces. From that piece
+on, a source piece is read and verified, then its same buffer replaces the
+destination only when valid. A source piece that fails leaves the destination
+untouched and unknown until the final destination pass. Earlier verified
+destination pieces stay untouched. Libtorrent's storage reader supplies source
+pieces, including skipped-file bytes held in its part file; v1 pieces can span
+files, and v2 verification uses the file's Merkle hashes. Source files are
+deleted only after the reconciled writes are flushed and the new folder and
+piece map are saved. Choosing the current save folder is a no-op.
+A different size or a destination that is not a file fails only its torrent
+and members sharing its files; both locations stay untouched and unrelated
+members continue. Preflight failures are settled before any member places
+files, so a successful member cannot take a failed member's shared source.
 A destination that is the source file under another path, such as through a
 link, stops the move with `same_location`, because moving the file onto itself
 would delete the only copy as its source.
@@ -194,8 +208,16 @@ completed destination file. Files already at the destination are not placed
 again.
 
 A moved torrent is verified at its new folder before transfer resumes only
-when the move found files of it there, or when the move recovers an
-interrupted move, whose files can be in two folders. So a person who moved
+when the move found files of it there without a source containing data, or when
+the move recovers an interrupted move, whose files can be in two folders,
+unless reconciliation has established the full piece map. Reconciliation hashes
+the untouched destination pieces last and hashes the source pieces of files
+that the ordinary mover will place. It reloads the paused libtorrent handle
+with that map, retaining the product torrent's identity, settings and history.
+The new resume checkpoint is saved after older checkpoints and before the new
+folder, so an old source map cannot survive deletion of its files. The reload
+skips libtorrent's file verification once; that flag is not saved. Missing
+pieces remain missing and resume downloading at the destination. So a person who moved
 files or whose drive letter changed needs only to choose their folder, and
 pieces that do not match are downloaded again over those files. The files a
 move places itself hold the pieces the torrent already verified, so checking
@@ -318,9 +340,9 @@ a later move of the same torrent, so that path checks that libtorrent is no
 longer moving storage and observes its actual save path. That observation runs
 on the payload worker with the current member and paths still held;
 a failed observation requests another acknowledgement and keeps those holds.
-Files found at the requested location still require verification, including
-Use the files there in the same folder; location alone never establishes valid
-content. A deletion whose release alert
+Files found at the requested location without a source still require
+verification; reusing a correctly sized copy beside its source follows the
+owner ruling above. A deletion whose release alert
 was lost waits for its removed handle to expire, because libtorrent retains the
 torrent until its disk work ends. Both operations continue during shutdown;
 missing evidence never releases their files or implies success.

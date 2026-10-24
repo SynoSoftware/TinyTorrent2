@@ -648,6 +648,10 @@ public:
         // The files in `moved` that no copy of a member's own files put
         // there, sorted.
         std::vector<std::filesystem::path> found;
+        // Members that found files without a source and need verification.
+        std::set<std::string> checks;
+        std::map<std::string, Problem> problems;
+        std::optional<lt::typed_bitfield<lt::piece_index_t>> pieces;
         // Files that earlier members put at the destination, kept while
         // members share files. On one volume, a member that shares one no
         // longer has it in its old folder.
@@ -1023,6 +1027,7 @@ public:
     void RecoverFiles();
     void RecoverDeletions();
     void ReleaseFiles(std::vector<lt::torrent_handle> const& handles);
+    std::optional<std::vector<std::byte>> ReadPiece(lt::torrent_handle handle, lt::piece_index_t piece);
     static void SyncCall(lt::session& session, std::function<void()> work);
     // The names a worker chose for a torrent's files in `params`, and the names
     // the files had when it chose them.
@@ -1195,6 +1200,7 @@ private:
     void PrepareMove(Move& moving);
     // The torrent's physical files whose path changes at the move's destination.
     static std::vector<Payload::File> Relocated(Move const& moving, Torrent const& torrent);
+    void ReloadMove(Move& moving);
     void SaveMove(Move& moving);
     void CleanMove(Move& moving, std::vector<std::filesystem::path> sources, std::filesystem::path origin);
     void FailMove(Move& moving, Problem problem);

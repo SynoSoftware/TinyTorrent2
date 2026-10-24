@@ -3,7 +3,10 @@
 #include "Owned.h"
 #include <Windows.h>
 #include <winioctl.h>
+#include <libtorrent/hasher.hpp>
+#include <libtorrent/aux_/merkle.hpp>
 #include <algorithm>
+#include <bit>
 #include <chrono>
 #include <cstddef>
 #include <cstdlib>
@@ -454,6 +457,7 @@ std::optional<std::string> Placement::Place(std::vector<File> const& files)
     };
     std::vector<Found> found;
     std::set<std::filesystem::path> folders;
+    auto total = progress_.done.load();
     for (auto const& file : files)
     {
         WIN32_FILE_ATTRIBUTE_DATA data;
@@ -470,8 +474,9 @@ std::optional<std::string> Placement::Place(std::vector<File> const& files)
         auto size = (std::uint64_t(data.nFileSizeHigh) << 32) | data.nFileSizeLow;
         found.push_back({&file, size, bool(data.dwFileAttributes & FILE_ATTRIBUTE_SPARSE_FILE)});
         folders.insert(file.destination.parent_path());
-        progress_.total += size;
+        total += size;
     }
+    progress_.total = total;
     // Workers would otherwise create the same folder at the same time.
     for (auto const& folder : folders)
     {
@@ -807,6 +812,209 @@ std::expected<void, Failure> Move(std::vector<File> const& files, Progress& prog
     if (progress.cancel == MoveCancel::Keep)
         return std::unexpected(Failure{MoveFailure::Split, std::move(*failure)});
     return std::unexpected(Failure{placement.Undo(), std::move(*failure)});
+}
+
+std::expected<Reconciled, Failure> Reconcile(Pieces const& pieces, std::vector<File> const& files,
+    Progress& progress)
+{
+    // Keep only the current file open on each side, so a torrent with many
+    // files cannot exhaust the process's handles.
+    struct Access
+    {
+        std::filesystem::path path;
+        OwnedHandle handle;
+        bool writable = false;
+
+        void Flush()
+        {
+            if (handle && writable && !FlushFileBuffers(handle.get()))
+                throw std::system_error(GetLastError(), std::system_category(), Utf8(path.wstring()));
+        }
+
+        HANDLE Open(std::filesystem::path const& next, bool writes = false)
+        {
+            if (handle && path == next && (!writes || writable))
+                return handle.get();
+            Flush();
+            handle.reset();
+            path = next;
+            writable = writes;
+            auto opened = CreateFileW(Extended(path).c_str(), GENERIC_READ | (writes ? GENERIC_WRITE : 0),
+                FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
+            if (opened != INVALID_HANDLE_VALUE)
+            {
+                handle.reset(opened);
+                return opened;
+            }
+            auto error = GetLastError();
+            if (!writes && (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND))
+                return nullptr;
+            throw std::system_error(error, std::system_category(), Utf8(path.wstring()));
+        }
+    };
+    try
+    {
+        auto const& metadata = *pieces.metadata;
+        auto const& layout = metadata.layout();
+        std::map<lt::file_index_t, File const*> indexed;
+        auto next = files.begin();
+        for (auto index : layout.file_range())
+        {
+            if (layout.pad_file_at(index))
+                continue;
+            auto const& file = *next++;
+            indexed.emplace(index, &file);
+            if (file.existing)
+                progress.total += layout.file_size(index);
+            else if (file.source != file.destination)
+            {
+                std::error_code error;
+                auto size = std::filesystem::file_size(file.source, error);
+                if (!error)
+                    progress.total += size;
+            }
+        }
+        Access source;
+        Access destination;
+        std::vector<std::byte> buffer(metadata.piece_length());
+        Reconciled outcome;
+        outcome.pieces.emplace(metadata.num_pieces(), false);
+        std::vector<lt::piece_index_t> unknown;
+        bool merging = false;
+        auto valid = [&](lt::piece_index_t piece, std::vector<lt::file_slice> const& slices)
+        {
+            auto data = reinterpret_cast<char const*>(buffer.data());
+            if (metadata.v1() && lt::hasher(data, layout.piece_size(piece)).final() != metadata.hash_for_piece(piece))
+                return false;
+            if (!metadata.v2())
+                return true;
+            auto const& file = slices.front();
+            if (layout.pad_file_at(file.file_index))
+                return false;
+            auto size = layout.file_size(file.file_index);
+            auto index = static_cast<std::size_t>(static_cast<int>(file.file_index));
+            auto local = static_cast<std::size_t>(file.offset / metadata.piece_length());
+            auto expected = size <= metadata.piece_length() ? layout.root(file.file_index) :
+                index < pieces.hashes.size() && local < pieces.hashes[index].size() ?
+                    pieces.hashes[index][local] : lt::sha256_hash{};
+            if (expected.is_all_zeros())
+                return false;
+            constexpr int leaf = 16 * 1024;
+            auto leaves = size <= metadata.piece_length() ?
+                std::bit_ceil(static_cast<unsigned>((size + leaf - 1) / leaf)) :
+                static_cast<unsigned>(metadata.piece_length() / leaf);
+            std::vector<lt::sha256_hash> hashes(leaves);
+            auto count = layout.piece_size2(piece);
+            for (int offset = 0; offset < count; offset += leaf)
+                hashes[offset / leaf] = lt::hasher256(data + offset, std::min(leaf, count - offset)).final();
+            return lt::merkle_root(hashes) == expected;
+        };
+        auto read = [&](lt::piece_index_t piece, std::vector<lt::file_slice> const& slices)
+        {
+            buffer.resize(layout.piece_size(piece));
+            std::size_t offset = 0;
+            for (auto const& slice : slices)
+            {
+                auto count = static_cast<DWORD>(slice.size);
+                if (layout.pad_file_at(slice.file_index))
+                    std::fill_n(buffer.data() + offset, count, std::byte{});
+                else
+                {
+                    auto const& file = *indexed.at(slice.file_index);
+                    auto& access = file.existing ? destination : source;
+                    auto const& path = file.existing ? file.destination : file.source;
+                    auto handle = access.Open(path);
+                    if (!handle)
+                        return false;
+                    SetLastError(ERROR_SUCCESS);
+                    if (!ReadAt(handle, slice.offset, buffer.data() + offset, count))
+                    {
+                        auto error = GetLastError();
+                        if (error == ERROR_SUCCESS || error == ERROR_HANDLE_EOF)
+                            return false;
+                        throw std::system_error(error, std::system_category(), Utf8(path.wstring()));
+                    }
+                    progress.compared += count;
+                }
+                offset += count;
+            }
+            return true;
+        };
+        for (auto piece : layout.piece_range())
+        {
+            auto slices = layout.map_block(piece, 0, layout.piece_size(piece));
+            std::uint64_t affected = 0;
+            for (auto const& slice : slices)
+            {
+                if (!layout.pad_file_at(slice.file_index) && indexed.at(slice.file_index)->existing)
+                    affected += slice.size;
+            }
+            if (progress.cancel != MoveCancel::None)
+                return std::unexpected(Failure{MoveFailure::Split, "Move cancelled"});
+            if (!affected)
+            {
+                auto original = pieces.read(piece);
+                if (original)
+                {
+                    buffer = std::move(*original);
+                    progress.compared += buffer.size();
+                    if (valid(piece, slices))
+                        outcome.pieces->set_bit(piece);
+                }
+                continue;
+            }
+            if (!merging && read(piece, slices) && valid(piece, slices))
+            {
+                outcome.pieces->set_bit(piece);
+                progress.done += affected;
+                continue;
+            }
+            merging = true;
+            auto original = pieces.read(piece);
+            if (original)
+            {
+                buffer = std::move(*original);
+                progress.compared += buffer.size();
+            }
+            if (!original || !valid(piece, slices))
+            {
+                unknown.push_back(piece);
+                progress.done += affected;
+                continue;
+            }
+            std::size_t offset = 0;
+            for (auto const& slice : slices)
+            {
+                if (!layout.pad_file_at(slice.file_index) && indexed.at(slice.file_index)->existing)
+                {
+                    auto const& path = indexed.at(slice.file_index)->destination;
+                    auto handle = destination.Open(path, true);
+                    if (!WriteAt(handle, slice.offset, buffer.data() + offset, static_cast<DWORD>(slice.size)))
+                        throw std::system_error(GetLastError(), std::system_category(), Utf8(path.wstring()));
+                    progress.copied += slice.size;
+                }
+                offset += slice.size;
+            }
+            outcome.pieces->set_bit(piece);
+            progress.done += affected;
+        }
+        for (auto piece : unknown)
+        {
+            if (progress.cancel != MoveCancel::None)
+                return std::unexpected(Failure{MoveFailure::Split, "Move cancelled"});
+            auto slices = layout.map_block(piece, 0, layout.piece_size(piece));
+            if (read(piece, slices) && valid(piece, slices))
+                outcome.pieces->set_bit(piece);
+            else
+                outcome.pieces->clear_bit(piece);
+        }
+        destination.Flush();
+        return outcome;
+    }
+    catch (std::exception const& error)
+    {
+        return std::unexpected(Failure{MoveFailure::Split, error.what()});
+    }
 }
 
 void Delete(std::vector<std::filesystem::path> const& files, std::stop_token stop)

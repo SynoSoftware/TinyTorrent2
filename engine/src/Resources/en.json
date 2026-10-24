@@ -104,7 +104,7 @@
     "move_interrupted": "The move was interrupted. Choose the folder that now holds the files and try Move again.",
     "move_unfinished": "This move stopped when TinyTorrent closed. It waits until you choose whether to continue unfinished tasks.",
     "move_failed": "The files could not be moved. They are still in their original folder.",
-    "destination_exists": "Files exist at both locations. Choose another destination to keep both copies.",
+    "destination_exists": "A destination file has a different size. Both copies were kept.",
     "same_location": "The files are already there, under another path.",
     "alias_conflict": "Other torrents use these files with different names. Resolve the file names before continuing.",
     "torrent_error": "The torrent stopped because of an error.",

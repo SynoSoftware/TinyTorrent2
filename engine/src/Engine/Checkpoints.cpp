@@ -45,7 +45,8 @@ void Engine::State::CheckpointUnsaved()
         }
         auto& [id, torrent] = *entry;
         ++entry;
-        if (torrent.unsaved && torrent.checkpointPhase == CheckpointPhase::Idle && now >= torrent.retryAt)
+        if (torrent.unsaved && (!torrent.moving || shutdownPhase == ShutdownPhase::Saving) &&
+            torrent.checkpointPhase == CheckpointPhase::Idle && now >= torrent.retryAt)
         {
             torrent.Checkpoint(IsShuttingDown());
             ++outstanding;

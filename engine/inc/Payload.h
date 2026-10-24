@@ -1,10 +1,15 @@
 #pragma once
 
 #include "Enums.h"
+#include <libtorrent/bitfield.hpp>
+#include <libtorrent/torrent_info.hpp>
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <stop_token>
@@ -22,6 +27,21 @@ struct File
     // How many bytes at the start of the unfinished copy at its `Partial`
     // name a flush proved on disk; 0 when nothing is proved.
     std::uint64_t proven = 0;
+    bool existing = false;
+};
+
+struct Pieces
+{
+    std::shared_ptr<libtorrent::torrent_info const> metadata;
+    std::vector<std::vector<libtorrent::sha256_hash>> hashes;
+    // Libtorrent's storage reader includes the bytes of skipped files that
+    // it keeps in its part file instead of their visible paths.
+    std::function<std::optional<std::vector<std::byte>>(libtorrent::piece_index_t)> read;
+};
+
+struct Reconciled
+{
+    std::optional<libtorrent::typed_bitfield<libtorrent::piece_index_t>> pieces;
 };
 
 // The bytes at the start of a copy that a flush put on the disk: the copy's
@@ -98,6 +118,13 @@ struct Failure
 // the unfinished copy where they are and reports Split. It blocks until every
 // file is placed, restored or kept, or forever for a parked copy.
 std::expected<void, Failure> Move(std::vector<File> const& files, Progress& progress);
+
+// Files follow the metadata's non-padding file order. Existing destinations
+// are verified until the first failed piece; thereafter only verified source
+// pieces replace them. The remaining destination pieces are checked last;
+// the returned map describes the resulting files without another full check.
+std::expected<Reconciled, Failure> Reconcile(Pieces const& pieces, std::vector<File> const& files,
+    Progress& progress);
 
 // Deletes the files permanently on parallel workers, and throws the first
 // failure after trying every file. A file that is already gone counts as
