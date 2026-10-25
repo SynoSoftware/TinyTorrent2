@@ -77,6 +77,21 @@ scoped-subscription design for torrent detail, which the owner has not decided
 to implement; its implemented first stage lives in the protocol and engine
 contracts.
 
+The [torrent indexing plan](plans/14-torrent-indexing-plan.md) designs an opt-in
+general DHT crawler, an engine-owned SQLite database and a separate local
+Search workspace. Search remains usable with indexing off and prioritizes
+responsiveness with explicit bounded coverage; downloads use the existing Add
+workflow. Retention rules remember rejected torrents without
+retaining their metadata and preview removal of existing entries. Owner
+decisions are settled; database/search mechanisms remain candidates to validate.
+Implementation has not started.
+
+The [Rats Search and Bitmagnet inventory](plans/14-torrent-references.md) compares
+their current documentation and source across discovery, metadata, search,
+downloads, availability, storage and index management. It distinguishes inspected
+implementations from partial features and plans, and informs the specification
+without selecting its algorithms, schema or storage policies.
+
 For TableView work, continue with the [table glossary](../lib/TableView/CONTEXT.md),
 [TableView contract](../lib/TableView/docs/tableview-contract.md), and
 [TableView implementation](../lib/TableView/docs/tableview-implementation.md).
