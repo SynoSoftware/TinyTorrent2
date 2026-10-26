@@ -106,8 +106,7 @@ public sealed partial class MainWindow
         )!;
         var property = typeof(Inspector).GetProperty(nameof(Inspector.Peers))!;
         pane.Layout = pane.Layout with { View = PeerView.Default with { Layout = PeerLayout.Table } };
-        pane.Surface.IsMaximized = true;
-        UpdateInspectorSize();
+        Model.IsInspectorMaximized = true;
         foreach (var count in new[] { 100, 1000, 10000 })
         {
             property.SetValue(inspector, null);

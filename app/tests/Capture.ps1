@@ -1,6 +1,6 @@
 param(
     [ValidateSet('1', 'smoke', 'shell', 'schedule', 'desktop', 'details', 'details-files', 'files', 'files-layout',
-        'search', 'library', 'library-files', 'traffic', 'peers', 'connections', 'edits', 'add-layout', 'settings-layout', 'settings-prototype', 'subtitle-tasks', 'memory', 'footer')]
+        'search', 'catalogue', 'library', 'library-files', 'traffic', 'peers', 'connections', 'edits', 'add-layout', 'settings-layout', 'settings-prototype', 'subtitle-tasks', 'memory', 'footer', 'workspace')]
     [string] $Review = '1',
     [ValidateSet('en', 'es')]
     [string] $Language,
@@ -133,7 +133,7 @@ function Test-Idle($torrents) {
     return -not ($torrents | Where-Object { -not $_.paused -or $_.peer_count -or $_.download_rate -or $_.upload_rate })
 }
 
-if ($Review -in 'files', 'files-layout', 'library', 'library-files', 'traffic') {
+if ($Review -in 'files', 'files-layout', 'library', 'library-files', 'traffic', 'catalogue', 'workspace') {
     $document = @{ format = 1; torrents = @(); settings = @{ language = 'en'; theme = 'light'; port_mapping = $false;
         check_for_updates = $false; show_splash = $false; notifications_enabled = $false; prevent_sleep = $false } }
 } else {
@@ -143,6 +143,12 @@ if ($Review -in 'files', 'files-layout', 'library', 'library-files', 'traffic') 
 }
 $document.settings.default_destination = $payload
 $document.settings.all_paused = $Review -notin 'add-layout', 'traffic', 'library-files'
+if ($Review -in 'catalogue', 'workspace') {
+    $document.settings.dht = $false
+    $document.settings.pex = $false
+    $document.settings.lsd = $false
+    $document.settings.indexing = $false
+}
 if ($Review -eq 'settings-prototype') { $document.settings.exclude = $true }
 if ($Language) { $document.settings.language = $Language }
 if ($Theme) { $document.settings.theme = $Theme }
@@ -176,6 +182,16 @@ foreach ($name in 'TINYTORRENT_CAPTURE_DIRECTORY', 'TINYTORRENT_CAPTURE_REVIEW',
 try {
     $null = Start-Engine
     switch ($Review) {
+        { $_ -in 'catalogue', 'workspace' } {
+            $members = foreach ($name in 'Open field atlas', 'Open ocean notes') {
+                $paths = if ($name -eq 'Open field atlas') { 'Chapter 01.txt', 'Maps/Coastline.dat' }
+                    else { 'Chapter 01.txt', 'Chapter 02.txt' }
+                $files = foreach ($path in $paths) {
+                    @{ path = $path; bytes = [Text.Encoding]::ASCII.GetBytes('Local catalogue fixture. ' * 8) }
+                }
+                Add-Torrent (New-Torrent $name @($files)) $payload
+            }
+        }
         { $_ -in 'files', 'files-layout' } {
             # Three torrents share one payload file through different piece
             # sizes; a fourth names a different file of the same name elsewhere.
@@ -296,7 +312,7 @@ try {
                 -ArgumentList @(('"' + $seed + '"'), $port, 'seed-files') -WindowStyle Hidden -PassThru `
                 -RedirectStandardOutput $log -RedirectStandardError (Join-Path $run 'peer-error.log')
             Wait-Until { -not $peer.HasExited -and (Get-Content -LiteralPath $log -Raw) -match 'ready' } 'The loopback seed did not become ready'
-            $target = Add-Torrent (Join-Path $seed 'transfer.torrent') $payload @{ paused = $false; priorities = @(4, 4) }
+            $target = Add-Torrent (Join-Path $seed 'transfer.torrent') $payload @{ paused = $false; default_priority = 4 }
             Wait-Until {
                 $torrent = (Send-Command @{ command = 'snapshot' }).data.torrents[0]
                 $torrent.downloaded -ge 524288 -and $torrent.download_rate -gt 0 -and $torrent.peer_count -gt 0

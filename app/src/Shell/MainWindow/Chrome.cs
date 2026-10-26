@@ -68,21 +68,33 @@ public sealed partial class MainWindow
     private void LayoutStatus()
     {
         var library = Model.Page == WindowPage.Library;
+        var search = Model.Page == WindowPage.Search;
         var about = Model.IsAbout;
         var current = !Model.IsLoading && !Model.IsStorageFailed;
         var transfers = Model.Torrents.Count > 0 || Model.IsLoading;
         var work = Model.Work.Items.Count > 0;
-        var selected = library ? Model.Library.Selection.Items.Count : Model.Selected.Count;
+        var selected = Model.Page == WindowPage.Search ? Model.Search.Selection.Items.Count
+            : library ? Model.Library.Selection.Items.Count : Model.Selected.Count;
         foreach (var label in new[] { CountLabel, InformationLabel, RestrictionLabel })
             label.MaxWidth = double.PositiveInfinity;
         TransferStatus.Spacing = 16;
         ContextIcon.Glyph =
             about ? Syno.Lucide.Info
             : library ? Model.Library.StatusGlyph
+            : search ? Syno.Lucide.Database
             : Model.Page == WindowPage.Settings ? Syno.Lucide.Settings
             : Syno.Lucide.List;
-        SetStatus(CountLabel, Model.CountStatus);
-        SetStatus(InformationLabel, Model.Library.InformationStatus);
+        SetStatus(CountLabel, search ? Model.Search.Totals
+            + (selected > 0 ? " · " + Model.Text.Format("catalogue", "selected_count", selected) : string.Empty) : Model.CountStatus,
+            search ? Model.Search.StatusTip : null);
+        SetStatus(RateLabel, Model.Search.Rate);
+        SetStatus(CollectionLabel, Model.Search.Collection, Model.Search.StatusTip);
+        CollectionIcon.Glyph = Model.Search.CollectionUnavailable
+            ? Syno.Lucide.CircleAlert
+            : Model.Search.State.Enabled ? Syno.Lucide.RefreshCw : Syno.Lucide.Pause;
+        InformationIcon.Glyph = search ? Syno.Lucide.Search : Syno.Lucide.Info;
+        SetStatus(InformationLabel, search ? Model.Search.Matches : Model.Library.InformationStatus);
+        ToolTipService.SetToolTip(ContextStatus, search ? Model.Search.StatusTip : null);
         var downloadTip = about
             ? Model.Text.Format("about", "downloaded_hint", Model.LifetimeDownloaded)
             : Model.DownloadTip;
@@ -142,11 +154,13 @@ public sealed partial class MainWindow
             Model.Text.Get("about", "available_tip")
         );
 
-        ShowStatus(ContextStatus, Model.CountStatus.Length > 0);
+        ShowStatus(ContextStatus, search || Model.CountStatus.Length > 0);
         ShowStatus(ContextIcon, true);
+        ShowStatus(CatalogueRate, search && Model.Search.ShowsRate);
+        ShowStatus(CollectionStatus, search);
         ShowStatus(
             InformationStatus,
-            library && current && !work && Model.Library.InformationStatus.Length > 0
+            !work && (search || library && current && Model.Library.InformationStatus.Length > 0)
         );
         ShowStatus(MemoryStatus, Model.ShowsMemory);
         ShowStatus(DownloadRate, about || transfers);
@@ -177,6 +191,7 @@ public sealed partial class MainWindow
         ReserveDigits(UploadRate, UploadLabel);
         ReserveDigits(MoveRate, MoveLabel);
         ReserveDigits(CheckRate, CheckLabel);
+        ReserveDigits(CatalogueRate, RateLabel);
         if (StatusFits())
             return;
 
@@ -184,6 +199,7 @@ public sealed partial class MainWindow
             var control in new FrameworkElement[]
             {
                 MemoryStatus,
+                CollectionStatus,
                 UpdateAvailable,
                 FreeSpaceStatus,
                 ExternalIpStatus,
@@ -226,13 +242,25 @@ public sealed partial class MainWindow
         if (StatusFits())
             return;
 
-        if (!work)
+        if (search)
+            ShowWork(overflow: true);
+        if (!work || search)
         {
             CountLabel.MaxWidth = Math.Max(
                 0,
                 MeasureText(CountLabel, CountLabel.Text)
                     - Math.Max(0, StatusWidth() - StatusBar.ActualWidth)
             );
+            if (StatusFits())
+                return;
+        }
+
+        if (search)
+        {
+            ShowStatus(CatalogueRate, false);
+            CountLabel.MaxWidth = double.PositiveInfinity;
+            CountLabel.MaxWidth = Math.Max(0, MeasureText(CountLabel, CountLabel.Text)
+                - Math.Max(0, StatusWidth() - StatusBar.ActualWidth));
             if (StatusFits())
                 return;
         }
@@ -420,7 +448,7 @@ public sealed partial class MainWindow
         var exclusions = new FrameworkElement[]
         {
             BackButton,
-            AppIcon,
+            WorkspacePicker,
             Menus,
             Search,
             LanguageButton,
@@ -562,12 +590,12 @@ public sealed partial class MainWindow
         PeersColumn.DisplayName = Model.Text.Get("columns", "peers");
         AddedColumn.DisplayName = Model.Text.Get("columns", "added");
         CompletedOnColumn.DisplayName = Model.Text.Get("columns", "completed_on");
-        Search.PlaceholderText = Model.Text.Get(
-            Model.Page == WindowPage.Library ? "library" : "finding",
-            Model.Page == WindowPage.Library ? "search" : "placeholder"
-        );
+        Search.PlaceholderText = SearchPlaceholder;
         AutomationProperties.SetName(Search, Model.Text.Get("finding", "search"));
-        Search.ItemsSource = Model.FindSuggestions(Search.Text);
+        Search.ItemsSource = Model.Page is WindowPage.Search or WindowPage.Library ? null : Model.FindSuggestions(Search.Text);
+        _catalogueView?.RefreshText();
+        _catalogueInspector?.RefreshText();
+        _catalogueFilters?.RefreshText();
         FiltersTitle.Text = Model.Text.Get("filters", "title");
         AutomationProperties.SetName(Filters, Model.Text.Get("filters", "title"));
         FiltersPane.RefreshText(Model.Text, "filters");

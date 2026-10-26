@@ -85,6 +85,10 @@
     "transfers": "TinyTorrent is transferring files."
   },
   "error": {
+    "crawler_unavailable": "Bitmagnet's TCP/IPv4 crawler is unavailable with the selected transport, encryption or bandwidth limits.",
+    "crawler_proxy_unavailable": "No usable proxy address is available for Bitmagnet.",
+    "crawler_config_invalid": "The Bitmagnet crawler configuration is invalid.",
+    "crawler_storage_failed": "Torrent catalogue storage is unavailable.",
     "unknown": "The operation could not be completed.",
     "argument_registration": "The --registration option needs an action.",
     "argument_folder": "The --data option needs a folder.",

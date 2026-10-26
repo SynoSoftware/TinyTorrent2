@@ -24,6 +24,17 @@ public sealed partial class MainWindow
     private RelayCommand? _switchInspector;
     private bool _menusPending;
 
+    private IReadOnlyList<MenuEntry> WorkspaceMenu(string group) =>
+        [
+            new MenuChoice(Model.Text.Get("window", "torrents"), Syno.Lucide.List,
+                NavigationPage == WindowPage.Torrents, Model.ShowTorrents) { Group = group },
+            new MenuChoice(Model.Text.Get("library", "title"), Syno.Lucide.FolderOpen,
+                NavigationPage == WindowPage.Library, Model.ShowLibrary) { Group = group },
+            new MenuChoice(Model.Text.Get("catalogue", "title"), Syno.Lucide.Search,
+                NavigationPage == WindowPage.Search, Model.ShowSearch)
+                { Group = group, AccessKey = MenuKey("search") },
+        ];
+
     private IReadOnlyList<MenuEntry> LanguageMenu() =>
         [
             .. Strings.Languages.Select(language => new MenuChoice(
@@ -84,12 +95,13 @@ public sealed partial class MainWindow
     private void RefreshMenus()
     {
         var library = Model.Page == WindowPage.Library;
+        var catalogue = Model.Page == WindowPage.Search;
         FileMenu.Title = Model.Text.Get("menus", "file");
         FileMenu.AccessKey = MenuKey("file");
-        TorrentMenu.Title = library
+        TorrentMenu.Title = catalogue ? Model.Text.Get("catalogue", "title") : library
             ? Model.Text.Get("library", "title")
             : Model.Text.Get("menus", "torrent");
-        TorrentMenu.AccessKey = MenuKey(library ? "library" : "torrent");
+        TorrentMenu.AccessKey = MenuKey(catalogue ? "search" : library ? "library" : "torrent");
         ViewMenu.Title = Model.Text.Get("menus", "view");
         ViewMenu.AccessKey = MenuKey("view");
         HelpMenu.Title = Model.Text.Get("menus", "help");
@@ -113,19 +125,69 @@ public sealed partial class MainWindow
                 (PropertiesButton, "properties", Model.Properties),
                 (VerifyButton, "verify", Model.Verify),
                 (RemoveButton, "remove", Model.Remove),
+                (LibraryOpenButton, "open", Model.Library.Open),
+                (LibraryFolderButton, "open_folder", Model.Library.OpenFolder),
+                (LibraryPropertiesButton, "properties", Model.Library.Properties),
                 (SelectedMapButton, "selected_map", SelectedMap),
                 (AllMapButton, "all_map", AllMap),
                 (SettingsButton, "settings", Model.ShowSettings),
             }
         )
+            Describe(button, Model.Text.Get("commands", name), command);
+        foreach (
+            var (button, name, command) in new[]
+            {
+                (DownloadButton, "download_selected", Model.Search.DownloadSelected),
+                (DownloadTorrentButton, "download_torrent", Model.Search.DownloadWhole),
+                (RefreshButton, "refresh", Model.Search.Refresh),
+            }
+        )
+            Describe(button, Model.Text.Get("catalogue", name), command);
+
+        void Describe(AppBarButton button, string label, ICommand command)
         {
-            var label = Model.Text.Get("commands", name);
             var shortcut = ShortcutText(command);
             button.Label = label;
             ToolTipService.SetToolTip(
                 button,
                 shortcut.Length > 0 ? Model.Text.Format("shortcuts", "tip", label, shortcut) : label
             );
+        }
+    }
+
+    // Each page's toolbar holds only the commands that can act on that page,
+    // so no button works on another page's hidden selection and none stays
+    // disabled for good. Add, Magnet and Settings act on the application and
+    // appear on every page. The All connections map opens from Library too.
+    private void ShowPageCommands()
+    {
+        var page = NavigationPage;
+        Show(
+            page == WindowPage.Torrents,
+            ResumeButton,
+            PauseButton,
+            FolderSeparator,
+            FolderButton,
+            PropertiesButton,
+            VerifySeparator,
+            VerifyButton,
+            RemoveSeparator,
+            RemoveButton,
+            SelectedMapButton
+        );
+        Show(
+            page == WindowPage.Library,
+            LibraryOpenButton,
+            LibraryFolderButton,
+            LibraryPropertiesButton
+        );
+        Show(page == WindowPage.Search, DownloadButton, DownloadTorrentButton, RefreshButton);
+        Show(page != WindowPage.Search, AllMapButton, MapSeparator);
+
+        static void Show(bool visible, params UIElement[] commands)
+        {
+            foreach (var command in commands)
+                command.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
         }
     }
 
@@ -147,11 +209,13 @@ public sealed partial class MainWindow
     private void FillMenus()
     {
         var library = Model.Page == WindowPage.Library;
+        var catalogue = Model.Page == WindowPage.Search;
         MenuItems.Fill(
             FileMenu.Items,
             [
                 Command("add_file", Model.Add, Syno.Lucide.FilePlus),
                 Command("add_magnet", Model.AddMagnet, Syno.Lucide.Link),
+                .. catalogue ? SearchMenu().Take(1) : [],
                 new MenuSeparator(),
                 Command("settings", Model.ShowSettings, Syno.Lucide.Settings),
                 new MenuSeparator(),
@@ -162,7 +226,7 @@ public sealed partial class MainWindow
         );
         MenuItems.Fill(
             TorrentMenu.Items,
-            library
+            catalogue ? SearchMenu() : library
                 ? [.. LibraryMenu()]
                 :
                 [
@@ -177,6 +241,8 @@ public sealed partial class MainWindow
         );
         List<MenuEntry> view =
         [
+            .. WorkspaceMenu("WorkspaceView"),
+            new MenuSeparator(),
             new MenuChoice(
                 Model.Text.Get("filters", "title"),
                 Syno.Lucide.Funnel,
@@ -196,20 +262,19 @@ public sealed partial class MainWindow
                 AccessKey = MenuKey("inspector"),
             },
         ];
+        view.Add(
+            new MenuChoice(
+                Model.Text.Get("menus", "toolbar"),
+                Syno.Lucide.PanelTop,
+                Model.IsToolbarOpen,
+                Model.SwitchToolbar
+            )
+            {
+                AccessKey = MenuKey("toolbar"),
+            }
+        );
         if (library)
             view.AddRange(LibraryViewMenu());
-        else
-            view.Add(
-                new MenuChoice(
-                    Model.Text.Get("menus", "toolbar"),
-                    Syno.Lucide.PanelTop,
-                    Model.IsToolbarOpen,
-                    Model.SwitchToolbar
-                )
-                {
-                    AccessKey = MenuKey("toolbar"),
-                }
-            );
         view.Add(new MenuSeparator());
         view.Add(Command("selected_map", SelectedMap, Syno.Lucide.GraphStar));
         view.Add(Command("all_map", AllMap, Syno.Lucide.Globe2));
@@ -547,12 +612,8 @@ public sealed partial class MainWindow
             return;
         if (Model.Inspector.HasDraft && !await LeaveInspector())
             return;
-        if (!Model.CloseInspector())
-            return;
-        if (Model.Page == WindowPage.Library)
-            _libraryTable?.FocusRows();
-        else
-            Torrents.Focus(FocusState.Programmatic);
+        if (Model.CloseInspector())
+            FocusRows(FocusState.Programmatic);
     }
 
     private async Task PasteSources()

@@ -124,6 +124,16 @@
             <Setter Target="SecondFact.Glyph" Value="{x:Bind icons:Lucide.Upload}" />
           </VisualState.Setters>
         </VisualState>
+        <VisualState x:Name="HeaderIndexing">
+          <VisualState.StateTriggers>
+            <StateTrigger IsActive="{x:Bind local:SettingsPage.IsCategory(Model.Overview.Category, app:SettingsCategory.Indexing), Mode=OneWay}" />
+          </VisualState.StateTriggers>
+          <VisualState.Setters>
+            <Setter Target="PageHeader.Artwork" Value="ms-appx:///Assets/Settings/network.png" />
+            <Setter Target="FirstFact.Glyph" Value="{x:Bind icons:Lucide.HardDrive}" />
+            <Setter Target="SecondFact.Glyph" Value="{x:Bind icons:Lucide.ListFilter}" />
+          </VisualState.Setters>
+        </VisualState>
         <VisualState x:Name="HeaderLimits">
           <VisualState.StateTriggers>
             <StateTrigger IsActive="{x:Bind local:SettingsPage.IsCategory(Model.Overview.Category, app:SettingsCategory.Limits), Mode=OneWay}" />
@@ -277,6 +287,14 @@
           AutomationProperties.AutomationId="TransfersCategory"
         >
           <TextBlock Text="{x:Bind Model.Text.Get('settings', 'transfers'), Mode=OneWay}" Style="{StaticResource TinyTorrentNavigationTextStyle}" />
+        </NavigationViewItem>
+        <NavigationViewItem
+          x:Name="IndexingCategory"
+          Tag="Indexing"
+          AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'indexing'), Mode=OneWay}"
+          AutomationProperties.AutomationId="IndexingCategory"
+        >
+          <TextBlock Text="{x:Bind Model.Text.Get('settings', 'indexing'), Mode=OneWay}" Style="{StaticResource TinyTorrentNavigationTextStyle}" />
         </NavigationViewItem>
         <NavigationViewItem
           x:Name="LimitsCategory"
@@ -925,6 +943,7 @@
                       </controls:SettingsRow>
                     </Border>
                   </StackPanel>
+                  <ContentControl x:Name="Indexing" x:Load="False" HorizontalContentAlignment="Stretch" IsTabStop="False" Visibility="Collapsed" />
                   <StackPanel x:Name="Transfers" x:Load="False" Spacing="8" Visibility="Collapsed">
                     <controls:SettingsSection
                       x:Name="DownloadsSection"

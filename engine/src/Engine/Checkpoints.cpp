@@ -14,6 +14,7 @@ constexpr std::ptrdiff_t checkpointLimit = 8;
 void Engine::State::WriteResume(std::string const& id, lt::add_torrent_params params,
     std::function<void(StorageOutcome)> completion)
 {
+    MetadataSource source{.snapshot = true};
     // A guarded magnet handle received only the info dictionary; root metadata
     // from a later torrent-file preview stays with the accepted torrent.
     if (auto found = torrents.find(id); found != torrents.end())
@@ -21,7 +22,9 @@ void Engine::State::WriteResume(std::string const& id, lt::add_torrent_params pa
         params.comment = found->second.comment;
         params.created_by = found->second.creator;
         params.creation_date = found->second.created;
+        source.metainfoPath = found->second.facts.torrentFile;
     }
+    IngestMetadata(params, std::move(source));
     store.Write(ResumeFile(id), [params = std::move(params)]
     {
         auto bytes = lt::write_resume_data_buf(params);

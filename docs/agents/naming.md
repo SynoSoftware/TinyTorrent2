@@ -225,7 +225,7 @@ Project names are unique in the repository, because each project writes to
 
 ### App folders
 
-The product app in `app/src` has seven areas in one WinUI project. Each starts
+The product app in `app/src` has eight areas in one WinUI project. Each starts
 flat and owns its related presentation, behavior and state, so a feature change
 stays local. The root holds `App`, `Enums.cs`, the project and manifest;
 `Assets/`, `Resources/` and `Properties/` retain their packaging roles.
@@ -245,6 +245,8 @@ stays local. The root holds `App`, `Enums.cs`, the project and manifest;
 - `Library/` owns its presentation, lookup, identity, catalogue and cache rules.
   `Imdb/`, `Tmdb/`, `Wikidata/`, `Omdb/` and `MdbList/` own their respective
   provider behavior.
+- `Search/` owns local torrent-catalogue queries, results, sources and inspection.
+  It uses the engine-owned catalogue and the existing Add owner for downloads.
 - `Subtitles/` owns acquisition and its shared supplier contract. `Suppliers/`
   holds OpenSubtitles, SubDL and SubSource; the Supplier host and the
   ISupplier contract stay at the root.

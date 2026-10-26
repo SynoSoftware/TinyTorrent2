@@ -356,6 +356,8 @@ try {
         MaxMindDb = 'installer/notices/MaxMind.Db.txt'
         Win2D = 'installer/notices/Win2D.txt'
         DBIP = 'installer/notices/DB-IP.txt'
+        Bitmagnet = 'installer/notices/Bitmagnet.txt'
+        BoomFilters = 'installer/notices/BoomFilters.txt'
     }
     foreach ($notice in $notices.GetEnumerator()) {
         $directory = Join-Path $licenses $notice.Key

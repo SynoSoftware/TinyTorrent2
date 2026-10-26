@@ -51,9 +51,8 @@
     <VersionDefinitions>TT_VERSION=&quot;$(Version)&quot;;TT_VERSION_MAJOR=$([System.Version]::Parse('$(Version)').Major);TT_VERSION_MINOR=$([System.Version]::Parse('$(Version)').Minor);TT_VERSION_BUILD=$([System.Version]::Parse('$(Version)').Build);TT_VERSION_REVISION=$([System.Math]::Max(0, $([System.Version]::Parse('$(Version)').Revision)))</VersionDefinitions>
   </PropertyGroup>
 
-  <!-- The dependencies that Dependencies.ps1 builds into 3rdParty: static libraries and, with
-       RuntimeLibrary below, the static C runtime, so the engine is one executable with no
-       dependency DLLs beside it. -->
+  <!-- Dependencies.ps1 supplies the static torrent/crypto libraries. SQLite
+       shares the native NuGet runtime deployed with the product window. -->
   <PropertyGroup>
     <ThirdPartyPath>$(MSBuildThisFileDirectory)..\..\3rdParty\</ThirdPartyPath>
     <!-- External, so warnings and code analysis report only the engine's own code. -->
@@ -135,6 +134,11 @@
     <ClCompile Include="Engine\Tasks.cpp" />
     <ClCompile Include="Engine\Alerts.cpp" />
     <ClCompile Include="Engine\Detail.cpp" />
+    <ClCompile Include="Engine\Indexing.cpp" />
+    <ClCompile Include="Engine\Bitmagnet.cpp" />
+    <ClCompile Include="BitmagnetCrawler.cpp" />
+    <ClCompile Include="MetadataRequester.cpp" />
+    <ClCompile Include="Catalogue.cpp" />
     <ClCompile Include="Changes.cpp" />
     <ClCompile Include="Log.cpp" />
     <ClCompile Include="Torrent.cpp" />
@@ -172,6 +176,23 @@
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />
+
+  <Target Name="SQLiteRuntime" BeforeTargets="PrepareForBuild" Condition="'$(DesignTimeBuild)' != 'true'">
+    <PropertyGroup>
+      <SQLitePackageRoot Condition="'$(NuGetPackageRoot)' != ''">$(NuGetPackageRoot)</SQLitePackageRoot>
+      <SQLitePackageRoot Condition="'$(SQLitePackageRoot)' == '' And '$(NUGET_PACKAGES)' != ''">$(NUGET_PACKAGES)\</SQLitePackageRoot>
+      <SQLitePackageRoot Condition="'$(SQLitePackageRoot)' == ''">$(USERPROFILE)\.nuget\packages\</SQLitePackageRoot>
+      <SQLiteRuntime>$(SQLitePackageRoot)sqlite\$(SQLiteRuntimeVersion)\runtimes\win-x64\native\e_sqlite3.dll</SQLiteRuntime>
+    </PropertyGroup>
+    <MSBuild Projects="$(MSBuildThisFileDirectory)..\..\app\src\TinyTorrent.csproj" Targets="Restore"
+      Properties="RestorePackagesPath=$(SQLitePackageRoot)" Condition="!Exists('$(SQLiteRuntime)')" />
+    <Error Condition="!Exists('$(SQLiteRuntime)')" Text="The bundled SQLite runtime could not be restored: $(SQLiteRuntime)" />
+    <MakeDir Directories="$(OutDir)" />
+    <Copy SourceFiles="$(SQLiteRuntime)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+    <ItemGroup>
+      <FileWrites Include="$(OutDir)e_sqlite3.dll" />
+    </ItemGroup>
+  </Target>
 
   <!-- A build never starts Dependencies.ps1, so a build after 3rdParty was moved or removed
        stops here instead of downloading and compiling every dependency again. The repository

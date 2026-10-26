@@ -85,6 +85,10 @@
     "transfers": "O TinyTorrent está transferindo arquivos."
   },
   "error": {
+    "crawler_unavailable": "O rastreador TCP/IPv4 do Bitmagnet não está disponível com o transporte, a criptografia ou os limites de largura de banda selecionados.",
+    "crawler_proxy_unavailable": "Não há nenhum endereço de proxy utilizável para o Bitmagnet.",
+    "crawler_config_invalid": "A configuração do rastreador do Bitmagnet é inválida.",
+    "crawler_storage_failed": "O armazenamento do catálogo de torrents está indisponível.",
     "unknown": "Não foi possível concluir a operação.",
     "argument_registration": "A opção --registration precisa de uma ação.",
     "argument_folder": "A opção --data precisa de uma pasta.",

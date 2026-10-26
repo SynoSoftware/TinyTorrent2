@@ -1,0 +1,89 @@
+<UserControl
+  x:Class="Syno.TinyTorrent.Settings.IndexingView"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:controls="using:Syno.TinyTorrent.Controls"
+  xmlns:icons="using:Syno"
+>
+  <StackPanel Spacing="8">
+    <controls:SettingsSection x:Name="CollectionSection" Header="{x:Bind Model.Text.Get('catalogue', 'collection'), Mode=OneWay}" Glyph="{x:Bind icons:Lucide.Search}" IsExpanded="True">
+      <StackPanel>
+      <controls:SettingsRow
+        Setting="{x:Bind Model.Settings.Indexing}"
+        Description="{x:Bind Model.Text.Get('catalogue', 'description'), Mode=OneWay}"
+        StateText="{x:Bind controls:SettingsRow.State(Model.Settings.Indexing.IsOn, Model.Settings.OnText, Model.Settings.OffText), Mode=OneWay}"
+      >
+        <ToggleSwitch x:Name="Enabled" IsOn="{x:Bind Model.Settings.Indexing.IsOn, Mode=OneWay}" AutomationProperties.AutomationId="IndexingEnabled" />
+      </controls:SettingsRow>
+      <controls:SettingsRow x:Name="AlgorithmRow" Header="{x:Bind Model.Text.Get('catalogue', 'algorithm'), Mode=OneWay}">
+        <TextBlock x:Name="Algorithm" Style="{StaticResource TinyTorrentBodyTextStyle}" VerticalAlignment="Center" AutomationProperties.AutomationId="IndexingAlgorithm" />
+      </controls:SettingsRow>
+      <controls:SettingsRow Header="{x:Bind Model.Text.Get('catalogue', 'indexed'), Mode=OneWay}">
+        <TextBlock x:Name="Indexed" Style="{StaticResource TinyTorrentBodyTextStyle}" VerticalAlignment="Center" />
+      </controls:SettingsRow>
+      <controls:SettingsRow Header="{x:Bind Model.Text.Get('catalogue', 'activity'), Mode=OneWay}">
+        <StackPanel Orientation="Horizontal" Spacing="16" VerticalAlignment="Center">
+          <StackPanel x:Name="RateGroup" Orientation="Horizontal" Spacing="6">
+            <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Gauge}" Style="{StaticResource TinyTorrentStatusIconStyle}" AutomationProperties.AccessibilityView="Raw" />
+            <TextBlock x:Name="Rate" Style="{StaticResource TinyTorrentBodyTextStyle}" />
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.RefreshCw}" Style="{StaticResource TinyTorrentStatusIconStyle}" AutomationProperties.AccessibilityView="Raw" />
+            <TextBlock x:Name="Activity" Style="{StaticResource TinyTorrentBodyTextStyle}" />
+          </StackPanel>
+        </StackPanel>
+      </controls:SettingsRow>
+      <controls:SettingsRow Header="{x:Bind Model.Text.Get('catalogue', 'peer_lookups'), Mode=OneWay}">
+        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+          <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Search}" Style="{StaticResource TinyTorrentStatusIconStyle}" AutomationProperties.AccessibilityView="Raw" />
+          <TextBlock x:Name="Probes" Style="{StaticResource TinyTorrentBodyTextStyle}" AutomationProperties.AutomationId="IndexingPeerLookups" />
+        </StackPanel>
+      </controls:SettingsRow>
+      <controls:SettingsRow x:Name="IdleRow" Setting="{x:Bind Model.Settings.IndexMetadataIdle}">
+        <TextBox x:Name="MetadataIdle" Width="160" InputScope="Number" Text="{x:Bind Model.Settings.IndexMetadataIdle.Input, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="IndexMetadataIdle" />
+      </controls:SettingsRow>
+      <controls:SettingsRow x:Name="BusyRow" Setting="{x:Bind Model.Settings.IndexMetadataBusy}" BorderThickness="0">
+        <TextBox x:Name="MetadataBusy" Width="160" InputScope="Number" Text="{x:Bind Model.Settings.IndexMetadataBusy.Input, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="IndexMetadataBusy" />
+      </controls:SettingsRow>
+      </StackPanel>
+    </controls:SettingsSection>
+    <controls:SettingsSection x:Name="StorageSection" Header="{x:Bind Model.Text.Get('catalogue', 'storage'), Mode=OneWay}" Glyph="{x:Bind icons:Lucide.HardDrive}" IsExpanded="True">
+      <StackPanel>
+        <controls:SettingsRow x:Name="BudgetRow" Header="{x:Bind Model.Text.Get('catalogue', 'budget'), Mode=OneWay}" Error="{x:Bind Model.Settings.IndexBudget.Message, Mode=OneWay}">
+          <controls:SettingsRow.UnitSelector>
+            <ComboBox x:Name="BudgetUnit" Width="100" SelectionChanged="OnBudgetUnit" AutomationProperties.AutomationId="IndexBudgetUnit" />
+          </controls:SettingsRow.UnitSelector>
+          <TextBox x:Name="Budget" Width="160" LostFocus="OnBudgetDeparture" KeyDown="OnBudgetKey" AutomationProperties.AutomationId="IndexBudget" />
+        </controls:SettingsRow>
+        <controls:SettingsRow Header="{x:Bind Model.Text.Get('catalogue', 'stale'), Mode=OneWay}" Error="{x:Bind Model.Settings.IndexStale.Message, Mode=OneWay}" BorderThickness="0">
+          <controls:SettingsRow.UnitSelector>
+            <ComboBox x:Name="StaleUnit" Width="100" SelectionChanged="OnStaleUnit" AutomationProperties.AutomationId="IndexStaleUnit" />
+          </controls:SettingsRow.UnitSelector>
+          <TextBox x:Name="Stale" Width="160" LostFocus="OnStaleDeparture" KeyDown="OnStaleKey" AutomationProperties.AutomationId="IndexStale" />
+        </controls:SettingsRow>
+      </StackPanel>
+    </controls:SettingsSection>
+    <controls:SettingsSection x:Name="RulesSection" Header="{x:Bind Model.Text.Get('catalogue', 'rules'), Mode=OneWay}" Glyph="{x:Bind icons:Lucide.ListFilter}" IsExpanded="True">
+      <StackPanel>
+        <controls:SettingsRow x:Name="Exclusions" Header="{x:Bind Model.Text.Get('catalogue', 'rules'), Mode=OneWay}">
+          <controls:ActionButton Width="174" Text="{x:Bind Model.Text.Get('catalogue', 'add'), Mode=OneWay}" Glyph="{x:Bind icons:Lucide.Plus}" Click="OnAdd" AutomationProperties.AutomationId="AddIndexRule" />
+        </controls:SettingsRow>
+        <StackPanel x:Name="RulesContent" />
+      </StackPanel>
+    </controls:SettingsSection>
+    <controls:SettingsSection x:Name="MaintenanceSection" Header="{x:Bind Model.Text.Get('catalogue', 'maintenance'), Mode=OneWay}" Glyph="{x:Bind icons:Lucide.Wrench}" IsExpanded="True">
+      <StackPanel>
+        <controls:SettingsRow Header="{x:Bind Model.Text.Get('catalogue', 'retained_torrents'), Mode=OneWay}">
+          <controls:ActionButton Width="174" Text="{x:Bind Model.Text.Get('catalogue', 'review'), Mode=OneWay}" Glyph="{x:Bind icons:Lucide.ListFilter}" Click="OnReview" AutomationProperties.AutomationId="ReviewIndexRules" />
+        </controls:SettingsRow>
+        <controls:SettingsRow Header="{x:Bind Model.Text.Get('catalogue', 'search_index'), Mode=OneWay}">
+          <controls:ActionButton Width="174" Text="{x:Bind Model.Text.Get('catalogue', 'rebuild'), Mode=OneWay}" Glyph="{x:Bind icons:Lucide.RefreshCw}" Click="OnRebuild" AutomationProperties.AutomationId="RebuildIndex" />
+        </controls:SettingsRow>
+        <controls:SettingsRow Header="{x:Bind Model.Text.Get('catalogue', 'saved_catalogue'), Mode=OneWay}" BorderThickness="0">
+          <controls:ActionButton Width="174" Text="{x:Bind Model.Text.Get('catalogue', 'clear'), Mode=OneWay}" Glyph="{x:Bind icons:Lucide.Trash2}" Click="OnClear" AutomationProperties.AutomationId="ClearIndex" />
+        </controls:SettingsRow>
+      </StackPanel>
+    </controls:SettingsSection>
+    <TextBlock x:Name="Feedback" TextWrapping="Wrap" Foreground="{ThemeResource SystemFillColorCriticalBrush}" Visibility="Collapsed" AutomationProperties.LiveSetting="Polite" />
+  </StackPanel>
+</UserControl>

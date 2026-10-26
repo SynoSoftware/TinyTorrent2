@@ -469,6 +469,54 @@ void Engine::State::RecoverAdditions()
 
 void Engine::State::On(lt::add_torrent_alert const& alert)
 {
+    if (auto cookie = alert.params.userdata.get<Acquisition>())
+    {
+        auto request = reinterpret_cast<std::uintptr_t>(cookie);
+        auto hashes = Hashes(alert.params.info_hashes);
+        auto found = std::find_if(acquisitions.begin(), acquisitions.end(), [request, &hashes](auto const& item)
+        {
+            return item.second.request == request && std::any_of(hashes.begin(), hashes.end(), [&item](auto const& hash)
+                { return hash.substr(0, 40) == item.first; });
+        });
+        if (found == acquisitions.end() || !settings.indexing || IsShuttingDown())
+        {
+            bool owned = FindWorking(alert.handle) ||
+                std::any_of(previews.begin(), previews.end(), [&alert](auto const& item) { return item.second.handle == alert.handle; }) ||
+                std::any_of(additions.begin(), additions.end(), [&alert](auto const& item) { return item.second.handle == alert.handle; });
+            if (!owned && !alert.error && alert.handle.is_valid())
+                session->remove_torrent(alert.handle);
+            if (found != acquisitions.end())
+            {
+                found->second.handle = alert.handle;
+                found->second.phase = AcquisitionPhase::Removing;
+            }
+            return;
+        }
+        if (alert.error)
+        {
+            auto key = found->first;
+            auto cancelled = found->second.phase == AcquisitionPhase::Cancelling;
+            auto waiting = std::move(found->second.waiting);
+            acquisitions.erase(found);
+            if (!cancelled)
+                indexFailures.insert(key);
+            for (auto& retry : waiting)
+                retry();
+            return;
+        }
+        found->second.handle = alert.handle;
+        if (found->second.phase == AcquisitionPhase::Cancelling)
+        {
+            session->remove_torrent(alert.handle);
+            found->second.phase = AcquisitionPhase::Removing;
+            return;
+        }
+        found->second.phase = AcquisitionPhase::Metadata;
+        ApplyPolicy(found->second, IndexBusy());
+        for (auto& retry : std::exchange(found->second.waiting, {}))
+            retry();
+        return;
+    }
     auto pointer = alert.params.userdata.get<Addition>();
     if (!pointer)
     {

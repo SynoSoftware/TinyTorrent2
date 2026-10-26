@@ -89,14 +89,13 @@ default loader or treat an info dictionary as a complete torrent.
 | BEP 44: DHT items | `dht_get_item()` and `dht_put_item()` support immutable and signed mutable values. They can support an application's own small records; they do not supply an existing searchable torrent catalogue. [Session APIs](https://libtorrent.org/reference-Session.html#dht_get_item%28%29). |
 | Custom integration | `dht_live_nodes()`, `dht_direct_request()` and `dht_storage_interface` expose routing contacts, custom RPCs and storage integration. Default DHT peer storage is an in-memory routing responsibility, not a durable metadata index. [Session](https://libtorrent.org/reference-Session.html), [storage](https://libtorrent.org/reference-DHT.html#dht_storage_interface). |
 
-The current engine configures DHT bootstrap nodes, applies the person's DHT
-setting and handles magnet metadata. Its inspected sources contain no calls to
-`dht_sample_infohashes()` or passive indexing handlers. Libtorrent supplies the
-network primitives; crawling policy, deduplication, metadata job limits,
-persistence, search and catalogue presentation remain application work.
+The engine's optional catalogue uses `dht_sample_infohashes()` with its existing
+DHT session and guarded metadata acquisition. Libtorrent supplies the network
+primitives; the engine owns crawling policy, deduplication, metadata job limits,
+persistence and local search. The product window owns catalogue presentation.
 
-The [feature specification](../plans/14-torrent-indexing-plan.md) owns proposed
-TinyTorrent behavior. The [Rats Search and Bitmagnet inventory](../plans/14-torrent-references.md)
+The [torrent catalogue contract](indexing.md) owns TinyTorrent behavior.
+The [Rats Search and Bitmagnet inventory](../plans/14-torrent-references.md)
 compares other applications, whose protocol support, limits and preservation
 choices differ from this dependency's capabilities.
 

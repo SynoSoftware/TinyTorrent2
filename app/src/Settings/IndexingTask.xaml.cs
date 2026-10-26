@@ -3,24 +3,24 @@ using System.Globalization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Input;
-using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Shared.Engine;
 using Syno.TinyTorrent.Shell;
-using Windows.System;
 
 namespace Syno.TinyTorrent.Settings;
 
-public sealed record RemovalRow(string Hash, string Name, string Reason);
+public sealed record RemovalRow(string Name, string Reason)
+{
+    public int NameSpan => Reason.Length == 0 ? 2 : 1;
+}
 
-public sealed partial class IndexingDialog : UserControl, IDraft, IDisposable
+public sealed partial class IndexingTask : UserControl, IDraft, IDisposable
 {
     private sealed record TextInput(TextBox Value, ComboBox Mode);
     private sealed record RangeInput(ComboBox Comparison, TextBox Value, TextBox End, ComboBox? Unit);
 
     private readonly CatalogueClient _client;
-    private readonly bool _startsClear;
+    private readonly IndexingPage _opening;
     private readonly List<Action> _text = [];
     private IReadOnlyList<Catalogue.Rule> _rules = [];
     private IReadOnlyList<Catalogue.Rule> _proposed = [];
@@ -28,7 +28,11 @@ public sealed partial class IndexingDialog : UserControl, IDraft, IDisposable
     private string _draftId = string.Empty;
     private Catalogue.PolicyPreview? _policy;
     private Catalogue.Removal? _removal;
-    private readonly List<Catalogue.RemovalRow> _removalRows = [];
+    private IReadOnlyList<Catalogue.RemovalRow> _removalRows = [];
+    private readonly List<long> _pages = [0];
+    private int _pageIndex;
+    private long _nextRow;
+    private bool _moreRows;
     private bool _rowsReady;
     private bool _clearing;
     private readonly TextInput _title;
@@ -43,28 +47,33 @@ public sealed partial class IndexingDialog : UserControl, IDraft, IDisposable
     private bool _stopped;
     private bool _cancel;
     private bool _loading = true;
-    private int _budgetScale = 1;
-    private int _staleScale = 24;
+    private bool _validRule;
 
     public MainViewModel Model { get; }
     internal Dialog Dialog { get; }
     public bool IsPending => _pending;
-    public bool HasDraft => _page != IndexingPage.Settings;
+    public bool HasDraft => true;
     public bool CanSubmit => !_pending && !_stopped && Model.CanEdit
-        && (_page == IndexingPage.Edit && IsValidRule() || _page == IndexingPage.Policy
+        && (_page == IndexingPage.Edit && _validRule || _page == IndexingPage.Policy && _policy is not null
             || _page == IndexingPage.Removal && _rowsReady && _removal?.Torrents > 0);
     public ClosePolicy ClosePolicy => new ClosePolicy.Discard();
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    internal IndexingDialog(MainViewModel model, bool clear = false)
+    internal IndexingTask(MainViewModel model, IndexingPage page, Catalogue.Rule? rule = null, bool clear = false)
     {
         Model = model;
         _client = model.Catalogue;
-        _startsClear = clear;
+        _opening = _page = page;
+        _editing = rule;
+        _clearing = clear;
         InitializeComponent();
-        Dialog = new Dialog { Content = this, Glyph = Lucide.Search };
+        Dialog = new Dialog { Content = this, Glyph = Lucide.ListFilter };
+        Dialog.SizeToContent();
         Dialog.Opened += OnOpened;
-        Dialog.CloseButtonClick += OnClose;
+        Dialog.CloseButtonClick += (_, args) =>
+        {
+            if (_pending) { _cancel = true; args.Cancel = true; }
+        };
         _title = AddText(TorrentConditions, "title_condition", "RuleTitle");
         _size = AddRange(TorrentConditions, "total_size", "RuleSize", true);
         _count = AddRange(TorrentConditions, "file_count", "RuleCount", false);
@@ -74,16 +83,9 @@ public sealed partial class IndexingDialog : UserControl, IDraft, IDisposable
         _fileSize = AddRange(FileConditions, "file_size", "RuleFileSize", true);
         Quantifier.ItemsSource = new[] { T("any_file"), T("every_file"), T("no_file") };
         Quantifier.SelectedIndex = 0;
-        StaleUnit.ItemsSource = new[] { T("hours"), T("days"), T("weeks") };
-        StaleUnit.SelectedIndex = 1;
-        BudgetUnit.ItemsSource = new[] { T("unit_mib"), T("unit_gib") };
-        BudgetUnit.SelectedIndex = 0;
-        RemovalEntries.Schema<RemovalRow>().Key(row => row.Hash);
-        Model.Settings.PropertyChanged += OnSettings;
+        Quantifier.SelectionChanged += (_, _) => Validate();
         Model.PropertyChanged += OnModel;
-        Model.Search.PropertyChanged += OnSearch;
         _loading = false;
-        RefreshInputs();
         RefreshText();
     }
 
@@ -92,49 +94,24 @@ public sealed partial class IndexingDialog : UserControl, IDraft, IDisposable
     private async void OnOpened(ContentDialog sender, ContentDialogOpenedEventArgs args) =>
         await Run(async () =>
         {
+            Width = Math.Min(_page == IndexingPage.Edit ? 800 : 560, Math.Max(320, Dialog.XamlRoot.Size.Width - 96));
             _rules = await _client.RulesAsync();
-            await RefreshStatus();
-            if (_startsClear && !_stopped)
-                await LoadRemoval(true);
+            if (_stopped)
+                return;
+            if (_opening == IndexingPage.Edit)
+                Edit(_editing);
+            else if (_opening == IndexingPage.Policy)
+            {
+                _proposed = _rules.Where(item => item.RuleId != _editing?.RuleId).ToArray();
+                _policy = await _client.PreviewRulesAsync(_proposed);
+                if (!_stopped)
+                    SetPage(IndexingPage.Policy);
+            }
+            else await LoadRemoval(_clearing);
         });
-
-    private void OnSettings(object? sender, PropertyChangedEventArgs args)
-    {
-        if (_page == IndexingPage.Settings)
-            RefreshInputs();
-        Bindings.Update();
-    }
 
     private void OnModel(object? sender, PropertyChangedEventArgs args) => Changed();
 
-    private void OnSearch(object? sender, PropertyChangedEventArgs args) => ShowStatus();
-
-    private void RefreshInputs()
-    {
-        var focused = XamlRoot is { } root ? FocusManager.GetFocusedElement(root) : null;
-        if (!ReferenceEquals(focused, Budget) && !Model.Settings.IndexBudget.HasDraft && !Model.Settings.IndexBudget.IsPending)
-            Budget.Text = (Model.Settings.IndexBudget.ConfirmedNumber / _budgetScale)
-                .ToString("G", CultureInfo.CurrentCulture);
-        if (!ReferenceEquals(focused, Stale) && !Model.Settings.IndexStale.HasDraft && !Model.Settings.IndexStale.IsPending)
-            Stale.Text = (Model.Settings.IndexStale.ConfirmedNumber / _staleScale)
-                .ToString("G", CultureInfo.CurrentCulture);
-    }
-
-    private async Task RefreshStatus()
-    {
-        await Model.Search.RefreshStatus();
-        if (_stopped)
-            return;
-        ShowStatus();
-        ShowRules();
-    }
-
-    private void ShowStatus()
-    {
-        var status = Model.Search.State;
-        Usage.Text = Model.Text.Format("catalogue", "used", Model.Text.Bytes(status.Allocated));
-        Excluded.Text = Model.Text.Format("catalogue", "excluded_count", status.Rejected);
-    }
 
     internal void RefreshText()
     {
@@ -153,26 +130,22 @@ public sealed partial class IndexingDialog : UserControl, IDraft, IDisposable
             IndexingPage.Removal => T(_clearing ? "delete" : "remove"),
             _ => string.Empty,
         };
-        Dialog.PrimaryGlyph = _page == IndexingPage.Edit ? Lucide.Search : Lucide.Check;
-        Dialog.CloseButtonText = _page == IndexingPage.Settings ? T("done") : Model.Text.Get("dialog", "cancel");
-        AutomationProperties.SetName(Budget, T("budget"));
-        AutomationProperties.SetName(BudgetUnit, T("budget_unit"));
-        AutomationProperties.SetName(Stale, T("stale"));
-        AutomationProperties.SetName(StaleUnit, T("age_unit"));
+        Dialog.Glyph = _page == IndexingPage.Removal && _clearing ? Lucide.Trash2 : Lucide.ListFilter;
+        Dialog.PrimaryGlyph = _page switch
+        {
+            IndexingPage.Edit => Lucide.ListFilter,
+            IndexingPage.Removal => Lucide.Trash2,
+            _ => Lucide.Check,
+        };
+        Dialog.CloseButtonText = Model.Text.Get("dialog", "cancel");
         AutomationProperties.SetName(Quantifier, T("file_matching"));
         _loading = true;
         RefreshChoices(Quantifier, [T("any_file"), T("every_file"), T("no_file")]);
-        RefreshChoices(StaleUnit, [T("hours"), T("days"), T("weeks")]);
-        RefreshChoices(BudgetUnit, [T("unit_mib"), T("unit_gib")]);
         foreach (var refresh in _text)
             refresh();
         _loading = false;
-        ShowStatus();
-        ShowRules();
-        RemovalEntries.Strings = Model.Text.Table;
-        TorrentColumn.DisplayName = T("torrent");
-        ReasonColumn.DisplayName = T("reason");
         ShowPreview();
+        Validate();
         Changed();
     }
 
@@ -189,41 +162,17 @@ public sealed partial class IndexingDialog : UserControl, IDraft, IDisposable
         control.SelectedIndex = selected;
     }
 
-    private void ShowRules()
+    internal static string Describe(Catalogue.Rule rule, Strings text)
     {
-        RulesContent.Children.Clear();
-        if (_rules.Count == 0)
-            RulesContent.Children.Add(new TextBlock { Text = T("no_rules") });
-        foreach (var rule in _rules)
+        string T(string key) => text.Get("catalogue", key);
+        string RangeText(Catalogue.Range range, bool bytes)
         {
-            var row = new Grid { ColumnSpacing = 8 };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            var label = new TextBlock
-            {
-                Text = Describe(rule),
-                TextWrapping = TextWrapping.NoWrap,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-            ToolTipService.SetToolTip(label, label.Text);
-            AutomationProperties.SetHelpText(label, label.Text);
-            row.Children.Add(label);
-            var edit = new ActionButton { Text = T("edit"), Glyph = Lucide.Pencil };
-            edit.Click += (_, _) => Edit(rule);
-            Grid.SetColumn(edit, 1);
-            row.Children.Add(edit);
-            var remove = new ActionButton { Text = T("remove"), Glyph = Lucide.Trash2 };
-            remove.Click += async (_, _) => await PreviewRules(_rules.Where(item => item.RuleId != rule.RuleId).ToArray());
-            Grid.SetColumn(remove, 2);
-            row.Children.Add(remove);
-            RulesContent.Children.Add(row);
+            string Value(long value) => bytes ? text.Bytes(value) : value.ToString("N0", CultureInfo.CurrentCulture);
+            return range.Minimum == range.Maximum && range.Minimum is { } same ? "= " + Value(same)
+                : range.Minimum is { } lower && range.Maximum is { } upper ? Value(lower) + " – " + Value(upper)
+                : range.Minimum is { } min ? "≥ " + Value(min)
+                : range.Maximum is { } max ? "≤ " + Value(max) : string.Empty;
         }
-    }
-
-    private string Describe(Catalogue.Rule rule)
-    {
         var facts = new List<string>();
         if (rule.Title.Value.Length > 0)
             facts.Add(T("title_condition") + ": " + (rule.Title.Exclude ? T("not") + " " : string.Empty) + rule.Title.Value);
@@ -247,26 +196,25 @@ public sealed partial class IndexingDialog : UserControl, IDraft, IDisposable
         return string.Join(" · ", facts);
     }
 
-    private string RangeText(Catalogue.Range range, bool bytes)
-    {
-        string Value(long value) => bytes ? Model.Text.Bytes(value) : value.ToString("N0", CultureInfo.CurrentCulture);
-        return range.Minimum == range.Maximum && range.Minimum is { } same ? "= " + Value(same)
-            : range.Minimum is { } lower && range.Maximum is { } upper ? Value(lower) + " – " + Value(upper)
-            : range.Minimum is { } min ? "≥ " + Value(min)
-            : range.Maximum is { } max ? "≤ " + Value(max) : string.Empty;
-    }
-
     private void SetPage(IndexingPage page)
     {
         _page = page;
-        SettingsContent.Visibility = page == IndexingPage.Settings ? Visibility.Visible : Visibility.Collapsed;
+        if (Dialog.XamlRoot is { } root)
+            Width = Math.Min(page == IndexingPage.Edit ? 800 : 560, Math.Max(320, root.Size.Width - 96));
         EditorContent.Visibility = page == IndexingPage.Edit ? Visibility.Visible : Visibility.Collapsed;
         PreviewContent.Visibility = page is IndexingPage.Policy or IndexingPage.Removal ? Visibility.Visible : Visibility.Collapsed;
         Feedback.Visibility = Visibility.Collapsed;
         RefreshText();
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (_stopped || _page != page)
+                return;
+            Viewport.ChangeView(0, 0, null, true);
+            if (page == IndexingPage.Edit)
+                _title.Value.Focus(FocusState.Programmatic);
+            else Dialog.Focus(FocusState.Programmatic);
+        });
     }
-
-    private void OnAdd(object sender, RoutedEventArgs args) => Edit(null);
 
     private void Edit(Catalogue.Rule? rule)
     {
@@ -295,10 +243,15 @@ public sealed partial class IndexingDialog : UserControl, IDraft, IDisposable
     private void ShowPreview()
     {
         PreviewFacts.Children.Clear();
-        RemovalEntries.Visibility = _page == IndexingPage.Removal ? Visibility.Visible : Visibility.Collapsed;
-        PreviewCoverage.Visibility = _page == IndexingPage.Removal ? Visibility.Visible : Visibility.Collapsed;
+        PolicyChanges.Children.Clear();
+        RemovalList.Visibility = _page == IndexingPage.Removal && _removalRows.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        Paging.Visibility = _page == IndexingPage.Removal && (_pageIndex > 0 || _moreRows) ? Visibility.Visible : Visibility.Collapsed;
         if (_page == IndexingPage.Policy && _policy is { } policy)
         {
+            foreach (var rule in _proposed.Where(rule => !_rules.Contains(rule)))
+                PolicyChange(_rules.Any(previous => previous.RuleId == rule.RuleId) ? "edit_rule" : "add_rule", rule);
+            foreach (var rule in _rules.Where(rule => !_proposed.Any(next => next.RuleId == rule.RuleId)))
+                PolicyChange("remove", rule);
             PreviewDescription.Text = T("policy_explanation");
             Fact("suppressed_now", policy.Suppressed.ToString("N0", CultureInfo.CurrentCulture));
             Fact("suppressed_after", policy.Retained.ToString("N0", CultureInfo.CurrentCulture));
@@ -306,18 +259,38 @@ public sealed partial class IndexingDialog : UserControl, IDraft, IDisposable
         }
         else if (_page == IndexingPage.Removal && _removal is { } removal)
         {
-            PreviewDescription.Text = T(_clearing ? "clear_explanation" : "removal_explanation");
-            Fact("torrents", removal.Torrents.ToString("N0", CultureInfo.CurrentCulture));
-            Fact("files", removal.Files.ToString("N0", CultureInfo.CurrentCulture));
-            Fact("retained_bytes", Model.Text.Bytes(removal.Bytes));
+            PreviewDescription.Text = removal.Torrents == 0 ? T(_clearing ? "empty" : "nothing_to_remove")
+                : T(_clearing ? "clear_explanation" : "removal_explanation");
+            if (removal.Torrents > 0)
+            {
+                PreviewFacts.Children.Add(new TextBlock
+                {
+                    Text = Model.Text.Format("catalogue", "removal_summary", removal.Torrents, removal.Files),
+                    Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"],
+                });
+                PreviewFacts.Children.Add(new TextBlock
+                {
+                    Text = Model.Text.Format("catalogue", "removal_size", Model.Text.Bytes(removal.Bytes)),
+                    Style = (Style)Application.Current.Resources["TinyTorrentTitleDetailTextStyle"],
+                });
+            }
             RemovalEntries.ItemsSource = _removalRows.Select(row => new RemovalRow(
-                row.Torrent.Hash, row.Torrent.Name,
-                _clearing ? T("clear") : string.Join(" · ", row.Reasons.Select(id =>
-                    _rules.FirstOrDefault(rule => rule.RuleId == id) is { } rule ? Describe(rule) : T("rules")))
+                row.Torrent.Name,
+                _clearing ? string.Empty : string.Join(" · ", row.Reasons.Select(id =>
+                    _rules.FirstOrDefault(rule => rule.RuleId == id) is { } rule ? Describe(rule, Model.Text) : T("rules")))
             )).ToArray();
-            PreviewCoverage.Text = Model.Text.Format("catalogue", "preview_coverage", _removalRows.Count, removal.Torrents);
+            PageRange.Text = Model.Text.Format("catalogue", "removal_scope",
+                _pageIndex + 1, removal.Torrents);
+            Previous.IsEnabled = _pageIndex > 0;
+            Next.IsEnabled = _moreRows;
         }
     }
+
+    private void PolicyChange(string action, Catalogue.Rule rule) => PolicyChanges.Children.Add(new TextBlock
+    {
+        Text = T(action) + ": " + Describe(rule, Model.Text),
+        TextWrapping = TextWrapping.Wrap,
+    });
 
     private void Fact(string key, string value)
     {
@@ -339,9 +312,6 @@ public sealed partial class IndexingDialog : UserControl, IDraft, IDisposable
         PreviewFacts.Children.Add(row);
     }
 
-    private async void OnReview(object sender, RoutedEventArgs args) => await PreviewRemoval(false);
-    private async void OnClear(object sender, RoutedEventArgs args) => await PreviewRemoval(true);
-    private Task PreviewRemoval(bool clear) => Run(() => LoadRemoval(clear));
     private async Task LoadRemoval(bool clear)
     {
         _cancel = false;
@@ -352,34 +322,53 @@ public sealed partial class IndexingDialog : UserControl, IDraft, IDisposable
         if (_cancel || _stopped)
             return;
         _clearing = clear;
-        _removalRows.Clear();
+        _removalRows = [];
+        _pages.Clear();
+        _pages.Add(0);
+        _pageIndex = 0;
         _rowsReady = false;
         SetPage(IndexingPage.Removal);
-        await ReadRows();
+        await ReadRows(0);
     }
 
-    private async Task ReadRows()
+    private async Task ReadRows(int index)
     {
         if (_removal is not { } removal)
             return;
-        var page = await _client.RemovalRowsAsync(removal.Token);
+        var page = await _client.RemovalRowsAsync(removal.Token, _pages[index]);
         if (_stopped || _page != IndexingPage.Removal || _removal?.Token != removal.Token)
             return;
-        _removalRows.AddRange(page.Entries);
+        _removalRows = page.Entries;
+        _pageIndex = index;
+        _nextRow = page.Next;
+        _moreRows = page.More;
         _rowsReady = true;
         ShowPreview();
     }
 
-    private async void OnRebuild(object sender, RoutedEventArgs args) => await Run(async () =>
+    private async void OnPrevious(object sender, RoutedEventArgs args) => await Run(async () =>
     {
-        await Model.Search.Rebuild();
-        await RefreshStatus();
+        if (_pageIndex > 0)
+        {
+            await ReadRows(_pageIndex - 1);
+        }
+    });
+
+    private async void OnNext(object sender, RoutedEventArgs args) => await Run(async () =>
+    {
+        if (_moreRows)
+        {
+            if (_pages.Count == _pageIndex + 1)
+                _pages.Add(_nextRow);
+            await ReadRows(_pageIndex + 1);
+        }
     });
 
     public async Task<bool> Submit()
     {
         if (!CanSubmit)
             return false;
+        var completed = false;
         if (_page == IndexingPage.Edit)
         {
             try
@@ -398,9 +387,8 @@ public sealed partial class IndexingDialog : UserControl, IDraft, IDisposable
             await Run(async () =>
             {
                 _rules = await _client.SaveRulesAsync(_proposed);
-                await RefreshStatus();
-                if (!_stopped)
-                    SetPage(IndexingPage.Settings);
+                await Model.Search.RefreshStatus();
+                completed = !_stopped;
             });
         else if (_page == IndexingPage.Removal && _removal is { } removal)
             await Run(async () =>
@@ -441,35 +429,10 @@ public sealed partial class IndexingDialog : UserControl, IDraft, IDisposable
                         throw;
                     }
                 }
-                await RefreshStatus();
-                if (!_stopped)
-                    SetPage(IndexingPage.Settings);
+                await Model.Search.RefreshStatus();
+                completed = !_stopped;
             });
-        return false;
-    }
-
-    private async void OnClose(ContentDialog sender, ContentDialogButtonClickEventArgs args)
-    {
-        if (_pending)
-        {
-            _cancel = true;
-            args.Cancel = true;
-        }
-        else if (_page != IndexingPage.Settings && !Model.IsClosing)
-        {
-            args.Cancel = true;
-            SetPage(IndexingPage.Settings);
-        }
-        else
-        {
-            var deferral = args.GetDeferral();
-            try
-            {
-                await CommitSetting(Model.Settings.IndexBudget, Budget, _budgetScale);
-                await CommitSetting(Model.Settings.IndexStale, Stale, _staleScale);
-            }
-            finally { deferral.Complete(); }
-        }
+        return completed;
     }
 
     private async Task Run(Func<Task> action)
@@ -508,9 +471,7 @@ public sealed partial class IndexingDialog : UserControl, IDraft, IDisposable
     public void Dispose()
     {
         Stop();
-        Model.Settings.PropertyChanged -= OnSettings;
         Model.PropertyChanged -= OnModel;
-        Model.Search.PropertyChanged -= OnSearch;
     }
 
     private TextInput AddText(StackPanel panel, string key, string identifier, bool extensions = false)
@@ -520,19 +481,10 @@ public sealed partial class IndexingDialog : UserControl, IDraft, IDisposable
         AutomationProperties.SetName(input, T(key));
         var mode = new ComboBox { ItemsSource = new[] { T(extensions ? "is_one_of" : "matches"), T(extensions ? "is_not_one_of" : "not_matches") }, SelectedIndex = 0 };
         AutomationProperties.SetName(mode, T(key) + " · " + T("comparison"));
-        var row = new StackPanel { Spacing = 8 };
-        var header = new Grid { ColumnSpacing = 12 };
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var label = new TextBlock { Text = T(key), VerticalAlignment = VerticalAlignment.Center };
-        header.Children.Add(label);
-        Grid.SetColumn(mode, 1);
-        header.Children.Add(mode);
-        row.Children.Add(header);
-        row.Children.Add(input);
-        panel.Children.Add(row);
-        input.TextChanged += (_, _) => Changed();
-        mode.SelectionChanged += (_, _) => Changed();
+        panel.Children.Add(ConditionRow(label, mode, input));
+        input.TextChanged += (_, _) => Validate();
+        mode.SelectionChanged += (_, _) => Validate();
         _text.Add(() =>
         {
             label.Text = T(key);
@@ -549,18 +501,18 @@ public sealed partial class IndexingDialog : UserControl, IDraft, IDisposable
         {
             ItemsSource = new[] { T("any"), ">", "≥", "=", "<", "≤", T("between") },
             SelectedIndex = 0,
-            Header = T(key),
             HorizontalAlignment = HorizontalAlignment.Stretch,
         };
-        var value = new TextBox();
-        var end = new TextBox();
+        var value = new TextBox { MinWidth = 72 };
+        var end = new TextBox { MinWidth = 72 };
         var unit = bytes ? new ComboBox { ItemsSource = new[] { T("bytes"), T("unit_kib"), T("unit_mib"), T("unit_gib") }, SelectedIndex = 2 } : null;
         AutomationProperties.SetAutomationId(value, identifier);
         AutomationProperties.SetName(value, T(key));
         AutomationProperties.SetName(end, T(key) + " · " + T("upper"));
         var row = new Grid { ColumnSpacing = 8 };
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        var upper = new ColumnDefinition { Width = GridLength.Auto };
+        row.ColumnDefinitions.Add(upper);
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         row.Children.Add(value);
         Grid.SetColumn(end, 1);
@@ -573,23 +525,23 @@ public sealed partial class IndexingDialog : UserControl, IDraft, IDisposable
         }
         comparison.SelectionChanged += (_, _) =>
         {
-            value.IsEnabled = comparison.SelectedIndex != 0;
+            row.Visibility = comparison.SelectedIndex != 0 ? Visibility.Visible : Visibility.Collapsed;
             end.Visibility = comparison.SelectedIndex == 6 ? Visibility.Visible : Visibility.Collapsed;
+            upper.Width = comparison.SelectedIndex == 6 ? new GridLength(1, GridUnitType.Star) : GridLength.Auto;
         };
-        value.IsEnabled = false;
+        row.Visibility = Visibility.Collapsed;
         end.Visibility = Visibility.Collapsed;
-        var fields = new StackPanel { Spacing = 8 };
-        fields.Children.Add(comparison);
-        fields.Children.Add(row);
-        panel.Children.Add(fields);
-        value.TextChanged += (_, _) => Changed();
-        end.TextChanged += (_, _) => Changed();
-        comparison.SelectionChanged += (_, _) => Changed();
+        var label = new TextBlock { Text = T(key), VerticalAlignment = VerticalAlignment.Center };
+        panel.Children.Add(ConditionRow(label, comparison, row));
+        value.TextChanged += (_, _) => Validate();
+        end.TextChanged += (_, _) => Validate();
+        comparison.SelectionChanged += (_, _) => Validate();
         if (unit is not null)
-            unit.SelectionChanged += (_, _) => Changed();
+            unit.SelectionChanged += (_, _) => Validate();
         _text.Add(() =>
         {
-            comparison.Header = T(key);
+            label.Text = T(key);
+            AutomationProperties.SetName(comparison, T(key) + " · " + T("comparison"));
             RefreshChoices(comparison, [T("any"), ">", "≥", "=", "<", "≤", T("between")]);
             AutomationProperties.SetName(value, T(key));
             AutomationProperties.SetName(end, T(key) + " · " + T("upper"));
@@ -600,6 +552,36 @@ public sealed partial class IndexingDialog : UserControl, IDraft, IDisposable
             }
         });
         return new(comparison, value, end, unit);
+    }
+
+    private static Grid ConditionRow(TextBlock label, Control comparison, FrameworkElement value)
+    {
+        var row = new Grid { ColumnSpacing = 12, RowSpacing = 8 };
+        row.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        row.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(124) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        label.TextTrimming = TextTrimming.CharacterEllipsis;
+        label.SetBinding(ToolTipService.ToolTipProperty, new Microsoft.UI.Xaml.Data.Binding { Source = label, Path = new PropertyPath(nameof(TextBlock.Text)) });
+        comparison.MinWidth = 144;
+        row.Children.Add(label);
+        row.Children.Add(comparison);
+        row.Children.Add(value);
+        void Arrange(double width)
+        {
+            var narrow = width < 620;
+            row.ColumnDefinitions[0].Width = narrow ? GridLength.Auto : new GridLength(124);
+            Grid.SetColumnSpan(label, narrow ? 3 : 1);
+            Grid.SetRow(comparison, narrow ? 1 : 0);
+            Grid.SetColumn(comparison, narrow ? 0 : 1);
+            Grid.SetRow(value, narrow ? 1 : 0);
+            Grid.SetColumn(value, narrow ? 1 : 2);
+            Grid.SetColumnSpan(value, narrow ? 2 : 1);
+        }
+        row.SizeChanged += (_, args) => Arrange(args.NewSize.Width);
+        Arrange(800);
+        return row;
     }
 
     private static void Set(TextInput input, Catalogue.Text? condition)
@@ -676,10 +658,22 @@ public sealed partial class IndexingDialog : UserControl, IDraft, IDisposable
         return rule;
     }
 
-    private bool IsValidRule()
+    private void Validate()
     {
-        try { ReadRule(); return true; }
-        catch (ArgumentException) { return false; }
+        if (_loading || _page != IndexingPage.Edit)
+            return;
+        try
+        {
+            ReadRule();
+            _validRule = true;
+            Validation.Text = string.Empty;
+        }
+        catch (ArgumentException error)
+        {
+            _validRule = false;
+            Validation.Text = error.Message;
+        }
+        Changed();
     }
 
     private Catalogue.Text ReadExtensions()
@@ -691,54 +685,4 @@ public sealed partial class IndexingDialog : UserControl, IDraft, IDisposable
         return new() { Value = string.Join(",", values), Exclude = _extension.Mode.SelectedIndex == 1 };
     }
 
-    private async Task CommitSetting(Setting setting, TextBox box, int scale)
-    {
-        if (_loading || _stopped || !Model.CanEdit)
-            return;
-        if (decimal.TryParse(box.Text, NumberStyles.Number, CultureInfo.CurrentCulture, out var value)
-            && value >= 1m / scale && value <= int.MaxValue / (decimal)scale)
-        {
-            var scaled = Math.Round(value * scale, 8);
-            if (scaled == decimal.Truncate(scaled))
-            {
-                setting.Input = scaled.ToString("0", CultureInfo.CurrentCulture);
-                await setting.Commit();
-                return;
-            }
-        }
-        ShowError(T("invalid_setting"));
-    }
-
-    private async void OnBudgetDeparture(object sender, RoutedEventArgs args) =>
-        await CommitSetting(Model.Settings.IndexBudget, Budget, _budgetScale);
-    private async void OnStaleDeparture(object sender, RoutedEventArgs args) =>
-        await CommitSetting(Model.Settings.IndexStale, Stale, _staleScale);
-    private async void OnBudgetKey(object sender, KeyRoutedEventArgs args)
-    {
-        if (args.Key == VirtualKey.Enter)
-        {
-            args.Handled = true;
-            await CommitSetting(Model.Settings.IndexBudget, Budget, _budgetScale);
-        }
-    }
-    private async void OnStaleKey(object sender, KeyRoutedEventArgs args)
-    {
-        if (args.Key == VirtualKey.Enter)
-        {
-            args.Handled = true;
-            await CommitSetting(Model.Settings.IndexStale, Stale, _staleScale);
-        }
-    }
-    private void OnBudgetUnit(object sender, SelectionChangedEventArgs args) =>
-        ConvertUnit(Budget, ref _budgetScale, BudgetUnit.SelectedIndex == 1 ? 1024 : 1);
-    private void OnStaleUnit(object sender, SelectionChangedEventArgs args) =>
-        ConvertUnit(Stale, ref _staleScale, StaleUnit.SelectedIndex switch { 1 => 24, 2 => 168, _ => 1 });
-    private void ConvertUnit(TextBox? box, ref int scale, int next)
-    {
-        if (box is not null && !_loading
-            && decimal.TryParse(box.Text, NumberStyles.Number, CultureInfo.CurrentCulture, out var value)
-            && value >= 0 && value <= decimal.MaxValue / scale)
-            box.Text = (value * scale / next).ToString("G", CultureInfo.CurrentCulture);
-        scale = next;
-    }
 }

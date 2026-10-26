@@ -7,6 +7,7 @@ using Syno.TinyTorrent.Settings;
 using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Torrents;
 using Windows.System;
+using SearchInspector = Syno.TinyTorrent.Search.InspectorPane;
 
 namespace Syno.TinyTorrent.Shell;
 
@@ -20,6 +21,7 @@ public sealed partial class MainWindow
     private readonly Motion _pages = new();
     private readonly Motion _workspaces = new();
     private readonly Motion _filters = new();
+    private readonly Motion _inspectors = new();
     private WindowPage _page;
     private bool _refreshingFilters;
     private bool _selecting;
@@ -84,19 +86,29 @@ public sealed partial class MainWindow
     private void FocusPage()
     {
         if (
-            Model.Page is WindowPage.Torrents or WindowPage.Library
-            && InspectorContent.Content is InspectorPane pane
+            Model.Page is WindowPage.Torrents or WindowPage.Library or WindowPage.Search
             && Model.HasInspector
             && !Model.IsInspectorCompact
-            && pane.Surface.IsMaximized
+            && Model.IsInspectorMaximized
+            && InspectorFrame is { } frame
         )
-            pane.Surface.FocusHeader(FocusState.Programmatic);
-        else if (Model.Navigation.Current == WindowPage.Torrents)
-            Torrents.Focus(FocusState.Programmatic);
-        else if (Model.Navigation.Current == WindowPage.Library)
-            _libraryTable?.FocusRows();
+            frame.FocusHeader(FocusState.Programmatic);
+        else if (Model.Navigation.Current is WindowPage.Torrents or WindowPage.Library or WindowPage.Search)
+            FocusRows(FocusState.Programmatic);
         else
             BackButton.Focus(FocusState.Programmatic);
+    }
+
+    // Focus goes to the current page's rows when a pane or the title search
+    // gives it up.
+    private void FocusRows(FocusState state)
+    {
+        if (NavigationPage == WindowPage.Library)
+            _libraryTable?.FocusRows(state);
+        else if (NavigationPage == WindowPage.Search)
+            _catalogueView?.FocusRows(state);
+        else
+            Torrents.Focus(state);
     }
 
     private Task ReturnToSettings() =>
@@ -179,6 +191,7 @@ public sealed partial class MainWindow
         _pages.Stop();
         _workspaces.Stop();
         _filters.Stop();
+        _inspectors.Stop();
     }
 
     private SettingsPage GetSettingsPage()
@@ -202,6 +215,8 @@ public sealed partial class MainWindow
                 await ConfirmDataDeletion(dataset);
             _settingsPage.ConnectionRequested += async (_, _) => await ShowConnection();
             _settingsPage.ResetRequested += async (_, _) => await ConfirmReset();
+            _settingsPage.IndexingTaskRequested += async (_, task) => await ShowIndexingTask(task);
+            _settingsPage.IndexRebuildRequested += async (_, _) => await ConfirmIndexRebuild();
             _settingsPage.LayoutChanged += (_, _) => UpdateChrome();
         }
         return _settingsPage;
@@ -251,9 +266,9 @@ public sealed partial class MainWindow
                 settings.Navigate(Model.Navigation.Settings ?? new(), animate: animate);
             }
         }
-        TorrentMenu.IsEnabled = Model.Page is WindowPage.Torrents or WindowPage.Library;
+        TorrentMenu.IsEnabled = Model.Page is WindowPage.Torrents or WindowPage.Library or WindowPage.Search;
         ViewMenu.IsEnabled = TorrentMenu.IsEnabled;
-        UpdateLibraryPage();
+        UpdateWorkspacePage();
         // A page restored while the window is still hidden replaces the
         // workspace at once: a transition the person did not start would show
         // both pages in the first visible frames.
@@ -262,6 +277,37 @@ public sealed partial class MainWindow
         else
             _pages.Show(content, forward: Model.Page >= _page);
         _page = Model.Page;
+    }
+
+    // Shows the current page's content in the shared workspace surfaces. The
+    // surfaces keep their visibility; only their content changes.
+    private void UpdateWorkspacePage()
+    {
+        if (Model.Page != WindowPage.Torrents)
+            (InspectorContent.Content as InspectorPane)?.CancelReveal();
+        var library = Model.Page == WindowPage.Library;
+        var catalogue = Model.Page == WindowPage.Search;
+        UpdateLibraryPage();
+        if (catalogue)
+            EnsureSearch();
+        Workspace.OpenPaneLength = library || catalogue ? 280 : 196;
+        Search.PlaceholderText = SearchPlaceholder;
+        Search.IsSuggestionListOpen = false;
+        Search.ItemsSource = null;
+        Search.Text = Model.Query;
+        RefreshNavigation();
+        RefreshMenus();
+        ShowPageCommands();
+        UpdateInspectorSize();
+        UpdateChrome();
+        if (Model.Page is not (WindowPage.Torrents or WindowPage.Library or WindowPage.Search))
+            return;
+        _workspaces.Show(catalogue ? CatalogueContent : library ? LibraryContent : TorrentContent,
+            forward: library || catalogue);
+        _filters.Show(catalogue ? CatalogueFilters : library ? LibraryFilters : Filters,
+            forward: library || catalogue);
+        _inspectors.Show(catalogue ? CatalogueInspector : InspectorContent,
+            forward: library || catalogue);
     }
 
     private void UpdateBack()
@@ -390,16 +436,36 @@ public sealed partial class MainWindow
     private void CloseFilters()
     {
         Model.IsFilterOpen = false;
-        if (Model.Page == WindowPage.Library)
-            _libraryTable?.FocusRows();
-        else
-            Torrents.Focus(FocusState.Keyboard);
+        FocusRows(FocusState.Keyboard);
     }
 
     private void OnFilterChanged(object sender, SelectionChangedEventArgs args)
     {
         if (!_refreshingFilters && Filters.SelectedItem is FilterChoice choice)
             Model.Filter = choice.Filter;
+    }
+
+    private string SearchPlaceholder =>
+        Model.Page switch
+        {
+            WindowPage.Search => Model.Text.Get("catalogue", "search_placeholder"),
+            WindowPage.Library => Model.Text.Get("library", "search"),
+            _ => Model.Text.Get("finding", "placeholder"),
+        };
+
+    // On Library and Search the title search filters the page's rows, so
+    // Escape clears it and Down moves into the rows.
+    private void OnSearchKey(object sender, KeyRoutedEventArgs args)
+    {
+        if (Model.Page is not (WindowPage.Library or WindowPage.Search))
+            return;
+        if (args.Key == VirtualKey.Escape)
+            Model.Query = string.Empty;
+        else if (args.Key == VirtualKey.Down)
+            FocusRows(FocusState.Keyboard);
+        else
+            return;
+        args.Handled = true;
     }
 
     private void FocusSearch()
@@ -418,7 +484,7 @@ public sealed partial class MainWindow
 
     private void ShowSuggestions()
     {
-        if (Model.Page == WindowPage.Library)
+        if (Model.Page is WindowPage.Library or WindowPage.Search)
         {
             Search.IsSuggestionListOpen = false;
             return;
@@ -432,7 +498,7 @@ public sealed partial class MainWindow
         if (args.Reason != AutoSuggestionBoxTextChangeReason.UserInput)
             return;
         Model.Query = sender.Text;
-        if (Model.Page == WindowPage.Library)
+        if (Model.Page is WindowPage.Library or WindowPage.Search)
         {
             sender.IsSuggestionListOpen = false;
             return;
@@ -447,10 +513,16 @@ public sealed partial class MainWindow
     {
         if (HasDialog || Model.IsClosing)
             return;
+        if (Model.Page == WindowPage.Search)
+        {
+            await Model.Search.SubmitSearch();
+            FocusRows(FocusState.Keyboard);
+            return;
+        }
         if (Model.Page == WindowPage.Library)
         {
             Model.Library.SubmitSearch();
-            _libraryTable?.FocusRows();
+            FocusRows(FocusState.Keyboard);
             return;
         }
         var suggestion =
@@ -465,50 +537,49 @@ public sealed partial class MainWindow
         Run(suggestion.Command);
     }
 
+    // The active page's inspector. Torrents and Library share one view.
+    private Pane? InspectorFrame =>
+        NavigationPage == WindowPage.Search
+            ? _catalogueInspector?.Surface
+            : (InspectorContent.Content as InspectorPane)?.Surface;
+
     private void UpdateInspectorSize()
     {
-        var pane = InspectorContent.Content as InspectorPane;
-        var expanded = Model.HasInspector && !Model.IsInspectorCompact;
-        var maximized = expanded && pane?.Surface.IsMaximized == true;
+        // The previous layout shows whether the inspector was already
+        // expanded, whichever page drew it.
         var opening =
-            InspectorSurface.Visibility != Visibility.Visible || pane?.Surface.IsCompact == true;
+            Split.Visibility != Visibility.Visible
+            && WorkspaceContent.Visibility == Visibility.Visible;
+        var expanded = Model.HasInspector && !Model.IsInspectorCompact;
+        var maximized = expanded && Model.IsInspectorMaximized;
         InspectorSurface.Visibility = Model.HasInspector
             ? Visibility.Visible
             : Visibility.Collapsed;
         Split.Visibility = expanded && !maximized ? Visibility.Visible : Visibility.Collapsed;
-        // A maximized inspector spans every workspace row on both pages. The
-        // workspace content collapses, because it would show through the pane.
+        // A maximized inspector spans every row below the toolbar. The page
+        // content collapses, because it would show through the pane.
         WorkspaceContent.Visibility = maximized ? Visibility.Collapsed : Visibility.Visible;
-        Grid.SetRow(InspectorSurface, maximized ? 0 : 2);
+        Grid.SetRow(InspectorSurface, maximized ? 1 : 3);
         Grid.SetRowSpan(InspectorSurface, maximized ? 3 : 1);
         if (!Model.HasInspector)
         {
             InspectorRow.Height = new GridLength(0);
             return;
         }
-        if (pane is null)
-        {
-            pane = new InspectorPane(Model.Inspector);
-            pane.Surface.CloseRequested += OnInspectorClose;
-            pane.Surface.CollapseRequested += OnInspectorCollapse;
-            pane.Surface.MaximizeRequested += OnInspectorMaximize;
-            pane.Surface.OpenRequested += OnInspectorOpen;
-            pane.LayoutChanged += (_, _) => KeepMap();
-            if (_placement?.Inspector is { } layout)
-                pane.Layout = layout;
-            InspectorContent.Content = pane;
-        }
-        pane.ShowLibrary(
-            Model.Page == WindowPage.Library ? Model.Library : null,
-            Model.DownloadSubtitles
-        );
-        pane.Surface.IsCompact = Model.IsInspectorCompact;
+        var frame = InspectorFrame ?? CreateInspector();
+        if (NavigationPage != WindowPage.Search)
+            ((InspectorPane)InspectorContent.Content).ShowLibrary(
+                Model.Page == WindowPage.Library ? Model.Library : null,
+                Model.DownloadSubtitles
+            );
+        frame.IsCompact = Model.IsInspectorCompact;
+        frame.IsMaximized = Model.IsInspectorMaximized;
         if (Model.IsInspectorCompact)
         {
             InspectorRow.Height = new GridLength(10);
             return;
         }
-        var toolbar = Model.ShowsToolbar
+        var toolbar = Model.IsToolbarOpen
             ? ToolbarRow.ActualHeight + ToolbarRow.Margin.Top + ToolbarRow.Margin.Bottom
             : 0;
         var maximum = Math.Max(0, Workspace.ActualHeight - toolbar - 126);
@@ -518,23 +589,42 @@ public sealed partial class MainWindow
             _motion.Enter(InspectorSurface);
     }
 
+    // Creates the active page's inspector view when it first opens. Every view
+    // sends its pane buttons to the same handlers.
+    private Pane CreateInspector()
+    {
+        Pane frame;
+        if (NavigationPage == WindowPage.Search)
+        {
+            _catalogueInspector = new SearchInspector(Model.Search);
+            CatalogueInspector.Content = _catalogueInspector;
+            frame = _catalogueInspector.Surface;
+        }
+        else
+        {
+            var pane = new InspectorPane(Model.Inspector);
+            pane.LayoutChanged += (_, _) => KeepMap();
+            if (_placement?.Inspector is { } layout)
+                pane.Layout = layout;
+            InspectorContent.Content = pane;
+            frame = pane.Surface;
+        }
+        frame.CloseRequested += OnInspectorClose;
+        frame.CollapseRequested += OnInspectorCollapse;
+        frame.MaximizeRequested += OnInspectorMaximize;
+        frame.OpenRequested += OnInspectorOpen;
+        return frame;
+    }
+
     private void OnInspectorCollapse(object? sender, FocusState focus) => CollapseInspector(focus);
 
     // The split height is kept while maximized, so Restore returns to it.
-    private void OnInspectorMaximize(object? sender, EventArgs args)
-    {
-        KeepMap();
-        var pane = (InspectorPane)InspectorContent.Content;
-        pane.Surface.IsMaximized = !pane.Surface.IsMaximized;
-        UpdateInspectorSize();
-    }
+    private void OnInspectorMaximize(object? sender, EventArgs args) =>
+        Model.IsInspectorMaximized = !Model.IsInspectorMaximized;
 
     private void OnSplitCommitted(object? sender, double previous)
     {
-        if (
-            InspectorContent.Content is not InspectorPane pane
-            || Split.Value >= 2 * pane.Surface.HeaderHeight
-        )
+        if (InspectorFrame is not { } frame || Split.Value >= 2 * frame.HeaderHeight)
             return;
         _splitHeight = previous;
         CollapseInspector(
@@ -545,15 +635,13 @@ public sealed partial class MainWindow
     private void CollapseInspector(FocusState focus)
     {
         Model.IsInspectorCompact = true;
-        if (InspectorContent.Content is InspectorPane pane)
-            pane.Surface.FocusToggle(focus);
+        InspectorFrame?.FocusToggle(focus);
     }
 
     private void OnInspectorOpen(object? sender, FocusState focus)
     {
         Model.IsInspectorCompact = false;
-        if (InspectorContent.Content is InspectorPane pane)
-            pane.Surface.FocusHeader(focus);
+        InspectorFrame?.FocusHeader(focus);
     }
 
     private async Task PickSettingsFolder(Setting setting)

@@ -44,6 +44,7 @@ public sealed partial class MainWindow
         "files" => CaptureMode.Files,
         "files-layout" => CaptureMode.FilesLayout,
         "search" => CaptureMode.Search,
+        "catalogue" => CaptureMode.Catalogue,
         "library" => CaptureMode.Library,
         "library-files" => CaptureMode.LibraryFiles,
         "traffic" => CaptureMode.Traffic,
@@ -56,6 +57,7 @@ public sealed partial class MainWindow
         "subtitle-tasks" => CaptureMode.SubtitleTasks,
         "memory" => CaptureMode.Memory,
         "footer" => CaptureMode.Footer,
+        "workspace" => CaptureMode.Workspace,
         _ => CaptureMode.None,
     };
 
@@ -921,7 +923,7 @@ public sealed partial class MainWindow
         foreach (
             var control in new FrameworkElement[]
             {
-                AppIcon,
+                WorkspacePicker,
                 FileMenu,
                 TorrentMenu,
                 ViewMenu,
@@ -2465,6 +2467,16 @@ public sealed partial class MainWindow
             if (ReviewMode == CaptureMode.Search)
             {
                 await CaptureSearch(target, outcomes, completed);
+                return;
+            }
+            if (ReviewMode == CaptureMode.Catalogue)
+            {
+                await CaptureCatalogue(outcomes, completed);
+                return;
+            }
+            if (ReviewMode == CaptureMode.Workspace)
+            {
+                await CaptureWorkspace(outcomes, completed);
                 return;
             }
             if (ReviewMode == CaptureMode.Desktop)

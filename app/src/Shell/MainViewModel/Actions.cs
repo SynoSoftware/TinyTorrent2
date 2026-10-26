@@ -125,6 +125,20 @@ public sealed partial class MainViewModel
             Changed(nameof(IsInspectorCompact));
         }
     }
+    // Kept while the inspector is compact or hidden, so expanding it again
+    // restores the maximized presentation.
+    private bool _inspectorMaximized;
+    public bool IsInspectorMaximized
+    {
+        get => _inspectorMaximized;
+        set
+        {
+            if (_inspectorMaximized == value)
+                return;
+            _inspectorMaximized = value;
+            Changed(nameof(IsInspectorMaximized));
+        }
+    }
     public ICommand AddMagnet { get; }
     public ICommand Force { get; }
     public ICommand Verify { get; }
@@ -432,7 +446,7 @@ public sealed partial class MainViewModel
     public void OpenInspector(bool expand = true)
     {
         if (
-            Page != WindowPage.Library
+            Page == WindowPage.Torrents
             && !Inspector.Show(_selected.Length == 1 ? _selected[0] : null)
         )
             return;

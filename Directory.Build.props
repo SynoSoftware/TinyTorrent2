@@ -19,6 +19,7 @@
   <PropertyGroup>
     <EngineTargetName>TinyTorrent</EngineTargetName>
     <WindowTargetName>TinyTorrentUI</WindowTargetName>
+    <SQLiteRuntimeVersion>3.53.4</SQLiteRuntimeVersion>
   </PropertyGroup>
 
   <!-- Local builds use local sources; commit-derived metadata otherwise recompiles

@@ -26,6 +26,19 @@ void Engine::State::Shutdown(std::function<void(ShutdownEnd end)> report)
         exitTasks = Tasks();
     StartFinalSave();
     CancelFileWork();
+    StopIndex();
+    if (session)
+    {
+        // Let cancelled DHT callbacks drain while checkpoints are saved.
+        lt::settings_pack pack;
+        pack.set_bool(lt::settings_pack::enable_dht, false);
+        session->apply_settings(std::move(pack));
+    }
+    if (crawlerBatches.empty() || crawlerSaveFailed)
+    {
+        catalogue.Interrupt();
+        indexWork.Interrupt();
+    }
     FailReading(Failure(ErrorCode::ShuttingDown));
     Discard([](Preview const&) { return true; });
     log.Write("shutdown", "", "requested");
@@ -130,6 +143,12 @@ void Engine::State::ContinueShutdown()
         phaseStarted = now;
     }
     bool expired = now - *phaseStarted >= phaseTimeout;
+    if (expired && !indexWork.IsIdle() && (crawlerBatches.empty() || crawlerSaveFailed))
+    {
+        catalogue.Interrupt();
+        indexWork.Interrupt();
+        sources.Interrupt();
+    }
     if (shutdownPhase == ShutdownPhase::Draining)
     {
         if (std::any_of(torrents.begin(), torrents.end(), [](auto const& entry)
@@ -249,7 +268,8 @@ void Engine::State::ContinueShutdown()
         { return !abandonment.worker || abandonment.worker->IsIdle(); };
     if (!std::all_of(moves.begin(), moves.end(), stopped) ||
         !std::all_of(abandonments.begin(), abandonments.end(), abandoned) || !payload.IsIdle() ||
-        !store.IsIdle() || !log.IsFlushed())
+        !store.IsIdle() || !indexWork.IsIdle() || !sources.IsIdle() || !log.IsFlushed() ||
+        (!crawlerBatches.empty() && !crawlerSaveFailed))
     {
         return;
     }

@@ -10,6 +10,7 @@ using Syno.TinyTorrent.Shared.Engine;
 using Syno.TinyTorrent.Shared.Network;
 using Syno.TinyTorrent.Torrents;
 using LibraryBrowser = Syno.TinyTorrent.Library.Browser;
+using SearchBrowser = Syno.TinyTorrent.Search.Browser;
 using SubtitleAcquisition = Syno.TinyTorrent.Subtitles.Acquisition;
 
 namespace Syno.TinyTorrent.Shell;
@@ -87,6 +88,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     // person hid the index.
     public SettingsCategory? SettingsHome => ShowsSettingsIndex ? null : SettingsCategory.General;
     public LibraryBrowser Library { get; }
+    public SearchBrowser Search { get; }
+    internal CatalogueClient Catalogue { get; }
     internal Features Features { get; }
     internal Updates Updates { get; }
     internal SubtitleAcquisition? Subtitles => Features.Subtitles;
@@ -176,11 +179,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 return;
             _toolbarOpen = value;
             Changed(nameof(IsToolbarOpen));
-            Changed(nameof(ShowsToolbar));
         }
     }
     public ICommand SwitchToolbar { get; }
-    public bool ShowsToolbar => Page != WindowPage.Library && IsToolbarOpen;
     public bool IsSessionPaused => _connected && IsPaused;
 
     private string Rate(double rate) =>
@@ -333,6 +334,18 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         _dispatcher = dispatcher;
         Work = new(dispatcher);
         _client = new PipeClient(strings);
+        Catalogue = new CatalogueClient(_client, strings);
+        Search = new SearchBrowser(strings, Catalogue, Work);
+        Search.PropertyChanged += (_, args) =>
+        {
+            if (Page == WindowPage.Search)
+            {
+                Changed(nameof(CountStatus));
+                if (args.PropertyName is nameof(Search.Query) or "")
+                    Changed(nameof(Query));
+            }
+        };
+        Search.InspectorRequested += (_, _) => OpenInspector();
         Library = new LibraryBrowser(strings, dispatcher, Work);
         // Before Settings, whose lookup limit field reads LookupLimit.
         Features = new Features(this, _client, _providerHttp, dispatcher);
@@ -534,17 +547,24 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         ClearFilters = new RelayCommand(
             () =>
             {
+                if (Page == WindowPage.Search)
+                {
+                    Search.ClearFilters.Execute(null);
+                    return Task.CompletedTask;
+                }
                 if (Page != WindowPage.Library)
                     return ClearFinding();
                 Library.ClearFilters.Execute(null);
                 return Task.CompletedTask;
             },
             () =>
-                Page == WindowPage.Library
+                Page == WindowPage.Search ? Search.ClearFilters.CanExecute(null)
+                : Page == WindowPage.Library
                     ? Library.ClearFilters.CanExecute(null)
                     : Filter != TorrentFilter.All
         );
         Library.ClearFilters.CanExecuteChanged += (_, _) => ((RelayCommand)ClearFilters).Refresh();
+        Search.ClearFilters.CanExecuteChanged += (_, _) => ((RelayCommand)ClearFilters).Refresh();
         ShowSettings = new RelayCommand(() => RequestSettings(new()), () => true);
         ShowSubtitleSettings = new RelayCommand(
             () => RequestSettings(new(SettingsCategory.Plugins, "subtitle_supplier")),
@@ -608,6 +628,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             },
             () => true
         );
+        ShowSearch = new RelayCommand(
+            () =>
+            {
+                SearchRequested?.Invoke(this, EventArgs.Empty);
+                return Task.CompletedTask;
+            },
+            () => true
+        );
         ShowAbout = new RelayCommand(
             () =>
             {
@@ -647,6 +675,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             ClearFilters,
             ShowSettings,
             ShowTorrents,
+            ShowSearch,
             ShowAbout,
             Exit,
             SwitchTheme,
@@ -981,6 +1010,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         if (first)
             ShowRequested?.Invoke(this, EventArgs.Empty);
         Features.Observe(snapshot);
+        Search.Connect(_connected);
+        Search.Observe(Page == WindowPage.Settings && Navigation.Settings?.Category == SettingsCategory.Indexing);
         ObserveUnfinished(snapshot);
         Inspector.Observe(
             sessionId,
@@ -1201,6 +1232,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         AddDraft.Refresh();
         Inspector.RefreshText();
         Library.RefreshText();
+        Search.RefreshText();
         _ = Features.Refresh();
         Settings.RefreshText();
         FileDraft.Refresh();
@@ -1271,6 +1303,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         if (_closed)
             return;
         AddDraft.Refresh();
+        Search.Connect(_connected);
         Inspector.Refresh();
         Settings.Refresh();
         FileDraft.Refresh();
@@ -1396,6 +1429,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         _ = Updates.Close();
         AddDraft.Close();
         Library.Dispose();
+        Search.Dispose();
         Geolocation.Dispose();
         Work.Dispose();
         _client.Dispose();

@@ -375,7 +375,12 @@ for chrome, controls and compact presentation. Docking determines the compact
 strip's edge; an undocked pane stays expanded without Pin. The workspace owns
 accepted visibility, placement, compact/maximized state, saved dimensions and
 departure guards. Pane buttons request changes through that owner, so shared
-drawing cannot bypass an unfinished edit or move another pane.
+drawing cannot bypass an unfinished edit or move another pane. Torrents,
+Library and Search show their content in this one inspector, so its
+visibility, Pin, Maximize and requested height stay the same when the person
+switches pages. A page without a selection shows its empty message inside the
+open inspector. Pin and Close keep the maximized choice for the next time the
+inspector expands.
 
 **Owner ruling:** the six inspector sections use a native SelectorBar at the
 start of one header row. Each section, and each Library section, shows a Lucide

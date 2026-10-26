@@ -47,10 +47,13 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
         Svg.Fit(TorrentsFace);
         Svg.Fit(LibraryFace);
+        WorkspacePicker.Flyout = MenuItems.Flyout(() => WorkspaceMenu("WorkspacePicker"), () => Model.Text);
+        WorkspacePicker.Flyout.Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.BottomEdgeAlignedLeft;
         LanguageButton.Flyout = MenuItems.Flyout(LanguageMenu, () => Model.Text);
         ConfigureWork();
         Model.Navigation.PropertyChanged += (_, _) => UpdateBack();
         ConfigureLibrary();
+        ConfigureSearch();
         PageContent.SizeChanged += Motion.Clip;
         WorkspaceContent.SizeChanged += Motion.Clip;
         SettingsContent.SizeChanged += Motion.Clip;
@@ -58,6 +61,7 @@ public sealed partial class MainWindow : Window
         _pages.Show(Workspace);
         _workspaces.Show(TorrentContent);
         _filters.Show(Filters);
+        _inspectors.Show(InspectorContent);
         Root.Unloaded += (_, _) => StopMotion();
         ConfigureCapture();
         ConfigureNotifications();
@@ -440,6 +444,7 @@ public sealed partial class MainWindow : Window
             is nameof(MainViewModel.FilterPane)
                 or nameof(MainViewModel.HasInspector)
                 or nameof(MainViewModel.IsInspectorCompact)
+                or nameof(MainViewModel.IsInspectorMaximized)
                 or nameof(MainViewModel.IsToolbarOpen)
             || Model.Inspector.Section != InspectorSection.Peers
             || !Model.Inspector.HasPeerScope
@@ -499,6 +504,7 @@ public sealed partial class MainWindow : Window
             string.IsNullOrEmpty(args.PropertyName)
             || args.PropertyName == nameof(MainViewModel.HasInspector)
             || args.PropertyName == nameof(MainViewModel.IsInspectorCompact)
+            || args.PropertyName == nameof(MainViewModel.IsInspectorMaximized)
             || args.PropertyName == nameof(MainViewModel.IsToolbarOpen)
         )
             UpdateInspectorSize();
@@ -577,8 +583,14 @@ public sealed partial class MainWindow : Window
             {
                 Content = _addDialog,
                 PrimaryGlyph = Syno.Lucide.CirclePlus,
-                Footer = new DialogFooter.OptOut(Model.AddDraft.Confirmation),
+                Footer = Model.AddDraft.HasPreference ? new DialogFooter.OptOut(Model.AddDraft.Confirmation) : null,
             };
+            void RefreshPreference(object? sender, PropertyChangedEventArgs args)
+            {
+                if (Model.AddDraft.HasPreference != (dialog.Footer is DialogFooter.OptOut))
+                    dialog.Footer = Model.AddDraft.HasPreference ? new DialogFooter.OptOut(Model.AddDraft.Confirmation) : null;
+            }
+            Model.AddDraft.PropertyChanged += RefreshPreference;
             dialog.SizeToContent();
             _addDialog.CloseRequested += (_, _) => dialog.Hide();
             Model.AddDraft.Open();
@@ -611,6 +623,7 @@ public sealed partial class MainWindow : Window
             }
             finally
             {
+                Model.AddDraft.PropertyChanged -= RefreshPreference;
                 _addDialog?.Dispose();
                 Model.AddDraft.Close();
                 _addDialog = null;

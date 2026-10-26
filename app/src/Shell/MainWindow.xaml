@@ -62,61 +62,22 @@
             FontSize="{StaticResource TinyTorrentInlineIconSize}"
           />
         </Button>
-        <Button
-          x:Name="AppIcon"
-          Style="{StaticResource TinyTorrentCaptionButtonStyle}"
-          Width="Auto"
+        <DropDownButton
+          x:Name="WorkspacePicker"
+          MinWidth="160"
+          VerticalAlignment="Center"
           Margin="8,0,0,0"
           AutomationProperties.AutomationId="PageSwitch"
         >
-          <StackPanel
-            x:Name="NavigationContent"
-            Margin="11,0"
-            Orientation="Horizontal"
-            Spacing="8"
-            IsHitTestVisible="False"
-            AutomationProperties.AccessibilityView="Raw"
-          >
-            <Grid RenderTransformOrigin="0.5,0.5">
-              <Grid.RenderTransform>
-                <ScaleTransform x:Name="NavigationPress" />
-              </Grid.RenderTransform>
-              <Image
-                x:Name="TorrentsFace"
-                Width="{StaticResource TinyTorrentSurfaceIconSize}"
-                Height="{StaticResource TinyTorrentSurfaceIconSize}"
-                AutomationProperties.AccessibilityView="Raw"
-              >
-                <Image.Source>
-                  <SvgImageSource UriSource="ms-appx:///Assets/tinyTorrent.svg" />
-                </Image.Source>
-              </Image>
-              <Image
-                x:Name="LibraryFace"
-                Source="ms-appx:///Assets/Settings/library.svg"
-                Width="{StaticResource TinyTorrentSurfaceIconSize}"
-                Height="{StaticResource TinyTorrentSurfaceIconSize}"
-                Visibility="Collapsed"
-                AutomationProperties.AccessibilityView="Raw"
-              />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Grid Width="24" Height="24" AutomationProperties.AccessibilityView="Raw">
+              <Image x:Name="TorrentsFace" Source="ms-appx:///Assets/tinyTorrent.svg" Width="24" Height="24" />
+              <Image x:Name="LibraryFace" Source="ms-appx:///Assets/Settings/library.svg" Width="24" Height="24" Visibility="Collapsed" />
+              <FontIcon x:Name="SearchFace" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Search}" FontSize="24" Visibility="Collapsed" />
             </Grid>
-            <!-- Both names stay in the layout, so the button keeps the width of
-                 the longer one and the menus never move when the page changes. -->
-            <Grid VerticalAlignment="Center">
-              <TextBlock
-                x:Name="TorrentsName"
-                TextTrimming="CharacterEllipsis"
-                AutomationProperties.AccessibilityView="Raw"
-              />
-              <TextBlock
-                x:Name="LibraryName"
-                Opacity="0"
-                TextTrimming="CharacterEllipsis"
-                AutomationProperties.AccessibilityView="Raw"
-              />
-            </Grid>
+            <TextBlock x:Name="WorkspaceName" VerticalAlignment="Center" />
           </StackPanel>
-        </Button>
+        </DropDownButton>
       </StackPanel>
       <MenuBar x:Name="Menus" Grid.Column="2" Padding="0" VerticalAlignment="Center">
         <!-- Without IsAccessKeyScope, a quick Alt+F opens the menu but its
@@ -144,6 +105,7 @@
           TextChanged="OnSearchChanged"
           QuerySubmitted="OnSearchSubmitted"
           GotFocus="OnSearchFocus"
+          KeyDown="OnSearchKey"
         >
           <AutoSuggestBox.TextBoxStyle>
             <Style TargetType="TextBox" BasedOn="{StaticResource AutoSuggestBoxTextBoxStyle}">
@@ -333,162 +295,231 @@
                 </ListView.ItemTemplate>
               </ListView>
               <ScrollViewer x:Name="LibraryFilters" Grid.Row="1" Visibility="Collapsed" />
+              <ScrollViewer x:Name="CatalogueFilters" Grid.Row="1" Visibility="Collapsed" />
             </Grid>
           </controls:Pane>
         </SplitView.Pane>
         <Grid x:Name="TorrentWorkspace" Background="Transparent">
           <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" MinHeight="110" />
             <RowDefinition Height="Auto" />
             <RowDefinition x:Name="InspectorRow" Height="0" />
           </Grid.RowDefinitions>
-          <Grid x:Name="WorkspaceContent">
-            <Grid x:Name="TorrentContent">
-              <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" MinHeight="110" />
-              </Grid.RowDefinitions>
-              <!-- A CommandBar cannot place some of its buttons at the far
-                   end, so the map and Settings buttons have their own bar.
-                   The row holds the focus settings so that both bars are one
-                   Tab stop. -->
-              <Grid
-                x:Name="ToolbarRow"
-                TabFocusNavigation="Once"
-                XYFocusKeyboardNavigation="Enabled"
-                Visibility="{x:Bind Model.IsToolbarOpen, Mode=OneWay}"
+          <!-- A CommandBar cannot place some of its buttons at the far
+               end, so the map and Settings buttons have their own bar.
+               The row holds the focus settings so that both bars are one
+               Tab stop. -->
+          <Grid
+            x:Name="ToolbarRow"
+            TabFocusNavigation="Once"
+            XYFocusKeyboardNavigation="Enabled"
+            Visibility="{x:Bind Model.IsToolbarOpen, Mode=OneWay}"
+          >
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <!-- AppBarButton scales its icon to AppBarButtonContentHeight
+                 and is 68 wide by default. The margin centres the toolbar
+                 icon in the bar's compact height, on a square button. -->
+            <Grid.Resources>
+              <StaticResource
+                x:Key="AppBarButtonContentHeight"
+                ResourceKey="TinyTorrentToolbarIconSize"
+              />
+              <Thickness x:Key="AppBarButtonContentViewboxCollapsedMargin">0,12,0,12</Thickness>
+              <Thickness x:Key="AppBarButtonInnerBorderMargin">2</Thickness>
+              <Style
+                TargetType="AppBarButton"
+                BasedOn="{StaticResource DefaultAppBarButtonStyle}"
               >
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="*" />
-                  <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <!-- AppBarButton scales its icon to AppBarButtonContentHeight
-                     and is 68 wide by default. The margin centres the toolbar
-                     icon in the bar's compact height, on a square button. -->
-                <Grid.Resources>
-                  <StaticResource
-                    x:Key="AppBarButtonContentHeight"
-                    ResourceKey="TinyTorrentToolbarIconSize"
+                <Setter Property="Width" Value="48" />
+              </Style>
+            </Grid.Resources>
+            <CommandBar
+              x:Name="Toolbar"
+              HorizontalAlignment="Left"
+              Background="Transparent"
+              DefaultLabelPosition="Collapsed"
+            >
+              <AppBarButton x:Name="AddButton" Command="{x:Bind Model.Add}">
+                <AppBarButton.Icon>
+                  <FontIcon
+                    FontFamily="{x:Bind icons:Lucide.Font}"
+                    Glyph="{x:Bind icons:Lucide.FilePlus}"
                   />
-                  <Thickness x:Key="AppBarButtonContentViewboxCollapsedMargin">0,12,0,12</Thickness>
-                  <Thickness x:Key="AppBarButtonInnerBorderMargin">2</Thickness>
-                  <Style
-                    TargetType="AppBarButton"
-                    BasedOn="{StaticResource DefaultAppBarButtonStyle}"
-                  >
-                    <Setter Property="Width" Value="48" />
-                  </Style>
-                </Grid.Resources>
-                <CommandBar
-                  x:Name="Toolbar"
-                  HorizontalAlignment="Left"
-                  Background="Transparent"
-                  DefaultLabelPosition="Collapsed"
-                >
-                  <AppBarButton x:Name="AddButton" Command="{x:Bind Model.Add}">
-                    <AppBarButton.Icon>
-                      <FontIcon
-                        FontFamily="{x:Bind icons:Lucide.Font}"
-                        Glyph="{x:Bind icons:Lucide.FilePlus}"
-                      />
-                    </AppBarButton.Icon>
-                  </AppBarButton>
-                  <AppBarButton x:Name="MagnetButton" Command="{x:Bind Model.AddMagnet}">
-                    <AppBarButton.Icon>
-                      <FontIcon
-                        FontFamily="{x:Bind icons:Lucide.Font}"
-                        Glyph="{x:Bind icons:Lucide.Link}"
-                      />
-                    </AppBarButton.Icon>
-                  </AppBarButton>
-                  <AppBarSeparator />
-                  <AppBarButton x:Name="ResumeButton" Command="{x:Bind Model.Resume}">
-                    <AppBarButton.Icon>
-                      <FontIcon
-                        FontFamily="{x:Bind icons:Lucide.Font}"
-                        Glyph="{x:Bind icons:Lucide.Play}"
-                      />
-                    </AppBarButton.Icon>
-                  </AppBarButton>
-                  <AppBarButton x:Name="PauseButton" Command="{x:Bind Model.Pause}">
-                    <AppBarButton.Icon>
-                      <FontIcon
-                        FontFamily="{x:Bind icons:Lucide.Font}"
-                        Glyph="{x:Bind icons:Lucide.Square}"
-                      />
-                    </AppBarButton.Icon>
-                  </AppBarButton>
-                  <AppBarSeparator />
-                  <AppBarButton x:Name="FolderButton" Command="{x:Bind Model.OpenFolder}">
-                    <AppBarButton.Icon>
-                      <FontIcon
-                        FontFamily="{x:Bind icons:Lucide.Font}"
-                        Glyph="{x:Bind icons:Lucide.FolderOpen}"
-                      />
-                    </AppBarButton.Icon>
-                  </AppBarButton>
-                  <AppBarButton x:Name="PropertiesButton" Command="{x:Bind Model.Properties}">
-                    <AppBarButton.Icon>
-                      <FontIcon
-                        FontFamily="{x:Bind icons:Lucide.Font}"
-                        Glyph="{x:Bind icons:Lucide.Info}"
-                      />
-                    </AppBarButton.Icon>
-                  </AppBarButton>
-                  <AppBarSeparator />
-                  <AppBarButton x:Name="VerifyButton" Command="{x:Bind Model.Verify}">
-                    <AppBarButton.Icon>
-                      <FontIcon
-                        FontFamily="{x:Bind icons:Lucide.Font}"
-                        Glyph="{x:Bind icons:Lucide.BookOpenCheck}"
-                      />
-                    </AppBarButton.Icon>
-                  </AppBarButton>
-                  <AppBarSeparator />
-                  <AppBarButton x:Name="RemoveButton" Command="{x:Bind Model.Remove}">
-                    <AppBarButton.Icon>
-                      <FontIcon
-                        FontFamily="{x:Bind icons:Lucide.Font}"
-                        Glyph="{x:Bind icons:Lucide.Trash2}"
-                      />
-                    </AppBarButton.Icon>
-                  </AppBarButton>
-                </CommandBar>
-                <CommandBar
-                  Grid.Column="1"
-                  Background="Transparent"
-                  DefaultLabelPosition="Collapsed"
-                >
-                  <AppBarButton x:Name="SelectedMapButton" Command="{x:Bind SelectedMap}">
-                    <AppBarButton.Icon>
-                      <FontIcon
-                        FontFamily="{x:Bind icons:Lucide.Font}"
-                        Glyph="{x:Bind icons:Lucide.GraphStar}"
-                      />
-                    </AppBarButton.Icon>
-                  </AppBarButton>
-                  <AppBarButton x:Name="AllMapButton" Command="{x:Bind AllMap}">
-                    <AppBarButton.Icon>
-                      <FontIcon
-                        FontFamily="{x:Bind icons:Lucide.Font}"
-                        Glyph="{x:Bind icons:Lucide.Globe2}"
-                      />
-                    </AppBarButton.Icon>
-                  </AppBarButton>
-                  <AppBarSeparator />
-                  <AppBarButton x:Name="SettingsButton" Command="{x:Bind Model.ShowSettings}">
-                    <AppBarButton.Icon>
-                      <FontIcon
-                        FontFamily="{x:Bind icons:Lucide.Font}"
-                        Glyph="{x:Bind icons:Lucide.Settings}"
-                      />
-                    </AppBarButton.Icon>
-                  </AppBarButton>
-                </CommandBar>
-              </Grid>
+                </AppBarButton.Icon>
+              </AppBarButton>
+              <AppBarButton x:Name="MagnetButton" Command="{x:Bind Model.AddMagnet}">
+                <AppBarButton.Icon>
+                  <FontIcon
+                    FontFamily="{x:Bind icons:Lucide.Font}"
+                    Glyph="{x:Bind icons:Lucide.Link}"
+                  />
+                </AppBarButton.Icon>
+              </AppBarButton>
+              <AppBarSeparator />
+              <AppBarButton x:Name="ResumeButton" Command="{x:Bind Model.Resume}">
+                <AppBarButton.Icon>
+                  <FontIcon
+                    FontFamily="{x:Bind icons:Lucide.Font}"
+                    Glyph="{x:Bind icons:Lucide.Play}"
+                  />
+                </AppBarButton.Icon>
+              </AppBarButton>
+              <AppBarButton x:Name="PauseButton" Command="{x:Bind Model.Pause}">
+                <AppBarButton.Icon>
+                  <FontIcon
+                    FontFamily="{x:Bind icons:Lucide.Font}"
+                    Glyph="{x:Bind icons:Lucide.Square}"
+                  />
+                </AppBarButton.Icon>
+              </AppBarButton>
+              <AppBarSeparator x:Name="FolderSeparator" />
+              <AppBarButton x:Name="FolderButton" Command="{x:Bind Model.OpenFolder}">
+                <AppBarButton.Icon>
+                  <FontIcon
+                    FontFamily="{x:Bind icons:Lucide.Font}"
+                    Glyph="{x:Bind icons:Lucide.FolderOpen}"
+                  />
+                </AppBarButton.Icon>
+              </AppBarButton>
+              <AppBarButton x:Name="PropertiesButton" Command="{x:Bind Model.Properties}">
+                <AppBarButton.Icon>
+                  <FontIcon
+                    FontFamily="{x:Bind icons:Lucide.Font}"
+                    Glyph="{x:Bind icons:Lucide.Info}"
+                  />
+                </AppBarButton.Icon>
+              </AppBarButton>
+              <AppBarSeparator x:Name="VerifySeparator" />
+              <AppBarButton x:Name="VerifyButton" Command="{x:Bind Model.Verify}">
+                <AppBarButton.Icon>
+                  <FontIcon
+                    FontFamily="{x:Bind icons:Lucide.Font}"
+                    Glyph="{x:Bind icons:Lucide.BookOpenCheck}"
+                  />
+                </AppBarButton.Icon>
+              </AppBarButton>
+              <AppBarSeparator x:Name="RemoveSeparator" />
+              <AppBarButton x:Name="RemoveButton" Command="{x:Bind Model.Remove}">
+                <AppBarButton.Icon>
+                  <FontIcon
+                    FontFamily="{x:Bind icons:Lucide.Font}"
+                    Glyph="{x:Bind icons:Lucide.Trash2}"
+                  />
+                </AppBarButton.Icon>
+              </AppBarButton>
+              <AppBarButton
+                x:Name="LibraryOpenButton"
+                Visibility="Collapsed"
+                Command="{x:Bind Model.Library.Open}"
+              >
+                <AppBarButton.Icon>
+                  <FontIcon
+                    FontFamily="{x:Bind icons:Lucide.Font}"
+                    Glyph="{x:Bind icons:Lucide.Play}"
+                  />
+                </AppBarButton.Icon>
+              </AppBarButton>
+              <AppBarButton
+                x:Name="LibraryFolderButton"
+                Visibility="Collapsed"
+                Command="{x:Bind Model.Library.OpenFolder}"
+              >
+                <AppBarButton.Icon>
+                  <FontIcon
+                    FontFamily="{x:Bind icons:Lucide.Font}"
+                    Glyph="{x:Bind icons:Lucide.FolderOpen}"
+                  />
+                </AppBarButton.Icon>
+              </AppBarButton>
+              <AppBarButton
+                x:Name="LibraryPropertiesButton"
+                Visibility="Collapsed"
+                Command="{x:Bind Model.Library.Properties}"
+              >
+                <AppBarButton.Icon>
+                  <FontIcon
+                    FontFamily="{x:Bind icons:Lucide.Font}"
+                    Glyph="{x:Bind icons:Lucide.Info}"
+                  />
+                </AppBarButton.Icon>
+              </AppBarButton>
+              <AppBarButton
+                x:Name="DownloadButton"
+                Visibility="Collapsed"
+                Command="{x:Bind Model.Search.DownloadSelected}"
+              >
+                <AppBarButton.Icon>
+                  <FontIcon
+                    FontFamily="{x:Bind icons:Lucide.Font}"
+                    Glyph="{x:Bind icons:Lucide.Download}"
+                  />
+                </AppBarButton.Icon>
+              </AppBarButton>
+              <AppBarButton
+                x:Name="DownloadTorrentButton"
+                Visibility="Collapsed"
+                Command="{x:Bind Model.Search.DownloadWhole}"
+              >
+                <AppBarButton.Icon>
+                  <FontIcon
+                    FontFamily="{x:Bind icons:Lucide.Font}"
+                    Glyph="{x:Bind icons:Lucide.Package}"
+                  />
+                </AppBarButton.Icon>
+              </AppBarButton>
+              <AppBarButton
+                x:Name="RefreshButton"
+                Visibility="Collapsed"
+                Command="{x:Bind Model.Search.Refresh}"
+              >
+                <AppBarButton.Icon>
+                  <FontIcon
+                    FontFamily="{x:Bind icons:Lucide.Font}"
+                    Glyph="{x:Bind icons:Lucide.RefreshCw}"
+                  />
+                </AppBarButton.Icon>
+              </AppBarButton>
+            </CommandBar>
+            <CommandBar
+              Grid.Column="1"
+              Background="Transparent"
+              DefaultLabelPosition="Collapsed"
+            >
+              <AppBarButton x:Name="SelectedMapButton" Command="{x:Bind SelectedMap}">
+                <AppBarButton.Icon>
+                  <FontIcon
+                    FontFamily="{x:Bind icons:Lucide.Font}"
+                    Glyph="{x:Bind icons:Lucide.GraphStar}"
+                  />
+                </AppBarButton.Icon>
+              </AppBarButton>
+              <AppBarButton x:Name="AllMapButton" Command="{x:Bind AllMap}">
+                <AppBarButton.Icon>
+                  <FontIcon
+                    FontFamily="{x:Bind icons:Lucide.Font}"
+                    Glyph="{x:Bind icons:Lucide.Globe2}"
+                  />
+                </AppBarButton.Icon>
+              </AppBarButton>
+              <AppBarSeparator x:Name="MapSeparator" />
+              <AppBarButton x:Name="SettingsButton" Command="{x:Bind Model.ShowSettings}">
+                <AppBarButton.Icon>
+                  <FontIcon
+                    FontFamily="{x:Bind icons:Lucide.Font}"
+                    Glyph="{x:Bind icons:Lucide.Settings}"
+                  />
+                </AppBarButton.Icon>
+              </AppBarButton>
+            </CommandBar>
+          </Grid>
+          <Grid x:Name="WorkspaceContent" Grid.Row="1">
+            <Grid x:Name="TorrentContent">
               <table:Table
                 x:Name="Torrents"
-                Grid.Row="1"
                 Background="Transparent"
                 ItemsSource="{x:Bind Model.VisibleTorrents, Mode=OneWay}"
                 CanReorder="{x:Bind Model.CanReorder, Mode=OneWay}"
@@ -745,11 +776,24 @@
               HorizontalContentAlignment="Stretch"
               VerticalContentAlignment="Stretch"
             />
+            <ContentControl
+              x:Name="CatalogueContent"
+              Grid.Row="0"
+              Visibility="Collapsed"
+              HorizontalContentAlignment="Stretch"
+              VerticalContentAlignment="Stretch"
+            />
           </Grid>
-          <controls:Splitter x:Name="Split" Grid.Row="1" Visibility="Collapsed" />
-          <Grid x:Name="InspectorSurface" Grid.Row="2" Visibility="Collapsed">
+          <controls:Splitter x:Name="Split" Grid.Row="2" Visibility="Collapsed" />
+          <Grid x:Name="InspectorSurface" Grid.Row="3" Visibility="Collapsed">
             <ContentControl
               x:Name="InspectorContent"
+              HorizontalContentAlignment="Stretch"
+              VerticalContentAlignment="Stretch"
+            />
+            <ContentControl
+              x:Name="CatalogueInspector"
+              Visibility="Collapsed"
               HorizontalContentAlignment="Stretch"
               VerticalContentAlignment="Stretch"
             />
@@ -1032,21 +1076,42 @@
       <StackPanel
         x:Name="ContextStatus"
         Orientation="Horizontal"
-        Spacing="6"
+        Spacing="16"
         VerticalAlignment="Center"
       >
-        <FontIcon
-          x:Name="ContextIcon"
-          Style="{StaticResource TinyTorrentStatusIconStyle}"
-          FontFamily="{x:Bind icons:Lucide.Font}"
-          Glyph="{x:Bind icons:Lucide.List}"
-          AutomationProperties.AccessibilityView="Raw"
-        />
-        <TextBlock
-          x:Name="CountLabel"
-          Style="{StaticResource TinyTorrentStatusTextStyle}"
-          TextTrimming="CharacterEllipsis"
-        />
+        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+          <FontIcon
+            x:Name="ContextIcon"
+            Style="{StaticResource TinyTorrentStatusIconStyle}"
+            FontFamily="{x:Bind icons:Lucide.Font}"
+            Glyph="{x:Bind icons:Lucide.List}"
+            AutomationProperties.AccessibilityView="Raw"
+          />
+          <TextBlock
+            x:Name="CountLabel"
+            Style="{StaticResource TinyTorrentStatusTextStyle}"
+            TextTrimming="CharacterEllipsis"
+          />
+        </StackPanel>
+        <StackPanel x:Name="CatalogueRate" Orientation="Horizontal" Spacing="6" Visibility="Collapsed">
+          <FontIcon
+            Style="{StaticResource TinyTorrentStatusIconStyle}"
+            FontFamily="{x:Bind icons:Lucide.Font}"
+            Glyph="{x:Bind icons:Lucide.Gauge}"
+            AutomationProperties.AccessibilityView="Raw"
+          />
+          <TextBlock x:Name="RateLabel" Style="{StaticResource TinyTorrentStatusTextStyle}" />
+        </StackPanel>
+        <StackPanel x:Name="CollectionStatus" Orientation="Horizontal" Spacing="6" Visibility="Collapsed">
+          <FontIcon
+            x:Name="CollectionIcon"
+            Style="{StaticResource TinyTorrentStatusIconStyle}"
+            FontFamily="{x:Bind icons:Lucide.Font}"
+            Glyph="{x:Bind icons:Lucide.RefreshCw}"
+            AutomationProperties.AccessibilityView="Raw"
+          />
+          <TextBlock x:Name="CollectionLabel" Style="{StaticResource TinyTorrentStatusTextStyle}" />
+        </StackPanel>
       </StackPanel>
       <StackPanel
         x:Name="ActivityStatus"

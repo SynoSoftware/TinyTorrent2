@@ -211,6 +211,15 @@ and a hidden stack, the same work failing again replacing its earlier failure,
 and a seen timed toast retiring when the stack hides. It
 does not cover the window's pause conditions, such as hover or editor focus.
 
+`Capture.ps1 -Review workspace` covers a change to the shared workspace: the
+toolbar, the Filters pane or the inspector's presentation. On Search, Library
+and Torrents, it checks that the inspector keeps its pinned, maximized and
+resized state across pages, that each pane button acts once, that Search
+shows its empty message in the open inspector, that Close returns focus to the
+results, and that every visible toolbar command fits or moves to the More
+menu. It runs one narrow English scene with a paused, indexed two-torrent
+fixture.
+
 `Capture.ps1 -Review connections` exercises the connections-map toolbar and View
 menu commands, selected and all-transfer scopes, Back restoration, Properties
 canceling the return point, selection loss through filtering and a Library
@@ -345,6 +354,26 @@ navigation, named-setting focus and reopening suggestions. It captures localized
 results across themes and sizes; it does not synthesize Ctrl+K keyboard input.
 `TINYTORRENT_CAPTURE_SEARCH_BASELINE=1` suppresses that mode's failure checks
 for baseline images; such a capture is not evidence that the search checks pass.
+Use `Capture.ps1 -Review catalogue` for the separate torrent Search workspace.
+Two private, paused torrents with discovery disabled populate the catalogue
+through initial transfer ingestion. The journey stops collection, searches files,
+filters by parent torrent, inspects file choices and visits the Indexing Settings
+category, exclusion-rule editor, policy and empty/populated removal previews in
+English/Dark and Spanish/Light, then visits Torrents results. The native caption
+selector also navigates between Library and Search. It closes without applying
+a rule or removal. It checks
+selection enables Download without accepting payload transfers. This provides
+native UI and local-query evidence; the engine catalogue check separately verifies
+compact Add choices and persistence.
+`engine/tests/CatalogueChecks.ps1 -EnginePath <built-engine>` uses disposable,
+private paused fixtures with discovery off. It watches metadata loss across
+historical schema migration/restart/offline rebuild, global ordering before
+page limits and exact matching after candidate lookup, wrong original-index
+Add choices, stale captured scopes,
+remembered rule reasons and release, unreviewed removal, and incorrect age-based
+eviction or collection stopping at its budget. It reports one small-fixture
+query timing and allocated/reusable bytes, without a timing assertion. These are
+catalogue-owner persistence and boundary decisions, not payload-transfer tests.
 Use `TINYTORRENT_CAPTURE_REVIEW=settings-prototype` for the implemented Settings
 index and categories with advanced controls hidden and shown, plus manual
 Connection setup. It uses English/Dark and Spanish/Light fixtures; its typed

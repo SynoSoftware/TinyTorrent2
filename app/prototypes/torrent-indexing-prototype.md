@@ -1,6 +1,6 @@
 # Torrent indexing UI prototype
 
-Question: how should Plan 14's search and file-choice journey fit the existing
+Question: how should catalogue search and file choices fit the existing
 torrent page? Open [the HTML](torrent-indexing-prototype.html) directly. From
 the repository root, one command opens it in the default browser:
 
@@ -10,8 +10,16 @@ Start-Process .\app\prototypes\torrent-indexing-prototype.html
 
 This is throwaway presentation code with invented, memory-only sample data.
 It makes no network requests, reads no catalogue and starts no downloads.
-[Plan 14](../../docs/plans/14-torrent-indexing-plan.md) remains the implementation
-plan; no production implementation is included here.
+The [torrent catalogue contract](../../docs/contracts/indexing.md) owns production
+behavior. Native Search implements the approved UI; this folder contains only
+the presentation prototype.
+
+The owner's later decision replaces its standalone settings dialog with the
+normal Settings > Indexing category after Transfers. Existing category headers,
+icons, cards and rows own that presentation; rule editing and explicit previews
+remain task dialogs. Inspector General uses the existing torrent-properties
+sections, fields, statistics and icons. The original native settings dialog is
+preserved in Git commit `763e82f`.
 
 The [reference inventory](../../docs/plans/14-torrent-references.md) records the
 subsequent Rats/Bitmagnet research. Bans are automatic rule-based rejections:
@@ -54,7 +62,7 @@ Results, expanded sources and Inspector files scroll continuously, without
 pagination controls. Production uses the existing TableView virtualization;
 engine query batches and work budgets remain internal.
 The finite sample's exact totals and global sorting do not establish production
-search guarantees. [Plan 14's search contract](../../docs/plans/14-torrent-indexing-plan.md#search)
+search guarantees. The [search contract](../../docs/contracts/indexing.md#search-and-add)
 allows bounded scans and limited results with explicit coverage and truthful
 counts/order; the HTML has not been updated to demonstrate those outcomes.
 
@@ -101,7 +109,7 @@ Matched-rule identities and revisions stay internal. Cancel changes nothing;
 Apply changes the policy, with retained catalogue removal reviewed separately.
 
 The search matcher is a case-insensitive substring demonstration; it does not
-implement Plan 14's expression language. Retention patterns support literals
+implement the production search syntax. Retention patterns support literals
 and wildcards, with combined per-file conditions. Storage allowance, statistics, destination
 free space and progress are illustrative. No performance, durability, native
 WinUI semantics or translation behavior is established by this HTML.

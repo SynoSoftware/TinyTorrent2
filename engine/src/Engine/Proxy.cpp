@@ -4,6 +4,7 @@
 #include <windns.h>
 #include <algorithm>
 #include <memory>
+#include <stdexcept>
 
 #pragma comment(lib, "dnsapi.lib")
 
@@ -46,6 +47,86 @@ struct Winsock
     }
 };
 
+std::vector<sockaddr_storage> ResolveAddresses(std::string const& host, int port,
+    std::optional<NetworkAdapter> const& adapter, std::stop_token stop, Clock::time_point deadline)
+{
+    auto check = [&]
+    {
+        if (stop.stop_requested() || Clock::now() >= deadline)
+            throw ProxyOutcome::TimedOut;
+    };
+    check();
+    std::vector<sockaddr_storage> addresses;
+    ADDRINFOW hints{};
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+    hints.ai_flags = adapter ? AI_NUMERICHOST : 0;
+    ADDRINFOW* found = nullptr;
+    auto status = GetAddrInfoW(Wide(host).c_str(), std::to_wstring(port).c_str(), &hints, &found);
+    std::unique_ptr<ADDRINFOW, decltype(&FreeAddrInfoW)> resolved(found, FreeAddrInfoW);
+    check();
+    if (status == 0)
+    {
+        for (auto address = found; address; address = address->ai_next)
+        {
+            if (address->ai_family != AF_INET && address->ai_family != AF_INET6)
+                continue;
+            sockaddr_storage endpoint{};
+            memcpy(&endpoint, address->ai_addr, address->ai_family == AF_INET ? sizeof(sockaddr_in) : sizeof(sockaddr_in6));
+            addresses.push_back(endpoint);
+        }
+    }
+    else if (adapter)
+    {
+        auto name = Wide(host);
+        for (auto type : {DNS_TYPE_A, DNS_TYPE_AAAA})
+        {
+            check();
+            auto index = type == DNS_TYPE_A ? adapter->ipv4Index : adapter->ipv6Index;
+            if (!index)
+                continue;
+            DNS_QUERY_REQUEST request{};
+            request.Version = DNS_QUERY_REQUEST_VERSION1;
+            request.QueryName = name.c_str();
+            request.QueryType = static_cast<WORD>(type);
+            request.QueryOptions = DNS_QUERY_TREAT_AS_FQDN | DNS_QUERY_NO_MULTICAST;
+            request.InterfaceIndex = index;
+            DNS_QUERY_RESULT result{};
+            result.Version = DNS_QUERY_RESULTS_VERSION1;
+            auto status = DnsQueryEx(&request, &result, nullptr);
+            auto release = [](DNS_RECORD* records) { DnsRecordListFree(records, DnsFreeRecordList); };
+            std::unique_ptr<DNS_RECORD, decltype(release)> records(result.pQueryRecords, release);
+            check();
+            if (status != ERROR_SUCCESS)
+                continue;
+            for (auto record = records.get(); record; record = record->pNext)
+            {
+                sockaddr_storage address{};
+                if (record->wType == DNS_TYPE_A)
+                {
+                    auto& endpoint = reinterpret_cast<sockaddr_in&>(address);
+                    endpoint.sin_family = AF_INET;
+                    endpoint.sin_port = htons(static_cast<u_short>(port));
+                    endpoint.sin_addr.s_addr = record->Data.A.IpAddress;
+                }
+                else if (record->wType == DNS_TYPE_AAAA)
+                {
+                    auto& endpoint = reinterpret_cast<sockaddr_in6&>(address);
+                    endpoint.sin6_family = AF_INET6;
+                    endpoint.sin6_port = htons(static_cast<u_short>(port));
+                    memcpy(&endpoint.sin6_addr, record->Data.AAAA.Ip6Address.IP6Byte, sizeof(endpoint.sin6_addr));
+                }
+                else
+                    continue;
+                addresses.push_back(address);
+            }
+        }
+    }
+    if (addresses.empty())
+        throw ProxyOutcome::NotFound;
+    return addresses;
+}
+
 // One TCP connection to the proxy. A step that cannot complete throws the
 // outcome that ends the check.
 class Connection
@@ -63,38 +144,16 @@ public:
 
     void Open(std::string const& host, int port)
     {
-        CheckCancelled();
-        ADDRINFOW hints{};
-        hints.ai_socktype = SOCK_STREAM;
-        hints.ai_protocol = IPPROTO_TCP;
-        hints.ai_flags = adapter_ ? AI_NUMERICHOST : 0;
-        ADDRINFOW* found = nullptr;
-        if (GetAddrInfoW(Wide(host).c_str(), std::to_wstring(port).c_str(), &hints, &found) != 0)
+        for (auto& address : ResolveAddresses(host, port, adapter_, stop_, deadline_))
         {
-            if (adapter_)
-            {
-                for (auto& address : Resolve(host, port))
-                {
-                    ADDRINFOW endpoint{};
-                    endpoint.ai_family = address.ss_family;
-                    endpoint.ai_socktype = SOCK_STREAM;
-                    endpoint.ai_protocol = IPPROTO_TCP;
-                    endpoint.ai_addr = reinterpret_cast<sockaddr*>(&address);
-                    endpoint.ai_addrlen = address.ss_family == AF_INET ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
-                    if (Connect(endpoint))
-                        return;
-                }
-                throw ProxyOutcome::Unreachable;
-            }
-            throw ProxyOutcome::NotFound;
-        }
-        std::unique_ptr<ADDRINFOW, decltype(&FreeAddrInfoW)> addresses(found, FreeAddrInfoW);
-        for (auto address = found; address; address = address->ai_next)
-        {
-            if (Connect(*address))
-            {
+            ADDRINFOW endpoint{};
+            endpoint.ai_family = address.ss_family;
+            endpoint.ai_socktype = SOCK_STREAM;
+            endpoint.ai_protocol = IPPROTO_TCP;
+            endpoint.ai_addr = reinterpret_cast<sockaddr*>(&address);
+            endpoint.ai_addrlen = address.ss_family == AF_INET ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
+            if (Connect(endpoint))
                 return;
-            }
         }
         throw ProxyOutcome::Unreachable;
     }
@@ -146,57 +205,6 @@ private:
     {
         if (stop_.stop_requested() || Clock::now() >= deadline_)
             throw ProxyOutcome::TimedOut;
-    }
-
-    std::vector<sockaddr_storage> Resolve(std::string const& host, int port)
-    {
-        std::vector<sockaddr_storage> addresses;
-        auto name = Wide(host);
-        for (auto type : {DNS_TYPE_A, DNS_TYPE_AAAA})
-        {
-            CheckCancelled();
-            auto index = type == DNS_TYPE_A ? adapter_->ipv4Index : adapter_->ipv6Index;
-            if (!index)
-                continue;
-            DNS_QUERY_REQUEST request{};
-            request.Version = DNS_QUERY_REQUEST_VERSION1;
-            request.QueryName = name.c_str();
-            request.QueryType = static_cast<WORD>(type);
-            request.QueryOptions = DNS_QUERY_TREAT_AS_FQDN | DNS_QUERY_NO_MULTICAST;
-            request.InterfaceIndex = index;
-            DNS_QUERY_RESULT result{};
-            result.Version = DNS_QUERY_RESULTS_VERSION1;
-            auto status = DnsQueryEx(&request, &result, nullptr);
-            auto release = [](DNS_RECORD* records) { DnsRecordListFree(records, DnsFreeRecordList); };
-            std::unique_ptr<DNS_RECORD, decltype(release)> records(result.pQueryRecords, release);
-            CheckCancelled();
-            if (status != ERROR_SUCCESS)
-                continue;
-            for (auto record = records.get(); record; record = record->pNext)
-            {
-                sockaddr_storage address{};
-                if (record->wType == DNS_TYPE_A)
-                {
-                    auto& endpoint = reinterpret_cast<sockaddr_in&>(address);
-                    endpoint.sin_family = AF_INET;
-                    endpoint.sin_port = htons(static_cast<u_short>(port));
-                    endpoint.sin_addr.s_addr = record->Data.A.IpAddress;
-                }
-                else if (record->wType == DNS_TYPE_AAAA)
-                {
-                    auto& endpoint = reinterpret_cast<sockaddr_in6&>(address);
-                    endpoint.sin6_family = AF_INET6;
-                    endpoint.sin6_port = htons(static_cast<u_short>(port));
-                    memcpy(&endpoint.sin6_addr, record->Data.AAAA.Ip6Address.IP6Byte, sizeof(endpoint.sin6_addr));
-                }
-                else
-                    continue;
-                addresses.push_back(address);
-            }
-        }
-        if (addresses.empty())
-            throw ProxyOutcome::NotFound;
-        return addresses;
     }
 
     bool Connect(ADDRINFOW const& address)
@@ -393,6 +401,38 @@ ProxyOutcome Http(Connection& connection, std::string const& username, std::stri
 std::string_view Engine::State::Name(ProxyOutcome outcome)
 {
     return Word(outcomes, outcome);
+}
+
+std::vector<lt::tcp::endpoint> Engine::State::ResolveProxy(Settings::Proxy const& proxy,
+    std::optional<NetworkAdapter> const& adapter, std::stop_token stop)
+{
+    Winsock winsock;
+    std::vector<lt::tcp::endpoint> endpoints;
+    try
+    {
+        for (auto const& address : ResolveAddresses(proxy.host, proxy.port, adapter, stop, Clock::now() + checkLimit))
+        {
+            if (address.ss_family == AF_INET)
+            {
+                auto const& socket = reinterpret_cast<sockaddr_in const&>(address);
+                lt::address_v4::bytes_type bytes;
+                memcpy(bytes.data(), &socket.sin_addr, bytes.size());
+                endpoints.emplace_back(lt::address_v4(bytes), ntohs(socket.sin_port));
+            }
+            else
+            {
+                auto const& socket = reinterpret_cast<sockaddr_in6 const&>(address);
+                lt::address_v6::bytes_type bytes;
+                memcpy(bytes.data(), &socket.sin6_addr, bytes.size());
+                endpoints.emplace_back(lt::address_v6(bytes, socket.sin6_scope_id), ntohs(socket.sin6_port));
+            }
+        }
+    }
+    catch (ProxyOutcome outcome)
+    {
+        throw std::runtime_error("Proxy resolution failed: " + std::string(Name(outcome)));
+    }
+    return endpoints;
 }
 
 void Engine::State::CheckProxy(Settings::Proxy proxy, std::function<void(std::optional<ProxyCheck>)> completion)

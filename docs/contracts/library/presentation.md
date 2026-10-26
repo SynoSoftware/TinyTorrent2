@@ -203,7 +203,7 @@ Library, the menus are:
 | --- | --- |
 | File | Unchanged. |
 | Library | Open, Open folder, Properties, Show in Torrents; Fetch metadata, Download Subtitle; Erase metadata. The row context menu has the same groups and a selection heading. Download Subtitle is a direct action; multiple selections use Download subtitles. Single and multiple selections use the same command owners and Lucide icons. |
-| View | Filters first; then Videos, Music, Files as choices. Library has no toolbar, so View has no Toolbar item there. |
+| View | Filters, Inspector and Toolbar, as on every page; then Videos, Music, Files as choices. |
 | Help | Unchanged. |
 
 ## Search

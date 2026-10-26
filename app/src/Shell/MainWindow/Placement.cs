@@ -263,6 +263,8 @@ public sealed partial class MainWindow
             await ShowAbout();
         else if (placement.Page == WindowPage.Library)
             await Model.Navigation.Navigate(WindowPage.Library);
+        else if (placement.Page == WindowPage.Search)
+            await Model.Navigation.Navigate(WindowPage.Search);
         return Enum.IsDefined(placement.Map) ? placement.Map : MapScope.None;
     }
 

@@ -53,7 +53,7 @@ public sealed partial class MainWindow
                 Filters = Model.FilterPane,
                 Open = Model.HasInspector,
                 Compact = Model.IsInspectorCompact,
-                Maximized = pane?.Surface.IsMaximized == true,
+                Maximized = Model.IsInspectorMaximized,
                 Height = _splitHeight,
                 Offset = Torrents.VerticalOffset,
                 Target = Model.Inspector.Target,
@@ -79,13 +79,12 @@ public sealed partial class MainWindow
             Model.Inspector.Select(InspectorSection.Peers);
             Model.SetInspector(open: true, compact: false);
             Model.FilterPane = FilterPane.Hidden;
+            Model.IsInspectorMaximized = true;
             var pane = (InspectorPane)InspectorContent.Content;
             pane.Layout = pane.Layout with
             {
                 View = pane.Layout.View with { Layout = PeerLayout.Map },
             };
-            pane.Surface.IsMaximized = true;
-            UpdateInspectorSize();
             BackButton.Focus(FocusState.Programmatic);
         }
         finally
@@ -110,12 +109,10 @@ public sealed partial class MainWindow
             Model.Inspector.Select(section);
             Model.SetInspector(saved.Open, saved.Compact);
             Model.FilterPane = saved.Filters;
+            Model.IsInspectorMaximized = saved.Maximized;
             _splitHeight = saved.Height;
             if (InspectorContent.Content is InspectorPane pane)
-            {
                 pane.Layout = pane.Layout with { View = saved.View };
-                pane.Surface.IsMaximized = saved.Maximized;
-            }
             UpdateInspectorSize();
             var page = Model.Navigation.Current;
             DispatcherQueue.TryEnqueue(

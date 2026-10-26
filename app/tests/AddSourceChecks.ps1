@@ -21,6 +21,13 @@ function Apply-Preview([string] $TorrentId) {
         error = $null
         hashes = @('hash')
         shared_with = @()
+        file_offset = 0
+        next_offset = 1
+        file_count = 8
+        selectable_count = 7
+        file_bytes = 96
+        wanted_count = 7
+        wanted_bytes = 96
         files = @(@{ index = 0; path = 'content.bin'; size = 12; padding = $false; priority = 4 })
     } | ConvertTo-Json -Depth 4
     $document = [Text.Json.JsonDocument]::Parse($preview)
@@ -45,6 +52,25 @@ if (!$source.NeedsFiles -or $source.Files.HasWanted) {
 }
 
 Write-Output 'PASS: duplicate recovery initializes file choices and preserves later edits.'
+
+# A catalogue-selected file can lie outside the bounded preview's first page.
+$choiceType = $assembly.GetType('Syno.TinyTorrent.Controls.FileChoice', $true)
+$choice = $choiceType.GetConstructors($flags)[0].Invoke([object[]]@(7, 4, [long]42, 4))
+$choices = [Array]::CreateInstance($choiceType, 1)
+$choices.SetValue($choice, 0)
+$selection = $source.Files
+$selectionType = $selection.GetType()
+$selectionType.GetMethod('Select', $flags).Invoke($selection, [object[]]@(0, $choices))
+$source.Files.Roots[0].Priority = 4
+$source.Files.Roots[0].Priority = 0
+Apply-Preview 'existing'
+Apply-Preview ''
+$selected = @($selectionType.GetMethod('Choices', $flags).Invoke($selection, @()))
+if ($selected.Count -ne 1 -or $selected[0].Index -ne 7 -or $selected[0].Priority -ne 4 -or
+    !$selection.HasWanted -or $selection.WantedBytes -ne 42) {
+    throw 'Editing displayed files or recovering a preview lost the original off-page file choice.'
+}
+Write-Output 'PASS: off-page catalogue choices retain their original indices and wanted size through edits and preview recovery.'
 
 # Inspect the queued settings command without starting a pipe or touching the user's engine.
 $settingsType = $assembly.GetType('Syno.TinyTorrent.Settings.Editor', $true)

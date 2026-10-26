@@ -434,6 +434,15 @@ void Engine::State::On(lt::torrent_deleted_alert const& alert)
 
 void Engine::State::On(lt::torrent_removed_alert const& alert)
 {
+    if (auto found = std::find_if(acquisitions.begin(), acquisitions.end(), [&alert](auto const& item)
+        { return item.second.phase == AcquisitionPhase::Removing && item.second.handle == alert.handle; });
+        found != acquisitions.end())
+    {
+        auto waiting = std::move(found->second.waiting);
+        acquisitions.erase(found);
+        for (auto& retry : waiting)
+            retry();
+    }
     for (auto& deletion : deletions)
     {
         // Ordinary Remove keeps the files, but holds their ownership until

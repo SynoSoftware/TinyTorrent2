@@ -84,7 +84,7 @@ internal sealed class Navigation(Func<WindowPage, Task<bool>> prepare) : INotify
     }
 
     private static bool IsWorkspace(WindowPage page) =>
-        page is WindowPage.Torrents or WindowPage.Library;
+        page is WindowPage.Torrents or WindowPage.Library or WindowPage.Search;
 
     private void Changed(string property) => PropertyChanged?.Invoke(this, new(property));
 }

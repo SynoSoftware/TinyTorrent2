@@ -14,6 +14,7 @@ public sealed class Overview : INotifyPropertyChanged
         _settings = settings;
         _main = main;
         settings.PropertyChanged += (_, _) => Refresh();
+        main.Search.PropertyChanged += (_, _) => Refresh();
         main.PropertyChanged += (_, args) =>
         {
             if (args.PropertyName is nameof(MainViewModel.CurrentStatus)
@@ -43,6 +44,7 @@ public sealed class Overview : INotifyPropertyChanged
     {
         null => Caption("home"),
         SettingsCategory.Transfers => Caption("default_destination"),
+        SettingsCategory.Indexing => _settings.Text.Get("catalogue", "indexing"),
         SettingsCategory.Limits => Caption("current_limits"),
         SettingsCategory.Schedule => Caption(
             _main.LimitsIndex < 0 ? "weekly_schedule"
@@ -51,7 +53,7 @@ public sealed class Overview : INotifyPropertyChanged
         SettingsCategory.Plugins => _settings.Text.Get("library", "title"),
         _ => string.Empty,
     };
-    public string FirstLabel => Caption(Category switch
+    public string FirstLabel => Category == SettingsCategory.Indexing ? _settings.Text.Get("catalogue", "budget") : Caption(Category switch
     {
         null => "session_totals",
         SettingsCategory.General => "torrent_files",
@@ -68,6 +70,7 @@ public sealed class Overview : INotifyPropertyChanged
         null => Caption("lifetime_totals"),
         SettingsCategory.General => Caption("start_signin"),
         SettingsCategory.Transfers => Caption("seeding"),
+        SettingsCategory.Indexing => _settings.Text.Get("catalogue", "suppressed_now"),
         SettingsCategory.Limits => Caption("alternative_caps"),
         SettingsCategory.Schedule => Caption("saved_periods"),
         SettingsCategory.Appearance => Caption("language"),
@@ -78,6 +81,7 @@ public sealed class Overview : INotifyPropertyChanged
     public string Subtitle => Category switch
     {
         SettingsCategory.Transfers => _settings.Destination.ConfirmedText,
+        SettingsCategory.Indexing => _settings.Indexing.IsOn ? _settings.OnText : _settings.OffText,
         SettingsCategory.Limits => _main.FollowsSchedule ? _main.LimitsNow : _main.LimitsHeading,
         // The inactive title and the Current limits fact already say what applies.
         SettingsCategory.Schedule => _main.FollowsSchedule ? _main.ScheduleSummary : string.Empty,
@@ -93,6 +97,8 @@ public sealed class Overview : INotifyPropertyChanged
     {
         SettingsCategory.General => _settings.HasRegistration ? _settings.TorrentApp : "—",
         SettingsCategory.Transfers => _settings.QueueSummary,
+        SettingsCategory.Indexing => _settings.Text.Bytes(_main.Search.State.Allocated) + " / "
+            + _settings.Text.Bytes((long)_main.Search.State.BudgetMib * 1048576),
         SettingsCategory.Limits => _settings.StandardSummary,
         SettingsCategory.Schedule => _main.LimitsHeading,
         SettingsCategory.Appearance => _settings.Text.Get("settings", _settings.Theme.Input switch
@@ -111,6 +117,7 @@ public sealed class Overview : INotifyPropertyChanged
         SettingsCategory.General => !_settings.HasRegistration ? "—"
             : _settings.Startup ? _settings.OnText : _settings.OffText,
         SettingsCategory.Transfers => _settings.SeedingSummary,
+        SettingsCategory.Indexing => _main.Search.State.Rejected.ToString("N0", CultureInfo.CurrentCulture),
         SettingsCategory.Limits => _settings.AlternativeSummary,
         SettingsCategory.Schedule => _settings.Schedule.Periods.Count.ToString("N0", CultureInfo.CurrentCulture),
         SettingsCategory.Appearance => _settings.Text.LanguageName(_settings.Text.Language),

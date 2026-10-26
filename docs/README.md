@@ -77,14 +77,12 @@ scoped-subscription design for torrent detail, which the owner has not decided
 to implement; its implemented first stage lives in the protocol and engine
 contracts.
 
-The [torrent indexing plan](plans/14-torrent-indexing-plan.md) designs an opt-in
-general DHT crawler, an engine-owned SQLite database and a separate local
-Search workspace. Search remains usable with indexing off and prioritizes
-responsiveness with explicit bounded coverage; downloads use the existing Add
-workflow. Retention rules remember rejected torrents without
-retaining their metadata and preview removal of existing entries. Owner
-decisions are settled; database/search mechanisms remain candidates to validate.
-Implementation has not started.
+The [torrent catalogue contract](contracts/indexing.md) owns the opt-in
+catalogue's engine storage, collection, search, Add and retention rules.
+Search remains usable with indexing off and prioritizes responsiveness with
+explicit bounded coverage; downloads use the existing Add workflow. Retention
+rules remember rejected torrents without retaining their metadata and preview
+removal of existing entries.
 
 The [Rats Search and Bitmagnet inventory](plans/14-torrent-references.md) compares
 their current documentation and source across discovery, metadata, search,

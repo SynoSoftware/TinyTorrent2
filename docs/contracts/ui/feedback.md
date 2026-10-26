@@ -58,6 +58,16 @@ indication describes the query that produced the displayed rows.
 
 Settings shows its current section, such as `Settings · Network`, with a Settings
 icon in the left group, from the navigation state; it has no collection count.
+Search shows indexed torrent/file totals and selection beside a separate
+icon-labelled rate of newly searchable torrents per second, averaged over the
+last 60 seconds. A compact activity group shows current metadata fetches while
+collection is enabled; shown-match counts occupy the information group. The
+rate is hidden when collection is off, disconnected or unavailable. These live
+facts refresh through the existing visible-page poll; a tooltip and accessible
+name retain peer probes, queued hashes, storage and the full status when it
+trims. Sampled hash
+observations describe this engine run and may repeat hashes; they are not a
+unique catalogue total. Disconnected facts read Last known.
 A selection count sits beside the collection count, not at the far end of the
 window. Counts refer to the table, and rates always refer to all torrents. About has no collection facts. Retained disconnected data is
 labelled Last known, while initial torrent connection says Connecting.

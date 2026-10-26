@@ -1,6 +1,7 @@
 #include "Engine/State.h"
 #include <libtorrent/torrent_info.hpp>
 #include <libtorrent/session_stats.hpp>
+#include <libtorrent/hex.hpp>
 #include <algorithm>
 #include <cwctype>
 
@@ -81,6 +82,35 @@ void Engine::State::Handle(lt::alert* alert)
         break;
     case lt::metadata_failed_alert::alert_type:
         On(static_cast<lt::metadata_failed_alert const&>(*alert));
+        break;
+    case lt::dht_stats_alert::alert_type:
+        On(static_cast<lt::dht_stats_alert const&>(*alert));
+        break;
+    case lt::dht_live_nodes_alert::alert_type:
+        On(static_cast<lt::dht_live_nodes_alert const&>(*alert));
+        break;
+    case lt::dht_sample_infohashes_alert::alert_type:
+        On(static_cast<lt::dht_sample_infohashes_alert const&>(*alert));
+        break;
+    case lt::dht_get_peers_reply_alert::alert_type:
+        On(static_cast<lt::dht_get_peers_reply_alert const&>(*alert));
+        break;
+    case lt::dht_direct_response_alert::alert_type:
+        On(static_cast<lt::dht_direct_response_alert const&>(*alert));
+        break;
+    case lt::dht_get_peers_alert::alert_type:
+        if (settings.indexing && indexReady)
+            indexDiscoveries.push_back(lt::aux::to_hex(static_cast<lt::dht_get_peers_alert const&>(*alert).info_hash.to_string()));
+        break;
+    case lt::dht_announce_alert::alert_type:
+        if (settings.indexing && indexReady)
+        {
+            auto const& announced = static_cast<lt::dht_announce_alert const&>(*alert);
+            auto hash = lt::aux::to_hex(announced.info_hash.to_string());
+            Catalogue::Endpoint peer{announced.ip.to_string(), announced.port};
+            indexDiscoveries.push_back(hash);
+            ConnectPeers(hash, {peer});
+        }
         break;
     case lt::save_resume_data_alert::alert_type:
         On(static_cast<lt::save_resume_data_alert&>(*alert));
@@ -224,6 +254,27 @@ void Engine::State::On(lt::state_update_alert const& alert)
     bool changed = false;
     for (auto const& status : alert.status)
     {
+        auto acquisition = std::find_if(acquisitions.begin(), acquisitions.end(), [&status](auto const& item)
+            { return item.second.handle == status.handle; });
+        if (acquisition != acquisitions.end() && acquisition->second.phase == AcquisitionPhase::Metadata &&
+            status.total_download - acquisition->second.received >= 16 * 1024)
+        {
+            // Metadata is protocol traffic; receive activity extends its stall deadline.
+            acquisition->second.received = status.total_download;
+            acquisition->second.deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+            acquisition->second.expiryRequested.reset();
+        }
+        if (acquisition != acquisitions.end() && acquisition->second.phase == AcquisitionPhase::Metadata &&
+            acquisition->second.expiryRequested && alert.timestamp() >= *acquisition->second.expiryRequested)
+        {
+            acquisition->second.expiryRequested.reset();
+            if (std::chrono::steady_clock::now() >= acquisition->second.deadline)
+            {
+                session->remove_torrent(acquisition->second.handle);
+                acquisition->second.phase = AcquisitionPhase::Removing;
+                indexFailures.insert(acquisition->first);
+            }
+        }
         switch (Answered(status))
         {
         case StatusQuery::Routine:
@@ -424,7 +475,8 @@ void Engine::State::On(lt::cache_flushed_alert const& alert)
 // only a preview, the preview gives way and the torrent continues.
 void Engine::State::On(lt::torrent_conflict_alert const& alert)
 {
-    bool released = false;
+    bool released = ReleaseAcquisition(alert.handle, alert.metadata);
+    released = ReleaseAcquisition(alert.conflicting_torrent, alert.metadata) || released;
     for (auto& [id, preview] : previews)
     {
         if (preview.handle == alert.handle || preview.handle == alert.conflicting_torrent)
@@ -456,12 +508,16 @@ void Engine::State::On(lt::torrent_conflict_alert const& alert)
 
 void Engine::State::On(lt::metadata_received_alert const& alert)
 {
+    if (ReleaseAcquisition(alert.handle, alert.handle.torrent_file()))
+        return;
     for (auto& [id, preview] : previews)
     {
         if (preview.handle == alert.handle)
         {
             UpdatePreview(preview);
             preview.error.clear();
+            IngestMetadata(preview.params, {.lookup = preview.discovery, .discovered = !preview.discovery.empty(),
+                .metainfoPath = preview.torrentFile});
         }
     }
     if (auto torrent = FindWorking(alert.handle))
@@ -473,6 +529,7 @@ void Engine::State::On(lt::metadata_received_alert const& alert)
         ContinueNames();
         torrent->ApplyIntent();
         RecordHashes(*torrent, alert.handle.info_hashes());
+        IngestMetadata(*torrent);
         Invalidate(torrent->torrentId);
     }
 }
@@ -515,6 +572,8 @@ void Engine::State::On(lt::alerts_dropped_alert const& alert)
         session->post_session_stats();
     if (alert.dropped_alerts[lt::state_update_alert::alert_type])
     {
+        for (auto& [key, acquisition] : acquisitions)
+            acquisition.expiryRequested.reset();
         seedQueries.clear();
         statusOutstanding = false;
         RequestStatus();
@@ -571,6 +630,7 @@ void Engine::State::On(lt::alerts_dropped_alert const& alert)
         RecordHashes(torrent, torrent.handle.info_hashes());
     }
     RecoverAdditions();
+    RecoverIndex();
     queuePending = true;
     log.Write("alerts", "", "dropped");
 }

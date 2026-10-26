@@ -39,7 +39,7 @@ a second box duplicates the task and takes a row away from the settings. Keep
 the title-bar search's existing scope of torrents, commands and settings.
 Settings uses the approved Windows Settings composition in
 `app/prototypes/settings-windows-prototype.html`, variant C, and its accompanying notes.
-Its sidebar contains Home, General, Transfers, Speed limits, Schedule,
+Its sidebar contains Home, General, Transfers, Indexing, Speed limits, Schedule,
 Appearance, Network, Plugins, and Advanced. Advanced appears while
 Advanced mode is on. The sidebar's TinyTorrent logo and name form a
 native button that returns directly to the workspace Settings was opened from.
@@ -47,7 +47,7 @@ The sidebar's footer items are Advanced mode and then the same return action,
 last in the pane. Both are navigation items that act instead of opening a page,
 so they render and respond like the categories. Advanced mode's icon is a
 checked square for On and an empty square for Off, keeping the state visible
-in the compact rail. The return label names Torrents or Library
+in the compact rail. The return label names Torrents, Library or Search
 from the navigation owner's workspace, and both return actions use that workspace's existing command and departure
 guards, so browsing Settings does not trap the person in its history.
 The sidebar uses a compact icon rail at smaller widths
@@ -58,6 +58,19 @@ share one viewport-constrained, centred content column, so a change of
 category cannot move the page or push its actions outside the viewport.
 
 ## Settings navigation
+
+Indexing owns opt-in [torrent indexing](../indexing.md), after Transfers in the
+sidebar. It uses the existing category header, artwork, facts, task sections and
+settings rows for collection, storage, exclusions and maintenance. Search links
+to this category. Only rule editing and explicit previews open task dialogs.
+Collapsed sections retain their summaries through the shared Settings control:
+indexed totals and collection state, storage and not-seen interval, active rules
+and excluded count, and search-index maintenance state.
+The original standalone settings dialog is retained in Git commit `763e82f`.
+Clear acknowledges
+collection Off before removal, so collection cannot immediately refill the
+confirmed scope. Ordinary indexing fields retain the existing per-field commit
+behavior; rule changes use their explicit preview and Apply.
 
 **Owner ruling: every Settings navigation icon is 24 DIPs, including Advanced
 mode and the return action.** The 16-DIP label's visible letters are vertically

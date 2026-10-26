@@ -22,8 +22,7 @@ public sealed partial class MainWindow
         await CaptureReady(Model.Inspector, () => !Model.Inspector.IsLoading);
         var pane = (InspectorPane)InspectorContent.Content;
         pane.Layout = pane.Layout with { View = PeerView.Default with { Layout = PeerLayout.Table } };
-        pane.Surface.IsMaximized = false;
-        UpdateInspectorSize();
+        Model.IsInspectorMaximized = false;
         await CapturePage("connections-before", pane);
         var view = pane.Layout.View;
         var height = _splitHeight;
@@ -48,7 +47,7 @@ public sealed partial class MainWindow
         Require(_mapReturn is null && !Model.Navigation.HasBack, "Back did not consume the map visit.");
         Require(Model.Inspector.Target == target && Model.Inspector.Section == InspectorSection.General,
             "Back did not restore the inspected torrent and section.");
-        Require(Model.IsFilterOpen && !pane.Surface.IsMaximized && pane.Layout.View == view,
+        Require(Model.IsFilterOpen && !Model.IsInspectorMaximized && pane.Layout.View == view,
             "Back did not restore filters, inspector size and peer view.");
         Require(Math.Abs(_splitHeight - height) < 1, "Back lost the inspector split height.");
         outcomes.Add(new { journey = "selected and global map buttons, scope switch and Back", restored = true });
@@ -114,7 +113,7 @@ public sealed partial class MainWindow
             await CaptureLayout();
             Require(_mapReturn is not null && Model.FilterPane == FilterPane.Hidden,
                 "The map command did not hide filters and create a return point.");
-            Require(Model.HasInspector && !Model.IsInspectorCompact && pane.Surface.IsMaximized,
+            Require(Model.HasInspector && !Model.IsInspectorCompact && Model.IsInspectorMaximized,
                 "The map command did not maximise the existing inspector.");
             Require(Model.Inspector.Section == InspectorSection.Peers && pane.Layout.View.Layout == PeerLayout.Map,
                 "The map command did not show peers as map only.");

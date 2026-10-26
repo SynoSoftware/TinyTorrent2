@@ -35,6 +35,7 @@ public sealed class AddDraft : IDraft
     private AdditionPhase _phase;
     private Addition? _addition;
     private Task _arrivals = Task.CompletedTask;
+    private bool _refreshing;
 
     // A submit holds the dialog open; preparing a source does not, because
     // AcceptMagnet releases a preview whose dialog has closed. Closing the
@@ -47,6 +48,7 @@ public sealed class AddDraft : IDraft
     internal bool IsOpen => _polling is not null;
     public ObservableCollection<AddSource> Sources { get; } = [];
     public bool HasSources => Sources.Count > 0;
+    public bool HasPreference => Sources.Any(source => source.Inputs.Count > 0);
     public FileSelection Files => Sources.Count == 1 ? Sources[0].Files : _emptyFiles;
     private string _magnet = string.Empty;
     private Exception? _magnetFailure;
@@ -222,6 +224,7 @@ public sealed class AddDraft : IDraft
             || !source.MetadataReady
             || source.SharedDestination == _destination
         )
+        && Sources.All(source => !source.Files.IsPaged || source.MetadataReady || source.IsDuplicate)
         && !Sources.Any(source => source.NeedsFiles);
     public bool HasDraft => Sources.Count > 0 || !string.IsNullOrWhiteSpace(Magnet);
     public ClosePolicy ClosePolicy =>
@@ -273,6 +276,49 @@ public sealed class AddDraft : IDraft
         }
     }
 
+    internal async Task<ArrivalOutcome> ReceiveCatalogue(
+        JsonElement preview,
+        bool showDialog,
+        Func<string, Task<JsonElement>> prepare,
+        string destination
+    )
+    {
+        var previous = _arrivals;
+        var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _arrivals = completed.Task;
+        Refresh();
+        try
+        {
+            await previous;
+            if (!CanEdit)
+            {
+                await Release(preview.GetProperty("preview_id").GetString()!);
+                return ArrivalOutcome.Settled;
+            }
+            var hadDraft = HasDraft;
+            var source = new AddSource(null, _strings, this)
+            {
+                Prepare = prepare,
+            };
+            ApplyPreview(source, preview, destination);
+            if (IsOpen)
+                return ArrivalOutcome.Settled;
+            if (hadDraft)
+                return ArrivalOutcome.Dialog;
+            return await AddOwned(showDialog);
+        }
+        catch (Exception error)
+        {
+            _owner.Notifications.Report(error);
+            return HasDraft ? ArrivalOutcome.Dialog : ArrivalOutcome.Settled;
+        }
+        finally
+        {
+            completed.SetResult();
+            Refresh();
+        }
+    }
+
     // Several sources arriving at once are added without the Add dialog or any
     // question, so one drop never opens a cascade of dialogs. A torrent already
     // in the list is shown where it is, and a source that fails is reported and
@@ -302,7 +348,7 @@ public sealed class AddDraft : IDraft
             _owner.Notifications.Report(failure);
     }
 
-    private async Task<ArrivalOutcome> AddOwned()
+    private async Task<ArrivalOutcome> AddOwned(bool? requestsDialog = null)
     {
         if (Sources.Count == 0)
             return ArrivalOutcome.Settled;
@@ -311,9 +357,8 @@ public sealed class AddDraft : IDraft
             await PrepareAll();
             return ArrivalOutcome.Settled;
         }
-        var showDialog = Sources.Any(source =>
-            _owner.Settings.AddPreference(source.Source).ConfirmedOn
-        );
+        var showDialog = requestsDialog ?? Sources.SelectMany(source => source.Inputs)
+            .Any(input => _owner.Settings.AddPreference(input).ConfirmedOn);
         await using (var addition = BeginAddition())
         {
             await PrepareAll();
@@ -351,6 +396,7 @@ public sealed class AddDraft : IDraft
     private void Own(AddSource source)
     {
         source.Files.Changed += (_, _) => Refresh();
+        source.Files.Failed += (_, error) => _owner.Notifications.Report(error);
         Sources.Add(source);
     }
 
@@ -580,6 +626,8 @@ public sealed class AddDraft : IDraft
 
     private async Task<JsonElement> PreviewSource(AddSource source, string destination)
     {
+        if (source.Prepare is { } prepare)
+            return await prepare(destination);
         var preview = await _client.Send(
             "preview",
             new { source = source.Source, destination },
@@ -592,6 +640,25 @@ public sealed class AddDraft : IDraft
                 Requester.Window
             );
         return preview;
+    }
+
+    internal async Task<FilePage> ReadFiles(AddSource source, int offset, string query)
+    {
+        if (source.PreviewId is null || !source.MetadataReady || !_owner.IsConnected)
+            throw new OperationCanceledException();
+        var preview = await _client.Read(
+            Consumer.AddFiles,
+            "preview_detail",
+            new
+            {
+                preview_id = source.PreviewId,
+                destination = _destination,
+                file_offset = offset,
+                file_limit = 200,
+                file_query = query,
+            }
+        );
+        return FilePage.Read(preview);
     }
 
     private void ApplyPreview(AddSource source, JsonElement preview, string destination)
@@ -608,6 +675,12 @@ public sealed class AddDraft : IDraft
                 )
             );
             existing.Apply(preview, destination);
+            if (source.Prepare is not null)
+            {
+                existing.Prepare = source.Prepare;
+                if (preview.TryGetProperty("selection", out _))
+                    existing.Files.MergeChoices(source.Files.Choices());
+            }
             Sources.Remove(source);
         }
         else if (!Sources.Contains(source))
@@ -710,7 +783,11 @@ public sealed class AddDraft : IDraft
                 JsonElement addition;
                 try
                 {
-                    var priorities = source.MetadataReady ? source.Files.Priorities() : [];
+                    var choices = source.Files.Choices().Select(choice => new
+                    {
+                        index = choice.Index,
+                        priority = choice.Priority,
+                    }).ToArray();
                     addition = await _client.Send(
                         "add",
                         new
@@ -721,7 +798,8 @@ public sealed class AddDraft : IDraft
                             queue_top = queueTop,
                             sequential,
                             first_last = firstLast,
-                            priorities,
+                            default_priority = source.Files.DefaultPriority,
+                            choices,
                         },
                         Requester.Person
                     );
@@ -805,6 +883,7 @@ public sealed class AddDraft : IDraft
         _polling = null;
         _space = null;
         _client.Withdraw(Consumer.Draft);
+        _client.Withdraw(Consumer.AddFiles);
         Refresh();
     }
 
@@ -1008,9 +1087,22 @@ public sealed class AddDraft : IDraft
 
     internal void Refresh()
     {
-        foreach (var source in Sources)
-            source.Refresh();
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+        if (_refreshing)
+            return;
+        _refreshing = true;
+        try
+        {
+            foreach (var source in Sources)
+            {
+                source.Files.IsEnabled = CanEdit;
+                source.Refresh();
+            }
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+        }
+        finally
+        {
+            _refreshing = false;
+        }
     }
 }
 
@@ -1019,7 +1111,7 @@ public sealed class AddSource : INotifyPropertyChanged
     private readonly Strings _strings;
     private readonly AddDraft _draft;
     internal List<string> Inputs { get; }
-    public string Source => Inputs[0];
+    public string Source => Inputs.FirstOrDefault() ?? Name;
     public FileSelection Files { get; }
     public string Name { get; private set; }
     public ICommand SelectAll { get; }
@@ -1036,6 +1128,7 @@ public sealed class AddSource : INotifyPropertyChanged
     internal string? PreviewId { get; set; }
     internal Exception? Failure { get; set; }
     internal bool Uncertain { get; set; }
+    internal Func<string, Task<JsonElement>>? Prepare { get; set; }
     public string Description =>
         Failure is not null && !AddDraft.IsDestinationError(Failure) ? _strings.Error(Failure)
         : IsDuplicate ? _strings.Get("add", "already_added")
@@ -1053,10 +1146,10 @@ public sealed class AddSource : INotifyPropertyChanged
     public string AllToolTip => _strings.Get("add", "all_files_tip");
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    internal AddSource(string source, Strings strings, AddDraft draft)
+    internal AddSource(string? source, Strings strings, AddDraft draft)
     {
-        Inputs = [source];
-        Name = source;
+        Inputs = source is null ? [] : [source];
+        Name = source ?? string.Empty;
         _strings = strings;
         _draft = draft;
         Files = new FileSelection(strings);
@@ -1074,7 +1167,7 @@ public sealed class AddSource : INotifyPropertyChanged
     {
         var hadFiles = MetadataReady && !IsDuplicate;
         if (
-            Failure is CommandException { Command: "preview" or "preview_detail" }
+            Failure is CommandException { Command: "preview" or "preview_detail" or "catalogue_prepare" }
             || Failure is not CommandException && !Uncertain
         )
             Failure = null;
@@ -1098,8 +1191,20 @@ public sealed class AddSource : INotifyPropertyChanged
             .Select(name => name.GetString()!)
             .ToArray();
         SharedDestination = destination;
-        if (!hadFiles && MetadataReady && !IsDuplicate)
-            Files.Load(preview.GetProperty("files"));
+        if (!hadFiles && MetadataReady && !IsDuplicate && !Files.IsPaged)
+        {
+            Files.InitializePage(FilePage.Read(preview), (offset, query) => _draft.ReadFiles(this, offset, query));
+            if (preview.TryGetProperty("selection", out var selection))
+                Files.Select(
+                    selection.GetProperty("default_priority").GetInt32(),
+                    selection.GetProperty("choices").EnumerateArray().Select(choice => new FileChoice(
+                        choice.GetProperty("index").GetInt32(),
+                        choice.GetProperty("priority").GetInt32(),
+                        choice.GetProperty("size").GetInt64(),
+                        choice.GetProperty("baseline").GetInt32()
+                    )).ToArray()
+                );
+        }
         Refresh();
     }
 

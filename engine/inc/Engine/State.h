@@ -1,6 +1,9 @@
 #pragma once
 
 #include "Changes.h"
+#include "Catalogue.h"
+#include "BitmagnetCrawler.h"
+#include "MetadataRequester.h"
 #include "Drives.h"
 #include "Engine.h"
 #include "Log.h"
@@ -11,7 +14,9 @@
 #include <libtorrent/add_torrent_params.hpp>
 #include <libtorrent/alert_types.hpp>
 #include <libtorrent/session.hpp>
+#include <array>
 #include <chrono>
+#include <deque>
 #include <atomic>
 #include <filesystem>
 #include <functional>
@@ -21,6 +26,7 @@
 #include <mutex>
 #include <optional>
 #include <set>
+#include <span>
 #include <stop_token>
 #include <string>
 #include <variant>
@@ -63,6 +69,7 @@ public:
         lt::torrent_handle handle;
         std::string error;
         bool cancelled = false;
+        std::string discovery;
 
         lt::info_hash_t InfoHashes() const
         {
@@ -162,6 +169,12 @@ public:
         bool watchesRecursively = false;
         std::string watchDestination;
         bool rechecksFinished = false;
+        bool indexing = false;
+        int indexBudgetMib = 1024;
+        int indexStaleHours = 4320;
+        int indexMetadataIdle = 256;
+        int indexMetadataBusy = 2;
+        std::vector<Catalogue::Rule> indexRules;
         std::string language;
         std::string incompleteFolder;
         bool usesIncompleteFolder = false;
@@ -484,6 +497,109 @@ public:
     Store sources;
     // Checks proxies, which can wait for one that does not answer.
     Store checks;
+    Catalogue catalogue{directory};
+    Store indexWork;
+    Json crawlerConfig;
+    bool bitmagnetSelected = false;
+    bool bitmagnetStarting = false;
+    std::uint64_t bitmagnetVersion = 0;
+    std::unique_ptr<MetadataRequester> metadataRequester;
+    std::unique_ptr<BitmagnetCrawler> bitmagnet;
+    BitmagnetCrawler::Statistics bitmagnetStatistics;
+    std::uint64_t bitmagnetValidated = 0;
+    std::uint64_t bitmagnetRetained = 0;
+    std::uint64_t bitmagnetInvalid = 0;
+    struct CrawlerRequest
+    {
+        std::uintptr_t request;
+        std::chrono::steady_clock::time_point deadline;
+    };
+    std::map<std::uintptr_t, CrawlerRequest> crawlerRequests;
+    std::uintptr_t crawlerRequest = 0;
+    std::vector<Catalogue::Pending> crawlerDiscoveries;
+    std::vector<Catalogue::Node> crawlerNodes;
+    struct CrawlerBatch
+    {
+        std::vector<BitmagnetCrawler::Acquired> values;
+        std::size_t next = 0;
+        std::function<void()> complete;
+    };
+    std::deque<std::shared_ptr<CrawlerBatch>> crawlerBatches;
+    bool crawlerSaving = false;
+    bool crawlerSaveFailed = false;
+    std::optional<lt::sha1_hash> crawlerNodeId;
+    struct Acquisition
+    {
+        static int Connections(bool yielding) { return yielding ? 1 : 2; }
+        static int DownloadLimit(bool yielding) { return yielding ? 16 * 1024 : 0; }
+
+        std::uintptr_t request = 0;
+        std::string lookup;
+        lt::torrent_handle handle;
+        std::chrono::steady_clock::time_point deadline;
+        std::vector<std::function<void()>> waiting;
+        AcquisitionPhase phase = AcquisitionPhase::Adding;
+        std::int64_t received = 0;
+        std::optional<lt::time_point> expiryRequested;
+        std::optional<bool> yielding;
+        std::shared_ptr<std::atomic<bool>> crawlerOwned = std::make_shared<std::atomic<bool>>(true);
+    };
+    std::map<std::string, Acquisition> acquisitions;
+    struct PeerProbe
+    {
+        std::uintptr_t request = 0;
+        std::chrono::steady_clock::time_point deadline;
+    };
+    std::map<std::string, PeerProbe> indexProbes;
+    bool indexProbing = false;
+    std::uint64_t indexSampled = 0;
+    std::array<std::pair<std::chrono::seconds, std::int64_t>, 60> indexPublications{};
+    struct Scrape
+    {
+        std::uintptr_t request = 0;
+        std::string hash;
+        std::vector<unsigned char> seeds;
+        std::vector<unsigned char> peers;
+        int responses = 0;
+        int pending = 0;
+        std::chrono::steady_clock::time_point deadline;
+        std::vector<Catalogue::Node> nodes;
+        std::set<std::string> visited;
+        int requested = 0;
+    };
+    std::map<std::string, Scrape> scrapes;
+    struct MetadataSource
+    {
+        std::string lookup;
+        bool discovered = false;
+        std::string metainfoPath;
+        std::filesystem::path resumeFile;
+        bool snapshot = false;
+    };
+    // A full parameter snapshot can enrich an earlier metadata-only admission.
+    std::map<std::string, bool> ingested;
+    std::map<std::string, bool> ingesting;
+    std::string indexError;
+    bool indexOpening = false;
+    bool indexReady = false;
+    bool indexConfigured = false;
+    std::uint64_t indexVersion = 0;
+    bool indexDispatching = false;
+    bool indexRebuilding = false;
+    bool indexMaintaining = false;
+    bool indexRecovering = false;
+    std::chrono::steady_clock::time_point indexAt{};
+    std::chrono::steady_clock::time_point nodesAt{};
+    std::chrono::steady_clock::time_point nodeRefreshAt{};
+    std::chrono::steady_clock::time_point cleanupAt{};
+    std::vector<std::string> indexDiscoveries;
+    std::map<std::string, std::vector<Catalogue::Endpoint>> indexPeers;
+    std::set<std::string> indexFailures;
+    std::uint64_t indexTarget = 0;
+    std::uintptr_t scrapeRequest = 0;
+    std::uintptr_t acquisitionRequest = 0;
+    std::uintptr_t probeRequest = 0;
+    std::map<std::string, std::chrono::steady_clock::time_point> scrapeAt;
     // Serializes route cancellation with nonblocking proxy connect/send calls.
     std::mutex checkGate;
     // Ends proxy checks when their route changes or the engine closes.
@@ -847,6 +963,8 @@ public:
     // Applies the parts of the policy that changed since the last call.
     void RefreshPolicy();
     static std::optional<NetworkAdapter> FindAdapter(std::string const& name);
+    static std::vector<lt::tcp::endpoint> ResolveProxy(Settings::Proxy const& proxy,
+        std::optional<NetworkAdapter> const& adapter, std::stop_token stop);
     void ApplyPolicy(lt::torrent_handle const& handle);
     ScheduleMode ScheduledMode() const;
     // Why the session is paused, or nothing when it is not. A pause that Resume
@@ -882,8 +1000,10 @@ public:
 
     void UpdatePreview(Preview& preview);
     void Merge(Preview& existing, Preview const& source);
+    Preview* Merge(Preview const& source);
     bool CanMerge(Preview const& preview) const;
-    Json Describe(Preview const& preview, std::string const& destination) const;
+    void DescribePreview(Preview const& preview, std::string const& destination, Reply reply,
+        int offset = 0, int limit = 200, std::string const& query = {});
     void Inspect(std::string source, std::string connectionId, std::function<void(Outcome, Preview*)> completion);
     Preview* FindPreview(std::string const& previewId, std::string const& connectionId);
     void Discard(std::function<bool(Preview const&)> const& matches);
@@ -893,6 +1013,37 @@ public:
     static std::vector<std::string> Missing(std::vector<std::string> const& urls,
         std::vector<std::string> known);
     void On(lt::metadata_failed_alert const& alert);
+    void ConfigureIndex();
+    void ContinueBitmagnet();
+    void SaveCrawler();
+    void StartBitmagnet(MetadataRequester::Route route);
+    void StopBitmagnet();
+    Json BitmagnetStatus() const;
+    static std::optional<std::int64_t> Estimate(std::span<unsigned char const> bloom);
+    bool IndexBusy() const;
+    void ApplyPolicy(Acquisition& acquisition, bool yielding);
+    void MaintainIndex();
+    void StopIndex();
+    void RecoverIndex();
+    void IngestMetadata(lt::add_torrent_params const& params, MetadataSource source);
+    void IngestMetadata(Torrent const& torrent, std::string lookup = {}, bool discovered = false);
+    void Acquire(std::vector<Catalogue::Pending> pending);
+    void ConnectPeers(std::string const& lookup, std::vector<Catalogue::Endpoint> peers);
+    void IndexCommand(std::string const& command, Json const& request,
+        std::string const& connectionId, Reply reply);
+    void PrepareCatalogue(Json const& request, std::string const& connectionId, Reply reply);
+    static Json IndexRules(std::vector<Catalogue::Rule> const& rules);
+    static std::optional<std::vector<Catalogue::Rule>> ReadIndexRules(Json const& value);
+    Catalogue::Settings IndexSettings() const;
+    void On(lt::dht_stats_alert const& alert);
+    void On(lt::dht_live_nodes_alert const& alert);
+    void On(lt::dht_sample_infohashes_alert const& alert);
+    void On(lt::dht_get_peers_reply_alert const& alert);
+    void On(lt::dht_direct_response_alert const& alert);
+    void ScrapeCatalogue(Catalogue::Entry const& entry);
+    void SendScrape(Scrape& scrape);
+    bool ReleaseAcquisition(lt::torrent_handle handle,
+        std::shared_ptr<lt::torrent_info const> metadata = {});
 
     void Add(Preview& preview, Addition::Choices choices, std::function<void(Outcome, Added)> completion);
     // A `watchStamp` marks a file from the watch folder, which saves to the

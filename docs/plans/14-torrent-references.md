@@ -3,9 +3,9 @@
 Research snapshot: **2026-10-25**. This document inventories reference products
 and prioritizes useful product capabilities. It does not select a TinyTorrent
 schema, algorithm, storage policy or architecture, and does not authorize
-implementation. The [feature specification](14-torrent-indexing-plan.md) owns
-TinyTorrent requirements and incorporates the relevant findings and owner
-clarifications; its technical mechanisms remain candidates to validate.
+implementation. The [torrent catalogue contract](../contracts/indexing.md) owns
+TinyTorrent behavior and incorporates the relevant findings and owner
+clarifications.
 
 ## Evidence and versions
 
@@ -41,7 +41,7 @@ provides filename or keyword search over the network.
 | Protocol support actually used | **Implemented:** BEP 5 and BEP 9/10. Pinned librats also implements BEP 32 address-family negotiation and BEP 42 node-ID handling. Its audited KRPC surface has ping, find_node, get_peers and announce_peer, without BEP 51 sampling or BEP 33 scrape filters. [KRPC][r-krpc], [DHT node][r-node], [metadata handling][r-bt]. | **Implemented:** BEP 5, BEP 9/10, BEP 51 and outbound BEP 33 requests. Its DHT responder handles the basic queries and sampling, but does not produce BEP 33 filters in get_peers responses. Thus its BEP 33 support here is estimate retrieval, not a complete scrape responder. [Client adapter][b-client], [responder][b-responder], [metadata requester][b-requester]. |
 | How hashes are discovered | An **announce-based spider**: walks random DHT targets, uses neighbor IDs and collects incoming announce hashes with the announcing peer endpoint. Separate Rats-peer search and replication can supply catalogue descriptions. [Crawler][r-crawl], [DHT node][r-node], [peer API][r-peer]. | A **sampling crawler**: bootstrap routers, discover nodes around rotating targets, sample eligible nodes, triage hashes, request peers, obtain metadata and persist. Incoming requests also contribute node contacts; announce handling is not shown as a second direct metadata acquisition pipeline. [Crawler][b-crawl], [sampling][b-sample], [responder][b-responder]. |
 | Peer discovery for metadata | Can contact the announcing peer directly; otherwise librats performs DHT peer discovery. Peer catalogue descriptions are another source, distinct from payload peers. [Crawler][r-crawl], [metadata helper][r-btsub]. | Queries the node associated with a sample, then tries returned peers sequentially until metadata succeeds. The audited get-peers stage does not recursively follow returned nodes to resolve that same hash. [Peer lookup][b-getpeers], [metadata pipeline][b-request]. |
-| Scheduling and resource bounds | Walk timer defaults to 100 ms; at most ten metadata fetches are active. An in-memory recent-hash set is capped at 10,000 with partial eviction, and indexed hashes are checked before fetching. The metadata enqueue path has no queue-size guard. No durable per-hash acquisition retry ledger was established. [Crawler and defaults][r-crawl], [bounds][r-crawlh]. | Bounded pipeline concurrency/buffers scale with a default factor of ten; metadata request concurrency is ten times that factor. DB triage avoids fetching complete known entries and a transient encountered-hash filter suppresses repeats. Processing has a durable job queue; failed metadata acquisition itself does not have an equivalent persisted per-hash retry ledger. [Factory][b-factory], [triage][b-triage], [request pipeline][b-request]. |
+| Scheduling and resource bounds | Walk timer defaults to 100 ms; at most ten metadata fetches are active. An in-memory recent-hash set is capped at 10,000 with partial eviction, and indexed hashes are checked before fetching. The metadata enqueue path has no queue-size guard. No durable per-hash acquisition retry ledger was established. [Crawler and defaults][r-crawl], [bounds][r-crawlh]. | Bounded pipeline concurrency/buffers scale with a default factor of ten; peer-lookup concurrency is twenty times that factor and metadata request concurrency forty times it (200/400 jobs at default). Both channels buffer 100 entries at default; buffer capacity is distinct from concurrency. DB triage avoids fetching complete known entries and a transient encountered-hash filter suppresses repeats. Processing has a durable job queue; failed metadata acquisition itself does not have an equivalent persisted per-hash retry ledger. [Factory][b-factory], [triage][b-triage], [request pipeline][b-request]. |
 | BEP 51 scheduling qualification | Not applicable to the inspected spider. | Samples up to 60 eligible nodes per second around a target rotated every ten seconds. It records returned intervals, **but shortens intervals above 300 seconds to 60 seconds when new hashes were found**. This does not fully respect BEP 51's requested backoff; it is a reference limitation, not a behavior to assume desirable. [Sampling][b-sample], [BEP 51][bep51]. |
 | IPv6 and coverage | IPv4/IPv6 discovery exists in the dependency; actual end-to-end crawler coverage on a host was not exercised. Discovery depends on reachable routes, announcements and metadata peers. [DHT discovery][r-dhtdisc]. | Structures decode IPv6 contacts, but the outbound adapter consumes IPv4 nodes and metadata dialing uses tcp4. Full IPv6 crawler coverage and BEP 42 behavior were not established. [Adapter][b-client], [requester][b-requester]. |
 
@@ -138,10 +138,10 @@ delete/block persistence path. A batch containing only delete outcomes therefore
 does not establish unconditional deletion as the documentation suggests. Mixed
 batches can reach that path. [Processor][b-process], [persistence][b-processpersist]
 
-**Owner clarification:** [retention in the specification](14-torrent-indexing-plan.md#retention)
+**Owner clarification:** [exclusion and cleanup](../contracts/indexing.md#exclusion-and-cleanup)
 defines bans as remembered rule-based rejections after metadata is discarded,
 with retrieval permitted again when lifted. This comparison uses that meaning,
-rather than a manual infohash-entry workflow. The specification owns the full
+rather than a manual infohash-entry workflow. The catalogue contract owns the full
 admission, reconsideration and removal requirements.
 
 Rats is the better reference for a small understandable rule surface and cleanup
@@ -215,7 +215,7 @@ and Add-workflow decisions remain settled; this research does not redesign them.
 1. **Real local file and torrent search.** Clearly select the result kind. A
    file result identifies its parent torrent and a file satisfies the whole
    file query; separate sibling paths must not manufacture a match. The
-   [search specification](14-torrent-indexing-plan.md#search) prioritizes useful
+   [search contract](../contracts/indexing.md#search-and-add) prioritizes useful
    matches within bounded work, with explicit coverage and truthful count/order
    claims rather than mandatory exhaustive results.
 2. **Inspect and download the intended files.** Inspect the parent and siblings,

@@ -1,9 +1,7 @@
-using System.Windows.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
-using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Media.Animation;
+using Microsoft.UI.Xaml.Automation;
 using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Library;
 using Syno.TinyTorrent.Shared;
@@ -16,11 +14,9 @@ public sealed partial class MainWindow
 {
     private LibraryTable? _libraryTable;
     private CancellationTokenSource? _associationRead;
-    private Storyboard? _navigationRelease;
 
     private void ConfigureLibrary()
     {
-        AppIcon.Loaded += WatchNavigationPress;
         Model.Library.ShowsFacets = Model.IsFilterOpen;
         Model.Library.CommandFailed += (_, error) => Model.Notifications.Report(error);
         Model.Library.BatchLimited += (_, files) => Model.Notifications.ShowSearchLimit(files);
@@ -129,77 +125,20 @@ public sealed partial class MainWindow
             },
             Model.ShowLibrary
         );
-        Search.KeyDown += (_, args) =>
-        {
-            if (Model.Page != WindowPage.Library)
-                return;
-            if (args.Key == VirtualKey.Escape)
-            {
-                Model.Query = string.Empty;
-                args.Handled = true;
-            }
-            else if (args.Key == VirtualKey.Down)
-            {
-                _libraryTable?.FocusRows();
-                args.Handled = true;
-            }
-        };
     }
 
     private WindowPage NavigationPage => Model.Navigation.Workspace;
 
-    // The switch's own Pressed visual state drives this feedback, so it starts
-    // and ends exactly when the button shows itself pressed. Its colour icons
-    // ignore the template's pressed foreground, so the content dims instead.
-    private void WatchNavigationPress(object sender, RoutedEventArgs args)
-    {
-        AppIcon.Loaded -= WatchNavigationPress;
-        if (VisualTreeHelper.GetChild(AppIcon, 0) is not FrameworkElement root)
-            return;
-        var states = VisualStateManager
-            .GetVisualStateGroups(root)
-            .FirstOrDefault(group => group.Name == "CommonStates");
-        if (states is not null)
-            states.CurrentStateChanged += (_, change) =>
-                ShowNavigationPress(change.NewState?.Name == "Pressed");
-    }
-
-    private void ShowNavigationPress(bool pressed)
-    {
-        _navigationRelease?.Stop();
-        _navigationRelease = null;
-        NavigationContent.Opacity = pressed ? 0.55 : 1;
-        var from = NavigationPress.ScaleX;
-        var to = pressed && _uiSettings.AnimationsEnabled ? 0.8 : 1;
-        NavigationPress.ScaleX = to;
-        NavigationPress.ScaleY = to;
-        if (pressed || from == to || !_uiSettings.AnimationsEnabled)
-            return;
-        var release = new Storyboard();
-        string[] properties = [nameof(ScaleTransform.ScaleX), nameof(ScaleTransform.ScaleY)];
-        foreach (var property in properties)
-        {
-            var animation = new DoubleAnimation
-            {
-                From = from,
-                To = to,
-                Duration = new Duration(TimeSpan.FromMilliseconds(250)),
-                EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.5 },
-            };
-            Storyboard.SetTarget(animation, NavigationPress);
-            Storyboard.SetTargetProperty(animation, property);
-            release.Children.Add(animation);
-        }
-        _navigationRelease = release;
-        release.Begin();
-    }
-
+    // Creates the Library view on its first visit, and reads the selected
+    // file's association only while Library shows.
     private void UpdateLibraryPage()
     {
-        if (Model.Page != WindowPage.Torrents)
-            (InspectorContent.Content as InspectorPane)?.CancelReveal();
-        var library = Model.Page == WindowPage.Library;
-        if (library && _libraryTable is null)
+        if (Model.Page != WindowPage.Library)
+        {
+            _associationRead?.Cancel();
+            return;
+        }
+        if (_libraryTable is null)
         {
             _libraryTable = new LibraryTable(Model.Library);
             if (_placement?.LibraryLayouts is { } layouts)
@@ -215,53 +154,24 @@ public sealed partial class MainWindow
                     );
             LibraryContent.Content = _libraryTable;
         }
-        if (!library)
-            _associationRead?.Cancel();
-        else
-            UpdateAssociation();
-        Workspace.OpenPaneLength = library ? 280 : 196;
-        Search.PlaceholderText = Model.Text.Get(
-            library ? "library" : "finding",
-            library ? "search" : "placeholder"
-        );
-        Search.IsSuggestionListOpen = false;
-        Search.ItemsSource = null;
-        Search.Text = Model.Query;
-        RefreshNavigation();
-        RefreshMenus();
-        if (library)
-            RefreshLibraryFilters();
-        UpdateInspectorSize();
-        UpdateChrome();
-        if (Model.Page is WindowPage.Torrents or WindowPage.Library)
-        {
-            _workspaces.Show(library ? LibraryContent : TorrentContent, forward: library);
-            _filters.Show(library ? LibraryFilters : Filters, forward: library);
-        }
+        UpdateAssociation();
+        RefreshLibraryFilters();
     }
 
     private void RefreshNavigation()
     {
-        var library = NavigationPage == WindowPage.Library;
-        var torrentsName = Model.Text.Get("window", "torrents");
-        var libraryName = Model.Text.Get("library", "title");
-        var command = library ? Model.ShowTorrents : Model.ShowLibrary;
-        AppIcon.Command = command;
-        NameButton(
-            AppIcon,
-            Model.Text.Format(
-                "shortcuts",
-                "tip",
-                Model.Text.Format("chrome", "switch_page", library ? torrentsName : libraryName),
-                ShortcutText(command)
-            )
-        );
-        TorrentsName.Text = torrentsName;
-        LibraryName.Text = libraryName;
-        TorrentsFace.Visibility = library ? Visibility.Collapsed : Visibility.Visible;
-        LibraryFace.Visibility = library ? Visibility.Visible : Visibility.Collapsed;
-        TorrentsName.Opacity = library ? 0 : 1;
-        LibraryName.Opacity = library ? 1 : 0;
+        var page = NavigationPage;
+        TorrentsFace.Visibility = page == WindowPage.Torrents ? Visibility.Visible : Visibility.Collapsed;
+        LibraryFace.Visibility = page == WindowPage.Library ? Visibility.Visible : Visibility.Collapsed;
+        SearchFace.Visibility = page == WindowPage.Search ? Visibility.Visible : Visibility.Collapsed;
+        WorkspaceName.Text = page switch
+        {
+            WindowPage.Library => Model.Text.Get("library", "title"),
+            WindowPage.Search => Model.Text.Get("catalogue", "title"),
+            _ => Model.Text.Get("window", "torrents"),
+        };
+        AutomationProperties.SetName(WorkspacePicker, WorkspaceName.Text);
+        ToolTipService.SetToolTip(WorkspacePicker, Model.Text.Get("chrome", "workspace"));
     }
 
     private async void UpdateAssociation()
