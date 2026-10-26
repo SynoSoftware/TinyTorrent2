@@ -103,6 +103,12 @@ Problem Problem::From(lt::error_code const& error)
         case ERROR_CONNECTION_UNAVAIL:
         case ERROR_NO_NET_OR_BAD_PATH:
         case ERROR_NO_NETWORK:
+        case ERROR_REM_NOT_LIST:
+        case ERROR_NETWORK_UNREACHABLE:
+        case ERROR_HOST_UNREACHABLE:
+        case ERROR_NOT_CONNECTED:
+        case ERROR_INVALID_DRIVE:
+        case ERROR_DEVICE_NOT_CONNECTED:
             return {ProblemKind::DownloadPathUnavailable};
         }
     }

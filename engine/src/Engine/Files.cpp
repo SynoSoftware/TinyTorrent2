@@ -320,6 +320,10 @@ void Engine::State::PrepareNames(lt::add_torrent_params& params, bool appendsSuf
         return;
     auto const& files = params.ti->layout();
     auto root = std::filesystem::path(Wide(params.save_path));
+    // Windows reports the files of a drive or share that does not answer as
+    // missing, which would give each the unfinished suffix, so preparation
+    // fails unless the folder answers before and after it reads them.
+    CheckReachable(root);
     for (auto index : files.file_range())
     {
         if (files.pad_file_at(index))
@@ -347,6 +351,7 @@ void Engine::State::PrepareNames(lt::add_torrent_params& params, bool appendsSuf
         else if (!SamePath(FullPath(Wide(name)), FullPath(Wide(files.file_path(index)))))
             params.renamed_files[index] = name;
     }
+    CheckReachable(root);
 }
 
 bool Engine::State::ApplyNames(lt::torrent_handle const& handle, lt::add_torrent_params const& prepared,
@@ -710,7 +715,11 @@ void Engine::State::ContinueRename()
                 return renamed;
             renamed.marked = Mark(source);
             if (!MoveFileExW(source.c_str(), target.c_str(), 0))
-                throw std::runtime_error(std::to_string(GetLastError()));
+            {
+                auto error = GetLastError();
+                CheckReachable(source.parent_path());
+                throw std::runtime_error(std::to_string(error));
+            }
             return renamed;
         }, [this](std::expected<Renamed, StorageOutcome> renamed)
         {
@@ -722,8 +731,14 @@ void Engine::State::ContinueRename()
             if (!complete)
             {
                 auto const& id = rename->owners.front().torrentId;
-                Working(id).renameAt = std::chrono::steady_clock::now() + renameRetry;
+                auto& torrent = Working(id);
+                torrent.renameAt = std::chrono::steady_clock::now() + renameRetry;
                 log.Write("rename", id, complete.error().detail);
+                // Storage recovery runs the rename again as soon as the
+                // share or drive answers.
+                auto cause = complete.error().cause;
+                if (cause == lt::error_code(ERROR_DEV_NOT_EXIST, lt::system_category()))
+                    RecoverStorage(torrent, cause);
                 EndRename();
                 return;
             }

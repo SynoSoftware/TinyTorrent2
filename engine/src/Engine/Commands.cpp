@@ -733,6 +733,13 @@ void Engine::State::Verify(std::vector<std::string> const& ids, std::function<vo
 
 void Engine::State::Recheck(Torrent& torrent)
 {
+    // libtorrent ignores a recheck while it checks resume data, such as one
+    // that runs again when its disk answers, so it waits for that check.
+    if (torrent.status.state == lt::torrent_status::checking_resume_data)
+    {
+        torrent.needsRecheck = true;
+        return;
+    }
     torrent.completion.Rechecked();
     torrent.completedFiles.clear();
     torrent.handle.force_recheck();

@@ -517,14 +517,20 @@ path, so `C:\temp`, a link to `V:\temp`, has V:'s drives:
 
 A folder that does not exist uses its nearest existing parent. The lookup runs
 on a worker of its letter or server, because it can stall on a network share,
-and its answer is kept until the engine exits. A job whose drives are not known yet waits. A
+and its answer is kept until the engine exits. Storage recovery that finds a
+folder answering again drops that folder's answer, because a lookup made while
+it did not answer names no drive. A job whose drives are not known yet waits. A
 storage pool or a hardware RAID reports one disk, so its jobs take turns.
 
 ## Unfinished files
 
 An accepted torrent whose name preparation fails retains the typed filesystem
-cause and uses storage recovery. A successful location probe admits immediate
-name preparation instead of waiting for its generic retry deadline. The name
+cause and uses storage recovery. Preparation fails when the folder's drive or
+share does not answer before or after it reads the files, because Windows then
+reports every file as missing and each would get the unfinished suffix. An
+addition whose names cannot be prepared fails with that cause. A successful
+location probe admits immediate name preparation instead of waiting for its
+generic retry deadline. The name
 problem ends when its actual preparation/mapping succeeds, so the row explains
 the hold while the share is absent.
 
@@ -541,7 +547,9 @@ choice, so changing the default does not rename an existing library.
   without replacing an existing file, then `rename_file` updates libtorrent's
   mapping. Finishing is always a rename and never a copy. If another program
   has the file open, Windows refuses the rename; the file keeps its suffix and
-  the engine tries again later, without reporting a download error.
+  the engine tries again later, without reporting a download error. A rename
+  that fails because the drive or share does not answer uses storage recovery,
+  so it runs again as soon as the location answers.
 - Before that rename, the engine pauses the torrent and waits for libtorrent
   to write the data it still holds in memory, without holding any files busy.
   Releasing the files for the rename waits for that write, which takes

@@ -829,8 +829,9 @@ public:
     // Moves share no drive, so they share no file. A list, so a move's
     // asynchronous steps can hold on to it.
     std::list<Move> moves;
-    // The drives of each folder a job used, kept until the engine exits;
-    // nothing while their lookup runs.
+    // The drives of each folder a job used, kept until the engine exits or
+    // storage recovery finds the folder answering again; nothing while their
+    // lookup runs.
     std::map<std::string, std::optional<Drives>, PathLess> drives;
     // Find the drives of folders, which can block on a share that does not
     // answer, so each root, such as a drive letter or a server, has its own.
@@ -1200,6 +1201,9 @@ public:
     void ReplaceHandle(Torrent& torrent, Replacement& replacement);
     Store& VolumeWorker(std::string const& folder);
     static bool Reachable(std::filesystem::path folder);
+    // Throws ERROR_DEV_NOT_EXIST, the cause libtorrent reports for the same
+    // case, when the folder's drive or share does not answer.
+    static void CheckReachable(std::filesystem::path const& folder);
     std::future<void> ReleaseStorage(lt::torrent_handle const& handle);
     void ReleaseFiles(std::vector<lt::torrent_handle> const& handles);
     std::optional<std::vector<std::byte>> ReadPiece(lt::torrent_handle handle, lt::piece_index_t piece);

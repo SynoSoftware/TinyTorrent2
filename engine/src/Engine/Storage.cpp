@@ -35,6 +35,12 @@ bool Engine::State::Retryable(lt::error_code const& error)
     case ERROR_CONNECTION_UNAVAIL:
     case ERROR_NO_NET_OR_BAD_PATH:
     case ERROR_NO_NETWORK:
+    case ERROR_REM_NOT_LIST:
+    case ERROR_NETWORK_UNREACHABLE:
+    case ERROR_HOST_UNREACHABLE:
+    case ERROR_NOT_CONNECTED:
+    case ERROR_INVALID_DRIVE:
+    case ERROR_DEVICE_NOT_CONNECTED:
         return true;
     default:
         return false;
@@ -129,6 +135,10 @@ void Engine::State::RetryStorage()
         VolumeWorker(folder).Run([folder] { return Reachable(Wide(folder)); },
             [this, folder, attempts = std::move(attempts)](std::expected<bool, StorageOutcome> ready)
         {
+            // A drive lookup made while the folder did not answer could name
+            // no drive, so the next job that asks looks it up again.
+            if (auto found = drives.find(folder); ready && *ready && found != drives.end() && found->second)
+                drives.erase(found);
             for (auto const& attempt : attempts)
             {
                 auto found = torrents.find(attempt.torrentId);
@@ -142,8 +152,9 @@ void Engine::State::RetryStorage()
                     Paused() || torrent.facts.intent == Intent::Paused || torrent.FilesBusy() ||
                     !Retryable(torrent))
                     continue;
-                if (torrent.status.state == lt::torrent_status::checking_resume_data ||
-                    (torrent.status.state == lt::torrent_status::checking_files && recovery.cause))
+                // libtorrent itself runs a failed check of resume data, or a
+                // failed recheck setup, again when ClearDiskError clears it.
+                if (torrent.status.state == lt::torrent_status::checking_files && recovery.cause)
                 {
                     RestartCheck(torrent);
                     continue;

@@ -62,6 +62,12 @@ bool Engine::State::Reachable(std::filesystem::path folder)
     }
 }
 
+void Engine::State::CheckReachable(std::filesystem::path const& folder)
+{
+    if (!Reachable(folder))
+        throw std::system_error(ERROR_DEV_NOT_EXIST, std::system_category(), Utf8(folder.wstring()));
+}
+
 std::set<std::string> Engine::State::Holders(std::vector<Task> const& tasks)
 {
     std::set<std::string> ids;

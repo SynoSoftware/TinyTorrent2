@@ -339,6 +339,14 @@ Payload disk errors retain their own reason; checkpoint failures do not replace
 the actual transfer status. Resume clears libtorrent's disk error and upload
 mode before applying the saved running intent.
 
+A missing file counts as a file with no data only while its drive or share
+answers. Windows reports a drive or share that does not answer with the same
+codes as a missing file, so a check would otherwise finish at 0 % without an
+error, and the next checkpoint would discard the saved progress. TinyTorrent's
+libtorrent fork reports such a file as `ERROR_DEV_NOT_EXIST`, a recoverable
+disk error. Name preparation and the rename to a final name check the folder
+the same way.
+
 Recoverable payload I/O errors pause their torrent and release its storage through
 libtorrent's disk fence. The engine then checks the location on its volume's
 worker once a second, sharing each check between torrents in the same folder.
@@ -346,14 +354,19 @@ When it answers, the engine clears the disk error and upload mode and reapplies
 the current intent, including forced downloads. This also reconnects seed peers
 with fresh piece availability and reopens invalidated network file handles.
 Stop, Pause all, schedules and adapter restrictions still apply. Pending Verify
-waits for storage recovery. A late probe cannot resume a removed torrent or
+waits for storage recovery, and for libtorrent's check of resume data, which
+ignores a recheck. A late probe cannot resume a removed torrent or
 apply an old location's answer after a move. Native release callbacks, rather
 than droppable alerts, establish that the old disk work has ended.
 Fresh generation-checked status samples reconcile missed errors, so an older
-status cannot restart recovery after it succeeds. If a disk error strands
-libtorrent's recheck setup, reload the native handle through the same owner as
-move verification, retaining the torrent's identity, history and current choices,
-and check its files again. A failed replacement retains the resume parameters
+status cannot restart recovery after it succeeds. When a disk error stops the
+check of resume data or the setup of a recheck, the fork runs that check again
+once the error clears. A failed check of resume data keeps its saved pieces,
+also in checkpoints, so a torrent whose share was absent at startup resumes
+without a full check. If a disk error stops a check while it reads the files,
+reload the native handle through the same owner as move verification,
+retaining the torrent's identity, history and current choices, and check its
+files again. A failed replacement retains the resume parameters
 according to whether the old handle was actually removed, rather than whether a
 late callback still holds it alive.
 Every replacement restores the status-update subscription that native resume
