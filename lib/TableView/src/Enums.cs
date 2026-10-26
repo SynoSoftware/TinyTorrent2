@@ -23,6 +23,13 @@ public enum SortDirection
     Descending,
 }
 
+/// <summary>Who applies the active sort to the supplied rows.</summary>
+public enum SortMode
+{
+    Local,
+    External,
+}
+
 /// <summary>What completed layout operation produced a <see cref="Table.LayoutChanged"/> event.</summary>
 public enum LayoutChange
 {

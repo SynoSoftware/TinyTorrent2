@@ -18,11 +18,13 @@ a WinUI control behaves at run time.
    and the platform documentation. An existing output or a running app shows
    how the product behaved before your edits; it cannot verify them.
    Documentation-only changes need no build.
-3. List what still needs a build: compiler errors, tests, an app inspection or a
-   capture. [Testing](testing.md) decides which checks earn their cost.
+3. List the unanswered questions that need a build. Tests, app inspection and
+   captures must pass the [verification gate](testing.md#verification-must-answer-a-question);
+   a clear change earns none of these merely because a build is available.
 4. Build once, for that whole list, and run every check on its output.
 
-Done when the build passed and every listed check has a result.
+When no remaining question needs a build, source review completes verification.
+Otherwise, finish when the build passes and every listed check has a result.
 
 ## Build
 

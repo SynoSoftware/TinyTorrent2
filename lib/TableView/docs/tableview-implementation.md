@@ -31,6 +31,12 @@ host items, the other presents the private view. Neither owns domain records or
 executes host commands. New behavior goes to its existing owner; the table above
 does not set a quota of classes or files.
 
+`Table/Sorting.cs` owns setup-only `SortMode`. Its default `Local` projects sort
+keys; `External` retains source order while exposing header criteria through
+the existing `Sort`, `Layout` and `LayoutChanged` interfaces. The same owner
+bypasses settling and local pointer-order pinning for external sorts. Hierarchy
+projection, membership holds and selection reconciliation remain shared.
+
 The [hierarchy extension](hierarchy.md) keeps host expansion state outside the
 control. Captured child membership feeds the same private view, sorting cadence
 and selection reconciliation as flat rows. `Table/Hierarchy.cs` integrates

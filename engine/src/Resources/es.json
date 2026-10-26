@@ -111,7 +111,7 @@
     "move_interrupted": "El traslado se interrumpió. Elige la carpeta que contiene ahora los archivos y vuelve a pulsar Mover.",
     "move_unfinished": "Este traslado se detuvo al cerrarse TinyTorrent. Esperará a que elijas si quieres continuar las tareas sin terminar.",
     "move_failed": "No se pudieron mover los archivos. Siguen en su carpeta original.",
-    "destination_exists": "Hay archivos en ambas ubicaciones. Elige otro destino para conservar ambas copias.",
+    "destination_exists": "Un archivo de destino tiene un tamaño diferente. Se han conservado ambas copias.",
     "same_location": "Los archivos ya están ahí, en otra ruta.",
     "alias_conflict": "Otros torrents usan estos archivos con nombres diferentes. Resuelve los nombres de archivo antes de continuar.",
     "torrent_error": "No hay más detalles del error.",

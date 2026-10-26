@@ -111,7 +111,7 @@
     "move_interrupted": "Het verplaatsen is onderbroken. Kies de map waar de bestanden nu staan en probeer Verplaatsen opnieuw.",
     "move_unfinished": "Dit verplaatsen is gestopt toen TinyTorrent werd gesloten. Het wacht tot je kiest of je onvoltooide taken wilt voortzetten.",
     "move_failed": "De bestanden konden niet worden verplaatst. Ze staan nog in hun oorspronkelijke map.",
-    "destination_exists": "Op beide locaties staan bestanden. Kies een andere bestemming om beide kopieën te behouden.",
+    "destination_exists": "Een doelbestand heeft een andere grootte. Beide kopieën zijn behouden.",
     "same_location": "De bestanden staan daar al, onder een ander pad.",
     "alias_conflict": "Andere torrents gebruiken deze bestanden onder andere namen. Los de bestandsnamen op voordat je doorgaat.",
     "torrent_error": "Er zijn geen verdere foutdetails beschikbaar.",

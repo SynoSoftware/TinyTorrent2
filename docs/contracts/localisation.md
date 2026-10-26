@@ -12,9 +12,9 @@ application.
 ## Languages during implementation
 
 `en.json` owns canonical keys and English text. Follow the
-[translation owner ruling](../../AGENTS.md#working-rules) for when other catalogues
-are updated. Between translation tasks, missing translated messages use the
-fallback below so ordinary patches remain usable while release text settles.
+[translation owner ruling](../../AGENTS.md#working-rules) to keep shipped catalogues
+current when product text changes. Missing translated messages use the fallback
+below so a catalogue gap cannot break the application.
 
 A key that `en.json` lacks shows as its dotted name, `column_menu.hide`, where
 the text belongs. Lookup never throws for a missing key: a person sees the gap on
@@ -204,7 +204,8 @@ duplicate keys, placeholders, and required forms when catalogues change; it does
 not assert the wording of screen strings. One focused live-switch exercise should
 cover an open draft, an owned control, tray state, fallback, and switching back
 while downloads continue. It switches to a language generated from `en.json` at
-test time, because every other language file is frozen. Use temporary long-text/RTL data to
-review layout when that path changes, not a maintained screenshot suite. Check
+test time, so the exercise does not depend on a particular translation. Use
+temporary long-text/RTL data to review layout when that path changes, not a
+maintained screenshot suite. Check
 that the visible switch has no perceptible pause on this machine; investigate an
 observed delay instead of imposing a benchmark run on every translation edit.

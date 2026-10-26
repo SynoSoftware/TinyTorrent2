@@ -101,9 +101,9 @@ do not define this product.
   and execute them in the order received. A later steer does not outrank an
   earlier one merely because it is newer, so follow-ups cannot silently drop or
   reorder the work.
-- **Owner ruling: update only `en.json` during normal work.** Refresh all other
-  language catalogues from English at release, or for an explicit translation
-  request, because translating unsettled text for every patch wastes work.
+- **Owner ruling: keep all shipped languages current.** When product text changes,
+  update the affected messages in every language catalogue, so users receive the
+  same information in their selected language.
   [Localisation](docs/contracts/localisation.md) owns catalogue structure and fallback.
 - State assumptions and verifiable success criteria before implementing. Resolve
   material ambiguity before dependent changes.
@@ -119,12 +119,26 @@ do not define this product.
   can answer its remaining questions, and then once for all of them.
 - **Owner ruling: finish the requested work, including its validation.** An
   implementation, fix or review authorizes the focused tests and application
-  inspection needed to verify that work. Use shared build outputs and choose
-  checks under [testing](docs/agents/testing.md), including its separately restricted
-  checks, because compiling without using the result can leave the actual
-  behavior unverified. Respect explicit user restrictions and protect the
-  owner's data and running applications. Close what you launched and report
-  the evidence and any remaining gaps.
+  inspection its open questions need. Validation is complete when every open
+  question has an answer; when source review leaves none, source review
+  completes it. Use shared build outputs and choose checks under
+  [testing](docs/agents/testing.md), including its separately restricted checks.
+  Respect explicit user restrictions and protect the owner's data and running
+  applications. Close what you launched and report the evidence and any
+  remaining gaps.
+- **Owner ruling: no redundant verification; every check answers an open
+  question.** An open question is a behavioral or visual result of this change
+  that code review, compiler guarantees and documented platform behavior cannot
+  settle. Before you start a test, a capture or an app launch, write in your
+  message the open question and the result that would change your next step;
+  when you cannot write both, source review completes the work. Scope each
+  check to the behavior the change touched, with the smallest test filter or
+  capture mode. A correction reopens only the questions whose answer it can
+  change. An explicit user request is an open question of its own. Each check
+  costs minutes of the owner's shared laptop, and a check of clear or
+  unchanged behavior cannot change the outcome.
+  [Testing](docs/agents/testing.md#verification-must-answer-a-question) owns
+  the details.
 - **Owner ruling: end a TinyTorrent that blocks you, unless it is capturing.**
   A capture run belongs to another session taking screenshots, and ending it
   breaks that run, so leave it and wait for it. A capture run starts from a

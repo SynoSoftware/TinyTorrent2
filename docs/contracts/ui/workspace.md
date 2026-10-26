@@ -26,13 +26,12 @@ describes: headings, commands, choices, submenus and separators. MenuItems
 renders all of them, so two menus cannot differ in appearance. It puts a
 separator under each heading and keeps native menu fonts and theme colors;
 owners do not create menu items or style headings.
-Choice checkmarks do not replace their content icons in View.
-MenuItems decides how a choice shows its state. In a menu that mixes choices
-with commands or headings, a choice shows its state as its
-icon: a checked, empty or mixed square. It is not a check-mark item there,
-because one check-mark item gives every item in its menu a second icon column
-that is empty beside the others. A menu of only on/off choices, such as View,
-uses native check-mark items with Lucide icons, because no column stands empty.
+Choices retain their content icons beside native state indicators, including
+in menus that also contain commands. Mutually exclusive choices use native
+radio items in named groups; independent options use native toggle items, so
+the control communicates whether several choices can apply. A mixed option
+keeps the mixed-square indicator. The described state remains authoritative
+when navigation is refused by an unfinished draft.
 
 The custom title bar contains one row: app-icon page switch, File/Torrent/View/Help
 MenuBar, bounded Search, the language switch, the light/dark switch, and native caption

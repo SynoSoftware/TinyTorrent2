@@ -220,6 +220,7 @@ public sealed class Table : Control
     public ObservableCollection<Column> Columns { get; }
     public Schema<TRow> Schema<TRow>() where TRow : class;
     public Strings Strings { get; set; }
+    public SortMode SortMode { get; set; }
 
     public ListViewSelectionMode SelectionMode { get; set; } // default Extended
     public Selection Selection { get; set; }
@@ -1035,9 +1036,19 @@ used to give it a size are the removed ones above. The usability gain is the
 real one — at most one reshuffle per interval instead of one per publish — and no
 notification count is needed to say so.
 
-There is no `SortRequested` callback or remote-sort mode in version one.
-Sorting is a local table projection; add an explicit external-sort mode only if
-a real host requires it.
+`SortMode` is setup-only, fixed at first Loaded, and defaults to `Local`.
+`External` supports hosts that sort a larger collection before fetching a bounded
+page. It keeps the supplied source order, including sibling order in a hierarchy,
+and never invokes column sort keys or delays source ordering through local sort
+settling. Sort keys still declare sortable columns. Header gestures, glyphs,
+`Sort`, layout snapshots and the existing `LayoutChanged` notifications retain
+their normal behavior; changing the criterion does not locally reorder old rows
+while the host obtains replacements. The host reads the requested sort and owns
+query ordering, cancellation and publication. Restoring `Layout` remains silent,
+so the host applies its restored criterion when preparing its initial query.
+Hiding the active column and Reset clear the criterion through their existing
+layout notifications. Membership holds, identity and selection retain their
+ordinary behavior. No separate sort callback or data-fetch mechanism is added.
 
 ## 10. Column widths, resizing, and fit commands
 

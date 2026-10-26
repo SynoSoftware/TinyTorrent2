@@ -187,6 +187,7 @@ public sealed partial class FileBrowser : UserControl
             )
             {
                 AccessKey = Model.Text.Get("files", key + "_key"),
+                Group = "FilePriority",
             };
     }
 

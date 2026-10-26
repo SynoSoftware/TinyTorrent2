@@ -43,6 +43,43 @@ every check skips them; `Checks.ps1` refuses them without `-OptIn`.
 replies at once, sends one toast, and starts once the metadata is no longer
 missing.
 
+## Test only what changed
+
+**Owner ruling: run checks only on behavior the change touched.** A check of
+unchanged behavior cannot fail because of the change, so it costs minutes of
+the owner's machine and finds nothing. This applies to every kind of check:
+unit tests, engine checks, app checks and capture reviews.
+
+- Run only the cases whose subject is the changed code path. Use the check's
+  filter, such as `--filter`, a check name or a capture mode.
+- A capture mode runs a whole journey. When a change touches only part of a
+  journey, do not run the whole journey. Put the check in the mode that covers
+  only the changed feature, and add a small mode when none exists.
+- Run a full suite, every capture mode or a cross-feature regression pass only
+  for release work or when the owner asks for it.
+- Report which checks ran and which changed behavior each one covered.
+
+## Verification must answer a question
+
+The [root ruling](../../AGENTS.md#working-rules) gates every check on an open
+question: before a test, capture or app launch starts, the message names the
+question and the result that would change the next step. This section says
+what counts.
+
+These are settled already, so they are never open questions: the compiler
+accepted the code; a known control shows the property the code sets; documented
+platform behavior, such as a collapsed AppBarButton leaving a CommandBar;
+behavior the change did not touch; and an answer a later correction cannot
+change. A typical open question is uncertain clipping or wrapping at a size,
+an interaction between controls the code cannot predict, or a lifetime that
+crosses a real process or window. General authorization to validate a change
+is not an open question; source review completes the work when none remains.
+
+Capture screenshots only to resolve actual doubt about appearance, such as
+uncertain clipping, wrapping or layout interaction. Use the smallest relevant
+scene; expand sizes, themes or languages only when the doubt spans them.
+An available capture mode is a tool, not a completion requirement.
+
 ## What earns a test
 
 **Owner ruling: high-return tests only.** Tests are not the safety net here;
@@ -73,7 +110,8 @@ Failures worth watching:
   These tests preserve the evidence while the protected behavior remains required.
 - A rule that nothing else guards.
 
-**Presentation is reviewed in the product, never asserted.** Screen text, labels,
+**Presentation is reviewed, never asserted.** Start with code review and inspect
+the product only when the verification gate leaves a visual question. Screen text, labels,
 wording, XAML or source text, colors, spacing, screenshots and displayed number
 strings change with every copy or layout edit while the behavior stands still.
 A test on them forces a matching test edit and proves nothing. A measured
@@ -225,7 +263,7 @@ review reports a failure. Pass `-ArtifactsPath` when the capture build is in a
 lane. Evidence goes to `evidence/Capture-<mode>-<id>` in that output folder.
 Capture environment variables do not enable diagnostics in an ordinary binary.
 
-For UI reviews, use the automation tree for controls, state, bounds and focus;
+When a UI runtime check is justified, use the automation tree for controls, state, bounds and focus;
 capture pixels when they establish a visual finding. A review launch may set
 `TINYTORRENT_CAPTURE_DIRECTORY` to an absolute evidence directory and use
 Ctrl+Shift+F12 to save the current XAML scene and open popup visuals, plus capture
@@ -391,8 +429,9 @@ launcher's `files-capture.json` manifest; they are not general-purpose actions
 against an existing store. The system folder picker is outside XAML capture,
 so the diagnostic supplies its disposable destination to the existing owner.
 
-First review functionality and recovery through the existing owners. Then use
-the images to examine hierarchy, spacing, alignment, typography, grouping,
+First review functionality and recovery through the existing owners. When a
+visual question requires screenshots, use the relevant images to examine
+hierarchy, spacing, alignment, typography, grouping,
 surfaces, color, state, and responsive layout against relevant Windows and
 Fluent guidance. A sequential roleplay of representative human users is an
 additional usability smoke test: check discoverability, task completion and

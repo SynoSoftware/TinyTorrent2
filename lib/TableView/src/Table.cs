@@ -61,8 +61,8 @@ public sealed partial class Table : Control
     /// <summary>
     /// Raised once after each completed effective sort, column move, resize, fit, visibility, or
     /// reset, carrying which of those it was. Never raised by initial setup, automatic fills, or restoring
-    /// <see cref="Layout"/>. A host that wants the snapshot reads <see cref="Layout"/>, which is
-    /// the same value the event used to carry.
+    /// <see cref="Layout"/>. In external sort mode it reports the requested criterion; publishing
+    /// its ordered rows belongs to the host. A host reads <see cref="Layout"/> for the snapshot.
     /// </summary>
     public event EventHandler<LayoutChange>? LayoutChanged;
 

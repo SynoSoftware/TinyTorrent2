@@ -181,6 +181,8 @@ public sealed class Strings
 
     public string Error(string code, string? detail)
     {
+        if (code == "torrent_error" && !string.IsNullOrWhiteSpace(detail))
+            return detail;
         var message = Find("errors", code) ?? Get("errors", "unknown");
         return string.IsNullOrWhiteSpace(detail)
             ? message

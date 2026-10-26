@@ -111,7 +111,7 @@
     "move_interrupted": "Le déplacement a été interrompu. Choisissez le dossier qui contient maintenant les fichiers, puis sélectionnez à nouveau Déplacer.",
     "move_unfinished": "Ce déplacement s’est arrêté à la fermeture de TinyTorrent. Il attend que vous choisissiez de continuer ou non les tâches inachevées.",
     "move_failed": "Impossible de déplacer les fichiers. Ils se trouvent toujours dans leur dossier d’origine.",
-    "destination_exists": "Des fichiers existent aux deux emplacements. Choisissez une autre destination pour conserver les deux copies.",
+    "destination_exists": "Un fichier à destination a une taille différente. Les deux copies ont été conservées.",
     "same_location": "Les fichiers y sont déjà, sous un autre chemin.",
     "alias_conflict": "D’autres torrents utilisent ces fichiers sous des noms différents. Résolvez les conflits de noms avant de continuer.",
     "torrent_error": "Aucun autre détail n’est disponible sur l’erreur.",

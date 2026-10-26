@@ -363,7 +363,7 @@ public sealed partial class MainWindow
                 },
                 Model.Library.Configuration == configuration,
                 new RelayCommand(() => Model.Library.Configuration = configuration, () => true)
-            );
+            ) { Group = "LibraryConfiguration" };
     }
 
     private Task ShowKey(ProviderOption option, bool enableAutomaticDownload = false)

@@ -32,13 +32,14 @@ internal sealed record MenuCommand(string Text, string Glyph, ICommand Command) 
 }
 
 /// <summary>
-/// An on, off or mixed choice. In a menu of only choices its glyph shows beside a check mark;
-/// in any other menu its state replaces the glyph.
+/// An on, off or mixed choice; a group makes it mutually exclusive with its peers.
 /// </summary>
 internal sealed record MenuChoice(string Text, string? Glyph, bool? State, ICommand Command)
     : MenuEntry
 {
     internal string AccessKey { get; init; } = string.Empty;
+
+    internal string? Group { get; init; }
 
     /// <summary>The ISO 3166-1 alpha-2 region whose flag shows in place of the glyph.</summary>
     internal string? FlagRegion { get; init; }
@@ -82,35 +83,38 @@ internal static class MenuItems
         var lines = entries
             .SelectMany(entry => entry is MenuHeading ? new[] { entry, Separator } : [entry])
             .ToArray();
-        // One check mark gives every item in its menu a check column, so only a menu of
-        // nothing but choices uses check marks; elsewhere a choice shows its state as its icon.
-        var checks =
-            lines.Any(line => line is MenuChoice)
-            && lines.All(line => line is MenuChoice or MenuSeparator);
         if (
             items.Count != lines.Length
-            || !items.Zip(lines).All(pair => Matches(pair.First, pair.Second, checks))
+            || !items.Zip(lines).All(pair => Matches(pair.First, pair.Second))
         )
         {
             Clear(items);
             foreach (var line in lines)
-                items.Add(Create(line, checks));
+                items.Add(Create(line, items));
         }
         for (var index = 0; index < lines.Length; index++)
             Update(items[index], lines[index], text);
     }
 
-    private static bool Matches(MenuFlyoutItemBase item, MenuEntry line, bool checks) =>
+    private static bool Matches(MenuFlyoutItemBase item, MenuEntry line) =>
         Equals(item.Tag, line.GetType().Name)
-        && (item is ToggleMenuFlyoutItem) == (checks && line is MenuChoice);
+        && (line switch
+        {
+            MenuChoice { State: null } => item is MenuFlyoutItem and not ToggleMenuFlyoutItem and not RadioMenuFlyoutItem,
+            MenuChoice { Group: not null } => item is RadioMenuFlyoutItem,
+            MenuChoice => item is ToggleMenuFlyoutItem,
+            _ => true,
+        });
 
-    private static MenuFlyoutItemBase Create(MenuEntry line, bool checks)
+    private static MenuFlyoutItemBase Create(MenuEntry line, IList<MenuFlyoutItemBase> siblings)
     {
         MenuFlyoutItemBase item = line switch
         {
             MenuSeparator => new MenuFlyoutSeparator(),
             MenuSubmenu => new MenuFlyoutSubItem(),
-            MenuChoice when checks => new ToggleMenuFlyoutItem(),
+            MenuChoice { State: null } => new MenuFlyoutItem(),
+            MenuChoice { Group: not null } => new RadioMenuFlyoutItem(),
+            MenuChoice => new ToggleMenuFlyoutItem(),
             MenuHeading => new MenuFlyoutItem
             {
                 IsEnabled = false,
@@ -122,10 +126,17 @@ internal static class MenuItems
         // A heading can name a long torrent.
         if (line is MenuHeading)
             item.Resources["MenuFlyoutItemTextTrimming"] = TextTrimming.CharacterEllipsis;
-        // WinUI flips the check mark before Click. Flipping it back keeps the described
-        // state, so choosing the current Library view leaves it checked.
+        // Navigation may be refused by an unfinished draft, so the owner's
+        // state remains authoritative after WinUI changes a choice on Click.
         if (item is ToggleMenuFlyoutItem toggle)
-            toggle.Click += (_, _) => toggle.IsChecked = !toggle.IsChecked;
+            toggle.Click += (_, _) => toggle.IsChecked = ((MenuChoice)toggle.DataContext).State == true;
+        if (item is RadioMenuFlyoutItem radio)
+            radio.Click += (_, _) =>
+            {
+                foreach (var peer in siblings.OfType<RadioMenuFlyoutItem>())
+                    if (peer.GroupName == radio.GroupName && peer.DataContext is MenuChoice choice)
+                        peer.IsChecked = choice.State == true;
+            };
         // A Type in Tag crosses WinRT as a type name, so the kind is kept as a string.
         item.Tag = line.GetType().Name;
         return item;
@@ -133,6 +144,7 @@ internal static class MenuItems
 
     private static void Update(MenuFlyoutItemBase item, MenuEntry line, Strings text)
     {
+        item.DataContext = line;
         switch (line, item)
         {
             case (MenuHeading heading, MenuFlyoutItem shown):
@@ -144,21 +156,20 @@ internal static class MenuItems
                 AutomationProperties.SetName(shown, command.Name ?? string.Empty);
                 ToolTipService.SetToolTip(shown, command.ToolTip);
                 break;
-            case (MenuChoice choice, ToggleMenuFlyoutItem shown):
+            case (MenuChoice choice, MenuFlyoutItem shown):
                 if (choice.FlagRegion is { } region)
                     Show(shown, choice.Text, Flags.Font, Flags.Glyph(region), choice.Command, choice.AccessKey);
                 else
-                    Show(shown, choice.Text, Lucide.Font, choice.Glyph, choice.Command, choice.AccessKey);
-                shown.IsChecked = choice.State == true;
-                break;
-            case (MenuChoice choice, MenuFlyoutItem shown):
-                var glyph = choice.State switch
+                    Show(shown, choice.Text, Lucide.Font,
+                        choice.State is null ? Lucide.SquareMinus : choice.Glyph,
+                        choice.Command, choice.AccessKey);
+                if (shown is ToggleMenuFlyoutItem toggle)
+                    toggle.IsChecked = choice.State == true;
+                if (shown is RadioMenuFlyoutItem radio)
                 {
-                    true => Lucide.SquareCheck,
-                    false => Lucide.Square,
-                    null => Lucide.SquareMinus,
-                };
-                Show(shown, choice.Text, Lucide.Font, glyph, choice.Command, choice.AccessKey);
+                    radio.GroupName = choice.Group;
+                    radio.IsChecked = choice.State == true;
+                }
                 AutomationProperties.SetItemStatus(
                     shown,
                     text.Get(

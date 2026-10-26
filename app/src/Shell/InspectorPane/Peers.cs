@@ -109,7 +109,15 @@ public sealed partial class InspectorPane
                 null,
                 selected,
                 new RelayCommand(() => SetPeerView(choice), () => enabled)
-            );
+            )
+            {
+                Group = key switch
+                {
+                    "map" or "table" or "both" => "PeerLayout",
+                    "countries" or "cities" => "PeerGeography",
+                    _ => "PeerSpeedCorner",
+                },
+            };
     }
 
     private void SetPeerView(PeerView view)

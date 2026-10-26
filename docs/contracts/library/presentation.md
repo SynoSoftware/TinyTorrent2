@@ -26,12 +26,14 @@ This is the acceptance checklist for the current Library design work, recorded
 on 2026-10-10. It owns the pending prototype-to-app review, not a second UI
 contract. The owner approved C — Sections and authorized native implementation.
 Validation follows the current [root instructions](../../../AGENTS.md#working-rules)
-and [testing policy](../../agents/testing.md); prototype screenshot review is
-already authorized.
+and [testing policy](../../agents/testing.md). Prototype screenshot review is
+authorized when a concrete visual question remains under the
+[verification gate](../../agents/testing.md#verification-must-answer-a-question).
 
 An unchecked item means native implementation and its appropriate evidence
-have not both been established. A prototype edit, source review or successful
-build alone does not complete a visual or interaction requirement. Record the
+have not both been established. Source review completes a clear requirement;
+runtime checks resolve only specific remaining visual or interaction doubts.
+The checklist does not require a screenshot per item. Record the
 changed owner and evidence against each item when implementing; carry unfinished
 items forward rather than asking the owner to rediscover them.
 

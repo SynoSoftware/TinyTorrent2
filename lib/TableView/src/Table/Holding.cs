@@ -269,7 +269,7 @@ public sealed partial class Table
         IReadOnlySet<object> held
     )
     {
-        bool reorders = _hierarchy is null && _sortColumn is not null && !SortsOrder;
+        bool reorders = _hierarchy is null && SortsLocally && !SortsOrder;
         object? menu = reorders ? _menuRow : null;
         object? pointed = reorders ? _pointedRow : null;
         if (held.Count == 0 && menu is null && pointed is null)

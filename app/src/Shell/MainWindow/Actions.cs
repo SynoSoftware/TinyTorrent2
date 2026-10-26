@@ -37,6 +37,7 @@ public sealed partial class MainWindow
             )
             {
                 FlagRegion = Strings.FlagRegion(language),
+                Group = "Language",
             }),
         ];
 

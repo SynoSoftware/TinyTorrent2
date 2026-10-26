@@ -1,8 +1,7 @@
 namespace Syno.TableView;
 
 /// <summary>
-/// Specification section 9. Sorting is a local table projection over the current source snapshot:
-/// it produces the private view and never touches <see cref="ItemsSource"/>.
+/// Specification section 9. Header sort state and the optional local projection over the source.
 /// </summary>
 public sealed partial class Table
 {
@@ -20,6 +19,7 @@ public sealed partial class Table
     private Sort? _pendingSort;
     private bool _hasPendingSort;
     private TimeSpan _sortInterval = DefaultSortInterval;
+    private SortMode _sortMode;
 
     /// <summary>When the rows were last allowed to take their sorted places.</summary>
     private DateTimeOffset _orderSettledAt = DateTimeOffset.MinValue;
@@ -27,6 +27,24 @@ public sealed partial class Table
     private Microsoft.UI.Dispatching.DispatcherQueueTimer? _settleDue;
 
     private bool SortsOrder => _sortColumn is not null && _sortColumn.Column == _order?.Column;
+    private bool SortsLocally => _sortMode == SortMode.Local && _sortColumn is not null;
+
+    /// <summary>
+    /// Setup-only. External sorting keeps source order and reports header choices through
+    /// <see cref="LayoutChanged"/>; the host supplies replacement rows in the requested order.
+    /// Sort keys still declare which columns have sorting gestures, but are not evaluated.
+    /// </summary>
+    public SortMode SortMode
+    {
+        get => _sortMode;
+        set
+        {
+            RequireSetup();
+            if (!Enum.IsDefined(value))
+                throw new ArgumentOutOfRangeException(nameof(value));
+            _sortMode = value;
+        }
+    }
 
     /// <summary>
     /// How long rows already on screen keep their places while a sort is applied over values the
@@ -69,7 +87,7 @@ public sealed partial class Table
 
             // Turning settling off is a request to see the sorted order, not a request to see it
             // whenever the source next moves.
-            if (value == TimeSpan.Zero && _schemaCaptured && _sortColumn is not null)
+            if (value == TimeSpan.Zero && _schemaCaptured && SortsLocally)
             {
                 _orderSettledAt = DateTimeOffset.MinValue;
                 RebuildView();
@@ -78,8 +96,9 @@ public sealed partial class Table
     }
 
     /// <summary>
-    /// The active sort, or null for natural order. Reading gives what stands; assigning is an
-    /// idempotent request, and it reports through <see cref="LayoutChanged"/> only when the
+    /// The active sort, or null for natural order. In external mode this is the requested order.
+    /// Reading gives what stands; assigning is an idempotent request, and it reports through
+    /// <see cref="LayoutChanged"/> only when the
     /// effective sort actually moved, so a host may set it from its own handler.
     /// </summary>
     /// <remarks>
@@ -125,13 +144,15 @@ public sealed partial class Table
             }
 
             // Comparison can invoke host code; finish it before committing the new sort.
-            IReadOnlyList<object> order = SortedSnapshot(_source.Snapshot, column, direction);
+            IReadOnlyList<object>? order = _sortMode == SortMode.Local
+                ? SortedSnapshot(_source.Snapshot, column, direction) : null;
             _sortColumn = column;
             _sortDirection = direction;
 
             // Complete presentation before selection handlers can run or throw.
             _headerStrip?.Panel?.RefreshHeader();
-            RebuildView(preparedOrder: order);
+            if (order is not null)
+                RebuildView(preparedOrder: order);
 
             RaiseLayoutChanged(LayoutChange.Sort);
         }
@@ -195,7 +216,7 @@ public sealed partial class Table
 
     /// <summary>
     /// Section 5: the captured baseline carries no sort criterion, so <see cref="ResetLayout"/>
-    /// clears the local sort with the rest of the overrides. Silent: the reset reports once.
+    /// clears the sort criterion with the rest of the overrides. Silent: the reset reports once.
     /// </summary>
     /// <returns>True when a sort was in force and the view now needs rebuilding.</returns>
     private bool ClearSort()
@@ -240,7 +261,7 @@ public sealed partial class Table
         IReadOnlyList<object> snapshot
     )
     {
-        if (_hierarchy is not null && _sortColumn is null)
+        if (_hierarchy is not null && !SortsLocally)
             return (snapshot, _held);
         var (shown, held, released) = Hold(snapshot);
         DateTimeOffset now = DateTimeOffset.UtcNow;
@@ -249,7 +270,7 @@ public sealed partial class Table
         // column shows that same order, so holding it would delay the person's own reorder; an
         // empty view has no established order to preserve; and a zero interval is the host asking
         // for none of this.
-        if (_sortColumn is null || SortsOrder || _view.Count == 0 || _sortInterval == TimeSpan.Zero)
+        if (!SortsLocally || SortsOrder || _view.Count == 0 || _sortInterval == TimeSpan.Zero)
         {
             return Finish(SortedSnapshot(shown, _sortColumn, _sortDirection), settled: true);
         }
@@ -319,7 +340,7 @@ public sealed partial class Table
 
                 // Only a reordering sort schedules a settle. A tick left over from one after the
                 // sort changed has nothing to settle.
-                if (_sortColumn is null || SortsOrder)
+                if (!SortsLocally || SortsOrder)
                 {
                     return;
                 }
@@ -402,6 +423,8 @@ public sealed partial class Table
         SortDirection direction
     )
     {
+        if (_sortMode == SortMode.External)
+            column = null;
         if (_hierarchy is not null && (_preparedHierarchy ?? _hierarchy.Captured) is { } hierarchy)
             return _hierarchy.Project(hierarchy, column?.Column.Sort, direction);
         if (column is null)

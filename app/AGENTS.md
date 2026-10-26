@@ -36,15 +36,14 @@ building in the wrong direction costs far more than the review. Resolve
 concrete findings before implementation.
 
 Review both clutter and missing essentials: every visible element should support
-a decision, and every required task needs a discoverable path. A successful build
-cannot establish usability or visual conformance. Screenshots can verify a
-design later; they do not replace understanding its interactions. Runtime checks
-follow [testing](../docs/agents/testing.md) and the root instructions.
-
-Verify the affected journey at relevant sizes, themes, text scales, and input
-methods under [testing](../docs/agents/testing.md). Review native semantics, reachable actions,
-focus return, automation, live text, and bounded hidden work. State the evidence
-and gaps explicitly; a static screenshot cannot establish all of them.
+a decision, and every required task needs a discoverable path. Review layout,
+native semantics, reachable actions, focus return, automation, live text and
+bounded hidden work in the code first. Apply the
+[verification gate](../docs/agents/testing.md#verification-must-answer-a-question)
+before adding tests, launching the app or capturing screenshots. Review relevant
+sizes, themes, text scales and input methods only where a concrete doubt remains;
+an ordinary UI change does not require a runtime matrix. State the evidence and
+any unresolved questions accurately.
 
 ## Dialogs
 
@@ -81,7 +80,9 @@ follow the [button rulings](../docs/contracts/ui.md#buttons).
 
 ## Capture review
 
-A capture review is a diagnostic build that drives the app off-screen through
+A capture review, when justified by the
+[verification gate](../docs/agents/testing.md#verification-must-answer-a-question),
+is a diagnostic build that drives the app off-screen through
 scripted journeys. It saves screenshots and control bounds in English and
 Spanish, Light and Dark, at several window sizes. It does not take over the
 desktop. The [root owner ruling](../AGENTS.md#working-rules) governs whether a
@@ -89,10 +90,10 @@ review may run; the [pre-launch check](../docs/agents/compilation.md#verify-the-
 establishes which successful build the capture will actually run.
 
 It has found text and controls clipped or pushed out of view at narrow sizes or
-in Spanish, input and drafts lost, and crashes while the window closes. For an
-authorized app review, choose a mode covering the requested checks.
+in Spanish, input and drafts lost, and crashes while the window closes. Choose
+the smallest mode that answers the remaining question.
 
 Reuse a current capture build across review modes; another mode alone needs no
 build. [Testing](../docs/agents/testing.md#windows-evidence) owns validation scope and
-the available journeys. Inspect screenshots of the changed area, because the
-journeys' behavior checks do not establish layout quality.
+the available journeys. When a visual doubt justified a capture, inspect the
+relevant images to resolve that doubt; running the journey alone cannot do so.
