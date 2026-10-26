@@ -342,10 +342,18 @@ mode before applying the saved running intent.
 A missing file counts as a file with no data only while its drive or share
 answers. Windows reports a drive or share that does not answer with the same
 codes as a missing file, so a check would otherwise finish at 0 % without an
-error, and the next checkpoint would discard the saved progress. TinyTorrent's
-libtorrent fork reports such a file as `ERROR_DEV_NOT_EXIST`, a recoverable
-disk error. Name preparation and the rename to a final name check the folder
-the same way.
+error, and the next checkpoint would discard the saved progress. When the
+save folder, or its nearest existing parent, does not answer either,
+TinyTorrent's libtorrent fork reports such a file as `ERROR_DEV_NOT_EXIST`, a
+recoverable disk error. The parent counts because the share can answer while
+the torrent's own folder on it has not been created yet. Name preparation and
+the rename to a final name check the folder the same way.
+
+libtorrent counts a piece as downloaded when it passes its hash check, before
+its blocks are written. When such a write fails, the fork recounts the file
+progress from the pieces it still has, so a file is not reported complete and
+renamed while its data is missing. A seed has no piece list to correct, so the
+fork checks all of its files when the disk error clears.
 
 Recoverable payload I/O errors pause their torrent and release its storage through
 libtorrent's disk fence. The engine then checks the location on its volume's
@@ -353,7 +361,9 @@ worker once a second, sharing each check between torrents in the same folder.
 When it answers, the engine clears the disk error and upload mode and reapplies
 the current intent, including forced downloads. This also reconnects seed peers
 with fresh piece availability and reopens invalidated network file handles.
-Stop, Pause all, schedules and adapter restrictions still apply. Pending Verify
+Stop, Pause all, schedules and adapter restrictions still apply. An error that
+waiting cannot fix ends recovery only once the location answers, because
+Windows reports an absent share with many codes. Pending Verify
 waits for storage recovery, and for libtorrent's check of resume data, which
 ignores a recheck. A late probe cannot resume a removed torrent or
 apply an old location's answer after a move. Native release callbacks, rather

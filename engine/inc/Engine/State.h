@@ -1201,8 +1201,11 @@ public:
     void ReplaceHandle(Torrent& torrent, Replacement& replacement);
     Store& VolumeWorker(std::string const& folder);
     static bool Reachable(std::filesystem::path folder);
-    // Throws ERROR_DEV_NOT_EXIST, the cause libtorrent reports for the same
-    // case, when the folder's drive or share does not answer.
+    // The cause of work that failed because its folder's drive or share does
+    // not answer: ERROR_DEV_NOT_EXIST, as TinyTorrent's libtorrent fork
+    // reports it too.
+    static lt::error_code Unreachable();
+    // Throws Unreachable() when the folder's drive or share does not answer.
     static void CheckReachable(std::filesystem::path const& folder);
     std::future<void> ReleaseStorage(lt::torrent_handle const& handle);
     void ReleaseFiles(std::vector<lt::torrent_handle> const& handles);
@@ -1223,6 +1226,9 @@ public:
     static bool ApplyNames(lt::torrent_handle const& handle, lt::add_torrent_params const& prepared,
         lt::renamed_files const& current, std::set<lt::file_index_t>& pending);
     void ContinueNames();
+    // Name preparation failed: it runs again after renameRetry, or when
+    // storage recovery finds the folder answering.
+    void FailNames(Torrent& torrent, StorageOutcome const& failure);
     void FinishNames(Torrent& torrent);
     void RecoverNames(Torrent& torrent);
     void QueryFiles();

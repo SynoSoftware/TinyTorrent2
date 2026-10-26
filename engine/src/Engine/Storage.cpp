@@ -41,6 +41,9 @@ bool Engine::State::Retryable(lt::error_code const& error)
     case ERROR_NOT_CONNECTED:
     case ERROR_INVALID_DRIVE:
     case ERROR_DEVICE_NOT_CONNECTED:
+    case ERROR_VC_DISCONNECTED:
+    case ERROR_FILE_INVALID:
+    case ERROR_REQUEST_ABORTED:
         return true;
     default:
         return false;
@@ -116,11 +119,6 @@ void Engine::State::RetryStorage()
             statusPending = true;
             continue;
         }
-        if (recovery->phase == DiskPhase::Waiting && !Retryable(torrent))
-        {
-            torrent.recovery.reset();
-            continue;
-        }
         if (recovery->phase != DiskPhase::Waiting || Paused() ||
             torrent.facts.intent == Intent::Paused || torrent.FilesBusy())
             continue;
@@ -148,9 +146,16 @@ void Engine::State::RetryStorage()
                 auto& torrent = found->second;
                 auto& recovery = *attempt.recovery;
                 recovery.phase = DiskPhase::Waiting;
-                if (IsShuttingDown() || !ready || !*ready || !SameFolder(folder, torrent.facts.savePath) ||
-                    Paused() || torrent.facts.intent == Intent::Paused || torrent.FilesBusy() ||
-                    !Retryable(torrent))
+                if (IsShuttingDown() || !ready || !*ready || !SameFolder(folder, torrent.facts.savePath))
+                    continue;
+                // Windows reports an absent share with many codes, so only an
+                // answering folder shows that waiting cannot fix the error.
+                if (!Retryable(torrent))
+                {
+                    torrent.recovery.reset();
+                    continue;
+                }
+                if (Paused() || torrent.facts.intent == Intent::Paused || torrent.FilesBusy())
                     continue;
                 // libtorrent itself runs a failed check of resume data, or a
                 // failed recheck setup, again when ClearDiskError clears it.

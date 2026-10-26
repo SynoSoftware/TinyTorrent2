@@ -527,10 +527,13 @@ storage pool or a hardware RAID reports one disk, so its jobs take turns.
 An accepted torrent whose name preparation fails retains the typed filesystem
 cause and uses storage recovery. Preparation fails when the folder's drive or
 share does not answer before or after it reads the files, because Windows then
-reports every file as missing and each would get the unfinished suffix. An
-addition whose names cannot be prepared fails with that cause. A successful
-location probe admits immediate name preparation instead of waiting for its
-generic retry deadline. The name
+reports every file as missing and each would get the unfinished suffix.
+Preparation first checks the folder on its drive's worker, so an absent share
+holds only the jobs of that share. An addition whose folder does not answer
+joins the list with its names unprepared and waits in the same way; an
+addition whose names fail for any other cause fails with that cause. A
+successful location probe admits immediate name preparation instead of waiting
+for its generic retry deadline. The name
 problem ends when its actual preparation/mapping succeeds, so the row explains
 the hold while the share is absent.
 

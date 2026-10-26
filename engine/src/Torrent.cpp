@@ -109,6 +109,9 @@ Problem Problem::From(lt::error_code const& error)
         case ERROR_NOT_CONNECTED:
         case ERROR_INVALID_DRIVE:
         case ERROR_DEVICE_NOT_CONNECTED:
+        case ERROR_VC_DISCONNECTED:
+        case ERROR_FILE_INVALID:
+        case ERROR_REQUEST_ABORTED:
             return {ProblemKind::DownloadPathUnavailable};
         }
     }

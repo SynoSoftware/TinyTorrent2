@@ -133,13 +133,17 @@ void Engine::State::Add(Preview& preview, Addition::Choices choices, std::functi
             auto found = additions.find(id);
             if (found == additions.end())
                 return;
-            if (!prepared)
+            // A torrent whose folder does not answer joins the list and
+            // chooses its names once the folder answers, as any torrent in
+            // the list does.
+            if (!prepared && prepared.error().cause != Unreachable())
             {
                 Abandon(id, prepared.error().ToOutcome(ErrorCode::AddFailed));
                 return;
             }
             auto& addition = found->second;
-            addition.params = std::move(*prepared);
+            if (prepared)
+                addition.params = std::move(*prepared);
             addition.params.userdata = &addition;
             session->async_add_torrent(addition.params);
         });
@@ -180,7 +184,10 @@ void Engine::State::PrepareAddition(std::string const& id, lt::torrent_handle ha
             return;
         if (!choice)
         {
-            Abandon(id, choice.error().ToOutcome(ErrorCode::AddFailed));
+            if (choice.error().cause == Unreachable())
+                SaveAddition(id, found->second.handle);
+            else
+                Abandon(id, choice.error().ToOutcome(ErrorCode::AddFailed));
             return;
         }
         auto& addition = found->second;
