@@ -17,10 +17,10 @@ public sealed class Notifications
     // Fluent 2 toasts: at most four timed toasts show. A finished download
     // stays visible in the list after its toast goes.
     private const int MaxTimed = 4;
+    private const int MaxErrors = 4;
 
     private readonly MainViewModel _owner;
     private readonly Strings _text;
-    private readonly ICommand _openErrorFolder;
 
     // The toasts on screen while the stack shows.
     private readonly HashSet<Toast> _shown = [];
@@ -29,21 +29,12 @@ public sealed class Notifications
     {
         _owner = owner;
         _text = text;
-        _openErrorFolder = new RelayCommand(
-            () =>
-            {
-                if (Error?.Failure.Folder is { } folder)
-                    _owner.RequestOpen(folder);
-            },
-            () => true
-        );
     }
 
     // Oldest first, so the newest toast sits nearest the window corner.
     public ObservableCollection<Toast> Toasts { get; } = [];
 
-    // At most one shows; a later failure replaces its failure in place.
-    private Toast.CommandError? Error => Toasts.OfType<Toast.CommandError>().FirstOrDefault();
+    private Toast.CommandError? Error => Toasts.OfType<Toast.CommandError>().FirstOrDefault(toast => toast.Key is null);
 
     internal event EventHandler<string>? AnnouncementRequested;
 
@@ -72,7 +63,7 @@ public sealed class Notifications
         var toast = Error;
         if (toast is null)
         {
-            toast = new Toast.CommandError(failure);
+            toast = new Toast.CommandError(failure, _owner);
             Toasts.Add(toast);
         }
         else
@@ -81,6 +72,34 @@ public sealed class Notifications
         }
         Describe(toast);
         Announce(toast.Message);
+    }
+
+    private void ReportProblem(CommandFailure failure, string key, string? change)
+    {
+        if (_owner.IsClosed)
+            return;
+        var toast = Toasts.OfType<Toast.CommandError>().FirstOrDefault(shown => shown.Key == key);
+        if (change == "resolved")
+        {
+            if (toast is not null)
+                Toasts.Remove(toast);
+            return;
+        }
+        if (toast is null)
+        {
+            if (change == "updated")
+                return;
+            var problems = Toasts.OfType<Toast.CommandError>().Where(shown => shown.Key is not null).ToList();
+            if (problems.Count >= MaxErrors)
+                Toasts.Remove(problems[0]);
+            toast = new Toast.CommandError(failure, _owner, key);
+            Toasts.Add(toast);
+        }
+        else
+            toast.Failure = failure;
+        Describe(toast);
+        if (change != "updated")
+            Announce(toast.Message);
     }
 
     private string ErrorTitle(Exception error) =>
@@ -122,6 +141,11 @@ public sealed class Notifications
             // error, whose detail is the reason libtorrent gave.
             string Reason()
             {
+                if (code == "download_location_unavailable")
+                {
+                    var affected = _text.FormatCount("notifications", "location_torrents", count);
+                    return detail.Length == 0 ? affected : _text.Format("errors", "detail", _text.Get("errors", detail), affected);
+                }
                 var reason =
                     kind == "delete_failed" && detail == "recycle_failed"
                         ? _text.Get("errors", "recycle_failed")
@@ -141,22 +165,30 @@ public sealed class Notifications
             {
                 "add_failed" => "not_added",
                 "delete_failed" => "not_deleted",
+                _ when code == "download_location_unavailable" => "location_unavailable",
                 // Only these stop the torrent. Every other torrent problem
                 // comes from a move, after which the torrent keeps running in
                 // its old folder.
-                _ when code is "torrent_error" or "alias_conflict" or "unknown" => "torrent_stopped",
+                _ when code is "torrent_error" or "download_path_missing" or "download_path_invalid"
+                    or "download_path_unavailable" or "disk_full" or "drive_stalled"
+                    or "alias_conflict" or "unknown" => "torrent_stopped",
                 _ => "failed_move",
             };
             var folder = message.GetProperty("folder").GetString();
-            Report(
+            var condition = message.TryGetProperty("condition", out var value) && value.ValueKind == JsonValueKind.Object
+                ? value : default;
+            ReportProblem(
                 new CommandFailure(
                     error,
                     title,
                     () => name,
                     Reason,
                     folder is { Length: > 0 } ? folder : null,
-                    @switch
-                )
+                    @switch,
+                    kind == "error" && torrentId.Length > 0 ? torrentId : null
+                ),
+                condition.ValueKind == JsonValueKind.Object ? condition.GetProperty("key").GetString()! : "event:" + kind,
+                condition.ValueKind == JsonValueKind.Object ? condition.GetProperty("change").GetString() : null
             );
         }
     }
@@ -393,11 +425,19 @@ public sealed class Notifications
                 error.Title = _text.Get("notifications", failure.Title);
                 error.Subject = failure.Subject?.Invoke() ?? string.Empty;
                 error.Message = failure.Reason?.Invoke() ?? _text.Error(failure.Error);
-                error.Action = failure.Folder is null ? null : _openErrorFolder;
+                error.Folder = failure.TorrentId is { } torrentId
+                    ? _owner.Find(torrentId)?.SavePath ?? string.Empty
+                    : failure.Folder ?? string.Empty;
+                error.ShowTorrent = failure.TorrentId is null ? null : error.Reveal;
+                error.ShowText = _text.Get("notifications", "show_torrent");
+                error.ShowTip = _text.Get("notifications", "show_torrent_tip");
+                error.Action = failure.Folder is null && failure.TorrentId is null ? null : error.Open;
                 error.ActionText = _text.Get("commands", "open_folder");
                 error.ActionTip = _text.Get("notifications", "files_folder_tip");
                 error.ActionGlyph = Syno.Lucide.FolderOpen;
                 error.Switch = failure.Switch;
+                error.Open.Refresh();
+                error.Reveal.Refresh();
                 break;
             case Toast.SubtitleError subtitle:
                 var latest = subtitle.Latest;
@@ -445,15 +485,16 @@ public sealed class Notifications
 // A failed command as its toast describes it: a title key from the
 // notifications text, the torrent it names, the reason when the engine sent
 // one instead of an error code, the folder where the person finishes a failed
-// deletion, and the engine's word for the Settings switch that turns off a
-// problem the engine reports.
+// deletion, the Settings switch that turns off the problem, and the durable
+// torrent identity used to inspect it and resolve its current folder.
 internal sealed record CommandFailure(
     Exception Error,
     string Title,
     Func<string>? Subject,
     Func<string>? Reason,
     string? Folder,
-    string? Switch
+    string? Switch,
+    string? TorrentId = null
 );
 
 // One message in the window's toast stack. Each kind carries the facts it
@@ -474,6 +515,10 @@ public abstract class Toast : INotifyPropertyChanged
     private string _closeText = string.Empty;
     private string _moreText = string.Empty;
     private string? _switch;
+    private ICommand? _showTorrent;
+    private string _showText = string.Empty;
+    private string _showTip = string.Empty;
+    private string _folder = string.Empty;
 
     private Toast(InfoBarSeverity severity, TimeSpan? lifetime)
     {
@@ -531,6 +576,36 @@ public abstract class Toast : INotifyPropertyChanged
         }
     }
     public bool HasAction => Action is not null;
+    public string Folder
+    {
+        get => _folder;
+        internal set
+        {
+            if (Set(ref _folder, value))
+                Changed(nameof(HasFolder));
+        }
+    }
+    public bool HasFolder => Folder.Length > 0;
+    public ICommand? ShowTorrent
+    {
+        get => _showTorrent;
+        internal set
+        {
+            if (Set(ref _showTorrent, value))
+                Changed(nameof(HasTorrent));
+        }
+    }
+    public bool HasTorrent => ShowTorrent is not null;
+    public string ShowText
+    {
+        get => _showText;
+        internal set => Set(ref _showText, value);
+    }
+    public string ShowTip
+    {
+        get => _showTip;
+        internal set => Set(ref _showTip, value);
+    }
     public string ActionText
     {
         get => _actionText;
@@ -587,10 +662,39 @@ public abstract class Toast : INotifyPropertyChanged
     // MainViewModel.HasResumeToast holds.
     internal sealed class Resume() : Toast(InfoBarSeverity.Informational, null);
 
-    internal sealed class CommandError(CommandFailure failure)
-        : Toast(InfoBarSeverity.Error, null)
+    internal sealed class CommandError : Toast
     {
-        internal CommandFailure Failure { get; set; } = failure;
+        internal CommandError(CommandFailure failure, MainViewModel owner, string? key = null)
+            : base(InfoBarSeverity.Error, null)
+        {
+            Failure = failure;
+            Key = key;
+            Open = new RelayCommand(
+                async () =>
+                {
+                    if (Failure.TorrentId is { } torrentId && owner.Find(torrentId) is { } torrent)
+                        await owner.OpenTorrent(torrent, true);
+                    else if (Failure.Folder is { } folder)
+                        owner.RequestOpen(folder);
+                },
+                () => Failure.TorrentId is { } torrentId
+                    ? owner.CanEdit && owner.Find(torrentId) is not null
+                    : Failure.Folder is not null
+            );
+            Reveal = new RelayCommand(
+                () =>
+                {
+                    if (Failure.TorrentId is { } torrentId)
+                        owner.Reveal([torrentId]);
+                },
+                () => owner.CanEdit && Failure.TorrentId is { } torrentId && owner.Find(torrentId) is not null
+            );
+        }
+
+        internal CommandFailure Failure { get; set; }
+        internal string? Key { get; }
+        internal RelayCommand Open { get; }
+        internal RelayCommand Reveal { get; }
     }
 
     // The latest subtitle file that failed, and how many failed.

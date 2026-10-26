@@ -67,7 +67,8 @@ $engineName = ([xml](Get-Content (Join-Path $repository 'Directory.Build.props')
 $configuration = if ($Check -eq 'Pause') { 'Debug' } else { 'Release' }
 $executable = Join-Path $repository "artifacts/bin/Engine/$configuration/$engineName.exe"
 if ($EnginePath) { $executable = [IO.Path]::GetFullPath($EnginePath) }
-$peerExecutable = [IO.Path]::GetFullPath((Join-Path (Split-Path $executable -Parent) '../../Transfer/Release/Transfer.exe'))
+$configuration = Split-Path (Split-Path $executable -Parent) -Leaf
+$peerExecutable = [IO.Path]::GetFullPath((Join-Path (Split-Path $executable -Parent) "../../Transfer/$configuration/Transfer.exe"))
 $directory = Join-Path $repository ('artifacts/evidence/' + $Check + '-' + [guid]::NewGuid())
 $null = New-Item -ItemType Directory -Path $directory
 $payload = Join-Path $directory 'payload'
@@ -1991,6 +1992,24 @@ try {
                 'A damaged resume file lost its torrent'
         }
         'DiskError' {
+            function Wait-Transfer([scriptblock] $condition, [string] $failure) {
+                $until = [DateTime]::UtcNow.AddSeconds(20)
+                do {
+                    $row = (Send-Command @{ command = 'snapshot' }).data.torrents[0]
+                    if (& $condition $row) { return $row }
+                    Start-Sleep -Milliseconds 50
+                } while ([DateTime]::UtcNow -lt $until)
+                Write-Host ($row | ConvertTo-Json -Depth 10 -Compress)
+                throw $failure
+            }
+            function Hold-Payload {
+                $until = [DateTime]::UtcNow.AddSeconds(10)
+                do {
+                    try { return [IO.File]::Open($collision, 'Open', 'ReadWrite', 'None') }
+                    catch [IO.IOException] { Start-Sleep -Milliseconds 50 }
+                } while ([DateTime]::UtcNow -lt $until)
+                throw 'Pausing did not release the payload file'
+            }
             $collision = Join-Path $payload 'transfer.bin'
             $null = New-Item -ItemType Directory -Path $collision
             $peer = Start-Process -FilePath $peerExecutable `
@@ -2011,18 +2030,67 @@ try {
                 'Payload write failure was hidden by normal transfer status'
             Assert ([IO.Directory]::GetFiles($collision).Length -eq 0) 'Collision fixture unexpectedly contains files'
             Remove-Item -LiteralPath $collision
-            $reply = Send-Command @{ command = 'resume'; torrent_ids = @($torrentId) }
-            Assert $reply.ok 'Resume refused a repaired payload destination'
-            $until = [DateTime]::UtcNow.AddSeconds(30)
-            do {
-                $snapshot = Send-Command @{ command = 'snapshot' }
-                $torrent = $snapshot.data.torrents[0]
-                if ($torrent.downloaded -gt 0 -and $torrent.status -ne 'error') { break }
-                [Threading.Thread]::Sleep(50)
-            } while ([DateTime]::UtcNow -lt $until)
-            Assert ($torrent.downloaded -gt 0 -and $torrent.status -ne 'error') 'Resume did not recover payload transfer after a disk failure'
+            $null = Wait-Transfer { param($row) $row.downloaded -gt 0 -and $row.status -ne 'error' } `
+                'A repaired destination did not resume downloading automatically'
+            $null = Wait-Transfer { param($row) $row.complete } 'The recovered download did not finish'
             $reply = Send-Command @{ command = 'pause'; torrent_ids = @($torrentId) }
             Assert $reply.ok 'Recovered torrent could not pause'
+            $heldFile = Hold-Payload
+            $null = New-Item -ItemType File -Path (Join-Path $peerDirectory 'stop')
+            Assert ($peer.WaitForExit(15000)) 'The fixture seed did not stop'
+            $peer.Dispose()
+            $peer = $null
+            Remove-Item -LiteralPath (Join-Path $peerDirectory 'stop')
+            $reply = Send-Command @{ command = 'speed_limit'; torrent_ids = @($torrentId); upload_limit = 131072 }
+            Assert $reply.ok 'The seed recovery rate limit was refused'
+            $peer = Start-Process -FilePath $peerExecutable `
+                -ArgumentList @(('"' + $peerDirectory + '"'), '6881', 'download') -WindowStyle Hidden -PassThru `
+                -RedirectStandardOutput (Join-Path $directory 'leecher.log') -RedirectStandardError (Join-Path $directory 'leecher-error.log')
+            $reply = Send-Command @{ command = 'force'; torrent_ids = @($torrentId) }
+            Assert $reply.ok 'The seed could not start with its file held'
+            $failed = Wait-Transfer { param($row) $row.status -eq 'error' } 'A failed seed read was hidden'
+            $heldFile.Dispose()
+            $heldFile = $null
+            $torrent = Wait-Transfer { param($row) $row.uploaded -gt $failed.uploaded -and $row.status -ne 'error' } `
+                'A forced seed did not reopen its storage and resume uploading automatically'
+            Assert $torrent.forced 'Storage recovery changed forced intent'
+            $reply = Send-Command @{ command = 'pause'; torrent_ids = @($torrentId) }
+            Assert $reply.ok 'The recovered seed could not pause'
+            $heldFile = Hold-Payload
+            $reply = Send-Command @{ command = 'verify'; torrent_ids = @($torrentId) }
+            Assert $reply.ok 'Verify refused the held payload'
+            $reply = Send-Command @{ command = 'force'; torrent_ids = @($torrentId) }
+            Assert $reply.ok 'The held verification could not start'
+            $failed = Wait-Transfer { param($row) $row.status -eq 'error' } 'The held verification did not fail'
+            $heldFile.Dispose()
+            $heldFile = $null
+            $null = Wait-Transfer { param($row) $row.uploaded -gt $failed.uploaded -and $row.status -ne 'error' } `
+                'A failed verification did not restart and return to seeding automatically'
+            $reply = Send-Command @{ command = 'pause'; torrent_ids = @($torrentId) }
+            Assert $reply.ok 'The repaired verification could not pause'
+            $heldFile = Hold-Payload
+            $reply = Send-Command @{ command = 'force'; torrent_ids = @($torrentId) }
+            Assert $reply.ok 'The seed could not restart for the repeated failure'
+            $null = Wait-Transfer { param($row) $row.status -eq 'error' } 'The repeated seed read did not fail'
+            $reply = Send-Command @{ command = 'pause'; torrent_ids = @($torrentId) }
+            Assert $reply.ok 'A recovering seed could not be stopped'
+            $heldFile.Dispose()
+            $heldFile = $null
+            Start-Sleep -Seconds 2
+            $stopped = (Send-Command @{ command = 'snapshot' }).data.torrents[0]
+            Start-Sleep -Seconds 2
+            $torrent = (Send-Command @{ command = 'snapshot' }).data.torrents[0]
+            Assert ($torrent.paused -and $torrent.uploaded -eq $stopped.uploaded) 'A late recovery restarted a stopped seed'
+            Assert ((Payload-Hash $collision) -eq (Payload-Hash (Join-Path $peerDirectory 'seed/transfer.bin'))) `
+                'Storage recovery changed verified payload'
+            $reply = Send-Command @{ command = 'delete_files'; torrent_ids = @($torrentId); deletion = 'permanent' }
+            Assert $reply.ok 'A recovering torrent could not be removed'
+            $until = [DateTime]::UtcNow.AddSeconds(10)
+            do {
+                if (-not (Test-Path -LiteralPath $collision)) { break }
+                Start-Sleep -Milliseconds 50
+            } while ([DateTime]::UtcNow -lt $until)
+            Assert (-not (Test-Path -LiteralPath $collision)) 'Removed storage recovery kept the payload held forever'
         }
         'PreviewGuard' {
             $reply = Send-Command @{ command = 'preview'; source = $TorrentFile; destination = $payload }

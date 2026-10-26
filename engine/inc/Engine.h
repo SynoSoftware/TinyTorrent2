@@ -66,6 +66,12 @@ inline void NormaliseMagnet(std::string& source)
 
 struct Toast
 {
+    struct Condition
+    {
+        std::string key;
+        ProblemChange change;
+    };
+
     static constexpr std::size_t limit = 32;
     ToastKind kind;
     std::string name;
@@ -74,10 +80,12 @@ struct Toast
     // empty when the toast carries no problem code.
     std::string code;
     std::string torrentId;
-    // The folder that Open folder shows, where the person fixes a failed
-    // deletion in File Explorer; empty when the toast offers no folder.
+    // The folder that Open folder shows; an unavailable location names its
+    // drive root or UNC share. Empty when the toast offers no folder.
     std::string folder;
     unsigned count = 1;
+    // Absent for an event; present for an engine-owned storage condition.
+    std::optional<Condition> condition;
 };
 
 // The completion or failure of an operation. A failure has its error code

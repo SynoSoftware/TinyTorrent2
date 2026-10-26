@@ -308,7 +308,7 @@ message cannot be the only explanation of unfinished or failed work.
 | A language choice that could not be saved | The message bar as a warning, with Settings. |
 | The selected torrent has an error | The details pane shows the error in its summary and progress bar; the window adds no message for it. |
 | A finished download | A success toast for each download, titled Download finished, with the torrent name below it and Open folder, as the [notification policy](../engine/notifications.md#notifications-and-sleep) defines a finished download. It closes by itself. |
-| A torrent stopped by an error, a move that failed, or a deletion that failed after removal | The error toast of a failed command, titled Torrent stopped, Move failed or Files not deleted. A failed move's body gives the reason, then the file it concerns, because the engine's detail for it is only that file. A stopped torrent also stays in the Errors count. With the window closed, the engine's [notification policy](../engine/notifications.md#notifications-and-sleep) shows its native popup instead. |
+| A torrent stopped by an error, a move that failed, or a deletion that failed after removal | A background error toast, titled Torrent stopped, Move failed or Files not deleted, separate from a failed user-command toast. Live storage problems update and resolve quietly under engine authority. A failed move's body gives the reason, then the file it concerns, because the engine's detail for it is only that file. A stopped torrent also stays in the Errors count. With the window closed, the engine's [notification policy](../engine/notifications.md#notifications-and-sleep) shows its native popup instead. |
 | A decision requiring consent | The existing dialog for that operation. |
 
 **Owner ruling: a message bar or toast never repeats itself.** The person
@@ -356,8 +356,28 @@ above the status bar and above the message bar while it shows, following the
 [Fluent 2 toast](https://fluent2.microsoft.design/components/web/react/core/toast/usage):
 a finished download, a failed command, a torrent the engine stopped, a
 subtitle that could not be saved, and a start that waits for a pause to end. A toast shows a severity icon, a bold
-title, the torrent it concerns, the reason or next step, at most one action at
+title, the torrent it concerns, the reason or next step, and actions at
 the bottom right, and Close at the top right.
+
+A missing, invalid, disconnected or full download location is reported once per
+drive root or UNC share, naming the cause, root and number of affected torrents.
+The engine owns its lifetime: updates are quiet and confirmed recovery removes
+it, including before a delayed notice first appears. Dismissed notices do not
+return merely because the count changes. Background problems have at most four
+visible error toasts, separate from the persistent failed-user-command toast.
+They list no torrent names and offer Open folder for the root. Other torrent problems show their download folder and offer Show torrent
+and Open folder. Show torrent reveals that torrent through the existing navigation owner;
+Open folder resolves its current folder when invoked. These actions leave the
+problem available until dismissed, so inspecting the torrent does not remove
+its explanation. A removed torrent disables its actions. The inspector shows
+one error line combining outcome and cause, such as `Torrent stopped: The
+download path is invalid.`, without a separate generic Error heading. Other
+torrent problems combine their explanation and relevant detail on one line,
+with the full text in the tooltip when clipped. The line uses the summary's
+full width instead of competing with rate columns. Its wording describes the
+torrent's current problem: move refusals and interrupted moves name the move,
+and a failure to save state names what was not saved. A save failure does not
+claim that transfers stopped; the actual transfer status remains above the bar.
 
 A finished download and a problem the engine reports also show More beside
 Close, because the engine sends them and a Settings switch turns them off.

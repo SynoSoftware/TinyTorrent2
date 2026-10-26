@@ -37,6 +37,9 @@
     "gib": "{0} Gio/s"
   },
   "notification": {
+    "location_unavailable": "Emplacement de téléchargement indisponible",
+    "location_torrents_one": "{0} torrent ne peut pas accéder à son emplacement de téléchargement.",
+    "location_torrents_other": "{0} torrents ne peuvent pas accéder à leur emplacement de téléchargement.",
     "completed": "Téléchargement terminé",
     "added": "Torrent ajouté",
     "duplicate": "Torrent déjà ajouté",
@@ -72,7 +75,11 @@
     "open_folder_tip": "Ouvrir le dossier des fichiers du programme TinyTorrent",
     "force_exit": "Forcer la fermeture",
     "force_exit_tip": "Quitter maintenant sans enregistrer les dernières modifications",
-    "files_folder_tip": "Ouvrir le dossier contenant les fichiers"
+    "files_folder_tip": "Ouvrir le dossier contenant les fichiers",
+    "show_torrent": "Voir le torrent",
+    "show_torrent_tip": "Afficher ce torrent dans la liste des torrents",
+    "download_folder": "Dossier de téléchargement",
+    "torrent_stopped": "Torrent arrêté"
   },
   "power": {
     "transfers": "TinyTorrent transfère des fichiers."
@@ -107,7 +114,11 @@
     "destination_exists": "Des fichiers existent aux deux emplacements. Choisissez une autre destination pour conserver les deux copies.",
     "same_location": "Les fichiers y sont déjà, sous un autre chemin.",
     "alias_conflict": "D’autres torrents utilisent ces fichiers sous des noms différents. Résolvez les conflits de noms avant de continuer.",
-    "torrent_error": "Le torrent s’est arrêté à cause d’une erreur.",
+    "torrent_error": "Aucun autre détail n’est disponible sur l’erreur.",
+    "download_path_missing": "Le chemin de téléchargement est introuvable.",
+    "download_path_invalid": "Le chemin de téléchargement n’est pas valide.",
+    "download_path_unavailable": "Le lecteur ou le partage réseau ne répond pas.",
+    "disk_full": "Il n’y a plus d’espace libre sur le lecteur de destination.",
     "storage_failed": "Impossible de lire ou d’enregistrer l’état des téléchargements. Vérifiez le dossier de données du moteur, puis réessayez.",
     "storage_overloaded": "TinyTorrent enregistre l’état des téléchargements. Réessayez dans un instant.",
     "overloaded": "TinyTorrent est occupé. Réessayez dans un instant.",

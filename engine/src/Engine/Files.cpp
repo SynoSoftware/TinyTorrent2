@@ -56,32 +56,35 @@ DWORD Mark(std::filesystem::path const& path)
 void Engine::State::ReleaseFiles(std::vector<lt::torrent_handle> const& handles)
 {
     for (auto const& handle : handles)
+        ReleaseStorage(handle).get();
+}
+
+std::future<void> Engine::State::ReleaseStorage(lt::torrent_handle const& handle)
+{
+    auto released = std::make_shared<std::promise<void>>();
+    auto ready = released->get_future();
+    boost::asio::post(session->get_context(), [session = session->native_handle(), handle, released]
     {
-        auto released = std::make_shared<std::promise<void>>();
-        auto ready = released->get_future();
-        boost::asio::post(session->get_context(), [session = session->native_handle(), handle, released]
+        try
         {
-            try
+            auto torrent = handle.native_handle();
+            if (!torrent || !torrent->has_storage())
             {
-                auto torrent = handle.native_handle();
-                if (!torrent || !torrent->has_storage())
-                {
-                    released->set_value();
-                    return;
-                }
-                session->disk_thread().async_release_files(torrent->storage(), [torrent, released]
-                {
-                    released->set_value();
-                });
-                session->disk_thread().submit_jobs();
+                released->set_value();
+                return;
             }
-            catch (...)
+            session->disk_thread().async_release_files(torrent->storage(), [torrent, released]
             {
-                released->set_exception(std::current_exception());
-            }
-        });
-        ready.get();
-    }
+                released->set_value();
+            });
+            session->disk_thread().submit_jobs();
+        }
+        catch (...)
+        {
+            released->set_exception(std::current_exception());
+        }
+    });
+    return ready;
 }
 
 std::optional<std::vector<std::byte>> Engine::State::ReadPiece(lt::torrent_handle handle, lt::piece_index_t piece)
@@ -251,7 +254,7 @@ void Engine::State::ContinueNames()
     auto now = std::chrono::steady_clock::now();
     for (auto& [id, torrent] : torrents)
     {
-        if (torrent.restore || torrent.namePhase != NamePhase::Pending ||
+        if (torrent.restore || torrent.recovery || torrent.namePhase != NamePhase::Pending ||
             torrent.FilesBusy() || now < torrent.renameAt)
             continue;
         auto metadata = torrent.handle.torrent_file();
@@ -290,6 +293,11 @@ void Engine::State::ContinueNames()
             {
                 torrent.namePhase = NamePhase::Pending;
                 torrent.renameAt = std::chrono::steady_clock::now() + renameRetry;
+                if (choice.error().cause)
+                {
+                    torrent.nameError = Problem::From(choice.error().cause);
+                    RecoverStorage(torrent, choice.error().cause);
+                }
                 log.Write("rename", id, choice.error().detail);
                 ContinueNames();
                 return;
@@ -362,7 +370,11 @@ bool Engine::State::ApplyNames(lt::torrent_handle const& handle, lt::add_torrent
 void Engine::State::FinishNames(Torrent& torrent)
 {
     torrent.namePhase = NamePhase::Ready;
-    if (torrent.needsRecheck)
+    auto problem = std::exchange(torrent.nameError, std::nullopt);
+    if (problem && !torrent.recovery && !torrent.StorageProblem() && torrent.fault &&
+        torrent.fault->operation == lt::operation_t::file_stat && torrent.fault->problem == problem)
+        torrent.fault.reset();
+    if (torrent.needsRecheck && !torrent.recovery)
     {
         torrent.needsRecheck = false;
         if (torrent.facts.finalFolder.empty())
@@ -472,7 +484,7 @@ void Engine::State::FinishFiles(Torrent& torrent, std::optional<lt::file_index_t
 {
     // A removed torrent's file alerts still reach this, but it starts no
     // rename of its own.
-    if (IsShuttingDown() || !torrents.contains(torrent.torrentId) || torrent.filesPending ||
+    if (IsShuttingDown() || torrent.recovery || !torrents.contains(torrent.torrentId) || torrent.filesPending ||
         torrent.namePhase != NamePhase::Ready ||
         torrent.completedFiles.empty() || std::chrono::steady_clock::now() < torrent.renameAt ||
         !additions.empty() || !changes.IsIdle() || FilesBusy())
@@ -563,7 +575,7 @@ void Engine::State::FinishDownload(Torrent& torrent)
     // interrupted move continues it or a move the person asked for waits.
     if (waits && !torrent.status.is_finished && !torrent.facts.marker && !torrent.waitingMove)
         torrent.moveError.reset();
-    if (IsShuttingDown() || torrent.restore || torrent.filesPending ||
+    if (IsShuttingDown() || torrent.restore || torrent.recovery || torrent.filesPending ||
         torrent.completion.NeedsSample() || torrent.completion.IsWorking() || !torrent.status.is_finished || torrent.namePhase != NamePhase::Ready || torrent.FilesBusy() ||
         !torrent.completedFiles.empty() || torrent.facts.marker || torrent.waitingMove || torrent.unfinished)
         return;
@@ -589,7 +601,11 @@ void Engine::State::FinishDownload(Torrent& torrent)
         return;
     }
     if (torrent.completion.Finish())
+    {
+        if (!torrent.StorageProblem() && torrent.status.total_wanted_done > 0)
+            torrent.fault.reset();
         Notify(ToastKind::Completed, torrent);
+    }
 }
 
 void Engine::State::ContinueRename()

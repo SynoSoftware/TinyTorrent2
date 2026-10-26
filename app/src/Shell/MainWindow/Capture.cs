@@ -413,7 +413,7 @@ public sealed partial class MainWindow
     // as the engine's messages and the commands' failures; message bars are
     // presented, because their conditions need a failed engine or store.
     private Toast.CommandError? CommandErrorToast =>
-        Model.Notifications.Toasts.OfType<Toast.CommandError>().FirstOrDefault();
+        Model.Notifications.Toasts.OfType<Toast.CommandError>().FirstOrDefault(toast => toast.Key is null);
 
     private async Task CaptureNotifications(string prefix, Torrent torrent)
     {
@@ -2676,7 +2676,7 @@ public sealed partial class MainWindow
                                     .Single(button =>
                                         button is not Controls.ActionButton
                                         && button.DataContext
-                                            is Toast.CommandError
+                                            is Toast.CommandError { Key: null }
                                     )
                             );
                             await CaptureLayout();

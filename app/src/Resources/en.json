@@ -642,7 +642,13 @@
     "invalid_trackers": "Enter one HTTP, HTTPS or UDP tracker URL per line.",
     "unknown": "Couldn't complete the operation.",
     "detail": "{0}\n{1}",
-    "torrent_error": "The torrent stopped because of an error.",
+    "torrent_error": "No further error details are available.",
+    "download_path_missing": "The download path was not found.",
+    "download_path_invalid": "The download path is invalid.",
+    "download_path_unavailable": "The drive or network share is not responding.",
+    "disk_full": "There is no free space on the destination drive.",
+    "line": "{0} · {1}",
+    "torrent_stopped": "Torrent stopped: {0}",
     "add_failed": "Couldn't add the torrent.",
     "watch_limit": "This watched folder contains more than 10,000 torrent files. Remove old source files or choose a smaller folder.",
     "delete_failed": "Couldn't delete some downloaded files.",
@@ -731,6 +737,25 @@
     "high_key": "H"
   },
   "outcomes": { "accepted": "{0}: request accepted", "queue": "Queue order" },
+  "torrent_errors": {
+    "unknown": "This torrent needs attention.",
+    "move_failed": "Move failed.",
+    "move_interrupted": "Move interrupted: Choose the folder holding the files and try Move again.",
+    "move_unfinished": "Move paused: Choose whether to continue unfinished tasks.",
+    "destination_exists": "Move failed: The destination contains a conflicting file or folder.",
+    "same_location": "Move skipped: Both paths refer to the same files.",
+    "alias_conflict": "Torrent stopped: This torrent conflicts with another download.",
+    "storage_failed": "Download state could not be updated.",
+    "storage_overloaded": "Download state could not be updated: TinyTorrent is busy.",
+    "checkpoint_failed": "Download progress could not be saved.",
+    "drive_stalled": "Torrent stopped: The drive stopped responding.",
+    "invalid_destination": "Move could not start: Choose an existing, writable download folder.",
+    "shared_files": "Move could not start: Include the other torrents using these files.",
+    "destination_conflict": "Move could not start: The selected torrents have conflicting destination paths.",
+    "destination_in_use": "Move could not start: Another torrent uses files at the destination.",
+    "overloaded": "Move could not start: TinyTorrent is busy.",
+    "metadata_unavailable": "Move waiting: Torrent metadata is not available yet."
+  },
   "inspector": {
     "close": "Close inspector",
     "minimize": "Minimize inspector",
@@ -1423,6 +1448,9 @@
     "start_in_tray": "Start in the notification area"
   },
   "notifications": {
+    "location_unavailable": "Download location unavailable",
+    "location_torrents_one": "{0} torrent cannot access its download location.",
+    "location_torrents_other": "{0} torrents cannot access their download location.",
     "resume": "Resume",
     "resume_all_tip": "Resume all transfers. Stopped torrents stay stopped.",
     "resume_schedule_tip": "Resume all transfers now, until the next schedule change. Stopped torrents stay stopped.",
@@ -1493,7 +1521,9 @@
     "failed_subtitle_scan": "Subtitle scan failed",
     "failed_subtitle_recheck": "Recheck failed",
     "open_folder_tip": "Open the folder for {0}",
-    "files_folder_tip": "Open the folder that holds the files"
+    "files_folder_tip": "Open the folder that holds the files",
+    "show_torrent": "Show torrent",
+    "show_torrent_tip": "Show this torrent in the torrent list"
   },
   "about": {
     "title": "About",

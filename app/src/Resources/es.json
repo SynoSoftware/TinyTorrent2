@@ -634,7 +634,13 @@
     "invalid_trackers": "Introduce una URL de rastreador HTTP, HTTPS o UDP por línea.",
     "unknown": "No se pudo completar la operación.",
     "detail": "{0}\n{1}",
-    "torrent_error": "El torrent se detuvo debido a un error.",
+    "torrent_error": "No hay más detalles del error.",
+    "download_path_missing": "No se encontró la ruta de descarga.",
+    "download_path_invalid": "La ruta de descarga no es válida.",
+    "download_path_unavailable": "La unidad o el recurso de red no responde.",
+    "disk_full": "No queda espacio libre en la unidad de destino.",
+    "line": "{0} · {1}",
+    "torrent_stopped": "Torrent detenido: {0}",
     "add_failed": "No se pudo añadir el torrent.",
     "watch_limit": "Esta carpeta vigilada contiene más de 10.000 archivos torrent. Retira archivos de origen antiguos o elige una carpeta más pequeña.",
     "delete_failed": "No se pudieron eliminar algunos archivos descargados.",
@@ -725,6 +731,25 @@
   "outcomes": {
     "accepted": "{0}: solicitud aceptada",
     "queue": "Orden de la cola"
+  },
+  "torrent_errors": {
+    "unknown": "Este torrent requiere atención.",
+    "move_failed": "No se pudieron mover los archivos.",
+    "move_interrupted": "Movimiento interrumpido: Elige la carpeta que contiene los archivos e intenta moverlos de nuevo.",
+    "move_unfinished": "Movimiento en pausa: Elige si quieres continuar las tareas pendientes.",
+    "destination_exists": "No se pudieron mover los archivos: El destino contiene un archivo o una carpeta en conflicto.",
+    "same_location": "Movimiento omitido: Ambas rutas apuntan a los mismos archivos.",
+    "alias_conflict": "Torrent detenido: Este torrent entra en conflicto con otra descarga.",
+    "storage_failed": "No se pudo actualizar el estado de la descarga.",
+    "storage_overloaded": "No se pudo actualizar el estado de la descarga: TinyTorrent está ocupado.",
+    "checkpoint_failed": "No se pudo guardar el progreso de la descarga.",
+    "drive_stalled": "Torrent detenido: La unidad dejó de responder.",
+    "invalid_destination": "No se pudo iniciar el movimiento: Elige una carpeta de descarga existente con permiso de escritura.",
+    "shared_files": "No se pudo iniciar el movimiento: Incluye los otros torrents que usan estos archivos.",
+    "destination_conflict": "No se pudo iniciar el movimiento: Los torrents seleccionados tienen rutas de destino en conflicto.",
+    "destination_in_use": "No se pudo iniciar el movimiento: Otro torrent usa archivos en el destino.",
+    "overloaded": "No se pudo iniciar el movimiento: TinyTorrent está ocupado.",
+    "metadata_unavailable": "Movimiento en espera: Los metadatos del torrent aún no están disponibles."
   },
   "inspector": {
     "close": "Cerrar inspector",
@@ -1419,6 +1444,9 @@
     "start_in_tray": "Iniciar en el área de notificación"
   },
   "notifications": {
+    "location_unavailable": "Ubicación de descarga no disponible",
+    "location_torrents_one": "{0} torrent no puede acceder a su ubicación de descarga.",
+    "location_torrents_other": "{0} torrents no pueden acceder a su ubicación de descarga.",
     "resume": "Reanudar",
     "resume_all_tip": "Reanudar todas las transferencias. Los torrents detenidos siguen detenidos.",
     "resume_schedule_tip": "Reanudar ahora todas las transferencias, hasta el próximo cambio de horario. Los torrents detenidos siguen detenidos.",
@@ -1489,7 +1517,9 @@
     "failed_subtitle_scan": "No se pudieron buscar los subtítulos en las carpetas",
     "failed_subtitle_recheck": "No se pudo volver a comprobar",
     "open_folder_tip": "Abrir la carpeta de {0}",
-    "files_folder_tip": "Abrir la carpeta que contiene los archivos"
+    "files_folder_tip": "Abrir la carpeta que contiene los archivos",
+    "show_torrent": "Ver torrent",
+    "show_torrent_tip": "Mostrar este torrent en la lista de torrents"
   },
   "about": {
     "title": "Acerca de",

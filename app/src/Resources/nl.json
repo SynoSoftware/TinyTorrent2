@@ -634,7 +634,13 @@
     "invalid_trackers": "Voer één HTTP-, HTTPS- of UDP-tracker-URL per regel in.",
     "unknown": "De bewerking kon niet worden voltooid.",
     "detail": "{0}\n{1}",
-    "torrent_error": "De torrent is gestopt door een fout.",
+    "torrent_error": "Er zijn geen verdere foutdetails beschikbaar.",
+    "download_path_missing": "Het downloadpad is niet gevonden.",
+    "download_path_invalid": "Het downloadpad is ongeldig.",
+    "download_path_unavailable": "Het station of de netwerkshare reageert niet.",
+    "disk_full": "Er is geen vrije ruimte op het doelstation.",
+    "line": "{0} · {1}",
+    "torrent_stopped": "Torrent gestopt: {0}",
     "add_failed": "De torrent kon niet worden toegevoegd.",
     "watch_limit": "Deze bewaakte map bevat meer dan 10.000 torrentbestanden. Verwijder oude bronbestanden of kies een kleinere map.",
     "delete_failed": "Sommige gedownloade bestanden konden niet worden verwijderd.",
@@ -723,6 +729,25 @@
     "high_key": "H"
   },
   "outcomes": { "accepted": "{0}: aanvraag geaccepteerd", "queue": "Wachtrijvolgorde" },
+  "torrent_errors": {
+    "unknown": "Deze torrent heeft aandacht nodig.",
+    "move_failed": "Verplaatsen mislukt.",
+    "move_interrupted": "Verplaatsen onderbroken: Kies de map met de bestanden en probeer opnieuw te verplaatsen.",
+    "move_unfinished": "Verplaatsen gepauzeerd: Kies of je onvoltooide taken wilt voortzetten.",
+    "destination_exists": "Verplaatsen mislukt: De bestemming bevat een conflicterend bestand of een conflicterende map.",
+    "same_location": "Verplaatsen overgeslagen: Beide paden verwijzen naar dezelfde bestanden.",
+    "alias_conflict": "Torrent gestopt: Deze torrent conflicteert met een andere download.",
+    "storage_failed": "De downloadstatus kon niet worden bijgewerkt.",
+    "storage_overloaded": "De downloadstatus kon niet worden bijgewerkt: TinyTorrent is bezig.",
+    "checkpoint_failed": "De downloadvoortgang kon niet worden opgeslagen.",
+    "drive_stalled": "Torrent gestopt: Het station reageert niet meer.",
+    "invalid_destination": "Verplaatsen kon niet starten: Kies een bestaande, beschrijfbare downloadmap.",
+    "shared_files": "Verplaatsen kon niet starten: Neem de andere torrents mee die deze bestanden gebruiken.",
+    "destination_conflict": "Verplaatsen kon niet starten: De geselecteerde torrents hebben conflicterende bestemmingspaden.",
+    "destination_in_use": "Verplaatsen kon niet starten: Een andere torrent gebruikt bestanden op de bestemming.",
+    "overloaded": "Verplaatsen kon niet starten: TinyTorrent is bezig.",
+    "metadata_unavailable": "Verplaatsen wacht: De torrentmetadata is nog niet beschikbaar."
+  },
   "inspector": {
     "close": "Inspectievenster sluiten",
     "minimize": "Inspectievenster minimaliseren",
@@ -1416,6 +1441,9 @@
     "start_in_tray": "Starten in het systeemvak"
   },
   "notifications": {
+    "location_unavailable": "Downloadlocatie niet beschikbaar",
+    "location_torrents_one": "{0} torrent heeft geen toegang tot de downloadlocatie.",
+    "location_torrents_other": "{0} torrents hebben geen toegang tot hun downloadlocatie.",
     "resume": "Hervatten",
     "resume_all_tip": "Alle overdrachten hervatten. Gestopte torrents blijven gestopt.",
     "resume_schedule_tip": "Alle overdrachten nu hervatten tot de volgende schemawijziging. Gestopte torrents blijven gestopt.",
@@ -1486,7 +1514,9 @@
     "failed_subtitle_scan": "Ondertitels scannen mislukt",
     "failed_subtitle_recheck": "Opnieuw controleren mislukt",
     "open_folder_tip": "De map voor {0} openen",
-    "files_folder_tip": "De map met de bestanden openen"
+    "files_folder_tip": "De map met de bestanden openen",
+    "show_torrent": "Torrent tonen",
+    "show_torrent_tip": "Deze torrent in de torrentlijst tonen"
   },
   "about": {
     "title": "Over",

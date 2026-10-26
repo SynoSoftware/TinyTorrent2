@@ -132,6 +132,9 @@ void Engine::State::ContinueShutdown()
     bool expired = now - *phaseStarted >= phaseTimeout;
     if (shutdownPhase == ShutdownPhase::Draining)
     {
+        if (std::any_of(torrents.begin(), torrents.end(), [](auto const& entry)
+            { return entry.second.recovery && entry.second.recovery->phase == DiskPhase::Reloading; }))
+            return;
         if ((!expired && !std::all_of(moves.begin(), moves.end(), stopped)) ||
             std::any_of(moves.begin(), moves.end(), finishing))
         {

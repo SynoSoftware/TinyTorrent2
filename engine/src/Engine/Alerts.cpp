@@ -2,6 +2,7 @@
 #include <libtorrent/torrent_info.hpp>
 #include <libtorrent/session_stats.hpp>
 #include <algorithm>
+#include <cwctype>
 
 namespace tt
 {
@@ -10,6 +11,28 @@ namespace
 std::string Code(lt::error_code const& error)
 {
     return std::string(error.category().name()) + ":" + std::to_string(error.value());
+}
+
+std::optional<std::string> UnavailableRoot(std::string const& location, Problem const& problem)
+{
+    if (problem.kind != ProblemKind::DownloadPathMissing && problem.kind != ProblemKind::DownloadPathInvalid &&
+        problem.kind != ProblemKind::DownloadPathUnavailable && problem.kind != ProblemKind::DiskFull)
+        return std::nullopt;
+
+    auto folder = Wide(location);
+    if (folder.starts_with(LR"(\\?\UNC\)"))
+        folder = LR"(\\)" + folder.substr(8);
+    else if (folder.starts_with(LR"(\\?\)"))
+        folder.erase(0, 4);
+    auto path = std::filesystem::path(folder);
+    path.make_preferred();
+    auto root = path.root_path();
+    // A UNC root_name names only the server; include its share.
+    if (path.root_name().wstring().starts_with(LR"(\\)") && path.has_relative_path())
+        root /= *path.relative_path().begin();
+    if (root.empty())
+        return std::nullopt;
+    return Utf8(root.wstring());
 }
 }
 
@@ -214,17 +237,20 @@ void Engine::State::On(lt::state_update_alert const& alert)
             {
                 detail.status = status;
                 detail.status.renamed_files = {};
-            }, [this, &status, &changed](Torrent& torrent)
+            }, [this, &status, &changed, at = alert.timestamp()](Torrent& torrent)
             {
                 if (!torrent.names)
                 {
                     if (auto metadata = status.torrent_file.lock())
                         torrent.names = FileNames{std::move(metadata), status.renamed_files};
                 }
+                auto error = torrent.diskError ? torrent.diskError : status.errc;
+                if (error ? Retryable(error) : bool(status.flags & lt::torrent_flags::upload_mode))
+                    RecoverStorage(torrent, error);
                 if (torrent.completion.NeedsSample())
                 {
                     changed |= IsQueued(torrent.status.queue_position) != IsQueued(status.queue_position);
-                    ObserveCompletion(torrent, status);
+                    ObserveCompletion(torrent, status, at);
                 }
             });
             continue;
@@ -233,7 +259,7 @@ void Engine::State::On(lt::state_update_alert const& alert)
         {
             changed |= torrent->queueReport == QueueReport::Reported &&
                 IsQueued(torrent->status.queue_position) != IsQueued(status.queue_position);
-            torrent->Update(status);
+            torrent->Update(status, alert.timestamp());
             // A recheck passes through checking_resume_data while the reads of
             // the check it replaces may remain.
             if (status.state != lt::torrent_status::checking_files &&
@@ -241,13 +267,6 @@ void Engine::State::On(lt::state_update_alert const& alert)
                 torrent->checkReads = CheckReads::None;
             else if (torrent->ChecksFiles(Paused().has_value()) && torrent->checkReads == CheckReads::None)
                 torrent->checkReads = CheckReads::Reading;
-            auto problem = torrent->Error();
-            auto error = problem ? problem->detail : std::string();
-            if (problem && !error.empty() && error != torrent->notifiedError)
-            {
-                Notify(ToastKind::Error, *torrent, error, problem->Code());
-            }
-            torrent->notifiedError = std::move(error);
         }
     }
     // A batch after an addition's files apply settles its queue state; a batch
@@ -282,6 +301,61 @@ void Engine::State::On(lt::state_update_alert const& alert)
     }
 }
 
+void Engine::State::UpdateProblems()
+{
+    std::map<std::string, Toast> current;
+    for (auto& [id, torrent] : torrents)
+    {
+        auto storage = torrent.StorageProblem();
+        if (storage && (!torrent.fault || torrent.fault->problem != storage))
+            torrent.fault = Torrent::Fault{*storage, torrent.facts.savePath,
+                torrent.nameError ? lt::operation_t::file_stat : torrent.checkError ? lt::operation_t::file_read :
+                    lt::operation_t::unknown, torrent.status.is_seeding};
+        auto problem = torrent.Error();
+        if (problem && !problem->IsStorage() && problem != torrent.notifiedError)
+            Notify(ToastKind::Error, torrent, problem->detail, problem->Code());
+        torrent.notifiedError = problem;
+        if (!torrent.fault)
+            continue;
+        auto const& cause = torrent.fault->problem;
+        if (auto root = UnavailableRoot(torrent.fault->folder, cause))
+        {
+            auto folder = Wide(*root);
+            std::transform(folder.begin(), folder.end(), folder.begin(), [](wchar_t character)
+                { return static_cast<wchar_t>(std::towlower(character)); });
+            auto key = "location:" + Utf8(folder);
+            auto [entry, inserted] = current.try_emplace(key, Toast{.kind = ToastKind::Error,
+                .detail = cause.Code(), .code = "download_location_unavailable", .folder = *root, .count = 0});
+            ++entry->second.count;
+        }
+        else
+        {
+            current.emplace("torrent:" + id, Toast{.kind = ToastKind::Error, .name = torrent.Name(),
+                .detail = cause.detail, .code = cause.Code(), .torrentId = id, .folder = torrent.fault->folder});
+        }
+    }
+    for (auto const& [key, toast] : current)
+    {
+        auto previous = problems.find(key);
+        if (previous != problems.end() && previous->second.count == toast.count &&
+            previous->second.code == toast.code && previous->second.detail == toast.detail &&
+            previous->second.name == toast.name && previous->second.folder == toast.folder)
+            continue;
+        auto notice = toast;
+        notice.condition = Toast::Condition{key, previous == problems.end() ? ProblemChange::Raised : ProblemChange::Updated};
+        Notify(std::move(notice));
+    }
+    for (auto const& [key, toast] : problems)
+    {
+        if (current.contains(key))
+            continue;
+        auto notice = toast;
+        notice.condition = Toast::Condition{key, ProblemChange::Resolved};
+        Notify(std::move(notice));
+    }
+    problems = std::move(current);
+}
+
 void Engine::State::QueryCompletions()
 {
     if (IsShuttingDown())
@@ -296,7 +370,10 @@ void Engine::State::QueryCompletions()
     {
         if (pending >= 64)
             break;
-        if (!torrent.completion.NeedsSample() || torrent.restore ||
+        auto error = torrent.diskError ? torrent.diskError : torrent.status.errc;
+        bool retries = !torrent.recovery &&
+            (error ? Retryable(error) : bool(torrent.status.flags & lt::torrent_flags::upload_mode));
+        if ((!torrent.completion.NeedsSample() && !retries) || torrent.restore ||
             torrent.queries.contains(DetailKind::Status))
             continue;
         Query(torrent, DetailKind::Status);
@@ -304,7 +381,7 @@ void Engine::State::QueryCompletions()
     }
 }
 
-void Engine::State::ObserveCompletion(Torrent& torrent, lt::torrent_status latest)
+void Engine::State::ObserveCompletion(Torrent& torrent, lt::torrent_status latest, lt::time_point at)
 {
     bool flushes = torrent.completion.Observed(torrent.status, latest);
     latest.pieces = {};
@@ -312,7 +389,7 @@ void Engine::State::ObserveCompletion(Torrent& torrent, lt::torrent_status lates
     latest.renamed_files = {};
     latest.torrent_file.reset();
     latest.save_path.clear();
-    torrent.Update(std::move(latest));
+    torrent.Update(std::move(latest), at);
     // The natural flush may precede this observation, or its alert may be lost.
     if (flushes)
         torrent.handle.flush_cache();
@@ -412,12 +489,17 @@ void Engine::State::On(lt::file_error_alert const& alert)
 {
     if (auto torrent = Find(alert.handle))
     {
-        torrent->diskError = alert.error.message();
+        if (alert.timestamp() < torrent->diskClearedAt)
+            return;
+        torrent->diskError = alert.error;
+        torrent->fault = Torrent::Fault{Problem::From(alert.error), torrent->facts.savePath, alert.op,
+            torrent->status.is_seeding};
+        RecoverStorage(*torrent, alert.error);
         // A failed file priority job raises this instead of file_prio_alert.
         AwaitQueueStatus(*torrent);
         if (torrent->priorityCompletion)
         {
-            std::exchange(torrent->priorityCompletion, nullptr)({ErrorCode::TorrentError, torrent->diskError});
+            std::exchange(torrent->priorityCompletion, nullptr)({ErrorCode::TorrentError, torrent->diskError.message()});
         }
         log.Write("file", torrent->torrentId, Code(alert.error));
     }
@@ -452,6 +534,10 @@ void Engine::State::On(lt::alerts_dropped_alert const& alert)
         {
             continue;
         }
+        if (alert.dropped_alerts[lt::torrent_paused_alert::alert_type] && torrent.checkReads != CheckReads::None)
+            RecoverStorage(torrent, torrent.diskError ? torrent.diskError : torrent.status.errc);
+        if (alert.dropped_alerts[lt::file_error_alert::alert_type] && torrent.status.has_metadata)
+            RecoverStorage(torrent, torrent.diskError);
         if (torrent.priorityCompletion)
         {
             std::exchange(torrent.priorityCompletion, nullptr)({ErrorCode::RecoveryRequired});

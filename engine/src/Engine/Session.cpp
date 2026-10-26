@@ -680,14 +680,34 @@ void Engine::State::Notify(ToastKind kind, Torrent const& torrent, std::string d
 void Engine::State::Notify(ToastKind kind, std::string name, std::string detail, std::string torrentId,
     std::string code, std::string folder)
 {
-    log.Write("notification", torrentId, ToString(kind));
+    Notify({.kind = kind, .name = std::move(name), .detail = std::move(detail), .code = std::move(code),
+        .torrentId = std::move(torrentId), .folder = std::move(folder)});
+}
+
+void Engine::State::Notify(Toast toast)
+{
+    log.Write("notification", toast.torrentId, ToString(toast.kind));
+    if (toast.condition)
+    {
+        auto key = toast.condition->key;
+        auto pending = problemChanges.find(key);
+        if (pending != problemChanges.end() && pending->second.condition->change == ProblemChange::Raised)
+        {
+            if (toast.condition->change == ProblemChange::Resolved)
+            {
+                problemChanges.erase(pending);
+                return;
+            }
+            toast.condition->change = ProblemChange::Raised;
+        }
+        problemChanges.insert_or_assign(key, std::move(toast));
+        return;
+    }
     if (toasts.size() == Toast::limit)
     {
         toasts.erase(toasts.begin());
     }
-    toasts.push_back(
-        {.kind = kind, .name = std::move(name), .detail = std::move(detail), .code = std::move(code),
-            .torrentId = std::move(torrentId), .folder = std::move(folder)});
+    toasts.push_back(std::move(toast));
 }
 
 void Engine::State::RecordHashes(Torrent& torrent, lt::info_hash_t const& hashes)
@@ -787,6 +807,7 @@ void Engine::State::Tick()
         }
         QueryCompletions();
         QueryFiles();
+        UpdateProblems();
         if (queuePending)
             ApplyQueue();
         if (statusPending)
@@ -842,6 +863,7 @@ void Engine::State::Maintain()
         RestorePending();
         WatchFolder();
         RefreshPolicy();
+        RetryStorage();
         LimitSeeds();
         auto time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         auto activity = Activity();

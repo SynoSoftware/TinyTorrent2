@@ -548,6 +548,9 @@ public:
     // The handles of listed torrents only.
     std::map<lt::torrent_handle, Torrent*> handles;
     std::vector<Toast> toasts;
+    // Last reported conditions, and their latest undelivered changes.
+    std::map<std::string, Toast> problems;
+    std::map<std::string, Toast> problemChanges;
     std::map<std::string, Preview> previews;
     std::map<std::string, Addition> additions;
     std::vector<std::shared_ptr<Preview>> parsing;
@@ -595,6 +598,7 @@ public:
     std::chrono::steady_clock::time_point checkpointAt = std::chrono::steady_clock::now();
     // The torrent CheckpointUnsaved chose last; the next choice starts after it.
     std::string checkpointCursor;
+    std::string storageCursor;
     std::chrono::steady_clock::time_point statusAt{};
     bool statusPending = false;
     bool statusOutstanding = false;
@@ -829,6 +833,8 @@ public:
     void Notify(ToastKind kind, Torrent const& torrent, std::string detail = {}, std::string code = {});
     void Notify(ToastKind kind, std::string name, std::string detail, std::string torrentId = {},
         std::string code = {}, std::string folder = {});
+    void Notify(Toast toast);
+    void UpdateProblems();
     tt::Activity Activity() const;
     Json Snapshot();
     void PublishSnapshot();
@@ -1026,6 +1032,24 @@ public:
     void On(lt::torrent_delete_failed_alert const& alert);
     void RecoverFiles();
     void RecoverDeletions();
+    static bool Retryable(lt::error_code const& error);
+    static bool Retryable(Torrent const& torrent);
+    void RecoverStorage(Torrent& torrent, lt::error_code error);
+    void RetryStorage();
+    void RestartCheck(Torrent& torrent);
+    struct Replacement
+    {
+        lt::add_torrent_params params;
+        lt::torrent_handle handle;
+        lt::torrent_status status;
+        lt::time_point statusAt{};
+        bool removed = false;
+    };
+    void ReloadStorage(lt::torrent_handle const& handle, Replacement& replacement);
+    void ReplaceHandle(Torrent& torrent, Replacement& replacement);
+    Store& VolumeWorker(std::string const& folder);
+    static bool Reachable(std::filesystem::path folder);
+    std::future<void> ReleaseStorage(lt::torrent_handle const& handle);
     void ReleaseFiles(std::vector<lt::torrent_handle> const& handles);
     std::optional<std::vector<std::byte>> ReadPiece(lt::torrent_handle handle, lt::piece_index_t piece);
     static void SyncCall(lt::session& session, std::function<void()> work);
@@ -1079,7 +1103,7 @@ public:
     void SaveCheckpoint(Torrent& torrent, lt::add_torrent_params params);
     void FinishCheckpoint(Torrent& torrent);
     void QueryCompletions();
-    void ObserveCompletion(Torrent& torrent, lt::torrent_status latest);
+    void ObserveCompletion(Torrent& torrent, lt::torrent_status latest, lt::time_point at);
     void FailCheckpoint(Torrent& torrent, Problem problem);
     void On(lt::save_resume_data_alert& alert);
     void On(lt::save_resume_data_failed_alert const& alert);

@@ -37,6 +37,9 @@
     "gib": "{0} 二进制吉字节/秒"
   },
   "notification": {
+    "location_unavailable": "下载位置不可用",
+    "location_torrents_one": "{0} 个下载任务无法访问其下载位置。",
+    "location_torrents_other": "{0} 个下载任务无法访问其下载位置。",
     "completed": "下载完成",
     "added": "已添加种子",
     "duplicate": "种子已添加过",
@@ -72,7 +75,11 @@
     "open_folder_tip": "打开微种下载器程序所在的文件夹",
     "force_exit": "强制退出",
     "force_exit_tip": "立即退出，不保存最近的更改",
-    "files_folder_tip": "打开文件所在的文件夹"
+    "files_folder_tip": "打开文件所在的文件夹",
+    "show_torrent": "查看种子",
+    "show_torrent_tip": "在种子列表中显示此种子",
+    "download_folder": "下载文件夹",
+    "torrent_stopped": "种子已停止"
   },
   "power": {
     "transfers": "微种下载器正在传输文件。"
@@ -107,7 +114,11 @@
     "destination_exists": "两个位置都已有文件。请选择其他目标位置，以保留两份文件。",
     "same_location": "文件已在该位置，只是路径不同。",
     "alias_conflict": "其他种子以不同名称使用这些文件。请先解决文件名冲突再继续。",
-    "torrent_error": "种子因错误而停止。",
+    "torrent_error": "没有更多错误详情。",
+    "download_path_missing": "找不到下载路径。",
+    "download_path_invalid": "下载路径无效。",
+    "download_path_unavailable": "驱动器或网络共享没有响应。",
+    "disk_full": "目标驱动器没有可用空间。",
     "storage_failed": "无法读取或写入已保存的下载状态。请检查引擎数据文件夹后重试。",
     "storage_overloaded": "微种下载器正忙于保存下载状态。请稍后重试。",
     "overloaded": "微种下载器正忙。请稍后重试。",

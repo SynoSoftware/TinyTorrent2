@@ -127,6 +127,7 @@ Application::Application(std::filesystem::path directory, std::wstring sid, bool
             .refresh = [this] { Refresh(); }});
     toasts_ = std::make_unique<Toasts>(strings_, headless_, errorIcon_.get(), Toasts::Commands{
         .open = [this] { window_->Open(); },
+        .openTorrent = [this](std::string torrentId) { window_->OpenTorrent(std::move(torrentId)); },
         .openSettings = [this](std::string card) { window_->OpenSettings(std::move(card)); },
         .folder = [this](std::string const& torrentId) { return engine_->Folder(torrentId); },
         .turnOff = [this](std::vector<ToastSwitch> toasts) { TurnOff(std::move(toasts)); },

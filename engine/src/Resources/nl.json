@@ -37,6 +37,9 @@
     "gib": "{0} GiB/s"
   },
   "notification": {
+    "location_unavailable": "Downloadlocatie niet beschikbaar",
+    "location_torrents_one": "{0} torrent heeft geen toegang tot de downloadlocatie.",
+    "location_torrents_other": "{0} torrents hebben geen toegang tot hun downloadlocatie.",
     "completed": "Download voltooid",
     "added": "Torrent toegevoegd",
     "duplicate": "Torrent al toegevoegd",
@@ -72,7 +75,11 @@
     "open_folder_tip": "De map met de programmabestanden van TinyTorrent openen",
     "force_exit": "Geforceerd afsluiten",
     "force_exit_tip": "Nu afsluiten zonder de laatste wijzigingen op te slaan",
-    "files_folder_tip": "De map met de bestanden openen"
+    "files_folder_tip": "De map met de bestanden openen",
+    "show_torrent": "Torrent tonen",
+    "show_torrent_tip": "Deze torrent in de torrentlijst tonen",
+    "download_folder": "Downloadmap",
+    "torrent_stopped": "Torrent gestopt"
   },
   "power": {
     "transfers": "TinyTorrent draagt bestanden over."
@@ -107,7 +114,11 @@
     "destination_exists": "Op beide locaties staan bestanden. Kies een andere bestemming om beide kopieën te behouden.",
     "same_location": "De bestanden staan daar al, onder een ander pad.",
     "alias_conflict": "Andere torrents gebruiken deze bestanden onder andere namen. Los de bestandsnamen op voordat je doorgaat.",
-    "torrent_error": "De torrent is gestopt door een fout.",
+    "torrent_error": "Er zijn geen verdere foutdetails beschikbaar.",
+    "download_path_missing": "Het downloadpad is niet gevonden.",
+    "download_path_invalid": "Het downloadpad is ongeldig.",
+    "download_path_unavailable": "Het station of de netwerkshare reageert niet.",
+    "disk_full": "Er is geen vrije ruimte op het doelstation.",
     "storage_failed": "De opgeslagen downloadstatus kon niet worden gelezen of opgeslagen. Controleer de gegevensmap van de engine en probeer het opnieuw.",
     "storage_overloaded": "TinyTorrent is bezig de downloadstatus op te slaan. Probeer het zo opnieuw.",
     "overloaded": "TinyTorrent is bezig. Probeer het zo opnieuw.",

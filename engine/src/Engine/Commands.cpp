@@ -649,7 +649,7 @@ void Engine::State::Verify(std::vector<std::string> const& ids, std::function<vo
         // A recheck queues behind the reads of a stalled check, so it waits
         // until they return; meanwhile the stalled check continues and can
         // stall again.
-        if (torrent.FilesBusy() || torrent.checkReads == CheckReads::Stalled)
+        if (torrent.recovery || torrent.FilesBusy() || torrent.checkReads == CheckReads::Stalled)
             torrent.needsRecheck = true;
         else
             Recheck(torrent);
@@ -675,7 +675,7 @@ void Engine::State::Recheck(Torrent& torrent)
 
 void Engine::State::ApplyWaiting(Torrent& torrent)
 {
-    if (torrent.restore || torrent.FilesBusy() || torrent.namePhase != NamePhase::Ready)
+    if (torrent.restore || torrent.recovery || torrent.FilesBusy() || torrent.namePhase != NamePhase::Ready)
         return;
     if (torrent.prioritiesPending)
     {
@@ -739,12 +739,7 @@ void Engine::State::SetIntent(std::vector<std::string> const& ids, Intent intent
             {
                 torrent.conflict.clear();
                 torrent.checkError.reset();
-                if (!torrent.restore)
-                {
-                    torrent.handle.clear_error();
-                    torrent.handle.unset_flags(lt::torrent_flags::upload_mode);
-                }
-                torrent.diskError.clear();
+                torrent.ClearDiskError();
             }
             // A later force goes after the checks forced before it.
             if (intent == Intent::Forced && torrent.CheckWaits())

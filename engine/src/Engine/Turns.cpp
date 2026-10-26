@@ -106,8 +106,7 @@ void Engine::State::StopStalledJobs()
         torrent.checkReads = CheckReads::Stalled;
         torrent.checkError = Problem{ProblemKind::DriveStalled, torrent.facts.savePath};
         torrent.ApplyIntent();
-        torrent.notifiedError = torrent.checkError->detail;
-        Notify(ToastKind::Error, torrent, torrent.checkError->detail, torrent.checkError->Code());
+        RecoverStorage(torrent, {});
         log.Write("verify", id, ToString(ProblemKind::DriveStalled));
         blocked = true;
     }
@@ -289,13 +288,7 @@ std::optional<Drives> Engine::State::FindDrives(std::vector<std::string> const& 
         {
             // Each root has its own worker, so a lookup that hangs on a share
             // that does not answer delays only the folders of that share.
-            auto root = std::filesystem::path(Wide(folder)).root_name().wstring();
-            for (auto& letter : root)
-                letter = static_cast<wchar_t>(std::towlower(letter));
-            auto& worker = volumes[Utf8(root)];
-            if (!worker)
-                worker = std::make_unique<Store>(wake);
-            worker->Run([folder] { return Drives::Of(Wide(folder)); },
+            VolumeWorker(folder).Run([folder] { return Drives::Of(Wide(folder)); },
                 [this, folder](std::expected<Drives, StorageOutcome> result)
             {
                 // A refused lookup runs again when a job next asks.
@@ -315,6 +308,17 @@ std::optional<Drives> Engine::State::FindDrives(std::vector<std::string> const& 
     if (!known)
         return std::nullopt;
     return found;
+}
+
+Store& Engine::State::VolumeWorker(std::string const& folder)
+{
+    auto root = std::filesystem::path(Wide(folder)).root_name().wstring();
+    for (auto& letter : root)
+        letter = static_cast<wchar_t>(std::towlower(letter));
+    auto& worker = volumes[Utf8(root)];
+    if (!worker)
+        worker = std::make_unique<Store>(wake);
+    return *worker;
 }
 
 std::vector<std::string> Engine::State::Folders(std::vector<std::string> const& ids,

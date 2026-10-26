@@ -42,21 +42,24 @@ enum class GivenBack
     // Files were renamed back, so the torrent checks its files.
     Renamed
 };
+}
 
 // Whether the folder, or the nearest of its ancestors that exists, answers.
-bool Reachable(std::filesystem::path folder)
+bool Engine::State::Reachable(std::filesystem::path folder)
 {
+    auto root = folder.root_path();
+    if (folder.root_name().wstring().starts_with(LR"(\\)") && folder.has_relative_path())
+        root /= *folder.relative_path().begin();
     while (true)
     {
         if (GetFileAttributesW(folder.c_str()) != INVALID_FILE_ATTRIBUTES)
             return true;
         auto error = GetLastError();
         auto parent = folder.parent_path();
-        if ((error != ERROR_FILE_NOT_FOUND && error != ERROR_PATH_NOT_FOUND) || parent == folder)
+        if ((error != ERROR_FILE_NOT_FOUND && error != ERROR_PATH_NOT_FOUND) || folder == root || parent == folder)
             return false;
         folder = std::move(parent);
     }
-}
 }
 
 std::set<std::string> Engine::State::Holders(std::vector<Task> const& tasks)
@@ -396,7 +399,7 @@ void Engine::State::Unfinished(std::vector<Task> tasks, bool continued)
                 auto& torrent = torrents.at(id);
                 torrent.unfinished = TaskKind::Move;
                 if (auto problem = torrent.Error())
-                    torrent.notifiedError = problem->detail;
+                    torrent.notifiedError = problem;
             }
         }
         else if (auto check = std::get_if<Task::Check>(&task.work))

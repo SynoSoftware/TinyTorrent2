@@ -260,10 +260,12 @@ bool Engine::State::Receive(lt::torrent_handle const& handle, DetailKind kind,
     {
         return false;
     }
-    bool current = query->second == torrent->generation;
+    auto generation = query->second;
+    bool current = generation == torrent->generation;
     torrent->queries.erase(query);
     if (current && observe)
         observe(*torrent);
+    current &= generation == torrent->generation;
     if (!reading || reading->torrentId != torrent->torrentId)
     {
         return current;

@@ -117,7 +117,30 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
     public double UploadRate { get; private set; }
     public string ErrorCode { get; private set; } = string.Empty;
     public string ErrorDetail { get; private set; } = string.Empty;
-    public string ErrorText => IsError ? strings.Error(ErrorCode, ErrorDetail) : string.Empty;
+    public string ErrorText
+    {
+        get
+        {
+            if (!IsError)
+                return string.Empty;
+            var detail = ErrorDetail.ReplaceLineEndings(" ").Trim();
+            if (ErrorCode is "torrent_error" or "download_path_missing" or "download_path_invalid"
+                or "download_path_unavailable" or "disk_full")
+            {
+                var reason = ErrorCode == "torrent_error"
+                    ? detail
+                    : strings.Get("errors", ErrorCode);
+                return string.IsNullOrWhiteSpace(reason)
+                    ? strings.Get("notifications", "torrent_stopped")
+                    : strings.Format("errors", "torrent_stopped", reason);
+            }
+            var message = strings.Find("torrent_errors", ErrorCode)
+                ?? strings.Get("torrent_errors", "unknown");
+            return detail.Length == 0
+                ? message
+                : strings.Format("errors", "line", message.TrimEnd('.', '。'), detail);
+        }
+    }
     public string SizeText => strings.Bytes(Size);
     public string DownloadedText => strings.Bytes(Downloaded);
     public string UploadedText => strings.Bytes(Uploaded);

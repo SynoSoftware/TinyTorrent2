@@ -438,6 +438,11 @@ Abandon drops the work:
 
 ## Drive turns
 
+Lost pause acknowledgements reconcile check reads through the same native
+storage-release fence as transient storage recovery. The recovery identity
+holds off a newer check until that fence completes; a sampled paused flag
+alone never releases a drive claim.
+
 Disk jobs on different physical drives run at the same time, and jobs on one
 drive take turns, so two jobs never slow each other down on one disk. A job is
 a check of a torrent's files or a move. A check uses the drive of its
@@ -464,12 +469,12 @@ it moves. Checks and moves follow one rule, and neither kind goes first.
   waits in its place for a move that started on its drive meanwhile. A
   person's Stop and then Start puts a check at the back.
 - A running job whose progress does not change for 2 minutes gives up with
-  `drive_stalled`. A stalled check stops its torrent until Start or Verify.
-  Verify of a stalled check whose reads remain lets that check continue,
-  where it can stall again, and rechecks once the reads return. A
+  `drive_stalled`. A stalled check pauses and releases its storage; once its
+  reads return and its location answers, it continues automatically under the
+  current running intent. Verify waits for that release before rechecking. A
   stalled move's copy is cancelled, and the move fails as after any failed
-  copy, which gives back what it placed and shows Move failed. Nothing
-  restarts either one. Only a move's placement is timed, not the wait for
+  copy, which gives back what it placed and shows Move failed. A failed move
+  waits for the person. Only a move's placement is timed, not the wait for
   libtorrent to release the files.
 
 The once-a-second maintenance pass decides. It works out which drives are in
@@ -516,6 +521,12 @@ and its answer is kept until the engine exits. A job whose drives are not known 
 storage pool or a hardware RAID reports one disk, so its jobs take turns.
 
 ## Unfinished files
+
+An accepted torrent whose name preparation fails retains the typed filesystem
+cause and uses storage recovery. A successful location probe admits immediate
+name preparation instead of waiting for its generic retry deadline. The name
+problem ends when its actual preparation/mapping succeeds, so the row explains
+the hold while the share is absent.
 
 New torrents use the `.!tt` suffix for incomplete files by default, such as
 `movie.mkv.!tt`, so other programs can distinguish unfinished downloads.

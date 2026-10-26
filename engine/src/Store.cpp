@@ -67,6 +67,17 @@ Store::Store(std::function<void()> wake) : wake_(std::move(wake)), worker_([this
         {
             job.work();
         }
+        catch (boost::system::system_error const& error)
+        {
+            outcome = {StorageFailure::Failed, error.what(), error.code()};
+        }
+        catch (std::system_error const& error)
+        {
+            auto const& code = error.code();
+            outcome = {StorageFailure::Failed, error.what(),
+                {code.value(), code.category() == std::generic_category() ?
+                    libtorrent::generic_category() : libtorrent::system_category()}};
+        }
         catch (std::exception const& error)
         {
             outcome = {StorageFailure::Failed, error.what()};

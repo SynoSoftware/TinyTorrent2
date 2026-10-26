@@ -3,6 +3,7 @@
 #include "Resources.h"
 #include <algorithm>
 #include <shellapi.h>
+#include <utility>
 
 namespace tt::desktop
 {
@@ -111,11 +112,36 @@ bool Toasts::IsOn(ToastKind kind) const
 void Toasts::Queue(Toast toast)
 {
     auto kind = toast.kind;
+    auto key = std::make_pair(kind, toast.condition ? toast.condition->key : std::string());
+    if (toast.condition && toast.condition->change != ProblemChange::Raised)
+    {
+        auto pending = batches_.find(key);
+        if (toast.condition->change == ProblemChange::Resolved)
+        {
+            batches_.erase(key);
+            if (shownCondition_ == toast.condition->key)
+            {
+                popup_.Close();
+                shownCondition_.reset();
+            }
+        }
+        else if (pending != batches_.end())
+        {
+            toast.condition->change = ProblemChange::Raised;
+            pending->second.first = std::move(toast);
+            return;
+        }
+        else if (shownCondition_ == toast.condition->key)
+            popup_.Update(Problems(toast, 1));
+        if (commands_.window)
+            commands_.window(toast);
+        return;
+    }
     if (!IsOn(kind))
     {
         return;
     }
-    if (UsesWindow(kind) && commands_.window && commands_.window(toast))
+    if (kind == ToastKind::Completed && commands_.window && commands_.window(toast))
     {
         return;
     }
@@ -131,10 +157,17 @@ void Toasts::Queue(Toast toast)
         ShowBackground();
         return;
     }
-    // One batch per kind bounds pending context while an open menu keeps its
-    // popup unchanged. Different notification switches never share a batch.
-    auto [entry, inserted] = batches_.try_emplace(kind, Batch{std::move(toast), 1, GetTickCount64() + delay});
-    if (!inserted && kind != ToastKind::MissingProgram)
+    if (!toast.condition && !batches_.contains(key) &&
+        std::count_if(batches_.begin(), batches_.end(), [](auto const& batch)
+            { return !batch.second.first.condition; }) >= Toast::limit)
+        return;
+    auto count = toast.count;
+    auto [entry, inserted] = batches_.try_emplace(std::move(key), Batch{std::move(toast), 1, GetTickCount64() + delay});
+    if (!inserted && entry->second.first.condition)
+    {
+        entry->second.first.count = count;
+    }
+    else if (!inserted && kind != ToastKind::MissingProgram)
     {
         ++entry->second.count;
     }
@@ -176,6 +209,23 @@ void Toasts::Report(Failure failure)
 
 void Toasts::Notify()
 {
+    // Window delivery shares the burst policy but not the desktop's focus/DND gate.
+    for (auto next = batches_.begin(); next != batches_.end();)
+    {
+        auto& batch = next->second;
+        if (!IsProblem(batch.first.kind) || GetTickCount64() < batch.due || !commands_.window)
+        {
+            ++next;
+            continue;
+        }
+        auto toast = batch.first;
+        if (!toast.condition)
+            toast.count = batch.count;
+        if (!IsOn(toast.kind) || commands_.window(toast))
+            next = batches_.erase(next);
+        else
+            ++next;
+    }
     // Let the displayed popup finish its lifetime, including hover and menu
     // interaction, before showing another.
     if (popup_.IsOpen())
@@ -217,6 +267,8 @@ void Toasts::Notify()
     if (IsProblem(kind))
     {
         Show(Problems(batch.first, batch.count), Switch(kind));
+        if (batch.first.condition)
+            shownCondition_ = batch.first.condition->key;
     }
     else if (batch.count == 1)
     {
@@ -231,6 +283,7 @@ void Toasts::Notify()
 // Selecting the message opens the window, where the person can act on it.
 void Toasts::ShowFailure(Failure failure)
 {
+    shownCondition_.reset();
     shownFailure_ = failure;
     popup_.Show({.title = failure.title.value_or(strings_.Text("notification", "failure")),
         .body = ErrorText(failure.code), .select = failure.opens ? commands_.open : nullptr,
@@ -248,6 +301,7 @@ void Toasts::Ask(Popup::Prompt prompt)
         failures_.insert(failures_.begin(), std::move(*shownFailure_));
     }
     shownFailure_.reset();
+    shownCondition_.reset();
     popup_.Ask(std::move(prompt));
 }
 
@@ -264,6 +318,16 @@ Popup::Content Toasts::Message(Toast const& toast) const
         content.body = strings_.Format("notification", toast.count > 1 ? "missing_programs" : "missing_program",
             {Wide(toast.name), Strings::Number(toast.count - 1)});
     }
+    else if (toast.kind == ToastKind::Error && toast.code == "download_location_unavailable")
+    {
+        content.title = strings_.Text("notification", "location_unavailable");
+        content.body = strings_.Format("notification", toast.count == 1 ? "location_torrents_one" : "location_torrents_other",
+            {Strings::Number(toast.count)});
+        if (!toast.detail.empty())
+            content.body = ErrorText(toast.detail) + L"\n" + content.body;
+        content.location = Popup::Location{strings_.Text("notification", "download_folder"), Wide(toast.folder)};
+        content.actions = {OpenFolder(strings_, Wide(toast.folder), strings_.Text("notification", "files_folder_tip"))};
+    }
     // The work waits until the person answers, so the notice stays.
     else if (toast.kind == ToastKind::Unfinished)
     {
@@ -274,8 +338,14 @@ Popup::Content Toasts::Message(Toast const& toast) const
     else
     {
         content.title = strings_.Text("notification", ToString(toast.kind));
+        if (toast.kind == ToastKind::Error && (toast.code == "torrent_error" ||
+            toast.code == "download_path_missing" || toast.code == "download_path_invalid" ||
+            toast.code == "download_path_unavailable" || toast.code == "disk_full" ||
+            toast.code == "drive_stalled" || toast.code == "alias_conflict"))
+            content.title = strings_.Text("notification", "torrent_stopped");
         content.body = Wide(toast.name);
-        auto problem = ErrorText(toast.code, !toast.detail.empty());
+        auto problem = toast.code == "torrent_error" && !toast.detail.empty() ?
+            std::wstring() : ErrorText(toast.code, !toast.detail.empty());
         if (!toast.detail.empty())
         {
             if (!problem.empty())
@@ -292,7 +362,24 @@ Popup::Content Toasts::Message(Toast const& toast) const
             }
             content.body += problem;
         }
-        if (!toast.folder.empty())
+        if (toast.kind == ToastKind::Error && !toast.torrentId.empty())
+        {
+            auto folder = commands_.folder(toast.torrentId);
+            if (!folder.empty())
+                content.location = Popup::Location{strings_.Text("notification", "download_folder"), Wide(folder)};
+            content.actions.push_back({.glyph = L'\uE106', .label = strings_.Text("notification", "show_torrent"),
+                .tooltip = strings_.Text("notification", "show_torrent_tip"), .run = content.select,
+                .closes = false, .automationId = L"ShowTorrent"});
+            content.actions.push_back({.glyph = L'\uE247', .label = strings_.Text("notification", "open_folder"),
+                .tooltip = strings_.Text("notification", "files_folder_tip"),
+                .run = [this, id = toast.torrentId]
+                {
+                    auto folder = commands_.folder(id);
+                    if (!folder.empty())
+                        ShowFolder(Wide(folder));
+                }, .closes = false, .automationId = L"OpenFolder"});
+        }
+        else if (!toast.folder.empty())
         {
             content.actions = {
                 OpenFolder(strings_, Wide(toast.folder), strings_.Text("notification", "files_folder_tip"))};
@@ -317,6 +404,7 @@ Popup::Content Toasts::Problems(Toast const& first, unsigned count) const
     {
         content.title = strings_.Format("notification", "failures", {Strings::Number(count)});
         content.select = commands_.open;
+        content.location.reset();
         content.actions.clear();
     }
     return content;
@@ -332,7 +420,7 @@ std::wstring Toasts::ErrorText(std::string const& code, bool explained) const
 }
 
 // A completed torrent opens its folder; a missing program opens its Settings
-// card; any other toast opens the window.
+// card; a torrent problem opens that torrent; other toasts open the window.
 std::function<void()> Toasts::Selection(Toast const& toast) const
 {
     if (toast.kind == ToastKind::MissingProgram)
@@ -353,6 +441,10 @@ std::function<void()> Toasts::Selection(Toast const& toast) const
                 ShowFolder(Wide(folder));
             }
         };
+    }
+    if (toast.kind == ToastKind::Error && !toast.torrentId.empty())
+    {
+        return [this, id = toast.torrentId] { commands_.openTorrent(id); };
     }
     return commands_.open;
 }
@@ -398,6 +490,7 @@ void Toasts::ShowBackground()
 void Toasts::Show(Popup::Content content, std::optional<ToastSwitch> toasts)
 {
     shownFailure_.reset();
+    shownCondition_.reset();
     if (toasts)
     {
         content.menuTitle = strings_.Text("notification", "fewer");

@@ -121,6 +121,7 @@
     <ClCompile Include="Engine\Edits.cpp" />
     <ClCompile Include="SpeedHistory.cpp" />
     <ClCompile Include="Engine\Files.cpp" />
+    <ClCompile Include="Engine\Storage.cpp" />
     <ClCompile Include="Engine\Move.cpp" />
     <ClCompile Include="Engine\Turns.cpp" />
     <ClCompile Include="Engine\Removal.cpp" />

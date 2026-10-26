@@ -60,13 +60,34 @@ window:
 - **Added.** A direct addition, such as a double-click on a torrent file, added
   the torrent.
 - **Problems.** A torrent stopped by an error, such as a full disk or a missing
-  folder, with its name and the reason; a direct addition that could not be
+  folder, with its name, reason and current download folder, plus Show torrent
+  and Open folder. Show torrent opens or raises the product window and selects
+  that torrent; Open folder resolves its location when invoked. Missing or
+  invalid paths, known drive/share disconnections and full disks use typed
+  native error codes. Notify once per drive root or UNC share for these
+  conditions, even across different folders and bursts. The warning gives the
+  cause, root and affected count, without listing torrent names or offering
+  Show torrent. Healthy seeds on a full drive remain unaffected. File-specific
+  failures stay separate. Open folder targets the root; each affected row
+  retains its own reason. Retry permission from a readable folder does not
+  resolve the warning: relevant transfer, check or filename work must succeed.
+  Transfer evidence compares samples taken after the retry, so delayed reports
+  of earlier activity cannot resolve it. A completed download whose payload
+  reached disk also resolves its old storage incident.
+  Counts and reasons update quietly; resolution removes pending and visible
+  warnings without success toasts. A later failure can then notify again.
+  A direct addition that could not be
   added, with the reason, because the person believes it is downloading; and a
   file deletion that fails, fully or in part, which is also written to the log,
   because the torrent has already left the list. Its notification offers Open
   folder, where the person deletes the rest.
 
-Coalesce a burst instead of flooding the desktop. Never execute a downloaded
+Coalesce problem bursts before routing them to either the desktop or the open
+window. Storage changes coalesce by live condition identity and survive event
+queue pressure; their retained context is bounded by the actual incidents,
+while disposable event batches keep their fixed bound. Updated/resolved storage conditions do not announce again or recreate
+a dismissed warning. Keep failures of explicit user commands separate from
+background conditions so those instructions survive. Never execute a downloaded
 file. Keep only bounded pending notification context, identified by durable
 torrent identity rather than a stale path. While the window is open, problems
 appear in it instead, following

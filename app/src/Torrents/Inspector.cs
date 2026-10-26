@@ -105,7 +105,8 @@ public sealed partial class Inspector : INotifyPropertyChanged
     public int PieceCount { get; private set; }
     public bool? IsPrivate { get; private set; }
     public bool HasMetadata => IsPrivate.HasValue;
-    public bool IsIndeterminate => !HasMetadata;
+    public bool IsIndeterminate => !HasMetadata && _target is { StatusCode: not "error" };
+    public bool ShowsStatus => _target is { StatusCode: not "error" };
     public string ProgressText =>
         HasMetadata ? _target?.ProgressText ?? string.Empty : string.Empty;
     public string Summary

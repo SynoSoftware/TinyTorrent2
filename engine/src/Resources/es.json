@@ -37,6 +37,9 @@
     "gib": "{0} GiB/s"
   },
   "notification": {
+    "location_unavailable": "Ubicación de descarga no disponible",
+    "location_torrents_one": "{0} torrent no puede acceder a su ubicación de descarga.",
+    "location_torrents_other": "{0} torrents no pueden acceder a su ubicación de descarga.",
     "completed": "Descarga terminada",
     "added": "Torrent añadido",
     "duplicate": "Torrent ya añadido",
@@ -72,7 +75,11 @@
     "open_folder_tip": "Abrir la carpeta con los archivos del programa TinyTorrent",
     "force_exit": "Forzar salida",
     "force_exit_tip": "Salir ahora sin guardar los últimos cambios",
-    "files_folder_tip": "Abrir la carpeta que contiene los archivos"
+    "files_folder_tip": "Abrir la carpeta que contiene los archivos",
+    "show_torrent": "Ver torrent",
+    "show_torrent_tip": "Mostrar este torrent en la lista de torrents",
+    "download_folder": "Carpeta de descarga",
+    "torrent_stopped": "Torrent detenido"
   },
   "power": {
     "transfers": "TinyTorrent está transfiriendo archivos."
@@ -107,7 +114,11 @@
     "destination_exists": "Hay archivos en ambas ubicaciones. Elige otro destino para conservar ambas copias.",
     "same_location": "Los archivos ya están ahí, en otra ruta.",
     "alias_conflict": "Otros torrents usan estos archivos con nombres diferentes. Resuelve los nombres de archivo antes de continuar.",
-    "torrent_error": "El torrent se detuvo debido a un error.",
+    "torrent_error": "No hay más detalles del error.",
+    "download_path_missing": "No se encontró la ruta de descarga.",
+    "download_path_invalid": "La ruta de descarga no es válida.",
+    "download_path_unavailable": "La unidad o el recurso de red no responde.",
+    "disk_full": "No queda espacio libre en la unidad de destino.",
     "storage_failed": "No se pudo leer o guardar el estado de las descargas. Comprueba la carpeta de datos del motor y vuelve a intentarlo.",
     "storage_overloaded": "TinyTorrent está guardando el estado de las descargas. Vuelve a intentarlo en unos instantes.",
     "overloaded": "TinyTorrent está ocupado. Vuelve a intentarlo en unos instantes.",

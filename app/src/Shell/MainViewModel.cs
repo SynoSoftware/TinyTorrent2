@@ -665,6 +665,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 _dispatcher.TryEnqueue(Notifications.ClearError);
         };
         _client.Toast += toast => _dispatcher.TryEnqueue(() => Notifications.Receive(toast));
+        _client.TorrentRequested += torrentId =>
+            _dispatcher.TryEnqueue(() =>
+            {
+                if (!_closed)
+                    Reveal([torrentId]);
+            });
         // Every card the engine opens is on the General page.
         _client.SettingsRequested += setting =>
             _dispatcher.TryEnqueue(() =>

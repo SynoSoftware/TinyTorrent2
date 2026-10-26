@@ -634,7 +634,13 @@
     "invalid_trackers": "Saisissez une URL de tracker HTTP, HTTPS ou UDP par ligne.",
     "unknown": "Impossible de terminer l’opération.",
     "detail": "{0}\n{1}",
-    "torrent_error": "Le torrent s’est arrêté à la suite d’une erreur.",
+    "torrent_error": "Aucun autre détail n’est disponible sur l’erreur.",
+    "download_path_missing": "Le chemin de téléchargement est introuvable.",
+    "download_path_invalid": "Le chemin de téléchargement n’est pas valide.",
+    "download_path_unavailable": "Le lecteur ou le partage réseau ne répond pas.",
+    "disk_full": "Il n’y a plus d’espace libre sur le lecteur de destination.",
+    "line": "{0} · {1}",
+    "torrent_stopped": "Torrent arrêté : {0}",
     "add_failed": "Impossible d’ajouter le torrent.",
     "watch_limit": "Ce dossier surveillé contient plus de 10 000 fichiers torrent. Supprimez les anciens fichiers sources ou choisissez un dossier plus petit.",
     "delete_failed": "Impossible de supprimer certains fichiers téléchargés.",
@@ -725,6 +731,25 @@
   "outcomes": {
     "accepted": "{0} : demande acceptée",
     "queue": "Ordre de la file d’attente"
+  },
+  "torrent_errors": {
+    "unknown": "Ce torrent nécessite votre attention.",
+    "move_failed": "Échec du déplacement.",
+    "move_interrupted": "Déplacement interrompu : Choisissez le dossier contenant les fichiers et réessayez le déplacement.",
+    "move_unfinished": "Déplacement en pause : Choisissez si vous souhaitez poursuivre les tâches inachevées.",
+    "destination_exists": "Échec du déplacement : La destination contient un fichier ou un dossier en conflit.",
+    "same_location": "Déplacement ignoré : Les deux chemins désignent les mêmes fichiers.",
+    "alias_conflict": "Torrent arrêté : Ce torrent entre en conflit avec un autre téléchargement.",
+    "storage_failed": "L’état du téléchargement n’a pas pu être mis à jour.",
+    "storage_overloaded": "L’état du téléchargement n’a pas pu être mis à jour : TinyTorrent est occupé.",
+    "checkpoint_failed": "La progression du téléchargement n’a pas pu être enregistrée.",
+    "drive_stalled": "Torrent arrêté : Le lecteur ne répond plus.",
+    "invalid_destination": "Le déplacement n’a pas pu démarrer : Choisissez un dossier de téléchargement existant et accessible en écriture.",
+    "shared_files": "Le déplacement n’a pas pu démarrer : Incluez les autres torrents utilisant ces fichiers.",
+    "destination_conflict": "Le déplacement n’a pas pu démarrer : Les chemins de destination des torrents sélectionnés sont en conflit.",
+    "destination_in_use": "Le déplacement n’a pas pu démarrer : Un autre torrent utilise des fichiers à destination.",
+    "overloaded": "Le déplacement n’a pas pu démarrer : TinyTorrent est occupé.",
+    "metadata_unavailable": "Déplacement en attente : Les métadonnées du torrent ne sont pas encore disponibles."
   },
   "inspector": {
     "close": "Fermer l’inspecteur",
@@ -1419,6 +1444,9 @@
     "start_in_tray": "Démarrer dans la zone de notification"
   },
   "notifications": {
+    "location_unavailable": "Emplacement de téléchargement indisponible",
+    "location_torrents_one": "{0} torrent ne peut pas accéder à son emplacement de téléchargement.",
+    "location_torrents_other": "{0} torrents ne peuvent pas accéder à leur emplacement de téléchargement.",
     "resume": "Reprendre",
     "resume_all_tip": "Reprendre tous les transferts. Les torrents arrêtés restent arrêtés.",
     "resume_schedule_tip": "Reprendre tous les transferts jusqu’au prochain changement de la planification. Les torrents arrêtés restent arrêtés.",
@@ -1489,7 +1517,9 @@
     "failed_subtitle_scan": "Échec de l’analyse des sous-titres",
     "failed_subtitle_recheck": "Échec de la nouvelle vérification",
     "open_folder_tip": "Ouvrir le dossier de {0}",
-    "files_folder_tip": "Ouvrir le dossier contenant les fichiers"
+    "files_folder_tip": "Ouvrir le dossier contenant les fichiers",
+    "show_torrent": "Voir le torrent",
+    "show_torrent_tip": "Afficher ce torrent dans la liste des torrents"
   },
   "about": {
     "title": "À propos",

@@ -33,6 +33,9 @@
         <VisualState x:Name="Transferring" />
         <VisualState x:Name="Error">
           <VisualState.Setters>
+            <Setter Target="Summary.(Grid.ColumnSpan)" Value="3" />
+            <Setter Target="DownloadRate.Visibility" Value="Collapsed" />
+            <Setter Target="UploadRate.Visibility" Value="Collapsed" />
             <Setter
               Target="Summary.Foreground"
               Value="{ThemeResource SystemFillColorCriticalBrush}"
@@ -223,6 +226,7 @@
                   </Grid.ColumnDefinitions>
                   <TextBlock
                     Text="{x:Bind Model.Target.Status, Mode=OneWay}"
+                    Visibility="{x:Bind Model.ShowsStatus, Mode=OneWay}"
                     Style="{StaticResource TinyTorrentSurfaceTitleTextStyle}"
                     IsTextSelectionEnabled="True"
                     ToolTipService.ToolTip="{x:Bind Model.Target.Status, Mode=OneWay}"
@@ -248,13 +252,13 @@
                     <ColumnDefinition Width="Auto" MinWidth="112" />
                     <ColumnDefinition Width="Auto" MinWidth="112" />
                   </Grid.ColumnDefinitions>
-                  <!-- An error adds its file on a second line, which tight line
-                       bounds would draw over the first. -->
                   <TextBlock
                     x:Name="Summary"
                     Text="{x:Bind Model.Summary, Mode=OneWay}"
                     Style="{StaticResource InspectorValueStyle}"
                     TextLineBounds="Full"
+                    TextTrimming="CharacterEllipsis"
+                    TextWrapping="NoWrap"
                     VerticalAlignment="Top"
                     ToolTipService.ToolTip="{x:Bind Model.Summary, Mode=OneWay}"
                   />

@@ -246,6 +246,14 @@ enum class NamePhase
     Ready
 };
 
+enum class DiskPhase
+{
+    Releasing,
+    Waiting,
+    Probing,
+    Reloading
+};
+
 // A finished download waits for libtorrent to write its data to disk, then
 // for its files to settle in their final names and folder, before the
 // Completed toast.
@@ -495,6 +503,10 @@ enum class ProblemKind
     SameLocation,
     AliasConflict,
     TorrentError,
+    DownloadPathMissing,
+    DownloadPathInvalid,
+    DownloadPathUnavailable,
+    DiskFull,
     StorageFailed,
     StorageOverloaded,
     CheckpointFailed,
@@ -543,6 +555,13 @@ enum class StorageFailure
     Failed,
     // The store refused the work because too many jobs were waiting.
     Overloaded
+};
+
+enum class ProblemChange
+{
+    Raised,
+    Updated,
+    Resolved
 };
 
 enum class ToastKind
@@ -615,6 +634,12 @@ enum class WindowWait
     Confirmation,
     // The window ending for Exit.
     Closing
+};
+
+enum class WindowTarget
+{
+    Settings,
+    Torrent
 };
 
 enum class TrayClick

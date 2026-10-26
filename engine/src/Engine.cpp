@@ -240,7 +240,14 @@ void Engine::Add(std::string const& source, std::function<void(Outcome, Added)> 
     state_->AddSource(source, std::move(completion));
 }
 Activity Engine::Activity() const { return state_->Activity(); }
-std::vector<Toast> Engine::TakeToasts() { return std::exchange(state_->toasts, {}); }
+std::vector<Toast> Engine::TakeToasts()
+{
+    auto toasts = std::exchange(state_->toasts, {});
+    for (auto& [key, toast] : state_->problemChanges)
+        toasts.push_back(std::move(toast));
+    state_->problemChanges.clear();
+    return toasts;
+}
 std::string Engine::Name(std::string const& torrentId) const
 {
     auto found = state_->torrents.find(torrentId);

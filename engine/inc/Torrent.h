@@ -11,6 +11,7 @@
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <future>
 #include <map>
 #include <optional>
 #include <set>
@@ -34,7 +35,10 @@ struct Problem
     // failure reports as Overloaded.
     static Problem From(Outcome const& failure, ProblemKind kind);
     static Problem From(StorageOutcome const& failure, ProblemKind kind);
+    static Problem From(lt::error_code const& error);
     char const* Code() const;
+    bool IsStorage() const;
+    bool operator==(Problem const&) const = default;
 };
 
 char const* ToString(ProblemKind kind);
@@ -189,6 +193,7 @@ public:
     // Returns true when the written download now settles its files.
     bool Flushed();
     void Rechecked();
+    void Replaced();
     // Alerts were dropped: it needs a fresh sample, and a lost state change
     // leaves later file completions without a known cause.
     void Lost(bool stateChanges);
@@ -215,6 +220,8 @@ private:
     bool requested_ = false;
     // Payload arrived since the download began.
     bool received_ = false;
+    // A replacement's session byte counter distinguishes new payload from a recheck.
+    bool replaced_ = false;
     // The latest state change, the cause of the file completions after it.
     std::optional<State> origin_;
 };
@@ -223,6 +230,23 @@ private:
 // about it, and what the engine knows about its errors and checkpoints.
 struct Torrent
 {
+    struct Recovery
+    {
+        DiskPhase phase = DiskPhase::Releasing;
+        std::shared_future<void> released;
+        lt::error_code cause;
+        bool retryRequested = false;
+    };
+
+    // A storage incident survives retry admission and other row-error precedence.
+    struct Fault
+    {
+        Problem problem;
+        std::string folder;
+        lt::operation_t operation;
+        bool seeding;
+    };
+
     std::string torrentId;
     lt::torrent_handle handle;
     Facts facts;
@@ -236,6 +260,7 @@ struct Torrent
     // The add/resume list applies until the person chooses a replacement.
     std::vector<lt::announce_entry> sourceTrackers;
     lt::torrent_status status;
+    lt::time_point statusAt{};
     QueueReport queueReport = QueueReport::Reported;
     SpeedHistory history;
     CheckpointPhase checkpointPhase = CheckpointPhase::Idle;
@@ -246,9 +271,13 @@ struct Torrent
     std::optional<Problem> checkpointError;
     std::optional<Problem> hashError;
     std::string conflict;
-    std::string diskError;
-    std::string notifiedError;
+    lt::error_code diskError;
+    lt::time_point diskClearedAt{};
+    std::shared_ptr<Recovery> recovery;
+    std::optional<Problem> notifiedError;
+    std::optional<Fault> fault;
     NamePhase namePhase = NamePhase::Pending;
+    std::optional<Problem> nameError;
     // Verification and file choices that wait until the files are not busy.
     bool needsRecheck = false;
     bool prioritiesPending = false;
@@ -264,8 +293,7 @@ struct Torrent
     // from a status that shows the check running until libtorrent reports
     // that its paused check has no read left, or until the check ends.
     CheckReads checkReads = CheckReads::None;
-    // The check stopped making progress, so the engine keeps the torrent
-    // stopped until the person starts or verifies it.
+    // A stalled check keeps its reason until storage recovery permits retry.
     std::optional<Problem> checkError;
     std::set<lt::file_index_t> completedFiles;
     bool filesPending = false;
@@ -300,6 +328,7 @@ struct Torrent
     std::string Folder() const;
     std::vector<std::filesystem::path> Paths(bool logical = false) const;
     std::optional<Problem> Error() const;
+    std::optional<Problem> StorageProblem() const;
     std::optional<Problem> Diagnose() const;
     // A move waits for its turn, or for the person's answer about the work
     // that the last end left unfinished, with no problem that delays it.
@@ -326,7 +355,7 @@ struct Torrent
     Status ClassifyTransfer(bool sessionPaused) const;
     bool IsChanged() const;
     // Takes the newest status, and remembers when it shows new payload.
-    void Update(lt::torrent_status latest);
+    void Update(lt::torrent_status latest, lt::time_point at);
     // The torrent's facts with its General and Files detail.
     Json Describe(Detail const& detail, std::shared_ptr<lt::torrent_info const> const& metadata) const;
     Json Describe(TorrentView view, bool includeFiles, Detail const& detail,
@@ -339,6 +368,7 @@ struct Torrent
         std::shared_ptr<lt::torrent_info const> const& metadata) const;
     std::vector<lt::announce_entry> const& Trackers() const;
     void ApplyIntent();
+    void ClearDiskError();
     // libtorrent sets piece priorities again from the file priorities each
     // time those change, so this runs again after each change settles.
     void PrioritizePieces(std::vector<lt::download_priority_t> const& priorities) const;

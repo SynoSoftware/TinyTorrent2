@@ -384,15 +384,26 @@ window rather than a path a pipe peer reports. Requests are
 notifications are `{type:"activate"}`, `{type:"close"}`, `{type:"confirm_exit"}`, and `{type:"activations"}`.
 `{type:"settings",setting}` opens Settings at that card of the General page and
 highlights it, as search does. The pipe
+also sends `{type:"torrent",torrent_id}` to select and reveal a notification's
+torrent, clearing torrent filters through the existing reveal owner. A pending
+destination waits for the window's ready handshake when the window starts.
+The pipe
 passes the engine each request's connection beside the request, so no request field
 can claim another connection's previews.
 
-Toasts use `{type:"toast",kind,torrent_id,name,detail,code,folder,count,switch}` on that
+Toasts use `{type:"toast",kind,torrent_id,name,detail,code,folder,count,switch,condition}` on that
 same connection while the window is open. `switch` names the Settings switch
 that turns the toast off: `finished`, `added`, `problems` or `background`, or
 null when none does. The window's More menu sends it back in `turn_off`, so
-the engine alone decides which switch a toast has. `count` is one: a toast queued in
-the tray stays there, and the window never receives a tray burst. The window
+the engine alone decides which switch a toast has. `condition` is null for an
+event, or `{key,change}` for a live storage problem. The stable engine-owned key
+identifies it; `change` is `raised`, `updated` or `resolved`. Updates change an
+existing notice quietly and do not recreate a dismissed one; resolution removes
+it without announcement. Grouped location notices use
+`code:"download_location_unavailable"`, with the typed cause code in `detail`.
+`count` includes the affected torrents or coalesced problem events. Problem
+bursts coalesce before window/desktop routing. A completion queued for the tray
+stays there. The window
 keeps completion feedback bounded and uses the current
 torrent identity to resolve Open folder. Windows delivery is reserved for a
 closed window and obeys the corresponding notification preference.

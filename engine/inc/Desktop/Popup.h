@@ -110,6 +110,8 @@ public:
     // Replaces the shown popup with a toast. Only an interactive toast takes
     // the focus.
     void Show(Content toast);
+    // Updates a shown toast without another announcement or lifetime restart.
+    void Update(Content const& toast);
     // The first Ask shows the prompt, requests the foreground and focuses the
     // answer when it is enabled. While the prompt is open, asking again
     // changes its text and buttons in place, without requesting the

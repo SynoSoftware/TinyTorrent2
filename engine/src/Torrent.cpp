@@ -70,6 +70,52 @@ char const* Problem::Code() const
     return refusal ? ToString(*refusal) : ToString(kind);
 }
 
+Problem Problem::From(lt::error_code const& error)
+{
+    if (error == boost::system::errc::no_such_file_or_directory)
+        return {ProblemKind::DownloadPathMissing};
+    if (error == boost::system::errc::no_space_on_device)
+        return {ProblemKind::DiskFull};
+    if (error == boost::system::errc::network_down || error == boost::system::errc::network_unreachable ||
+        error == boost::system::errc::host_unreachable || error == boost::system::errc::not_connected)
+        return {ProblemKind::DownloadPathUnavailable};
+    if (error.category() == lt::system_category())
+    {
+        switch (error.value())
+        {
+        case ERROR_INVALID_NAME:
+        case ERROR_BAD_PATHNAME:
+        case ERROR_DIRECTORY:
+        case ERROR_FILENAME_EXCED_RANGE:
+            return {ProblemKind::DownloadPathInvalid};
+        case ERROR_DISK_FULL:
+        case ERROR_HANDLE_DISK_FULL:
+            return {ProblemKind::DiskFull};
+        case ERROR_NOT_READY:
+        case ERROR_BAD_NETPATH:
+        case ERROR_NETWORK_BUSY:
+        case ERROR_DEV_NOT_EXIST:
+        case ERROR_BAD_NET_RESP:
+        case ERROR_UNEXP_NET_ERR:
+        case ERROR_NETNAME_DELETED:
+        case ERROR_NETWORK_ACCESS_DENIED:
+        case ERROR_BAD_NET_NAME:
+        case ERROR_CONNECTION_UNAVAIL:
+        case ERROR_NO_NET_OR_BAD_PATH:
+        case ERROR_NO_NETWORK:
+            return {ProblemKind::DownloadPathUnavailable};
+        }
+    }
+    return {ProblemKind::TorrentError, error.message()};
+}
+
+bool Problem::IsStorage() const
+{
+    return kind == ProblemKind::TorrentError || kind == ProblemKind::DownloadPathMissing ||
+        kind == ProblemKind::DownloadPathInvalid || kind == ProblemKind::DownloadPathUnavailable ||
+        kind == ProblemKind::DiskFull || kind == ProblemKind::DriveStalled;
+}
+
 char const* ToString(ProblemKind kind)
 {
     switch (kind)
@@ -81,6 +127,10 @@ char const* ToString(ProblemKind kind)
     case ProblemKind::SameLocation: return "same_location";
     case ProblemKind::AliasConflict: return "alias_conflict";
     case ProblemKind::TorrentError: return "torrent_error";
+    case ProblemKind::DownloadPathMissing: return "download_path_missing";
+    case ProblemKind::DownloadPathInvalid: return "download_path_invalid";
+    case ProblemKind::DownloadPathUnavailable: return "download_path_unavailable";
+    case ProblemKind::DiskFull: return "disk_full";
     case ProblemKind::StorageFailed: return "storage_failed";
     case ProblemKind::StorageOverloaded: return "storage_overloaded";
     case ProblemKind::CheckpointFailed: return "checkpoint_failed";
@@ -442,10 +492,8 @@ std::optional<Problem> Torrent::Error() const
     {
         return moveError;
     }
-    if (checkError)
-    {
-        return checkError;
-    }
+    if (checkError || nameError)
+        return StorageProblem();
     // A waiting move the person asked for replaces the interrupted one.
     if (!moving && !waitingMove && facts.marker)
     {
@@ -456,13 +504,28 @@ std::optional<Problem> Torrent::Error() const
     {
         return Problem{ProblemKind::AliasConflict, conflict};
     }
+    return StorageProblem();
+}
+
+std::optional<Problem> Torrent::StorageProblem() const
+{
+    if (checkError)
+        return checkError;
+    if (nameError)
+        return nameError;
     if (status.errc)
     {
-        return Problem{ProblemKind::TorrentError, status.errc.message()};
+        return Problem::From(status.errc);
     }
+    if (diskError)
+    {
+        return Problem::From(diskError);
+    }
+    if (recovery && recovery->cause)
+        return Problem::From(recovery->cause);
     if (bool(status.flags & lt::torrent_flags::upload_mode) && !status.is_seeding)
     {
-        return Problem{ProblemKind::TorrentError, diskError};
+        return Problem{ProblemKind::TorrentError};
     }
     return std::nullopt;
 }
@@ -488,13 +551,16 @@ bool Torrent::MoveWaits() const
 
 bool Torrent::FilesBusy() const
 {
-    return moving || namePhase == NamePhase::Preparing || namePhase == NamePhase::Recovering ||
+    return (recovery && (recovery->phase == DiskPhase::Reloading ||
+        (recovery->phase == DiskPhase::Releasing &&
+        recovery->released.wait_for(std::chrono::seconds(0)) != std::future_status::ready))) ||
+        moving || namePhase == NamePhase::Preparing || namePhase == NamePhase::Recovering ||
         !renaming.empty() || !marking.empty();
 }
 
 bool Torrent::IsHeld(bool hasMetadata) const
 {
-    return !conflict.empty() || moving || facts.marker || cacheWrite == CacheWrite::Flushing || CheckWaits() ||
+    return recovery || !conflict.empty() || moving || facts.marker || cacheWrite == CacheWrite::Flushing || CheckWaits() ||
         checkError || unfinished == TaskKind::Check || (hasMetadata && namePhase != NamePhase::Ready);
 }
 
@@ -588,10 +654,30 @@ bool Torrent::IsChanged() const
     return status.all_time_upload != savedUploaded || bool(status.need_save_resume_data & dirty);
 }
 
-void Torrent::Update(lt::torrent_status latest)
+void Torrent::Update(lt::torrent_status latest, lt::time_point at)
 {
+    // A retry alone proves no payload I/O; compare only samples taken after it.
+    if (fault && statusAt >= diskClearedAt && at >= statusAt &&
+        !recovery && !nameError && !latest.errc && !diskError &&
+        !(latest.flags & lt::torrent_flags::upload_mode))
+    {
+        bool reading = fault->operation == lt::operation_t::file_read ||
+            fault->operation == lt::operation_t::partfile_read ||
+            (fault->seeding && (fault->operation == lt::operation_t::unknown ||
+                fault->operation == lt::operation_t::file_open));
+        bool written = !reading && !Checks(status.state) && !Checks(latest.state) &&
+            latest.total_wanted_done > status.total_wanted_done && latest.total_done > status.total_done;
+        bool checked = Checks(status.state) && !Checks(latest.state) && latest.is_finished &&
+            latest.total_wanted_done > 0;
+        bool read = reading && fault->problem.kind != ProblemKind::DiskFull &&
+            (latest.total_payload_upload > status.total_payload_upload ||
+                (Checks(latest.state) && latest.progress_ppm > status.progress_ppm));
+        if (written || read || checked)
+            fault.reset();
+    }
     completion.Sampled(status, latest);
     status = std::move(latest);
+    statusAt = at;
 }
 
 bool Completion::Changed(State state, State previous)
@@ -621,6 +707,7 @@ bool Completion::Changed(State state, State previous)
 
 void Completion::Sampled(lt::torrent_status const& previous, lt::torrent_status const& latest)
 {
+    received_ |= replaced_ && latest.total_payload_download > 0;
     received_ |= phase_ == CompletionPhase::Downloading &&
         latest.total_payload_download > previous.total_payload_download;
 }
@@ -628,6 +715,11 @@ void Completion::Sampled(lt::torrent_status const& previous, lt::torrent_status 
 bool Completion::Observed(lt::torrent_status const& previous, lt::torrent_status const& latest)
 {
     requested_ = false;
+    if (std::exchange(replaced_, false) && latest.total_payload_download > 0)
+    {
+        phase_ = CompletionPhase::Downloading;
+        received_ = true;
+    }
     bool checking = Checks(latest.state);
     if (phase_ == CompletionPhase::Checking && !checking)
         phase_ = latest.is_finished ? CompletionPhase::Checked : CompletionPhase::Idle;
@@ -674,6 +766,15 @@ bool Completion::Flushed()
 void Completion::Rechecked()
 {
     received_ = false;
+    replaced_ = false;
+}
+
+void Completion::Replaced()
+{
+    received_ = false;
+    replaced_ = true;
+    origin_.reset();
+    requested_ = true;
 }
 
 void Completion::Lost(bool stateChanges)
@@ -1210,6 +1311,22 @@ void Torrent::ApplyIntent()
         handle.resume();
     }
     unsaved = true;
+}
+
+void Torrent::ClearDiskError()
+{
+    if (recovery)
+    {
+        recovery->retryRequested = true;
+        return;
+    }
+    diskClearedAt = lt::clock_type::now();
+    if (!restore)
+    {
+        handle.clear_error();
+        handle.unset_flags(lt::torrent_flags::upload_mode);
+    }
+    diskError.clear();
 }
 
 // Each piece gets the highest priority of the wanted files it holds, as

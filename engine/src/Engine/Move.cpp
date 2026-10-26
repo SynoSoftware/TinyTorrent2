@@ -170,7 +170,7 @@ void Engine::State::RefuseMove(Torrent& torrent, Outcome const& outcome)
     torrent.moveError = Problem{ProblemKind::MoveFailed, outcome.detail, outcome.error};
     // A wait that now names another torrent is the same problem, so the
     // status update does not report it again.
-    torrent.notifiedError = outcome.detail;
+    torrent.notifiedError = torrent.moveError;
     if (!shown)
         Notify(ToastKind::Error, torrent, outcome.detail, torrent.moveError->Code());
 }
@@ -564,19 +564,13 @@ void Engine::State::FinishMove(lt::torrent_handle const& handle, std::string fai
 
 void Engine::State::ReloadMove(Move& moving)
 {
-    struct Reloaded
-    {
-        lt::torrent_handle handle;
-        lt::add_torrent_params params;
-        lt::torrent_status status;
-    };
     auto id = moving.ids.at(moving.current);
     auto handle = Working(id).handle;
-    auto resume = std::make_shared<lt::add_torrent_params>();
+    auto replacement = std::make_shared<Replacement>();
     moving.phase = MovePhase::Saving;
-    moving.worker->Run([this, handle, resume, pieces = *moving.pieces, logical = Working(id).Paths(true)]
+    moving.worker->Run([this, handle, replacement, pieces = *moving.pieces, logical = Working(id).Paths(true)]
     {
-        auto& params = *resume;
+        auto& params = replacement->params;
         params = handle.get_resume_data(lt::torrent_handle::save_info_dict);
         params.have_pieces = pieces;
         params.verified_pieces.clear();
@@ -597,55 +591,34 @@ void Engine::State::ReloadMove(Move& moving)
         }
         params.flags &= ~(lt::torrent_flags::seed_mode | lt::torrent_flags::auto_managed);
         params.flags |= lt::torrent_flags::paused | lt::torrent_flags::no_verify_files;
-        ReleaseFiles({handle});
-        session->remove_torrent(handle);
-        lt::error_code error;
-        auto replacement = session->add_torrent(params, error);
-        if (error)
-            throw lt::system_error(error);
-        auto status = replacement.status(routineQuery);
+        ReloadStorage(handle, *replacement);
         params.flags &= ~lt::torrent_flags::no_verify_files;
-        return Reloaded{replacement, std::move(params), std::move(status)};
-    }, [this, &moving, id, handle, resume](std::expected<Reloaded, StorageOutcome> loaded)
+    }, [this, &moving, id, handle, replacement](StorageOutcome outcome)
     {
-        if (!loaded)
+        if (outcome.failure)
         {
-            if (!handle.is_valid() && resume->ti)
+            if (replacement->removed)
             {
                 auto& torrent = Working(id);
                 handles.erase(handle);
                 seedQueries.erase(handle);
-                resume->save_path = torrent.facts.savePath;
-                resume->have_pieces.clear();
-                resume->flags &= ~lt::torrent_flags::no_verify_files;
-                torrent.restore = std::move(*resume);
+                auto& params = replacement->params;
+                params.save_path = torrent.facts.savePath;
+                params.have_pieces.clear();
+                params.flags &= ~lt::torrent_flags::no_verify_files;
+                torrent.restore = std::move(params);
                 torrent.pendingCheckpoint.reset();
                 torrent.checkpointPhase = CheckpointPhase::Idle;
             }
-            FailMove(moving, Problem::From(loaded.error(), ProblemKind::MoveInterrupted));
+            FailMove(moving, Problem::From(outcome, ProblemKind::MoveInterrupted));
             return;
         }
         auto& torrent = Working(id);
-        handles.erase(handle);
-        seedQueries.erase(handle);
-        torrent.handle = loaded->handle;
-        torrent.status = std::move(loaded->status);
-        torrent.queries.clear();
-        torrent.pendingCheckpoint.reset();
-        torrent.checkpointPhase = CheckpointPhase::Idle;
-        torrent.completion.Rechecked();
-        if (torrents.contains(id))
-            handles.emplace(torrent.handle, &torrent);
-        ApplyPolicy(torrent.handle);
-        if (torrent.facts.trackers)
-            torrent.handle.replace_trackers(*torrent.facts.trackers);
-        Invalidate(id);
+        ReplaceHandle(torrent, *replacement);
         torrent.ApplyIntent();
-        statusPending = true;
-        queuePending = true;
         // The writer queues this after older checkpoints. The old handle no
         // longer answers alerts, so no stale piece map can follow this one.
-        WriteResume(id, std::move(loaded->params), [this, &moving](StorageOutcome outcome)
+        WriteResume(id, std::move(replacement->params), [this, &moving](StorageOutcome outcome)
         {
             if (outcome.failure)
             {
@@ -843,11 +816,16 @@ void Engine::State::EndMove(Torrent& torrent, std::optional<Problem> problem)
     torrent.moveError = problem;
     if (!problem)
     {
+        if (torrent.fault && !SameFolder(torrent.fault->folder, torrent.facts.savePath))
+        {
+            torrent.fault.reset();
+            torrent.nameError.reset();
+        }
         ContinueNames();
         return;
     }
     torrent.ApplyIntent();
-    torrent.notifiedError = problem->detail;
+    torrent.notifiedError = problem;
     Notify(ToastKind::Error, torrent, problem->detail, problem->Code());
     log.Write("move", torrent.torrentId, ToString(problem->kind));
 }

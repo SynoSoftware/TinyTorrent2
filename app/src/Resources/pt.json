@@ -634,7 +634,13 @@
     "invalid_trackers": "Insira um endereço de rastreador HTTP, HTTPS ou UDP por linha.",
     "unknown": "Não foi possível concluir a operação.",
     "detail": "{0}\n{1}",
-    "torrent_error": "O torrent parou devido a um erro.",
+    "torrent_error": "Não há mais detalhes sobre o erro.",
+    "download_path_missing": "O caminho de download não foi encontrado.",
+    "download_path_invalid": "O caminho de download é inválido.",
+    "download_path_unavailable": "A unidade ou o compartilhamento de rede não está respondendo.",
+    "disk_full": "Não há espaço livre na unidade de destino.",
+    "line": "{0} · {1}",
+    "torrent_stopped": "Torrent parado: {0}",
     "add_failed": "Não foi possível adicionar o torrent.",
     "watch_limit": "Esta pasta monitorada contém mais de 10.000 arquivos torrent. Remova os arquivos de origem antigos ou escolha uma pasta menor.",
     "delete_failed": "Não foi possível excluir alguns arquivos baixados.",
@@ -725,6 +731,25 @@
   "outcomes": {
     "accepted": "{0}: solicitação aceita",
     "queue": "Ordem da fila"
+  },
+  "torrent_errors": {
+    "unknown": "Este torrent precisa de atenção.",
+    "move_failed": "Não foi possível mover os arquivos.",
+    "move_interrupted": "Movimentação interrompida: Escolha a pasta que contém os arquivos e tente movê-los novamente.",
+    "move_unfinished": "Movimentação pausada: Escolha se deseja continuar as tarefas inacabadas.",
+    "destination_exists": "Não foi possível mover os arquivos: O destino contém um arquivo ou uma pasta em conflito.",
+    "same_location": "Movimentação ignorada: Ambos os caminhos apontam para os mesmos arquivos.",
+    "alias_conflict": "Torrent parado: Este torrent está em conflito com outro download.",
+    "storage_failed": "Não foi possível atualizar o estado do download.",
+    "storage_overloaded": "Não foi possível atualizar o estado do download: O TinyTorrent está ocupado.",
+    "checkpoint_failed": "Não foi possível salvar o progresso do download.",
+    "drive_stalled": "Torrent parado: A unidade parou de responder.",
+    "invalid_destination": "Não foi possível iniciar a movimentação: Escolha uma pasta de download existente com permissão de gravação.",
+    "shared_files": "Não foi possível iniciar a movimentação: Inclua os outros torrents que usam estes arquivos.",
+    "destination_conflict": "Não foi possível iniciar a movimentação: Os torrents selecionados têm caminhos de destino em conflito.",
+    "destination_in_use": "Não foi possível iniciar a movimentação: Outro torrent usa arquivos no destino.",
+    "overloaded": "Não foi possível iniciar a movimentação: O TinyTorrent está ocupado.",
+    "metadata_unavailable": "Movimentação em espera: Os metadados do torrent ainda não estão disponíveis."
   },
   "inspector": {
     "close": "Fechar inspetor",
@@ -1419,6 +1444,9 @@
     "start_in_tray": "Iniciar na área de notificação"
   },
   "notifications": {
+    "location_unavailable": "Local de download indisponível",
+    "location_torrents_one": "{0} torrent não consegue acessar seu local de download.",
+    "location_torrents_other": "{0} torrents não conseguem acessar seus locais de download.",
     "resume": "Retomar",
     "resume_all_tip": "Retomar todas as transferências. Os torrents parados permanecem parados.",
     "resume_schedule_tip": "Retomar todas as transferências agora, até a próxima alteração da programação. Os torrents parados permanecem parados.",
@@ -1489,7 +1517,9 @@
     "failed_subtitle_scan": "Falha na busca por legendas",
     "failed_subtitle_recheck": "Falha na nova verificação",
     "open_folder_tip": "Abrir a pasta de {0}",
-    "files_folder_tip": "Abrir a pasta que contém os arquivos"
+    "files_folder_tip": "Abrir a pasta que contém os arquivos",
+    "show_torrent": "Ver torrent",
+    "show_torrent_tip": "Mostrar este torrent na lista de torrents"
   },
   "about": {
     "title": "Sobre",

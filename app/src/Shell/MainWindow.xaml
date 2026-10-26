@@ -860,6 +860,7 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
               </Grid.RowDefinitions>
               <!-- One icon per severity, because a theme brush cannot be
                        chosen from code without losing the window's theme. -->
@@ -929,19 +930,47 @@
                 IsTextSelectionEnabled="True"
                 IsTextTrimmedChanged="OnToastTextTrimmed"
               />
-              <controls:ActionButton
+              <TextBlock
                 Grid.Column="1"
                 Grid.ColumnSpan="2"
                 Grid.Row="3"
+                Text="{x:Bind Folder, Mode=OneWay}"
+                Visibility="{x:Bind HasFolder, Mode=OneWay}"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                TextWrapping="NoWrap"
+                TextTrimming="CharacterEllipsis"
+                IsTextSelectionEnabled="True"
+                IsTextTrimmedChanged="OnToastTextTrimmed"
+              />
+              <StackPanel
+                Grid.Column="1"
+                Grid.ColumnSpan="2"
+                Grid.Row="4"
                 Margin="0,12,0,0"
                 HorizontalAlignment="Right"
                 Visibility="{x:Bind HasAction, Mode=OneWay}"
-                Command="{x:Bind Action, Mode=OneWay}"
-                Glyph="{x:Bind ActionGlyph, Mode=OneWay}"
-                Text="{x:Bind ActionText, Mode=OneWay}"
-                ToolTipService.ToolTip="{x:Bind ActionTip, Mode=OneWay}"
-                AutomationProperties.HelpText="{x:Bind ActionTip, Mode=OneWay}"
-              />
+                Orientation="Horizontal"
+                Spacing="8"
+              >
+                <controls:ActionButton
+                  Visibility="{x:Bind HasTorrent, Mode=OneWay}"
+                  Command="{x:Bind ShowTorrent, Mode=OneWay}"
+                  Glyph="{x:Bind icons:Lucide.List}"
+                  Text="{x:Bind ShowText, Mode=OneWay}"
+                  ToolTipService.ToolTip="{x:Bind ShowTip, Mode=OneWay}"
+                  AutomationProperties.AutomationId="ShowTorrent"
+                  AutomationProperties.HelpText="{x:Bind ShowTip, Mode=OneWay}"
+                />
+                <controls:ActionButton
+                  Visibility="{x:Bind HasAction, Mode=OneWay}"
+                  Command="{x:Bind Action, Mode=OneWay}"
+                  Glyph="{x:Bind ActionGlyph, Mode=OneWay}"
+                  Text="{x:Bind ActionText, Mode=OneWay}"
+                  ToolTipService.ToolTip="{x:Bind ActionTip, Mode=OneWay}"
+                  AutomationProperties.AutomationId="ToastAction"
+                  AutomationProperties.HelpText="{x:Bind ActionTip, Mode=OneWay}"
+                />
+              </StackPanel>
               <!-- The negative margin keeps the title row as tall as the
                        text while More and Close keep their full target size. -->
               <StackPanel

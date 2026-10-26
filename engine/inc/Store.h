@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Engine.h"
+#include <libtorrent/error_code.hpp>
 #include <condition_variable>
 #include <deque>
 #include <expected>
@@ -19,6 +20,7 @@ struct StorageOutcome
 {
     std::optional<StorageFailure> failure;
     std::string detail;
+    libtorrent::error_code cause;
 
     // The engine's outcome: Overloaded when the store refused the work,
     // otherwise `code` with the cause of a failure.

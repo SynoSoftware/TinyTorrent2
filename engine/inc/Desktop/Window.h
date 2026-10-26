@@ -52,6 +52,7 @@ public:
     // Opens the window at `card`, a card on the General page of Settings,
     // which the window highlights.
     void OpenSettings(std::string card);
+    void OpenTorrent(std::string torrentId);
     // Opens the window the person asked for once its old process has ended.
     void Reopen();
     // Asks the connected window to confirm Exit; false without one.
@@ -88,6 +89,11 @@ public:
     void Refresh(Theme theme);
     void Translate();
 private:
+    struct Target
+    {
+        WindowTarget kind;
+        std::string key;
+    };
     struct Wait
     {
         WindowWait kind;
@@ -102,7 +108,8 @@ private:
     HWND Shown() const;
     void Forget();
     void ShowSplash();
-    void ShowSettings();
+    void OpenTarget(Target target);
+    void ShowTarget();
     void ShowStartError(Toasts::Failure failure);
     Strings const& strings_;
     Engine& engine_;
@@ -113,8 +120,8 @@ private:
     // The person asked for the window while an old window process could not
     // show it, so a new one opens once that process has ended.
     bool reopen_ = false;
-    // The Settings card to show once the window connects.
-    std::optional<std::string> settingsCard_;
+    // The destination to show once the window connects.
+    std::optional<Target> target_;
     // Cold when the current wait for a window began while the engine loaded.
     Launch launch_ = Launch::Warm;
     // When the warm launch now waiting for `ready` started its window process.

@@ -667,6 +667,19 @@ void Popup::Show(Content toast)
     ScheduleClose();
 }
 
+void Popup::Update(Content const& toast)
+{
+    if (!window_ || asking_)
+        return;
+    content_.title = toast.title;
+    content_.body = toast.body;
+    content_.detail = toast.detail;
+    content_.location = toast.location;
+    Layout();
+    SetWindowTextW(window_, content_.title.c_str());
+    InvalidateRect(window_, nullptr, FALSE);
+}
+
 void Popup::Ask(Prompt prompt)
 {
     // A toast's window has other styles, so it closes before the prompt

@@ -188,7 +188,7 @@ bool Window::Open()
     {
         auto error = GetLastError();
         wait_.reset();
-        settingsCard_.reset();
+        target_.reset();
         splash_.Close();
         auto key = "launch";
         switch (error)
@@ -233,13 +233,23 @@ bool Window::Open()
 
 void Window::OpenSettings(std::string card)
 {
+    OpenTarget({WindowTarget::Settings, std::move(card)});
+}
+
+void Window::OpenTorrent(std::string torrentId)
+{
+    OpenTarget({WindowTarget::Torrent, std::move(torrentId)});
+}
+
+void Window::OpenTarget(Target target)
+{
     // Set first, so a launch failure inside Open can clear it.
-    settingsCard_ = std::move(card);
+    target_ = std::move(target);
     if (!Open())
     {
-        settingsCard_.reset();
+        target_.reset();
     }
-    ShowSettings();
+    ShowTarget();
 }
 
 void Window::Reopen()
@@ -322,9 +332,16 @@ bool Window::Notify(Toast const& toast)
         return false;
     }
     auto toasts = Switch(toast.kind);
+    Json condition = nullptr;
+    if (toast.condition)
+    {
+        auto change = toast.condition->change == ProblemChange::Raised ? "raised" :
+            toast.condition->change == ProblemChange::Updated ? "updated" : "resolved";
+        condition = {{"key", toast.condition->key}, {"change", change}};
+    }
     client_->Send(Json{{"type", "toast"}, {"kind", ToString(toast.kind)},
         {"torrent_id", toast.torrentId}, {"name", toast.name}, {"detail", toast.detail}, {"code", toast.code},
-        {"folder", toast.folder}, {"count", toast.count},
+        {"folder", toast.folder}, {"count", toast.count}, {"condition", std::move(condition)},
         {"switch", toasts ? Json(ToString(*toasts)) : Json(nullptr)}});
     return true;
 }
@@ -374,7 +391,7 @@ void Window::OnReady(std::shared_ptr<Pipe::Connection> const& client, Reply cons
         {
             client_->Send(Json{{"type", "activations"}});
         }
-        ShowSettings();
+        ShowTarget();
         if (IsClosing())
         {
             client_->Send(Json{{"type", "close"}});
@@ -529,7 +546,7 @@ void Window::OnTimer()
         {
             wait_.reset();
             reopen_ = false;
-            settingsCard_.reset();
+            target_.reset();
             splash_.Close();
             ShowStartError({.code = "startup", .detail = std::to_wstring(code)});
             return;
@@ -556,7 +573,7 @@ void Window::OnTimer()
     }
     auto kind = wait_->kind;
     reopen_ = false;
-    settingsCard_.reset();
+    target_.reset();
     // A headless Exit goes on without the window, which still counts as
     // closing.
     if (kind == WindowWait::Closing && headless_)
@@ -651,12 +668,15 @@ void Window::ShowSplash()
     splash_.Show(launch_);
 }
 
-void Window::ShowSettings()
+void Window::ShowTarget()
 {
-    if (settingsCard_ && client_)
+    if (target_ && client_)
     {
-        client_->Send(Json{{"type", "settings"}, {"setting", *settingsCard_}});
-        settingsCard_.reset();
+        if (target_->kind == WindowTarget::Settings)
+            client_->Send(Json{{"type", "settings"}, {"setting", target_->key}});
+        else
+            client_->Send(Json{{"type", "torrent"}, {"torrent_id", target_->key}});
+        target_.reset();
     }
 }
 

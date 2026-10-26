@@ -37,6 +37,9 @@
     "gib": "{0} GiB/s"
   },
   "notification": {
+    "location_unavailable": "Download location unavailable",
+    "location_torrents_one": "{0} torrent cannot access its download location.",
+    "location_torrents_other": "{0} torrents cannot access their download location.",
     "completed": "Download finished",
     "added": "Torrent added",
     "duplicate": "Torrent already added",
@@ -72,7 +75,11 @@
     "open_folder_tip": "Open the folder that holds TinyTorrent's program files",
     "force_exit": "Force exit",
     "force_exit_tip": "Exit now without saving the latest changes",
-    "files_folder_tip": "Open the folder that holds the files"
+    "files_folder_tip": "Open the folder that holds the files",
+    "show_torrent": "Show torrent",
+    "show_torrent_tip": "Show this torrent in the torrent list",
+    "download_folder": "Download folder",
+    "torrent_stopped": "Torrent stopped"
   },
   "power": {
     "transfers": "TinyTorrent is transferring files."
@@ -107,7 +114,11 @@
     "destination_exists": "A destination file has a different size. Both copies were kept.",
     "same_location": "The files are already there, under another path.",
     "alias_conflict": "Other torrents use these files with different names. Resolve the file names before continuing.",
-    "torrent_error": "The torrent stopped because of an error.",
+    "torrent_error": "No further error details are available.",
+    "download_path_missing": "The download path was not found.",
+    "download_path_invalid": "The download path is invalid.",
+    "download_path_unavailable": "The drive or network share is not responding.",
+    "disk_full": "There is no free space on the destination drive.",
     "storage_failed": "Saved download state could not be read or written. Check the engine data folder and try again.",
     "storage_overloaded": "TinyTorrent is busy saving download state. Try again shortly.",
     "overloaded": "TinyTorrent is busy. Try again shortly.",

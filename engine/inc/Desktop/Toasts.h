@@ -28,6 +28,7 @@ public:
     struct Commands
     {
         std::function<void()> open;
+        std::function<void(std::string torrentId)> openTorrent;
         // Opens the window at a card on the General page of Settings.
         std::function<void(std::string card)> openSettings;
         // The folder that holds a torrent's files; empty when it has none.
@@ -120,11 +121,12 @@ private:
     HICON errorIcon_;
     Commands commands_;
     Activity activity_;
-    std::map<ToastKind, Batch> batches_;
+    std::map<std::pair<ToastKind, std::string>, Batch> batches_;
     // In the order they were reported, one per code.
     std::vector<Failure> failures_;
     // The failure that the open popup shows; none while it shows a toast.
     std::optional<Failure> shownFailure_;
+    std::optional<std::string> shownCondition_;
     Popup popup_;
 };
 }

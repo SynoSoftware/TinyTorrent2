@@ -634,7 +634,13 @@
     "invalid_trackers": "请每行输入一个使用超文本传输、安全超文本传输或用户数据报协议的追踪服务器网址。",
     "unknown": "无法完成操作。",
     "detail": "{0}\n{1}",
-    "torrent_error": "种子因错误而停止。",
+    "torrent_error": "没有更多错误详情。",
+    "download_path_missing": "找不到下载路径。",
+    "download_path_invalid": "下载路径无效。",
+    "download_path_unavailable": "驱动器或网络共享没有响应。",
+    "disk_full": "目标驱动器没有可用空间。",
+    "line": "{0} · {1}",
+    "torrent_stopped": "种子已停止：{0}",
     "add_failed": "无法添加种子。",
     "watch_limit": "此监视文件夹中的种子文件超过 10,000 个。请移除旧的源文件，或选择文件更少的文件夹。",
     "delete_failed": "无法删除部分已下载的文件。",
@@ -725,6 +731,25 @@
   "outcomes": {
     "accepted": "{0}：请求已接受",
     "queue": "队列顺序"
+  },
+  "torrent_errors": {
+    "unknown": "此种子需要处理。",
+    "move_failed": "移动失败。",
+    "move_interrupted": "移动已中断：请选择存放文件的文件夹，然后重试移动。",
+    "move_unfinished": "移动已暂停：请选择是否继续未完成的任务。",
+    "destination_exists": "移动失败：目标位置包含冲突的文件或文件夹。",
+    "same_location": "已跳过移动：两个路径指向相同的文件。",
+    "alias_conflict": "种子已停止：此种子与另一个下载冲突。",
+    "storage_failed": "无法更新下载状态。",
+    "storage_overloaded": "无法更新下载状态：TinyTorrent 正忙。",
+    "checkpoint_failed": "无法保存下载进度。",
+    "drive_stalled": "种子已停止：驱动器已停止响应。",
+    "invalid_destination": "无法开始移动：请选择已存在且可写入的下载文件夹。",
+    "shared_files": "无法开始移动：请包含使用这些文件的其他种子。",
+    "destination_conflict": "无法开始移动：所选种子的目标路径冲突。",
+    "destination_in_use": "无法开始移动：另一个种子正在使用目标位置的文件。",
+    "overloaded": "无法开始移动：TinyTorrent 正忙。",
+    "metadata_unavailable": "移动正在等待：种子元数据尚不可用。"
   },
   "inspector": {
     "close": "关闭详情窗格",
@@ -1419,6 +1444,9 @@
     "start_in_tray": "在通知区域启动"
   },
   "notifications": {
+    "location_unavailable": "下载位置不可用",
+    "location_torrents_one": "{0} 个下载任务无法访问其下载位置。",
+    "location_torrents_other": "{0} 个下载任务无法访问其下载位置。",
     "resume": "恢复",
     "resume_all_tip": "恢复所有传输。已停止的种子保持停止。",
     "resume_schedule_tip": "立即恢复所有传输，直至计划下次更改。已停止的种子保持停止。",
@@ -1489,7 +1517,9 @@
     "failed_subtitle_scan": "字幕扫描失败",
     "failed_subtitle_recheck": "重新检查失败",
     "open_folder_tip": "打开 {0} 的文件夹",
-    "files_folder_tip": "打开文件所在的文件夹"
+    "files_folder_tip": "打开文件所在的文件夹",
+    "show_torrent": "查看种子",
+    "show_torrent_tip": "在种子列表中显示此种子"
   },
   "about": {
     "title": "关于",

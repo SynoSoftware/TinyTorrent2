@@ -134,6 +134,10 @@ Dropped-alert recovery queries effective finished state and
 requests a fresh flush acknowledgement rather than inferring disk readiness.
 Completion demand shares the inspector's status query records and posts only
 while fewer than 64 are outstanding, so recovery cannot flood the alert queue.
+Replacing a native handle invalidates its ordered completion provenance and
+requests a fresh observation through that same owner. Native initialization
+can finish while the replacement is paused and before its alerts are mapped;
+the current handle's observation closes that gap.
 
 Completed-file discovery runs on the payload worker in batches of at most 64
 torrents, with one network-thread collection visit per batch. The observation pairs metadata
@@ -333,6 +337,26 @@ as a failed storage outcome rather than escaping the state owner's dispatch.
 Payload disk errors retain their own reason; checkpoint failures do not replace
 the actual transfer status. Resume clears libtorrent's disk error and upload
 mode before applying the saved running intent.
+
+Recoverable payload I/O errors pause their torrent and release its storage through
+libtorrent's disk fence. The engine then checks the location on its volume's
+worker once a second, sharing each check between torrents in the same folder.
+When it answers, the engine clears the disk error and upload mode and reapplies
+the current intent, including forced downloads. This also reconnects seed peers
+with fresh piece availability and reopens invalidated network file handles.
+Stop, Pause all, schedules and adapter restrictions still apply. Pending Verify
+waits for storage recovery. A late probe cannot resume a removed torrent or
+apply an old location's answer after a move. Native release callbacks, rather
+than droppable alerts, establish that the old disk work has ended.
+Fresh generation-checked status samples reconcile missed errors, so an older
+status cannot restart recovery after it succeeds. If a disk error strands
+libtorrent's recheck setup, reload the native handle through the same owner as
+move verification, retaining the torrent's identity, history and current choices,
+and check its files again. A failed replacement retains the resume parameters
+according to whether the old handle was actually removed, rather than whether a
+late callback still holds it alive.
+Every replacement restores the status-update subscription that native resume
+data omits, so the list and transfer policy keep following the new handle.
 
 Mark each payload file as downloaded from the internet when it completes while
 its torrent is downloading, by writing the internet zone to the file's
