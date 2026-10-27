@@ -721,8 +721,6 @@
     "speed_limit": "Torrentsnelheid beperken…"
   },
   "files": {
-    "window": "{0} · {1} weergegeven",
-    "all_displayed": "Weergegeven bestanden selecteren",
     "name": "Bestand",
     "priority": "Prioriteit",
     "summary": "{0} van {1} bestanden · {2}",

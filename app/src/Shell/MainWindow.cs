@@ -60,7 +60,6 @@ public sealed partial class MainWindow : Window
         _pages.Show(Workspace);
         _workspaces.Show(TorrentContent);
         _filters.Show(Filters);
-        _inspectors.Show(InspectorContent);
         Root.Unloaded += (_, _) => StopMotion();
         ConfigureCapture();
         ConfigureNotifications();

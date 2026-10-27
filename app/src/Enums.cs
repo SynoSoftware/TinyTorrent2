@@ -166,7 +166,6 @@ public enum Consumer
     Inspector,
     Draft,
     Files,
-    AddFiles,
 }
 
 // Who requested an engine command. Only an accepted command the person

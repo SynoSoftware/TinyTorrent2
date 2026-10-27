@@ -13,8 +13,6 @@ namespace Syno.TinyTorrent.Controls;
 
 public sealed partial class FileBrowser : UserControl
 {
-    private ScrollViewer? _scroller;
-    private bool _paging;
     public static readonly DependencyProperty ModelProperty = DependencyProperty.Register(
         nameof(Model),
         typeof(FileSelection),
@@ -41,28 +39,19 @@ public sealed partial class FileBrowser : UserControl
             Files.Columns.Remove(ProgressColumn);
         var schema = Files
             .Schema<FileNode>()
-            .Key(node => node.IsFolder ? "folder:" + node.Path : "file:" + node.Index)
+            .Key(node => node.Path)
             .Hierarchy(
                 NameColumn,
                 node => node.Children,
                 node => node.IsExpanded,
                 (node, expanded) => node.IsExpanded = expanded
-            );
+            )
+            .SortKey(NameColumn, node => node.Name)
+            .SortKey(SizeColumn, node => node.TotalSize)
+            .SortKey(PriorityColumn, node => node.Priority);
         if (Model.ShowsProgress)
-            schema.SortKey(NameColumn, node => node.Name)
-                .SortKey(SizeColumn, node => node.TotalSize)
-                .SortKey(PriorityColumn, node => node.Priority)
-                .SortKey(ProgressColumn, node => node.Progress);
+            schema.SortKey(ProgressColumn, node => node.Progress);
         Files.SelectionChanged += (_, _) => RefreshActions();
-        Files.PointerWheelChanged += (_, args) =>
-        {
-            if (Model.IsPaged && Model.Roots.Count == 0)
-            {
-                var delta = args.GetCurrentPoint(Files).Properties.MouseWheelDelta;
-                if (delta != 0)
-                    _ = ReadWindow(delta < 0);
-            }
-        };
         Files.ItemContextRequested += (_, args) =>
             ShowPriority(
                 args.Target,
@@ -75,23 +64,13 @@ public sealed partial class FileBrowser : UserControl
         {
             Model.Changed -= OnChanged;
             Model.Changed += OnChanged;
-            _scroller = Find<ScrollViewer>(Files);
-            if (_scroller is not null)
-            {
-                _scroller.ViewChanged -= OnScroll;
-                _scroller.ViewChanged += OnScroll;
-            }
             RefreshActions();
-            _ = ReadWindow();
         };
         Unloaded += (_, _) =>
         {
             if (!IsLoaded)
             {
                 Model.Changed -= OnChanged;
-                if (_scroller is not null)
-                    _scroller.ViewChanged -= OnScroll;
-                _scroller = null;
             }
         };
         RefreshText();
@@ -114,7 +93,6 @@ public sealed partial class FileBrowser : UserControl
         browser.Files.Selection = Selection.Empty;
         browser.RefreshText();
         browser.RefreshActions();
-        _ = browser.ReadWindow();
     }
 
     internal void RefreshText()
@@ -125,7 +103,7 @@ public sealed partial class FileBrowser : UserControl
         SizeColumn.DisplayName = Model.Text.Get("columns", "size");
         ProgressColumn.DisplayName = Model.Text.Get("columns", "progress");
         PriorityColumn.DisplayName = Model.Text.Get("files", "priority");
-        string matching = Model.AllLabel;
+        string matching = Model.Text.Get("files", "all_matching");
         ToolTipService.SetToolTip(All, matching);
         AutomationProperties.SetName(All, matching);
         Model.Refresh();
@@ -147,75 +125,11 @@ public sealed partial class FileBrowser : UserControl
     private void OnChanged(object? sender, EventArgs args)
     {
         RefreshActions();
-        ToolTipService.SetToolTip(All, Model.AllLabel);
-        AutomationProperties.SetName(All, Model.AllLabel);
         if (
             Files.Sort is { } sort
             && (sort.Column == ProgressColumn || sort.Column == PriorityColumn)
         )
             Files.RefreshView();
-        if (Model.IsPaged && Model.Roots.Count == 0)
-            _ = ReadWindow();
-    }
-
-    private void OnScroll(object? sender, ScrollViewerViewChangedEventArgs args)
-    {
-        if (!args.IsIntermediate)
-            _ = ReadWindow();
-    }
-
-    private async Task ReadWindow(bool? direction = null)
-    {
-        if (_paging || !IsLoaded || _scroller is not { } scroller || !Model.IsPaged)
-            return;
-        var height = Find<ListViewItem>(Files)?.ActualHeight ?? 32;
-        if (height <= 0)
-            return;
-        var forward = scroller.VerticalOffset + scroller.ViewportHeight >= scroller.ExtentHeight - 2 * height;
-        var backward = scroller.VerticalOffset <= 2 * height;
-        if (direction is null && !(forward && Model.HasMore) && !(backward && Model.HasPrevious))
-            return;
-        var advance = direction ?? (forward && Model.HasMore);
-        if (advance ? !Model.HasMore : !Model.HasPrevious)
-            return;
-        var model = Model;
-        var query = model.Search;
-        var rows = model.VisibleNodes();
-        var position = (int)(scroller.VerticalOffset / height);
-        var anchor = rows.ElementAtOrDefault(position);
-        var remainder = scroller.VerticalOffset % height;
-        _paging = true;
-        try
-        {
-            if (!await model.ReadWindow(advance) || !IsLoaded
-                || Model != model || model.Search != query)
-                return;
-            if (anchor is null)
-                return;
-            var updated = model.VisibleNodes();
-            var index = Enumerable.Range(0, updated.Count).FirstOrDefault(index =>
-                anchor.IsFolder ? updated[index].IsFolder && updated[index].Path == anchor.Path
-                    : updated[index].Index == anchor.Index, -1);
-            if (index >= 0)
-                Files.ScrollTo(index * height + remainder);
-        }
-        finally
-        {
-            _paging = false;
-        }
-    }
-
-    private static T? Find<T>(DependencyObject parent) where T : DependencyObject
-    {
-        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++)
-        {
-            var child = VisualTreeHelper.GetChild(parent, index);
-            if (child is T match)
-                return match;
-            if (Find<T>(child) is { } descendant)
-                return descendant;
-        }
-        return null;
     }
 
     private void RefreshActions()
@@ -279,13 +193,6 @@ public sealed partial class FileBrowser : UserControl
 
     private void OnFilesKey(object sender, KeyRoutedEventArgs args)
     {
-        if (args.Key is VirtualKey.PageDown or VirtualKey.PageUp
-            && Model.IsPaged && Model.Roots.Count == 0)
-        {
-            _ = ReadWindow(args.Key == VirtualKey.PageDown);
-            args.Handled = true;
-            return;
-        }
         if (args.Key != VirtualKey.F2)
             return;
         FrameworkElement? target = null;

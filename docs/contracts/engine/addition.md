@@ -35,11 +35,6 @@ accepts priorities 0 (unwanted), 1 (low), 4 (normal), and 7 (high), with at leas
 one wanted file. A batch shares destination and paused intent; individual file
 choices belong to a single-source Add dialog or the Files inspector after addition.
 
-Known-metadata previews page the file list while retaining original torrent
-indices, including gaps from hidden padding. Selection is one default priority
-plus original-index overrides; opening another page does not replace choices
-made earlier.
-
 Add to top of queue commits the new torrent at the front of the saved download
 order before releasing its payload guard. The queue owner reapplies that order
 when a torrent enters downloading, because libtorrent appends a torrent whose

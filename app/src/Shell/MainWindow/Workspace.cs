@@ -20,7 +20,6 @@ public sealed partial class MainWindow
     private readonly Motion _pages = new();
     private readonly Motion _workspaces = new();
     private readonly Motion _filters = new();
-    private readonly Motion _inspectors = new();
     private WindowPage _page;
     private bool _refreshingFilters;
     private bool _selecting;
@@ -188,7 +187,6 @@ public sealed partial class MainWindow
         _pages.Stop();
         _workspaces.Stop();
         _filters.Stop();
-        _inspectors.Stop();
     }
 
     private SettingsPage GetSettingsPage()
@@ -296,7 +294,6 @@ public sealed partial class MainWindow
             return;
         _workspaces.Show(library ? LibraryContent : TorrentContent, forward: library);
         _filters.Show(library ? LibraryFilters : Filters, forward: library);
-        _inspectors.Show(InspectorContent, forward: library);
     }
 
     private void UpdateBack()
@@ -525,7 +522,7 @@ public sealed partial class MainWindow
     private void UpdateInspectorSize()
     {
         // The previous layout shows whether the inspector was already
-        // expanded, whichever page drew it.
+        // expanded.
         var opening =
             Split.Visibility != Visibility.Visible
             && WorkspaceContent.Visibility == Visibility.Visible;
@@ -567,8 +564,8 @@ public sealed partial class MainWindow
             _motion.Enter(InspectorSurface);
     }
 
-    // Creates the active page's inspector view when it first opens. Every view
-    // sends its pane buttons to the same handlers.
+    // Creates the inspector view, which Torrents and Library share, when it
+    // first opens.
     private Pane CreateInspector()
     {
         var pane = new InspectorPane(Model.Inspector);

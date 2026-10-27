@@ -425,6 +425,24 @@ Facts Facts::Read(Json const& saved)
     return facts;
 }
 
+std::vector<lt::download_priority_t> ReadPriorities(Json const& values)
+{
+    if (!values.is_array())
+    {
+        throw std::invalid_argument("File priorities are not a list.");
+    }
+    std::vector<lt::download_priority_t> priorities;
+    for (auto const& value : values)
+    {
+        if (!IsPriority(value))
+        {
+            throw std::invalid_argument("A file priority is not a whole number from 0 to 255.");
+        }
+        priorities.emplace_back(value.get<std::uint8_t>());
+    }
+    return priorities;
+}
+
 std::string Torrent::Name() const
 {
     return tt::Name(status.name, Hashes());

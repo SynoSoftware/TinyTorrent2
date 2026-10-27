@@ -126,21 +126,6 @@ void Engine::State::Merge(Preview& existing, Preview const& source)
     UpdatePreview(existing);
 }
 
-Engine::State::Preview* Engine::State::Merge(Preview const& source)
-{
-    auto hashes = Hashes(source.InfoHashes());
-    for (auto& [id, existing] : previews)
-    {
-        if (existing.connectionId != source.connectionId || !Overlaps(Hashes(existing.InfoHashes()), hashes))
-            continue;
-        if (source.handle.is_valid() && source.handle != existing.handle)
-            session->remove_torrent(source.handle);
-        Merge(existing, source);
-        return &existing;
-    }
-    return nullptr;
-}
-
 // Whether the previewed content is already in the list and the preview has
 // trackers that torrent lacks.
 bool Engine::State::CanMerge(Preview const& preview) const
@@ -151,90 +136,28 @@ bool Engine::State::CanMerge(Preview const& preview) const
         !Missing(preview.params.trackers, Urls(torrents.at(*duplicate).Trackers())).empty();
 }
 
-void Engine::State::DescribePreview(Preview const& preview, std::string const& destination, Reply reply,
-    int offset, int limit, std::string const& query)
+Json Engine::State::Describe(Preview const& preview, std::string const& destination) const
 {
     auto const& params = preview.params;
     auto hashes = preview.InfoHashes();
     auto duplicate = FindDuplicate(hashes);
-    Json data{{"preview_id", preview.previewId},
+    auto files = Files(params.ti);
+    if (params.ti)
+    {
+        auto priorities = DefaultPriorities(params.ti->layout(), settings.excludes ? settings.patterns : std::string());
+        for (auto& file : files)
+        {
+            auto index = lt::file_index_t(file.at("index").get<int>());
+            file["path"] = ContentPath(params.ti->layout(), index, settings.layout);
+            file["priority"] = static_cast<std::uint8_t>(priorities[static_cast<int>(index)]);
+        }
+    }
+    return {{"preview_id", preview.previewId},
         {"name", tt::Name(params.ti ? params.ti->name() : params.name, Hashes(hashes))},
-        {"size", params.ti ? params.ti->total_size() : 0},
+        {"size", params.ti ? params.ti->total_size() : 0}, {"files", std::move(files)},
         {"torrent_id", duplicate.value_or("")}, {"hashes", Hashes(hashes)}, {"trackers", params.trackers},
         {"merge_available", CanMerge(preview)}, {"metadata_ready", bool(params.ti)},
         {"error", preview.error}, {"shared_with", SharedFiles(params.ti, settings.SavePath(destination))}};
-    auto identity = preview.previewId;
-    auto connection = preview.connectionId;
-    sources.Run([metadata = params.ti, offset, limit, query, layout = settings.layout,
-        patterns = settings.excludes ? settings.patterns : std::string()]() mutable
-    {
-    auto files = Json::array();
-    int count = metadata ? metadata->num_files() : 0;
-    int selectable = 0;
-    int wanted = 0;
-    std::int64_t fileBytes = 0;
-    std::int64_t wantedBytes = 0;
-    int next = std::clamp(offset, 0, count);
-    limit = std::clamp(limit, 0, 500);
-    if (metadata)
-    {
-        auto const& storage = metadata->layout();
-        auto priorities = DefaultPriorities(storage, patterns);
-        for (auto index : storage.file_range())
-        {
-            if (storage.pad_file_at(index))
-                continue;
-            ++selectable;
-            fileBytes += storage.file_size(index);
-            if (priorities[static_cast<int>(index)] != lt::dont_download)
-            {
-                ++wanted;
-                wantedBytes += storage.file_size(index);
-            }
-        }
-        auto needle = Wide(query);
-        auto matches = [&needle](std::string const& path)
-        {
-            auto text = Wide(path);
-            if (needle.empty())
-                return true;
-            for (std::size_t start = 0; start + needle.size() <= text.size(); ++start)
-                if (CompareStringOrdinal(text.data() + start, static_cast<int>(needle.size()),
-                    needle.data(), static_cast<int>(needle.size()), TRUE) == CSTR_EQUAL)
-                    return true;
-            return false;
-        };
-        int visited = 0;
-        while (next < count && static_cast<int>(files.size()) < limit && visited++ < 4096)
-        {
-            auto index = lt::file_index_t(next++);
-            if (storage.pad_file_at(index))
-                continue;
-            auto path = ContentPath(storage, index, layout);
-            if (!matches(path))
-                continue;
-            files.push_back({{"index", static_cast<int>(index)}, {"path", std::move(path)},
-                {"size", storage.file_size(index)}, {"padding", false},
-                {"priority", static_cast<std::uint8_t>(priorities[static_cast<int>(index)])}});
-        }
-    }
-    return Json{{"files", std::move(files)},
-        {"file_offset", std::clamp(offset, 0, count)}, {"file_count", count},
-        {"next_offset", next < count ? Json(next) : Json(nullptr)},
-        {"selectable_count", selectable}, {"file_bytes", fileBytes},
-        {"wanted_count", wanted}, {"wanted_bytes", wantedBytes}};
-    }, [this, identity, connection, data = std::move(data), reply](std::expected<Json, StorageOutcome> page) mutable
-    {
-        if (!FindPreview(identity, connection))
-            reply(Failure(ErrorCode::PreviewExpired));
-        else if (!page)
-            reply(Failure(ErrorCode::PreviewFailed, page.error().detail));
-        else
-        {
-            data.update(*page);
-            reply(Success(std::move(data)));
-        }
-    });
 }
 
 void Engine::State::Inspect(std::string source, std::string connectionId,
@@ -285,10 +208,17 @@ void Engine::State::Inspect(std::string source, std::string connectionId,
         preview->params.info_hashes = preview->InfoHashes();
         auto merge = [this, preview, completion]
         {
-            if (auto existing = Merge(*preview))
+            auto hashes = Hashes(preview->InfoHashes());
+            for (auto& [id, existing] : previews)
             {
-                completion({}, existing);
-                return true;
+                if (existing.connectionId == preview->connectionId && Overlaps(Hashes(existing.InfoHashes()), hashes))
+                {
+                    if (preview->handle.is_valid())
+                        session->remove_torrent(preview->handle);
+                    Merge(existing, *preview);
+                    completion({}, &existing);
+                    return true;
+                }
             }
             return false;
         };

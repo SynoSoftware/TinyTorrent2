@@ -21,13 +21,6 @@ function Apply-Preview([string] $TorrentId) {
         error = $null
         hashes = @('hash')
         shared_with = @()
-        file_offset = 0
-        next_offset = 1
-        file_count = 8
-        selectable_count = 7
-        file_bytes = 96
-        wanted_count = 7
-        wanted_bytes = 96
         files = @(@{ index = 0; path = 'content.bin'; size = 12; padding = $false; priority = 4 })
     } | ConvertTo-Json -Depth 4
     $document = [Text.Json.JsonDocument]::Parse($preview)

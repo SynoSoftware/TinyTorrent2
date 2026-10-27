@@ -223,7 +223,6 @@ public sealed class AddDraft : IDraft
             || !source.MetadataReady
             || source.SharedDestination == _destination
         )
-        && Sources.All(source => !source.Files.IsPaged || source.MetadataReady || source.IsDuplicate)
         && !Sources.Any(source => source.NeedsFiles);
     public bool HasDraft => Sources.Count > 0 || !string.IsNullOrWhiteSpace(Magnet);
     public ClosePolicy ClosePolicy =>
@@ -352,7 +351,6 @@ public sealed class AddDraft : IDraft
     private void Own(AddSource source)
     {
         source.Files.Changed += (_, _) => Refresh();
-        source.Files.Failed += (_, error) => _owner.Notifications.Report(error);
         Sources.Add(source);
     }
 
@@ -596,25 +594,6 @@ public sealed class AddDraft : IDraft
         return preview;
     }
 
-    internal async Task<FilePage> ReadFiles(AddSource source, int offset, string query)
-    {
-        if (source.PreviewId is null || !source.MetadataReady || !_owner.IsConnected)
-            throw new OperationCanceledException();
-        var preview = await _client.Read(
-            Consumer.AddFiles,
-            "preview_detail",
-            new
-            {
-                preview_id = source.PreviewId,
-                destination = _destination,
-                file_offset = offset,
-                file_limit = 200,
-                file_query = query,
-            }
-        );
-        return FilePage.Read(preview);
-    }
-
     private void ApplyPreview(AddSource source, JsonElement preview, string destination)
     {
         source.Apply(preview, destination);
@@ -731,11 +710,7 @@ public sealed class AddDraft : IDraft
                 JsonElement addition;
                 try
                 {
-                    var choices = source.Files.Choices().Select(choice => new
-                    {
-                        index = choice.Index,
-                        priority = choice.Priority,
-                    }).ToArray();
+                    var priorities = source.MetadataReady ? source.Files.Priorities() : [];
                     addition = await _client.Send(
                         "add",
                         new
@@ -746,8 +721,7 @@ public sealed class AddDraft : IDraft
                             queue_top = queueTop,
                             sequential,
                             first_last = firstLast,
-                            default_priority = source.Files.DefaultPriority,
-                            choices,
+                            priorities,
                         },
                         Requester.Person
                     );
@@ -831,7 +805,6 @@ public sealed class AddDraft : IDraft
         _polling = null;
         _space = null;
         _client.Withdraw(Consumer.Draft);
-        _client.Withdraw(Consumer.AddFiles);
         Refresh();
     }
 
@@ -1138,10 +1111,8 @@ public sealed class AddSource : INotifyPropertyChanged
             .Select(name => name.GetString()!)
             .ToArray();
         SharedDestination = destination;
-        if (!hadFiles && MetadataReady && !IsDuplicate && !Files.IsPaged)
-        {
-            Files.InitializePage(FilePage.Read(preview), (offset, query) => _draft.ReadFiles(this, offset, query));
-        }
+        if (!hadFiles && MetadataReady && !IsDuplicate)
+            Files.Load(preview.GetProperty("files"));
         Refresh();
     }
 

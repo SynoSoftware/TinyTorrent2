@@ -374,9 +374,9 @@ isolation guarantee; an extra token would not create a stronger boundary.
 
 ## Wire representation
 
-Protocol version 33 uses a four-byte little-endian UTF-8 JSON frame length,
+Protocol version 34 uses a four-byte little-endian UTF-8 JSON frame length,
 bounded to 16 MiB. The endpoint is `TinyTorrent.<logon SID>`; each connecting
-client first receives `{type:"hello",version:33,session_id:"...",data_directory:"..."}`. The absolute data directory
+client first receives `{type:"hello",version:34,session_id:"...",data_directory:"..."}`. The absolute data directory
 keeps the same store for explicit Restart, which starts the engine beside the
 window rather than a path a pipe peer reports. Requests are
 `{request_id:signed-64-bit-integer,command:string,...}`. Replies repeat `request_id` and have
@@ -437,9 +437,8 @@ without it start at zero. The engine owns sampling and persistence; Home only
 formats these snapshot values.
 
 Commands are `snapshot`, `preview` (source, destination), `preview_detail`
-(preview_id, destination, file_offset, file_limit, file_query), `add`
-(preview_id, destination, paused, optional default_priority and choices of
-original index/priority, optional sequential, first_last and queue_top booleans that default to false),
+(preview_id, destination), `add` (preview_id, destination, paused, optional
+priorities, optional sequential, first_last and queue_top booleans that default to false),
 `cancel_preview` (preview_id), `merge_trackers` (preview_id,
 torrent_id), `torrent` (torrent_id), `pause`, `resume`, `force`, `verify`, and
 `remove` (torrent_ids), `retry` (torrent_ids: continues torrents that wait for

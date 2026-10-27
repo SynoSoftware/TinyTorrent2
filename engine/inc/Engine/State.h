@@ -894,10 +894,8 @@ public:
 
     void UpdatePreview(Preview& preview);
     void Merge(Preview& existing, Preview const& source);
-    Preview* Merge(Preview const& source);
     bool CanMerge(Preview const& preview) const;
-    void DescribePreview(Preview const& preview, std::string const& destination, Reply reply,
-        int offset = 0, int limit = 200, std::string const& query = {});
+    Json Describe(Preview const& preview, std::string const& destination) const;
     void Inspect(std::string source, std::string connectionId, std::function<void(Outcome, Preview*)> completion);
     Preview* FindPreview(std::string const& previewId, std::string const& connectionId);
     void Discard(std::function<bool(Preview const&)> const& matches);

@@ -311,7 +311,7 @@ try {
                 -ArgumentList @(('"' + $seed + '"'), $port, 'seed-files') -WindowStyle Hidden -PassThru `
                 -RedirectStandardOutput $log -RedirectStandardError (Join-Path $run 'peer-error.log')
             Wait-Until { -not $peer.HasExited -and (Get-Content -LiteralPath $log -Raw) -match 'ready' } 'The loopback seed did not become ready'
-            $target = Add-Torrent (Join-Path $seed 'transfer.torrent') $payload @{ paused = $false; default_priority = 4 }
+            $target = Add-Torrent (Join-Path $seed 'transfer.torrent') $payload @{ paused = $false; priorities = @(4, 4) }
             Wait-Until {
                 $torrent = (Send-Command @{ command = 'snapshot' }).data.torrents[0]
                 $torrent.downloaded -ge 524288 -and $torrent.download_rate -gt 0 -and $torrent.peer_count -gt 0

@@ -129,10 +129,8 @@ public sealed partial class MainWindow
                 (SettingsButton, "settings", Model.ShowSettings),
             }
         )
-            Describe(button, Model.Text.Get("commands", name), command);
-
-        void Describe(AppBarButton button, string label, ICommand command)
         {
+            var label = Model.Text.Get("commands", name);
             var shortcut = ShortcutText(command);
             button.Label = label;
             ToolTipService.SetToolTip(

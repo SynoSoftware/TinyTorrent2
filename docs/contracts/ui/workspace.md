@@ -154,9 +154,9 @@ does not keep the window or engine open. Layout recovery never changes downloads
 
 Torrents sits to the left of Library: the page's table slides left
 when entering Library and right when returning to Torrents. The
-filter and inspector content slide with it in the same direction, so the
-whole workspace moves as one gesture. The title bar, the toolbar and the filter
-and inspector frames stay in place.
+filter content slides with it in the same direction, so the whole workspace
+moves as one gesture. The title bar, the toolbar, the filter frame and the
+inspector, which both pages share, stay in place.
 
 ## Main window
 

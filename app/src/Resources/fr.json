@@ -721,8 +721,6 @@
     "speed_limit": "Limiter le débit du torrent…"
   },
   "files": {
-    "window": "{0} · {1} affichés",
-    "all_displayed": "Sélectionner les fichiers affichés",
     "name": "Fichier",
     "priority": "Priorité",
     "summary": "{0} fichiers sur {1} · {2}",

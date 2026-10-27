@@ -248,7 +248,7 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
             if (outcome.error)
                 reply(Failure(*outcome.error, outcome.detail));
             else
-                DescribePreview(*preview, destination, reply);
+                reply(Success(Describe(*preview, destination)));
         });
         break;
     case Command::PreviewDetail:
@@ -260,9 +260,7 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
             return;
         }
         UpdatePreview(*preview);
-        DescribePreview(*preview, request.value("destination", ""), reply,
-            request.value("file_offset", 0), request.value("file_limit", 200),
-            request.value("file_query", std::string()));
+        reply(Success(Describe(*preview, request.value("destination", ""))));
         break;
     }
     case Command::CancelPreview:
@@ -286,69 +284,10 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
         Addition::Choices choices;
         choices.destination = request.at("destination").get<std::string>();
         choices.intent = request.value("paused", !settings.startsDownload) ? Intent::Paused : Intent::Resumed;
+        choices.priorities = ReadPriorities(request.value("priorities", Json::array()));
         choices.sequential = request.value("sequential", false);
         choices.firstLast = request.value("first_last", false);
         choices.queueTop = request.value("queue_top", settings.queueTop);
-        auto overrides = request.value("choices", Json::array());
-        if (!overrides.is_array())
-            throw std::invalid_argument("Invalid file choices");
-        bool hasDefault = request.contains("default_priority") && !request.at("default_priority").is_null();
-        if (hasDefault || !overrides.empty())
-        {
-            if (!preview->params.ti)
-            {
-                reply(Failure(ErrorCode::MetadataUnavailable));
-                return;
-            }
-            auto const& files = preview->params.ti->layout();
-            std::optional<lt::download_priority_t> fallback;
-            auto readPriority = [](Json const& value)
-            {
-                auto number = value.get<int>();
-                if (number < 0 || number > 7 || !IsChoice(lt::download_priority_t(static_cast<std::uint8_t>(number))))
-                    throw std::invalid_argument("Invalid file priority");
-                return lt::download_priority_t(static_cast<std::uint8_t>(number));
-            };
-            if (hasDefault)
-                fallback = readPriority(request.at("default_priority"));
-            if (overrides.size() > static_cast<std::size_t>(files.num_files()))
-                throw std::invalid_argument("Invalid file choices");
-            std::set<int> indices;
-            std::vector<std::pair<int, lt::download_priority_t>> selected;
-            for (auto const& choice : overrides)
-            {
-                auto index = choice.at("index").get<int>();
-                auto priority = readPriority(choice.at("priority"));
-                if (index < 0 || index >= files.num_files() || !indices.insert(index).second)
-                    throw std::invalid_argument("Invalid file choice");
-                selected.emplace_back(index, priority);
-            }
-            auto metadata = preview->params.ti;
-            auto id = preview->previewId;
-            sources.Run([metadata, choices = std::move(choices), selected = std::move(selected), fallback,
-                patterns = settings.excludes ? settings.patterns : std::string()]() mutable
-            {
-                choices.priorities = fallback ? std::vector<lt::download_priority_t>(metadata->num_files(), *fallback) :
-                    DefaultPriorities(metadata->layout(), patterns);
-                for (auto const& [index, priority] : selected)
-                    choices.priorities[index] = priority;
-                return std::move(choices);
-            }, [this, id, connectionId, reply](std::expected<Addition::Choices, StorageOutcome> prepared)
-            {
-                auto preview = FindPreview(id, connectionId);
-                if (!preview)
-                    reply(Failure(ErrorCode::PreviewExpired));
-                else if (!prepared)
-                    reply(Failure(ErrorCode::InvalidPriorities, prepared.error().detail));
-                else
-                    Add(*preview, std::move(*prepared), [reply](Outcome outcome, Added added)
-                    {
-                        reply(outcome.error ? Failure(*outcome.error, outcome.detail) :
-                            Success({{"torrent_id", added.torrentId}, {"duplicate", added.kind == AdditionKind::Duplicate}}));
-                    });
-            });
-            break;
-        }
         Add(*preview, std::move(choices), [reply](Outcome outcome, Added added)
         {
             reply(outcome.error ? Failure(*outcome.error, outcome.detail) :

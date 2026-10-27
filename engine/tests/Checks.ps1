@@ -1811,7 +1811,7 @@ try {
             Assert ($reply.ok -and $reply.data.files.Count -eq 2) 'Aligned multifile fixture did not preview'
             Assert ($reply.data.files[0].path.Replace('\', '/') -eq 'selection/skip.bin' -and $reply.data.files[1].path.Replace('\', '/') -eq 'selection/wanted.bin') 'Fixture file order is not skip then wanted'
             $hash = $reply.data.hashes[0]
-            $reply = Send-Command @{ command = 'add'; preview_id = $reply.data.preview_id; destination = $payload; paused = $false; default_priority = 0; choices = @(@{ index = 1; priority = 7 }) }
+            $reply = Send-Command @{ command = 'add'; preview_id = $reply.data.preview_id; destination = $payload; paused = $false; priorities = @(0, 7) }
             Assert $reply.ok 'Selected files could not be confirmed'
             $torrentId = $reply.data.torrent_id
             $until = [DateTime]::UtcNow.AddSeconds(30)
@@ -2138,7 +2138,7 @@ try {
                 -ArgumentList @(('"' + $peerDirectory + '"'), '6881') -WindowStyle Hidden -PassThru `
                 -RedirectStandardOutput (Join-Path $directory 'peer.log') -RedirectStandardError (Join-Path $directory 'peer-error.log')
             $previewId = Preview
-            $reply = Send-Command @{ command = 'add'; preview_id = $previewId; destination = $payload; paused = $false; default_priority = 4; choices = @() }
+            $reply = Send-Command @{ command = 'add'; preview_id = $previewId; destination = $payload; paused = $false; priorities = @(4) }
             Assert $reply.ok 'Removal fixture addition failed'
             $torrentId = $reply.data.torrent_id
             $until = [DateTime]::UtcNow.AddSeconds(30)

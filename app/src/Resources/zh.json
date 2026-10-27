@@ -721,8 +721,6 @@
     "speed_limit": "限制种子速度…"
   },
   "files": {
-    "window": "{0} · 已显示 {1} 项",
-    "all_displayed": "选择已显示的文件",
     "name": "文件",
     "priority": "优先级",
     "summary": "{0}/{1} 个文件 · {2}",

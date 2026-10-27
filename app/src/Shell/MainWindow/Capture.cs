@@ -351,31 +351,30 @@ public sealed partial class MainWindow
         Model.IsInspectorMaximized = false;
         Model.SetInspector(open: true, compact: false);
         await CaptureLayout();
-        var torrents = (InspectorPane)InspectorContent.Content;
-        Require(InspectorSurface.Visibility == Visibility.Visible && ReferenceEquals(InspectorFrame, torrents.Surface),
+        var pane = (InspectorPane)InspectorContent.Content;
+        Require(InspectorSurface.Visibility == Visibility.Visible,
             "Torrents did not show its inspector.");
         var overflow = new Dictionary<string, int> { ["torrents"] = CheckToolbar() };
         await CapturePage("workspace-torrents");
 
-        await Press(torrents.Surface, "InspectorMaximize");
-        Require(Model.IsInspectorMaximized && torrents.Surface.IsMaximized
+        await Press(pane.Surface, "InspectorMaximize");
+        Require(Model.IsInspectorMaximized && pane.Surface.IsMaximized
             && WorkspaceContent.Visibility == Visibility.Collapsed && ToolbarRow.Visibility == Visibility.Visible,
             "One Maximize press on Torrents did not maximize below the toolbar.");
-        await Press(torrents.Surface, "InspectorMinimize");
+        await Press(pane.Surface, "InspectorMinimize");
         Require(Model.IsInspectorCompact && Model.IsInspectorMaximized,
             "Pin on Torrents lost the maximized choice.");
 
         Require(await Model.Navigation.Navigate(WindowPage.Library), "Library did not open.");
         await CaptureLayout();
-        var library = (InspectorPane)InspectorContent.Content;
-        Require(ReferenceEquals(InspectorFrame, library.Surface) && library.Surface.IsCompact
+        Require(pane.Surface.IsCompact
             && InspectorRow.Height.Value == 10,
             "Library did not show the inspector pinned on Torrents.");
-        await Press(library.Surface, "InspectorToggle");
-        Require(!Model.IsInspectorCompact && library.Surface.IsMaximized
+        await Press(pane.Surface, "InspectorToggle");
+        Require(!Model.IsInspectorCompact && pane.Surface.IsMaximized
             && WorkspaceContent.Visibility == Visibility.Collapsed,
             "Expanding on Library did not restore the maximized inspector.");
-        await Press(library.Surface, "InspectorMaximize");
+        await Press(pane.Surface, "InspectorMaximize");
         Require(!Model.IsInspectorMaximized && Split.Visibility == Visibility.Visible,
             "One Restore press on Library did not restore the inspector.");
         Split.SetValue(Split.Value - 40);
@@ -387,10 +386,10 @@ public sealed partial class MainWindow
 
         Require(await Model.Navigation.Navigate(WindowPage.Torrents), "Torrents did not open again.");
         await CaptureLayout();
-        Require(ReferenceEquals(InspectorFrame, torrents.Surface) && !torrents.Surface.IsCompact
-            && !torrents.Surface.IsMaximized && Math.Abs(InspectorRow.Height.Value - height) < 1,
+        Require(!pane.Surface.IsCompact
+            && !pane.Surface.IsMaximized && Math.Abs(InspectorRow.Height.Value - height) < 1,
             "Torrents did not show the inspector as it was left on Library.");
-        await Press(torrents.Surface, "InspectorClose");
+        await Press(pane.Surface, "InspectorClose");
         var focus = FocusManager.GetFocusedElement(Root.XamlRoot) as DependencyObject;
         while (focus is not null && !ReferenceEquals(focus, Torrents))
             focus = VisualTreeHelper.GetParent(focus);
@@ -398,11 +397,11 @@ public sealed partial class MainWindow
             "Close on Torrents did not hide the inspector and return focus to the torrents.");
         Model.OpenInspector();
         await CaptureLayout();
-        Require(ReferenceEquals(InspectorContent.Content, torrents) && Math.Abs(InspectorRow.Height.Value - height) < 1,
+        Require(ReferenceEquals(InspectorContent.Content, pane) && Math.Abs(InspectorRow.Height.Value - height) < 1,
             "Reopening replaced the Torrents inspector or lost its height.");
-        await Press(torrents.Surface, "InspectorMaximize");
+        await Press(pane.Surface, "InspectorMaximize");
         Require(Model.IsInspectorMaximized, "One Maximize press after reopening did not maximize once.");
-        await Press(torrents.Surface, "InspectorMaximize");
+        await Press(pane.Surface, "InspectorMaximize");
 
         completed.Add("workspace");
         outcomes.Add(new

@@ -467,7 +467,7 @@
                   />
                 </AppBarButton.Icon>
               </AppBarButton>
-              <AppBarSeparator x:Name="MapSeparator" />
+              <AppBarSeparator />
               <AppBarButton x:Name="SettingsButton" Command="{x:Bind Model.ShowSettings}">
                 <AppBarButton.Icon>
                   <FontIcon
