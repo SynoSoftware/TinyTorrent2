@@ -3,42 +3,6 @@ using Syno.TinyTorrent.Shell;
 using Syno.TinyTorrent.Torrents;
 namespace Syno.TinyTorrent;
 
-public enum CatalogueTarget
-{
-    Files,
-    Torrents,
-}
-
-public enum CatalogueSort
-{
-    Name,
-    Size,
-    Seeds,
-    Peers,
-    Seen,
-}
-
-public enum FileQuantifier
-{
-    Any,
-    Every,
-    None,
-}
-
-public enum CatalogueCondition
-{
-    None,
-    Unavailable,
-    Damaged,
-}
-
-internal enum IndexingPage
-{
-    Edit,
-    Policy,
-    Removal,
-}
-
 internal enum ImdbPhase
 {
     Downloading,
@@ -130,8 +94,6 @@ internal enum MaintenanceWork
     Recovery,
     ResetProtection,
     DeleteDataset,
-    Rebuild,
-    CatalogueRemoval,
 }
 
 public enum FileKind
@@ -152,7 +114,6 @@ public enum WindowPage
     Library,
     Connection,
     Credits,
-    Search,
 }
 
 public enum LibraryConfiguration
@@ -205,11 +166,6 @@ public enum Consumer
     Inspector,
     Draft,
     Files,
-    Catalogue,
-    CatalogueDetail,
-    CatalogueStatus,
-    CatalogueRules,
-    CatalogueSources,
     AddFiles,
 }
 
@@ -277,7 +233,6 @@ public enum SettingsCategory
     Advanced,
     Schedule,
     Plugins,
-    Indexing,
 }
 
 internal enum SubtitleScope
@@ -791,7 +746,6 @@ internal enum ConnectionPhase
 internal enum CaptureMode
 {
     None,
-    Catalogue,
     Full,
     Smoke,
     Shell,

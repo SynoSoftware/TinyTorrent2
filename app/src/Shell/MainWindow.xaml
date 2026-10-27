@@ -73,7 +73,6 @@
             <Grid Width="24" Height="24" AutomationProperties.AccessibilityView="Raw">
               <Image x:Name="TorrentsFace" Source="ms-appx:///Assets/tinyTorrent.svg" Width="24" Height="24" />
               <Image x:Name="LibraryFace" Source="ms-appx:///Assets/Settings/library.svg" Width="24" Height="24" Visibility="Collapsed" />
-              <FontIcon x:Name="SearchFace" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Search}" FontSize="24" Visibility="Collapsed" />
             </Grid>
             <TextBlock x:Name="WorkspaceName" VerticalAlignment="Center" />
           </StackPanel>
@@ -295,7 +294,6 @@
                 </ListView.ItemTemplate>
               </ListView>
               <ScrollViewer x:Name="LibraryFilters" Grid.Row="1" Visibility="Collapsed" />
-              <ScrollViewer x:Name="CatalogueFilters" Grid.Row="1" Visibility="Collapsed" />
             </Grid>
           </controls:Pane>
         </SplitView.Pane>
@@ -444,42 +442,6 @@
                   <FontIcon
                     FontFamily="{x:Bind icons:Lucide.Font}"
                     Glyph="{x:Bind icons:Lucide.Info}"
-                  />
-                </AppBarButton.Icon>
-              </AppBarButton>
-              <AppBarButton
-                x:Name="DownloadButton"
-                Visibility="Collapsed"
-                Command="{x:Bind Model.Search.DownloadSelected}"
-              >
-                <AppBarButton.Icon>
-                  <FontIcon
-                    FontFamily="{x:Bind icons:Lucide.Font}"
-                    Glyph="{x:Bind icons:Lucide.Download}"
-                  />
-                </AppBarButton.Icon>
-              </AppBarButton>
-              <AppBarButton
-                x:Name="DownloadTorrentButton"
-                Visibility="Collapsed"
-                Command="{x:Bind Model.Search.DownloadWhole}"
-              >
-                <AppBarButton.Icon>
-                  <FontIcon
-                    FontFamily="{x:Bind icons:Lucide.Font}"
-                    Glyph="{x:Bind icons:Lucide.Package}"
-                  />
-                </AppBarButton.Icon>
-              </AppBarButton>
-              <AppBarButton
-                x:Name="RefreshButton"
-                Visibility="Collapsed"
-                Command="{x:Bind Model.Search.Refresh}"
-              >
-                <AppBarButton.Icon>
-                  <FontIcon
-                    FontFamily="{x:Bind icons:Lucide.Font}"
-                    Glyph="{x:Bind icons:Lucide.RefreshCw}"
                   />
                 </AppBarButton.Icon>
               </AppBarButton>
@@ -776,24 +738,11 @@
               HorizontalContentAlignment="Stretch"
               VerticalContentAlignment="Stretch"
             />
-            <ContentControl
-              x:Name="CatalogueContent"
-              Grid.Row="0"
-              Visibility="Collapsed"
-              HorizontalContentAlignment="Stretch"
-              VerticalContentAlignment="Stretch"
-            />
           </Grid>
           <controls:Splitter x:Name="Split" Grid.Row="2" Visibility="Collapsed" />
           <Grid x:Name="InspectorSurface" Grid.Row="3" Visibility="Collapsed">
             <ContentControl
               x:Name="InspectorContent"
-              HorizontalContentAlignment="Stretch"
-              VerticalContentAlignment="Stretch"
-            />
-            <ContentControl
-              x:Name="CatalogueInspector"
-              Visibility="Collapsed"
               HorizontalContentAlignment="Stretch"
               VerticalContentAlignment="Stretch"
             />
@@ -1076,42 +1025,21 @@
       <StackPanel
         x:Name="ContextStatus"
         Orientation="Horizontal"
-        Spacing="16"
+        Spacing="6"
         VerticalAlignment="Center"
       >
-        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-          <FontIcon
-            x:Name="ContextIcon"
-            Style="{StaticResource TinyTorrentStatusIconStyle}"
-            FontFamily="{x:Bind icons:Lucide.Font}"
-            Glyph="{x:Bind icons:Lucide.List}"
-            AutomationProperties.AccessibilityView="Raw"
-          />
-          <TextBlock
-            x:Name="CountLabel"
-            Style="{StaticResource TinyTorrentStatusTextStyle}"
-            TextTrimming="CharacterEllipsis"
-          />
-        </StackPanel>
-        <StackPanel x:Name="CatalogueRate" Orientation="Horizontal" Spacing="6" Visibility="Collapsed">
-          <FontIcon
-            Style="{StaticResource TinyTorrentStatusIconStyle}"
-            FontFamily="{x:Bind icons:Lucide.Font}"
-            Glyph="{x:Bind icons:Lucide.Gauge}"
-            AutomationProperties.AccessibilityView="Raw"
-          />
-          <TextBlock x:Name="RateLabel" Style="{StaticResource TinyTorrentStatusTextStyle}" />
-        </StackPanel>
-        <StackPanel x:Name="CollectionStatus" Orientation="Horizontal" Spacing="6" Visibility="Collapsed">
-          <FontIcon
-            x:Name="CollectionIcon"
-            Style="{StaticResource TinyTorrentStatusIconStyle}"
-            FontFamily="{x:Bind icons:Lucide.Font}"
-            Glyph="{x:Bind icons:Lucide.RefreshCw}"
-            AutomationProperties.AccessibilityView="Raw"
-          />
-          <TextBlock x:Name="CollectionLabel" Style="{StaticResource TinyTorrentStatusTextStyle}" />
-        </StackPanel>
+        <FontIcon
+          x:Name="ContextIcon"
+          Style="{StaticResource TinyTorrentStatusIconStyle}"
+          FontFamily="{x:Bind icons:Lucide.Font}"
+          Glyph="{x:Bind icons:Lucide.List}"
+          AutomationProperties.AccessibilityView="Raw"
+        />
+        <TextBlock
+          x:Name="CountLabel"
+          Style="{StaticResource TinyTorrentStatusTextStyle}"
+          TextTrimming="CharacterEllipsis"
+        />
       </StackPanel>
       <StackPanel
         x:Name="ActivityStatus"

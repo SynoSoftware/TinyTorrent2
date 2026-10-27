@@ -305,13 +305,6 @@ void Engine::State::RefreshPolicy()
     // Connection policy and peer classes apply to new peers, so changing them
     // reconnects existing peers too.
     bool reconnects = routeChanged || connectionChanged;
-    if (reconnects || pauseChanged || ratesChanged)
-        StopBitmagnet();
-    if (reconnects)
-    {
-        crawlerNodeId.reset();
-        nodeRefreshAt = {};
-    }
     if (routeChanged)
     {
         std::lock_guard lock(checkGate);
@@ -414,7 +407,7 @@ void Engine::State::RefreshPolicy()
         // A limit of 0 or less would pause every check.
         pack.set_int(lt::settings_pack::active_checking, INT_MAX);
         pack.set_int(lt::settings_pack::connection_speed, chosen.outgoingRate);
-        pack.set_bool(lt::settings_pack::enable_dht, chosen.dht && !IsShuttingDown());
+        pack.set_bool(lt::settings_pack::enable_dht, chosen.dht);
         pack.set_bool(lt::settings_pack::enable_lsd, chosen.lsd);
         pack.set_bool(lt::settings_pack::rate_limit_ip_overhead, chosen.includesOverhead);
         pack.set_int(lt::settings_pack::active_dht_limit, -1);

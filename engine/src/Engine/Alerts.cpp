@@ -1,7 +1,6 @@
 #include "Engine/State.h"
 #include <libtorrent/torrent_info.hpp>
 #include <libtorrent/session_stats.hpp>
-#include <libtorrent/hex.hpp>
 #include <algorithm>
 #include <cwctype>
 
@@ -88,55 +87,6 @@ void Engine::State::Handle(lt::alert* alert)
     case lt::metadata_failed_alert::alert_type:
         On(static_cast<lt::metadata_failed_alert const&>(*alert));
         break;
-    case lt::dht_stats_alert::alert_type:
-        On(static_cast<lt::dht_stats_alert const&>(*alert));
-        break;
-    case lt::dht_live_nodes_alert::alert_type:
-        On(static_cast<lt::dht_live_nodes_alert const&>(*alert));
-        break;
-    case lt::dht_direct_response_alert::alert_type:
-        On(static_cast<lt::dht_direct_response_alert const&>(*alert));
-        break;
-    case lt::dht_get_peers_alert::alert_type:
-        if (settings.indexing && indexReady)
-        {
-            auto hash = lt::aux::to_hex(static_cast<lt::dht_get_peers_alert const&>(*alert).info_hash.to_string());
-            // Rats Search peers looking for each other, not a torrent.
-            if (hash == rats::rendezvous)
-                break;
-            if (bitmagnet) bitmagnet->Rank(hash);
-            indexDiscoveries.push_back(std::move(hash));
-        }
-        break;
-    case lt::dht_announce_alert::alert_type:
-        if (settings.indexing && indexReady)
-        {
-            auto const& announced = static_cast<lt::dht_announce_alert const&>(*alert);
-            auto hash = lt::aux::to_hex(announced.info_hash.to_string());
-            // Port 0 marks an announce with no usable port; both receivers skip it.
-            auto port = announced.port > 0 && announced.port <= 65535 ? announced.port : 0;
-            lt::tcp::endpoint peer{announced.ip, static_cast<unsigned short>(port)};
-            // Rats Search peers announce themselves under this key; it is not a torrent.
-            if (hash == rats::rendezvous)
-                FoundRats({peer});
-            else
-            {
-                if (bitmagnet)
-                    bitmagnet->Fetch(hash, peer);
-                indexDiscoveries.push_back(std::move(hash));
-            }
-        }
-        break;
-    case lt::dht_get_peers_reply_alert::alert_type:
-    {
-        auto const& reply = static_cast<lt::dht_get_peers_reply_alert const&>(*alert);
-        auto hash = lt::aux::to_hex(reply.info_hash.to_string());
-        if (hash == rats::rendezvous)
-            FoundRats(reply.peers());
-        else if (bitmagnet)
-            bitmagnet->Found(hash, reply.peers());
-        break;
-    }
     case lt::save_resume_data_alert::alert_type:
         On(static_cast<lt::save_resume_data_alert&>(*alert));
         break;
@@ -541,7 +491,6 @@ void Engine::State::On(lt::metadata_received_alert const& alert)
         {
             UpdatePreview(preview);
             preview.error.clear();
-            IngestMetadata(preview.params, {.metainfoPath = preview.torrentFile});
         }
     }
     if (auto torrent = FindWorking(alert.handle))
@@ -553,7 +502,6 @@ void Engine::State::On(lt::metadata_received_alert const& alert)
         ContinueNames();
         torrent->ApplyIntent();
         RecordHashes(*torrent, alert.handle.info_hashes());
-        IngestMetadata(*torrent);
         Invalidate(torrent->torrentId);
     }
 }

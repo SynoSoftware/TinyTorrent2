@@ -115,11 +115,6 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
         reply(Failure(*refusal));
         return;
     }
-    if (name.starts_with("catalogue_"))
-    {
-        IndexCommand(name, request, connectionId, std::move(reply));
-        return;
-    }
     if (!command)
     {
         reply(Failure(ErrorCode::UnknownCommand));

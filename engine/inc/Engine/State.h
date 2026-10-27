@@ -1,10 +1,6 @@
 #pragma once
 
 #include "Changes.h"
-#include "Catalogue.h"
-#include "BitmagnetCrawler.h"
-#include "MetadataRequester.h"
-#include "Rats/Connection.h"
 #include "Drives.h"
 #include "Engine.h"
 #include "Log.h"
@@ -15,9 +11,7 @@
 #include <libtorrent/add_torrent_params.hpp>
 #include <libtorrent/alert_types.hpp>
 #include <libtorrent/session.hpp>
-#include <array>
 #include <chrono>
-#include <deque>
 #include <atomic>
 #include <filesystem>
 #include <functional>
@@ -27,7 +21,6 @@
 #include <mutex>
 #include <optional>
 #include <set>
-#include <span>
 #include <stop_token>
 #include <string>
 #include <variant>
@@ -169,10 +162,6 @@ public:
         bool watchesRecursively = false;
         std::string watchDestination;
         bool rechecksFinished = false;
-        bool indexing = false;
-        int indexBudgetMib = 1024;
-        int indexStaleHours = 4320;
-        std::vector<Catalogue::Rule> indexRules;
         std::string language;
         std::string incompleteFolder;
         bool usesIncompleteFolder = false;
@@ -495,130 +484,6 @@ public:
     Store sources;
     // Checks proxies, which can wait for one that does not answer.
     Store checks;
-    Catalogue catalogue{directory};
-    Store indexWork;
-    Json crawlerConfig;
-    bool bitmagnetStarting = false;
-    std::uint64_t bitmagnetVersion = 0;
-    std::unique_ptr<MetadataRequester> metadataRequester;
-    std::unique_ptr<BitmagnetCrawler> bitmagnet;
-    BitmagnetCrawler::Statistics bitmagnetStatistics;
-    std::uint64_t bitmagnetValidated = 0;
-    std::uint64_t bitmagnetRetained = 0;
-    std::uint64_t bitmagnetInvalid = 0;
-    struct CrawlerRequest
-    {
-        std::uintptr_t request;
-        std::chrono::steady_clock::time_point deadline;
-    };
-    std::map<std::uintptr_t, CrawlerRequest> crawlerRequests;
-    std::uintptr_t crawlerRequest = 0;
-    std::vector<Catalogue::Pending> crawlerDiscoveries;
-    std::vector<Catalogue::Node> crawlerNodes;
-    struct CrawlerBatch
-    {
-        std::vector<BitmagnetCrawler::Acquired> values;
-        std::size_t next = 0;
-        std::function<void()> complete;
-    };
-    std::deque<std::shared_ptr<CrawlerBatch>> crawlerBatches;
-    bool crawlerSaving = false;
-    bool crawlerSaveFailed = false;
-    std::optional<lt::sha1_hash> crawlerNodeId;
-    // Rats Search peers that share catalogue records over their own protocol.
-    // They run while the crawler runs, through the crawler's route.
-    struct RatsPeer
-    {
-        enum class Stage
-        {
-            Opening,
-            // Reading when this peer's snapshot was last requested.
-            Deciding,
-            Batch,
-            Snapshot,
-            // Everything asked for has arrived and is being stored.
-            Storing,
-            Closing
-        };
-        std::uint64_t id = 0;
-        lt::tcp::endpoint endpoint;
-        std::unique_ptr<rats::Connection> connection;
-        Stage stage = Stage::Opening;
-        // When the peer has been silent too long. Only an answer to what was
-        // asked moves it.
-        std::chrono::steady_clock::time_point deadline;
-        // When the connection ends however busy the peer keeps it.
-        std::chrono::steady_clock::time_point expires;
-        std::string peerId;
-        // Used by one catalogue job at a time, and by this thread only while
-        // none runs.
-        std::shared_ptr<rats::Snapshot> snapshot;
-        // Snapshot bytes not yet decoded. Bytes are acknowledged only once
-        // their records are stored, so the sender's window bounds this memory.
-        std::vector<char> received;
-        // How many snapshot bytes the Snapshot has consumed.
-        std::int64_t decoded = 0;
-        std::int64_t acknowledged = 0;
-        std::vector<Catalogue::Claim> claims;
-        // Records this connection added to the catalogue.
-        std::int64_t stored = 0;
-        bool storing = false;
-    };
-    struct RatsCandidate
-    {
-        std::chrono::steady_clock::time_point retry;
-        // From crawler.json, so it is kept whatever its address and however
-        // often it fails.
-        bool listed = false;
-    };
-    std::shared_ptr<Dialer::Route const> ratsRoute;
-    std::vector<RatsPeer> ratsPeers;
-    std::uint64_t ratsPeer = 0;
-    // Each peer address known, by the DHT or crawler.json.
-    std::map<lt::tcp::endpoint, RatsCandidate> ratsCandidates;
-    // When each address last got a snapshot request, because a peer can
-    // change its key and so its catalogue sync record.
-    std::map<lt::address, std::chrono::steady_clock::time_point> ratsSnapshots;
-    std::chrono::steady_clock::time_point ratsLookupAt{};
-    std::uint64_t ratsReceived = 0;
-    std::uint64_t indexSampled = 0;
-    std::array<std::pair<std::chrono::seconds, std::int64_t>, 60> indexPublications{};
-    struct Scrape
-    {
-        std::uintptr_t request = 0;
-        std::string hash;
-        std::vector<unsigned char> seeds;
-        std::vector<unsigned char> peers;
-        int responses = 0;
-        int pending = 0;
-        std::chrono::steady_clock::time_point deadline;
-        std::vector<Catalogue::Node> nodes;
-        std::set<std::string> visited;
-        int requested = 0;
-    };
-    std::map<std::string, Scrape> scrapes;
-    struct MetadataSource
-    {
-        std::string metainfoPath;
-        std::filesystem::path resumeFile;
-        bool snapshot = false;
-    };
-    // A full parameter snapshot can enrich an earlier metadata-only admission.
-    std::map<std::string, bool> ingested;
-    std::map<std::string, bool> ingesting;
-    std::string indexError;
-    bool indexOpening = false;
-    bool indexReady = false;
-    bool indexConfigured = false;
-    std::uint64_t indexVersion = 0;
-    bool indexRebuilding = false;
-    bool indexMaintaining = false;
-    std::chrono::steady_clock::time_point indexAt{};
-    std::chrono::steady_clock::time_point nodeRefreshAt{};
-    std::chrono::steady_clock::time_point cleanupAt{};
-    std::vector<std::string> indexDiscoveries;
-    std::uintptr_t scrapeRequest = 0;
-    std::map<std::string, std::chrono::steady_clock::time_point> scrapeAt;
     // Serializes route cancellation with nonblocking proxy connect/send calls.
     std::mutex checkGate;
     // Ends proxy checks when their route changes or the engine closes.
@@ -994,8 +859,6 @@ public:
     // Applies the parts of the policy that changed since the last call.
     void RefreshPolicy();
     static std::optional<NetworkAdapter> FindAdapter(std::string const& name);
-    static std::vector<lt::tcp::endpoint> ResolveProxy(Settings::Proxy const& proxy,
-        std::optional<NetworkAdapter> const& adapter, std::stop_token stop);
     void ApplyPolicy(lt::torrent_handle const& handle);
     ScheduleMode ScheduledMode() const;
     // Why the session is paused, or nothing when it is not. A pause that Resume
@@ -1044,37 +907,6 @@ public:
     static std::vector<std::string> Missing(std::vector<std::string> const& urls,
         std::vector<std::string> known);
     void On(lt::metadata_failed_alert const& alert);
-    void ConfigureIndex();
-    void ContinueBitmagnet();
-    void SaveCrawler();
-    void StartBitmagnet(Dialer::Route route);
-    void StopBitmagnet();
-    Json BitmagnetStatus() const;
-    void ContinueRats();
-    void ContinueRats(RatsPeer& peer);
-    void OnRats(RatsPeer& peer, rats::Event event);
-    void EndRats(RatsPeer& peer);
-    RatsPeer* FindRats(std::uint64_t id);
-    void FoundRats(std::vector<lt::tcp::endpoint> const& peers);
-    void ListRats(std::vector<lt::tcp::endpoint> const& peers);
-    void StopRats();
-    Json RatsStatus() const;
-    static std::optional<std::int64_t> Estimate(std::span<unsigned char const> bloom);
-    void MaintainIndex();
-    void StopIndex();
-    void IngestMetadata(lt::add_torrent_params const& params, MetadataSource source);
-    void IngestMetadata(Torrent const& torrent);
-    void IndexCommand(std::string const& command, Json const& request,
-        std::string const& connectionId, Reply reply);
-    void PrepareCatalogue(Json const& request, std::string const& connectionId, Reply reply);
-    static Json IndexRules(std::vector<Catalogue::Rule> const& rules);
-    static std::optional<std::vector<Catalogue::Rule>> ReadIndexRules(Json const& value);
-    Catalogue::Settings IndexSettings() const;
-    void On(lt::dht_stats_alert const& alert);
-    void On(lt::dht_live_nodes_alert const& alert);
-    void On(lt::dht_direct_response_alert const& alert);
-    void ScrapeCatalogue(Catalogue::Entry const& entry);
-    void SendScrape(Scrape& scrape);
 
     void Add(Preview& preview, Addition::Choices choices, std::function<void(Outcome, Added)> completion);
     // A `watchStamp` marks a file from the watch folder, which saves to the

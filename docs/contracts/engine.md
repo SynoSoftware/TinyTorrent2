@@ -24,7 +24,6 @@ hide the safety and recovery rules the change needs.
 | Startup, activation, tray, Windows registration, Close, Exit or crash reporting | [Lifetime](engine/lifetime.md) |
 | Network route, speed limits, schedule, connection measurement or libtorrent tuning | [Settings](engine/settings.md) |
 | Notifications or idle-sleep prevention | [Notifications and sleep](engine/notifications.md) |
-| Catalogue metadata, DHT collection, catalogue search, exclusion or stale eviction | [Torrent catalogue](indexing.md) |
 
 These references are parts of this contract, with the same authority.
 

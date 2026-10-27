@@ -15,13 +15,11 @@ public sealed partial class MainViewModel
     internal Navigation Navigation { get; }
     public WindowPage Page => Navigation.Page;
     public ICommand ReturnWorkspace =>
-        Navigation.Workspace == WindowPage.Search ? ShowSearch
-        : Navigation.Workspace == WindowPage.Library ? ShowLibrary : ShowTorrents;
+        Navigation.Workspace == WindowPage.Library ? ShowLibrary : ShowTorrents;
     public string ReturnText =>
         Text.Get(
             "settings",
-            Navigation.Workspace == WindowPage.Search ? "return_search"
-            : Navigation.Workspace == WindowPage.Library ? "return_library" : "return_torrents"
+            Navigation.Workspace == WindowPage.Library ? "return_library" : "return_torrents"
         );
 
     private void RefreshNavigation()
@@ -35,7 +33,6 @@ public sealed partial class MainViewModel
             Inspector.Show(_selected.Length == 1 ? _selected[0] : null);
         RefreshInspector();
         Library.SetVisible(Page == WindowPage.Library);
-        Search.SetVisible(Page == WindowPage.Search);
         ObserveMemory();
         Changed(nameof(Page));
         Changed(nameof(ReturnWorkspace));
@@ -48,14 +45,9 @@ public sealed partial class MainViewModel
     public IReadOnlyList<Torrent> VisibleTorrents { get; private set; } = [];
     public string Query
     {
-        get => Page == WindowPage.Search ? Search.Query : Page == WindowPage.Library ? Library.Query : _query;
+        get => Page == WindowPage.Library ? Library.Query : _query;
         set
         {
-            if (Page == WindowPage.Search)
-            {
-                Search.Query = value;
-                return;
-            }
             if (Page == WindowPage.Library)
             {
                 Library.Query = value;
@@ -126,8 +118,6 @@ public sealed partial class MainViewModel
         {
             if (Page == WindowPage.Library)
                 return Library.Status;
-            if (Page == WindowPage.Search)
-                return Search.Status;
             if (Page == WindowPage.Settings)
             {
                 var category =
@@ -169,12 +159,10 @@ public sealed partial class MainViewModel
     public ICommand ShowSettings { get; }
     public ICommand ShowTorrents { get; }
     public ICommand ShowLibrary { get; }
-    public ICommand ShowSearch { get; }
     public ICommand ShowAbout { get; }
     public event EventHandler<SettingTarget>? SettingsRequested;
     public event EventHandler? TorrentsRequested;
     public event EventHandler? LibraryRequested;
-    public event EventHandler? SearchRequested;
     public event EventHandler? AboutRequested;
 
     internal static bool Matches(Torrent torrent, TorrentFilter filter) =>
@@ -243,7 +231,6 @@ public sealed partial class MainViewModel
                     || suggestion.Command == Add
                     || suggestion.Command == ShowTorrents
                     || suggestion.Command == ShowLibrary
-                    || suggestion.Command == ShowSearch
                     || suggestion.Command == ShowAbout
                     || suggestion.Command == AddMagnet
                     || suggestion.Command == (IsPausedByChoice ? ResumeAll : PauseAll)
@@ -293,12 +280,6 @@ public sealed partial class MainViewModel
             string.Empty,
             SuggestionScope.Command,
             ShowLibrary
-        );
-        yield return new(
-            Text.Get("catalogue", "title"),
-            string.Empty,
-            SuggestionScope.Command,
-            ShowSearch
         );
         yield return new(
             Text.Get("about", "title"),

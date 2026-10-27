@@ -62,17 +62,12 @@ entirely in C# while the product window is open. They share one C# SQLite owner
 for saved facts, decisions and the last accepted file lists. The complete engine
 summary reconciles membership before cached rows are published; background reads
 confirm or replace those lists before file work trusts them. The resident engine keeps no
-Library projection or provider work. C# creates, populates
+Library projection, provider work or SQLite dependency. C# creates, populates
 and queries the database and owns subtitle-file handling. These features use
 existing torrent facts and commands without adding native feature code or APIs.
 The plan owns the feature's detailed behavior and future data-source seam.
 The [database contract](database.md) owns shared persistence, initialization,
 versioning and connection lifetime.
-
-The optional [torrent catalogue](indexing.md) is separate from Library. The
-engine owns its SQLite archive and search projection, shared-session DHT
-collection and best-effort availability observations. Search is a third
-workspace and stays usable with collection off. Its downloads use existing Add.
 
 ### Third-party provider access
 
@@ -124,9 +119,8 @@ controls and HTTP requests serve the product without its memory cost.
 Explicit website links open in the person's default browser.
 
 Design the interface around these tasks and libtorrent's capabilities. Remote
-servers, browser access, interchangeable engines, other platforms and torrent
-creation are outside scope. Optional public-DHT collection is scoped by the
-[catalogue contract](indexing.md). Blocklists and running a
+servers, browser access, interchangeable engines, other platforms, online torrent
+discovery, and torrent creation are outside scope. Blocklists and running a
 program when a download finishes need an identified user requirement before
 they become implementation work. The approved Settings scope includes one
 watched torrent folder, configurable speed-history intervals, addition and
@@ -282,7 +276,6 @@ each process starts the other by name and two copies of a name drift apart.
 | Framing, decoding, request correlation, connection failures | Pipe adapter at each endpoint |
 | Display copies, filters, drafts, dialogs, window placement, window-only settings | WinUI |
 | Library search, TMDB, subtitle acquisition/file handling and their settings/facts | C# product-window lifetime; one SQLite owner |
-| Discovered torrent catalogue, DHT collection and local catalogue queries | Engine lifetime; a separate native SQLite owner using the existing session |
 | Table geometry, sorting, selection, and gestures | TableView |
 | Resource lookup and live text refresh | One localisation component per process, following the [localisation contract](localisation.md#ownership-and-live-behavior) |
 
@@ -507,7 +500,7 @@ Broader platform lists in individual C# projects do not add release targets.
 | `3rdParty/` | The engine's dependencies, compiled once; not in git. See [third-party dependencies](#third-party-dependencies). |
 
 The app is one WinUI project. `Shell/` holds the window, the main view model and
-InspectorPane composition. `Search/`, `Torrents/`, `Settings/`, `Library/` and
+InspectorPane composition. `Torrents/`, `Settings/`, `Library/` and
 `Subtitles/` keep their related state, operations and presentation together.
 `Shared/` holds common facilities, with engine communication, storage, network,
 desktop and diagnostics in their own folders; `Controls/` holds reusable UI.

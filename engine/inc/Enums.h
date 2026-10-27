@@ -2,62 +2,6 @@
 
 namespace tt
 {
-enum class MetadataStage
-{
-    Route,
-    Limiter,
-    Connect,
-    Handshake,
-    Extension,
-    Receive,
-    Validate,
-    Cancelled
-};
-
-enum class CrawlerQuery
-{
-    Ping,
-    Find,
-    Sample,
-    Peers,
-    Scrape
-};
-
-enum class CatalogueTarget
-{
-    Files,
-    Torrents
-};
-
-enum class CatalogueSort
-{
-    Name,
-    Size,
-    Seeds,
-    Peers,
-    Seen
-};
-
-enum class FileQuantifier
-{
-    Any,
-    Every,
-    None
-};
-
-enum class CatalogueRemoval
-{
-    Excluded,
-    Clear
-};
-
-enum class CatalogueCondition
-{
-    Healthy,
-    Damaged,
-    Unavailable
-};
-
 enum class Command
 {
     Snapshot,

@@ -4,7 +4,6 @@
 #include <windns.h>
 #include <algorithm>
 #include <memory>
-#include <stdexcept>
 
 #pragma comment(lib, "dnsapi.lib")
 
@@ -401,38 +400,6 @@ ProxyOutcome Http(Connection& connection, std::string const& username, std::stri
 std::string_view Engine::State::Name(ProxyOutcome outcome)
 {
     return Word(outcomes, outcome);
-}
-
-std::vector<lt::tcp::endpoint> Engine::State::ResolveProxy(Settings::Proxy const& proxy,
-    std::optional<NetworkAdapter> const& adapter, std::stop_token stop)
-{
-    Winsock winsock;
-    std::vector<lt::tcp::endpoint> endpoints;
-    try
-    {
-        for (auto const& address : ResolveAddresses(proxy.host, proxy.port, adapter, stop, Clock::now() + checkLimit))
-        {
-            if (address.ss_family == AF_INET)
-            {
-                auto const& socket = reinterpret_cast<sockaddr_in const&>(address);
-                lt::address_v4::bytes_type bytes;
-                memcpy(bytes.data(), &socket.sin_addr, bytes.size());
-                endpoints.emplace_back(lt::address_v4(bytes), ntohs(socket.sin_port));
-            }
-            else
-            {
-                auto const& socket = reinterpret_cast<sockaddr_in6 const&>(address);
-                lt::address_v6::bytes_type bytes;
-                memcpy(bytes.data(), &socket.sin6_addr, bytes.size());
-                endpoints.emplace_back(lt::address_v6(bytes, socket.sin6_scope_id), ntohs(socket.sin6_port));
-            }
-        }
-    }
-    catch (ProxyOutcome outcome)
-    {
-        throw std::runtime_error("Proxy resolution failed: " + std::string(Name(outcome)));
-    }
-    return endpoints;
 }
 
 void Engine::State::CheckProxy(Settings::Proxy proxy, std::function<void(std::optional<ProxyCheck>)> completion)

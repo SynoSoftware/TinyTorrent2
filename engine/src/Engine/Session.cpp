@@ -43,7 +43,7 @@ lt::info_hash_t SavedHashes(std::vector<std::string> const& hashes)
 }
 
 Engine::State::State(std::filesystem::path path, std::function<void()> wake) :
-    directory(std::move(path)), store(wake), payload(wake), sources(wake), checks(wake), indexWork(wake),
+    directory(std::move(path)), store(wake), payload(wake), sources(wake), checks(wake),
     wake(std::move(wake)), language(settings.language)
 {
     // Without a saved document the engine starts from the default settings.
@@ -149,7 +149,7 @@ void Engine::State::Start(Document const& saved, Resumes& resumes)
         "dht.libtorrent.org:25401,dht.transmissionbt.com:6881,router.bittorrent.com:6881");
     pack.set_int(lt::settings_pack::alert_mask,
         lt::alert_category::error | lt::alert_category::storage | lt::alert_category::status |
-        lt::alert_category::file_progress | lt::alert_category::dht | lt::alert_category::dht_operation);
+        lt::alert_category::file_progress);
     session = std::make_unique<lt::session>(lt::session_params(pack));
     // ABI 100 leaves filter changes to us; retain libtorrent's initial class
     // assignments without reading them back during policy changes.
@@ -218,7 +218,6 @@ void Engine::State::Start(Document const& saved, Resumes& resumes)
         torrent.ApplyIntent();
     }
     startup = Startup::Ready;
-    ConfigureIndex();
     log.Write("startup", "", "ready");
     PublishSnapshot();
 }
@@ -759,9 +758,6 @@ void Engine::State::RecordHashes(Torrent& torrent)
 
 Engine::State::~State()
 {
-    StopBitmagnet();
-    catalogue.Interrupt();
-    indexWork.Abandon();
     sources.Abandon();
     for (auto const& [root, worker] : volumes)
         worker->Abandon();
@@ -794,8 +790,6 @@ void Engine::State::Tick()
         worker->Drain();
     sources.Drain();
     checks.Drain();
-    indexWork.Drain();
-    SaveCrawler();
     if (session)
     {
         std::vector<lt::alert*> alerts;
@@ -812,9 +806,6 @@ void Engine::State::Tick()
         if (!IsShuttingDown())
         {
             Maintain();
-            ContinueBitmagnet();
-            ContinueRats();
-            MaintainIndex();
         }
         QueryCompletions();
         QueryFiles();

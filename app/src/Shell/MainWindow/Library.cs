@@ -163,11 +163,9 @@ public sealed partial class MainWindow
         var page = NavigationPage;
         TorrentsFace.Visibility = page == WindowPage.Torrents ? Visibility.Visible : Visibility.Collapsed;
         LibraryFace.Visibility = page == WindowPage.Library ? Visibility.Visible : Visibility.Collapsed;
-        SearchFace.Visibility = page == WindowPage.Search ? Visibility.Visible : Visibility.Collapsed;
         WorkspaceName.Text = page switch
         {
             WindowPage.Library => Model.Text.Get("library", "title"),
-            WindowPage.Search => Model.Text.Get("catalogue", "title"),
             _ => Model.Text.Get("window", "torrents"),
         };
         AutomationProperties.SetName(WorkspacePicker, WorkspaceName.Text);

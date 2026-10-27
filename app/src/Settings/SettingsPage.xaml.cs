@@ -33,7 +33,6 @@ public sealed partial class SettingsPage : UserControl
     private Scheduler? _scheduler;
     private SpeedLimits? _speedLimits;
     private SpeedLimits? _scheduleLimits;
-    private IndexingView? _indexing;
     private Syno.TinyTorrent.Subtitles.Automatic? _automatic;
     private readonly UISettings _display = new();
     private ThemeSettings? _themeSettings;
@@ -55,8 +54,6 @@ public sealed partial class SettingsPage : UserControl
     internal event EventHandler<IDataset>? DeleteRequested;
     public event EventHandler? ConnectionRequested;
     internal event EventHandler? ResetRequested;
-    internal event EventHandler<IndexingTask>? IndexingTaskRequested;
-    internal event EventHandler? IndexRebuildRequested;
     internal event EventHandler? LayoutChanged;
 
     public SettingsPage(MainViewModel main)
@@ -84,7 +81,6 @@ public sealed partial class SettingsPage : UserControl
 
     private void OnLoaded(object sender, RoutedEventArgs args)
     {
-        _indexing?.SetVisible(_category == IndexingCategory);
         Model.TextChanged += OnText;
         Model.PropertyChanged += OnModel;
         Main.PropertyChanged += OnMain;
@@ -105,7 +101,6 @@ public sealed partial class SettingsPage : UserControl
 
     internal void Release()
     {
-        _indexing?.SetVisible(false);
         _automatic?.Attach(null);
         if (SubtitlesContent?.Content is SubtitleSettings subtitles)
         {
@@ -142,7 +137,6 @@ public sealed partial class SettingsPage : UserControl
                 (HomeCategory, Lucide.House, "home"),
                 (GeneralCategory, Lucide.Settings, "general"),
                 (TransfersCategory, Lucide.ArrowDownUp, "transfers"),
-                (IndexingCategory, Lucide.Search, "network"),
                 (LimitsCategory, Lucide.SlidersHorizontal, "limits"),
                 (ScheduleCategory, Lucide.CalendarClock, "schedule"),
                 (AppearanceCategory, Lucide.Palette, "appearance"),
@@ -355,7 +349,6 @@ public sealed partial class SettingsPage : UserControl
         RefreshHome();
         (SubtitlesContent?.Content as SubtitleSettings)?.RefreshText();
         _automatic?.Refresh();
-        _indexing?.RefreshText();
         AlignCategory();
     }
 
@@ -472,7 +465,6 @@ public sealed partial class SettingsPage : UserControl
                 panel.Visibility = ReferenceEquals(panel, content)
                     ? Visibility.Visible
                     : Visibility.Collapsed;
-            _indexing?.SetVisible(_category == IndexingCategory);
             UpdateLayout();
             RefreshSubtitles();
             AlignCategory();
@@ -494,7 +486,6 @@ public sealed partial class SettingsPage : UserControl
             Advanced,
             Schedule,
             Plugins,
-            Indexing,
         }.OfType<FrameworkElement>();
 
     private FrameworkElement LoadCategory(out bool loaded)
@@ -513,12 +504,6 @@ public sealed partial class SettingsPage : UserControl
             IntegrationContent.Content = _integration = new WindowsIntegration(Model);
         else if (_category == AppearanceCategory)
             ThemeContent.Content = _themes = new ThemePicker(Model);
-        else if (_category == IndexingCategory)
-        {
-            Indexing.Content = _indexing = new IndexingView(Main);
-            _indexing.TaskRequested += (_, task) => IndexingTaskRequested?.Invoke(this, task);
-            _indexing.RebuildRequested += (_, _) => IndexRebuildRequested?.Invoke(this, EventArgs.Empty);
-        }
         else if (_category == LimitsCategory)
         {
             _speedLimits = new SpeedLimits(Main);
@@ -678,8 +663,6 @@ public sealed partial class SettingsPage : UserControl
 
     internal void FocusConnection() => CurrentProfiles?.FocusConnection();
 
-    internal Task RefreshIndexing() => _indexing?.Refresh() ?? Main.Search.RefreshStatus();
-
     // In SettingsCategory order.
     private NavigationViewItem[] CategoryItems =>
         [
@@ -691,7 +674,6 @@ public sealed partial class SettingsPage : UserControl
             AdvancedCategory,
             ScheduleCategory,
             PluginsCategory,
-            IndexingCategory,
         ];
 
     public static bool IsHome(SettingsCategory? category) => category is null;
@@ -796,7 +778,6 @@ public sealed partial class SettingsPage : UserControl
             "power" => PowerSection,
             "dialogs" => ConfirmationsSection,
             "startup_closing" => LifecycleSection,
-            "indexing" or "index_budget_mib" or "index_stale_hours" => _indexing?.Field(settingName),
             "watched_folder" => WatchedSection,
             "peer_connections" => PeersSection,
             "peer_discovery" => DiscoverySection,

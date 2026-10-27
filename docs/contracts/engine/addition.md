@@ -38,10 +38,7 @@ choices belong to a single-source Add dialog or the Files inspector after additi
 Known-metadata previews page the file list while retaining original torrent
 indices, including gaps from hidden padding. Selection is one default priority
 plus original-index overrides; opening another page does not replace choices
-made earlier. Ordinary sources and the [torrent catalogue](../indexing.md#search-and-add)
-use this same preview, selection and confirmation owner. Catalogue metadata
-preparation never exports a temporary `.torrent` or changes the ordinary
-source-dialog preference.
+made earlier.
 
 Add to top of queue commits the new torrent at the front of the saved download
 order before releasing its payload guard. The queue owner reapplies that order

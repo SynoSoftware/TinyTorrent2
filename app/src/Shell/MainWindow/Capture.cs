@@ -44,7 +44,6 @@ public sealed partial class MainWindow
         "files" => CaptureMode.Files,
         "files-layout" => CaptureMode.FilesLayout,
         "search" => CaptureMode.Search,
-        "catalogue" => CaptureMode.Catalogue,
         "library" => CaptureMode.Library,
         "library-files" => CaptureMode.LibraryFiles,
         "traffic" => CaptureMode.Traffic,
@@ -336,6 +335,109 @@ public sealed partial class MainWindow
                 return false;
         }
         return true;
+    }
+
+    // Arranges the inspector on Torrents and checks that Library shows the same
+    // arrangement and toolbar, that each pane button acts once, and that Close
+    // returns focus to the page. The window is narrow and Filters is open, so
+    // the toolbar has little room for each page's commands.
+    private async Task CaptureWorkspace(List<object> outcomes, List<string> completed)
+    {
+        Require(await Model.Navigation.Navigate(WindowPage.Torrents), "Torrents did not open.");
+        var scale = Root.XamlRoot.RasterizationScale;
+        AppWindow.Resize(new SizeInt32((int)(720 * scale), (int)(560 * scale)));
+        Model.IsFilterOpen = true;
+        Model.IsToolbarOpen = true;
+        Model.IsInspectorMaximized = false;
+        Model.SetInspector(open: true, compact: false);
+        await CaptureLayout();
+        var torrents = (InspectorPane)InspectorContent.Content;
+        Require(InspectorSurface.Visibility == Visibility.Visible && ReferenceEquals(InspectorFrame, torrents.Surface),
+            "Torrents did not show its inspector.");
+        var overflow = new Dictionary<string, int> { ["torrents"] = CheckToolbar() };
+        await CapturePage("workspace-torrents");
+
+        await Press(torrents.Surface, "InspectorMaximize");
+        Require(Model.IsInspectorMaximized && torrents.Surface.IsMaximized
+            && WorkspaceContent.Visibility == Visibility.Collapsed && ToolbarRow.Visibility == Visibility.Visible,
+            "One Maximize press on Torrents did not maximize below the toolbar.");
+        await Press(torrents.Surface, "InspectorMinimize");
+        Require(Model.IsInspectorCompact && Model.IsInspectorMaximized,
+            "Pin on Torrents lost the maximized choice.");
+
+        Require(await Model.Navigation.Navigate(WindowPage.Library), "Library did not open.");
+        await CaptureLayout();
+        var library = (InspectorPane)InspectorContent.Content;
+        Require(ReferenceEquals(InspectorFrame, library.Surface) && library.Surface.IsCompact
+            && InspectorRow.Height.Value == 10,
+            "Library did not show the inspector pinned on Torrents.");
+        await Press(library.Surface, "InspectorToggle");
+        Require(!Model.IsInspectorCompact && library.Surface.IsMaximized
+            && WorkspaceContent.Visibility == Visibility.Collapsed,
+            "Expanding on Library did not restore the maximized inspector.");
+        await Press(library.Surface, "InspectorMaximize");
+        Require(!Model.IsInspectorMaximized && Split.Visibility == Visibility.Visible,
+            "One Restore press on Library did not restore the inspector.");
+        Split.SetValue(Split.Value - 40);
+        await CaptureLayout();
+        var height = InspectorRow.Height.Value;
+        Require(height > 10 && Math.Abs(height - Split.Value) < 1, "The Library split did not resize the inspector.");
+        overflow["library"] = CheckToolbar();
+        await CapturePage("workspace-library");
+
+        Require(await Model.Navigation.Navigate(WindowPage.Torrents), "Torrents did not open again.");
+        await CaptureLayout();
+        Require(ReferenceEquals(InspectorFrame, torrents.Surface) && !torrents.Surface.IsCompact
+            && !torrents.Surface.IsMaximized && Math.Abs(InspectorRow.Height.Value - height) < 1,
+            "Torrents did not show the inspector as it was left on Library.");
+        await Press(torrents.Surface, "InspectorClose");
+        var focus = FocusManager.GetFocusedElement(Root.XamlRoot) as DependencyObject;
+        while (focus is not null && !ReferenceEquals(focus, Torrents))
+            focus = VisualTreeHelper.GetParent(focus);
+        Require(!Model.HasInspector && InspectorSurface.Visibility == Visibility.Collapsed && focus is not null,
+            "Close on Torrents did not hide the inspector and return focus to the torrents.");
+        Model.OpenInspector();
+        await CaptureLayout();
+        Require(ReferenceEquals(InspectorContent.Content, torrents) && Math.Abs(InspectorRow.Height.Value - height) < 1,
+            "Reopening replaced the Torrents inspector or lost its height.");
+        await Press(torrents.Surface, "InspectorMaximize");
+        Require(Model.IsInspectorMaximized, "One Maximize press after reopening did not maximize once.");
+        await Press(torrents.Surface, "InspectorMaximize");
+
+        completed.Add("workspace");
+        outcomes.Add(new
+        {
+            journey = "workspace continuity across Torrents and Library",
+            inspectorHeight = height,
+            overflowedCommands = overflow,
+        });
+
+        async Task Press(Syno.TinyTorrent.Controls.Pane pane, string automationId)
+        {
+            CaptureInvoke(CaptureElements(pane).OfType<Button>()
+                .Single(button => AutomationProperties.GetAutomationId(button) == automationId));
+            await CaptureLayout();
+        }
+
+        // Every visible command sits inside the toolbar's column or in its
+        // More menu. Returns how many moved to the More menu.
+        int CheckToolbar()
+        {
+            var width = ToolbarRow.ColumnDefinitions[0].ActualWidth;
+            var commands = Toolbar.PrimaryCommands.OfType<AppBarButton>()
+                .Where(button => button.Visibility == Visibility.Visible)
+                .ToArray();
+            foreach (var button in commands.Where(button => !button.IsInOverflow))
+                Require(button.TransformToVisual(ToolbarRow).TransformPoint(new Windows.Foundation.Point(button.ActualWidth, 0)).X <= width + 0.5,
+                    $"The toolbar clipped {button.Label} on {Model.Page}.");
+            return commands.Count(button => button.IsInOverflow);
+        }
+
+        static void Require(bool condition, string failure)
+        {
+            if (!condition)
+                throw new InvalidOperationException(failure);
+        }
     }
 
     private static IEnumerable<FrameworkElement> CaptureElements(
@@ -2502,11 +2604,6 @@ public sealed partial class MainWindow
             if (ReviewMode == CaptureMode.Search)
             {
                 await CaptureSearch(target, outcomes, completed);
-                return;
-            }
-            if (ReviewMode == CaptureMode.Catalogue)
-            {
-                await CaptureCatalogue(outcomes, completed);
                 return;
             }
             if (ReviewMode == CaptureMode.Workspace)

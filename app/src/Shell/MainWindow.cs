@@ -53,7 +53,6 @@ public sealed partial class MainWindow : Window
         ConfigureWork();
         Model.Navigation.PropertyChanged += (_, _) => UpdateBack();
         ConfigureLibrary();
-        ConfigureSearch();
         PageContent.SizeChanged += Motion.Clip;
         WorkspaceContent.SizeChanged += Motion.Clip;
         SettingsContent.SizeChanged += Motion.Clip;
@@ -583,14 +582,8 @@ public sealed partial class MainWindow : Window
             {
                 Content = _addDialog,
                 PrimaryGlyph = Syno.Lucide.CirclePlus,
-                Footer = Model.AddDraft.HasPreference ? new DialogFooter.OptOut(Model.AddDraft.Confirmation) : null,
+                Footer = new DialogFooter.OptOut(Model.AddDraft.Confirmation),
             };
-            void RefreshPreference(object? sender, PropertyChangedEventArgs args)
-            {
-                if (Model.AddDraft.HasPreference != (dialog.Footer is DialogFooter.OptOut))
-                    dialog.Footer = Model.AddDraft.HasPreference ? new DialogFooter.OptOut(Model.AddDraft.Confirmation) : null;
-            }
-            Model.AddDraft.PropertyChanged += RefreshPreference;
             dialog.SizeToContent();
             _addDialog.CloseRequested += (_, _) => dialog.Hide();
             Model.AddDraft.Open();
@@ -623,7 +616,6 @@ public sealed partial class MainWindow : Window
             }
             finally
             {
-                Model.AddDraft.PropertyChanged -= RefreshPreference;
                 _addDialog?.Dispose();
                 Model.AddDraft.Close();
                 _addDialog = null;

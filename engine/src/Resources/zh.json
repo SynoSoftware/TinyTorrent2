@@ -88,10 +88,6 @@
     "transfers": "微种下载器正在传输文件。"
   },
   "error": {
-    "crawler_unavailable": "当前传输协议、加密或带宽限制设置不支持 Bitmagnet 的 TCP/IPv4 爬虫。",
-    "crawler_proxy_unavailable": "Bitmagnet 没有可用的代理地址。",
-    "crawler_config_invalid": "Bitmagnet 爬虫配置无效。",
-    "crawler_storage_failed": "种子目录存储不可用。",
     "unknown": "无法完成操作。",
     "argument_registration": "--registration 选项需要指定操作。",
     "argument_folder": "--data 选项需要指定文件夹。",

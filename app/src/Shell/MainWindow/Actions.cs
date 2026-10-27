@@ -30,9 +30,6 @@ public sealed partial class MainWindow
                 NavigationPage == WindowPage.Torrents, Model.ShowTorrents) { Group = group },
             new MenuChoice(Model.Text.Get("library", "title"), Syno.Lucide.FolderOpen,
                 NavigationPage == WindowPage.Library, Model.ShowLibrary) { Group = group },
-            new MenuChoice(Model.Text.Get("catalogue", "title"), Syno.Lucide.Search,
-                NavigationPage == WindowPage.Search, Model.ShowSearch)
-                { Group = group, AccessKey = MenuKey("search") },
         ];
 
     private IReadOnlyList<MenuEntry> LanguageMenu() =>
@@ -95,13 +92,12 @@ public sealed partial class MainWindow
     private void RefreshMenus()
     {
         var library = Model.Page == WindowPage.Library;
-        var catalogue = Model.Page == WindowPage.Search;
         FileMenu.Title = Model.Text.Get("menus", "file");
         FileMenu.AccessKey = MenuKey("file");
-        TorrentMenu.Title = catalogue ? Model.Text.Get("catalogue", "title") : library
+        TorrentMenu.Title = library
             ? Model.Text.Get("library", "title")
             : Model.Text.Get("menus", "torrent");
-        TorrentMenu.AccessKey = MenuKey(catalogue ? "search" : library ? "library" : "torrent");
+        TorrentMenu.AccessKey = MenuKey(library ? "library" : "torrent");
         ViewMenu.Title = Model.Text.Get("menus", "view");
         ViewMenu.AccessKey = MenuKey("view");
         HelpMenu.Title = Model.Text.Get("menus", "help");
@@ -134,15 +130,6 @@ public sealed partial class MainWindow
             }
         )
             Describe(button, Model.Text.Get("commands", name), command);
-        foreach (
-            var (button, name, command) in new[]
-            {
-                (DownloadButton, "download_selected", Model.Search.DownloadSelected),
-                (DownloadTorrentButton, "download_torrent", Model.Search.DownloadWhole),
-                (RefreshButton, "refresh", Model.Search.Refresh),
-            }
-        )
-            Describe(button, Model.Text.Get("catalogue", name), command);
 
         void Describe(AppBarButton button, string label, ICommand command)
         {
@@ -181,8 +168,6 @@ public sealed partial class MainWindow
             LibraryFolderButton,
             LibraryPropertiesButton
         );
-        Show(page == WindowPage.Search, DownloadButton, DownloadTorrentButton, RefreshButton);
-        Show(page != WindowPage.Search, AllMapButton, MapSeparator);
 
         static void Show(bool visible, params UIElement[] commands)
         {
@@ -209,13 +194,11 @@ public sealed partial class MainWindow
     private void FillMenus()
     {
         var library = Model.Page == WindowPage.Library;
-        var catalogue = Model.Page == WindowPage.Search;
         MenuItems.Fill(
             FileMenu.Items,
             [
                 Command("add_file", Model.Add, Syno.Lucide.FilePlus),
                 Command("add_magnet", Model.AddMagnet, Syno.Lucide.Link),
-                .. catalogue ? SearchMenu().Take(1) : [],
                 new MenuSeparator(),
                 Command("settings", Model.ShowSettings, Syno.Lucide.Settings),
                 new MenuSeparator(),
@@ -226,7 +209,7 @@ public sealed partial class MainWindow
         );
         MenuItems.Fill(
             TorrentMenu.Items,
-            catalogue ? SearchMenu() : library
+            library
                 ? [.. LibraryMenu()]
                 :
                 [

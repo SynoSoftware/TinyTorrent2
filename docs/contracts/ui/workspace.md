@@ -78,24 +78,19 @@ There is no workspace navigation pane, identity text, command overflow or perman
 Exit button. Language and theme are also chosen in Settings; their title-bar shortcuts
 use the same owners, so both entry points preserve immediate, in-place updates.
 
-**Owner ruling: Torrents, [Library](../library/presentation.md#presentation-and-interaction)
-and [Search](../indexing.md) are peer pages.** Torrents remains the main page.
-Search uses the torrent-indexing prototype and searches the engine's saved
-catalogue; Library continues to represent files on the drive. Search stays
-reachable with collection off or no database, through File, global command
-search and Ctrl+3. Its title-bar search queries the catalogue while that page
-is active; Files/Torrents and its parent/file filters belong to Search.
+**Owner ruling: Torrents and [Library](../library/presentation.md#presentation-and-interaction)
+are peer pages.** Torrents remains the main page.
 
 The inset app-icon position contains a native DropDownButton showing the current
 workspace's icon and localized name. Its menu opens below the button, with
-Torrents, Library and Search as native radio choices rendered by MenuItems, using
+Torrents and Library as native radio choices rendered by MenuItems, using
 the same descriptions and commands as View. Moving through choices does not
 navigate; activating one uses the same navigation owner and departure guards
-as Ctrl+1, Ctrl+2 and Ctrl+3. The confirmed workspace remains selected when
+as Ctrl+1 and Ctrl+2. The confirmed workspace remains selected when
 departure is refused. Secondary pages retain their caller in the selector.
 The logo represents Torrents, never an individual torrent or Show in
-Torrents action. Global command search offers all three pages. The second menu belongs to the
-current page: Torrent on Torrents, Library on Library and Search on Search. View shows the current
+Torrents action. Global command search offers both pages. The second menu belongs to the
+current page: Torrent on Torrents and Library on Library. View shows the current
 page's presentation, with Filters first. Filters uses one command
 and one shared pane visibility state: changing pages changes its content, not
 whether it is open. The Inspector and the toolbar follow the same rule. Each
@@ -109,7 +104,7 @@ Settings, so the page keeps its full height. Keep continuous acrylic.
 
 One window navigation history owns the current destination, Back availability
 and return destinations, including Connection setup inside Settings. Explicit
-Torrents/Library/Search navigation selects a workspace and clears return history;
+Torrents/Library navigation selects a workspace and clears return history;
 Show in Torrents is a contextual visit that retains Library as its return.
 Secondary pages retain their callers. Selecting a destination already in that
 history returns to it without adding a duplicate. Back consumes a destination
@@ -157,8 +152,8 @@ does not keep the window or engine open. Layout recovery never changes downloads
 
 ## Workspace motion
 
-Torrents sits to the left of Library and Search: the page's table slides left
-when entering Library or Search and right when returning to Torrents. The
+Torrents sits to the left of Library: the page's table slides left
+when entering Library and right when returning to Torrents. The
 filter and inspector content slide with it in the same direction, so the
 whole workspace moves as one gesture. The title bar, the toolbar and the filter
 and inspector frames stay in place.
@@ -311,8 +306,8 @@ a secondary page is visible so commands cannot act on a hidden selection.
 ## Toolbar
 
 The toolbar, a row above the page content that View shows or hides, is a
-CommandBar of AppBarButtons in groups split by AppBarSeparators. Torrents,
-Library and Search share it, and View shows or hides it on all three at once.
+CommandBar of AppBarButtons in groups split by AppBarSeparators. Torrents
+and Library share it, and View shows or hides it on both at once.
 Add and Magnet come first on every page, and the current page's commands
 follow. Each page shows only commands that can act on it: a command that never
 applies on a page is hidden there, and one that is only unavailable for the
@@ -322,12 +317,11 @@ Torrents, the groups follow a torrent's life, and the most used commands come
 first: Start and Stop; Open folder and Properties; Verify;
 Remove. Remove is a group of its own at the end of the selection commands, so
 the destructive command sits apart from the frequent ones. Library shows Open,
-Open folder and Properties; Search shows Download selected, Download whole
-torrent and Refresh. These use the same commands and Lucide icons as the
+Open folder and Properties. These use the same commands and Lucide icons as the
 page's menu. At the row's right end, Selected
 connections map and All connections map form one group, because they are two
 scopes of one view. Library shows only All connections map, because Selected
-needs a Torrents selection; Search shows neither. Settings comes last, in a
+needs a Torrents selection. Settings comes last, in a
 group of its own, because it acts on the application and not on torrents; Edge and File Explorer also put their
 settings at the end of the bar. **Owner ruling: the toolbar buttons are
 icon-only,** because text labels make the interface look cheap. Each button

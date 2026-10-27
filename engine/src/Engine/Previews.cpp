@@ -300,7 +300,7 @@ void Engine::State::Inspect(std::string source, std::string connectionId,
         }
         if (merge())
             return;
-        if (!preview->params.ti && !preview->handle.is_valid() && !FindDuplicate(preview->params.info_hashes))
+        if (!preview->params.ti && !FindDuplicate(preview->params.info_hashes))
         {
             Guard(preview->params);
             preview->params.flags &= ~lt::torrent_flags::paused;

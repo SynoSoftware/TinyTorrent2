@@ -122,7 +122,7 @@ code and detail, so the window can explain the actual reason.
 ## Snapshots and detail
 
 Library and subtitle acquisition run in C# and use the existing pipe only for
-torrent/file facts and ordinary torrent operations. Their search, filters, details,
+torrent/file facts and ordinary torrent operations. Search, filters, details,
 TMDB and supplier requests, credentials, SQLite edits and job progress stay in
 C#; they have no dedicated engine command or snapshot family. Shared source
 reads belong to the C# torrent adapter, which seeds and synchronizes SQLite.
@@ -132,51 +132,6 @@ torrent reads of their own.
 There is no new feature endpoint, subtitle byte demand, publication hold or
 companion-file list in the protocol; C# uses the existing torrent contract.
 The same coherence, cancellation and payload bounds below apply to those reads.
-
-The separate engine-owned [torrent catalogue](indexing.md) uses bounded
-`catalogue_*` requests over this same connection. Its typed data and source
-references are independent of managed torrent IDs. It adds no download path:
-catalogue preparation returns an ordinary connection-owned Add preview.
-
-Catalogue reads are `catalogue_status`, `catalogue_query`, `catalogue_detail`
-and `catalogue_sources`. Query pages carry a publication watermark, generation
-and sort-key cursor; continuations and expanded source reads retain that scope.
-The watermark excludes later publications, rather than holding a database
-transaction open; dated availability and discovery facts can change between
-pages. Invalidated
-scopes are refused rather than combined with a rebuilt projection. File offsets
-and choices always refer to original torrent indices. Every source carries
-`verified`; an unverified entry's files are a peer's claim in listing order, so
-`catalogue_prepare` refuses it with `metadata_unavailable`. `catalogue_prepare` binds
-a verified torrent hash and, for a single file, its index, length and known root,
-plus the result's captured query scope. Preparation validates its generation,
-publication watermark and parent restrictions before returning the existing
-Add preview shape. The prepared preview then belongs to Add and survives
-catalogue removal independently of the search projection.
-
-`catalogue_rules` gets, previews or saves the finite policy. `catalogue_preview`
-builds a read-only removal scope in bounded continuations; `more` means the
-preview is still incomplete. Once complete, `catalogue_removal_rows` supplies
-bounded examples and `catalogue_remove` applies that token in short batches.
-`catalogue_rebuild` starts or cancels local projection work. Native `Catalogue.h`
-and managed `Shared/Engine/Catalogue.cs` define these typed message fields;
-[indexing](indexing.md) owns their behavior.
-
-Status reports indexed totals separately from retained pending observations,
-active metadata jobs, peer lookups and stored nodes. Sample observations count
-this engine run and can repeat hashes. Persisted pending hashes await
-rediscovery; they are not the live scheduler's runnable queue.
-`queued` is the live scheduler's queue size, or zero while inactive.
-`crawler_config` and `crawler_stats` describe the sole crawler; no algorithm
-discriminator is exchanged. `rats` reports the Rats Search exchange.
-A running crawler also reports `acquiring_limit` and `probing_limit`, taken from
-its actual metadata-job and peer-lookup admission limits. These optional fields
-are absent while it is stopped or not yet started, so cached statistics cannot
-imply a current capacity. Tuning belongs to optional `crawler.json`.
-`torrents_per_second` is a nonnegative floating-point rate of newly searchable
-torrents committed during the last 60 monotonic seconds, divided by 60. It
-excludes rebuild work, rediscovery and metadata enrichment and decays to zero
-without new publications; it is session telemetry, not a persisted lifetime rate.
 
 Start with complete summary snapshots while WinUI is open, and request only the
 visible detail section. Fetching files must not also fetch all peers and pieces.
@@ -419,9 +374,9 @@ isolation guarantee; an extra token would not create a stronger boundary.
 
 ## Wire representation
 
-Protocol version 32 uses a four-byte little-endian UTF-8 JSON frame length,
+Protocol version 33 uses a four-byte little-endian UTF-8 JSON frame length,
 bounded to 16 MiB. The endpoint is `TinyTorrent.<logon SID>`; each connecting
-client first receives `{type:"hello",version:32,session_id:"...",data_directory:"..."}`. The absolute data directory
+client first receives `{type:"hello",version:33,session_id:"...",data_directory:"..."}`. The absolute data directory
 keeps the same store for explicit Restart, which starts the engine beside the
 window rather than a path a pipe peer reports. Requests are
 `{request_id:signed-64-bit-integer,command:string,...}`. Replies repeat `request_id` and have

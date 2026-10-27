@@ -88,10 +88,6 @@
     "transfers": "TinyTorrent transfère des fichiers."
   },
   "error": {
-    "crawler_unavailable": "Le robot d’indexation TCP/IPv4 de Bitmagnet n’est pas disponible avec le transport, le chiffrement ou les limites de bande passante sélectionnés.",
-    "crawler_proxy_unavailable": "Aucune adresse de proxy utilisable n’est disponible pour Bitmagnet.",
-    "crawler_config_invalid": "La configuration du robot d’indexation de Bitmagnet n’est pas valide.",
-    "crawler_storage_failed": "Le stockage du catalogue de torrents est indisponible.",
     "unknown": "Impossible de terminer l’opération.",
     "argument_registration": "L’option --registration nécessite une action.",
     "argument_folder": "L’option --data nécessite un dossier.",

@@ -259,11 +259,7 @@ public sealed class FileSelection(Strings strings) : INotifyPropertyChanged
         Refresh();
     }
 
-    internal void InitializePage(
-        FilePage page,
-        Func<int, string, Task<FilePage>> read,
-        int? defaultPriority = null
-    )
+    internal void InitializePage(FilePage page, Func<int, string, Task<FilePage>> read)
     {
         _generation++;
         _read = read;
@@ -271,36 +267,9 @@ public sealed class FileSelection(Strings strings) : INotifyPropertyChanged
         _pages.Clear();
         _previous.Clear();
         _pages.Add(page);
-        _defaultPriority = defaultPriority;
+        _defaultPriority = null;
         _choices.Clear();
         LoadEntries(page.Files);
-    }
-
-    internal void Select(int defaultPriority, IReadOnlyList<FileChoice> choices)
-    {
-        _defaultPriority = defaultPriority;
-        _choices.Clear();
-        foreach (var choice in choices)
-        {
-            _entries.TryGetValue(choice.Index, out var entry);
-            if (choice.Priority != defaultPriority)
-                _choices[choice.Index] = new(choice.Index, choice.Priority, entry?.Size ?? choice.Size, entry?.Priority ?? choice.Baseline);
-        }
-        LoadEntries(_pages.SelectMany(page => page.Files));
-    }
-
-    internal void MergeChoices(IReadOnlyList<FileChoice> choices)
-    {
-        foreach (var choice in choices)
-        {
-            _entries.TryGetValue(choice.Index, out var entry);
-            var baseline = entry?.Priority ?? choice.Baseline;
-            if (choice.Priority == (_defaultPriority ?? baseline))
-                _choices.Remove(choice.Index);
-            else
-                _choices[choice.Index] = new(choice.Index, choice.Priority, entry?.Size ?? choice.Size, baseline);
-        }
-        LoadEntries(_pages.SelectMany(page => page.Files));
     }
 
     internal async Task<bool> ReadWindow(bool forward)

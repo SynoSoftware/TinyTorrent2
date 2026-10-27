@@ -88,10 +88,6 @@
     "transfers": "TinyTorrent draagt bestanden over."
   },
   "error": {
-    "crawler_unavailable": "De TCP/IPv4-crawler van Bitmagnet is niet beschikbaar met de gekozen transport-, versleutelings- of bandbreedte-instellingen.",
-    "crawler_proxy_unavailable": "Er is geen bruikbaar proxyadres beschikbaar voor Bitmagnet.",
-    "crawler_config_invalid": "De configuratie van de Bitmagnet-crawler is ongeldig.",
-    "crawler_storage_failed": "De opslag van de torrentcatalogus is niet beschikbaar.",
     "unknown": "De bewerking kon niet worden voltooid.",
     "argument_registration": "De optie --registration vereist een actie.",
     "argument_folder": "De optie --data vereist een map.",

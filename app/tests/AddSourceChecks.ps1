@@ -53,25 +53,6 @@ if (!$source.NeedsFiles -or $source.Files.HasWanted) {
 
 Write-Output 'PASS: duplicate recovery initializes file choices and preserves later edits.'
 
-# A catalogue-selected file can lie outside the bounded preview's first page.
-$choiceType = $assembly.GetType('Syno.TinyTorrent.Controls.FileChoice', $true)
-$choice = $choiceType.GetConstructors($flags)[0].Invoke([object[]]@(7, 4, [long]42, 4))
-$choices = [Array]::CreateInstance($choiceType, 1)
-$choices.SetValue($choice, 0)
-$selection = $source.Files
-$selectionType = $selection.GetType()
-$selectionType.GetMethod('Select', $flags).Invoke($selection, [object[]]@(0, $choices))
-$source.Files.Roots[0].Priority = 4
-$source.Files.Roots[0].Priority = 0
-Apply-Preview 'existing'
-Apply-Preview ''
-$selected = @($selectionType.GetMethod('Choices', $flags).Invoke($selection, @()))
-if ($selected.Count -ne 1 -or $selected[0].Index -ne 7 -or $selected[0].Priority -ne 4 -or
-    !$selection.HasWanted -or $selection.WantedBytes -ne 42) {
-    throw 'Editing displayed files or recovering a preview lost the original off-page file choice.'
-}
-Write-Output 'PASS: off-page catalogue choices retain their original indices and wanted size through edits and preview recovery.'
-
 # Inspect the queued settings command without starting a pipe or touching the user's engine.
 $settingsType = $assembly.GetType('Syno.TinyTorrent.Settings.Editor', $true)
 $settingType = $assembly.GetType('Syno.TinyTorrent.Settings.Setting', $true)

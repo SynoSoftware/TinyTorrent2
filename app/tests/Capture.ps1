@@ -1,6 +1,6 @@
 param(
     [ValidateSet('1', 'smoke', 'shell', 'schedule', 'desktop', 'details', 'details-files', 'files', 'files-layout',
-        'search', 'catalogue', 'library', 'library-files', 'traffic', 'peers', 'connections', 'edits', 'add-layout', 'settings-layout', 'settings-prototype', 'subtitle-tasks', 'memory', 'footer', 'workspace')]
+        'search', 'library', 'library-files', 'traffic', 'peers', 'connections', 'edits', 'add-layout', 'settings-layout', 'settings-prototype', 'subtitle-tasks', 'memory', 'footer', 'workspace')]
     [string] $Review = '1',
     [ValidateSet('en', 'es')]
     [string] $Language,
@@ -133,7 +133,7 @@ function Test-Idle($torrents) {
     return -not ($torrents | Where-Object { -not $_.paused -or $_.peer_count -or $_.download_rate -or $_.upload_rate })
 }
 
-if ($Review -in 'files', 'files-layout', 'library', 'library-files', 'traffic', 'catalogue', 'workspace') {
+if ($Review -in 'files', 'files-layout', 'library', 'library-files', 'traffic', 'workspace') {
     $document = @{ format = 1; torrents = @(); settings = @{ language = 'en'; theme = 'light'; port_mapping = $false;
         check_for_updates = $false; show_splash = $false; notifications_enabled = $false; prevent_sleep = $false } }
 } else {
@@ -143,11 +143,10 @@ if ($Review -in 'files', 'files-layout', 'library', 'library-files', 'traffic', 
 }
 $document.settings.default_destination = $payload
 $document.settings.all_paused = $Review -notin 'add-layout', 'traffic', 'library-files'
-if ($Review -in 'catalogue', 'workspace') {
+if ($Review -eq 'workspace') {
     $document.settings.dht = $false
     $document.settings.pex = $false
     $document.settings.lsd = $false
-    $document.settings.indexing = $false
 }
 if ($Review -eq 'settings-prototype') { $document.settings.exclude = $true }
 if ($Language) { $document.settings.language = $Language }
@@ -182,12 +181,12 @@ foreach ($name in 'TINYTORRENT_CAPTURE_DIRECTORY', 'TINYTORRENT_CAPTURE_REVIEW',
 try {
     $null = Start-Engine
     switch ($Review) {
-        { $_ -in 'catalogue', 'workspace' } {
+        'workspace' {
             $members = foreach ($name in 'Open field atlas', 'Open ocean notes') {
                 $paths = if ($name -eq 'Open field atlas') { 'Chapter 01.txt', 'Maps/Coastline.dat' }
                     else { 'Chapter 01.txt', 'Chapter 02.txt' }
                 $files = foreach ($path in $paths) {
-                    @{ path = $path; bytes = [Text.Encoding]::ASCII.GetBytes('Local catalogue fixture. ' * 8) }
+                    @{ path = $path; bytes = [Text.Encoding]::ASCII.GetBytes('Local workspace fixture. ' * 8) }
                 }
                 Add-Torrent (New-Torrent $name @($files)) $payload
             }

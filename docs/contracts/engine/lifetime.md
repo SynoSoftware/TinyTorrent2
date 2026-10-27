@@ -361,9 +361,7 @@ saved before it still hold the work. When the final save succeeded but a
 stalled check's reads remain, libtorrent's teardown would wait for them, so the
 engine logs `teardown_skipped` and ends at once as well. Then:
 
-1. Stop accepting new commands, cancel DHT activity, and settle accepted state
-   changes and writes. An accepted settings completion cannot restart DHT while
-   shutdown drains, giving crawl callbacks time to finish before the session join.
+1. Stop accepting new commands and settle accepted state changes and writes.
 2. Pause the session and await transfer/disk quiescence without changing each
    torrent's saved paused/running intent. Track actual outstanding work rather
    than expecting a new pause alert from an already-idle torrent.

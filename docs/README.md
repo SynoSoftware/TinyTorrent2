@@ -77,28 +77,6 @@ scoped-subscription design for torrent detail, which the owner has not decided
 to implement; its implemented first stage lives in the protocol and engine
 contracts.
 
-The [torrent catalogue contract](contracts/indexing.md) owns the opt-in
-catalogue's engine storage, collection, search, Add and retention rules.
-Search remains usable with indexing off and prioritizes responsiveness with
-explicit bounded coverage; downloads use the existing Add workflow. Retention
-rules remember rejected torrents without retaining their metadata and preview
-removal of existing entries.
-
-The [Rats Search and Bitmagnet inventory](plans/14-torrent-references.md) compares
-their current documentation and source across discovery, metadata, search,
-downloads, availability, storage and index management. It distinguishes inspected
-implementations from partial features and plans, and informs the specification
-without selecting its algorithms, schema or storage policies.
-
-The [faster indexing research](plans/14-faster-indexing-research.md) measures
-where catalogue collection loses its time and compares tuning, bulk sources,
-HTTP torrent caches and passive harvesting against the verified-metadata and
-proxy rules.
-
-The [Rats exchange plan](plans/14-rats-exchange.md) builds the engine's own
-receive-only Rats Search client; the [Rats wire protocol](plans/14-rats-wire-protocol.md)
-records the byte layouts it implements.
-
 For TableView work, continue with the [table glossary](../lib/TableView/CONTEXT.md),
 [TableView contract](../lib/TableView/docs/tableview-contract.md), and
 [TableView implementation](../lib/TableView/docs/tableview-implementation.md).

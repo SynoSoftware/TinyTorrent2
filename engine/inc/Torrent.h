@@ -103,10 +103,6 @@ struct Facts
     static Facts Read(Json const& saved);
 };
 
-// Reads file priorities as the add command sends them. Throws when a value is
-// not a whole number from 0 to 255.
-std::vector<lt::download_priority_t> ReadPriorities(Json const& values);
-
 // libtorrent's latest answers to the detail queries for one torrent.
 struct Detail
 {

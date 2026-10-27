@@ -43,9 +43,6 @@ public sealed partial class Editor : INotifyPropertyChanged
     public Setting TorrentDialog { get; }
     public Setting MagnetDialog { get; }
     public Setting LookupLimit { get; }
-    public Setting Indexing { get; }
-    public Setting IndexBudget { get; }
-    public Setting IndexStale { get; }
 
     public Setting StartDownload { get; }
     public Setting QueueTop { get; }
@@ -508,21 +505,6 @@ public sealed partial class Editor : INotifyPropertyChanged
         );
         MagnetDialog = Add(
             new(Engine, Text, "magnet_dialog", SettingKind.Boolean, SettingsCategory.General)
-        );
-        Indexing = Add(
-            new(Engine, Text, "indexing", SettingKind.Boolean, SettingsCategory.Indexing)
-        );
-        IndexBudget = Add(
-            new(Engine, Text, "index_budget_mib", SettingKind.Integer, SettingsCategory.Indexing)
-            {
-                Minimum = 1,
-            }
-        );
-        IndexStale = Add(
-            new(Engine, Text, "index_stale_hours", SettingKind.Integer, SettingsCategory.Indexing)
-            {
-                Minimum = 1,
-            }
         );
         StartDownload = Add(
             new(Engine, Text, "starts_download", SettingKind.Boolean, SettingsCategory.Transfers)

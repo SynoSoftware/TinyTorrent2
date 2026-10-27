@@ -341,9 +341,6 @@ void Engine::State::Settings::Fields(Self& settings, Visit&& visit)
     visit("watch_recursive", settings.watchesRecursively, Bool{});
     visit("watch_destination", settings.watchDestination, Text{.valid = optionalFolder});
     visit("recheck_finished", settings.rechecksFinished, Bool{});
-    visit("indexing", settings.indexing, Bool{});
-    visit("index_budget_mib", settings.indexBudgetMib, Range{1, INT_MAX});
-    visit("index_stale_hours", settings.indexStaleHours, Range{1, 876000});
     visit(setting::incompleteFolder, settings.incompleteFolder, Text{.valid = folder});
     visit("use_incomplete_folder", settings.usesIncompleteFolder, Bool{});
     visit("append_suffix", settings.appendsSuffix, Bool{});
@@ -438,7 +435,6 @@ Json Engine::State::Settings::ToJson() const
     values[setting::allPaused] = allPaused;
     values[setting::limitMode] = Name(limitMode);
     values[setting::reportedPrograms] = reportedPrograms;
-    values["index_rules"] = State::IndexRules(indexRules);
     return values;
 }
 
@@ -454,9 +450,6 @@ Json Engine::State::Settings::ToFile() const
 // never has to repair settings.json; the next save writes the corrected values.
 void Engine::State::Settings::Read(Json const& saved)
 {
-    if (auto value = saved.find("index_rules"); value != saved.end())
-        if (auto rules = State::ReadIndexRules(*value))
-            indexRules = std::move(*rules);
     Fields(*this, [&saved](char const* key, auto& member, auto const& domain)
     {
         auto found = saved.find(key);
@@ -553,13 +546,6 @@ std::optional<Engine::State::Settings> Engine::State::Settings::With(Json const&
             {
                 return std::nullopt;
             }
-        }
-        else if (key == "index_rules")
-        {
-            auto rules = State::ReadIndexRules(value);
-            if (!rules)
-                return std::nullopt;
-            next.indexRules = std::move(*rules);
         }
         else if (key == setting::networkInterface && value.is_string())
         {
@@ -750,15 +736,8 @@ void Engine::State::SaveSettings(Settings next, std::function<void()> settled, s
         {
             limitOverride.reset();
         }
-        bool rulesChanged = State::IndexRules(settings.indexRules) != State::IndexRules(next.indexRules);
-        bool indexChanged = settings.indexing != next.indexing || settings.indexBudgetMib != next.indexBudgetMib ||
-            settings.indexStaleHours != next.indexStaleHours || rulesChanged;
-        if ((!settings.indexing && next.indexing) || rulesChanged)
-            ingested.clear();
         settings = next;
         RefreshPolicy();
-        if (indexChanged)
-            ConfigureIndex();
         finish();
     });
 }

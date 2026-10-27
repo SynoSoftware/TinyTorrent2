@@ -12,8 +12,7 @@ separate, domain-neutral vocabulary. Decisions belong in the
 identity, files, transfer state, and user choices.
 _Avoid_: torrent file, when referring to the managed torrent.
 
-**Source**: a torrent file, magnet link or catalogue entry supplied to add a
-torrent.
+**Source**: a torrent file or magnet link supplied to add a torrent.
 
 **Metadata**: the description of torrent content, including its file names,
 sizes, and the hashes used to verify its pieces.
@@ -216,61 +215,6 @@ _Avoid_: relocation.
 **Adoption**: updating a torrent's location to use its files already present
 elsewhere, without physically moving them. It is distinct from permission to
 download missing payload.
-
-### Torrent search
-
-**Search**: the workspace for finding discovered torrent content and the files
-listed within it, independently of whether collection is running.
-
-**Torrent catalogue**: the retained descriptions of discovered torrent content,
-independent of managed downloads and files on disk.
-_Avoid_: Library catalogue, which retains Library's reported on-drive file lists.
-
-**Catalogue entry**: one torrent description in the torrent catalogue, validated
-unless it is an unverified entry. Its content may have both v1 and v2 info
-hashes; it is distinct from an accepted addition and remains known when a
-managed torrent is removed.
-
-**Unverified entry**: a catalogue entry that a Rats Search peer described and
-whose metadata TinyTorrent has not fetched. Its name, size and files are the
-peer's claim until admission replaces them with validated metadata.
-
-**Indexed file**: a file listed by a catalogue entry, identified within that
-entry by its original torrent file index, or by its listing position in an
-unverified entry; its presence in search does not mean its payload exists on
-disk.
-
-**Lookup key**: a 20-byte DHT content key, which may be a v1 info hash or a
-truncated v2 info hash until validated metadata establishes its identity.
-
-**Retained metadata**: the validated torrent description kept for later search
-rebuilding and download preparation, together with additional torrent metadata
-actually obtained.
-
-**Indexing**: automatic discovery of torrent content and collection of its
-metadata into the torrent catalogue.
-
-**Search index**: the searchable representation derived from retained metadata.
-A rebuild recreates it locally without repeating discovery or metadata retrieval.
-
-**Swarm estimate**: a dated, approximate observation of the peers sharing
-torrent content, independent of any particular file's availability.
-_Avoid_: guaranteed seeds, availability, when describing an estimate.
-
-**Retention policy**: the configured conditions deciding which discovered
-torrent descriptions are kept in the catalogue; an accepted description keeps
-its entire file list.
-
-**Ban**: a rule-based exclusion of discovered torrent content from the catalogue.
-While it applies, known rejected content is excluded from metadata retrieval;
-lifting it permits retrieval again.
-_Avoid_: manual hash ban, when describing content filters.
-
-**Rejection record**: compact evidence of a ban and its reason, without the
-rejected torrent's metadata or file list.
-
-**Removal preview**: the catalogue entries proposed for removal and the reasons,
-presented before those entries are removed.
 
 ### Library
 
