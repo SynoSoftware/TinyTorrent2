@@ -358,6 +358,8 @@ try {
         DBIP = 'installer/notices/DB-IP.txt'
         Bitmagnet = 'installer/notices/Bitmagnet.txt'
         BoomFilters = 'installer/notices/BoomFilters.txt'
+        RatsSearch = 'installer/notices/RatsSearch.txt'
+        Librats = 'installer/notices/librats.txt'
     }
     foreach ($notice in $notices.GetEnumerator()) {
         $directory = Join-Path $licenses $notice.Key

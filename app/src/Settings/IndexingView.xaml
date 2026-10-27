@@ -15,9 +15,6 @@
       >
         <ToggleSwitch x:Name="Enabled" IsOn="{x:Bind Model.Settings.Indexing.IsOn, Mode=OneWay}" AutomationProperties.AutomationId="IndexingEnabled" />
       </controls:SettingsRow>
-      <controls:SettingsRow x:Name="AlgorithmRow" Header="{x:Bind Model.Text.Get('catalogue', 'algorithm'), Mode=OneWay}">
-        <TextBlock x:Name="Algorithm" Style="{StaticResource TinyTorrentBodyTextStyle}" VerticalAlignment="Center" AutomationProperties.AutomationId="IndexingAlgorithm" />
-      </controls:SettingsRow>
       <controls:SettingsRow Header="{x:Bind Model.Text.Get('catalogue', 'indexed'), Mode=OneWay}">
         <TextBlock x:Name="Indexed" Style="{StaticResource TinyTorrentBodyTextStyle}" VerticalAlignment="Center" />
       </controls:SettingsRow>
@@ -33,17 +30,11 @@
           </StackPanel>
         </StackPanel>
       </controls:SettingsRow>
-      <controls:SettingsRow Header="{x:Bind Model.Text.Get('catalogue', 'peer_lookups'), Mode=OneWay}">
+      <controls:SettingsRow Header="{x:Bind Model.Text.Get('catalogue', 'peer_lookups'), Mode=OneWay}" BorderThickness="0">
         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
           <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Search}" Style="{StaticResource TinyTorrentStatusIconStyle}" AutomationProperties.AccessibilityView="Raw" />
           <TextBlock x:Name="Probes" Style="{StaticResource TinyTorrentBodyTextStyle}" AutomationProperties.AutomationId="IndexingPeerLookups" />
         </StackPanel>
-      </controls:SettingsRow>
-      <controls:SettingsRow x:Name="IdleRow" Setting="{x:Bind Model.Settings.IndexMetadataIdle}">
-        <TextBox x:Name="MetadataIdle" Width="160" InputScope="Number" Text="{x:Bind Model.Settings.IndexMetadataIdle.Input, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="IndexMetadataIdle" />
-      </controls:SettingsRow>
-      <controls:SettingsRow x:Name="BusyRow" Setting="{x:Bind Model.Settings.IndexMetadataBusy}" BorderThickness="0">
-        <TextBox x:Name="MetadataBusy" Width="160" InputScope="Number" Text="{x:Bind Model.Settings.IndexMetadataBusy.Input, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="IndexMetadataBusy" />
       </controls:SettingsRow>
       </StackPanel>
     </controls:SettingsSection>

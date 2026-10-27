@@ -3,12 +3,6 @@ using Syno.TinyTorrent.Shell;
 using Syno.TinyTorrent.Torrents;
 namespace Syno.TinyTorrent;
 
-public enum Crawler
-{
-    Libtorrent,
-    Bitmagnet,
-}
-
 public enum CatalogueTarget
 {
     Files,

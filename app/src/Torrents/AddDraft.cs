@@ -244,8 +244,9 @@ public sealed class AddDraft : IDraft
     // Sources dropped, pasted, picked or sent by another instance. Picked
     // sources open one Add dialog however many files the person picks, unless
     // they turned the dialog off. Later arrivals stay outside the draft until
-    // the preceding one has finished its cleanup.
-    internal async Task<ArrivalOutcome> Receive(string[] sources, bool picked)
+    // the preceding one has finished its cleanup. A source that needs the
+    // Add dialog opens it whatever the person's dialog settings say.
+    internal async Task<ArrivalOutcome> Receive(string[] sources, bool picked, bool needsDialog = false)
     {
         if (sources.All(string.IsNullOrWhiteSpace))
             return ArrivalOutcome.Settled;
@@ -259,8 +260,8 @@ public sealed class AddDraft : IDraft
         {
             await previous;
             Own(sources);
-            if (picked || IsOpen || Sources.Count <= 1)
-                return await AddOwned();
+            if (picked || needsDialog || IsOpen || Sources.Count <= 1)
+                return await AddOwned(needsDialog ? true : null);
             await AddTogether();
             return ArrivalOutcome.Settled;
         }

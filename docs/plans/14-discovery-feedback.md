@@ -2,7 +2,165 @@
 
 ## Current batch: useful acquisition throughput
 
-**Current owner request:** show the engine-reported algorithm in Settings so
+**Authorized compatibility experiment, 2026-10-26:** connect an independent
+receiver to one controlled released Rats peer, receive a small record batch,
+then one snapshot. Root owns downloads, fixture, processes and evidence;
+`acquisition_evidence_read` checks upstream launch/client APIs without running
+anything. Use isolated disposable data and official digest-verified releases,
+with no production crawler or dependency rebuild. Prefer released librats
+receiver tooling; two Rats peers alone cannot prove a TinyTorrent integration.
+Record batch contents, snapshot identity/decoding and the scope of the result,
+then stop owned processes and remove their temporary data. This supersedes the
+earlier source-only restriction for this bounded experiment only.
+
+The controlled experiment passed: an independent C API receiver linked against
+released librats 3.0.3 received five distinct torrent records (15 files), then
+the full 12-torrent/36-file snapshot from released Rats Search v2.3.5, over one
+TCP connection. The 991-byte snapshot matched the sender byte for byte and all
+fixture identities/paths/sizes matched. Total receiver interval was 0.2428 s
+on loopback, not a public throughput result. Source and raw evidence are under
+`artifacts/experiments/rats-compatibility-20261026/evidence/`; the
+[compatibility report](14-rats-catalogue-compatibility.md#controlled-experiment-passed)
+records checks, setup findings and remaining limits. No TinyTorrent or library
+rebuild occurred; only the reviewed disposable receiver was compiled. The
+controlled server and owned database daemon stopped and its directory preference
+was restored. Production integration and public-peer measurements remain open.
+
+**Follow-up investigation, 2026-10-26:** the owner asks for compatibility with
+Rats Search's existing catalogue exchange before considering a new extension.
+`acquisition_evidence_read` owns
+[the compatibility report](14-rats-catalogue-compatibility.md); root verifies
+TinyTorrent's admission and Add constraints. This is one source-research round,
+with no implementation, dependency build, live peer contact or throughput claim.
+Completion requires a traced interoperable request/transfer sequence, exported
+field coverage, released-source evidence, integration conflicts and the smallest
+useful future interoperability check. Existing source already establishes that
+`Catalogue::Admit` requires verified info bytes and Add uses original torrent
+file indices; imported Rats file-list positions cannot substitute for them.
+
+Research completed against released Rats v2.3.5 source and its pinned librats.
+It supports persistent-session random batches (1–10 records) and resumable
+whole-index snapshots. Existing Mainline DHT can in principle discover its
+`SHA1("rats-search/4")` rendezvous without another BitTorrent session. Root
+confirmed the local capability, request, transfer and dump paths and
+TinyTorrent's admission/Add conflict. The research agent matched the
+relevant release-tree blobs against this checkout; published assets exist,
+but no executable interoperability was exercised. Public peer availability,
+novel records per peer, throughput and policy-compatible outgoing routing
+remain unmeasured. The report proposes one controlled-peer compatibility
+experiment, not production integration or an altered metadata contract.
+If product integration proceeds, TinyTorrent writes its own receive-only TCP
+client instead of linking librats; the report's
+[implementation direction](14-rats-catalogue-compatibility.md#implementation-direction)
+owns the reasons and risks.
+
+**Speed research, 2026-10-26:** [faster indexing](14-faster-indexing-research.md)
+finds no tenfold method that keeps verified info bytes and the proxy rule. In
+the warmed run, peer lookup is the limit: its 200 slots are full while metadata
+peaks at 177 of 400, and 8% of lookups yield a dictionary. Two small,
+unmeasured candidates remain open for an owner decision: send the peer from an
+incoming `announce_peer` straight to metadata, and release a lookup's slot
+while per-node pacing delays it.
+
+**Current owner steer:** finish collapsing the two-crawler support and remove
+the Algorithm Settings row, then investigate obtaining multiple torrents from
+one established peer connection. Root removes the enum, discriminator, display
+branches and algorithm-specific JSON handling; actual Bitmagnet tuning remains.
+Protocol 30 matches the smaller status contract. Success: no algorithm selection
+or label remains, existing Collection facts and tuning still work, and the
+research separates deployed protocol support from hypothetical extensions.
+`acquisition_evidence_read` owns the independent primary-source report;
+`sole_crawler_ui` reviews the cleanup delta. Root owns the sole final build.
+Expected one small cleanup/review/build round; no new acquisition algorithm or
+network experiment is authorized by this investigation.
+
+Cleanup is implemented: Algorithm row/collapsed prefix, the Crawler enum,
+nullable status discriminator, its wire field and two localization keys are
+removed; no algorithm key is read. Optional JSON still configures only the
+existing Bitmagnet tuning. The retained reviewer passed correctness/paths,
+ownership/simplicity and fresh-read review without findings. Reviewed blobs:
+`IndexingView.xaml` `8c07874349cc7dcd1493e40482af8a412f18ca10`,
+`IndexingView.xaml.cs` `5471790da0f1b8515fd4751410263a2a99169686`,
+`Enums.cs` `5b3c132aca9b4456f5f7952c60532ba60dcc2137`,
+managed `Catalogue.cs` `3c02259bae759580d3dcd4b05593964395fb4c75`,
+`Indexing.cpp` `0f2504a612013ee016a8024c098800cd7347bc67` and
+`Catalogue.h` `581f16a9c14f15813ec838c213e7ed15f37abc03`.
+Wire 30 is consistent across engine, app, test handshake and contract. The final
+combined Release build stopped before compilation: `Build.ps1:180` requires
+`3rdParty/complete`, which is absent. Per the dependency owner ruling, do not
+rebuild dependencies or create the marker to bypass this check. The earlier
+15:35 build remains the last executable and still contains the Algorithm row;
+these cleanup edits are reviewed source, awaiting a build after dependencies
+are restored. No test or capture has a distinct unanswered behavioral/visual
+question. The protocol research is source-only.
+
+Research is complete in [Multiple torrents per peer contact](14-peer-metadata-research.md),
+reviewed against the official BEPs, our requester and the pinned Rats sources.
+Standard BEP 9 has one handshake hash and no cross-torrent selector; our
+requester already pipelines all metadata blocks. Rats has a separate bulk
+catalogue session, but its dump lacks original verified torrent info/piece
+hashes. Bulk index exchange is a possible future search-population capability,
+not a substitute for the archive/download metadata requirement. No extension,
+importer or performance change was implemented or benchmarked.
+
+### Completed crawler consolidation
+
+**Owner decision, current:** the owner accepts dropping the original crawler
+after observing about 0.28 torrents/s. Checkpoint `c4d0980` on main preserves the
+complete pre-deletion checkout with both implementations. Keep only the
+Bitmagnet translation, make it the default without a selector, and remove the
+original scheduler, handles, settings and newly orphaned code. Existing
+`crawler.json` tuning and catalogues remain usable; the obsolete `algorithm`
+field no longer chooses an implementation. Preserve shared DHT transport,
+metadata ingestion, retained metadata, search, Add, shutdown and route/privacy
+guards. This decision supersedes instructions below to retain the A/B switch.
+
+Root owns native removal, shared contracts, documentation and the sole final
+build. A separate implementer owns the independent managed Settings cleanup;
+one retained reviewer challenges the integrated removal before compilation.
+Completion: no executable legacy-crawler path or original-only controls remain,
+Bitmagnet starts without selection configuration, and the retained catalogue
+and download workflows still have their existing owners. Estimated one coherent
+implementation/review/build round; no new performance tuning is included.
+
+Removal is implemented in the shared checkout. The original acquisition
+scheduler/plugin, handle adoption, probe/sampling branches and their Catalogue
+APIs and Settings controls are gone. The database schema is unchanged. Protocol
+29 removes the original controls and adds a live `queued` count; persisted
+pending observations remain separate and the tooltip describes rediscovery
+accurately. All six shipped catalogues have matching text changes.
+
+Independent review (`sole_crawler_ui`) traced configuration compatibility,
+startup/stop/reconfigure/shutdown, late cookies, metadata draining, existing
+transfer ingestion, Add/preview ownership, BEP 33, retained search/storage and
+protocol consumers. No actionable defect beyond the corrected queue display
+was found. The reporting/unused-field delta passed all three focused review
+passes without findings. Root's ownership/fresh-read pass removed the remaining
+unused queue fields and stale backoff comment. The final combined Release build
+passed at 2026-10-26 15:35:15 UTC (12:35:15 owner local time), logs prefix
+`20261026-153103`. The engine beside the app matches the native output, SHA256
+`606067E1023F4C8185897F79B30D64ACC9800E979B193C5BF60B89D9A0219D9A`.
+Output: `artifacts/bin/TinyTorrent/release_win-x64/TinyTorrentUI.exe`.
+Consolidation is complete. One final build took 4 minutes 12 seconds; no test,
+capture or app launch had an unresolved behavioral/visual question for this
+removal, so none ran. No new throughput claim is made: the Bitmagnet algorithm
+and its tuning are unchanged. Actual upstream comparison remains open below.
+
+Delta review record: `Indexing.cpp` `eff900aed3d3522bcf3808dd65c3df93ffa54bb5`
+(final `139b8658cd138868522a70182e2850e303d14fbb` changes only the stale comment),
+`Catalogue.h` `31f8a4ad7ea9a6c56e2b08ebb07eeceb30f8411d`,
+`Catalogue.cpp` `182da9a1b28bdca7316b7c9a56e0b9afff124f90`,
+`Engine/Bitmagnet.cpp` `39d7f8ba1082f59e3a4c8bed0313e3d221334ba6`,
+managed `Catalogue.cs` `7eb4f9b6c18d7d08707de8138118a274eb1dad7d` and
+`Search/Browser.cs` `1a7de186b34859fab71b070ff7b350a1b465f6b1`.
+
+### Completed comparison display work (historical)
+
+The following records the display work completed before consolidation. The
+current owner decision above replaces its selection and original-crawler
+requirements.
+
+**Earlier owner request:** show the engine-reported algorithm in Settings so
 manual performance comparisons identify which implementation is running. Add a
 read-only Collection row and retain it in the collapsed summary; disable the
 original-only concurrency rows for the translation and explain why. Selection
@@ -44,10 +202,10 @@ batch is complete; the lower observed owner rate remains unexplained and
 upstream comparison below remains open. Total elapsed was about 0.45 hours,
 including the additional steer and the shared build wait/retry.
 
-The existing manual switch remains:
+The pre-consolidation manual switch was:
 Turn Indexing off, edit `%LOCALAPPDATA%/TinyTorrent/crawler.json` to
 `{"algorithm":"bitmagnet"}` or `{"algorithm":"libtorrent"}`, then turn it on.
-Absent configuration selects libtorrent. Both use the existing catalogue;
+Absent configuration selected libtorrent. Both used the existing catalogue;
 switching requires neither clearing it nor rebuilding search. The original
 idle/busy concurrency controls govern only the original crawler. Root previously
 finished the matching Release app/engine output for the owner's test:
@@ -74,7 +232,7 @@ TCP-only (59.4/minute) and one-peer acquisition (66.6/minute) supplied no
 improvement; one-peer source is reverted. The proposed temporary diagnostic
 batch was cancelled and its five source files restored before any build/run.
 
-**Owner decision, settled:** retain the existing crawler for A/B comparison and
+**Earlier owner decision, superseded by consolidation:** retain the existing crawler for A/B comparison and
 implement another crawler as a direct translation of pinned Bitmagnet
 `e31b30d7351c269dc801876f92ebc59d31fee545`. Use Bitmagnet's actual configuration
 parameters and defaults; do not force this algorithm through our invented

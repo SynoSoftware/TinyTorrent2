@@ -28,7 +28,7 @@ using Destructor = void(*)(void*);
 constexpr int row = 100;
 constexpr int done = 101;
 constexpr int sqlNull = 5;
-constexpr int schemaVersion = 4;
+constexpr int schemaVersion = 6;
 constexpr std::size_t visitLimit = 20'000;
 constexpr int sourceLimit = 32;
 constexpr auto scanTime = std::chrono::milliseconds(75);
@@ -597,8 +597,6 @@ public:
     std::atomic<sqlite3*> interruptible{nullptr};
     Settings settings;
     std::map<std::string, std::string> active;
-    std::string probeSource;
-    bool preferSource = false;
     struct Review
     {
         CatalogueRemoval kind;
@@ -627,6 +625,20 @@ public:
     };
     std::string searchKey;
     std::map<std::pair<std::string, std::int64_t>, SearchGroup> searchGroups;
+    // Drops the cached file groups that show one of the changed torrents. A
+    // group that kept only part of its sources may hide the changed torrent
+    // behind that limit, so it is dropped too.
+    void ForgetGroups(std::vector<std::string> const& hashes)
+    {
+        if (hashes.empty()) return;
+        for (auto it = searchGroups.begin(); it != searchGroups.end();)
+        {
+            auto const& sources = it->second.hit.sources;
+            bool stale = it->second.hit.sourcesLimited || std::any_of(sources.begin(), sources.end(),
+                [&](Source const& source) { return std::find(hashes.begin(), hashes.end(), source.hash) != hashes.end(); });
+            it = stale ? searchGroups.erase(it) : std::next(it);
+        }
+    }
 
     Statement Prepare(std::string const& sql)
     {
@@ -678,6 +690,11 @@ public:
             if (!error) allocated += static_cast<std::int64_t>(bytes);
         }
         return {allocated, reusable};
+    }
+    // Bytes of database pages in use, without journal or write-ahead files.
+    std::int64_t LivePages()
+    {
+        return (Scalar("PRAGMA page_count") - Scalar("PRAGMA freelist_count")) * Scalar("PRAGMA page_size");
     }
     void Changed()
     {
@@ -738,6 +755,7 @@ public:
         result.seen = query.Optional(start + 6);
         result.availability = {query.Optional(start + 7), query.Optional(start + 8),
             query.Number(start + 9), static_cast<int>(query.Number(start + 10))};
+        result.verified = query.Number(start + 11) != 0;
         return result;
     }
     File ReadFile(Statement const& query, int start) const
@@ -748,7 +766,24 @@ public:
     }
     static std::string SourceColumns()
     {
-        return "c.v1,c.v2,c.name,c.size,c.count,c.admitted,c.seen,c.seeds,c.peers,c.observed,c.responses";
+        return "c.v1,c.v2,c.name,c.size,c.count,c.admitted,c.seen,c.seeds,c.peers,c.observed,c.responses,c.verified";
+    }
+    bool Verified(std::int64_t id)
+    {
+        auto query = Prepare("SELECT 1 FROM catalogue WHERE catalogue_id=? AND verified=1");
+        query.Number(1, id);
+        return query.Step();
+    }
+    // An unverified entry has no metadata to derive files from; its claimed
+    // files exist only in the files table.
+    std::vector<File> Contents(std::int64_t id)
+    {
+        if (Verified(id)) return Files(*Load(id).ti);
+        std::vector<File> result;
+        auto query = Prepare("SELECT file_index,name,path,size,padding,symlink,root FROM files WHERE catalogue_id=? ORDER BY file_index");
+        query.Number(1, id);
+        while (query.Step()) result.push_back(ReadFile(query, 0));
+        return result;
     }
     int Project(std::int64_t id, std::vector<File> const& files, int begin, int limit,
         std::chrono::steady_clock::time_point deadline)
@@ -756,10 +791,11 @@ public:
         auto insert = Prepare("INSERT INTO files(catalogue_id,file_index,name,path,size,padding,symlink,root,extension,name_key) "
             "VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(catalogue_id,file_index) DO UPDATE SET "
             "name=excluded.name,path=excluded.path,size=excluded.size,padding=excluded.padding,symlink=excluded.symlink,"
-            "root=excluded.root,extension=excluded.extension,name_key=excluded.name_key");
-        auto identity = Prepare("SELECT file_id FROM files WHERE catalogue_id=? AND file_index=?");
-        auto removeText = Prepare("DELETE FROM file_search WHERE rowid=?");
-        auto text = Prepare("INSERT INTO file_search(rowid,path) VALUES(?,?)");
+            "root=excluded.root,extension=excluded.extension,name_key=excluded.name_key RETURNING file_id");
+        // RETURNING gives the file_id of a new or rewritten row in the same step.
+        // OR REPLACE makes FTS5 drop a rewritten row's old text itself, so a new
+        // row costs no separate lookup or delete.
+        auto text = Prepare("INSERT OR REPLACE INTO file_search(rowid,path) VALUES(?,?)");
         auto end = std::min(static_cast<int>(files.size()), begin + std::clamp(limit, 1, 2048));
         int next = begin;
         while (next < end)
@@ -770,10 +806,9 @@ public:
             insert.Number(7, file.symlink);
             if (file.root.empty()) insert.Null(8); else insert.Text(8, file.root);
             insert.Text(9, Utf8(Fold(Extension(file.name)))); insert.Text(10, Utf8(Fold(file.name)));
-            insert.Step(); insert.Reset();
-            identity.Number(1, id); identity.Number(2, file.index); identity.Step();
-            auto fileId = identity.Number(0); identity.Reset();
-            removeText.Number(1, fileId); removeText.Step(); removeText.Reset();
+            insert.Step();
+            auto fileId = insert.Number(0);
+            insert.Reset();
             text.Number(1, fileId); text.Text(2, Utf8(Fold(file.path))); text.Step(); text.Reset();
             ++next;
             if (std::chrono::steady_clock::now() >= deadline) break;
@@ -784,7 +819,7 @@ public:
     {
         auto query = Prepare("SELECT info,resume,extras FROM metadata WHERE catalogue_id=?");
         query.Number(1, id);
-        if (!query.Step()) throw std::runtime_error("Catalogue metadata is unavailable");
+        if (!query.Step()) throw std::runtime_error("Catalogue entry has no verified metadata");
         auto bytes = query.Blob(0);
         auto extras = Json::parse(query.Text(2));
         auto resume = query.Blob(1);
@@ -859,8 +894,6 @@ CREATE TABLE files(catalogue_id INTEGER NOT NULL REFERENCES catalogue ON DELETE 
  PRIMARY KEY(catalogue_id,file_index)) WITHOUT ROWID;
 CREATE INDEX files_root ON files(root,size) WHERE root IS NOT NULL;
 CREATE INDEX files_extension ON files(extension,catalogue_id,file_index);
-CREATE INDEX catalogue_seen ON catalogue(seen,admitted);
-CREATE INDEX catalogue_published ON catalogue(published,catalogue_id);
 CREATE TABLE lookups(lookup TEXT PRIMARY KEY,catalogue_id INTEGER NOT NULL REFERENCES catalogue ON DELETE CASCADE) WITHOUT ROWID;
 CREATE INDEX lookup_catalogue ON lookups(catalogue_id);
 CREATE TABLE pending(lookup TEXT PRIMARY KEY,eligible INTEGER NOT NULL,failures INTEGER NOT NULL DEFAULT 0,seen INTEGER NOT NULL) WITHOUT ROWID;
@@ -989,6 +1022,32 @@ CREATE TRIGGER torrent_search_delete AFTER DELETE ON catalogue BEGIN DELETE FROM
             Impl::Transaction transaction(state);
             state.Execute("CREATE INDEX pending_probe ON pending((peers!='[]'),source_address,eligible,lookup,failures,source_port)");
             state.Execute("PRAGMA user_version=4");
+            transaction.Commit();
+        }
+        if (version < 5)
+        {
+            Impl::Transaction transaction(state);
+            state.Execute("CREATE TABLE rats_sync(peer_id TEXT PRIMARY KEY,requested INTEGER NOT NULL) WITHOUT ROWID");
+            state.Execute("PRAGMA user_version=5");
+            transaction.Commit();
+        }
+        if (version < 6)
+        {
+            // verified and private are read on every search row and every
+            // crawler candidate, where the metadata row's blobs are too costly.
+            // The unique index on published already serves its lookups.
+            Impl::Transaction transaction(state);
+            state.Execute(R"SQL(
+DROP INDEX IF EXISTS catalogue_seen;
+DROP INDEX IF EXISTS catalogue_published;
+ALTER TABLE catalogue ADD COLUMN verified INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE catalogue ADD COLUMN private INTEGER NOT NULL DEFAULT 1;
+UPDATE catalogue SET verified=1,
+ private=coalesce((SELECT json_extract(m.extras,'$.private') FROM metadata m WHERE m.catalogue_id=catalogue.catalogue_id),1)
+ WHERE EXISTS(SELECT 1 FROM metadata m WHERE m.catalogue_id=catalogue.catalogue_id);
+CREATE INDEX catalogue_stale ON catalogue(coalesce(seen,admitted),catalogue_id);
+PRAGMA user_version=6;
+)SQL");
             transaction.Commit();
         }
         state.interruptible = database;
@@ -1122,20 +1181,29 @@ Catalogue::Admission Catalogue::Admit(libtorrent::add_torrent_params const& para
     std::vector<std::string> keys;
     for (auto const& key : {v1, v2, v2.substr(0, 40), lookup})
         if (!key.empty() && std::find(keys.begin(), keys.end(), key) == keys.end()) keys.push_back(key);
-    std::set<std::int64_t> identities;
+    std::set<std::int64_t> identities, verified;
     for (auto const& key : keys) if (auto id = state.Find(key)) identities.insert(id);
-    auto reasons = identities.empty() ? state.Reasons(metadata->name(), metadata->total_size(),
+    for (auto id : identities) if (state.Verified(id)) verified.insert(id);
+    // Rules judged an unverified entry by its claim, so its metadata is judged again.
+    auto reasons = verified.empty() ? state.Reasons(metadata->name(), metadata->total_size(),
         static_cast<int>(files.size()), files) : std::vector<std::pair<std::string, std::string>>{};
     Admission result{reasons.empty(), v2.empty() ? v1 : v2, {}};
     for (auto const& [fingerprint, reason] : reasons) result.reasons.push_back(reason);
     Impl::Transaction transaction(state);
     if (!reasons.empty())
     {
+        auto remove = state.Prepare("DELETE FROM catalogue WHERE catalogue_id=?");
+        for (auto entry : identities)
+        {
+            remove.Number(1, entry); remove.Step(); remove.Reset();
+        }
+        if (!identities.empty()) state.Changed();
         state.Remember(keys, reasons);
         transaction.Commit();
         return result;
     }
-    std::int64_t id = identities.empty() ? 0 : *identities.begin();
+    // Keeping a verified row keeps its archived extras and piece layers.
+    std::int64_t id = !verified.empty() ? *verified.begin() : identities.empty() ? 0 : *identities.begin();
     std::optional<std::int64_t> discoveredAt;
     if (discovered)
     {
@@ -1166,6 +1234,23 @@ Catalogue::Admission Catalogue::Admit(libtorrent::add_torrent_params const& para
         insert.Optional(7, discoveredAt); insert.Text(8, Utf8(Fold(metadata->name())));
         insert.Step(); id = state.api->last_insert_rowid(state.database);
     }
+    else if (verified.empty())
+    {
+        // The metadata replaces everything the claim described; projection
+        // publishes the entry again with the verified files.
+        auto upgrade = state.Prepare("UPDATE catalogue SET v1=?,v2=?,name=?,size=?,count=?,name_key=?,published=NULL,projected=0,"
+            "seen=CASE WHEN ? THEN ? ELSE seen END WHERE catalogue_id=?");
+        if (v1.empty()) upgrade.Null(1); else upgrade.Text(1, v1);
+        if (v2.empty()) upgrade.Null(2); else upgrade.Text(2, v2);
+        upgrade.Text(3, metadata->name()); upgrade.Number(4, metadata->total_size());
+        upgrade.Number(5, static_cast<int>(files.size())); upgrade.Text(6, Utf8(Fold(metadata->name())));
+        upgrade.Number(7, discovered); upgrade.Optional(8, discoveredAt); upgrade.Number(9, id); upgrade.Step();
+        auto title = state.Prepare("UPDATE torrent_search SET name=? WHERE rowid=?");
+        title.Text(1, Utf8(Fold(metadata->name()))); title.Number(2, id); title.Step();
+        auto claimed = state.Prepare("DELETE FROM files WHERE catalogue_id=?");
+        claimed.Number(1, id); claimed.Step();
+        state.Changed();
+    }
     else
     {
         auto update = state.Prepare("UPDATE catalogue SET v1=coalesce(v1,?),v2=coalesce(v2,?),seen=CASE WHEN ? THEN ? ELSE seen END WHERE catalogue_id=?");
@@ -1174,7 +1259,7 @@ Catalogue::Admission Catalogue::Admit(libtorrent::add_torrent_params const& para
         update.Number(3, discovered); update.Optional(4, discoveredAt); update.Number(5, id); update.Step();
     }
     Json extras = {{"trackers", Json::array()}, {"web_seeds", Json::array()}, {"nodes", Json::array()},
-        {"private", metadata->priv()}, {"creator", ""}, {"comment", ""}, {"created", 0}};
+        {"creator", ""}, {"comment", ""}, {"created", 0}};
     auto append = [&](char const* collection, Json const& value)
     {
         auto& values = extras[collection];
@@ -1231,13 +1316,100 @@ Catalogue::Admission Catalogue::Admit(libtorrent::add_torrent_params const& para
     archive.Number(1, id); archive.Blob(2, info.data(), info.size());
     archive.Blob(3, metainfo.data(), metainfo.size()); archive.Blob(4, resume.data(), resume.size());
     archive.Text(5, extras.dump()); archive.Step();
-    auto selectable = state.Prepare("UPDATE catalogue SET selectable_count=? WHERE catalogue_id=?");
+    // Written in the transaction that stores the metadata, so verified always
+    // means the metadata row exists.
+    auto selectable = state.Prepare("UPDATE catalogue SET selectable_count=?,verified=1,private=? WHERE catalogue_id=?");
     selectable.Number(1, std::count_if(files.begin(), files.end(), [](File const& file) { return !file.padding; }));
-    selectable.Number(2, id); selectable.Step();
+    selectable.Number(2, metadata->priv()); selectable.Number(3, id); selectable.Step();
     for (auto const& key : keys) state.Alias(key, id);
     transaction.Commit();
-    if (!state.projection) state.projection = Impl::Projection{id, std::move(files)};
+    if (!state.projection || state.projection->entry == id) state.projection = Impl::Projection{id, std::move(files)};
     return result;
+}
+
+Catalogue::Receipt Catalogue::Receive(std::vector<Claim> const& claims)
+{
+    Open(true);
+    auto& state = *impl_;
+    Receipt result;
+    // One check per call: a time slice of writes overshoots the budget by
+    // little, and the budget is a cleanup target, not an exact size.
+    auto [allocated, reusable] = state.Footprint();
+    if (allocated - reusable >= state.settings.budget)
+    {
+        result.full = true;
+        return result;
+    }
+    auto deadline = std::chrono::steady_clock::now() + scanTime;
+    auto now = Now();
+    Impl::Transaction transaction(state);
+    auto held = state.Prepare("SELECT EXISTS(SELECT 1 FROM lookups WHERE lookup=?1) OR EXISTS(SELECT 1 FROM rejections WHERE lookup=?1)");
+    auto insert = state.Prepare("INSERT INTO catalogue(v1,name,size,count,admitted,name_key,selectable_count,projected,"
+        "published,seeds,peers,observed,responses) VALUES(?,?,?,?,?,?,?,?,(SELECT publication FROM state WHERE state_id=1),?,?,?,?)");
+    for (; result.next < static_cast<int>(claims.size()); ++result.next)
+    {
+        if (result.next > 0 && std::chrono::steady_clock::now() >= deadline) break;
+        auto const& claim = claims[result.next];
+        if (claim.hash.size() != 40 || claim.hash.find_first_not_of("0123456789abcdef") != std::string::npos ||
+            claim.size < 0 || std::any_of(claim.files.begin(), claim.files.end(),
+                [](Claim::File const& file) { return file.size < 0; }))
+            continue;
+        held.Text(1, claim.hash);
+        held.Step();
+        bool known = held.Number(0) != 0;
+        held.Reset();
+        if (known) continue;
+        std::vector<File> files;
+        files.reserve(claim.files.size());
+        for (auto const& file : claim.files)
+        {
+            auto path = file.path;
+            std::replace(path.begin(), path.end(), '\\', '/');
+            auto slash = path.find_last_of('/');
+            files.push_back({static_cast<int>(files.size()), path.substr(slash == std::string::npos ? 0 : slash + 1),
+                path, file.size});
+        }
+        auto count = static_cast<int>(files.size());
+        if (!state.Reasons(claim.name, claim.size, count, files).empty()) continue;
+        auto const& availability = claim.availability;
+        // A future time would stop later observations from replacing the claim.
+        bool observed = availability.observed > 0 && availability.observed <= now &&
+            (availability.seeds || availability.peers);
+        state.Execute("UPDATE state SET publication=publication+1 WHERE state_id=1");
+        insert.Text(1, claim.hash); insert.Text(2, claim.name); insert.Number(3, claim.size);
+        insert.Number(4, count); insert.Number(5, now); insert.Text(6, Utf8(Fold(claim.name)));
+        insert.Number(7, count); insert.Number(8, count);
+        insert.Optional(9, observed ? availability.seeds : std::nullopt);
+        insert.Optional(10, observed ? availability.peers : std::nullopt);
+        insert.Number(11, observed ? availability.observed : 0);
+        insert.Number(12, observed ? availability.responses : 0);
+        insert.Step(); insert.Reset();
+        auto id = state.api->last_insert_rowid(state.database);
+        state.Alias(claim.hash, id);
+        for (int begin = 0; begin < count;)
+            begin = state.Project(id, files, begin, count - begin, std::chrono::steady_clock::time_point::max());
+        ++result.stored;
+    }
+    transaction.Commit();
+    return result;
+}
+
+std::optional<Catalogue::Sync> Catalogue::ReadSync(std::string const& peerId)
+{
+    auto& state = *impl_;
+    if (!state.database) return std::nullopt;
+    auto query = state.Prepare("SELECT requested FROM rats_sync WHERE peer_id=?");
+    query.Text(1, peerId);
+    if (!query.Step()) return std::nullopt;
+    return Sync{peerId, query.Number(0)};
+}
+
+void Catalogue::SaveSync(Sync const& sync)
+{
+    Open(true);
+    auto query = impl_->Prepare("INSERT INTO rats_sync(peer_id,requested) VALUES(?,?) "
+        "ON CONFLICT(peer_id) DO UPDATE SET requested=excluded.requested");
+    query.Text(1, sync.peerId); query.Number(2, sync.requested); query.Step();
 }
 
 void Catalogue::Discover(std::vector<std::string> const& lookups, std::int64_t now,
@@ -1246,7 +1418,7 @@ void Catalogue::Discover(std::vector<std::string> const& lookups, std::int64_t n
     std::vector<Pending> candidates;
     candidates.reserve(lookups.size());
     for (auto const& lookup : lookups)
-        candidates.push_back({lookup, 0, 0, {}, source});
+        candidates.push_back({lookup, source});
     Discover(candidates, now);
 }
 
@@ -1280,11 +1452,11 @@ Catalogue::Selection Catalogue::Triage(std::vector<Pending> const& candidates, s
     Selection result;
     auto& state = *impl_;
     if (!state.database) return result;
-    auto query = state.Prepare("SELECT 1 WHERE NOT EXISTS(SELECT 1 FROM lookups WHERE lookup=?) "
+    // An unverified entry counts as missing, so the crawler can fetch its metadata.
+    auto query = state.Prepare("SELECT 1 WHERE NOT EXISTS(SELECT 1 FROM lookups l JOIN catalogue c USING(catalogue_id) WHERE l.lookup=? AND c.verified=1) "
         "AND NOT EXISTS(SELECT 1 FROM rejections WHERE lookup=?)");
     auto known = state.Prepare("SELECT c.seeds,c.peers,c.observed FROM lookups l "
-        "JOIN catalogue c USING(catalogue_id) JOIN metadata m USING(catalogue_id) "
-        "WHERE l.lookup=? AND coalesce(json_extract(m.extras,'$.private'),1)=0");
+        "JOIN catalogue c USING(catalogue_id) WHERE l.lookup=? AND c.verified=1 AND c.private=0");
     for (auto const& candidate : candidates)
     {
         query.Text(1, candidate.lookup);
@@ -1301,118 +1473,6 @@ Catalogue::Selection Catalogue::Triage(std::vector<Pending> const& candidates, s
         query.Reset();
     }
     return result;
-}
-
-std::vector<Catalogue::Pending> Catalogue::Due(int limit, std::int64_t now)
-{
-    std::vector<Pending> result;
-    auto& state = *impl_;
-    if (!state.database) return result;
-    Impl::Transaction transaction(state);
-    auto query = state.Prepare("SELECT lookup,eligible,failures,peers FROM pending WHERE (peers!='[]')=1 AND eligible<=? ORDER BY eligible,lookup LIMIT ?");
-    query.Number(1, now); query.Number(2, std::clamp(limit, 0, 256));
-    while (query.Step())
-    {
-        Pending pending{query.Text(0), query.Number(1), static_cast<int>(query.Number(2))};
-        for (auto const& peer : Json::parse(query.Text(3)))
-            pending.peers.push_back({peer.at(0).get<std::string>(), peer.at(1).get<int>()});
-        result.push_back(std::move(pending));
-    }
-    auto lease = state.Prepare("UPDATE pending SET eligible=?,peers='[]' WHERE lookup=?");
-    for (auto const& pending : result)
-    {
-        lease.Number(1, now + 120); lease.Text(2, pending.lookup); lease.Step(); lease.Reset();
-    }
-    transaction.Commit();
-    return result;
-}
-
-std::vector<Catalogue::Pending> Catalogue::Probe(int limit, std::int64_t now)
-{
-    std::vector<Pending> result;
-    auto& state = *impl_;
-    limit = std::clamp(limit, 0, 200);
-    if (!state.database || limit == 0) return result;
-    Impl::Transaction transaction(state);
-    std::vector<Pending> unknown;
-    auto sourceless = state.Prepare("SELECT lookup,eligible,failures FROM pending WHERE (peers!='[]')=0 AND source_address='' AND eligible<=? ORDER BY eligible,lookup LIMIT ?");
-    sourceless.Number(1, now); sourceless.Number(2, limit);
-    while (sourceless.Step())
-        unknown.push_back({sourceless.Text(0), sourceless.Number(1), static_cast<int>(sourceless.Number(2))});
-    auto share = (limit + (state.preferSource ? 0 : 1)) / 2;
-    auto reserved = std::min(static_cast<std::size_t>(share), unknown.size());
-    result.insert(result.end(), unknown.begin(), unknown.begin() + reserved);
-
-    auto cursor = state.probeSource;
-    auto beginning = cursor;
-    bool wrapped = false;
-    auto next = state.Prepare("SELECT source_address FROM pending WHERE (peers!='[]')=0 AND source_address>? ORDER BY source_address LIMIT 1");
-    auto query = state.Prepare("SELECT lookup,eligible,failures,source_port FROM pending WHERE (peers!='[]')=0 AND source_address=? AND eligible<=? ORDER BY eligible,lookup LIMIT 1");
-    // Seek past each supplier's entire hash range, even when none is due.
-    for (int visited = 0; visited < 200 && result.size() < static_cast<std::size_t>(limit);)
-    {
-        next.Text(1, cursor);
-        if (!next.Step())
-        {
-            next.Reset();
-            if (wrapped || beginning.empty()) break;
-            cursor.clear();
-            wrapped = true;
-            continue;
-        }
-        auto address = next.Text(0);
-        next.Reset();
-        if (wrapped && address > beginning) break;
-        cursor = std::move(address);
-        ++visited;
-        query.Text(1, cursor); query.Number(2, now);
-        if (!query.Step()) { query.Reset(); continue; }
-        Pending pending{query.Text(0), query.Number(1), static_cast<int>(query.Number(2))};
-        if (query.Number(3) > 0)
-            pending.source = Endpoint{cursor, static_cast<int>(query.Number(3))};
-        result.push_back(std::move(pending));
-        query.Reset();
-    }
-    auto remaining = std::min(unknown.size() - reserved, static_cast<std::size_t>(limit) - result.size());
-    result.insert(result.end(), unknown.begin() + reserved, unknown.begin() + reserved + remaining);
-    auto lease = state.Prepare("UPDATE pending SET eligible=? WHERE lookup=?");
-    for (auto const& pending : result)
-    {
-        lease.Number(1, now + 120); lease.Text(2, pending.lookup); lease.Step(); lease.Reset();
-    }
-    transaction.Commit();
-    state.probeSource = std::move(cursor);
-    state.preferSource = !state.preferSource;
-    return result;
-}
-
-void Catalogue::Peers(std::map<std::string, std::vector<Endpoint>> const& peers, std::int64_t now)
-{
-    auto& state = *impl_;
-    if (!state.database || peers.empty()) return;
-    Impl::Transaction transaction(state);
-    auto query = state.Prepare("UPDATE pending SET peers=?,eligible=? WHERE lookup=?");
-    for (auto const& [lookup, endpoints] : peers)
-    {
-        if (endpoints.empty()) continue;
-        auto values = Json::array();
-        for (auto const& peer : endpoints) values.push_back({peer.address, peer.port});
-        query.Text(1, values.dump()); query.Number(2, now); query.Text(3, lookup); query.Step(); query.Reset();
-    }
-    transaction.Commit();
-}
-
-void Catalogue::Failed(std::set<std::string> const& lookups, std::int64_t now)
-{
-    auto& state = *impl_;
-    if (!state.database || lookups.empty()) return;
-    Impl::Transaction transaction(state);
-    auto query = state.Prepare("UPDATE pending SET failures=min(failures+1,16),peers='[]',eligible=?+min(86400,60*(1<<min(failures,10))) WHERE lookup=?");
-    for (auto const& lookup : lookups)
-    {
-        query.Number(1, now); query.Text(2, lookup); query.Step(); query.Reset();
-    }
-    transaction.Commit();
 }
 
 void Catalogue::SaveNodes(std::vector<Node> const& nodes)
@@ -1441,21 +1501,6 @@ std::vector<Catalogue::Node> Catalogue::Nodes(int limit, std::int64_t now)
     return result;
 }
 
-std::vector<Catalogue::Node> Catalogue::DueNodes(int limit, std::int64_t now)
-{
-    auto& state = *impl_;
-    if (!state.database) return {};
-    Impl::Transaction transaction(state);
-    auto result = Nodes(limit, now);
-    auto lease = state.Prepare("UPDATE nodes SET eligible=? WHERE address=? AND port=?");
-    for (auto const& node : result)
-    {
-        lease.Number(1, now + 300); lease.Text(2, node.address); lease.Number(3, node.port); lease.Step(); lease.Reset();
-    }
-    transaction.Commit();
-    return result;
-}
-
 Catalogue::Entry Catalogue::Detail(std::string const& hash, int offset, int limit, std::string const& query)
 {
     auto& state = *impl_;
@@ -1466,13 +1511,18 @@ Catalogue::Entry Catalogue::Detail(std::string const& hash, int offset, int limi
     source.Number(1, id); source.Step(); result.torrent = state.ReadSource(source);
     result.offset = std::max(0, offset);
     result.next = result.offset;
-    auto selectable = state.Prepare("SELECT c.selectable_count,m.extras FROM catalogue c JOIN metadata m USING(catalogue_id) WHERE c.catalogue_id=?");
+    auto selectable = state.Prepare("SELECT c.selectable_count,c.private,m.extras FROM catalogue c LEFT JOIN metadata m USING(catalogue_id) WHERE c.catalogue_id=?");
     selectable.Number(1, id); selectable.Step(); result.selectableCount = static_cast<int>(selectable.Number(0));
-    auto extras = Json::parse(selectable.Text(1));
-    result.isPrivate = extras.value("private", true);
-    result.comment = extras.value("comment", "");
-    result.creator = extras.value("creator", "");
-    result.created = extras.value("created", std::int64_t(0));
+    // An unverified entry stays private, because a public DHT scrape must not
+    // run for a torrent that may be private.
+    result.isPrivate = selectable.Number(1) != 0;
+    if (result.torrent.verified)
+    {
+        auto extras = Json::parse(selectable.Text(2));
+        result.comment = extras.value("comment", "");
+        result.creator = extras.value("creator", "");
+        result.created = extras.value("created", std::int64_t(0));
+    }
     auto files = state.Prepare("SELECT file_index,name,path,size,padding,symlink,root FROM files WHERE catalogue_id=? AND file_index>=? ORDER BY file_index LIMIT ?");
     auto maximum = std::clamp(limit, 1, 500);
     files.Number(1, id); files.Number(2, result.offset); files.Number(3, visitLimit + 1);
@@ -1546,7 +1596,7 @@ Catalogue::SourcePage Catalogue::Sources(Source const& selected, Query const& qu
                 break;
             }
             auto source = state.ReadSource(sources);
-            source.file = state.ReadFile(sources, 11);
+            source.file = state.ReadFile(sources, 12);
             if (!predicate.Parent(source)) { ++result.next; continue; }
             if (result.sources.size() == maximum) { result.more = true; break; }
             ++result.next;
@@ -1571,22 +1621,39 @@ libtorrent::add_torrent_params Catalogue::Metadata(std::string const& hash, Quer
         auto entry = state.Prepare("SELECT " + Impl::SourceColumns() + ",c.published "
             "FROM catalogue c WHERE c.catalogue_id=?");
         entry.Number(1, id);
-        if (!entry.Step() || !entry.Optional(11) || entry.Number(11) > scope.cursor->watermark ||
+        if (!entry.Step() || !entry.Optional(12) || entry.Number(12) > scope.cursor->watermark ||
             !Predicate(scope).Parent(state.ReadSource(entry)))
             throw std::runtime_error("Catalogue source is outside the captured search");
     }
     return state.Load(id);
 }
 
-void Catalogue::Observe(std::string const& hash, Observation const& observation)
+void Catalogue::Observe(std::vector<Observed> const& observations)
 {
     auto& state = *impl_;
-    auto id = state.Find(hash);
-    if (!id || (!observation.seeds && !observation.peers)) return;
-    auto query = state.Prepare("UPDATE catalogue SET seeds=?,peers=?,observed=?,responses=? WHERE catalogue_id=? AND observed<=?");
-    query.Optional(1, observation.seeds); query.Optional(2, observation.peers); query.Number(3, observation.observed);
-    query.Number(4, observation.responses); query.Number(5, id); query.Number(6, observation.observed); query.Step();
-    if (state.api->changes(state.database)) state.searchGroups.clear();
+    auto find = state.Prepare("SELECT catalogue_id FROM lookups WHERE lookup=?");
+    auto update = state.Prepare("UPDATE catalogue SET seeds=?,peers=?,observed=?,responses=? WHERE catalogue_id=? AND observed<=? "
+        "RETURNING v1,v2");
+    std::vector<std::string> changed;
+    Impl::Transaction transaction(state);
+    for (auto const& [hash, observation] : observations)
+    {
+        if (!observation.seeds && !observation.peers) continue;
+        find.Text(1, hash);
+        auto id = find.Step() ? find.Number(0) : 0;
+        find.Reset();
+        if (!id) continue;
+        update.Optional(1, observation.seeds); update.Optional(2, observation.peers); update.Number(3, observation.observed);
+        update.Number(4, observation.responses); update.Number(5, id); update.Number(6, observation.observed);
+        if (update.Step())
+        {
+            auto v2 = update.Text(1);
+            changed.push_back(v2.empty() ? update.Text(0) : v2);
+        }
+        update.Reset();
+    }
+    transaction.Commit();
+    state.ForgetGroups(changed);
 }
 
 Catalogue::Page Catalogue::Search(Query const& query)
@@ -1711,11 +1778,11 @@ Catalogue::Page Catalogue::Search(Query const& query)
                 { stopped = true; break; }
                 auto rowCursor = cursor;
                 rowCursor.entry = rows.Number(0);
-                rowCursor.file = static_cast<int>(rows.Number(12));
-                rowCursor.value = rows.Text(19);
+                rowCursor.file = static_cast<int>(rows.Number(13));
+                rowCursor.value = rows.Text(20);
                 auto source = state.ReadSource(rows, 1);
-                source.file = state.ReadFile(rows, 12);
-                if (!rows.Optional(20) || rows.Number(20) > cursor.watermark || source.file.padding)
+                source.file = state.ReadFile(rows, 13);
+                if (!rows.Optional(21) || rows.Number(21) > cursor.watermark || source.file.padding)
                 { cursor = rowCursor; continue; }
                 Hit hit;
                 bool matched = false;
@@ -1747,9 +1814,9 @@ Catalogue::Page Catalogue::Search(Query const& query)
                             if (++result.visited > visitLimit || std::chrono::steady_clock::now() - start >= scanTime)
                             { stopped = true; break; }
                             auto alias = state.ReadSource(aliases, 1);
-                            alias.file = state.ReadFile(aliases, 12);
-                            group.after = Cursor{aliases.Number(0), alias.file.index, cursor.watermark, cursor.generation, aliases.Text(19)};
-                            if (!aliases.Optional(20) || aliases.Number(20) > cursor.watermark || alias.file.padding) continue;
+                            alias.file = state.ReadFile(aliases, 13);
+                            group.after = Cursor{aliases.Number(0), alias.file.index, cursor.watermark, cursor.generation, aliases.Text(20)};
+                            if (!aliases.Optional(21) || aliases.Number(21) > cursor.watermark || alias.file.padding) continue;
                             if (!predicate.Parent(alias)) continue;
                             if (!group.matched && predicate.Matches(alias, true))
                             { group.matched = aliases.Number(0); group.hit.matched = alias; }
@@ -1824,10 +1891,7 @@ Catalogue::Removal Catalogue::Preview(CatalogueRemoval kind)
         review.cursor = id;
         bool remove = kind == CatalogueRemoval::Clear;
         if (!remove)
-        {
-            auto retained = state.Load(id);
-            remove = !state.Reasons(entries.Text(1), entries.Number(2), static_cast<int>(entries.Number(3)), Files(*retained.ti)).empty();
-        }
+            remove = !state.Reasons(entries.Text(1), entries.Number(2), static_cast<int>(entries.Number(3)), state.Contents(id)).empty();
         if (remove)
         {
             ++review.result.torrents;
@@ -1866,8 +1930,7 @@ Catalogue::RemovalPage Catalogue::PreviewRows(std::string const& token, std::int
         item.torrent = state.ReadSource(entries, 1);
         if (review.kind == CatalogueRemoval::Excluded)
         {
-            auto retained = state.Load(id);
-            auto files = Files(*retained.ti);
+            auto files = state.Contents(id);
             for (auto const& rule : state.settings.rules)
                 if (Rejects(rule, item.torrent.name, item.torrent.size, item.torrent.count, files))
                     item.reasons.push_back(rule.ruleId);
@@ -1899,8 +1962,7 @@ Catalogue::Removal Catalogue::Remove(std::string const& token, int limit)
         std::vector<std::pair<std::string, std::string>> reasons;
         if (review.kind == CatalogueRemoval::Excluded)
         {
-            auto retained = state.Load(id);
-            reasons = state.Reasons(entries.Text(1), entries.Number(2), static_cast<int>(entries.Number(3)), Files(*retained.ti));
+            reasons = state.Reasons(entries.Text(1), entries.Number(2), static_cast<int>(entries.Number(3)), state.Contents(id));
             if (reasons.empty()) continue;
         }
         candidates.push_back({id, std::move(reasons)});
@@ -1910,7 +1972,8 @@ Catalogue::Removal Catalogue::Remove(std::string const& token, int limit)
     auto remove = state.Prepare("DELETE FROM catalogue WHERE catalogue_id=?");
     for (auto const& candidate : candidates)
     {
-        if (!candidate.reasons.empty())
+        // Rules matched an unverified entry by its claim, which must never ban the real torrent.
+        if (!candidate.reasons.empty() && state.Verified(candidate.id))
         {
             auto aliases = state.Prepare("SELECT lookup FROM lookups WHERE catalogue_id=?");
             aliases.Number(1, candidate.id);
@@ -1957,6 +2020,8 @@ Catalogue::Progress Catalogue::ProjectPending(int limit)
     auto deadline = std::chrono::steady_clock::now() + scanTime;
     int remaining = std::clamp(limit, 1, 2048);
     int published = 0;
+    // One commit per time slice: each commit waits for the disk to flush.
+    Impl::Transaction transaction(state);
     while (remaining > 0 && std::chrono::steady_clock::now() < deadline)
     {
         auto progress = state.Prepare("SELECT rebuild_active,rebuild_cursor,rebuild_end,rebuild_entry FROM state WHERE state_id=1");
@@ -1972,13 +2037,14 @@ Catalogue::Progress Catalogue::ProjectPending(int limit)
                 break;
             }
             auto id = next.Number(0);
-            Impl::Transaction transaction(state);
-            auto remove = state.Prepare("DELETE FROM files WHERE catalogue_id=?");
+            // Projection rewrites an unverified entry's files in place, because
+            // they exist nowhere else.
+            auto remove = state.Prepare("DELETE FROM files WHERE catalogue_id=?1 AND EXISTS(SELECT 1 FROM catalogue WHERE catalogue_id=?1 AND verified=1)");
             remove.Number(1, id); remove.Step();
             auto reset = state.Prepare("UPDATE catalogue SET published=NULL,projected=0 WHERE catalogue_id=?");
             reset.Number(1, id); reset.Step();
             auto current = state.Prepare("UPDATE state SET rebuild_entry=?,generation=generation+1 WHERE state_id=1");
-            current.Number(1, id); current.Step(); transaction.Commit();
+            current.Number(1, id); current.Step();
             state.projection.reset();
         }
         auto entry = state.Prepare(rebuilding
@@ -1997,13 +2063,9 @@ Catalogue::Progress Catalogue::ProjectPending(int limit)
         auto id = entry.Number(0);
         auto begin = static_cast<int>(entry.Number(1));
         if (!state.projection || state.projection->entry != id)
-        {
-            auto retained = state.Load(id);
-            state.projection = Impl::Projection{id, Files(*retained.ti)};
-        }
+            state.projection = Impl::Projection{id, state.Contents(id)};
         auto const& files = state.projection->files;
         if (begin < 0 || begin > files.size()) throw std::runtime_error("Invalid saved projection progress");
-        Impl::Transaction transaction(state);
         auto next = state.Project(id, files, begin, remaining, deadline);
         remaining -= std::max(1, next - begin);
         bool complete = next == files.size();
@@ -2017,13 +2079,13 @@ Catalogue::Progress Catalogue::ProjectPending(int limit)
             auto saved = state.Prepare("UPDATE state SET rebuild_cursor=?,rebuild_entry=NULL,rebuilt=rebuilt+1 WHERE rebuild_entry=?");
             saved.Number(1, id); saved.Number(2, id); saved.Step();
         }
-        transaction.Commit();
         // Finishing a cancelled rebuild is not a newly indexed torrent.
         if (complete && !rebuilding && progress.Optional(3) != id)
             ++published;
         if (complete) state.projection.reset();
         else break;
     }
+    transaction.Commit();
     auto result = state.ReadProgress();
     result.published = published;
     return result;
@@ -2040,25 +2102,27 @@ int Catalogue::Evict(std::int64_t now, int limit)
     if (!state.database) return 0;
     auto [allocated, reusable] = state.Footprint();
     if (allocated - reusable < state.settings.budget) return 0;
+    auto deadline = std::chrono::steady_clock::now() + scanTime;
+    // The stale entries come oldest first from the catalogue_stale index.
     auto entries = state.Prepare("SELECT catalogue_id FROM catalogue WHERE coalesce(seen,admitted)<? ORDER BY coalesce(seen,admitted),catalogue_id LIMIT ?");
     auto cutoff = now - static_cast<std::int64_t>(state.settings.staleHours) * 3600;
     entries.Number(1, cutoff); entries.Number(2, std::clamp(limit, 1, 64));
     std::vector<std::int64_t> ids;
     while (entries.Step()) ids.push_back(entries.Number(0));
+    entries.Reset();
     int removed = 0;
+    // One commit per slice. The journal file exists inside the transaction, so
+    // the budget check counts database pages only.
+    Impl::Transaction transaction(state);
+    auto remove = state.Prepare("DELETE FROM catalogue WHERE catalogue_id=? AND coalesce(seen,admitted)<?");
     for (auto id : ids)
     {
-        std::tie(allocated, reusable) = state.Footprint();
-        if (allocated - reusable < state.settings.budget) break;
-        Impl::Transaction transaction(state);
-        auto remove = state.Prepare("DELETE FROM catalogue WHERE catalogue_id=? AND coalesce(seen,admitted)<?");
-        remove.Number(1, id); remove.Number(2, cutoff); remove.Step();
-        auto changed = state.api->changes(state.database);
-        if (changed) state.Execute("UPDATE state SET generation=generation+1 WHERE state_id=1");
-        transaction.Commit();
-        removed += changed;
+        if (std::chrono::steady_clock::now() >= deadline || state.LivePages() < state.settings.budget) break;
+        remove.Number(1, id); remove.Number(2, cutoff); remove.Step(); remove.Reset();
+        removed += state.api->changes(state.database);
     }
-    if (removed) state.review.reset();
+    if (removed) state.Changed();
+    transaction.Commit();
     return removed;
 }
 

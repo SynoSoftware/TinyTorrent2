@@ -109,8 +109,6 @@ public sealed partial class IndexingView : UserControl
         "indexing" => Enabled,
         "index_budget_mib" => Budget,
         "index_stale_hours" => Stale,
-        "index_metadata_idle" => MetadataIdle,
-        "index_metadata_busy" => MetadataBusy,
         _ => null,
     };
 
@@ -129,17 +127,6 @@ public sealed partial class IndexingView : UserControl
     private void ShowStatus()
     {
         var status = Model.Search.State;
-        var algorithm = status.Crawler switch
-        {
-            Crawler.Libtorrent => T("original_crawler"),
-            Crawler.Bitmagnet => T("bitmagnet_crawler"),
-            _ => Model.IsConnected ? Model.Text.Get("window", "connecting") : "—",
-        };
-        Algorithm.Text = !Model.IsConnected && status.Crawler.HasValue
-            ? Model.Text.Format("window", "last_known", algorithm) : algorithm;
-        AlgorithmRow.Description = status.Crawler == Crawler.Bitmagnet ? T("original_limits") : string.Empty;
-        ToolTipService.SetToolTip(Algorithm, Algorithm.Text);
-        IdleRow.IsEnabled = BusyRow.IsEnabled = Model.IsConnected && status.Crawler == Crawler.Libtorrent;
         BudgetRow.Description = Model.Text.Format("catalogue", "used", Model.Text.Bytes(status.Allocated));
         Exclusions.Header = Model.Text.Format("catalogue", "excluded_count", status.Rejected);
         Indexed.Text = Model.Search.Totals;
@@ -156,7 +143,7 @@ public sealed partial class IndexingView : UserControl
         ToolTipService.SetToolTip(Rate, Model.Text.Format("catalogue", "index_rate_hint", status.TorrentsPerSecond));
         ToolTipService.SetToolTip(Activity, Model.Search.StatusTip);
         AutomationProperties.SetName(Activity, collecting ? Activity.Text : Model.Search.StatusTip);
-        CollectionSection.Summary = Algorithm.Text + " · " + Model.Search.Totals + " · " + Model.Search.Collection;
+        CollectionSection.Summary = Model.Search.Totals + " · " + Model.Search.Collection;
         StorageSection.Summary = Model.Text.Format("catalogue", "storage_summary", Model.Text.Bytes(status.Allocated),
             Model.Text.Bytes(Model.Settings.IndexBudget.ConfirmedNumber * 1048576L),
             (Model.Settings.IndexStale.ConfirmedNumber / _staleScale).ToString("G", CultureInfo.CurrentCulture),

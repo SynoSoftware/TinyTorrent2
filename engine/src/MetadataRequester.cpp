@@ -1,7 +1,4 @@
 #include "MetadataRequester.h"
-#include "Engine.h"
-#include <winsock2.h>
-#include <ws2tcpip.h>
 #include <libtorrent/bdecode.hpp>
 #include <libtorrent/hasher.hpp>
 #include <boost/asio/post.hpp>
@@ -51,7 +48,7 @@ struct MetadataRequester::State : std::enable_shared_from_this<State>
 
     libtorrent::io_context& context;
     Config config;
-    Route route;
+    std::shared_ptr<Dialer::Route const> route;
     std::array<char, 20> peerId;
     std::mutex gate;
     bool cancelled = false;
@@ -63,8 +60,9 @@ struct MetadataRequester::State : std::enable_shared_from_this<State>
     std::map<std::string, Limiter> limiters;
     std::list<std::string> recent;
 
-    State(libtorrent::io_context& io, Config settings, Route path, std::function<void()> notify) :
-        context(io), config(settings), route(std::move(path)), wake(std::move(notify))
+    State(libtorrent::io_context& io, Config settings, Dialer::Route path, std::function<void()> notify) :
+        context(io), config(settings), route(std::make_shared<Dialer::Route const>(std::move(path))),
+        wake(std::move(notify))
     {
         std::random_device random;
         for (auto& byte : peerId)
@@ -124,28 +122,23 @@ struct MetadataRequester::State::Job : std::enable_shared_from_this<Job>
     std::size_t next = 0;
     Socket socket;
     boost::asio::steady_timer timer;
-    boost::asio::steady_timer dial;
+    std::shared_ptr<Dialer> dialer;
     Clock::time_point started = Clock::now();
     Clock::time_point waiting;
     Clock::time_point endpointAt;
-    Clock::time_point dialDeadline;
-    std::size_t physical = 0;
     std::uint64_t generation = 0;
-    std::uint64_t connection = 0;
     MetadataStage stage = MetadataStage::Connect;
     bool done = false;
     bool timedOut = false;
-    bool dialExpired = false;
     std::vector<char> frame;
     std::vector<char> info;
     std::vector<bool> received;
     std::size_t remaining = 0;
     unsigned extension = 0;
-    std::string response;
 
     Job(std::shared_ptr<State> owner, Result value, std::vector<libtorrent::tcp::endpoint> endpoints) :
         state(std::move(owner)), result(std::move(value)), peers(std::move(endpoints)),
-        socket(state->context), timer(state->context), dial(state->context) {}
+        socket(state->context), timer(state->context) {}
 
     bool Stopped()
     {
@@ -157,7 +150,8 @@ struct MetadataRequester::State::Job : std::enable_shared_from_this<Job>
     {
         Error ignored;
         timer.cancel();
-        dial.cancel();
+        if (dialer)
+            std::exchange(dialer, {})->Close();
         socket.close(ignored);
     }
 
@@ -201,8 +195,7 @@ struct MetadataRequester::State::Job : std::enable_shared_from_this<Job>
             Finish(result.attempts.empty() ? MetadataStage::Connect : result.attempts.back().failure);
             return;
         }
-        auto const& route = state->route;
-        if (!route.allowed || (route.proxy != ProxyType::None && route.endpoints.empty()))
+        if (!Dialer::Usable(*state->route))
         {
             Finish(MetadataStage::Route);
             return;
@@ -227,53 +220,18 @@ struct MetadataRequester::State::Job : std::enable_shared_from_this<Job>
         });
     }
 
-    bool Bind(libtorrent::tcp::endpoint const& physical, Error& error)
-    {
-        auto const& route = state->route;
-        socket.open(physical.protocol(), error);
-        if (error)
-            return false;
-        socket.set_option(boost::asio::socket_base::linger(true, 0), error);
-        if (!error)
-            socket.set_option(libtorrent::tcp::no_delay(true), error);
-        if (error || !route.adapter)
-            return !error;
-        bool ipv4 = physical.address().is_v4();
-        auto index = ipv4 ? htonl(route.adapter->ipv4Index) : route.adapter->ipv6Index;
-        if (!index)
-        {
-            error = boost::asio::error::address_family_not_supported;
-            return false;
-        }
-        if (setsockopt(socket.native_handle(), ipv4 ? IPPROTO_IP : IPPROTO_IPV6,
-            ipv4 ? IP_UNICAST_IF : IPV6_UNICAST_IF, reinterpret_cast<char const*>(&index), sizeof(index)) != 0)
-        {
-            error = Error(WSAGetLastError(), boost::system::system_category());
-            return false;
-        }
-        for (auto const& text : route.adapter->addresses)
-        {
-            auto address = libtorrent::make_address(text, error);
-            if (!error && address.is_v4() == ipv4)
-            {
-                if (!ipv4 && address.to_v6().is_link_local() && !physical.address().to_v6().is_link_local())
-                    continue;
-                socket.bind({address, 0}, error);
-                if (!error)
-                    return true;
-            }
-        }
-        error = boost::asio::error::address_family_not_supported;
-        return false;
-    }
-
     void Expire(std::uint64_t current)
     {
         if (done || generation != current)
             return;
         timedOut = true;
-        Error ignored;
-        socket.close(ignored);
+        if (dialer)
+            Fail(MetadataStage::Connect, boost::asio::error::timed_out);
+        else
+        {
+            Error ignored;
+            socket.close(ignored);
+        }
     }
 
     void Connect()
@@ -287,94 +245,26 @@ struct MetadataRequester::State::Job : std::enable_shared_from_this<Job>
             if (!error)
                 self->Expire(current);
         });
-        dialDeadline = endpointAt + std::chrono::seconds(3);
-        physical = 0;
-        Dial();
-    }
-
-    void DialFailed(MetadataStage failure, Error error)
-    {
-        dial.cancel();
-        if (!timedOut && state->route.proxy != ProxyType::None &&
-            physical < state->route.endpoints.size() && Clock::now() < dialDeadline)
-            Dial();
-        else
+        dialer = std::make_shared<Dialer>(state->context, state->route);
+        dialer->Connect(result.attempts.back().peer, endpointAt + std::chrono::seconds(3),
+            [self = shared_from_this(), epoch = generation](std::optional<Dialer::Failure> failure, Error error)
         {
-            timedOut = timedOut || dialExpired || Clock::now() >= dialDeadline;
-            Fail(failure, error);
-        }
-    }
-
-    void Dial()
-    {
-        if (Stopped())
-        {
-            Finish(MetadataStage::Cancelled);
-            return;
-        }
-        auto now = Clock::now();
-        if (now >= dialDeadline)
-        {
-            timedOut = true;
-            Fail(MetadataStage::Connect);
-            return;
-        }
-        auto const& route = state->route;
-        auto endpoint = route.proxy == ProxyType::None ? result.attempts.back().peer : route.endpoints[physical++];
-        auto remaining = route.proxy == ProxyType::None ? std::size_t(1) : route.endpoints.size() - physical + 1;
-        auto current = ++connection;
-        auto epoch = generation;
-        dialExpired = false;
-        Error error;
-        socket.close(error);
-        error.clear();
-        if (!Bind(endpoint, error))
-        {
-            DialFailed(MetadataStage::Route, error);
-            return;
-        }
-        dial.expires_at(now + (dialDeadline - now) / remaining);
-        dial.async_wait([self = shared_from_this(), epoch, current](Error error)
-        {
-            if (!error && !self->done && self->generation == epoch && self->connection == current &&
-                self->stage == MetadataStage::Connect)
+            if (self->done || self->generation != epoch)
+                return;
+            auto dialed = std::exchange(self->dialer, {});
+            if (failure)
             {
-                self->dialExpired = true;
-                Error ignored;
-                self->socket.close(ignored);
+                self->timedOut = error == boost::asio::error::timed_out;
+                self->Fail(*failure == Dialer::Failure::Route ? MetadataStage::Route : MetadataStage::Connect, error);
+            }
+            else if (self->Stopped())
+                self->Finish(MetadataStage::Cancelled);
+            else
+            {
+                self->socket = std::move(dialed->Socket());
+                self->Connected();
             }
         });
-        bool cancelled;
-        {
-            std::lock_guard lock(state->gate);
-            cancelled = state->cancelled;
-            if (!cancelled)
-                socket.async_connect(endpoint,
-                    [self = shared_from_this(), epoch, current](Error error)
-                {
-                    if (self->done || self->generation != epoch || self->connection != current)
-                        return;
-                    if (self->dialExpired || self->timedOut)
-                        error = boost::asio::error::timed_out;
-                    if (error)
-                        self->DialFailed(MetadataStage::Connect, error);
-                    else
-                    {
-                        auto connected = ++self->connection;
-                        self->dial.cancel();
-                        self->dial.expires_at(self->dialDeadline);
-                        self->dial.async_wait([self, epoch, connected](Error error)
-                        {
-                            if (!error && self->generation == epoch && self->connection == connected &&
-                                self->stage == MetadataStage::Connect)
-                                self->Expire(epoch);
-                        });
-                        self->Tunnel();
-                    }
-                });
-        }
-        if (cancelled)
-            Finish(MetadataStage::Cancelled);
     }
 
     void Write(std::vector<char> bytes, std::function<void()> continuation)
@@ -430,142 +320,8 @@ struct MetadataRequester::State::Job : std::enable_shared_from_this<Job>
 
     void Connected()
     {
-        dial.cancel();
         result.attempts.back().connected = true;
         Handshake();
-    }
-
-    void Tunnel()
-    {
-        auto const& route = state->route;
-        auto peer = result.attempts.back().peer;
-        if (route.proxy == ProxyType::None)
-            Connected();
-        else if (route.proxy == ProxyType::Http)
-        {
-            auto target = peer.address().to_string() + ":" + std::to_string(peer.port());
-            auto request = "CONNECT " + target + " HTTP/1.1\r\nHost: " + target + "\r\n";
-            if (!route.username.empty())
-                request += "Proxy-Authorization: Basic " + Base64(route.username + ":" + route.password) + "\r\n";
-            request += "\r\n";
-            response.clear();
-            Write({request.begin(), request.end()}, [self = shared_from_this()] { self->Http(); });
-        }
-        else if (route.proxy == ProxyType::Socks4)
-        {
-            if (route.username.find('\0') != std::string::npos)
-            {
-                Fail(MetadataStage::Route);
-                return;
-            }
-            std::vector<char> request{4, 1, static_cast<char>(peer.port() >> 8), static_cast<char>(peer.port())};
-            auto address = peer.address().to_v4().to_bytes();
-            request.insert(request.end(), address.begin(), address.end());
-            request.insert(request.end(), route.username.begin(), route.username.end());
-            request.push_back(0);
-            Write(std::move(request), [self = shared_from_this()]
-            {
-                self->Read(8, [self]
-                {
-                    if (self->frame[0] == 0 && static_cast<unsigned char>(self->frame[1]) == 90)
-                        self->Connected();
-                    else
-                        self->Fail(MetadataStage::Connect);
-                });
-            });
-        }
-        else
-        {
-            auto signsIn = !route.username.empty();
-            Write(signsIn ? std::vector<char>{5, 2, 0, 2} : std::vector<char>{5, 1, 0},
-                [self = shared_from_this()]
-            {
-                self->Read(2, [self]
-                {
-                    if (self->frame[0] != 5)
-                        self->Fail(MetadataStage::Connect);
-                    else if (self->frame[1] == 0)
-                        self->Socks();
-                    else if (self->frame[1] == 2 && !self->state->route.username.empty())
-                    {
-                        auto const& route = self->state->route;
-                        if (route.username.size() > 255 || route.password.size() > 255)
-                        {
-                            self->Fail(MetadataStage::Route);
-                            return;
-                        }
-                        std::vector<char> credentials{1, static_cast<char>(route.username.size())};
-                        credentials.insert(credentials.end(), route.username.begin(), route.username.end());
-                        credentials.push_back(static_cast<char>(route.password.size()));
-                        credentials.insert(credentials.end(), route.password.begin(), route.password.end());
-                        self->Write(std::move(credentials), [self]
-                        {
-                            self->Read(2, [self]
-                            {
-                                if (self->frame[0] == 1 && self->frame[1] == 0)
-                                    self->Socks();
-                                else
-                                    self->Fail(MetadataStage::Connect);
-                            });
-                        });
-                    }
-                    else
-                        self->Fail(MetadataStage::Connect);
-                });
-            });
-        }
-    }
-
-    void Http()
-    {
-        Read(1, [self = shared_from_this()]
-        {
-            self->response.push_back(self->frame[0]);
-            if (self->response.ends_with("\r\n\r\n"))
-            {
-                if (self->response.starts_with("HTTP/1.") && self->response.size() >= 12 &&
-                    self->response.substr(9, 3) == "200")
-                    self->Connected();
-                else
-                    self->Fail(MetadataStage::Connect);
-            }
-            else if (self->response.size() >= 16 * 1024)
-                self->Fail(MetadataStage::Connect);
-            else
-                self->Http();
-        });
-    }
-
-    void Socks()
-    {
-        auto peer = result.attempts.back().peer;
-        std::vector<char> request{5, 1, 0, 1};
-        auto address = peer.address().to_v4().to_bytes();
-        request.insert(request.end(), address.begin(), address.end());
-        request.push_back(static_cast<char>(peer.port() >> 8));
-        request.push_back(static_cast<char>(peer.port()));
-        Write(std::move(request), [self = shared_from_this()]
-        {
-            self->Read(4, [self]
-            {
-                if (self->frame[0] != 5 || self->frame[1] != 0 || self->frame[2] != 0)
-                {
-                    self->Fail(MetadataStage::Connect);
-                    return;
-                }
-                auto type = self->frame[3];
-                if (type == 1 || type == 4)
-                    self->Read(type == 1 ? 6 : 18, [self] { self->Connected(); });
-                else if (type == 3)
-                    self->Read(1, [self]
-                    {
-                        auto count = static_cast<unsigned char>(self->frame[0]);
-                        self->Read(count + 2, [self] { self->Connected(); });
-                    });
-                else
-                    self->Fail(MetadataStage::Connect);
-            });
-        });
     }
 
     void Handshake()
@@ -713,12 +469,15 @@ struct MetadataRequester::State::Job : std::enable_shared_from_this<Job>
 
 void MetadataRequester::State::Stop()
 {
-    for (auto const& [id, reference] : jobs)
+    // A closed Dialer never calls back, so a job that is connecting would never
+    // finish on its own. Finish removes the job from `jobs`, so walk a copy.
+    auto running = jobs;
+    for (auto const& [id, reference] : running)
         if (auto job = reference.lock())
-            job->Close();
+            job->Finish(MetadataStage::Cancelled);
 }
 
-MetadataRequester::MetadataRequester(libtorrent::io_context& context, Config config, Route route,
+MetadataRequester::MetadataRequester(libtorrent::io_context& context, Config config, Dialer::Route route,
     std::function<void()> wake) : state_(std::make_shared<State>(context, config, std::move(route), std::move(wake))) {}
 
 MetadataRequester::~MetadataRequester()

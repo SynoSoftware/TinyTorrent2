@@ -370,7 +370,8 @@ private paused fixtures with discovery off. It watches metadata loss across
 historical schema migration/restart/offline rebuild, global ordering before
 page limits and exact matching after candidate lookup, wrong original-index
 Add choices, stale captured scopes,
-remembered rule reasons and release, unreviewed removal, and incorrect age-based
+remembered rule reasons and release, unverified entries that rebuild drops, Add
+prepares or admission fails to replace, unreviewed removal, and incorrect age-based
 eviction or collection stopping at its budget. It reports one small-fixture
 query timing and allocated/reusable bytes, without a timing assertion. These are
 catalogue-owner persistence and boundary decisions, not payload-transfer tests.

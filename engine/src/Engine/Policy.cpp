@@ -444,8 +444,6 @@ void Engine::State::RefreshPolicy()
         {
             ApplyPolicy(addition.handle);
         }
-        for (auto& [lookup, acquisition] : acquisitions)
-            ApplyPolicy(acquisition, IndexBusy());
     }
     if (ratesChanged)
     {

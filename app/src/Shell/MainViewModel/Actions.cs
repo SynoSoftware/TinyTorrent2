@@ -200,9 +200,9 @@ public sealed partial class MainViewModel
 
     // Picked sources come from Add torrent file; the others are dropped,
     // pasted or sent by another instance.
-    public async Task AddSources(IEnumerable<string> sources, bool picked)
+    public async Task AddSources(IEnumerable<string> sources, bool picked, bool needsDialog = false)
     {
-        var outcome = await AddDraft.Receive([.. sources], picked);
+        var outcome = await AddDraft.Receive([.. sources], picked, needsDialog);
         if (outcome == ArrivalOutcome.Dialog)
             AddRequested?.Invoke(this, EventArgs.Empty);
         else if (outcome == ArrivalOutcome.Merge)

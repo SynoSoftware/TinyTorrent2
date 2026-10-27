@@ -58,14 +58,6 @@ enum class CatalogueCondition
     Unavailable
 };
 
-enum class AcquisitionPhase
-{
-    Adding,
-    Metadata,
-    Cancelling,
-    Removing
-};
-
 enum class Command
 {
     Snapshot,

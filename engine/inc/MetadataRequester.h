@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Dialer.h"
 #include "Enums.h"
 #include <libtorrent/io_context.hpp>
 #include <libtorrent/sha1_hash.hpp>
@@ -21,23 +22,6 @@ public:
     {
         std::chrono::milliseconds requestTimeout{6000};
         int keyMutexSize = 1000;
-    };
-
-    struct Adapter
-    {
-        unsigned ipv4Index = 0;
-        unsigned ipv6Index = 0;
-        std::vector<std::string> addresses;
-    };
-
-    struct Route
-    {
-        ProxyType proxy = ProxyType::None;
-        std::vector<libtorrent::tcp::endpoint> endpoints;
-        std::string username;
-        std::string password;
-        std::optional<Adapter> adapter;
-        bool allowed = true;
     };
 
     struct Attempt
@@ -63,7 +47,7 @@ public:
         std::chrono::microseconds elapsed{};
     };
 
-    MetadataRequester(libtorrent::io_context& context, Config config, Route route,
+    MetadataRequester(libtorrent::io_context& context, Config config, Dialer::Route route,
         std::function<void()> wake);
     ~MetadataRequester();
     MetadataRequester(MetadataRequester const&) = delete;

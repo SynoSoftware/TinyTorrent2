@@ -344,8 +344,6 @@ void Engine::State::Settings::Fields(Self& settings, Visit&& visit)
     visit("indexing", settings.indexing, Bool{});
     visit("index_budget_mib", settings.indexBudgetMib, Range{1, INT_MAX});
     visit("index_stale_hours", settings.indexStaleHours, Range{1, 876000});
-    visit("index_metadata_idle", settings.indexMetadataIdle, Range{1, 256});
-    visit("index_metadata_busy", settings.indexMetadataBusy, Range{1, 64});
     visit(setting::incompleteFolder, settings.incompleteFolder, Text{.valid = folder});
     visit("use_incomplete_folder", settings.usesIncompleteFolder, Bool{});
     visit("append_suffix", settings.appendsSuffix, Bool{});

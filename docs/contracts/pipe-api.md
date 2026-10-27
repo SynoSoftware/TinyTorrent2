@@ -145,7 +145,9 @@ The watermark excludes later publications, rather than holding a database
 transaction open; dated availability and discovery facts can change between
 pages. Invalidated
 scopes are refused rather than combined with a rebuilt projection. File offsets
-and choices always refer to original torrent indices. `catalogue_prepare` binds
+and choices always refer to original torrent indices. Every source carries
+`verified`; an unverified entry's files are a peer's claim in listing order, so
+`catalogue_prepare` refuses it with `metadata_unavailable`. `catalogue_prepare` binds
 a verified torrent hash and, for a single file, its index, length and known root,
 plus the result's captured query scope. Preparation validates its generation,
 publication watermark and parent restrictions before returning the existing
@@ -160,16 +162,17 @@ bounded examples and `catalogue_remove` applies that token in short batches.
 and managed `Shared/Engine/Catalogue.cs` define these typed message fields;
 [indexing](indexing.md) owns their behavior.
 
-Status reports indexed totals separately from pending hashes, active metadata
-handles, peer-probe leases, stored nodes and ready peer hints. Sample observations
-count this engine run and can repeat hashes; probe leases do not count every
-internal libtorrent DHT request. `index_metadata_idle` and `index_metadata_busy`
-configure the metadata-handle limits through the existing settings command.
-`crawler` identifies the engine-selected algorithm. A running translated crawler
-also reports `acquiring_limit` and `probing_limit`, taken from its actual
-metadata-job and peer-lookup admission limits. These optional fields are absent
-for the original crawler and while the translation is stopped or not yet
-started, so cached statistics cannot imply a current capacity.
+Status reports indexed totals separately from retained pending observations,
+active metadata jobs, peer lookups and stored nodes. Sample observations count
+this engine run and can repeat hashes. Persisted pending hashes await
+rediscovery; they are not the live scheduler's runnable queue.
+`queued` is the live scheduler's queue size, or zero while inactive.
+`crawler_config` and `crawler_stats` describe the sole crawler; no algorithm
+discriminator is exchanged. `rats` reports the Rats Search exchange.
+A running crawler also reports `acquiring_limit` and `probing_limit`, taken from
+its actual metadata-job and peer-lookup admission limits. These optional fields
+are absent while it is stopped or not yet started, so cached statistics cannot
+imply a current capacity. Tuning belongs to optional `crawler.json`.
 `torrents_per_second` is a nonnegative floating-point rate of newly searchable
 torrents committed during the last 60 monotonic seconds, divided by 60. It
 excludes rebuild work, rediscovery and metadata enrichment and decays to zero
@@ -416,9 +419,9 @@ isolation guarantee; an extra token would not create a stronger boundary.
 
 ## Wire representation
 
-Protocol version 29 uses a four-byte little-endian UTF-8 JSON frame length,
+Protocol version 32 uses a four-byte little-endian UTF-8 JSON frame length,
 bounded to 16 MiB. The endpoint is `TinyTorrent.<logon SID>`; each connecting
-client first receives `{type:"hello",version:29,session_id:"...",data_directory:"..."}`. The absolute data directory
+client first receives `{type:"hello",version:32,session_id:"...",data_directory:"..."}`. The absolute data directory
 keeps the same store for explicit Restart, which starts the engine beside the
 window rather than a path a pipe peer reports. Requests are
 `{request_id:signed-64-bit-integer,command:string,...}`. Replies repeat `request_id` and have

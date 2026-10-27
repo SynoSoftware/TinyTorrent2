@@ -226,13 +226,19 @@ listed within it, independently of whether collection is running.
 independent of managed downloads and files on disk.
 _Avoid_: Library catalogue, which retains Library's reported on-drive file lists.
 
-**Catalogue entry**: one validated torrent description in the torrent catalogue.
-Its content may have both v1 and v2 info hashes; it is distinct from an accepted
-addition and remains known when a managed torrent is removed.
+**Catalogue entry**: one torrent description in the torrent catalogue, validated
+unless it is an unverified entry. Its content may have both v1 and v2 info
+hashes; it is distinct from an accepted addition and remains known when a
+managed torrent is removed.
+
+**Unverified entry**: a catalogue entry that a Rats Search peer described and
+whose metadata TinyTorrent has not fetched. Its name, size and files are the
+peer's claim until admission replaces them with validated metadata.
 
 **Indexed file**: a file listed by a catalogue entry, identified within that
-entry by its original torrent file index; its presence in search does not mean
-its payload exists on disk.
+entry by its original torrent file index, or by its listing position in an
+unverified entry; its presence in search does not mean its payload exists on
+disk.
 
 **Lookup key**: a 20-byte DHT content key, which may be a v1 info hash or a
 truncated v2 info hash until validated metadata establishes its identity.

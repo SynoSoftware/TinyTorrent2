@@ -136,8 +136,16 @@
     <ClCompile Include="Engine\Detail.cpp" />
     <ClCompile Include="Engine\Indexing.cpp" />
     <ClCompile Include="Engine\Bitmagnet.cpp" />
+    <ClCompile Include="Engine\Rats.cpp" />
     <ClCompile Include="BitmagnetCrawler.cpp" />
+    <ClCompile Include="Dialer.cpp" />
     <ClCompile Include="MetadataRequester.cpp" />
+    <ClCompile Include="Rats\Connection.cpp" />
+    <!-- Engine\Session.cpp would otherwise write the same Session.obj. -->
+    <ClCompile Include="Rats\Session.cpp">
+      <ObjectFileName>$(IntDir)RatsSession.obj</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="Rats\Snapshot.cpp" />
     <ClCompile Include="Catalogue.cpp" />
     <ClCompile Include="Changes.cpp" />
     <ClCompile Include="Log.cpp" />

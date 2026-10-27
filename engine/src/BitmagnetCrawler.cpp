@@ -10,6 +10,8 @@
 #include <map>
 #include <optional>
 #include <random>
+#include <set>
+#include <tuple>
 #include <utility>
 
 namespace tt
@@ -175,9 +177,25 @@ struct BitmagnetCrawler::State : std::enable_shared_from_this<State>
         CrawlerQuery kind;
         Node node;
         Candidate candidate;
-        std::optional<Time> deadline;
+        Time deadline{};
         std::optional<Answer> answer;
     };
+
+    struct Search
+    {
+        Time deadline;
+        std::vector<lt::tcp::endpoint> peers;
+        bool started = false;
+    };
+
+    // Request count, last request and hash; ranked most-requested first, then
+    // most recently requested.
+    using Standing = std::tuple<std::uint64_t, Time, std::string>;
+    using Ranking = std::set<Standing, std::greater<>>;
+
+    // A libtorrent lookup keeps querying after its first reply and reports no
+    // end, so each one holds its slot this long to bound concurrent lookups.
+    static constexpr auto searchLifetime = 10s;
 
     struct Metadata
     {
@@ -212,8 +230,13 @@ struct BitmagnetCrawler::State : std::enable_shared_from_this<State>
     StableFilter ignored;
     std::array<std::deque<Query>, 5> queues;
     std::map<std::uintptr_t, Query> queries;
-    std::map<std::string, Limiter> limiters;
+    std::map<lt::address, Limiter> limiters;
     std::deque<Ready> ready;
+    Ranking ranking;
+    std::map<std::string, Ranking::iterator> standings;
+    std::vector<Candidate> requested;
+    std::deque<std::string> searchQueue;
+    std::map<std::string, Search> searches;
     std::map<std::uintptr_t, Metadata> metadata;
     Batch<Node> discovered;
     Batch<Candidate> triage;
@@ -225,8 +248,11 @@ struct BitmagnetCrawler::State : std::enable_shared_from_this<State>
     std::size_t nextMissing = 0;
     std::size_t nextScrape = 0;
     std::size_t nextClassified = 0;
+    std::size_t nextRequested = 0;
     bool classifying = false;
-    bool persisting = false;
+    bool searchTriaging = false;
+    // The batch the engine is storing, until it reports the batch stored.
+    std::optional<std::vector<Candidate>> persisting;
     bool stopped = false;
     std::uintptr_t sequence = 0;
     Time rotateAt = Clock::now() + 10s;
@@ -258,6 +284,9 @@ struct BitmagnetCrawler::State : std::enable_shared_from_this<State>
 
     std::size_t Capacity(CrawlerQuery kind) const
     {
+        // Lookups wait here for per-node pacing, and all of one sample's hashes
+        // go to the node that sampled them, so the queue must span many nodes.
+        if (kind == CrawlerQuery::Peers || kind == CrawlerQuery::Scrape) return 100 * config.scalingFactor;
         return (kind == CrawlerQuery::Ping ? 1 : 10) * config.scalingFactor;
     }
 
@@ -270,6 +299,21 @@ struct BitmagnetCrawler::State : std::enable_shared_from_this<State>
     std::size_t FetchingLimit() const
     {
         return 40 * config.scalingFactor;
+    }
+
+    std::size_t ReadyLimit() const
+    {
+        return 10 * config.scalingFactor;
+    }
+
+    std::size_t SearchLimit() const
+    {
+        return 2 * config.scalingFactor;
+    }
+
+    std::size_t RankingLimit() const
+    {
+        return 1000 * config.scalingFactor;
     }
 
     std::size_t Active(CrawlerQuery kind) const
@@ -347,7 +391,7 @@ struct BitmagnetCrawler::State : std::enable_shared_from_this<State>
 
     bool Allow(Node const& node, Time now)
     {
-        auto key = node.endpoint.address().to_string();
+        auto key = node.endpoint.address();
         auto found = limiters.find(key);
         if (found == limiters.end() || now >= found->second.expires)
         {
@@ -370,7 +414,6 @@ struct BitmagnetCrawler::State : std::enable_shared_from_this<State>
 
     void Send(std::uintptr_t requestId, Query& query, Time now)
     {
-        if (!Allow(query.node, now)) return;
         lt::entry request;
         switch (query.kind)
         {
@@ -457,7 +500,8 @@ struct BitmagnetCrawler::State : std::enable_shared_from_this<State>
                 auto value = Hex(hash);
                 samples.push_back(value);
                 if (!ignored.TestAndAdd(hash, random))
-                    answer.samples.push_back({std::move(value), {query.node.endpoint.address().to_string(), query.node.endpoint.port()}});
+                    answer.samples.push_back({std::move(value),
+                        Sampled{{query.node.endpoint.address().to_string(), query.node.endpoint.port()}}});
             }
             statistics.discovered += samples.size();
             if (!samples.empty() && callbacks.discover)
@@ -517,7 +561,7 @@ struct BitmagnetCrawler::State : std::enable_shared_from_this<State>
         }
         if (query.kind == CrawlerQuery::Peers && !answer.peers.empty())
         {
-            if (ready.size() >= 10 * config.scalingFactor) return false;
+            if (ready.size() >= ReadyLimit()) return false;
             ready.push_back({std::move(query.candidate), std::move(answer.peers)});
         }
         if (answer.observation && !observations.Push(*answer.observation)) return false;
@@ -530,15 +574,25 @@ struct BitmagnetCrawler::State : std::enable_shared_from_this<State>
         {
             auto kind = static_cast<CrawlerQuery>(slot);
             auto active = Active(kind);
-            while (!queues[slot].empty() && active < Concurrency(kind))
+            auto& queue = queues[slot];
+            // A query takes a slot only when sent. One whose node's pacing
+            // refuses it goes back in the queue instead of holding a slot idle,
+            // which upstream Bitmagnet's blocking limiter does.
+            for (auto waiting = queue.size(); waiting > 0 && active < Concurrency(kind); --waiting)
             {
-                auto query = std::move(queues[slot].front());
-                queues[slot].pop_front();
+                auto query = std::move(queue.front());
+                queue.pop_front();
                 auto node = nodes.find(query.node.id);
                 if (kind == CrawlerQuery::Ping && node != nodes.end() && node->second.responded > now - 15min) continue;
                 if (kind == CrawlerQuery::Sample && node != nodes.end() &&
                     (node->second.eligible >= now || node->second.responded >= now - 5s)) continue;
-                queries.emplace(++sequence, std::move(query));
+                if (!Allow(query.node, now))
+                {
+                    queue.push_back(std::move(query));
+                    continue;
+                }
+                auto requestId = ++sequence;
+                Send(requestId, queries.emplace(requestId, std::move(query)).first->second, now);
                 ++active;
             }
         }
@@ -550,16 +604,12 @@ struct BitmagnetCrawler::State : std::enable_shared_from_this<State>
                 if (Forward(query, now)) it = queries.erase(it);
                 else ++it;
             }
-            else if (query.deadline && now >= *query.deadline)
+            else if (now >= query.deadline)
             {
                 Drop(query);
                 it = queries.erase(it);
             }
-            else
-            {
-                auto current = it++;
-                if (!current->second.deadline) Send(current->first, current->second, now);
-            }
+            else ++it;
         }
     }
 
@@ -616,6 +666,33 @@ struct BitmagnetCrawler::State : std::enable_shared_from_this<State>
         }
     }
 
+    // Begins acquiring a hash the catalogue lacks; false while its stage is full.
+    bool Start(Candidate const& candidate)
+    {
+        if (auto sampled = std::get_if<Sampled>(&candidate.route))
+        {
+            auto endpoint = Endpoint(sampled->node);
+            return !endpoint || Enqueue({CrawlerQuery::Peers, {{}, *endpoint}, candidate});
+        }
+        if (auto announced = std::get_if<Announced>(&candidate.route))
+        {
+            if (ready.size() >= ReadyLimit()) return false;
+            ready.push_back({candidate, announced->peers});
+            return true;
+        }
+        if (searchQueue.size() >= SearchLimit()) return false;
+        searchQueue.push_back(candidate.hash);
+        return true;
+    }
+
+    // BEP 33 estimates come from the sampling node; other routes have none.
+    bool Scrape(Candidate const& candidate)
+    {
+        auto sampled = std::get_if<Sampled>(&candidate.route);
+        auto endpoint = sampled ? Endpoint(sampled->node) : std::nullopt;
+        return !endpoint || Enqueue({CrawlerQuery::Scrape, {{}, *endpoint}, candidate});
+    }
+
     void Classify(Time now)
     {
         triage.Pump(now);
@@ -623,17 +700,13 @@ struct BitmagnetCrawler::State : std::enable_shared_from_this<State>
         {
             while (nextMissing < selection->missing.size())
             {
-                auto candidate = selection->missing[nextMissing];
-                auto endpoint = Endpoint(candidate.source);
-                if (endpoint && !Enqueue({CrawlerQuery::Peers, {{}, *endpoint}, std::move(candidate)})) return;
+                if (!Start(selection->missing[nextMissing])) return;
                 ++nextMissing;
                 ++statistics.selected;
             }
             while (nextScrape < selection->scrape.size())
             {
-                auto candidate = selection->scrape[nextScrape];
-                auto endpoint = Endpoint(candidate.source);
-                if (endpoint && !Enqueue({CrawlerQuery::Scrape, {{}, *endpoint}, std::move(candidate)})) return;
+                if (!Scrape(selection->scrape[nextScrape])) return;
                 ++nextScrape;
             }
             selection.reset();
@@ -642,7 +715,17 @@ struct BitmagnetCrawler::State : std::enable_shared_from_this<State>
         if (classifying || !triage.output) return;
         auto values = std::exchange(triage.output, {});
         std::map<std::string, Candidate> unique;
-        for (auto& value : *values) unique.try_emplace(value.hash, std::move(value));
+        for (auto& value : *values)
+        {
+            auto [found, inserted] = unique.try_emplace(value.hash, std::move(value));
+            if (inserted) continue;
+            auto announced = std::get_if<Announced>(&value.route);
+            if (!announced) continue;
+            // Announced peers were reachable moments ago, unlike a sample's.
+            if (auto known = std::get_if<Announced>(&found->second.route))
+                known->peers.insert(known->peers.end(), announced->peers.begin(), announced->peers.end());
+            else found->second = std::move(value);
+        }
         std::vector<Candidate> batch;
         for (auto& [hash, value] : unique) batch.push_back(std::move(value));
         classifying = true;
@@ -656,6 +739,91 @@ struct BitmagnetCrawler::State : std::enable_shared_from_this<State>
                 state->nextScrape = 0;
             }
         });
+    }
+
+    void Rank(std::string const& hash, Time now)
+    {
+        std::uint64_t count = 1;
+        auto found = standings.find(hash);
+        if (found != standings.end())
+        {
+            count += std::get<0>(*found->second);
+            ranking.erase(found->second);
+        }
+        auto standing = ranking.emplace(count, now, hash).first;
+        if (found != standings.end()) found->second = standing;
+        else standings.emplace(hash, standing);
+        if (standings.size() > RankingLimit())
+        {
+            auto last = std::prev(ranking.end());
+            standings.erase(std::get<2>(*last));
+            ranking.erase(last);
+        }
+    }
+
+    // Looks up the most-requested hashes the catalogue lacks. A hash requested
+    // once is no evidence of popularity, so it waits for a second request.
+    void Seek(Time now)
+    {
+        while (nextRequested < requested.size() && Start(requested[nextRequested]))
+            ++nextRequested;
+        if (nextRequested == requested.size() && !searchTriaging)
+        {
+            requested.clear();
+            nextRequested = 0;
+            std::vector<Candidate> batch;
+            while (!ranking.empty() && std::get<0>(*ranking.begin()) >= 2 &&
+                searchQueue.size() + batch.size() < SearchLimit())
+            {
+                auto hash = std::get<2>(*ranking.begin());
+                ranking.erase(ranking.begin());
+                standings.erase(hash);
+                if (!ignored.TestAndAdd(Hash(hash), random))
+                    batch.push_back({std::move(hash), Requested{}});
+            }
+            if (!batch.empty())
+            {
+                searchTriaging = true;
+                std::weak_ptr<State> weak = shared_from_this();
+                callbacks.triage(std::move(batch), [weak](Selection value)
+                {
+                    if (auto state = weak.lock(); state && !state->stopped)
+                    {
+                        state->requested = std::move(value.missing);
+                        state->searchTriaging = false;
+                    }
+                });
+            }
+        }
+        for (auto it = searches.begin(); it != searches.end();)
+        {
+            auto& search = it->second;
+            if (!search.started && !search.peers.empty() && ready.size() < ReadyLimit())
+            {
+                ready.push_back({{it->first, Requested{}}, std::move(search.peers)});
+                search.started = true;
+            }
+            if (now >= search.deadline) it = searches.erase(it);
+            else ++it;
+        }
+        while (!searchQueue.empty() && searches.size() < SearchLimit())
+        {
+            auto hash = std::move(searchQueue.front());
+            searchQueue.pop_front();
+            if (!searches.try_emplace(hash, Search{now + searchLifetime}).second) continue;
+            ++statistics.searches;
+            callbacks.search(hash);
+        }
+    }
+
+    void Found(std::string const& hash, std::vector<lt::tcp::endpoint> peers)
+    {
+        auto found = searches.find(hash);
+        if (found == searches.end() || found->second.started) return;
+        auto& known = found->second.peers;
+        // The requester dials IPv4 TCP only.
+        for (auto const& peer : peers)
+            if (peer.address().is_v4() && peer.port()) known.push_back(peer);
     }
 
     void Discover(Time now)
@@ -679,6 +847,20 @@ struct BitmagnetCrawler::State : std::enable_shared_from_this<State>
         discovered.output.reset();
     }
 
+    // Announces bypass the sample filter so a failed hash can be retried, so a
+    // repeat can arrive while the hash is still fetching or awaiting storage,
+    // where triage cannot see it yet.
+    bool Acquiring(std::string const& hash) const
+    {
+        auto same = [&hash](auto const& value) { return value.candidate.hash == hash; };
+        return std::any_of(metadata.begin(), metadata.end(), [&same](auto const& item) { return same(item.second); }) ||
+            std::any_of(retained.input.begin(), retained.input.end(), same) ||
+            std::any_of(retained.buffer.begin(), retained.buffer.end(), same) ||
+            (retained.output && std::any_of(retained.output->begin(), retained.output->end(), same)) ||
+            (persisting && std::any_of(persisting->begin(), persisting->end(),
+                [&hash](Candidate const& candidate) { return candidate.hash == hash; }));
+    }
+
     void Acquire()
     {
         Receive();
@@ -695,8 +877,10 @@ struct BitmagnetCrawler::State : std::enable_shared_from_this<State>
         {
             auto work = std::move(ready.front());
             ready.pop_front();
+            if (Acquiring(work.candidate.hash)) continue;
             auto requestId = ++sequence;
             auto hash = Hash(work.candidate.hash);
+            ++statistics.jobsByRoute[work.candidate.route.index()];
             metadata.emplace(requestId, Metadata{std::move(work.candidate)});
             ++statistics.metadataRequests;
             requester.Request(requestId, hash, std::move(work.peers));
@@ -715,9 +899,7 @@ struct BitmagnetCrawler::State : std::enable_shared_from_this<State>
         }
         while (nextClassified < classified.size())
         {
-            auto candidate = classified[nextClassified];
-            auto endpoint = Endpoint(candidate.source);
-            if (endpoint && !Enqueue({CrawlerQuery::Scrape, {{}, *endpoint}, std::move(candidate)})) return;
+            if (!Scrape(classified[nextClassified])) return;
             ++nextClassified;
         }
         classified.clear();
@@ -725,16 +907,15 @@ struct BitmagnetCrawler::State : std::enable_shared_from_this<State>
         if (persisting || !retained.output) return;
         auto batch = std::move(*retained.output);
         retained.output.reset();
-        std::vector<Candidate> candidates;
-        for (auto const& value : batch) candidates.push_back(value.candidate);
-        persisting = true;
+        persisting.emplace();
+        for (auto const& value : batch) persisting->push_back(value.candidate);
         std::weak_ptr<State> weak = shared_from_this();
-        callbacks.persist(std::move(batch), [weak, candidates = std::move(candidates)]() mutable
+        callbacks.persist(std::move(batch), [weak]
         {
             if (auto state = weak.lock(); state && !state->stopped)
             {
-                state->classified = std::move(candidates);
-                state->persisting = false;
+                state->classified = std::move(*state->persisting);
+                state->persisting.reset();
             }
         });
     }
@@ -746,6 +927,7 @@ struct BitmagnetCrawler::State : std::enable_shared_from_this<State>
         Acquire();
         Persist(now);
         Classify(now);
+        Seek(now);
         Discover(now);
         Schedule(now);
         Dispatch(now);
@@ -770,6 +952,11 @@ struct BitmagnetCrawler::State : std::enable_shared_from_this<State>
         queries.clear();
         for (auto& queue : queues) queue.clear();
         ready.clear();
+        standings.clear();
+        ranking.clear();
+        requested.clear();
+        searchQueue.clear();
+        searches.clear();
     }
 
     void Receive()
@@ -798,6 +985,7 @@ struct BitmagnetCrawler::State : std::enable_shared_from_this<State>
                 continue;
             }
             ++statistics.metadataReceived;
+            ++statistics.receivedByRoute[found->second.candidate.route.index()];
             statistics.metadataBytes += result.info.size();
             found->second.info = std::move(result.info);
         }
@@ -838,6 +1026,28 @@ void BitmagnetCrawler::Response(std::uintptr_t requestId, lt::bdecode_node respo
     state_->Response(requestId, response);
 }
 
+void BitmagnetCrawler::Fetch(std::string hash, lt::tcp::endpoint peer)
+{
+    // The requester dials IPv4 TCP only. A full triage batch drops the
+    // announce; Engine::State still records the hash as a pending observation.
+    if (state_->stopped) return;
+    ++state_->statistics.announcesHeard;
+    if (!peer.address().is_v4() || !peer.port()) return;
+    state_->triage.Push({std::move(hash), Announced{{peer}}});
+}
+
+void BitmagnetCrawler::Rank(std::string const& hash)
+{
+    if (state_->stopped) return;
+    ++state_->statistics.requestsHeard;
+    state_->Rank(hash, Clock::now());
+}
+
+void BitmagnetCrawler::Found(std::string const& hash, std::vector<lt::tcp::endpoint> peers)
+{
+    if (!state_->stopped) state_->Found(hash, std::move(peers));
+}
+
 void BitmagnetCrawler::Stop()
 {
     if (state_) state_->Stop();
@@ -850,9 +1060,10 @@ BitmagnetCrawler::Statistics BitmagnetCrawler::Stats() const
     result.probing = state_->Active(CrawlerQuery::Peers);
     result.fetchingLimit = state_->FetchingLimit();
     result.probingLimit = state_->Concurrency(CrawlerQuery::Peers);
+    result.searching = state_->searches.size();
     result.queued = state_->triage.Size() + state_->ready.size();
     if (state_->selection) result.queued += state_->selection->missing.size() - state_->nextMissing;
-    result.queued += state_->queues[State::Slot(CrawlerQuery::Peers)].size();
+    result.queued += state_->queues[State::Slot(CrawlerQuery::Peers)].size() + state_->searchQueue.size();
     result.nodes = state_->nodes.size();
     return result;
 }

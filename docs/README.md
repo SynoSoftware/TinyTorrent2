@@ -90,6 +90,15 @@ downloads, availability, storage and index management. It distinguishes inspecte
 implementations from partial features and plans, and informs the specification
 without selecting its algorithms, schema or storage policies.
 
+The [faster indexing research](plans/14-faster-indexing-research.md) measures
+where catalogue collection loses its time and compares tuning, bulk sources,
+HTTP torrent caches and passive harvesting against the verified-metadata and
+proxy rules.
+
+The [Rats exchange plan](plans/14-rats-exchange.md) builds the engine's own
+receive-only Rats Search client; the [Rats wire protocol](plans/14-rats-wire-protocol.md)
+records the byte layouts it implements.
+
 For TableView work, continue with the [table glossary](../lib/TableView/CONTEXT.md),
 [TableView contract](../lib/TableView/docs/tableview-contract.md), and
 [TableView implementation](../lib/TableView/docs/tableview-implementation.md).

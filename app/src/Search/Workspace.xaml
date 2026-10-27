@@ -10,9 +10,10 @@
   <UserControl.Resources>
     <DataTemplate x:Key="NameTemplate" x:DataType="local:Row">
       <Grid ColumnSpacing="8" ToolTipService.ToolTip="{x:Bind Tip}">
-        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
         <FontIcon FontFamily="{ThemeResource LucideFont}" Glyph="{x:Bind Glyph}" Style="{StaticResource TinyTorrentStatusIconStyle}" AutomationProperties.AccessibilityView="Raw"/>
         <TextBlock Grid.Column="1" Text="{x:Bind Name}" Style="{StaticResource TinyTorrentIdentityTextStyle}" FlowDirection="LeftToRight"/>
+        <FontIcon Grid.Column="2" FontFamily="{ThemeResource LucideFont}" Glyph="{x:Bind icons:Lucide.CircleHelp}" Style="{StaticResource TinyTorrentStatusIconStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Visibility="{x:Bind ShowsUnverified}" ToolTipService.ToolTip="{x:Bind UnverifiedTip}" AutomationProperties.Name="{x:Bind UnverifiedTip}"/>
       </Grid>
     </DataTemplate>
     <DataTemplate x:Key="SizeTemplate" x:DataType="local:Row"><TextBlock Text="{x:Bind Size}" Style="{StaticResource TinyTorrentBodyTextStyle}"/></DataTemplate>

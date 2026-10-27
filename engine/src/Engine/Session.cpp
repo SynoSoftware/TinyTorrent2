@@ -813,6 +813,7 @@ void Engine::State::Tick()
         {
             Maintain();
             ContinueBitmagnet();
+            ContinueRats();
             MaintainIndex();
         }
         QueryCompletions();

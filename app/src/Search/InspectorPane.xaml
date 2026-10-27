@@ -10,17 +10,18 @@
   <controls:Pane x:Name="Surface" x:FieldModifier="internal" Dock="Bottom" CanClose="True" CanMaximize="True" Padding="0,0,4,4" AutomationProperties.AutomationId="CatalogueInspector">
     <controls:Pane.Header>
       <Grid ColumnSpacing="12" HorizontalAlignment="Left">
-        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
         <FontIcon Glyph="{x:Bind Model.HeadingGlyph, Mode=OneWay}" Style="{StaticResource TinyTorrentSurfaceIconStyle}" FontFamily="{x:Bind icons:Lucide.Font}"/>
         <TextBlock Grid.Column="1" Text="{x:Bind Model.Heading, Mode=OneWay}" ToolTipService.ToolTip="{x:Bind Model.Heading, Mode=OneWay}" Style="{StaticResource TinyTorrentGroupTitleTextStyle}" TextTrimming="CharacterEllipsis"/>
         <TextBlock Grid.Column="2" Text="{x:Bind Model.Size, Mode=OneWay}" Style="{StaticResource TinyTorrentTitleDetailTextStyle}"/>
+        <FontIcon Grid.Column="3" FontFamily="{ThemeResource LucideFont}" Glyph="{x:Bind icons:Lucide.CircleHelp}" Style="{StaticResource TinyTorrentStatusIconStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Visibility="{x:Bind Model.InspectsUnverified, Mode=OneWay}" ToolTipService.ToolTip="{x:Bind Model.UnverifiedTip, Mode=OneWay}" AutomationProperties.Name="{x:Bind Model.UnverifiedTip, Mode=OneWay}"/>
       </Grid>
     </controls:Pane.Header>
     <controls:Pane.Navigation>
       <SelectorBar x:Name="Sections" Padding="0" SelectionChanged="OnSection" AutomationProperties.AutomationId="CatalogueInspectorSections">
         <SelectorBarItem x:Name="GeneralSection" Text="{x:Bind Model.Text.Get('catalogue', 'general'), Mode=OneWay}"><SelectorBarItem.Icon><FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Info}"/></SelectorBarItem.Icon></SelectorBarItem>
         <SelectorBarItem x:Name="AliasesSection" Text="{x:Bind Model.Text.Get('catalogue', 'aliases'), Mode=OneWay}" Visibility="{x:Bind controls:Visibilities.Unless(Model.InspectsTorrent), Mode=OneWay}"><SelectorBarItem.Icon><FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Tags}"/></SelectorBarItem.Icon></SelectorBarItem>
-        <SelectorBarItem x:Name="FilesSection" Text="{x:Bind Model.Text.Get('catalogue', 'files'), Mode=OneWay}" Visibility="{x:Bind Model.InspectsTorrent, Mode=OneWay}"><SelectorBarItem.Icon><FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Files}"/></SelectorBarItem.Icon></SelectorBarItem>
+        <SelectorBarItem x:Name="FilesSection" Text="{x:Bind Model.Text.Get('catalogue', 'files'), Mode=OneWay}" Visibility="{x:Bind Model.OffersFiles, Mode=OneWay}"><SelectorBarItem.Icon><FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Files}"/></SelectorBarItem.Icon></SelectorBarItem>
       </SelectorBar>
     </controls:Pane.Navigation>
     <Grid x:Name="InspectorBody">
@@ -62,7 +63,7 @@
         </ScrollViewer>
         <table:Table x:Name="SourceTable" Grid.Row="1" Margin="0,8,0,0" ItemsSource="{x:Bind Model.Sources, Mode=OneWay}" Visibility="{x:Bind controls:Visibilities.Unless(Model.InspectsTorrent), Mode=OneWay}" AutomationProperties.AutomationId="CatalogueSources">
           <table:Table.Columns>
-            <table:Column x:Name="SourceName" Id="name" Width="320" MinWidth="160" CanHide="False"><table:Column.CellTemplate><DataTemplate x:DataType="local:SourceRow"><TextBlock Text="{x:Bind Name}" ToolTipService.ToolTip="{x:Bind Tip}" Style="{StaticResource TinyTorrentIdentityTextStyle}"/></DataTemplate></table:Column.CellTemplate></table:Column>
+            <table:Column x:Name="SourceName" Id="name" Width="320" MinWidth="160" CanHide="False"><table:Column.CellTemplate><DataTemplate x:DataType="local:SourceRow"><Grid ColumnSpacing="8" ToolTipService.ToolTip="{x:Bind Tip}"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="{x:Bind Name}" Style="{StaticResource TinyTorrentIdentityTextStyle}"/><FontIcon Grid.Column="1" FontFamily="{ThemeResource LucideFont}" Glyph="{x:Bind icons:Lucide.CircleHelp}" Style="{StaticResource TinyTorrentStatusIconStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Visibility="{x:Bind ShowsUnverified}" ToolTipService.ToolTip="{x:Bind UnverifiedTip}" AutomationProperties.Name="{x:Bind UnverifiedTip}"/></Grid></DataTemplate></table:Column.CellTemplate></table:Column>
             <table:Column x:Name="SourceSize" Id="size" CanShrink="False" CellAlignment="Right"><table:Column.CellTemplate><DataTemplate x:DataType="local:SourceRow"><TextBlock Text="{x:Bind Size}" Style="{StaticResource TinyTorrentBodyTextStyle}"/></DataTemplate></table:Column.CellTemplate></table:Column>
             <table:Column x:Name="SourceFiles" Id="files" CanShrink="False" CellAlignment="Right"><table:Column.CellTemplate><DataTemplate x:DataType="local:SourceRow"><TextBlock Text="{x:Bind Files}" Style="{StaticResource TinyTorrentBodyTextStyle}"/></DataTemplate></table:Column.CellTemplate></table:Column>
             <table:Column x:Name="SourceSeeds" Id="seeds" CanShrink="False" CellAlignment="Right"><table:Column.CellTemplate><DataTemplate x:DataType="local:SourceRow"><TextBlock Text="{x:Bind Seeds}" ToolTipService.ToolTip="{x:Bind EstimateTip}" AutomationProperties.HelpText="{x:Bind EstimateTip}" Style="{StaticResource TinyTorrentBodyTextStyle}"/></DataTemplate></table:Column.CellTemplate></table:Column>

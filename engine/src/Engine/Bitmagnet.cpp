@@ -47,8 +47,26 @@ struct Configuration
 {
     BitmagnetCrawler::Config crawler;
     MetadataRequester::Config requester;
+    // Rats Search peers to try besides those the DHT finds.
+    std::vector<lt::tcp::endpoint> ratsPeers;
     Json resolved;
 };
+
+// The port after the last colon of "host:port", or nothing when there is no
+// host or the port is not 1 to 65535.
+std::optional<unsigned short> Port(std::string const& node)
+{
+    auto split = node.rfind(':');
+    if (split == std::string::npos || split == 0)
+        return std::nullopt;
+    int port = 0;
+    auto first = node.data() + split + 1;
+    auto last = node.data() + node.size();
+    auto parsed = std::from_chars(first, last, port);
+    if (parsed.ec != std::errc{} || parsed.ptr != last || port < 1 || port > 65535)
+        return std::nullopt;
+    return static_cast<unsigned short>(port);
+}
 
 Configuration ConfigurationFor(Json const& input)
 {
@@ -56,6 +74,7 @@ Configuration ConfigurationFor(Json const& input)
     auto crawler = input.value("dht_crawler", Json::object());
     auto requester = input.value("metainfo_requester", Json::object());
     auto server = input.value("dht_server", Json::object());
+    auto rats = input.value("rats", Json::object());
     auto& c = result.crawler;
     c.scalingFactor = crawler.value("scaling_factor", c.scalingFactor);
     if (c.scalingFactor == 0 || c.scalingFactor > 1000)
@@ -63,15 +82,18 @@ Configuration ConfigurationFor(Json const& input)
     c.bootstrapNodes = crawler.value("bootstrap_nodes", c.bootstrapNodes);
     for (auto const& node : c.bootstrapNodes)
     {
-        auto split = node.rfind(':');
-        int port = 0;
-        if (split == std::string::npos || split == 0)
+        if (!Port(node))
             throw std::invalid_argument("Invalid Bitmagnet bootstrap node");
-        auto first = node.data() + split + 1;
-        auto last = node.data() + node.size();
-        auto parsed = std::from_chars(first, last, port);
-        if (parsed.ec != std::errc{} || parsed.ptr != last || port < 1 || port > 65535)
-            throw std::invalid_argument("Invalid Bitmagnet bootstrap port");
+    }
+    auto ratsPeers = rats.value("peers", std::vector<std::string>{});
+    for (auto const& peer : ratsPeers)
+    {
+        lt::error_code error;
+        auto port = Port(peer);
+        auto address = port ? lt::make_address(peer.substr(0, peer.rfind(':')), error) : lt::address{};
+        if (!port || error || !address.is_v4())
+            throw std::invalid_argument("Invalid Rats peer");
+        result.ratsPeers.emplace_back(address, *port);
     }
     c.reseedBootstrapNodesInterval = Duration(crawler, "reseed_bootstrap_nodes_interval", c.reseedBootstrapNodesInterval);
     c.saveFilesThreshold = crawler.value("save_files_threshold", c.saveFilesThreshold);
@@ -91,6 +113,7 @@ Configuration ConfigurationFor(Json const& input)
         {"metainfo_requester", {{"request_timeout", duration(result.requester.requestTimeout)},
             {"key_mutex_size", result.requester.keyMutexSize}}},
         {"dht_server", {{"port", server.value("port", 3334)}, {"query_timeout", duration(c.queryTimeout)}}},
+        {"rats", {{"peers", ratsPeers}}},
         {"adapters", {{"dht_socket", "shared_session"}, {"retention", "all_files_and_exact_info"},
             {"metadata_transport", "plaintext_tcp4"},
             {"unused_reference_keys", {"dht_server.port", "dht_crawler.save_files_threshold", "dht_crawler.save_pieces",
@@ -102,6 +125,7 @@ Configuration ConfigurationFor(Json const& input)
 
 void Engine::State::StopBitmagnet()
 {
+    StopRats();
     if (!bitmagnet && !metadataRequester && !bitmagnetStarting) return;
     ++bitmagnetVersion;
     bitmagnetStarting = false;
@@ -118,7 +142,6 @@ void Engine::State::StopBitmagnet()
 
 void Engine::State::ContinueBitmagnet()
 {
-    if (!bitmagnetSelected) return;
     if (!session || !indexReady || !indexConfigured || !settings.indexing || !settings.dht ||
         indexRebuilding || IsShuttingDown() || Paused() || crawlerSaveFailed)
     {
@@ -132,7 +155,7 @@ void Engine::State::ContinueBitmagnet()
         nodeRefreshAt = now;
         session->post_dht_stats();
     }
-    if (!crawlerNodeId || !acquisitions.empty()) return;
+    if (!crawlerNodeId) return;
     if (bitmagnet) { bitmagnet->Tick(); return; }
     if (bitmagnetStarting) return;
     if (settings.encryption == Encryption::Required || settings.transport == Transport::Utp ||
@@ -141,13 +164,13 @@ void Engine::State::ContinueBitmagnet()
         indexError = Utf8(Strings(language).Text("error", "crawler_unavailable"));
         return;
     }
-    MetadataRequester::Route route;
+    Dialer::Route route;
     std::optional<NetworkAdapter> adapter;
     if (!settings.networkAdapter.empty())
     {
         adapter = FindAdapter(settings.networkAdapter);
         if (!adapter) return;
-        route.adapter = MetadataRequester::Adapter{adapter->ipv4Index, adapter->ipv6Index, adapter->addresses};
+        route.adapter = Dialer::Adapter{adapter->ipv4Index, adapter->ipv6Index, adapter->addresses};
     }
     route.proxy = settings.proxy.type;
     route.username = settings.proxy.username;
@@ -172,7 +195,7 @@ void Engine::State::ContinueBitmagnet()
     });
 }
 
-void Engine::State::StartBitmagnet(MetadataRequester::Route route)
+void Engine::State::StartBitmagnet(Dialer::Route route)
 {
     try
     {
@@ -183,6 +206,8 @@ void Engine::State::StartBitmagnet(MetadataRequester::Route route)
         configuration.resolved["adapters"]["shared_transfer_outgoing_rate"] = settings.outgoingRate;
         crawlerConfig = configuration.resolved;
         auto version = bitmagnetVersion;
+        ratsRoute = std::make_shared<Dialer::Route const>(route);
+        ListRats(configuration.ratsPeers);
         metadataRequester = std::make_unique<MetadataRequester>(session->get_context(),
             configuration.requester, std::move(route), wake);
         BitmagnetCrawler::Callbacks callbacks;
@@ -204,6 +229,12 @@ void Engine::State::StartBitmagnet(MetadataRequester::Route route)
             }
             session->post_dht_stats();
         };
+        callbacks.search = [this](std::string const& hash)
+        {
+            lt::sha1_hash target;
+            lt::aux::from_hex(hash, target.data());
+            session->dht_get_peers(target);
+        };
         callbacks.nodes = [this](std::vector<Catalogue::Node> nodes)
         {
             crawlerNodes.insert(crawlerNodes.end(), std::make_move_iterator(nodes.begin()), std::make_move_iterator(nodes.end()));
@@ -212,26 +243,31 @@ void Engine::State::StartBitmagnet(MetadataRequester::Route route)
         {
             indexSampled += hashes.size();
             for (auto& hash : hashes)
-                crawlerDiscoveries.push_back({std::move(hash), 0, 0, {}, source});
+                crawlerDiscoveries.push_back({std::move(hash), source});
         };
         auto rescrape = std::chrono::duration_cast<std::chrono::seconds>(configuration.crawler.rescrapeThreshold).count();
         callbacks.triage = [this, version, rescrape](std::vector<BitmagnetCrawler::Candidate> candidates,
             std::function<void(BitmagnetCrawler::Selection)> complete)
         {
             std::vector<Catalogue::Pending> pending;
+            std::map<std::string, BitmagnetCrawler::Candidate> routes;
             for (auto& candidate : candidates)
-                pending.push_back({std::move(candidate.hash), 0, 0, {}, std::move(candidate.source)});
+            {
+                pending.push_back({candidate.hash});
+                routes.emplace(candidate.hash, std::move(candidate));
+            }
             indexWork.Run([this, pending = std::move(pending), rescrape]
                 { return catalogue.Triage(pending, std::time(nullptr), rescrape); },
-                [this, version, complete = std::move(complete)](std::expected<Catalogue::Selection, StorageOutcome> selected)
+                [this, version, routes = std::move(routes), complete = std::move(complete)]
+                (std::expected<Catalogue::Selection, StorageOutcome> selected) mutable
             {
                 BitmagnetCrawler::Selection result;
                 if (selected && version == bitmagnetVersion)
                 {
-                    for (auto& pending : selected->missing)
-                        result.missing.push_back({std::move(pending.lookup), *pending.source});
-                    for (auto& pending : selected->scrape)
-                        result.scrape.push_back({std::move(pending.lookup), *pending.source});
+                    for (auto const& pending : selected->missing)
+                        result.missing.push_back(std::move(routes.at(pending.lookup)));
+                    for (auto const& pending : selected->scrape)
+                        result.scrape.push_back(std::move(routes.at(pending.lookup)));
                 }
                 else if (!selected) indexError = selected.error().detail;
                 complete(std::move(result));
@@ -246,11 +282,12 @@ void Engine::State::StartBitmagnet(MetadataRequester::Route route)
         {
             indexWork.Run([this, observations = std::move(observations)]
             {
+                std::vector<Catalogue::Observed> batch;
+                batch.reserve(observations.size());
                 for (auto const& value : observations)
-                {
-                    Catalogue::Observation observation{Estimate(value.seeds), Estimate(value.peers), std::time(nullptr), 1};
-                    catalogue.Observe(value.candidate.hash, observation);
-                }
+                    batch.push_back({value.candidate.hash,
+                        {Estimate(value.seeds), Estimate(value.peers), std::time(nullptr), 1}});
+                catalogue.Observe(batch);
             },
                 [this](StorageOutcome outcome) { if (outcome.failure) indexError = outcome.detail; });
         };
@@ -342,6 +379,9 @@ Json Engine::State::BitmagnetStatus() const
         {"fetching_limit", stats.fetchingLimit}, {"probing_limit", stats.probingLimit},
         {"failure_stages", stats.failures}, {"attempt_latency_buckets", stats.latencies},
         {"limiter_wait_us", stats.limiterMicros}, {"limiter_max_wait_us", stats.limiterMaxMicros},
+        {"jobs_by_route", stats.jobsByRoute}, {"received_by_route", stats.receivedByRoute},
+        {"requests_heard", stats.requestsHeard}, {"announces_heard", stats.announcesHeard},
+        {"searches", stats.searches}, {"searching", stats.searching},
         {"peak_fetching", stats.peakFetching}, {"peak_probing", stats.peakProbing},
         {"persistence_batches", crawlerBatches.size()}, {"storage_failed", crawlerSaveFailed}};
 }

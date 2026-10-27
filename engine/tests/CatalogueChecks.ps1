@@ -269,10 +269,41 @@ DETACH DATABASE current;
     Stop-Engine
     $null = Start-Engine
     Assert ((Command @{ command = 'catalogue_status' }).rejected -eq 1) 'A still-applicable exclusion was lost across restart'
+
+    Stop-Engine
+    $claimed = "(SELECT catalogue_id FROM lookups WHERE lookup='$($v1.Hash)')"
+    [CatalogueFixture]::Execute((Join-Path $directory 'index.db'), @"
+DELETE FROM metadata WHERE catalogue_id=$claimed;
+DELETE FROM files WHERE catalogue_id=$claimed;
+UPDATE catalogue SET name='claimed-v1',name_key='claimed-v1',size=7,count=1,selectable_count=1,projected=1,verified=0,private=1 WHERE catalogue_id=$claimed;
+UPDATE torrent_search SET name='claimed-v1' WHERE rowid=$claimed;
+INSERT INTO files(catalogue_id,file_index,name,path,size,padding,symlink,root,extension,name_key)
+ SELECT $claimed,0,'movie.mkv','claimed/movie.mkv',7,0,0,NULL,'mkv','movie.mkv';
+INSERT INTO file_search(rowid,path) SELECT file_id,path FROM files WHERE catalogue_id=$claimed;
+"@)
+    $null = Start-Engine
+    $refused = Send-Command @{ command = 'catalogue_prepare'; hash = $v1.Hash }
+    Assert (-not $refused.ok -and $refused.error.code -eq 'metadata_unavailable') 'Add accepted claimed listing positions as torrent file indices'
+    $null = Command @{ command = 'catalogue_rebuild' }
+    $status = Wait-Catalogue { param($status) -not $status.rebuilding -and -not $status.projecting } 'Rebuild with an unverified entry did not finish'
+    Assert ($status.torrents -eq 3 -and $status.files -eq 3) 'Rebuild removed an unverified entry or its claimed files'
+    $entry = Command @{ command = 'catalogue_detail'; hash = $v1.Hash }
+    Assert ($entry.torrent.verified -eq $false -and $entry.torrent.name -eq 'claimed-v1' -and
+        $entry.files.Count -eq 1 -and $entry.files[0].path -eq 'claimed/movie.mkv') 'Detail lost an unverified entry or its claimed files'
+    $found = Command @{ command = 'catalogue_query'; target = 'files'; text = 'movie' }
+    Assert ($found.hits.Count -eq 1 -and $found.hits[0].matched.verified -eq $false) `
+        'Rebuild left an unverified entry unsearchable or marked it verified'
+
     $null = Command @{ command = 'catalogue_rules'; action = 'save'; rules = @() }
     $null = Command @{ command = 'settings'; changes = @{ indexing = $true } }
     $null = Wait-Catalogue { param($status) $status.torrents -eq 5 -and $status.rejected -eq 0 -and -not $status.projecting } `
         'Lifting exclusions did not let already-available metadata enter the catalogue again'
+    Check-Metadata $v1 3 2 'manual.pdf'
+    $entry = Command @{ command = 'catalogue_detail'; hash = $v1.Hash }
+    Assert ($entry.torrent.verified -eq $true -and $entry.torrent.name -eq 'v1-root' -and $entry.torrent.size -eq 16385) `
+        'Verified metadata did not replace the claimed name and size of an unverified entry'
+    $found = Command @{ command = 'catalogue_query'; target = 'files'; text = 'movie' }
+    Assert ($found.hits.Count -eq 0) 'Claimed files stayed searchable after verified metadata replaced them'
 
     foreach ($number in 1..12) {
         $name = if ($number -eq 12) { 'Éléphant-12' } else { "extra-$number" }

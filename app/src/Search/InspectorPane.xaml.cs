@@ -66,7 +66,7 @@ public sealed partial class InspectorPane : UserControl
         if (General is null)
             return;
         if ((Model.InspectsTorrent && Sections.SelectedItem == AliasesSection)
-            || (!Model.InspectsTorrent && Sections.SelectedItem == FilesSection))
+            || (!Model.OffersFiles && Sections.SelectedItem == FilesSection))
             Sections.SelectedItem = GeneralSection;
         General.Visibility = Model.HasSelection && Sections.SelectedItem == GeneralSection ? Visibility.Visible : Visibility.Collapsed;
         Aliases.Visibility = Model.HasSelection && Sections.SelectedItem == AliasesSection ? Visibility.Visible : Visibility.Collapsed;

@@ -87,6 +87,14 @@ public sealed partial class MainWindow
             {
                 if (Model.IsClosing || !Model.CanEdit)
                     break;
+                // An unverified entry's file positions are not torrent file
+                // indices, so Add fetches the real metadata from the hash and
+                // the person picks files from the real list.
+                if (!choice.Source.Verified)
+                {
+                    await Model.AddSources(["magnet:?xt=urn:btih:" + choice.Source.Hash], picked: false, needsDialog: true);
+                    continue;
+                }
                 Task<System.Text.Json.JsonElement> Prepare(string destination) =>
                     Model.Catalogue.PrepareAsync(new()
                     {

@@ -62,6 +62,7 @@ public static class Catalogue
         public long Admitted { get; init; }
         public long? Seen { get; init; }
         public Observation Availability { get; init; } = new();
+        public bool Verified { get; init; } = true;
         public File File { get; init; } = new();
     }
 
@@ -134,14 +135,13 @@ public static class Catalogue
     {
         public bool Exists { get; init; }
         public bool Enabled { get; init; }
-        public Crawler? Crawler { get; init; }
         public string Error { get; init; } = string.Empty;
         public CatalogueCondition ErrorKind { get; init; }
         public int Acquiring { get; init; }
         public int Probing { get; init; }
         public int? AcquiringLimit { get; init; }
         public int? ProbingLimit { get; init; }
-        public long Ready { get; init; }
+        public long Queued { get; init; }
         public long Nodes { get; init; }
         public long Sampled { get; init; }
         public double TorrentsPerSecond { get; init; }

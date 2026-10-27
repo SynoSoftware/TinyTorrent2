@@ -87,6 +87,11 @@ public sealed class Browser : INotifyPropertyChanged, IDisposable
     public string Failure { get; private set; } = string.Empty;
     public CatalogueCondition Condition => State.ErrorKind;
     private Catalogue.Source? Inspected => _entry?.Torrent ?? _pendingSource;
+    public bool InspectsUnverified => Inspected is { Verified: false };
+    // An unverified entry's file list is a peer's claim and Download replaces
+    // it, so the inspector offers no file choices for it.
+    public bool OffersFiles => InspectsTorrent && !InspectsUnverified;
+    public string UnverifiedTip => Text.Get("catalogue", "unverified_tip");
     public string Heading => Inspected?.Name ?? _hit?.Matched.File.Name ?? string.Empty;
     public string HeadingGlyph => InspectsTorrent ? Lucide.Package : Lucide.File;
     public string Size => (Inspected?.Size ?? _hit?.Matched.File.Size) is { } bytes ? Text.Bytes(bytes) : string.Empty;
@@ -147,7 +152,7 @@ public sealed class Browser : INotifyPropertyChanged, IDisposable
             if (!_connected)
                 return Text.Format("window", "last_known", counts);
             return counts
-                + (State.Enabled && !CollectionUnavailable ? " · " + Text.Format("catalogue", "crawl_progress", State.Acquiring, State.Probing, State.Pending) : string.Empty)
+                + (State.Enabled && !CollectionUnavailable ? " · " + Text.Format("catalogue", "crawl_progress", State.Acquiring, State.Probing, State.Queued) : string.Empty)
                 + " · " + Text.Format("catalogue", Rows.Count >= ResultLimit ? "results_capped" : IsLimited ? "results_partial" : "results", Rows.Count)
                 + (Selection.Items.Count > 0 ? " · " + Text.Format("catalogue", "selected_count", Selection.Items.Count) : string.Empty)
                 + " · " + Text.Get("catalogue", CollectionUnavailable ? "indexing_unavailable"
@@ -157,7 +162,7 @@ public sealed class Browser : INotifyPropertyChanged, IDisposable
         }
     }
     public string StatusTip => !_connected || _statusRead == 0 ? Status : Status + " · "
-        + Text.Format("catalogue", "discovery_details", State.Nodes, State.Sampled, State.Ready)
+        + Text.Format("catalogue", "discovery_details", State.Nodes, State.Sampled, State.Pending)
         + (ShowsRate ? " · " + Text.Format("catalogue", "index_rate_hint", State.TorrentsPerSecond) : string.Empty)
         + (CollectionUnavailable && State.Error.Length > 0 ? " · " + State.Error : string.Empty);
     public ICommand DownloadSelected { get; }
@@ -570,16 +575,19 @@ public sealed class Browser : INotifyPropertyChanged, IDisposable
                 return;
             _entry = entry;
             _pendingSource = null;
-            FileChoices.InitializePage(Page(entry), async (offset, query) =>
+            if (entry.Torrent.Verified)
             {
-                var next = await _client.DetailAsync(source.Hash, offset, 200, query);
-                if (generation != _detailGeneration)
-                    throw new OperationCanceledException();
-                _entry = next;
-                return Page(next);
-            }, defaultPriority: 0);
-            if (fromFile && !source.File.Padding && !source.File.Symlink)
-                FileChoices.Select(0, [new(source.File.Index, 4, source.File.Size, 0)]);
+                FileChoices.InitializePage(Page(entry), async (offset, query) =>
+                {
+                    var next = await _client.DetailAsync(source.Hash, offset, 200, query);
+                    if (generation != _detailGeneration)
+                        throw new OperationCanceledException();
+                    _entry = next;
+                    return Page(next);
+                }, defaultPriority: 0);
+                if (fromFile && !source.File.Padding && !source.File.Symlink)
+                    FileChoices.Select(0, [new(source.File.Index, 4, source.File.Size, 0)]);
+            }
             Raise();
             if (open)
                 InspectorRequested?.Invoke(this, EventArgs.Empty);
@@ -783,6 +791,9 @@ public sealed class Row
     public string Glyph => IsSource || _owner.Target == CatalogueTarget.Torrents ? Lucide.Package : Lucide.File;
     public Microsoft.UI.Xaml.Visibility ShowsFile => !IsSource && _owner.Target == CatalogueTarget.Files
         ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
+    public string UnverifiedTip => _owner.UnverifiedTip;
+    public Microsoft.UI.Xaml.Visibility ShowsUnverified => Source.Verified
+        ? Microsoft.UI.Xaml.Visibility.Collapsed : Microsoft.UI.Xaml.Visibility.Visible;
     public string DownloadText => _owner.Text.Get("catalogue", "download");
     public ICommand DownloadFile { get; }
     public ICommand DownloadTorrent { get; }
@@ -828,10 +839,14 @@ public sealed class SourceRow
     public string Tip => Source.File.Path;
     public string EstimateTip { get; }
     public string InspectText { get; }
+    public string UnverifiedTip { get; }
+    public Microsoft.UI.Xaml.Visibility ShowsUnverified => Source.Verified
+        ? Microsoft.UI.Xaml.Visibility.Collapsed : Microsoft.UI.Xaml.Visibility.Visible;
     public ICommand Inspect { get; }
     internal SourceRow(Browser owner, Catalogue.Source source)
     {
         Source = source;
+        UnverifiedTip = owner.UnverifiedTip;
         Size = owner.Text.Bytes(source.Size);
         Files = source.Count.ToString("N0");
         Seeds = owner.Count(source.Availability.Seeds);

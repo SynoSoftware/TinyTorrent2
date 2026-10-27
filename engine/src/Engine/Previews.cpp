@@ -298,33 +298,6 @@ void Engine::State::Inspect(std::string source, std::string connectionId,
             completion({ErrorCode::TorrentRemoving}, nullptr);
             return;
         }
-        for (auto it = acquisitions.begin(); it != acquisitions.end(); ++it)
-        {
-            auto hashes = Hashes(preview->InfoHashes());
-            if (std::none_of(hashes.begin(), hashes.end(), [&it](std::string const& hash)
-                { return hash.substr(0, 40) == it->first; }))
-                continue;
-            if (it->second.phase != AcquisitionPhase::Metadata || !it->second.handle.is_valid())
-            {
-                parsing.push_back(preview);
-                it->second.waiting.push_back([this, preview, source, completion]
-                {
-                    std::erase(parsing, preview);
-                    if (!preview->cancelled)
-                        Inspect(source, preview->connectionId, completion);
-                });
-                return;
-            }
-            it->second.crawlerOwned->store(false);
-            preview->handle = it->second.handle;
-            preview->discovery = it->first;
-            acquisitions.erase(it);
-            preview->handle.unset_flags(lt::torrent_flags::disable_dht | lt::torrent_flags::disable_lsd);
-            preview->handle.set_download_limit(0);
-            ApplyPolicy(preview->handle);
-            UpdatePreview(*preview);
-            break;
-        }
         if (merge())
             return;
         if (!preview->params.ti && !preview->handle.is_valid() && !FindDuplicate(preview->params.info_hashes))
