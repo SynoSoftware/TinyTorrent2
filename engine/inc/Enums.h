@@ -85,6 +85,7 @@ enum class Command
     Resume,
     Force,
     Verify,
+    Retry,
     Remove,
     FileScope,
     Move,
@@ -316,6 +317,25 @@ enum class DiskPhase
     Waiting,
     Probing,
     Reloading
+};
+
+// How the engine continues a torrent that its files stopped: storage errors
+// and a failed move to the final folder. Each automatic continuation happens
+// at most once per cause, so a cause that persists never loops.
+enum class StorageRetry
+{
+    // The next failure gets an automatic retry once the location answers.
+    Automatic,
+    // The engine continued the torrent; the same failure soon after stops it.
+    Retried,
+    // Stopped. Once a minute the engine checks, without starting it, whether
+    // the cause is gone, and then continues it.
+    Stopped,
+    // That check continued the torrent; the same failure soon after leaves it
+    // to the person.
+    Resumed,
+    // Only the person's Retry continues the torrent.
+    Person
 };
 
 // A finished download waits for libtorrent to write its data to disk, then

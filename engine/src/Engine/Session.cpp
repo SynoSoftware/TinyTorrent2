@@ -667,6 +667,8 @@ Torrent& Engine::State::Install(std::string const& id, lt::torrent_handle handle
     torrent.status.all_time_upload = params.total_uploaded;
     torrent.namePhase = NamePhase::Pending;
     torrent.savedUploaded = params.total_uploaded;
+    if (params.ti && params.ti->num_pieces() > 0 && !params.have_pieces.empty())
+        torrent.savedProgress = float(params.have_pieces.count()) / float(params.ti->num_pieces());
     torrent.filesPending = true;
     handles.emplace(handle, &torrent);
     statusPending = true;
@@ -872,6 +874,7 @@ void Engine::State::Maintain()
         WatchFolder();
         RefreshPolicy();
         RetryStorage();
+        CheckStopped();
         LimitSeeds();
         auto time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         auto activity = Activity();

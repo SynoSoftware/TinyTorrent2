@@ -238,15 +238,6 @@ struct Torrent
         bool retryRequested = false;
     };
 
-    // A storage incident survives retry admission and other row-error precedence.
-    struct Fault
-    {
-        Problem problem;
-        std::string folder;
-        lt::operation_t operation;
-        bool seeding;
-    };
-
     std::string torrentId;
     lt::torrent_handle handle;
     Facts facts;
@@ -268,14 +259,21 @@ struct Torrent
     bool unsaved = true;
     std::chrono::steady_clock::time_point retryAt{};
     std::int64_t savedUploaded = 0;
+    // The resume file's share of pieces, derived for the row: libtorrent
+    // reports no progress until it has checked that file, which waits while
+    // the drive or share does not answer.
+    std::optional<float> savedProgress;
     std::optional<Problem> checkpointError;
     std::optional<Problem> hashError;
     std::string conflict;
     lt::error_code diskError;
     lt::time_point diskClearedAt{};
     std::shared_ptr<Recovery> recovery;
+    StorageRetry storageRetry = StorageRetry::Automatic;
+    // When the engine last continued the torrent. A storage error later than
+    // storageRetryWindow after it is a new one, which gets its own retry.
+    std::chrono::steady_clock::time_point storageRetriedAt{};
     std::optional<Problem> notifiedError;
-    std::optional<Fault> fault;
     NamePhase namePhase = NamePhase::Pending;
     std::optional<Problem> nameError;
     // Verification and file choices that wait until the files are not busy.
@@ -314,6 +312,9 @@ struct Torrent
     // two never overlap, because each waits until the other's files are free.
     bool moving = false;
     std::optional<Problem> moveError;
+    // How the engine continues a failed move to the final folder. It never
+    // uses Retried: the first failure waits for the destination to answer.
+    StorageRetry moveRetry = StorageRetry::Automatic;
     // Rises with each reply to a command that changes the torrent, and when
     // its metadata arrives, so no detail queried before then is shown.
     std::uint64_t generation = 0;
@@ -329,6 +330,9 @@ struct Torrent
     std::vector<std::filesystem::path> Paths(bool logical = false) const;
     std::optional<Problem> Error() const;
     std::optional<Problem> StorageProblem() const;
+    // A storage problem or a failed move to the final folder that the engine
+    // no longer retries by itself, so it waits for the person's Retry.
+    bool NeedsPerson() const;
     std::optional<Problem> Diagnose() const;
     // A move waits for its turn, or for the person's answer about the work
     // that the last end left unfinished, with no problem that delays it.

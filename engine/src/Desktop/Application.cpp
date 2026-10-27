@@ -128,6 +128,7 @@ Application::Application(std::filesystem::path directory, std::wstring sid, bool
     toasts_ = std::make_unique<Toasts>(strings_, headless_, errorIcon_.get(), Toasts::Commands{
         .open = [this] { window_->Open(); },
         .openTorrent = [this](std::string torrentId) { window_->OpenTorrent(std::move(torrentId)); },
+        .retryAll = [this] { RetryAll(); },
         .openSettings = [this](std::string card) { window_->OpenSettings(std::move(card)); },
         .folder = [this](std::string const& torrentId) { return engine_->Folder(torrentId); },
         .turnOff = [this](std::vector<ToastSwitch> toasts) { TurnOff(std::move(toasts)); },
@@ -255,6 +256,18 @@ LRESULT Application::Handle(UINT message, WPARAM first, LPARAM second)
         return TRUE;
     }
     return DefWindowProcW(owner_.get(), message, first, second);
+}
+
+void Application::RetryAll()
+{
+    engine_->RetryAll([this](Outcome outcome)
+    {
+        if (outcome.error)
+        {
+            toasts_->Report({.code = "retry", .detail = Wide(outcome.detail), .interactive = true});
+        }
+        Refresh();
+    });
 }
 
 void Application::TurnOff(std::vector<ToastSwitch> toasts)

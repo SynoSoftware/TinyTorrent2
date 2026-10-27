@@ -666,6 +666,14 @@ public:
     std::vector<Toast> toasts;
     // Last reported conditions, and their latest undelivered changes.
     std::map<std::string, Toast> problems;
+    // When each condition began and when it last held. It is reported once it
+    // has lasted noticeDelay, and a gap shorter than that does not restart it.
+    struct Lasting
+    {
+        std::chrono::steady_clock::time_point since;
+        std::chrono::steady_clock::time_point seen;
+    };
+    std::map<std::string, Lasting> lasting;
     std::map<std::string, Toast> problemChanges;
     std::map<std::string, Preview> previews;
     std::map<std::string, Addition> additions;
@@ -715,6 +723,9 @@ public:
     // The torrent CheckpointUnsaved chose last; the next choice starts after it.
     std::string checkpointCursor;
     std::string storageCursor;
+    std::chrono::steady_clock::time_point stoppedCheckAt{};
+    // The folders whose CheckStopped job has not returned.
+    std::set<std::string, PathLess> stoppedChecks;
     std::chrono::steady_clock::time_point statusAt{};
     bool statusPending = false;
     bool statusOutstanding = false;
@@ -1073,6 +1084,9 @@ public:
     void Act(std::vector<std::string> ids, std::function<void(Outcome)> completion, Action action);
     // Rechecks each torrent now, or once its files are no longer busy.
     void Verify(std::vector<std::string> const& ids, std::function<void(Outcome)> completion);
+    // Clears the storage error that stopped each torrent and runs it again
+    // under its current intent, which Retry leaves unchanged.
+    void Retry(std::vector<std::string> const& ids, std::function<void(Outcome)> completion);
     void Recheck(Torrent& torrent);
     // Runs a torrent's verification and file choices that waited for its
     // files.
@@ -1188,7 +1202,17 @@ public:
     static bool Retryable(Torrent const& torrent);
     void RecoverStorage(Torrent& torrent, lt::error_code error);
     void RetryStorage();
-    void RestartCheck(Torrent& torrent);
+    // Stops a torrent that recovery could not continue: Stopped until
+    // CheckStopped finds its cause gone, or Person until the person's Retry.
+    void StopStorage(Torrent& torrent, StorageRetry retry);
+    // Continues a torrent whose folder answers, forgetting the data of the
+    // `lost` files, and records `retry` as how it was continued.
+    void ContinueStorage(Torrent& torrent, std::vector<lt::file_index_t> lost, StorageRetry retry);
+    // Once a minute, checks without starting them whether the cause that
+    // stopped each Stopped torrent or final-folder move is gone, and then
+    // continues it.
+    void CheckStopped();
+    void Reload(Torrent& torrent, std::vector<lt::file_index_t> lost);
     struct Replacement
     {
         lt::add_torrent_params params;
@@ -1201,6 +1225,16 @@ public:
     void ReplaceHandle(Torrent& torrent, Replacement& replacement);
     Store& VolumeWorker(std::string const& folder);
     static bool Reachable(std::filesystem::path folder);
+    // The files that held downloaded data but are gone or shorter than that
+    // data, as when they were deleted while their share was away. Blocks on
+    // the drive and on libtorrent, so it runs on the drive's worker.
+    static std::vector<lt::file_index_t> LostData(lt::torrent_handle const& handle);
+    // Whether storage work in `folder` can succeed now, tested without
+    // writing data: the folder answers, `file`, when it exists, opens with
+    // the access the work needs, the folder otherwise accepts a new file, and
+    // its drive has `needed` bytes free. Blocks on the drive.
+    static bool Usable(std::filesystem::path folder, std::filesystem::path const& file, bool write,
+        std::uint64_t needed);
     // The cause of work that failed because its folder's drive or share does
     // not answer: ERROR_DEV_NOT_EXIST, as TinyTorrent's libtorrent fork
     // reports it too.
@@ -1393,7 +1427,9 @@ private:
     // could finish its move, so Exit lets the move of a removed current
     // member finish, and stops at the next member.
     bool StopsAtExit(Move const& moving) const;
-    void EndMove(Torrent& torrent, std::optional<Problem> problem);
+    // `finalFolder`: the failed move took the files to their final folder
+    // and left them complete where they were, so it can run again by itself.
+    void EndMove(Torrent& torrent, std::optional<Problem> problem, bool finalFolder);
     // Forced torrents' checks go first, each group by turn. A job takes its
     // turn when it joins the jobs, and a waiting check takes a new one when
     // the person forces it.

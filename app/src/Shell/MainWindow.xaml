@@ -826,12 +826,12 @@
         >
           <controls:ActionButton
             Margin="0,0,8,0"
-            Command="{x:Bind Model.OpenDataFolder}"
-            Visibility="{x:Bind Model.AppStatus.OffersDataFolder, Mode=OneWay}"
-            Glyph="{x:Bind icons:Lucide.FolderOpen}"
-            Text="{x:Bind Model.Text.Get('commands', 'open_folder'), Mode=OneWay}"
-            ToolTipService.ToolTip="{x:Bind Model.Text.Get('window', 'database_folder_tip'), Mode=OneWay}"
-            AutomationProperties.HelpText="{x:Bind Model.Text.Get('window', 'database_folder_tip'), Mode=OneWay}"
+            Command="{x:Bind Model.AppStatus.Secondary.Command, Mode=OneWay}"
+            Visibility="{x:Bind Model.AppStatus.HasSecondary, Mode=OneWay}"
+            Glyph="{x:Bind Model.AppStatus.Secondary.Glyph, Mode=OneWay}"
+            Text="{x:Bind Model.AppStatus.Secondary.Text, Mode=OneWay}"
+            ToolTipService.ToolTip="{x:Bind Model.AppStatus.Secondary.Tip, Mode=OneWay}"
+            AutomationProperties.HelpText="{x:Bind Model.AppStatus.Secondary.Tip, Mode=OneWay}"
           />
           <InfoBar.ActionButton>
             <controls:ActionButton

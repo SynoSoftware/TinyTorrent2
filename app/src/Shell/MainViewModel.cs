@@ -256,6 +256,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 );
             if (_loading)
                 return null;
+            if (_stopped is { } condition)
+                return StoppedStatus(condition);
+            if (_locations.Count > 0)
+                return LocationStatus();
             if (Features.Failure is { } featureFailure)
                 return FeatureStatus(featureFailure);
             if (
@@ -315,6 +319,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool IsDisconnected => !_connected && _disconnection is not null;
     public string RestartText => Text.Get("connection", "restart");
     private ICommand RetryFeatures { get; }
+    private ICommand RetryAll { get; }
+    private ICommand ShowErrors { get; }
     private ICommand DeleteDatabase { get; }
     private ICommand RepairDatabase { get; }
     internal ICommand ShowSubtitleSettings { get; }
@@ -474,6 +480,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             () => ActOnSelection("force"),
             () => CanEdit && _selected.Length > 0
         );
+        Retry = new RelayCommand(
+            () => SendRetry(_selected),
+            () => CanEdit && _selected.Any(torrent => torrent.CanRetry)
+        );
+        // Commands refresh when the selection changes, not on every row
+        // change, so the message bar's Retry reads no row to enable itself.
+        // The bar shows only while the engine reports torrents that need it.
+        RetryAll = new RelayCommand(() => SendRetry(Torrents), () => CanEdit);
         SwitchSequential = new RelayCommand(
             () => SetPieceOrder(PieceOrder.Sequential, Sequential != true),
             () => CanEditSelection
@@ -620,6 +634,16 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             () => true
         );
         Library.TorrentsRequested += (_, _) => ShowTorrents.Execute(null);
+        ShowErrors = new RelayCommand(
+            () =>
+            {
+                Filter = TorrentFilter.Errors;
+                ShowsFilters = true;
+                ShowTorrents.Execute(null);
+                return Task.CompletedTask;
+            },
+            () => true
+        );
         ShowLibrary = new RelayCommand(
             () =>
             {
@@ -651,6 +675,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             Pause,
             Resume,
             Force,
+            Retry,
+            RetryAll,
             SwitchSequential,
             SwitchFirstLast,
             LimitSpeed,
@@ -720,6 +746,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 Unfinished = null;
                 _unfinishedAnswered = false;
                 _disconnection = disconnection;
+                // The engine resolves its conditions only while connected.
+                _stopped = null;
+                _locations.Clear();
                 _ready = false;
                 AddDraft.Invalidate();
                 Inspector.Disconnect();
@@ -1104,6 +1133,28 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             else if (latest is { } message)
                 Inspector.Receive(message);
         });
+    }
+
+    // Runs again the torrents among these that the engine could not recover
+    // by itself: a stopped torrent under its own Start, Stop or Force choice,
+    // or a failed move.
+    internal async Task SendRetry(IEnumerable<Torrent> torrents)
+    {
+        var torrentIds = torrents
+            .Where(torrent => torrent.CanRetry)
+            .Select(torrent => torrent.TorrentId)
+            .ToArray();
+        if (!CanEdit || torrentIds.Length == 0)
+            return;
+        try
+        {
+            await _client.Send("retry", new { torrent_ids = torrentIds }, Requester.Person);
+            Notifications.AnnounceAccepted("commands", "retry");
+        }
+        catch (Exception error)
+        {
+            Notifications.Report(error);
+        }
     }
 
     private async Task ActOnSelection(string command)

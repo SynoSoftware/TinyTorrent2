@@ -59,23 +59,28 @@ window:
   folder; a combined one opens the application.
 - **Added.** A direct addition, such as a double-click on a torrent file, added
   the torrent.
-- **Problems.** A torrent stopped by an error, such as a full disk or a missing
-  folder, with its name, reason and current download folder, plus Show torrent
-  and Open folder. Show torrent opens or raises the product window and selects
-  that torrent; Open folder resolves its location when invoked. Missing or
-  invalid paths, known drive/share disconnections and full disks use typed
-  native error codes. Notify once per drive root or UNC share for these
-  conditions, even across different folders and bursts. The warning gives the
-  cause, root and affected count, without listing torrent names or offering
-  Show torrent. Healthy seeds on a full drive remain unaffected. File-specific
-  failures stay separate. Open folder targets the root; each affected row
-  retains its own reason. Retry permission from a readable folder does not
-  resolve the warning: relevant transfer, check or filename work must succeed.
-  Transfer evidence compares samples taken after the retry, so delayed reports
-  of earlier activity cannot resolve it. A completed download whose payload
-  reached disk also resolves its old storage incident.
-  Counts and reasons update quietly; resolution removes pending and visible
-  warnings without success toasts. A later failure can then notify again.
+- **Problems.** Torrents that wait for the person share one notice, so one
+  Retry continues them all: torrents whose storage error the engine stopped
+  retrying by itself, and torrents whose move to the final folder failed. With
+  one torrent it gives its name, reason and current download folder, plus Show
+  torrent and Retry; with several it counts them, gives the reason they share,
+  if any, and offers Retry, and selecting it opens the window, which lists
+  them. Show torrent opens or raises the product window and selects that
+  torrent. Retry keeps each torrent's Start, Stop or Force choice. Torrents
+  that wait for a drive or share to answer get one notice per drive root or
+  UNC share, even across different folders and bursts. It gives the cause,
+  root and affected count, without listing torrent names or offering Show
+  torrent, and Open folder targets the root; each affected row retains its own
+  reason. Missing or invalid paths, known drive/share disconnections and full
+  disks use typed native error codes. Healthy seeds on a full drive remain
+  unaffected. Both notices appear only once their condition has lasted two
+  minutes, because most absent shares, such as a NAS waking up or Wi-Fi
+  reconnecting, return sooner and the engine continues their torrents by
+  itself. A gap shorter than two minutes does not restart that wait, so a
+  problem that returns right after Retry shows again at once. The notices
+  follow the current state: counts and reasons update quietly, and a notice
+  disappears without a success toast as soon as its torrents continue. A later
+  failure can then notify again.
   A direct addition that could not be
   added, with the reason, because the person believes it is downloading; and a
   file deletion that fails, fully or in part, which is also written to the log,

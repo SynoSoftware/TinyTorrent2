@@ -352,6 +352,7 @@ public sealed partial class MainViewModel
                 ("pause", Pause),
                 ("resume", Resume),
                 ("force", Force),
+                ("retry", Retry),
                 ("verify", Verify),
                 ("remove", Remove),
                 ("move", MoveFiles),

@@ -444,7 +444,12 @@ public sealed partial class InspectorPane : UserControl
             );
             VisualStateManager.GoToState(
                 this,
-                Model.Target is { IsError: true } ? "Error" : "Transferring",
+                Model.Target switch
+                {
+                    { CanRetry: true } => "RetryableError",
+                    { IsError: true } => "Error",
+                    _ => "Transferring",
+                },
                 false
             );
         }

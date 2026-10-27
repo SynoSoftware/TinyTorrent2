@@ -68,6 +68,10 @@ struct Toast
 {
     struct Condition
     {
+        // The key of the condition that counts every torrent that waits for
+        // the person's Retry.
+        static constexpr char const* stopped = "stopped";
+
         std::string key;
         ProblemChange change;
     };
@@ -152,6 +156,8 @@ public:
     void PauseSession(bool paused, std::function<void(Outcome)> completion);
     // Saves the switches that turn `toasts` off, in one settings change.
     void TurnOff(std::vector<ToastSwitch> const& toasts, std::function<void(Outcome)> completion);
+    // Retries every torrent that waits for the person's Retry.
+    void RetryAll(std::function<void(Outcome)> completion);
     // Saves the missing programs that torrent handlers start, once reported.
     void RecordPrograms(std::vector<std::string> programs, std::function<void(Outcome)> completion);
     // Adds a source to the default destination with the default file choices.
@@ -160,6 +166,9 @@ public:
     std::vector<Toast> TakeToasts();
     std::string Name(std::string const& torrentId) const;
     std::string Folder(std::string const& torrentId) const;
+    // The storage conditions reported so far, each as raised, for a window
+    // that connects while they last.
+    std::vector<Toast> Conditions() const;
     std::string Language() const;
     bool IsShuttingDown() const;
     // Whether work that the last end left unfinished waits for the person's

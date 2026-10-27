@@ -266,8 +266,12 @@ void Engine::State::ContinueShutdown()
     }
     auto abandoned = [](Abandonment const& abandonment)
         { return !abandonment.worker || abandonment.worker->IsIdle(); };
+    // Renames and marks run on the drives' workers, which the engine abandons
+    // at its end, so it waits for them here.
+    auto marking = [](auto const& entry) { return !entry.second.marking.empty(); };
     if (!std::all_of(moves.begin(), moves.end(), stopped) ||
         !std::all_of(abandonments.begin(), abandonments.end(), abandoned) || !payload.IsIdle() ||
+        (rename && rename->phase == RenamePhase::Moving) || std::any_of(torrents.begin(), torrents.end(), marking) ||
         !store.IsIdle() || !indexWork.IsIdle() || !sources.IsIdle() || !log.IsFlushed() ||
         (!crawlerBatches.empty() && !crawlerSaveFailed))
     {

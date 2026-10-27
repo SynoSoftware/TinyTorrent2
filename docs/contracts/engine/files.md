@@ -552,7 +552,9 @@ choice, so changing the default does not rename an existing library.
   has the file open, Windows refuses the rename; the file keeps its suffix and
   the engine tries again later, without reporting a download error. A rename
   that fails because the drive or share does not answer uses storage recovery,
-  so it runs again as soon as the location answers.
+  so it runs again as soon as the location answers. The rename runs on its
+  drive's worker, so a share that stops answering holds up only its own
+  folders' work.
 - Before that rename, the engine pauses the torrent and waits for libtorrent
   to write the data it still holds in memory, without holding any files busy.
   Releasing the files for the rename waits for that write, which takes
@@ -578,7 +580,9 @@ retains its chosen final folder separately from its current save path. After
 its wanted files finish and their names settle, the owner of moves
 takes them to that final folder before notifying completion. Collisions and
 interrupted moves use the same refusal and recovery as a manual move. A refused
-move shows its reason on the torrent.
+move shows its reason on the torrent. A failed move that left the files
+complete where they were runs once more when the final folder is usable again,
+under the [storage recovery](../engine.md) rule, and then waits for Retry.
 While another torrent whose save folder overlaps the final folder still
 acquires metadata, the torrent shows that reason
 with the other torrent's name, and the move starts once the metadata arrives,

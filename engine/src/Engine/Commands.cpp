@@ -31,6 +31,7 @@ constexpr CommandEntry commands[] = {
     {"resume", Command::Resume, Publication::Execute},
     {"force", Command::Force, Publication::Execute},
     {"verify", Command::Verify, Publication::Execute},
+    {"retry", Command::Retry, Publication::Execute},
     {"remove", Command::Remove, Publication::Execute},
     {"file_scope", Command::FileScope, Publication::None},
     {"move", Command::Move, Publication::Execute},
@@ -496,6 +497,12 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
             Verify(ids, done);
         });
         break;
+    case Command::Retry:
+        Act(TorrentIds(request), Acknowledge(reply), [this](auto const& ids, auto done)
+        {
+            Retry(ids, done);
+        });
+        break;
     case Command::Remove:
     case Command::DeleteFiles:
     {
@@ -712,6 +719,8 @@ void Engine::State::Verify(std::vector<std::string> const& ids, std::function<vo
     for (auto const& id : ids)
     {
         auto& torrent = torrents.at(id);
+        // The person answered a stopped torrent, so recovery may retry again.
+        torrent.storageRetry = StorageRetry::Automatic;
         // A recheck queues behind the reads of a stalled check, so it waits
         // until they return; meanwhile the stalled check continues and can
         // stall again.
@@ -728,6 +737,22 @@ void Engine::State::Verify(std::vector<std::string> const& ids, std::function<vo
     }
     statusPending = true;
     ApplyQueue();
+    completion({});
+}
+
+void Engine::State::Retry(std::vector<std::string> const& ids, std::function<void(Outcome)> completion)
+{
+    for (auto const& id : ids)
+    {
+        auto& torrent = torrents.at(id);
+        torrent.checkError.reset();
+        torrent.ClearDiskError();
+        // FinishDownload starts a failed move to the final folder again.
+        if (torrent.moveRetry == StorageRetry::Stopped || torrent.moveRetry == StorageRetry::Person)
+            torrent.AnswerMoveProblem();
+        torrent.ApplyIntent();
+    }
+    statusPending = true;
     completion({});
 }
 

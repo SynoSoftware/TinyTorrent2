@@ -67,6 +67,8 @@
     "retry": "Opnieuw",
     "retry_tip": "Het venster opnieuw proberen te openen",
     "retry_request_tip": "Dezelfde aanvraag opnieuw proberen",
+    "retry_torrent_tip": "Deze torrent opnieuw proberen",
+    "retry_all_tip": "Alle gestopte torrents opnieuw proberen",
     "open_folder": "Map openen",
     "copy_path": "Pad kopiëren",
     "close": "Sluiten",
@@ -79,7 +81,8 @@
     "show_torrent": "Torrent tonen",
     "show_torrent_tip": "Deze torrent in de torrentlijst tonen",
     "download_folder": "Downloadmap",
-    "torrent_stopped": "Torrent gestopt"
+    "torrent_stopped": "Torrent gestopt",
+    "torrents_stopped": "{0} torrents vereisen aandacht"
   },
   "power": {
     "transfers": "TinyTorrent draagt bestanden over."
@@ -145,6 +148,7 @@
     "startup": "Het venster is niet geopend. TinyTorrent blijft actief.",
     "save": "TinyTorrent kon nog niet opslaan. Het blijft het proberen en sluit af zodra opslaan lukt.",
     "pause": "De instelling voor het pauzeren van overdrachten kon niet worden opgeslagen.",
+    "retry": "De torrents konden niet opnieuw worden geprobeerd.",
     "notification": "De meldingsinstelling kon niet worden opgeslagen.",
     "window_open": "Het TinyTorrent-venster is nog open.\nSluit het en kies Opnieuw.",
     "unresponsive": "Het venster heeft niet gereageerd op Afsluiten. Er is niets verloren gegaan. Probeer Afsluiten opnieuw zodra het venster reageert."

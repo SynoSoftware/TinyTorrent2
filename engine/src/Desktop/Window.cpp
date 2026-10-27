@@ -391,6 +391,10 @@ void Window::OnReady(std::shared_ptr<Pipe::Connection> const& client, Reply cons
         {
             client_->Send(Json{{"type", "activations"}});
         }
+        // The window shows lasting conditions in its message bar, so it
+        // needs those that began before it connected.
+        for (auto const& condition : engine_.Conditions())
+            Notify(condition);
         ShowTarget();
         if (IsClosing())
         {

@@ -196,6 +196,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
     internal event EventHandler? RecoveryRequested;
     internal event EventHandler<InspectorSection>? RowsUpdated;
     public ICommand Reannounce { get; }
+    public ICommand RetryTorrent { get; }
     public ICommand OpenFolder { get; }
     public ICommand CopyV1 { get; }
     public ICommand CopyV2 { get; }
@@ -263,12 +264,17 @@ public sealed partial class Inspector : INotifyPropertyChanged
             () => Apply("reannounce", new { torrent_id = _target!.TorrentId }),
             () => CanEdit && !_editingTrackers
         );
+        RetryTorrent = new RelayCommand(
+            () => _owner.SendRetry([_target!]),
+            () => CanEdit && _target is { CanRetry: true } target && _owner.Contains(target)
+        );
         _commands =
         [
             EditTrackers,
             CancelTrackers,
             Retry,
             Reannounce,
+            RetryTorrent,
             OpenFolder,
             CopyV1,
             CopyV2,

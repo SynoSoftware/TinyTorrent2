@@ -141,6 +141,7 @@ public sealed partial class MainViewModel
     }
     public ICommand AddMagnet { get; }
     public ICommand Force { get; }
+    public ICommand Retry { get; }
     public ICommand Verify { get; }
     public ICommand Remove { get; }
     public ICommand MoveFiles { get; }

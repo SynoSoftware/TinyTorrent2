@@ -67,6 +67,8 @@
     "retry": "重试",
     "retry_tip": "重新尝试打开窗口",
     "retry_request_tip": "重新尝试同一请求",
+    "retry_torrent_tip": "重新尝试此种子",
+    "retry_all_tip": "重新尝试所有已停止的种子",
     "open_folder": "打开文件夹",
     "copy_path": "复制路径",
     "close": "关闭",
@@ -79,7 +81,8 @@
     "show_torrent": "查看种子",
     "show_torrent_tip": "在种子列表中显示此种子",
     "download_folder": "下载文件夹",
-    "torrent_stopped": "种子已停止"
+    "torrent_stopped": "种子已停止",
+    "torrents_stopped": "{0} 个种子需要处理"
   },
   "power": {
     "transfers": "微种下载器正在传输文件。"
@@ -145,6 +148,7 @@
     "startup": "窗口未能打开。微种下载器将继续运行。",
     "save": "微种下载器暂时无法保存。它会继续尝试，保存成功后即退出。",
     "pause": "无法保存传输暂停设置。",
+    "retry": "无法重试这些种子。",
     "notification": "无法保存通知设置。",
     "window_open": "微种下载器窗口仍处于打开状态。\n请关闭它，然后选择“重试”。",
     "unresponsive": "窗口未响应退出请求，所有内容均已保留。请在窗口恢复响应后再次退出。"

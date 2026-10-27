@@ -15,9 +15,9 @@ public sealed partial class MainViewModel
     private Torrent[]? _waiting;
 
     // A lasting problem and the action that resolves it, which Fluent 2
-    // requires on an error or warning message bar. OffersDataFolder adds
-    // Open folder before the action, for a file in the data folder that the
-    // person fixes outside the app.
+    // requires on an error or warning message bar. Fluent 2 allows a second
+    // action, shown before it, such as Open folder for a file in the data
+    // folder that the person fixes outside the app.
     internal sealed record Status(
         string Title,
         string Body,
@@ -26,17 +26,39 @@ public sealed partial class MainViewModel
         string ActionText,
         string ActionGlyph,
         string ActionTip,
-        bool OffersDataFolder = false
+        StatusAction? Secondary = null
     )
     {
         internal bool HasAction => Action is not null;
+        internal bool HasSecondary => Secondary is not null;
     }
+
+    internal sealed record StatusAction(ICommand Command, string Text, string Glyph, string Tip);
+
+    // A lasting storage problem as the engine reports it, until the engine
+    // resolves it. The "stopped" condition counts the torrents that need
+    // Retry: Name and Detail describe the only one, and Code is the problem
+    // they share, empty when their problems differ. A location condition
+    // names its drive root or UNC share in Folder, the cause's error code in
+    // Detail, and the torrents that wait for it in Count.
+    internal sealed record Condition(
+        string Code,
+        string Detail,
+        string Name,
+        string Folder,
+        int Count
+    );
 
     // The status the person closed. Fluent 2 brings a closed message bar
     // back while its problem lasts, so it returns when the problem changes
     // and at the next start.
     private Status? _dismissedStatus;
     private bool _showsStatus;
+
+    private Condition? _stopped;
+
+    // In the order the engine raised them, keyed by its condition key.
+    private readonly List<(string Key, Condition Condition)> _locations = [];
 
     // The events the window reports as toasts.
     public Notifications Notifications { get; }
@@ -121,6 +143,94 @@ public sealed partial class MainViewModel
         SyncStatus();
     }
 
+    // Records a condition the engine raised or updated, or forgets it when
+    // condition is null because the engine resolved it.
+    internal void Observe(string key, Condition? condition)
+    {
+        if (key == "stopped")
+            _stopped = condition;
+        else
+        {
+            var index = _locations.FindIndex(location => location.Key == key);
+            if (condition is null)
+            {
+                if (index >= 0)
+                    _locations.RemoveAt(index);
+            }
+            else if (index >= 0)
+                _locations[index] = (key, condition);
+            else
+                _locations.Add((key, condition));
+        }
+        Changed(nameof(CurrentStatus));
+    }
+
+    // One bar covers every torrent that needs Retry, and its Retry runs them
+    // all, so torrents that stopped together need one click.
+    private Status StoppedStatus(Condition stopped)
+    {
+        var title =
+            stopped.Count == 1
+                ? Text.Get("notifications", Notifications.ProblemTitle(stopped.Code))
+                : Text.Format("notifications", "attention", stopped.Count);
+        var body =
+            stopped.Count == 1
+                ? Text.Format("errors", "line", stopped.Name, Text.Error(stopped.Code, stopped.Detail))
+            // A torrent error's text is each torrent's own libtorrent message,
+            // so several of them share no reason to show.
+            : stopped.Code is { Length: > 0 } and not "torrent_error"
+                ? Text.Error(stopped.Code, null)
+            : Text.Get("notifications", "different_problems");
+        return new(
+            title,
+            body,
+            InfoBarSeverity.Error,
+            RetryAll,
+            Text.Get("inspector", "retry"),
+            Syno.Lucide.RotateCcw,
+            Text.Get("notifications", stopped.Count == 1 ? "retry_torrent_tip" : "retry_torrents_tip"),
+            ShowErrorsAction
+        );
+    }
+
+    // The bar names the first location that stopped answering and counts
+    // the others, which Show torrents lists with it.
+    private Status LocationStatus()
+    {
+        var location = _locations[0].Condition;
+        var affected = Text.FormatCount("notifications", "location_torrents", location.Count);
+        var reason =
+            location.Detail.Length == 0
+                ? affected
+                : Text.Format("errors", "detail", Text.Get("errors", location.Detail), affected);
+        var body = Text.Format("errors", "line", location.Folder, reason);
+        if (_locations.Count > 1)
+            body = Text.Format(
+                "errors",
+                "detail",
+                body,
+                Text.Format("errors", "additional_problems", _locations.Count - 1)
+            );
+        return new(
+            Text.Get("notifications", "location_unavailable"),
+            body,
+            InfoBarSeverity.Warning,
+            ShowErrorsAction.Command,
+            ShowErrorsAction.Text,
+            ShowErrorsAction.Glyph,
+            ShowErrorsAction.Tip
+        );
+    }
+
+    // Show alone would not say what the bar shows, so the label is two words.
+    private StatusAction ShowErrorsAction =>
+        new(
+            ShowErrors,
+            Text.Get("notifications", "show_torrents"),
+            Syno.Lucide.List,
+            Text.Get("notifications", "show_torrents_tip")
+        );
+
     private void RefreshFeedback()
     {
         if (_closed || Features.IsClosed)
@@ -180,9 +290,17 @@ public sealed partial class MainViewModel
         // report of it needs.
         return cause is null
             ? Retry(Text.Error(error))
-            : Retry(Text.Format("window", cause, Database.FileName), offersDataFolder: true);
+            : Retry(
+                Text.Format("window", cause, Database.FileName),
+                new(
+                    OpenDataFolder,
+                    Text.Get("commands", "open_folder"),
+                    Syno.Lucide.FolderOpen,
+                    Text.Get("window", "database_folder_tip")
+                )
+            );
 
-        Status Retry(string body, bool offersDataFolder = false) =>
+        Status Retry(string body, StatusAction? dataFolder = null) =>
             new(
                 title,
                 body,
@@ -191,7 +309,7 @@ public sealed partial class MainViewModel
                 Text.Get("inspector", "retry"),
                 Syno.Lucide.RotateCcw,
                 Text.Get("window", "retry_features_tip"),
-                offersDataFolder
+                dataFolder
             );
     }
 

@@ -29,6 +29,8 @@ public:
     {
         std::function<void()> open;
         std::function<void(std::string torrentId)> openTorrent;
+        // Continues every torrent that waits for the person's Retry.
+        std::function<void()> retryAll;
         // Opens the window at a card on the General page of Settings.
         std::function<void(std::string card)> openSettings;
         // The folder that holds a torrent's files; empty when it has none.

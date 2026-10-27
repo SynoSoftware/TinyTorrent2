@@ -137,8 +137,12 @@ void Toasts::Queue(Toast toast)
             commands_.window(toast);
         return;
     }
+    // The window's message bar shows a condition while it lasts; the
+    // Problems switch turns off only the popup.
     if (!IsOn(kind))
     {
+        if (toast.condition && commands_.window)
+            commands_.window(toast);
         return;
     }
     if (kind == ToastKind::Completed && commands_.window && commands_.window(toast))
@@ -221,7 +225,7 @@ void Toasts::Notify()
         auto toast = batch.first;
         if (!toast.condition)
             toast.count = batch.count;
-        if (!IsOn(toast.kind) || commands_.window(toast))
+        if ((!IsOn(toast.kind) && !toast.condition) || commands_.window(toast))
             next = batches_.erase(next);
         else
             ++next;
@@ -328,6 +332,15 @@ Popup::Content Toasts::Message(Toast const& toast) const
         content.location = Popup::Location{strings_.Text("notification", "download_folder"), Wide(toast.folder)};
         content.actions = {OpenFolder(strings_, Wide(toast.folder), strings_.Text("notification", "files_folder_tip"))};
     }
+    // Every torrent that waits for the person shares one notice, so one Retry
+    // continues them all. Selecting it opens the window, which lists them.
+    else if (toast.condition && toast.condition->key == Toast::Condition::stopped && toast.count > 1)
+    {
+        content.title = strings_.Format("notification", "torrents_stopped", {Strings::Number(toast.count)});
+        content.body = ErrorText(toast.code, true);
+        content.select = commands_.open;
+        content.actions = {Retry(strings_, strings_.Text("notification", "retry_all_tip"), commands_.retryAll)};
+    }
     // The work waits until the person answers, so the notice stays.
     else if (toast.kind == ToastKind::Unfinished)
     {
@@ -370,14 +383,24 @@ Popup::Content Toasts::Message(Toast const& toast) const
             content.actions.push_back({.glyph = L'\uE106', .label = strings_.Text("notification", "show_torrent"),
                 .tooltip = strings_.Text("notification", "show_torrent_tip"), .run = content.select,
                 .closes = false, .automationId = L"ShowTorrent"});
-            content.actions.push_back({.glyph = L'\uE247', .label = strings_.Text("notification", "open_folder"),
-                .tooltip = strings_.Text("notification", "files_folder_tip"),
-                .run = [this, id = toast.torrentId]
-                {
-                    auto folder = commands_.folder(id);
-                    if (!folder.empty())
-                        ShowFolder(Wide(folder));
-                }, .closes = false, .automationId = L"OpenFolder"});
+            // Retry answers an error that the engine stopped retrying; the
+            // toast still names the folder for a person who fixes it there.
+            if (toast.condition && toast.condition->key == Toast::Condition::stopped)
+            {
+                content.actions.push_back(Retry(strings_, strings_.Text("notification", "retry_torrent_tip"),
+                    commands_.retryAll));
+            }
+            else
+            {
+                content.actions.push_back({.glyph = L'\uE247', .label = strings_.Text("notification", "open_folder"),
+                    .tooltip = strings_.Text("notification", "files_folder_tip"),
+                    .run = [this, id = toast.torrentId]
+                    {
+                        auto folder = commands_.folder(id);
+                        if (!folder.empty())
+                            ShowFolder(Wide(folder));
+                    }, .closes = false, .automationId = L"OpenFolder"});
+            }
         }
         else if (!toast.folder.empty())
         {

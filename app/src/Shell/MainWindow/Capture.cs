@@ -457,7 +457,12 @@ public sealed partial class MainWindow
                     text.Get("inspector", "retry"),
                     Syno.Lucide.RotateCcw,
                     string.Empty,
-                    OffersDataFolder: true
+                    new(
+                        Model.OpenDataFolder,
+                        text.Get("commands", "open_folder"),
+                        Syno.Lucide.FolderOpen,
+                        text.Get("window", "database_folder_tip")
+                    )
                 )
             ),
             (
@@ -502,6 +507,28 @@ public sealed partial class MainWindow
                     }
                 )
             );
+        // The engine's lasting problems reach the message bar through the
+        // same handler as its messages.
+        var root = Path.GetPathRoot(torrent.SavePath) ?? string.Empty;
+        var location = "location:" + root;
+        void Raise(string key, string code, string detail) =>
+            Model.Notifications.Receive(
+                JsonSerializer.SerializeToElement(
+                    new
+                    {
+                        type = "toast",
+                        kind = "error",
+                        torrent_id = string.Empty,
+                        name = string.Empty,
+                        code,
+                        detail,
+                        folder = root,
+                        @switch = "problems",
+                        count = 3,
+                        condition = new { key, change = "raised" },
+                    }
+                )
+            );
         try
         {
             foreach (var (key, status) in bars)
@@ -510,6 +537,12 @@ public sealed partial class MainWindow
                 await CapturePage(prefix + "bar-" + key);
             }
             Model.PresentedStatus = null;
+            Raise("stopped", "download_path_unavailable", string.Empty);
+            await CapturePage(prefix + "bar-attention");
+            Model.Observe("stopped", null);
+            Raise(location, "download_location_unavailable", "download_path_unavailable");
+            await CapturePage(prefix + "bar-location");
+            Model.Observe(location, null);
             Notify("completed", string.Empty, string.Empty);
             Model.Notifications.ShowOutcome("subtitles", "connected", "OpenSubtitles");
             await CapturePage(prefix + "toast-finished");
@@ -530,6 +563,8 @@ public sealed partial class MainWindow
         finally
         {
             Model.PresentedStatus = null;
+            Model.Observe("stopped", null);
+            Model.Observe(location, null);
             Model.Notifications.ClearError();
             foreach (var toast in Model.Notifications.Toasts.ToArray())
             {

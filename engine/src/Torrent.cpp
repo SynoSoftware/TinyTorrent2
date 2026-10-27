@@ -553,6 +553,16 @@ std::optional<Problem> Torrent::Diagnose() const
     return checkpointError;
 }
 
+bool Torrent::NeedsPerson() const
+{
+    if (recovery || restore)
+        return false;
+    // An error that never reached recovery, such as one libtorrent reports
+    // without a disk alert, has nothing that retries it either.
+    return StorageProblem() || (moveError &&
+        (moveRetry == StorageRetry::Stopped || moveRetry == StorageRetry::Person));
+}
+
 bool Torrent::MoveWaits() const
 {
     return !moving && (waitingMove || unfinished == TaskKind::Move) && !Error();
@@ -599,6 +609,7 @@ void Torrent::AnswerMoveProblem()
     if (!facts.marker)
     {
         moveError.reset();
+        moveRetry = StorageRetry::Automatic;
     }
 }
 
@@ -665,28 +676,11 @@ bool Torrent::IsChanged() const
 
 void Torrent::Update(lt::torrent_status latest, lt::time_point at)
 {
-    // A retry alone proves no payload I/O; compare only samples taken after it.
-    if (fault && statusAt >= diskClearedAt && at >= statusAt &&
-        !recovery && !nameError && !latest.errc && !diskError &&
-        !(latest.flags & lt::torrent_flags::upload_mode))
-    {
-        bool reading = fault->operation == lt::operation_t::file_read ||
-            fault->operation == lt::operation_t::partfile_read ||
-            (fault->seeding && (fault->operation == lt::operation_t::unknown ||
-                fault->operation == lt::operation_t::file_open));
-        bool written = !reading && !Checks(status.state) && !Checks(latest.state) &&
-            latest.total_wanted_done > status.total_wanted_done && latest.total_done > status.total_done;
-        bool checked = Checks(status.state) && !Checks(latest.state) && latest.is_finished &&
-            latest.total_wanted_done > 0;
-        bool read = reading && fault->problem.kind != ProblemKind::DiskFull &&
-            (latest.total_payload_upload > status.total_payload_upload ||
-                (Checks(latest.state) && latest.progress_ppm > status.progress_ppm));
-        if (written || read || checked)
-            fault.reset();
-    }
     completion.Sampled(status, latest);
     status = std::move(latest);
     statusAt = at;
+    if (status.state != lt::torrent_status::checking_resume_data)
+        savedProgress.reset();
 }
 
 bool Completion::Changed(State state, State previous)
@@ -1242,19 +1236,20 @@ Json Torrent::Row(bool sessionPaused, int queue, std::optional<double> moveProgr
 {
     auto problem = Diagnose();
     auto complete = completion.IsReached(status);
+    auto saved = status.state == lt::torrent_status::checking_resume_data ? savedProgress : std::nullopt;
     return {{"torrent_id", torrentId}, {"save_path", facts.savePath}, {"final_folder", facts.finalFolder},
         {"moving", moving}, {"move_destination", facts.marker ? facts.marker->destination : std::string()},
         {"paused", facts.intent == Intent::Paused}, {"forced", facts.intent == Intent::Forced},
         {"sequential", facts.sequential}, {"first_last", facts.firstLast},
         {"download_limit", facts.downloadLimit}, {"upload_limit", facts.uploadLimit},
         {"added", facts.added}, {"name", Name()}, {"size", status.total_wanted},
-        {"completed", status.total_wanted_done},
-        {"progress", moveProgress.value_or(status.progress)}, {"status", ToString(Classify(sessionPaused))},
+        {"completed", saved ? std::int64_t(double(*saved) * double(status.total_wanted)) : status.total_wanted_done},
+        {"progress", moveProgress.value_or(saved.value_or(status.progress))}, {"status", ToString(Classify(sessionPaused))},
         {"waiting_drive", wait.drive}, {"waiting_torrent_id", wait.holderId},
         {"waiting_files", wait.files},
         {"download_rate", status.download_payload_rate}, {"upload_rate", status.upload_payload_rate},
         {"error", !problem ? "" : problem->Code()},
-        {"detail", problem ? problem->detail : ""},
+        {"detail", problem ? problem->detail : ""}, {"retry", NeedsPerson()},
         {"seed_count", status.num_seeds}, {"peer_count", status.num_peers},
         {"known_peer_count", status.list_peers},
         // The tracker's scrape counts the whole swarm; without one, the peers this session has heard of
@@ -1324,6 +1319,7 @@ void Torrent::ApplyIntent()
 
 void Torrent::ClearDiskError()
 {
+    storageRetry = StorageRetry::Automatic;
     if (recovery)
     {
         recovery->retryRequested = true;

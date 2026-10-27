@@ -325,6 +325,8 @@ public sealed partial class MainWindow
         yield return Command("pause", Model.Pause, Syno.Lucide.Square);
         yield return Command("resume", Model.Resume, Syno.Lucide.Play);
         yield return Command("force", Model.Force, Syno.Lucide.Zap);
+        if (Model.Retry.CanExecute(null))
+            yield return Command("retry", Model.Retry, Syno.Lucide.RotateCcw);
         yield return new MenuSeparator();
         yield return Command("open", Model.Open, Syno.Lucide.File);
         yield return Command("open_folder", Model.OpenFolder, Syno.Lucide.FolderOpen);

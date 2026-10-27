@@ -9,6 +9,11 @@ namespace tt
 {
 namespace
 {
+// Background storage conditions show only once they last this long, because
+// most absent shares, such as a NAS waking up or Wi-Fi reconnecting, return
+// sooner and the engine continues their torrents by itself.
+constexpr auto noticeDelay = std::chrono::minutes(2);
+
 std::string Code(lt::error_code const& error)
 {
     return std::string(error.category().name()) + ":" + std::to_string(error.value());
@@ -352,39 +357,63 @@ void Engine::State::On(lt::state_update_alert const& alert)
     }
 }
 
+// Two conditions cover every torrent that its storage stopped: the torrents
+// that wait for a location to answer, counted per drive or share, and the
+// torrents that wait for the person's Retry, counted together so that one
+// Retry continues them all.
 void Engine::State::UpdateProblems()
 {
     std::map<std::string, Toast> current;
+    std::optional<Toast> stopped;
     for (auto& [id, torrent] : torrents)
     {
-        auto storage = torrent.StorageProblem();
-        if (storage && (!torrent.fault || torrent.fault->problem != storage))
-            torrent.fault = Torrent::Fault{*storage, torrent.facts.savePath,
-                torrent.nameError ? lt::operation_t::file_stat : torrent.checkError ? lt::operation_t::file_read :
-                    lt::operation_t::unknown, torrent.status.is_seeding};
         auto problem = torrent.Error();
         if (problem && !problem->IsStorage() && problem != torrent.notifiedError)
             Notify(ToastKind::Error, torrent, problem->detail, problem->Code());
         torrent.notifiedError = problem;
-        if (!torrent.fault)
+        if (torrent.NeedsPerson())
+        {
+            auto cause = torrent.StorageProblem() ? *torrent.StorageProblem() : *torrent.moveError;
+            if (!stopped)
+            {
+                stopped = Toast{.kind = ToastKind::Error, .name = torrent.Name(), .detail = cause.detail,
+                    .code = cause.Code(), .torrentId = id, .folder = torrent.facts.savePath};
+                continue;
+            }
+            // Several torrents name none of them, and a reason only when they
+            // share it.
+            ++stopped->count;
+            stopped->name.clear();
+            stopped->detail.clear();
+            stopped->torrentId.clear();
+            stopped->folder.clear();
+            if (stopped->code != cause.Code())
+                stopped->code.clear();
             continue;
-        auto const& cause = torrent.fault->problem;
-        if (auto root = UnavailableRoot(torrent.fault->folder, cause))
+        }
+        auto storage = torrent.StorageProblem();
+        if (!torrent.recovery || !storage)
+            continue;
+        if (auto root = UnavailableRoot(torrent.facts.savePath, *storage))
         {
             auto folder = Wide(*root);
             std::transform(folder.begin(), folder.end(), folder.begin(), [](wchar_t character)
                 { return static_cast<wchar_t>(std::towlower(character)); });
             auto key = "location:" + Utf8(folder);
             auto [entry, inserted] = current.try_emplace(key, Toast{.kind = ToastKind::Error,
-                .detail = cause.Code(), .code = "download_location_unavailable", .folder = *root, .count = 0});
+                .detail = storage->Code(), .code = "download_location_unavailable", .folder = *root, .count = 0});
             ++entry->second.count;
         }
-        else
-        {
-            current.emplace("torrent:" + id, Toast{.kind = ToastKind::Error, .name = torrent.Name(),
-                .detail = cause.detail, .code = cause.Code(), .torrentId = id, .folder = torrent.fault->folder});
-        }
     }
+    if (stopped)
+        current.emplace(Toast::Condition::stopped, std::move(*stopped));
+    auto now = std::chrono::steady_clock::now();
+    std::erase_if(lasting, [&current, now](auto const& entry)
+        { return !current.contains(entry.first) && now - entry.second.seen >= noticeDelay; });
+    for (auto const& [key, toast] : current)
+        lasting.try_emplace(key, Lasting{now, now}).first->second.seen = now;
+    std::erase_if(current, [this, now](auto const& entry)
+        { return !problems.contains(entry.first) && now - lasting.at(entry.first).since < noticeDelay; });
     for (auto const& [key, toast] : current)
     {
         auto previous = problems.find(key);
@@ -549,8 +578,6 @@ void Engine::State::On(lt::file_error_alert const& alert)
         if (alert.timestamp() < torrent->diskClearedAt)
             return;
         torrent->diskError = alert.error;
-        torrent->fault = Torrent::Fault{Problem::From(alert.error), torrent->facts.savePath, alert.op,
-            torrent->status.is_seeding};
         RecoverStorage(*torrent, alert.error);
         // A failed file priority job raises this instead of file_prio_alert.
         AwaitQueueStatus(*torrent);

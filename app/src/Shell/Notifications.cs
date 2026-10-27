@@ -17,7 +17,6 @@ public sealed class Notifications
     // Fluent 2 toasts: at most four timed toasts show. A finished download
     // stays visible in the list after its toast goes.
     private const int MaxTimed = 4;
-    private const int MaxErrors = 4;
 
     private readonly MainViewModel _owner;
     private readonly Strings _text;
@@ -74,32 +73,22 @@ public sealed class Notifications
         Announce(toast.Message);
     }
 
-    private void ReportProblem(CommandFailure failure, string key, string? change)
+    // A later problem of the same kind replaces the earlier toast, so a
+    // burst of engine problems never stacks.
+    private void ReportProblem(CommandFailure failure, string kind)
     {
         if (_owner.IsClosed)
             return;
-        var toast = Toasts.OfType<Toast.CommandError>().FirstOrDefault(shown => shown.Key == key);
-        if (change == "resolved")
-        {
-            if (toast is not null)
-                Toasts.Remove(toast);
-            return;
-        }
+        var toast = Toasts.OfType<Toast.CommandError>().FirstOrDefault(shown => shown.Key == kind);
         if (toast is null)
         {
-            if (change == "updated")
-                return;
-            var problems = Toasts.OfType<Toast.CommandError>().Where(shown => shown.Key is not null).ToList();
-            if (problems.Count >= MaxErrors)
-                Toasts.Remove(problems[0]);
-            toast = new Toast.CommandError(failure, _owner, key);
+            toast = new Toast.CommandError(failure, _owner, kind);
             Toasts.Add(toast);
         }
         else
             toast.Failure = failure;
         Describe(toast);
-        if (change != "updated")
-            Announce(toast.Message);
+        Announce(toast.Message);
     }
 
     private string ErrorTitle(Exception error) =>
@@ -107,6 +96,16 @@ public sealed class Notifications
         && _text.Find("notifications", "failed_" + command) is not null
             ? "failed_" + command
             : "failed";
+
+    // The title key for a torrent problem's code. Only these codes stop the
+    // torrent; every other torrent problem comes from a move, after which the
+    // torrent keeps running in its old folder.
+    internal static string ProblemTitle(string code) =>
+        code is "torrent_error" or "download_path_missing" or "download_path_invalid"
+            or "download_path_unavailable" or "disk_full" or "drive_stalled"
+            or "alias_conflict" or "unknown"
+            ? "torrent_stopped"
+            : "failed_move";
 
     // The error lasts until the person closes it or a later command succeeds.
     internal void ClearError()
@@ -122,6 +121,23 @@ public sealed class Notifications
         var torrentId = message.GetProperty("torrent_id").GetString() ?? string.Empty;
         var count = message.TryGetProperty("count", out var total) ? total.GetInt32() : 1;
         var @switch = message.GetProperty("switch").GetString();
+        // A lasting problem shows in the message bar instead of a toast.
+        if (message.TryGetProperty("condition", out var condition) && condition.ValueKind == JsonValueKind.Object)
+        {
+            _owner.Observe(
+                condition.GetProperty("key").GetString()!,
+                condition.GetProperty("change").GetString() == "resolved"
+                    ? null
+                    : new MainViewModel.Condition(
+                        message.GetProperty("code").GetString() ?? string.Empty,
+                        message.GetProperty("detail").GetString() ?? string.Empty,
+                        name,
+                        message.GetProperty("folder").GetString() ?? string.Empty,
+                        count
+                    )
+            );
+            return;
+        }
         if (kind == "completed")
             ShowCompletion(torrentId, name, @switch);
         else if (kind is "error" or "add_failed" or "delete_failed")
@@ -141,11 +157,6 @@ public sealed class Notifications
             // error, whose detail is the reason libtorrent gave.
             string Reason()
             {
-                if (code == "download_location_unavailable")
-                {
-                    var affected = _text.FormatCount("notifications", "location_torrents", count);
-                    return detail.Length == 0 ? affected : _text.Format("errors", "detail", _text.Get("errors", detail), affected);
-                }
                 var reason =
                     kind == "delete_failed" && detail == "recycle_failed"
                         ? _text.Get("errors", "recycle_failed")
@@ -165,18 +176,9 @@ public sealed class Notifications
             {
                 "add_failed" => "not_added",
                 "delete_failed" => "not_deleted",
-                _ when code == "download_location_unavailable" => "location_unavailable",
-                // Only these stop the torrent. Every other torrent problem
-                // comes from a move, after which the torrent keeps running in
-                // its old folder.
-                _ when code is "torrent_error" or "download_path_missing" or "download_path_invalid"
-                    or "download_path_unavailable" or "disk_full" or "drive_stalled"
-                    or "alias_conflict" or "unknown" => "torrent_stopped",
-                _ => "failed_move",
+                _ => ProblemTitle(code),
             };
             var folder = message.GetProperty("folder").GetString();
-            var condition = message.TryGetProperty("condition", out var value) && value.ValueKind == JsonValueKind.Object
-                ? value : default;
             ReportProblem(
                 new CommandFailure(
                     error,
@@ -187,8 +189,7 @@ public sealed class Notifications
                     @switch,
                     kind == "error" && torrentId.Length > 0 ? torrentId : null
                 ),
-                condition.ValueKind == JsonValueKind.Object ? condition.GetProperty("key").GetString()! : "event:" + kind,
-                condition.ValueKind == JsonValueKind.Object ? condition.GetProperty("change").GetString() : null
+                kind
             );
         }
     }

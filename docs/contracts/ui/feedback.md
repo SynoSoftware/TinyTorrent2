@@ -316,9 +316,11 @@ message cannot be the only explanation of unfinished or failed work.
 | Fetch metadata left files unidentified because the search limit refused their search | One timed warning toast when the batch ends, titled Search limit reached, counting those files, with Settings, which opens the search limit. |
 | A subtitle that could not be downloaded or saved | One error toast, titled Subtitle not saved, naming the latest subtitle file and counting the others, with Settings, which opens the Subtitles card. It stays until the person closes it. |
 | A language choice that could not be saved | The message bar as a warning, with Settings. |
+| Torrents that wait for the person: the engine stopped retrying their storage error, or their move to the final folder failed | The message bar as an error, for all of them together, with Retry, which continues them all, and Show torrents, which shows the Errors filter. One torrent is named, with its reason; several are counted, with the reason they share. The row's menu and the details pane offer Retry for one torrent, so a closed bar never leaves a torrent without it. |
+| Torrents that wait for their drive or share to answer | The message bar as a warning, naming the drive root or UNC share and counting the torrents, with Show torrents. |
 | The selected torrent has an error | The details pane shows the error in its summary and progress bar; the window adds no message for it. |
 | A finished download | A success toast for each download, titled Download finished, with the torrent name below it and Open folder, as the [notification policy](../engine/notifications.md#notifications-and-sleep) defines a finished download. It closes by itself. |
-| A torrent stopped by an error, a move that failed, or a deletion that failed after removal | A background error toast, titled Torrent stopped, Move failed or Files not deleted, separate from a failed user-command toast. Live storage problems update and resolve quietly under engine authority. A failed move's body gives the reason, then the file it concerns, because the engine's detail for it is only that file. A stopped torrent also stays in the Errors count. With the window closed, the engine's [notification policy](../engine/notifications.md#notifications-and-sleep) shows its native popup instead. |
+| Another torrent error, a move the person asked for that failed, or a deletion that failed after removal | A background error toast, titled Torrent stopped, Move failed or Files not deleted, separate from a failed user-command toast. A failed move's body gives the reason, then the file it concerns, because the engine's detail for it is only that file. A stopped torrent also stays in the Errors count. With the window closed, the engine's [notification policy](../engine/notifications.md#notifications-and-sleep) shows its native popup instead. |
 | A decision requiring consent | The existing dialog for that operation. |
 
 **Owner ruling: a message bar or toast never repeats itself.** The person
@@ -330,9 +332,15 @@ couldn't be completed under Action failed.
 
 ### Message bar
 
-A lasting problem with the whole application shows in one
+A lasting problem shows in one
 [Fluent 2 message bar](https://fluent2.microsoft.design/components/web/react/core/messagebar/usage),
-the WinUI InfoBar.
+the WinUI InfoBar: a problem with the whole application, or torrents that
+storage stopped. Torrents that stop together usually share one cause, and one
+bar with one Retry serves them all where a toast for each would ask for a click
+each. The engine reports these torrents only once their condition has lasted
+two minutes, because most absent shares return sooner and the engine continues
+their torrents by itself, and the bar disappears by itself as soon as they
+continue.
 
 **Owner ruling: the message bar sits at the bottom of every page, above the
 status bar.** Fluent 2 places a page-level message bar below the page's
@@ -340,7 +348,9 @@ command bar, and TinyTorrent's toolbar is not that command bar, so the bar
 does not go at the top of the page.
 
 - It shows the most important problem: the engine, then the download state,
-  then Library and subtitles, then the subtitle supplier, then the language.
+  then torrents that wait for the person, then torrents that wait for their
+  drive or share, then Library and subtitles, then the subtitle supplier, then
+  the language.
 - Its title names the problem without a final period, such as Downloads
   stopped, and its message gives the reason and the next step.
 - An error or warning always has the action that resolves it, because Fluent 2
@@ -364,19 +374,15 @@ does not go at the top of the page.
 Events show as toasts in one stack in the bottom-right corner of the window,
 above the status bar and above the message bar while it shows, following the
 [Fluent 2 toast](https://fluent2.microsoft.design/components/web/react/core/toast/usage):
-a finished download, a failed command, a torrent the engine stopped, a
+a finished download, a failed command, a torrent error that is not a storage
+condition, a
 subtitle that could not be saved, and a start that waits for a pause to end. A toast shows a severity icon, a bold
 title, the torrent it concerns, the reason or next step, and actions at
 the bottom right, and Close at the top right.
 
-A missing, invalid, disconnected or full download location is reported once per
-drive root or UNC share, naming the cause, root and number of affected torrents.
-The engine owns its lifetime: updates are quiet and confirmed recovery removes
-it, including before a delayed notice first appears. Dismissed notices do not
-return merely because the count changes. Background problems have at most four
-visible error toasts, separate from the persistent failed-user-command toast.
-They list no torrent names and offer Open folder for the root. Other torrent problems show their download folder and offer Show torrent
-and Open folder. Show torrent reveals that torrent through the existing navigation owner;
+Background problems have at most four visible error toasts, separate from the
+persistent failed-user-command toast. Torrent problems show their download
+folder and offer Show torrent and Open folder. Show torrent reveals that torrent through the existing navigation owner;
 Open folder resolves its current folder when invoked. These actions leave the
 problem available until dismissed, so inspecting the torrent does not remove
 its explanation. A removed torrent disables its actions. The inspector shows

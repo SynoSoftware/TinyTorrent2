@@ -67,6 +67,8 @@
     "retry": "Retry",
     "retry_tip": "Try to open the window again",
     "retry_request_tip": "Try the same request again",
+    "retry_torrent_tip": "Try this torrent again",
+    "retry_all_tip": "Try every stopped torrent again",
     "open_folder": "Open folder",
     "copy_path": "Copy path",
     "close": "Close",
@@ -79,7 +81,8 @@
     "show_torrent": "Show torrent",
     "show_torrent_tip": "Show this torrent in the torrent list",
     "download_folder": "Download folder",
-    "torrent_stopped": "Torrent stopped"
+    "torrent_stopped": "Torrent stopped",
+    "torrents_stopped": "{0} torrents need attention"
   },
   "power": {
     "transfers": "TinyTorrent is transferring files."
@@ -145,6 +148,7 @@
     "startup": "The window did not open. TinyTorrent keeps running.",
     "save": "TinyTorrent keeps trying and exits by itself once saving works. Force exit closes it now and loses the changes since the last save. Downloaded files stay on disk.",
     "pause": "The transfer pause setting could not be saved.",
+    "retry": "The torrents could not be retried.",
     "notification": "The notification setting could not be saved.",
     "window_open": "The TinyTorrent window is still open.\nClose it, then select Retry.",
     "unresponsive": "The window did not respond to Exit. Nothing was discarded. Try Exit again when the window responds."

@@ -67,6 +67,8 @@
     "retry": "Reintentar",
     "retry_tip": "Intentar abrir la ventana de nuevo",
     "retry_request_tip": "Intentar la misma solicitud de nuevo",
+    "retry_torrent_tip": "Intentar este torrent de nuevo",
+    "retry_all_tip": "Intentar de nuevo todos los torrents detenidos",
     "open_folder": "Abrir carpeta",
     "copy_path": "Copiar ruta",
     "close": "Cerrar",
@@ -79,7 +81,8 @@
     "show_torrent": "Ver torrent",
     "show_torrent_tip": "Mostrar este torrent en la lista de torrents",
     "download_folder": "Carpeta de descarga",
-    "torrent_stopped": "Torrent detenido"
+    "torrent_stopped": "Torrent detenido",
+    "torrents_stopped": "{0} torrents necesitan atención"
   },
   "power": {
     "transfers": "TinyTorrent está transfiriendo archivos."
@@ -145,6 +148,7 @@
     "startup": "La ventana no se abrió. TinyTorrent sigue en ejecución.",
     "save": "TinyTorrent aún no pudo guardar. Sigue intentándolo y se cierra cuando se guarde.",
     "pause": "No se pudo guardar el ajuste de pausa de las transferencias.",
+    "retry": "No se pudieron reintentar los torrents.",
     "notification": "No se pudo guardar el ajuste de notificaciones.",
     "window_open": "La ventana de TinyTorrent sigue abierta.\nCiérrala y selecciona Reintentar.",
     "unresponsive": "La ventana no respondió a Salir. No se descartó nada. Inténtalo de nuevo cuando responda."

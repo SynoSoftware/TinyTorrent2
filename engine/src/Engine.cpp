@@ -221,6 +221,21 @@ void Engine::TurnOff(std::vector<ToastSwitch> const& toasts, std::function<void(
     }
     state_->TurnOff(toasts, std::move(completion));
 }
+void Engine::RetryAll(std::function<void(Outcome)> completion)
+{
+    if (auto refusal = state_->Refusal())
+    {
+        completion({*refusal});
+        return;
+    }
+    std::vector<std::string> ids;
+    for (auto const& [id, torrent] : state_->torrents)
+    {
+        if (torrent.NeedsPerson())
+            ids.push_back(id);
+    }
+    state_->Retry(ids, std::move(completion));
+}
 void Engine::RecordPrograms(std::vector<std::string> programs, std::function<void(Outcome)> completion)
 {
     if (auto refusal = state_->Refusal())
@@ -257,6 +272,16 @@ std::string Engine::Folder(std::string const& torrentId) const
 {
     auto found = state_->torrents.find(torrentId);
     return found == state_->torrents.end() ? std::string() : found->second.Folder();
+}
+std::vector<Toast> Engine::Conditions() const
+{
+    std::vector<Toast> conditions;
+    for (auto const& [key, toast] : state_->problems)
+    {
+        auto& raised = conditions.emplace_back(toast);
+        raised.condition = Toast::Condition{key, ProblemChange::Raised};
+    }
+    return conditions;
 }
 std::string Engine::Language() const { return state_->language; }
 

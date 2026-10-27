@@ -277,7 +277,7 @@ void Engine::State::ContinueNames()
         // The folder answers on its own drive's worker first, so a share that
         // does not answer holds up only its own torrents, not the shared
         // worker every torrent's names wait for.
-        VolumeWorker(params.save_path).Run([folder = params.save_path] { CheckReachable(Wide(folder)); },
+        VolumeWorker(torrent.facts.savePath).Run([folder = torrent.facts.savePath] { CheckReachable(Wide(folder)); },
             [this, id, params = std::move(params), handle = torrent.handle,
             appendsSuffix = torrent.facts.appendsSuffix, layout = torrent.facts.layout](StorageOutcome reached) mutable
         {
@@ -395,10 +395,7 @@ bool Engine::State::ApplyNames(lt::torrent_handle const& handle, lt::add_torrent
 void Engine::State::FinishNames(Torrent& torrent)
 {
     torrent.namePhase = NamePhase::Ready;
-    auto problem = std::exchange(torrent.nameError, std::nullopt);
-    if (problem && !torrent.recovery && !torrent.StorageProblem() && torrent.fault &&
-        torrent.fault->operation == lt::operation_t::file_stat && torrent.fault->problem == problem)
-        torrent.fault.reset();
+    torrent.nameError.reset();
     if (torrent.needsRecheck && !torrent.recovery)
     {
         torrent.needsRecheck = false;
@@ -627,8 +624,6 @@ void Engine::State::FinishDownload(Torrent& torrent)
     }
     if (torrent.completion.Finish())
     {
-        if (!torrent.StorageProblem() && torrent.status.total_wanted_done > 0)
-            torrent.fault.reset();
         Notify(ToastKind::Completed, torrent);
     }
 }
@@ -708,7 +703,10 @@ void Engine::State::ContinueRename()
             std::vector<bool> complete;
             DWORD marked = ERROR_SUCCESS;
         };
-        payload.Run([this, handles, files, source = rename->source, target = rename->target]
+        // On its drive's worker, so a share that stops answering holds up only
+        // its own folders' work, not every torrent's checkpoints and names.
+        VolumeWorker(Utf8(rename->source.parent_path().wstring())).Run(
+            [this, handles, files, source = rename->source, target = rename->target]
         {
             ReleaseFiles(handles);
             Renamed renamed{std::vector<bool>(files.size(), false)};
@@ -831,7 +829,7 @@ void Engine::State::On(lt::file_completed_alert const& alert)
         return;
     }
     torrent->marking.insert(alert.index);
-    payload.Run([handle = alert.handle, index = alert.index]
+    VolumeWorker(torrent->facts.savePath).Run([handle = alert.handle, index = alert.index]
     {
         auto status = handle.status(lt::torrent_handle::query_save_path |
             lt::torrent_handle::query_torrent_file | lt::torrent_handle::query_renamed_files);

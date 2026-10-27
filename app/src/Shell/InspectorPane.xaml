@@ -42,6 +42,18 @@
             />
           </VisualState.Setters>
         </VisualState>
+        <VisualState x:Name="RetryableError">
+          <VisualState.Setters>
+            <Setter Target="Summary.(Grid.ColumnSpan)" Value="2" />
+            <Setter Target="DownloadRate.Visibility" Value="Collapsed" />
+            <Setter Target="UploadRate.Visibility" Value="Collapsed" />
+            <Setter Target="RetryTorrent.Visibility" Value="Visible" />
+            <Setter
+              Target="Summary.Foreground"
+              Value="{ThemeResource SystemFillColorCriticalBrush}"
+            />
+          </VisualState.Setters>
+        </VisualState>
       </VisualStateGroup>
     </VisualStateManager.VisualStateGroups>
     <controls:Pane.Header>
@@ -314,6 +326,21 @@
                       ToolTipService.ToolTip="{x:Bind Model.Target.UploadText, Mode=OneWay}"
                     />
                   </StackPanel>
+                  <!-- The negative margin keeps the row as tall as the text,
+                           so the fields below stay put when Retry appears. -->
+                  <controls:ActionButton
+                    x:Name="RetryTorrent"
+                    Grid.Column="2"
+                    Margin="0,-6"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Center"
+                    Visibility="Collapsed"
+                    Command="{x:Bind Model.RetryTorrent}"
+                    Glyph="{x:Bind icons:Lucide.RotateCcw}"
+                    Text="{x:Bind Model.Text.Get('inspector', 'retry')}"
+                    ToolTipService.ToolTip="{x:Bind Model.Text.Get('notifications', 'retry_torrent_tip')}"
+                    AutomationProperties.HelpText="{x:Bind Model.Text.Get('notifications', 'retry_torrent_tip')}"
+                  />
                 </Grid>
                 <controls:Strip Margin="0,16,0,0" ColumnSpacing="32" RowSpacing="12">
                   <controls:Field

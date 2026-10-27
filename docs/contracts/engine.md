@@ -346,14 +346,22 @@ error, and the next checkpoint would discard the saved progress. When the
 save folder, or its nearest existing parent, does not answer either,
 TinyTorrent's libtorrent fork reports such a file as `ERROR_DEV_NOT_EXIST`, a
 recoverable disk error. The parent counts because the share can answer while
-the torrent's own folder on it has not been created yet. Name preparation and
-the rename to a final name check the folder the same way.
+the torrent's own folder on it has not been created yet. The fork applies this
+wherever libtorrent reads a missing file as empty: checks, including the check
+of a torrent that has no saved progress yet, the part file that holds the data
+of skipped files, a change of skipped files, moves and renames. A move that only
+sets the folder, as an addition does, succeeds without it, and the torrent then
+waits for its check like any other. Name preparation and the rename to a final
+name check the folder the same way.
 
 libtorrent counts a piece as downloaded when it passes its hash check, before
 its blocks are written. When such a write fails, the fork recounts the file
 progress from the pieces it still has, so a file is not reported complete and
-renamed while its data is missing. A seed has no piece list to correct, so the
-fork checks all of its files when the disk error clears.
+renamed while its data is missing. A torrent that finished with that piece goes
+back to downloading. A seed has no piece list to correct, so the fork checks
+all of its files when the disk error clears, and its resume data lists no
+pieces until then, so a restart checks them too. A piece whose blocks were
+written but could not be read back for its hash check downloads again.
 
 Recoverable payload I/O errors pause their torrent and release its storage through
 libtorrent's disk fence. The engine then checks the location on its volume's
@@ -361,9 +369,30 @@ worker once a second, sharing each check between torrents in the same folder.
 When it answers, the engine clears the disk error and upload mode and reapplies
 the current intent, including forced downloads. This also reconnects seed peers
 with fresh piece availability and reopens invalidated network file handles.
-Stop, Pause all, schedules and adapter restrictions still apply. An error that
+Stop, Pause all, schedules and adapter restrictions still apply. A stopped
+torrent, or one under Pause all, recovers as well, so it shows its saved
+progress instead of the error, and stays stopped. When the location answers
+but a file that held downloaded data is gone or shorter than that data, as
+when it was deleted while its share was away, the engine reloads the torrent
+from its resume data without the pieces of those files. It downloads only
+them again, rather than writing around zeros or failing every read, and needs
+no check of every file, which can take hours. An error that
 waiting cannot fix ends recovery only once the location answers, because
-Windows reports an absent share with many codes. Pending Verify
+Windows reports an absent share with many codes. Recovery resumes a torrent by
+itself once. When the same error returns within a minute while the location
+still answers, the torrent stops, because resuming again at once would loop.
+Once a minute the engine then checks, without starting the torrent, whether
+the cause is gone: the folder answers, the file that failed opens with the
+access the torrent needs, the folder otherwise accepts a new file, and the
+drive has room for what the torrent still lacks. When the check passes, the
+engine continues the torrent once more. The same error within a minute after
+that leaves the torrent to the person's Retry, because a check that passes
+while the work still fails would loop too. An error that no check can judge
+leaves the torrent to the person at once. A location that stops answering in
+between makes the next resume automatic again, and so do the person's Retry,
+Start and Verify. A failed move to the final folder that left the files
+complete where they were follows the same rule: it waits until the check finds
+the final folder usable, runs once more, and then waits for Retry. Pending Verify
 waits for storage recovery, and for libtorrent's check of resume data, which
 ignores a recheck. A late probe cannot resume a removed torrent or
 apply an old location's answer after a move. Native release callbacks, rather
@@ -373,10 +402,14 @@ status cannot restart recovery after it succeeds. When a disk error stops the
 check of resume data or the setup of a recheck, the fork runs that check again
 once the error clears. A failed check of resume data keeps its saved pieces,
 also in checkpoints, so a torrent whose share was absent at startup resumes
-without a full check. If a disk error stops a check while it reads the files,
+without a full check. libtorrent reports no progress until that check passes,
+so the row shows the share of pieces the resume file saved while it waits.
+If a disk error stops a check while it reads the files,
 reload the native handle through the same owner as move verification,
-retaining the torrent's identity, history and current choices, and check its
-files again. A failed replacement retains the resume parameters
+retaining the torrent's identity, history and current choices. The check
+continues after the pieces it had checked: the fork keeps a stopped check's
+position at the piece that failed and ignores the reads still in flight, and
+libtorrent continues a check after the pieces its resume data lists. A failed replacement retains the resume parameters
 according to whether the old handle was actually removed, rather than whether a
 late callback still holds it alive.
 Every replacement restores the status-update subscription that native resume
@@ -396,3 +429,8 @@ until it is needed, and a person who trusts a file unblocks it in its
 Properties, as for any download. Marking is best effort. A volume, network
 share, or permission that refuses the stream is written to diagnostics and
 never fails the download, because the finished file matters more than the mark.
+Each mark runs on its drive's worker, so a share that stops answering holds up
+only its own folders' work, not the checkpoints and names of torrents on other
+drives. libtorrent's own disk threads stay held until Windows gives up on such
+a share, because Windows cannot reliably cancel a synchronous read on another
+thread.

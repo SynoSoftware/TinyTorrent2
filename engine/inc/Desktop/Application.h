@@ -33,6 +33,8 @@ public:
 private:
     static LRESULT CALLBACK Procedure(HWND window, UINT message, WPARAM first, LPARAM second);
     LRESULT Handle(UINT message, WPARAM first, LPARAM second);
+    // Retries every torrent that waits for the person's Retry.
+    void RetryAll();
     void TurnOff(std::vector<ToastSwitch> toasts);
     void OnTimer();
     void Dispatch(std::shared_ptr<Pipe::Connection> client, Json request, Reply reply);

@@ -65,6 +65,10 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
         );
     public bool IsPaused => StatusCode is "paused" or "all_paused";
     public bool IsError => StatusCode == "error" || ErrorCode.Length > 0;
+
+    // The engine could not recover the torrent by itself, so the torrent, or
+    // its failed move, runs again only when the person selects Retry.
+    public bool CanRetry { get; private set; }
     public bool IsProgressMuted =>
         !IsError
         && !IsMoving
@@ -270,6 +274,7 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
         UploadRate = Set(UploadRate, row.GetProperty("upload_rate").GetDouble());
         ErrorCode = ReadText("error", ErrorCode);
         ErrorDetail = ReadText("detail", ErrorDetail);
+        CanRetry = Set(CanRetry, row.GetProperty("retry").GetBoolean());
         if (Name != previousName || StatusCode != previousStatus)
             _searchText = null;
         var now = DateTimeOffset.UtcNow;

@@ -67,6 +67,8 @@
     "retry": "Réessayer",
     "retry_tip": "Réessayer d’ouvrir la fenêtre",
     "retry_request_tip": "Réessayer la même demande",
+    "retry_torrent_tip": "Réessayer ce torrent",
+    "retry_all_tip": "Réessayer tous les torrents arrêtés",
     "open_folder": "Ouvrir le dossier",
     "copy_path": "Copier le chemin",
     "close": "Fermer",
@@ -79,7 +81,8 @@
     "show_torrent": "Voir le torrent",
     "show_torrent_tip": "Afficher ce torrent dans la liste des torrents",
     "download_folder": "Dossier de téléchargement",
-    "torrent_stopped": "Torrent arrêté"
+    "torrent_stopped": "Torrent arrêté",
+    "torrents_stopped": "{0} torrents nécessitent votre attention"
   },
   "power": {
     "transfers": "TinyTorrent transfère des fichiers."
@@ -145,6 +148,7 @@
     "startup": "La fenêtre ne s’est pas ouverte. TinyTorrent fonctionne toujours.",
     "save": "TinyTorrent n’a pas encore pu enregistrer. Il continue d’essayer et se ferme dès que l’enregistrement réussit.",
     "pause": "Impossible d’enregistrer le réglage de pause des transferts.",
+    "retry": "Impossible de réessayer les torrents.",
     "notification": "Impossible d’enregistrer le réglage des notifications.",
     "window_open": "La fenêtre de TinyTorrent est toujours ouverte.\nFermez-la, puis choisissez Réessayer.",
     "unresponsive": "La fenêtre n’a pas répondu à Quitter. Rien n’a été abandonné. Réessayez lorsqu’elle répondra."

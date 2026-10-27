@@ -67,6 +67,8 @@
     "retry": "Tentar novamente",
     "retry_tip": "Tentar abrir a janela novamente",
     "retry_request_tip": "Tentar a mesma solicitação novamente",
+    "retry_torrent_tip": "Tentar este torrent novamente",
+    "retry_all_tip": "Tentar novamente todos os torrents parados",
     "open_folder": "Abrir pasta",
     "copy_path": "Copiar caminho",
     "close": "Fechar",
@@ -79,7 +81,8 @@
     "show_torrent": "Ver torrent",
     "show_torrent_tip": "Mostrar este torrent na lista de torrents",
     "download_folder": "Pasta de download",
-    "torrent_stopped": "Torrent parado"
+    "torrent_stopped": "Torrent parado",
+    "torrents_stopped": "{0} torrents precisam de atenção"
   },
   "power": {
     "transfers": "O TinyTorrent está transferindo arquivos."
@@ -145,6 +148,7 @@
     "startup": "A janela não abriu. O TinyTorrent continua em execução.",
     "save": "O TinyTorrent ainda não conseguiu salvar. Ele continua tentando e sai quando o salvamento der certo.",
     "pause": "Não foi possível salvar a configuração de pausa das transferências.",
+    "retry": "Não foi possível tentar os torrents novamente.",
     "notification": "Não foi possível salvar a configuração de notificações.",
     "window_open": "A janela do TinyTorrent ainda está aberta.\nFeche-a e escolha Tentar novamente.",
     "unresponsive": "A janela não respondeu ao comando Sair. Nada foi descartado. Tente sair novamente quando a janela responder."

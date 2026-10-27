@@ -672,7 +672,7 @@ void Engine::State::SaveMove(Move& moving)
         torrent.filesPending = true;
         torrent.namePhase = NamePhase::Pending;
         torrent.renameAt = {};
-        EndMove(torrent, std::nullopt);
+        EndMove(torrent, std::nullopt, false);
         CleanMove(moving, sources, origin);
     };
     if (!changes.Queue([this, &moving, id, relocate, settle]
@@ -784,8 +784,11 @@ void Engine::State::FailMove(Move& moving, Problem problem)
     {
         for (auto const& id : failed)
         {
-            settle(Working(id).facts, clears(id) && saved);
-            EndMove(Working(id), problem);
+            auto& torrent = Working(id);
+            settle(torrent.facts, clears(id) && saved);
+            // Only a failure that left the files complete where they were can
+            // run again by itself.
+            EndMove(torrent, problem, !torrent.facts.marker && SameFolder(moving.destination, torrent.facts.finalFolder));
         }
         moving.current += failed.size();
         moving.phase = MovePhase::Ready;
@@ -810,24 +813,31 @@ void Engine::State::FailMove(Move& moving, Problem problem)
     }
 }
 
-void Engine::State::EndMove(Torrent& torrent, std::optional<Problem> problem)
+void Engine::State::EndMove(Torrent& torrent, std::optional<Problem> problem, bool finalFolder)
 {
     torrent.moving = false;
     torrent.moveError = problem;
     if (!problem)
     {
-        if (torrent.fault && !SameFolder(torrent.fault->folder, torrent.facts.savePath))
-        {
-            torrent.fault.reset();
-            torrent.nameError.reset();
-        }
+        torrent.moveRetry = StorageRetry::Automatic;
+        // The names are prepared again at the new folder.
+        torrent.nameError.reset();
         ContinueNames();
         return;
     }
     torrent.ApplyIntent();
     torrent.notifiedError = problem;
-    Notify(ToastKind::Error, torrent, problem->detail, problem->Code());
     log.Write("move", torrent.torrentId, ToString(problem->kind));
+    // A move to the final folder is the engine's own work, so its failure
+    // waits for the destination to answer and runs once more, as a storage
+    // error does, and the message bar reports it while it lasts.
+    if (finalFolder)
+    {
+        torrent.moveRetry = torrent.moveRetry == StorageRetry::Resumed ? StorageRetry::Person : StorageRetry::Stopped;
+        Invalidate(torrent.torrentId);
+        return;
+    }
+    Notify(ToastKind::Error, torrent, problem->detail, problem->Code());
 }
 
 std::optional<double> Engine::State::MoveProgress(Torrent const& torrent) const

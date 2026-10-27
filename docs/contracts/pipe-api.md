@@ -416,9 +416,9 @@ isolation guarantee; an extra token would not create a stronger boundary.
 
 ## Wire representation
 
-Protocol version 28 uses a four-byte little-endian UTF-8 JSON frame length,
+Protocol version 29 uses a four-byte little-endian UTF-8 JSON frame length,
 bounded to 16 MiB. The endpoint is `TinyTorrent.<logon SID>`; each connecting
-client first receives `{type:"hello",version:28,session_id:"...",data_directory:"..."}`. The absolute data directory
+client first receives `{type:"hello",version:29,session_id:"...",data_directory:"..."}`. The absolute data directory
 keeps the same store for explicit Restart, which starts the engine beside the
 window rather than a path a pipe peer reports. Requests are
 `{request_id:signed-64-bit-integer,command:string,...}`. Replies repeat `request_id` and have
@@ -438,11 +438,16 @@ same connection while the window is open. `switch` names the Settings switch
 that turns the toast off: `finished`, `added`, `problems` or `background`, or
 null when none does. The window's More menu sends it back in `turn_off`, so
 the engine alone decides which switch a toast has. `condition` is null for an
-event, or `{key,change}` for a live storage problem. The stable engine-owned key
+event, or `{key,change}` for a live storage condition. The stable engine-owned key
 identifies it; `change` is `raised`, `updated` or `resolved`. Updates change an
 existing notice quietly and do not recreate a dismissed one; resolution removes
-it without announcement. Grouped location notices use
-`code:"download_location_unavailable"`, with the typed cause code in `detail`.
+it without announcement. A condition is raised only once it has lasted two
+minutes. Key `stopped` counts the torrents that wait for the person's Retry:
+with one, `torrent_id`, `name`, `detail`, `folder` and `code` describe it; with
+several, those are empty except `code`, which names the cause they share or is
+empty. Key `location:<root>` counts the torrents that wait for one drive root
+or UNC share, with `code:"download_location_unavailable"`, the typed cause code
+in `detail` and the root in `folder`.
 `count` includes the affected torrents or coalesced problem events. Problem
 bursts coalesce before window/desktop routing. A completion queued for the tray
 stays there. The window
@@ -479,7 +484,9 @@ Commands are `snapshot`, `preview` (source, destination), `preview_detail`
 original index/priority, optional sequential, first_last and queue_top booleans that default to false),
 `cancel_preview` (preview_id), `merge_trackers` (preview_id,
 torrent_id), `torrent` (torrent_id), `pause`, `resume`, `force`, `verify`, and
-`remove` (torrent_ids), `queue` (torrent_ids with direction: up/down/top/bottom,
+`remove` (torrent_ids), `retry` (torrent_ids: continues torrents that wait for
+the person's Retry under their current intent, and runs a failed move to the
+final folder again), `queue` (torrent_ids with direction: up/down/top/bottom,
 or before_torrent_id: string/null for a row drop; null means end),
 `piece_order` (torrent_ids with sequential, first_last or both as booleans; an
 absent one keeps each torrent's choice),
@@ -608,6 +615,7 @@ Torrent rows contain torrent_id, name,
 size (wanted bytes), completed (wanted bytes present), progress (0..1 for the
 current task, including verification), status (stable code), paused, download_rate and
 upload_rate (bytes/second), save_path, error (stable code), diagnostic detail,
+retry (true while the torrent waits for the person's Retry),
 added (Unix seconds), seed_count and peer_count (connected; peers include seeds),
 swarm_seed_count and swarm_peer_count (tracker scrape totals, else known peers),
 downloaded/uploaded (bytes), queue

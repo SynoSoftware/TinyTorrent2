@@ -710,7 +710,7 @@ void Engine::State::AbandonMove(Abandonment& abandonment, Torrent& torrent)
         {
             if (auto torrent = FindWorking(id))
             {
-                EndMove(*torrent, std::move(problem));
+                EndMove(*torrent, std::move(problem), false);
                 torrent->ApplyIntent();
             }
         };
