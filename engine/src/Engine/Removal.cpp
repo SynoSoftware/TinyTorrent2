@@ -2,6 +2,7 @@
 #include <Windows.h>
 #include <Shellapi.h>
 #include <ShlObj.h>
+#include <wrl.h>
 #include <algorithm>
 #include <system_error>
 
@@ -257,7 +258,9 @@ void Engine::State::ContinueDeletion()
     {
         if (released(*deletion))
         {
-            // Another removed handle can still flush writes to a shared file.
+            // Another removed handle can still flush writes to a shared file,
+            // and the files of a torrent whose move was cut are deleted once
+            // they are back in its save folder.
             bool held = std::any_of(deletions.begin(), deletions.end(), [&deletion](auto const& other)
             {
                 return (other.phase == DeletionPhase::Saving || !other.waiting.empty()) &&
@@ -265,7 +268,8 @@ void Engine::State::ContinueDeletion()
                     {
                         return std::binary_search(other.holds.begin(), other.holds.end(), file, PathBefore);
                     });
-            });
+            }) || std::any_of(returning.begin(), returning.end(), [&deletion](Task::Return const& running)
+                { return Contains(deletion->ids, running.torrentId); });
             // Exit leaves the deletion to the saved task.
             if (!held && !IsShuttingDown())
             {
@@ -277,9 +281,55 @@ void Engine::State::ContinueDeletion()
 
 namespace
 {
+// Cancels a Recycle Bin operation before its next file once `stop` is
+// requested. Windows then cancels every file still pending and leaves it
+// where it was, so each file is either in the Recycle Bin or untouched.
+class StopBeforeNext final : public Microsoft::WRL::RuntimeClass<
+    Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>, IFileOperationProgressSink>
+{
+public:
+    explicit StopBeforeNext(std::stop_token stop) : stop_(std::move(stop)) {}
+
+    HRESULT STDMETHODCALLTYPE PreDeleteItem(DWORD, IShellItem*) override
+    {
+        return stop_.stop_requested() ? HRESULT_FROM_WIN32(ERROR_CANCELLED) : S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE StartOperations() override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE FinishOperations(HRESULT) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE PreRenameItem(DWORD, IShellItem*, LPCWSTR) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE PostRenameItem(DWORD, IShellItem*, LPCWSTR, HRESULT, IShellItem*) override
+    {
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE PreMoveItem(DWORD, IShellItem*, IShellItem*, LPCWSTR) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE PostMoveItem(DWORD, IShellItem*, IShellItem*, LPCWSTR, HRESULT, IShellItem*) override
+    {
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE PreCopyItem(DWORD, IShellItem*, IShellItem*, LPCWSTR) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE PostCopyItem(DWORD, IShellItem*, IShellItem*, LPCWSTR, HRESULT, IShellItem*) override
+    {
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE PostDeleteItem(DWORD, IShellItem*, HRESULT, IShellItem*) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE PreNewItem(DWORD, IShellItem*, LPCWSTR) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE PostNewItem(DWORD, IShellItem*, LPCWSTR, LPCWSTR, DWORD, HRESULT, IShellItem*) override
+    {
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE UpdateProgress(UINT, UINT) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE ResetTimer() override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE PauseTimer() override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE ResumeTimer() override { return S_OK; }
+
+private:
+    std::stop_token stop_;
+};
+
 // Sends the files to the Recycle Bin and throws the first failure. A file that
-// is already gone counts as deleted.
-void Recycle(std::vector<std::filesystem::path> const& files)
+// is already gone counts as deleted. Once `stop` is requested, it sends no
+// further file and leaves the rest without a failure.
+void Recycle(std::vector<std::filesystem::path> const& files, std::stop_token stop)
 {
     auto initialized = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     IFileOperation* operation = nullptr;
@@ -288,6 +338,10 @@ void Recycle(std::vector<std::filesystem::path> const& files)
     if (SUCCEEDED(result))
         result = operation->SetOperationFlags(FOFX_RECYCLEONDELETE | FOFX_EARLYFAILURE |
             FOF_NOERRORUI | FOF_SILENT | FOF_NOCONFIRMATION | FOF_NO_CONNECTED_ELEMENTS);
+    auto sink = Microsoft::WRL::Make<StopBeforeNext>(stop);
+    DWORD cookie = 0;
+    if (SUCCEEDED(result))
+        result = sink ? operation->Advise(sink.Get(), &cookie) : E_OUTOFMEMORY;
     for (auto const& file : files)
     {
         if (FAILED(result))
@@ -317,6 +371,8 @@ void Recycle(std::vector<std::filesystem::path> const& files)
         operation->Release();
     if (SUCCEEDED(initialized))
         CoUninitialize();
+    if (stop.stop_requested())
+        return;
     if (FAILED(result))
         throw std::system_error(
             HRESULT_FACILITY(result) == FACILITY_WIN32 ? HRESULT_CODE(result) : result,
@@ -332,13 +388,8 @@ void Engine::State::Erase(std::vector<std::filesystem::path> const& files, Delet
     std::exception_ptr failure;
     try
     {
-        // The Recycle Bin takes the files in one operation, which cannot stop
-        // between files.
         if (mode == DeletionMode::Recycle)
-        {
-            if (!stop.stop_requested())
-                Recycle(files);
-        }
+            Recycle(files, stop);
         else
             Payload::Delete(files, stop);
     }

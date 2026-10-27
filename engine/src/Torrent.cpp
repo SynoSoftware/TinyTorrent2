@@ -311,7 +311,7 @@ Json Facts::ToJson() const
         {"layout", static_cast<int>(layout)},
         {"skip_patterns", skipPatterns},
         {"move_destination", marker ? marker->destination : std::string()},
-        {"move_stage", static_cast<int>(marker ? marker->stage : MoveStage::Staged)},
+        {"move_stage", !marker ? 0 : marker->stage == MoveStage::Returning ? 3 : static_cast<int>(marker->stage)},
         {"move_copy", marker && marker->copy ? marker->copy->path : std::string()},
         {"move_copy_bytes", marker && marker->copy ? marker->copy->bytes : 0},
         {"move_found", marker ? marker->found : std::vector<std::string>{}},
@@ -356,10 +356,13 @@ Facts Facts::Read(Json const& saved)
     {
         facts.marker = Facts::Marker{std::move(destination)};
         // A move saved without a valid stage counts as unchecked. Earlier
-        // versions saved 2 for a checked move that waited for the person.
+        // versions saved 2 for a checked move that waited for the person, so
+        // a move that gives its files back is saved as 3.
         auto stage = ReadSaved(saved, "move_stage", 0);
         if (stage == 1 || stage == 2)
             facts.marker->stage = MoveStage::Placing;
+        else if (stage == 3)
+            facts.marker->stage = MoveStage::Returning;
         facts.marker->failed = stage == 2 || ReadSaved(saved, "move_failed", false);
         if (auto found = saved.find("move_found"); found != saved.end() && found->is_array())
         {
@@ -563,6 +566,11 @@ bool Torrent::NeedsPerson() const
         (moveRetry == StorageRetry::Stopped || moveRetry == StorageRetry::Person));
 }
 
+bool Torrent::StorageStopped() const
+{
+    return (storageRetry == StorageRetry::Stopped || storageRetry == StorageRetry::Person) && StorageProblem();
+}
+
 bool Torrent::MoveWaits() const
 {
     return !moving && (waitingMove || unfinished == TaskKind::Move) && !Error();
@@ -579,8 +587,11 @@ bool Torrent::FilesBusy() const
 
 bool Torrent::IsHeld(bool hasMetadata) const
 {
+    // A stopped torrent that stayed auto-managed would leave upload mode by
+    // itself every few minutes and fail its writes again.
     return recovery || !conflict.empty() || moving || facts.marker || cacheWrite == CacheWrite::Flushing || CheckWaits() ||
-        checkError || unfinished == TaskKind::Check || (hasMetadata && namePhase != NamePhase::Ready);
+        checkError || StorageStopped() || unfinished == TaskKind::Check ||
+        (hasMetadata && namePhase != NamePhase::Ready);
 }
 
 bool Torrent::CheckWaits() const
@@ -680,7 +691,22 @@ void Torrent::Update(lt::torrent_status latest, lt::time_point at)
     status = std::move(latest);
     statusAt = at;
     if (status.state != lt::torrent_status::checking_resume_data)
+    {
         savedProgress.reset();
+        if (!retriedProgress)
+            retriedProgress = FileProgress::Of(status);
+    }
+}
+
+FileProgress FileProgress::Of(lt::torrent_status const& status)
+{
+    return {status.total_wanted_done, status.is_finished ? status.all_time_upload : 0,
+        status.state == lt::torrent_status::checking_files ? status.progress_ppm : 0};
+}
+
+bool FileProgress::Beyond(FileProgress const& earlier) const
+{
+    return done > earlier.done || uploaded > earlier.uploaded || checked > earlier.checked;
 }
 
 bool Completion::Changed(State state, State previous)
@@ -1317,9 +1343,21 @@ void Torrent::ApplyIntent()
     unsaved = true;
 }
 
+void Torrent::AnswerStorageProblem()
+{
+    checkError.reset();
+    storageRetry = StorageRetry::Automatic;
+}
+
+void Torrent::Retry()
+{
+    conflict.clear();
+    AnswerStorageProblem();
+    ClearDiskError();
+}
+
 void Torrent::ClearDiskError()
 {
-    storageRetry = StorageRetry::Automatic;
     if (recovery)
     {
         recovery->retryRequested = true;

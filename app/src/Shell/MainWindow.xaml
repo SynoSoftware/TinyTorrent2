@@ -784,12 +784,12 @@
           />
           <InfoBar.ActionButton>
             <controls:ActionButton
-              Command="{x:Bind Model.AppStatus.Action, Mode=OneWay}"
+              Command="{x:Bind Model.AppStatus.Action.Command, Mode=OneWay}"
               Visibility="{x:Bind Model.AppStatus.HasAction, Mode=OneWay}"
-              Glyph="{x:Bind Model.AppStatus.ActionGlyph, Mode=OneWay}"
-              Text="{x:Bind Model.AppStatus.ActionText, Mode=OneWay}"
-              ToolTipService.ToolTip="{x:Bind Model.AppStatus.ActionTip, Mode=OneWay}"
-              AutomationProperties.HelpText="{x:Bind Model.AppStatus.ActionTip, Mode=OneWay}"
+              Glyph="{x:Bind Model.AppStatus.Action.Glyph, Mode=OneWay}"
+              Text="{x:Bind Model.AppStatus.Action.Text, Mode=OneWay}"
+              ToolTipService.ToolTip="{x:Bind Model.AppStatus.Action.Tip, Mode=OneWay}"
+              AutomationProperties.HelpText="{x:Bind Model.AppStatus.Action.Tip, Mode=OneWay}"
             />
           </InfoBar.ActionButton>
         </InfoBar>

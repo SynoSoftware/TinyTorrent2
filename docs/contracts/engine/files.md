@@ -60,7 +60,10 @@ read-only attribute; on FAT, where Windows uses the classic delete, a read-only
 file is made writable first. Antivirus scanners and indexers hold files open
 for a moment, so a refused delete is tried again for up to 200 ms, as rimraf
 does. The Recycle Bin mode uses `IFileOperation`, because only Explorer can
-recycle files.
+recycle files. Once Exit starts, its progress sink refuses the next file, and
+Windows then cancels that file and every file after it and leaves them where
+they were, so Exit stops a recycle between files as it stops a permanent
+deletion.
 
 A move takes only the torrent's own files: other files in its folder, such as
 added subtitles, stay where they are, and only folders left empty are removed.
@@ -226,7 +229,8 @@ still checked, because only that check moves libtorrent's part file.
 
 Moves that share no drive run at the same time, each with its own copy worker,
 and [drive turns](#drive-turns) decide when each one starts. Renames of
-finished files, restoring and Exit wait until no move runs. A payload
+finished files and restoring wait until no move runs; Exit does not wait, and
+stops the move between files. A payload
 operation's source and destination paths stay held until its disk work has a
 known outcome.
 
@@ -344,8 +348,8 @@ Files found at the requested location without a source still require
 verification; reusing a correctly sized copy beside its source follows the
 owner ruling above. A deletion whose release alert
 was lost waits for its removed handle to expire, because libtorrent retains the
-torrent until its disk work ends. Both operations continue during shutdown;
-missing evidence never releases their files or implies success.
+torrent until its disk work ends. Exit stops both, and their saved tasks
+continue them; missing evidence never releases their files or implies success.
 
 Addition recovery observes live handles and move locations in one network-thread
 collection from the payload worker. It resumes only the same addition in the
@@ -380,6 +384,9 @@ one. The tasks are:
   turn, in the order of their turns. A move to the final folder that waits for
   its turn is one of these.
 - A Verify that waits for the torrent's files.
+- The give-back of a move whose torrent the person removed during the move,
+  while that move runs. Nothing can continue the move of a torrent that has
+  left the list, so its files go back to the old folder.
 - The files of removed torrents that a deletion has not deleted yet, from the
   commit that removes the torrents. A removal that waits until libtorrent can
   take its torrents saves its files only once every torrent's names are read,
@@ -387,8 +394,9 @@ one. The tasks are:
 
 The engine saves the tasks again whenever they change, together with any
 other change to `settings.json`, and once more at Exit, before it cancels
-anything. Renames to final names are not tasks: they follow from each
-torrent's state at every start.
+anything. Renames to final names, name choices and storage recovery are not
+tasks: they follow from each torrent's state at every start, so one that Exit
+cuts off runs again.
 
 At start, the `unfinished_tasks` setting decides: `ask`, the default,
 `continue` or `abandon`. With `ask`, the engine keeps the tasks and reports
@@ -401,6 +409,12 @@ waits and opens the window when selected. With `continue`, work that the
 engine continued at start without asking and that a crash cut off again is
 asked for instead, because work that crashes the engine would otherwise run
 again at every start. The save at Exit clears that record.
+
+Giving files back is what either answer would do, so it continues at start
+without asking: the give-back of a removed torrent's move, and the give-back
+of a move that the person abandoned, which its marker records. A deletion of
+the removed torrent's files waits until they are back. A give-back whose
+destination does not answer stays for the next start.
 
 Continue runs the work in the saved order:
 
@@ -424,9 +438,11 @@ Abandon drops the work:
   such as one that an earlier member of the same move placed. A staged move
   changed no file, so only its marker clears. Giving back takes its drives
   as a move does and gives up as a move does when it stops making progress.
-  When the destination does not answer, nothing changes, and the marker and
-  the task stay, so the next start asks again. A move whose files cannot be
-  given back keeps its marker and shows Move interrupted.
+  When the destination does not answer, or Exit stops the give-back, the
+  marker stays and records the give-back, so the next start continues it
+  without asking. A staged move's marker records no give-back, so the next
+  start asks about it again. A move whose files cannot be given back keeps its
+  marker and shows Move interrupted.
 - A move to the final folder that had not started clears the final folder, so
   it does not start again when the download finishes.
 - A check leaves its torrent stopped with its check pending: the torrent
@@ -528,9 +544,11 @@ An accepted torrent whose name preparation fails retains the typed filesystem
 cause and uses storage recovery. Preparation fails when the folder's drive or
 share does not answer before or after it reads the files, because Windows then
 reports every file as missing and each would get the unfinished suffix.
-Preparation first checks the folder on its drive's worker, so an absent share
-holds only the jobs of that share. An addition whose folder does not answer
-joins the list with its names unprepared and waits in the same way; an
+Preparation runs on its drive's worker, for a listed torrent and an addition
+alike, so an absent share holds only the jobs of that share. An addition
+whose folder does not answer joins the list with its names unprepared and
+waits in the same way, and so does an addition whose names, new folder or
+renames are still being prepared when Exit starts; an
 addition whose names fail for any other cause fails with that cause. A
 successful location probe admits immediate name preparation instead of waiting
 for its generic retry deadline. The name
@@ -553,8 +571,9 @@ choice, so changing the default does not rename an existing library.
   the engine tries again later, without reporting a download error. A rename
   that fails because the drive or share does not answer uses storage recovery,
   so it runs again as soon as the location answers. The rename runs on its
-  drive's worker, so a share that stops answering holds up only its own
-  folders' work.
+  drive's worker, so a share that stops answering holds no worker that other
+  drives use. One rename or deletion runs at a time, so other torrents'
+  renames and name choices still wait until Windows gives up on that share.
 - Before that rename, the engine pauses the torrent and waits for libtorrent
   to write the data it still holds in memory, without holding any files busy.
   Releasing the files for the rename waits for that write, which takes

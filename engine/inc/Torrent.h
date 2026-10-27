@@ -162,6 +162,19 @@ struct Pulse
     std::chrono::steady_clock::time_point changed;
 };
 
+// How far a torrent has got with its files: the data it has, the data a
+// finished torrent uploaded, and how far a check read. A download's upload
+// does not count, because a download whose drive is full keeps uploading.
+struct FileProgress
+{
+    std::int64_t done = 0;
+    std::int64_t uploaded = 0;
+    int checked = 0;
+
+    static FileProgress Of(lt::torrent_status const& status);
+    bool Beyond(FileProgress const& earlier) const;
+};
+
 // A check's place among the jobs that use drives, and its progress while the
 // drive pass lets it run. A check that does not run waits for its drive.
 struct CheckTurn
@@ -236,6 +249,12 @@ struct Torrent
         std::shared_future<void> released;
         lt::error_code cause;
         bool retryRequested = false;
+        // Whether the last probe found the folder not answering.
+        bool absent = false;
+        // The files whose data is gone and whose pieces a reload drops.
+        // Until it has, each checkpoint drops them too, so a start after a
+        // cut downloads only those files again instead of checking every one.
+        std::vector<lt::file_index_t> lost;
     };
 
     std::string torrentId;
@@ -270,9 +289,12 @@ struct Torrent
     lt::time_point diskClearedAt{};
     std::shared_ptr<Recovery> recovery;
     StorageRetry storageRetry = StorageRetry::Automatic;
-    // When the engine last continued the torrent. A storage error later than
-    // storageRetryWindow after it is a new one, which gets its own retry.
-    std::chrono::steady_clock::time_point storageRetriedAt{};
+    // How far the torrent had got when the engine last continued it, once a
+    // torrent that the engine reloaded has read its resume data. A storage
+    // error after it got further is a new one, which gets its own retry, so
+    // an error that returns at once and one that takes Windows minutes to
+    // report are judged alike.
+    std::optional<FileProgress> retriedProgress;
     std::optional<Problem> notifiedError;
     NamePhase namePhase = NamePhase::Pending;
     std::optional<Problem> nameError;
@@ -333,6 +355,11 @@ struct Torrent
     // A storage problem or a failed move to the final folder that the engine
     // no longer retries by itself, so it waits for the person's Retry.
     bool NeedsPerson() const;
+    // Whether a storage failure stopped the torrent and its problem remains,
+    // so storage recovery leaves it to CheckStopped or the person's Retry.
+    // Other work can clear the problem, such as names that are chosen at
+    // last, and the torrent then runs again.
+    bool StorageStopped() const;
     std::optional<Problem> Diagnose() const;
     // A move waits for its turn, or for the person's answer about the work
     // that the last end left unfinished, with no problem that delays it.
@@ -340,13 +367,21 @@ struct Torrent
     // The torrent's own files are being prepared, renamed or moved.
     bool FilesBusy() const;
     bool MoveBlocked() const;
-    // The person's Start, Stop or Verify answers a move problem. One that
-    // left no interrupted move clears, because its files are where they were.
+    // The person's Start, Stop, Verify or Retry answers a move problem. One
+    // that left no interrupted move clears, because its files are where they
+    // were, and the engine retries the move's next failure by itself again.
     void AnswerMoveProblem();
+    // The person's Start, Force, Retry or Verify answers a storage problem:
+    // a stalled check's error clears, and the engine retries the next storage
+    // failure by itself again.
+    void AnswerStorageProblem();
+    // The person's Start, Force or Retry clears every problem that stopped
+    // the torrent. The caller applies the intent.
+    void Retry();
     // The engine keeps it paused for its own work, whatever the person chose:
     // a conflict, a move, the write before a rename, a check that waits for
-    // its drive, for the person's answer or stalled, or names that wait for
-    // preparation once it has `hasMetadata`.
+    // its drive, for the person's answer or stalled, storage that stopped it,
+    // or names that wait for preparation once it has `hasMetadata`.
     bool IsHeld(bool hasMetadata) const;
     // The engine holds its check, because another job uses its drive.
     bool CheckWaits() const;

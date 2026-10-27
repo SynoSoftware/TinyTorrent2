@@ -176,7 +176,25 @@ enum class MoveStage
     Staged,
     // Its destination was checked before any file changed, so a file there
     // beside a source that holds data is the move's own copy.
-    Placing
+    Placing,
+    // The person abandoned the checked move, so its files go back to the save
+    // folder. Each start continues that without asking, because either answer
+    // would give them back.
+    Returning
+};
+
+// What giving a move's files back did.
+enum class GivenBack
+{
+    // The destination did not answer, so nothing changed.
+    Unreachable,
+    // Exit stopped it between files, so some files may still be at the
+    // destination.
+    Stopped,
+    // Only copies were deleted, so the files at the source did not change.
+    Deleted,
+    // Files were renamed back, so the torrent checks its files.
+    Renamed
 };
 
 // How the engine stops a move's placement: not at all; cancelling it and
@@ -262,13 +280,14 @@ enum class StorageRetry
 {
     // The next failure gets an automatic retry once the location answers.
     Automatic,
-    // The engine continued the torrent; the same failure soon after stops it.
+    // The engine continued the torrent; the same failure before the torrent
+    // gets further stops it.
     Retried,
     // Stopped. Once a minute the engine checks, without starting it, whether
     // the cause is gone, and then continues it.
     Stopped,
-    // That check continued the torrent; the same failure soon after leaves it
-    // to the person.
+    // That check continued the torrent; the same failure before the torrent
+    // gets further leaves it to the person.
     Resumed,
     // Only the person's Retry continues the torrent.
     Person
@@ -344,8 +363,9 @@ enum class CheckpointPhase
     Writing
 };
 
-// Saving waits for the final checkpoints; Ending waits for the file work
-// that Exit cancelled to stop.
+// Saving waits for the final checkpoints; Ending gives the work that still
+// runs a moment to stop. Cutting waits only for the lines and the document
+// that record the work it cuts off.
 enum class ShutdownPhase
 {
     Idle,
@@ -353,17 +373,21 @@ enum class ShutdownPhase
     Pausing,
     Sampling,
     Saving,
-    Ending
+    Ending,
+    Cutting
 };
 
 // How a shutdown ended.
 enum class ShutdownEnd
 {
-    // The final save succeeded and the file work stopped.
+    // The final save succeeded and the work stopped, so libtorrent's teardown
+    // follows.
     Saved,
-    // The final save failed, or libtorrent's teardown would wait on a drive
-    // that stopped responding, so the process must end at once, as after a
-    // crash.
+    // The final save succeeded, but work that uses the session or a drive
+    // still runs and may never return, so the process ends at once without
+    // libtorrent's teardown. The next start resumes or restarts that work.
+    Cut,
+    // The final save failed, so the process ends at once, as after a crash.
     Abrupt
 };
 

@@ -16,9 +16,9 @@ namespace tt::desktop
 class Application
 {
     // Ends the process 10 seconds after Exit starts, also when a thread waits
-    // on a drive that stopped responding; cancelling Exit stops it. The first
-    // member, so it is released last, and it still ends a teardown that runs
-    // out of time.
+    // on a drive that stopped responding; cancelling Exit stops it. After the
+    // final save it ends the teardown sooner. The first member, so it is
+    // released last, and it still ends a teardown that runs out of time.
     std::jthread watchdog_;
 
 public:
@@ -57,6 +57,8 @@ private:
     void CheckPrograms();
     bool headless_;
     ExitPhase exit_ = ExitPhase::Idle;
+    // When the watchdog ends an Exit that has not ended.
+    std::chrono::steady_clock::time_point exitDeadline_;
     bool ticking_ = false;
     bool adding_ = false;
     // A plain start opens the window once startup has read whether the person

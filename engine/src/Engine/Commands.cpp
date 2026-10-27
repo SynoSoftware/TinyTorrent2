@@ -653,8 +653,14 @@ void Engine::State::Verify(std::vector<std::string> const& ids, std::function<vo
     for (auto const& id : ids)
     {
         auto& torrent = torrents.at(id);
-        // The person answered a stopped torrent, so recovery may retry again.
-        torrent.storageRetry = StorageRetry::Automatic;
+        bool stopped = torrent.checkError || torrent.moveError || torrent.StorageStopped();
+        torrent.AnswerStorageProblem();
+        torrent.AnswerMoveProblem();
+        // The recheck reads the files again, so the disk error that stopped
+        // the torrent clears. During storage recovery the recheck waits for
+        // the location instead.
+        if (!torrent.recovery)
+            torrent.ClearDiskError();
         // A recheck queues behind the reads of a stalled check, so it waits
         // until they return; meanwhile the stalled check continues and can
         // stall again.
@@ -662,12 +668,8 @@ void Engine::State::Verify(std::vector<std::string> const& ids, std::function<vo
             torrent.needsRecheck = true;
         else
             Recheck(torrent);
-        if (torrent.checkError || torrent.moveError)
-        {
-            torrent.checkError.reset();
-            torrent.AnswerMoveProblem();
+        if (stopped)
             torrent.ApplyIntent();
-        }
     }
     statusPending = true;
     ApplyQueue();
@@ -679,11 +681,9 @@ void Engine::State::Retry(std::vector<std::string> const& ids, std::function<voi
     for (auto const& id : ids)
     {
         auto& torrent = torrents.at(id);
-        torrent.checkError.reset();
-        torrent.ClearDiskError();
         // FinishDownload starts a failed move to the final folder again.
-        if (torrent.moveRetry == StorageRetry::Stopped || torrent.moveRetry == StorageRetry::Person)
-            torrent.AnswerMoveProblem();
+        torrent.AnswerMoveProblem();
+        torrent.Retry();
         torrent.ApplyIntent();
     }
     statusPending = true;
@@ -768,11 +768,7 @@ void Engine::State::SetIntent(std::vector<std::string> const& ids, Intent intent
             auto& torrent = torrents.at(id);
             torrent.AnswerMoveProblem();
             if (intent != Intent::Paused)
-            {
-                torrent.conflict.clear();
-                torrent.checkError.reset();
-                torrent.ClearDiskError();
-            }
+                torrent.Retry();
             // A later force goes after the checks forced before it.
             if (intent == Intent::Forced && torrent.CheckWaits())
                 torrent.checkTurn->turn = ++turns;

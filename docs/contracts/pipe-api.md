@@ -403,9 +403,10 @@ it without announcement. A condition is raised only once it has lasted two
 minutes. Key `stopped` counts the torrents that wait for the person's Retry:
 with one, `torrent_id`, `name`, `detail`, `folder` and `code` describe it; with
 several, those are empty except `code`, which names the cause they share or is
-empty. Key `location:<root>` counts the torrents that wait for one drive root
-or UNC share, with `code:"download_location_unavailable"`, the typed cause code
-in `detail` and the root in `folder`.
+empty. Key `location:<root>` counts the torrents that wait because one drive
+root or UNC share does not answer, whatever error Windows reported, with
+`code:"download_location_unavailable"`, the typed cause code in `detail` and
+the root in `folder`.
 `count` includes the affected torrents or coalesced problem events. Problem
 bursts coalesce before window/desktop routing. A completion queued for the tray
 stays there. The window
@@ -441,10 +442,11 @@ Commands are `snapshot`, `preview` (source, destination), `preview_detail`
 priorities, optional sequential, first_last and queue_top booleans that default to false),
 `cancel_preview` (preview_id), `merge_trackers` (preview_id,
 torrent_id), `torrent` (torrent_id), `pause`, `resume`, `force`, `verify`, and
-`remove` (torrent_ids), `retry` (torrent_ids: continues torrents that wait for
-the person's Retry under their current intent, and runs a failed move to the
-final folder again), `queue` (torrent_ids with direction: up/down/top/bottom,
-or before_torrent_id: string/null for a row drop; null means end),
+`remove` (torrent_ids), `retry` (torrent_ids: clears each torrent's problems as
+Start does but keeps its current intent, so a stopped torrent continues and a
+failed move to the final folder runs again), `queue` (torrent_ids with
+direction: up/down/top/bottom, or before_torrent_id: string/null for a row
+drop; null means end),
 `piece_order` (torrent_ids with sequential, first_last or both as booleans; an
 absent one keeps each torrent's choice),
 `session_pause` (paused), `settings` (changes), `reset_settings`, `turn_off`

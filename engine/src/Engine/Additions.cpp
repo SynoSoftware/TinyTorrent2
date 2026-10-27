@@ -123,7 +123,7 @@ void Engine::State::Add(Preview& preview, Addition::Choices choices, std::functi
     }
     else
     {
-        sources.Run([params = pending.params, appendsSuffix = pending.facts.appendsSuffix,
+        VolumeWorker(pending.facts.savePath).Run([params = pending.params, appendsSuffix = pending.facts.appendsSuffix,
             layout = pending.facts.layout]() mutable
         {
             PrepareNames(params, appendsSuffix, layout);
@@ -131,8 +131,11 @@ void Engine::State::Add(Preview& preview, Addition::Choices choices, std::functi
         }, [this, id = pending.torrentId](std::expected<lt::add_torrent_params, StorageOutcome> prepared)
         {
             auto found = additions.find(id);
-            if (found == additions.end())
+            // Exit adds the torrent without these names.
+            if (found == additions.end() || found->second.params.userdata.get<Addition>())
+            {
                 return;
+            }
             // A torrent whose folder does not answer joins the list and
             // chooses its names once the folder answers, as any torrent in
             // the list does.
@@ -162,15 +165,17 @@ void Engine::State::PrepareAddition(std::string const& id, lt::torrent_handle ha
         params.ti = handle.torrent_file();
     // A rename or removal can change the destination's files while the names
     // are chosen, so the torrent then joins the list without them and
-    // ContinueNames chooses them once that work ends. It stays paused until
+    // ContinueNames chooses them once that work ends. Exit does not wait for
+    // the drive's worker that chooses them, so during Exit the torrent joins
+    // without them too, and the next start chooses them. It stays paused until
     // then, so it writes nothing under a wrong name.
-    if (!params.ti || DeletingOrRenaming())
+    if (!params.ti || DeletingOrRenaming() || IsShuttingDown())
     {
         SaveAddition(id, handle);
         return;
     }
-    sources.Run([this, params = std::move(params), handle, appendsSuffix = addition.facts.appendsSuffix,
-        layout = addition.facts.layout]() mutable
+    VolumeWorker(addition.facts.savePath).Run([this, params = std::move(params), handle,
+        appendsSuffix = addition.facts.appendsSuffix, layout = addition.facts.layout]() mutable
     {
         ReleaseFiles({handle});
         auto current = handle.get_renamed_files();

@@ -312,6 +312,8 @@ void Toasts::Ask(Popup::Prompt prompt)
 Popup::Content Toasts::Message(Toast const& toast) const
 {
     Popup::Content content{.select = Selection(toast)};
+    // The notice of the torrents that wait for the person's Retry.
+    bool stopped = toast.condition && toast.condition->key == Toast::Condition::stopped;
     if (toast.kind == ToastKind::Aggregate)
     {
         content.title = strings_.Format("notification", "aggregate", {Strings::Number(toast.count)});
@@ -334,7 +336,7 @@ Popup::Content Toasts::Message(Toast const& toast) const
     }
     // Every torrent that waits for the person shares one notice, so one Retry
     // continues them all. Selecting it opens the window, which lists them.
-    else if (toast.condition && toast.condition->key == Toast::Condition::stopped && toast.count > 1)
+    else if (stopped && toast.count > 1)
     {
         content.title = strings_.Format("notification", "torrents_stopped", {Strings::Number(toast.count)});
         content.body = ErrorText(toast.code, true);
@@ -385,7 +387,7 @@ Popup::Content Toasts::Message(Toast const& toast) const
                 .closes = false, .automationId = L"ShowTorrent"});
             // Retry answers an error that the engine stopped retrying; the
             // toast still names the folder for a person who fixes it there.
-            if (toast.condition && toast.condition->key == Toast::Condition::stopped)
+            if (stopped)
             {
                 content.actions.push_back(Retry(strings_, strings_.Text("notification", "retry_torrent_tip"),
                     commands_.retryAll));

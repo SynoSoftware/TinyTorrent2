@@ -22,10 +22,7 @@ public sealed partial class MainViewModel
         string Title,
         string Body,
         InfoBarSeverity Severity,
-        ICommand? Action,
-        string ActionText,
-        string ActionGlyph,
-        string ActionTip,
+        StatusAction? Action,
         StatusAction? Secondary = null
     )
     {
@@ -185,10 +182,12 @@ public sealed partial class MainViewModel
             title,
             body,
             InfoBarSeverity.Error,
-            RetryAll,
-            Text.Get("inspector", "retry"),
-            Syno.Lucide.RotateCcw,
-            Text.Get("notifications", stopped.Count == 1 ? "retry_torrent_tip" : "retry_torrents_tip"),
+            new(
+                RetryAll,
+                Text.Get("inspector", "retry"),
+                Syno.Lucide.RotateCcw,
+                Text.Get("notifications", stopped.Count == 1 ? "retry_torrent_tip" : "retry_torrents_tip")
+            ),
             ShowErrorsAction
         );
     }
@@ -215,10 +214,7 @@ public sealed partial class MainViewModel
             Text.Get("notifications", "location_unavailable"),
             body,
             InfoBarSeverity.Warning,
-            ShowErrorsAction.Command,
-            ShowErrorsAction.Text,
-            ShowErrorsAction.Glyph,
-            ShowErrorsAction.Tip
+            ShowErrorsAction
         );
     }
 
@@ -261,20 +257,24 @@ public sealed partial class MainViewModel
                     ? Text.Error(error)
                     : Text.Get("errors", "database_incompatible"),
                 InfoBarSeverity.Error,
-                DeleteDatabase,
-                Text.Get("file_action", "delete"),
-                Syno.Lucide.Trash2,
-                Text.Get("window", "delete_database_tip")
+                new(
+                    DeleteDatabase,
+                    Text.Get("file_action", "delete"),
+                    Syno.Lucide.Trash2,
+                    Text.Get("window", "delete_database_tip")
+                )
             );
         if (failure.Database == DatabaseCondition.ReadOnlyFile)
             return new(
                 title,
                 Text.Format("window", "database_read_only", Database.FileName),
                 InfoBarSeverity.Error,
-                RepairDatabase,
-                Text.Get("window", "repair_database"),
-                Syno.Lucide.Wrench,
-                Text.Get("window", "repair_database_tip")
+                new(
+                    RepairDatabase,
+                    Text.Get("window", "repair_database"),
+                    Syno.Lucide.Wrench,
+                    Text.Get("window", "repair_database_tip")
+                )
             );
         if (error is not SqliteException { SqliteErrorCode: var code })
             return Retry(Text.Error(error));
@@ -305,10 +305,12 @@ public sealed partial class MainViewModel
                 title,
                 body,
                 InfoBarSeverity.Error,
-                RetryFeatures,
-                Text.Get("inspector", "retry"),
-                Syno.Lucide.RotateCcw,
-                Text.Get("window", "retry_features_tip"),
+                new(
+                    RetryFeatures,
+                    Text.Get("inspector", "retry"),
+                    Syno.Lucide.RotateCcw,
+                    Text.Get("window", "retry_features_tip")
+                ),
                 dataFolder
             );
     }

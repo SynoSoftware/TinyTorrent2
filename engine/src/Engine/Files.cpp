@@ -25,7 +25,7 @@ constexpr auto renameRetry = std::chrono::seconds(30);
 // Windows warns before it runs. The mark reaches the disk before this
 // returns, so a rename after it cannot outlast it in a crash. Returns the
 // Windows error, or ERROR_SUCCESS.
-DWORD Mark(std::filesystem::path const& path)
+DWORD WriteMark(std::filesystem::path const& path)
 {
     // Opening the stream would create a missing file.
     auto base = CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -246,7 +246,7 @@ void Engine::State::ContinueNames()
     // member that has ended prepares its names while the rest of its group
     // moves. The move preflight keeps the move's paths apart from every other
     // torrent's.
-    if (!changes.IsIdle() || DeletingOrRenaming())
+    if (IsShuttingDown() || !changes.IsIdle() || DeletingOrRenaming())
         return;
     constexpr std::ptrdiff_t limit = 8;
     auto pending = std::count_if(torrents.begin(), torrents.end(),
@@ -274,44 +274,30 @@ void Engine::State::ContinueNames()
         lt::add_torrent_params params;
         params.ti = metadata;
         params.save_path = torrent.facts.savePath;
-        // The folder answers on its own drive's worker first, so a share that
-        // does not answer holds up only its own torrents, not the shared
-        // worker every torrent's names wait for.
-        VolumeWorker(torrent.facts.savePath).Run([folder = torrent.facts.savePath] { CheckReachable(Wide(folder)); },
-            [this, id, params = std::move(params), handle = torrent.handle,
-            appendsSuffix = torrent.facts.appendsSuffix, layout = torrent.facts.layout](StorageOutcome reached) mutable
+        // On its drive's worker, so a share that does not answer holds up only
+        // its own torrents' names.
+        VolumeWorker(torrent.facts.savePath).Run([this, params = std::move(params), handle = torrent.handle,
+            appendsSuffix = torrent.facts.appendsSuffix, layout = torrent.facts.layout]() mutable
+        {
+            ReleaseFiles({handle});
+            auto current = handle.get_renamed_files();
+            params.renamed_files = current.export_filenames(params.ti->layout());
+            PrepareNames(params, appendsSuffix, layout);
+            return NameChoice{std::move(params), std::move(current)};
+        }, [this, id](std::expected<NameChoice, StorageOutcome> choice)
         {
             auto found = FindWorking(id);
             if (!found || found->namePhase != NamePhase::Preparing)
                 return;
-            if (reached.failure)
+            auto& torrent = *found;
+            if (!choice)
             {
-                FailNames(*found, reached);
+                FailNames(torrent, choice.error());
                 return;
             }
-            payload.Run([this, params = std::move(params), handle, appendsSuffix, layout]() mutable
-            {
-                ReleaseFiles({handle});
-                auto current = handle.get_renamed_files();
-                params.renamed_files = current.export_filenames(params.ti->layout());
-                PrepareNames(params, appendsSuffix, layout);
-                return NameChoice{std::move(params), std::move(current)};
-            },
-                [this, id](std::expected<NameChoice, StorageOutcome> choice)
-            {
-                auto found = FindWorking(id);
-                if (!found)
-                    return;
-                auto& torrent = *found;
-                if (!choice)
-                {
-                    FailNames(torrent, choice.error());
-                    return;
-                }
-                torrent.needsRecheck |= ApplyNames(torrent.handle, choice->params, choice->current, torrent.renaming);
-                if (torrent.renaming.empty())
-                    FinishNames(torrent);
-            });
+            torrent.needsRecheck |= ApplyNames(torrent.handle, choice->params, choice->current, torrent.renaming);
+            if (torrent.renaming.empty())
+                FinishNames(torrent);
         });
     }
 }
@@ -731,7 +717,7 @@ void Engine::State::ContinueRename()
             }
             if (std::find(complete.begin(), complete.end(), false) != complete.end())
                 return renamed;
-            renamed.marked = Mark(source);
+            renamed.marked = WriteMark(source);
             if (!MoveFileExW(source.c_str(), target.c_str(), 0))
             {
                 auto error = GetLastError();
@@ -828,8 +814,13 @@ void Engine::State::On(lt::file_completed_alert const& alert)
         FinishFiles(*torrent);
         return;
     }
-    torrent->marking.insert(alert.index);
-    VolumeWorker(torrent->facts.savePath).Run([handle = alert.handle, index = alert.index]
+    Mark(*torrent, alert.index);
+}
+
+void Engine::State::Mark(Torrent& torrent, lt::file_index_t index)
+{
+    torrent.marking.insert(index);
+    VolumeWorker(torrent.facts.savePath).Run([handle = torrent.handle, index]
     {
         auto status = handle.status(lt::torrent_handle::query_save_path |
             lt::torrent_handle::query_torrent_file | lt::torrent_handle::query_renamed_files);
@@ -837,9 +828,9 @@ void Engine::State::On(lt::file_completed_alert const& alert)
         if (!metadata)
             return;
         auto path = FullPath(Wide(status.renamed_files.file_path(metadata->layout(), index, status.save_path)));
-        if (auto error = Mark(path); error != ERROR_SUCCESS)
+        if (auto error = WriteMark(path); error != ERROR_SUCCESS)
             throw std::runtime_error(std::to_string(error));
-    }, [this, id = torrent->torrentId, index = alert.index](StorageOutcome outcome)
+    }, [this, id = torrent.torrentId, index](StorageOutcome outcome)
     {
         if (outcome.failure)
             log.Write("mark_of_the_web", id, outcome.detail);
@@ -849,6 +840,34 @@ void Engine::State::On(lt::file_completed_alert const& alert)
             FinishFiles(*found);
         }
     });
+}
+
+void Engine::State::MarkWaiting(Torrent& torrent)
+{
+    auto found = waitingMarks.find(torrent.torrentId);
+    if (found == waitingMarks.end() || torrent.restore)
+        return;
+    auto metadata = torrent.handle.torrent_file();
+    if (!metadata)
+        return;
+    for (auto index : found->second)
+    {
+        if (index < metadata->layout().end_file())
+            Mark(torrent, index);
+    }
+    waitingMarks.erase(found);
+}
+
+std::map<std::string, std::set<lt::file_index_t>> Engine::State::UnwrittenMarks() const
+{
+    auto unwritten = waitingMarks;
+    std::erase_if(unwritten, [this](auto const& entry) { return !torrents.contains(entry.first); });
+    for (auto const& [id, torrent] : torrents)
+    {
+        if (!torrent.marking.empty())
+            unwritten[id].insert(torrent.marking.begin(), torrent.marking.end());
+    }
+    return unwritten;
 }
 
 void Engine::State::On(lt::file_renamed_alert const& alert)

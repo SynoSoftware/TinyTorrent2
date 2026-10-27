@@ -17,13 +17,10 @@ std::string Code(lt::error_code const& error)
 {
     return std::string(error.category().name()) + ":" + std::to_string(error.value());
 }
+}
 
-std::optional<std::string> UnavailableRoot(std::string const& location, Problem const& problem)
+std::optional<std::string> Engine::State::NoticeRoot(std::string const& location)
 {
-    if (problem.kind != ProblemKind::DownloadPathMissing && problem.kind != ProblemKind::DownloadPathInvalid &&
-        problem.kind != ProblemKind::DownloadPathUnavailable && problem.kind != ProblemKind::DiskFull)
-        return std::nullopt;
-
     auto folder = Wide(location);
     if (folder.starts_with(LR"(\\?\UNC\)"))
         folder = LR"(\\)" + folder.substr(8);
@@ -31,14 +28,10 @@ std::optional<std::string> UnavailableRoot(std::string const& location, Problem 
         folder.erase(0, 4);
     auto path = std::filesystem::path(folder);
     path.make_preferred();
-    auto root = path.root_path();
-    // A UNC root_name names only the server; include its share.
-    if (path.root_name().wstring().starts_with(LR"(\\)") && path.has_relative_path())
-        root /= *path.relative_path().begin();
+    auto root = ShareRoot(path);
     if (root.empty())
         return std::nullopt;
     return Utf8(root.wstring());
-}
 }
 
 void Engine::State::Handle(lt::alert* alert)
@@ -250,7 +243,7 @@ void Engine::State::On(lt::state_update_alert const& alert)
                         torrent.names = FileNames{std::move(metadata), status.renamed_files};
                 }
                 auto error = torrent.diskError ? torrent.diskError : status.errc;
-                if (error ? Retryable(error) : bool(status.flags & lt::torrent_flags::upload_mode))
+                if (Recoverable(error, status.flags))
                     RecoverStorage(torrent, error);
                 if (torrent.completion.NeedsSample())
                 {
@@ -320,9 +313,10 @@ void Engine::State::UpdateProblems()
         if (problem && !problem->IsStorage() && problem != torrent.notifiedError)
             Notify(ToastKind::Error, torrent, problem->detail, problem->Code());
         torrent.notifiedError = problem;
+        auto storage = torrent.StorageProblem();
         if (torrent.NeedsPerson())
         {
-            auto cause = torrent.StorageProblem() ? *torrent.StorageProblem() : *torrent.moveError;
+            auto cause = storage ? *storage : *torrent.moveError;
             if (!stopped)
             {
                 stopped = Toast{.kind = ToastKind::Error, .name = torrent.Name(), .detail = cause.detail,
@@ -340,10 +334,12 @@ void Engine::State::UpdateProblems()
                 stopped->code.clear();
             continue;
         }
-        auto storage = torrent.StorageProblem();
-        if (!torrent.recovery || !storage)
+        // Windows reports a share that does not answer with many codes, so
+        // the probe, not the error, shows that the torrent waits for its
+        // location.
+        if (!torrent.recovery || !torrent.recovery->absent || !storage)
             continue;
-        if (auto root = UnavailableRoot(torrent.facts.savePath, *storage))
+        if (auto root = NoticeRoot(torrent.facts.savePath))
         {
             auto folder = Wide(*root);
             std::transform(folder.begin(), folder.end(), folder.begin(), [](wchar_t character)
@@ -400,8 +396,7 @@ void Engine::State::QueryCompletions()
         if (pending >= 64)
             break;
         auto error = torrent.diskError ? torrent.diskError : torrent.status.errc;
-        bool retries = !torrent.recovery &&
-            (error ? Retryable(error) : bool(torrent.status.flags & lt::torrent_flags::upload_mode));
+        bool retries = !torrent.recovery && !torrent.StorageStopped() && Recoverable(error, torrent.status.flags);
         if ((!torrent.completion.NeedsSample() && !retries) || torrent.restore ||
             torrent.queries.contains(DetailKind::Status))
             continue;
@@ -499,6 +494,7 @@ void Engine::State::On(lt::metadata_received_alert const& alert)
         // for.
         if (!torrent->restore && !torrent->names)
             torrent->filesPending = true;
+        MarkWaiting(*torrent);
         ContinueNames();
         torrent->ApplyIntent();
         RecordHashes(*torrent, alert.handle.info_hashes());

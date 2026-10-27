@@ -88,6 +88,11 @@ void Engine::State::On(lt::save_resume_data_alert& alert)
 
 void Engine::State::SaveCheckpoint(Torrent& torrent, lt::add_torrent_params params)
 {
+    // libtorrent still claims the pieces of files whose data is gone until
+    // the reload drops them, and a start whose resume data claims them
+    // checks every file.
+    if (torrent.recovery)
+        DropPieces(params, torrent.recovery->lost);
     torrent.checkpointPhase = CheckpointPhase::Writing;
     auto id = torrent.torrentId;
     auto completion = [this, id, uploaded = params.total_uploaded, path = params.save_path,
@@ -113,7 +118,10 @@ void Engine::State::SaveCheckpoint(Torrent& torrent, lt::add_torrent_params para
             return;
         }
         auto handle = torrent.handle;
-        payload.Run([handle, pieces]
+        // On the save worker, because the payload worker can wait on a drive
+        // that stopped responding, and Exit's final save waits for this
+        // checkpoint. The question goes only to libtorrent's network thread.
+        store.Run([handle, pieces]
         {
             auto current = handle.status(lt::torrent_handle::query_pieces);
             if (current.state == lt::torrent_status::checking_files ||

@@ -148,6 +148,38 @@ std::uint64_t Allocated(std::filesystem::path const& file, std::uint64_t size)
     return (std::uint64_t(high) << 32) | low;
 }
 
+bool KeepsSparse(bool sparse, Volume const& to)
+{
+    return sparse && to.sparse && Build() >= sparseBuild;
+}
+
+// The free space that copying `file` takes on its destination's volume. An
+// unfinished torrent's sparse file takes its full size where it cannot stay
+// sparse, which can be far more than it holds. An unfinished copy already
+// holds part of it.
+std::uint64_t CopySpace(File const& file, std::uint64_t size, bool keepsSparse)
+{
+    auto partial = Extended(Partial(file.destination));
+    auto space = keepsSparse ? Allocated(file.source, size) : size;
+    if (GetFileAttributesW(partial.c_str()) != INVALID_FILE_ATTRIBUTES)
+        space -= std::min(space, Allocated(partial, 0));
+    return space;
+}
+
+// The volume that lacks the space its copies need, with the reason.
+std::optional<std::string> Unfitting(std::map<std::wstring, std::uint64_t> const& needed)
+{
+    for (auto const& [root, bytes] : needed)
+    {
+        ULARGE_INTEGER available{};
+        if (!GetDiskFreeSpaceExW(root.c_str(), &available, nullptr, nullptr))
+            return Describe(root, GetLastError());
+        if (available.QuadPart < bytes)
+            return Describe(root, static_cast<DWORD>(ERROR_DISK_FULL));
+    }
+    return std::nullopt;
+}
+
 // The byte ranges of a sparse file that hold data, in order, or nothing when
 // Windows cannot list them.
 std::optional<std::vector<FILE_ALLOCATED_RANGE_BUFFER>> DataRanges(std::filesystem::path const& file,
@@ -497,6 +529,9 @@ std::optional<std::string> Placement::Place(std::vector<File> const& files)
     std::map<std::wstring, std::uint64_t> needed;
     for (auto const& [file, size, sparse] : found)
     {
+        // A cancel stops the renames between files, as it stops the copies.
+        if (progress_.cancel != MoveCancel::None)
+            return "Move cancelled";
         if (MoveFileExW(Extended(file->source).c_str(), Extended(file->destination).c_str(), 0))
         {
             renamed_.push_back(file);
@@ -508,20 +543,13 @@ std::optional<std::string> Placement::Place(std::vector<File> const& files)
         auto const& from = volume(file->source.parent_path());
         auto const& to = volume(file->destination.parent_path());
         bool local = !from.remote && !to.remote;
-        bool keepsSparse = sparse && to.sparse && Build() >= sparseBuild;
+        bool keepsSparse = KeepsSparse(sparse, to);
         DWORD flags = COPY_FILE_FAIL_IF_EXISTS | COPY_FILE_COPY_SYMLINK;
         if (local && size >= large)
             flags |= COPY_FILE_NO_BUFFERING;
         if (keepsSparse)
             flags |= COPY_FILE_ENABLE_SPARSE_COPY;
-        // An unfinished torrent's sparse file takes its full size where it
-        // cannot stay sparse, which can be far more than it holds. An
-        // unfinished copy already holds part of it.
-        auto partial = Extended(Partial(file->destination));
-        auto space = keepsSparse ? Allocated(file->source, size) : size;
-        if (GetFileAttributesW(partial.c_str()) != INVALID_FILE_ATTRIBUTES)
-            space -= std::min(space, Allocated(partial, 0));
-        needed[to.root] += space;
+        needed[to.root] += CopySpace(*file, size, keepsSparse);
         std::optional<std::vector<FILE_ALLOCATED_RANGE_BUFFER>> data;
         if (keepsSparse)
             data = DataRanges(file->source, size);
@@ -534,14 +562,8 @@ std::optional<std::string> Placement::Place(std::vector<File> const& files)
         }
         copies_.push_back({file, size, flags, local && !from.seeks && !to.seeks && size < large, std::move(data)});
     }
-    for (auto const& [root, bytes] : needed)
-    {
-        ULARGE_INTEGER available{};
-        if (!GetDiskFreeSpaceExW(root.c_str(), &available, nullptr, nullptr))
-            return Describe(root, GetLastError());
-        if (available.QuadPart < bytes)
-            return Describe(root, static_cast<DWORD>(ERROR_DISK_FULL));
-    }
+    if (auto unfitting = Unfitting(needed))
+        return unfitting;
     return CopyAll();
 }
 
@@ -793,6 +815,25 @@ MoveFailure Placement::Undo()
     }
     return failure;
 }
+}
+
+bool HasRoom(std::vector<File> const& files)
+{
+    std::map<std::wstring, std::uint64_t> needed;
+    for (auto const& file : files)
+    {
+        WIN32_FILE_ATTRIBUTE_DATA data;
+        if (!GetFileAttributesExW(Extended(file.source).c_str(), GetFileExInfoStandard, &data))
+            continue;
+        auto from = Inspect(file.source.parent_path());
+        auto to = Inspect(file.destination.parent_path());
+        if (_wcsicmp(from.root.c_str(), to.root.c_str()) == 0)
+            continue;
+        auto size = (std::uint64_t(data.nFileSizeHigh) << 32) | data.nFileSizeLow;
+        bool sparse = data.dwFileAttributes & FILE_ATTRIBUTE_SPARSE_FILE;
+        needed[to.root] += CopySpace(file, size, KeepsSparse(sparse, to));
+    }
+    return !Unfitting(needed);
 }
 
 std::expected<void, Failure> Move(std::vector<File> const& files, Progress& progress)

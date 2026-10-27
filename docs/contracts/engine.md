@@ -371,27 +371,33 @@ with fresh piece availability and reopens invalidated network file handles.
 Stop, Pause all, schedules and adapter restrictions still apply. A stopped
 torrent, or one under Pause all, recovers as well, so it shows its saved
 progress instead of the error, and stays stopped. When the location answers
-but a file that held downloaded data is gone or shorter than that data, as
-when it was deleted while its share was away, the engine reloads the torrent
-from its resume data without the pieces of those files. It downloads only
-them again, rather than writing around zeros or failing every read, and needs
-no check of every file, which can take hours. An error that
-waiting cannot fix ends recovery only once the location answers, because
-Windows reports an absent share with many codes. Recovery resumes a torrent by
-itself once. When the same error returns within a minute while the location
-still answers, the torrent stops, because resuming again at once would loop.
-Once a minute the engine then checks, without starting the torrent, whether
-the cause is gone: the folder answers, the file that failed opens with the
-access the torrent needs, the folder otherwise accepts a new file, and the
-drive has room for what the torrent still lacks. When the check passes, the
-engine continues the torrent once more. The same error within a minute after
-that leaves the torrent to the person's Retry, because a check that passes
-while the work still fails would loop too. An error that no check can judge
-leaves the torrent to the person at once. A location that stops answering in
-between makes the next resume automatic again, and so do the person's Retry,
-Start and Verify. A failed move to the final folder that left the files
-complete where they were follows the same rule: it waits until the check finds
-the final folder usable, runs once more, and then waits for Retry. Pending Verify
+but a file that the torrent downloads and that held downloaded data is gone or
+shorter than that data, as when it was deleted while its share was away, the
+engine reloads the torrent from its resume data without the pieces of those
+files. It downloads only them again, rather than writing around zeros or
+failing every read, and needs no check of every file, which can take hours.
+An error that waiting cannot fix ends recovery only once the location answers,
+because Windows reports an absent share with many codes. Recovery resumes a
+torrent by itself once. When the error returns before the torrent got further
+while the location still answers, the torrent stops and stays paused, because
+resuming again would loop. A torrent gets further when it has more data, when
+a finished torrent uploads more, or when a check reads further; a reloaded
+torrent counts from its reloaded progress. Time does not decide, because
+Windows can take minutes to report an error from a share that hangs. Once a
+minute the engine then checks, without starting the torrent, whether the cause
+is gone: the folder answers, the file that failed opens with the access the
+torrent needs, the folder otherwise accepts a new file, and a download's drive
+has room for the data it still lacks. When the check passes, the engine
+continues the torrent once more. The error returning before the torrent gets
+further after that leaves the torrent to the person's Retry, because a check
+that passes while the work still fails would loop too. An error that no check
+can judge leaves the torrent to the person at once. A location that stops
+answering in between makes the next resume automatic again, and so do the
+person's Retry, Start and Verify, and other work that clears the problem, such
+as names that are chosen at last. A failed move to the final folder that left
+the files complete where they were follows the same rule: it waits until the
+check finds the final folder usable, with the room that the move's copies need
+by the move's own rule, runs once more, and then waits for Retry. Pending Verify
 waits for storage recovery, and for libtorrent's check of resume data, which
 ignores a recheck. A late probe cannot resume a removed torrent or
 apply an old location's answer after a move. Native release callbacks, rather
@@ -422,8 +428,11 @@ Files that verification finds already complete are not marked, because they may
 be the person's own files. A file that has the unfinished suffix is marked, and
 the mark flushed, before its rename to its final name, so a cut never leaves a
 final-named file without its mark. Without the suffix, a file is marked when it
-completes, so a crash in the moment between the two leaves that file
-unmarked. There is no setting: the protection shows nothing
+completes. An Exit that ends while the mark is written records the file in
+`settings.json`, and the next start marks it; a crash in the moment between
+the two leaves that file unmarked. A torrent that waits to be restored, or
+whose metadata has not arrived, keeps that record until it can take the mark.
+There is no setting: the protection shows nothing
 until it is needed, and a person who trusts a file unblocks it in its
 Properties, as for any download. Marking is best effort. A volume, network
 share, or permission that refuses the stream is written to diagnostics and

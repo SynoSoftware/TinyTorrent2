@@ -338,28 +338,72 @@ Windows shutdown and headless operation bypass it. After confirmation, engine Ex
 the window by the same rules as Close: a prompt appears only for actual unfinished
 input, and Cancel in that prompt cancels Exit.
 
-**Owner ruling: Exit ends within 10 seconds.** The person who chooses Exit
-wants the program gone, so Exit never waits for file work. It saves the work
-in progress as [unfinished tasks](files.md#unfinished-tasks) before it waits for
-anything, then cancels that work: a copy parks with its proof, and a
-permanent deletion stops between files. A move of a removed torrent has no
-task that could finish it, so Exit lets it finish its current torrent, and a
-move that is giving its files back finishes too. A deletion to the
-Recycle Bin is one Windows operation, which cannot stop between files, so
-Exit waits for one that runs and starts no other. The moves get 2 seconds to
-stop, and then their proofs are saved. Pending priority edits, the torrents'
-pauses and the final transfer sample get 2 seconds each; one that times out
-is logged and Exit continues, because the resume data still records what each
-torrent has. The desktop host ends the process with exit code 2 when Exit has
-not ended 10 seconds after the person chose it, also when a thread waits on a
-drive that stopped responding; cancelling Exit in the window stops that
+**Owner ruling: Exit ends within 10 seconds.** The interface never hangs, and
+Exit never hangs. Exit has 10 seconds to stop, and that is a hard rule: at 10
+seconds the process is ended, whatever still runs. Within that time Exit stops
+gracefully. When Exit comes in the middle of long work, it saves that work's
+state, and the next start resumes the work in a logical way, or restarts it
+when resuming is impossible. Every case has its own graceful stop and logical
+continuation; no work is exempt. A normal Exit ends in 2 to 3 seconds; the 10
+seconds are only the watchdog.
+
+The person who chooses Exit wants the program gone, so Exit never waits for
+file work. It saves the work in progress as
+[unfinished tasks](files.md#unfinished-tasks) before it waits for anything,
+then stops that work before its next file, so each file is either done or
+untouched and the saved state names what remains:
+
+- A move stops between files, and a copy parks with its proof. The move's
+  task continues it at the next start.
+- A deletion, permanent or to the Recycle Bin, deletes no further file. Its
+  task holds its files, and continuing it deletes the ones that remain.
+- A move that the person abandoned gives its files back, and its marker
+  records that. The next start continues the give-back without asking,
+  because either answer would give the files back.
+- A move whose torrent the person removed during the move cannot continue,
+  because the torrent has left the list. Its task gives the files back to the
+  old folder at the next start, without asking. When the person deleted the
+  files, their deletion runs after the files are back.
+
+Nothing before the final save waits on a drive. The moves, storage reloads and
+additions get 2 seconds to stop, and then the proofs of the copies are saved.
+An addition whose disk work has not ended joins the list without its names
+and stays paused, and the next start chooses them: its names are chosen on the
+drive's worker, its new folder and renames are made on libtorrent's disk
+threads, and a share that does not answer can hold either. A reload that has
+not yet replaced its torrent's handle stops. From the start of a reload, each
+save of the torrent leaves out the pieces of its lost files, so the next start
+downloads only those files again instead of checking every file. Pending
+priority edits, the torrents' pauses and the final transfer sample get 2
+seconds each; one that times out is logged and Exit continues, because the
+resume data still records what each torrent has.
+
+After the final save, the work that still runs gets 1 second to end: a job on
+a drive's worker, such as a rename to a final name, a mark of the web or a
+name choice, a storage job, a give-back, and a copy that has not parked.
+libtorrent's teardown would end the session under such a job, and the
+engine's end would wait for a job that may never return. libtorrent's
+teardown also waits for a stalled check's reads. So when work still runs after
+that second, or such reads remain, the engine logs `teardown_skipped` and ends
+the process with exit code 0 without the teardown. The next start does that
+work again from the saved state, as
+[unfinished tasks](files.md#unfinished-tasks) describe. When a mark of the web
+started or ended after the last save, the engine saves again before it ends,
+so the next start writes each mark that the end cut off, and no other.
+
+The engine reports the end of Exit once the work after the final save has
+ended, or after that second. The desktop host ends the process with exit code
+0 when the teardown has not ended 2 seconds after that report, because
+everything is saved by then. It ends the process with exit code 2 when Exit
+has not ended 10 seconds after the person chose it, also when a thread waits
+on a drive that stopped responding; cancelling Exit in the window stops that
 clock. A normal Exit ends well before that, so the end at 10 seconds firing
-during one is a defect. The end at 10 seconds can also cut the teardown after
-the final save, which loses nothing, because everything is saved by then. A failed save ends Exit at once, as
+during one is a defect. A failed save ends Exit at once with exit code 1, as
 after a crash, because saving again would fail again; the tasks and markers
-saved before it still hold the work. When the final save succeeded but a
-stalled check's reads remain, libtorrent's teardown would wait for them, so the
-engine logs `teardown_skipped` and ends at once as well. Then:
+saved before it still hold the work.
+
+An Exit whose work ends in time takes these steps. One that ends without the
+teardown takes steps 1 to 3, then removes the tray icon and ends the process.
 
 1. Stop accepting new commands and settle accepted state changes and writes.
 2. Pause the session and await transfer/disk quiescence without changing each
@@ -406,7 +450,9 @@ they end by themselves.
 A hung window ends the close wait with a tray notification and cancels that Exit
 attempt, preserving unfinished input. The tray can request Exit again when the
 window responds. Windows logoff/shutdown uses a bounded persistence path
-that does not depend on an interactive confirmation. Abrupt termination may lose
+that does not depend on an interactive confirmation. When it arrives after an
+Exit that already saved, that path does nothing, because the session is gone
+and the process is ending. Abrupt termination may lose
 changes since the last successful checkpoint; do not promise zero loss.
 
 A window crash leaves transfers running and the tray able to reopen it. An engine

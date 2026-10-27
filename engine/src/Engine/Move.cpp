@@ -348,11 +348,6 @@ void Engine::State::PrepareMove(Move& moving)
     });
 }
 
-bool Engine::State::StopsAtExit(Move const& moving) const
-{
-    return IsShuttingDown() && (moving.current >= moving.ids.size() || torrents.contains(moving.ids[moving.current]));
-}
-
 void Engine::State::ContinueMoves()
 {
     // A move that ends leaves the list, and only that move.
@@ -401,7 +396,7 @@ void Engine::State::ContinueMove(Move& moving)
         FailMove(moving, problem->second);
         return;
     }
-    auto files = Relocated(moving, current);
+    auto files = Relocated(moving.destination, current);
     if (auto const& marker = current.facts.marker; marker && marker->copy)
     {
         for (auto& file : files)
@@ -472,7 +467,7 @@ void Engine::State::ContinueMove(Move& moving)
     {
         // Exit cancelled the copy and keeps what it placed for the saved
         // task, or the copy finished as Exit began.
-        if (StopsAtExit(moving))
+        if (IsShuttingDown())
             return;
         if (!placed)
         {
@@ -500,10 +495,10 @@ void Engine::State::ContinueMove(Move& moving)
     });
 }
 
-std::vector<Payload::File> Engine::State::Relocated(Move const& moving, Torrent const& torrent)
+std::vector<Payload::File> Engine::State::Relocated(std::string const& destination, Torrent const& torrent)
 {
     std::filesystem::path from = Wide(torrent.facts.savePath);
-    std::filesystem::path to = Wide(moving.destination);
+    std::filesystem::path to = Wide(destination);
     std::vector<Payload::File> files;
     for (auto const& path : torrent.Paths())
     {
@@ -519,7 +514,7 @@ void Engine::State::FinishMove(lt::torrent_handle const& handle, std::string fai
 {
     auto found = std::find_if(moves.begin(), moves.end(), [this, &handle](Move const& moving)
         { return moving.phase == MovePhase::Moving && Working(moving.ids.at(moving.current)).handle == handle; });
-    if (found == moves.end() || StopsAtExit(*found))
+    if (found == moves.end() || IsShuttingDown())
     {
         return;
     }
@@ -533,7 +528,7 @@ void Engine::State::FinishMove(lt::torrent_handle const& handle, std::string fai
         return handle.status(lt::torrent_handle::query_save_path);
     }, [this, &moving, handle, failure](std::expected<lt::torrent_status, StorageOutcome> status)
     {
-        if (StopsAtExit(moving))
+        if (IsShuttingDown())
             return;
         if (!status || status->moving_storage)
         {
@@ -568,7 +563,8 @@ void Engine::State::ReloadMove(Move& moving)
     auto handle = Working(id).handle;
     auto replacement = std::make_shared<Replacement>();
     moving.phase = MovePhase::Saving;
-    moving.worker->Run([this, handle, replacement, pieces = *moving.pieces, logical = Working(id).Paths(true)]
+    moving.worker->Run([this, handle, replacement, pieces = *moving.pieces, logical = Working(id).Paths(true),
+        stop = exitStop.get_token()]
     {
         auto& params = replacement->params;
         params = handle.get_resume_data(lt::torrent_handle::save_info_dict);
@@ -591,6 +587,11 @@ void Engine::State::ReloadMove(Move& moving)
         }
         params.flags &= ~(lt::torrent_flags::seed_mode | lt::torrent_flags::auto_managed);
         params.flags |= lt::torrent_flags::paused | lt::torrent_flags::no_verify_files;
+        // Exit pauses and saves the torrent through its handle, so once Exit
+        // has started the handle stays, and the saved task continues the move.
+        ReleaseFiles({handle});
+        if (stop.stop_requested())
+            throw std::runtime_error("shutting_down");
         ReloadStorage(handle, *replacement);
         params.flags &= ~lt::torrent_flags::no_verify_files;
     }, [this, &moving, id, handle, replacement](StorageOutcome outcome)
@@ -610,7 +611,8 @@ void Engine::State::ReloadMove(Move& moving)
                 torrent.pendingCheckpoint.reset();
                 torrent.checkpointPhase = CheckpointPhase::Idle;
             }
-            FailMove(moving, Problem::From(outcome, ProblemKind::MoveInterrupted));
+            if (!IsShuttingDown())
+                FailMove(moving, Problem::From(outcome, ProblemKind::MoveInterrupted));
             return;
         }
         auto& torrent = Working(id);
@@ -620,6 +622,10 @@ void Engine::State::ReloadMove(Move& moving)
         // longer answers alerts, so no stale piece map can follow this one.
         WriteResume(id, std::move(replacement->params), [this, &moving](StorageOutcome outcome)
         {
+            // The saved task continues the move: a save of the new folder
+            // during Exit would leave the old files without a task.
+            if (IsShuttingDown())
+                return;
             if (outcome.failure)
             {
                 FailMove(moving, Problem::From(outcome, ProblemKind::MoveInterrupted));
@@ -640,11 +646,11 @@ void Engine::State::SaveMove(Move& moving)
     std::set<std::filesystem::path, decltype(&PathBefore)> later(PathBefore);
     for (auto member = moving.ids.begin() + moving.current + 1; moving.shared && member != moving.ids.end(); ++member)
     {
-        for (auto const& file : Relocated(moving, Working(*member)))
+        for (auto const& file : Relocated(moving.destination, Working(*member)))
             later.insert(file.source);
     }
     std::vector<std::filesystem::path> sources;
-    for (auto const& file : Relocated(moving, Working(id)))
+    for (auto const& file : Relocated(moving.destination, Working(id)))
     {
         if (!later.contains(file.source))
             sources.push_back(file.source);
@@ -678,11 +684,18 @@ void Engine::State::SaveMove(Move& moving)
     if (!changes.Queue([this, &moving, id, relocate, settle]
     {
         // A removed torrent has left the document. Its new folder decides
-        // only where its removal deletes its files.
+        // only where its removal deletes its files. The save before the
+        // sources go replaces the saved task that gives its files back with
+        // the one that deletes the sources.
         if (!torrents.contains(id))
         {
             relocate(id, Working(id).facts);
-            settle();
+            changes.Commit([document = Saved()] { return document.ToJson(); }, [this, id, settle](Outcome outcome)
+            {
+                if (outcome.error)
+                    log.Write("move", id, outcome.detail);
+                settle();
+            });
             return;
         }
         CommitFacts({id}, relocate, [this, &moving, settle](Outcome outcome, auto const&)
@@ -708,18 +721,15 @@ void Engine::State::SaveMove(Move& moving)
 void Engine::State::CleanMove(Move& moving, std::vector<std::filesystem::path> sources, std::filesystem::path origin)
 {
     moving.phase = MovePhase::Cleaning;
-    if (StopsAtExit(moving))
+    if (IsShuttingDown())
         return;
-    // A removed member's old files have no task, so Exit lets their deletion
-    // finish.
-    auto stop = torrents.contains(moving.ids.at(moving.current)) ? exitStop.get_token() : std::stop_token();
-    moving.worker->Run([sources = std::move(sources), origin = std::move(origin), stop]
+    moving.worker->Run([sources = std::move(sources), origin = std::move(origin), stop = exitStop.get_token()]
     {
         Erase(sources, DeletionMode::Permanent, {origin}, stop);
     }, [this, &moving](StorageOutcome outcome)
     {
         // Exit stopped the deletion, and the saved task finishes it.
-        if (StopsAtExit(moving))
+        if (IsShuttingDown())
             return;
         moving.cleaning.reset();
         if (outcome.failure)

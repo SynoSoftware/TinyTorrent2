@@ -530,10 +530,12 @@ public sealed partial class MainWindow
                     text.Get("notifications", "stopped"),
                     text.Get("window", "disconnected"),
                     InfoBarSeverity.Error,
-                    command,
-                    Model.RestartText,
-                    Syno.Lucide.RotateCcw,
-                    string.Empty
+                    new(
+                        command,
+                        Model.RestartText,
+                        Syno.Lucide.RotateCcw,
+                        string.Empty
+                    )
                 )
             ),
             (
@@ -542,10 +544,12 @@ public sealed partial class MainWindow
                     text.Get("notifications", "storage"),
                     text.Get("window", "storage_failed"),
                     InfoBarSeverity.Error,
-                    command,
-                    text.Get("commands", "open_folder"),
-                    Syno.Lucide.FolderOpen,
-                    string.Empty
+                    new(
+                        command,
+                        text.Get("commands", "open_folder"),
+                        Syno.Lucide.FolderOpen,
+                        string.Empty
+                    )
                 )
             ),
             (
@@ -554,10 +558,12 @@ public sealed partial class MainWindow
                     text.Get("notifications", "subtitles_unavailable"),
                     text.Format("window", "database_in_use", Database.FileName),
                     InfoBarSeverity.Error,
-                    command,
-                    text.Get("inspector", "retry"),
-                    Syno.Lucide.RotateCcw,
-                    string.Empty,
+                    new(
+                        command,
+                        text.Get("inspector", "retry"),
+                        Syno.Lucide.RotateCcw,
+                        string.Empty
+                    ),
                     new(
                         Model.OpenDataFolder,
                         text.Get("commands", "open_folder"),
@@ -572,10 +578,12 @@ public sealed partial class MainWindow
                     text.Get("notifications", "subtitles_paused"),
                     text.Get("subtitles", "failure_authentication"),
                     InfoBarSeverity.Warning,
-                    command,
-                    text.Get("notifications", "settings"),
-                    Syno.Lucide.Settings,
-                    string.Empty
+                    new(
+                        command,
+                        text.Get("notifications", "settings"),
+                        Syno.Lucide.Settings,
+                        string.Empty
+                    )
                 )
             ),
             (
@@ -584,10 +592,12 @@ public sealed partial class MainWindow
                     text.Get("notifications", "language"),
                     text.Get("errors", "language_unsaved"),
                     InfoBarSeverity.Warning,
-                    command,
-                    text.Get("notifications", "settings"),
-                    Syno.Lucide.Settings,
-                    string.Empty
+                    new(
+                        command,
+                        text.Get("notifications", "settings"),
+                        Syno.Lucide.Settings,
+                        string.Empty
+                    )
                 )
             ),
         ];
@@ -2767,10 +2777,12 @@ public sealed partial class MainWindow
                             Model.Text.Get("notifications", "stopped"),
                             Model.Text.Get("window", "disconnected"),
                             InfoBarSeverity.Error,
-                            Model.Restart,
-                            Model.RestartText,
-                            Syno.Lucide.RotateCcw,
-                            Model.Text.Get("connection", "restart_tip")
+                            new(
+                                Model.Restart,
+                                Model.RestartText,
+                                Syno.Lucide.RotateCcw,
+                                Model.Text.Get("connection", "restart_tip")
+                            )
                         );
                         var workspace = new
                         {

@@ -47,6 +47,10 @@ constexpr ULONGLONG sessionEndTimeout = 4000;
 // How long Exit may take before the watchdog ends the process. A normal Exit
 // ends well within it.
 constexpr auto exitLimit = std::chrono::seconds(10);
+// How long libtorrent's teardown and the engine's end may take after the
+// final save. The teardown waits up to a second for trackers; one that takes
+// longer waits on a drive that stopped responding.
+constexpr auto teardownLimit = std::chrono::seconds(2);
 
 // Pipe requests that wait for this thread; more are refused as overloaded.
 constexpr std::size_t requestLimit = 128;
@@ -75,6 +79,23 @@ LRESULT CALLBACK Broadcast(HWND window, UINT message, WPARAM first, LPARAM secon
         PostMessageW(owner, message, first, second);
     }
     return DefWindowProcW(window, message, first, second);
+}
+
+// Ends the process with `code` at `deadline`, unless the thread is stopped
+// first, as replacing or releasing it does.
+std::jthread Watchdog(std::chrono::steady_clock::time_point deadline, UINT code)
+{
+    return std::jthread([deadline, code](std::stop_token stop)
+    {
+        std::mutex gate;
+        std::condition_variable_any ended;
+        std::unique_lock lock(gate);
+        ended.wait_until(lock, stop, deadline, [] { return false; });
+        if (!stop.stop_requested())
+        {
+            TerminateProcess(GetCurrentProcess(), code);
+        }
+    });
 }
 }
 
@@ -508,15 +529,8 @@ void Application::StartWatchdog()
 {
     if (watchdog_.joinable())
         return;
-    watchdog_ = std::jthread([](std::stop_token stop)
-    {
-        std::mutex gate;
-        std::condition_variable_any ended;
-        std::unique_lock lock(gate);
-        ended.wait_for(lock, stop, exitLimit, [] { return false; });
-        if (!stop.stop_requested())
-            TerminateProcess(GetCurrentProcess(), 2);
-    });
+    exitDeadline_ = std::chrono::steady_clock::now() + exitLimit;
+    watchdog_ = Watchdog(exitDeadline_, 2);
 }
 
 void Application::Shutdown()
@@ -524,16 +538,23 @@ void Application::Shutdown()
     StartWatchdog();
     engine_->Shutdown([this](ShutdownEnd end)
     {
-        // A save failed, or the engine's teardown would wait on a drive that
-        // stopped responding. The saved tasks hold the work that remains.
-        if (end == ShutdownEnd::Abrupt)
+        // A save failed, or work that may never return still runs. The saved
+        // document holds the work that remains.
+        if (end != ShutdownEnd::Saved)
         {
             tray_->Remove();
-            TerminateProcess(GetCurrentProcess(), 1);
+            TerminateProcess(GetCurrentProcess(), end == ShutdownEnd::Cut ? 0 : 1);
         }
+        // Everything is saved, so a teardown that waits on a drive that
+        // stopped responding ends with the process.
+        auto teardownEnd = std::chrono::steady_clock::now() + teardownLimit;
+        if (teardownEnd < exitDeadline_)
+        {
+            watchdog_ = Watchdog(teardownEnd, 0);
+        }
+        endSaved_ = true;
         if (exit_ == ExitPhase::SessionEnding)
         {
-            endSaved_ = true;
             return;
         }
         toasts_->Close();
@@ -546,6 +567,11 @@ void Application::Shutdown()
 // allows, and ends the process when the save does not finish in time.
 void Application::EndSession()
 {
+    // An Exit that already saved everything ends the process by itself.
+    if (endSaved_)
+    {
+        return;
+    }
     exit_ = ExitPhase::SessionEnding;
     window_->End();
     Refresh();

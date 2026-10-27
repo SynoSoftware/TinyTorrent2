@@ -28,6 +28,8 @@ struct File
     // name a flush proved on disk; 0 when nothing is proved.
     std::uint64_t proven = 0;
     bool existing = false;
+
+    bool operator==(File const&) const = default;
 };
 
 struct Pieces
@@ -118,6 +120,10 @@ struct Failure
 // the unfinished copy where they are and reports Split. It blocks until every
 // file is placed, restored or kept, or forever for a parked copy.
 std::expected<void, Failure> Move(std::vector<File> const& files, Progress& progress);
+
+// Whether Move would find the space its copies need: a file on another volume
+// than its destination is copied. Blocks on the drives.
+bool HasRoom(std::vector<File> const& files);
 
 // Files follow the metadata's non-padding file order. Existing destinations
 // are verified until the first failed piece; thereafter only verified source

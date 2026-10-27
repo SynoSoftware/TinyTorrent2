@@ -6,6 +6,7 @@
 #include <libtorrent/settings_pack.hpp>
 #include <libtorrent/fingerprint.hpp>
 #include <algorithm>
+#include <limits>
 #include <stdexcept>
 #include <utility>
 
@@ -209,6 +210,11 @@ void Engine::State::Start(Document const& saved, Resumes& resumes)
             std::fill(params.file_priorities.begin(), params.file_priorities.end(), lt::dont_download);
         Restore(id, facts, std::move(params));
     }
+    waitingMarks = saved.unmarked;
+    for (auto& [id, torrent] : torrents)
+    {
+        MarkWaiting(torrent);
+    }
     ContinueNames();
     queueOrder = saved.queueOrder;
     ApplyQueue();
@@ -269,6 +275,7 @@ void Engine::State::RestorePending()
         }
         Restore(id, torrent.facts, std::move(*torrent.restore));
         torrent.ApplyIntent();
+        MarkWaiting(torrent);
         queuePending = true;
     }
 }
@@ -324,9 +331,19 @@ Json Engine::State::Document::ToJson() const
         entry["torrent_id"] = id;
         list.push_back(std::move(entry));
     }
+    Json marks = Json::object();
+    for (auto const& [id, files] : unmarked)
+    {
+        Json indices = Json::array();
+        for (auto file : files)
+        {
+            indices.push_back(static_cast<int>(file));
+        }
+        marks[id] = std::move(indices);
+    }
     return {{"format", format}, {"settings", settings.ToFile()}, {"torrents", std::move(list)},
         {"queue_order", queueOrder}, {"watched_sources", watchedSources}, {"transfers", transfers.ToJson()},
-        {"tasks", SavedTasks()}, {"tasks_continued", tasksContinued}};
+        {"tasks", SavedTasks()}, {"tasks_continued", tasksContinued}, {"unmarked_files", std::move(marks)}};
 }
 
 // Refuses a document of another format, which a save must not rewrite, or
@@ -381,6 +398,26 @@ void Engine::State::Document::Read(Json const& saved)
                 tasks.push_back(std::move(*task));
         }
     }
+    if (auto found = saved.find("unmarked_files"); found != saved.end() && found->is_object())
+    {
+        for (auto const& [id, files] : found->items())
+        {
+            if (!torrents.contains(id) || !files.is_array())
+            {
+                continue;
+            }
+            // A damaged index is dropped here, and one beyond the torrent's
+            // files when its metadata is known.
+            for (auto const& file : files)
+            {
+                if (file.is_number_integer() && file.get<std::int64_t>() >= 0 &&
+                    file.get<std::int64_t>() <= (std::numeric_limits<int>::max)())
+                {
+                    unmarked[id].insert(lt::file_index_t(file.get<int>()));
+                }
+            }
+        }
+    }
 }
 
 // Choices change only after their commit succeeds; cumulative transfers also
@@ -395,6 +432,7 @@ Engine::State::Document Engine::State::Saved() const
     {
         document.torrents.emplace(id, torrent.facts);
     }
+    document.unmarked = UnwrittenMarks();
     document.queueOrder = queueOrder;
     std::erase_if(document.queueOrder, [&document](auto const& id) { return !document.torrents.contains(id); });
     document.tasks = Tasks();

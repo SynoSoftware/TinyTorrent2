@@ -228,10 +228,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                         : reason.Length == 0 ? stopped
                         : Text.Format("errors", "detail", stopped, reason),
                     InfoBarSeverity.Error,
-                    CanRestart ? Restart : null,
-                    RestartText,
-                    Syno.Lucide.RotateCcw,
-                    Text.Get("connection", "restart_tip")
+                    CanRestart
+                        ? new StatusAction(Restart, RestartText, Syno.Lucide.RotateCcw, Text.Get("connection", "restart_tip"))
+                        : null
                 );
             }
             if (_storageFailed)
@@ -246,10 +245,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                             _startupError
                         ),
                     InfoBarSeverity.Error,
-                    OpenDataFolder,
-                    Text.Get("commands", "open_folder"),
-                    Syno.Lucide.FolderOpen,
-                    Text.Get("notifications", "storage_tip")
+                    new(
+                        OpenDataFolder,
+                        Text.Get("commands", "open_folder"),
+                        Syno.Lucide.FolderOpen,
+                        Text.Get("notifications", "storage_tip")
+                    )
                 );
             if (_loading)
                 return null;
@@ -276,27 +277,30 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                     // A folder that refused a file is fixed outside the app,
                     // so its action tries the work again.
                     failure == SubtitleFailure.Save
-                        ? RetrySubtitleWork
-                        : ShowSubtitleSettings,
-                    Text.Get(
-                        failure == SubtitleFailure.Save ? "inspector" : "notifications",
-                        failure == SubtitleFailure.Save ? "retry" : "settings"
-                    ),
-                    failure == SubtitleFailure.Save ? Syno.Lucide.RotateCcw : Syno.Lucide.Settings,
-                    Text.Get(
-                        "notifications",
-                        failure == SubtitleFailure.Save ? "subtitles_retry_tip" : "subtitles_tip"
-                    )
+                        ? new StatusAction(
+                            RetrySubtitleWork,
+                            Text.Get("inspector", "retry"),
+                            Syno.Lucide.RotateCcw,
+                            Text.Get("notifications", "subtitles_retry_tip")
+                        )
+                        : new StatusAction(
+                            ShowSubtitleSettings,
+                            Text.Get("notifications", "settings"),
+                            Syno.Lucide.Settings,
+                            Text.Get("notifications", "subtitles_tip")
+                        )
                 );
             if (!_languageSaved)
                 return new(
                     Text.Get("notifications", "language"),
                     Text.Get("errors", "language_unsaved"),
                     InfoBarSeverity.Warning,
-                    ShowSettings,
-                    Text.Get("notifications", "settings"),
-                    Syno.Lucide.Settings,
-                    Text.Get("notifications", "language_tip")
+                    new(
+                        ShowSettings,
+                        Text.Get("notifications", "settings"),
+                        Syno.Lucide.Settings,
+                        Text.Get("notifications", "language_tip")
+                    )
                 );
             return null;
         }
@@ -1105,30 +1109,16 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     // Runs again the torrents among these that the engine could not recover
     // by itself: a stopped torrent under its own Start, Stop or Force choice,
     // or a failed move.
-    internal async Task SendRetry(IEnumerable<Torrent> torrents)
-    {
-        var torrentIds = torrents
-            .Where(torrent => torrent.CanRetry)
-            .Select(torrent => torrent.TorrentId)
-            .ToArray();
-        if (!CanEdit || torrentIds.Length == 0)
-            return;
-        try
-        {
-            await _client.Send("retry", new { torrent_ids = torrentIds }, Requester.Person);
-            Notifications.AnnounceAccepted("commands", "retry");
-        }
-        catch (Exception error)
-        {
-            Notifications.Report(error);
-        }
-    }
+    internal Task SendRetry(IEnumerable<Torrent> torrents) =>
+        Act("retry", [.. torrents.Where(torrent => torrent.CanRetry)]);
 
-    private async Task ActOnSelection(string command)
+    private Task ActOnSelection(string command) => Act(command, [.. _selected]);
+
+    // Sends the person's command for these torrents.
+    private async Task Act(string command, Torrent[] torrents)
     {
-        if (!CanEdit || _selected.Length == 0)
+        if (!CanEdit || torrents.Length == 0)
             return;
-        var torrents = _selected.ToArray();
         var torrentIds = torrents.Select(row => row.TorrentId).ToArray();
         try
         {
