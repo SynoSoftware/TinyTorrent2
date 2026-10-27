@@ -121,9 +121,25 @@ struct Failure
 // file is placed, restored or kept, or forever for a parked copy.
 std::expected<void, Failure> Move(std::vector<File> const& files, Progress& progress);
 
-// Whether Move would find the space its copies need: a file on another volume
-// than its destination is copied. Blocks on the drives.
-bool HasRoom(std::vector<File> const& files);
+// A file that a move would place, as its source's drive shows it.
+struct Source
+{
+    File file;
+    std::uint64_t size = 0;
+    // The bytes the file occupies, which a sparse copy takes.
+    std::uint64_t allocated = 0;
+    bool sparse = false;
+    // The source volume's name, or its root for a network volume.
+    std::wstring volume;
+};
+
+// The sources of `files` that exist. Blocks on the source drives only.
+std::vector<Source> Sources(std::vector<File> const& files);
+
+// Whether Move would find the space its copies need: a source on another
+// volume than its destination is copied. Blocks on the destination drives
+// only.
+bool HasRoom(std::vector<Source> const& sources);
 
 // Files follow the metadata's non-padding file order. Existing destinations
 // are verified until the first failed piece; thereafter only verified source

@@ -295,6 +295,13 @@ execute.
 If physical names are still being observed, the reply describes the known
 scope and `kept_files` is null. Unknown names cannot authorize payload deletion.
 
+`retry`, `resume`, `force` and `verify` act on every listed torrent they can.
+Retry, Start and Force refuse a torrent while another listed torrent still
+holds one of its alias identities, and Verify refuses a torrent without
+metadata. The reply then is the refusal's code, `alias_conflict` or
+`metadata_unavailable`, with the refused torrents' names in `detail`; the
+other torrents were acted on.
+
 No command is refused because files are busy, following
 [the busy-files ruling](engine/files.md#removal-and-moves). A command on torrents
 whose own files are being prepared, renamed or moved replies once its choice
@@ -574,7 +581,9 @@ Torrent rows contain torrent_id, name,
 size (wanted bytes), completed (wanted bytes present), progress (0..1 for the
 current task, including verification), status (stable code), paused, download_rate and
 upload_rate (bytes/second), save_path, error (stable code), diagnostic detail,
-retry (true while the torrent waits for the person's Retry),
+retry (true from the first stop: while the torrent waits for the person's
+Retry, also while the engine's minute check can still continue it, and false
+while Retry would be refused),
 added (Unix seconds), seed_count and peer_count (connected; peers include seeds),
 swarm_seed_count and swarm_peer_count (tracker scrape totals, else known peers),
 downloaded/uploaded (bytes), queue

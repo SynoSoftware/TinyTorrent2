@@ -365,22 +365,24 @@ untouched and the saved state names what remains:
   old folder at the next start, without asking. When the person deleted the
   files, their deletion runs after the files are back.
 
-Nothing before the final save waits on a drive. The moves, storage reloads and
-additions get 2 seconds to stop, and then the proofs of the copies are saved.
-An addition whose disk work has not ended joins the list without its names
-and stays paused, and the next start chooses them: its names are chosen on the
-drive's worker, its new folder and renames are made on libtorrent's disk
-threads, and a share that does not answer can hold either. A reload that has
-not yet replaced its torrent's handle stops. From the start of a reload, each
-save of the torrent leaves out the pieces of its lost files, so the next start
-downloads only those files again instead of checking every file. Pending
-priority edits, the torrents' pauses and the final transfer sample get 2
-seconds each; one that times out is logged and Exit continues, because the
-resume data still records what each torrent has.
+Nothing before the final save waits on a drive. The moves and additions get 2
+seconds to stop, and then the proofs of the copies are saved. An addition
+whose disk work has not ended joins the list without its names and stays
+paused, and the next start chooses them: its names are chosen on the drive's
+worker, its new folder and renames are made on libtorrent's disk threads, and
+a share that does not answer can hold either. A reload that has not yet
+replaced its torrent's handle stops: once Exit starts, its end leaves the old
+handle in place, which Exit pauses and saves. From the start of a reload until
+a reload succeeds, each save of the torrent leaves out the pieces of its lost
+files, so the next start downloads only those files again instead of checking
+every file. Pending priority edits, the torrents' pauses and the final
+transfer sample get 2 seconds each; one that times out is logged and Exit
+continues, because the resume data still records what each torrent has.
 
 After the final save, the work that still runs gets 1 second to end: a job on
 a drive's worker, such as a rename to a final name, a mark of the web or a
-name choice, a storage job, a give-back, and a copy that has not parked.
+name choice, a storage job, a give-back, a copy that has not parked, and the
+probe that opens a drive root or share once a minute.
 libtorrent's teardown would end the session under such a job, and the
 engine's end would wait for a job that may never return. libtorrent's
 teardown also waits for a stalled check's reads. So when work still runs after

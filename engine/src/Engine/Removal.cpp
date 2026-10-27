@@ -198,7 +198,8 @@ void Engine::State::Extract(std::string const& id, std::optional<DeletionMode> m
         FailReading(Failure(ErrorCode::TorrentRemoved));
     }
     torrent.facts.intent = Intent::Paused;
-    torrent.ApplyIntent();
+    // A release or reload that uses its files still ends first.
+    Answer(torrent, FailureAnswer::Remove);
     handles.erase(torrent.handle);
     seedQueries.erase(torrent.handle);
     removed.emplace(id, Removal{std::move(torrents.extract(id).mapped()), mode});

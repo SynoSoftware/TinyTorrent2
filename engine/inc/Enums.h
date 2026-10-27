@@ -265,32 +265,75 @@ enum class NamePhase
     Ready
 };
 
-enum class DiskPhase
-{
-    Releasing,
-    Waiting,
-    Probing,
-    Reloading
-};
-
-// How the engine continues a torrent that its files stopped: storage errors
-// and a failed move to the final folder. Each automatic continuation happens
-// at most once per cause, so a cause that persists never loops.
+// How many automatic continues a failure has used: a storage failure or a
+// failed move to the final folder. Each happens at most once per failure, so
+// a cause that persists never loops.
 enum class StorageRetry
 {
-    // The next failure gets an automatic retry once the location answers.
+    // The engine has not continued the torrent. Its first continue comes at
+    // once, after the location answers.
     Automatic,
-    // The engine continued the torrent; the same failure before the torrent
-    // gets further stops it.
+    // The engine continued the torrent at once. If the failure returns before
+    // the torrent gets further, the torrent stops.
     Retried,
-    // Stopped. Once a minute the engine checks, without starting it, whether
-    // the cause is gone, and then continues it.
+    // The minute check continued the torrent. If the failure returns before
+    // the torrent gets further, only the person continues it.
+    Resumed
+};
+
+// Where a storage failure stands.
+enum class FailureStage
+{
+    // The torrent is held while the engine releases its files and probes
+    // its location each second.
+    Recovering,
+    // The torrent is held, and once a minute the engine checks, without
+    // starting it, whether the cause is gone.
     Stopped,
-    // That check continued the torrent; the same failure before the torrent
-    // gets further leaves it to the person.
-    Resumed,
-    // Only the person's Retry continues the torrent.
-    Person
+    // Only the person's answer continues the torrent.
+    Person,
+    // The engine continued the torrent, which runs until it gets further or
+    // the failure returns.
+    Continued
+};
+
+// A job of a torrent's storage control.
+enum class JobKind
+{
+    // libtorrent's disk fence, which ends the torrent's disk work.
+    Release,
+    // Whether the location answers, and which files lost their data.
+    Probe,
+    // The minute check of a stopped torrent's own folder.
+    Check,
+    // The minute check of the final folder of a failed move.
+    FinalCheck,
+    // A new handle from the resume data, without the pieces of lost files.
+    Reload
+};
+
+// The person's command that answers a torrent's failures.
+enum class FailureAnswer
+{
+    // Retry, Start or Force: every failure ends, and so do an alias conflict
+    // and an add that failed.
+    Retry,
+    // Every failure ends, and the check reads the files again.
+    Verify,
+    // Only the failed move to the final folder ends.
+    Stop,
+    // A move to another folder replaces the failed move.
+    Move,
+    // The removal ends every failure.
+    Remove
+};
+
+// Who asks for a command: the person, whose command answers the torrent's
+// failures, or the engine's own policy, which answers none.
+enum class Requester
+{
+    Person,
+    Engine
 };
 
 // A finished download waits for libtorrent to write its data to disk, then

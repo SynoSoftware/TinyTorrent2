@@ -4,6 +4,7 @@
 #include <libtorrent/error_code.hpp>
 #include <condition_variable>
 #include <deque>
+#include <exception>
 #include <expected>
 #include <filesystem>
 #include <functional>
@@ -53,7 +54,9 @@ public:
     }
     void Write(std::filesystem::path path, std::function<std::string()> encode,
         std::function<void(StorageOutcome)> completion);
-    void Drain();
+    // Runs the completions of finished work. A completion that throws goes to
+    // `failed`, and the others still run.
+    void Drain(std::function<void(std::exception const&)> const& failed);
     bool IsIdle() const;
     void Abandon();
     // Cancels the Windows call that the job in progress waits in, so a job

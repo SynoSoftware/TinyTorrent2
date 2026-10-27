@@ -84,6 +84,9 @@ struct Volume
     // The root, or the folder itself when Windows names no root; free-space
     // queries accept either.
     std::wstring root;
+    // The volume's name, which every mount point of a local volume shares;
+    // the root for a network volume, which has no name.
+    std::wstring name;
     bool remote = false;
     // Without an answer the volume counts as a hard disk, which only keeps
     // its copies sequential.
@@ -111,9 +114,11 @@ Volume Inspect(std::filesystem::path const& folder)
     if (!GetVolumePathNameW(path.c_str(), root.data(), static_cast<DWORD>(root.size())))
     {
         volume.root = path;
+        volume.name = volume.root;
         return volume;
     }
     volume.root = Plain(root.c_str());
+    volume.name = volume.root;
     volume.remote = GetDriveTypeW(volume.root.c_str()) == DRIVE_REMOTE;
     DWORD features = 0;
     if (GetVolumeInformationW(volume.root.c_str(), nullptr, 0, nullptr, nullptr, &features, nullptr, 0))
@@ -121,6 +126,7 @@ Volume Inspect(std::filesystem::path const& folder)
     wchar_t name[MAX_PATH]{};
     if (volume.remote || !GetVolumeNameForVolumeMountPointW(volume.root.c_str(), name, MAX_PATH))
         return volume;
+    volume.name = name;
     // A volume opens by its name without the trailing backslash.
     std::wstring device(name);
     device.pop_back();
@@ -153,14 +159,15 @@ bool KeepsSparse(bool sparse, Volume const& to)
     return sparse && to.sparse && Build() >= sparseBuild;
 }
 
-// The free space that copying `file` takes on its destination's volume. An
+// The free space that a copy of `bytes` takes at `destination`: the bytes the
+// source occupies when the copy stays sparse, otherwise its size. An
 // unfinished torrent's sparse file takes its full size where it cannot stay
 // sparse, which can be far more than it holds. An unfinished copy already
 // holds part of it.
-std::uint64_t CopySpace(File const& file, std::uint64_t size, bool keepsSparse)
+std::uint64_t CopySpace(std::filesystem::path const& destination, std::uint64_t bytes)
 {
-    auto partial = Extended(Partial(file.destination));
-    auto space = keepsSparse ? Allocated(file.source, size) : size;
+    auto partial = Extended(Partial(destination));
+    auto space = bytes;
     if (GetFileAttributesW(partial.c_str()) != INVALID_FILE_ATTRIBUTES)
         space -= std::min(space, Allocated(partial, 0));
     return space;
@@ -549,7 +556,7 @@ std::optional<std::string> Placement::Place(std::vector<File> const& files)
             flags |= COPY_FILE_NO_BUFFERING;
         if (keepsSparse)
             flags |= COPY_FILE_ENABLE_SPARSE_COPY;
-        needed[to.root] += CopySpace(*file, size, keepsSparse);
+        needed[to.root] += CopySpace(file->destination, keepsSparse ? Allocated(file->source, size) : size);
         std::optional<std::vector<FILE_ALLOCATED_RANGE_BUFFER>> data;
         if (keepsSparse)
             data = DataRanges(file->source, size);
@@ -817,21 +824,43 @@ MoveFailure Placement::Undo()
 }
 }
 
-bool HasRoom(std::vector<File> const& files)
+std::vector<Source> Sources(std::vector<File> const& files)
 {
-    std::map<std::wstring, std::uint64_t> needed;
+    std::vector<Source> sources;
+    std::map<std::filesystem::path, std::wstring> volumes;
     for (auto const& file : files)
     {
         WIN32_FILE_ATTRIBUTE_DATA data;
         if (!GetFileAttributesExW(Extended(file.source).c_str(), GetFileExInfoStandard, &data))
             continue;
-        auto from = Inspect(file.source.parent_path());
-        auto to = Inspect(file.destination.parent_path());
-        if (_wcsicmp(from.root.c_str(), to.root.c_str()) == 0)
-            continue;
+        auto folder = file.source.parent_path();
+        auto volume = volumes.find(folder);
+        if (volume == volumes.end())
+            volume = volumes.emplace(folder, Inspect(folder).name).first;
         auto size = (std::uint64_t(data.nFileSizeHigh) << 32) | data.nFileSizeLow;
         bool sparse = data.dwFileAttributes & FILE_ATTRIBUTE_SPARSE_FILE;
-        needed[to.root] += CopySpace(file, size, KeepsSparse(sparse, to));
+        sources.push_back({file, size, sparse ? Allocated(file.source, size) : size, sparse, volume->second});
+    }
+    return sources;
+}
+
+bool HasRoom(std::vector<Source> const& sources)
+{
+    std::map<std::wstring, std::uint64_t> needed;
+    std::map<std::filesystem::path, Volume> volumes;
+    for (auto const& source : sources)
+    {
+        auto folder = source.file.destination.parent_path();
+        auto to = volumes.find(folder);
+        if (to == volumes.end())
+            to = volumes.emplace(folder, Inspect(folder)).first;
+        // Move renames a file within its volume, whichever mount point
+        // names it, and copies it only to another volume.
+        if (_wcsicmp(source.volume.c_str(), to->second.name.c_str()) == 0)
+            continue;
+        bool keepsSparse = KeepsSparse(source.sparse, to->second);
+        needed[to->second.root] +=
+            CopySpace(source.file.destination, keepsSparse ? source.allocated : source.size);
     }
     return !Unfitting(needed);
 }

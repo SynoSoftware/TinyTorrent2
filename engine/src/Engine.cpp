@@ -231,7 +231,7 @@ void Engine::RetryAll(std::function<void(Outcome)> completion)
     std::vector<std::string> ids;
     for (auto const& [id, torrent] : state_->torrents)
     {
-        if (torrent.NeedsPerson())
+        if (state_->OffersRetry(torrent))
             ids.push_back(id);
     }
     state_->Retry(ids, std::move(completion));

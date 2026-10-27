@@ -71,16 +71,23 @@ window:
   UNC share, even across different folders and bursts. It gives the cause,
   root and affected count, without listing torrent names or offering Show
   torrent, and Open folder targets the root; each affected row retains its own
-  reason. Missing or invalid paths, known drive/share disconnections and full
-  disks use typed native error codes. Healthy seeds on a full drive remain
-  unaffected. Both notices appear only once their condition has lasted two
-  minutes, because most absent shares, such as a NAS waking up or Wi-Fi
-  reconnecting, return sooner and the engine continues their torrents by
-  itself. A gap shorter than two minutes does not restart that wait, so a
-  problem that returns right after Retry shows again at once. The notices
-  follow the current state: counts and reasons update quietly, and a notice
-  disappears without a success toast as soon as its torrents continue. A later
-  failure can then notify again.
+  reason. A share that hangs gets the same notice, whatever work waits on it:
+  the engine opens each root that holds a running torrent once a minute, on a
+  thread of its own, and a root whose open has not returned after two minutes
+  does not answer, so the notice counts the running torrents under it at once.
+  A popup that shows a notice whose count changes also changes its buttons and
+  what selecting it does. Missing or invalid paths, known drive/share
+  disconnections and full disks use typed native error codes. Healthy seeds on
+  a full drive remain unaffected. Both notices appear only once their
+  condition has lasted two minutes, because most absent shares, such as a NAS
+  waking up or Wi-Fi reconnecting, return sooner and the engine continues their
+  torrents by itself. A gap shorter than two minutes does not restart that
+  wait, so a problem that returns right after Retry shows again at once. The
+  notices follow the current state: counts and reasons update quietly, and a
+  notice disappears without a success toast as soon as its torrents continue.
+  A later failure can then notify again. A storage problem that hides another
+  problem of the torrent for a while, such as Move interrupted, does not make
+  that problem notify a second time when it ends.
   A direct addition that could not be
   added, with the reason, because the person believes it is downloading; and a
   file deletion that fails, fully or in part, which is also written to the log,

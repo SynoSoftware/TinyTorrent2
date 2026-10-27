@@ -232,12 +232,21 @@ void Engine::State::Restore(std::string const& id, Facts facts, lt::add_torrent_
 {
     lt::error_code error;
     auto handle = session->add_torrent(params, error);
-    if (error == lt::errors::duplicate_torrent)
+    if (error)
     {
         auto hashes = params.ti ? params.ti->info_hashes() : params.info_hashes;
-        auto& torrent = torrents.insert_or_assign(id, Torrent{id, {}, std::move(facts)}).first->second;
+        auto& torrent = torrents.try_emplace(id, Torrent{id}).first->second;
+        torrent.facts = std::move(facts);
         torrent.restore = std::move(params);
         torrent.status.info_hashes = hashes;
+        if (error != lt::errors::duplicate_torrent)
+        {
+            // The torrent keeps its parameters and shows why libtorrent did
+            // not add it, and the person's Retry adds it again.
+            torrent.restoreError = Problem::From(error);
+            log.Write("startup", id, torrent.restoreError->Code());
+            return;
+        }
         torrent.unsaved = false;
         for (auto& [otherId, other] : torrents)
         {
@@ -249,10 +258,6 @@ void Engine::State::Restore(std::string const& id, Facts facts, lt::add_torrent_
         }
         log.Write("startup", id, "alias_conflict");
         return;
-    }
-    if (error)
-    {
-        throw lt::system_error(error);
     }
     auto& torrent = Install(id, handle, std::move(facts), params);
     if (torrent.facts.trackers)
@@ -269,7 +274,8 @@ void Engine::State::RestorePending()
     }
     for (auto& [id, torrent] : torrents)
     {
-        if (!torrent.restore || Removing(torrent.status.info_hashes) || FindDuplicate(torrent.status.info_hashes, id))
+        if (!torrent.restore || torrent.restoreError || Removing(torrent.status.info_hashes) ||
+            FindDuplicate(torrent.status.info_hashes, id))
         {
             continue;
         }
@@ -584,7 +590,7 @@ Json Engine::State::Snapshot()
         auto wait = status == Status::WaitingCheck || status == Status::WaitingMove ?
             WaitOf(torrent, status, inUse) : DriveWait{};
         rows.push_back(torrent.Row(paused.has_value(), queued == queue.end() ? -1 : queued->second,
-            MoveProgress(torrent), wait));
+            MoveProgress(torrent), wait, OffersRetry(torrent)));
     }
     auto current = settings.ToJson();
     current["language"] = language;
@@ -669,7 +675,19 @@ Torrent& Engine::State::Install(std::string const& id, lt::torrent_handle handle
     lt::add_torrent_params const& params)
 {
     ApplyPolicy(handle);
-    auto& torrent = torrents.insert_or_assign(id, Torrent{id, handle, std::move(facts)}).first->second;
+    // A torrent that waited to be added again keeps the engine's own state
+    // about it, such as its storage control, its speed history and its last
+    // move's failure. What described the add that failed goes: the add
+    // succeeded, so no alias identity conflicts with it.
+    auto& torrent = torrents.try_emplace(id, Torrent{id}).first->second;
+    torrent.handle = handle;
+    torrent.facts = std::move(facts);
+    torrent.restore.reset();
+    torrent.restoreError.reset();
+    torrent.conflict.clear();
+    torrent.status = {};
+    torrent.diskError.clear();
+    torrent.unsaved = true;
     torrent.history.Configure(settings.recentInterval, settings.historyInterval);
     torrent.comment = params.comment;
     torrent.creator = params.created_by;
@@ -799,6 +817,8 @@ Engine::State::~State()
     sources.Abandon();
     for (auto const& [root, worker] : volumes)
         worker->Abandon();
+    for (auto const& [root, probe] : rootProbes)
+        probe.worker->Abandon();
     {
         std::lock_guard lock(checkGate);
         checkStop.request_stop();
@@ -810,8 +830,11 @@ Engine::State::~State()
 
 void Engine::State::Tick()
 {
-    store.Drain();
-    payload.Drain();
+    // One completion or alert that throws ends only its own step; the rest
+    // of the batch still runs.
+    auto failed = [this](std::exception const& error) { log.Write("engine", "", error.what()); };
+    store.Drain(failed);
+    payload.Drain(failed);
     // A completion can end its move, which releases the move's worker, so
     // the drain keeps every worker until it has finished.
     std::vector<std::shared_ptr<Store>> workers;
@@ -823,18 +846,27 @@ void Engine::State::Tick()
             workers.push_back(abandonment.worker);
     }
     for (auto const& worker : workers)
-        worker->Drain();
+        worker->Drain(failed);
     for (auto const& [root, worker] : volumes)
-        worker->Drain();
-    sources.Drain();
-    checks.Drain();
+        worker->Drain(failed);
+    for (auto const& [root, probe] : rootProbes)
+        probe.worker->Drain(failed);
+    sources.Drain(failed);
+    checks.Drain(failed);
     if (session)
     {
         std::vector<lt::alert*> alerts;
         session->pop_alerts(&alerts);
         for (auto* alert : alerts)
         {
-            Handle(alert);
+            try
+            {
+                Handle(alert);
+            }
+            catch (std::exception const& error)
+            {
+                failed(error);
+            }
         }
         if (reading && !alerts.empty())
             ContinueReading(std::exchange(reading->changed, false));
@@ -904,7 +936,7 @@ void Engine::State::Maintain()
         WatchFolder();
         RefreshPolicy();
         RetryStorage();
-        CheckStopped();
+        ProbeRoots();
         LimitSeeds();
         auto time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         auto activity = Activity();
@@ -917,10 +949,13 @@ void Engine::State::Maintain()
         {
             torrent.history.Sample(time, double(torrent.status.download_payload_rate),
                 double(torrent.status.upload_payload_rate));
-            QueryPriorities(torrent);
-            ApplyWaiting(torrent);
-            FinishFiles(torrent);
-            FinishDownload(torrent);
+            Isolate(id, [this, &torrent]
+            {
+                QueryPriorities(torrent);
+                ApplyWaiting(torrent);
+                FinishFiles(torrent);
+                FinishDownload(torrent);
+            });
         }
         RecordCopies();
         RecordTasks();

@@ -544,7 +544,7 @@ void Engine::State::LimitSeeds()
             done({});
             return;
         }
-        SetIntent(seeds, Intent::Paused, done);
+        SetIntent(seeds, Intent::Paused, done, Requester::Engine);
     });
 }
 

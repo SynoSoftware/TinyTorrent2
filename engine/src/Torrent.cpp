@@ -504,7 +504,11 @@ std::optional<Problem> Torrent::Error() const
     {
         return moveError;
     }
-    if (checkError || nameError)
+    if (waitingMove && waitingMove->refusal)
+        return waitingMove->refusal;
+    if (restoreError)
+        return restoreError;
+    if (control.Cause() || nameError)
         return StorageProblem();
     // A waiting move the person asked for replaces the interrupted one.
     if (!moving && !waitingMove && facts.marker)
@@ -521,8 +525,8 @@ std::optional<Problem> Torrent::Error() const
 
 std::optional<Problem> Torrent::StorageProblem() const
 {
-    if (checkError)
-        return checkError;
+    if (auto cause = control.Cause())
+        return cause;
     if (nameError)
         return nameError;
     if (status.errc)
@@ -533,8 +537,6 @@ std::optional<Problem> Torrent::StorageProblem() const
     {
         return Problem::From(diskError);
     }
-    if (recovery && recovery->cause)
-        return Problem::From(recovery->cause);
     if (bool(status.flags & lt::torrent_flags::upload_mode) && !status.is_seeding)
     {
         return Problem{ProblemKind::TorrentError};
@@ -558,17 +560,9 @@ std::optional<Problem> Torrent::Diagnose() const
 
 bool Torrent::NeedsPerson() const
 {
-    if (recovery || restore)
-        return false;
-    // An error that never reached recovery, such as one libtorrent reports
-    // without a disk alert, has nothing that retries it either.
-    return StorageProblem() || (moveError &&
-        (moveRetry == StorageRetry::Stopped || moveRetry == StorageRetry::Person));
-}
-
-bool Torrent::StorageStopped() const
-{
-    return (storageRetry == StorageRetry::Stopped || storageRetry == StorageRetry::Person) && StorageProblem();
+    // libtorrent's error for an alias conflict belongs to the conflict, not
+    // to the storage control, and waits for the person too.
+    return control.NeedsPerson() || restoreError || (!conflict.empty() && status.errc);
 }
 
 bool Torrent::MoveWaits() const
@@ -576,22 +570,23 @@ bool Torrent::MoveWaits() const
     return !moving && (waitingMove || unfinished == TaskKind::Move) && !Error();
 }
 
+bool Torrent::FileWork() const
+{
+    return moving || namePhase == NamePhase::Preparing || namePhase == NamePhase::Recovering ||
+        !renaming.empty() || !marking.empty();
+}
+
 bool Torrent::FilesBusy() const
 {
-    return (recovery && (recovery->phase == DiskPhase::Reloading ||
-        (recovery->phase == DiskPhase::Releasing &&
-        recovery->released.wait_for(std::chrono::seconds(0)) != std::future_status::ready))) ||
-        moving || namePhase == NamePhase::Preparing || namePhase == NamePhase::Recovering ||
-        !renaming.empty() || !marking.empty();
+    return control.Busy() || FileWork();
 }
 
 bool Torrent::IsHeld(bool hasMetadata) const
 {
     // A stopped torrent that stayed auto-managed would leave upload mode by
     // itself every few minutes and fail its writes again.
-    return recovery || !conflict.empty() || moving || facts.marker || cacheWrite == CacheWrite::Flushing || CheckWaits() ||
-        checkError || StorageStopped() || unfinished == TaskKind::Check ||
-        (hasMetadata && namePhase != NamePhase::Ready);
+    return control.Holds() || !conflict.empty() || moving || facts.marker || cacheWrite == CacheWrite::Flushing ||
+        CheckWaits() || unfinished == TaskKind::Check || (hasMetadata && namePhase != NamePhase::Ready);
 }
 
 bool Torrent::CheckWaits() const
@@ -612,16 +607,13 @@ bool Torrent::ChecksFiles(bool sessionPaused) const
 
 bool Torrent::MoveBlocked() const
 {
-    return moveError && moveError->refusal != ErrorCode::MetadataUnavailable;
+    return moveError.has_value();
 }
 
 void Torrent::AnswerMoveProblem()
 {
     if (!facts.marker)
-    {
         moveError.reset();
-        moveRetry = StorageRetry::Automatic;
-    }
 }
 
 Status Torrent::Classify(bool sessionPaused) const
@@ -691,22 +683,13 @@ void Torrent::Update(lt::torrent_status latest, lt::time_point at)
     status = std::move(latest);
     statusAt = at;
     if (status.state != lt::torrent_status::checking_resume_data)
-    {
         savedProgress.reset();
-        if (!retriedProgress)
-            retriedProgress = FileProgress::Of(status);
-    }
 }
 
 FileProgress FileProgress::Of(lt::torrent_status const& status)
 {
     return {status.total_wanted_done, status.is_finished ? status.all_time_upload : 0,
         status.state == lt::torrent_status::checking_files ? status.progress_ppm : 0};
-}
-
-bool FileProgress::Beyond(FileProgress const& earlier) const
-{
-    return done > earlier.done || uploaded > earlier.uploaded || checked > earlier.checked;
 }
 
 bool Completion::Changed(State state, State previous)
@@ -1258,7 +1241,8 @@ Json Torrent::Describe(TorrentView view, bool includeFiles, Detail const& detail
     return data;
 }
 
-Json Torrent::Row(bool sessionPaused, int queue, std::optional<double> moveProgress, DriveWait const& wait) const
+Json Torrent::Row(bool sessionPaused, int queue, std::optional<double> moveProgress, DriveWait const& wait,
+    bool retry) const
 {
     auto problem = Diagnose();
     auto complete = completion.IsReached(status);
@@ -1275,7 +1259,7 @@ Json Torrent::Row(bool sessionPaused, int queue, std::optional<double> moveProgr
         {"waiting_files", wait.files},
         {"download_rate", status.download_payload_rate}, {"upload_rate", status.upload_payload_rate},
         {"error", !problem ? "" : problem->Code()},
-        {"detail", problem ? problem->detail : ""}, {"retry", NeedsPerson()},
+        {"detail", problem ? problem->detail : ""}, {"retry", retry},
         {"seed_count", status.num_seeds}, {"peer_count", status.num_peers},
         {"known_peer_count", status.list_peers},
         // The tracker's scrape counts the whole swarm; without one, the peers this session has heard of
@@ -1343,26 +1327,14 @@ void Torrent::ApplyIntent()
     unsaved = true;
 }
 
-void Torrent::AnswerStorageProblem()
-{
-    checkError.reset();
-    storageRetry = StorageRetry::Automatic;
-}
-
 void Torrent::Retry()
 {
     conflict.clear();
-    AnswerStorageProblem();
-    ClearDiskError();
+    restoreError.reset();
 }
 
 void Torrent::ClearDiskError()
 {
-    if (recovery)
-    {
-        recovery->retryRequested = true;
-        return;
-    }
     diskClearedAt = lt::clock_type::now();
     if (!restore)
     {
@@ -1370,6 +1342,9 @@ void Torrent::ClearDiskError()
         handle.unset_flags(lt::torrent_flags::upload_mode);
     }
     diskError.clear();
+    // The last sample would show the cleared error until the next one.
+    status.errc.clear();
+    status.flags &= ~lt::torrent_flags::upload_mode;
 }
 
 // Each piece gets the highest priority of the wanted files it holds, as

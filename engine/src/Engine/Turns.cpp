@@ -104,9 +104,8 @@ void Engine::State::StopStalledJobs()
             continue;
         torrent.checkTurn.reset();
         torrent.checkReads = CheckReads::Stalled;
-        torrent.checkError = Problem{ProblemKind::DriveStalled, torrent.facts.savePath};
+        Steer(torrent, Control::Failed{Problem{ProblemKind::DriveStalled, torrent.facts.savePath}});
         torrent.ApplyIntent();
-        RecoverStorage(torrent, {});
         log.Write("verify", id, ToString(ProblemKind::DriveStalled));
         blocked = true;
     }
@@ -129,7 +128,7 @@ void Engine::State::AssignDrives()
             torrent.status.state == lt::torrent_status::checking_resume_data;
         bool stopped = torrent.facts.intent == Intent::Paused;
         // libtorrent stops a check whose file fails with a torrent error.
-        bool failed = torrent.checkError || bool(torrent.status.errc);
+        bool failed = torrent.control.Cause() || bool(torrent.status.errc);
         if (torrent.checkTurn && (stopped || !checking || failed || torrent.moving))
         {
             bool waited = torrent.CheckWaits();
@@ -187,8 +186,8 @@ void Engine::State::AssignDrives()
                 auto& torrent = torrents.at(id);
                 if (outcome.error == ErrorCode::MetadataUnavailable)
                     RefuseMove(torrent, outcome);
-                else if (torrent.moveError && torrent.moveError->refusal == ErrorCode::MetadataUnavailable)
-                    torrent.moveError.reset();
+                else if (torrent.waitingMove)
+                    torrent.waitingMove->refusal.reset();
             }
             continue;
         }
@@ -310,12 +309,17 @@ std::optional<Drives> Engine::State::FindDrives(std::vector<std::string> const& 
     return found;
 }
 
+std::string Engine::State::RootKey(std::filesystem::path const& root)
+{
+    auto key = root.wstring();
+    for (auto& letter : key)
+        letter = static_cast<wchar_t>(std::towlower(letter));
+    return Utf8(key);
+}
+
 Store& Engine::State::VolumeWorker(std::string const& folder)
 {
-    auto root = std::filesystem::path(Wide(folder)).root_name().wstring();
-    for (auto& letter : root)
-        letter = static_cast<wchar_t>(std::towlower(letter));
-    auto& worker = volumes[Utf8(root)];
+    auto& worker = volumes[RootKey(std::filesystem::path(Wide(folder)).root_name())];
     if (!worker)
         worker = std::make_unique<Store>(wake);
     return *worker;

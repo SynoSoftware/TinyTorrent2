@@ -1,5 +1,6 @@
 #include "Engine/State.h"
 #include <Windows.h>
+#include <libtorrent/aux_/path.hpp>
 #include <algorithm>
 #include <set>
 #include <system_error>
@@ -42,7 +43,7 @@ std::filesystem::path Engine::State::ShareRoot(std::filesystem::path const& fold
     return root;
 }
 
-std::optional<std::filesystem::path> Engine::State::AnsweringFolder(std::filesystem::path folder)
+std::optional<std::filesystem::path> Engine::State::ExistingFolder(std::filesystem::path folder)
 {
     auto root = ShareRoot(folder);
     while (true)
@@ -68,9 +69,13 @@ std::optional<std::filesystem::path> Engine::State::AnsweringFolder(std::filesys
 }
 
 // Whether the folder, or the nearest of its ancestors that exists, answers.
+// libtorrent's rule decides, so the engine and libtorrent agree on a link
+// whose target does not answer.
 bool Engine::State::Reachable(std::filesystem::path const& folder)
 {
-    return AnsweringFolder(folder).has_value();
+    auto error = boost::system::errc::make_error_code(boost::system::errc::no_such_file_or_directory);
+    lt::check_storage_root(error, Utf8(folder.wstring()));
+    return error != Unreachable();
 }
 
 lt::error_code Engine::State::Unreachable()

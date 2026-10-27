@@ -1,5 +1,6 @@
 #include "Engine/State.h"
 #include <Windows.h>
+#include <algorithm>
 
 namespace tt
 {
@@ -7,6 +8,8 @@ namespace
 {
 // How often the engine checks whether the cause of a stopped torrent is gone.
 constexpr auto stoppedCheck = std::chrono::minutes(1);
+// How often a probe opens each root that holds a running torrent.
+constexpr auto rootProbe = std::chrono::minutes(1);
 
 // The files of one torrent that lost the data they held.
 using LostFiles = std::vector<lt::file_index_t>;
@@ -39,16 +42,15 @@ bool Engine::State::Retryable(lt::error_code const& error)
     }
 }
 
-bool Engine::State::Retryable(Torrent const& torrent)
+std::optional<Control::Failed> Engine::State::StatusFailure(Torrent const& torrent, lt::torrent_status const& status)
 {
-    return (!torrent.diskError || Retryable(torrent.diskError)) &&
-        (!torrent.status.errc || Retryable(torrent.status.errc)) &&
-        (!torrent.recovery || !torrent.recovery->cause || Retryable(torrent.recovery->cause));
-}
-
-bool Engine::State::Recoverable(lt::error_code const& error, lt::torrent_flags_t flags)
-{
-    return error ? Retryable(error) : bool(flags & lt::torrent_flags::upload_mode);
+    if (!torrent.conflict.empty())
+        return std::nullopt;
+    if (auto error = torrent.diskError ? torrent.diskError : status.errc)
+        return Control::Failed{Problem::From(error), Retryable(error)};
+    if (status.flags & lt::torrent_flags::upload_mode)
+        return Control::Failed{Problem{ProblemKind::TorrentError}};
+    return std::nullopt;
 }
 
 std::vector<lt::file_index_t> Engine::State::LostData(lt::torrent_handle const& handle)
@@ -92,7 +94,7 @@ bool Engine::State::Usable(std::filesystem::path const& folder, std::filesystem:
 {
     // libtorrent creates the folders it lacks, so the nearest existing one
     // takes the file.
-    auto existing = AnsweringFolder(folder);
+    auto existing = ExistingFolder(folder);
     if (!existing)
         return false;
     ULARGE_INTEGER available{};
@@ -120,270 +122,457 @@ bool Engine::State::Usable(std::filesystem::path const& folder, std::filesystem:
     return true;
 }
 
-void Engine::State::RecoverStorage(Torrent& torrent, lt::error_code error)
+Control::Effects Engine::State::Steer(Torrent& torrent, Control::Event const& event)
 {
-    if (IsShuttingDown() || torrent.restore || torrent.StorageStopped())
-        return;
-    if (torrent.recovery)
+    if (IsShuttingDown())
     {
-        if (error)
-            torrent.recovery->cause = error;
-        return;
+        return {};
     }
-    torrent.recovery = std::make_shared<Torrent::Recovery>();
-    torrent.recovery->cause = error;
-    Invalidate(torrent.torrentId);
-    torrent.ApplyIntent();
-    torrent.recovery->released = ReleaseStorage(torrent.handle).share();
+    // A removed torrent starts no job, so its control refuses the events that
+    // start one. Job results and Dropped still end its jobs, so its files are
+    // released and its removal can finish.
+    bool starts = std::holds_alternative<Control::Failed>(event) || std::holds_alternative<Control::Due>(event);
+    if (starts && !torrents.contains(torrent.torrentId))
+    {
+        return {};
+    }
+    std::optional<FileProgress> progress;
+    if (torrent.status.state != lt::torrent_status::checking_resume_data)
+    {
+        progress = FileProgress::Of(torrent.status);
+    }
+    Control::Reality reality{.progress = progress,
+        .retryable = (!torrent.diskError || Retryable(torrent.diskError)) &&
+            (!torrent.status.errc || Retryable(torrent.status.errc)),
+        .checking = torrent.status.state == lt::torrent_status::checking_files,
+        .fileWork = torrent.FileWork()};
+    auto stage = [](Control const& control)
+    {
+        auto const& storage = control.Storage();
+        return storage ? std::optional(storage->ladder.stage) : std::nullopt;
+    };
+    auto before = stage(torrent.control);
+    auto effects = torrent.control.Decide(event, reality);
+    auto const& id = torrent.torrentId;
+    if (effects.clear)
+    {
+        torrent.ClearDiskError();
+        torrent.renameAt = {};
+    }
+    // FinishDownload starts the move again once its error is gone. The
+    // failure left no marker, so nothing else waits.
+    if (effects.retryMove)
+    {
+        torrent.moveError.reset();
+    }
+    // The torrent pauses before its release, so the release ends its disk
+    // work.
+    if (effects.changed)
+    {
+        // A torrent the person stopped recovers too, so it shows its saved
+        // progress instead of the error; ApplyIntent keeps it stopped.
+        torrent.ApplyIntent();
+        Invalidate(id);
+        statusPending = true;
+    }
+    for (auto const& job : effects.jobs)
+    {
+        if (job->kind == JobKind::Release)
+        {
+            torrent.released = ReleaseStorage(torrent.handle).share();
+        }
+        else if (job->kind == JobKind::Reload)
+        {
+            if (!job->lost.empty())
+            {
+                log.Write("storage", id, "files_lost");
+            }
+            Reload(torrent, job);
+        }
+    }
+    if (auto after = stage(torrent.control); after != before)
+    {
+        if (after == FailureStage::Stopped)
+        {
+            log.Write("storage", id, "stopped");
+        }
+        else if (after == FailureStage::Person)
+        {
+            log.Write("storage", id, "retry_needed");
+        }
+        else if (after == FailureStage::Continued)
+        {
+            log.Write("storage", id, "resumed");
+        }
+    }
+    if (effects.retryMove)
+    {
+        log.Write("move", id, "resumed");
+    }
+    return effects;
+}
+
+void Engine::State::Isolate(std::string const& id, std::function<void()> const& work)
+{
+    try
+    {
+        work();
+    }
+    catch (std::exception const& error)
+    {
+        log.Write("engine", id, error.what());
+    }
 }
 
 void Engine::State::RetryStorage()
 {
-    struct Attempt
+    auto now = std::chrono::steady_clock::now();
+    bool minute = !IsShuttingDown() && now >= stoppedCheckAt;
+    if (minute)
     {
-        std::string torrentId;
-        lt::torrent_handle handle;
-        std::shared_ptr<Torrent::Recovery> recovery;
+        stoppedCheckAt = now + stoppedCheck;
+    }
+    std::map<std::string, std::vector<Attempt>, PathLess> probes;
+    std::map<std::string, std::vector<Attempt>, PathLess> stopped;
+    std::vector<Attempt> finals;
+    auto collect = [&probes, &stopped, &finals](Torrent const& torrent, Control::Effects const& effects)
+    {
+        for (auto const& job : effects.jobs)
+        {
+            Attempt attempt{torrent.torrentId, torrent.handle, job};
+            if (job->kind == JobKind::Probe)
+            {
+                probes[torrent.facts.savePath].push_back(std::move(attempt));
+            }
+            else if (job->kind == JobKind::Check)
+            {
+                stopped[torrent.facts.savePath].push_back(std::move(attempt));
+            }
+            else if (job->kind == JobKind::FinalCheck)
+            {
+                finals.push_back(std::move(attempt));
+            }
+        }
     };
-    std::map<std::string, std::vector<Attempt>, PathLess> locations;
+    // A removed torrent's files stay busy until its release ends too.
+    EachWorking([this, &collect](Torrent& torrent)
+    {
+        if (!torrent.released.valid() ||
+            torrent.released.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+        {
+            return;
+        }
+        Isolate(torrent.torrentId, [this, &torrent, &collect]
+        {
+            auto released = std::exchange(torrent.released, {});
+            try
+            {
+                released.get();
+            }
+            catch (std::exception const& error)
+            {
+                log.Write("storage", torrent.torrentId, error.what());
+                torrent.released = ReleaseStorage(torrent.handle).share();
+                return;
+            }
+            torrent.checkReads = CheckReads::None;
+            if (auto job = torrent.control.Running(); job && job->kind == JobKind::Release)
+            {
+                collect(torrent, Steer(torrent, Control::Released{job}));
+            }
+        });
+    });
     auto entry = torrents.upper_bound(storageCursor);
     for (std::size_t visited = 0; visited < torrents.size(); ++visited)
     {
         if (entry == torrents.end())
+        {
             entry = torrents.begin();
+        }
         auto& [id, torrent] = *entry++;
-        auto recovery = torrent.recovery;
-        if (!recovery || torrent.restore)
-            continue;
-        if (recovery->phase == DiskPhase::Releasing)
+        if (torrent.restore || !torrent.control.Failing())
         {
-            if (recovery->released.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
-                continue;
-            try
-            {
-                recovery->released.get();
-            }
-            catch (std::exception const& error)
-            {
-                log.Write("storage", id, error.what());
-                recovery->released = ReleaseStorage(torrent.handle).share();
-                continue;
-            }
-            recovery->phase = DiskPhase::Waiting;
-            torrent.checkReads = CheckReads::None;
-        }
-        if (recovery->retryRequested && recovery->phase != DiskPhase::Reloading)
-        {
-            torrent.recovery.reset();
-            torrent.ClearDiskError();
-            torrent.renameAt = {};
-            torrent.ApplyIntent();
-            Invalidate(id);
-            statusPending = true;
             continue;
         }
-        // A torrent the person stopped recovers too, so it shows its saved
-        // progress instead of the error; ApplyIntent keeps it stopped.
-        if (IsShuttingDown() || recovery->phase != DiskPhase::Waiting || torrent.FilesBusy())
+        // One pass probes at most 64 folders; the next starts after the last
+        // torrent this one probed.
+        if (torrent.control.WantsProbe() && probes.size() == 64 && !probes.contains(torrent.facts.savePath))
+        {
             continue;
-        if (locations.size() == 64 && !locations.contains(torrent.facts.savePath))
-            break;
-        storageCursor = id;
-        recovery->phase = DiskPhase::Probing;
-        locations[torrent.facts.savePath].push_back({id, torrent.handle, recovery});
-    }
-    for (auto& [folder, attempts] : locations)
-    {
-        std::vector<lt::torrent_handle> handles;
-        for (auto const& attempt : attempts)
-            handles.push_back(attempt.handle);
-        // Once the folder answers, which files each torrent lost; nothing
-        // while it does not answer.
-        VolumeWorker(folder).Run([folder, handles]
+        }
+        Isolate(id, [this, &id, &torrent, &collect, minute]
         {
-            std::optional<std::vector<LostFiles>> lost;
-            if (Reachable(Wide(folder)))
+            auto effects = Steer(torrent, Control::Due{minute && !stoppedChecks.contains(torrent.facts.savePath)});
+            if (std::any_of(effects.jobs.begin(), effects.jobs.end(),
+                [](auto const& job) { return job->kind == JobKind::Probe; }))
             {
-                lost.emplace();
-                for (auto const& handle : handles)
-                    lost->push_back(LostData(handle));
+                storageCursor = id;
             }
-            return lost;
-        }, [this, folder, attempts = std::move(attempts)](
-            std::expected<std::optional<std::vector<LostFiles>>, StorageOutcome> lost)
-        {
-            bool answered = lost && *lost;
-            bool absent = lost && !*lost;
-            // A drive lookup made while the folder did not answer could name
-            // no drive, so the next job that asks looks it up again.
-            if (auto found = drives.find(folder); answered && found != drives.end() && found->second)
-                drives.erase(found);
-            for (std::size_t item = 0; item < attempts.size(); ++item)
-            {
-                auto const& attempt = attempts[item];
-                auto found = torrents.find(attempt.torrentId);
-                if (found == torrents.end() || found->second.handle != attempt.handle ||
-                    found->second.recovery != attempt.recovery)
-                    continue;
-                auto& torrent = found->second;
-                auto& recovery = *attempt.recovery;
-                recovery.phase = DiskPhase::Waiting;
-                recovery.absent = absent;
-                // Waiting fixes a folder that does not answer, so its next
-                // resume is automatic again.
-                if (absent)
-                    torrent.storageRetry = StorageRetry::Automatic;
-                if (IsShuttingDown() || !answered || !SameFolder(folder, torrent.facts.savePath))
-                    continue;
-                // Windows reports an absent share with many codes, so only an
-                // answering folder shows that waiting cannot fix the error.
-                // Neither can it fix the same error again before the torrent
-                // got further than at its last resume, so the torrent stops:
-                // CheckStopped continues it once its cause is gone, and after
-                // a resume of its own only the person does. An error no check
-                // can judge waits for the person at once.
-                bool again = !torrent.retriedProgress ||
-                    !FileProgress::Of(torrent.status).Beyond(*torrent.retriedProgress);
-                if (!Retryable(torrent) || (again && torrent.storageRetry == StorageRetry::Resumed))
-                    StopStorage(torrent, StorageRetry::Person);
-                else if (again && torrent.storageRetry == StorageRetry::Retried)
-                    StopStorage(torrent, StorageRetry::Stopped);
-                else if (!torrent.FilesBusy())
-                    ContinueStorage(torrent, std::move((**lost)[item]), StorageRetry::Retried);
-            }
+            collect(torrent, effects);
         });
     }
-}
-
-void Engine::State::StopStorage(Torrent& torrent, StorageRetry retry)
-{
-    torrent.storageRetry = retry;
-    torrent.recovery.reset();
-    Invalidate(torrent.torrentId);
-    statusPending = true;
-    log.Write("storage", torrent.torrentId, retry == StorageRetry::Person ? "retry_needed" : "stopped");
-}
-
-void Engine::State::ContinueStorage(Torrent& torrent, std::vector<lt::file_index_t> lost, StorageRetry retry)
-{
-    torrent.storageRetry = retry;
-    // A check that a disk error stopped reads the files again, so it finds
-    // lost data itself.
-    if (torrent.status.state == lt::torrent_status::checking_files && (torrent.diskError || torrent.status.errc))
+    for (auto& [folder, attempts] : probes)
     {
-        Reload(torrent, {});
-        return;
+        Probe(folder, std::move(attempts));
     }
-    if (!lost.empty())
+    for (auto& [folder, attempts] : stopped)
     {
-        log.Write("storage", torrent.torrentId, "files_lost");
-        Reload(torrent, std::move(lost));
-        return;
+        CheckStopped(folder, std::move(attempts));
     }
-    torrent.retriedProgress = FileProgress::Of(torrent.status);
-    torrent.recovery.reset();
-    torrent.ClearDiskError();
-    torrent.checkError.reset();
-    torrent.renameAt = {};
-    torrent.ApplyIntent();
-    Invalidate(torrent.torrentId);
-    statusPending = true;
-    log.Write("storage", torrent.torrentId, "resumed");
+    for (auto const& attempt : finals)
+    {
+        CheckFinalFolder(attempt);
+    }
 }
 
-void Engine::State::CheckStopped()
+void Engine::State::Probe(std::string const& folder, std::vector<Attempt> attempts)
 {
-    auto now = std::chrono::steady_clock::now();
-    if (IsShuttingDown() || now < stoppedCheckAt)
-        return;
-    stoppedCheckAt = now + stoppedCheck;
-    struct Attempt
+    std::vector<lt::torrent_handle> handles;
+    for (auto const& attempt : attempts)
     {
-        std::string torrentId;
+        handles.push_back(attempt.handle);
+    }
+    // Once the folder answers, which files each torrent lost; nothing while
+    // it does not answer.
+    VolumeWorker(folder).Run([folder, handles]
+    {
+        std::optional<std::vector<LostFiles>> lost;
+        if (!Reachable(Wide(folder)))
+        {
+            return lost;
+        }
+        lost.emplace();
+        for (auto const& handle : handles)
+        {
+            lost->push_back(LostData(handle));
+        }
+        // A location that stops answering during the search makes every file
+        // look lost, so lost files count only when it still answers.
+        if (std::any_of(lost->begin(), lost->end(), [](auto const& files) { return !files.empty(); }) &&
+            !Reachable(Wide(folder)))
+        {
+            lost.reset();
+        }
+        return lost;
+    }, [this, folder, attempts = std::move(attempts)](
+        std::expected<std::optional<std::vector<LostFiles>>, StorageOutcome> lost)
+    {
+        bool answered = lost && *lost;
+        // A drive lookup made while the folder did not answer could name no
+        // drive, so the next job that asks looks it up again.
+        if (auto found = drives.find(folder); answered && found != drives.end() && found->second)
+        {
+            drives.erase(found);
+        }
+        for (std::size_t item = 0; item < attempts.size(); ++item)
+        {
+            auto const& attempt = attempts[item];
+            Isolate(attempt.torrentId, [this, &attempt, &lost, answered, item]
+            {
+                auto torrent = FindWorking(attempt.torrentId);
+                if (!torrent || torrent->handle != attempt.handle)
+                {
+                    return;
+                }
+                Control::Probed probed{attempt.job};
+                if (answered)
+                {
+                    probed.finding = Control::Usable{std::move((**lost)[item])};
+                }
+                else if (lost)
+                {
+                    probed.finding = Control::Absent{};
+                }
+                Steer(*torrent, probed);
+            });
+        }
+    });
+}
+
+// Checks, without starting the torrents, whether the cause that stopped each
+// one is gone, from the facts that the drive of their folder gives.
+void Engine::State::CheckStopped(std::string const& folder, std::vector<Attempt> attempts)
+{
+    struct Request
+    {
         lt::torrent_handle handle;
-        // The files that a failed move to the final folder places; otherwise
-        // the storage of the torrent's own folder is checked.
-        std::optional<std::vector<Payload::File>> move;
         std::filesystem::path file;
         bool write = true;
         std::uint64_t needed = 0;
     };
-    std::map<std::string, std::vector<Attempt>, PathLess> folders;
-    for (auto& [id, torrent] : torrents)
+    std::vector<Request> requests;
+    for (auto const& attempt : attempts)
     {
-        if (torrent.restore || torrent.recovery || torrent.FilesBusy())
-            continue;
-        if (torrent.moveError && torrent.moveRetry == StorageRetry::Stopped)
-        {
-            folders[torrent.facts.finalFolder].push_back({id, torrent.handle,
-                Relocated(torrent.facts.finalFolder, torrent)});
-            continue;
-        }
-        // A stop whose problem other work cleared has ended, so the next
-        // failure gets its automatic retry again.
-        bool stopped = torrent.storageRetry == StorageRetry::Stopped || torrent.storageRetry == StorageRetry::Person;
-        if (stopped && !torrent.StorageProblem())
-            torrent.storageRetry = StorageRetry::Automatic;
-        if (torrent.storageRetry != StorageRetry::Stopped || !torrent.StorageProblem())
-            continue;
+        auto const& torrent = Working(attempt.torrentId);
         // A seed only reads; a download needs room for what it still lacks.
-        bool write = !torrent.status.is_seeding;
-        std::filesystem::path file;
+        Request request{attempt.handle};
+        request.write = !torrent.status.is_seeding;
         auto index = torrent.status.error_file;
         if (torrent.names && index >= lt::file_index_t(0) && index < torrent.names->metadata->layout().end_file())
-            file = FullPath(Wide(torrent.names->mappings.file_path(torrent.names->metadata->layout(), index,
-                torrent.facts.savePath)));
-        folders[torrent.facts.savePath].push_back({id, torrent.handle, std::nullopt, std::move(file), write,
-            write ? static_cast<std::uint64_t>(torrent.status.total_wanted - torrent.status.total_wanted_done) : 0});
+        {
+            request.file = FullPath(Wide(torrent.names->mappings.file_path(torrent.names->metadata->layout(),
+                index, torrent.facts.savePath)));
+        }
+        if (request.write)
+        {
+            request.needed =
+                static_cast<std::uint64_t>(torrent.status.total_wanted - torrent.status.total_wanted_done);
+        }
+        requests.push_back(std::move(request));
     }
-    for (auto& [folder, attempts] : folders)
+    stoppedChecks.insert(folder);
+    VolumeWorker(folder).Run([folder, requests]
     {
-        // A folder whose last check has not returned is not checked again.
-        if (!stoppedChecks.insert(folder).second)
-            continue;
-        struct Found
+        std::vector<Control::Finding> found;
+        for (auto const& request : requests)
         {
-            bool usable = false;
-            LostFiles lost;
-        };
-        VolumeWorker(folder).Run([folder, attempts]
-        {
-            std::vector<Found> found;
-            for (auto const& attempt : attempts)
+            Control::Finding finding = Control::Absent{};
+            if (Reachable(Wide(folder)))
             {
-                Found result{Usable(Wide(folder), attempt.file, attempt.write, attempt.needed) &&
-                    (!attempt.move || Payload::HasRoom(*attempt.move))};
-                if (result.usable && !attempt.move)
-                    result.lost = LostData(attempt.handle);
-                found.push_back(std::move(result));
-            }
-            return found;
-        }, [this, folder, attempts](std::expected<std::vector<Found>, StorageOutcome> found)
-        {
-            stoppedChecks.erase(folder);
-            if (!found || IsShuttingDown())
-                return;
-            for (std::size_t item = 0; item < attempts.size(); ++item)
-            {
-                auto const& attempt = attempts[item];
-                auto torrent = FindWorking(attempt.torrentId);
-                if (!torrent || torrent->handle != attempt.handle || !(*found)[item].usable ||
-                    torrent->recovery || torrent->FilesBusy())
-                    continue;
-                if (attempt.move)
+                finding = Control::Unusable{};
+                if (Usable(Wide(folder), request.file, request.write, request.needed))
                 {
-                    if (torrent->moveRetry != StorageRetry::Stopped)
-                        continue;
-                    // FinishDownload starts the move again once its error is
-                    // gone. The failure left no marker, so nothing else waits.
-                    torrent->moveError.reset();
-                    torrent->moveRetry = StorageRetry::Resumed;
-                    torrent->ApplyIntent();
-                    Invalidate(attempt.torrentId);
-                    log.Write("move", attempt.torrentId, "resumed");
+                    // As in a probe, lost files count only while the folder
+                    // still answers.
+                    auto lost = LostData(request.handle);
+                    finding = lost.empty() || Reachable(Wide(folder)) ?
+                        Control::Finding{Control::Usable{std::move(lost)}} : Control::Finding{Control::Absent{}};
                 }
-                else if (torrent->storageRetry == StorageRetry::Stopped)
-                    ContinueStorage(*torrent, std::move((*found)[item].lost), StorageRetry::Resumed);
+            }
+            found.push_back(std::move(finding));
+        }
+        return found;
+    }, [this, folder, attempts](std::expected<std::vector<Control::Finding>, StorageOutcome> found)
+    {
+        stoppedChecks.erase(folder);
+        for (std::size_t item = 0; item < attempts.size(); ++item)
+        {
+            auto const& attempt = attempts[item];
+            Isolate(attempt.torrentId, [this, &attempt, &found, item]
+            {
+                auto torrent = FindWorking(attempt.torrentId);
+                if (!torrent || torrent->handle != attempt.handle)
+                {
+                    return;
+                }
+                // A failed check ends its job, so the next minute checks
+                // again.
+                Control::Checked checked{attempt.job};
+                if (found)
+                {
+                    checked.finding = std::move((*found)[item]);
+                }
+                Steer(*torrent, checked);
+            });
+        }
+    });
+}
+
+// Reads the failed move's sources on the drive of the torrent's own folder,
+// then checks the final folder and its room on that folder's drive.
+void Engine::State::CheckFinalFolder(Attempt const& attempt)
+{
+    auto const& torrent = Working(attempt.torrentId);
+    auto destination = torrent.facts.finalFolder;
+    VolumeWorker(torrent.facts.savePath).Run([files = Relocated(destination, torrent)]
+    {
+        return Payload::Sources(files);
+    }, [this, attempt, destination](std::expected<std::vector<Payload::Source>, StorageOutcome> sources)
+    {
+        Isolate(attempt.torrentId, [this, &attempt, &destination, &sources]
+        {
+            auto torrent = FindWorking(attempt.torrentId);
+            if (!torrent || torrent->handle != attempt.handle)
+            {
+                return;
+            }
+            if (!sources)
+            {
+                Steer(*torrent, Control::Checked{attempt.job});
+                return;
+            }
+            if (!torrent->control.Owns(attempt.job))
+            {
+                return;
+            }
+            VolumeWorker(destination).Run([destination, sources = std::move(*sources)]
+            {
+                if (!Reachable(Wide(destination)))
+                {
+                    return Control::Finding{Control::Absent{}};
+                }
+                if (!Usable(Wide(destination), {}, true, 0) || !Payload::HasRoom(sources))
+                {
+                    return Control::Finding{Control::Unusable{}};
+                }
+                return Control::Finding{Control::Usable{}};
+            }, [this, attempt](std::expected<Control::Finding, StorageOutcome> finding)
+            {
+                Isolate(attempt.torrentId, [this, &attempt, &finding]
+                {
+                    auto torrent = FindWorking(attempt.torrentId);
+                    if (!torrent || torrent->handle != attempt.handle)
+                    {
+                        return;
+                    }
+                    Control::Checked checked{attempt.job};
+                    if (finding)
+                    {
+                        checked.finding = std::move(*finding);
+                    }
+                    Steer(*torrent, checked);
+                });
+            });
+        });
+    });
+}
+
+void Engine::State::ProbeRoots()
+{
+    auto now = std::chrono::steady_clock::now();
+    std::set<std::string> wanted;
+    for (auto const& [id, torrent] : torrents)
+    {
+        if (torrent.facts.intent == Intent::Paused || torrent.control.StorageWaits())
+        {
+            continue;
+        }
+        if (auto root = NoticeRoot(torrent.facts.savePath))
+        {
+            wanted.insert(RootKey(Wide(*root)));
+        }
+    }
+    // A root whose probe has not returned stays, so its notice remains after
+    // its torrents are held.
+    std::erase_if(rootProbes, [&wanted](auto const& entry)
+        { return !entry.second.pending && !wanted.contains(entry.first); });
+    for (auto const& key : wanted)
+    {
+        auto& probe = rootProbes[key];
+        if (!probe.worker)
+        {
+            probe.worker = std::make_unique<Store>(wake);
+        }
+        if (probe.pending || (probe.at && now - *probe.at < rootProbe))
+        {
+            continue;
+        }
+        probe.pending = true;
+        probe.at = now;
+        probe.worker->Run([root = Wide(key)]
+        {
+            // The root answers once Windows returns, whatever it returns.
+            auto opened = CreateFileW(root.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+            if (opened != INVALID_HANDLE_VALUE)
+            {
+                CloseHandle(opened);
+            }
+        }, [this, key](StorageOutcome)
+        {
+            if (auto probe = rootProbes.find(key); probe != rootProbes.end())
+            {
+                probe->second.pending = false;
             }
         });
     }
@@ -391,43 +580,62 @@ void Engine::State::CheckStopped()
 
 void Engine::State::ReloadStorage(lt::torrent_handle const& handle, Replacement& replacement)
 {
-    ReleaseFiles({handle});
     session->remove_torrent(handle);
-    replacement.removed = true;
-    lt::error_code error;
     // Native resume data omits the subscription to status updates.
     replacement.params.flags |= lt::torrent_flags::update_subscribe;
-    replacement.handle = session->add_torrent(replacement.params, error);
-    if (error)
-        throw lt::system_error(error);
+    replacement.handle = session->add_torrent(replacement.params, replacement.error);
+    if (replacement.error)
+    {
+        return;
+    }
     replacement.statusAt = lt::clock_type::now();
     replacement.status = replacement.handle.status(routineQuery);
 }
 
-void Engine::State::ReplaceHandle(Torrent& torrent, Replacement& replacement)
+void Engine::State::SwapHandle(Torrent& torrent, Replacement& replacement)
 {
     handles.erase(torrent.handle);
     seedQueries.erase(torrent.handle);
-    torrent.handle = std::move(replacement.handle);
-    torrent.status = std::move(replacement.status);
-    torrent.statusAt = replacement.statusAt;
-    torrent.diskError = torrent.status.errc;
-    torrent.recovery.reset();
-    torrent.checkError.reset();
     torrent.queries.clear();
     torrent.pendingCheckpoint.reset();
     torrent.checkpointPhase = CheckpointPhase::Idle;
     torrent.checkReads = CheckReads::None;
+    torrent.released = {};
     torrent.checkTurn.reset();
+    // The removed handle never confirms its write.
+    if (torrent.cacheWrite == CacheWrite::Flushing)
+    {
+        torrent.cacheWrite = CacheWrite::Pending;
+    }
     torrent.completion.Replaced();
-    if (torrents.contains(torrent.torrentId))
-        handles.emplace(torrent.handle, &torrent);
-    ApplyPolicy(torrent.handle);
-    if (torrent.facts.trackers)
-        torrent.handle.replace_trackers(*torrent.facts.trackers);
+    if (replacement.error)
+    {
+        // RestorePending adds the torrent again from these parameters.
+        torrent.handle = {};
+        torrent.restore = std::move(replacement.params);
+    }
+    else
+    {
+        torrent.handle = replacement.handle;
+        torrent.status = std::move(replacement.status);
+        torrent.statusAt = replacement.statusAt;
+        torrent.diskError = torrent.status.errc;
+        if (torrents.contains(torrent.torrentId))
+        {
+            handles.emplace(torrent.handle, &torrent);
+        }
+        ApplyPolicy(torrent.handle);
+        if (torrent.facts.trackers)
+        {
+            torrent.handle.replace_trackers(*torrent.facts.trackers);
+        }
+    }
     Invalidate(torrent.torrentId);
     statusPending = true;
     queuePending = true;
+    // Only now, with the new handle or its parameters in place, may the
+    // control's event apply the torrent's running state.
+    Steer(torrent, Control::Dropped{});
 }
 
 // libtorrent cannot forget single pieces, so the torrent reloads from its
@@ -460,65 +668,59 @@ void Engine::State::DropPieces(lt::add_torrent_params& params, std::vector<lt::f
     params.flags &= ~lt::torrent_flags::seed_mode;
 }
 
-void Engine::State::Reload(Torrent& torrent, std::vector<lt::file_index_t> lost)
+void Engine::State::Reload(Torrent& torrent, std::shared_ptr<Control::Job const> job)
 {
     auto id = torrent.torrentId;
     auto handle = torrent.handle;
-    if (!torrent.recovery)
-        torrent.recovery = std::make_shared<Torrent::Recovery>();
-    auto recovery = torrent.recovery;
-    recovery->phase = DiskPhase::Reloading;
-    recovery->lost = lost;
-    auto replacement = std::make_shared<Replacement>();
-    payload.Run([this, handle, replacement, lost = std::move(lost), stop = exitStop.get_token()]
+    auto params = std::make_shared<lt::add_torrent_params>();
+    // The worker does only what waits on the drive: the resume data and the
+    // release. The engine thread, which owns the handle, replaces it.
+    payload.Run([this, handle, params, lost = job->lost, stop = exitStop.get_token()]
     {
-        auto& params = replacement->params;
-        params = handle.get_resume_data(lt::torrent_handle::save_info_dict);
-        DropPieces(params, lost);
-        params.flags &= ~(lt::torrent_flags::seed_mode | lt::torrent_flags::no_verify_files |
+        *params = handle.get_resume_data(lt::torrent_handle::save_info_dict);
+        DropPieces(*params, lost);
+        params->flags &= ~(lt::torrent_flags::seed_mode | lt::torrent_flags::no_verify_files |
             lt::torrent_flags::auto_managed | lt::torrent_flags::upload_mode);
-        params.flags |= lt::torrent_flags::paused;
-        // The release can wait on a drive that stopped responding. Exit waits
-        // for this reload only briefly and then saves the torrent through its
-        // old handle, without the pieces of the lost files, so once Exit has
-        // started, the handle stays. ReloadStorage then releases again at once.
+        params->flags |= lt::torrent_flags::paused;
+        // The paused torrent issues no disk job after this release.
         ReleaseFiles({handle});
         if (stop.stop_requested())
             throw std::runtime_error("shutting_down");
-        ReloadStorage(handle, *replacement);
-    }, [this, id, handle, recovery, replacement](StorageOutcome outcome)
+    }, [this, id, handle, job, params](StorageOutcome outcome)
     {
         auto torrent = FindWorking(id);
-        if (!torrent || torrent->handle != handle || torrent->recovery != recovery)
+        if (!torrent || torrent->handle != handle || torrent->control.Running() != job)
+            return;
+        // Exit saves the torrent through its old handle, without the pieces
+        // of the lost files, because each checkpoint drops them until a
+        // reload succeeds.
+        if (IsShuttingDown())
             return;
         if (outcome.failure)
         {
-            recovery->phase = DiskPhase::Waiting;
-            if (replacement->removed)
-            {
-                handles.erase(handle);
-                seedQueries.erase(handle);
-                torrent->restore = std::move(replacement->params);
-                torrent->recovery.reset();
-                torrent->pendingCheckpoint.reset();
-                torrent->checkpointPhase = CheckpointPhase::Idle;
-            }
             log.Write("storage", id, outcome.detail);
+            Steer(*torrent, Control::Reloaded{job});
             return;
         }
-        ReplaceHandle(*torrent, *replacement);
-        // A reload changes the torrent's progress, so the reloaded torrent
-        // measures it once it has read its resume data.
-        torrent->retriedProgress.reset();
+        // A removed torrent is not added again; its removal ends the handle.
+        if (!torrents.contains(id))
+        {
+            Steer(*torrent, Control::Reloaded{job});
+            return;
+        }
+        Replacement replacement{.params = std::move(*params)};
+        ReloadStorage(handle, replacement);
+        SwapHandle(*torrent, replacement);
+        if (replacement.error)
+        {
+            log.Write("storage", id, replacement.error.message());
+            Steer(*torrent, Control::Reloaded{job});
+            return;
+        }
         torrent->renameAt = {};
         torrent->unsaved = true;
-        if (!IsShuttingDown())
-        {
-            if (torrent->diskError)
-                RecoverStorage(*torrent, torrent->diskError);
-            torrent->ApplyIntent();
-        }
-        log.Write("storage", id, "resumed");
+        Steer(*torrent, Control::Reloaded{job, true});
+        torrent->ApplyIntent();
     });
 }
 }

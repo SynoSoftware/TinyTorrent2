@@ -179,11 +179,12 @@ waiting member that shares a file with a failed member fails with it and
 reports the same problem, because moving it would take that file from the
 failed member's folder.
 
-Start, Stop and Verify clear a move problem that left no marker, because the
-torrent's files are where they were and the person has answered it. A move
-problem with a marker stays, because the files can be in two folders. Other
-commands, such as a speed limit or the queue order, keep the problem, because
-they do not answer it.
+The person's Start, Stop, Retry and Verify clear a move problem that left no
+marker, because the torrent's files are where they were and the person has
+answered it. A move problem with a marker stays, because the files can be in
+two folders. Other commands, such as a speed limit or the queue order, keep the
+problem, because they do not answer it, and so does the engine's own work, such
+as a seed limit's stop or the verification of finished downloads.
 
 The move preflight checks both physical and final names at source and destination.
 When the source is absent or an empty placeholder and the destination exists,
@@ -486,12 +487,14 @@ it moves. Checks and moves follow one rule, and neither kind goes first.
   person's Stop and then Start puts a check at the back.
 - A running job whose progress does not change for 2 minutes gives up with
   `drive_stalled`. A stalled check pauses and releases its storage; once its
-  reads return and its location answers, it continues automatically under the
-  current running intent. Verify waits for that release before rechecking. A
-  stalled move's copy is cancelled, and the move fails as after any failed
-  copy, which gives back what it placed and shows Move failed. A failed move
-  waits for the person. Only a move's placement is timed, not the wait for
-  libtorrent to release the files.
+  reads return and its location answers, the engine reloads it from its resume
+  data, and the check continues after the pieces it had checked under the
+  current running intent. A check that stalls again before it reads further
+  stops with Retry, as any storage failure does. Verify waits for that release
+  before rechecking. A stalled move's copy is cancelled, and the move fails as
+  after any failed copy, which gives back what it placed and shows Move failed.
+  A failed move waits for the person. Only a move's placement is timed, not the
+  wait for libtorrent to release the files.
 
 The once-a-second maintenance pass decides. It works out which drives are in
 use from the jobs that run, on every pass, and never stores that as a loan a
@@ -570,10 +573,12 @@ choice, so changing the default does not rename an existing library.
   has the file open, Windows refuses the rename; the file keeps its suffix and
   the engine tries again later, without reporting a download error. A rename
   that fails because the drive or share does not answer uses storage recovery,
-  so it runs again as soon as the location answers. The rename runs on its
-  drive's worker, so a share that stops answering holds no worker that other
-  drives use. One rename or deletion runs at a time, so other torrents'
-  renames and name choices still wait until Windows gives up on that share.
+  so it runs again as soon as the location answers. A rename error that
+  waiting cannot fix, such as a file of the final name that already exists,
+  shows the error and Retry. The rename runs on its drive's worker, so a share
+  that stops answering holds no worker that other drives use. One rename or
+  deletion runs at a time, so other torrents' renames and name choices still
+  wait until Windows gives up on that share.
 - Before that rename, the engine pauses the torrent and waits for libtorrent
   to write the data it still holds in memory, without holding any files busy.
   Releasing the files for the rename waits for that write, which takes

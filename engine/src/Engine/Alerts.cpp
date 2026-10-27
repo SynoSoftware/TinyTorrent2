@@ -210,6 +210,11 @@ void Engine::State::On(lt::torrent_paused_alert const& alert)
         torrent->checkReads = CheckReads::None;
 }
 
+void Engine::State::AwaitCheckReads(Torrent& torrent)
+{
+    torrent.released = ReleaseStorage(torrent.handle).share();
+}
+
 StatusQuery Engine::State::Answered(lt::torrent_status const& status)
 {
     if (!status.save_path.empty())
@@ -242,9 +247,8 @@ void Engine::State::On(lt::state_update_alert const& alert)
                     if (auto metadata = status.torrent_file.lock())
                         torrent.names = FileNames{std::move(metadata), status.renamed_files};
                 }
-                auto error = torrent.diskError ? torrent.diskError : status.errc;
-                if (Recoverable(error, status.flags))
-                    RecoverStorage(torrent, error);
+                if (auto failed = StatusFailure(torrent, status))
+                    Steer(torrent, *failed);
                 if (torrent.completion.NeedsSample())
                 {
                     changed |= IsQueued(torrent.status.queue_position) != IsQueued(status.queue_position);
@@ -307,16 +311,27 @@ void Engine::State::UpdateProblems()
 {
     std::map<std::string, Toast> current;
     std::optional<Toast> stopped;
+    auto now = std::chrono::steady_clock::now();
+    // A root whose probe has not returned for noticeDelay does not answer.
+    // The torrents under it wait for it, whatever their own work waits in.
+    std::set<std::string> hung;
+    for (auto const& [key, probe] : rootProbes)
+    {
+        if (probe.pending && now - *probe.at >= noticeDelay)
+            hung.insert(key);
+    }
     for (auto& [id, torrent] : torrents)
     {
         auto problem = torrent.Error();
         if (problem && !problem->IsStorage() && problem != torrent.notifiedError)
             Notify(ToastKind::Error, torrent, problem->detail, problem->Code());
-        torrent.notifiedError = problem;
-        auto storage = torrent.StorageProblem();
-        if (torrent.NeedsPerson())
+        // A storage problem has its own notices. The problem it hides shows
+        // again when it ends, and that problem was already notified.
+        if (!problem || !problem->IsStorage())
+            torrent.notifiedError = problem;
+        if (OffersRetry(torrent) && problem)
         {
-            auto cause = storage ? *storage : *torrent.moveError;
+            auto const& cause = *problem;
             if (!stopped)
             {
                 stopped = Toast{.kind = ToastKind::Error, .name = torrent.Name(), .detail = cause.detail,
@@ -337,24 +352,29 @@ void Engine::State::UpdateProblems()
         // Windows reports a share that does not answer with many codes, so
         // the probe, not the error, shows that the torrent waits for its
         // location.
-        if (!torrent.recovery || !torrent.recovery->absent || !storage)
+        bool absent = torrent.control.AwaitsLocation();
+        auto root = NoticeRoot(torrent.facts.savePath);
+        if (!root)
             continue;
-        if (auto root = NoticeRoot(torrent.facts.savePath))
-        {
-            auto folder = Wide(*root);
-            std::transform(folder.begin(), folder.end(), folder.begin(), [](wchar_t character)
-                { return static_cast<wchar_t>(std::towlower(character)); });
-            auto key = "location:" + Utf8(folder);
-            auto [entry, inserted] = current.try_emplace(key, Toast{.kind = ToastKind::Error,
-                .detail = storage->Code(), .code = "download_location_unavailable", .folder = *root, .count = 0});
-            ++entry->second.count;
-        }
+        auto key = RootKey(Wide(*root));
+        bool waits = hung.contains(key) && torrent.facts.intent != Intent::Paused;
+        if (!absent && !waits)
+            continue;
+        auto cause = absent ? *torrent.control.Cause() : Problem{ProblemKind::DownloadPathUnavailable};
+        auto [entry, inserted] = current.try_emplace("location:" + key, Toast{.kind = ToastKind::Error,
+            .detail = cause.Code(), .code = "download_location_unavailable", .folder = *root, .count = 0});
+        ++entry->second.count;
     }
     if (stopped)
         current.emplace(Toast::Condition::stopped, std::move(*stopped));
-    auto now = std::chrono::steady_clock::now();
     std::erase_if(lasting, [&current, now](auto const& entry)
         { return !current.contains(entry.first) && now - entry.second.seen >= noticeDelay; });
+    // A hung root already waited noticeDelay for its probe.
+    for (auto const& key : hung)
+    {
+        if (current.contains("location:" + key))
+            lasting.try_emplace("location:" + key, Lasting{*rootProbes.at(key).at, now});
+    }
     for (auto const& [key, toast] : current)
         lasting.try_emplace(key, Lasting{now, now}).first->second.seen = now;
     std::erase_if(current, [this, now](auto const& entry)
@@ -395,9 +415,8 @@ void Engine::State::QueryCompletions()
     {
         if (pending >= 64)
             break;
-        auto error = torrent.diskError ? torrent.diskError : torrent.status.errc;
-        bool retries = !torrent.recovery && !torrent.StorageStopped() && Recoverable(error, torrent.status.flags);
-        if ((!torrent.completion.NeedsSample() && !retries) || torrent.restore ||
+        bool fails = !torrent.control.Holds() && StatusFailure(torrent, torrent.status);
+        if ((!torrent.completion.NeedsSample() && !fails) || torrent.restore ||
             torrent.queries.contains(DetailKind::Status))
             continue;
         Query(torrent, DetailKind::Status);
@@ -517,7 +536,7 @@ void Engine::State::On(lt::file_error_alert const& alert)
         if (alert.timestamp() < torrent->diskClearedAt)
             return;
         torrent->diskError = alert.error;
-        RecoverStorage(*torrent, alert.error);
+        Steer(*torrent, Control::Failed{Problem::From(alert.error), Retryable(alert.error)});
         // A failed file priority job raises this instead of file_prio_alert.
         AwaitQueueStatus(*torrent);
         if (torrent->priorityCompletion)
@@ -558,9 +577,7 @@ void Engine::State::On(lt::alerts_dropped_alert const& alert)
             continue;
         }
         if (alert.dropped_alerts[lt::torrent_paused_alert::alert_type] && torrent.checkReads != CheckReads::None)
-            RecoverStorage(torrent, torrent.diskError ? torrent.diskError : torrent.status.errc);
-        if (alert.dropped_alerts[lt::file_error_alert::alert_type] && torrent.status.has_metadata)
-            RecoverStorage(torrent, torrent.diskError);
+            AwaitCheckReads(torrent);
         if (torrent.priorityCompletion)
         {
             std::exchange(torrent.priorityCompletion, nullptr)({ErrorCode::RecoveryRequired});

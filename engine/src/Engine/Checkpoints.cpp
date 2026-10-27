@@ -91,8 +91,7 @@ void Engine::State::SaveCheckpoint(Torrent& torrent, lt::add_torrent_params para
     // libtorrent still claims the pieces of files whose data is gone until
     // the reload drops them, and a start whose resume data claims them
     // checks every file.
-    if (torrent.recovery)
-        DropPieces(params, torrent.recovery->lost);
+    DropPieces(params, torrent.control.Lost());
     torrent.checkpointPhase = CheckpointPhase::Writing;
     auto id = torrent.torrentId;
     auto completion = [this, id, uploaded = params.total_uploaded, path = params.save_path,

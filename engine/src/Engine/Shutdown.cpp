@@ -170,13 +170,8 @@ void Engine::State::ContinueShutdown()
     bool expired = waited >= phaseTimeout;
     if (shutdownPhase == ShutdownPhase::Draining)
     {
-        // A reload replaces its torrent's handle, which the pause and the
-        // final checkpoint use. One that takes longer waits on a drive that
-        // stopped responding, before it removes the old handle.
-        bool reloading = std::any_of(torrents.begin(), torrents.end(), [](auto const& entry)
-            { return entry.second.recovery && entry.second.recovery->phase == DiskPhase::Reloading; });
         bool stopping = !std::all_of(moves.begin(), moves.end(), stopped);
-        if (!expired && (!additions.empty() || reloading || stopping))
+        if (!expired && (!additions.empty() || stopping))
         {
             return;
         }
@@ -209,13 +204,12 @@ void Engine::State::ContinueShutdown()
         expired = false;
         // A check confirms its pause only after its reads return, which a
         // drive that stopped responding may never do. Storage recovery and a
-        // move hold their torrent paused, and their reload may be replacing
-        // its handle.
+        // move hold their torrent paused.
         if (!session->is_paused())
         {
             for (auto const& [id, torrent] : torrents)
             {
-                if (!torrent.restore && !torrent.recovery && !torrent.moving &&
+                if (!torrent.restore && !torrent.control.Recovers() && !torrent.moving &&
                     !bool(torrent.handle.flags() & lt::torrent_flags::paused) &&
                     torrent.status.state != lt::torrent_status::checking_files)
                 {
@@ -306,7 +300,9 @@ void Engine::State::ContinueShutdown()
         bool runs = !std::all_of(moves.begin(), moves.end(), stopped) ||
             !std::all_of(abandonments.begin(), abandonments.end(), abandoned) || !payload.IsIdle() ||
             !sources.IsIdle() ||
-            std::any_of(volumes.begin(), volumes.end(), [](auto const& entry) { return !entry.second->IsIdle(); });
+            std::any_of(volumes.begin(), volumes.end(), [](auto const& entry) { return !entry.second->IsIdle(); }) ||
+            std::any_of(rootProbes.begin(), rootProbes.end(),
+                [](auto const& entry) { return !entry.second.worker->IsIdle(); });
         if (runs && waited < endingTimeout)
         {
             return;

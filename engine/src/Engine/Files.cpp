@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <future>
 #include <set>
+#include <system_error>
 
 namespace tt
 {
@@ -254,7 +255,7 @@ void Engine::State::ContinueNames()
     auto now = std::chrono::steady_clock::now();
     for (auto& [id, torrent] : torrents)
     {
-        if (torrent.restore || torrent.recovery || torrent.namePhase != NamePhase::Pending ||
+        if (torrent.restore || torrent.control.Recovers() || torrent.namePhase != NamePhase::Pending ||
             torrent.FilesBusy() || now < torrent.renameAt)
             continue;
         auto metadata = torrent.handle.torrent_file();
@@ -309,7 +310,7 @@ void Engine::State::FailNames(Torrent& torrent, StorageOutcome const& failure)
     if (failure.cause)
     {
         torrent.nameError = Problem::From(failure.cause);
-        RecoverStorage(torrent, failure.cause);
+        Steer(torrent, Control::Failed{*torrent.nameError, Retryable(failure.cause)});
     }
     log.Write("rename", torrent.torrentId, failure.detail);
     ContinueNames();
@@ -381,10 +382,10 @@ bool Engine::State::ApplyNames(lt::torrent_handle const& handle, lt::add_torrent
 void Engine::State::FinishNames(Torrent& torrent)
 {
     torrent.namePhase = NamePhase::Ready;
-    torrent.nameError.reset();
-    if (torrent.needsRecheck && !torrent.recovery)
+    if (auto cause = std::exchange(torrent.nameError, std::nullopt))
+        Steer(torrent, Control::Cleared{*cause});
+    if (torrent.needsRecheck && !torrent.control.Recovers())
     {
-        torrent.needsRecheck = false;
         if (torrent.facts.finalFolder.empty())
             torrent.completion.BeginCheck();
         Recheck(torrent);
@@ -491,8 +492,10 @@ void Engine::State::CompleteFiles(Torrent& torrent, lt::span<std::int64_t const>
 void Engine::State::FinishFiles(Torrent& torrent, std::optional<lt::file_index_t> after)
 {
     // A removed torrent's file alerts still reach this, but it starts no
-    // rename of its own.
-    if (IsShuttingDown() || torrent.recovery || !torrents.contains(torrent.torrentId) || torrent.filesPending ||
+    // rename of its own. While a storage failure holds the torrent, a failed
+    // rename runs again only when the ladder or the person continues it.
+    if (IsShuttingDown() || torrent.restore || torrent.control.Holds() || !torrents.contains(torrent.torrentId) ||
+        torrent.filesPending ||
         torrent.namePhase != NamePhase::Ready ||
         torrent.completedFiles.empty() || std::chrono::steady_clock::now() < torrent.renameAt ||
         !additions.empty() || !changes.IsIdle() || FilesBusy())
@@ -576,14 +579,7 @@ void Engine::State::FinishFiles(Torrent& torrent, std::optional<lt::file_index_t
 // sends the Completed toast that is due.
 void Engine::State::FinishDownload(Torrent& torrent)
 {
-    // A move that waits for another torrent's metadata tries again; other
-    // move problems wait for the person.
-    bool waits = torrent.moveError && !torrent.MoveBlocked();
-    // A torrent that downloads again has no move to wait for, unless an
-    // interrupted move continues it or a move the person asked for waits.
-    if (waits && !torrent.status.is_finished && !torrent.facts.marker && !torrent.waitingMove)
-        torrent.moveError.reset();
-    if (IsShuttingDown() || torrent.restore || torrent.recovery || torrent.filesPending ||
+    if (IsShuttingDown() || torrent.restore || torrent.control.Recovers() || torrent.filesPending ||
         torrent.completion.NeedsSample() || torrent.completion.IsWorking() || !torrent.status.is_finished || torrent.namePhase != NamePhase::Ready || torrent.FilesBusy() ||
         !torrent.completedFiles.empty() || torrent.facts.marker || torrent.waitingMove || torrent.unfinished)
         return;
@@ -592,7 +588,7 @@ void Engine::State::FinishDownload(Torrent& torrent)
         // The move waits its turn for its drives and busy files, as a move
         // the person asks for does.
         if (!torrent.MoveBlocked())
-            torrent.waitingMove = WaitingMove{torrent.facts.finalFolder, ++turns};
+            torrent.waitingMove = WaitingMove{.destination = torrent.facts.finalFolder, .turn = ++turns, .final = true};
         return;
     }
     if (settings.rechecksFinished && torrent.completion.BeginCheck())
@@ -605,7 +601,7 @@ void Engine::State::FinishDownload(Torrent& torrent)
                     found->second.completion.FailCheck();
                 log.Write("verify", id, "completion_failed");
             }
-        });
+        }, Requester::Engine);
         return;
     }
     if (torrent.completion.Finish())
@@ -722,7 +718,7 @@ void Engine::State::ContinueRename()
             {
                 auto error = GetLastError();
                 CheckReachable(source.parent_path());
-                throw std::runtime_error(std::to_string(error));
+                throw std::system_error(static_cast<int>(error), std::system_category(), Utf8(target.wstring()));
             }
             return renamed;
         }, [this](std::expected<Renamed, StorageOutcome> renamed)
@@ -737,11 +733,14 @@ void Engine::State::ContinueRename()
                 auto const& id = rename->owners.front().torrentId;
                 auto& torrent = Working(id);
                 torrent.renameAt = std::chrono::steady_clock::now() + renameRetry;
+                auto const& cause = complete.error().cause;
                 log.Write("rename", id, complete.error().detail);
-                // Storage recovery runs the rename again as soon as the
-                // share or drive answers.
-                if (complete.error().cause == Unreachable())
-                    RecoverStorage(torrent, Unreachable());
+                // A rename whose folder does not answer, or whose error no
+                // wait fixes, is a storage failure, so the row shows it with
+                // Retry. Any other error, such as a player that holds the
+                // file open, tries again after renameRetry without an error.
+                if (cause == Unreachable() || (cause && !Retryable(cause)))
+                    Steer(torrent, Control::Failed{Problem::From(cause), Retryable(cause)});
                 EndRename();
                 return;
             }
@@ -918,9 +917,10 @@ void Engine::State::On(lt::file_rename_failed_alert const& alert)
         if (expected && torrent->namePhase == NamePhase::Preparing)
             RecoverNames(*torrent);
         torrent->renameAt = std::chrono::steady_clock::now() + renameRetry;
-        // Storage recovery retries as soon as the folder answers again.
-        if (alert.error == Unreachable())
-            RecoverStorage(*torrent, alert.error);
+        // As for the rename of a finished file: only a folder that does not
+        // answer, or an error that no wait fixes, is a storage failure.
+        if (alert.error == Unreachable() || !Retryable(alert.error))
+            Steer(*torrent, Control::Failed{Problem::From(alert.error), Retryable(alert.error)});
         log.Write("rename", torrent->torrentId, alert.error.message());
         return;
     }

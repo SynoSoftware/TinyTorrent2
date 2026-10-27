@@ -32,6 +32,11 @@ void Engine::State::StartMove(std::vector<std::string> const& ids, std::string c
     Move moving;
     moving.ids = ids;
     moving.destination = destination;
+    moving.final = start == MoveStart::Waited && std::all_of(ids.begin(), ids.end(), [this](auto const& id)
+    {
+        auto const& waiting = torrents.at(id).waitingMove;
+        return waiting && waiting->final;
+    });
     // Members whose interrupted move checked this destination.
     std::vector<std::string> continued;
     for (auto const& id : ids)
@@ -119,6 +124,7 @@ void Engine::State::StartMove(std::vector<std::string> const& ids, std::string c
             // The latest move the person asked for replaces one that waited.
             torrent.waitingMove.reset();
             torrent.moveError.reset();
+            Steer(torrent, Control::MoveStarted{started.final});
             torrent.ApplyIntent();
         }
         PrepareMove(started);
@@ -163,16 +169,18 @@ bool Engine::State::DelaysMove(Outcome const& outcome)
 }
 
 // Shows on the torrent, and once as a toast, why a move that the person is
-// not waiting on could not start.
+// not waiting on could not start. A move that still waits keeps the refusal
+// on its wait; otherwise the move failed.
 void Engine::State::RefuseMove(Torrent& torrent, Outcome const& outcome)
 {
-    bool shown = torrent.moveError && torrent.moveError->refusal == outcome.error;
-    torrent.moveError = Problem{ProblemKind::MoveFailed, outcome.detail, outcome.error};
+    auto& refused = torrent.waitingMove ? torrent.waitingMove->refusal : torrent.moveError;
+    bool shown = refused && refused->refusal == outcome.error;
+    refused = Problem{ProblemKind::MoveFailed, outcome.detail, outcome.error};
     // A wait that now names another torrent is the same problem, so the
     // status update does not report it again.
-    torrent.notifiedError = torrent.moveError;
+    torrent.notifiedError = refused;
     if (!shown)
-        Notify(ToastKind::Error, torrent, outcome.detail, torrent.moveError->Code());
+        Notify(ToastKind::Error, torrent, outcome.detail, refused->Code());
 }
 
 void Engine::State::PrepareMove(Move& moving)
@@ -587,36 +595,35 @@ void Engine::State::ReloadMove(Move& moving)
         }
         params.flags &= ~(lt::torrent_flags::seed_mode | lt::torrent_flags::auto_managed);
         params.flags |= lt::torrent_flags::paused | lt::torrent_flags::no_verify_files;
-        // Exit pauses and saves the torrent through its handle, so once Exit
-        // has started the handle stays, and the saved task continues the move.
+        // The paused torrent issues no disk job after this release.
         ReleaseFiles({handle});
         if (stop.stop_requested())
             throw std::runtime_error("shutting_down");
-        ReloadStorage(handle, *replacement);
-        params.flags &= ~lt::torrent_flags::no_verify_files;
     }, [this, &moving, id, handle, replacement](StorageOutcome outcome)
     {
+        // Exit pauses and saves the torrent through its handle, so once Exit
+        // has started the handle stays, and the saved task continues the move.
+        if (IsShuttingDown())
+            return;
         if (outcome.failure)
         {
-            if (replacement->removed)
-            {
-                auto& torrent = Working(id);
-                handles.erase(handle);
-                seedQueries.erase(handle);
-                auto& params = replacement->params;
-                params.save_path = torrent.facts.savePath;
-                params.have_pieces.clear();
-                params.flags &= ~lt::torrent_flags::no_verify_files;
-                torrent.restore = std::move(params);
-                torrent.pendingCheckpoint.reset();
-                torrent.checkpointPhase = CheckpointPhase::Idle;
-            }
-            if (!IsShuttingDown())
-                FailMove(moving, Problem::From(outcome, ProblemKind::MoveInterrupted));
+            FailMove(moving, Problem::From(outcome, ProblemKind::MoveInterrupted));
             return;
         }
         auto& torrent = Working(id);
-        ReplaceHandle(torrent, *replacement);
+        ReloadStorage(handle, *replacement);
+        replacement->params.flags &= ~lt::torrent_flags::no_verify_files;
+        if (replacement->error)
+        {
+            // RestorePending adds the torrent again, and it checks the files
+            // that the move left.
+            replacement->params.save_path = torrent.facts.savePath;
+            replacement->params.have_pieces.clear();
+            SwapHandle(torrent, *replacement);
+            FailMove(moving, Problem{ProblemKind::MoveInterrupted, replacement->error.message()});
+            return;
+        }
+        SwapHandle(torrent, *replacement);
         torrent.ApplyIntent();
         // The writer queues this after older checkpoints. The old handle no
         // longer answers alerts, so no stale piece map can follow this one.
@@ -798,7 +805,7 @@ void Engine::State::FailMove(Move& moving, Problem problem)
             settle(torrent.facts, clears(id) && saved);
             // Only a failure that left the files complete where they were can
             // run again by itself.
-            EndMove(torrent, problem, !torrent.facts.marker && SameFolder(moving.destination, torrent.facts.finalFolder));
+            EndMove(torrent, problem, moving.final && !torrent.facts.marker);
         }
         moving.current += failed.size();
         moving.phase = MovePhase::Ready;
@@ -823,14 +830,16 @@ void Engine::State::FailMove(Move& moving, Problem problem)
     }
 }
 
-void Engine::State::EndMove(Torrent& torrent, std::optional<Problem> problem, bool finalFolder)
+void Engine::State::EndMove(Torrent& torrent, std::optional<Problem> problem, bool final)
 {
     torrent.moving = false;
     torrent.moveError = problem;
+    Steer(torrent, Control::MoveEnded{problem, final});
     if (!problem)
     {
-        torrent.moveRetry = StorageRetry::Automatic;
-        // The names are prepared again at the new folder.
+        // The torrent's storage failure belonged to its old folder, and the
+        // names are prepared again at the new one.
+        Steer(torrent, Control::Replaced{});
         torrent.nameError.reset();
         ContinueNames();
         return;
@@ -841,9 +850,8 @@ void Engine::State::EndMove(Torrent& torrent, std::optional<Problem> problem, bo
     // A move to the final folder is the engine's own work, so its failure
     // waits for the destination to answer and runs once more, as a storage
     // error does, and the message bar reports it while it lasts.
-    if (finalFolder)
+    if (final)
     {
-        torrent.moveRetry = torrent.moveRetry == StorageRetry::Resumed ? StorageRetry::Person : StorageRetry::Stopped;
         Invalidate(torrent.torrentId);
         return;
     }

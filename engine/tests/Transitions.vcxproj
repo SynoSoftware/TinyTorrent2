@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="../src/Engine.vcxproj" />
+  <PropertyGroup>
+    <ProjectGuid>{0C4A7E2B-5D19-4F3E-9A61-7B2E8D4C1F05}</ProjectGuid>
+  </PropertyGroup>
+  <ItemGroup>
+    <ClCompile Remove="@(ClCompile)" />
+    <ResourceCompile Remove="@(ResourceCompile)" />
+    <ClCompile Include="../src/Precompiled.cpp">
+      <PrecompiledHeader>Create</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="../src/Control.cpp" />
+    <ClCompile Include="Transitions.cpp" />
+  </ItemGroup>
+  <ItemDefinitionGroup>
+    <Link><SubSystem>Console</SubSystem></Link>
+  </ItemDefinitionGroup>
+</Project>

@@ -110,7 +110,8 @@ public:
     // Replaces the shown popup with a toast. Only an interactive toast takes
     // the focus.
     void Show(Content toast);
-    // Updates a shown toast without another announcement or lifetime restart.
+    // Updates a shown toast, its buttons included, without another
+    // announcement or lifetime restart.
     void Update(Content const& toast);
     // The first Ask shows the prompt, requests the foreground and focuses the
     // answer when it is enabled. While the prompt is open, asking again
@@ -219,6 +220,12 @@ private:
     void Invoke(std::size_t action);
     void CopyPath();
     void DeleteFonts();
+    Action Dismiss() const;
+    // After the buttons changed, keeps a press, hover or focus only on a
+    // button that is still the same enabled button, so nothing shows on, or
+    // runs, a button the person did not point at. The focus that went
+    // returns to the default answer.
+    void Settle(std::vector<Action> const& previous);
     Strings const& strings_;
     Acrylic acrylic_;
     Theme theme_ = Theme::System;

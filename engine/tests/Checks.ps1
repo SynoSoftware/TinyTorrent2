@@ -1,9 +1,10 @@
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('Frames', 'Summaries', 'Targets', 'Facts', 'Restore', 'Exit', 'Conflict', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames', 'Pause', 'History', 'Accounting', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify', 'MoveExisting', 'DriveTurns', 'UnfinishedTasks')]
+    [ValidateSet('Frames', 'Summaries', 'Targets', 'Facts', 'Restore', 'Exit', 'Conflict', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames', 'Pause', 'History', 'Accounting', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify', 'MoveExisting', 'DriveTurns', 'UnfinishedTasks', 'StorageStop', 'StoppedLocation', 'AbsentLink', 'AbsentNotice', 'KilledCheck', 'StoppedHeld', 'MagnetAbsent')]
     [string] $Check,
     # Every check but Conflict, FilesSafety, WaitingMove, RemoveDuringMove, MoveAndVerify,
-    # MoveExisting, DriveTurns and UnfinishedTasks, which make their own torrents.
+    # MoveExisting, DriveTurns, UnfinishedTasks, StorageStop, StoppedLocation,
+    # AbsentLink, AbsentNotice and KilledCheck, which make their own torrents.
     [string] $TorrentFile,
     [string] $EnginePath,
     [switch] $Transfer,
@@ -25,11 +26,11 @@ param(
 $ErrorActionPreference = 'Stop'
 # These checks start the Transfer peer and download real payload, which takes
 # minutes of the owner's machine, so they run only when the owner asks.
-$transferChecks = 'MagnetDownload', 'SelectedTransfer', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles'
+$transferChecks = 'MagnetDownload', 'SelectedTransfer', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'StoppedHeld', 'MagnetAbsent'
 # These checks each guard one defect that was already fixed, so a run of every
 # check skips them; the owner asks for them when that code changes.
 $optInChecks = 'WaitingMove', 'RemoveDuringMove'
-if (-not $TorrentFile -and $Check -notin 'Conflict', 'FilesSafety', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify', 'MoveExisting', 'DriveTurns', 'UnfinishedTasks') {
+if (-not $TorrentFile -and $Check -notin 'Conflict', 'FilesSafety', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify', 'MoveExisting', 'DriveTurns', 'UnfinishedTasks', 'StorageStop', 'StoppedLocation', 'AbsentLink', 'AbsentNotice', 'KilledCheck') {
     throw "$Check needs -TorrentFile."
 }
 if ($Check -in $transferChecks -and -not $Transfer) {
@@ -101,6 +102,11 @@ $heldFile = $null
 $peer = $null
 $peerDirectory = Join-Path $directory 'peer'
 $standIn = $null
+# The storage checks' faults, which the cleanup removes.
+$locked = $null
+$junction = $null
+$substDrive = $null
+$substMapped = $false
 
 function Preview {
     $reply = Send-Command @{ command = 'preview'; source = $TorrentFile; destination = $payload }
@@ -182,6 +188,107 @@ function New-Pattern([string] $name, [long] $length, [string] $destination) {
     }
     finally { $stream.Dispose() }
     return Add-Fixture $name $length $pieces $destination
+}
+
+function Get-Row([string] $id) {
+    return (Send-Command @{ command = 'snapshot' }).data.torrents | Where-Object torrent_id -eq $id
+}
+
+function Wait-Torrent([string] $id, [scriptblock] $done, [int] $seconds, [string] $failure) {
+    $until = [DateTime]::UtcNow.AddSeconds($seconds)
+    do {
+        $row = Get-Row $id
+        if (& $done $row) { return $row }
+        Start-Sleep -Milliseconds 200
+    } while ([DateTime]::UtcNow -lt $until)
+    throw "$failure`: the torrent is $($row.status) at $($row.progress), error '$($row.error)', retry $($row.retry)"
+}
+
+function Wait-Checked([string] $id) {
+    return Wait-Torrent $id { param($row) $row.progress -eq 1 -and -not $row.error -and $row.status -notin 'checking', 'waiting_check' } 300 'The fixture check'
+}
+
+# The engine logs its storage decisions, such as `storage <id> stopped`, and
+# each notice it sends, which the snapshot does not show.
+function Count-Log([string] $text) {
+    $log = Join-Path $directory 'engine.log'
+    if (-not (Test-Path -LiteralPath $log)) { return 0 }
+    return @(Select-String -LiteralPath $log -SimpleMatch -Pattern $text).Count
+}
+
+function Wait-Log([string] $text, [int] $count, [int] $seconds, [string] $failure) {
+    $until = [DateTime]::UtcNow.AddSeconds($seconds)
+    do {
+        if ((Count-Log $text) -ge $count) { return }
+        Start-Sleep -Milliseconds 200
+    } while ([DateTime]::UtcNow -lt $until)
+    throw "$failure; the log is in $directory"
+}
+
+# Locks every byte of the file. Every read of it then fails with
+# ERROR_LOCK_VIOLATION, which the engine retries, while its folder answers and
+# the file still opens, so the engine's probes find the storage usable.
+function Lock-Payload([string] $file) {
+    $stream = [IO.File]::Open($file, 'Open', 'ReadWrite', [IO.FileShare]'ReadWrite, Delete')
+    $stream.Lock(0, $stream.Length)
+    return $stream
+}
+
+# Maps a free drive letter to the folder. Removing the mapping closes no open
+# file; only new opens fail, as on a drive that was unplugged.
+function Mount-Drive([string] $folder) {
+    if (-not $script:substDrive) {
+        $used = @([IO.DriveInfo]::GetDrives() | ForEach-Object { $_.Name.Substring(0, 2).ToUpperInvariant() })
+        $script:substDrive = @('T:', 'U:', 'W:', 'X:', 'Q:', 'R:', 'S:', 'P:', 'O:', 'N:') | Where-Object { $_ -notin $used } | Select-Object -First 1
+        Assert ([bool]$script:substDrive) 'No drive letter is free for the absent drive'
+    }
+    $null = & subst.exe $script:substDrive $folder
+    Assert ($LASTEXITCODE -eq 0) "subst could not map $($script:substDrive) to $folder"
+    $script:substMapped = $true
+}
+
+function Dismount-Drive {
+    $null = & subst.exe $script:substDrive /D
+    Assert ($LASTEXITCODE -eq 0) "subst could not remove $($script:substDrive)"
+    $script:substMapped = $false
+}
+
+# Returns the index after the bencoded value that starts at `at`.
+function Skip-Bencoded([byte[]] $bytes, [int] $at) {
+    $kind = [char]$bytes[$at]
+    if ($kind -eq 'i') { return [Array]::IndexOf($bytes, [byte][char]'e', $at) + 1 }
+    if ($kind -eq 'l' -or $kind -eq 'd') {
+        $at++
+        while ([char]$bytes[$at] -ne 'e') { $at = Skip-Bencoded $bytes $at }
+        return $at + 1
+    }
+    $colon = [Array]::IndexOf($bytes, [byte][char]':', $at)
+    return $colon + 1 + [int][Text.Encoding]::ASCII.GetString($bytes, $at, $colon - $at)
+}
+
+# The pieces that the torrent's resume file records as had: the set bits of
+# the top-level `pieces` string, a bitfield. The saved info dictionary has a
+# `pieces` key of its own, which holds the hashes.
+function Saved-Pieces([string] $id) {
+    $bytes = [IO.File]::ReadAllBytes((Join-Path $directory "$id.resume"))
+    $at = 1
+    while ([char]$bytes[$at] -ne 'e') {
+        $colon = [Array]::IndexOf($bytes, [byte][char]':', $at)
+        $length = [int][Text.Encoding]::ASCII.GetString($bytes, $at, $colon - $at)
+        $key = [Text.Encoding]::ASCII.GetString($bytes, $colon + 1, $length)
+        $at = $colon + 1 + $length
+        if ($key -eq 'pieces') {
+            $colon = [Array]::IndexOf($bytes, [byte][char]':', $at)
+            $count = [int][Text.Encoding]::ASCII.GetString($bytes, $at, $colon - $at)
+            $had = 0
+            for ($index = $colon + 1; $index -le $colon + $count; $index++) {
+                $had += [Numerics.BitOperations]::PopCount([uint32]$bytes[$index])
+            }
+            return $had
+        }
+        $at = Skip-Bencoded $bytes $at
+    }
+    return 0
 }
 
 try {
@@ -2386,6 +2493,218 @@ while ($true) { Add-Content -LiteralPath $Frames -Value (Read-Frame) }
                 Assert $reply.ok 'The removal session could not pause again'
             }
         }
+        'StorageStop' {
+            # A read error that waiting can fix runs the storage ladder: one
+            # automatic continue, a stop that the minute check continues once,
+            # then the person's Retry. The locked file fails every read while
+            # its folder answers and it still opens.
+            $id = New-Zeros 'locked' 64MB
+            $null = Wait-Checked $id
+            $locked = Lock-Payload (Join-Path $payload 'locked.bin')
+            $reply = Send-Command @{ command = 'verify'; torrent_ids = @($id) }
+            Assert $reply.ok 'Verify of the locked file was refused'
+            Wait-Log "storage $id stopped" 1 60 'The failing check did not stop after its automatic continue'
+            # A stopped torrent once made the engine query it on every pass,
+            # so the engine and libtorrent ran without pause for as long as
+            # it waited.
+            $script:process.Refresh()
+            $before = $script:process.TotalProcessorTime
+            Start-Sleep -Seconds 30
+            $script:process.Refresh()
+            $used = ($script:process.TotalProcessorTime - $before).TotalSeconds
+            Assert ($used -lt 3) "A stopped torrent kept the engine busy: $used s of processor time in 30 s"
+            Wait-Log "storage $id retry_needed" 1 90 'The minute check did not continue the stopped torrent once and then leave it to Retry'
+            $row = Get-Row $id
+            Assert ($row.status -eq 'error' -and $row.retry) "The torrent that waits for Retry is $($row.status), retry $($row.retry)"
+            # Verify once queued a check on the handle that recovery had
+            # paused, so the check never ran and the error stayed.
+            $locked.Dispose()
+            $locked = $null
+            $reply = Send-Command @{ command = 'verify'; torrent_ids = @($id) }
+            Assert $reply.ok 'Verify of a torrent that waits for Retry was refused'
+            $null = Wait-Torrent $id { param($row) $row.progress -eq 1 -and -not $row.error -and -not $row.retry -and
+                $row.status -notin 'checking', 'waiting_check' } 60 'Verify did not check a torrent that waited for Retry'
+        }
+        'StoppedLocation' {
+            # A location that stops answering while a torrent is stopped makes
+            # its next resume automatic again, so a failure after that resume
+            # gets an automatic continue, and later the minute check, before
+            # the person's Retry.
+            $drive = Join-Path $directory 'drive'
+            $null = New-Item -ItemType Directory -Path $drive
+            Mount-Drive $drive
+            $folder = "$substDrive\stopped"
+            $null = New-Item -ItemType Directory -Path $folder
+            $id = New-Zeros 'located' 64MB $folder
+            $null = Wait-Checked $id
+            $locked = Lock-Payload (Join-Path $folder 'located.bin')
+            $reply = Send-Command @{ command = 'verify'; torrent_ids = @($id) }
+            Assert $reply.ok 'Verify of the locked file was refused'
+            Wait-Log "storage $id stopped" 1 60 'The failing check did not stop after its automatic continue'
+            Dismount-Drive
+            # The minute check runs once a minute, so one of them runs while
+            # the drive is absent.
+            Start-Sleep -Seconds 65
+            Mount-Drive $drive
+            $person = Count-Log "storage $id retry_needed"
+            $stopped = Count-Log "storage $id stopped"
+            # The next minute check continues the torrent, and the lock fails
+            # it again.
+            $until = [DateTime]::UtcNow.AddSeconds(150)
+            do {
+                Start-Sleep -Milliseconds 200
+                $toPerson = (Count-Log "storage $id retry_needed") -gt $person
+                $toStop = (Count-Log "storage $id stopped") -gt $stopped
+            } while (-not ($toPerson -or $toStop) -and [DateTime]::UtcNow -lt $until)
+            Assert ($toPerson -or $toStop) 'The minute check did not continue the torrent after its drive returned'
+            $outcome = if ($toPerson) { "it waits for the person's Retry" } else { 'it stopped' }
+            # Once its file reads again, a stopped torrent continues by itself
+            # at the next minute check; one that waits for Retry does not.
+            $locked.Dispose()
+            $locked = $null
+            $null = Wait-Torrent $id { param($row) $row.progress -eq 1 -and -not $row.error -and
+                $row.status -notin 'checking', 'waiting_check' } 75 "After its drive was absent and returned, the failure took no automatic retry ($outcome)"
+        }
+        'AbsentLink' {
+            # A save folder that is a junction to a drive that is absent does
+            # not answer. Its torrent waits for it and keeps its saved pieces;
+            # a missing file there is not a file without data.
+            $drive = Join-Path $directory 'drive'
+            $null = New-Item -ItemType Directory -Path $drive
+            Mount-Drive $drive
+            $null = New-Item -ItemType Directory -Path "$substDrive\media"
+            $junction = Join-Path $directory 'link'
+            $null = New-Item -ItemType Junction -Path $junction -Target "$substDrive\media"
+            $id = New-Zeros 'linked' 64MB $junction
+            $null = Wait-Checked $id
+            Stop-Engine
+            $pieces = Saved-Pieces $id
+            Assert ($pieces -eq 16) "The fixture saved $pieces of 16 pieces before its drive was removed"
+            Dismount-Drive
+            $null = Start-Engine
+            # libtorrent has judged the files once the torrent waits with an
+            # error or downloads what it lacks.
+            $row = Wait-Torrent $id { param($row) $row.status -in 'error', 'downloading' } 120 'The start with the drive absent did not settle'
+            Stop-Engine
+            $pieces = Saved-Pieces $id
+            Assert ($pieces -eq 16) "A start with the junction's drive absent saved $pieces of 16 pieces; the torrent was $($row.status), error '$($row.error)'"
+            Mount-Drive $drive
+            $null = Start-Engine
+            $null = Wait-Torrent $id { param($row) $row.complete -and $row.progress -eq 1 -and -not $row.error -and
+                $row.status -notin 'checking', 'waiting_check' } 60 'The torrent did not resume once its drive returned'
+        }
+        'AbsentNotice' {
+            # A torrent that waits for a drive that does not answer shows one
+            # notice for that drive, whatever error Windows reported.
+            $drive = Join-Path $directory 'drive'
+            $null = New-Item -ItemType Directory -Path $drive
+            Mount-Drive $drive
+            $folder = "$substDrive\absent"
+            $null = New-Item -ItemType Directory -Path $folder
+            $id = New-Zeros 'absent' 64MB $folder
+            $null = Wait-Checked $id
+            Dismount-Drive
+            $reply = Send-Command @{ command = 'verify'; torrent_ids = @($id) }
+            Assert $reply.ok 'Verify on the absent drive was refused'
+            $null = Wait-Torrent $id { param($row) $row.status -eq 'error' } 30 'The check on the absent drive did not fail'
+            # A condition is raised once it has lasted two minutes. A headless
+            # engine prints a raised condition instead of sending it to the
+            # window, so the engine's log of each notice it sends is the
+            # evidence. A notice without a torrent is a drive's notice, or
+            # the stopped notice of several torrents, and here only one
+            # torrent exists.
+            Wait-Log 'notification  error' 1 180 'The absent drive raised no notice'
+            Mount-Drive $drive
+        }
+        'KilledCheck' {
+            # A check that a crash interrupts continues at the next start, as
+            # the setting says, so the torrent ends with all its pieces.
+            $reply = Send-Command @{ command = 'settings'; changes = @{ unfinished_tasks = 'continue' } }
+            Assert $reply.ok 'The unfinished-task setting was refused'
+            $id = New-Zeros 'killed' 16GB
+            $null = Wait-Checked $id
+            $reply = Send-Command @{ command = 'verify'; torrent_ids = @($id) }
+            Assert $reply.ok 'Verify was refused'
+            # The kill falls inside the check, after its task was saved.
+            $until = [DateTime]::UtcNow.AddSeconds(60)
+            do {
+                Start-Sleep -Milliseconds 100
+                $row = Get-Row $id
+                $saved = [IO.File]::ReadAllText((Join-Path $directory 'settings.json')) | ConvertFrom-Json
+                $task = @($saved.tasks | Where-Object { $_.kind -eq 'check' -and $_.torrent_id -eq $id })
+            } while (-not ($row.status -eq 'checking' -and $row.progress -gt 0.05 -and $task.Count) -and [DateTime]::UtcNow -lt $until)
+            Assert ($row.status -eq 'checking' -and $row.progress -gt 0.05 -and $row.progress -lt 0.9 -and $task.Count) `
+                "The check was not under way with its task saved: $($row.status) at $($row.progress), $($task.Count) tasks"
+            Stop-Process -Id $script:process.Id -Force
+            $null = $script:process.WaitForExit(15000)
+            $script:pipe.Dispose(); $script:pipe = $null
+            $script:process.Dispose(); $script:process = $null
+            $snapshot = Start-Engine
+            Assert ($null -eq $snapshot.unfinished_tasks) 'The engine asked about the check although the setting says continue'
+            $null = Wait-Torrent $id { param($row) $row.complete -and $row.progress -eq 1 -and -not $row.error -and
+                $row.status -notin 'checking', 'waiting_check' } 300 'The check that the kill interrupted did not finish after the restart'
+        }
+        'StoppedHeld' {
+            # A torrent that storage recovery stopped stays paused in
+            # libtorrent when another choice reapplies its intent. Once, a
+            # speed limit resumed it, and libtorrent left upload mode by
+            # itself and wrote again. The directory at the payload's path
+            # fails every write while the folder answers.
+            $collision = Join-Path $payload 'transfer.bin'
+            $null = New-Item -ItemType Directory -Path $collision
+            $peer = Start-Process -FilePath $peerExecutable `
+                -ArgumentList @(('"' + $peerDirectory + '"'), '6881') -WindowStyle Hidden -PassThru `
+                -RedirectStandardOutput (Join-Path $directory 'peer.log') -RedirectStandardError (Join-Path $directory 'peer-error.log')
+            $reply = Send-Command @{ command = 'add'; preview_id = (Preview); destination = $payload; paused = $false }
+            Assert $reply.ok 'Fixture addition failed'
+            $id = $reply.data.torrent_id
+            Wait-Log "storage $id stopped" 1 120 'The failing writes did not stop the torrent after its automatic continue'
+            $reply = Send-Command @{ command = 'speed_limit'; torrent_ids = @($id); download_limit = 131072 }
+            Assert $reply.ok 'The speed limit was refused'
+            # The seed connects every second, and a paused torrent refuses it.
+            $until = [DateTime]::UtcNow.AddSeconds(10)
+            do {
+                Start-Sleep -Milliseconds 200
+                $row = Get-Row $id
+                Assert ($row.peer_count -eq 0) "A stopped torrent connected to $($row.peer_count) peers after a speed limit"
+            } while ([DateTime]::UtcNow -lt $until)
+            Assert ($row.status -eq 'error' -and $row.retry) "The stopped torrent is $($row.status), retry $($row.retry)"
+            Remove-Item -LiteralPath $collision
+        }
+        'MagnetAbsent' {
+            # A magnet added to a drive that does not answer joins the list and
+            # waits for its location. libtorrent moves the preview's storage
+            # there without files, so that move must not fail.
+            $reply = Send-Command @{ command = 'preview'; source = $TorrentFile; destination = $payload }
+            Assert $reply.ok 'Known file could not supply the magnet hash'
+            $magnet = 'magnet:?xt=urn:btih:' + $reply.data.hashes[0]
+            $reply = Send-Command @{ command = 'cancel_preview'; preview_id = $reply.data.preview_id }
+            Assert $reply.ok 'Known file preview did not release'
+            $drive = Join-Path $directory 'drive'
+            $null = New-Item -ItemType Directory -Path $drive
+            Mount-Drive $drive
+            $destination = "$substDrive\magnet"
+            $null = New-Item -ItemType Directory -Path $destination
+            $peer = Start-Process -FilePath $peerExecutable `
+                -ArgumentList @(('"' + $peerDirectory + '"'), '6881') -WindowStyle Hidden -PassThru `
+                -RedirectStandardOutput (Join-Path $directory 'peer.log') -RedirectStandardError (Join-Path $directory 'peer-error.log')
+            $reply = Send-Command @{ command = 'preview'; source = $magnet; destination = $destination }
+            Assert $reply.ok 'The magnet did not preview'
+            $previewId = $reply.data.preview_id
+            $until = [DateTime]::UtcNow.AddSeconds(60)
+            do {
+                Assert (-not $peer.HasExited) 'The magnet seed failed'
+                Start-Sleep -Milliseconds 200
+                $reply = Send-Command @{ command = 'preview_detail'; preview_id = $previewId; destination = $destination }
+            } while (-not ($reply.ok -and $reply.data.metadata_ready) -and [DateTime]::UtcNow -lt $until)
+            Assert ($reply.ok -and $reply.data.metadata_ready) 'The magnet preview did not receive its metadata'
+            Dismount-Drive
+            $reply = Send-Command @{ command = 'add'; preview_id = $previewId; destination = $destination; paused = $true }
+            Assert $reply.ok "The magnet added to an absent drive was refused: $($reply.error.code) $($reply.error.detail)"
+            $row = Get-Row $reply.data.torrent_id
+            Assert ($row -and $row.save_path -eq $destination) 'The magnet added to an absent drive is not in the list'
+            Mount-Drive $drive
+        }
     }
     Stop-Engine
     if ($stalled) { $stalled.Dispose(); $stalled = $null }
@@ -2393,6 +2712,7 @@ while ($true) { Add-Content -LiteralPath $Frames -Value (Read-Frame) }
 }
 finally {
     if ($heldFile) { $heldFile.Dispose() }
+    if ($locked) { $locked.Dispose() }
     if ($peer -and -not $peer.HasExited) {
         $null = New-Item -ItemType File -Path (Join-Path $peerDirectory 'stop') -Force
         if (-not $peer.WaitForExit(15000)) { $peer.Kill(); $peer.WaitForExit() }
@@ -2415,6 +2735,16 @@ finally {
         }
     }
     if ($script:pipe) { $script:pipe.Dispose() }
+    # Deleting the junction as a folder removes only the link, also when its
+    # drive is absent, where Test-Path reports it missing.
+    if ($junction) {
+        try { [IO.Directory]::Delete($junction) }
+        catch [IO.DirectoryNotFoundException] { }
+    }
+    if ($substMapped) {
+        $null = & subst.exe $substDrive /D
+        if ($LASTEXITCODE -ne 0) { Write-Warning "subst could not remove $substDrive" }
+    }
     if ($volumeFolder) { Remove-Item -LiteralPath $volumeFolder -Recurse -Force -ErrorAction Continue }
     if ($networkFolder) { Remove-Item -LiteralPath $networkFolder -Recurse -Force -ErrorAction Continue }
     foreach ($other in $others) { Remove-Item -LiteralPath $other -Recurse -Force -ErrorAction Continue }

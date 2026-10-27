@@ -647,9 +647,7 @@ void Popup::Show(Content toast)
     {
         DestroyWindow(menu_);
     }
-    // Dismiss only closes the toast, which Invoke does before running it.
-    toast.actions.push_back({.glyph = dismissGlyph, .label = strings_.Text("notification", "dismiss"),
-        .run = [] {}, .automationId = L"Dismiss"});
+    toast.actions.push_back(Dismiss());
     content_ = std::move(toast);
     Present();
     if (!window_)
@@ -675,9 +673,58 @@ void Popup::Update(Content const& toast)
     content_.body = toast.body;
     content_.detail = toast.detail;
     content_.location = toast.location;
+    // A new count can change what the toast and its buttons do, such as Show
+    // torrent for one torrent and Retry all for several.
+    content_.select = toast.select;
+    auto previous = std::exchange(content_.actions, toast.actions);
+    content_.actions.push_back(Dismiss());
     Layout();
     SetWindowTextW(window_, content_.title.c_str());
+    Settle(previous);
     InvalidateRect(window_, nullptr, FALSE);
+}
+
+void Popup::Settle(std::vector<Action> const& previous)
+{
+    auto kept = [this, &previous](std::size_t index)
+    {
+        return index < content_.actions.size() && index < previous.size() && content_.actions[index].enabled &&
+            content_.actions[index].automationId == previous[index].automationId;
+    };
+    auto stale = [&kept](std::optional<Target> const& target)
+    {
+        return target && target->part == PopupPart::Action && !kept(target->index);
+    };
+    if (stale(pressed_))
+    {
+        pressed_.reset();
+    }
+    if (stale(hover_))
+    {
+        hover_.reset();
+    }
+    if (focused_ && !kept(*focused_))
+    {
+        Focus(std::nullopt);
+    }
+    if (!focused_ && (asking_ || Interactive()))
+    {
+        Focus(Answer());
+    }
+    for (std::size_t index = 0; index < content_.actions.size(); ++index)
+    {
+        if (index >= previous.size() || previous[index].enabled != content_.actions[index].enabled)
+        {
+            NotifyWinEvent(EVENT_OBJECT_STATECHANGE, window_, OBJID_CLIENT, static_cast<LONG>(index + 1));
+        }
+    }
+}
+
+// Dismiss only closes the toast, which Invoke does before running it.
+Popup::Action Popup::Dismiss() const
+{
+    return {.glyph = dismissGlyph, .label = strings_.Text("notification", "dismiss"), .run = [] {},
+        .automationId = L"Dismiss"};
 }
 
 void Popup::Ask(Prompt prompt)
@@ -715,31 +762,7 @@ void Popup::Ask(Prompt prompt)
     auto previous = std::exchange(content_, std::move(content));
     Layout();
     SetWindowTextW(window_, content_.title.c_str());
-    auto usable = [this](std::size_t action)
-    {
-        return action < content_.actions.size() && content_.actions[action].enabled;
-    };
-    // A button that becomes disabled loses its press and the focus, so it
-    // never shows pressed or runs when it is enabled again.
-    if (pressed_ && pressed_->part == PopupPart::Action && !usable(pressed_->index))
-    {
-        pressed_.reset();
-    }
-    if (focused_ && !usable(*focused_))
-    {
-        Focus(std::nullopt);
-    }
-    if (!focused_)
-    {
-        Focus(Answer());
-    }
-    for (std::size_t index = 0; index < content_.actions.size(); ++index)
-    {
-        if (index >= previous.actions.size() || previous.actions[index].enabled != content_.actions[index].enabled)
-        {
-            NotifyWinEvent(EVENT_OBJECT_STATECHANGE, window_, OBJID_CLIENT, static_cast<LONG>(index + 1));
-        }
-    }
+    Settle(previous.actions);
     if (previous.title != content_.title || previous.body != content_.body)
     {
         NotifyWinEvent(EVENT_OBJECT_NAMECHANGE, window_, OBJID_CLIENT, CHILDID_SELF);

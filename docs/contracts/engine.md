@@ -69,6 +69,10 @@ Use window messages rather than [`PostThreadMessage`](https://learn.microsoft.co
 whose messages can be lost in native modal loops. Bound each dispatch batch, and
 finish a state transition before opening a menu or dialog that pumps messages.
 Headless execution uses the same owner without showing tray or splash surfaces.
+A worker completion, an alert, or one torrent's turn in the second's
+maintenance that throws is written to diagnostics and ends only its own step;
+the rest of the batch still runs, because one failed item never hides the
+others.
 
 Keep blocking storage and serialization off the tray message loop and libtorrent
 alert callbacks. Use libtorrent's existing asynchronous operations and
@@ -350,8 +354,10 @@ wherever libtorrent reads a missing file as empty: checks, including the check
 of a torrent that has no saved progress yet, the part file that holds the data
 of skipped files, a change of skipped files, moves and renames. A move that only
 sets the folder, as an addition does, succeeds without it, and the torrent then
-waits for its check like any other. Name preparation and the rename to a final
-name check the folder the same way.
+waits for its check like any other. Name preparation, the rename to a final
+name and storage recovery's probes call the fork's own check, so the engine and
+libtorrent agree on a folder, such as a link whose target is gone, that does
+not answer.
 
 libtorrent counts a piece as downloaded when it passes its hash check, before
 its blocks are written. When such a write fails, the fork recounts the file
@@ -362,48 +368,81 @@ all of its files when the disk error clears, and its resume data lists no
 pieces until then, so a restart checks them too. A piece whose blocks were
 written but could not be read back for its hash check downloads again.
 
-Recoverable payload I/O errors pause their torrent and release its storage through
-libtorrent's disk fence. The engine then checks the location on its volume's
-worker once a second, sharing each check between torrents in the same folder.
-When it answers, the engine clears the disk error and upload mode and reapplies
-the current intent, including forced downloads. This also reconnects seed peers
-with fresh piece availability and reopens invalidated network file handles.
-Stop, Pause all, schedules and adapter restrictions still apply. A stopped
-torrent, or one under Pause all, recovers as well, so it shows its saved
-progress instead of the error, and stays stopped. When the location answers
-but a file that the torrent downloads and that held downloaded data is gone or
-shorter than that data, as when it was deleted while its share was away, the
-engine reloads the torrent from its resume data without the pieces of those
-files. It downloads only them again, rather than writing around zeros or
-failing every read, and needs no check of every file, which can take hours.
-An error that waiting cannot fix ends recovery only once the location answers,
-because Windows reports an absent share with many codes. Recovery resumes a
-torrent by itself once. When the error returns before the torrent got further
-while the location still answers, the torrent stops and stays paused, because
-resuming again would loop. A torrent gets further when it has more data, when
-a finished torrent uploads more, or when a check reads further; a reloaded
-torrent counts from its reloaded progress. Time does not decide, because
-Windows can take minutes to report an error from a share that hangs. Once a
-minute the engine then checks, without starting the torrent, whether the cause
-is gone: the folder answers, the file that failed opens with the access the
-torrent needs, the folder otherwise accepts a new file, and a download's drive
-has room for the data it still lacks. When the check passes, the engine
-continues the torrent once more. The error returning before the torrent gets
-further after that leaves the torrent to the person's Retry, because a check
-that passes while the work still fails would loop too. An error that no check
-can judge leaves the torrent to the person at once. A location that stops
-answering in between makes the next resume automatic again, and so do the
-person's Retry, Start and Verify, and other work that clears the problem, such
-as names that are chosen at last. A failed move to the final folder that left
+Payload I/O errors, and a check that stalls on its drive, pause their torrent
+and release its storage through libtorrent's disk fence. The engine then checks
+the location on its volume's worker once a second, sharing each check between
+torrents in the same folder. When it answers, the engine clears the disk error
+and upload mode, and the torrent runs by its current intent, including forced
+downloads. This also reconnects seed peers with fresh piece availability and
+reopens invalidated network file handles. Stop, Pause all, schedules and
+adapter restrictions still apply. A stopped torrent, or one under Pause all,
+recovers as well, so it shows its saved progress instead of the error, and
+stays stopped. When the location answers but a file that the torrent downloads
+and that held downloaded data is gone or shorter than that data, as when it was
+deleted while its share was away, the engine asks the location again in the
+same job, and reloads the torrent from its resume data without the pieces of
+those files only when it still answers, so a share that drops during the search
+loses no pieces. The torrent downloads only those files again, rather than
+writing around zeros or failing every read, and needs no check of every file,
+which can take hours. An error that waiting cannot fix ends recovery only once
+the location answers, because Windows reports an absent share with many codes.
+
+Recovery resumes a torrent by itself once. When the error returns before the
+torrent got further while the location still answers, the torrent stops and
+stays paused, because resuming again would loop. A reload that fails counts as
+that resume, and its failure as the error returning. A torrent gets further
+when it has more data, when a finished torrent uploads more, or when a check
+reads further; a reloaded torrent counts from its first progress after its
+resume data is checked. Time does not decide, because Windows can take minutes
+to report an error from a share that hangs. From the stop on, the row offers
+Retry, and once a minute the engine checks, without starting the torrent,
+whether the cause is gone: the folder answers, the file that failed opens with
+the access the torrent needs, the folder otherwise accepts a new file, and a
+download's drive has room for the data it still lacks. When the check passes,
+the engine continues the torrent once more. The error returning before the
+torrent gets further after that leaves the torrent to the person's Retry,
+because a check that passes while the work still fails would loop too. An error
+that no check can judge leaves the torrent to the person once the location
+answers. A stop keeps the error that caused it, also an error that only a
+stalled check or a rename on a share that did not answer reported, so the row
+and Retry stay until the stop ends.
+
+A location that stops answering, also while the torrent is stopped, makes the
+next resume automatic again, and the torrent waits for its location instead of
+the person. The stop ends when the torrent gets further, when the person's
+Retry, Start, Force or Verify answers it, when other work clears its cause,
+such as names that are chosen at last, when a move gives the torrent a new
+folder, and when the torrent is removed. Only the person's commands answer a
+stop: the engine's own work, such as a seed limit's stop or the verification of
+finished downloads, leaves it as it is. Each answer acts on every listed
+torrent it can and refuses only the others, so one torrent never blocks the
+rest. Retry, Start and Force cannot act on an alias conflict while another
+listed torrent still holds the other identity, because the conflict comes
+straight back; Verify cannot act without metadata. One rule per answer decides
+this, and the row offers Retry, the stopped notice counts the torrent, and
+Retry all collects it only when Retry can act. A new error after a stop ended starts
+again with its automatic resume. A failed move to the final folder that left
 the files complete where they were follows the same rule: it waits until the
-check finds the final folder usable, with the room that the move's copies need
-by the move's own rule, runs once more, and then waits for Retry. Pending Verify
-waits for storage recovery, and for libtorrent's check of resume data, which
-ignores a recheck. A late probe cannot resume a removed torrent or
-apply an old location's answer after a move. Native release callbacks, rather
-than droppable alerts, establish that the old disk work has ended.
-Fresh generation-checked status samples reconcile missed errors, so an older
-status cannot restart recovery after it succeeds. When a disk error stops the
+check finds the final folder answering and usable, with the room that the
+move's copies need by the move's own rule, runs once more, and then waits for
+Retry. A move the person asks for ends that wait, also one that waits for its
+turn, and so does the person's Stop. Both minute checks run when the torrent
+has both stops, and the check of the torrent's own folder never waits for the
+check of a final folder that does not answer. Pending Verify waits for a
+release or reload that uses the files, and for libtorrent's check of resume
+data, which ignores a recheck. Each failure has at most one job: the storage
+failure its release, probe, own-folder check or reload, and the failed move to
+the final folder its final-folder check. A
+release or reload that still runs when the person answers, or when the torrent
+is removed, only clears the error when it ends; a probe or minute check then
+changes nothing, and a removed torrent starts no other job. A job on a handle
+that a reload or a move replaced, or on a folder that a move replaced, ends
+with it, also for a removed torrent, and its late result changes nothing. Native release callbacks, rather than
+droppable alerts, establish that the old disk work has ended, and the engine
+thread polls them, so no worker waits on one. Fresh generation-checked
+status samples reconcile missed errors, so an older status cannot restart
+recovery after it succeeds. After dropped alerts, only a torrent whose status
+shows an error starts recovery, with that error. When a disk error stops the
 check of resume data or the setup of a recheck, the fork runs that check again
 once the error clears. A failed check of resume data keeps its saved pieces,
 also in checkpoints, so a torrent whose share was absent at startup resumes
@@ -414,9 +453,18 @@ reload the native handle through the same owner as move verification,
 retaining the torrent's identity, history and current choices. The check
 continues after the pieces it had checked: the fork keeps a stopped check's
 position at the piece that failed and ignores the reads still in flight, and
-libtorrent continues a check after the pieces its resume data lists. A failed replacement retains the resume parameters
-according to whether the old handle was actually removed, rather than whether a
-late callback still holds it alive.
+libtorrent continues a check after the pieces its resume data lists. A worker
+reads the resume data and waits for the release; the engine thread then
+removes the old handle and adds the new one in one step, so no engine call ever
+uses a removed handle. One handle swap serves every reload and move: it forgets
+the state bound to the old handle (its status queries, checkpoint, check reads,
+release and turn, and cache write), installs the new handle or, when libtorrent
+did not add the torrent, the parameters to add it from, and only then ends the
+jobs on the old handle, so no event finds a torrent with neither. When
+libtorrent does not add the torrent again, the torrent keeps its identity,
+history, choices and stop, and the engine adds it from the resume parameters
+once more. When that add fails too, or a saved torrent cannot be added at
+start, the row shows the error and Retry, which adds it again.
 Every replacement restores the status-update subscription that native resume
 data omits, so the list and transfer policy keep following the new handle.
 

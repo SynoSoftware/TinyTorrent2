@@ -138,6 +138,7 @@
     <ClCompile Include="Changes.cpp" />
     <ClCompile Include="Log.cpp" />
     <ClCompile Include="Torrent.cpp" />
+    <ClCompile Include="Control.cpp" />
     <ClCompile Include="Payload.cpp" />
     <ClCompile Include="Drives.cpp" />
     <ClCompile Include="Store.cpp" />

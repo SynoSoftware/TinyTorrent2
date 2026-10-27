@@ -410,25 +410,25 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
     case Command::Pause:
         Act(TorrentIds(request), Acknowledge(reply), [this](auto const& ids, auto done)
         {
-            SetIntent(ids, Intent::Paused, done);
+            SetIntent(ids, Intent::Paused, done, Requester::Person);
         });
         break;
     case Command::Resume:
         Act(TorrentIds(request), Acknowledge(reply), [this](auto const& ids, auto done)
         {
-            SetIntent(ids, Intent::Resumed, done);
+            SetIntent(ids, Intent::Resumed, done, Requester::Person);
         });
         break;
     case Command::Force:
         Act(TorrentIds(request), Acknowledge(reply), [this](auto const& ids, auto done)
         {
-            SetIntent(ids, Intent::Forced, done);
+            SetIntent(ids, Intent::Forced, done, Requester::Person);
         });
         break;
     case Command::Verify:
         Act(TorrentIds(request), Acknowledge(reply), [this](auto const& ids, auto done)
         {
-            Verify(ids, done);
+            Verify(ids, done, Requester::Person);
         });
         break;
     case Command::Retry:
@@ -494,7 +494,7 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
                     {
                         auto& torrent = torrents.at(id);
                         torrent.waitingMove = WaitingMove{destination, turn};
-                        torrent.moveError.reset();
+                        Answer(torrent, FailureAnswer::Move);
                         if (outcome.error == ErrorCode::MetadataUnavailable)
                             RefuseMove(torrent, outcome);
                     }
@@ -640,54 +640,96 @@ void Engine::State::Act(std::vector<std::string> ids, std::function<void(Outcome
     }
 }
 
-void Engine::State::Verify(std::vector<std::string> const& ids, std::function<void(Outcome)> completion)
+void Engine::State::Verify(std::vector<std::string> const& ids, std::function<void(Outcome)> completion,
+    Requester requester)
 {
-    for (auto const& id : ids)
-    {
-        if (torrents.at(id).restore || !torrents.at(id).handle.torrent_file())
-        {
-            completion({ErrorCode::MetadataUnavailable});
-            return;
-        }
-    }
-    for (auto const& id : ids)
+    Outcome refusal;
+    for (auto const& id : Acting(ids, FailureAnswer::Verify, refusal))
     {
         auto& torrent = torrents.at(id);
-        bool stopped = torrent.checkError || torrent.moveError || torrent.StorageStopped();
-        torrent.AnswerStorageProblem();
-        torrent.AnswerMoveProblem();
         // The recheck reads the files again, so the disk error that stopped
-        // the torrent clears. During storage recovery the recheck waits for
-        // the location instead.
-        if (!torrent.recovery)
-            torrent.ClearDiskError();
+        // the torrent clears. While a release or reload uses the files, the
+        // recheck waits for it.
+        if (requester == Requester::Person)
+            Answer(torrent, FailureAnswer::Verify);
         // A recheck queues behind the reads of a stalled check, so it waits
         // until they return; meanwhile the stalled check continues and can
         // stall again.
-        if (torrent.recovery || torrent.FilesBusy() || torrent.checkReads == CheckReads::Stalled)
+        if (torrent.control.Recovers() || torrent.FilesBusy() || torrent.checkReads == CheckReads::Stalled)
             torrent.needsRecheck = true;
         else
             Recheck(torrent);
-        if (stopped)
-            torrent.ApplyIntent();
     }
     statusPending = true;
     ApplyQueue();
-    completion({});
+    completion(std::move(refusal));
 }
 
 void Engine::State::Retry(std::vector<std::string> const& ids, std::function<void(Outcome)> completion)
 {
-    for (auto const& id : ids)
+    Outcome refusal;
+    for (auto const& id : Acting(ids, FailureAnswer::Retry, refusal))
     {
-        auto& torrent = torrents.at(id);
-        // FinishDownload starts a failed move to the final folder again.
-        torrent.AnswerMoveProblem();
-        torrent.Retry();
-        torrent.ApplyIntent();
+        Answer(torrents.at(id), FailureAnswer::Retry);
     }
     statusPending = true;
-    completion({});
+    completion(std::move(refusal));
+}
+
+std::optional<ErrorCode> Engine::State::Refuses(Torrent const& torrent, FailureAnswer answer) const
+{
+    if (answer == FailureAnswer::Verify && (torrent.restore || !torrent.handle.torrent_file()))
+    {
+        return ErrorCode::MetadataUnavailable;
+    }
+    // While the other identity is listed, the conflict comes straight back.
+    if (answer == FailureAnswer::Retry && (torrent.restore || !torrent.conflict.empty()) &&
+        FindDuplicate(torrent.status.info_hashes, torrent.torrentId))
+    {
+        return ErrorCode::AliasConflict;
+    }
+    return std::nullopt;
+}
+
+bool Engine::State::OffersRetry(Torrent const& torrent) const
+{
+    return torrent.NeedsPerson() && !Refuses(torrent, FailureAnswer::Retry);
+}
+
+std::vector<std::string> Engine::State::Acting(std::vector<std::string> const& ids, FailureAnswer answer,
+    Outcome& refusal) const
+{
+    std::vector<std::string> acting;
+    for (auto const& id : ids)
+    {
+        auto const& torrent = torrents.at(id);
+        auto error = Refuses(torrent, answer);
+        if (!error)
+        {
+            acting.push_back(id);
+            continue;
+        }
+        if (!refusal.error)
+        {
+            refusal.error = error;
+        }
+        refusal.detail += (refusal.detail.empty() ? "" : ", ") + torrent.Name();
+    }
+    return acting;
+}
+
+void Engine::State::Answer(Torrent& torrent, FailureAnswer answer)
+{
+    if (answer == FailureAnswer::Retry)
+        torrent.Retry();
+    // The person's new move replaces the problem of the last one, also an
+    // interrupted one.
+    if (answer == FailureAnswer::Move)
+        torrent.moveError.reset();
+    else
+        torrent.AnswerMoveProblem();
+    Steer(torrent, Control::Answered{.storage = answer != FailureAnswer::Stop && answer != FailureAnswer::Move});
+    torrent.ApplyIntent();
 }
 
 void Engine::State::Recheck(Torrent& torrent)
@@ -699,6 +741,9 @@ void Engine::State::Recheck(Torrent& torrent)
         torrent.needsRecheck = true;
         return;
     }
+    // libtorrent restarts a recheck from its start, so a recheck that waited
+    // ends with the one sent now.
+    torrent.needsRecheck = false;
     torrent.completion.Rechecked();
     torrent.completedFiles.clear();
     torrent.handle.force_recheck();
@@ -707,7 +752,7 @@ void Engine::State::Recheck(Torrent& torrent)
 
 void Engine::State::ApplyWaiting(Torrent& torrent)
 {
-    if (torrent.restore || torrent.recovery || torrent.FilesBusy() || torrent.namePhase != NamePhase::Ready)
+    if (torrent.restore || torrent.control.Recovers() || torrent.FilesBusy() || torrent.namePhase != NamePhase::Ready)
         return;
     if (torrent.prioritiesPending)
     {
@@ -717,27 +762,21 @@ void Engine::State::ApplyWaiting(Torrent& torrent)
     }
     if (torrent.needsRecheck && torrent.checkReads == CheckReads::None)
     {
-        torrent.needsRecheck = false;
         Recheck(torrent);
         statusPending = true;
         queuePending = true;
     }
 }
 
-void Engine::State::SetIntent(std::vector<std::string> const& ids, Intent intent,
-    std::function<void(Outcome)> completion)
+void Engine::State::SetIntent(std::vector<std::string> const& all, Intent intent,
+    std::function<void(Outcome)> completion, Requester requester)
 {
-    if (intent != Intent::Paused)
+    Outcome refusal;
+    auto ids = intent == Intent::Paused ? all : Acting(all, FailureAnswer::Retry, refusal);
+    if (ids.empty())
     {
-        for (auto const& id : ids)
-        {
-            if ((torrents.at(id).restore || !torrents.at(id).conflict.empty()) &&
-                FindDuplicate(torrents.at(id).status.info_hashes, id))
-            {
-                completion({ErrorCode::AliasConflict});
-                return;
-            }
-        }
+        completion(std::move(refusal));
+        return;
     }
     // A finished torrent that starts again ignores its seed limits. Whether it
     // is finished is read now, because the edit runs again after the write.
@@ -756,7 +795,7 @@ void Engine::State::SetIntent(std::vector<std::string> const& ids, Intent intent
         {
             facts.ignoresSeedLimits = true;
         }
-    }, [this, ids, intent, completion](Outcome outcome, auto const&)
+    }, [this, ids, intent, completion, requester, refusal](Outcome outcome, auto const&)
     {
         if (outcome.error)
         {
@@ -766,16 +805,15 @@ void Engine::State::SetIntent(std::vector<std::string> const& ids, Intent intent
         for (auto const& id : ids)
         {
             auto& torrent = torrents.at(id);
-            torrent.AnswerMoveProblem();
-            if (intent != Intent::Paused)
-                torrent.Retry();
+            if (requester == Requester::Person)
+                Answer(torrent, intent == Intent::Paused ? FailureAnswer::Stop : FailureAnswer::Retry);
             // A later force goes after the checks forced before it.
             if (intent == Intent::Forced && torrent.CheckWaits())
                 torrent.checkTurn->turn = ++turns;
             torrent.ApplyIntent();
         }
         statusPending = true;
-        completion({});
+        completion(refusal);
     });
 }
 

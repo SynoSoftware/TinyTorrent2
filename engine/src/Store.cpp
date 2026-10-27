@@ -176,7 +176,7 @@ void Store::Write(std::filesystem::path path, std::function<std::string()> encod
     }, std::move(completion));
 }
 
-void Store::Drain()
+void Store::Drain(std::function<void(std::exception const&)> const& failed)
 {
     std::deque<Completed> completed;
     {
@@ -185,7 +185,14 @@ void Store::Drain()
     }
     for (auto& value : completed)
     {
-        value.completion(std::move(value.outcome));
+        try
+        {
+            value.completion(std::move(value.outcome));
+        }
+        catch (std::exception const& error)
+        {
+            failed(error);
+        }
     }
 }
 

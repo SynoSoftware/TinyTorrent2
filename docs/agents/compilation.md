@@ -87,6 +87,9 @@ default to other folders, so pass the printed paths:
 
 - App check scripts: `-BinaryDirectory <folder>`.
 - [Checks.ps1](../../engine/tests/Checks.ps1): `-EnginePath <folder>\TinyTorrent.exe`.
+- The storage control's transition check builds with
+  `-Project engine\tests\Transitions.vcxproj` and runs as
+  `Transitions.exe` from its printed output folder, in seconds.
 - [Capture.ps1](../../app/tests/Capture.ps1): `-ArtifactsPath <artifacts>`, and
   `-Configuration Release` after a `-Release` build.
 
