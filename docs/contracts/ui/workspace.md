@@ -97,7 +97,7 @@ whether it is open. The Inspector and the toolbar follow the same rule. Each
 page keeps its own filter criteria. File and Help do not change.
 
 On Settings and About, a Back arrow at the left of the title bar, before the
-app icon, and Alt+Left return to the page they were opened from, with the
+workspace picker, and Alt+Left return to the page they were opened from, with the
 existing draft guards. Show in Torrents on Library also shows Back on Torrents,
 returning to Library. The arrow sits in the title bar, as in Windows
 Settings, so the page keeps its full height. Keep continuous acrylic.
@@ -154,9 +154,9 @@ does not keep the window or engine open. Layout recovery never changes downloads
 
 Torrents sits to the left of Library: the page's table slides left
 when entering Library and right when returning to Torrents. The
-filter content slides with it in the same direction, so the whole workspace
-moves as one gesture. The title bar, the toolbar, the filter frame and the
-inspector, which both pages share, stay in place.
+filter and inspector content slide with it in the same direction, so the
+whole workspace moves as one gesture. The title bar, the toolbar and the filter
+and inspector frames stay in place.
 
 ## Main window
 

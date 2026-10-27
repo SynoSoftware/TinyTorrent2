@@ -137,14 +137,14 @@ items forward rather than asking the owner to rediscover them.
 The [title-bar contract](../ui/workspace.md#native-controls-and-visual-authority) owns
 the approved navigation and caption behavior.
 
-- [ ] Remove the Torrents/Library page selector and add no navigation row or
-  mode-selection menu. Use the existing app-icon position as the direct page
-  switch; keep the File/current-page/View/Help menus.
+- [ ] Add no navigation row. Switch pages through the workspace picker at the
+  app-icon position; keep the File/current-page/View/Help menus.
 - [ ] Use the actual `resources/tinyTorrent.svg` for Torrents and the Library
   face for Library. Do not substitute a Lucide download glyph for the brand.
-- [ ] Make the switch the caption button that the
+- [ ] Make the switch the workspace picker that the
   [title-bar contract](../ui/workspace.md#native-controls-and-visual-authority)
-  describes: the current page's icon and name, with its press feedback.
+  describes: the current page's icon and name, with Torrents and Library as its
+  choices.
 - [ ] Keep Ctrl+1 / Ctrl+2, search, current-page menus, focus and Settings/About
   return behavior consistent with the existing navigation owner.
 

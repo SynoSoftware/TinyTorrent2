@@ -516,16 +516,12 @@ public sealed partial class MainWindow
         Run(suggestion.Command);
     }
 
-    // The active page's inspector. Torrents and Library share one view.
+    // The inspector that Torrents and Library share.
     private Pane? InspectorFrame => (InspectorContent.Content as InspectorPane)?.Surface;
 
     private void UpdateInspectorSize()
     {
-        // The previous layout shows whether the inspector was already
-        // expanded.
-        var opening =
-            Split.Visibility != Visibility.Visible
-            && WorkspaceContent.Visibility == Visibility.Visible;
+        var opening = InspectorSurface.Visibility != Visibility.Visible || InspectorFrame?.IsCompact == true;
         var expanded = Model.HasInspector && !Model.IsInspectorCompact;
         var maximized = expanded && Model.IsInspectorMaximized;
         InspectorSurface.Visibility = Model.HasInspector

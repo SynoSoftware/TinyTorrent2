@@ -447,7 +447,7 @@ public sealed partial class MainViewModel
     public void OpenInspector(bool expand = true)
     {
         if (
-            Page == WindowPage.Torrents
+            Page != WindowPage.Library
             && !Inspector.Show(_selected.Length == 1 ? _selected[0] : null)
         )
             return;

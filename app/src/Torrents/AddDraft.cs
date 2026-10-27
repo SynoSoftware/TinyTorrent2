@@ -35,7 +35,6 @@ public sealed class AddDraft : IDraft
     private AdditionPhase _phase;
     private Addition? _addition;
     private Task _arrivals = Task.CompletedTask;
-    private bool _refreshing;
 
     // A submit holds the dialog open; preparing a source does not, because
     // AcceptMagnet releases a preview whose dialog has closed. Closing the
@@ -1008,22 +1007,12 @@ public sealed class AddDraft : IDraft
 
     internal void Refresh()
     {
-        if (_refreshing)
-            return;
-        _refreshing = true;
-        try
+        foreach (var source in Sources)
         {
-            foreach (var source in Sources)
-            {
-                source.Files.IsEnabled = CanEdit;
-                source.Refresh();
-            }
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+            source.Files.IsEnabled = CanEdit;
+            source.Refresh();
         }
-        finally
-        {
-            _refreshing = false;
-        }
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
     }
 }
 

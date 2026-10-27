@@ -70,9 +70,9 @@
           AutomationProperties.AutomationId="PageSwitch"
         >
           <StackPanel Orientation="Horizontal" Spacing="8">
-            <Grid Width="24" Height="24" AutomationProperties.AccessibilityView="Raw">
-              <Image x:Name="TorrentsFace" Source="ms-appx:///Assets/tinyTorrent.svg" Width="24" Height="24" />
-              <Image x:Name="LibraryFace" Source="ms-appx:///Assets/Settings/library.svg" Width="24" Height="24" Visibility="Collapsed" />
+            <Grid Width="{StaticResource TinyTorrentSurfaceIconSize}" Height="{StaticResource TinyTorrentSurfaceIconSize}" AutomationProperties.AccessibilityView="Raw">
+              <Image x:Name="TorrentsFace" Source="ms-appx:///Assets/tinyTorrent.svg" Width="{StaticResource TinyTorrentSurfaceIconSize}" Height="{StaticResource TinyTorrentSurfaceIconSize}" />
+              <Image x:Name="LibraryFace" Source="ms-appx:///Assets/Settings/library.svg" Width="{StaticResource TinyTorrentSurfaceIconSize}" Height="{StaticResource TinyTorrentSurfaceIconSize}" Visibility="Collapsed" />
             </Grid>
             <TextBlock x:Name="WorkspaceName" VerticalAlignment="Center" />
           </StackPanel>
