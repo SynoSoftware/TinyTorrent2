@@ -15,7 +15,7 @@ references ([files](../contracts/engine/files.md),
 `FORK.rst` describes its changes.
 
 This plan keeps only what needs the owner: pushing the fork, the checks that
-need a real share or download real payload, and the separate work.
+need a share that can be disconnected, and the separate work.
 
 ## Push the fork (owner)
 
@@ -24,11 +24,6 @@ commit and the two before it exist only in the local checkout
 `3rdParty/libtorrent`, branch `Synapse/TinyTorrent`. A machine without that
 checkout cannot fetch the pin until the owner pushes the branch to
 `SynoSoftware/libtorrent`.
-
-## Checks that download real payload (owner)
-
-When the owner asks, `StoppedHeld`, `MagnetAbsent` and `DiskError` in
-`engine/tests/Checks.ps1` run once with `-Transfer`.
 
 ## Manual checks with a real share
 
