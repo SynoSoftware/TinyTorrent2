@@ -73,9 +73,9 @@ design of a copy engine of the engine's own, for moves between hard disks. It
 will not be implemented.
 
 The [torrent control plan](plans/torrent-control-plan.md) keeps what remains
-of the storage controller work, whose steps 0 to 5 are implemented: the
-owner's dependency rebuild, the checks that wait for it, and step 6, disk work
-per drive inside libtorrent, which needs separate authorization.
+of the storage controller work, whose steps are all implemented: pushing the
+libtorrent fork, and the checks that need a real share or download real
+payload.
 
 The [communication plan](plans/communication-plan.md) is paused. It holds the
 scoped-subscription design for torrent detail, which the owner has not decided

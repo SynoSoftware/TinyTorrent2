@@ -393,10 +393,6 @@ public:
             // which the policy finds itself.
             bool paused = false;
             LimitMode limits = LimitMode::None;
-            // The checks that libtorrent runs, each on its own drive, and the
-            // stopped checks whose reads are still outstanding, because those
-            // reads keep their hashing threads.
-            int checks = 0;
         };
         // How traffic leaves the computer. A change cancels the proxy checks
         // and reconnects.
@@ -1123,10 +1119,11 @@ public:
     bool DrivesFree(std::vector<std::string> const& ids, std::string const& destination, bool waited);
     // What the job of a row with `status` waits for, from the drives in use.
     DriveWait WaitOf(Torrent const& torrent, Status status, Claims const& inUse) const;
-    // The check that stalled while its reads remain, if any. libtorrent hashes
-    // every check on one queue of threads, so no other check progresses until
-    // those reads return.
-    Torrent const* StalledCheck() const;
+    // The checks that stalled while their reads remain, keyed by the RootOf
+    // key of their save folder, the first on each. libtorrent hashes the checks
+    // of each drive or server on threads of their own, so no other check on
+    // that root progresses until those reads return.
+    std::map<std::string, Torrent const*> StalledChecks() const;
     // Samples the bytes per second libtorrent checks across every torrent
     // whose files it checks, over the time since the last sample.
     void SampleChecks(std::chrono::steady_clock::duration elapsed);
@@ -1203,15 +1200,16 @@ public:
     Store& VolumeWorker(std::string const& folder);
     // The key of the drive or server that holds `folder`. The volume workers
     // and the gates of file work use one per key, because a server that hangs
-    // usually hangs all its shares.
+    // usually hangs all its shares. libtorrent names the key, so a key here
+    // is the root whose disk threads serve the folder's torrents.
     static std::string RootOf(std::string const& folder);
     // The drive root or UNC share that holds `folder`, such as D:\ or
     // \\nas\media; empty for a relative path.
     static std::filesystem::path ShareRoot(std::filesystem::path const& folder);
     // The drive root or UNC share that a notice about `location` names.
     static std::optional<std::string> NoticeRoot(std::string const& location);
-    // A root in lowercase, so one root has one key however it is written:
-    // a volume worker's drive or server, or a NoticeRoot.
+    // A NoticeRoot in lowercase, so one root has one key however it is
+    // written.
     static std::string RootKey(std::filesystem::path const& root);
     // The key of the root probe and the location notice for `location`.
     static std::string NoticeKey(std::string const& location);
@@ -1508,6 +1506,10 @@ private:
     // own torrents `ids` do not count, because a move pauses them.
     static std::optional<std::string> Blocked(Drives const& needed, Claims const& claims,
         std::vector<std::string> const& ids);
+    // Adds the RootOf key of each of `folders` to a check's drives. libtorrent
+    // hashes the checks of one root on the same threads, also when a folder
+    // links to another drive, so two checks on one root never run together.
+    static void AddRoots(Drives& drives, std::vector<std::string> const& folders);
 
     SpeedHistory history;
 

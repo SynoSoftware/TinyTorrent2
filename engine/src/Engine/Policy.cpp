@@ -257,10 +257,11 @@ Engine::State::Policy::Policy(Settings const& settings, Environment const& envir
         settings.encryption};
     // Peers cannot connect in through a proxy, so there is no port to forward.
     maps = settings.mapsPorts && !route.adapterMissing && settings.proxy.type == ProxyType::None;
-    // libtorrent reads and hashes every check's pieces on its checking threads,
-    // so with fewer threads a check would wait for one on another drive.
+    // libtorrent gives each drive letter or server this many checking threads,
+    // and the drive turns run one check at a time on a drive, so each running
+    // check gets the threads the setting names.
     session = {settings.activeDownloads, settings.activeSeeds, settings.activeTotal,
-        settings.diskBufferMib, settings.checkingMib, settings.hashingThreads * std::max(1, environment.checks),
+        settings.diskBufferMib, settings.checkingMib, settings.hashingThreads,
         settings.fileLimit,
         settings.ignoresSlow, settings.slowDownload, settings.slowUpload, settings.slowWait,
         settings.outgoingRate, settings.connections, settings.dht, settings.lsd, settings.includesOverhead};
@@ -279,13 +280,7 @@ void Engine::State::RefreshPolicy()
         bypassesScheduledPause = false;
         limitOverride.reset();
     }
-    auto sessionPaused = Paused().has_value();
-    Policy::Environment environment{.paused = Paused(false).has_value(), .limits = CurrentLimits(),
-        .checks = static_cast<int>(std::count_if(torrents.begin(), torrents.end(),
-            [sessionPaused](auto const& entry)
-            {
-                return entry.second.ChecksFiles(sessionPaused) || entry.second.checkReads != CheckReads::None;
-            }))};
+    Policy::Environment environment{.paused = Paused(false).has_value(), .limits = CurrentLimits()};
     if (auto adapter = AdapterName(settings.networkAdapter); !adapter.empty())
         environment.adapter = FindAdapter(adapter);
     Policy next(settings, environment);

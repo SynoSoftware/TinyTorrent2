@@ -201,7 +201,8 @@ policy, leaving `session_params::disk_io_constructor` unset. In the reviewed
 2.1.2 release that is pread with write-through, which `disk_write_mode` does not
 configure. Libtorrent 2.1 has no configurable disk-cache size. Advanced settings
 instead exposes `max_queued_disk_bytes` as Disk write buffer, saved as
-`disk_buffer_mib`: 1–1024 MiB, initially libtorrent's 100 MiB default. Lowering
+`disk_buffer_mib`: 1–1024 MiB, initially libtorrent's 100 MiB default, for each
+drive letter or server in use. Lowering
 this threshold can reduce memory for writes waiting on a slow disk by applying
 backpressure to peers; it may reduce download speed. It is neither a strict
 allocation ceiling nor a limit on the engine's total memory or Windows' cache.
@@ -215,14 +216,16 @@ Advanced also exposes three controls for verification and large seeding librarie
   keeps at least two pieces outstanding per hashing thread, so large pieces
   can exceed the target.
 - Checking threads (`hashing_threads`): 1–64, default 1, per running check.
-  libtorrent gets this many threads for each check that runs or still reads,
-  counting at least one check, because all checks share its threads and
-  checks on different drives would otherwise take turns on one thread. A single thread
+  libtorrent gets this value unchanged and gives each drive letter or server
+  this many threads. The drive turns run one check at a time on a drive
+  letter or server, also when a folder links to another drive, so each
+  running check has these threads to itself. A single thread
   suits sequential hard-drive access; extra threads allow parallel
   verification on faster storage at the cost of CPU and memory. Download-time
   hashing retains the regular disk threads.
-- Open-file limit (`file_pool_size`): 1–10000, default 40. A larger pool reduces
-  reopen work across many active files but retains more operating-system resources.
+- Open-file limit (`file_pool_size`): 1–10000, default 40, for each drive
+  letter or server in use. A larger pool reduces reopen work across many
+  active files but retains more operating-system resources.
 
 Defaults match the pinned libtorrent release. Changes use the existing settings
 commit and session update, including after restart. Windows working-set trimming,

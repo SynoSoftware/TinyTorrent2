@@ -1,4 +1,5 @@
 #include "Engine/State.h"
+#include <libtorrent/aux_/path.hpp>
 #include <algorithm>
 #include <cwctype>
 
@@ -38,6 +39,13 @@ std::optional<std::string> Engine::State::Blocked(Drives const& needed, Claims c
             return name;
     }
     return std::nullopt;
+}
+
+void Engine::State::AddRoots(Drives& drives, std::vector<std::string> const& folders)
+{
+    // The prefix keeps a root apart from the names Drives::Of gives.
+    for (auto const& folder : folders)
+        drives.names.insert("root " + RootOf(folder));
 }
 
 void Engine::State::StopStalledJobs()
@@ -86,16 +94,18 @@ void Engine::State::StopStalledJobs()
             abandonment.worker->Interrupt();
         }
     }
-    // While a stalled check's reads remain, the other checks cannot progress,
-    // so only the check that stalled first gives up.
+    // While a stalled check's reads remain, the other checks on its drive or
+    // server cannot progress, so only the check that stalled first there gives
+    // up.
     auto sessionPaused = Paused().has_value();
-    bool blocked = StalledCheck() != nullptr;
+    auto stalled = StalledChecks();
+    auto blocked = [&stalled](Torrent const& torrent) { return stalled.contains(RootOf(torrent.facts.savePath)); };
     // The reads of a check that no longer runs, as after a stop or a removal,
-    // still hold the hashing threads that every check shares. They are timed
+    // still hold the hashing threads of its drive or server. They are timed
     // from when the check stopped running, before the running checks, so a
     // read that hangs names its own check, and the checks it holds up are
     // not blamed for it.
-    EachWorking([this, now, sessionPaused, &blocked](Torrent& torrent)
+    EachWorking([this, now, sessionPaused, &stalled, &blocked](Torrent& torrent)
     {
         bool runs = torrents.contains(torrent.torrentId) && torrent.ChecksFiles(sessionPaused);
         if (torrent.checkReads != CheckReads::Reading || runs)
@@ -105,7 +115,7 @@ void Engine::State::StopStalledJobs()
         }
         if (!torrent.readsSince)
             torrent.readsSince = now;
-        if (blocked || now - *torrent.readsSince < stall)
+        if (blocked(torrent) || now - *torrent.readsSince < stall)
             return;
         torrent.readsSince.reset();
         torrent.checkReads = CheckReads::Stalled;
@@ -115,7 +125,7 @@ void Engine::State::StopStalledJobs()
             torrent.ApplyIntent();
         }
         log.Write("verify", torrent.torrentId, ToString(ProblemKind::DriveStalled));
-        blocked = true;
+        stalled.emplace(RootOf(torrent.facts.savePath), &torrent);
     });
     for (auto& [id, torrent] : torrents)
     {
@@ -124,7 +134,7 @@ void Engine::State::StopStalledJobs()
         auto& pulse = *torrent.checkTurn->running;
         auto done = static_cast<std::uint64_t>(torrent.status.progress_ppm);
         // The clock runs only while the check runs.
-        if (blocked || !torrent.ChecksFiles(sessionPaused) || done != pulse.done)
+        if (blocked(torrent) || !torrent.ChecksFiles(sessionPaused) || done != pulse.done)
         {
             pulse = {done, now};
             continue;
@@ -136,7 +146,7 @@ void Engine::State::StopStalledJobs()
         Steer(torrent, Control::Failed{Problem{ProblemKind::DriveStalled, torrent.facts.savePath}});
         torrent.ApplyIntent();
         log.Write("verify", id, ToString(ProblemKind::DriveStalled));
-        blocked = true;
+        stalled.emplace(RootOf(torrent.facts.savePath), &torrent);
     }
 }
 
@@ -173,17 +183,19 @@ void Engine::State::AssignDrives()
     }
     // A running check waits again in its place when a move started on its
     // drive while Pause all stopped it, or while a stalled check's reads
-    // remain, because no other check can progress then.
+    // remain on its drive letter or server, because no other check there can
+    // progress then.
     if (!sessionPaused)
     {
-        bool stalled = StalledCheck() != nullptr;
+        auto stalled = StalledChecks();
         auto claims = DrivesInUse();
         for (auto& [id, torrent] : torrents)
         {
             if (!torrent.checkTurn || !torrent.checkTurn->running)
                 continue;
             auto used = FindDrives({torrent.facts.savePath});
-            if (stalled || (used && std::any_of(used->names.begin(), used->names.end(), [&claims](auto const& name)
+            if (stalled.contains(RootOf(torrent.facts.savePath)) ||
+                (used && std::any_of(used->names.begin(), used->names.end(), [&claims](auto const& name)
                 { auto claim = claims.find(name); return claim != claims.end() && !claim->second.check; })))
             {
                 torrent.checkTurn->running.reset();
@@ -265,21 +277,30 @@ Engine::State::Claims Engine::State::DrivesInUse()
     // Pause all stops every check, so their drives are free while it lasts,
     // once libtorrent has no read left for them. The running checks claim
     // first, so a waiting row names the check that runs, not one that still
-    // finishes its reads. The reads of other checks queue behind a stalled
-    // check's reads and touch no drive until those return, so they claim none.
+    // finishes its reads. The reads of other checks on a stalled check's drive
+    // letter or server queue behind its reads and touch no drive until those
+    // return, so they claim none.
     auto sessionPaused = Paused().has_value();
-    auto stalled = StalledCheck();
+    auto stalled = StalledChecks();
     for (bool running : {true, false})
     {
         for (auto const& [id, torrent] : torrents)
         {
             bool runs = torrent.checkTurn && torrent.checkTurn->running && !sessionPaused;
-            bool reads = torrent.checkReads != CheckReads::None && (!stalled || stalled == &torrent);
+            bool reads = torrent.checkReads != CheckReads::None;
+            if (reads && !stalled.empty())
+            {
+                auto behind = stalled.find(RootOf(torrent.facts.savePath));
+                reads = behind == stalled.end() || behind->second == &torrent;
+            }
             bool uses = running ? runs : !runs && reads;
             if (!uses)
                 continue;
             if (auto used = FindDrives({torrent.facts.savePath}))
+            {
+                AddRoots(*used, {torrent.facts.savePath});
                 Reserve(claims, *used, {id, true});
+            }
         }
     }
     return claims;
@@ -287,12 +308,19 @@ Engine::State::Claims Engine::State::DrivesInUse()
 
 std::vector<Outcome> Engine::State::ShareDrives(std::vector<Job> const& jobs, Claims& claims)
 {
-    bool stalled = StalledCheck() != nullptr;
+    auto stalled = StalledChecks();
     std::vector<Outcome> outcomes;
     for (auto const& job : jobs)
     {
-        auto needed = FindDrives(Folders(job.ids, job.destination));
-        if (!needed || Blocked(*needed, claims, job.ids) || (!job.destination && stalled))
+        auto folders = Folders(job.ids, job.destination);
+        auto needed = FindDrives(folders);
+        // A check does not start behind a stalled check's reads on its drive
+        // letter or server.
+        bool behindStalled = !job.destination && std::any_of(folders.begin(), folders.end(),
+            [&stalled](auto const& folder) { return stalled.contains(RootOf(folder)); });
+        if (needed && !job.destination)
+            AddRoots(*needed, folders);
+        if (!needed || Blocked(*needed, claims, job.ids) || behindStalled)
         {
             outcomes.push_back({ErrorCode::FilesBusy});
             continue;
@@ -348,14 +376,14 @@ std::string Engine::State::RootKey(std::filesystem::path const& root)
 
 std::string Engine::State::RootOf(std::string const& folder)
 {
-    return RootKey(std::filesystem::path(Wide(folder)).root_name());
+    return lt::storage_root_key(folder);
 }
 
 std::set<std::string> Engine::State::RootsOf(std::vector<std::filesystem::path> const& paths)
 {
     std::set<std::string> roots;
     for (auto const& path : paths)
-        roots.insert(RootKey(path.root_name()));
+        roots.insert(RootOf(Utf8(path.wstring())));
     return roots;
 }
 
@@ -442,8 +470,9 @@ DriveWait Engine::State::WaitOf(Torrent const& torrent, Status status, Claims co
     std::optional<std::string> destination;
     if (status == Status::WaitingCheck)
     {
-        if (auto stalled = StalledCheck())
-            return {rootName(stalled->facts.savePath), stalled->torrentId};
+        auto stalled = StalledChecks();
+        if (auto behind = stalled.find(RootOf(torrent.facts.savePath)); behind != stalled.end())
+            return {rootName(behind->second->facts.savePath), behind->second->torrentId};
     }
     else if (torrent.waitingMove)
     {
@@ -464,7 +493,10 @@ DriveWait Engine::State::WaitOf(Torrent const& torrent, Status status, Claims co
         auto known = drives.find(folder);
         if (known == drives.end() || !known->second)
             return {rootName(folder), {}};
-        if (auto name = Blocked(*known->second, inUse, ids))
+        auto needed = *known->second;
+        if (status == Status::WaitingCheck)
+            AddRoots(needed, {folder});
+        if (auto name = Blocked(needed, inUse, ids))
             return {rootName(folder), inUse.at(*name).torrentId};
     }
     // A move whose drives are free can still wait for file work it reaches.
@@ -476,15 +508,15 @@ DriveWait Engine::State::WaitOf(Torrent const& torrent, Status status, Claims co
     return {};
 }
 
-Torrent const* Engine::State::StalledCheck() const
+std::map<std::string, Torrent const*> Engine::State::StalledChecks() const
 {
     // A removed torrent's reads count until they return, because they hold
     // the hashing threads as a listed torrent's do.
-    Torrent const* stalled = nullptr;
+    std::map<std::string, Torrent const*> stalled;
     EachWorking([&stalled](Torrent const& torrent)
     {
-        if (!stalled && torrent.checkReads == CheckReads::Stalled)
-            stalled = &torrent;
+        if (torrent.checkReads == CheckReads::Stalled)
+            stalled.emplace(RootOf(torrent.facts.savePath), &torrent);
     });
     return stalled;
 }

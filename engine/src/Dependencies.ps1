@@ -15,7 +15,7 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
 $libtorrentUrl = 'https://github.com/SynoSoftware/libtorrent.git'
-$libtorrentCommit = '21f44eaa922d7c540d974f950d8f86bc2048bdd9'
+$libtorrentCommit = 'df0da6bf121c03910bf0b66e8db16c20d1c0ecb5'
 $opensslTag = 'openssl-3.6.4'
 $boostTag = 'boost-1.92.0'
 $jsonTag = 'v3.12.0'

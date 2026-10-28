@@ -552,14 +552,19 @@ inside a Windows call keeps its drive until Windows returns. A check that
 stops, by Stop, Pause all or the drive rule, keeps its drive until libtorrent
 reports that it has no read left (`torrent_paused_alert`).
 
-libtorrent hashes every check on one shared queue of threads. Checking threads
-is multiplied by the number of checks that run or still read, but each check
-keeps at least twice as many reads queued as there are threads, so a check on
-a slow drive slows a check on a fast drive to its pace. A read that never
-returns stops every check, so while a stalled check's reads remain, only that
-check gives up with `drive_stalled`, and every other check shows Waiting to
-check for the stalled check's drive. Their queued reads touch no drive, so
-they claim none, and moves on their drives go on.
+libtorrent hashes the checks of each drive letter or server on threads of
+their own, so a check on a slow drive does not slow a check on another.
+libtorrent names that drive from the save folder's path, so a folder that
+links to another drive counts under its own letter. The engine's drive
+workers, file-work gates and stalled checks use libtorrent's name for the
+drive, so both always key a folder the same way. A check also uses that
+letter or server as one of its drives, so two checks whose folders link to
+different disks under one letter take turns, as they share its threads.
+Moves do not use it. While a stalled check's
+reads remain, the other checks on its letter or server cannot progress, so
+only that check gives up with `drive_stalled`, and every other check there
+shows Waiting to check for the stalled check's drive. Their queued reads touch
+no drive, so they claim none, and moves on their drives go on.
 
 `Drives::Of` names the drives of a folder after following the links in its
 path, so `C:\temp`, a link to `V:\temp`, has V:'s drives:
