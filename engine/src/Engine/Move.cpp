@@ -549,11 +549,12 @@ void Engine::State::ContinueMove(Move& moving)
         // the new folder, without checking the files there. It keeps a part
         // file for skipped files, which only dont_replace moves, and that
         // mode checks every file it finds at the destination.
-        auto const& handle = Working(moving.ids.at(moving.current)).handle;
-        auto priorities = handle.get_file_priorities();
+        auto& member = Working(moving.ids.at(moving.current));
+        auto priorities = member.handle.get_file_priorities();
         bool skips = std::find(priorities.begin(), priorities.end(), lt::dont_download) != priorities.end();
-        handle.move_storage(moving.destination,
-            skips ? lt::move_flags_t::dont_replace : lt::move_flags_t::reset_save_path_unchecked);
+        member.storageRoot = RootOf(moving.destination);
+        member.handle.move_storage(moving.destination,
+            skips ? lt::move_flags_t::dont_replace : lt::move_flags_t::reset_save_path_unchecked, member.storageRoot);
     });
 }
 

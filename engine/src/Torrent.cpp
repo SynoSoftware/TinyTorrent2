@@ -623,6 +623,11 @@ bool Torrent::NamesKnown() const
     return namePhase != NamePhase::Recovering && (restore || !handle.torrent_file() || names);
 }
 
+bool Torrent::AwaitsAdd() const
+{
+    return restore && !restoreError && conflict.empty();
+}
+
 bool Torrent::ChecksFiles(bool sessionPaused) const
 {
     return !sessionPaused && status.state == lt::torrent_status::checking_files &&

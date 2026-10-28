@@ -592,21 +592,20 @@ stops, by Stop, Pause all or the drive rule, keeps its drive until libtorrent
 reports that it has no read left (`torrent_paused_alert`).
 
 libtorrent hashes the checks of each drive letter or server on threads of
-their own, so a check on a slow drive does not slow a check on another.
-libtorrent names that drive from the save folder's path, so a folder that
-links to another drive counts under its own letter. The engine's drive
-workers, file-work gates and stalled checks use libtorrent's name for the
-drive, so both always key a folder the same way. A check also uses that
-letter or server as one of its drives, so two checks whose folders link to
-different disks under one letter take turns, as they share its threads.
-Moves do not use it. While a stalled check's
+their own, so a check on a slow drive does not slow a check on another. The
+engine gives libtorrent that root for each torrent, from where its folder
+really is (see [Where a folder really is](#where-a-folder-really-is)), and its
+drive workers, file-work gates and stalled checks key the folder the same way.
+A check also uses that letter or server as one of its drives, so two checks
+whose folders lie on different disks under one letter take turns, as they
+share its threads. Moves do not use it. While a stalled check's
 reads remain, the other checks on its letter or server cannot progress, so
 only that check gives up with `drive_stalled`, and every other check there
 shows Waiting to check for the stalled check's drive. Their queued reads touch
 no drive, so they claim none, and moves on their drives go on.
 
-`Drives::Of` names the drives of a folder after following the links in its
-path, so `C:\temp`, a link to `V:\temp`, has V:'s drives:
+`Drives::Of` names the drives of where a folder really is, so `C:\temp`, a
+link to `V:\temp`, has V:'s drives:
 
 - A local volume: the disks its extents lie on, and for a virtual disk such as
   a VHDX also the disks of the volume that holds its file, because its work
@@ -616,12 +615,64 @@ path, so `C:\temp`, a link to `V:\temp`, has V:'s drives:
 - A folder that cannot be identified: a drive of its own, so its jobs run
   beside the others.
 
-A folder that does not exist uses its nearest existing parent. The lookup runs
-on a worker of its letter or server, because it can stall on a network share,
-and its answer is kept until the engine exits. Storage recovery that finds a
+A folder that does not exist uses its nearest existing parent. The lookup waits
+until the engine knows where the folder really is, then runs on the worker of
+that letter or server, because it can stall on a network share. Its answer is
+kept until the engine exits or the folder's real path changes. Storage recovery that finds a
 folder answering again drops that folder's answer, because a lookup made while
 it did not answer names no drive. A job whose drives are not known yet waits. A
 storage pool or a hardware RAID reports one disk, so its jobs take turns.
+
+## Where a folder really is
+
+**Owner ruling (2026-10-28):** storage is classified by its actual
+destination, not by the drive letter in the configured path. A save folder
+`C:\Media` that is a link to `\\nas\media` belongs to the server `nas`, so when
+the NAS hangs, only its torrents wait, and the location notice names
+`\\nas\media`.
+
+Every drive, server and root in this reference is where the folder really is:
+libtorrent's disk threads, the drive workers, the file-work gates, stalled
+checks, renames, the probes and the location notices. The engine finds that
+place from metadata alone, because opening a link opens its target, and that
+open hangs on the target that this rule keeps apart:
+
+- It walks the path from its root. A symbolic link, junction or volume mount
+  point on the way is replaced by its target, read with
+  `FSCTL_GET_REPARSE_POINT` from the volume that holds the link. A `subst`
+  letter becomes its folder and a mapped letter its server and share, read
+  with `QueryDosDevice`.
+- It stops at a network path, because the engine cannot see behind a server.
+- An entry that it cannot read, such as a missing folder or a volume mounted
+  without a drive letter, ends the walk where it is. A link to a drive letter
+  that is gone, such as a removed USB drive or `subst` letter, therefore ends
+  at that letter, and the location notice names that drive.
+- The key of the real path is `lt::storage_root_key`, so one parser names
+  every root.
+
+`State::locations` keeps the real path of each folder that a torrent, an
+addition, a move or file work uses, and of the default download folders. Each
+lookup reads only one root at a time, on that root's own lookup worker: when
+the path reaches another root, that root's worker follows it on, so a volume
+that hangs holds only the lookups that need it. Each worker takes the waiting
+lookups as one batch, so any number of folders is looked up. The engine looks
+each folder up again once a minute, so a link that now points elsewhere moves
+its work.
+
+At startup, each torrent waits to be added to libtorrent until its folder's
+lookup answers, and is then added on the root where its folder really is, so
+a share that hangs holds only its own torrents. The window opens at once and
+lists every torrent; a waiting torrent's row shows what it shows just after
+libtorrent adds it, such as Checking. A new torrent waits in the same way
+before its files are prepared or its preview moves to its folder, and Exit
+adds one that still waits on the root its path names. Drive turns wait for
+the lookup too, as they wait for their drive lookup. A torrent that waits for
+its add waits for nothing from the person: Verify and Move wait and run once
+it is added, a reannounce happens with the add, its file list comes from its
+saved metadata, and only its detail and edits reply `starting`. The engine
+gives libtorrent the root when it adds, reloads or moves a torrent, and gives
+it the new root when a lookup changes it; libtorrent then finishes the
+torrent's queued disk work and moves it to the new root's threads.
 
 ## Unfinished files
 
@@ -668,8 +719,7 @@ choice, so changing the default does not rename an existing library.
   holds the renames on each drive or server it uses, so torrents on other
   drives never wait for a share that stopped answering. A rename waits only
   for the names of the torrents whose files can lie in its folder. A folder is
-  on the drive that its path names, also when a junction on the way leads to
-  another drive.
+  on the drive or server where it really is.
 - Before that rename, the engine pauses the torrent and waits for libtorrent
   to write the data it still holds in memory, without holding any files busy.
   Releasing the files for the rename waits for that write, which takes

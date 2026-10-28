@@ -91,7 +91,7 @@ void Engine::State::CommitEdit(std::string const& id,
     auto& torrent = torrents.at(id);
     if (torrent.restore)
     {
-        completion({ErrorCode::AliasConflict, torrent.conflict});
+        completion({torrent.AwaitsAdd() ? ErrorCode::Starting : ErrorCode::AliasConflict, torrent.conflict});
         return;
     }
     if (!priorities.empty() && torrent.priorityCompletion)

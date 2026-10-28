@@ -35,6 +35,14 @@ void Engine::State::Shutdown(std::function<void(ShutdownEnd end)> report)
     // names and stays paused, and the next start chooses them.
     for (auto& [id, addition] : additions)
     {
+        // One that waits for its folder's lookup joins the list too, with no
+        // disk work through its folder: without its preview it is added here,
+        // and with it it is saved below, as one that moves is.
+        if (addition.phase == AdditionPhase::Locating && !addition.handle.is_valid())
+        {
+            addition.params.root_key = RootOf(addition.facts.savePath);
+            addition.phase = AdditionPhase::Adding;
+        }
         if (addition.phase == AdditionPhase::Adding)
         {
             if (!addition.params.userdata.get<Addition>())

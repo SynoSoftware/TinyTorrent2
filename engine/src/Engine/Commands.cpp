@@ -364,6 +364,13 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
             return;
         }
         auto const& torrent = found->second;
+        // Its saved metadata names its files; where each lies on disk is
+        // known once it is added.
+        if (torrent.AwaitsAdd())
+        {
+            reply(Success(torrent.DescribeFilePage(torrent.restore->ti, offset)));
+            return;
+        }
         if (torrent.restore)
         {
             reply(Failure(ErrorCode::AliasConflict, torrent.conflict));
@@ -378,12 +385,20 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
     case Command::Reannounce:
         Act({request.at("torrent_id").get<std::string>()}, Acknowledge(reply), [this](auto const& ids, auto done)
         {
-            if (torrents.at(ids.front()).restore)
+            auto const& torrent = torrents.at(ids.front());
+            // libtorrent announces a torrent that it adds, so one that waits
+            // for its add announces then.
+            if (torrent.AwaitsAdd())
+            {
+                done({});
+                return;
+            }
+            if (torrent.restore)
             {
                 done({ErrorCode::AliasConflict});
                 return;
             }
-            torrents.at(ids.front()).handle.force_reannounce();
+            torrent.handle.force_reannounce();
             done({});
         });
         break;
@@ -702,7 +717,8 @@ void Engine::State::Verify(std::vector<std::string> const& ids, std::function<vo
         // A recheck queues behind the reads of a stalled check, so it waits
         // until they return; meanwhile the stalled check continues and can
         // stall again.
-        if (torrent.control.Recovers() || torrent.FilesBusy() || torrent.checkReads == CheckReads::Stalled)
+        if (torrent.AwaitsAdd() || torrent.control.Recovers() || torrent.FilesBusy() ||
+            torrent.checkReads == CheckReads::Stalled)
             torrent.needsRecheck = true;
         else
             Recheck(torrent);
@@ -726,7 +742,10 @@ void Engine::State::Retry(std::vector<std::string> const& ids, std::function<voi
 
 std::optional<ErrorCode> Engine::State::Refuses(Torrent const& torrent, FailureAnswer answer) const
 {
-    if (answer == FailureAnswer::Verify && (torrent.restore || !torrent.handle.torrent_file()))
+    // A torrent that waits for its add has its metadata in `restore`.
+    bool metadata = torrent.AwaitsAdd() ? bool(torrent.restore->ti) :
+        !torrent.restore && torrent.handle.torrent_file();
+    if (answer == FailureAnswer::Verify && !metadata)
     {
         return ErrorCode::MetadataUnavailable;
     }

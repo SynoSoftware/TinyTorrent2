@@ -302,6 +302,13 @@ metadata. The reply then is the refusal's code, `alias_conflict` or
 `metadata_unavailable`, with the refused torrents' names in `detail`; the
 other torrents were acted on.
 
+A torrent that waits to be added to libtorrent, such as at startup until the
+engine knows [where its folder really is](engine/files.md#where-a-folder-really-is),
+refuses nothing that can wait: `verify` and `move` reply at once and run once
+it is added, `reannounce` succeeds and the add announces it, and `files` lists
+its files from its saved metadata, with a null `disk_path` while their names
+on disk are unknown. Its `detail` reads and `edit` fail with `starting`.
+
 No command is refused because files are busy, following
 [the busy-files ruling](engine/files.md#removal-and-moves). A command on torrents
 whose own files are being prepared, renamed or moved replies once its choice
@@ -311,8 +318,9 @@ apply at once. A `move` that waits for busy files or for its
 [drives](engine/files.md#drive-turns) replies at once, and its rows show the
 `waiting_move` status until the move starts; a refusal then shows on the rows.
 A check that waits for its drive shows `waiting_check`. The rows of both carry
-`waiting_drive`, the drive letter or server of the waiting torrent's own folder
-that the job waits for, and `waiting_torrent_id`, the torrent whose running
+`waiting_drive`, the drive letter or server where the waiting torrent's own
+folder [really is](engine/files.md#where-a-folder-really-is), that the job
+waits for, and `waiting_torrent_id`, the torrent whose running
 job uses that drive. Both are empty on every other row, and on a waiting row
 whose job waits only for busy files. While the engine still looks up the
 drives of the folder, `waiting_drive` names the folder's drive letter or
@@ -612,7 +620,7 @@ engine has read its names. A page holds at most 5,000 files and ends earlier
 when its paths are long, so the next page starts at offset plus the number of
 files received. An offset at or past file_count gives an empty page.
 `files` fails with `preview_expired`, `torrent_removed`, or `alias_conflict`
-for a torrent that waits to be restored.
+for a torrent whose restored identity conflicts with a listed one.
 All identities are strings. Settings are intended changes rather than replacement
 snapshots. `reset_settings` saves every setting at the default a new
 installation starts with and replies like `settings`. It keeps Pause all,

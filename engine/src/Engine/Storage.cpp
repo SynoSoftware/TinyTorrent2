@@ -571,7 +571,7 @@ void Engine::State::ProbeRoots()
     // roots of other file work are probed too, because a job that hangs
     // there never returns to say so, also when no listed torrent uses the
     // root. Work that waits for the person waits for no root.
-    fileWork.Each([&wanted](FileWork::Job const& job)
+    fileWork.Each([this, &wanted](FileWork::Job const& job)
     {
         if (job.Phase() == JobPhase::Unanswered)
             wanted.insert(NoticeKey(job.Unanswered()));
@@ -623,7 +623,7 @@ void Engine::State::ProbeRoots()
             // waiting.
             if (!opened || !*opened)
                 return;
-            fileWork.Opened(key);
+            fileWork.Opened([this, &key](auto const& folder) { return NoticeKey(folder) == key; });
         });
     }
 }
@@ -633,6 +633,7 @@ void Engine::State::ReloadStorage(lt::torrent_handle const& handle, Replacement&
     session->remove_torrent(handle);
     // Native resume data omits the subscription to status updates.
     replacement.params.flags |= lt::torrent_flags::update_subscribe;
+    replacement.params.root_key = RootOf(replacement.params.save_path);
     replacement.handle = session->add_torrent(replacement.params, replacement.error);
     if (replacement.error)
     {
@@ -667,6 +668,7 @@ void Engine::State::SwapHandle(Torrent& torrent, Replacement& replacement)
     else
     {
         torrent.handle = replacement.handle;
+        torrent.storageRoot = replacement.params.root_key;
         torrent.status = std::move(replacement.status);
         torrent.statusAt = replacement.statusAt;
         torrent.diskError = torrent.status.errc;

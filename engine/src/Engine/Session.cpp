@@ -210,6 +210,8 @@ void Engine::State::Start(Document const& saved, Resumes& resumes)
             std::fill(params.file_priorities.begin(), params.file_priorities.end(), lt::dont_download);
         Restore(id, facts, std::move(params));
     }
+    // Sends the lookups of the folders that Restore asked for, once for all.
+    ContinueLookups();
     waitingMarks = saved.unmarked;
     for (auto& [id, torrent] : torrents)
     {
@@ -230,11 +232,36 @@ void Engine::State::Start(Document const& saved, Resumes& resumes)
 
 void Engine::State::Restore(std::string const& id, Facts facts, lt::add_torrent_params params)
 {
+    auto hashes = params.ti ? params.ti->info_hashes() : params.info_hashes;
     lt::error_code error;
-    auto handle = session->add_torrent(params, error);
+    lt::torrent_handle handle;
+    // libtorrent serves a torrent on the root where its folder really is, so
+    // a torrent whose folder has no lookup answer yet, as at the start, waits
+    // in `restore` until RestorePending adds it. Its identity is checked as
+    // libtorrent would check it.
+    if (!Locate(facts.savePath))
+    {
+        if (FindDuplicate(hashes, id))
+            error = lt::errors::make_error_code(lt::errors::duplicate_torrent);
+    }
+    else
+    {
+        params.root_key = RootOf(facts.savePath);
+        handle = session->add_torrent(params, error);
+    }
+    if (!error && !handle.is_valid())
+    {
+        auto& torrent = torrents.try_emplace(id, Torrent{id}).first->second;
+        torrent.facts = std::move(facts);
+        torrent.status.name = params.ti ? params.ti->name() : params.name;
+        torrent.status.info_hashes = hashes;
+        torrent.status.has_metadata = bool(params.ti);
+        torrent.restore = std::move(params);
+        torrent.unsaved = false;
+        return;
+    }
     if (error)
     {
-        auto hashes = params.ti ? params.ti->info_hashes() : params.info_hashes;
         auto& torrent = torrents.try_emplace(id, Torrent{id}).first->second;
         torrent.facts = std::move(facts);
         torrent.restore = std::move(params);
@@ -260,6 +287,16 @@ void Engine::State::Restore(std::string const& id, Facts facts, lt::add_torrent_
         return;
     }
     auto& torrent = Install(id, handle, std::move(facts), params);
+    // A saved record of the same identity that waits behind this one still
+    // conflicts with it, as when libtorrent refuses that record.
+    auto values = Hashes(hashes);
+    bool behind = std::any_of(torrents.begin(), torrents.end(), [&id, &values](auto const& other)
+    {
+        return other.first != id && other.second.restore && !other.second.restoreError &&
+            Overlaps(values, other.second.Hashes());
+    });
+    if (behind)
+        torrent.conflict = lt::errors::make_error_code(lt::errors::duplicate_torrent).message();
     if (torrent.facts.trackers)
     {
         handle.replace_trackers(*torrent.facts.trackers);
@@ -270,10 +307,28 @@ void Engine::State::RestorePending()
 {
     for (auto& [id, torrent] : torrents)
     {
+        if (!torrent.restore || torrent.restoreError || Removing(torrent.status.info_hashes) ||
+            !Locate(torrent.facts.savePath))
+        {
+            continue;
+        }
+        // A torrent whose identity another one holds waits until that one is
+        // removed: one in libtorrent, or one that waits ahead of it to be
+        // added, so the first of two saved records with one identity is
+        // added, as at the start. One that libtorrent refused holds nothing.
+        auto values = Hashes(torrent.status.info_hashes);
+        bool held = std::any_of(torrents.begin(), torrents.end(), [&id, &values](auto const& other)
+        {
+            bool ahead = !other.second.restore || (other.first < id && !other.second.restoreError);
+            return other.first != id && ahead && Overlaps(values, other.second.Hashes());
+        });
+        // A give-back that runs moves the torrent's files, which libtorrent's
+        // check at the add would read meanwhile.
+        bool givingBack = std::any_of(abandonments.begin(), abandonments.end(), [&id](auto const& abandonment)
+            { return abandonment.torrentId == id && abandonment.job->Phase() == JobPhase::Running; });
         // File work and additions hold the restores on their own roots.
         auto root = RootOf(torrent.facts.savePath);
-        if (!torrent.restore || torrent.restoreError || Removing(torrent.status.info_hashes) ||
-            FindDuplicate(torrent.status.info_hashes, id) || FilesBusy(root) || Adding(root))
+        if (held || givingBack || FilesBusy(root) || Adding(root))
         {
             continue;
         }
@@ -679,6 +734,7 @@ Torrent& Engine::State::Install(std::string const& id, lt::torrent_handle handle
     // succeeded, so no alias identity conflicts with it.
     auto& torrent = torrents.try_emplace(id, Torrent{id}).first->second;
     torrent.handle = handle;
+    torrent.storageRoot = params.root_key;
     torrent.facts = std::move(facts);
     torrent.restore.reset();
     torrent.restoreError.reset();
@@ -931,7 +987,10 @@ void Engine::State::Maintain()
             (connectionTest && connectionTest->phase == ConnectionPhase::Restoring))
             snapshotPending = true;
         MaintainConnectionTest();
+        LocateFolders();
+        Rekey();
         RestorePending();
+        ContinueAdditions();
         WatchFolder();
         RefreshPolicy();
         RetryStorage();

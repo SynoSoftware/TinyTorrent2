@@ -73,23 +73,23 @@ std::shared_ptr<Engine::State::FileWork::Job> Engine::State::FileWork::Start(Wor
     return job;
 }
 
-bool Engine::State::FileWork::Holds(std::string const& root, bool names) const
+bool Engine::State::FileWork::Holds(std::function<bool(std::string const& folder)> const& on, bool names) const
 {
     bool held = false;
-    Each([&root, names, &held](Job const& job)
+    Each([&on, names, &held](Job const& job)
     {
         bool holds = job.kind == WorkKind::Deletion || (!names && job.kind == WorkKind::Move);
         held = held || (holds && std::any_of(job.uses.begin(), job.uses.end(),
-            [&root](Use const& use) { return RootOf(use.folder) == root; }));
+            [&on](Use const& use) { return on(use.folder); }));
     });
     return held;
 }
 
-void Engine::State::FileWork::Opened(std::string const& key)
+void Engine::State::FileWork::Opened(std::function<bool(std::string const& folder)> const& on)
 {
-    Each([&key](Job& job)
+    Each([&on](Job& job)
     {
-        if (job.Phase() == JobPhase::Unanswered && NoticeKey(job.Unanswered()) == key)
+        if (job.Phase() == JobPhase::Unanswered && on(job.Unanswered()))
             job.Queue();
     });
 }

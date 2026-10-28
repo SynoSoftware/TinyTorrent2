@@ -1,5 +1,4 @@
 #include "Engine/State.h"
-#include <libtorrent/aux_/path.hpp>
 #include <algorithm>
 #include <cwctype>
 #include <iterator>
@@ -42,7 +41,7 @@ std::optional<std::string> Engine::State::Blocked(Drives const& needed, Claims c
     return std::nullopt;
 }
 
-void Engine::State::AddRoots(Drives& drives, std::vector<std::string> const& folders)
+void Engine::State::AddRoots(Drives& drives, std::vector<std::string> const& folders) const
 {
     // The prefix keeps a root apart from the names Drives::Of gives.
     for (auto const& folder : folders)
@@ -100,7 +99,7 @@ void Engine::State::StopStalledJobs()
     // up.
     auto sessionPaused = Paused().has_value();
     auto stalled = StalledChecks();
-    auto blocked = [&stalled](Torrent const& torrent) { return stalled.contains(RootOf(torrent.facts.savePath)); };
+    auto blocked = [this, &stalled](Torrent const& torrent) { return stalled.contains(RootOf(torrent.facts.savePath)); };
     // The reads of a check that no longer runs, as after a stop or a removal,
     // still hold the hashing threads of its drive or server. They are timed
     // from when the check stopped running, before the running checks, so a
@@ -324,7 +323,7 @@ std::vector<Outcome> Engine::State::ShareDrives(std::vector<Job> const& jobs, Cl
         // A check does not start behind a stalled check's reads on its drive
         // letter or server.
         bool behindStalled = check && std::any_of(folders.begin(), folders.end(),
-            [&stalled](auto const& folder) { return stalled.contains(RootOf(folder)); });
+            [this, &stalled](auto const& folder) { return stalled.contains(RootOf(folder)); });
         if (needed && check)
             AddRoots(*needed, folders);
         if (!needed || Blocked(*needed, claims, job.ids) || behindStalled)
@@ -346,16 +345,25 @@ std::optional<Drives> Engine::State::FindDrives(std::vector<std::string> const& 
     bool known = true;
     for (auto const& folder : folders)
     {
+        // The drives are those of where the folder really is, so their
+        // lookup waits for that.
+        if (!Locate(folder))
+        {
+            known = false;
+            continue;
+        }
         auto [entry, added] = drives.try_emplace(folder);
         if (added)
         {
             // Each root has its own worker, so a lookup that hangs on a share
             // that does not answer delays only the folders of that share.
-            VolumeWorker(folder).Run([folder] { return Drives::Of(Wide(folder)); },
-                [this, folder](std::expected<Drives, StorageOutcome> result)
+            auto real = RealPath(folder);
+            VolumeWorker(folder).Run([real] { return Drives::Of(Wide(real)); },
+                [this, folder, real](std::expected<Drives, StorageOutcome> result)
             {
-                // A refused lookup runs again when a job next asks.
-                if (result)
+                // A refused lookup, or one of a real path that changed since,
+                // runs again when a job next asks.
+                if (result && RealPath(folder) == real)
                     drives[folder] = std::move(*result);
                 else
                     drives.erase(folder);
@@ -379,11 +387,6 @@ std::string Engine::State::RootKey(std::filesystem::path const& root)
     for (auto& letter : key)
         letter = static_cast<wchar_t>(std::towlower(letter));
     return Utf8(key);
-}
-
-std::string Engine::State::RootOf(std::string const& folder)
-{
-    return lt::storage_root_key(folder);
 }
 
 Store& Engine::State::VolumeWorker(std::string const& folder)
@@ -505,7 +508,8 @@ bool Engine::State::DrivesFree(std::vector<std::string> const& ids, std::string 
 
 DriveWait Engine::State::WaitOf(Torrent const& torrent, Status status, Claims const& inUse) const
 {
-    auto rootName = [](std::string const& folder) { return Utf8(std::filesystem::path(Wide(folder)).root_name().wstring()); };
+    auto rootName = [this](std::string const& folder)
+        { return Utf8(std::filesystem::path(Wide(RealPath(folder))).root_name().wstring()); };
     std::vector<std::string> ids{torrent.torrentId};
     std::optional<std::string> destination;
     if (status == Status::WaitingCheck)
@@ -553,7 +557,7 @@ std::map<std::string, Torrent const*> Engine::State::StalledChecks() const
     // A removed torrent's reads count until they return, because they hold
     // the hashing threads as a listed torrent's do.
     std::map<std::string, Torrent const*> stalled;
-    EachWorking([&stalled](Torrent const& torrent)
+    EachWorking([this, &stalled](Torrent const& torrent)
     {
         if (torrent.checkReads == CheckReads::Stalled)
             stalled.emplace(RootOf(torrent.facts.savePath), &torrent);

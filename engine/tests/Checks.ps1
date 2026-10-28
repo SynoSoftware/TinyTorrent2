@@ -1,10 +1,10 @@
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('Frames', 'Summaries', 'Targets', 'Facts', 'Restore', 'Exit', 'Conflict', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames', 'Pause', 'History', 'Accounting', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify', 'MoveExisting', 'DriveTurns', 'UnfinishedTasks', 'StorageStop', 'StoppedLocation', 'AbsentLink', 'AbsentNotice', 'KilledCheck', 'StoppedHeld', 'MagnetAbsent')]
+    [ValidateSet('Frames', 'Summaries', 'Targets', 'Facts', 'Restore', 'Exit', 'Conflict', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames', 'Pause', 'History', 'Accounting', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify', 'MoveExisting', 'DriveTurns', 'UnfinishedTasks', 'StorageStop', 'StoppedLocation', 'AbsentLink', 'AbsentNotice', 'LinkedNotice', 'KilledCheck', 'StoppedHeld', 'MagnetAbsent')]
     [string] $Check,
     # Every check but Conflict, FilesSafety, WaitingMove, RemoveDuringMove, MoveAndVerify,
     # MoveExisting, DriveTurns, UnfinishedTasks, StorageStop, StoppedLocation,
-    # AbsentLink, AbsentNotice and KilledCheck, which make their own torrents.
+    # AbsentLink, AbsentNotice, LinkedNotice and KilledCheck, which make their own torrents.
     [string] $TorrentFile,
     [string] $EnginePath,
     [switch] $Transfer,
@@ -30,7 +30,7 @@ $transferChecks = 'MagnetDownload', 'SelectedTransfer', 'DiskError', 'PreviewGua
 # These checks each guard one defect that was already fixed, so a run of every
 # check skips them; the owner asks for them when that code changes.
 $optInChecks = 'WaitingMove', 'RemoveDuringMove'
-if (-not $TorrentFile -and $Check -notin 'Conflict', 'FilesSafety', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify', 'MoveExisting', 'DriveTurns', 'UnfinishedTasks', 'StorageStop', 'StoppedLocation', 'AbsentLink', 'AbsentNotice', 'KilledCheck') {
+if (-not $TorrentFile -and $Check -notin 'Conflict', 'FilesSafety', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify', 'MoveExisting', 'DriveTurns', 'UnfinishedTasks', 'StorageStop', 'StoppedLocation', 'AbsentLink', 'AbsentNotice', 'LinkedNotice', 'KilledCheck') {
     throw "$Check needs -TorrentFile."
 }
 if ($Check -in $transferChecks -and -not $Transfer) {
@@ -255,6 +255,59 @@ function Dismount-Drive {
     $null = & subst.exe $script:substDrive /D
     Assert ($LASTEXITCODE -eq 0) "subst could not remove $($script:substDrive)"
     $script:substMapped = $false
+}
+
+# The engine sends toasts only to the window, so a second process stands in
+# for it and writes each frame it receives to window.json. Stop-Window ends it
+# before Exit, because Exit waits for the window's process.
+function Start-Window {
+    $windowScript = @'
+param([string] $Name, [string] $Frames, [string] $Stop)
+$stream = [IO.Pipes.NamedPipeClientStream]::new('.', $Name, [IO.Pipes.PipeDirection]::InOut, [IO.Pipes.PipeOptions]::Asynchronous)
+$stream.Connect(10000)
+function Read-Exactly([int] $count) {
+    $bytes = [byte[]]::new($count)
+    $offset = 0
+    while ($offset -lt $count) {
+        $read = $stream.ReadAsync($bytes, $offset, $count - $offset)
+        while (-not $read.Wait(250)) { if (Test-Path -LiteralPath $Stop) { exit 0 } }
+        if ($read.Result -eq 0) { exit 0 }
+        $offset += $read.Result
+    }
+    return ,$bytes
+}
+function Read-Frame { [Text.Encoding]::UTF8.GetString((Read-Exactly ([BitConverter]::ToInt32((Read-Exactly 4), 0)))) }
+$null = Read-Frame
+$bytes = [Text.Encoding]::UTF8.GetBytes('{"request_id":1,"command":"ready"}')
+$stream.Write([BitConverter]::GetBytes([int]$bytes.Length), 0, 4)
+$stream.Write($bytes, 0, $bytes.Length)
+while ($true) { Add-Content -LiteralPath $Frames -Value (Read-Frame) }
+'@
+    $windowFile = Join-Path $directory 'window.ps1'
+    Set-Content -LiteralPath $windowFile -Value $windowScript
+    $script:standIn = Start-Process -FilePath (Get-Process -Id $PID).Path -WindowStyle Hidden -PassThru -ArgumentList @(
+        '-NoProfile', '-File', ('"' + $windowFile + '"'), '-Name', "TinyTorrent.$logon",
+        '-Frames', ('"' + (Join-Path $directory 'window.json') + '"'), '-Stop', ('"' + (Join-Path $directory 'window-stop') + '"'))
+    $until = [DateTime]::UtcNow.AddSeconds(15)
+    do {
+        Start-Sleep -Milliseconds 100
+        $ready = Read-Window | Where-Object request_id -eq 1
+    } while (-not $ready -and [DateTime]::UtcNow -lt $until)
+    Assert ($ready -and $ready.ok) 'The stand-in window could not connect'
+}
+
+function Read-Window {
+    $frames = Join-Path $directory 'window.json'
+    if (-not (Test-Path -LiteralPath $frames)) { return @() }
+    $stream = [IO.File]::Open($frames, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+    $reader = [IO.StreamReader]::new($stream)
+    try { return @($reader.ReadToEnd().Split("`n", [StringSplitOptions]::RemoveEmptyEntries) | ForEach-Object { $_ | ConvertFrom-Json }) }
+    finally { $reader.Dispose() }
+}
+
+function Stop-Window {
+    $null = New-Item -ItemType File -Path (Join-Path $directory 'window-stop') -Force
+    Assert ($script:standIn.WaitForExit(15000)) 'The stand-in window did not end'
 }
 
 # Returns the index after the bencoded value that starts at `at`.
@@ -1320,7 +1373,9 @@ try {
                 do {
                     Start-Sleep -Milliseconds 100
                     $row = (Rows-Of $id)[$id]
-                } while (-not ($row.status -eq $status -and $row.waiting_drive) -and [DateTime]::UtcNow -lt $until)
+                # The row names the drive while its lookup runs, and the
+                # torrent that uses it once the lookup answers.
+                } while (-not ($row.status -eq $status -and $row.waiting_torrent_id) -and [DateTime]::UtcNow -lt $until)
                 Assert ($row.status -eq $status -and $row.waiting_drive -eq $drive -and $row.waiting_torrent_id -eq $holder) `
                     "$label`: $($row.name) is $($row.status) for '$($row.waiting_drive)' used by '$($row.waiting_torrent_id)', not $status for $drive used by $holder"
             }
@@ -2549,50 +2604,8 @@ try {
         }
         'WaitingMove' {
             # A Move that waits for another torrent's metadata once repeated
-            # its toast every second. The engine sends toasts only to the
-            # window, so a second process stands in for it. That process ends
-            # before Exit, because Exit waits for the window's process.
-            $windowScript = @'
-param([string] $Name, [string] $Frames, [string] $Stop)
-$stream = [IO.Pipes.NamedPipeClientStream]::new('.', $Name, [IO.Pipes.PipeDirection]::InOut, [IO.Pipes.PipeOptions]::Asynchronous)
-$stream.Connect(10000)
-function Read-Exactly([int] $count) {
-    $bytes = [byte[]]::new($count)
-    $offset = 0
-    while ($offset -lt $count) {
-        $read = $stream.ReadAsync($bytes, $offset, $count - $offset)
-        while (-not $read.Wait(250)) { if (Test-Path -LiteralPath $Stop) { exit 0 } }
-        if ($read.Result -eq 0) { exit 0 }
-        $offset += $read.Result
-    }
-    return ,$bytes
-}
-function Read-Frame { [Text.Encoding]::UTF8.GetString((Read-Exactly ([BitConverter]::ToInt32((Read-Exactly 4), 0)))) }
-$null = Read-Frame
-$bytes = [Text.Encoding]::UTF8.GetBytes('{"request_id":1,"command":"ready"}')
-$stream.Write([BitConverter]::GetBytes([int]$bytes.Length), 0, 4)
-$stream.Write($bytes, 0, $bytes.Length)
-while ($true) { Add-Content -LiteralPath $Frames -Value (Read-Frame) }
-'@
-            $windowFile = Join-Path $directory 'window.ps1'
-            $frames = Join-Path $directory 'window.json'
-            Set-Content -LiteralPath $windowFile -Value $windowScript
-            $standIn = Start-Process -FilePath (Get-Process -Id $PID).Path -WindowStyle Hidden -PassThru -ArgumentList @(
-                '-NoProfile', '-File', ('"' + $windowFile + '"'), '-Name', "TinyTorrent.$logon",
-                '-Frames', ('"' + $frames + '"'), '-Stop', ('"' + (Join-Path $directory 'window-stop') + '"'))
-            function Read-Window {
-                if (-not (Test-Path -LiteralPath $frames)) { return @() }
-                $stream = [IO.File]::Open($frames, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
-                $reader = [IO.StreamReader]::new($stream)
-                try { return @($reader.ReadToEnd().Split("`n", [StringSplitOptions]::RemoveEmptyEntries) | ForEach-Object { $_ | ConvertFrom-Json }) }
-                finally { $reader.Dispose() }
-            }
-            $until = [DateTime]::UtcNow.AddSeconds(15)
-            do {
-                Start-Sleep -Milliseconds 100
-                $ready = Read-Window | Where-Object request_id -eq 1
-            } while (-not $ready -and [DateTime]::UtcNow -lt $until)
-            Assert ($ready -and $ready.ok) 'The stand-in window could not connect'
+            # its toast every second.
+            Start-Window
             # Paused, so nothing reaches the network. The torrent has no data,
             # so it is not finished, which is the case that repeated.
             $reply = Send-Command @{ command = 'session_pause'; paused = $true }
@@ -2636,8 +2649,7 @@ while ($true) { Add-Content -LiteralPath $Frames -Value (Read-Frame) }
                 "The waiting Move did not start: '$($row.save_path)', moving $($row.moving), error '$($row.error)'"
             $toasts = @(Read-Window | Where-Object { $_.type -eq 'toast' -and $_.torrent_id -eq $torrentId })
             Assert ($toasts.Count -eq 1) "The Move sent $($toasts.Count) toasts in total"
-            $null = New-Item -ItemType File -Path (Join-Path $directory 'window-stop') -Force
-            Assert ($standIn.WaitForExit(15000)) 'The stand-in window did not end'
+            Stop-Window
         }
         'RemoveDuringMove' {
             # A torrent removed while its own move runs stays out of the list
@@ -2844,6 +2856,50 @@ while ($true) { Add-Content -LiteralPath $Frames -Value (Read-Frame) }
             # the stopped notice of several torrents, and here only one
             # torrent exists.
             Wait-Log 'notification  error' 1 180 'The absent drive raised no notice'
+            Mount-Drive $drive
+        }
+        'LinkedNotice' {
+            # A save folder that is a junction to another drive belongs to
+            # that drive: when it is absent, the location notice names it,
+            # not the drive that holds the junction, and a torrent beside the
+            # junction is not affected. A headless engine prints a notice
+            # instead of sending it to the window, unless problem
+            # notifications are off; then it sends each condition to the
+            # window's message bar, which names its folder.
+            $reply = Send-Command @{ command = 'settings'; changes = @{ notify_problems = $false } }
+            Assert $reply.ok 'The problem notification setting was refused'
+            Start-Window
+            $drive = Join-Path $directory 'drive'
+            $null = New-Item -ItemType Directory -Path $drive
+            Mount-Drive $drive
+            $null = New-Item -ItemType Directory -Path "$substDrive\media"
+            $junction = Join-Path $directory 'link'
+            $null = New-Item -ItemType Junction -Path $junction -Target "$substDrive\media"
+            $id = New-Zeros 'linked' 64MB $junction
+            $beside = New-Zeros 'beside' 64MB
+            $null = Wait-Checked $id
+            $null = Wait-Checked $beside
+            Dismount-Drive
+            $reply = Send-Command @{ command = 'verify'; torrent_ids = @($id) }
+            Assert $reply.ok 'Verify behind the junction was refused'
+            $null = Wait-Torrent $id { param($row) $row.status -eq 'error' } 30 'The check behind the junction did not fail'
+            # While T: is mounted the junction leads to its folder on the
+            # evidence drive. The engine looks the junction up again within a
+            # minute; with T: gone the walk ends at T:\media, and the notice
+            # for T:\ comes once it has not answered for two minutes.
+            $root = "$substDrive\"
+            $until = [DateTime]::UtcNow.AddSeconds(330)
+            do {
+                Start-Sleep -Seconds 1
+                $notices = @(Read-Window | Where-Object { $_.type -eq 'toast' -and $_.condition.key -like 'location:*' })
+            } while (-not @($notices | Where-Object folder -eq $root).Count -and [DateTime]::UtcNow -lt $until)
+            $named = ($notices | ForEach-Object folder | Sort-Object -Unique) -join ', '
+            Assert (@($notices | Where-Object folder -eq $root).Count -gt 0) "No location notice named $root; the notices named '$named'"
+            $own = Path-Volume $directory
+            Assert (@($notices | Where-Object folder -eq $own).Count -eq 0) "A location notice named the junction's own drive $own"
+            $row = Get-Row $beside
+            Assert ($row.progress -eq 1 -and -not $row.error) "The torrent beside the junction is $($row.status), error '$($row.error)'"
+            Stop-Window
             Mount-Drive $drive
         }
         'KilledCheck' {

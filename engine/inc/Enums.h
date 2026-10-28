@@ -154,6 +154,9 @@ enum class Copy
 
 enum class AdditionPhase
 {
+    // Waits until the engine knows where its save folder really is, so its
+    // disk work starts on that root.
+    Locating,
     Adding,
     Moving,
     Naming,

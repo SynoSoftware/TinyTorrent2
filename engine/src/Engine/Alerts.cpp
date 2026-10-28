@@ -24,26 +24,6 @@ bool Engine::State::RootProbe::Hangs(std::chrono::steady_clock::time_point now) 
     return pending && at && now - *at >= noticeDelay;
 }
 
-std::optional<std::string> Engine::State::NoticeRoot(std::string const& location)
-{
-    auto folder = Wide(location);
-    if (folder.starts_with(LR"(\\?\UNC\)"))
-        folder = LR"(\\)" + folder.substr(8);
-    else if (folder.starts_with(LR"(\\?\)"))
-        folder.erase(0, 4);
-    auto path = std::filesystem::path(folder);
-    path.make_preferred();
-    auto root = ShareRoot(path);
-    if (root.empty())
-        return std::nullopt;
-    return Utf8(root.wstring());
-}
-
-std::string Engine::State::NoticeKey(std::string const& location)
-{
-    return RootKey(Wide(NoticeRoot(location).value_or(location)));
-}
-
 void Engine::State::Handle(lt::alert* alert)
 {
     switch (alert->type())
@@ -392,7 +372,7 @@ void Engine::State::UpdateProblems()
     // that one of its folders lies under, unless it waits for the person.
     // Under each such root it counts only the torrents whose folders lie
     // there, removed ones included.
-    fileWork.Each([&locate, &hung](FileWork::Job const& job)
+    fileWork.Each([this, &locate, &hung](FileWork::Job const& job)
     {
         if (job.Phase() == JobPhase::Failed)
             return;

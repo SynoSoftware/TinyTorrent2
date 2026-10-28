@@ -20,7 +20,7 @@ hide the safety and recovery rules the change needs.
 | Change | Reference |
 | --- | --- |
 | Adding a torrent, metadata preview or duplicate identity | [Addition and identity](engine/addition.md) |
-| Shared files, Remove, deletion, Move, unfinished work, drive turns or incomplete filenames | [Files and recovery](engine/files.md) |
+| Shared files, Remove, deletion, Move, unfinished work, drive turns, where a folder really is or incomplete filenames | [Files and recovery](engine/files.md) |
 | Startup, activation, tray, Windows registration, Close, Exit or crash reporting | [Lifetime](engine/lifetime.md) |
 | Network route, speed limits, schedule, connection measurement or libtorrent tuning | [Settings](engine/settings.md) |
 | Notifications or idle-sleep prevention | [Notifications and sleep](engine/notifications.md) |

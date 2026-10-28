@@ -68,7 +68,9 @@ window:
   them. Show torrent opens or raises the product window and selects that
   torrent. Retry keeps each torrent's Start, Stop or Force choice. Torrents
   that wait for a drive or share to answer get one notice per drive root or
-  UNC share, even across different folders and bursts. It gives the cause,
+  UNC share, even across different folders and bursts. A folder that links
+  elsewhere counts under the root or share it links to, so `C:\Media`, a link
+  to `\\nas\media`, counts under `\\nas\media`. It gives the cause,
   root and affected count, without listing torrent names or offering Show
   torrent, and Open folder targets the root; each affected row retains its own
   reason. A share that hangs gets the same notice, whatever work waits on it:

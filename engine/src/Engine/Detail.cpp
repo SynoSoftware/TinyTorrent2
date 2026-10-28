@@ -122,6 +122,13 @@ void Engine::State::CollectDetail(Reading::Read read)
         return;
     }
     auto& torrent = found->second;
+    // libtorrent holds a torrent's detail, so one that waits for its add is
+    // still starting.
+    if (torrent.AwaitsAdd())
+    {
+        read.reply(Failure(ErrorCode::Starting));
+        return;
+    }
     if (torrent.restore)
     {
         read.reply(Failure(ErrorCode::AliasConflict, torrent.conflict));

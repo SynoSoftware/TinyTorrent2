@@ -519,6 +519,9 @@ struct Torrent
 {
     std::string torrentId;
     lt::torrent_handle handle;
+    // The root whose disk threads serve the handle's storage, as the engine
+    // last gave it to libtorrent at the add, a move or Rekey.
+    std::string storageRoot;
     Facts facts;
     // A conflicting restored identity keeps its parameters until its other
     // owner is removed; it must never borrow that owner's live handle.
@@ -641,6 +644,11 @@ struct Torrent
     bool CheckWaits() const;
     // Its current file names are read, or it has no metadata to name files.
     bool NamesKnown() const;
+    // It is not in libtorrent yet and RestorePending adds it by itself, as at
+    // the start until its folder's lookup answers: libtorrent did not refuse
+    // it, and no alias identity conflicts with it. Its commands wait for the
+    // add, or reply `starting` where only libtorrent holds the answer.
+    bool AwaitsAdd() const;
     // libtorrent checks its files now, as the last status reports.
     bool ChecksFiles(bool sessionPaused) const;
     Status Classify(bool sessionPaused) const;

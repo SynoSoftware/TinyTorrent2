@@ -124,6 +124,7 @@
     <ClCompile Include="Engine\Storage.cpp" />
     <ClCompile Include="Engine\Move.cpp" />
     <ClCompile Include="Engine\Turns.cpp" />
+    <ClCompile Include="Engine\Locations.cpp" />
     <ClCompile Include="Engine\FileWork.cpp" />
     <ClCompile Include="Engine\Removal.cpp" />
     <ClCompile Include="Engine\Previews.cpp" />

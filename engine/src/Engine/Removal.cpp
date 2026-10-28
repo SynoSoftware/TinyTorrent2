@@ -218,10 +218,19 @@ void Engine::State::RemoveHandles(std::vector<std::string> const& ids, std::list
             {
                 session->remove_torrent(torrent.handle);
             }
-            // libtorrent's disk work runs on the part's root until it lets go.
-            auto& part = deletion->parts.at(RootOf(torrent.facts.savePath));
-            part.waiting.push_back(torrent.handle);
-            part.job->Run();
+            // libtorrent's disk work runs on the root of the part that uses
+            // the torrent's folder until it lets go. The part is found by its
+            // use, because a lookup since the split can name another root.
+            auto part = std::find_if(deletion->parts.begin(), deletion->parts.end(), [&torrent, &id](auto const& entry)
+            {
+                auto const& uses = entry.second.job->uses;
+                return std::any_of(uses.begin(), uses.end(), [&torrent, &id](FileWork::Use const& use)
+                    { return use.torrentId == id && SameFolder(use.folder, torrent.facts.savePath); });
+            });
+            if (part == deletion->parts.end())
+                throw std::runtime_error("A removed torrent's folder has no part in its deletion");
+            part->second.waiting.push_back(torrent.handle);
+            part->second.job->Run();
         }
         removed.erase(id);
         files.push_back(ResumeFile(id));
@@ -371,18 +380,36 @@ void Engine::State::ContinueDeletion()
 
 bool Engine::State::Held(Deletion const& deletion, std::string const& root) const
 {
-    auto const& files = deletion.parts.at(root).files;
+    auto const& part = deletion.parts.at(root);
+    auto const& files = part.files;
     auto holds = [&files](auto const& held)
     {
         return std::any_of(files.begin(), files.end(), [&held](auto const& file)
             { return std::binary_search(held.begin(), held.end(), file, PathBefore); });
     };
-    // Only a handle on the same root can write these files.
-    return std::any_of(deletions.begin(), deletions.end(), [&root, &holds](Deletion const& other)
+    // The roots that a part's folders are on now, which a lookup since the
+    // parts were split can have changed.
+    auto rootsOf = [this](Deletion::Part const& of)
     {
-        auto same = other.parts.find(root);
-        return same != other.parts.end() &&
-            (other.phase == DeletionPhase::Saving || !same->second.waiting.empty()) && holds(other.holds);
+        std::set<std::string> roots;
+        for (auto const& use : of.job->uses)
+            roots.insert(RootOf(use.folder));
+        return roots;
+    };
+    auto mine = rootsOf(part);
+    auto sameRoot = [&rootsOf, &mine](Deletion::Part const& other)
+    {
+        auto roots = rootsOf(other);
+        return std::any_of(roots.begin(), roots.end(), [&mine](auto const& root) { return mine.contains(root); });
+    };
+    // Only a handle on the same root can write these files.
+    return std::any_of(deletions.begin(), deletions.end(), [&holds, &sameRoot](Deletion const& other)
+    {
+        auto writes = [&other, &sameRoot](auto const& entry)
+        {
+            return (other.phase == DeletionPhase::Saving || !entry.second.waiting.empty()) && sameRoot(entry.second);
+        };
+        return holds(other.holds) && std::any_of(other.parts.begin(), other.parts.end(), writes);
     }) || std::any_of(returning.begin(), returning.end(), [&files](Returning const& running)
     {
         return std::any_of(running.task.files.begin(), running.task.files.end(), [&files](auto const& file)

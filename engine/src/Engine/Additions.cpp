@@ -117,11 +117,41 @@ void Engine::State::Add(Preview& preview, Addition::Choices choices, std::functi
     if (preview.handle.is_valid())
     {
         pending.handle = preview.handle;
-        pending.phase = AdditionPhase::Moving;
         pending.handle.pause();
-        pending.handle.move_storage(pending.facts.savePath, lt::move_flags_t::reset_save_path);
     }
-    else if (DeletingOrRenaming(RootOf(pending.facts.savePath)))
+    // Its disk work starts on the root where its folder really is, so an
+    // addition whose folder has no lookup answer yet waits, and
+    // ContinueAdditions starts it once the answer comes.
+    if (Locate(pending.facts.savePath))
+        StartAddition(pending);
+    else
+    {
+        pending.phase = AdditionPhase::Locating;
+        ContinueLookups();
+    }
+    previews.erase(previews.find(preview.previewId));
+}
+
+void Engine::State::ContinueAdditions()
+{
+    for (auto& [id, addition] : additions)
+    {
+        if (addition.phase == AdditionPhase::Locating && Locate(addition.facts.savePath))
+            StartAddition(addition);
+    }
+}
+
+void Engine::State::StartAddition(Addition& pending)
+{
+    pending.params.root_key = RootOf(pending.facts.savePath);
+    if (pending.handle.is_valid())
+    {
+        pending.phase = AdditionPhase::Moving;
+        pending.handle.move_storage(pending.facts.savePath, lt::move_flags_t::reset_save_path, pending.params.root_key);
+        return;
+    }
+    pending.phase = AdditionPhase::Adding;
+    if (DeletingOrRenaming(pending.params.root_key))
     {
         // PrepareAddition then saves it without names, which it chooses once
         // that work ends.
@@ -158,7 +188,6 @@ void Engine::State::Add(Preview& preview, Addition::Choices choices, std::functi
             session->async_add_torrent(addition.params);
         });
     }
-    previews.erase(previews.find(preview.previewId));
 }
 
 void Engine::State::PrepareAddition(std::string const& id, lt::torrent_handle handle)
@@ -417,7 +446,7 @@ void Engine::State::RecoverAdditions()
             if (!addition.renaming.empty())
                 lost.push_back(id);
         }
-        else if (addition.phase != AdditionPhase::Saving &&
+        else if (addition.phase != AdditionPhase::Saving && addition.phase != AdditionPhase::Locating &&
             (addition.phase != AdditionPhase::Adding || addition.params.userdata.get<Addition>()))
         {
             observations->push_back({id, addition.phase, &addition, addition.handle});

@@ -619,13 +619,14 @@ public:
                     visit(*job);
             }
         }
-        // Whether a deletion or a move uses `root`, a RootOf key, which holds
-        // the renames and restores there; with `names`, whether a deletion
-        // does, which holds the name choices there too.
-        bool Holds(std::string const& root, bool names) const;
-        // The probe of the root `key`, a NoticeKey, opened it, so the jobs
-        // that waited for that root wait for their turn again.
-        void Opened(std::string const& key);
+        // Whether a deletion or a move uses a folder that `on` selects, such
+        // as one on a root, which holds the renames and restores there; with
+        // `names`, whether a deletion does, which holds the name choices
+        // there too.
+        bool Holds(std::function<bool(std::string const& folder)> const& on, bool names) const;
+        // The probe of a root opened it, so the jobs that waited for a folder
+        // that `on` selects, one on that root, wait for their turn again.
+        void Opened(std::function<bool(std::string const& folder)> const& on);
     private:
         std::vector<std::weak_ptr<Job>> jobs_;
     };
@@ -852,6 +853,34 @@ public:
     // storage recovery finds the folder answering again; nothing while their
     // lookup runs.
     std::map<std::string, std::optional<Drives>, PathLess> drives;
+    // Where a folder really is, as FollowLinks finds it on workers. RootOf,
+    // NoticeRoot and FindDrives read it, so libtorrent's disk threads, the
+    // volume workers, the gates of file work, the stalled checks, the root
+    // probes, the location notices and the drive turns all key a folder by
+    // the drive or server it really is on.
+    struct Location
+    {
+        // A lookup under way: the path it has reached, which the `link`
+        // worker of that path's root follows further.
+        struct Walk
+        {
+            std::filesystem::path path;
+            // The links followed so far.
+            int links = 0;
+            // Whether that worker has it now; otherwise it waits for the
+            // worker's current batch to return.
+            bool sent = false;
+        };
+        // The folder as first written, which the lookup follows.
+        std::string folder;
+        // Nothing until the first lookup returns.
+        std::optional<std::string> real;
+        // When the last lookup started.
+        std::chrono::steady_clock::time_point at{};
+        std::optional<Walk> walk;
+    };
+    // Keyed by LocationKey.
+    std::map<std::string, Location> locations;
     // Find the drives of folders, which can block on a share that does not
     // answer, so each root, such as a drive letter or a server, has its own.
     std::map<std::string, std::unique_ptr<Store>> volumes;
@@ -1065,6 +1094,12 @@ public:
     void On(lt::metadata_failed_alert const& alert);
 
     void Add(Preview& preview, Addition::Choices choices, std::function<void(Outcome, Added)> completion);
+    // Starts each addition that waits for its folder's lookup once the
+    // answer has come. Part of the maintenance pass.
+    void ContinueAdditions();
+    // Starts the addition's disk work on the root where its folder really is:
+    // the preview's move, or its names and its add.
+    void StartAddition(Addition& pending);
     // A `watchStamp` marks a file from the watch folder, which saves to the
     // watch destination when one is set.
     void AddSource(std::string source, std::function<void(Outcome, Added)> completion,
@@ -1143,6 +1178,10 @@ public:
     bool DeletingOrRenaming(std::string const& root) const;
     // An addition saves under the root, a RootOf key.
     bool Adding(std::string const& root) const;
+    // A rename runs on the root: its key in `renames`, which names its
+    // worker, or the root its file is on now, which a lookup since it started
+    // can have changed.
+    bool RenamesOn(std::string const& root) const;
     static std::vector<std::filesystem::path> FilePaths(lt::torrent_info const& metadata,
         std::string const& folder, Layout layout = Layout::Keep);
     // The torrent's files at `folder`, or without one at its save folder and
@@ -1322,21 +1361,52 @@ public:
     // an addition never waits behind another torrent's work there, and a
     // root that does not answer holds only its own additions.
     Store& AdditionWorker(std::string const& folder);
-    // The key of the drive or server that holds `folder`. The volume workers
-    // and the gates of file work use one per key, because a server that hangs
-    // usually hangs all its shares. libtorrent names the key, so a key here
-    // is the root whose disk threads serve the folder's torrents.
-    static std::string RootOf(std::string const& folder);
+    // The key of the drive or server that `folder` really is on, in
+    // libtorrent's form (lt::storage_root_key of its RealPath). The volume
+    // workers and the gates of file work use one per key, because a server
+    // that hangs usually hangs all its shares, and libtorrent gets the key,
+    // so a key here is the root whose disk threads serve the folder's
+    // torrents.
+    std::string RootOf(std::string const& folder) const;
     // The drive root or UNC share that holds `folder`, such as D:\ or
     // \\nas\media; empty for a relative path.
     static std::filesystem::path ShareRoot(std::filesystem::path const& folder);
-    // The drive root or UNC share that a notice about `location` names.
-    static std::optional<std::string> NoticeRoot(std::string const& location);
+    // The drive root or UNC share that `location` really is on, which a
+    // notice about it names.
+    std::optional<std::string> NoticeRoot(std::string const& location) const;
     // A NoticeRoot in lowercase, so one root has one key however it is
     // written.
     static std::string RootKey(std::filesystem::path const& root);
     // The key of the root probe and the location notice for `location`.
-    static std::string NoticeKey(std::string const& location);
+    std::string NoticeKey(std::string const& location) const;
+    // `path` with the real path of the deepest folder in it that
+    // `locations` knows, or `path` itself while none is known, so a folder
+    // that is not looked up yet keeps the root its path names.
+    std::string RealPath(std::string const& path) const;
+    // The key of `folder` in `locations`: its full path in lowercase.
+    static std::string LocationKey(std::string const& folder);
+    // Whether `locations` knows where `folder` really is. Queues its lookup
+    // when it has none; ContinueLookups, which the maintenance pass runs,
+    // sends it.
+    bool Locate(std::string const& folder);
+    // Looks up where each folder that the engine uses really is: the
+    // torrents' folders, their moves' destinations, the folders of file work
+    // and additions, and the settings' download folders. Each is looked up
+    // again once a minute, so a link that now points elsewhere moves its
+    // work. Part of the maintenance pass.
+    void LocateFolders();
+    // Gives libtorrent the RootOf key of each listed torrent's folder when it
+    // differs from the storageRoot it last got. Part of the maintenance pass.
+    void Rekey();
+    // Follows `walk` on the root of its path: each symbolic link, junction
+    // and volume mount point on the way is replaced by its target, and a
+    // subst or mapped drive letter by its folder or share. It reads each link
+    // from the volume that holds it and never opens a link's target. It
+    // returns when the path reaches another root, which that root's worker
+    // follows further, so a volume that hangs holds only the lookups that
+    // need it. A walk that returns on its own root has ended: at a network
+    // path, at an entry it cannot read, or after the last link.
+    static Location::Walk FollowLinks(Location::Walk walk);
     // `folder`, or its nearest existing parent up to its drive root or share.
     // Blocks on the drive.
     static std::optional<std::filesystem::path> ExistingFolder(std::filesystem::path folder);
@@ -1615,6 +1685,13 @@ public:
     void On(lt::alerts_dropped_alert const&);
 
 private:
+    // Starts the lookup of the location `key` from its folder;
+    // ContinueLookups sends it to a worker.
+    void LookUp(std::string const& key);
+    // Sends each lookup that waits to the `link` worker of its path's root,
+    // as one batch per worker, and only to a worker without a batch, so no
+    // worker's queue fills however many folders there are.
+    void ContinueLookups();
     void PrepareMove(Move& moving);
     // The torrent's physical files whose path changes at `destination`.
     static std::vector<Payload::File> Relocated(std::string const& destination, Torrent const& torrent);
@@ -1635,9 +1712,10 @@ private:
     static std::optional<std::string> Blocked(Drives const& needed, Claims const& claims,
         std::vector<std::string> const& ids);
     // Adds the RootOf key of each of `folders` to a check's drives. libtorrent
-    // hashes the checks of one root on the same threads, also when a folder
-    // links to another drive, so two checks on one root never run together.
-    static void AddRoots(Drives& drives, std::vector<std::string> const& folders);
+    // hashes the checks of one root on the same threads, also when its
+    // folders lie on different disks, such as a volume mounted in a folder,
+    // so two checks on one root never run together.
+    void AddRoots(Drives& drives, std::vector<std::string> const& folders) const;
 
     SpeedHistory history;
 

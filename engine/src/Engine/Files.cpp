@@ -233,18 +233,30 @@ bool Engine::State::FoldersOverlap(std::string const& left, std::string const& r
 
 bool Engine::State::FilesBusy(std::string const& root) const
 {
-    return renames.contains(root) || fileWork.Holds(root, false);
+    return RenamesOn(root) || fileWork.Holds([this, &root](auto const& folder) { return RootOf(folder) == root; },
+        false);
 }
 
 bool Engine::State::DeletingOrRenaming(std::string const& root) const
 {
-    return renames.contains(root) || fileWork.Holds(root, true);
+    return RenamesOn(root) || fileWork.Holds([this, &root](auto const& folder) { return RootOf(folder) == root; },
+        true);
+}
+
+bool Engine::State::RenamesOn(std::string const& root) const
+{
+    return renames.contains(root) || std::any_of(renames.begin(), renames.end(),
+        [this, &root](auto const& entry) { return RootOf(Utf8(entry.second.source.wstring())) == root; });
 }
 
 bool Engine::State::Adding(std::string const& root) const
 {
-    return std::any_of(additions.begin(), additions.end(),
-        [&root](auto const& entry) { return RootOf(entry.second.facts.savePath) == root; });
+    // One that waits for its folder's lookup has no disk work yet, and its
+    // path's root may not be where it saves.
+    return std::any_of(additions.begin(), additions.end(), [this, &root](auto const& entry)
+    {
+        return entry.second.phase != AdditionPhase::Locating && RootOf(entry.second.facts.savePath) == root;
+    });
 }
 
 void Engine::State::ContinueNames()
@@ -1146,7 +1158,11 @@ Outcome Engine::State::FilesReady(std::vector<std::string> const& ids, std::stri
         // so only a save folder that overlaps the destination can hold one
         // the move would write.
         bool unknown = torrent.restore || !torrent.handle.torrent_file();
-        if (unknown && (own || FoldersOverlap(torrent.facts.savePath, destination)))
+        // One that waits for its add is added by itself, so the move waits
+        // for it as for busy files.
+        if (torrent.AwaitsAdd() && (own || FoldersOverlap(torrent.facts.savePath, destination)))
+            refusal = Outcome{ErrorCode::FilesBusy, torrent.Name()};
+        else if (unknown && (own || FoldersOverlap(torrent.facts.savePath, destination)))
             refusal = Outcome{ErrorCode::MetadataUnavailable, torrent.Name()};
         else if ((((torrent.FilesBusy() && !elsewhere) || !torrent.NamesKnown()) && reaches(torrent)) ||
             (own && torrent.priorityCompletion))

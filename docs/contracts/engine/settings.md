@@ -218,7 +218,7 @@ Advanced also exposes three controls for verification and large seeding librarie
 - Checking threads (`hashing_threads`): 1–64, default 1, per running check.
   libtorrent gets this value unchanged and gives each drive letter or server
   this many threads. The drive turns run one check at a time on a drive
-  letter or server, also when a folder links to another drive, so each
+  letter or server, where its folder really is, so each
   running check has these threads to itself. A single thread
   suits sequential hard-drive access; extra threads allow parallel
   verification on faster storage at the cost of CPU and memory. Download-time
