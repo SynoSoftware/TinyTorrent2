@@ -141,23 +141,30 @@ Json Engine::State::Describe(Preview const& preview, std::string const& destinat
     auto const& params = preview.params;
     auto hashes = preview.InfoHashes();
     auto duplicate = FindDuplicate(hashes);
-    auto files = Files(params.ti);
-    if (params.ti)
-    {
-        auto priorities = DefaultPriorities(params.ti->layout(), settings.excludes ? settings.patterns : std::string());
-        for (auto& file : files)
-        {
-            auto index = lt::file_index_t(file.at("index").get<int>());
-            file["path"] = ContentPath(params.ti->layout(), index, settings.layout);
-            file["priority"] = static_cast<std::uint8_t>(priorities[static_cast<int>(index)]);
-        }
-    }
     return {{"preview_id", preview.previewId},
         {"name", tt::Name(params.ti ? params.ti->name() : params.name, Hashes(hashes))},
-        {"size", params.ti ? params.ti->total_size() : 0}, {"files", std::move(files)},
+        {"size", params.ti ? params.ti->total_size() : 0}, {"file_count", params.ti ? params.ti->num_files() : 0},
         {"torrent_id", duplicate.value_or("")}, {"hashes", Hashes(hashes)}, {"trackers", params.trackers},
         {"merge_available", CanMerge(preview)}, {"metadata_ready", bool(params.ti)},
         {"error", preview.error}, {"shared_with", SharedFiles(params.ti, settings.SavePath(destination))}};
+}
+
+Json Engine::State::DescribeFilePage(Preview const& preview, int offset) const
+{
+    auto const& metadata = preview.params.ti;
+    Json data = {{"preview_id", preview.previewId}, {"offset", offset},
+        {"file_count", metadata ? metadata->num_files() : 0}, {"files", Json::array()}};
+    if (metadata)
+    {
+        auto masks = SkipMasks(settings.excludes ? settings.patterns : std::string());
+        auto const& layout = metadata->layout();
+        data["files"] = FilePage(*metadata, offset, [this, &masks, &layout](lt::file_index_t index, Json& file)
+        {
+            file["path"] = ContentPath(layout, index, settings.layout);
+            file["priority"] = static_cast<std::uint8_t>(DefaultPriority(layout, index, masks));
+        });
+    }
+    return data;
 }
 
 void Engine::State::Inspect(std::string source, std::string connectionId,

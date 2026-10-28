@@ -173,24 +173,7 @@ std::string Name(std::string name, std::vector<std::string> const& hashes)
     return name;
 }
 
-// Padding files only align pieces, so they never download.
-lt::download_priority_t DefaultPriority(lt::file_storage const& files, lt::file_index_t index)
-{
-    return files.pad_file_at(index) ? lt::dont_download : lt::default_priority;
-}
-
-std::string ContentPath(lt::file_storage const& files, lt::file_index_t index, Layout layout)
-{
-    auto path = std::filesystem::path(Wide(files.file_path(index)));
-    bool hasFolder = path.has_parent_path() && *path.begin() == std::filesystem::path(Wide(files.name()));
-    if (layout == Layout::Strip && hasFolder)
-        path = path.lexically_relative(*path.begin());
-    else if (layout == Layout::Create && !hasFolder)
-        path = std::filesystem::path(Wide(files.name())) / path;
-    return Utf8(path.generic_wstring());
-}
-
-std::vector<lt::download_priority_t> DefaultPriorities(lt::file_storage const& files, std::string const& patterns)
+std::vector<std::wstring> SkipMasks(std::string const& patterns)
 {
     std::vector<std::wstring> masks;
     std::wistringstream lines{Wide(patterns)};
@@ -200,6 +183,17 @@ std::vector<lt::download_priority_t> DefaultPriorities(lt::file_storage const& f
         if (first != std::wstring::npos)
             masks.push_back(line.substr(first, line.find_last_not_of(L" \t\r") - first + 1));
     }
+    return masks;
+}
+
+// Padding files only align pieces, so they never download.
+lt::download_priority_t DefaultPriority(lt::file_storage const& files, lt::file_index_t index,
+    std::vector<std::wstring> const& masks)
+{
+    if (files.pad_file_at(index))
+        return lt::dont_download;
+    if (masks.empty())
+        return lt::default_priority;
     auto matches = [](std::wstring const& name, std::wstring const& mask)
     {
         std::size_t file = 0, pattern = 0, star = std::wstring::npos, retry = 0;
@@ -228,29 +222,50 @@ std::vector<lt::download_priority_t> DefaultPriorities(lt::file_storage const& f
             ++pattern;
         return pattern == mask.size();
     };
+    auto name = std::filesystem::path(Wide(files.file_path(index))).filename().wstring();
+    bool skipped = std::any_of(masks.begin(), masks.end(), [&](auto const& mask) { return matches(name, mask); });
+    return skipped ? lt::dont_download : lt::default_priority;
+}
+
+std::string ContentPath(lt::file_storage const& files, lt::file_index_t index, Layout layout)
+{
+    auto path = std::filesystem::path(Wide(files.file_path(index)));
+    bool hasFolder = path.has_parent_path() && *path.begin() == std::filesystem::path(Wide(files.name()));
+    if (layout == Layout::Strip && hasFolder)
+        path = path.lexically_relative(*path.begin());
+    else if (layout == Layout::Create && !hasFolder)
+        path = std::filesystem::path(Wide(files.name())) / path;
+    return Utf8(path.generic_wstring());
+}
+
+std::vector<lt::download_priority_t> DefaultPriorities(lt::file_storage const& files, std::string const& patterns)
+{
+    auto masks = SkipMasks(patterns);
     std::vector<lt::download_priority_t> priorities;
     for (auto index : files.file_range())
-    {
-        auto name = std::filesystem::path(Wide(files.file_path(index))).filename().wstring();
-        bool skipped = std::any_of(masks.begin(), masks.end(), [&](auto const& mask) { return matches(name, mask); });
-        priorities.push_back(skipped ? lt::dont_download : DefaultPriority(files, index));
-    }
+        priorities.push_back(DefaultPriority(files, index, masks));
     return priorities;
 }
 
-Json Files(std::shared_ptr<lt::torrent_info const> const& metadata)
+Json FilePage(lt::torrent_info const& metadata, int offset,
+    std::function<void(lt::file_index_t, Json&)> const& describe)
 {
+    auto const& storage = metadata.layout();
+    std::int64_t const pieceLength = metadata.piece_length();
     Json files = Json::array();
-    if (!metadata)
+    std::size_t paths = 0;
+    for (int item = offset; item < storage.num_files() && files.size() < filePage && paths < filePageNames; ++item)
     {
-        return files;
-    }
-    auto const& storage = metadata->layout();
-    for (auto index : storage.file_range())
-    {
-        files.push_back({{"index", static_cast<int>(index)}, {"path", storage.file_path(index)},
-            {"size", storage.file_size(index)}, {"padding", storage.pad_file_at(index)},
-            {"priority", static_cast<std::uint8_t>(DefaultPriority(storage, index))}});
+        lt::file_index_t index(item);
+        auto start = storage.file_offset(index);
+        auto size = storage.file_size(index);
+        auto path = storage.file_path(index);
+        paths += path.size();
+        Json file = {{"index", item}, {"path", std::move(path)}, {"size", size},
+            {"padding", storage.pad_file_at(index)}, {"first_piece", start / pieceLength},
+            {"end_piece", size == 0 ? start / pieceLength : (start + size + pieceLength - 1) / pieceLength}};
+        describe(index, file);
+        files.push_back(std::move(file));
     }
     return files;
 }
@@ -850,8 +865,8 @@ std::vector<lt::announce_entry> const& Torrent::Trackers() const
 Json Torrent::Describe(Detail const& detail, std::shared_ptr<lt::torrent_info const> const& metadata) const
 {
     auto data = facts.ToJson();
-    data.update(Describe(TorrentView::General, false, detail, metadata));
-    data.update(Describe(TorrentView::Files, false, detail, metadata));
+    data.update(Describe(TorrentView::General, detail, metadata));
+    data.update(Describe(TorrentView::Files, detail, metadata));
     if (facts.trackers)
     {
         data["trackers"] = Urls(*facts.trackers);
@@ -1122,31 +1137,28 @@ Json DescribeGeneral(Torrent const& torrent, std::shared_ptr<lt::torrent_info co
 Json DescribeFiles(Torrent const& torrent, std::shared_ptr<lt::torrent_info const> const& metadata, Detail const& detail,
     std::chrono::steady_clock::time_point since)
 {
+    // Names, sizes and pieces come in pages from the `files` command; the
+    // detail holds one number per file for what changes while it downloads.
     Json data;
-    data["files"] = Files(metadata);
-    if (!metadata)
+    data["file_count"] = metadata ? metadata->num_files() : 0;
+    data["downloaded"] = Json();
+    data["priority"] = Json();
+    if (detail.Has(DetailKind::Progress, since))
+        data["downloaded"] = detail.progress;
+    // Choices that wait for busy files are saved, so they show before
+    // libtorrent has them.
+    auto const& priorities = torrent.prioritiesPending ? torrent.facts.priorities : detail.priorities;
+    if (torrent.prioritiesPending || detail.Has(DetailKind::Priorities, since))
     {
-        return data;
-    }
-    for (auto& file : data["files"])
-    {
-        auto index = file.at("index").get<size_t>();
-        file["disk_path"] = detail.Has(DetailKind::Status, since) && torrent.names ?
-            Json(torrent.names->mappings.file_path(metadata->layout(),
-                lt::file_index_t(static_cast<int>(index)))) : Json();
-        file["downloaded"] = detail.Has(DetailKind::Progress, since) && index < detail.progress.size() ?
-            Json(detail.progress[index]) : Json();
-        // Choices that wait for busy files are saved, so they show before
-        // libtorrent has them.
-        auto const& priorities = torrent.prioritiesPending ? torrent.facts.priorities : detail.priorities;
-        file["priority"] = (torrent.prioritiesPending || detail.Has(DetailKind::Priorities, since)) &&
-            index < priorities.size() ? Json(static_cast<std::uint8_t>(priorities[index])) : Json();
+        data["priority"] = Json::array();
+        for (auto priority : priorities)
+            data["priority"].push_back(static_cast<std::uint8_t>(priority));
     }
     return data;
 }
 
 Json DescribePieces(Torrent const& torrent, std::shared_ptr<lt::torrent_info const> const& metadata,
-    Detail const& detail, bool includeFiles)
+    Detail const& detail)
 {
     auto const& current = detail.status;
     auto count = metadata ? metadata->num_pieces() : 0;
@@ -1188,32 +1200,25 @@ Json DescribePieces(Torrent const& torrent, std::shared_ptr<lt::torrent_info con
                 {"progress", std::clamp(double(bytes) / metadata->piece_size(index), 0.0, 1.0)}});
         }
     }
-    if (includeFiles)
-    {
-        data["files"] = Json::array();
-        if (metadata)
-        {
-            auto const& files = metadata->layout();
-            for (auto index : files.file_range())
-            {
-                if (files.pad_file_at(index))
-                {
-                    continue;
-                }
-                auto first = files.file_offset(index) / metadata->piece_length();
-                auto end = files.file_size(index) == 0 ? first :
-                    (files.file_offset(index) + files.file_size(index) + metadata->piece_length() - 1) /
-                        metadata->piece_length();
-                data["files"].push_back({{"path", files.file_path(index)},
-                    {"first_piece", first}, {"end_piece", end}});
-            }
-        }
-    }
     return data;
 }
 }
 
-Json Torrent::Describe(TorrentView view, bool includeFiles, Detail const& detail,
+Json Torrent::DescribeFilePage(std::shared_ptr<lt::torrent_info const> const& metadata, int offset) const
+{
+    Json data = {{"torrent_id", torrentId}, {"offset", offset}, {"file_count", metadata ? metadata->num_files() : 0},
+        {"files", Json::array()}};
+    if (metadata)
+    {
+        data["files"] = FilePage(*metadata, offset, [this, &metadata](lt::file_index_t index, Json& file)
+        {
+            file["disk_path"] = names ? Json(names->mappings.file_path(metadata->layout(), index)) : Json();
+        });
+    }
+    return data;
+}
+
+Json Torrent::Describe(TorrentView view, Detail const& detail,
     std::shared_ptr<lt::torrent_info const> const& metadata,
     std::chrono::steady_clock::time_point since) const
 {
@@ -1244,7 +1249,7 @@ Json Torrent::Describe(TorrentView view, bool includeFiles, Detail const& detail
         if (!metadata || (detail.Has(DetailKind::Status, since) &&
             detail.Has(DetailKind::Availability, since) &&
             detail.Has(DetailKind::Downloading, since)))
-            data.update(DescribePieces(*this, metadata, detail, includeFiles));
+            data.update(DescribePieces(*this, metadata, detail));
         break;
     }
     return data;

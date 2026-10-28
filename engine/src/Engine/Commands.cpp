@@ -24,6 +24,7 @@ constexpr CommandEntry commands[] = {
     {"add", Command::Add, Publication::Execute},
     {"merge_trackers", Command::MergeTrackers, Publication::Execute},
     {"torrent", Command::Torrent, Publication::None},
+    {"files", Command::Files, Publication::None},
     {"edit", Command::Edit, Publication::Execute},
     {"reannounce", Command::Reannounce, Publication::Execute},
     {"history", Command::History, Publication::None},
@@ -324,8 +325,7 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
                 return;
             }
         }
-        Reading::Read read{connectionId, request.at("torrent_id").get<std::string>(), view,
-            request.value("include_files", false), reply};
+        Reading::Read read{connectionId, request.at("torrent_id").get<std::string>(), view, reply};
         if (request.contains("context"))
         {
             if (!view || !request.at("context").is_number_integer())
@@ -336,6 +336,40 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
             read.context = request.at("context").get<std::int64_t>();
         }
         ReadDetail(std::move(read));
+        break;
+    }
+    case Command::Files:
+    {
+        auto offset = request.value("offset", 0);
+        if (offset < 0 || request.contains("preview_id") == request.contains("torrent_id"))
+        {
+            reply(Failure(ErrorCode::InvalidRequest));
+            return;
+        }
+        if (request.contains("preview_id"))
+        {
+            auto preview = FindPreview(request.at("preview_id").get<std::string>(), connectionId);
+            if (!preview)
+            {
+                reply(Failure(ErrorCode::PreviewExpired));
+                return;
+            }
+            reply(Success(DescribeFilePage(*preview, offset)));
+            break;
+        }
+        auto found = torrents.find(request.at("torrent_id").get<std::string>());
+        if (found == torrents.end())
+        {
+            reply(Failure(ErrorCode::TorrentRemoved));
+            return;
+        }
+        auto const& torrent = found->second;
+        if (torrent.restore)
+        {
+            reply(Failure(ErrorCode::AliasConflict, torrent.conflict));
+            return;
+        }
+        reply(Success(torrent.DescribeFilePage(torrent.handle.torrent_file(), offset)));
         break;
     }
     case Command::Edit:

@@ -65,7 +65,7 @@ function Connect-Pipe {
         throw 'TinyTorrent is already running. The check refuses to command an engine it did not start.'
     }
     $hello = Read-Frame $stream
-    Assert ($hello.type -eq 'hello' -and $hello.version -eq 34) 'Invalid version handshake'
+    Assert ($hello.type -eq 'hello' -and $hello.version -eq 35) 'Invalid version handshake'
     return $stream
 }
 
@@ -78,6 +78,19 @@ function Send-Command([hashtable] $fields) {
     do { $reply = Read-Frame $script:pipe } while ($reply.type -eq 'detail')
     Assert ($reply.request_id -eq $fields.request_id) 'Reply belongs to another request'
     return $reply
+}
+
+# The torrent's files from the first page, each with its downloaded bytes and
+# priority from the Files detail. The fixtures fit in one page.
+function Get-Files([string] $torrentId) {
+    $page = Send-Command @{ command = 'files'; torrent_id = $torrentId }
+    Assert $page.ok 'Engine refused the file list'
+    $detail = (Send-Command @{ command = 'torrent'; torrent_id = $torrentId; view = 'files' }).data
+    foreach ($file in $page.data.files) {
+        $file | Add-Member downloaded ($null -ne $detail.downloaded ? $detail.downloaded[$file.index] : $null)
+        $file | Add-Member priority ($null -ne $detail.priority ? $detail.priority[$file.index] : $null)
+    }
+    return ,$page.data.files
 }
 
 function Start-Engine {

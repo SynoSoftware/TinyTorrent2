@@ -105,7 +105,7 @@ try {
             }
             $null = Measure-Reply $command $phase 'command'
             $view = $views[$index % $views.Count]
-            $null = Measure-Reply @{ command = 'torrent'; torrent_id = $torrentId; view = $view; context = ++$context; include_files = $true } $phase 'immediate'
+            $null = Measure-Reply @{ command = 'torrent'; torrent_id = $torrentId; view = $view; context = ++$context } $phase 'immediate'
             while ($pending.Count) { Receive-Detail (Read-Frame $script:pipe) }
             if ($index % 25 -eq 0) {
                 $snapshot = (Send-Command @{ command = 'snapshot' }).data

@@ -42,16 +42,7 @@ public sealed class Pieces
                 value => value.GetProperty("index").GetInt32(),
                 value => value.GetProperty("progress").GetDouble()
             );
-        Files = data.TryGetProperty("files", out var topology)
-            ? topology
-                .EnumerateArray()
-                .Select(file => new PieceFile(
-                    file.GetProperty("path").GetString()!,
-                    file.GetProperty("first_piece").GetInt32(),
-                    file.GetProperty("end_piece").GetInt32()
-                ))
-                .ToArray()
-            : files;
+        Files = files;
         if (Availability.Count != Count || Wanted.Count != Count)
             throw new InvalidDataException("Incomplete piece availability.");
         States = Classify();
@@ -86,7 +77,7 @@ public sealed class Pieces
         && Verified.SequenceEqual(other.Verified)
         && Wanted.SequenceEqual(other.Wanted)
         && Availability.SequenceEqual(other.Availability)
-        && Files.SequenceEqual(other.Files)
+        && (ReferenceEquals(Files, other.Files) || Files.SequenceEqual(other.Files))
         && Downloading.Count == other.Downloading.Count
         && Downloading.All(piece =>
             other.Downloading.TryGetValue(piece.Key, out var progress) && progress == piece.Value

@@ -87,7 +87,7 @@ void Engine::State::ReadDetail(Reading::Read read)
                 });
             Detail empty;
             auto const& detail = current ? reading->detail : empty;
-            auto data = torrent.Describe(*read.view, read.includeFiles, detail, metadata);
+            auto data = torrent.Describe(*read.view, detail, metadata);
             data["session_id"] = sessionId;
             data["context"] = *read.context;
             data["ready"] = ready;
@@ -209,7 +209,7 @@ void Engine::State::ContinueReading(bool changed)
         }
         if (complete || (changed && read.context))
         {
-            auto data = read.view ? torrent.Describe(*read.view, read.includeFiles, detail, metadata)
+            auto data = read.view ? torrent.Describe(*read.view, detail, metadata)
                                   : torrent.Describe(detail, metadata);
             if (read.view)
                 data["session_id"] = sessionId;

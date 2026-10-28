@@ -142,8 +142,8 @@ swarm at one instant.
 
 <a id="pieces-detail"></a>While the Pieces map is visible, its detail replies
 include verified pieces, the connected-peer count per piece and downloading
-pieces with their received share. Opening the map also supplies where each
-file starts in the piece sequence. Hidden maps request no piece detail, because
+pieces with their received share. Where each file starts in the piece
+sequence comes from the [file pages](#file-pages). Hidden maps request no piece detail, because
 a large torrent has tens of thousands of per-piece availability counts.
 Replies include a `wanted` boolean per piece, derived from the chosen
 non-padding files. A boundary piece shared with a wanted file remains wanted,
@@ -381,9 +381,9 @@ isolation guarantee; an extra token would not create a stronger boundary.
 
 ## Wire representation
 
-Protocol version 34 uses a four-byte little-endian UTF-8 JSON frame length,
+Protocol version 35 uses a four-byte little-endian UTF-8 JSON frame length,
 bounded to 16 MiB. The endpoint is `TinyTorrent.<logon SID>`; each connecting
-client first receives `{type:"hello",version:34,session_id:"...",data_directory:"..."}`. The absolute data directory
+client first receives `{type:"hello",version:35,session_id:"...",data_directory:"..."}`. The absolute data directory
 keeps the same store for explicit Restart, which starts the engine beside the
 window rather than a path a pipe peer reports. Requests are
 `{request_id:signed-64-bit-integer,command:string,...}`. Replies repeat `request_id` and have
@@ -450,7 +450,8 @@ Commands are `snapshot`, `preview` (source, destination), `preview_detail`
 (preview_id, destination), `add` (preview_id, destination, paused, optional
 priorities, optional sequential, first_last and queue_top booleans that default to false),
 `cancel_preview` (preview_id), `merge_trackers` (preview_id,
-torrent_id), `torrent` (torrent_id), `pause`, `resume`, `force`, `verify`, and
+torrent_id), `torrent` (torrent_id), `files` (preview_id or torrent_id, and
+offset, as [file pages](#file-pages) describes), `pause`, `resume`, `force`, `verify`, and
 `remove` (torrent_ids), `retry` (torrent_ids: clears each torrent's problems as
 Start does but keeps its current intent, so a stopped torrent continues and a
 failed move to the final folder runs again; every `retry` also tries again
@@ -542,8 +543,7 @@ The same operations are available through the engine executable's
 Snapshot settings contain the live language, with `language_saved` indicating
 whether it matches the saved preference. The store retains only saved settings;
 a failed save leaves the live choice selected and reports the failure.
-Preview replies contain preview_id, name, size, files (index, path, size,
-priority, padding), metadata_ready, hashes (full v1/v2 hexadecimal strings),
+Preview replies contain preview_id, name, size, file_count, metadata_ready, hashes (full v1/v2 hexadecimal strings),
 trackers (URLs), merge_available, error, shared_with (the names of listed
 torrents, and of removed torrents whose files are being deleted, that use a
 file of this content at the destination), and
@@ -595,8 +595,24 @@ downloaded/uploaded (bytes), queue
 finished the wanted files; 0 until complete), incoming, forced, sequential, first_last, and
 hashes. Protocol version 6 adds `completed`, so content totals and remaining time
 do not mistake verification progress for downloaded bytes. `torrent` returns
-the torrent's facts, name, metadata_ready, files, hashes, current content folder,
-and magnet link.
+the torrent's facts, name, metadata_ready, file_count, hashes, current content folder,
+and magnet link. Its Files view carries file_count, `downloaded` (bytes per
+file, in file order) and `priority` (one number per file), each null until
+libtorrent reports it.
+
+<a id="file-pages"></a>File names come in pages, so neither side holds a large
+torrent's whole file list as one message, and the engine keeps no copy of it:
+it builds each page from libtorrent's file table when asked. `files` takes a
+preview_id or a torrent_id and an offset (default 0), and replies with
+file_count, offset and files. Each file carries index, path, size, padding,
+first_piece and end_piece (its pieces, end exclusive). A preview's files carry
+the path in the saved folder layout and the priority the Add dialog starts
+from; a torrent's carry disk_path, its current name on disk, or null until the
+engine has read its names. A page holds at most 5,000 files and ends earlier
+when its paths are long, so the next page starts at offset plus the number of
+files received. An offset at or past file_count gives an empty page.
+`files` fails with `preview_expired`, `torrent_removed`, or `alias_conflict`
+for a torrent that waits to be restored.
 All identities are strings. Settings are intended changes rather than replacement
 snapshots. `reset_settings` saves every setting at the default a new
 installation starts with and replies like `settings`. It keeps Pause all,

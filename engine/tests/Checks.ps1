@@ -428,7 +428,7 @@ try {
             $reply = Send-Command @{ command = 'add'; preview_id = (Preview); destination = $payload; paused = $true }
             Assert $reply.ok 'Fixture addition failed'
             $torrentId = $reply.data.torrent_id
-            $files = (Send-Command @{ command = 'torrent'; torrent_id = $torrentId; view = 'files' }).data.files
+            $files = (Get-Files $torrentId)
             Stop-Engine
             $checkpoint = [IO.File]::ReadAllBytes((Join-Path $directory ($torrentId + '.resume')))
             $file = Join-Path $directory 'settings.json'
@@ -621,7 +621,7 @@ try {
                 $reply = Send-Command @{ command = 'add'; preview_id = $preview.data.preview_id; destination = $payload }
                 Assert ($reply.ok -and -not $reply.data.duplicate) 'Distinct unfinished-file owners were merged or refused'
                 $identities += $reply.data.torrent_id
-                $files = (Send-Command @{ command = 'torrent'; torrent_id = $reply.data.torrent_id; view = 'files' }).data.files
+                $files = (Get-Files $reply.data.torrent_id)
                 Assert ($files[0].path -eq 'shared.bin' -and $files[0].disk_path -eq 'shared.bin.!tt') 'New payload did not keep its logical name and unfinished disk name'
             }
             Stop-Engine
@@ -650,13 +650,13 @@ try {
                 if ($attempts -le $previous) {
                     $failure = @{
                         snapshot = (Send-Command @{ command = 'snapshot' }).data
-                        files = @($identities | ForEach-Object { (Send-Command @{ command = 'torrent'; torrent_id = $_; view = 'files' }).data })
+                        files = @($identities | ForEach-Object { Get-Files $_ })
                     } | ConvertTo-Json -Depth 20
                     [IO.File]::WriteAllBytes((Join-Path $directory 'failure.json'), [Text.Encoding]::UTF8.GetBytes($failure))
                 }
                 Assert ($attempts -gt $previous) 'Verified unfinished content never attempted its held-file rename'
                 foreach ($torrentId in $identities) {
-                    $files = (Send-Command @{ command = 'torrent'; torrent_id = $torrentId; view = 'files' }).data.files
+                    $files = (Get-Files $torrentId)
                     Assert ($files[0].disk_path -eq 'shared.bin.!tt' -and $files[0].downloaded -eq 2048) 'A held-file rename lost verified bytes or the saved physical name'
                 }
                 $rows = (Send-Command @{ command = 'snapshot' }).data.torrents
@@ -669,7 +669,7 @@ try {
             $until = [DateTime]::UtcNow.AddSeconds(40)
             do {
                 $paths = @($identities | ForEach-Object {
-                    (Send-Command @{ command = 'torrent'; torrent_id = $_; view = 'files' }).data.files[0].disk_path
+                    (Get-Files $_)[0].disk_path
                 })
                 if (@($paths | Where-Object { $_ -ne 'shared.bin' }).Count -eq 0) { break }
                 Start-Sleep -Milliseconds 100
@@ -686,7 +686,7 @@ try {
             Stop-Engine
             $null = Start-Engine
             foreach ($torrentId in $identities) {
-                $files = (Send-Command @{ command = 'torrent'; torrent_id = $torrentId; view = 'files' }).data.files
+                $files = (Get-Files $torrentId)
                 Assert ($files[0].disk_path -eq 'shared.bin' -and $files[0].downloaded -eq 2048) 'The completed shared-file names or verified bytes were lost at restart'
             }
             $reply = Send-Command @{ command = 'remove'; torrent_ids = $identities }
@@ -706,7 +706,7 @@ try {
             $until = [DateTime]::UtcNow.AddSeconds(15)
             do {
                 $files = @($identities | ForEach-Object {
-                    (Send-Command @{ command = 'torrent'; torrent_id = $_; view = 'files' }).data.files[0]
+                    (Get-Files $_)[0]
                 })
                 if (@($files | Where-Object { $_.disk_path -ne 'shared.bin' -or $_.downloaded -ne 2048 }).Count -eq 0) { break }
                 Start-Sleep -Milliseconds 100
@@ -1860,7 +1860,7 @@ try {
             $until = [DateTime]::UtcNow.AddSeconds(90)
             do {
                 Start-Sleep -Milliseconds 200
-                $name = (Send-Command @{ command = 'torrent'; torrent_id = $shared; view = 'files' }).data.files[0].disk_path
+                $name = (Get-Files $shared)[0].disk_path
             } while ($name -ne 'shared.bin' -and (Row-Of $big).moving -and [DateTime]::UtcNow -lt $until)
             $row = Row-Of $big
             Assert ($name -eq 'shared.bin' -and $row.moving) "$label`: the file is $name and the move $($row.status) at $($row.progress)"
@@ -1948,14 +1948,14 @@ try {
             $reply = Send-Command @{ command = 'add'; preview_id = $previewId; destination = $payload; paused = $true }
             Assert $reply.ok 'The file-edit fixture could not be added'
             $torrentId = $reply.data.torrent_id
-            $files = (Send-Command @{ command = 'torrent'; torrent_id = $torrentId; view = 'files' }).data.files
+            $files = (Get-Files $torrentId)
             $wanted = $files | Where-Object { -not $_.padding } | Select-Object -First 1
             Assert ($null -ne $wanted) 'The file-edit fixture has no payload files'
             $reply = Send-Command @{ command = 'edit'; torrent_id = $torrentId; changes = @{ priorities = @(@{ index = $wanted.index; priority = 7 }); trackers = @(@{ url = 'http://127.0.0.1:1/announce'; tier = 3 }) } }
             Assert $reply.ok 'A committed priority and tracker edit was refused'
             Stop-Engine
             $null = Start-Engine
-            $files = (Send-Command @{ command = 'torrent'; torrent_id = $torrentId; view = 'files' }).data.files
+            $files = (Get-Files $torrentId)
             Assert (($files | Where-Object index -eq $wanted.index).priority -eq 7) 'An older checkpoint defeated a committed priority at restart'
             $trackers = (Send-Command @{ command = 'torrent'; torrent_id = $torrentId; view = 'trackers' }).data.trackers
             Assert ($trackers.Count -eq 1 -and $trackers[0].url -eq 'http://127.0.0.1:1/announce' -and $trackers[0].tier -eq 3) 'A saved tracker choice lost its URL or tier'
@@ -1965,7 +1965,7 @@ try {
             Stop-Engine
             $snapshot = Start-Engine
             Assert ($snapshot.torrents.Count -eq 1 -and $snapshot.torrents[0].torrent_id -eq $torrentId) 'Select none removed the accepted torrent'
-            $files = (Send-Command @{ command = 'torrent'; torrent_id = $torrentId; view = 'files' }).data.files
+            $files = (Get-Files $torrentId)
             Assert (@($files | Where-Object priority -ne 0).Count -eq 0) 'Select none did not survive restart'
             $trackers = (Send-Command @{ command = 'torrent'; torrent_id = $torrentId; view = 'trackers' }).data.trackers
             Assert (@($trackers).Count -eq 0) 'An explicit empty tracker list restored the original trackers'
@@ -2142,8 +2142,9 @@ try {
             $reply = Send-Command @{ command = 'settings'; changes = @{ limit_mode = 'speed'; download_limit = 131072; alternative_download_limit = 524288 } }
             Assert $reply.ok 'Global limits were refused'
             $reply = Send-Command @{ command = 'preview'; source = $TorrentFile; destination = $payload }
-            Assert ($reply.ok -and $reply.data.files.Count -eq 2) 'Aligned multifile fixture did not preview'
-            Assert ($reply.data.files[0].path.Replace('\', '/') -eq 'selection/skip.bin' -and $reply.data.files[1].path.Replace('\', '/') -eq 'selection/wanted.bin') 'Fixture file order is not skip then wanted'
+            Assert ($reply.ok -and $reply.data.file_count -eq 2) 'Aligned multifile fixture did not preview'
+            $fixture = (Send-Command @{ command = 'files'; preview_id = $reply.data.preview_id }).data.files
+            Assert ($fixture[0].path.Replace('\', '/') -eq 'selection/skip.bin' -and $fixture[1].path.Replace('\', '/') -eq 'selection/wanted.bin') 'Fixture file order is not skip then wanted'
             $hash = $reply.data.hashes[0]
             $reply = Send-Command @{ command = 'add'; preview_id = $reply.data.preview_id; destination = $payload; paused = $false; priorities = @(0, 7) }
             Assert $reply.ok 'Selected files could not be confirmed'

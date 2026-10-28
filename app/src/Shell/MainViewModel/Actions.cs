@@ -371,22 +371,13 @@ public sealed partial class MainViewModel
         {
             var detail = await Detail(torrent);
             var destination = detail.GetProperty("save_path").GetString()!;
-            var files = detail
-                .GetProperty("files")
-                .EnumerateArray()
-                .Where(file => !file.GetProperty("padding").GetBoolean())
-                .ToArray();
             var path = detail.GetProperty("folder").GetString()!;
             string? extension = null;
-            if (!folder && files.Length == 1)
+            if (!folder && await SingleFile(torrent) is { } only)
             {
-                var logical = files[0].GetProperty("path").GetString()!;
-                var physical = files[0].TryGetProperty("disk_path", out var disk)
-                    ? disk.GetString()!
-                    : logical;
-                path = Path.Combine(destination, physical);
-                if (logical != physical)
-                    extension = Path.GetExtension(logical);
+                path = Path.Combine(destination, only.Physical);
+                if (only.Logical != only.Physical)
+                    extension = Path.GetExtension(only.Logical);
             }
             OpenRequested?.Invoke(this, new(path, extension));
         }
@@ -394,6 +385,26 @@ public sealed partial class MainViewModel
         {
             Notifications.Report(error);
         }
+    }
+
+    // The torrent's only payload file, or null when it has none or several.
+    // The disk path is the logical path until the engine has read the names.
+    private async Task<(string Logical, string Physical)?> SingleFile(Torrent torrent)
+    {
+        (string Logical, string Physical)? single = null;
+        await foreach (var page in _client.TorrentFiles(torrent.TorrentId))
+        {
+            foreach (var file in page.GetProperty("files").EnumerateArray())
+            {
+                if (file.GetProperty("padding").GetBoolean())
+                    continue;
+                if (single is not null)
+                    return null;
+                var logical = file.GetProperty("path").GetString()!;
+                single = (logical, file.GetProperty("disk_path").GetString() ?? logical);
+            }
+        }
+        return single;
     }
 
     private async Task CopyTorrent(bool hashes)

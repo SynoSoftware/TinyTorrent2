@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Text.Json;
 using Syno.TinyTorrent.Shared;
+using Syno.TinyTorrent.Shared.Engine;
 
 namespace Syno.TinyTorrent.Controls;
 
@@ -88,58 +89,87 @@ public sealed class FileSelection(Strings strings) : INotifyPropertyChanged
         Refresh(project: true);
     }
 
-    internal void Load(JsonElement files)
+    internal int Count => _files.Count;
+
+    // Builds the rows from pages of files while the current rows stay shown,
+    // so a page that never arrives leaves them as they were.
+    internal Loader Load() => new(this);
+
+    internal sealed class Loader
     {
-        var choices = _files.ToDictionary(file => file.Index, file => file.Priority);
-        var expanded = _roots.SelectMany(root => root.Nodes()).Where(node => node.IsFolder)
-            .ToDictionary(node => node.Path, node => node.IsExpanded);
-        var folders = new Dictionary<(FileNode? Parent, string Name), FileNode>();
-        _roots.Clear();
-        _files.Clear();
-        foreach (var item in files.EnumerateArray())
+        private readonly FileSelection _owner;
+        private readonly Dictionary<int, int> _choices;
+        private readonly Dictionary<string, bool> _expanded;
+        private readonly Dictionary<(FileNode? Parent, string Name), FileNode> _folders = [];
+        private readonly List<FileNode> _roots = [];
+        private readonly List<FileNode> _files = [];
+
+        internal Loader(FileSelection owner)
         {
-            var path = item.GetProperty("path").GetString()!;
-            var parts = path.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
-            var siblings = _roots;
-            FileNode? parent = null;
-            for (var i = 0; i < parts.Length; i++)
+            _owner = owner;
+            _choices = owner._files.ToDictionary(file => file.Index, file => file.Priority);
+            _expanded = owner
+                ._roots.SelectMany(root => root.Nodes())
+                .Where(node => node.IsFolder)
+                .ToDictionary(node => node.Path, node => node.IsExpanded);
+        }
+
+        internal int Count => _files.Count;
+
+        // A page without a priority leaves each file's choice unknown until the
+        // Files view reports it.
+        internal void Add(JsonElement page)
+        {
+            foreach (var item in page.GetProperty("files").EnumerateArray())
             {
-                var leaf = i == parts.Length - 1;
-                var node = leaf ? null : folders.GetValueOrDefault((parent, parts[i]));
-                if (node is null)
+                var path = item.GetProperty("path").GetString()!;
+                var parts = path.Replace('\\', '/')
+                    .Split('/', StringSplitOptions.RemoveEmptyEntries);
+                var siblings = _roots;
+                FileNode? parent = null;
+                for (var i = 0; i < parts.Length; i++)
                 {
-                    var index = leaf ? item.GetProperty("index").GetInt32() : -1;
-                    node = new FileNode(this, parts[i], parent, index)
+                    var leaf = i == parts.Length - 1;
+                    var node = leaf ? null : _folders.GetValueOrDefault((parent, parts[i]));
+                    if (node is null)
                     {
-                        Path = string.Join('/', parts.Take(i + 1)),
-                        IsPadding = leaf && item.GetProperty("padding").GetBoolean(),
-                        Size = leaf ? item.GetProperty("size").GetInt64() : 0,
-                    };
-                    if (leaf)
-                    {
-                        node.SetPriority(
-                            node.IsPadding
-                                ? 0
-                                : choices.GetValueOrDefault(
-                                    index,
-                                    item.GetProperty("priority").ValueKind == JsonValueKind.Null
-                                        ? -1
-                                        : item.GetProperty("priority").GetInt32()
-                                )
-                        );
-                        _files.Add(node);
+                        var index = leaf ? item.GetProperty("index").GetInt32() : -1;
+                        node = new FileNode(_owner, parts[i], parent, index)
+                        {
+                            Path = string.Join('/', parts.Take(i + 1)),
+                            IsPadding = leaf && item.GetProperty("padding").GetBoolean(),
+                            Size = leaf ? item.GetProperty("size").GetInt64() : 0,
+                        };
+                        if (leaf)
+                        {
+                            node.SetPriority(
+                                node.IsPadding ? 0
+                                : _choices.TryGetValue(index, out var choice) ? choice
+                                : item.TryGetProperty("priority", out var priority) ? priority.GetInt32()
+                                : -1
+                            );
+                            _files.Add(node);
+                        }
+                        else
+                            node.IsExpanded = _expanded.GetValueOrDefault(node.Path, true);
+                        siblings.Add(node);
+                        if (!leaf)
+                            _folders.Add((parent, parts[i]), node);
                     }
-                    else
-                        node.IsExpanded = expanded.GetValueOrDefault(node.Path, true);
-                    siblings.Add(node);
-                    if (!leaf)
-                        folders.Add((parent, parts[i]), node);
+                    parent = node;
+                    siblings = node.Descendants;
                 }
-                parent = node;
-                siblings = node.Descendants;
             }
         }
-        Refresh(project: true);
+
+        internal void Commit()
+        {
+            _owner._roots.Clear();
+            _owner._roots.AddRange(_roots);
+            _owner._files.Clear();
+            _owner._files.AddRange(_files);
+            _owner.Refresh(project: true);
+        }
     }
 
     public void SelectMatching(bool wanted) => Want(_files.Where(Matches), wanted);
@@ -163,22 +193,18 @@ public sealed class FileSelection(Strings strings) : INotifyPropertyChanged
             node.IsExpanded = expanded;
     }
 
-    internal void Apply(JsonElement files, bool preserveChoices)
+    internal void Apply(FileStatus status, bool preserveChoices)
     {
-        var known = _files.ToDictionary(file => file.Index);
-        foreach (var item in files.EnumerateArray())
+        foreach (var file in _files)
         {
-            if (!known.TryGetValue(item.GetProperty("index").GetInt32(), out var file))
-                continue;
-            var downloaded = item.GetProperty("downloaded");
-            if (downloaded.ValueKind != JsonValueKind.Null)
-                file.Downloaded = downloaded.GetInt64();
-            if (!preserveChoices)
-            {
-                var priority = item.GetProperty("priority");
-                if (priority.ValueKind != JsonValueKind.Null)
-                    file.SetPriority(priority.GetInt32());
-            }
+            if (status.Downloaded is { } downloaded && file.Index < downloaded.Length)
+                file.Downloaded = downloaded[file.Index];
+            if (
+                !preserveChoices
+                && status.Priorities is { } priorities
+                && file.Index < priorities.Length
+            )
+                file.SetPriority(priorities[file.Index]);
         }
         Refresh(notify: false);
     }

@@ -38,7 +38,8 @@ public sealed partial class Inspector : INotifyPropertyChanged
     private Exception? _editFailure;
     private string _trackerInput = string.Empty;
     private string _trackerOriginal = string.Empty;
-    private JsonElement? _confirmedFiles;
+    private FileStatus? _confirmedFiles;
+    private IReadOnlyList<PieceFile>? _pieceFiles;
 
     public Strings Text => _owner.Text;
     public Torrent? Target => _target;
@@ -374,6 +375,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
             Peers = null;
             Trackers = null;
             Pieces = null;
+            _pieceFiles = null;
             History = null;
             Invalidate();
             _readFailure = null;
@@ -432,6 +434,11 @@ public sealed partial class Inspector : INotifyPropertyChanged
             if (section == InspectorSection.Peers)
             {
                 changed = await ReadPeers(context);
+                return;
+            }
+            await ReadPages(target, section, context);
+            if (!IsCurrent(context))
+            {
                 return;
             }
             await ReadDetail(
@@ -524,8 +531,6 @@ public sealed partial class Inspector : INotifyPropertyChanged
                     torrent_id = torrent.TorrentId,
                     context,
                     view = section.ToString().ToLowerInvariant(),
-                    include_files = section == InspectorSection.Pieces
-                        && Pieces is not { MetadataReady: true },
                 }
             );
             // Invalidate withdraws an unsent read; a cancelled task is awaited
@@ -657,7 +662,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
             case InspectorSection.Pieces:
                 if (reply.TryGetProperty("verified", out _))
                 {
-                    Pieces = new Pieces(reply, Pieces?.Files ?? []);
+                    Pieces = new Pieces(reply, _pieceFiles ?? []);
                     changed = true;
                 }
                 break;
@@ -761,35 +766,86 @@ public sealed partial class Inspector : INotifyPropertyChanged
         IsPrivate = privacy.ValueKind == JsonValueKind.Null ? null : privacy.GetBoolean();
     }
 
+    // Names, sizes and pieces come from the file pages, which ReadPages reads
+    // before this view, so the rows exist once the engine has the metadata.
+    private async Task ReadPages(Torrent torrent, InspectorSection section, int context)
+    {
+        if (section == InspectorSection.Files && !_filesLoaded)
+        {
+            var load = Files.Load();
+            await foreach (var page in _client.TorrentFiles(torrent.TorrentId))
+            {
+                if (!IsCurrent(context))
+                {
+                    return;
+                }
+                load.Add(page);
+            }
+            if (!IsCurrent(context) || load.Count == 0)
+            {
+                return;
+            }
+            load.Commit();
+            _filesLoaded = true;
+            Refresh();
+        }
+        else if (section == InspectorSection.Pieces && _pieceFiles is null)
+        {
+            List<PieceFile> files = [];
+            await foreach (var page in _client.TorrentFiles(torrent.TorrentId))
+            {
+                if (!IsCurrent(context))
+                {
+                    return;
+                }
+                files.AddRange(
+                    page.GetProperty("files")
+                        .EnumerateArray()
+                        .Where(file => !file.GetProperty("padding").GetBoolean())
+                        .Select(file => new PieceFile(
+                            file.GetProperty("path").GetString()!,
+                            file.GetProperty("first_piece").GetInt32(),
+                            file.GetProperty("end_piece").GetInt32()
+                        ))
+                );
+            }
+            if (IsCurrent(context) && files.Count > 0)
+            {
+                _pieceFiles = files;
+            }
+        }
+    }
+
     private void ApplyFiles(JsonElement reply)
     {
         if (!reply.GetProperty("metadata_ready").GetBoolean())
             return;
-        var files = reply.GetProperty("files");
+        if (_filesLoaded && reply.GetProperty("file_count").GetInt32() != Files.Count)
+        {
+            // The rows no longer match the engine's list, so the next read
+            // builds them again from the pages.
+            Files.Clear();
+            _filesLoaded = false;
+            _confirmedFiles = null;
+        }
+        if (!_filesLoaded)
+            return;
+        var status = FileStatus.Read(reply);
         var ready = reply.GetProperty("ready").GetBoolean();
         if (ready)
-            _confirmedFiles = files.Clone();
-        if (!_filesLoaded)
-        {
-            Files.Load(files);
-            _filesLoaded = true;
-        }
+            _confirmedFiles = status;
         if (!ready)
         {
-            Files.Apply(files, IsPending || HasFileChanges);
+            Files.Apply(status, IsPending || HasFileChanges);
             return;
         }
         if (!IsPending && _fileChanges.Count > 0)
         {
-            var priorities = files
-                .EnumerateArray()
-                .ToDictionary(
-                    file => file.GetProperty("index").GetInt32(),
-                    file => file.GetProperty("priority").GetInt32()
-                );
             if (
                 _fileChanges.All(change =>
-                    priorities.TryGetValue(change.Key, out var priority) && priority == change.Value
+                    status.Priorities is { } priorities
+                    && change.Key < priorities.Length
+                    && priorities[change.Key] == change.Value
                 )
             )
             {
@@ -797,7 +853,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
                 _editFailure = null;
             }
         }
-        Files.Apply(files, IsPending || HasFileChanges);
+        Files.Apply(status, IsPending || HasFileChanges);
     }
 
     // A choice made while a save runs joins that save, which sends it when it
@@ -994,6 +1050,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
         _located.Clear();
         Trackers = null;
         Pieces = null;
+        _pieceFiles = null;
         History = null;
         Folder = Comment = Creator = Magnet = string.Empty;
         Created = PieceSize = PieceCount = 0;

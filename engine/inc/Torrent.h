@@ -11,6 +11,7 @@
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <future>
 #include <map>
 #include <memory>
@@ -650,9 +651,12 @@ struct Torrent
     void Update(lt::torrent_status latest, lt::time_point at);
     // The torrent's facts with its General and Files detail.
     Json Describe(Detail const& detail, std::shared_ptr<lt::torrent_info const> const& metadata) const;
-    Json Describe(TorrentView view, bool includeFiles, Detail const& detail,
+    Json Describe(TorrentView view, Detail const& detail,
         std::shared_ptr<lt::torrent_info const> const& metadata,
         std::chrono::steady_clock::time_point since = {}) const;
+    // One `files` reply: the page from FilePage, with each file's current
+    // name on disk once its names are read.
+    Json DescribeFilePage(std::shared_ptr<lt::torrent_info const> const& metadata, int offset) const;
     // `queue` is the torrent's place in the download queue, or -1 outside it.
     // `moveProgress` replaces the progress while the torrent's files move.
     // `retry` offers the person's Retry.
@@ -675,9 +679,21 @@ struct Torrent
 // The hashes as hexadecimal text, v1 first.
 std::vector<std::string> Hashes(lt::info_hash_t const& hashes);
 std::string Name(std::string name, std::vector<std::string> const& hashes);
-lt::download_priority_t DefaultPriority(lt::file_storage const& files, lt::file_index_t index);
+// The file-name masks of skip patterns, one pattern per line.
+std::vector<std::wstring> SkipMasks(std::string const& patterns);
+lt::download_priority_t DefaultPriority(lt::file_storage const& files, lt::file_index_t index,
+    std::vector<std::wstring> const& masks);
 std::vector<lt::download_priority_t> DefaultPriorities(lt::file_storage const& files, std::string const& patterns = {});
 std::string ContentPath(lt::file_storage const& files, lt::file_index_t index, Layout layout);
-Json Files(std::shared_ptr<lt::torrent_info const> const& metadata);
+// A large torrent's file list goes in pages, one `files` reply each, so
+// neither side ever holds the whole list as one message. A page ends at
+// `filePage` files or once its paths reach `filePageNames` bytes, which keeps
+// a reply with a disk path beside each path well under the frame limit.
+constexpr std::size_t filePage = 5000;
+constexpr std::size_t filePageNames = 2 << 20;
+// The page of the files of `metadata` that starts at `offset`: each file's
+// index, path, size, padding and pieces, with what `describe` adds.
+Json FilePage(lt::torrent_info const& metadata, int offset,
+    std::function<void(lt::file_index_t, Json&)> const& describe);
 std::vector<std::string> Urls(std::vector<lt::announce_entry> const& trackers);
 }

@@ -9,36 +9,96 @@ internal sealed partial class PipeClient
     private PendingFiles? _files;
     private (Request Request, long Context, TaskCompletionSource Completion)? _inspector;
 
+    // A preview's files, one page at a time. The caller reads each page before
+    // the next one is requested.
+    internal IAsyncEnumerable<JsonElement> PreviewFiles(string previewId) =>
+        Pages(offset => new { preview_id = previewId, offset });
+
+    internal IAsyncEnumerable<JsonElement> TorrentFiles(string torrentId) =>
+        Pages(offset => new { torrent_id = torrentId, offset });
+
+    private async IAsyncEnumerable<JsonElement> Pages(Func<int, object> request)
+    {
+        var offset = 0;
+        while (true)
+        {
+            var page = await Send("files", request(offset), Requester.Window)
+                .ConfigureAwait(false);
+            var length = page.GetProperty("files").GetArrayLength();
+            if (length == 0)
+                yield break;
+            yield return page;
+            offset += length;
+            if (offset >= page.GetProperty("file_count").GetInt32())
+                yield break;
+        }
+    }
+
     // Null when the inspector took the connection first; the caller asks again.
     internal async Task<FileDetail?> ReadFiles(string torrentId, CancellationToken cancellation)
     {
         if (
             await ReadSection(torrentId, "files", cancellation).ConfigureAwait(false)
-            is not { } files
+            is not { } view
         )
             return null;
-        JsonElement? pieces = null;
-        if (
-            files.GetProperty("metadata_ready").GetBoolean()
-            && files
-                .GetProperty("files")
-                .EnumerateArray()
-                .Any(file =>
-                    !file.GetProperty("padding").GetBoolean()
-                    && file.GetProperty("downloaded").ValueKind == JsonValueKind.Number
-                    && file.GetProperty("downloaded").GetInt64()
-                        >= file.GetProperty("size").GetInt64()
-                )
-        )
+        // A torrent without metadata has no files yet, so its empty list is
+        // complete and does not hold back cleanup that waits for unread lists.
+        if (!view.GetProperty("metadata_ready").GetBoolean())
+            return new FileDetail([], null);
+        var status = FileStatus.Read(view);
+        var priorities =
+            status.Priorities ?? throw new InvalidDataException("Files without priorities.");
+        List<DetailFile> files = [];
+        var downloaded = false;
+        var offset = 0;
+        var count = view.GetProperty("file_count").GetInt32();
+        while (offset < count)
+        {
+            if (
+                await ReadPage(torrentId, offset, cancellation).ConfigureAwait(false)
+                is not { } page
+            )
+                return null;
+            var listed = page.GetProperty("files");
+            if (listed.GetArrayLength() == 0)
+                break;
+            foreach (var file in listed.EnumerateArray())
+            {
+                if (file.GetProperty("padding").GetBoolean())
+                    continue;
+                var index = file.GetProperty("index").GetInt32();
+                var size = file.GetProperty("size").GetInt64();
+                downloaded |= status.Downloaded is { } bytes && bytes[index] >= size;
+                files.Add(
+                    new DetailFile(
+                        index,
+                        file.GetProperty("path").GetString()!,
+                        file.GetProperty("disk_path").GetString(),
+                        size,
+                        file.GetProperty("first_piece").GetInt32(),
+                        file.GetProperty("end_piece").GetInt32(),
+                        priorities[index]
+                    )
+                );
+            }
+            offset += listed.GetArrayLength();
+            count = page.GetProperty("file_count").GetInt32();
+        }
+        bool[]? verified = null;
+        if (downloaded)
         {
             if (
                 await ReadSection(torrentId, "pieces", cancellation).ConfigureAwait(false)
-                is not { } section
+                is not { } pieces
             )
                 return null;
-            pieces = section;
+            verified =
+            [
+                .. pieces.GetProperty("verified").EnumerateArray().Select(bit => bit.GetBoolean()),
+            ];
         }
-        return new FileDetail(files, pieces);
+        return new FileDetail(files, verified);
     }
 
     private async Task<JsonElement?> ReadSection(
@@ -47,20 +107,7 @@ internal sealed partial class PipeClient
         CancellationToken cancellation
     )
     {
-        Task? inspector;
-        lock (_gate)
-            inspector = _inspector?.Completion.Task;
-        if (inspector is not null)
-            await inspector.WaitAsync(cancellation).ConfigureAwait(false);
-
-        PendingFiles pending;
-        lock (_gate)
-        {
-            if (_files is not null)
-                throw new InvalidOperationException("File collection already has a pending read.");
-            pending = new PendingFiles(torrentId, --_fileContext);
-            _files = pending;
-        }
+        var pending = await BeginFiles(torrentId, cancellation).ConfigureAwait(false);
         try
         {
             var read = Read(
@@ -71,7 +118,6 @@ internal sealed partial class PipeClient
                     torrent_id = torrentId,
                     context = pending.Context,
                     view,
-                    include_files = view == "pieces",
                 }
             );
             // The inspector withdraws an unsent read; a cancelled task is
@@ -94,6 +140,50 @@ internal sealed partial class PipeClient
             lock (_gate)
                 if (ReferenceEquals(_files, pending))
                     EndFiles();
+        }
+    }
+
+    // A page is background demand like a section: the inspector or a command
+    // withdraws it, and the caller then asks again.
+    private async Task<JsonElement?> ReadPage(
+        string torrentId,
+        int offset,
+        CancellationToken cancellation
+    )
+    {
+        var pending = await BeginFiles(torrentId, cancellation).ConfigureAwait(false);
+        try
+        {
+            var read = Read(Consumer.Files, "files", new { torrent_id = torrentId, offset });
+            await ((Task)read)
+                .WaitAsync(cancellation)
+                .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            cancellation.ThrowIfCancellationRequested();
+            if (read.IsCanceled)
+                return null;
+            return await read.ConfigureAwait(false);
+        }
+        finally
+        {
+            lock (_gate)
+                if (ReferenceEquals(_files, pending))
+                    EndFiles();
+        }
+    }
+
+    private async Task<PendingFiles> BeginFiles(string torrentId, CancellationToken cancellation)
+    {
+        Task? inspector;
+        lock (_gate)
+            inspector = _inspector?.Completion.Task;
+        if (inspector is not null)
+            await inspector.WaitAsync(cancellation).ConfigureAwait(false);
+
+        lock (_gate)
+        {
+            if (_files is not null)
+                throw new InvalidOperationException("File collection already has a pending read.");
+            return _files = new PendingFiles(torrentId, --_fileContext);
         }
     }
 
@@ -197,4 +287,33 @@ internal sealed partial class PipeClient
     }
 }
 
-internal sealed record FileDetail(JsonElement Files, JsonElement? Pieces);
+// The payload files of a torrent as the engine's file pages and views describe
+// them. Verified holds the torrent's verified pieces; it is null when no file
+// was complete, so the pieces were not read.
+internal sealed record FileDetail(IReadOnlyList<DetailFile> Files, bool[]? Verified);
+
+// DiskPath is the file's current name on disk, or null until the engine has
+// read the names.
+internal sealed record DetailFile(
+    int Index,
+    string Path,
+    string? DiskPath,
+    long Size,
+    int FirstPiece,
+    int EndPiece,
+    int Priority
+);
+
+// What a Files view reply reports for each file index. Each array is null
+// until libtorrent reports it.
+internal sealed record FileStatus(long[]? Downloaded, int[]? Priorities)
+{
+    internal static FileStatus Read(JsonElement view) =>
+        new(
+            Numbers(view.GetProperty("downloaded"), number => number.GetInt64()),
+            Numbers(view.GetProperty("priority"), number => number.GetInt32())
+        );
+
+    private static T[]? Numbers<T>(JsonElement array, Func<JsonElement, T> read) =>
+        array.ValueKind == JsonValueKind.Null ? null : [.. array.EnumerateArray().Select(read)];
+}

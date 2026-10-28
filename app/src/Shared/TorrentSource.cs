@@ -377,54 +377,35 @@ internal sealed class TorrentSource : IAsyncDisposable
 
     private static IReadOnlyList<SourceFile>? Files(Contribution contribution, FileDetail detail)
     {
-        // A torrent without metadata has no files yet, so its empty list is
-        // complete and does not hold back cleanup that waits for unread lists.
-        if (!detail.Files.GetProperty("metadata_ready").GetBoolean())
-            return [];
-        var verified = new HashSet<string>(StringComparer.Ordinal);
-        if (detail.Pieces is { } pieces)
-        {
-            var bits = pieces
-                .GetProperty("verified")
-                .EnumerateArray()
-                .Select(bit => bit.GetBoolean())
-                .ToArray();
-            foreach (var file in pieces.GetProperty("files").EnumerateArray())
-            {
-                var first = file.GetProperty("first_piece").GetInt32();
-                var end = file.GetProperty("end_piece").GetInt32();
-                if (
-                    first >= 0
-                    && end <= bits.Length
-                    && end >= first
-                    && Enumerable.Range(first, end - first).All(index => bits[index])
-                )
-                    verified.Add(file.GetProperty("path").GetString()!);
-            }
-        }
         List<SourceFile> files = [];
-        foreach (var file in detail.Files.GetProperty("files").EnumerateArray())
+        foreach (var file in detail.Files)
         {
-            if (file.GetProperty("padding").GetBoolean())
-                continue;
-            if (file.GetProperty("disk_path").GetString() is not { } disk)
+            if (file.DiskPath is not { } disk)
                 return null;
-            var path = file.GetProperty("path").GetString()!;
             files.Add(
                 new SourceFile(
-                    file.GetProperty("index").GetInt32(),
+                    file.Index,
                     Path.GetFullPath(Path.Combine(contribution.SavePath, disk)),
-                    Path.GetFullPath(Path.Combine(contribution.SavePath, path)),
-                    file.GetProperty("size").GetInt64()
+                    Path.GetFullPath(Path.Combine(contribution.SavePath, file.Path)),
+                    file.Size
                 )
                 {
-                    Complete = verified.Contains(path),
-                    Wanted = file.GetProperty("priority").GetInt32() > 0,
+                    Complete = IsVerified(file, detail.Verified),
+                    Wanted = file.Priority > 0,
                 }
             );
         }
         return files;
     }
+
+    private static bool IsVerified(DetailFile file, bool[]? bits) =>
+        bits is not null
+        && file.FirstPiece >= 0
+        && file.EndPiece <= bits.Length
+        && file.EndPiece >= file.FirstPiece
+        && Enumerable
+            .Range(file.FirstPiece, file.EndPiece - file.FirstPiece)
+            .All(index => bits[index]);
 
     public async ValueTask DisposeAsync()
     {

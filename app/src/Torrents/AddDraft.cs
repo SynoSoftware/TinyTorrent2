@@ -396,12 +396,13 @@ public sealed class AddDraft : IDraft
             var source = new AddSource(value, _strings, this);
             var destination = _destination;
             var preview = await PreviewSource(source, destination);
+            var files = await ReadFiles(source, preview);
             if (Magnet != input || !IsOpen && !_owner.IsClosing)
             {
                 await Release(preview.GetProperty("preview_id").GetString()!);
                 return false;
             }
-            ApplyPreview(source, preview, destination);
+            await ApplyPreview(source, preview, destination, files);
             Magnet = string.Empty;
             return true;
         }
@@ -580,12 +581,13 @@ public sealed class AddDraft : IDraft
         {
             var destination = _destination;
             var preview = await PreviewSource(source, destination);
+            var files = await ReadFiles(source, preview);
             if (!Sources.Contains(source))
             {
                 await Release(preview.GetProperty("preview_id").GetString()!);
                 return;
             }
-            ApplyPreview(source, preview, destination);
+            await ApplyPreview(source, preview, destination, files);
         }
         catch (Exception error)
         {
@@ -611,9 +613,31 @@ public sealed class AddDraft : IDraft
         return preview;
     }
 
-    private void ApplyPreview(AddSource source, JsonElement preview, string destination)
+    // The files of a preview that the source does not show yet, read before the
+    // source applies the preview so it never shows an empty list.
+    private async Task<FileSelection.Loader?> ReadFiles(AddSource source, JsonElement preview)
     {
-        source.Apply(preview, destination);
+        if (
+            source.Content is SourceContent.Files
+            || SourceContent.Read(preview) is not SourceContent.Files
+        )
+            return null;
+        var load = source.Files.Load();
+        await foreach (
+            var page in _client.PreviewFiles(preview.GetProperty("preview_id").GetString()!)
+        )
+            load.Add(page);
+        return load;
+    }
+
+    private async Task ApplyPreview(
+        AddSource source,
+        JsonElement preview,
+        string destination,
+        FileSelection.Loader? files
+    )
+    {
+        source.Apply(preview, destination, files);
         var existing = Sources.FirstOrDefault(existing =>
             existing != source && existing.PreviewId == source.PreviewId
         );
@@ -624,7 +648,7 @@ public sealed class AddDraft : IDraft
                     !existing.Inputs.Contains(input, StringComparer.Ordinal)
                 )
             );
-            existing.Apply(preview, destination);
+            existing.Apply(preview, destination, await ReadFiles(existing, preview));
             Sources.Remove(source);
         }
         else if (!Sources.Contains(source))
@@ -770,14 +794,12 @@ public sealed class AddDraft : IDraft
                     source.PreviewId = previewId;
                     try
                     {
-                        source.Apply(
-                            await _client.Send(
-                                "preview_detail",
-                                new { preview_id = previewId, destination },
-                                Requester.Window
-                            ),
-                            destination
+                        var detail = await _client.Send(
+                            "preview_detail",
+                            new { preview_id = previewId, destination },
+                            Requester.Window
                         );
+                        source.Apply(detail, destination, await ReadFiles(source, detail));
                     }
                     catch (CommandException error) when (error.Code == "preview_expired")
                     {
@@ -922,7 +944,7 @@ public sealed class AddDraft : IDraft
                     if (token.IsCancellationRequested)
                         return;
                     if (Sources.Contains(source))
-                        source.Apply(preview, destination);
+                        source.Apply(preview, destination, await ReadFiles(source, preview));
                 }
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -1127,24 +1149,15 @@ public sealed class AddSource : INotifyPropertyChanged
             Problem = null;
     }
 
-    internal void Apply(JsonElement preview, string destination)
+    // Files holds the rows read from the preview's file pages when the source
+    // shows no files yet and the preview now has them.
+    internal void Apply(JsonElement preview, string destination, FileSelection.Loader? files)
     {
         var hadFiles = Content is SourceContent.Files;
         PreviewId = preview.GetProperty("preview_id").GetString();
         Name = preview.GetProperty("name").GetString()!;
         Size = preview.GetProperty("size").GetInt64();
-        var ready = preview.GetProperty("metadata_ready").GetBoolean();
-        // The engine sends an empty torrent_id when no listed torrent holds the content.
-        if (preview.GetProperty("torrent_id").GetString() is { Length: > 0 } torrentId)
-            Content = new SourceContent.Present(
-                torrentId,
-                preview.GetProperty("merge_available").GetBoolean(),
-                ready
-            );
-        else if (ready)
-            Content = new SourceContent.Files();
-        else
-            Content = new SourceContent.Pending();
+        Content = SourceContent.Read(preview);
         if (Content is SourceContent.Present)
             Settle();
         if (Problem is SourceProblem.Preview)
@@ -1166,7 +1179,7 @@ public sealed class AddSource : INotifyPropertyChanged
             .ToArray();
         SharedDestination = destination;
         if (!hadFiles && Content is SourceContent.Files)
-            Files.Load(preview.GetProperty("files"));
+            files?.Commit();
         Refresh();
     }
 
@@ -1194,6 +1207,15 @@ internal abstract record SourceContent
     // and adds nothing.
     internal sealed record Present(string TorrentId, bool MergeAvailable, bool MetadataReady)
         : SourceContent;
+
+    internal static SourceContent Read(JsonElement preview)
+    {
+        var ready = preview.GetProperty("metadata_ready").GetBoolean();
+        // The engine sends an empty torrent_id when no listed torrent holds the content.
+        if (preview.GetProperty("torrent_id").GetString() is { Length: > 0 } torrentId)
+            return new Present(torrentId, preview.GetProperty("merge_available").GetBoolean(), ready);
+        return ready ? new Files() : new Pending();
+    }
 }
 
 // Why the last request for an Add source failed. A refused folder is the

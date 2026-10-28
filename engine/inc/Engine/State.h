@@ -918,7 +918,6 @@ public:
             std::string connectionId;
             std::string torrentId;
             std::optional<TorrentView> view;
-            bool includeFiles = false;
             Reply reply;
             std::chrono::steady_clock::time_point started{};
             std::optional<std::int64_t> context;
@@ -1052,6 +1051,9 @@ public:
     void Merge(Preview& existing, Preview const& source);
     bool CanMerge(Preview const& preview) const;
     Json Describe(Preview const& preview, std::string const& destination) const;
+    // One `files` reply: the page from FilePage, with each file's path in the
+    // saved layout and the priority the Add dialog starts from.
+    Json DescribeFilePage(Preview const& preview, int offset) const;
     void Inspect(std::string source, std::string connectionId, std::function<void(Outcome, Preview*)> completion);
     Preview* FindPreview(std::string const& previewId, std::string const& connectionId);
     void Discard(std::function<bool(Preview const&)> const& matches);

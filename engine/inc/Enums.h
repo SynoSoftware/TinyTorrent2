@@ -14,6 +14,7 @@ enum class Command
     Add,
     MergeTrackers,
     Torrent,
+    Files,
     Edit,
     Reannounce,
     History,
