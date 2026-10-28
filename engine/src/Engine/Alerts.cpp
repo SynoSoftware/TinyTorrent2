@@ -34,6 +34,11 @@ std::optional<std::string> Engine::State::NoticeRoot(std::string const& location
     return Utf8(root.wstring());
 }
 
+std::string Engine::State::NoticeKey(std::string const& location)
+{
+    return RootKey(Wide(NoticeRoot(location).value_or(location)));
+}
+
 void Engine::State::Handle(lt::alert* alert)
 {
     switch (alert->type())
@@ -205,8 +210,9 @@ void Engine::State::On(lt::torrent_checked_alert const& alert)
 void Engine::State::On(lt::torrent_paused_alert const& alert)
 {
     std::erase(pausing, alert.handle);
-    // libtorrent posts this for a paused check only after its last read.
-    if (auto torrent = Find(alert.handle))
+    // libtorrent posts this for a paused check only after its last read,
+    // also for a removed torrent that it still holds.
+    if (auto torrent = FindWorking(alert.handle))
         torrent->checkReads = CheckReads::None;
 }
 
@@ -312,6 +318,35 @@ void Engine::State::UpdateProblems()
     std::map<std::string, Toast> current;
     std::optional<Toast> stopped;
     auto now = std::chrono::steady_clock::now();
+    // The torrents that wait for each root, each counted once.
+    std::map<std::string, std::set<std::string>> located;
+    auto locate = [&current, &located](std::string const& key, std::string const& root, Problem const& cause,
+        std::string const& id)
+    {
+        current.try_emplace("location:" + key, Toast{.kind = ToastKind::Error, .detail = cause.Code(),
+            .code = "download_location_unavailable", .folder = root, .count = 0});
+        located["location:" + key].insert(id);
+    };
+    // A torrent that waits for the person's Retry joins the stopped notice.
+    // Several torrents name none of them, and a reason only when they share
+    // it.
+    auto stop = [&stopped](std::string const& name, Problem const& cause, std::string const& id,
+        std::string const& folder)
+    {
+        if (!stopped)
+        {
+            stopped = Toast{.kind = ToastKind::Error, .name = name, .detail = cause.detail, .code = cause.Code(),
+                .torrentId = id, .folder = folder};
+            return;
+        }
+        ++stopped->count;
+        stopped->name.clear();
+        stopped->detail.clear();
+        stopped->torrentId.clear();
+        stopped->folder.clear();
+        if (stopped->code != cause.Code())
+            stopped->code.clear();
+    };
     // A root whose probe has not returned for noticeDelay does not answer.
     // The torrents under it wait for it, whatever their own work waits in.
     std::set<std::string> hung;
@@ -331,22 +366,7 @@ void Engine::State::UpdateProblems()
             torrent.notifiedError = problem;
         if (OffersRetry(torrent) && problem)
         {
-            auto const& cause = *problem;
-            if (!stopped)
-            {
-                stopped = Toast{.kind = ToastKind::Error, .name = torrent.Name(), .detail = cause.detail,
-                    .code = cause.Code(), .torrentId = id, .folder = torrent.facts.savePath};
-                continue;
-            }
-            // Several torrents name none of them, and a reason only when they
-            // share it.
-            ++stopped->count;
-            stopped->name.clear();
-            stopped->detail.clear();
-            stopped->torrentId.clear();
-            stopped->folder.clear();
-            if (stopped->code != cause.Code())
-                stopped->code.clear();
+            stop(torrent.Name(), *problem, id, torrent.facts.savePath);
             continue;
         }
         // Windows reports a share that does not answer with many codes, so
@@ -361,9 +381,27 @@ void Engine::State::UpdateProblems()
         if (!absent && !waits)
             continue;
         auto cause = absent ? *torrent.control.Cause() : Problem{ProblemKind::DownloadPathUnavailable};
-        auto [entry, inserted] = current.try_emplace("location:" + key, Toast{.kind = ToastKind::Error,
-            .detail = cause.Code(), .code = "download_location_unavailable", .folder = *root, .count = 0});
-        ++entry->second.count;
+        locate(key, *root, cause, id);
+    }
+    // The file work whose root did not answer waits for it, and counts its
+    // torrents there, removed ones included.
+    EachRootWait([&locate](std::optional<std::string>& unanswered, std::string const& id)
+    {
+        if (unanswered)
+            locate(NoticeKey(*unanswered), NoticeRoot(*unanswered).value_or(*unanswered),
+                Problem{ProblemKind::DownloadPathUnavailable}, id);
+    });
+    // A removed torrent's give-back has no row, so its failure waits for the
+    // Retry of the stopped notice.
+    for (auto const& running : returning)
+    {
+        if (running.tries.failure)
+            stop(running.task.name, *running.tries.failure, "", Utf8(running.task.root.wstring()));
+    }
+    for (auto& [key, entry] : current)
+    {
+        if (auto counted = located.find(key); counted != located.end())
+            entry.count = static_cast<unsigned>(counted->second.size());
     }
     if (stopped)
         current.emplace(Toast::Condition::stopped, std::move(*stopped));
@@ -569,6 +607,12 @@ void Engine::State::On(lt::alerts_dropped_alert const& alert)
     {
         pausing.clear();
         log.Write("shutdown", "", "recovery_required");
+    }
+    for (auto& [id, removal] : removed)
+    {
+        if (alert.dropped_alerts[lt::torrent_paused_alert::alert_type] &&
+            removal.torrent.checkReads != CheckReads::None && !removal.torrent.restore)
+            AwaitCheckReads(removal.torrent);
     }
     for (auto& [id, torrent] : torrents)
     {

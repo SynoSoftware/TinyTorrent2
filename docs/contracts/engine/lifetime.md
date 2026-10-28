@@ -348,10 +348,12 @@ continuation; no work is exempt. A normal Exit ends in 2 to 3 seconds; the 10
 seconds are only the watchdog.
 
 The person who chooses Exit wants the program gone, so Exit never waits for
-file work. It saves the work in progress as
-[unfinished tasks](files.md#unfinished-tasks) before it waits for anything,
-then stops that work before its next file, so each file is either done or
-untouched and the saved state names what remains:
+file work. The work in progress is already saved as
+[unfinished tasks](files.md#unfinished-tasks), each from before it changed a
+file. Exit adds none: its first save, before it waits for anything, records
+only that Exit cut the tasks off. It then stops that work before its next
+file, so each file is either done or untouched and the saved state names what
+remains:
 
 - A move stops between files, and a copy parks with its proof. The move's
   task continues it at the next start.
@@ -361,9 +363,12 @@ untouched and the saved state names what remains:
   records that. The next start continues the give-back without asking,
   because either answer would give the files back.
 - A move whose torrent the person removed during the move cannot continue,
-  because the torrent has left the list. Its task gives the files back to the
-  old folder at the next start, without asking. When the person deleted the
-  files, their deletion runs after the files are back.
+  because the torrent has left the list. Its task, saved with the removal,
+  gives the files back to the old folder at the next start, without asking.
+  When the person deleted the files, their deletion runs after the files are
+  back.
+- A mark of the web stops before it writes. A file that finishes from the
+  start of Exit on is not marked until the next start.
 
 Nothing before the final save waits on a drive. The moves and additions get 2
 seconds to stop, and then the proofs of the copies are saved. An addition
@@ -389,9 +394,10 @@ teardown also waits for a stalled check's reads. So when work still runs after
 that second, or such reads remain, the engine logs `teardown_skipped` and ends
 the process with exit code 0 without the teardown. The next start does that
 work again from the saved state, as
-[unfinished tasks](files.md#unfinished-tasks) describe. When a mark of the web
-started or ended after the last save, the engine saves again before it ends,
-so the next start writes each mark that the end cut off, and no other.
+[unfinished tasks](files.md#unfinished-tasks) describe. Exit saves a second
+time once the torrents are paused and their last checkpoints are saved, when
+no file can finish any more, so the next start writes each mark that Exit
+stopped or that a file finishing during Exit needs.
 
 The engine reports the end of Exit once the work after the final save has
 ended, or after that second. The desktop host ends the process with exit code

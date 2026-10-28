@@ -62,11 +62,13 @@ void Engine::State::StopStalledJobs()
         else if (now - moving.pulse->changed >= stall)
         {
             // Undoing the copy gets its own 2 minutes before the next
-            // interruption, so a slow deletion of the copies is not cut short.
+            // interruption, so a slow deletion of the copies is not cut short,
+            // and an undo that stalls too is interrupted again.
             moving.pulse = Pulse{done, now};
             auto none = MoveCancel::None;
+            progress->cancel.compare_exchange_strong(none, MoveCancel::Undo);
             // A cancel that Exit already made keeps the copies.
-            if (progress->cancel.compare_exchange_strong(none, MoveCancel::Undo))
+            if (progress->cancel == MoveCancel::Undo)
                 moving.worker->Interrupt();
         }
     }
@@ -88,6 +90,33 @@ void Engine::State::StopStalledJobs()
     // so only the check that stalled first gives up.
     auto sessionPaused = Paused().has_value();
     bool blocked = StalledCheck() != nullptr;
+    // The reads of a check that no longer runs, as after a stop or a removal,
+    // still hold the hashing threads that every check shares. They are timed
+    // from when the check stopped running, before the running checks, so a
+    // read that hangs names its own check, and the checks it holds up are
+    // not blamed for it.
+    EachWorking([this, now, sessionPaused, &blocked](Torrent& torrent)
+    {
+        bool runs = torrents.contains(torrent.torrentId) && torrent.ChecksFiles(sessionPaused);
+        if (torrent.checkReads != CheckReads::Reading || runs)
+        {
+            torrent.readsSince.reset();
+            return;
+        }
+        if (!torrent.readsSince)
+            torrent.readsSince = now;
+        if (blocked || now - *torrent.readsSince < stall)
+            return;
+        torrent.readsSince.reset();
+        torrent.checkReads = CheckReads::Stalled;
+        if (torrents.contains(torrent.torrentId))
+        {
+            Steer(torrent, Control::Failed{Problem{ProblemKind::DriveStalled, torrent.facts.savePath}});
+            torrent.ApplyIntent();
+        }
+        log.Write("verify", torrent.torrentId, ToString(ProblemKind::DriveStalled));
+        blocked = true;
+    });
     for (auto& [id, torrent] : torrents)
     {
         if (!torrent.checkTurn || !torrent.checkTurn->running)
@@ -129,7 +158,7 @@ void Engine::State::AssignDrives()
         bool stopped = torrent.facts.intent == Intent::Paused;
         // libtorrent stops a check whose file fails with a torrent error.
         bool failed = torrent.control.Cause() || bool(torrent.status.errc);
-        if (torrent.checkTurn && (stopped || !checking || failed || torrent.moving))
+        if (torrent.checkTurn && (stopped || !checking || failed || torrent.pathWork))
         {
             bool waited = torrent.CheckWaits();
             torrent.checkTurn.reset();
@@ -317,9 +346,22 @@ std::string Engine::State::RootKey(std::filesystem::path const& root)
     return Utf8(key);
 }
 
+std::string Engine::State::RootOf(std::string const& folder)
+{
+    return RootKey(std::filesystem::path(Wide(folder)).root_name());
+}
+
+std::set<std::string> Engine::State::RootsOf(std::vector<std::filesystem::path> const& paths)
+{
+    std::set<std::string> roots;
+    for (auto const& path : paths)
+        roots.insert(RootKey(path.root_name()));
+    return roots;
+}
+
 Store& Engine::State::VolumeWorker(std::string const& folder)
 {
-    auto& worker = volumes[RootKey(std::filesystem::path(Wide(folder)).root_name())];
+    auto& worker = volumes[RootOf(folder)];
     if (!worker)
         worker = std::make_unique<Store>(wake);
     return *worker;
@@ -350,6 +392,13 @@ std::vector<Engine::State::Job> Engine::State::WaitingJobs() const
             jobs.push_back({{id}, std::nullopt, torrent.checkTurn->turn, torrent.facts.intent == Intent::Forced});
     }
     auto moving = WaitingMoves();
+    // A move that waits for the give-back of its torrent's cut move takes no
+    // turn and claims no drive until the give-back ends.
+    for (auto& job : moving)
+    {
+        std::erase_if(job.ids, [this](auto const& id) { return Abandoning(id); });
+    }
+    std::erase_if(moving, [](Job const& job) { return job.ids.empty(); });
     jobs.insert(jobs.end(), std::make_move_iterator(moving.begin()), std::make_move_iterator(moving.end()));
     std::sort(jobs.begin(), jobs.end(), Before);
     return jobs;
@@ -429,8 +478,14 @@ DriveWait Engine::State::WaitOf(Torrent const& torrent, Status status, Claims co
 
 Torrent const* Engine::State::StalledCheck() const
 {
-    auto found = std::find_if(torrents.begin(), torrents.end(), [](auto const& entry)
-        { return entry.second.checkReads == CheckReads::Stalled; });
-    return found == torrents.end() ? nullptr : &found->second;
+    // A removed torrent's reads count until they return, because they hold
+    // the hashing threads as a listed torrent's do.
+    Torrent const* stalled = nullptr;
+    EachWorking([&stalled](Torrent const& torrent)
+    {
+        if (!stalled && torrent.checkReads == CheckReads::Stalled)
+            stalled = &torrent;
+    });
+    return stalled;
 }
 }

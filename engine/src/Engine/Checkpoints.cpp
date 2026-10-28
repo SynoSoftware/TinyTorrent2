@@ -45,7 +45,7 @@ void Engine::State::CheckpointUnsaved()
         }
         auto& [id, torrent] = *entry;
         ++entry;
-        if (torrent.unsaved && (!torrent.moving || shutdownPhase == ShutdownPhase::Saving) &&
+        if (torrent.unsaved && (!torrent.pathWork || shutdownPhase == ShutdownPhase::Saving) &&
             torrent.checkpointPhase == CheckpointPhase::Idle && now >= torrent.retryAt)
         {
             torrent.Checkpoint(IsShuttingDown());
@@ -117,7 +117,7 @@ void Engine::State::SaveCheckpoint(Torrent& torrent, lt::add_torrent_params para
             return;
         }
         auto handle = torrent.handle;
-        // On the save worker, because the payload worker can wait on a drive
+        // On the save worker, because a volume worker can wait on a drive
         // that stopped responding, and Exit's final save waits for this
         // checkpoint. The question goes only to libtorrent's network thread.
         store.Run([handle, pieces]
@@ -152,7 +152,7 @@ void Engine::State::SaveCheckpoint(Torrent& torrent, lt::add_torrent_params para
                 }
                 auto& torrent = found->second;
                 if (torrent.handle != handle || torrent.generation != generation || torrent.pendingCheckpoint ||
-                    !torrent.facts.verifyFiles || torrent.namePhase != NamePhase::Ready || torrent.moving ||
+                    !torrent.facts.verifyFiles || torrent.namePhase != NamePhase::Ready || torrent.pathWork ||
                     torrent.facts.marker || !SameFolder(path, torrent.facts.savePath))
                 {
                     FinishCheckpoint(torrent);

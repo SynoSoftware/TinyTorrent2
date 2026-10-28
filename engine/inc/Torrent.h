@@ -143,8 +143,10 @@ struct WaitingMove
 {
     std::string destination;
     std::uint64_t turn = 0;
-    // Another torrent whose folder overlaps the destination still acquires
-    // its metadata, which the row and a toast name while the move waits.
+    // Why the move waits, which the row and a toast name. Another torrent
+    // whose folder overlaps the destination still acquires its metadata. Or
+    // the give-back of the torrent's cut move, which the move waits for, did
+    // not succeed.
     std::optional<Problem> refusal;
     // The engine's own move of a finished torrent to its final folder, whose
     // failure waits for the minute check instead of the person.
@@ -569,6 +571,9 @@ struct Torrent
     // from a status that shows the check running until libtorrent reports
     // that its paused check has no read left, or until the check ends.
     CheckReads checkReads = CheckReads::None;
+    // Since when its check's reads remain while the check does not run, as
+    // after a stop or a removal; nothing otherwise.
+    std::optional<std::chrono::steady_clock::time_point> readsSince;
     std::set<lt::file_index_t> completedFiles;
     bool filesPending = false;
     // The files whose rename_file request waits for its alert.
@@ -584,9 +589,8 @@ struct Torrent
     std::optional<std::uint64_t> checked;
     std::function<void(Outcome)> priorityCompletion;
     bool piecesPending = false;
-    // A move or the suffix rename is changing the torrent's file paths. The
-    // two never overlap, because each waits until the other's files are free.
-    bool moving = false;
+    // The work that changes the torrent's file paths, if any.
+    std::optional<PathWork> pathWork;
     // The last move's failure. While the engine's own move to the final
     // folder waits for the minute check, it is that failure's cause.
     std::optional<Problem> moveError;
@@ -614,6 +618,9 @@ struct Torrent
     bool MoveWaits() const;
     // The torrent's own files are being prepared, renamed, moved or marked.
     bool FileWork() const;
+    // The torrent's file names are being prepared, renamed or marked, apart
+    // from its path work.
+    bool NameWork() const;
     // File work, or a storage release or reload, uses the torrent's files.
     bool FilesBusy() const;
     bool MoveBlocked() const;

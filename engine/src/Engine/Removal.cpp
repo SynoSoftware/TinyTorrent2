@@ -9,7 +9,7 @@
 namespace tt
 {
 // Removes the torrents from the list once the saved list no longer holds
-// them. With a mode it also deletes their files. CanRemove and NamesReady
+// them. With a mode it also deletes their files. CanRemove and NamesReadyFor
 // decide only when each handle goes to libtorrent: now, or later from
 // RemoveDeferred. With a torrentFiles mode it deletes the .torrent files they
 // were added from once the list no longer holds them.
@@ -17,7 +17,7 @@ void Engine::State::Remove(std::vector<std::string> const& ids,
     std::function<void(Outcome, std::optional<std::size_t> kept)> completion,
     std::optional<DeletionMode> mode, std::optional<DeletionMode> torrentFiles)
 {
-    auto namesReady = !mode || NamesReady();
+    auto namesReady = !mode || NamesReadyFor(ids);
     std::vector<std::string> ready;
     std::vector<std::string> later;
     for (auto const& id : ids)
@@ -47,19 +47,31 @@ void Engine::State::Remove(std::vector<std::string> const& ids,
             sourceNames += (sourceNames.empty() ? "" : ", ") + torrent.Name();
         }
     }
+    // The give-backs of the torrents' moves, which run once each torrent's
+    // path work has ended.
+    std::vector<Task::Return> givesBack;
+    for (auto const& id : ids)
+    {
+        if (auto returned = GiveBackOf(torrents.at(id)))
+            givesBack.push_back(std::move(*returned));
+    }
     auto selected = [&ids](std::string const& id) { return Contains(ids, id); };
     auto document = Saved();
-    // The torrents that leave libtorrent later keep their deletion as a task
-    // from this save on. Without every torrent's names, the files they keep
-    // are unknown, so their deletion is a task only once it starts.
-    if (mode && !later.empty() && namesReady)
+    // The removal's own commit saves its file work, and no earlier save holds
+    // it: the deletion of the torrents that leave libtorrent now, which
+    // Saved() holds, and the give-backs and the deletion of the torrents that
+    // leave later, whose owners take them only once this commit succeeds.
+    for (auto const& returned : givesBack)
+        document.tasks.push_back({returned});
+    if (mode && !later.empty())
         document.tasks.push_back({DeferredDeletion(later, *mode)});
     std::erase_if(document.torrents, [&selected](auto const& entry) { return selected(entry.first); });
     std::erase_if(document.queueOrder, selected);
     auto order = document.queueOrder;
     changes.Commit([document = std::move(document)] { return document.ToJson(); },
         [this, ids, ready, order = std::move(order), deletion, kept, completion, mode, torrentFiles,
-            sources = std::move(sources), sourceNames = std::move(sourceNames)](Outcome outcome)
+            givesBack = std::move(givesBack), sources = std::move(sources),
+            sourceNames = std::move(sourceNames)](Outcome outcome)
     {
         if (outcome.error)
         {
@@ -73,6 +85,8 @@ void Engine::State::Remove(std::vector<std::string> const& ids,
         }
         queueOrder = order;
         Unask(ids);
+        for (auto const& returned : givesBack)
+            returning.push_back({returned});
         for (auto const& id : ids)
         {
             Extract(id, mode);
@@ -122,6 +136,8 @@ std::list<Engine::State::Deletion>::iterator Engine::State::PrepareDeletion(std:
     }
     std::sort(deleting.holds.begin(), deleting.holds.end(), PathBefore);
     deleting.holds.erase(std::unique(deleting.holds.begin(), deleting.holds.end(), SamePath), deleting.holds.end());
+    deleting.rootKeys = RootsOf(deleting.holds);
+    deleting.rootKeys.merge(RootsOf(deleting.files));
     return deletions.insert(deletions.end(), std::move(deleting));
 }
 
@@ -175,12 +191,15 @@ void Engine::State::RemoveHandles(std::vector<std::string> const& ids, std::list
 }
 
 // A removed torrent leaves the session once libtorrent has finished its own
-// move or rename, which it cannot stop halfway. Deleting its files also waits
-// until no addition runs, because FileScope cannot see the files an addition
-// shares.
+// move or rename, which it cannot stop halfway, and once the reads of its
+// check have returned, so StopStalledJobs still times a check whose reads
+// hang. Deleting its files also waits until no addition runs on its roots,
+// because FileScope cannot see the files an addition shares.
 bool Engine::State::CanRemove(Torrent const& torrent, std::optional<DeletionMode> mode) const
 {
-    return !torrent.FilesBusy() && (!mode || additions.empty());
+    auto const& marker = torrent.facts.marker;
+    bool adding = Adding(RootOf(torrent.facts.savePath)) || (marker && Adding(RootOf(marker->destination)));
+    return !torrent.FilesBusy() && torrent.checkReads == CheckReads::None && (!mode || !adding);
 }
 
 // Runs once the removal's document commit has succeeded. The torrent is
@@ -220,17 +239,17 @@ void Engine::State::RemoveDeferred()
     {
         return;
     }
-    // Only a deletion needs every torrent's names, to find the files it keeps.
-    auto namesReady = NamesReady();
     for (auto mode : {std::optional(DeletionMode::Recycle), std::optional(DeletionMode::Permanent),
         std::optional<DeletionMode>()})
     {
-        if (mode && !namesReady)
-            continue;
+        // Only a deletion needs the names of the torrents whose files can lie
+        // in its folders, to find the files they keep.
         std::vector<std::string> ready;
         for (auto const& [id, removal] : removed)
-            if (removal.mode == mode && CanRemove(removal.torrent, mode))
+        {
+            if (removal.mode == mode && CanRemove(removal.torrent, mode) && (!mode || NamesReadyFor({id})))
                 ready.push_back(id);
+        }
         if (!ready.empty())
             RemoveHandles(ready, PrepareDeletion(ready, mode, mode ? FileScope(ready) : Scope{}));
     }
@@ -255,8 +274,10 @@ void Engine::State::ContinueDeletion()
     };
     // A removal that keeps the files has nothing to delete once they are released.
     std::erase_if(deletions, [&released](auto const& deletion) { return !deletion.mode && released(deletion); });
-    for (auto deletion = deletions.begin(); deletion != deletions.end(); ++deletion)
+    // Delete can end the deletion at once, so the loop moves on first.
+    for (auto next = deletions.begin(); next != deletions.end();)
     {
+        auto deletion = next++;
         if (released(*deletion))
         {
             // Another removed handle can still flush writes to a shared file,
@@ -269,10 +290,10 @@ void Engine::State::ContinueDeletion()
                     {
                         return std::binary_search(other.holds.begin(), other.holds.end(), file, PathBefore);
                     });
-            }) || std::any_of(returning.begin(), returning.end(), [&deletion](Task::Return const& running)
-                { return Contains(deletion->ids, running.torrentId); });
+            }) || std::any_of(returning.begin(), returning.end(), [&deletion](Returning const& running)
+                { return Contains(deletion->ids, running.task.torrentId); });
             // Exit leaves the deletion to the saved task.
-            if (!held && !IsShuttingDown())
+            if (!held && !IsShuttingDown() && !deletion->unanswered)
             {
                 Delete(deletion);
             }
@@ -428,19 +449,59 @@ void Engine::State::Erase(std::vector<std::filesystem::path> const& files, Delet
 
 void Engine::State::Delete(std::list<Deletion>::iterator deletion)
 {
-    auto deleting = *deletion;
-    deletion->phase = DeletionPhase::Deleting;
-    payload.Run([deleting, stop = exitStop.get_token()]
+    // Each root's files go on that root's worker, so a share that does not
+    // answer holds up only its own deletions.
+    std::map<std::string, std::vector<std::filesystem::path>> parts;
+    for (auto const& file : deletion->files)
+        parts[RootOf(Utf8(file.wstring()))].push_back(file);
+    if (parts.empty())
     {
-        Erase(deleting.files, *deleting.mode, deleting.roots, stop);
-    }, [this, deletion](StorageOutcome outcome)
-    {
-        if (outcome.failure)
-        {
-            ReportDeletion(outcome, deletion->names, deletion->roots.front());
-        }
         deletions.erase(deletion);
-    });
+        return;
+    }
+    deletion->phase = DeletionPhase::Deleting;
+    // What the parts found: a folder that did not answer, and how many parts
+    // still run.
+    struct Progress
+    {
+        std::optional<std::string> unreachable;
+        std::size_t running = 0;
+    };
+    auto progress = std::make_shared<Progress>(Progress{.running = parts.size()});
+    for (auto& [root, files] : parts)
+    {
+        auto folder = files.front().parent_path();
+        VolumeWorker(Utf8(folder.wstring())).Run([files = files, folder, mode = *deletion->mode,
+            roots = deletion->roots, stop = exitStop.get_token()]
+        {
+            if (!Reachable(folder))
+                return false;
+            Erase(files, mode, roots, stop);
+            return true;
+        }, [this, deletion, progress, folder](std::expected<bool, StorageOutcome> erased)
+        {
+            if (erased && !*erased)
+                progress->unreachable = Utf8(folder.wstring());
+            else if (!erased)
+                ReportDeletion(erased.error(), deletion->names, deletion->roots.front());
+            if (--progress->running != 0)
+                return;
+            // Exit stopped the deletion, and its record continues it at the
+            // next start. Files that are already gone count as deleted then.
+            if (IsShuttingDown())
+                return;
+            // The record waits for the root's probe to answer, and the
+            // location notice names the root meanwhile.
+            if (progress->unreachable)
+            {
+                log.Write("delete", "", "unreachable");
+                deletion->unanswered = progress->unreachable;
+                deletion->phase = DeletionPhase::Waiting;
+                return;
+            }
+            deletions.erase(deletion);
+        });
+    }
 }
 
 // The .torrent files hold no torrent's data, so they need not wait for
@@ -448,20 +509,28 @@ void Engine::State::Delete(std::list<Deletion>::iterator deletion)
 void Engine::State::DeleteTorrentFiles(std::vector<std::filesystem::path> files, DeletionMode mode, std::string names)
 {
     // A recorded .torrent file is the add source as it arrived, which can be
-    // relative or use forward slashes.
-    for (auto& file : files)
-        file = FullPath(file);
-    auto folder = files.front().parent_path();
-    payload.Run([files = std::move(files), mode]
+    // relative or use forward slashes. Each root's files go on that root's
+    // worker, so a share that does not answer holds up only its own work.
+    std::map<std::string, std::vector<std::filesystem::path>> parts;
+    for (auto const& file : files)
     {
-        Erase(files, mode, {});
-    }, [this, names = std::move(names), folder = std::move(folder)](StorageOutcome outcome)
+        auto full = FullPath(file);
+        parts[RootOf(Utf8(full.wstring()))].push_back(std::move(full));
+    }
+    for (auto& [root, part] : parts)
     {
-        if (outcome.failure)
+        auto folder = part.front().parent_path();
+        VolumeWorker(Utf8(folder.wstring())).Run([part = std::move(part), mode]
         {
-            ReportDeletion(outcome, names, folder);
-        }
-    });
+            Erase(part, mode, {});
+        }, [this, names, folder](StorageOutcome outcome)
+        {
+            if (outcome.failure)
+            {
+                ReportDeletion(outcome, names, folder);
+            }
+        });
+    }
 }
 
 // The toast offers the folder, where the person deletes the rest in File
@@ -500,7 +569,9 @@ void Engine::State::On(lt::torrent_delete_failed_alert const& alert)
 {
     for (auto& deletion : deletions)
     {
-        if (std::erase(deletion.waiting, alert.handle))
+        // libtorrent also posts it without an error for a torrent that has no
+        // storage, such as a magnet without metadata, which has no files.
+        if (std::erase(deletion.waiting, alert.handle) && alert.error)
         {
             log.Write("delete", "", "partfile_delete_failed");
             Notify(ToastKind::DeleteFailed, deletion.names, alert.error.message(), {}, {},

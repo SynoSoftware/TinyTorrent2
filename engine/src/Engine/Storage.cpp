@@ -542,10 +542,21 @@ void Engine::State::ProbeRoots()
             wanted.insert(RootKey(Wide(*root)));
         }
     }
+    // File work whose root did not answer waits for that root's probe, also
+    // when no listed torrent uses the root.
+    EachRootWait([&wanted](std::optional<std::string>& unanswered, std::string const&)
+    {
+        if (unanswered)
+            wanted.insert(NoticeKey(*unanswered));
+    });
     // A root whose probe has not returned stays, so its notice remains after
-    // its torrents are held.
-    std::erase_if(rootProbes, [&wanted](auto const& entry)
-        { return !entry.second.pending && !wanted.contains(entry.first); });
+    // its torrents are held. A root probed within the last minute stays too,
+    // so work that waits for it again soon after waits for the next probe.
+    std::erase_if(rootProbes, [&wanted, now](auto const& entry)
+    {
+        auto const& probe = entry.second;
+        return !probe.pending && !wanted.contains(entry.first) && (!probe.at || now - *probe.at >= rootProbe);
+    });
     for (auto const& key : wanted)
     {
         auto& probe = rootProbes[key];
@@ -561,19 +572,30 @@ void Engine::State::ProbeRoots()
         probe.at = now;
         probe.worker->Run([root = Wide(key)]
         {
-            // The root answers once Windows returns, whatever it returns.
+            // The root answers once Windows returns, whatever it returns. It
+            // is there when it opens.
             auto opened = CreateFileW(root.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                 nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
-            if (opened != INVALID_HANDLE_VALUE)
-            {
-                CloseHandle(opened);
-            }
-        }, [this, key](StorageOutcome)
+            if (opened == INVALID_HANDLE_VALUE)
+                return false;
+            CloseHandle(opened);
+            return true;
+        }, [this, key](std::expected<bool, StorageOutcome> opened)
         {
             if (auto probe = rootProbes.find(key); probe != rootProbes.end())
             {
                 probe->second.pending = false;
             }
+            // The root opened, so the file work that waited for it runs again
+            // from the next maintenance pass. An absent drive keeps it
+            // waiting.
+            if (!opened || !*opened)
+                return;
+            EachRootWait([&key](std::optional<std::string>& unanswered, std::string const&)
+            {
+                if (unanswered && NoticeKey(*unanswered) == key)
+                    unanswered.reset();
+            });
         });
     }
 }
@@ -673,9 +695,9 @@ void Engine::State::Reload(Torrent& torrent, std::shared_ptr<Control::Job const>
     auto id = torrent.torrentId;
     auto handle = torrent.handle;
     auto params = std::make_shared<lt::add_torrent_params>();
-    // The worker does only what waits on the drive: the resume data and the
-    // release. The engine thread, which owns the handle, replaces it.
-    payload.Run([this, handle, params, lost = job->lost, stop = exitStop.get_token()]
+    // The drive's worker does only what waits on the drive: the resume data
+    // and the release. The engine thread, which owns the handle, replaces it.
+    VolumeWorker(torrent.facts.savePath).Run([this, handle, params, lost = job->lost, stop = exitStop.get_token()]
     {
         *params = handle.get_resume_data(lt::torrent_handle::save_info_dict);
         DropPieces(*params, lost);

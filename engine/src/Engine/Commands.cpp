@@ -432,11 +432,21 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
         });
         break;
     case Command::Retry:
-        Act(TorrentIds(request), Acknowledge(reply), [this](auto const& ids, auto done)
+    {
+        // A Retry without torrents still reaches the removed torrents' failed
+        // give-backs, which have no row to send.
+        auto ids = TorrentIds(request);
+        if (ids.empty())
+        {
+            Retry({}, Acknowledge(reply));
+            break;
+        }
+        Act(std::move(ids), Acknowledge(reply), [this](auto const& ids, auto done)
         {
             Retry(ids, done);
         });
         break;
+    }
     case Command::Remove:
     case Command::DeleteFiles:
     {
@@ -475,7 +485,7 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
                 return;
             }
             auto scope = Describe(ids, FileScope(ids));
-            if (!NamesReady())
+            if (!NamesReadyFor(ids))
                 scope["kept_files"] = nullptr;
             reply(Success(std::move(scope)));
         }, [](auto const&, auto done) { done({}); });
@@ -489,6 +499,9 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
                 // The move waits its turn and replaces an earlier problem.
                 if (DelaysMove(outcome))
                 {
+                    // The person's Move replaces the asked move, so a later
+                    // Continue leaves it as it is.
+                    Unask(ids, TaskKind::Move);
                     auto turn = ++turns;
                     for (auto const& id : ids)
                     {
@@ -667,6 +680,7 @@ void Engine::State::Verify(std::vector<std::string> const& ids, std::function<vo
 
 void Engine::State::Retry(std::vector<std::string> const& ids, std::function<void(Outcome)> completion)
 {
+    RetryGiveBacks();
     Outcome refusal;
     for (auto const& id : Acting(ids, FailureAnswer::Retry, refusal))
     {
@@ -693,7 +707,7 @@ std::optional<ErrorCode> Engine::State::Refuses(Torrent const& torrent, FailureA
 
 bool Engine::State::OffersRetry(Torrent const& torrent) const
 {
-    return torrent.NeedsPerson() && !Refuses(torrent, FailureAnswer::Retry);
+    return (torrent.NeedsPerson() || GiveBackFailed(torrent.torrentId)) && !Refuses(torrent, FailureAnswer::Retry);
 }
 
 std::vector<std::string> Engine::State::Acting(std::vector<std::string> const& ids, FailureAnswer answer,
@@ -722,6 +736,8 @@ void Engine::State::Answer(Torrent& torrent, FailureAnswer answer)
 {
     if (answer == FailureAnswer::Retry)
         torrent.Retry();
+    if (answer == FailureAnswer::Retry || answer == FailureAnswer::Move)
+        RetryGiveBack(torrent.torrentId);
     // The person's new move replaces the problem of the last one, also an
     // interrupted one.
     if (answer == FailureAnswer::Move)

@@ -13,6 +13,20 @@ void Engine::State::StartMove(std::vector<std::string> const& ids, std::string c
         accepted({ErrorCode::InvalidDestination});
         return;
     }
+    // A member whose cut move placed files in another folder gives them back
+    // first, so no file stays in a folder that no marker records. Its path
+    // work keeps this move waiting until then. Without metadata it cannot
+    // name those files, and the move waits for the metadata.
+    for (auto const& id : ids)
+    {
+        auto& torrent = torrents.at(id);
+        auto const& marker = torrent.facts.marker;
+        if (marker && marker->stage != MoveStage::Staged && !SameFolder(marker->destination, destination) &&
+            !torrent.pathWork && !torrent.restore && !torrent.Paths().empty())
+        {
+            JoinAbandonments(torrent);
+        }
+    }
     if (auto ready = FilesReady(ids, destination); ready.error)
     {
         accepted(std::move(ready));
@@ -103,6 +117,12 @@ void Engine::State::StartMove(std::vector<std::string> const& ids, std::string c
     // move keep its complete copies and continue the unfinished one.
     moving.worker = std::make_shared<Store>(wake);
     auto& started = moves.emplace_back(std::move(moving));
+    for (auto const& id : ids)
+    {
+        auto& torrent = torrents.at(id);
+        torrent.pathWork = PathWork::Move;
+        torrent.ApplyIntent();
+    }
     CommitFacts(ids, [destination, continued](std::string const& id, Facts& facts)
     {
         facts.marker = Contains(continued, id) ?
@@ -112,17 +132,24 @@ void Engine::State::StartMove(std::vector<std::string> const& ids, std::string c
     {
         if (outcome.error)
         {
+            for (auto const& id : started.ids)
+            {
+                auto& torrent = torrents.at(id);
+                torrent.pathWork.reset();
+                torrent.ApplyIntent();
+            }
             moves.remove_if([&started](Move const& other) { return &other == &started; });
             accepted(std::move(outcome));
             return;
         }
-        Unask(started.ids);
+        Unask(started.ids, TaskKind::Move);
         for (auto const& id : started.ids)
         {
             auto& torrent = torrents.at(id);
-            torrent.moving = true;
-            // The latest move the person asked for replaces one that waited.
+            // The latest move the person asked for replaces one that waited,
+            // and its marker replaces the abandoned move's.
             torrent.waitingMove.reset();
+            std::erase_if(abandonments, [&id](Abandonment const& abandonment) { return abandonment.torrentId == id; });
             torrent.moveError.reset();
             Steer(torrent, Control::MoveStarted{started.final});
             torrent.ApplyIntent();
@@ -383,7 +410,7 @@ void Engine::State::ContinueMove(Move& moving)
             continue;
         }
         auto& torrent = Working(*member);
-        torrent.moving = false;
+        torrent.pathWork.reset();
         torrent.facts.marker.reset();
         member = moving.ids.erase(member);
     }
@@ -697,6 +724,7 @@ void Engine::State::SaveMove(Move& moving)
         if (!torrents.contains(id))
         {
             relocate(id, Working(id).facts);
+            returning.remove_if([&id](Returning const& running) { return running.task.torrentId == id; });
             changes.Commit([document = Saved()] { return document.ToJson(); }, [this, id, settle](Outcome outcome)
             {
                 if (outcome.error)
@@ -832,7 +860,7 @@ void Engine::State::FailMove(Move& moving, Problem problem)
 
 void Engine::State::EndMove(Torrent& torrent, std::optional<Problem> problem, bool final)
 {
-    torrent.moving = false;
+    torrent.pathWork.reset();
     torrent.moveError = problem;
     Steer(torrent, Control::MoveEnded{problem, final});
     if (!problem)
@@ -862,7 +890,7 @@ std::optional<double> Engine::State::MoveProgress(Torrent const& torrent) const
 {
     if (torrent.MoveWaits())
         return 0.0;
-    if (!torrent.moving)
+    if (torrent.pathWork != PathWork::Move)
         return std::nullopt;
     for (auto const& moving : moves)
     {

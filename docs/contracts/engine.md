@@ -143,7 +143,7 @@ requests a fresh observation through that same owner. Native initialization
 can finish while the replacement is paused and before its alerts are mapped;
 the current handle's observation closes that gap.
 
-Completed-file discovery runs on the payload worker in batches of at most 64
+Completed-file discovery runs on each drive's worker in batches of at most 64
 torrents, with one network-thread collection visit per batch. The observation pairs metadata
 and actual names with verified-piece file progress; display progress can include
 unverified blocks and cannot establish that a physical file is complete. The
@@ -472,13 +472,15 @@ Mark each payload file as downloaded from the internet when it completes while
 its torrent is downloading, by writing the internet zone to the file's
 `Zone.Identifier` stream, as browsers do. Windows then shows its SmartScreen or
 Protected View warning before the person runs or edits a file from a torrent.
-Files that verification finds already complete are not marked, because they may
-be the person's own files. A file that has the unfinished suffix is marked, and
-the mark flushed, before its rename to its final name, so a cut never leaves a
-final-named file without its mark. Without the suffix, a file is marked when it
-completes. An Exit that ends while the mark is written records the file in
-`settings.json`, and the next start marks it; a crash in the moment between
-the two leaves that file unmarked. A torrent that waits to be restored, or
+Files that verification finds complete under their final name are not marked,
+because they may be the person's own files. A file that has the unfinished
+suffix is the engine's own download, so it is marked, and the mark flushed,
+before its rename to its final name, so a cut never leaves a final-named file
+without its mark. Without the suffix, a file is marked when it
+completes. Exit stops a mark before it writes, and a file that completes
+during Exit waits too: Exit's second save records each such file in
+`settings.json`, and the next start marks it. A crash in the moment between
+the completion and the next save leaves that file unmarked. A torrent that waits to be restored, or
 whose metadata has not arrived, keeps that record until it can take the mark.
 There is no setting: the protection shows nothing
 until it is needed, and a person who trusts a file unblocks it in its

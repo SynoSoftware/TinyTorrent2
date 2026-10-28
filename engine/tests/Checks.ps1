@@ -40,17 +40,21 @@ if ($Check -in $optInChecks -and -not $OptIn) {
     throw "$Check runs only when the owner asks, with -OptIn."
 }
 $repository = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
-# The drive that holds a path, through any junction on the way, because the
-# repository's artifacts folder can be a junction to another drive.
-function Path-Volume([string] $path) {
+# A path without the junctions on the way, because the repository's artifacts
+# folder can be a junction to another drive.
+function Real-Path([string] $path) {
     $path = [IO.Path]::GetFullPath($path)
     for ($part = $path; $part; $part = Split-Path $part -Parent) {
         $item = Get-Item -LiteralPath $part -Force -ErrorAction SilentlyContinue
         if ($item -and $item.LinkTarget) {
-            return Path-Volume ($item.ResolveLinkTarget($true).FullName + $path.Substring($part.Length))
+            return Real-Path ($item.ResolveLinkTarget($true).FullName + $path.Substring($part.Length))
         }
     }
-    return [IO.Path]::GetPathRoot($path)
+    return $path
+}
+# The drive that holds a path, through any junction on the way.
+function Path-Volume([string] $path) {
+    return [IO.Path]::GetPathRoot((Real-Path $path))
 }
 # A move on one volume is a rename that ends at once, so only a copy to another
 # volume leaves time to remove the torrent while its move runs. The payload
@@ -672,11 +676,13 @@ try {
             } while ([DateTime]::UtcNow -lt $until)
             Assert (@($paths | Where-Object { $_ -ne 'shared.bin' }).Count -eq 0) 'Retry did not update every shared-file owner to the finished name'
             Assert ((Payload-Hash $finished) -eq $originalHash -and -not (Test-Path -LiteralPath $unfinished)) 'Finishing changed the bytes or left a second payload copy'
+            # A file with the unfinished suffix is the engine's own download,
+            # so it takes the mark of the web before its final name.
             $zone = $null
             try { $zone = [IO.File]::OpenRead($finished + ':Zone.Identifier') }
             catch [IO.FileNotFoundException] { }
             finally { if ($zone) { $zone.Dispose() } }
-            Assert ($null -eq $zone) 'Verification marked existing bytes as a new Internet download'
+            Assert ($null -ne $zone) 'The finished file of the unfinished suffix was not marked as downloaded'
             Stop-Engine
             $null = Start-Engine
             foreach ($torrentId in $identities) {
@@ -1591,7 +1597,11 @@ try {
                 $null = Wait-Row $id { param($row) $row.moving -and $row.progress -ge 0.5 } $label 120
             }
             function Saved-Marker([string] $id) {
-                $saved = [IO.File]::ReadAllText((Join-Path $directory 'settings.json')) | ConvertFrom-Json
+                # Shared for delete, so the engine's replace of the file never
+                # fails on this read.
+                $stream = [IO.FileStream]::new((Join-Path $directory 'settings.json'), 'Open', 'Read', 'ReadWrite, Delete')
+                try { $saved = [IO.StreamReader]::new($stream).ReadToEnd() | ConvertFrom-Json }
+                finally { $stream.Dispose() }
                 return @{ torrent = $saved.torrents | Where-Object torrent_id -eq $id; tasks = @($saved.tasks) }
             }
             # Waits for the continued move and its verification, and checks
@@ -1610,6 +1620,16 @@ try {
                 $file = Join-Path $destination 'big.bin'
                 Assert ((Payload-Hash $file) -eq $hash) "$label`: the continued copy differs from its source"
                 Assert (-not (Test-Path -LiteralPath "$file.!ttcopy") -and -not (Test-Path -LiteralPath (Join-Path $volumeFolder 'big.bin'))) "$label`: the move left its unfinished copy or its source"
+                Wait-Verified $id $label
+            }
+            # A moved torrent's check starts once its file names are read, so
+            # the row can show it finished before the check runs. The saved
+            # record asks for the check until a checkpoint after it, so the
+            # next case starts without a check that it did not start.
+            function Wait-Verified([string] $id, [string] $label) {
+                $until = [DateTime]::UtcNow.AddSeconds(300)
+                while ((Saved-Marker $id).torrent.verify_files -and [DateTime]::UtcNow -lt $until) { Start-Sleep -Milliseconds 200 }
+                Assert (-not (Saved-Marker $id).torrent.verify_files) "$label`: the moved files were not verified"
             }
             function Stop-Timed([string] $label) {
                 $watch = [Diagnostics.Stopwatch]::StartNew()
@@ -1621,6 +1641,7 @@ try {
                 $reply = Send-Command @{ command = 'move'; torrent_ids = @($id); destination = $volumeFolder }
                 Assert $reply.ok "$label`: the move back to C: was refused"
                 $null = Wait-Row $id { param($row) -not $row.moving -and $row.save_path -eq $volumeFolder -and -not $row.error } "$label`: the move back"
+                Wait-Verified $id $label
             }
 
             # -Folder is on C:, and the evidence folder on V:, the virtual disk
@@ -1658,16 +1679,75 @@ try {
                 Move-Back $big $label
 
                 # Abandon deletes what the move copied and leaves the torrent
-                # where it was.
+                # where it was. While the files go back, nothing asks again.
                 $label = "Exit and abandon to $($target.name)"
                 Start-Half $big $destination $label
                 Stop-Timed $label
                 $null = Start-Engine
+                # An Abandon whose save fails leaves the question asked and
+                # gives nothing back.
+                if ($target.name -eq 'V:') {
+                    $settingsFile = Get-Item -LiteralPath (Join-Path $directory 'settings.json')
+                    $settingsFile.IsReadOnly = $true
+                    try {
+                        $reply = Send-Command @{ command = 'unfinished_tasks'; action = 'abandon' }
+                    }
+                    finally { $settingsFile.IsReadOnly = $false }
+                    Assert (-not $reply.ok -and $reply.error.code -eq 'storage_failed') "$label`: an Abandon that was not saved replied $($reply | ConvertTo-Json -Compress)"
+                    Start-Sleep -Seconds 2
+                    $snapshot = (Send-Command @{ command = 'snapshot' }).data
+                    $row = $snapshot.torrents | Where-Object torrent_id -eq $big
+                    Assert ($snapshot.unfinished_tasks.moves -eq 1 -and $row.error -eq 'move_unfinished' -and -not $row.moving) "$label`: after a failed Abandon the torrent is $($row.status) $($row.error), asked $($snapshot.unfinished_tasks | ConvertTo-Json -Compress)"
+                    Assert (Test-Path -LiteralPath $partial) "$label`: an Abandon that was not saved gave the files back"
+                }
                 $reply = Send-Command @{ command = 'unfinished_tasks'; action = 'abandon' }
                 Assert $reply.ok "$label`: Abandon was refused"
-                $row = Wait-Row $big { param($row) -not $row.moving -and -not $row.move_destination -and -not $row.error } $label 60
+                $script:askedAgain = $false
+                $row = Wait-Row $big { param($row)
+                    $script:askedAgain = $script:askedAgain -or $row.error -eq 'move_unfinished' -or $row.status -eq 'waiting_move'
+                    -not $row.moving -and -not $row.move_destination -and -not $row.error } $label 60
+                Assert (-not $script:askedAgain) "$label`: the torrent asked again while its files went back"
                 Assert ($row.save_path -eq $volumeFolder -and -not (Test-Path -LiteralPath $partial) -and -not (Test-Path -LiteralPath (Join-Path $destination 'big.bin'))) "$label`: the move left its copy or moved the torrent"
                 Assert ((Payload-Hash $source) -eq $hash) "$label`: the source changed"
+
+                # The person's Move to another folder before the answer gives
+                # back what the cut move placed and then moves, and the
+                # Continue after it leaves that Move as it is. While another
+                # program holds the copy, the give-back tries once more, and
+                # then the Move waits with the error and Retry. Nothing tries
+                # it again by itself; the Retry after the copy is free gives
+                # the files back and the Move runs.
+                if ($target.name -eq 'V:') {
+                    $label = 'Exit, then a Move elsewhere and Continue'
+                    $elsewhere = Join-Path $directory 'elsewhere'
+                    $null = New-Item -ItemType Directory -Path $elsewhere
+                    Start-Half $big $destination $label
+                    Stop-Timed $label
+                    $null = Start-Engine
+                    $held = [IO.File]::Open($partial, 'Open', 'Read', 'Read')
+                    try {
+                        $reply = Send-Command @{ command = 'move'; torrent_ids = @($big); destination = $elsewhere }
+                        Assert $reply.ok "$label`: the Move was refused"
+                        $row = Wait-Row $big { param($row) -not $row.moving -and $row.error -and $row.retry } "$label`: the held copy" 60
+                        Start-Sleep -Seconds 3
+                        $row = Row-Of $big
+                        Assert (-not $row.moving -and $row.error -and $row.retry -and $row.save_path -eq $volumeFolder) "$label`: while the copy is held, the torrent is $($row.status) $($row.error) in $($row.save_path), retry $($row.retry)"
+                        $reply = Send-Command @{ command = 'unfinished_tasks'; action = 'continue' }
+                        Assert $reply.ok "$label`: Continue was refused"
+                    }
+                    finally { $held.Dispose() }
+                    Start-Sleep -Seconds 5
+                    $row = Row-Of $big
+                    Assert ($row.error -and $row.retry -and $row.save_path -eq $volumeFolder) "$label`: the give-back ran again without Retry: $($row.status) $($row.error) in $($row.save_path)"
+                    $reply = Send-Command @{ command = 'retry'; torrent_ids = @($big) }
+                    Assert $reply.ok "$label`: Retry was refused"
+                    $row = Wait-Row $big { param($row) -not $row.moving -and $row.save_path -eq $elsewhere -and $row.status -notin 'checking', 'waiting_check', 'waiting_move' } $label
+                    Assert (-not $row.error -and $row.progress -eq 1) "$label`: the Move ended $($row.status) at $($row.progress) $($row.error)"
+                    Assert (-not (Test-Path -LiteralPath $partial) -and -not (Test-Path -LiteralPath (Join-Path $destination 'big.bin'))) "$label`: the cut move's folder kept its files"
+                    Assert ((Payload-Hash (Join-Path $elsewhere 'big.bin')) -eq $hash) "$label`: the moved file differs from its source"
+                    Move-Back $big $label
+                }
+
 
                 # A crash leaves the copy without a parked proof, and the
                 # stored setting continues it at the next start without
@@ -1713,6 +1793,153 @@ try {
                 Finish-Continued $big $destination $hash 0 $label
                 Move-Back $big $label
             }
+
+            # The person's Move replaces only the asked move, so a check that
+            # Exit cut off stays asked. A large sparse file makes the check
+            # last until its task is saved, as in KilledCheck.
+            $label = 'Exit during a check, then a Move'
+            $zeros = New-Zeros 'zeros' 16GB $volumeFolder
+            $null = Wait-Row $zeros { param($row) $row.status -notin 'checking', 'waiting_check' -and $row.progress -eq 1 } "$label`: the zeros fixture"
+            $reply = Send-Command @{ command = 'verify'; torrent_ids = @($zeros) }
+            Assert $reply.ok "$label`: Verify was refused"
+            $until = [DateTime]::UtcNow.AddSeconds(60)
+            do {
+                Start-Sleep -Milliseconds 100
+                $task = @((Saved-Marker $zeros).tasks | Where-Object { $_.kind -eq 'check' -and $_.torrent_id -eq $zeros })
+            } while (-not $task.Count -and [DateTime]::UtcNow -lt $until)
+            Assert $task.Count "$label`: the check's task was not saved"
+            Stop-Timed $label
+            $snapshot = Start-Engine
+            Assert ($snapshot.unfinished_tasks.checks -eq 1) "$label`: the snapshot reports $($snapshot.unfinished_tasks | ConvertTo-Json -Compress)"
+            $checked = Join-Path $volumeFolder 'checked'
+            $null = New-Item -ItemType Directory -Path $checked
+            $reply = Send-Command @{ command = 'move'; torrent_ids = @($zeros); destination = $checked }
+            Assert $reply.ok "$label`: the Move was refused"
+            $null = Wait-Row $zeros { param($row) -not $row.moving -and $row.save_path -eq $checked } $label
+            $snapshot = (Send-Command @{ command = 'snapshot' }).data
+            Assert ($snapshot.unfinished_tasks.checks -eq 1) "$label`: the Move dropped the asked check: $($snapshot.unfinished_tasks | ConvertTo-Json -Compress)"
+            $reply = Send-Command @{ command = 'unfinished_tasks'; action = 'continue' }
+            Assert $reply.ok "$label`: Continue was refused"
+            $null = Wait-Row $zeros { param($row) $row.status -notin 'checking', 'waiting_check' -and $row.progress -eq 1 -and -not $row.error } $label
+
+            # File work on two roots does not hold a rename on a third. A
+            # finished file on V: keeps its unfinished name while another
+            # program holds it, and once it is free, its next try, 30 seconds
+            # after the first, gives it its final name while a move from C: to
+            # the share runs. The engine knows a drive by the path, so the
+            # file's folder is the evidence folder's path on V:, without the
+            # junction through C:. The dense pattern moves for longer than
+            # the sparse zeros, whose move ends at once.
+            $label = 'A rename on V: during a move from C: to Y:'
+            $sharedFolder = Real-Path $payload
+            $content = [Text.Encoding]::ASCII.GetBytes(('x' * 2048))
+            $fixture = Join-Path $directory 'shared.torrent'
+            $prefix = [Text.Encoding]::ASCII.GetBytes('d4:infod6:lengthi2048e4:name10:shared.bin12:piece lengthi16384e6:pieces20:')
+            $suffix = [Text.Encoding]::ASCII.GetBytes('7:privatei1eee')
+            [IO.File]::WriteAllBytes($fixture, [byte[]]($prefix + [Security.Cryptography.SHA1]::HashData($content) + $suffix))
+            $unfinishedFile = Join-Path $sharedFolder 'shared.bin.!tt'
+            [IO.File]::WriteAllBytes($unfinishedFile, $content)
+            $held = [IO.File]::Open($unfinishedFile, 'Open', 'Read', 'ReadWrite')
+            try {
+                $renames = Count-Log ' rename '
+                $preview = Send-Command @{ command = 'preview'; source = $fixture; destination = $sharedFolder }
+                Assert $preview.ok "$label`: the fixture did not preview"
+                $reply = Send-Command @{ command = 'add'; preview_id = $preview.data.preview_id; destination = $sharedFolder }
+                Assert $reply.ok "$label`: the fixture could not be added"
+                $shared = $reply.data.torrent_id
+                $reply = Send-Command @{ command = 'verify'; torrent_ids = @($shared) }
+                Assert $reply.ok "$label`: Verify was refused"
+                Wait-Log ' rename ' ($renames + 1) 60 "$label`: the rename of the held file was not tried"
+                Start-Sleep -Seconds 20
+                $null = Wait-Row $zeros { param($row) $row.status -notin 'checking', 'waiting_check' } "$label`: the zeros check"
+                $reply = Send-Command @{ command = 'move'; torrent_ids = @($big); destination = $networkFolder }
+                Assert $reply.ok "$label`: the move was refused"
+                $null = Wait-Row $big { param($row) $row.moving } $label 60
+            }
+            finally { $held.Dispose() }
+            $until = [DateTime]::UtcNow.AddSeconds(90)
+            do {
+                Start-Sleep -Milliseconds 200
+                $name = (Send-Command @{ command = 'torrent'; torrent_id = $shared; view = 'files' }).data.files[0].disk_path
+            } while ($name -ne 'shared.bin' -and (Row-Of $big).moving -and [DateTime]::UtcNow -lt $until)
+            $row = Row-Of $big
+            Assert ($name -eq 'shared.bin' -and $row.moving) "$label`: the file is $name and the move $($row.status) at $($row.progress)"
+            Stop-Timed $label
+            $null = Start-Engine
+            $reply = Send-Command @{ command = 'unfinished_tasks'; action = 'abandon' }
+            Assert $reply.ok "$label`: Abandon was refused"
+            $null = Wait-Row $big { param($row) -not $row.moving -and -not $row.move_destination -and $row.save_path -eq $volumeFolder } $label 120
+            Assert (-not (Test-Path -LiteralPath (Join-Path $networkFolder 'big.bin.!ttcopy'))) "$label`: the give-back left the copy on the share"
+
+            # A give-back's marker is saved as stage 2 with move_returns,
+            # which an earlier engine reads as a failed move that waits for
+            # the person, and one version saved stage 3. The next start reads
+            # both as a give-back and continues it without asking.
+            $destination = Join-Path $directory 'moved'
+            $partial = Join-Path $destination 'big.bin.!ttcopy'
+            foreach ($form in @(@{ stage = 3; returns = $false }, @{ stage = 2; returns = $true })) {
+                $label = "A give-back saved as stage $($form.stage)"
+                Start-Half $big $destination $label
+                Stop-Timed $label
+                $file = Join-Path $directory 'settings.json'
+                $saved = [IO.File]::ReadAllText($file) | ConvertFrom-Json
+                $torrent = $saved.torrents | Where-Object torrent_id -eq $big
+                $torrent.move_stage = $form.stage
+                $torrent | Add-Member -NotePropertyName move_returns -NotePropertyValue $form.returns -Force
+                $saved.tasks = @()
+                [IO.File]::WriteAllText($file, ($saved | ConvertTo-Json -Depth 32))
+                $snapshot = Start-Engine
+                Assert ($null -eq $snapshot.unfinished_tasks) "$label`: the engine asked $($snapshot.unfinished_tasks | ConvertTo-Json -Compress)"
+                $row = Wait-Row $big { param($row) -not $row.moving -and -not $row.move_destination -and -not $row.error } $label 60
+                Assert ($row.save_path -eq $volumeFolder -and -not (Test-Path -LiteralPath $partial)) "$label`: the give-back left its copy or moved the torrent"
+                Assert ((Payload-Hash $source) -eq $hash) "$label`: the source changed"
+            }
+
+            # Delete files during a move saves the give-back with the
+            # removal, so the next start gives the files back without asking
+            # and deletes them after. A give-back that fails, because another
+            # program holds the copy, tries once more, keeps its task and
+            # waits for the person, and the deletion waits for it. Nothing
+            # tries it again by itself; the next start, as the stopped
+            # notice's Retry, runs both once the copy is free.
+            $label = 'Delete files during a move, then Exit'
+            $destination = $networkFolder
+            $partial = Join-Path $destination 'big.bin.!ttcopy'
+            Start-Half $big $destination $label
+            $reply = Send-Command @{ command = 'delete_files'; torrent_ids = @($big); deletion = 'permanent' }
+            Assert $reply.ok "$label`: the removal was refused"
+            Stop-Timed $label
+            $tasks = (Saved-Marker $big).tasks
+            Assert (@($tasks | Where-Object { $_.kind -eq 'return' -and $_.torrent_id -eq $big }).Count -eq 1) "$label`: the give-back was not saved"
+            Assert (@($tasks | Where-Object { $_.kind -eq 'delete' -and $big -in $_.ids }).Count -eq 1) "$label`: the deletion was not saved"
+            $held = [IO.File]::Open($partial, 'Open', 'Read', 'Read')
+            try {
+                $snapshot = Start-Engine
+                Assert ($snapshot.unfinished_tasks.deletions -eq 1 -and $snapshot.unfinished_tasks.moves -eq 0) "$label`: the snapshot reports $($snapshot.unfinished_tasks | ConvertTo-Json -Compress)"
+                $reply = Send-Command @{ command = 'unfinished_tasks'; action = 'continue' }
+                Assert $reply.ok "$label`: Continue was refused"
+                Start-Sleep -Seconds 8
+                Assert ((Test-Path -LiteralPath $source) -and (Test-Path -LiteralPath $partial)) "$label`: the deletion ran before the give-back"
+            }
+            finally { $held.Dispose() }
+            Start-Sleep -Seconds 5
+            Assert ((Test-Path -LiteralPath $source) -and (Test-Path -LiteralPath $partial)) "$label`: the give-back ran again by itself"
+            Stop-Timed $label
+            $null = Start-Engine
+            $reply = Send-Command @{ command = 'unfinished_tasks'; action = 'continue' }
+            Assert $reply.ok "$label`: Continue at the next start was refused"
+            $until = [DateTime]::UtcNow.AddSeconds(150)
+            while (((Test-Path -LiteralPath $source) -or (Test-Path -LiteralPath $partial)) -and [DateTime]::UtcNow -lt $until) {
+                Start-Sleep -Milliseconds 500
+            }
+            Assert (-not (Test-Path -LiteralPath $partial)) "$label`: the give-back did not run at the next start"
+            Assert (-not (Test-Path -LiteralPath $source)) "$label`: the deletion did not run after the give-back"
+            $until = [DateTime]::UtcNow.AddSeconds(15)
+            do {
+                Start-Sleep -Milliseconds 500
+                $tasks = @((Saved-Marker $big).tasks | Where-Object { $_.kind -in 'return', 'delete' })
+            } while ($tasks.Count -and [DateTime]::UtcNow -lt $until)
+            Assert (-not $tasks.Count) "$label`: the ended work is still saved: $($tasks | ConvertTo-Json -Compress)"
         }
         'CommittedFiles' {
             $reply = Send-Command @{ command = 'session_pause'; paused = $true }

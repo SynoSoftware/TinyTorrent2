@@ -183,6 +183,19 @@ enum class MoveStage
     Returning
 };
 
+// How a give-back's try ended, for the owner of its record.
+enum class GiveBackEnd
+{
+    // The files are back.
+    Ended,
+    // Exit stopped it, and its record continues it at the next start.
+    Stopped,
+    // It runs again: once its root answers, or as its one automatic retry.
+    Again,
+    // It failed after its retry and waits for the person.
+    Failed
+};
+
 // What giving a move's files back did.
 enum class GivenBack
 {
@@ -205,6 +218,20 @@ enum class MoveCancel
     None,
     Undo,
     Keep
+};
+
+// The work that changes a torrent's file paths. At most one runs per torrent,
+// and the owner that started it ends it.
+enum class PathWork
+{
+    // A move to another folder, from when it joins the moves, before its
+    // marker is saved, until the torrent's own move ends.
+    Move,
+    // The rename of a finished file from its unfinished name.
+    Rename,
+    // The give-back of an abandoned move's files, from when the torrent joins
+    // the abandonments, also while it waits for its drives.
+    Abandon
 };
 
 // The work of a torrent that the last end left unfinished: a move to another
@@ -408,7 +435,8 @@ enum class CheckpointPhase
 
 // Saving waits for the final checkpoints; Ending gives the work that still
 // runs a moment to stop. Cutting waits only for the lines and the document
-// that record the work it cuts off.
+// that record the work it cuts off. Failing follows a save that failed and
+// waits only for the log line that says so.
 enum class ShutdownPhase
 {
     Idle,
@@ -417,7 +445,8 @@ enum class ShutdownPhase
     Sampling,
     Saving,
     Ending,
-    Cutting
+    Cutting,
+    Failing
 };
 
 // How a shutdown ended.

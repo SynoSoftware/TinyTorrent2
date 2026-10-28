@@ -311,7 +311,8 @@ Json Facts::ToJson() const
         {"layout", static_cast<int>(layout)},
         {"skip_patterns", skipPatterns},
         {"move_destination", marker ? marker->destination : std::string()},
-        {"move_stage", !marker ? 0 : marker->stage == MoveStage::Returning ? 3 : static_cast<int>(marker->stage)},
+        {"move_stage", !marker ? 0 : marker->stage == MoveStage::Returning ? 2 : static_cast<int>(marker->stage)},
+        {"move_returns", marker && marker->stage == MoveStage::Returning},
         {"move_copy", marker && marker->copy ? marker->copy->path : std::string()},
         {"move_copy_bytes", marker && marker->copy ? marker->copy->bytes : 0},
         {"move_found", marker ? marker->found : std::vector<std::string>{}},
@@ -356,14 +357,17 @@ Facts Facts::Read(Json const& saved)
     {
         facts.marker = Facts::Marker{std::move(destination)};
         // A move saved without a valid stage counts as unchecked. Earlier
-        // versions saved 2 for a checked move that waited for the person, so
-        // a move that gives its files back is saved as 3.
+        // versions saved 2 for a checked move that waited for the person. A
+        // move that gives its files back is saved as 2 with `move_returns`,
+        // so an earlier version waits for the person instead of continuing
+        // the move, and one version saved it as 3.
         auto stage = ReadSaved(saved, "move_stage", 0);
-        if (stage == 1 || stage == 2)
-            facts.marker->stage = MoveStage::Placing;
-        else if (stage == 3)
+        bool returns = stage == 3 || (stage == 2 && ReadSaved(saved, "move_returns", false));
+        if (returns)
             facts.marker->stage = MoveStage::Returning;
-        facts.marker->failed = stage == 2 || ReadSaved(saved, "move_failed", false);
+        else if (stage == 1 || stage == 2)
+            facts.marker->stage = MoveStage::Placing;
+        facts.marker->failed = (stage == 2 && !returns) || ReadSaved(saved, "move_failed", false);
         if (auto found = saved.find("move_found"); found != saved.end() && found->is_array())
         {
             for (auto const& path : *found)
@@ -511,7 +515,7 @@ std::optional<Problem> Torrent::Error() const
     if (control.Cause() || nameError)
         return StorageProblem();
     // A waiting move the person asked for replaces the interrupted one.
-    if (!moving && !waitingMove && facts.marker)
+    if (!pathWork && !waitingMove && facts.marker)
     {
         return Problem{unfinished ? ProblemKind::MoveUnfinished : ProblemKind::MoveInterrupted,
             facts.marker->destination};
@@ -567,13 +571,18 @@ bool Torrent::NeedsPerson() const
 
 bool Torrent::MoveWaits() const
 {
-    return !moving && (waitingMove || unfinished == TaskKind::Move) && !Error();
+    return !pathWork && (waitingMove || unfinished == TaskKind::Move) && !Error();
 }
 
 bool Torrent::FileWork() const
 {
-    return moving || namePhase == NamePhase::Preparing || namePhase == NamePhase::Recovering ||
-        !renaming.empty() || !marking.empty();
+    return pathWork || NameWork();
+}
+
+bool Torrent::NameWork() const
+{
+    return namePhase == NamePhase::Preparing || namePhase == NamePhase::Recovering || !renaming.empty() ||
+        !marking.empty();
 }
 
 bool Torrent::FilesBusy() const
@@ -585,7 +594,7 @@ bool Torrent::IsHeld(bool hasMetadata) const
 {
     // A stopped torrent that stayed auto-managed would leave upload mode by
     // itself every few minutes and fail its writes again.
-    return control.Holds() || !conflict.empty() || moving || facts.marker || cacheWrite == CacheWrite::Flushing ||
+    return control.Holds() || !conflict.empty() || pathWork || facts.marker || cacheWrite == CacheWrite::Flushing ||
         CheckWaits() || unfinished == TaskKind::Check || (hasMetadata && namePhase != NamePhase::Ready);
 }
 
@@ -602,7 +611,7 @@ bool Torrent::NamesKnown() const
 bool Torrent::ChecksFiles(bool sessionPaused) const
 {
     return !sessionPaused && status.state == lt::torrent_status::checking_files &&
-        !(status.flags & lt::torrent_flags::paused) && !moving && !CheckWaits();
+        !(status.flags & lt::torrent_flags::paused) && !pathWork && !CheckWaits();
 }
 
 bool Torrent::MoveBlocked() const
@@ -618,7 +627,7 @@ void Torrent::AnswerMoveProblem()
 
 Status Torrent::Classify(bool sessionPaused) const
 {
-    if (moving)
+    if (pathWork)
     {
         return Status::Moving;
     }
@@ -1248,7 +1257,7 @@ Json Torrent::Row(bool sessionPaused, int queue, std::optional<double> moveProgr
     auto complete = completion.IsReached(status);
     auto saved = status.state == lt::torrent_status::checking_resume_data ? savedProgress : std::nullopt;
     return {{"torrent_id", torrentId}, {"save_path", facts.savePath}, {"final_folder", facts.finalFolder},
-        {"moving", moving}, {"move_destination", facts.marker ? facts.marker->destination : std::string()},
+        {"moving", pathWork.has_value()}, {"move_destination", facts.marker ? facts.marker->destination : std::string()},
         {"paused", facts.intent == Intent::Paused}, {"forced", facts.intent == Intent::Forced},
         {"sequential", facts.sequential}, {"first_last", facts.firstLast},
         {"download_limit", facts.downloadLimit}, {"upload_limit", facts.uploadLimit},

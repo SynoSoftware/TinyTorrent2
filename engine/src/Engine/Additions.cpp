@@ -169,7 +169,7 @@ void Engine::State::PrepareAddition(std::string const& id, lt::torrent_handle ha
     // the drive's worker that chooses them, so during Exit the torrent joins
     // without them too, and the next start chooses them. It stays paused until
     // then, so it writes nothing under a wrong name.
-    if (!params.ti || DeletingOrRenaming() || IsShuttingDown())
+    if (!params.ti || DeletingOrRenaming(RootOf(addition.facts.savePath)) || IsShuttingDown())
     {
         SaveAddition(id, handle);
         return;
@@ -424,7 +424,10 @@ void Engine::State::RecoverAdditions()
     // A removed torrent stays in the session until its removal ends.
     std::set<lt::torrent_handle> accepted;
     EachWorking([&accepted](Torrent const& torrent) { accepted.insert(torrent.handle); });
-    payload.Run([session = session.get(), observations, accepted = std::move(accepted)]
+    // The job asks only libtorrent's network thread and touches no drive, so
+    // it runs on the save worker, which a share that does not answer cannot
+    // hold.
+    store.Run([session = session.get(), observations, accepted = std::move(accepted)]
     {
         SyncCall(*session, [session, observations, accepted]
         {

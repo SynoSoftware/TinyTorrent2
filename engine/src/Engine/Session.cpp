@@ -44,7 +44,7 @@ lt::info_hash_t SavedHashes(std::vector<std::string> const& hashes)
 }
 
 Engine::State::State(std::filesystem::path path, std::function<void()> wake) :
-    directory(std::move(path)), store(wake), payload(wake), sources(wake), checks(wake),
+    directory(std::move(path)), store(wake), sources(wake), checks(wake),
     wake(std::move(wake)), language(settings.language)
 {
     // Without a saved document the engine starts from the default settings.
@@ -268,14 +268,12 @@ void Engine::State::Restore(std::string const& id, Facts facts, lt::add_torrent_
 
 void Engine::State::RestorePending()
 {
-    if (FilesBusy() || !additions.empty())
-    {
-        return;
-    }
     for (auto& [id, torrent] : torrents)
     {
+        // File work and additions hold the restores on their own roots.
+        auto root = RootOf(torrent.facts.savePath);
         if (!torrent.restore || torrent.restoreError || Removing(torrent.status.info_hashes) ||
-            FindDuplicate(torrent.status.info_hashes, id))
+            FindDuplicate(torrent.status.info_hashes, id) || FilesBusy(root) || Adding(root))
         {
             continue;
         }
@@ -443,7 +441,7 @@ Engine::State::Document Engine::State::Saved() const
     std::erase_if(document.queueOrder, [&document](auto const& id) { return !document.torrents.contains(id); });
     document.tasks = Tasks();
     // The save at Exit records that Exit, not a crash, cut the work off.
-    document.tasksContinued = tasksContinued && !exitTasks;
+    document.tasksContinued = tasksContinued && !IsShuttingDown();
     return document;
 }
 
@@ -834,7 +832,6 @@ void Engine::State::Tick()
     // of the batch still runs.
     auto failed = [this](std::exception const& error) { log.Write("engine", "", error.what()); };
     store.Drain(failed);
-    payload.Drain(failed);
     // A completion can end its move, which releases the move's worker, so
     // the drain keeps every worker until it has finished.
     std::vector<std::shared_ptr<Store>> workers;
@@ -844,6 +841,11 @@ void Engine::State::Tick()
     {
         if (abandonment.worker)
             workers.push_back(abandonment.worker);
+    }
+    for (auto const& running : returning)
+    {
+        if (running.worker)
+            workers.push_back(running.worker);
     }
     for (auto const& worker : workers)
         worker->Drain(failed);
@@ -870,7 +872,11 @@ void Engine::State::Tick()
         }
         if (reading && !alerts.empty())
             ContinueReading(std::exchange(reading->changed, false));
-        ContinueRename();
+        std::vector<std::string> renaming;
+        for (auto const& [root, rename] : renames)
+            renaming.push_back(root);
+        for (auto const& root : renaming)
+            ContinueRename(root);
         ContinueDeletion();
         RemoveDeferred();
         if (!IsShuttingDown())
@@ -943,6 +949,7 @@ void Engine::State::Maintain()
         history.Sample(time, double(activity.downloadRate), double(activity.uploadRate));
         ContinueNames();
         AbandonMoves();
+        GiveBackRemoved();
         StopStalledJobs();
         AssignDrives();
         for (auto& [id, torrent] : torrents)

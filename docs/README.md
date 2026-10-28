@@ -72,11 +72,10 @@ The [ring copy research](plans/ring-copy-plan.md) keeps the evidence and the
 design of a copy engine of the engine's own, for moves between hard disks. It
 will not be implemented.
 
-The [torrent control plan](plans/torrent-control-plan.md) proposes one
-controller per torrent for storage failures, stops and holds, with explicit
-transitions and a native check of event sequences. The owner approved steps 0
-to 5; steps 0 to 2 are implemented. The [torrent control
-audit](plans/torrent-control-audit.md) is the evidence it builds on.
+The [torrent control plan](plans/torrent-control-plan.md) keeps what remains
+of the storage controller work, whose steps 0 to 5 are implemented: the
+owner's dependency rebuild, the checks that wait for it, and step 6, disk work
+per drive inside libtorrent, which needs separate authorization.
 
 The [communication plan](plans/communication-plan.md) is paused. It holds the
 scoped-subscription design for torrent detail, which the owner has not decided

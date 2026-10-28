@@ -410,7 +410,9 @@ it without announcement. A condition is raised only once it has lasted two
 minutes. Key `stopped` counts the torrents that wait for the person's Retry:
 with one, `torrent_id`, `name`, `detail`, `folder` and `code` describe it; with
 several, those are empty except `code`, which names the cause they share or is
-empty. Key `location:<root>` counts the torrents that wait because one drive
+empty. The count also includes each removed torrent whose move's give-back
+failed and waits for Retry. It has no row, so alone it has an empty
+`torrent_id`, and `retry` tries it again. Key `location:<root>` counts the torrents that wait because one drive
 root or UNC share does not answer, whatever error Windows reported, with
 `code:"download_location_unavailable"`, the typed cause code in `detail` and
 the root in `folder`.
@@ -451,7 +453,9 @@ priorities, optional sequential, first_last and queue_top booleans that default 
 torrent_id), `torrent` (torrent_id), `pause`, `resume`, `force`, `verify`, and
 `remove` (torrent_ids), `retry` (torrent_ids: clears each torrent's problems as
 Start does but keeps its current intent, so a stopped torrent continues and a
-failed move to the final folder runs again), `queue` (torrent_ids with
+failed move to the final folder runs again; every `retry` also tries again
+the failed give-backs of removed torrents, and one with an empty torrent_ids
+array does only that), `queue` (torrent_ids with
 direction: up/down/top/bottom, or before_torrent_id: string/null for a row
 drop; null means end),
 `piece_order` (torrent_ids with sequential, first_last or both as booleans; an

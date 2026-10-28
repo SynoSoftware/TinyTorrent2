@@ -13,6 +13,24 @@ constexpr std::size_t jobLimit = 64;
 // can be read back.
 constexpr std::streamoff fileLimit = 16 * 1024 * 1024;
 
+// Runs `attempt`, which returns ERROR_SUCCESS or a Windows error, again while
+// another program holds the file for a moment, as a virus scanner or an
+// indexer that opens a new file does. It gives up after about a second and
+// returns the last error.
+template <typename Attempt>
+DWORD Retried(Attempt attempt)
+{
+    auto error = attempt();
+    for (int pause : {50, 100, 200, 300, 400})
+    {
+        if (error != ERROR_SHARING_VIOLATION && error != ERROR_ACCESS_DENIED)
+            break;
+        Sleep(pause);
+        error = attempt();
+    }
+    return error;
+}
+
 // The file and Windows' own words for `error`, in the person's language,
 // because the person reads the failure.
 std::string WriteFailure(std::filesystem::path const& path, DWORD error)
@@ -147,11 +165,15 @@ void Store::Write(std::filesystem::path path, std::function<std::string()> encod
         }
         auto temporary = path;
         temporary += L".tmp";
-        HANDLE file = CreateFileW(temporary.c_str(), GENERIC_WRITE, 0, nullptr,
-            CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-        if (file == INVALID_HANDLE_VALUE)
+        HANDLE file = INVALID_HANDLE_VALUE;
+        if (auto error = Retried([&]
         {
-            throw std::runtime_error(WriteFailure(path, GetLastError()));
+            file = CreateFileW(temporary.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL,
+                nullptr);
+            return file == INVALID_HANDLE_VALUE ? GetLastError() : ERROR_SUCCESS;
+        }); error != ERROR_SUCCESS)
+        {
+            throw std::runtime_error(WriteFailure(path, error));
         }
         DWORD written = 0;
         bool success = WriteFile(file, bytes.data(), static_cast<DWORD>(bytes.size()),
@@ -164,8 +186,12 @@ void Store::Write(std::filesystem::path path, std::function<std::string()> encod
         CloseHandle(file);
         if (success)
         {
-            success = MoveFileExW(temporary.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);
-            error = success ? 0 : GetLastError();
+            error = Retried([&]
+            {
+                return MoveFileExW(temporary.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING |
+                    MOVEFILE_WRITE_THROUGH) ? ERROR_SUCCESS : GetLastError();
+            });
+            success = error == ERROR_SUCCESS;
         }
         if (!success)
         {

@@ -26,10 +26,7 @@ void Engine::State::Shutdown(std::function<void(ShutdownEnd end)> report)
     }
     if (connectionTest)
         ReleaseConnectionTest(connectionTest->connectionId, ConnectionPhase::Cancelled);
-    // Taken before the cancel, which ends the jobs that the tasks name.
     bool ready = startup == Startup::Ready;
-    if (ready)
-        exitTasks = Tasks();
     StartFinalSave();
     CancelFileWork();
     // An addition's disk work can wait on a share that does not answer: its
@@ -56,26 +53,26 @@ void Engine::State::Shutdown(std::function<void(ShutdownEnd end)> report)
     Discard([](Preview const&) { return true; });
     log.Write("shutdown", "", "requested");
     shutdown = std::move(report);
-    // The tasks are saved before anything waits, so an end at 10 seconds
-    // loses none of them.
+    // The tasks are already saved. This save records that Exit cut them off,
+    // and the marks being written, before anything waits.
     if (ready)
     {
         SaveDocument();
     }
 }
 
-void Engine::State::SaveDocument()
+void Engine::State::SaveDocument(std::function<void()> saved)
 {
-    if (!changes.Queue([this]
+    if (!changes.Queue([this, saved = std::move(saved)]
     {
         auto document = Saved();
-        recordedMarks = document.unmarked;
-        changes.Commit([document = std::move(document)] { return document.ToJson(); }, [this](Outcome outcome)
+        changes.Commit([document = std::move(document)] { return document.ToJson(); },
+            [this, saved](Outcome outcome)
         {
             if (outcome.error)
-            {
                 FailFinalSave(outcome.detail);
-            }
+            else if (saved)
+                saved();
         });
     }))
     {
@@ -146,11 +143,18 @@ void Engine::State::ContinueShutdown()
         }
         return;
     }
-    // A save that fails now would fail again, so Exit ends as after a crash.
-    // The tasks and markers saved before it still hold the work.
-    if (saveFailure)
+    // A save that fails now would fail again, so Exit ends as after a crash,
+    // once the log holds the failure. The tasks and markers saved before it
+    // still hold the work.
+    if (saveFailure && shutdownPhase != ShutdownPhase::Failing)
     {
-        EndAbruptly("save_failed");
+        log.Write("shutdown", "", "save_failed");
+        shutdownPhase = ShutdownPhase::Failing;
+    }
+    if (shutdownPhase == ShutdownPhase::Failing)
+    {
+        if (store.IsIdle() && log.IsFlushed())
+            std::exchange(shutdown, nullptr)(ShutdownEnd::Abrupt);
         return;
     }
     if (!changes.IsIdle())
@@ -209,7 +213,7 @@ void Engine::State::ContinueShutdown()
         {
             for (auto const& [id, torrent] : torrents)
             {
-                if (!torrent.restore && !torrent.control.Recovers() && !torrent.moving &&
+                if (!torrent.restore && !torrent.control.Recovers() && !torrent.pathWork &&
                     !bool(torrent.handle.flags() & lt::torrent_flags::paused) &&
                     torrent.status.state != lt::torrent_status::checking_files)
                 {
@@ -271,10 +275,15 @@ void Engine::State::ContinueShutdown()
         {
             return;
         }
+        // The second save of Exit, now that no completion can start a mark,
+        // records the files that finished since the first.
+        if (startup == Startup::Ready)
+            SaveDocument([this] { log.Write("shutdown", "", "saved"); });
+        else
+            log.Write("shutdown", "", "saved");
         shutdownPhase = ShutdownPhase::Ending;
         phaseStarted = now;
         waited = {};
-        log.Write("shutdown", "", "saved");
     }
     if (shutdownPhase == ShutdownPhase::Ending)
     {
@@ -297,22 +306,16 @@ void Engine::State::ContinueShutdown()
         // without the teardown: the saved tasks and markers hold that work.
         auto abandoned = [](Abandonment const& abandonment)
             { return !abandonment.worker || abandonment.worker->IsIdle(); };
+        auto returned = [](Returning const& running) { return !running.worker || running.worker->IsIdle(); };
         bool runs = !std::all_of(moves.begin(), moves.end(), stopped) ||
-            !std::all_of(abandonments.begin(), abandonments.end(), abandoned) || !payload.IsIdle() ||
+            !std::all_of(abandonments.begin(), abandonments.end(), abandoned) ||
+            !std::all_of(returning.begin(), returning.end(), returned) ||
             !sources.IsIdle() ||
             std::any_of(volumes.begin(), volumes.end(), [](auto const& entry) { return !entry.second->IsIdle(); }) ||
             std::any_of(rootProbes.begin(), rootProbes.end(),
                 [](auto const& entry) { return !entry.second.worker->IsIdle(); });
         if (runs && waited < endingTimeout)
         {
-            return;
-        }
-        // The document records the marks that are not written yet, so the next
-        // start writes one that the end cuts off, and does not write again one
-        // that ended during Exit.
-        if (startup == Startup::Ready && UnwrittenMarks() != recordedMarks)
-        {
-            SaveDocument();
             return;
         }
         if (!runs && !StalledCheck())
@@ -336,11 +339,5 @@ void Engine::State::Finish()
 {
     auto report = std::exchange(shutdown, nullptr);
     report(ShutdownEnd::Saved);
-}
-
-void Engine::State::EndAbruptly(std::string const& reason)
-{
-    log.Write("shutdown", "", reason);
-    std::exchange(shutdown, nullptr)(ShutdownEnd::Abrupt);
 }
 }

@@ -404,10 +404,16 @@ Popup::Content Toasts::Message(Toast const& toast) const
                     }, .closes = false, .automationId = L"OpenFolder"});
             }
         }
-        else if (!toast.folder.empty())
+        else
         {
-            content.actions = {
-                OpenFolder(strings_, Wide(toast.folder), strings_.Text("notification", "files_folder_tip"))};
+            if (!toast.folder.empty())
+                content.actions = {
+                    OpenFolder(strings_, Wide(toast.folder), strings_.Text("notification", "files_folder_tip"))};
+            // A removed torrent's give-back has no row to show, and its Retry
+            // still continues it.
+            if (stopped)
+                content.actions.push_back(Retry(strings_, strings_.Text("notification", "retry_torrent_tip"),
+                    commands_.retryAll));
         }
     }
     return content;
