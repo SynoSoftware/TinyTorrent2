@@ -1339,17 +1339,21 @@ internal sealed partial class VideoLookup(
         }
     }
 
+    // Nothing is left when every target scrolled away before its turn.
     private static void ReportSweep(Sweep sweep, WorkExecution execution)
     {
         if (sweep.Work is { } work)
             work.Report(
                 work.Observation with
                 {
-                    Progress = new WorkProgress.Fraction(
-                        sweep.Done,
-                        sweep.Targets.Count,
-                        WorkUnit.Files
-                    ),
+                    Progress =
+                        sweep.Targets.Count > 0
+                            ? new WorkProgress.Fraction(
+                                sweep.Done,
+                                sweep.Targets.Count,
+                                WorkUnit.Files
+                            )
+                            : new WorkProgress.Unknown(),
                     Execution = execution,
                 }
             );

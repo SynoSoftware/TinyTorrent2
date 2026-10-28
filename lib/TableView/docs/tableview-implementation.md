@@ -16,6 +16,7 @@ for this documentation review.
 | Optional child membership, subscriptions and sibling projection | [Hierarchy](../src/Hierarchy.cs), configured by `Schema<TRow>.Hierarchy`. |
 | Displayed sequence, collection reconciliation and the selected state the list reads | [Body.View](../src/Body/View.cs). |
 | Effective layout | [EffectiveLayout](../src/EffectiveLayout.cs). |
+| Realized items reported to the host | `RealizedItems` in [Table/View](../src/Table/View.cs), read from the row panel's cache range; the panel's `CacheLength` in [Generic.xaml](../src/Themes/Generic.xaml) sets the margin. |
 | Shared header and row arrangement | [CellsPanel](../src/CellsPanel.cs). |
 | Hierarchy cell indentation and disclosure | [Body.HierarchyCell](../src/Body/HierarchyCell.cs), created only for the hierarchy column, with a `SubtleButton` as its expander. |
 | Selection, current item, anchor, and logical focus | [SelectionState](../src/SelectionState.cs). |

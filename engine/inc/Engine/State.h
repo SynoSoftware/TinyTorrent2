@@ -305,8 +305,9 @@ public:
             bool operator==(Check const&) const = default;
         };
         // Files that a deletion has not deleted yet: the files of removed
-        // torrents, or the old files of a torrent whose move saved its new
-        // folder (`cleans`). `roots` bound the emptied folders it removes.
+        // torrents, their .torrent files, or the old files of a torrent whose
+        // move saved its new folder (`cleans`). `roots` hold the folder of each
+        // of `ids`, in their order, and bound the emptied folders it removes.
         struct Deletion
         {
             std::vector<std::string> ids;
@@ -547,6 +548,88 @@ public:
     std::string language;
     // Listed torrents: they have rows, are saved, and accept commands.
     std::map<std::string, Torrent> torrents;
+    // The moves, give-backs, deletions and removals that run or wait, each
+    // with the folders it uses and the torrent whose files lie in each. The
+    // drive turns, the gates of renames and names, the root probes, the
+    // location notices, the stall rule, Exit and Tick read them here. Renames
+    // keep their own record in `renames`. A job stays in flight while the record that started it holds it,
+    // so no way that the work ends can leave its job behind.
+    class FileWork
+    {
+    public:
+        struct Use
+        {
+            std::string folder;
+            std::string torrentId;
+        };
+        class Job
+        {
+        public:
+            Job(WorkKind kind, std::vector<Use> uses) : kind(kind), uses(std::move(uses)) {}
+
+            WorkKind kind;
+            // A waiting row names the torrent of the first use as the one
+            // whose job holds the drive.
+            std::vector<Use> uses;
+            // Its own worker, shared so that a drain can finish the
+            // completion that ends the job. Nothing for a removal, for a job
+            // that does not run, and for a give-back between its tries.
+            std::shared_ptr<Store> worker;
+            // What the stall rule times while `placing` is set; nothing for
+            // work that is not timed.
+            std::shared_ptr<Payload::Progress> progress;
+            std::optional<Pulse> pulse;
+            // A listed torrent's give-back waits for its drives with this
+            // turn, among the checks and moves; 0 for work that takes no turn.
+            std::uint64_t turn = 0;
+
+            // The folders of its uses, each once.
+            std::vector<std::string> Folders() const;
+            // The folders its Windows calls can be in now: a move's current
+            // member, whose uses come first, and every folder of other work.
+            std::vector<std::string> Touched() const;
+            JobPhase Phase() const { return phase_; }
+            // The folder whose root did not answer, while Unanswered.
+            std::string const& Unanswered() const { return unanswered_; }
+            // The failure that waits for the person, while Failed.
+            std::optional<Problem> const& Failure() const { return failure_; }
+            // A job that stops running lets go of its worker, its progress
+            // and its pulse.
+            void Queue();
+            void Run();
+            void Await(std::string folder);
+            void Fail(Problem failure);
+        private:
+            void Settle();
+
+            JobPhase phase_ = JobPhase::Queued;
+            std::string unanswered_;
+            std::optional<Problem> failure_;
+        };
+
+        // Records a queued job, which is in flight while the returned
+        // pointer lives.
+        std::shared_ptr<Job> Start(WorkKind kind, std::vector<Use> uses);
+        // Visits each job in flight, in the order they started.
+        template <class Visit> void Each(Visit visit) const
+        {
+            for (auto const& entry : jobs_)
+            {
+                if (auto job = entry.lock())
+                    visit(*job);
+            }
+        }
+        // Whether a deletion or a move uses `root`, a RootOf key, which holds
+        // the renames and restores there; with `names`, whether a deletion
+        // does, which holds the name choices there too.
+        bool Holds(std::string const& root, bool names) const;
+        // The probe of the root `key`, a NoticeKey, opened it, so the jobs
+        // that waited for that root wait for their turn again.
+        void Opened(std::string const& key);
+    private:
+        std::vector<std::weak_ptr<Job>> jobs_;
+    };
+    FileWork fileWork;
     // A torrent the person removed, out of the list and the saved document. It
     // stays until RemoveHandles gives its handle to libtorrent: in the
     // removal's own commit when nothing holds it, otherwise from
@@ -556,6 +639,8 @@ public:
         Torrent torrent;
         // Nothing when the person kept the files.
         std::optional<DeletionMode> mode;
+        // Uses the save folder, where the torrent's own file work runs.
+        std::shared_ptr<FileWork::Job> job;
     };
     std::map<std::string, Removal> removed;
     // The handles of listed torrents only.
@@ -600,20 +685,9 @@ public:
     // The work as the last save that RecordTasks made found it; nothing
     // after that save failed.
     std::optional<std::vector<Task>> recordedTasks;
-    // How a give-back stands between its tries, alike for a listed
-    // torrent's and a removed torrent's. EndTry owns its rules.
-    struct GiveBackTries
-    {
-        // The folder whose drive or share did not answer, until that root's
-        // probe opens it.
-        std::optional<std::string> unanswered;
-        // The one automatic retry after a failure is spent.
-        bool retried = false;
-        // The failure that waits for the person's Retry.
-        std::optional<Problem> failure;
-
-        bool Waits() const { return unanswered || failure; }
-    };
+    // How a try of a give-back ended: what giving back did, the folder whose
+    // root did not answer, or the failure.
+    using GiveBackTry = std::expected<std::expected<GivenBack, std::string>, StorageOutcome>;
     // A move the person abandoned, which gives its files back. It waits for
     // the file names of the torrents whose files can lie at its destination,
     // which say which files other torrents use there, and for its drives,
@@ -621,13 +695,10 @@ public:
     struct Abandonment
     {
         std::string torrentId;
-        // Nothing until it starts. Shared, as a move's worker is, so a drain
-        // can finish the completion that ends it.
-        std::shared_ptr<Store> worker;
-        // The files it handled, which the stall rule watches.
-        std::shared_ptr<std::atomic<std::uint64_t>> done;
-        std::optional<Pulse> pulse;
-        GiveBackTries tries;
+        // Uses the marker's destination and the save folder.
+        std::shared_ptr<FileWork::Job> job;
+        // The one automatic retry after a failure is spent. EndTry owns it.
+        bool retried = false;
     };
     std::list<Abandonment> abandonments;
     // The engine continued the last end's work at start without asking, and
@@ -679,9 +750,6 @@ public:
     {
         std::vector<std::string> ids;
         std::string destination;
-        // The members' folders when the move started, whose drives the move
-        // uses until it ends.
-        std::vector<std::string> sourceFolders;
         // Members that had a marker before this move, so their files can
         // still be in two folders.
         std::vector<std::string> recovering;
@@ -704,24 +772,22 @@ public:
         // members share files. On one volume, a member that shares one no
         // longer has it in its old folder.
         std::vector<std::filesystem::path> placed;
-        // The current member's bytes, which its worker writes while it copies.
-        std::shared_ptr<Payload::Progress> progress;
         // Bytes per second copied between the last two status samples, and
         // the current member's copied bytes at the last one.
         double rate = 0;
         std::uint64_t sampled = 0;
-        // The current member's placement, timed only while it copies.
-        std::optional<Pulse> pulse;
         // The current member's old files, from just before its new folder is
-        // saved until they are deleted.
+        // saved until a deletion takes them.
         std::optional<Task::Deletion> cleaning;
         MovePhase phase = MovePhase::Staging;
-        // Checks the destination, places and deletes this move's files, and
-        // confirms libtorrent's new folder. Each can take many minutes or hang
-        // on a drive, so the volume workers' renames and names and other
-        // moves do not wait for it. Shared, so a drain can finish its completions after
-        // the move that ends in one of them is gone.
-        std::shared_ptr<Store> worker;
+        // Uses the members' folders when the move started and the
+        // destination, until the move ends. Its worker checks the
+        // destination, places this move's files and confirms libtorrent's new
+        // folder. Each can take many minutes or hang on a drive, so the
+        // volume workers' renames and names and other moves do not wait for
+        // it. Its progress is the current member's bytes, which the worker
+        // writes while it copies, and only that copy is timed.
+        std::shared_ptr<FileWork::Job> job;
     };
     // The torrent whose running job uses a drive.
     struct Claim
@@ -732,32 +798,52 @@ public:
         bool check = false;
     };
     using Claims = std::map<std::string, Claim>;
-    // A job that waits for its drives: a check of one torrent, or the move of
-    // the torrents of one request.
+    // A job that waits for its drives: a check of one torrent, the move of
+    // the torrents of one request, or a listed torrent's give-back.
     struct Job
     {
         std::vector<std::string> ids;
-        // Nothing for a check.
+        // Nothing for a check or a give-back.
         std::optional<std::string> destination;
         std::uint64_t turn = 0;
         bool forced = false;
+        // The give-back's file work, which names its folders; nothing for a
+        // check or a move.
+        FileWork::Job const* giveBack = nullptr;
     };
     struct Deletion
     {
-        // The removed torrents whose files it deletes.
+        // The work on one root, a RootOf key: libtorrent's removal of the
+        // torrents saved there, then the deletion of their files there. Each
+        // part runs and waits on its own, so a root that does not answer
+        // holds up only its own part.
+        struct Part
+        {
+            // The removed torrents' handles that libtorrent still holds.
+            std::vector<lt::torrent_handle> waiting;
+            std::vector<std::filesystem::path> files;
+            // Uses the save folders of the torrents whose files lie there.
+            std::shared_ptr<FileWork::Job> job;
+
+            // Forgets the handles that `released` selects, and returns
+            // whether it forgot one. Once no handle is left, the part waits
+            // for its turn to delete.
+            bool Release(std::function<bool(lt::torrent_handle const&)> const& released);
+        };
+        // The removed torrents whose files it deletes, or the moved torrent
+        // whose old files it deletes.
         std::vector<std::string> ids;
         std::optional<DeletionMode> mode;
-        std::vector<lt::torrent_handle> waiting;
         std::vector<std::filesystem::path> holds;
-        std::vector<std::filesystem::path> files;
         std::vector<std::filesystem::path> roots;
         std::string names;
+        // It deletes a moved torrent's old files, which the new folder also
+        // holds, so a failure is logged rather than notified.
+        bool cleans = false;
         DeletionPhase phase = DeletionPhase::Saving;
-        // The RootOf keys of the folders whose files it holds or deletes.
-        std::set<std::string> rootKeys;
-        // A folder whose drive or share did not answer, until that root's
-        // probe opens it and the deletion runs again.
-        std::optional<std::string> unanswered;
+        // Keyed by RootOf. A part leaves once it has ended, and the deletion
+        // once no part is left.
+        std::map<std::string, Part> parts;
     };
     // Moves share no drive, so they share no file. A list, so a move's
     // asynchronous steps can hold on to it.
@@ -779,6 +865,10 @@ public:
         // When the last probe started; nothing before the first.
         std::optional<std::chrono::steady_clock::time_point> at;
         bool pending = false;
+
+        // Whether the root does not answer: its probe has not returned
+        // after noticeDelay.
+        bool Hangs(std::chrono::steady_clock::time_point now) const;
     };
     // Keyed by the RootKey of the NoticeRoot.
     std::map<std::string, RootProbe> rootProbes;
@@ -793,11 +883,10 @@ public:
     struct Returning
     {
         Task::Return task;
-        // Its own, as an abandonment's, because it touches the save folder's
-        // root and the destination's; nothing while no try runs. Shared, so
-        // a drain can finish the completion that ends it.
-        std::shared_ptr<Store> worker;
-        GiveBackTries tries;
+        // Uses the destination and the save folder, as an abandonment's.
+        std::shared_ptr<FileWork::Job> job;
+        // The one automatic retry after a failure is spent. EndTry owns it.
+        bool retried = false;
     };
     std::list<Returning> returning;
     struct Rename
@@ -1044,9 +1133,11 @@ public:
     static bool SameFolder(std::string const& left, std::string const& right);
     // Whether one folder is the other or lies inside it.
     static bool FoldersOverlap(std::string const& left, std::string const& right);
-    // A move, deletion or rename uses the root, a RootOf key.
+    // A move, a part of a deletion or a rename uses the root, a RootOf key,
+    // which holds the renames and restores there.
     bool FilesBusy(std::string const& root) const;
-    // A deletion or rename uses the root, a RootOf key.
+    // A part of a deletion or a rename uses the root, a RootOf key, which
+    // holds the name choices there too.
     bool DeletingOrRenaming(std::string const& root) const;
     // An addition saves under the root, a RootOf key.
     bool Adding(std::string const& root) const;
@@ -1088,15 +1179,26 @@ public:
     std::optional<double> MoveProgress(Torrent const& torrent) const;
     // Samples each move's copy rate over the time since the last sample.
     void SampleMoves(std::chrono::steady_clock::duration elapsed);
-    // Starts each waiting job, in its order, whose drives no running job uses,
-    // and holds the checks that libtorrent runs on a busy drive. Part of the
-    // maintenance pass.
+    // Starts each waiting check and move, in its order, whose drives no
+    // running job uses, and holds the checks that libtorrent runs on a busy
+    // drive. A give-back's turn keeps its drives from later jobs, and
+    // AbandonMoves starts it. Part of the maintenance pass.
     void AssignDrives();
-    // Stops the running checks and move copies that made no progress for too
-    // long. Part of the maintenance pass, also during Exit.
+    // Stops the running checks, move copies and give-backs that made no
+    // progress for too long. A copy or give-back whose root's probe has not
+    // returned waits for that root and is not stopped. Part of the
+    // maintenance pass.
     void StopStalledJobs();
     // The drives that running jobs use, and that stopped checks still read.
     Claims DrivesInUse();
+    // Whether the give-back gets its drives in its turn among the waiting
+    // jobs.
+    bool GetsDrives(FileWork::Job const& job);
+    // Whether a listed torrent's give-back can start once it has its drives:
+    // the torrent's storage and names are idle, and the torrents whose files
+    // can lie at the destination know their names. A give-back that cannot
+    // start reserves no drive.
+    bool GiveBackReady(Torrent const& torrent) const;
     // Gives drives to `jobs` in their order: a job starts when its drives are
     // known, no claim in `claims` has them and, for a move, its files are
     // ready. A job that starts adds its claims. Returns for each job nothing
@@ -1127,15 +1229,30 @@ public:
     // Samples the bytes per second libtorrent checks across every torrent
     // whose files it checks, over the time since the last sample.
     void SampleChecks(std::chrono::steady_clock::duration elapsed);
+    // Starts each part of a deletion whose files nothing holds any more, and
+    // ends the parts and deletions that are done.
     void ContinueDeletion();
+    // Whether other work still holds the files of the deletion's part on
+    // `root`: another removed handle that can flush writes to a shared file,
+    // or the give-back of a cut move whose files go back there first.
+    bool Held(Deletion const& deletion, std::string const& root) const;
+    // Gives each root of `files` and `uses` its part of the deletion, with
+    // the uses and files there.
+    void Split(Deletion& deletion, std::vector<std::filesystem::path> files, std::vector<FileWork::Use> uses);
+    // Adds the deletion of a task's files that waits for nothing but its
+    // turn: one saved at the last end, a moved torrent's old files, or a
+    // .torrent file.
+    void AddDeletion(Task::Deletion const& task);
     // Deletes the files in the mode, then the folders that leaves empty up to
     // the nearest of `roots`, even after a failure, and throws the first
     // failure. A file that is already gone counts as deleted. Once `stop` is
     // requested, it deletes no further file.
     static void Erase(std::vector<std::filesystem::path> const& files, DeletionMode mode,
         std::vector<std::filesystem::path> const& roots, std::stop_token stop = {});
-    void Delete(std::list<Deletion>::iterator deletion);
-    void DeleteTorrentFiles(std::vector<std::filesystem::path> files, DeletionMode mode, std::string names);
+    // Deletes the files of the deletion's part on `root`, on that root's
+    // worker. A part whose root does not answer keeps its files and waits for
+    // the root.
+    void Delete(std::list<Deletion>::iterator deletion, std::string const& root);
     void ReportDeletion(StorageOutcome const& outcome, std::string names, std::filesystem::path const& folder);
     void On(lt::torrent_deleted_alert const& alert);
     void On(lt::torrent_removed_alert const& alert);
@@ -1170,9 +1287,9 @@ public:
     void CheckStopped(std::string const& folder, std::vector<Attempt> attempts);
     // The failed move's minute check of its final folder.
     void CheckFinalFolder(Attempt const& attempt);
-    // Opens once a minute each root that holds a running torrent, and each
-    // root of the file work that EachRootWait reports, and keeps the roots
-    // whose probe has not returned.
+    // Opens once a minute each root that holds a running torrent, each root
+    // of the folders of file work that runs, and each root that file work
+    // waits for, and keeps the roots whose probe has not returned.
     void ProbeRoots();
     void Reload(Torrent& torrent, std::shared_ptr<Control::Job const> job);
     // Drops the pieces of `files` from the resume data, so the torrent
@@ -1199,6 +1316,10 @@ public:
     // `replacement.params` when the add succeeded.
     void SwapHandle(Torrent& torrent, Replacement& replacement);
     Store& VolumeWorker(std::string const& folder);
+    // The worker that chooses an addition's names on the folder's root, so
+    // an addition never waits behind another torrent's work there, and a
+    // root that does not answer holds only its own additions.
+    Store& AdditionWorker(std::string const& folder);
     // The key of the drive or server that holds `folder`. The volume workers
     // and the gates of file work use one per key, because a server that hangs
     // usually hangs all its shares. libtorrent names the key, so a key here
@@ -1214,13 +1335,19 @@ public:
     static std::string RootKey(std::filesystem::path const& root);
     // The key of the root probe and the location notice for `location`.
     static std::string NoticeKey(std::string const& location);
-    // The RootOf keys of `paths`.
-    static std::set<std::string> RootsOf(std::vector<std::filesystem::path> const& paths);
     // `folder`, or its nearest existing parent up to its drive root or share.
     // Blocks on the drive.
     static std::optional<std::filesystem::path> ExistingFolder(std::filesystem::path folder);
     // The one rule for whether a folder's location answers.
     static bool Reachable(std::filesystem::path const& folder);
+    // The one rule for whether file work in `folders` waits for a root: runs
+    // `work` unless a folder does not answer, and asks every folder again
+    // after it, failed or not, because Windows reports the files of a root
+    // that went away as files that are not there. Returns the folder that did
+    // not answer, before or after the work, and otherwise rethrows the work's
+    // failure. Blocks on the drives.
+    static std::optional<std::string> Reach(std::vector<std::string> const& folders,
+        std::function<void()> const& work);
     // The files that held downloaded data but are gone or shorter than that
     // data, as when they were deleted while their share was away. Blocks on
     // the drive and on libtorrent, so it runs on the drive's worker.
@@ -1417,13 +1544,12 @@ public:
     // start. A failure after the retry waits for the person: a waiting Move
     // keeps waiting and shows it, and otherwise the marker fails and the row
     // says so.
-    void EndAbandonment(std::string const& id, std::string const& destination,
-        std::expected<GivenBack, StorageOutcome> given);
-    // Records how a give-back's try ended. A destination that does not answer
-    // waits for its root's probe to open it. A failure gets one automatic
-    // retry, and then waits for the person.
-    GiveBackEnd EndTry(GiveBackTries& tries, std::expected<GivenBack, StorageOutcome> const& given,
-        std::string const& destination) const;
+    void EndAbandonment(std::string const& id, GiveBackTry given);
+    // Records in its job how a give-back's try ended, alike for both kinds
+    // of give-back. A folder that did not answer waits for its root's probe
+    // to open it. A failure while the roots answer gets one automatic retry,
+    // which `retried` records, and then waits for the person.
+    static GiveBackEnd EndTry(FileWork::Job& job, bool& retried, GiveBackTry const& given);
     // The person's Retry or Move tries the failed give-back of the torrent's
     // abandoned move again.
     void RetryGiveBack(std::string const& id);
@@ -1432,13 +1558,9 @@ public:
     // Whether the give-back of the torrent's abandoned move waits for the
     // person's Retry.
     bool GiveBackFailed(std::string const& id) const;
-    // Calls `visit` for each piece of file work that waits for a root:
-    // abandonments, removed torrents' give-backs and deletions. It passes the
-    // folder that did not answer, the folders that the work's job uses while
-    // it runs, and the torrent. A job on a root that hangs never returns to
-    // report it, so only the root's probe shows that it waits.
-    void EachRootWait(std::function<void(std::optional<std::string>& unanswered,
-        std::vector<std::string> const& running, std::string const& id)> const& visit);
+    // Adds the give-back of a removed torrent's move, which waits for its
+    // turn.
+    void AddGiveBack(Task::Return task);
     // The give-back of the torrent's move as its record holds it: the
     // torrent's own files at its marker's destination, paired with their
     // sources in the save folder, without the files that the move found
@@ -1449,14 +1571,15 @@ public:
     std::vector<Payload::File> Unshared(std::vector<Payload::File> files, std::string const& id) const;
     // The files that the torrent's give-back moves or deletes now.
     std::vector<Payload::File> Returned(Torrent const& torrent) const;
-    // Gives back what a move placed at `root`: deletes each unfinished copy
-    // and each complete copy beside its source, and renames back each file
-    // whose source is gone. It decides each file from the disk, so it
+    // Gives back what a move placed at the first of `folders`, its
+    // destination, into the second, the save folder: deletes each unfinished
+    // copy and each complete copy beside its source, and renames back each
+    // file whose source is gone. It decides each file from the disk, so it
     // continues where an earlier one stopped. Once `stop` is requested it
-    // handles no further file. Counts each file in `done`. Blocks on the
-    // drives.
-    static GivenBack GiveBack(std::vector<Payload::File> const& files, std::filesystem::path const& root,
-        std::stop_token stop, std::atomic<std::uint64_t>& done);
+    // handles no further file. Counts each file in `done`. Returns the
+    // folder that did not answer, by Reach's rule. Blocks on the drives.
+    static std::expected<GivenBack, std::string> GiveBack(std::vector<Payload::File> const& files,
+        std::vector<std::string> const& folders, std::stop_token stop, std::atomic<std::uint64_t>& done);
     // Starts the give-backs of removed torrents' moves that can start, each
     // on its own worker, before the deletions that wait for them. Part of the
     // maintenance pass.
@@ -1495,7 +1618,6 @@ private:
     static std::vector<Payload::File> Relocated(std::string const& destination, Torrent const& torrent);
     void ReloadMove(Move& moving);
     void SaveMove(Move& moving);
-    void CleanMove(Move& moving, std::vector<std::filesystem::path> sources, std::filesystem::path origin);
     void FailMove(Move& moving, Problem problem);
     // `final`: the engine's own move to the final folder failed and left the
     // files complete where they were, so it can run again by itself.

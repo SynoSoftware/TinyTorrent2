@@ -333,15 +333,17 @@ catalogue.
 
 ### TMDB early and background enrichment
 
-With TMDB selected for automatic downloads, identification begins when a new
-torrent supplies enough filename information; video completion is not a
-prerequisite. Process only recognizable video candidates for movie/TV identification; other
-files retain ordinary filename search without provider requests. Reuse common
-series identification for a season pack and fetch episode-specific information
-only for represented episodes, rather than importing an entire series catalogue.
-Fetch searchable cast and synopsis during enrichment, not only when the details
-pane opens, so an actor or subject search can find an unselected file. Do not
-retrieve artwork, trailers or unrelated credits as part of it. Recommendations
+With TMDB selected for automatic downloads, a video is identified when the
+person displays it, as the [no-scan ruling](../library.md#purpose-and-experience)
+requires; video completion is not a prerequisite. Process only recognizable
+video candidates for movie/TV identification; other files retain ordinary
+filename search without provider requests. Reuse common series identification
+for a season pack and fetch episode-specific information only for represented
+episodes, rather than importing an entire series catalogue. The identification
+request also returns the searchable cast and synopsis, so an actor or subject
+search finds every file identified earlier, not only the one whose details pane
+is open. Do not retrieve artwork, trailers or unrelated credits as part of it.
+Recommendations
 arrive in the same request through `append_to_response`, so they add no
 request; Fetch metadata offers them as choices.
 

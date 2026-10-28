@@ -10,9 +10,6 @@
       <Grid
         ColumnSpacing="8"
         ToolTipService.ToolTip="{x:Bind Failure, Mode=OneWay}"
-        DataContextChanged="OnCellRow"
-        Loaded="OnCellLoaded"
-        Unloaded="OnCellUnloaded"
       >
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="Auto" />
@@ -45,9 +42,6 @@
       <Grid
         ColumnSpacing="8"
         ToolTipService.ToolTip="{x:Bind Failure, Mode=OneWay}"
-        DataContextChanged="OnCellRow"
-        Loaded="OnCellLoaded"
-        Unloaded="OnCellUnloaded"
       >
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="Auto" />

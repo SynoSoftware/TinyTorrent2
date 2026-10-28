@@ -70,7 +70,9 @@ struct Progress
     // They change while `done` may not, and the stall rule counts them.
     std::atomic<std::uint64_t> compared{0};
     // Set by the worker once libtorrent released the files and their
-    // placement begins, which starts the engine's stall clock.
+    // placement begins, which starts the engine's stall clock. The engine
+    // clears it when a move's copy ends, so the move's later phases are not
+    // timed.
     std::atomic<bool> placing{false};
     // Set by the engine to cancel the placement in progress.
     std::atomic<MoveCancel> cancel{MoveCancel::None};

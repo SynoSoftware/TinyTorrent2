@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Syno.TableView;
@@ -14,14 +13,6 @@ public sealed partial class LibraryTable : UserControl
     internal Table? Table => _table;
     private LibraryConfiguration _configuration;
     private readonly Dictionary<LibraryConfiguration, double> _positions = [];
-
-    // The row each loaded title or name cell shows. Every row the table
-    // realizes has one, because each configuration's table cannot hide that
-    // column. The table realizes the visible rows and a quarter page around
-    // them. The cell of a hidden column unloads, but a container the list
-    // keeps after a scroll holds its old row until the list reuses it.
-    private readonly Dictionary<FrameworkElement, LibraryRow> _cells = [];
-    private bool _sharing;
     internal Dictionary<LibraryConfiguration, ColumnLayout> Layouts { get; } = [];
     internal event EventHandler<ItemContextRequestedEventArgs>? ItemContextRequested;
 
@@ -118,49 +109,6 @@ public sealed partial class LibraryTable : UserControl
             if (_positions.TryGetValue(_configuration, out var position))
                 table.ScrollTo(position);
         }
-    }
-
-    private void OnCellRow(FrameworkElement cell, DataContextChangedEventArgs args)
-    {
-        if (cell.IsLoaded)
-            Track(cell);
-    }
-
-    private void OnCellLoaded(object sender, RoutedEventArgs args) => Track((FrameworkElement)sender);
-
-    private void OnCellUnloaded(object sender, RoutedEventArgs args)
-    {
-        var cell = (FrameworkElement)sender;
-        // A late Unloaded can arrive for a cell already loaded again.
-        if (cell.IsLoaded)
-            return;
-        _cells.Remove(cell);
-        ShareCells();
-    }
-
-    private void Track(FrameworkElement cell)
-    {
-        if (cell.DataContext is LibraryRow row)
-            _cells[cell] = row;
-        else
-            _cells.Remove(cell);
-        ShareCells();
-    }
-
-    private void ShareCells()
-    {
-        if (_sharing)
-            return;
-        _sharing = true;
-        // One update for all the cells that a scroll or a layout pass changes.
-        DispatcherQueue.TryEnqueue(
-            DispatcherQueuePriority.Low,
-            () =>
-            {
-                _sharing = false;
-                _model.SetDisplayed(_cells.Values.Select(shown => shown.Entry.EntryId).ToHashSet());
-            }
-        );
     }
 
     private void Create()
@@ -288,6 +236,13 @@ public sealed partial class LibraryTable : UserControl
         {
             if (ReferenceEquals(sender, _table))
                 _model.Select(selection);
+        };
+        table.RealizedItemsChanged += (sender, rows) =>
+        {
+            if (ReferenceEquals(sender, _table))
+                _model.SetDisplayed(
+                    rows.Cast<LibraryRow>().Select(row => row.Entry.EntryId).ToHashSet()
+                );
         };
         table.ItemInvoked += (_, _) => _model.Properties.Execute(null);
         table.ItemContextRequested += (_, args) => ItemContextRequested?.Invoke(this, args);

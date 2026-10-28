@@ -2,6 +2,7 @@
 #include <libtorrent/aux_/path.hpp>
 #include <algorithm>
 #include <cwctype>
+#include <iterator>
 
 // Which drives are in use is worked out again on every pass from the jobs
 // that run, and never stored as a loan that a job must give back: a check or
@@ -51,49 +52,49 @@ void Engine::State::AddRoots(Drives& drives, std::vector<std::string> const& fol
 void Engine::State::StopStalledJobs()
 {
     auto now = std::chrono::steady_clock::now();
-    // Only the placement is timed, not the wait for libtorrent to release
-    // the files. A copy that stalls is cancelled, and the move fails as after
-    // any failed copy.
-    for (auto& moving : moves)
+    // A root whose probe has not returned does not answer, so the job waits
+    // for that root: its location notice counts it, and the end of the
+    // Windows call decides by Reach's rule. Interrupting it would make a
+    // root that does not answer look like a failure of the work.
+    auto unanswered = [this](FileWork::Job const& job)
     {
-        auto const& progress = moving.progress;
-        if (moving.phase != MovePhase::Copying || !progress || !progress->placing)
+        auto touched = job.Touched();
+        return std::any_of(touched.begin(), touched.end(), [this](auto const& folder)
         {
-            moving.pulse.reset();
-            continue;
+            auto probe = rootProbes.find(NoticeKey(folder));
+            return probe != rootProbes.end() && probe->second.pending;
+        });
+    };
+    // Only a placement is timed, not the wait for libtorrent to release the
+    // files. A move's copy that stalls is cancelled, and the move fails as
+    // after any failed copy; a give-back that stalls fails as after any
+    // error.
+    fileWork.Each([now, &unanswered](FileWork::Job& job)
+    {
+        auto const& progress = job.progress;
+        if (job.Phase() != JobPhase::Running || !progress || !progress->placing)
+        {
+            job.pulse.reset();
+            return;
         }
         auto done = progress->done.load() + progress->compared.load();
-        if (!moving.pulse || done != moving.pulse->done)
+        if (!job.pulse || done != job.pulse->done)
         {
-            moving.pulse = Pulse{done, now};
+            job.pulse = Pulse{done, now};
+            return;
         }
-        else if (now - moving.pulse->changed >= stall)
-        {
-            // Undoing the copy gets its own 2 minutes before the next
-            // interruption, so a slow deletion of the copies is not cut short,
-            // and an undo that stalls too is interrupted again.
-            moving.pulse = Pulse{done, now};
-            auto none = MoveCancel::None;
-            progress->cancel.compare_exchange_strong(none, MoveCancel::Undo);
-            // A cancel that Exit already made keeps the copies.
-            if (progress->cancel == MoveCancel::Undo)
-                moving.worker->Interrupt();
-        }
-    }
-    // An abandoned move that stalls fails, and its marker stays.
-    for (auto& abandonment : abandonments)
-    {
-        if (!abandonment.worker)
-            continue;
-        auto done = abandonment.done->load();
-        if (!abandonment.pulse || done != abandonment.pulse->done)
-            abandonment.pulse = Pulse{done, now};
-        else if (now - abandonment.pulse->changed >= stall)
-        {
-            abandonment.pulse = Pulse{done, now};
-            abandonment.worker->Interrupt();
-        }
-    }
+        if (now - job.pulse->changed < stall || unanswered(job))
+            return;
+        // Undoing a copy gets its own 2 minutes before the next interruption,
+        // so a slow deletion of the copies is not cut short, and an undo that
+        // stalls too is interrupted again.
+        job.pulse = Pulse{done, now};
+        auto none = MoveCancel::None;
+        progress->cancel.compare_exchange_strong(none, MoveCancel::Undo);
+        // A cancel that Exit already made keeps the copies.
+        if (progress->cancel == MoveCancel::Undo)
+            job.worker->Interrupt();
+    });
     // While a stalled check's reads remain, the other checks on its drive or
     // server cannot progress, so only the check that stalled first there gives
     // up.
@@ -216,6 +217,9 @@ void Engine::State::AssignDrives()
     {
         auto const& job = jobs[index];
         auto const& outcome = outcomes[index];
+        // Its drives are kept from the later jobs of this pass.
+        if (job.giveBack)
+            continue;
         if (job.destination)
         {
             if (!outcome.error)
@@ -256,24 +260,26 @@ void Engine::State::AssignDrives()
 Engine::State::Claims Engine::State::DrivesInUse()
 {
     Claims claims;
-    for (auto const& moving : moves)
+    // A move keeps its drives until it ends, and a give-back while a try
+    // runs. A job held inside a Windows call on a root that does not answer
+    // touches no other drive until that call returns, so it keeps only the
+    // drives of that root, and checks on its other drives can run.
+    auto now = std::chrono::steady_clock::now();
+    fileWork.Each([this, now, &claims](FileWork::Job const& job)
     {
-        // A move keeps its source drives until it ends, also while it deletes
-        // the sources after its new folder is saved.
-        auto folders = moving.sourceFolders;
-        folders.push_back(moving.destination);
-        auto holder = moving.ids.empty() ? std::string() : moving.ids.at(std::min(moving.current, moving.ids.size() - 1));
-        if (auto used = FindDrives(folders))
-            Reserve(claims, *used, {holder});
-    }
-    for (auto const& abandonment : abandonments)
-    {
-        auto torrent = FindWorking(abandonment.torrentId);
-        if (!abandonment.worker || !torrent || !torrent->facts.marker)
-            continue;
-        if (auto used = FindDrives(Folders({abandonment.torrentId}, torrent->facts.marker->destination)))
-            Reserve(claims, *used, {abandonment.torrentId});
-    }
+        bool turns = job.kind == WorkKind::Move || job.kind == WorkKind::GiveBack;
+        if (!turns || job.Phase() != JobPhase::Running || job.uses.empty())
+            return;
+        auto touched = job.Touched();
+        std::vector<std::string> hung;
+        std::copy_if(touched.begin(), touched.end(), std::back_inserter(hung), [this, now](auto const& folder)
+        {
+            auto probe = rootProbes.find(NoticeKey(folder));
+            return probe != rootProbes.end() && probe->second.Hangs(now);
+        });
+        if (auto used = FindDrives(hung.empty() ? job.Folders() : hung))
+            Reserve(claims, *used, {job.uses.front().torrentId});
+    });
     // Pause all stops every check, so their drives are free while it lasts,
     // once libtorrent has no read left for them. The running checks claim
     // first, so a waiting row names the check that runs, not one that still
@@ -312,13 +318,14 @@ std::vector<Outcome> Engine::State::ShareDrives(std::vector<Job> const& jobs, Cl
     std::vector<Outcome> outcomes;
     for (auto const& job : jobs)
     {
-        auto folders = Folders(job.ids, job.destination);
+        bool check = !job.destination && !job.giveBack;
+        auto folders = job.giveBack ? job.giveBack->Folders() : Folders(job.ids, job.destination);
         auto needed = FindDrives(folders);
         // A check does not start behind a stalled check's reads on its drive
         // letter or server.
-        bool behindStalled = !job.destination && std::any_of(folders.begin(), folders.end(),
+        bool behindStalled = check && std::any_of(folders.begin(), folders.end(),
             [&stalled](auto const& folder) { return stalled.contains(RootOf(folder)); });
-        if (needed && !job.destination)
+        if (needed && check)
             AddRoots(*needed, folders);
         if (!needed || Blocked(*needed, claims, job.ids) || behindStalled)
         {
@@ -327,7 +334,7 @@ std::vector<Outcome> Engine::State::ShareDrives(std::vector<Job> const& jobs, Cl
         }
         auto ready = job.destination ? FilesReady(job.ids, *job.destination) : Outcome{};
         if (!ready.error)
-            Reserve(claims, *needed, {job.ids.front(), !job.destination});
+            Reserve(claims, *needed, {job.ids.front(), check});
         outcomes.push_back(std::move(ready));
     }
     return outcomes;
@@ -379,17 +386,19 @@ std::string Engine::State::RootOf(std::string const& folder)
     return lt::storage_root_key(folder);
 }
 
-std::set<std::string> Engine::State::RootsOf(std::vector<std::filesystem::path> const& paths)
-{
-    std::set<std::string> roots;
-    for (auto const& path : paths)
-        roots.insert(RootOf(Utf8(path.wstring())));
-    return roots;
-}
-
 Store& Engine::State::VolumeWorker(std::string const& folder)
 {
     auto& worker = volumes[RootOf(folder)];
+    if (!worker)
+        worker = std::make_unique<Store>(wake);
+    return *worker;
+}
+
+Store& Engine::State::AdditionWorker(std::string const& folder)
+{
+    // The prefix keeps it apart from the root's volume worker, and the
+    // drains and Exit that read `volumes` cover it.
+    auto& worker = volumes["add " + RootOf(folder)];
     if (!worker)
         worker = std::make_unique<Store>(wake);
     return *worker;
@@ -428,6 +437,22 @@ std::vector<Engine::State::Job> Engine::State::WaitingJobs() const
     }
     std::erase_if(moving, [](Job const& job) { return job.ids.empty(); });
     jobs.insert(jobs.end(), std::make_move_iterator(moving.begin()), std::make_move_iterator(moving.end()));
+    fileWork.Each([this, &jobs](FileWork::Job const& work)
+    {
+        if (work.kind != WorkKind::GiveBack || work.turn == 0 || work.Phase() != JobPhase::Queued ||
+            work.uses.empty())
+            return;
+        auto torrent = torrents.find(work.uses.front().torrentId);
+        if (torrent == torrents.end() || !GiveBackReady(torrent->second))
+            return;
+        Job waiting{.turn = work.turn, .giveBack = &work};
+        for (auto const& use : work.uses)
+        {
+            if (!Contains(waiting.ids, use.torrentId))
+                waiting.ids.push_back(use.torrentId);
+        }
+        jobs.push_back(std::move(waiting));
+    });
     std::sort(jobs.begin(), jobs.end(), Before);
     return jobs;
 }
@@ -447,6 +472,21 @@ std::vector<Engine::State::Job> Engine::State::WaitingMoves() const
             group->ids.push_back(id);
     }
     return jobs;
+}
+
+bool Engine::State::GetsDrives(FileWork::Job const& job)
+{
+    // The give-back gets its drives only when no job with an earlier turn
+    // takes them, by the rule that shares them among all waiting jobs.
+    auto jobs = WaitingJobs();
+    auto claims = DrivesInUse();
+    auto outcomes = ShareDrives(jobs, claims);
+    for (std::size_t index = 0; index < jobs.size(); ++index)
+    {
+        if (jobs[index].giveBack == &job)
+            return !outcomes[index].error;
+    }
+    return false;
 }
 
 bool Engine::State::DrivesFree(std::vector<std::string> const& ids, std::string const& destination, bool waited)

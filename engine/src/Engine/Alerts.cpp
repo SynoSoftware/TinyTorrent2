@@ -19,6 +19,11 @@ std::string Code(lt::error_code const& error)
 }
 }
 
+bool Engine::State::RootProbe::Hangs(std::chrono::steady_clock::time_point now) const
+{
+    return pending && at && now - *at >= noticeDelay;
+}
+
 std::optional<std::string> Engine::State::NoticeRoot(std::string const& location)
 {
     auto folder = Wide(location);
@@ -347,12 +352,12 @@ void Engine::State::UpdateProblems()
         if (stopped->code != cause.Code())
             stopped->code.clear();
     };
-    // A root whose probe has not returned for noticeDelay does not answer.
-    // The torrents under it wait for it, whatever their own work waits in.
+    // The torrents under a root that does not answer wait for it, whatever
+    // their own work waits in.
     std::set<std::string> hung;
     for (auto const& [key, probe] : rootProbes)
     {
-        if (probe.pending && now - *probe.at >= noticeDelay)
+        if (probe.Hangs(now))
             hung.insert(key);
     }
     for (auto& [id, torrent] : torrents)
@@ -383,27 +388,30 @@ void Engine::State::UpdateProblems()
         auto cause = absent ? *torrent.control.Cause() : Problem{ProblemKind::DownloadPathUnavailable};
         locate(key, *root, cause, id);
     }
-    // The file work whose root did not answer waits for it, and so does file
-    // work that runs on a hung root. Each counts its torrents there, removed
-    // ones included.
-    EachRootWait([&locate, &hung](std::optional<std::string>& unanswered, std::vector<std::string> const& running,
-        std::string const& id)
+    // File work waits for the root that did not answer, or for a hung root
+    // that one of its folders lies under, unless it waits for the person.
+    // Under each such root it counts only the torrents whose folders lie
+    // there, removed ones included.
+    fileWork.Each([&locate, &hung](FileWork::Job const& job)
     {
-        if (unanswered)
-            locate(NoticeKey(*unanswered), NoticeRoot(*unanswered).value_or(*unanswered),
-                Problem{ProblemKind::DownloadPathUnavailable}, id);
-        for (auto const& folder : running)
+        if (job.Phase() == JobPhase::Failed)
+            return;
+        auto awaited = job.Phase() == JobPhase::Unanswered ? std::optional(NoticeKey(job.Unanswered())) :
+            std::nullopt;
+        for (auto const& use : job.uses)
         {
-            if (auto key = NoticeKey(folder); hung.contains(key))
-                locate(key, NoticeRoot(folder).value_or(folder), Problem{ProblemKind::DownloadPathUnavailable}, id);
+            auto key = NoticeKey(use.folder);
+            if (awaited ? key == *awaited : hung.contains(key))
+                locate(key, NoticeRoot(use.folder).value_or(use.folder), Problem{ProblemKind::DownloadPathUnavailable},
+                    use.torrentId);
         }
     });
     // A removed torrent's give-back has no row, so its failure waits for the
     // Retry of the stopped notice.
     for (auto const& running : returning)
     {
-        if (running.tries.failure)
-            stop(running.task.name, *running.tries.failure, "", Utf8(running.task.root.wstring()));
+        if (auto const& failure = running.job->Failure())
+            stop(running.task.name, *failure, "", Utf8(running.task.root.wstring()));
     }
     for (auto& [key, entry] : current)
     {

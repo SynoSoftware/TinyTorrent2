@@ -375,6 +375,8 @@
                                             screen at the default, 36 at one viewport. Every
                                             realized row is bound to its item and pays for each
                                             update the source sends, whether it is on screen or not.
+                                            RealizedItems reports these rows, so a host that loads
+                                            data for them loads it for this margin too.
                                         -->
                     <!--
                                             KeepScrollOffset: a reorder moves rows through a fixed

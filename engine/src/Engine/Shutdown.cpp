@@ -82,12 +82,12 @@ void Engine::State::SaveDocument(std::function<void()> saved)
 
 void Engine::State::CancelFileWork()
 {
-    for (auto const& moving : moves)
+    fileWork.Each([](FileWork::Job const& job)
     {
         auto none = MoveCancel::None;
-        if (moving.progress)
-            moving.progress->cancel.compare_exchange_strong(none, MoveCancel::Keep);
-    }
+        if (job.progress)
+            job.progress->cancel.compare_exchange_strong(none, MoveCancel::Keep);
+    });
     exitStop.request_stop();
 }
 
@@ -161,10 +161,17 @@ void Engine::State::ContinueShutdown()
     {
         return;
     }
-    // A move has stopped once its worker is idle, or once its copy waits,
-    // parked, for the process to end.
-    auto stopped = [](Move const& moving)
-        { return moving.worker->IsIdle() || (moving.progress && moving.progress->parked); };
+    // File work on its own worker has stopped once the worker is idle, or
+    // once a move's copy waits, parked, for the process to end.
+    auto working = [this]
+    {
+        bool runs = false;
+        fileWork.Each([&runs](FileWork::Job const& job)
+        {
+            runs = runs || (job.worker && !job.worker->IsIdle() && !(job.progress && job.progress->parked));
+        });
+        return runs;
+    };
     auto now = std::chrono::steady_clock::now();
     if (!phaseStarted)
     {
@@ -174,8 +181,7 @@ void Engine::State::ContinueShutdown()
     bool expired = waited >= phaseTimeout;
     if (shutdownPhase == ShutdownPhase::Draining)
     {
-        bool stopping = !std::all_of(moves.begin(), moves.end(), stopped);
-        if (!expired && (!additions.empty() || stopping))
+        if (!expired && (!additions.empty() || working()))
         {
             return;
         }
@@ -288,13 +294,11 @@ void Engine::State::ContinueShutdown()
     if (shutdownPhase == ShutdownPhase::Ending)
     {
         // A parked copy waits for the process to end, so nothing waits for it.
-        for (auto const& moving : moves)
+        fileWork.Each([](FileWork::Job const& job)
         {
-            if (moving.progress && moving.progress->parked)
-            {
-                moving.worker->Detach();
-            }
-        }
+            if (job.worker && job.progress && job.progress->parked)
+                job.worker->Detach();
+        });
         if (!store.IsIdle() || !log.IsFlushed())
         {
             return;
@@ -304,13 +308,7 @@ void Engine::State::ContinueShutdown()
         // teardown also waits for a stalled check's reads. The file work
         // stops between files, so Exit gives it a moment, and otherwise ends
         // without the teardown: the saved tasks and markers hold that work.
-        auto abandoned = [](Abandonment const& abandonment)
-            { return !abandonment.worker || abandonment.worker->IsIdle(); };
-        auto returned = [](Returning const& running) { return !running.worker || running.worker->IsIdle(); };
-        bool runs = !std::all_of(moves.begin(), moves.end(), stopped) ||
-            !std::all_of(abandonments.begin(), abandonments.end(), abandoned) ||
-            !std::all_of(returning.begin(), returning.end(), returned) ||
-            !sources.IsIdle() ||
+        bool runs = working() || !sources.IsIdle() ||
             std::any_of(volumes.begin(), volumes.end(), [](auto const& entry) { return !entry.second->IsIdle(); }) ||
             std::any_of(rootProbes.begin(), rootProbes.end(),
                 [](auto const& entry) { return !entry.second.worker->IsIdle(); });

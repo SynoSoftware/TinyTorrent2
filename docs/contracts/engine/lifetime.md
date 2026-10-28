@@ -370,10 +370,10 @@ remains:
 - A mark of the web stops before it writes. A file that finishes from the
   start of Exit on is not marked until the next start.
 
-Nothing before the final save waits on a drive. The moves and additions get 2
-seconds to stop, and then the proofs of the copies are saved. An addition
-whose disk work has not ended joins the list without its names and stays
-paused, and the next start chooses them: its names are chosen on the drive's
+Nothing before the final save waits on a drive. The moves, give-backs and
+additions get 2 seconds to stop, and then the proofs of the copies are saved.
+An addition whose disk work has not ended joins the list without its names and
+stays paused, and the next start chooses them: its names are chosen on the drive's
 worker, its new folder and renames are made on libtorrent's disk threads, and
 a share that does not answer can hold either. A reload that has not yet
 replaced its torrent's handle stops: once Exit starts, its end leaves the old

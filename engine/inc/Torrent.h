@@ -143,10 +143,10 @@ struct WaitingMove
 {
     std::string destination;
     std::uint64_t turn = 0;
-    // Why the move waits, which the row and a toast name. Another torrent
-    // whose folder overlaps the destination still acquires its metadata. Or
-    // the give-back of the torrent's cut move, which the move waits for, did
-    // not succeed.
+    // Why the move waits, which the row and a toast name: another torrent
+    // whose folder overlaps the destination still acquires its metadata, or
+    // the give-back of the torrent's cut move, which the move waits for,
+    // failed.
     std::optional<Problem> refusal;
     // The engine's own move of a finished torrent to its final folder, whose
     // failure waits for the minute check instead of the person.
@@ -260,7 +260,7 @@ class Control
 public:
     // Where a failure stands. Both failures climb one ladder: one automatic
     // continue at once, then a stop that the minute check continues once,
-    // then the person.
+    // then the person. A failed final-folder move enters at the stop.
     struct Ladder
     {
         FailureStage stage = FailureStage::Recovering;

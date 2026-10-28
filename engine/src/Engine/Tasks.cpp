@@ -301,9 +301,12 @@ std::vector<Engine::State::Task> Engine::State::Tasks() const
     // holds the changes queue from its preparation to its end.
     for (auto const& deletion : deletions)
     {
-        if (deletion.mode)
-            tasks.push_back({Task::Deletion{deletion.ids, *deletion.mode, deletion.files, deletion.roots,
-                deletion.names}});
+        if (!deletion.mode)
+            continue;
+        Task::Deletion task{deletion.ids, *deletion.mode, {}, deletion.roots, deletion.names, deletion.cleans};
+        for (auto const& [root, part] : deletion.parts)
+            task.files.insert(task.files.end(), part.files.begin(), part.files.end());
+        tasks.push_back({std::move(task)});
     }
     if (!removed.empty())
     {
@@ -385,9 +388,10 @@ bool Engine::State::RecordCopies()
     std::vector<std::pair<std::string, Facts::Marker::Copy>> proofs;
     for (auto const& moving : moves)
     {
-        if (!moving.progress || moving.current >= moving.ids.size())
+        auto const& progress = moving.job->progress;
+        if (!progress || moving.current >= moving.ids.size())
             continue;
-        auto proof = moving.progress->Proven();
+        auto proof = progress->Proven();
         auto const& id = moving.ids[moving.current];
         auto torrent = torrents.find(id);
         if (!proof || torrent == torrents.end() || !torrent->second.facts.marker)
@@ -591,22 +595,9 @@ void Engine::State::ContinueTasks(std::vector<Task> const& tasks)
                 found->second.needsRecheck = true;
         }
         else if (auto returned = std::get_if<Task::Return>(&task.work))
-            returning.push_back({*returned});
+            AddGiveBack(*returned);
         else
-        {
-            auto const& deleting = std::get<Task::Deletion>(task.work);
-            Deletion deletion;
-            deletion.ids = deleting.ids;
-            deletion.mode = deleting.mode;
-            deletion.holds = deleting.files;
-            std::sort(deletion.holds.begin(), deletion.holds.end(), PathBefore);
-            deletion.files = deleting.files;
-            deletion.roots = deleting.roots;
-            deletion.names = deleting.names;
-            deletion.phase = DeletionPhase::Waiting;
-            deletion.rootKeys = RootsOf(deletion.files);
-            deletions.push_back(std::move(deletion));
-        }
+            AddDeletion(std::get<Task::Deletion>(task.work));
     }
     ContinueDeletion();
 }
@@ -723,7 +714,12 @@ void Engine::State::JoinAbandonments(Torrent& torrent)
 {
     if (!Abandoning(torrent.torrentId))
     {
-        abandonments.push_back({torrent.torrentId});
+        std::vector<FileWork::Use> uses;
+        if (auto const& marker = torrent.facts.marker)
+            uses = {{marker->destination, torrent.torrentId}, {torrent.facts.savePath, torrent.torrentId}};
+        auto job = fileWork.Start(WorkKind::GiveBack, std::move(uses));
+        job->turn = ++turns;
+        abandonments.push_back({torrent.torrentId, std::move(job)});
     }
     // A rename that still runs keeps the files, and EndRename passes the
     // path work on when it ends.
@@ -748,7 +744,8 @@ void Engine::State::AbandonMoves()
     };
     for (auto abandonment = abandonments.begin(); abandonment != abandonments.end();)
     {
-        if (abandonment->worker)
+        auto const& job = *abandonment->job;
+        if (job.Phase() == JobPhase::Running)
         {
             ++abandonment;
             continue;
@@ -767,14 +764,13 @@ void Engine::State::AbandonMoves()
         // While its give-back waits for its root or for the person, the
         // torrent shows Moving, unless the person's waiting Move must show
         // why it does not start.
-        if (abandonment->tries.Waits())
+        if (job.Phase() != JobPhase::Queued)
         {
             if (torrent.waitingMove)
             {
                 release(torrent);
-                auto const& tries = abandonment->tries;
-                auto refusal = tries.failure ? *tries.failure :
-                    Problem{ProblemKind::DownloadPathUnavailable, *tries.unanswered};
+                auto refusal = job.Failure() ? *job.Failure() :
+                    Problem{ProblemKind::DownloadPathUnavailable, job.Unanswered()};
                 if (torrent.waitingMove->refusal != refusal)
                 {
                     torrent.waitingMove->refusal = std::move(refusal);
@@ -784,6 +780,13 @@ void Engine::State::AbandonMoves()
             ++abandonment;
             continue;
         }
+        // After a Retry the give-back waits again, so its failure no longer
+        // explains the waiting Move.
+        if (torrent.waitingMove && torrent.waitingMove->refusal)
+        {
+            torrent.waitingMove->refusal.reset();
+            Invalidate(torrent.torrentId);
+        }
         if (!torrent.pathWork)
             JoinAbandonments(torrent);
         if (torrent.pathWork != PathWork::Abandon)
@@ -792,15 +795,10 @@ void Engine::State::AbandonMoves()
             continue;
         }
         auto const& marker = torrent.facts.marker;
-        if (marker)
+        if (marker && (!GiveBackReady(torrent) || !GetsDrives(job)))
         {
-            auto needed = FindDrives(Folders({torrent.torrentId}, marker->destination));
-            if (!NamesReady(marker->destination) || torrent.control.Busy() || torrent.NameWork() || !needed ||
-                Blocked(*needed, DrivesInUse(), {torrent.torrentId}))
-            {
-                ++abandonment;
-                continue;
-            }
+            ++abandonment;
+            continue;
         }
         if (!marker)
             release(torrent);
@@ -820,6 +818,13 @@ void Engine::State::AbandonMoves()
         }
         abandonment = abandonments.erase(abandonment);
     }
+}
+
+bool Engine::State::GiveBackReady(Torrent const& torrent) const
+{
+    auto const& marker = torrent.facts.marker;
+    return torrent.pathWork == PathWork::Abandon && marker && NamesReady(marker->destination) &&
+        !torrent.control.Busy() && !torrent.NameWork();
 }
 
 std::optional<Engine::State::Task::Return> Engine::State::GiveBackOf(Torrent const& torrent) const
@@ -864,46 +869,61 @@ std::vector<Payload::File> Engine::State::Returned(Torrent const& torrent) const
     return returned ? Unshared(std::move(returned->files), torrent.torrentId) : std::vector<Payload::File>{};
 }
 
-GivenBack Engine::State::GiveBack(std::vector<Payload::File> const& files, std::filesystem::path const& root,
-    std::stop_token stop, std::atomic<std::uint64_t>& done)
+std::expected<GivenBack, std::string> Engine::State::GiveBack(std::vector<Payload::File> const& files,
+    std::vector<std::string> const& folders, std::stop_token stop, std::atomic<std::uint64_t>& done)
 {
     // Nothing to give back waits for no root.
     if (files.empty())
         return GivenBack::Deleted;
-    if (!Reachable(root))
-        return GivenBack::Unreachable;
     auto present = [](auto const& path)
     {
         return std::filesystem::symlink_status(path).type() != std::filesystem::file_type::not_found;
     };
-    std::vector<std::filesystem::path> copies;
-    bool renamed = false;
-    for (auto const& file : files)
+    auto given = GivenBack::Deleted;
+    auto unanswered = Reach(folders, [&]
     {
-        if (stop.stop_requested())
-            return GivenBack::Stopped;
-        ++done;
-        if (auto partial = Payload::Partial(file.destination); present(partial))
-            copies.push_back(partial);
-        if (!present(file.destination))
-            continue;
-        // Beside its source, only a complete copy is the move's.
-        if (present(file.source))
+        std::vector<std::filesystem::path> copies;
+        for (auto const& file : files)
         {
-            if (Payload::IsCopy(file))
-                copies.push_back(file.destination);
-            continue;
+            if (stop.stop_requested())
+            {
+                given = GivenBack::Stopped;
+                return;
+            }
+            ++done;
+            if (auto partial = Payload::Partial(file.destination); present(partial))
+                copies.push_back(partial);
+            if (!present(file.destination))
+                continue;
+            // Beside its source, only a complete copy is the move's.
+            if (present(file.source))
+            {
+                if (Payload::IsCopy(file))
+                    copies.push_back(file.destination);
+                continue;
+            }
+            std::filesystem::create_directories(file.source.parent_path());
+            if (!MoveFileExW(file.destination.c_str(), file.source.c_str(), 0))
+                throw std::system_error(static_cast<int>(GetLastError()), std::system_category(),
+                    Utf8(file.destination.wstring()));
+            given = GivenBack::Renamed;
         }
-        std::filesystem::create_directories(file.source.parent_path());
-        if (!MoveFileExW(file.destination.c_str(), file.source.c_str(), 0))
-            throw std::system_error(static_cast<int>(GetLastError()), std::system_category(),
-                Utf8(file.destination.wstring()));
-        renamed = true;
-    }
-    Erase(copies, DeletionMode::Permanent, {root}, stop);
-    if (stop.stop_requested())
-        return GivenBack::Stopped;
-    return renamed ? GivenBack::Renamed : GivenBack::Deleted;
+        Erase(copies, DeletionMode::Permanent, {FullPath(Wide(folders.front()))}, stop);
+        if (stop.stop_requested())
+            given = GivenBack::Stopped;
+    });
+    if (unanswered)
+        return std::unexpected(std::move(*unanswered));
+    return given;
+}
+
+void Engine::State::AddGiveBack(Task::Return task)
+{
+    std::vector<FileWork::Use> uses{{Utf8(task.root.wstring()), task.torrentId}};
+    if (!task.files.empty())
+        uses.push_back({Utf8(task.files.front().source.parent_path().wstring()), task.torrentId});
+    auto job = fileWork.Start(WorkKind::GiveBack, std::move(uses));
+    returning.push_back({std::move(task), std::move(job)});
 }
 
 void Engine::State::GiveBackRemoved()
@@ -913,25 +933,28 @@ void Engine::State::GiveBackRemoved()
     for (auto running = returning.begin(); running != returning.end(); ++running)
     {
         auto const& task = running->task;
-        auto destination = Utf8(task.root.wstring());
+        auto& job = *running->job;
         auto torrent = FindWorking(task.torrentId);
         // It waits while a try runs, while its root does not answer or its
         // failure waits for the person, while the torrent's move or rename
-        // still runs, and until the torrents whose files can lie at the
-        // destination know their names, which say the files they keep.
-        if (running->worker || running->tries.Waits() || (torrent && torrent->FilesBusy()) ||
-            !NamesReady(destination))
+        // still runs, until the torrents whose files can lie at the
+        // destination know their names, which say the files they keep. It
+        // takes no drive turn, because the deletion of the removed torrent's
+        // files waits for it and Delete files never waits for other work.
+        if (job.Phase() != JobPhase::Queued || (torrent && torrent->FilesBusy()) ||
+            !NamesReady(Utf8(task.root.wstring())))
             continue;
-        running->worker = std::make_shared<Store>(wake);
-        running->worker->Run([files = Unshared(task.files, task.torrentId), root = task.root,
-            stop = exitStop.get_token()]
+        job.Run();
+        job.worker = std::make_shared<Store>(wake);
+        job.progress = std::make_shared<Payload::Progress>();
+        job.worker->Run([files = Unshared(task.files, task.torrentId), folders = job.Folders(),
+            progress = job.progress, stop = exitStop.get_token()]
         {
-            std::atomic<std::uint64_t> done{0};
-            return GiveBack(files, root, stop, done);
-        }, [this, running, destination](std::expected<GivenBack, StorageOutcome> given)
+            progress->placing = true;
+            return GiveBack(files, folders, stop, progress->done);
+        }, [this, running](GiveBackTry given)
         {
-            running->worker.reset();
-            auto end = EndTry(running->tries, given, destination);
+            auto end = EndTry(*running->job, running->retried, given);
             if (end == GiveBackEnd::Again || end == GiveBackEnd::Failed)
                 log.Write("move", running->task.torrentId, given ? "return_unreachable" : given.error().detail);
             // The record outlives every other end: the deletion of the
@@ -949,19 +972,21 @@ void Engine::State::AbandonMove(Abandonment& abandonment, Torrent& torrent)
     auto const& marker = *torrent.facts.marker;
     // A staged move changed no file.
     auto files = marker.stage == MoveStage::Staged ? std::vector<Payload::File>{} : Returned(torrent);
-    abandonment.worker = std::make_shared<Store>(wake);
-    abandonment.done = std::make_shared<std::atomic<std::uint64_t>>(0);
-    auto run = [this, id = torrent.torrentId, worker = abandonment.worker, done = abandonment.done,
-        files = std::move(files), destination = marker.destination]
+    auto& job = *abandonment.job;
+    job.Run();
+    job.worker = std::make_shared<Store>(wake);
+    job.progress = std::make_shared<Payload::Progress>();
+    auto run = [this, id = torrent.torrentId, worker = job.worker, progress = job.progress,
+        files = std::move(files), folders = job.Folders()]
     {
-        worker->Run([this, handle = Working(id).handle, files, root = FullPath(Wide(destination)), done,
-            stop = exitStop.get_token()]
+        worker->Run([this, handle = Working(id).handle, files, folders, progress, stop = exitStop.get_token()]
         {
             ReleaseFiles({handle});
-            return GiveBack(files, root, stop, *done);
-        }, [this, id, destination](std::expected<GivenBack, StorageOutcome> given)
+            progress->placing = true;
+            return GiveBack(files, folders, stop, progress->done);
+        }, [this, id](GiveBackTry given)
         {
-            EndAbandonment(id, destination, std::move(given));
+            EndAbandonment(id, std::move(given));
         });
     };
     // The record of a give-back past Staged says that the torrent checks its
@@ -973,10 +998,10 @@ void Engine::State::AbandonMove(Abandonment& abandonment, Torrent& torrent)
         return;
     }
     // A save that fails ends the try as a give-back that fails does.
-    auto fail = [this, destination = marker.destination](std::string const& id, Outcome const& outcome)
+    auto fail = [this](std::string const& id, Outcome const& outcome)
     {
         log.Write("move", id, outcome.detail);
-        EndAbandonment(id, destination, std::unexpected(StorageOutcome{
+        EndAbandonment(id, std::unexpected(StorageOutcome{
             .failure = outcome.error == ErrorCode::Overloaded ? StorageFailure::Overloaded : StorageFailure::Failed,
             .detail = outcome.detail}));
     };
@@ -987,7 +1012,7 @@ void Engine::State::AbandonMove(Abandonment& abandonment, Torrent& torrent)
         auto found = std::find_if(abandonments.begin(), abandonments.end(),
             [&id](Abandonment const& entry) { return entry.torrentId == id; });
         if (found != abandonments.end())
-            found->worker.reset();
+            found->job->Queue();
     };
     if (!changes.Queue([this, id = torrent.torrentId, run, fail, removed]
     {
@@ -1010,20 +1035,16 @@ void Engine::State::AbandonMove(Abandonment& abandonment, Torrent& torrent)
         fail(torrent.torrentId, Outcome{ErrorCode::Overloaded});
 }
 
-void Engine::State::EndAbandonment(std::string const& id, std::string const& destination,
-    std::expected<GivenBack, StorageOutcome> given)
+void Engine::State::EndAbandonment(std::string const& id, GiveBackTry given)
 {
     auto abandonment = std::find_if(abandonments.begin(), abandonments.end(),
         [&id](Abandonment const& entry) { return entry.torrentId == id; });
     if (abandonment == abandonments.end())
         return;
-    auto end = EndTry(abandonment->tries, given, destination);
+    auto end = EndTry(*abandonment->job, abandonment->retried, given);
     // The marker says that the files go back, so the next start continues.
     if (end == GiveBackEnd::Stopped)
         return;
-    abandonment->worker.reset();
-    abandonment->done.reset();
-    abandonment->pulse.reset();
     auto torrent = FindWorking(id);
     bool listed = torrents.contains(id);
     // A listed torrent's give-back that runs again, or whose failure waits
@@ -1032,7 +1053,7 @@ void Engine::State::EndAbandonment(std::string const& id, std::string const& des
     if (torrent && listed && (end == GiveBackEnd::Again || (end == GiveBackEnd::Failed && torrent->waitingMove)))
     {
         log.Write("move", id, end == GiveBackEnd::Failed ? "give_back_failed" :
-            abandonment->tries.unanswered ? "abandon_unreachable" : "give_back_retry");
+            abandonment->job->Phase() == JobPhase::Unanswered ? "abandon_unreachable" : "give_back_retry");
         return;
     }
     abandonments.erase(abandonment);
@@ -1059,7 +1080,7 @@ void Engine::State::EndAbandonment(std::string const& id, std::string const& des
         }
     };
     // A torrent removed meanwhile left the saved list with its marker.
-    if (!changes.Queue([this, id, renamed = given && *given == GivenBack::Renamed, failure, settle]
+    if (!changes.Queue([this, id, renamed = given && *given && **given == GivenBack::Renamed, failure, settle]
     {
         if (!torrents.contains(id))
         {
@@ -1088,28 +1109,31 @@ void Engine::State::EndAbandonment(std::string const& id, std::string const& des
         settle(Problem{ProblemKind::StorageOverloaded});
 }
 
-GiveBackEnd Engine::State::EndTry(GiveBackTries& tries, std::expected<GivenBack, StorageOutcome> const& given,
-    std::string const& destination) const
+GiveBackEnd Engine::State::EndTry(FileWork::Job& job, bool& retried, GiveBackTry const& given)
 {
-    if (given && *given == GivenBack::Stopped)
+    // The job still runs until the next start continues it.
+    if (given && *given && **given == GivenBack::Stopped)
         return GiveBackEnd::Stopped;
     // A root that went away starts a new episode, with its own retry.
-    if (given && *given == GivenBack::Unreachable)
+    if (given && !*given)
     {
-        tries.unanswered = destination;
-        tries.retried = false;
+        job.Await(given->error());
+        retried = false;
         return GiveBackEnd::Again;
     }
+    job.Queue();
     if (given)
         return GiveBackEnd::Ended;
-    // A held file or a refused access is no matter of the root, so no probe
-    // answers it: one retry at once, and then the person decides.
-    if (!std::exchange(tries.retried, true))
+    // A held file or a refused access while every root answers is no matter
+    // of the root, so no probe answers it: one retry at once, and then the
+    // person decides.
+    if (!std::exchange(retried, true))
         return GiveBackEnd::Again;
     auto const& error = given.error();
-    tries.failure = error.cause ? Problem::From(error.cause) : Problem::From(error, ProblemKind::TorrentError);
-    if (tries.failure->detail.empty())
-        tries.failure->detail = error.detail;
+    auto failure = error.cause ? Problem::From(error.cause) : Problem::From(error, ProblemKind::TorrentError);
+    if (failure.detail.empty())
+        failure.detail = error.detail;
+    job.Fail(std::move(failure));
     return GiveBackEnd::Failed;
 }
 
@@ -1117,54 +1141,24 @@ void Engine::State::RetryGiveBack(std::string const& id)
 {
     for (auto& abandonment : abandonments)
     {
-        if (abandonment.torrentId == id)
-            abandonment.tries.failure.reset();
+        if (abandonment.torrentId == id && abandonment.job->Phase() == JobPhase::Failed)
+            abandonment.job->Queue();
     }
 }
 
 void Engine::State::RetryGiveBacks()
 {
     for (auto& running : returning)
-        running.tries.failure.reset();
+    {
+        if (running.job->Phase() == JobPhase::Failed)
+            running.job->Queue();
+    }
 }
 
 bool Engine::State::GiveBackFailed(std::string const& id) const
 {
     return std::any_of(abandonments.begin(), abandonments.end(), [&id](Abandonment const& abandonment)
-        { return abandonment.torrentId == id && abandonment.tries.failure; });
-}
-
-void Engine::State::EachRootWait(std::function<void(std::optional<std::string>& unanswered,
-    std::vector<std::string> const& running, std::string const& id)> const& visit)
-{
-    auto runs = [](std::shared_ptr<Store> const& worker) { return worker && !worker->IsIdle(); };
-    // A give-back reads its destination and renames into the save folder.
-    for (auto& abandonment : abandonments)
-    {
-        std::vector<std::string> folders;
-        auto torrent = FindWorking(abandonment.torrentId);
-        if (runs(abandonment.worker) && torrent && torrent->facts.marker)
-            folders = {torrent->facts.marker->destination, torrent->facts.savePath};
-        visit(abandonment.tries.unanswered, folders, abandonment.torrentId);
-    }
-    for (auto& entry : returning)
-    {
-        std::vector<std::string> folders;
-        if (runs(entry.worker) && !entry.task.files.empty())
-            folders = {Utf8(entry.task.root.wstring()), Utf8(entry.task.files.front().source.wstring())};
-        visit(entry.tries.unanswered, folders, entry.task.torrentId);
-    }
-    for (auto& deletion : deletions)
-    {
-        std::vector<std::string> folders;
-        if (deletion.phase == DeletionPhase::Deleting)
-        {
-            for (auto const& root : deletion.roots)
-                folders.push_back(Utf8(root.wstring()));
-        }
-        for (auto const& id : deletion.ids)
-            visit(deletion.unanswered, folders, id);
-    }
+        { return abandonment.torrentId == id && abandonment.job->Phase() == JobPhase::Failed; });
 }
 
 Json Engine::State::AskedCounts() const
@@ -1173,7 +1167,9 @@ Json Engine::State::AskedCounts() const
         return nullptr;
     std::size_t moves = 0;
     std::size_t checks = 0;
-    std::size_t deleted = 0;
+    // A torrent whose files and .torrent file both wait counts once.
+    std::set<std::string> deleting;
+    std::size_t unnamed = 0;
     for (auto const& task : asked)
     {
         if (auto move = std::get_if<Task::Move>(&task.work))
@@ -1181,8 +1177,12 @@ Json Engine::State::AskedCounts() const
         else if (std::holds_alternative<Task::Check>(task.work))
             ++checks;
         else if (auto deletion = std::get_if<Task::Deletion>(&task.work))
-            deleted += std::max<std::size_t>(1, deletion->ids.size());
+        {
+            deleting.insert(deletion->ids.begin(), deletion->ids.end());
+            unnamed += deletion->ids.empty();
+        }
     }
+    auto deleted = deleting.size() + unnamed;
     return {{"moves", moves}, {"checks", checks}, {"deletions", deleted}};
 }
 }

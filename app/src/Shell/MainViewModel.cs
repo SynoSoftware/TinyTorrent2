@@ -489,7 +489,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         // Commands refresh when the selection changes, not on every row
         // change, so the message bar's Retry reads no row to enable itself.
         // The bar shows only while the engine reports torrents that need it.
-        RetryAll = new RelayCommand(() => SendRetry(Torrents), () => CanEdit);
+        // It sends retry even when no row can retry, because a removed
+        // torrent's failed give-back has no row and every retry tries it again.
+        RetryAll = new RelayCommand(
+            () => Act("retry", [.. Torrents.Where(torrent => torrent.CanRetry)]),
+            () => CanEdit
+        );
         SwitchSequential = new RelayCommand(
             () => SetPieceOrder(PieceOrder.Sequential, Sequential != true),
             () => CanEditSelection
@@ -1107,15 +1112,19 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     // Runs again the torrents among these that the engine could not recover
     // by itself: a stopped torrent under its own Start, Stop or Force choice,
     // or a failed move.
-    internal Task SendRetry(IEnumerable<Torrent> torrents) =>
-        Act("retry", [.. torrents.Where(torrent => torrent.CanRetry)]);
+    internal Task SendRetry(IEnumerable<Torrent> torrents)
+    {
+        Torrent[] retrying = [.. torrents.Where(torrent => torrent.CanRetry)];
+        return retrying.Length > 0 ? Act("retry", retrying) : Task.CompletedTask;
+    }
 
-    private Task ActOnSelection(string command) => Act(command, [.. _selected]);
+    private Task ActOnSelection(string command) =>
+        _selected.Length > 0 ? Act(command, [.. _selected]) : Task.CompletedTask;
 
     // Sends the person's command for these torrents.
     private async Task Act(string command, Torrent[] torrents)
     {
-        if (!CanEdit || torrents.Length == 0)
+        if (!CanEdit)
             return;
         var torrentIds = torrents.Select(row => row.TorrentId).ToArray();
         try

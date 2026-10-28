@@ -13,6 +13,26 @@ constexpr auto rootProbe = std::chrono::minutes(1);
 
 // The files of one torrent that lost the data they held.
 using LostFiles = std::vector<lt::file_index_t>;
+
+// The bytes a file must hold for the complete pieces that lie wholly inside
+// it: from its start to the end of the last such piece, or 0 when none.
+std::int64_t InnerData(lt::file_storage const& layout, lt::file_index_t index, lt::typed_bitfield<lt::piece_index_t> const& have)
+{
+    auto const pieceLength = std::int64_t(layout.piece_length());
+    auto const start = layout.file_offset(index);
+    auto const end = start + layout.file_size(index);
+    auto first = (start + pieceLength - 1) / pieceLength;
+    // The torrent's last piece is shorter, so it ends inside the last file.
+    auto last = end == layout.total_size() ? std::int64_t(layout.num_pieces()) : end / pieceLength;
+    for (auto piece = last - 1; piece >= first; --piece)
+    {
+        if (piece < have.size() && have.get_bit(lt::piece_index_t(static_cast<int>(piece))))
+        {
+            return std::min(end, (piece + 1) * pieceLength) - start;
+        }
+    }
+    return 0;
+}
 }
 
 bool Engine::State::Retryable(lt::error_code const& error)
@@ -56,22 +76,27 @@ std::optional<Control::Failed> Engine::State::StatusFailure(Torrent const& torre
 std::vector<lt::file_index_t> Engine::State::LostData(lt::torrent_handle const& handle)
 {
     std::vector<lt::file_index_t> lost;
-    auto status = handle.status(lt::torrent_handle::query_save_path |
-        lt::torrent_handle::query_torrent_file | lt::torrent_handle::query_renamed_files);
+    auto status = handle.status(lt::torrent_handle::query_save_path | lt::torrent_handle::query_torrent_file |
+        lt::torrent_handle::query_renamed_files | lt::torrent_handle::query_pieces);
     auto metadata = status.torrent_file.lock();
     if (!metadata)
         return lost;
     auto const& layout = metadata->layout();
     auto progress = handle.file_progress(lt::torrent_handle::piece_granularity);
-    // A skipped file keeps the pieces it shares with its neighbours in the
-    // part file, not in its own file, and the torrent wants none of its own
-    // data.
     auto priorities = handle.get_file_priorities();
     for (auto index : layout.file_range())
     {
         auto item = static_cast<std::size_t>(static_cast<int>(index));
-        if (item >= progress.size() || progress[item] <= 0 || layout.pad_file_at(index) ||
-            (item < priorities.size() && priorities[item] == lt::dont_download))
+        if (item >= progress.size() || progress[item] <= 0 || layout.pad_file_at(index))
+            continue;
+        auto needed = progress[item];
+        // A skipped file can hold its data in the part file, which only
+        // libtorrent reads. A complete piece wholly inside the file was
+        // written while the file was wanted, so it is still in the file:
+        // libtorrent keeps writing to a file that exists when it is skipped.
+        if (item < priorities.size() && priorities[item] == lt::dont_download)
+            needed = InnerData(layout, index, status.pieces);
+        if (needed <= 0)
             continue;
         auto path = FullPath(Wide(status.renamed_files.file_path(layout, index, status.save_path)));
         WIN32_FILE_ATTRIBUTE_DATA data{};
@@ -83,7 +108,7 @@ std::vector<lt::file_index_t> Engine::State::LostData(lt::torrent_handle const& 
             continue;
         }
         auto size = (std::int64_t(data.nFileSizeHigh) << 32) | data.nFileSizeLow;
-        if (size < progress[item])
+        if (size < needed)
             lost.push_back(index);
     }
     return lost;
@@ -542,16 +567,19 @@ void Engine::State::ProbeRoots()
             wanted.insert(RootKey(Wide(*root)));
         }
     }
-    // File work whose root did not answer waits for that root's probe, and
-    // the roots of file work that runs are probed so that a job that hangs
-    // there shows, also when no listed torrent uses the root.
-    EachRootWait([&wanted](std::optional<std::string>& unanswered, std::vector<std::string> const& running,
-        std::string const&)
+    // File work whose root did not answer waits for that root's probe. The
+    // roots of other file work are probed too, because a job that hangs
+    // there never returns to say so, also when no listed torrent uses the
+    // root. Work that waits for the person waits for no root.
+    fileWork.Each([&wanted](FileWork::Job const& job)
     {
-        if (unanswered)
-            wanted.insert(NoticeKey(*unanswered));
-        for (auto const& folder : running)
-            wanted.insert(NoticeKey(folder));
+        if (job.Phase() == JobPhase::Unanswered)
+            wanted.insert(NoticeKey(job.Unanswered()));
+        else if (job.Phase() != JobPhase::Failed)
+        {
+            for (auto const& use : job.uses)
+                wanted.insert(NoticeKey(use.folder));
+        }
     });
     // A root whose probe has not returned stays, so its notice remains after
     // its torrents are held. A root probed within the last minute stays too,
@@ -595,12 +623,7 @@ void Engine::State::ProbeRoots()
             // waiting.
             if (!opened || !*opened)
                 return;
-            EachRootWait([&key](std::optional<std::string>& unanswered, std::vector<std::string> const&,
-                std::string const&)
-            {
-                if (unanswered && NoticeKey(*unanswered) == key)
-                    unanswered.reset();
-            });
+            fileWork.Opened(key);
         });
     }
 }

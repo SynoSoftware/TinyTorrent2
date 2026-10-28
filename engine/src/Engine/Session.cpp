@@ -832,21 +832,14 @@ void Engine::State::Tick()
     // of the batch still runs.
     auto failed = [this](std::exception const& error) { log.Write("engine", "", error.what()); };
     store.Drain(failed);
-    // A completion can end its move, which releases the move's worker, so
-    // the drain keeps every worker until it has finished.
+    // A completion can end its job, which releases the job's worker, so the
+    // drain keeps every worker until it has finished.
     std::vector<std::shared_ptr<Store>> workers;
-    for (auto const& moving : moves)
-        workers.push_back(moving.worker);
-    for (auto const& abandonment : abandonments)
+    fileWork.Each([&workers](FileWork::Job const& job)
     {
-        if (abandonment.worker)
-            workers.push_back(abandonment.worker);
-    }
-    for (auto const& running : returning)
-    {
-        if (running.worker)
-            workers.push_back(running.worker);
-    }
+        if (job.worker)
+            workers.push_back(job.worker);
+    });
     for (auto const& worker : workers)
         worker->Drain(failed);
     for (auto const& [root, worker] : volumes)

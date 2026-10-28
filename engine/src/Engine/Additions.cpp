@@ -121,9 +121,16 @@ void Engine::State::Add(Preview& preview, Addition::Choices choices, std::functi
         pending.handle.pause();
         pending.handle.move_storage(pending.facts.savePath, lt::move_flags_t::reset_save_path);
     }
+    else if (DeletingOrRenaming(RootOf(pending.facts.savePath)))
+    {
+        // PrepareAddition then saves it without names, which it chooses once
+        // that work ends.
+        pending.params.userdata = &pending;
+        session->async_add_torrent(pending.params);
+    }
     else
     {
-        VolumeWorker(pending.facts.savePath).Run([params = pending.params, appendsSuffix = pending.facts.appendsSuffix,
+        AdditionWorker(pending.facts.savePath).Run([params = pending.params, appendsSuffix = pending.facts.appendsSuffix,
             layout = pending.facts.layout]() mutable
         {
             PrepareNames(params, appendsSuffix, layout);
@@ -174,7 +181,7 @@ void Engine::State::PrepareAddition(std::string const& id, lt::torrent_handle ha
         SaveAddition(id, handle);
         return;
     }
-    VolumeWorker(addition.facts.savePath).Run([this, params = std::move(params), handle,
+    AdditionWorker(addition.facts.savePath).Run([this, params = std::move(params), handle,
         appendsSuffix = addition.facts.appendsSuffix, layout = addition.facts.layout]() mutable
     {
         ReleaseFiles({handle});

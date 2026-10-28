@@ -189,6 +189,10 @@ public sealed partial class Table : Control
         if (_surface is not null)
         {
             _surface.ItemsSource = _view;
+            _surface.ContainerContentChanging += OnRowsRealizing;
+            _surface.SizeChanged += OnRowsResized;
+            _surface.GotFocus += OnRowsFocus;
+            _surface.LostFocus += OnRowsFocus;
         }
 
         AttachInput();
@@ -203,6 +207,13 @@ public sealed partial class Table : Control
         LayoutUpdated -= OnFillLayout;
         if (_headerStrip is not null)
             _headerStrip.SizeChanged -= OnFillSizeChanged;
+        if (_surface is not null)
+        {
+            _surface.ContainerContentChanging -= OnRowsRealizing;
+            _surface.SizeChanged -= OnRowsResized;
+            _surface.GotFocus -= OnRowsFocus;
+            _surface.LostFocus -= OnRowsFocus;
+        }
 
         // A settle waiting to fire would rebuild a view whose template parts have just been taken
         // away, and would hold this table alive to do it.
@@ -222,6 +233,7 @@ public sealed partial class Table : Control
         }
 
         _detached = true;
+        QueueRealized();
         LayoutUpdated -= OnFillLayout;
         StopWatchingVisibility();
         _resizeDue?.Stop();

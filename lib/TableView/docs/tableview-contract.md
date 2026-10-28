@@ -248,6 +248,7 @@ public sealed class Table : Control
     public void ScrollIntoView(object item, IEnumerable<object> arrivals);
     public double VerticalOffset { get; }
     public void ScrollTo(double verticalOffset);
+    public IReadOnlyList<object> RealizedItems { get; }
     public void Fit(Column column);
     public void FitColumns();
     public void FillWidth();
@@ -258,6 +259,7 @@ public sealed class Table : Control
     public event EventHandler<ItemContextRequestedEventArgs> ItemContextRequested;
     public event EventHandler<ReorderRequestedEventArgs> ReorderRequested;
     public event EventHandler<LayoutChange> LayoutChanged;
+    public event EventHandler<IReadOnlyList<object>> RealizedItemsChanged;
 }
 
 public sealed class Schema<TRow> where TRow : class
@@ -407,6 +409,7 @@ The control deliberately has two extension mechanisms, with no overlap:
 | `ItemContextRequested` | host event | construct/show a domain menu | put domain menu logic in the table |
 | `ReorderRequested` | host event | request a domain reorder | mutate `ItemsSource` through `Table`; the host may update its own source after the event |
 | `LayoutChanged` | host event | debounce a persisted layout snapshot | write settings on every pointer movement |
+| `RealizedItemsChanged` | host event | load data only for the rows on screen | treat the list as the visible rows alone |
 
 Policy callbacks are called on the UI thread and MUST be pure, synchronous, and
 cheap. The table never calls them per render frame. A sort key is read
@@ -433,12 +436,22 @@ are immutable snapshots:
 | `ItemContextRequested` | `Item`, ordered `SelectedItems`, realized row `FrameworkElement Target`, nullable `Point Position` relative to it (`null` for a keyboard invocation) |
 | `ReorderRequested` | ascending numbered-order `Items`, nullable `Before` item, never one of `Items` |
 | `LayoutChanged` | one `LayoutChange`: `Sort`, `Move`, `Resize`, `Fit`, `Visibility`, or `Reset` |
+| `RealizedItemsChanged` | the new `RealizedItems`, in view order |
 
 `LayoutChanged` carries the change kind and nothing else. A host that wants the
 snapshot reads `Layout`, which is the same independent snapshot the event used
 to carry, so there is one way to obtain it rather than two.
 
 Assigning `Layout` is silent.
+
+`RealizedItems` lists the items whose rows the table realizes, in view order:
+the visible rows, about a quarter viewport above and below them, and the row
+that holds keyboard focus. The margin lets a short scroll show rows the host
+has already filled, and its size depends on the viewport, never on the row
+count. A container the list keeps from before a scroll does not count, because
+it no longer shows its row. The list is empty while the table is out of the
+tree. `RealizedItemsChanged` reports a change once for each layout pass that
+made one, after a scroll, a size change, a view change or a focus move.
 
 For `ReorderRequested`, `Items` contains participating items in ascending
 numbered order, independently of the display sort. `Before` identifies a

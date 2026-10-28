@@ -65,6 +65,90 @@ public sealed partial class Table
         return indices;
     }
 
+    /// <summary>Set while a refresh of <see cref="RealizedItems"/> waits on the queue.</summary>
+    private bool _realizing;
+
+    /// <summary>
+    /// The items whose rows the table realizes, in view order: the visible rows, about a quarter
+    /// viewport above and below them, and the row that holds keyboard focus. A host that loads
+    /// data only for rows on screen reads these. Empty while the table is out of the tree.
+    /// </summary>
+    public IReadOnlyList<object> RealizedItems { get; private set; } = Array.Empty<object>();
+
+    /// <summary>
+    /// Raised with the new <see cref="RealizedItems"/> after a scroll, a size change, a view
+    /// change or a focus move changed them, once for all the rows one layout pass realized.
+    /// </summary>
+    public event EventHandler<IReadOnlyList<object>>? RealizedItemsChanged;
+
+    private void OnRowsRealizing(ListViewBase sender, ContainerContentChangingEventArgs args) =>
+        QueueRealized();
+
+    private void OnRowsResized(object sender, SizeChangedEventArgs args) => QueueRealized();
+
+    private void OnRowsFocus(object sender, RoutedEventArgs args) => QueueRealized();
+
+    private void QueueRealized()
+    {
+        if (_realizing)
+        {
+            return;
+        }
+
+        _realizing = true;
+        // Low priority runs after the layout pass that moves the panel's cache range.
+        DispatcherQueue.TryEnqueue(
+            Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+            () =>
+            {
+                _realizing = false;
+                IReadOnlyList<object> items = ReadRealized();
+                if (items.SequenceEqual(RealizedItems, ReferenceEqualityComparer.Instance))
+                {
+                    return;
+                }
+
+                RealizedItems = items;
+                RealizedItemsChanged?.Invoke(this, items);
+            }
+        );
+    }
+
+    /// <summary>
+    /// Read from the panel's cache range, not its children as <see cref="RealizedIndices"/> is:
+    /// a container left from before a scroll keeps its old row without showing it. The list pins
+    /// the focused row's container outside that range, so that row is added.
+    /// </summary>
+    private IReadOnlyList<object> ReadRealized()
+    {
+        if (_detached || _surface?.ItemsPanelRoot is not ItemsStackPanel rows)
+        {
+            return Array.Empty<object>();
+        }
+
+        int first = rows.FirstCacheIndex;
+        int last = Math.Min(rows.LastCacheIndex, View.Count - 1);
+        List<object> items = new();
+        for (int index = Math.Max(first, 0); index <= last; index++)
+        {
+            items.Add(View[index]);
+        }
+
+        if (
+            RowSurfaceFocusState() != FocusState.Unfocused
+            && FocusManager.GetFocusedElement(XamlRoot) is ListViewItem focused
+        )
+        {
+            int pinned = _surface.IndexFromContainer(focused);
+            if (pinned >= 0 && pinned < View.Count && (pinned < first || pinned > last))
+            {
+                items.Insert(pinned < first ? 0 : items.Count, View[pinned]);
+            }
+        }
+
+        return items;
+    }
+
     private int IndexInView(object? item)
     {
         if (item is null)
@@ -207,6 +291,7 @@ public sealed partial class Table
         }
 
         ReconcileDrag();
+        QueueRealized();
 
         if (viewMoved)
         {

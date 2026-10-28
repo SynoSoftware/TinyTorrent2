@@ -233,18 +233,12 @@ bool Engine::State::FoldersOverlap(std::string const& left, std::string const& r
 
 bool Engine::State::FilesBusy(std::string const& root) const
 {
-    // A move uses its members' old folders and its destination until it ends.
-    return DeletingOrRenaming(root) || std::any_of(moves.begin(), moves.end(), [&root](Move const& moving)
-    {
-        return RootOf(moving.destination) == root || std::any_of(moving.sourceFolders.begin(),
-            moving.sourceFolders.end(), [&root](auto const& folder) { return RootOf(folder) == root; });
-    });
+    return renames.contains(root) || fileWork.Holds(root, false);
 }
 
 bool Engine::State::DeletingOrRenaming(std::string const& root) const
 {
-    return renames.contains(root) || std::any_of(deletions.begin(), deletions.end(),
-        [&root](Deletion const& deletion) { return deletion.rootKeys.contains(root); });
+    return renames.contains(root) || fileWork.Holds(root, true);
 }
 
 bool Engine::State::Adding(std::string const& root) const
@@ -258,8 +252,7 @@ void Engine::State::ContinueNames()
     // A move keeps each member busy until that member's own move ends, so a
     // member that has ended prepares its names while the rest of its group
     // moves. The move preflight keeps the move's paths apart from every other
-    // torrent's. A deletion or rename can change the files among which the
-    // names are chosen, so it holds the names on its own root.
+    // torrent's.
     if (IsShuttingDown() || !changes.IsIdle())
         return;
     constexpr std::ptrdiff_t limit = 8;
@@ -268,6 +261,8 @@ void Engine::State::ContinueNames()
     auto now = std::chrono::steady_clock::now();
     for (auto& [id, torrent] : torrents)
     {
+        // A deletion or rename can change the files among which the names
+        // are chosen, so it holds the names on its own root.
         if (torrent.restore || torrent.control.Recovers() || torrent.namePhase != NamePhase::Pending ||
             torrent.FilesBusy() || now < torrent.renameAt || DeletingOrRenaming(RootOf(torrent.facts.savePath)))
             continue;
@@ -1091,8 +1086,8 @@ Outcome Engine::State::FilesReady(std::vector<std::string> const& ids, std::stri
     // Other torrents' renames and name preparation delay the move where they
     // can reach the move's files: under the destination, or under a member's
     // save folder, where the shared-files refusal reads the other torrents'
-    // file names. A deletion or an addition changes only its own files, which
-    // the move can meet only at the destination.
+    // file names; an addition there has no names yet. A deletion changes only
+    // its own files, which the move can meet only at the destination.
     auto folders = Folders(ids, destination);
     auto overlaps = [&folders](std::string const& folder)
     {
@@ -1104,11 +1099,17 @@ Outcome Engine::State::FilesReady(std::vector<std::string> const& ids, std::stri
         return Contains(ids, torrent.torrentId) || overlaps(torrent.facts.savePath) ||
             (torrent.facts.marker && overlaps(torrent.facts.marker->destination));
     };
+    // Only the parts that remain still change files; a part on a root that
+    // does not answer holds no other root's moves.
     for (auto const& deletion : deletions)
     {
-        if (std::any_of(deletion.roots.begin(), deletion.roots.end(), [&destination](auto const& root)
-            { return FoldersOverlap(Utf8(root.wstring()), destination); }))
-            return {ErrorCode::FilesBusy, deletion.names};
+        for (auto const& [root, part] : deletion.parts)
+        {
+            auto folders = part.job->Folders();
+            if (std::any_of(folders.begin(), folders.end(), [&destination](auto const& folder)
+                { return FoldersOverlap(folder, destination); }))
+                return {ErrorCode::FilesBusy, deletion.names};
+        }
     }
     for (auto const& [root, rename] : renames)
     {
@@ -1121,11 +1122,11 @@ Outcome Engine::State::FilesReady(std::vector<std::string> const& ids, std::stri
     }
     for (auto const& [id, addition] : additions)
     {
-        if (FoldersOverlap(addition.facts.savePath, destination))
+        if (overlaps(addition.facts.savePath))
             return {ErrorCode::FilesBusy, addition.params.ti ? addition.params.ti->name() : addition.params.name};
     }
     // A member's path work ends when its files are in the new folder, but it
-    // stays in its move while the move deletes the old files.
+    // stays in its move until the whole move ends.
     for (auto const& moving : moves)
     {
         auto member = std::find_if(ids.begin(), ids.end(), [&moving](auto const& id) { return Contains(moving.ids, id); });
@@ -1291,8 +1292,8 @@ std::vector<std::string> Engine::State::Holders(std::shared_ptr<lt::torrent_info
         for (auto const& owner : rename.owners)
             names.push_back(Working(owner.torrentId).Name());
     }
-    // A member leaves the session once its own move has ended, also while
-    // its sources are deleted.
+    // A member leaves the session once its own move has ended; the deletion
+    // of its sources names it while that runs.
     for (auto const& moving : moves)
     {
         if (!holds(moving.holds))

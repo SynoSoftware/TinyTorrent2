@@ -38,13 +38,18 @@ a failed deletion is notified after the row is gone. The commit that removes
 the torrents also saves their deletion as a task, and no earlier save holds
 it, so a deletion that Exit or a crash cuts off is offered at the next start
 as an [unfinished task](#unfinished-tasks), and a removal whose commit fails
-leaves no deletion behind; recovery does not restore the removed torrent. A
-deletion whose drive or share does not answer keeps its task: the location
-notice counts its torrents, and it deletes again once the root's probe opens
-the root. A deletion whose job hangs on its drive or share never returns to
-say so, so while it runs the engine also probes the roots of the folders it
-deletes in, and the location notice counts its torrents once that probe has
-not returned for two minutes. libtorrent also reports a failed deletion
+leaves no deletion behind; recovery does not restore the removed torrent.
+
+A deletion has one part for each drive or share that holds its files, and each
+part waits only for its own root. The engine asks whether that root answers
+before the part deletes and again after its Windows calls return. A part whose
+root does not answer, or stops answering while it deletes, keeps its files in
+the task: it reports no failure and counts no file as deleted, the location
+notice counts the torrents whose folders lie on that root, and the part deletes
+again once the root's probe opens the root. A part whose job hangs on its
+drive or share never returns to say so, so until the part ends the engine also
+probes its root, and the location notice counts its torrents once that probe
+has not returned for two minutes. libtorrent also reports a failed deletion
 without an error for a torrent that has no storage, such as a magnet without
 metadata; that one ends without a notice, because there are no files to
 delete.
@@ -57,9 +62,11 @@ alert is lost, the same recovery path waits for handle destruction.
 
 Add records the .torrent file a torrent came from, so Removal can delete it
 when the person asks. The file holds none of the torrent's data, so its deletion
-waits only for the membership commit and uses the payload's deletion mode. A
-recorded file that has moved or gone counts as deleted, because the person
-wanted it gone.
+waits only for the membership commit and uses the payload's deletion mode. That
+commit saves it as a task, and it waits for a drive or share that does not
+answer as the payload's deletion does. It removes no folder that it leaves
+empty. A recorded file that has moved or gone counts as deleted, because the
+person wanted it gone.
 
 Permanent deletion and a move's cleanup share `Payload::Delete`. It runs one
 worker per logical processor, as rmbrr and FastDelete do, each taking at most
@@ -124,8 +131,10 @@ implemented.
 
 Each member of a move moves on its own, in this order: its files are placed,
 libtorrent takes the new folder, the folder is saved with its marker cleared,
-and then the sources that a copy left are deleted, with the folders that leaves
-empty up to the old save folder. The member leaves Moving when its folder is
+and then a deletion takes the sources that a copy left, with the folders that
+leaves empty up to the old save folder. That deletion follows the rules of a
+removal's deletion, so it waits for an old folder that does not answer, and the
+rest of the group moves meanwhile. The member leaves Moving when its folder is
 saved, so its transfers, or the verification it needs first, continue while
 the rest of the group moves. Each complete copy is flushed to the disk before
 it takes its final name, and the rename is written through, so the saved
@@ -239,7 +248,8 @@ still checked, because only that check moves libtorrent's part file.
 
 Moves that share no drive run at the same time, each with its own copy worker,
 and [drive turns](#drive-turns) decide when each one starts. Renames of
-finished files and restoring wait until no move runs; Exit does not wait, and
+finished files and restoring wait until no move uses their drive or server;
+Exit does not wait, and
 stops the move between files. A payload
 operation's source and destination paths stay held until its disk work has a
 known outcome.
@@ -413,9 +423,10 @@ one. The tasks are:
   the torrent's own files at the move's destination, without the files that
   the move found there; the files that other torrents use there are left out
   when it runs, once their names are read.
-- The files of removed torrents that a deletion has not deleted yet, from the
-  commit that removes the torrents. While another torrent's names are not
-  read, the saved deletion keeps every file under that torrent's folders.
+- The files of removed torrents that a deletion has not deleted yet, and the
+  .torrent files that the person deleted with them, from the commit that
+  removes the torrents. While another torrent's names are not read, the saved
+  deletion keeps every file under that torrent's folders.
 
 A give-back or deletion is saved before it changes a file, and its task ends
 in the save that records its end. The other tasks follow from each torrent's
@@ -444,13 +455,19 @@ of a move that the person abandoned, which its marker records. A deletion of
 the removed torrent's files waits until they are back. A give-back whose
 destination does not answer keeps its task and waits: the location notice of
 its drive or share counts its torrent, and it runs again once that root's
-probe, about once a minute, opens the root, also before the next start.
-While a give-back runs, the engine probes the roots of its destination and
-of the save folder it renames into, so a give-back that hangs there counts in
-that root's location notice once the probe has not returned for two minutes,
-as a deletion does. A give-back that fails with an error tries once more at
-once and then keeps its task and waits for the person. A removed torrent's give-back has no row, so
-it shows with its error in the notice of the torrents that wait for Retry.
+probe, about once a minute, opens the root, also before the next start. The
+engine asks whether the roots answer again after a failure, so a give-back
+that fails because a root stopped answering waits for that root too. A listed
+torrent's give-back waits for its drives in turn, as a move does. A removed
+torrent's give-back takes no turn, because Delete files never waits for other
+work, but it claims its drives while it runs. Every give-back gives up when it
+stops making progress as a move does, and until it ends the engine probes the roots of its destination
+and of the save folder it renames into, so a give-back that hangs there
+counts in that root's location notice once the probe has not returned for two
+minutes, as a deletion does. A give-back that fails with an error while its
+roots answer tries once more at once and then keeps its task and waits for
+the person. A removed torrent's give-back has no row, so it shows with its
+error in the notice of the torrents that wait for Retry.
 Every Retry tries it again, so the Retry of that notice in the window and in
 the engine's popup does, and so does the next start.
 
@@ -474,12 +491,13 @@ Abandon drops the work:
   it was. It leaves the files that its preflight found at the destination,
   which are the person's own, and every file that another torrent uses there,
   such as one that an earlier member of the same move placed. A staged move
-  changed no file, so the saved answer clears its marker. Giving back takes
-  its drives as a move does and gives up as a move does when it stops making
-  progress. The marker records the give-back from the saved answer on, and
-  that the torrent's files are checked before its pieces are trusted again,
-  so an end that cuts the give-back off after its renames still leads to the
-  check. When Exit stops the give-back, the next start continues it without
+  changed no file, so the saved answer clears its marker. The give-back
+  leaves the torrent's storage stop and name problem as they were, because
+  the files return to the folder that the torrent already uses; only a move
+  to a new folder ends them. The marker records the give-back from the saved
+  answer on, and that the torrent's files are checked before its pieces are
+  trusted again, so an end that cuts the give-back off after its renames still
+  leads to the check. When Exit stops the give-back, the next start continues it without
   asking. When the destination does not answer, the give-back waits and runs
   again once the root's probe opens the root. A give-back that fails with an
   error, or whose save fails, tries once more at once; a move whose files then
@@ -494,7 +512,7 @@ Abandon drops the work:
 - A check leaves its torrent stopped with its check pending: the torrent
   checks its files once the person starts it.
 - A deletion leaves its remaining files on disk.
-- A move cut after its new folder was saved, while it deleted the old files,
+- A move cut after its new folder was saved, while its old files were deleted,
   is complete at its destination. Abandon leaves the old files there, and
   Continue deletes them.
 
@@ -507,15 +525,19 @@ alone never releases a drive claim.
 
 Disk jobs on different physical drives run at the same time, and jobs on one
 drive take turns, so two jobs never slow each other down on one disk. A job is
-a check of a torrent's files or a move. A check uses the drive of its
-torrent's folder. A move uses the drive of its destination and of each torrent
-it moves. Checks and moves follow one rule, and neither kind goes first.
+a check of a torrent's files, a move, or the give-back of a listed torrent's
+move. A
+check uses the drive of its torrent's folder. A move uses the drive of its
+destination and of each torrent it moves, and a give-back the drives of the
+move's destination and of the save folder. Every kind follows one rule, and
+none goes first.
 
 - A drive does one job at a time, and nobody takes it from a running job. A
   job keeps its drives until it finishes, fails or stalls; a check also ends
   when the person stops its torrent or libtorrent stops it with a torrent
-  error. A move keeps its source drives until it
-  ends, also while it deletes the sources.
+  error. A move keeps its drives until its last member's folder is saved. The
+  deletion of each member's sources takes no drive turn, so the move does not
+  wait for it.
 - A job starts only when all its drives are free. A waiting job holds and
   reserves no drive, so no job waits for a job that cannot start yet, and two
   moves never each hold one drive and wait for the other's.
@@ -538,8 +560,15 @@ it moves. Checks and moves follow one rule, and neither kind goes first.
   stops with Retry, as any storage failure does. Verify waits for that release
   before rechecking. A stalled move's copy is cancelled, and the move fails as
   after any failed copy, which gives back what it placed and shows Move failed.
-  A failed move waits for the person. Only a move's placement is timed, not the
-  wait for libtorrent to release the files.
+  A failed move waits for the person. A copy whose source or destination does
+  not answer before it places the files fails too, because Windows then
+  reports the files there as missing; one that stops answering after the
+  placement started is interrupted, and its marker keeps what it placed. A stalled give-back fails as after any
+  error. A move or give-back on a drive or share whose probe has not returned
+  does not give up: that root does not answer, its location notice counts the
+  job's torrents, and the job's Windows calls decide when they return. Only
+  the copy of a move and the work of a give-back are timed, not the wait for
+  libtorrent to release the files.
 
 The once-a-second maintenance pass decides. It works out which drives are in
 use from the jobs that run, on every pass, and never stores that as a loan a
@@ -555,7 +584,10 @@ move meanwhile; one destination's group that cannot start does not hold back
 another's.
 
 A drive is freed only when its job has really stopped. A copy or a read stuck
-inside a Windows call keeps its drive until Windows returns. A check that
+inside a Windows call keeps its drive until Windows returns. While a move or
+give-back waits for a drive or share that does not answer, it keeps only that
+root's drives, because it touches no other drive until its call returns, so
+checks and moves on its other drives run meanwhile. A check that
 stops, by Stop, Pause all or the drive rule, keeps its drive until libtorrent
 reports that it has no read left (`torrent_paused_alert`).
 
@@ -597,8 +629,11 @@ An accepted torrent whose name preparation fails retains the typed filesystem
 cause and uses storage recovery. Preparation fails when the folder's drive or
 share does not answer before or after it reads the files, because Windows then
 reports every file as missing and each would get the unfinished suffix.
-Preparation runs on its drive's worker, for a listed torrent and an addition
-alike, so an absent share holds only the jobs of that share. An addition
+A listed torrent's preparation runs on its drive's worker, and an addition's
+on a worker of its own for that drive, so an absent share holds only the jobs
+of that share and an addition never waits behind another torrent's work.
+Deletions, moves and give-backs run on workers of their own, so no
+preparation waits behind them. An addition
 whose folder does not answer joins the list with its names unprepared and
 waits in the same way, and so does an addition whose names, new folder or
 renames are still being prepared when Exit starts; an
@@ -628,12 +663,13 @@ choice, so changing the default does not rename an existing library.
   shows the error and Retry. The rename runs on its drive's worker, so a share
   that stops answering holds no worker that other drives use. One rename runs
   at a time on each drive, or on each server for network shares, because a
-  server that hangs usually hangs all its shares. A rename or deletion there
-  holds the renames and name choices on that drive or server, and a move holds
-  the renames on its two, so torrents on other drives never wait for a share
-  that stopped answering. A rename waits only for the names of the torrents
-  whose files can lie in its folder. A folder is on the drive that its path
-  names, also when a junction on the way leads to another drive.
+  server that hangs usually hangs all its shares. A rename or a deletion's part
+  there holds the renames and name choices on that drive or server, and a move
+  holds the renames on each drive or server it uses, so torrents on other
+  drives never wait for a share that stopped answering. A rename waits only
+  for the names of the torrents whose files can lie in its folder. A folder is
+  on the drive that its path names, also when a junction on the way leads to
+  another drive.
 - Before that rename, the engine pauses the torrent and waits for libtorrent
   to write the data it still holds in memory, without holding any files busy.
   Releasing the files for the rename waits for that write, which takes

@@ -199,8 +199,6 @@ enum class GiveBackEnd
 // What giving a move's files back did.
 enum class GivenBack
 {
-    // The destination did not answer, so nothing changed.
-    Unreachable,
     // Exit stopped it between files, so some files may still be at the
     // destination.
     Stopped,
@@ -252,8 +250,8 @@ enum class TaskAnswer
 };
 
 // A move's current member: its worker places the files (Copying), libtorrent
-// takes the new folder (Moving), the engine confirms it (Observing), saves the
-// outcome (Saving) and deletes the sources (Cleaning).
+// takes the new folder (Moving), the engine confirms it (Observing) and saves
+// the outcome (Saving). A deletion then deletes the sources.
 enum class MovePhase
 {
     Staging,
@@ -262,8 +260,40 @@ enum class MovePhase
     Copying,
     Moving,
     Observing,
-    Saving,
-    Cleaning
+    Saving
+};
+
+// The kinds of file work that FileWork records, each with its own rules.
+enum class WorkKind
+{
+    // A move of torrents to another folder, in every phase. It takes drive
+    // turns, its copy is timed, and it holds the renames on its roots.
+    Move,
+    // The give-back of what a cut move placed, for a listed or a removed
+    // torrent. It is timed; a listed torrent's give-back takes drive turns.
+    GiveBack,
+    // One root's part of a deletion: libtorrent's removal of the torrents
+    // saved there, then the deletion of their files there. It holds the
+    // renames and name choices on its root.
+    Deletion,
+    // A removed torrent that waits for its own file work to end before
+    // libtorrent takes it.
+    Removal
+};
+
+// How a piece of file work stands, named by what ends each wait.
+enum class JobPhase
+{
+    // It waits for its turn: its drives, other work on its files, other
+    // torrents' names or the save that records it.
+    Queued,
+    // A Windows call or a libtorrent disk job runs in its folders.
+    Running,
+    // Its root did not answer; the root's probe ends the wait when it opens
+    // the root.
+    Unanswered,
+    // It failed after its retry; the person's Retry ends the wait.
+    Failed
 };
 
 // Where the files of a failed move are: back in their source folder
@@ -297,8 +327,9 @@ enum class NamePhase
 // a cause that persists never loops.
 enum class StorageRetry
 {
-    // The engine has not continued the torrent. Its first continue comes at
-    // once, after the location answers.
+    // The engine has not continued the torrent. A storage failure's first
+    // continue comes at once, after the location answers; a failed move to
+    // the final folder starts at the minute check.
     Automatic,
     // The engine continued the torrent at once. If the failure returns before
     // the torrent gets further, the torrent stops.
@@ -398,13 +429,13 @@ enum class QueueReport
     AwaitingStatus
 };
 
-// A deletion saves the list without its torrents, waits for libtorrent to
-// release their files, and then deletes them.
+// A deletion saves the list without its torrents (Saving), and then its parts
+// wait for libtorrent to release their files and delete them (Waiting). After
+// lost alerts, a part waits for its removed handles to expire (Unknown).
 enum class DeletionPhase
 {
     Saving,
     Waiting,
-    Deleting,
     Unknown
 };
 
@@ -436,7 +467,7 @@ enum class CheckpointPhase
 // Saving waits for the final checkpoints; Ending gives the work that still
 // runs a moment to stop. Cutting waits only for the lines and the document
 // that record the work it cuts off. Failing follows a save that failed and
-// waits only for the log line that says so.
+// waits only for the save worker and the log line that says so.
 enum class ShutdownPhase
 {
     Idle,

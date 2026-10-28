@@ -264,16 +264,20 @@ internal sealed class FileFacts(Database database, BackgroundWork work) : IAsync
             }
         }
 
-        // Callers hold _gate.
+        // Callers hold _gate. Nothing is left when every target scrolled away
+        // before its turn.
         void Report() =>
             run!.Report(
                 run.Observation with
                 {
-                    Progress = new WorkProgress.Fraction(
-                        done,
-                        accepted.Length - skipped,
-                        WorkUnit.Files
-                    ),
+                    Progress =
+                        accepted.Length - skipped > 0
+                            ? new WorkProgress.Fraction(
+                                done,
+                                accepted.Length - skipped,
+                                WorkUnit.Files
+                            )
+                            : new WorkProgress.Unknown(),
                 }
             );
 
