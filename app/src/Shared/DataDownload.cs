@@ -13,24 +13,21 @@ namespace Syno.TinyTorrent.Shared;
 internal sealed class DataDownload
 {
     private readonly object _gate = new();
-    private readonly CancellationTokenSource _cancellation = new();
-    private readonly TaskCompletionSource _finished = new(
-        TaskCreationOptions.RunContinuationsAsynchronously
-    );
-    private WorkObservation _observation;
-    private Task _signalling = Task.CompletedTask;
-    private bool _ended;
+    private readonly CancellableWork _work;
     private bool _interrupted;
     private bool _installed;
-    internal BackgroundWork.Operation Operation { get; }
+    internal BackgroundWork.Operation Operation => _work.Operation;
 
     /// <summary>Set by a stop, so the build ends at it.</summary>
-    internal CancellationToken Cancellation => _cancellation.Token;
+    internal CancellationToken Cancellation => _work.Token;
 
     internal DataDownload(BackgroundWork work, WorkDescription starting)
     {
-        _observation = new(starting, new WorkProgress.Unknown(), new WorkExecution.Running());
-        Operation = work.Begin(_observation, () => Stop(false));
+        _work = new(
+            work,
+            new(starting, new WorkProgress.Unknown(), new WorkExecution.Running()),
+            _ => Stop(false)
+        );
     }
 
     // Windows reports a full disk as ERROR_DISK_FULL or ERROR_HANDLE_DISK_FULL.
@@ -69,7 +66,7 @@ internal sealed class DataDownload
         Action<Exception> report
     )
     {
-        var cancellation = _cancellation.Token;
+        var cancellation = _work.Token;
         try
         {
             await build();
@@ -82,7 +79,7 @@ internal sealed class DataDownload
         catch (Exception) when (_interrupted && !_installed)
         {
             System.Diagnostics.Debug.WriteLine(
-                $"Data download interrupted: {_observation.Description}."
+                $"Data download interrupted: {_work.Observation.Description}."
             );
             var error = new Library.VideoException(VideoFailure.Interrupted);
             Operation.Error = error;
@@ -92,7 +89,7 @@ internal sealed class DataDownload
         {
             Operation.Outcome = WorkOutcome.Cancelled;
             System.Diagnostics.Debug.WriteLine(
-                $"Data download cancelled: {_observation.Description}."
+                $"Data download cancelled: {_work.Observation.Description}."
             );
         }
         catch (Exception error)
@@ -115,7 +112,7 @@ internal sealed class DataDownload
             }
             finally
             {
-                await Finish();
+                await _work.DisposeAsync();
             }
         }
         return _installed;
@@ -125,10 +122,15 @@ internal sealed class DataDownload
     {
         lock (_gate)
         {
-            if (_ended || _observation.Execution is not WorkExecution.Running)
+            if (_work.Observation.Execution is not WorkExecution.Running)
                 return;
-            _observation = _observation with { Description = description, Progress = progress };
-            Operation.Report(_observation);
+            _work.Report(
+                _work.Observation with
+                {
+                    Description = description,
+                    Progress = progress,
+                }
+            );
         }
     }
 
@@ -140,13 +142,10 @@ internal sealed class DataDownload
     {
         lock (_gate)
         {
-            _cancellation.Token.ThrowIfCancellationRequested();
-            _observation = new(
-                description,
-                new WorkProgress.Unknown(),
-                new WorkExecution.Finishing()
+            _work.Token.ThrowIfCancellationRequested();
+            _work.Report(
+                new(description, new WorkProgress.Unknown(), new WorkExecution.Finishing())
             );
-            Operation.Report(_observation);
         }
         install();
         _installed = true;
@@ -160,37 +159,14 @@ internal sealed class DataDownload
     {
         lock (_gate)
         {
-            if (_ended || _observation.Execution is WorkExecution.Finishing)
-                return _finished.Task;
-            _interrupted |= interrupted;
-            if (_observation.Execution is not WorkExecution.Cancelling)
-            {
-                _observation = _observation with { Execution = new WorkExecution.Cancelling() };
-                Operation.Report(_observation);
-                // CancelAsync sets the token immediately and runs callbacks off this gate.
-                _signalling = _cancellation.CancelAsync();
-            }
-            return _finished.Task;
-        }
-    }
-
-    private async Task Finish()
-    {
-        Task signalling;
-        lock (_gate)
-        {
-            _ended = true;
-            signalling = _signalling;
-        }
-        try
-        {
-            await signalling.ConfigureAwait(false);
-        }
-        finally
-        {
-            _cancellation.Dispose();
-            Operation.Dispose();
-            _finished.TrySetResult();
+            // Finishing cannot be cancelled, so a stop then is no interruption.
+            // The interruption is recorded before the token fires, because
+            // Run's failure filter reads it as soon as the build throws; Report
+            // and Install change the work only under _gate, so the check holds.
+            if (_work.CanCancel || _work.IsCancelling)
+                _interrupted |= interrupted;
+            _work.TryCancel(out _);
+            return _work.Completion;
         }
     }
 }

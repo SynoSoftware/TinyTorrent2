@@ -15,7 +15,7 @@ internal sealed partial class Acquisition
             cancellation = _requests.Token;
         using var request = CancellationTokenSource.CreateLinkedTokenSource(
             cancellation,
-            run.Cancellation.Token
+            run.Token
         );
         cancellation = request.Token;
         var entered = false;
@@ -82,7 +82,9 @@ internal sealed partial class Acquisition
                     .ConfigureAwait(false);
                 LanguagesChanged?.Invoke(this, EventArgs.Empty);
             }
-            var result = await Discover(cancellation, true, run).ConfigureAwait(false);
+            var (movies, accepted) = await PlanScan(cancellation, force: true)
+                .ConfigureAwait(false);
+            var result = await Scan(run, movies, accepted, cancellation).ConfigureAwait(false);
             await RefreshCounts().ConfigureAwait(false);
             run.Operation.Summarize("scan_result", result.Found, result.Unreadable + unreadable);
             run.Operation.Outcome = result.Unreadable + unreadable > 0
@@ -114,10 +116,47 @@ internal sealed partial class Acquisition
         }
     }
 
-    private async Task<ScanResult> Discover(
+    // The automatic scan, which shows in the work list only when it has movies
+    // to scan.
+    private async Task Discover(CancellationToken cancellation)
+    {
+        var (movies, accepted) = await PlanScan(cancellation, force: false)
+            .ConfigureAwait(false);
+        if (accepted.Count == 0)
+            return;
+        var run = new WorkRun(this, SubtitleWork.Discovery);
+        try
+        {
+            using var request = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellation,
+                run.Token
+            );
+            var result = await Scan(run, movies, accepted, request.Token).ConfigureAwait(false);
+            run.Operation.Summarize("scan_result", result.Found, result.Unreadable);
+            run.Operation.Outcome = result.Unreadable > 0
+                ? WorkOutcome.Failed : WorkOutcome.Completed;
+        }
+        catch (OperationCanceledException)
+        {
+            run.Operation.Outcome = WorkOutcome.Cancelled;
+            throw;
+        }
+        catch (Exception error)
+        {
+            run.Operation.Error = error;
+            throw;
+        }
+        finally
+        {
+            await run.Finish().ConfigureAwait(false);
+        }
+    }
+
+    // Reads every movie and the ones that need a scan: all eligible readable
+    // movies when forced, otherwise those not scanned or cancelled yet.
+    private async Task<(List<Discovery> Movies, HashSet<Discovery> Accepted)> PlanScan(
         CancellationToken cancellation,
-        bool force = false,
-        WorkRun? owner = null
+        bool force
     )
     {
         var movies = await Run(
@@ -201,15 +240,19 @@ internal sealed partial class Acquisition
                 )
                 .ToHashSet();
         }
-        if (accepted.Count == 0)
-            return new(0, 0);
-        var run = owner ?? new WorkRun(this, SubtitleWork.Discovery);
+        return (movies, accepted);
+    }
+
+    // Finds the subtitles beside the accepted movies and records them.
+    private async Task<ScanResult> Scan(
+        WorkRun run,
+        List<Discovery> movies,
+        HashSet<Discovery> accepted,
+        CancellationToken cancellation
+    )
+    {
         lock (_requestSync)
             run.Scans = accepted.ToArray();
-        using var request = owner is null
-            ? CancellationTokenSource.CreateLinkedTokenSource(cancellation, run.Cancellation.Token)
-            : null;
-        cancellation = request?.Token ?? cancellation;
         var changed = false;
         try
         {
@@ -379,27 +422,10 @@ internal sealed partial class Acquisition
                     )
                     .ConfigureAwait(false);
             }
-            if (owner is null)
-            {
-                run.Operation.Summarize("scan_result", found.Count, failures);
-                run.Operation.Outcome = failures > 0 ? WorkOutcome.Failed : WorkOutcome.Completed;
-            }
             return new(found.Count, failures);
-        }
-        catch (OperationCanceledException)
-        {
-            run.Operation.Outcome = WorkOutcome.Cancelled;
-            throw;
-        }
-        catch (Exception error)
-        {
-            run.Operation.Error = error;
-            throw;
         }
         finally
         {
-            if (owner is null)
-                await run.Finish().ConfigureAwait(false);
             if (changed)
                 LanguagesChanged?.Invoke(this, EventArgs.Empty);
         }

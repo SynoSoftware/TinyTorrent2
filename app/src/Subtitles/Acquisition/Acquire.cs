@@ -172,7 +172,7 @@ internal sealed partial class Acquisition
                         using (
                             var request = CancellationTokenSource.CreateLinkedTokenSource(
                                 cancellation,
-                                run.Cancellation.Token
+                                run.Token
                             )
                         )
                         {

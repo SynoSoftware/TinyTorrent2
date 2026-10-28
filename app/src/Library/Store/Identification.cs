@@ -16,13 +16,26 @@ internal sealed partial class Store
 
     // The sweep skips a file that will never be downloaded, because it never
     // shows in Library.
-    private const string Eligible =
+    private static string Eligible =>
         Undecided
-        + """
+        + $"""
             AND (f.wanted=1 OR f.complete=1)
             AND NOT EXISTS(SELECT 1 FROM source_files m JOIN video_attempts a USING(origin,file_index)
                 WHERE m.entry_id=f.entry_id AND a.catalog_id=$catalog AND a.evidence=m.name
-                    AND (a.outcome IS NULL OR a.outcome<>'cancelled'))
+                    AND (a.outcome IS NULL OR a.outcome<>{(int)AttemptOutcome.Cancelled}))
+            """;
+
+    // Whether attempt a found that its provider has no match: an ordinary miss,
+    // or a lookup held back because the provider earlier had no match or no
+    // such video. The block is read as it stands now, so an answer recorded
+    // since then clears it. The table's dash and Fetch metadata's groups both
+    // use this rule.
+    private static string NotFound =>
+        $"""
+            (a.outcome IS {(int)AttemptOutcome.NoMatch} OR a.outcome IS {(int)AttemptOutcome.Blocked}
+                AND EXISTS(SELECT 1 FROM request_blocks b
+                    WHERE b.provider_id=a.catalog_id AND b.question_id=a.question_id
+                        AND b.reason IN ({(int)RequestBlockKind.NoMatch},{(int)RequestBlockKind.Missing})))
             """;
 
     internal Task<IReadOnlyList<VideoChoice>?> Search(
@@ -145,14 +158,14 @@ internal sealed partial class Store
                 using var command = connection.CreateCommand();
                 // The file's current identification, as Library shows it, then
                 // what the provider last answered for the file.
-                command.CommandText = """
+                command.CommandText = $"""
                     SELECT i.catalog_id, i.video_id IS NULL, v.imdb_id IS NOT NULL
                     FROM source_files f JOIN identifications i USING(origin,file_index)
                     LEFT JOIN video_information v ON v.catalog_id=i.catalog_id AND v.video_id=i.video_id
                     WHERE f.entry_id=$entry AND (i.explicit=1 OR i.evidence=f.name)
                     ORDER BY i.explicit DESC, i.decided DESC LIMIT 1;
-                    SELECT a.outcome, b.reason FROM video_attempts a JOIN collected_files f USING(origin,file_index)
-                    LEFT JOIN request_blocks b ON b.provider_id=a.catalog_id AND b.question_id=a.question_id
+                    SELECT a.outcome IS {(int)AttemptOutcome.Matched}, {NotFound}
+                    FROM video_attempts a JOIN collected_files f USING(origin,file_index)
                     WHERE f.entry_id=$entry AND a.catalog_id=$catalog AND a.evidence=f.name LIMIT 1;
                     """;
                 command.Parameters.AddWithValue("$catalog", catalog);
@@ -173,19 +186,12 @@ internal sealed partial class Store
                     if (identified && (reader.GetBoolean(1) || !own && !reader.GetBoolean(2)))
                         continue;
                     reader.NextResult();
-                    var outcome = reader.Read() && !reader.IsDBNull(0) ? reader.GetString(0) : null;
-                    var notFound =
-                        outcome == "no_match"
-                        || outcome == "blocked"
-                            && !reader.IsDBNull(1)
-                            && (RequestBlockKind)reader.GetInt32(1)
-                                is RequestBlockKind.NoMatch
-                                    or RequestBlockKind.Missing;
+                    var attempted = reader.Read();
                     var answer =
-                        own || outcome == "success" ? ProviderAnswer.Found
-                        : notFound ? ProviderAnswer.NotFound
+                        own || attempted && reader.GetBoolean(0) ? ProviderAnswer.Found
+                        : attempted && reader.GetBoolean(1) ? ProviderAnswer.NotFound
                         : ProviderAnswer.Unasked;
-                    result.Add(new(entry with { HasMetadata = own }, answer, null));
+                    result.Add(new(entry, answer, null) { Identified = own });
                 }
                 return result;
             },
@@ -220,6 +226,7 @@ internal sealed partial class Store
 
     internal Task<IReadOnlyList<VideoTarget>> Pending(
         string catalogId,
+        IReadOnlySet<long> entries,
         CancellationToken cancellation
     ) =>
         database.Run<IReadOnlyList<VideoTarget>>(
@@ -228,9 +235,11 @@ internal sealed partial class Store
                 using var command = connection.CreateCommand();
                 command.CommandText = $"""
                     SELECT f.entry_id,f.path,f.name,f.size FROM collected_files f
-                    WHERE f.kind=0 AND {Eligible};
+                    WHERE f.kind=0 AND f.entry_id IN (SELECT value FROM json_each($entries))
+                        AND {Eligible};
                     """;
                 command.Parameters.AddWithValue("$catalog", catalogId);
+                command.Parameters.AddWithValue("$entries", JsonSerializer.Serialize(entries));
                 using var reader = command.ExecuteReader();
                 var targets = new List<VideoTarget>();
                 while (reader.Read())
@@ -350,10 +359,47 @@ internal sealed partial class Store
             cancellation
         );
 
+    /// <summary>
+    /// Ends <paramref name="attempt"/> with its match: saves
+    /// <paramref name="video"/> and records <see cref="AttemptOutcome.Matched"/>.
+    /// Returns false when the file changed or a newer decision won, and the
+    /// attempt then counts as <see cref="AttemptOutcome.Cancelled"/>.
+    /// </summary>
     internal Task<bool> Complete(
         VideoAttempt attempt,
+        VideoInformation video,
+        CancellationToken cancellation
+    ) => End(attempt, video, AttemptOutcome.Matched, cancellation);
+
+    /// <summary>
+    /// Ends <paramref name="attempt"/> without a match and records
+    /// <paramref name="outcome"/>. Returns false when the file changed or a
+    /// newer decision won, and the attempt then counts as
+    /// <see cref="AttemptOutcome.Cancelled"/>.
+    /// </summary>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="outcome"/> is <see cref="AttemptOutcome.Matched"/>,
+    /// which Fetchable would report as found without a video.
+    /// </exception>
+    internal Task<bool> Complete(
+        VideoAttempt attempt,
+        AttemptOutcome outcome,
+        CancellationToken cancellation
+    )
+    {
+        if (outcome == AttemptOutcome.Matched)
+            throw new ArgumentException(
+                "A match is recorded only with its video.",
+                nameof(outcome)
+            );
+        return End(attempt, null, outcome, cancellation);
+    }
+
+    // Callers pass a video exactly when outcome is Matched.
+    private Task<bool> End(
+        VideoAttempt attempt,
         VideoInformation? video,
-        string outcome,
+        AttemptOutcome outcome,
         CancellationToken cancellation
     ) =>
         database.Run(
@@ -381,11 +427,7 @@ internal sealed partial class Store
                     """;
                 command.Parameters.AddWithValue(
                     "$outcome",
-                    accepted
-                        ? video is null
-                            ? outcome
-                            : "success"
-                        : "cancelled"
+                    (int)(accepted ? outcome : AttemptOutcome.Cancelled)
                 );
                 command.Parameters.AddWithValue(
                     "$question",

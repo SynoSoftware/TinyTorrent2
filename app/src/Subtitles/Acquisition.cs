@@ -26,7 +26,7 @@ internal sealed partial class Acquisition(
     private string _language = "en";
     private bool _connected;
     private bool _disposed;
-    private Account _account = new(SubtitleSupplier.OpenSubtitles, string.Empty, string.Empty);
+    private Account _account = new Account.BuiltIn(SubtitleSupplier.OpenSubtitles);
     private Allowance _allowance = new();
     private Account? _checkedAccount;
     internal IReadOnlyList<Supplier> Suppliers { get; } = SupplierType.CreateAll(policy);
@@ -41,8 +41,6 @@ internal sealed partial class Acquisition(
     internal bool IsDisposed => _disposed;
     internal bool Enabled { get; private set; }
     internal SubtitleSupplier SupplierId => _account.SupplierId;
-    internal string Username => _account.Username;
-    internal bool HasSecret => _account.Secret.Length > 0;
     internal string[] Languages { get; private set; } = [];
 
     // Automatic searches keep the saved number of alternatives independently of Find.
@@ -56,9 +54,10 @@ internal sealed partial class Acquisition(
     internal bool CanCheck => Supplier?.Configured(_account) == true;
 
     // Failure derives from the database health, the saved configuration, the
-    // last supplier answer, the allowance and the file health, so each fact
-    // has one writer.
-    private SubtitleFailure _supplierFailure;
+    // supplier's last answers about access and reach, the allowance and the
+    // file health, so each fact has one writer.
+    private AccountCheck _check;
+    private SupplierReach _reach;
     private SqliteException? _databaseFailure;
     private bool _saveFailed;
     internal SqliteException? DatabaseFailure => _databaseFailure;
@@ -66,11 +65,13 @@ internal sealed partial class Acquisition(
         _databaseFailure is not null ? SubtitleFailure.Database
         : Supplier is not { Available: true } ? SubtitleFailure.Unavailable
         : !Ready ? SubtitleFailure.Unconfigured
-        : _supplierFailure != SubtitleFailure.None ? _supplierFailure
+        : _check == AccountCheck.Refused ? SubtitleFailure.Authentication
+        : _reach == SupplierReach.Network ? SubtitleFailure.Network
+        : _reach == SupplierReach.Route ? SubtitleFailure.Route
         : RetryAt > DateTimeOffset.UtcNow ? SubtitleFailure.Quota
         : _saveFailed ? SubtitleFailure.Save
         : SubtitleFailure.None;
-    internal bool Checked { get; private set; }
+    internal bool Checked => _check == AccountCheck.Verified;
     internal DateTimeOffset? RetryAt => _allowance.RetryAt;
 
     // Read current membership from SQLite so Library selections and counts agree.
@@ -132,9 +133,9 @@ internal sealed partial class Acquisition(
         {
             await policy.Initialize(_lifetime.Token).ConfigureAwait(false);
             _language = language;
-            _supplierFailure = SubtitleFailure.None;
+            _check = AccountCheck.Unchecked;
+            _reach = SupplierReach.Ok;
             _saveFailed = false;
-            Checked = false;
             _checkedAccount = null;
             _batch.Clear();
             Found = null;
@@ -183,10 +184,11 @@ internal sealed partial class Acquisition(
             "UPDATE subtitle_jobs SET retry_at=0 WHERE outcome=$pending;",
             ("$pending", (int)SubtitleOutcome.Pending)
         );
-        Checked = false;
+        // A new route needs a new check, but a refusal belongs to the account.
+        if (_check == AccountCheck.Verified)
+            _check = AccountCheck.Unchecked;
         _checkedAccount = null;
-        if (_supplierFailure is SubtitleFailure.Route or SubtitleFailure.Network)
-            _supplierFailure = SubtitleFailure.None;
+        _reach = SupplierReach.Ok;
     }
 
     internal async Task Suspend(Func<Task> apply)
@@ -197,8 +199,8 @@ internal sealed partial class Acquisition(
         {
             await apply().ConfigureAwait(false);
             await RefreshAllowance().ConfigureAwait(false);
-            if (_supplierFailure == SubtitleFailure.Network)
-                _supplierFailure = SubtitleFailure.None;
+            if (_reach == SupplierReach.Network)
+                _reach = SupplierReach.Ok;
             await RefreshCounts().ConfigureAwait(false);
         }
         finally
@@ -221,7 +223,8 @@ internal sealed partial class Acquisition(
             """,
             ("$provider", providerId)
         );
-        if (providerId is not null && providerId != RequireSupplier(SupplierId).ProviderId)
+        // A saved supplier this version does not know matches no provider.
+        if (providerId is not null && providerId != Supplier?.ProviderId)
             return;
         Unblock(connection);
         Execute(
@@ -430,18 +433,45 @@ internal sealed partial class Acquisition(
 
     // Another supplier starts with an empty account, so the saved supplier's
     // credentials are never sent to it.
-    internal Draft Edit(SubtitleSupplier supplierId) =>
-        supplierId == SupplierId
-            ? new(SupplierId, Username, string.Empty, HasSecret)
-            : new(supplierId, string.Empty, string.Empty, false);
+    internal Draft Edit(SubtitleSupplier supplierId)
+    {
+        AccountInput input =
+            supplierId != SupplierId ? new AccountInput.BuiltIn()
+            : _account switch
+            {
+                Account.OwnKey => new AccountInput.OwnKey(new Secret.Kept()),
+                Account.SignedIn signedIn => new AccountInput.SignedIn(
+                    signedIn.Username,
+                    new Secret.Kept()
+                ),
+                Account.PasswordNeeded needed => new AccountInput.SignedIn(needed.Username, null),
+                _ => new AccountInput.BuiltIn(),
+            };
+        return new(supplierId, input);
+    }
 
+    // The one place that reads a kept secret. A kept password belongs to the
+    // saved user name, so another user name needs a typed password.
     private Account Interpret(Draft draft)
     {
-        var secret =
-            draft.Secret.Length > 0 ? draft.Secret
-            : draft.KeepSecret && draft.SupplierId == SupplierId ? _account.Secret
-            : string.Empty;
-        return RequireSupplier(draft.SupplierId).Interpret(draft, secret);
+        var saved = draft.SupplierId == SupplierId ? _account : null;
+        Account account = draft.Input switch
+        {
+            AccountInput.BuiltIn => new Account.BuiltIn(draft.SupplierId),
+            AccountInput.OwnKey { Key: Secret.Typed typed } => new Account.OwnKey(
+                draft.SupplierId,
+                typed.Value
+            ),
+            AccountInput.OwnKey { Key: Secret.Kept } when saved is Account.OwnKey kept => kept,
+            AccountInput.SignedIn { Password: Secret.Typed typed } signedIn =>
+                new Account.SignedIn(draft.SupplierId, signedIn.Username, typed.Value),
+            AccountInput.SignedIn { Password: Secret.Kept } signedIn
+                when saved is Account.SignedIn kept && kept.Username == signedIn.Username => kept,
+            _ => throw new SubtitleException(SubtitleFailure.Unconfigured),
+        };
+        return RequireSupplier(draft.SupplierId).Accepts(account)
+            ? account
+            : throw new SubtitleException(SubtitleFailure.Unconfigured);
     }
 
     // Choosing the saved supplier again keeps its account.
@@ -449,7 +479,7 @@ internal sealed partial class Acquisition(
         Queue(() =>
             supplierId == SupplierId
                 ? Task.CompletedTask
-                : SaveAccount(new Account(supplierId, string.Empty, string.Empty))
+                : SaveAccount(new Account.BuiltIn(supplierId))
         );
 
     internal Task Save(Draft draft) => Queue(() => SaveAccount(Interpret(draft)));
@@ -459,7 +489,13 @@ internal sealed partial class Acquisition(
         var changed = account != _account;
         if (changed)
             Invalidate();
-        var secret = account.Secret.Length > 0 ? Credentials.Protect(account.Secret) : null;
+        var username = account is Account.SignedIn signedIn ? signedIn.Username : string.Empty;
+        var secret = account switch
+        {
+            Account.OwnKey own => Credentials.Protect(own.Key),
+            Account.SignedIn user => Credentials.Protect(user.Password),
+            _ => null,
+        };
         await _operation.WaitAsync(_lifetime.Token).ConfigureAwait(false);
         try
         {
@@ -478,7 +514,7 @@ internal sealed partial class Acquisition(
                             UPDATE subtitle_settings SET supplier=$supplier, username=$username, secret=$secret WHERE singleton=1;
                             """,
                             ("$supplier", (int)account.SupplierId),
-                            ("$username", account.Username),
+                            ("$username", username),
                             ("$secret", secret)
                         );
                         if (changed)
@@ -525,8 +561,8 @@ internal sealed partial class Acquisition(
             if (changed)
             {
                 _retryCommands.Clear();
-                Checked = false;
-                _supplierFailure = SubtitleFailure.None;
+                _check = AccountCheck.Unchecked;
+                _reach = SupplierReach.Ok;
             }
             if (verified)
                 Answered(SubtitleFailure.None);
@@ -558,7 +594,7 @@ internal sealed partial class Acquisition(
             await RequireSupplier(account.SupplierId)
                 .Check(http, account, pending.Token)
                 .ConfigureAwait(false);
-            if (draft is null && _supplierFailure == SubtitleFailure.Authentication)
+            if (draft is null && _check == AccountCheck.Refused)
                 await Run(
                         connection =>
                         {
@@ -617,18 +653,37 @@ internal sealed partial class Acquisition(
         }
     }
 
-    // Records the supplier's answer to the saved account. A format failure
-    // belongs to one movie and a used-up allowance to Allowance, so neither
-    // is an account problem; refused access means access is no longer checked.
+    // Records the supplier's answer to the saved account. Only a success or a
+    // refusal says something about access, so a failure to reach the
+    // supplier never hides a refusal. A format failure belongs to one movie
+    // and a used-up allowance to Allowance, but both are replies, so the
+    // supplier was reached. Failure reads an unconfigured or unavailable
+    // supplier from the setup itself.
     private void Answered(SubtitleFailure answer)
     {
-        _supplierFailure = answer is SubtitleFailure.Format or SubtitleFailure.Quota
-            ? SubtitleFailure.None
-            : answer;
-        if (answer == SubtitleFailure.None)
-            Checked = true;
-        else if (answer == SubtitleFailure.Authentication)
-            Checked = false;
+        switch (answer)
+        {
+            case SubtitleFailure.None:
+                _check = AccountCheck.Verified;
+                _reach = SupplierReach.Ok;
+                break;
+            case SubtitleFailure.Authentication:
+                _check = AccountCheck.Refused;
+                // A later refusal outdates an earlier dialog check of the
+                // same values, so saving them unchanged checks nothing.
+                if (_checkedAccount == _account)
+                    _checkedAccount = null;
+                break;
+            case SubtitleFailure.Network:
+                _reach = SupplierReach.Network;
+                break;
+            case SubtitleFailure.Route:
+                _reach = SupplierReach.Route;
+                break;
+            case SubtitleFailure.Format or SubtitleFailure.Quota:
+                _reach = SupplierReach.Ok;
+                break;
+        }
     }
 
     private void Notify() => Changed?.Invoke(this, EventArgs.Empty);
@@ -686,18 +741,38 @@ internal sealed partial class Acquisition(
     }
 }
 
-internal sealed record Draft(
-    SubtitleSupplier SupplierId,
-    string Username,
-    string Secret,
-    bool KeepSecret
-);
+/// <summary>The values the account dialog edits for one supplier.</summary>
+internal sealed record Draft(SubtitleSupplier SupplierId, AccountInput Input);
 
 internal sealed record FileFailure(string Path, SubtitleFailure Reason);
 
-internal sealed record Account(SubtitleSupplier SupplierId, string Username, string Secret)
+/// <summary>
+/// The account a supplier serves: none of the person's own, which uses the
+/// key built into the release and does not sign in, the person's own API key,
+/// a sign-in, or a sign-in that waits for its password.
+/// </summary>
+internal abstract record Account
 {
-    public override string ToString() => SupplierId.ToString();
+    private Account(SubtitleSupplier supplierId) => SupplierId = supplierId;
+
+    internal SubtitleSupplier SupplierId { get; }
+
+    internal sealed record BuiltIn(SubtitleSupplier SupplierId) : Account(SupplierId);
+
+    internal sealed record OwnKey(SubtitleSupplier SupplierId, string Key) : Account(SupplierId);
+
+    internal sealed record SignedIn(SubtitleSupplier SupplierId, string Username, string Password)
+        : Account(SupplierId);
+
+    /// <summary>
+    /// A saved sign-in whose password could not be read. It sends nothing
+    /// until the person enters the password again.
+    /// </summary>
+    internal sealed record PasswordNeeded(SubtitleSupplier SupplierId, string Username)
+        : Account(SupplierId);
+
+    // Keeps the key and password out of logs.
+    public sealed override string ToString() => SupplierId.ToString();
 }
 
 internal sealed class SubtitleException(SubtitleFailure reason, DateTimeOffset? retryAt = null)

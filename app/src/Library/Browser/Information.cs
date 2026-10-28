@@ -8,7 +8,7 @@ public sealed partial class Browser
 {
     // A file without Information does not replace the person's section choice.
     private LibrarySection _section = LibrarySection.Information;
-    private InformationRequest? _informationRequest;
+    private CancellableWork? _informationRequest;
 
     // What the last Inspector lookup for the selected file left to show.
     private FetchOutcome? _outcome;
@@ -468,70 +468,11 @@ public sealed partial class Browser
         RefreshCommands();
     }
 
-    private sealed class InformationRequest : IAsyncDisposable
-    {
-        private static readonly WorkObservation Started = new(
-            new WorkDescription.Metadata(MetadataScope.Inspector),
-            new WorkProgress.Unknown(),
-            new WorkExecution.Running()
-        );
-        private readonly CancellationTokenSource _cancellation = new();
-        private readonly BackgroundWork.Operation _operation;
-        private readonly object _gate = new();
-        private Task _signalling = Task.CompletedTask;
-        private bool _ended;
-
-        internal InformationRequest(BackgroundWork work)
-        {
-            _operation = work.Begin(Started, Cancel);
-        }
-
-        internal CancellationToken Token => _cancellation.Token;
-        internal BackgroundWork.Operation Operation => _operation;
-
-        internal void Report(WorkExecution execution)
-        {
-            lock (_gate)
-                if (!_ended && !_cancellation.IsCancellationRequested)
-                    _operation.Report(Started with { Execution = execution });
-        }
-
-        internal Task Cancel()
-        {
-            lock (_gate)
-            {
-                if (!_ended && !_cancellation.IsCancellationRequested)
-                {
-                    _operation.Report(Started with { Execution = new WorkExecution.Cancelling() });
-                    _signalling = _cancellation.CancelAsync();
-                }
-                return _signalling;
-            }
-        }
-
-        // CancelAsync runs the token's callbacks on the thread pool, so the
-        // source is disposed only after they finish.
-        public async ValueTask DisposeAsync()
-        {
-            Task signalling;
-            lock (_gate)
-            {
-                _ended = true;
-                signalling = _signalling;
-            }
-            try
-            {
-                await signalling;
-            }
-            finally
-            {
-                if (_cancellation.IsCancellationRequested)
-                    _operation.Outcome = WorkOutcome.Cancelled;
-                _operation.Dispose();
-                _cancellation.Dispose();
-            }
-        }
-    }
+    private static readonly WorkObservation InspectorLookup = new(
+        new WorkDescription.Metadata(MetadataScope.Inspector),
+        new WorkProgress.Unknown(),
+        new WorkExecution.Running()
+    );
 
     private async Task RequestInformation()
     {
@@ -542,7 +483,7 @@ public sealed partial class Browser
         )
             return;
         var entry = row.Entry;
-        await using var request = new InformationRequest(_work);
+        await using var request = new CancellableWork(_work, InspectorLookup);
         _informationRequest = request;
         _outcome = null;
         ShowInformation();
@@ -563,7 +504,12 @@ public sealed partial class Browser
                 Fetch(source);
                 return;
             }
-            var found = await videos.Lookup(entry, source, request.Token, request.Report);
+            var found = await videos.Lookup(
+                entry,
+                source,
+                request.Token,
+                execution => request.Report(InspectorLookup with { Execution = execution })
+            );
             request.Token.ThrowIfCancellationRequested();
             if (!found)
                 _outcome = new FetchOutcome.NoMatch();
@@ -598,6 +544,9 @@ public sealed partial class Browser
         }
         finally
         {
+            // A lookup cancelled after its answer arrived still ends as cancelled.
+            if (request.Token.IsCancellationRequested)
+                request.Operation.Outcome = WorkOutcome.Cancelled;
             if (ReferenceEquals(_informationRequest, request))
             {
                 _informationRequest = null;
@@ -610,7 +559,7 @@ public sealed partial class Browser
     {
         if (_informationRequest is not { } request)
             return;
-        _ = request.Cancel();
+        request.TryCancel(out _);
         _informationRequest = null;
         ShowInformation();
     }

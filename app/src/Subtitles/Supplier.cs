@@ -36,28 +36,20 @@ internal sealed class Supplier(ISupplier supplier, RequestPolicy policy)
 
     internal string Question(SubtitleLookup lookup) => supplier.Question(lookup);
 
-    internal bool Configured(Account account) =>
-        Available
-        && (
-            Access == Access.Password
-                ? (account.Username.Length == 0) == (account.Secret.Length == 0)
-                : account.Secret.Length > 0 || HasBuiltInKey
-        );
+    internal bool Configured(Account account) => Available && Accepts(account);
 
-    internal Account Interpret(Draft draft, string secret)
-    {
-        var password = Access == Access.Password;
-        var username = password ? draft.Username.Trim() : string.Empty;
-        if (password && username.Length == 0 && draft.Secret.Length == 0)
-            secret = string.Empty;
-        if (
-            password
-                ? (username.Length > 0) != (secret.Length > 0)
-                : secret.Length == 0 && !HasBuiltInKey
-        )
-            throw new SubtitleException(SubtitleFailure.Unconfigured);
-        return new(SupplierId, username, secret);
-    }
+    // Whether the supplier can serve this kind of account: a password
+    // supplier signs in or not at all, and a key supplier takes the person's
+    // own key, or the built-in key when the release has one.
+    internal bool Accepts(Account account) =>
+        account switch
+        {
+            Account.BuiltIn => Access == Access.Password || HasBuiltInKey,
+            Account.OwnKey => Access != Access.Password,
+            Account.SignedIn => Access == Access.Password,
+            Account.PasswordNeeded => false,
+            _ => throw new ArgumentOutOfRangeException(nameof(account)),
+        };
 
     internal async Task<Allowance> Allowance(Account account)
     {
@@ -78,10 +70,21 @@ internal sealed class Supplier(ISupplier supplier, RequestPolicy policy)
     /// <summary>The supplier's identity in the shared request policy.</summary>
     internal string ProviderId => SupplierId.ToString().ToLowerInvariant();
 
+    // A password supplier's requests belong to the user, and all requests
+    // without sign-in to one shared identity; a key supplier's requests
+    // belong to their key.
     internal ProviderAccess Scope(Account account, string operation) =>
         new(
             ProviderId,
-            RequestKey.Digest(Access == Access.Password ? account.Username : ApiKey(account)),
+            RequestKey.Digest(
+                account switch
+                {
+                    Account.SignedIn signedIn => signedIn.Username,
+                    Account.PasswordNeeded needed => needed.Username,
+                    _ when Access == Access.Password => string.Empty,
+                    _ => ApiKey(account),
+                }
+            ),
             operation
         );
 
@@ -92,12 +95,9 @@ internal sealed class Supplier(ISupplier supplier, RequestPolicy policy)
     internal ProviderAccess Authentication(Account account) => Scope(account, string.Empty);
 
     // The key a request sends: the person's own, or else the one built into
-    // the release. A password supplier's secret is a password, so it always
-    // sends the built-in key.
+    // the release, which a password supplier always sends.
     private string ApiKey(Account account) =>
-        Access == Access.Key && account.Secret.Length > 0
-            ? account.Secret
-            : supplier.BuiltInKey ?? string.Empty;
+        account is Account.OwnKey own ? own.Key : supplier.BuiltInKey ?? string.Empty;
 
     internal async Task Check(ProviderHttp http, Account account, CancellationToken cancellation)
     {

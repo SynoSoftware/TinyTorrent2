@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Windows.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
@@ -125,13 +126,13 @@ public sealed partial class MainWindow
             }
         }
 
-        async Task<(ContentDialog Dialog, Task Closed)> Open(Torrent[] torrents, FileAction action)
+        async Task<(ContentDialog Dialog, Task Closed)> Open(Torrent[] torrents, ICommand command, FileDraft draft)
         {
             Torrents.Selection = new Syno.TableView.Selection(torrents, torrents[0]);
             await SelectTorrent();
-            Run(action == FileAction.Move ? Model.MoveFiles : Model.Remove);
+            Run(command);
             // The dialog opens only after the scope arrives.
-            await CaptureReady(Model.FileDraft, () => Model.FileDraft.CanRefresh);
+            await CaptureReady(draft, () => draft.CanRefresh);
             await CaptureLayout();
             var dialog =
                 _interaction?.Dialog
@@ -139,23 +140,23 @@ public sealed partial class MainWindow
             var closed =
                 _interaction?.Completion.Task
                 ?? throw new InvalidOperationException("The file dialog has no completion.");
-            if (Model.FileDraft.HasError)
+            if (draft.HasError)
                 throw new InvalidOperationException(
-                    "The file scope could not be read: " + Model.FileDraft.Message
+                    "The file scope could not be read: " + draft.Message
                 );
             return (dialog, closed);
         }
 
         void Choose(ContentDialog dialog, string path)
         {
-            Model.FileDraft.Destination = path;
+            Model.MoveDraft.Destination = path;
             CaptureElements(dialog)
                 .OfType<CheckBox>()
                 .Single(control => AutomationProperties.GetAutomationId(control) == "IncludeShared")
                 .IsChecked = true;
         }
 
-        var (dialog, closed) = await Open(group, FileAction.Move);
+        var (dialog, closed) = await Open(group, Model.MoveFiles, Model.MoveDraft);
         try
         {
             await Matrix("move-selection", dialog.Content as FrameworkElement);
@@ -166,30 +167,30 @@ public sealed partial class MainWindow
             await closed;
         }
 
-        (dialog, closed) = await Open([group[0]], FileAction.Move);
+        (dialog, closed) = await Open([group[0]], Model.MoveFiles, Model.MoveDraft);
         try
         {
-            if (!Model.FileDraft.HasShared || Model.FileDraft.CanSubmit)
+            if (!Model.MoveDraft.HasShared || Model.MoveDraft.CanSubmit)
                 throw new InvalidOperationException(
                     "The shared move did not require its outside owners."
                 );
             await Matrix("move-shared", dialog.Content as FrameworkElement);
             Choose(dialog, collision);
             await CaptureLayout();
-            if (!Model.FileDraft.CanSubmit || !dialog.IsPrimaryButtonEnabled)
+            if (!Model.MoveDraft.CanSubmit || !dialog.IsPrimaryButtonEnabled)
                 throw new InvalidOperationException(
                     "The complete shared scope cannot submit its move."
                 );
             await Matrix("move-confirm", dialog.Content as FrameworkElement);
             CaptureInvoke(dialog);
             await CaptureReady(
-                Model.FileDraft,
-                () => Model.FileDraft.HasError || _interaction?.Dialog is null
+                Model.MoveDraft,
+                () => Model.MoveDraft.HasError || _interaction?.Dialog is null
             );
             if (
                 _interaction?.Dialog is null
-                || !SamePath(Model.FileDraft.Destination, collision)
-                || !Model.FileDraft.IncludeShared
+                || !SamePath(Model.MoveDraft.Destination, collision)
+                || !Model.MoveDraft.IncludeShared
             )
                 throw new InvalidOperationException(
                     "The destination ownership refusal lost the dialog choices."
@@ -207,7 +208,7 @@ public sealed partial class MainWindow
                     dialogStayedOpen = true,
                     destinationRetained = true,
                     sharedChoiceRetained = true,
-                    message = Model.FileDraft.Message,
+                    message = Model.MoveDraft.Message,
                     sourceHash,
                     collisionHash,
                 }
@@ -233,7 +234,7 @@ public sealed partial class MainWindow
             return;
         }
 
-        (var removal, closed) = await Open([outside], FileAction.Remove);
+        (var removal, closed) = await Open([outside], Model.Remove, Model.RemovalDraft);
         try
         {
             CaptureInvoke(removal);
@@ -247,7 +248,7 @@ public sealed partial class MainWindow
         await CaptureReady(Model, () => !Model.Torrents.Contains(outside));
         CheckBytes(collisionFile, collisionHash);
 
-        (dialog, closed) = await Open([group[0]], FileAction.Move);
+        (dialog, closed) = await Open([group[0]], Model.MoveFiles, Model.MoveDraft);
         try
         {
             Choose(dialog, collision);
@@ -276,7 +277,7 @@ public sealed partial class MainWindow
                 "The occupied-file collision changed the source location."
             );
         await Matrix("move-collision");
-        (dialog, closed) = await Open([group[0]], FileAction.Move);
+        (dialog, closed) = await Open([group[0]], Model.MoveFiles, Model.MoveDraft);
         try
         {
             outcomes.Add(
@@ -289,8 +290,8 @@ public sealed partial class MainWindow
                     collisionHash,
                     chosenDestination = collision,
                     moveDestination = group[0].MoveDestination,
-                    reopenedDestination = Model.FileDraft.Destination,
-                    destinationRetained = SamePath(Model.FileDraft.Destination, collision),
+                    reopenedDestination = Model.MoveDraft.Destination,
+                    destinationRetained = SamePath(Model.MoveDraft.Destination, collision),
                     scope = "Accepted asynchronous work closes the dialog; a cleared preflight marker requires choosing the folder again.",
                 }
             );
@@ -339,11 +340,11 @@ public sealed partial class MainWindow
         );
         await CapturePage("files-moved");
 
-        (dialog, closed) = await Open([group[0]], FileAction.Remove);
+        (dialog, closed) = await Open([group[0]], Model.Remove, Model.RemovalDraft);
         try
         {
-            Model.FileDraft.DeleteDownloaded = true;
-            if (!Model.FileDraft.HasShared || dialog.DefaultButton != ContentDialogButton.Primary)
+            Model.RemovalDraft.DeleteDownloaded = true;
+            if (!Model.RemovalDraft.HasShared || dialog.DefaultButton != ContentDialogButton.Primary)
                 throw new InvalidOperationException(
                     "The partial deletion omitted shared-file protection or Delete as default."
                 );
@@ -379,11 +380,11 @@ public sealed partial class MainWindow
             }
         );
 
-        (dialog, closed) = await Open(group.Skip(1).ToArray(), FileAction.Remove);
+        (dialog, closed) = await Open(group.Skip(1).ToArray(), Model.Remove, Model.RemovalDraft);
         try
         {
-            Model.FileDraft.DeleteDownloaded = true;
-            if (Model.FileDraft.HasShared || dialog.DefaultButton != ContentDialogButton.Primary)
+            Model.RemovalDraft.DeleteDownloaded = true;
+            if (Model.RemovalDraft.HasShared || dialog.DefaultButton != ContentDialogButton.Primary)
                 throw new InvalidOperationException(
                     "The full deletion scope or Delete as default is incorrect."
                 );

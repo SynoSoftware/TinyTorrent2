@@ -88,12 +88,13 @@ dialog asks for it and the plugin's owner saves the result, because a dialog per
 plugin would repeat the same fields, checks and wording. The person can enter
 their own key even when the release has no built-in key for that provider.
 
-**Owner ruling: automatic provider work is limited per movie.**
-Every torrent takes the same import path: its files are read and listed. When
-movie information download is on, every video without a match is identified,
-from saved information first and from the provider only when needed, because
-a file nobody identified cannot be used in Library. A video without a match is
-tried once in each session. Automatic work and Fetch new respect remembered
+**Owner ruling: a video is identified only when it is displayed.** This follows
+the [no-scan ruling](library.md#purpose-and-experience). When movie information
+download is on, a video without a match is identified when the person displays
+it, in the background, from saved information first and from the provider only
+when needed. No pass identifies every video, because Library never asks a
+provider about items the person is not displaying. A displayed video without a
+match is tried once in each session. Lookups and Fetch new respect remembered
 empty results, unusable resources and the search limit across sessions, because
 a second copy of a movie sends the same question to the provider. Movie lookups
 and subtitle searches share that limit, one setting on the Plugins page.
@@ -321,7 +322,8 @@ from owning edits.
   results, so those operations do not depend on a page's controls. Views
   request loading when the relevant content becomes visible and bind to the
   results.
-- `AddDraft`, `Inspector` and `FileDraft` own their unfinished operations.
+- `AddDraft`, `Inspector`, `MoveDraft` and `RemovalDraft` own their unfinished
+  operations.
   `AddDraft` holds addition choices and preview state. It also receives
   dropped, pasted, picked and activated sources: it takes them in arrival
   order, adds several together without a dialog, and tells `MainViewModel`

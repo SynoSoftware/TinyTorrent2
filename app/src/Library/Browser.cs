@@ -42,6 +42,7 @@ public sealed partial class Browser
     private bool _hasCatalogue;
     private string _emptyText = string.Empty;
     private bool _visible;
+    private IReadOnlySet<long> _displayed = new HashSet<long>();
     private bool _typing;
     private bool _showsFacets;
     private bool _erasing;
@@ -734,6 +735,28 @@ public sealed partial class Browser
             CancelRequests();
         else
             Refresh();
+        ShareDisplayed();
+    }
+
+    /// <summary>
+    /// Sets the entries whose rows the table realizes. Library reads file
+    /// facts and identifies videos only for these, and only while the page
+    /// shows.
+    /// </summary>
+    internal void SetDisplayed(IReadOnlySet<long> entries)
+    {
+        _displayed = entries;
+        ShareDisplayed();
+    }
+
+    private void ShareDisplayed()
+    {
+        // Only rows of the current results can be on screen.
+        IReadOnlySet<long> shown = _visible
+            ? _displayed.Where(_rows.ContainsKey).ToHashSet()
+            : new HashSet<long>();
+        _facts?.SetDisplayed(shown);
+        _videos?.SetDisplayed(shown);
     }
 
     public void Filter(string section, string? value, int? season = null)
@@ -873,6 +896,9 @@ public sealed partial class Browser
                 }
                 foreach (var key in _rows.Keys.Where(key => !retained.Contains(key)).ToArray())
                     _rows.Remove(key);
+                // A row the search removed stops being read, even when no cell
+                // shows another row in its place.
+                ShareDisplayed();
                 rowsChanged |= !Rows.SequenceEqual(rows);
                 var facetsChanged =
                     query.IncludesFacets

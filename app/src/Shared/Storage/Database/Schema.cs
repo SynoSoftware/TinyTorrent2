@@ -175,7 +175,7 @@ internal sealed partial class Database
         CREATE TEMP TABLE received (file_index INTEGER PRIMARY KEY);
         CREATE TEMP TABLE video_attempts (
             origin TEXT NOT NULL, file_index INTEGER NOT NULL, catalog_id TEXT NOT NULL,
-            evidence TEXT NOT NULL, request TEXT NOT NULL, outcome TEXT, question_id TEXT,
+            evidence TEXT NOT NULL, request TEXT NOT NULL, outcome INTEGER, question_id TEXT,
             PRIMARY KEY(origin,file_index,catalog_id)
         );
         CREATE INDEX video_attempts_request ON video_attempts(catalog_id,request) WHERE outcome IS NULL;

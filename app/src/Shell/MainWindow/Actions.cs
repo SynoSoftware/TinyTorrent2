@@ -410,97 +410,138 @@ public sealed partial class MainWindow
         });
     }
 
-    // Removal deletes the ticked files in the deletion mode; Move ignores it.
-    private async Task ShowFiles(
-        Torrent[] torrents,
-        FileAction action,
-        DeletionMode deletion = DeletionMode.Recycle,
-        bool initialize = true
-    )
+    private async Task ShowMove(Torrent[] torrents, bool initialize = true)
     {
         await Interact(async interaction =>
         {
+            var draft = Model.MoveDraft;
             if (initialize)
-                Model.FileDraft.Begin(torrents, action, deletion);
+                draft.Begin(torrents);
+            interaction.Restore = () =>
+                torrents.All(Model.Contains)
+                    ? ShowMove(torrents, initialize: false)
+                    : Task.CompletedTask;
+            var content = new FileDialog(Model, draft);
+            content.DestinationRequested += async (_, _) =>
+            {
+                var folder = await PickFolder(draft.Destination, draft.Folder);
+                if (folder is not null)
+                    draft.Destination = folder;
+            };
+            var dialog = new Dialog { Content = content };
+            await ShowFileDialog(
+                interaction,
+                dialog,
+                initialize,
+                () =>
+                {
+                    // Only Move's footer gives the count and size: Removal's
+                    // footer is its opt-out, so its title and check box carry
+                    // them instead.
+                    if (draft.Total.Length > 0)
+                        dialog.Footer = new DialogFooter.Detail(draft.Total);
+                },
+                draft.Submit
+            );
+            return true;
+        });
+    }
+
+    private async Task ShowRemoval(Torrent[] torrents, DeletionMode deletion)
+    {
+        await Interact(async interaction =>
+        {
+            var draft = Model.RemovalDraft;
+            draft.Begin(torrents, deletion);
             Task<bool> Submit()
             {
-                if (Model.FileDraft.IsRemoval)
-                    Torrents.Release(torrents);
-                return Model.FileDraft.Submit();
+                Torrents.Release(torrents);
+                return draft.Submit();
             }
             if (
-                action != FileAction.Move
-                && !Model.Settings.ConfirmDelete.ConfirmedOn
-                && Model.FileDraft.CanSubmit
+                // CanSubmit needs the engine, which has confirmed every setting by then.
+                Model.Settings.ConfirmDelete.ConfirmedOn != true
+                && draft.CanSubmit
                 && await Submit()
             )
                 return true;
-            if (action == FileAction.Move)
-                interaction.Restore = () =>
-                    torrents.All(Model.Contains)
-                        ? ShowFiles(torrents, action, initialize: false)
-                        : Task.CompletedTask;
-            var content = new FileDialog(Model);
-            content.DestinationRequested += async (_, _) =>
+            var content = new FileDialog(Model, draft);
+            var dialog = new Dialog
             {
-                var folder = await PickFolder(Model.FileDraft.Destination, Model.FileDraft.Location);
-                if (folder is not null)
-                    Model.FileDraft.Destination = folder;
+                Content = content,
+                Footer = new DialogFooter.OptOut(draft.Confirmation),
             };
-            void Resize(object? sender = null, SizeChangedEventArgs? args = null)
-            {
-                content.Width = Math.Min(560, Root.ActualWidth - 80);
-                content.MaxHeight = Math.Clamp(Root.ActualHeight - 180, 220, 440);
-            }
-            Resize();
-            Root.SizeChanged += Resize;
-            var dialog = new Dialog { Content = content };
-            dialog.SizeToContent();
-            if (action != FileAction.Move)
-                dialog.Footer = new DialogFooter.OptOut(Model.FileDraft.Confirmation);
-            // Removal's check boxes change what the button deletes, so its
-            // tooltip follows them.
-            void ShowAct(object? sender = null, PropertyChangedEventArgs? args = null)
-            {
-                dialog.Title = Model.FileDraft.Title;
-                dialog.Glyph = Model.FileDraft.Glyph;
-                dialog.PrimaryGlyph = Model.FileDraft.SubmitGlyph;
-                dialog.PrimaryButtonText = Model.FileDraft.SubmitText;
-                dialog.PrimaryToolTip = Model.FileDraft.SubmitToolTip;
-            }
-            if (action != FileAction.Move)
-                Model.FileDraft.PropertyChanged += ShowAct;
-            _fileDialog = content;
-            // The scope holds Move's shared-file choices and Removal's
-            // .torrent files, so the dialog opens with every row it shows.
-            if (initialize)
-                await Model.FileDraft.RefreshScope();
+            // The check boxes change what the button deletes, so its tooltip
+            // follows them.
+            void FollowChoices(object? sender, PropertyChangedEventArgs args) =>
+                ShowLabels(dialog, draft);
+            draft.PropertyChanged += FollowChoices;
             try
             {
-                await ShowEditor(
-                    interaction,
-                    dialog,
-                    Model.FileDraft,
-                    () =>
-                    {
-                        ShowAct();
-                        // Removal's footer is its opt-out, so its title and
-                        // check box carry the count and size instead.
-                        if (action == FileAction.Move && Model.FileDraft.Total.Length > 0)
-                            dialog.Footer = new DialogFooter.Detail(Model.FileDraft.Total);
-                        content.RefreshText();
-                    },
-                    submit: Submit
-                );
+                await ShowFileDialog(interaction, dialog, initialize: true, null, Submit);
             }
             finally
             {
-                Root.SizeChanged -= Resize;
-                Model.FileDraft.PropertyChanged -= ShowAct;
-                _fileDialog = null;
+                draft.PropertyChanged -= FollowChoices;
             }
             return true;
         });
+    }
+
+    // What Move and Remove share: the dialog's size, its title and button
+    // from the draft, and the scope read before it opens.
+    private async Task ShowFileDialog(
+        DialogInteraction interaction,
+        Dialog dialog,
+        bool initialize,
+        Action? refreshFooter,
+        Func<Task<bool>> submit
+    )
+    {
+        var content = (FileDialog)dialog.Content;
+        var draft = content.Draft;
+        void Resize(object? sender = null, SizeChangedEventArgs? args = null)
+        {
+            content.Width = Math.Min(560, Root.ActualWidth - 80);
+            content.MaxHeight = Math.Clamp(Root.ActualHeight - 180, 220, 440);
+        }
+        Resize();
+        Root.SizeChanged += Resize;
+        dialog.SizeToContent();
+        _fileDialog = content;
+        // The scope holds Move's shared-file choices and Removal's .torrent
+        // files, so the dialog opens with every row it shows.
+        if (initialize)
+            await draft.RefreshScope();
+        try
+        {
+            await ShowEditor(
+                interaction,
+                dialog,
+                draft,
+                () =>
+                {
+                    ShowLabels(dialog, draft);
+                    refreshFooter?.Invoke();
+                    content.RefreshText();
+                },
+                submit
+            );
+        }
+        finally
+        {
+            Root.SizeChanged -= Resize;
+            _fileDialog = null;
+        }
+    }
+
+    private static void ShowLabels(Dialog dialog, FileDraft draft)
+    {
+        dialog.Title = draft.Title;
+        dialog.Glyph = draft.Glyph;
+        dialog.PrimaryGlyph = draft.SubmitGlyph;
+        dialog.PrimaryButtonText = draft.SubmitText;
+        dialog.PrimaryToolTip = draft.SubmitToolTip;
     }
 
     private async Task ShowSpeedLimit(Torrent[] torrents, bool initialize = true)

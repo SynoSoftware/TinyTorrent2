@@ -126,37 +126,21 @@ internal sealed class Updates
         await SaveCheck();
         if (!CanCheck)
             return;
-        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+        var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(8));
         _request = cancellation;
-        var observation = new WorkObservation(
-            new WorkDescription.Update(UpdatePhase.Checking),
-            new WorkProgress.Unknown(),
-            new WorkExecution.Running()
+        var work = new CancellableWork(
+            _work,
+            new(
+                new WorkDescription.Update(UpdatePhase.Checking),
+                new WorkProgress.Unknown(),
+                new WorkExecution.Running()
+            ),
+            cancellation: cancellation
         );
-        BackgroundWork.Operation? operation = null;
-        var signalling = Task.CompletedTask;
-        var cancelled = false;
-        operation = _work.Begin(
-            observation,
-            () =>
-            {
-                if (ReferenceEquals(_request, cancellation))
-                {
-                    cancelled = true;
-                    operation?.Report(
-                        observation with
-                        {
-                            Execution = new WorkExecution.Cancelling(),
-                        }
-                    );
-                    signalling = cancellation.CancelAsync();
-                }
-                return signalling;
-            }
-        );
+        var operation = work.Operation;
         try
         {
-            using var release = await FetchRelease(cancellation.Token);
+            using var release = await FetchRelease(work.Token);
             if (release is null)
                 return;
             if (!CanCheck)
@@ -182,7 +166,9 @@ internal sealed class Updates
         }
         catch (OperationCanceledException)
         {
-            operation.Outcome = cancelled ? WorkOutcome.Cancelled : WorkOutcome.Failed;
+            // Only the person's Cancel shows Cancelling; the timeout, Observe
+            // and Close cancel the token directly and fail the check.
+            operation.Outcome = work.IsCancelling ? WorkOutcome.Cancelled : WorkOutcome.Failed;
             Debug.WriteLine("Update check cancelled.");
         }
         catch (Exception error)
@@ -199,14 +185,7 @@ internal sealed class Updates
         finally
         {
             _request = null;
-            try
-            {
-                await signalling;
-            }
-            finally
-            {
-                operation.Dispose();
-            }
+            await work.DisposeAsync();
         }
     }
 
@@ -229,32 +208,20 @@ internal sealed class Updates
     // opens the window again, so this returns only when Setup fails.
     private async Task InstallLatest()
     {
-        using var cancellation = new CancellationTokenSource();
-        var observation = new WorkObservation(
-            new WorkDescription.Update(UpdatePhase.Downloading),
-            new WorkProgress.Unknown(),
-            new WorkExecution.Running()
+        var work = new CancellableWork(
+            _work,
+            new(
+                new WorkDescription.Update(UpdatePhase.Downloading),
+                new WorkProgress.Unknown(),
+                new WorkExecution.Running()
+            )
         );
-        BackgroundWork.Operation? operation = null;
-        var signalling = Task.CompletedTask;
-        operation = _work.Begin(
-            observation,
-            () =>
-            {
-                operation?.Report(
-                    observation with
-                    {
-                        Execution = new WorkExecution.Cancelling(),
-                    }
-                );
-                signalling = cancellation.CancelAsync();
-                return signalling;
-            }
-        );
+        var operation = work.Operation;
+        var cancellation = work.Token;
         try
         {
             using var release =
-                await FetchRelease(cancellation.Token)
+                await FetchRelease(cancellation)
                 ?? throw new UpdateException(UpdateFailure.Missing);
             // installer/Build.ps1 gives the installer this name.
             var name = $"TinyTorrent-{Tag(release.RootElement)}-x64-Setup.exe";
@@ -272,19 +239,20 @@ internal sealed class Updates
             using (
                 var request = new HttpRequestMessage(
                     HttpMethod.Get,
-                    await Locate(installer, cancellation.Token)
+                    await Locate(installer, cancellation)
                 )
             )
                 await _http.Download(
                     request,
                     path,
-                    progress =>
-                        operation.Report(observation = observation with { Progress = progress }),
-                    cancellation.Token
+                    progress => work.Report(work.Observation with { Progress = progress }),
+                    cancellation
                 );
-            await CheckInstaller(release.RootElement, name, path, cancellation.Token);
-            operation.Report(
-                observation = new WorkObservation(
+            await CheckInstaller(release.RootElement, name, path, cancellation);
+            // Setup cannot be cancelled, so a Cancel until now stops it starting.
+            cancellation.ThrowIfCancellationRequested();
+            work.Report(
+                new WorkObservation(
                     new WorkDescription.Update(UpdatePhase.Installing),
                     new WorkProgress.Unknown(),
                     new WorkExecution.Running(Cancellable: false)
@@ -330,14 +298,7 @@ internal sealed class Updates
         }
         finally
         {
-            try
-            {
-                await signalling;
-            }
-            finally
-            {
-                operation.Dispose();
-            }
+            await work.DisposeAsync();
         }
     }
 

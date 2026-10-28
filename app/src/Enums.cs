@@ -76,6 +76,15 @@ internal enum WorkOutcome
     Failed,
 }
 
+// Where a CancellableWork is in its life; WorkExecution is what the work list
+// shows of it.
+internal enum WorkPhase
+{
+    Running,
+    Cancelling,
+    Ended,
+}
+
 // What the window shows after AddDraft receives sources.
 internal enum ArrivalOutcome
 {
@@ -181,12 +190,6 @@ public enum PieceOrder
 {
     Sequential,
     FirstLast,
-}
-
-public enum FileAction
-{
-    Move,
-    Remove,
 }
 
 internal enum AdditionPhase
@@ -324,6 +327,22 @@ internal enum SubtitleMatch
     Likely,
 }
 
+// What the subtitle supplier last answered about the saved account.
+internal enum AccountCheck
+{
+    Unchecked,
+    Verified,
+    Refused,
+}
+
+// Whether the subtitle supplier could be reached at its last request.
+internal enum SupplierReach
+{
+    Ok,
+    Network,
+    Route,
+}
+
 internal enum SubtitleFailure
 {
     None,
@@ -389,6 +408,41 @@ public enum PieceKind
     Missing,
     Downloading,
     Verified,
+}
+
+// A torrent's state as the engine's status word names it; Unknown is a word
+// this app does not know.
+public enum TorrentState
+{
+    Unknown,
+    Downloading,
+    Seeding,
+    Completed,
+    Paused,
+    AllPaused,
+    Checking,
+    WaitingCheck,
+    Moving,
+    WaitingMove,
+    Metadata,
+    Queued,
+    Error,
+}
+
+// The engine's startup as the snapshot's loading and storage_failed report it.
+internal enum EngineStartup
+{
+    Loading,
+    Ready,
+    Failed,
+}
+
+// A draft that closing the window must save, discard or ask about.
+internal enum UnfinishedDraft
+{
+    Add,
+    Move,
+    Inspector,
 }
 
 internal enum PeerTransport
@@ -548,6 +602,27 @@ internal enum IdentificationOutcome
     Superseded,
 }
 
+/// <summary>
+/// How an identification attempt ended, as <c>video_attempts.outcome</c> holds
+/// it; NULL there is an attempt still in flight.
+/// </summary>
+internal enum AttemptOutcome
+{
+    Matched,
+    NoMatch,
+
+    /// <summary>Search protection held it back; the attempt names the blocked request.</summary>
+    Blocked,
+    Unanswered,
+
+    /// <summary>
+    /// The attempt was stopped or superseded, or the provider could serve no
+    /// request, so the automatic sweep may try the file again.
+    /// </summary>
+    Cancelled,
+    Failed,
+}
+
 internal enum RequestOutcome
 {
     Answered,
@@ -683,6 +758,14 @@ internal enum PauseReason
     Manual,
     Schedule,
     ConnectionTest,
+}
+
+// What limits the session's transfers: a pause outranks the alternative limits.
+internal enum Restriction
+{
+    None,
+    Paused,
+    Alternative,
 }
 
 internal enum RefusalReason

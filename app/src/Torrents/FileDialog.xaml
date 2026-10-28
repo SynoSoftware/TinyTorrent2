@@ -46,7 +46,7 @@
              restore what the other outcomes delete. -->
         <VisualState x:Name="Permanent">
           <VisualState.StateTriggers>
-            <StateTrigger IsActive="{x:Bind Model.FileDraft.DeletesPermanently, Mode=OneWay}" />
+            <StateTrigger IsActive="{x:Bind Removal.DeletesPermanently, Mode=OneWay}" />
           </VisualState.StateTriggers>
           <VisualState.Setters>
             <Setter Target="ConsequenceIcon.Foreground" Value="{ThemeResource SystemFillColorCautionBrush}" />
@@ -66,15 +66,31 @@
       HorizontalScrollBarVisibility="Disabled"
     >
       <StackPanel Spacing="12">
+        <StackPanel Spacing="12" Visibility="{x:Bind ShowsMove}">
+          <ItemsControl
+            ItemsSource="{x:Bind Move.Torrents, Mode=OneWay}"
+            ItemTemplate="{StaticResource FileDialogTorrentTemplate}"
+            IsTabStop="False"
+          />
+          <StackPanel Spacing="8" Visibility="{x:Bind Move.HasShared, Mode=OneWay}">
+            <TextBlock
+              Text="{x:Bind Move.SharedText, Mode=OneWay}"
+              Style="{StaticResource TinyTorrentBodyTextStyle}"
+              IsTextSelectionEnabled="True"
+              ToolTipService.ToolTip="{x:Bind Move.SharedText, Mode=OneWay}"
+            />
+            <CheckBox
+              x:Name="IncludeShared"
+              Content="{x:Bind Model.Text.Get('file_action', 'include_shared'), Mode=OneWay}"
+              AutomationProperties.AutomationId="IncludeShared"
+              IsChecked="{x:Bind Move.IncludeShared, Mode=TwoWay}"
+              IsEnabled="{x:Bind Move.CanRefresh, Mode=OneWay}"
+            />
+          </StackPanel>
+        </StackPanel>
         <ItemsControl
-          ItemsSource="{x:Bind Model.FileDraft.Torrents, Mode=OneWay}"
-          ItemTemplate="{StaticResource FileDialogTorrentTemplate}"
-          Visibility="{x:Bind Model.FileDraft.IsMove, Mode=OneWay}"
-          IsTabStop="False"
-        />
-        <ItemsControl
-          ItemsSource="{x:Bind Model.FileDraft.Folders, Mode=OneWay}"
-          Visibility="{x:Bind Model.FileDraft.IsRemoval, Mode=OneWay}"
+          ItemsSource="{x:Bind Removal.Folders, Mode=OneWay}"
+          Visibility="{x:Bind ShowsRemoval}"
           IsTabStop="False"
         >
           <ItemsControl.ItemsPanel>
@@ -118,21 +134,6 @@
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>
-        <StackPanel Spacing="8" Visibility="{x:Bind Model.FileDraft.ShowsMoveShared, Mode=OneWay}">
-          <TextBlock
-            Text="{x:Bind Model.FileDraft.SharedText, Mode=OneWay}"
-            Style="{StaticResource TinyTorrentBodyTextStyle}"
-            IsTextSelectionEnabled="True"
-            ToolTipService.ToolTip="{x:Bind Model.FileDraft.SharedText, Mode=OneWay}"
-          />
-          <CheckBox
-            x:Name="IncludeShared"
-            Content="{x:Bind Model.Text.Get('file_action', 'include_shared'), Mode=OneWay}"
-            AutomationProperties.AutomationId="IncludeShared"
-            IsChecked="{x:Bind Model.FileDraft.IncludeShared, Mode=TwoWay}"
-            IsEnabled="{x:Bind Model.FileDraft.CanRefresh, Mode=OneWay}"
-          />
-        </StackPanel>
       </StackPanel>
     </ScrollViewer>
     <!-- The list scrolls while the deletion choice and its consequence stay
@@ -144,34 +145,34 @@
       Margin="0,16,0,0"
       BorderThickness="0,1,0,0"
       BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
-      Visibility="{x:Bind Model.FileDraft.IsRemoval, Mode=OneWay}"
+      Visibility="{x:Bind ShowsRemoval}"
     >
       <controls:WrapPanel Orientation="Horizontal" ColumnSpacing="24">
         <CheckBox
           AutomationProperties.AutomationId="DeleteDownloaded"
-          AutomationProperties.HelpText="{x:Bind Model.FileDraft.Consequence, Mode=OneWay}"
-          IsChecked="{x:Bind Model.FileDraft.DeleteDownloaded, Mode=TwoWay}"
-          IsEnabled="{x:Bind Model.FileDraft.CanEdit, Mode=OneWay}"
+          AutomationProperties.HelpText="{x:Bind Removal.Consequence, Mode=OneWay}"
+          IsChecked="{x:Bind Removal.DeleteDownloaded, Mode=TwoWay}"
+          IsEnabled="{x:Bind Removal.CanEdit, Mode=OneWay}"
         >
           <TextBlock>
-            <Run Text="{x:Bind Model.FileDraft.DownloadedText, Mode=OneWay}" />
+            <Run Text="{x:Bind Removal.DownloadedText, Mode=OneWay}" />
             <Run
-              Text="{x:Bind Model.FileDraft.DownloadedSize, Mode=OneWay}"
+              Text="{x:Bind Removal.DownloadedSize, Mode=OneWay}"
               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
             />
           </TextBlock>
         </CheckBox>
         <CheckBox
           AutomationProperties.AutomationId="DeleteTorrentFiles"
-          AutomationProperties.HelpText="{x:Bind Model.FileDraft.Consequence, Mode=OneWay}"
-          IsChecked="{x:Bind Model.FileDraft.DeleteTorrentFiles, Mode=TwoWay}"
-          IsEnabled="{x:Bind Model.FileDraft.CanEdit, Mode=OneWay}"
-          Visibility="{x:Bind Model.FileDraft.HasTorrentFiles, Mode=OneWay}"
+          AutomationProperties.HelpText="{x:Bind Removal.Consequence, Mode=OneWay}"
+          IsChecked="{x:Bind Removal.DeleteTorrentFiles, Mode=TwoWay}"
+          IsEnabled="{x:Bind Removal.CanEdit, Mode=OneWay}"
+          Visibility="{x:Bind Removal.HasTorrentFiles, Mode=OneWay}"
         >
           <TextBlock>
-            <Run Text="{x:Bind Model.FileDraft.TorrentFilesText, Mode=OneWay}" />
+            <Run Text="{x:Bind Removal.TorrentFilesText, Mode=OneWay}" />
             <Run
-              Text="{x:Bind Model.FileDraft.TorrentFilesSize, Mode=OneWay}"
+              Text="{x:Bind Removal.TorrentFilesSize, Mode=OneWay}"
               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
             />
           </TextBlock>
@@ -185,7 +186,7 @@
         <FontIcon
           x:Name="ConsequenceIcon"
           FontFamily="{x:Bind icons:Lucide.Font}"
-          Glyph="{x:Bind Model.FileDraft.ConsequenceGlyph, Mode=OneWay}"
+          Glyph="{x:Bind Removal.ConsequenceGlyph, Mode=OneWay}"
           FontSize="{StaticResource TinyTorrentInlineIconSize}"
           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
           VerticalAlignment="Top"
@@ -194,7 +195,7 @@
         <TextBlock
           x:Name="ConsequenceText"
           Grid.Column="1"
-          Text="{x:Bind Model.FileDraft.Consequence, Mode=OneWay}"
+          Text="{x:Bind Removal.Consequence, Mode=OneWay}"
           Style="{StaticResource TinyTorrentBodyTextStyle}"
           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
           TextWrapping="Wrap"
@@ -207,7 +208,7 @@
       Padding="0,16,0,0"
       Margin="0,16,0,0"
       BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
-      Visibility="{x:Bind Model.FileDraft.IsMove, Mode=OneWay}"
+      Visibility="{x:Bind ShowsMove}"
     >
       <Grid ColumnSpacing="12">
         <Grid.RowDefinitions>
@@ -228,8 +229,8 @@
         <TextBlock
           Grid.Column="1"
           Margin="12,0,0,0"
-          Text="{x:Bind Model.FileDraft.Locations, Mode=OneWay}"
-          ToolTipService.ToolTip="{x:Bind Model.FileDraft.Locations, Mode=OneWay}"
+          Text="{x:Bind Move.FolderText, Mode=OneWay}"
+          ToolTipService.ToolTip="{x:Bind Move.FolderText, Mode=OneWay}"
           Style="{StaticResource TinyTorrentBodyTextStyle}"
           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
           TextWrapping="NoWrap"
@@ -253,11 +254,11 @@
           x:Name="Destination"
           AutomationProperties.AutomationId="MoveDestination"
           AutomationProperties.Name="{x:Bind Model.Text.Get('file_action', 'destination'), Mode=OneWay}"
-          AutomationProperties.HelpText="{x:Bind Model.FileDraft.DestinationError, Mode=OneWay}"
+          AutomationProperties.HelpText="{x:Bind Move.DestinationError, Mode=OneWay}"
           AutomationProperties.LabeledBy="{x:Bind DestinationLabel}"
-          IsEnabled="{x:Bind Model.FileDraft.CanRefresh, Mode=OneWay}"
-          Text="{x:Bind Model.FileDraft.Destination, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-          ToolTipService.ToolTip="{x:Bind Model.FileDraft.Destination, Mode=OneWay}"
+          IsEnabled="{x:Bind Move.CanRefresh, Mode=OneWay}"
+          Text="{x:Bind Move.Destination, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+          ToolTipService.ToolTip="{x:Bind Move.Destination, Mode=OneWay}"
           FlowDirection="LeftToRight"
         />
         <controls:FieldHeader
@@ -265,7 +266,7 @@
           Grid.Column="1"
           Grid.ColumnSpan="2"
           Margin="0,8,0,0"
-          Error="{x:Bind Model.FileDraft.DestinationError, Mode=OneWay}"
+          Error="{x:Bind Move.DestinationError, Mode=OneWay}"
         />
         <controls:ActionButton
           Glyph="{x:Bind icons:Lucide.FolderSearch}"
@@ -277,7 +278,7 @@
           Grid.Column="2"
           Margin="0,8,0,0"
           VerticalAlignment="Bottom"
-          IsEnabled="{x:Bind Model.FileDraft.CanRefresh, Mode=OneWay}"
+          IsEnabled="{x:Bind Move.CanRefresh, Mode=OneWay}"
           Click="OnDestination"
         />
       </Grid>
@@ -287,17 +288,17 @@
       Height="20"
       HorizontalAlignment="Center"
       VerticalAlignment="Center"
-      IsActive="{x:Bind Model.FileDraft.IsPending, Mode=OneWay}"
-      Visibility="{x:Bind Model.FileDraft.IsPending, Mode=OneWay}"
+      IsActive="{x:Bind Draft.IsPending, Mode=OneWay}"
+      Visibility="{x:Bind Draft.IsPending, Mode=OneWay}"
     />
     <StackPanel Grid.Row="2" Spacing="8">
       <InfoBar
         Margin="0,16,0,0"
         IsClosable="False"
         Severity="Error"
-        IsOpen="{x:Bind Model.FileDraft.HasError, Mode=OneWay}"
-        Visibility="{x:Bind Model.FileDraft.HasError, Mode=OneWay}"
-        Message="{x:Bind Model.FileDraft.Message, Mode=OneWay}"
+        IsOpen="{x:Bind Draft.HasError, Mode=OneWay}"
+        Visibility="{x:Bind Draft.HasError, Mode=OneWay}"
+        Message="{x:Bind Draft.Message, Mode=OneWay}"
       >
         <InfoBar.ActionButton>
           <controls:ActionButton
@@ -307,7 +308,8 @@
             Text="{x:Bind Model.Text.Get('file_action', 'refresh'), Mode=OneWay}"
             AutomationProperties.AutomationId="RefreshFileScope"
             Click="OnRefresh"
-            IsEnabled="{x:Bind Model.FileDraft.CanRefresh, Mode=OneWay}"
+            IsEnabled="{x:Bind Draft.CanRefresh, Mode=OneWay}"
+            Visibility="{x:Bind Draft.ShowsScopeError, Mode=OneWay}"
           />
         </InfoBar.ActionButton>
       </InfoBar>

@@ -77,15 +77,16 @@ public sealed class Overview : INotifyPropertyChanged
     };
     public string Subtitle => Category switch
     {
-        SettingsCategory.Transfers => _settings.Destination.ConfirmedText,
+        SettingsCategory.Transfers => _settings.Destination.ConfirmedText ?? "—",
         SettingsCategory.Limits => _main.FollowsSchedule ? _main.LimitsNow : _main.LimitsHeading,
         // The inactive title and the Current limits fact already say what applies.
         SettingsCategory.Schedule => _main.FollowsSchedule ? _main.ScheduleSummary : string.Empty,
         SettingsCategory.Network => _main.IsConnected ? _main.IncomingStatus : "—",
         SettingsCategory.Plugins => _main.Library.Status,
         null => _settings.Text.Format("settings", "home_activity",
-            _main.Torrents.Count(torrent => torrent.StatusCode is "downloading" or "metadata"),
-            _main.Torrents.Count(torrent => torrent.StatusCode == "seeding")),
+            _main.Torrents.Count(torrent =>
+                torrent.State is TorrentState.Downloading or TorrentState.Metadata),
+            _main.Torrents.Count(torrent => torrent.State == TorrentState.Seeding)),
         _ => string.Empty,
     };
 

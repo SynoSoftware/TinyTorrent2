@@ -283,15 +283,18 @@ public sealed partial class MainWindow
                 option.Name,
                 option.Access,
                 option.HasBuiltInKey,
-                new(string.Empty, string.Empty, library.HasKey(option.ProviderId)),
+                library.HasKey(option.ProviderId)
+                    ? new AccountInput.OwnKey(new Secret.Kept())
+                    : new AccountInput.BuiltIn(),
                 async input =>
                 {
                     // Saving a key restarts the provider's lookups, so an
-                    // unchanged choice saves nothing. No typed key and no kept
-                    // key means the built-in key.
-                    var key = input.Secret.Length > 0 ? input.Secret : null;
-                    if (key is not null || (!input.KeepSecret && library.HasKey(option.ProviderId)))
-                        await library.SaveKey(option.ProviderId, key);
+                    // unchanged choice saves nothing. A null key means the
+                    // built-in key.
+                    if (input is AccountInput.OwnKey { Key: Secret.Typed typed })
+                        await library.SaveKey(option.ProviderId, typed.Value);
+                    else if (input is AccountInput.BuiltIn && library.HasKey(option.ProviderId))
+                        await library.SaveKey(option.ProviderId, null);
                     if (enableAutomaticDownload)
                         await library.EnableAutomaticDownload(option.ProviderId);
                 }

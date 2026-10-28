@@ -62,11 +62,21 @@ internal sealed partial class Acquisition
                         else
                             repairSecret = true;
                     }
-                    var account = new Account(
-                        (SubtitleSupplier)reader.GetInt32(1),
-                        reader.GetString(2),
-                        secret
-                    );
+                    // A user name without a readable password keeps the user
+                    // name and waits for the password, because a failed
+                    // sign-in never falls back to anonymous use. A key
+                    // supplier has no user name, so a saved one is ignored
+                    // and the key kept.
+                    var supplierId = (SubtitleSupplier)reader.GetInt32(1);
+                    var username = reader.GetString(2);
+                    var password = GetSupplier(supplierId)?.Access == Access.Password;
+                    Account account =
+                        password && username.Length > 0
+                            ? secret.Length > 0
+                                ? new Account.SignedIn(supplierId, username, secret)
+                                : new Account.PasswordNeeded(supplierId, username)
+                        : secret.Length > 0 ? new Account.OwnKey(supplierId, secret)
+                        : new Account.BuiltIn(supplierId);
                     var repairLanguages = false;
                     string[] languages;
                     try

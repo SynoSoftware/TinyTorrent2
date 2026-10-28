@@ -10,7 +10,7 @@ $strings = [Activator]::CreateInstance($assembly.GetType('Syno.TinyTorrent.Share
 $type = $assembly.GetType('Syno.TinyTorrent.Torrents.AddSource', $true)
 $source = $type.GetConstructors($flags)[0].Invoke([object[]]@('source.torrent', $strings, $null))
 
-function Apply-Preview([string] $TorrentId) {
+function Apply-Preview([string] $TorrentId, $Target = $source) {
     $preview = @{
         preview_id = 'preview'
         torrent_id = $TorrentId
@@ -25,7 +25,7 @@ function Apply-Preview([string] $TorrentId) {
     } | ConvertTo-Json -Depth 4
     $document = [Text.Json.JsonDocument]::Parse($preview)
     try {
-        $type.GetMethod('Apply', $flags).Invoke($source, [object[]]@($document.RootElement, 'C:\Downloads'))
+        $type.GetMethod('Apply', $flags).Invoke($Target, [object[]]@($document.RootElement, 'C:\Downloads'))
     }
     finally {
         $document.Dispose()
@@ -45,6 +45,31 @@ if (!$source.NeedsFiles -or $source.Files.HasWanted) {
 }
 
 Write-Output 'PASS: duplicate recovery initializes file choices and preserves later edits.'
+
+# A timeout is a lost reply, so the add may have happened.
+$lostReply = [TimeoutException]::new('The add reply timed out.')
+function New-Source { $type.GetConstructors($flags)[0].Invoke([object[]]@('source.torrent', $strings, $null)) }
+function Get-Problem($Target) { $type.GetProperty('Problem', $flags).GetValue($Target) }
+function Fail([string] $Method, $Target, [Exception] $Failure) {
+    $null = $type.GetMethod($Method, $flags).Invoke($Target, [object[]]@($Failure))
+}
+
+$added = New-Source
+Fail 'FailAdd' $added $lostReply
+Apply-Preview 'existing' $added
+if ($null -ne (Get-Problem $added) -or
+    $type.GetProperty('Content', $flags).GetValue($added).GetType().Name -ne 'Present') {
+    throw 'A listed torrent holding the content did not settle an unconfirmed add.'
+}
+
+$waiting = New-Source
+Fail 'FailAdd' $waiting $lostReply
+Fail 'FailPreview' $waiting ([Exception]::new('The preview failed.'))
+if ((Get-Problem $waiting).GetType().Name -ne 'Unconfirmed') {
+    throw 'A failed preview replaced an unconfirmed add.'
+}
+
+Write-Output 'PASS: a listed torrent settles an unconfirmed add, and a failed preview keeps it unconfirmed.'
 
 # Inspect the queued settings command without starting a pipe or touching the user's engine.
 $settingsType = $assembly.GetType('Syno.TinyTorrent.Settings.Editor', $true)

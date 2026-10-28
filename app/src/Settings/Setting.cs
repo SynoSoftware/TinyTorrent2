@@ -10,14 +10,10 @@ public sealed class Setting : INotifyPropertyChanged
     private readonly Strings _text;
     private string _input = string.Empty;
     private string _confirmedInput = string.Empty;
-    private JsonElement _confirmed;
-    private Exception? _failure;
-    private bool _invalid;
+    private JsonElement? _confirmed;
     private bool? _choice;
-    private TaskCompletionSource? _saving;
-    private Submission? _intent;
-    private Submission? _uncertain;
-    private bool _cancelled;
+    private SaveState _save = new SaveState.Idle();
+    private Problem _problem = new Problem.None();
     private bool? _unlimited;
 
     internal Setting(
@@ -65,10 +61,13 @@ public sealed class Setting : INotifyPropertyChanged
                 && Minimum == 0;
         init => _unlimited = value;
     }
-    internal string ConfirmedText => _confirmedInput;
-    internal double ConfirmedNumber =>
-        _confirmed.ValueKind == JsonValueKind.Number ? _confirmed.GetDouble() : 0;
-    internal bool ConfirmedOn => _confirmed.ValueKind == JsonValueKind.True;
+    // Each confirmed value is null while no value is confirmed, so a summary
+    // shows that it is unknown instead of a default.
+    internal string? ConfirmedText => _confirmed is null ? null : _confirmedInput;
+    internal double? ConfirmedNumber =>
+        _confirmed is { ValueKind: JsonValueKind.Number } number ? number.GetDouble() : null;
+    internal bool? ConfirmedOn =>
+        _confirmed is { } value ? value.ValueKind == JsonValueKind.True : null;
     public string Label => _text.Get(Section, Name);
 
     // Names the duration's unit selector after its setting, so each one reads
@@ -82,13 +81,12 @@ public sealed class Setting : INotifyPropertyChanged
             if (_input == value)
                 return;
             _input = value;
-            _cancelled = false;
-            _failure = null;
-            _invalid = false;
+            ClearCancel();
+            _problem = new Problem.None();
             Change();
         }
     }
-    public bool IsOn => _choice ?? _confirmed.ValueKind == JsonValueKind.True;
+    public bool IsOn => _choice ?? ConfirmedOn == true;
 
     // The tag of the item a selector shows, as Select reads it.
     public string SelectedValue =>
@@ -96,13 +94,16 @@ public sealed class Setting : INotifyPropertyChanged
         : Input;
     public bool HasDraft =>
         _input != _confirmedInput
-        || _choice is { } choice && choice != (_confirmed.ValueKind == JsonValueKind.True)
-        || !_cancelled
-            && _uncertain is { } submitted
-            && (_input != submitted.Input || _choice != submitted.Choice);
-    public bool IsPending => _saving is not null;
-    internal Exception? Failure => _failure;
-    internal Task Saving => _saving?.Task ?? Task.CompletedTask;
+        || _choice is { } choice && choice != (ConfirmedOn == true)
+        || _save is SaveState.Unconfirmed { Cancelled: false } lost
+            && !lost.Sent.IsCurrent(_input, _choice);
+    public bool IsPending => _save is SaveState.Running;
+    internal Exception? Failure => _problem is Problem.Failed failed ? failed.Error : null;
+    internal Task Saving =>
+        _save is SaveState.Running running ? running.Done.Task : Task.CompletedTask;
+
+    private bool Cancelled =>
+        _save is SaveState.Running { Cancelled: true } or SaveState.Unconfirmed { Cancelled: true };
 
     // A save keeps its control enabled so later input keeps focus.
     public bool CanEdit => Store.CanEdit() && (Condition?.Invoke() ?? true);
@@ -110,7 +111,7 @@ public sealed class Setting : INotifyPropertyChanged
     {
         get
         {
-            if (!_invalid)
+            if (_problem is not Problem.Invalid)
                 return string.Empty;
             if (ValidationKey is { } key)
                 return _text.Get(Section, key);
@@ -146,10 +147,12 @@ public sealed class Setting : INotifyPropertyChanged
     internal bool Confirm(JsonElement value)
     {
         var changed =
-            _confirmed.ValueKind != value.ValueKind || !JsonElement.DeepEquals(_confirmed, value);
+            _confirmed is not { } confirmed
+            || confirmed.ValueKind != value.ValueKind
+            || !JsonElement.DeepEquals(confirmed, value);
         if (changed)
         {
-            var preserve = HasDraft || IsPending || _uncertain is not null;
+            var preserve = HasDraft || IsPending || _save is SaveState.Unconfirmed;
             // Cloning a child of the snapshot's clone retains the whole snapshot.
             _confirmed = JsonSerializer.SerializeToElement(value);
             _confirmedInput =
@@ -165,12 +168,11 @@ public sealed class Setting : INotifyPropertyChanged
             }
         }
         if (
-            !IsPending
-            && _uncertain is { } submitted
-            && JsonElement.DeepEquals(value, JsonSerializer.SerializeToElement(submitted.Value))
+            _save is SaveState.Unconfirmed lost
+            && JsonElement.DeepEquals(value, JsonSerializer.SerializeToElement(lost.Sent.Value))
         )
         {
-            Settle(submitted);
+            Settle(lost.Sent);
             changed = true;
         }
         if (changed)
@@ -178,7 +180,42 @@ public sealed class Setting : INotifyPropertyChanged
         return changed;
     }
 
-    private sealed record Submission(object Value, string Input, bool? Choice);
+    private sealed record Submission(object Value, string Input, bool? Choice)
+    {
+        // Whether the field still shows this submission, so its outcome
+        // belongs to the input the person sees.
+        internal bool IsCurrent(string input, bool? choice) => Input == input && Choice == choice;
+    }
+
+    // Where the last submitted value stands. Cancelled records a Cancel made
+    // while the save ran or waited for confirmation, so the outcome discards
+    // the input instead of keeping it.
+    private abstract record SaveState
+    {
+        private SaveState() { }
+
+        public sealed record Idle : SaveState;
+
+        // Next is the newest value submitted while this save runs.
+        public sealed record Running(TaskCompletionSource Done, Submission? Next, bool Cancelled)
+            : SaveState;
+
+        // The reply to Sent was lost, so a snapshot that reports Sent settles it.
+        public sealed record Unconfirmed(Submission Sent, bool Cancelled) : SaveState;
+    }
+
+    // What the field reports under it: input that cannot be saved, or a
+    // failed save of the input it shows.
+    private abstract record Problem
+    {
+        private Problem() { }
+
+        public sealed record None : Problem;
+
+        public sealed record Invalid : Problem;
+
+        public sealed record Failed(Exception Error) : Problem;
+    }
 
     public void SelectUnit(string unit)
     {
@@ -189,9 +226,9 @@ public sealed class Setting : INotifyPropertyChanged
         if (Editor.TryNumber(_input, out var number))
             _input = (number * scale / DurationScale).ToString("G", CultureInfo.CurrentCulture);
         _confirmedInput =
-            ConfirmedNumber == 0
+            ConfirmedNumber is not { } minutes || minutes == 0
                 ? string.Empty
-                : (ConfirmedNumber / DurationScale).ToString("G", CultureInfo.CurrentCulture);
+                : (minutes / DurationScale).ToString("G", CultureInfo.CurrentCulture);
         Change();
     }
 
@@ -202,7 +239,7 @@ public sealed class Setting : INotifyPropertyChanged
             return;
         if (!TryValue(out var value))
         {
-            _invalid = true;
+            _problem = new Problem.Invalid();
             Refresh();
             return;
         }
@@ -215,7 +252,7 @@ public sealed class Setting : INotifyPropertyChanged
     /// </summary>
     public async Task Depart()
     {
-        if (_cancelled || !IsPending && !HasDraft)
+        if (Cancelled || !IsPending && !HasDraft)
         {
             await Saving;
             return;
@@ -229,7 +266,7 @@ public sealed class Setting : INotifyPropertyChanged
         }
         if (!Store.CanSave())
             return;
-        if (_failure is null)
+        if (_problem is not Problem.Failed)
             await Submit(value);
     }
 
@@ -238,9 +275,8 @@ public sealed class Setting : INotifyPropertyChanged
         if (!CanEdit || IsOn == value)
             return;
         _choice = value;
-        _cancelled = false;
-        _failure = null;
-        _invalid = false;
+        ClearCancel();
+        _problem = new Problem.None();
         Change();
         if (!HasDraft && !IsPending)
         {
@@ -270,14 +306,27 @@ public sealed class Setting : INotifyPropertyChanged
 
     public void Cancel()
     {
-        _intent = null;
-        _cancelled = IsPending || _uncertain is not null;
+        _save = _save switch
+        {
+            SaveState.Running running => running with { Next = null, Cancelled = true },
+            SaveState.Unconfirmed lost => lost with { Cancelled = true },
+            _ => _save,
+        };
         _input = _confirmedInput;
         _choice = null;
-        _failure = null;
-        _invalid = false;
+        _problem = new Problem.None();
         Change();
     }
+
+    // Input typed or chosen after Cancel is the person's again, so the save
+    // keeps it when it settles.
+    private void ClearCancel() =>
+        _save = _save switch
+        {
+            SaveState.Running running => running with { Cancelled = false },
+            SaveState.Unconfirmed lost => lost with { Cancelled = false },
+            _ => _save,
+        };
 
     /// <summary>
     /// Saves the value without the <see cref="CanEdit"/> check of the
@@ -293,19 +342,18 @@ public sealed class Setting : INotifyPropertyChanged
             Failed?.Invoke(this, error);
             return;
         }
-        _cancelled = false;
         var submitted = new Submission(value, _input, _choice);
-        if (IsPending)
+        if (_save is SaveState.Running running)
         {
-            _intent = submitted;
-            await Saving;
+            _save = running with { Next = submitted, Cancelled = false };
+            await running.Done.Task;
             return;
         }
-        _saving = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        _failure = null;
-        _uncertain = null;
-        _invalid = false;
+        var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _save = new SaveState.Running(done, null, false);
+        _problem = new Problem.None();
         Change();
+        Submission? lost = null;
         try
         {
             while (true)
@@ -326,7 +374,7 @@ public sealed class Setting : INotifyPropertyChanged
                 if (
                     Store.CanSave()
                     && (failure is null || Store.Refused(failure))
-                    && TakeIntent() is { } next
+                    && TakeNext() is { } next
                     && next != submitted
                 )
                 {
@@ -334,60 +382,67 @@ public sealed class Setting : INotifyPropertyChanged
                     continue;
                 }
                 if (failure is not null)
-                    Reject(failure, submitted);
+                    lost = Reject(failure, submitted);
                 break;
             }
         }
         finally
         {
-            var saving = _saving;
-            _saving = null;
-            _intent = null;
-            if (_uncertain is null)
-                _cancelled = false;
+            // A lost reply still needs confirmation, even after the input
+            // changes or is cancelled; Settle preserves any newer input when
+            // it arrives.
+            _save = lost is null ? new SaveState.Idle() : new SaveState.Unconfirmed(lost, Cancelled);
             Change();
-            saving?.TrySetResult();
+            done.TrySetResult();
         }
     }
 
-    private Submission? TakeIntent()
+    private Submission? TakeNext()
     {
-        var intent = _intent;
-        _intent = null;
-        return intent;
+        if (_save is not SaveState.Running { Next: { } next } running)
+            return null;
+        _save = running with { Next = null };
+        return next;
     }
 
+    // Ends the save of submitted with its value confirmed or refused, and
+    // keeps newer input unless Cancel discarded it.
     private void Settle(Submission submitted)
     {
-        var preserve = !_cancelled && (_input != submitted.Input || _choice != submitted.Choice);
+        var preserve = !Cancelled && !submitted.IsCurrent(_input, _choice);
         if (!preserve)
         {
             _input = _confirmedInput;
             _choice = null;
-            _invalid = false;
         }
-        _cancelled = false;
-        _failure = null;
-        _uncertain = null;
+        _problem = preserve && _problem is Problem.Invalid ? _problem : new Problem.None();
+        _save = _save is SaveState.Running running
+            ? running with { Cancelled = false }
+            : new SaveState.Idle();
     }
 
 #if CAPTURE
     internal void Reject(Exception error) => Reject(error, null);
 #endif
 
-    private void Reject(Exception error, Submission? submitted)
+    // Reports a failed save of submitted, or of nothing when the store could
+    // not save. Returns the submission whose reply was lost, which a snapshot
+    // must confirm; a refusal proves the value unsaved and returns null.
+    private Submission? Reject(Exception error, Submission? submitted)
     {
-        var current =
-            submitted is null
-            || !_cancelled && _input == submitted.Input && _choice == submitted.Choice;
+        var cancelled = Cancelled;
+        var current = submitted is null || !cancelled && submitted.IsCurrent(_input, _choice);
         var refused = Store.Refused(error);
-        if (_cancelled && submitted is not null && refused)
+        if (cancelled && submitted is not null && refused)
             Settle(submitted);
-        _failure = current ? error : null;
-        // A lost reply still needs confirmation, even after the input changes
-        // or is cancelled; Settle preserves any newer input when it arrives.
-        _uncertain = refused ? null : submitted;
+        _problem =
+            current ? new Problem.Failed(error)
+            : _problem is Problem.Invalid ? _problem
+            : new Problem.None();
+        if (submitted is null && _save is SaveState.Unconfirmed)
+            _save = new SaveState.Idle();
         Refresh();
+        return refused ? null : submitted;
     }
 
     private bool TryValue(out object value)

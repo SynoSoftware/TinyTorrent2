@@ -87,23 +87,21 @@ internal sealed partial class VideoLookup
                     ? IdentificationOutcome.Blocked
                 : unanswered ? IdentificationOutcome.Unanswered
                 : IdentificationOutcome.NoMatch;
-            accepted = await store
-                .Complete(
-                    attempt with
-                    {
-                        BlockedRequest = blocked?.Request,
-                    },
-                    video,
-                    outcome switch
-                    {
-                        IdentificationOutcome.Matched => "complete",
-                        IdentificationOutcome.Blocked => "blocked",
-                        IdentificationOutcome.Unanswered => "unanswered",
-                        _ => "no_match",
-                    },
-                    context.Token
-                )
-                .ConfigureAwait(false);
+            var answered = attempt with { BlockedRequest = blocked?.Request };
+            accepted = await (
+                video is not null
+                    ? store.Complete(answered, video, context.Token)
+                    : store.Complete(
+                        answered,
+                        outcome switch
+                        {
+                            IdentificationOutcome.Blocked => AttemptOutcome.Blocked,
+                            IdentificationOutcome.Unanswered => AttemptOutcome.Unanswered,
+                            _ => AttemptOutcome.NoMatch,
+                        },
+                        context.Token
+                    )
+            ).ConfigureAwait(false);
         }
         catch (Exception error)
         {
@@ -115,15 +113,14 @@ internal sealed partial class VideoLookup
                     is OperationCanceledException
                         or ProviderException
                         or RequestBlockedException
-                    ? "cancelled"
-                    : "failed";
+                    ? AttemptOutcome.Cancelled
+                    : AttemptOutcome.Failed;
             await store
                 .Complete(
                     attempt with
                     {
                         BlockedRequest = (blocked ?? (error as RequestBlockedException))?.Request,
                     },
-                    null,
                     failure,
                     CancellationToken.None
                 )

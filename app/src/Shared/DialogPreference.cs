@@ -31,7 +31,7 @@ public sealed class DialogPreference(Editor settings) : INotifyPropertyChanged
             return Task.CompletedTask;
         var values = choices
             .Distinct()
-            .Where(setting => setting.ConfirmedOn)
+            .Where(setting => setting.ConfirmedOn == true)
             .ToDictionary(setting => setting.Name, _ => false);
         return values.Count > 0 ? settings.Save(values) : Task.CompletedTask;
     }

@@ -9,9 +9,13 @@ membership and SQLite rules before the sections here that the change affects.
 for example MP3 ID3 tags, read once after download writes have finished. The
 file names of music releases do not reliably carry artist, album and track.
 
-When SQLite's [file-read readiness](../library.md#sqlite-and-video-information) condition
-holds, Library's C# file facts reader reads the file once, off the UI dispatcher
-and database worker, through the Windows property system that Explorer uses:
+The facts are read only when the entry is displayed, as the
+[no-scan ruling](../library.md#purpose-and-experience) requires. When a displayed
+entry has no saved facts and SQLite's
+[file-read readiness](../library.md#sqlite-and-video-information) condition holds,
+Library's C# file facts reader reads the file once, in the background, off the
+UI dispatcher and database worker, through the Windows property system that
+Explorer uses:
 
 - For every file: its created and modified dates.
 - For an audio file: Title, Artist, Album, Track, Year, Genre and Duration.
@@ -25,18 +29,18 @@ all media-property columns; no earlier database format needs an upgrade.
 
 The store saves these facts with the entry, and they go with the torrent like
 every other stored fact. They are not read again: a file is finished, and
-TinyTorrent's own moves and renames do not change its content. A file finished
-before this feature existed, or while the window was closed, is read once after
-window initialization, a few files at a time, once read readiness holds.
-Until then, its date and tag cells are empty and its row is still shown. For
+TinyTorrent's own moves and renames do not change its content. No pass reads
+files that are not displayed, whenever they finished. Until a displayed entry's
+read completes, its date and tag cells are empty and its row is still shown;
+nothing waits for the read. For
 a finished track in an unfinished torrent this may wait for the torrent's
 completion, because saving a premature empty tag read would lose its searchable
 information permanently. Waiting does not count as an attempted read.
 A successful read with no tags is a saved empty result. A failed read leaves
 the facts unread: an unavailable drive or a sharing violation does not establish
-that a file has no tags. Retry through the same bounded reader when its source
-confirms a different location or during a later window initialization, once per
-trigger; summary refreshes do not retry it.
+that a file has no tags. A failed read is retried through the same reader when
+the entry is displayed again after its source confirms a different location, or
+in a later window session; summary refreshes do not retry it.
 
 Music tags are searchable like video information. An audio file without tags
 shows its cleaned file name as its title and leaves the other music cells

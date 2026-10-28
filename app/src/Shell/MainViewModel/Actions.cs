@@ -13,7 +13,6 @@ public sealed partial class MainViewModel
     private bool _resettingProtection;
     private IReadOnlyList<ProtectionScope> _protectionScopes = [];
     private string? _protectionProviderId;
-    public bool IsPaused { get; private set; }
     public bool HasIncoming { get; private set; }
     private string _externalIpv4 = string.Empty;
     private string _externalIpv6 = string.Empty;
@@ -145,7 +144,8 @@ public sealed partial class MainViewModel
     public ICommand Verify { get; }
     public ICommand Remove { get; }
     public ICommand MoveFiles { get; }
-    public FileDraft FileDraft { get; }
+    public MoveDraft MoveDraft { get; }
+    public RemovalDraft RemovalDraft { get; }
     public ICommand Up { get; }
     public ICommand Down { get; }
     public ICommand Top { get; }
@@ -214,12 +214,12 @@ public sealed partial class MainViewModel
     internal async Task ReceiveActivations()
     {
         _activationsPending = true;
-        if (_receivingActivations || !_ready || !_connected || IsClosing)
+        if (_receivingActivations || !IsDisplayable || IsClosing)
             return;
         _receivingActivations = true;
         try
         {
-            while (_activationsPending && _ready && _connected && !IsClosing)
+            while (_activationsPending && IsDisplayable && !IsClosing)
             {
                 _activationsPending = false;
                 var pending = await _client.Send("pending_activations", null, Requester.Window);

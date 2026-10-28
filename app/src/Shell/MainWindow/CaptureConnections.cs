@@ -89,10 +89,10 @@ public sealed partial class MainWindow
         Model.OpenInspector();
         Model.Inspector.Select(InspectorSection.General);
         await ShowConnections(false);
-        Model.FileDraft.Begin([target], FileAction.Remove, DeletionMode.Recycle);
-        Model.FileDraft.DeleteDownloaded = false;
-        Model.FileDraft.DeleteTorrentFiles = false;
-        Require(await Model.FileDraft.Submit(), "The disposable transfer could not be removed.");
+        Model.RemovalDraft.Begin([target], DeletionMode.Recycle);
+        Model.RemovalDraft.DeleteDownloaded = false;
+        Model.RemovalDraft.DeleteTorrentFiles = false;
+        Require(await Model.RemovalDraft.Submit(), "The disposable transfer could not be removed.");
         await CaptureReady(Model, () => !Model.Contains(target));
         await GoBack();
         Require(Model.Inspector.Target is null && Model.Inspector.Section == InspectorSection.Peers,

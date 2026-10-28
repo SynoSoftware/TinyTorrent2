@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Syno.TinyTorrent.Shared.Engine;
+using Syno.TinyTorrent.Torrents;
 
 namespace Syno.TinyTorrent.Shared;
 
@@ -337,7 +338,8 @@ internal sealed class TorrentSource : IAsyncDisposable
         var settled =
             !row.GetProperty("moving").GetBoolean()
             && row.GetProperty("move_destination").GetString() is not { Length: > 0 }
-            && row.GetProperty("status").GetString() is not ("checking" or "waiting_check");
+            && Torrent.ReadState(row.GetProperty("status"))
+                is not (TorrentState.Checking or TorrentState.WaitingCheck);
         var path = row.GetProperty("save_path").GetString()!;
         var complete = row.GetProperty("complete").GetBoolean();
         var origin = row.GetProperty("torrent_id").GetString()!;

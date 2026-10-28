@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Shared.Storage;
@@ -14,6 +15,7 @@ internal sealed class FileFacts(Database database, BackgroundWork work) : IAsync
     private bool _connected;
     private CancellationTokenSource _connection = new();
     private readonly HashSet<Target> _cancelled = [];
+    private IReadOnlySet<long> _displayed = new HashSet<long>();
     internal event EventHandler? Changed;
     internal event EventHandler<Exception>? Failed;
 
@@ -30,17 +32,37 @@ internal sealed class FileFacts(Database database, BackgroundWork work) : IAsync
                 _connection = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
                 _connected = connected;
             }
-            if (_lifetime.IsCancellationRequested || !connected)
-                return;
-            _again = true;
-            if (_work is null || _work.IsCompleted)
-                _work = Task.Run(Run);
+            Start();
         }
+    }
+
+    /// <summary>
+    /// Sets the entries on screen. Only these have their files read, as the
+    /// Library contract's no-scan ruling requires.
+    /// </summary>
+    internal void SetDisplayed(IReadOnlySet<long> entries)
+    {
+        lock (_gate)
+        {
+            _displayed = entries;
+            Start();
+        }
+    }
+
+    // Callers hold _gate.
+    private void Start()
+    {
+        if (_lifetime.IsCancellationRequested || !_connected || _displayed.Count == 0)
+            return;
+        _again = true;
+        if (_work is null || _work.IsCompleted)
+            _work = Task.Run(Run);
     }
 
     private async Task Run()
     {
         CancellationTokenSource request;
+        IReadOnlySet<long> displayed;
         lock (_gate)
         {
             if (!_connected)
@@ -49,19 +71,17 @@ internal sealed class FileFacts(Database database, BackgroundWork work) : IAsync
                 return;
             }
             _again = false;
+            displayed = _displayed;
             request = CancellationTokenSource.CreateLinkedTokenSource(_connection.Token);
         }
         var cancellation = request.Token;
-        BackgroundWork.Operation? operation = null;
-        var signalling = Task.CompletedTask;
-        var ended = false;
+        // The read shows in the work list only once it has files to read, and
+        // then takes over request.
+        CancellableWork? run = null;
+        Target[] accepted = [];
+        var skipped = 0;
         var done = 0;
         var unreadable = 0;
-        var observation = new WorkObservation(
-            new WorkDescription.FileProperties(),
-            new WorkProgress.Unknown(),
-            new WorkExecution.Running()
-        );
         try
         {
             var pending = await database
@@ -71,11 +91,15 @@ internal sealed class FileFacts(Database database, BackgroundWork work) : IAsync
                         using var command = connection.CreateCommand();
                         command.CommandText = """
                             SELECT f.entry_id,f.path,f.kind,f.size FROM current_files f
-                            WHERE f.readable=1
+                            WHERE f.entry_id IN (SELECT value FROM json_each($entries)) AND f.readable=1
                             AND NOT EXISTS(SELECT 1 FROM file_facts p
                                 JOIN source_files owner USING(origin,file_index) WHERE owner.entry_id=f.entry_id)
                             AND NOT EXISTS(SELECT 1 FROM fact_attempts a WHERE a.entry_id=f.entry_id AND a.path=f.path COLLATE PATH);
                             """;
+                        command.Parameters.AddWithValue(
+                            "$entries",
+                            JsonSerializer.Serialize(displayed)
+                        );
                         using var reader = command.ExecuteReader();
                         var targets = new List<Target>();
                         while (reader.Read())
@@ -91,42 +115,35 @@ internal sealed class FileFacts(Database database, BackgroundWork work) : IAsync
                     cancellation
                 )
                 .ConfigureAwait(false);
-            Target[] accepted;
             lock (_gate)
                 accepted = pending.Where(target => !_cancelled.Contains(target)).ToArray();
             if (accepted.Length == 0)
                 return;
             lock (_gate)
-            {
-                observation = observation with
-                {
-                    Progress = new WorkProgress.Fraction(0, accepted.Length, WorkUnit.Files),
-                };
-                operation = work.Begin(
-                    observation,
-                    () =>
-                    {
-                        lock (_gate)
-                        {
-                            if (!ended && !request.IsCancellationRequested)
-                            {
-                                foreach (var target in accepted.Skip(done))
-                                    _cancelled.Add(target);
-                                observation = observation with
-                                {
-                                    Execution = new WorkExecution.Cancelling(),
-                                };
-                                operation?.Report(observation);
-                                signalling = request.CancelAsync();
-                            }
-                            return signalling;
-                        }
-                    }
+                run = new CancellableWork(
+                    work,
+                    new(
+                        new WorkDescription.FileProperties(),
+                        new WorkProgress.Fraction(0, accepted.Length, WorkUnit.Files),
+                        new WorkExecution.Running()
+                    ),
+                    Stop,
+                    request
                 );
-            }
             foreach (var target in accepted)
             {
                 cancellation.ThrowIfCancellationRequested();
+                lock (_gate)
+                {
+                    // A row that scrolled away before its turn is read when it
+                    // shows again.
+                    if (!_displayed.Contains(target.EntryId))
+                    {
+                        skipped++;
+                        Report();
+                        continue;
+                    }
+                }
                 Facts? facts = null;
                 try
                 {
@@ -183,7 +200,7 @@ internal sealed class FileFacts(Database database, BackgroundWork work) : IAsync
                 catch (Exception error) when (error is not OperationCanceledException)
                 {
                     unreadable++;
-                    operation.Error ??= error;
+                    run.Operation.Error ??= error;
                     facts = null;
                     System.Diagnostics.Debug.WriteLine(
                         "Library file properties: " + error.GetType().Name
@@ -200,60 +217,76 @@ internal sealed class FileFacts(Database database, BackgroundWork work) : IAsync
                 lock (_gate)
                 {
                     done++;
-                    if (!request.IsCancellationRequested)
-                    {
-                        observation = observation with
-                        {
-                            Progress = new WorkProgress.Fraction(
-                                done,
-                                accepted.Length,
-                                WorkUnit.Files
-                            ),
-                        };
-                        operation.Report(observation);
-                    }
+                    Report();
                 }
             }
-            operation.Outcome = unreadable > 0 ? WorkOutcome.Failed : WorkOutcome.Completed;
+            run.Operation.Outcome = unreadable > 0 ? WorkOutcome.Failed : WorkOutcome.Completed;
             // Library reads properties by itself; the person is not waiting.
-            operation.ReportsSuccess = false;
+            run.Operation.ReportsSuccess = false;
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
-            if (operation is not null)
-                operation.Outcome = WorkOutcome.Cancelled;
+            if (run is not null)
+                run.Operation.Outcome = WorkOutcome.Cancelled;
             System.Diagnostics.Debug.WriteLine("Library file properties read cancelled.");
         }
         catch (Exception error)
         {
-            if (operation is not null)
-                operation.Error = error;
+            if (run is not null)
+                run.Operation.Error = error;
             Failed?.Invoke(this, error);
         }
         finally
         {
-            lock (_gate)
-                ended = true;
-            try
-            {
-                await signalling.ConfigureAwait(false);
-            }
-            finally
-            {
-                operation?.Summarize(
-                    "properties_result",
-                    done,
-                    observation.Progress is WorkProgress.Fraction fraction ? fraction.Total : done,
-                    unreadable
-                );
-                operation?.Dispose();
+            if (run is null)
                 request.Dispose();
+            else
+            {
+                ValueTask ending;
+                // Under _gate, so Stop never marks files of a read that ended.
+                lock (_gate)
+                {
+                    run.Operation.Summarize(
+                        "properties_result",
+                        done,
+                        accepted.Length - skipped,
+                        unreadable
+                    );
+                    ending = run.DisposeAsync();
+                }
+                await ending.ConfigureAwait(false);
             }
             lock (_gate)
             {
                 _work = null;
                 if (_connected && _again && !_lifetime.IsCancellationRequested)
                     _work = Task.Run(Run);
+            }
+        }
+
+        // Callers hold _gate.
+        void Report() =>
+            run!.Report(
+                run.Observation with
+                {
+                    Progress = new WorkProgress.Fraction(
+                        done,
+                        accepted.Length - skipped,
+                        WorkUnit.Files
+                    ),
+                }
+            );
+
+        // The person's Cancel also keeps the files not read yet from the next
+        // read in this session.
+        Task Stop(CancellableWork stopping)
+        {
+            lock (_gate)
+            {
+                if (stopping.TryCancel(out var signalling))
+                    foreach (var target in accepted.Skip(done + skipped))
+                        _cancelled.Add(target);
+                return signalling;
             }
         }
     }

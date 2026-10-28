@@ -241,7 +241,7 @@ internal sealed class Features
         if (IsStopped)
             return;
         var settings = _owner.Settings;
-        var route = settings.Proxy.RouteSettings(settings.Adapter.ConfirmedText);
+        var route = settings.Proxy.RouteSettings(settings.Adapter.ConfirmedText ?? string.Empty);
         if (_route == route)
             return;
         _route = route;

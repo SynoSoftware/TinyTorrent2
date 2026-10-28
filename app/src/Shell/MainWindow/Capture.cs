@@ -650,10 +650,10 @@ public sealed partial class MainWindow
             Model.PresentedStatus = null;
             Raise("stopped", "download_path_unavailable", string.Empty);
             await CapturePage(prefix + "bar-attention");
-            Model.Observe("stopped", null);
+            Model.ObserveStopped(null);
             Raise(location, "download_location_unavailable", "download_path_unavailable");
             await CapturePage(prefix + "bar-location");
-            Model.Observe(location, null);
+            Model.ObserveLocation(location, null);
             Notify("completed", string.Empty, string.Empty);
             Model.Notifications.ShowOutcome("subtitles", "connected", "OpenSubtitles");
             await CapturePage(prefix + "toast-finished");
@@ -674,8 +674,8 @@ public sealed partial class MainWindow
         finally
         {
             Model.PresentedStatus = null;
-            Model.Observe("stopped", null);
-            Model.Observe(location, null);
+            Model.ObserveStopped(null);
+            Model.ObserveLocation(location, null);
             Model.Notifications.ClearError();
             foreach (var toast in Model.Notifications.Toasts.ToArray())
             {
@@ -716,8 +716,8 @@ public sealed partial class MainWindow
     private async Task CaptureDialog(string name, Func<Task> open, Func<ContentDialog?> current)
     {
         var closed = open();
-        if (_fileDialog is not null)
-            await CaptureReady(Model.FileDraft, () => Model.FileDraft.CanRefresh);
+        if (_fileDialog?.Draft is { } draft)
+            await CaptureReady(draft, () => draft.CanRefresh);
         await CaptureLayout();
         var dialog =
             current() ?? throw new InvalidOperationException("The review dialog did not open.");
@@ -806,7 +806,7 @@ public sealed partial class MainWindow
         );
         Run(Model.Inspector.EditTrackers);
         Model.Inspector.TrackerInput = "https://example.invalid/announce";
-        closed = ShowFiles([target], FileAction.Remove);
+        closed = ShowRemoval([target], DeletionMode.Recycle);
         await CaptureLayout();
         dialog =
             _interaction?.Dialog
@@ -953,11 +953,11 @@ public sealed partial class MainWindow
                     command = item.Text,
                     enabled = item.IsEnabled,
                     persistedPaused = paused,
-                    status = target.StatusCode,
+                    status = target.State.ToString(),
                     globalPaused = allPaused,
                 }
             );
-            if (paused != (command == Model.Pause) || !allPaused || !Model.IsPaused)
+            if (paused != (command == Model.Pause) || !allPaused || !Model.IsSessionPaused)
                 throw new InvalidOperationException(
                     "The native torrent command did not save its pause choice while retaining global pause."
                 );
@@ -1772,7 +1772,7 @@ public sealed partial class MainWindow
         {
             await CaptureReady(
                 Model,
-                () => target.StatusCode == "all_paused" && Model.HasResumeToast
+                () => target.State == TorrentState.AllPaused && Model.HasResumeToast
             );
             await CaptureMatrix(
                 async (suffix, _) =>
@@ -1788,7 +1788,7 @@ public sealed partial class MainWindow
                         {
                             journey = name,
                             scope = "Real Resume while every transfer is paused; the toast button is not pressed",
-                            status = target.StatusCode,
+                            status = target.State.ToString(),
                             message = toast?.Message,
                             action = toast?.ActionText,
                             severity = toast?.Severity.ToString(),
@@ -1803,7 +1803,7 @@ public sealed partial class MainWindow
                         || toast.Message != Model.ResumeMessage
                         || !toast.Message.Contains(target.Name, StringComparison.Ordinal)
                         || toast.ActionText != Model.Text.Get("notifications", "resume")
-                        || target.StatusCode != "all_paused"
+                        || target.State != TorrentState.AllPaused
                     )
                         throw new InvalidOperationException(
                             "The blocked resume did not show All paused and its toast."
@@ -1816,7 +1816,7 @@ public sealed partial class MainWindow
             Run(Model.Pause);
             await CaptureReady(
                 Model,
-                () => target.StatusCode == "paused" && !Model.HasResumeToast
+                () => target.State == TorrentState.Paused && !Model.HasResumeToast
             );
         }
     }
@@ -1915,7 +1915,7 @@ public sealed partial class MainWindow
                         {
                             await CaptureReady(
                                 Model,
-                                () => Model.Settings.ShowMemory.ConfirmedOn && Model.UiMemory != "—"
+                                () => Model.Settings.ShowMemory.ConfirmedOn == true && Model.UiMemory != "—"
                             );
                             await Scene("memory", "Real Show memory usage setting");
                         }
@@ -2147,7 +2147,7 @@ public sealed partial class MainWindow
             "details-live-tracker-draft",
             InspectorContent.Content as FrameworkElement
         );
-        if (!Model.IsPaused)
+        if (!Model.IsSessionPaused)
             throw new InvalidOperationException(
                 "The tracker capture requires a globally paused fixture."
             );
@@ -2169,7 +2169,7 @@ public sealed partial class MainWindow
                 confirmed = true,
                 count = populated.Count,
                 tiers = new[] { 0, 1 },
-                globalPaused = Model.IsPaused,
+                globalPaused = Model.IsSessionPaused,
             }
         );
         foreach (var captureLanguage in new[] { "en", "es" })
@@ -2192,7 +2192,7 @@ public sealed partial class MainWindow
                 }
             )
             {
-                if (!Model.IsPaused)
+                if (!Model.IsSessionPaused)
                     throw new InvalidOperationException(
                         "The populated tracker capture lost global pause."
                     );
@@ -2222,7 +2222,7 @@ public sealed partial class MainWindow
                         requestedHeight = size.Height,
                         clientWidth = AppWindow.ClientSize.Width,
                         count = Model.Inspector.Trackers?.Count ?? 0,
-                        globalPaused = Model.IsPaused,
+                        globalPaused = Model.IsSessionPaused,
                     }
                 );
             }
@@ -2462,7 +2462,7 @@ public sealed partial class MainWindow
                         {
                             var setting = Model.Settings.AddedNotifications;
                             var toggle = Field<ToggleSwitch>(page, setting);
-                            var original = setting.ConfirmedOn;
+                            var original = setting.ConfirmedOn == true;
                             toggle.IsOn = !original;
                             await CaptureReady(
                                 setting,
@@ -3131,17 +3131,17 @@ public sealed partial class MainWindow
                     await ShowTorrents();
                     await CaptureDialog(
                         prefix + "remove",
-                        () => ShowFiles([target], FileAction.Remove),
+                        () => ShowRemoval([target], DeletionMode.Recycle),
                         () => _interaction?.Dialog
                     );
                     await CaptureDialog(
                         prefix + "move",
-                        () => ShowFiles([target], FileAction.Move),
+                        () => ShowMove([target]),
                         () => _interaction?.Dialog
                     );
                     await CaptureDialog(
                         prefix + "delete",
-                        () => ShowFiles([target], FileAction.Remove, DeletionMode.Permanent),
+                        () => ShowRemoval([target], DeletionMode.Permanent),
                         () => _interaction?.Dialog
                     );
                     Model.AddDraft.EditingMagnet = true;

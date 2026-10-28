@@ -179,6 +179,13 @@ reports/retains Finishing instead; this is an ordinary no-op for a stale click,
 not an error. The reporting module never invents Cancelling optimistically or
 restores an old Running snapshot.
 
+`CancellableWork` implements these steps for every cancellable run, so a
+feature does not repeat them. It owns the run's operation and cancellation
+source. `TryCancel` accepts the stop only while the run can be cancelled, and
+says whether this call started it, so the feature's extra stop work runs once.
+Reports after the stop are ignored, and `DisposeAsync` is the run's one end:
+it waits for the cancellation callbacks before it disposes the source.
+
 The delegate yields promptly: no SQL, file deletion, synchronous waits or
 expensive cancellation callbacks on the UI thread. Asynchronous cancellation
 callbacks remain observed by the feature's error owner. The delegate handles

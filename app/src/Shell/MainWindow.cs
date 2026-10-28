@@ -150,9 +150,8 @@ public sealed partial class MainWindow : Window
         // As in File Explorer, Shift with Remove's key, button or menu item
         // deletes permanently instead of through the Recycle Bin.
         Model.RemoveRequested += async (_, torrents) =>
-            await ShowFiles(
+            await ShowRemoval(
                 torrents,
-                FileAction.Remove,
                 Microsoft
                     .UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Shift)
                     .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down)
@@ -161,7 +160,7 @@ public sealed partial class MainWindow : Window
             );
         Model.MergeRequested += async (_, _) => await ConfirmMerge();
         Model.DatabaseDeletionRequested += async (_, _) => await ConfirmDatabaseDeletion();
-        Model.MoveRequested += async (_, torrents) => await ShowFiles(torrents, FileAction.Move);
+        Model.MoveRequested += async (_, torrents) => await ShowMove(torrents);
         Model.SpeedLimitRequested += async (_, torrents) => await ShowSpeedLimit(torrents);
         Model.OpenRequested += (_, args) => Open(args);
         Model.CopyRequested += (_, text) =>
@@ -822,12 +821,12 @@ public sealed partial class MainWindow : Window
             }
             if (suspended?.ResolveDraft is { } resolve && !await resolve())
                 return;
-            while (Model.HasDraft)
+            while (Model.RemainingDraft is { } draft)
             {
                 if (!AppWindow.IsVisible)
                     AppWindow.Show();
                 await Model.DeferExit();
-                if (!await ResolveRemainingDraft())
+                if (!await ResolveRemainingDraft(draft))
                     return;
             }
             AppWindow.Hide();
@@ -887,20 +886,25 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private Task<bool> ResolveRemainingDraft()
+    private Task<bool> ResolveRemainingDraft(UnfinishedDraft draft)
     {
-        if (Model.AddDraft.HasDraft)
-            return ResolveDraft(Model.AddDraft);
-        if (Model.FileDraft.HasDraft)
-            return ResolveDraft(Model.FileDraft);
-        if (!Model.Inspector.HasDraft)
-            return Task.FromResult(true);
-        // As with Settings, an edit that cannot be saved, because the engine or
-        // the torrent is gone, closes without it instead of trapping the person.
-        if (Model.CanSave && Model.Inspector.IsAvailable)
-            return Model.Inspector.Depart();
-        Model.Inspector.CancelDraft();
-        return Task.FromResult(true);
+        switch (draft)
+        {
+            case UnfinishedDraft.Add:
+                return ResolveDraft(Model.AddDraft);
+            case UnfinishedDraft.Move:
+                return ResolveDraft(Model.MoveDraft);
+            case UnfinishedDraft.Inspector:
+                // As with Settings, an edit that cannot be saved, because the
+                // engine or the torrent is gone, closes without it instead of
+                // trapping the person.
+                if (Model.CanSave && Model.Inspector.IsAvailable)
+                    return Model.Inspector.Depart();
+                Model.Inspector.CancelDraft();
+                return Task.FromResult(true);
+            default:
+                throw new ArgumentOutOfRangeException(nameof(draft));
+        }
     }
 
     [DllImport("user32.dll")]

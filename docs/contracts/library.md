@@ -28,6 +28,20 @@ contract with the same authority.
 
 ## Purpose and experience
 
+**Owner ruling: Library is fast, and it never scans.** Library shows at once
+what SQLite already holds. A fact it lacks is fetched only when its item is
+displayed on screen. The fetch runs in the background, first from SQLite, then
+from the file or the provider, and saves the result in SQLite; the row fills
+in when the answer arrives, and nothing waits for it. Library never reads,
+hashes or lists files, and never asks a provider, for items the person is not
+displaying. This holds because nobody needs instant data, while every scan
+costs the person disk work, time and battery they did not ask for.
+
+A displayed item is a row the Library table realizes: the visible rows, about
+a quarter page above and below them, and the focused row. Windows list views
+prepare that margin so a short scroll shows filled rows, and its size depends
+on the window, never on the number of files.
+
 People need to find files they have downloaded without remembering which torrent
 contains them. For movies and TV, they also need to search by information such
 as title, genre, year, actor or subject. They should be able to do this as they

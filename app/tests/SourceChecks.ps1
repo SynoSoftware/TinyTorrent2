@@ -8,6 +8,10 @@ $assembly = [Reflection.Assembly]::LoadFrom((Join-Path $binary 'TinyTorrentUI.dl
 $lookupKind = $assembly.GetType('Syno.TinyTorrent.LookupKind', $true)
 $automatic = [Enum]::Parse($lookupKind, 'Automatic')
 $explicit = [Enum]::Parse($lookupKind, 'Explicit')
+$attemptOutcome = $assembly.GetType('Syno.TinyTorrent.AttemptOutcome', $true)
+$outcomeNoMatch = [Enum]::Parse($attemptOutcome, 'NoMatch')
+$outcomeFailed = [Enum]::Parse($attemptOutcome, 'Failed')
+$outcomeBlocked = [Enum]::Parse($attemptOutcome, 'Blocked')
 $flags = [Reflection.BindingFlags]'Instance,Public,NonPublic'
 $cancel = [Threading.CancellationToken]::None
 $movieKind = $assembly.GetType('Syno.TinyTorrent.VideoKind', $true).GetField('Movie').GetValue($null)
@@ -25,7 +29,11 @@ function Unwrap([object[]] $Arguments) {
 function New-Value([string] $Name, [object[]] $Arguments, [hashtable] $Properties = @{}) {
     $type = $assembly.GetType('Syno.TinyTorrent.' + $Name, $true)
     $values = Unwrap $Arguments
-    $constructor = $type.GetConstructors($flags) | Where-Object { $_.GetParameters().Count -eq $values.Count } | Select-Object -First 1
+    # A record's copy constructor also takes one argument, so it is skipped.
+    $constructor = $type.GetConstructors($flags) | Where-Object {
+        $parameters = $_.GetParameters()
+        $parameters.Count -eq $values.Count -and !($parameters.Count -eq 1 -and $parameters[0].ParameterType -eq $type)
+    } | Select-Object -First 1
     $value = $constructor.Invoke($values)
     foreach ($key in $Properties.Keys) {
         $type.GetProperty($key, $flags).SetValue($value, $Properties[$key])
@@ -112,7 +120,7 @@ try {
         Ratings = (New-Value 'Library.Ratings' @() @{ Tmdb = (New-Value 'Library.Rating' @([double]8.25, $movieKind)) })
     }
     $chosen = Invoke-Value $store 'Begin' @((New-Value 'Library.VideoTarget' @($entry, 'tmdb', $explicit)), $null, $cancel)
-    Require (Invoke-Value $store 'Complete' @($chosen, $video, 'success', $cancel)) 'An explicit identification was not saved.'
+    Require (Invoke-Value $store 'Complete' @($chosen, $video, $cancel)) 'An explicit identification was not saved.'
     $mixed = New-Value 'Library.Query' @('2024 chosen', $configuration)
     $matches = Invoke-Value $store 'Search' @($mixed, $cancel)
     Require ($matches.Entries.Count -eq 1 -and $matches.Counts[$configuration] -eq 1 -and $matches.Entries[0].Title -eq 'Chosen title') 'Search and its row summary did not reflect the saved identification.'
@@ -193,7 +201,7 @@ try {
     Invoke-Value $sources 'Reconcile' @((New-Values 'Shared.Contribution' @()), $cancel) | Out-Null
     Invoke-Value $sources 'Reconcile' @((New-Values 'Shared.Contribution' @($first)), $cancel) | Out-Null
     Invoke-Value $sources 'Replace' @($first, $files, $cancel) | Out-Null
-    Require (!(Invoke-Value $store 'Complete' @($late, $video, 'complete', $cancel))) 'A withdrawn request was accepted after its file was re-added.'
+    Require (!(Invoke-Value $store 'Complete' @($late, $video, $cancel))) 'A withdrawn request was accepted after its file was re-added.'
     $matches = Invoke-Value $store 'Search' @($query, $cancel)
     Require ($matches.Entries.Count -eq 1 -and $matches.Entries[0].Title -ne 'Chosen title') 'A late identification resurrected a removed decision after re-add.'
 
@@ -201,12 +209,14 @@ try {
     $entry = $matches.Entries[0]
     $missTarget = New-Value 'Library.VideoTarget' @($entry, 'tmdb', $automatic)
     $miss = Invoke-Value $store 'Begin' @($missTarget, $null, $cancel)
-    Require ($null -ne $miss -and (Invoke-Value $store 'Complete' @($miss, $null, 'no_match', $cancel))) 'An ordinary miss was not recorded.'
-    Require (@(Invoke-Value $store 'Pending' @('tmdb', $cancel)).Count -eq 0) 'A miss was tried again in the same session.'
+    Require ($null -ne $miss -and (Invoke-Value $store 'Complete' @($miss, $outcomeNoMatch, $cancel))) 'An ordinary miss was not recorded.'
+    $shown = [Collections.Generic.HashSet[long]]::new()
+    $shown.Add($entry.EntryId) | Out-Null
+    Require (@(Invoke-Value $store 'Pending' @('tmdb', $shown, $cancel)).Count -eq 0) 'A miss was tried again in the same session.'
     $target = New-Value 'Library.VideoTarget' @($entry, $catalog, $automatic)
     $request = Invoke-Value $store 'Begin' @($target, $null, $cancel)
     Require ($null -ne $request) 'An unattempted empty movie could not start its lookup.'
-    Invoke-Value $store 'Complete' @($request, $null, 'failed', $cancel) | Out-Null
+    Invoke-Value $store 'Complete' @($request, $outcomeFailed, $cancel) | Out-Null
     Invoke-Value $store 'SelectProvider' @('wikidata', $cancel) | Out-Null
     Require (!(Invoke-Value $store 'AutomaticDownload' @($cancel))) 'Choosing a provider started automatic downloads.'
     Invoke-Value $store 'EnableAutomaticDownload' @('wikidata', $cancel) | Out-Null
@@ -218,11 +228,14 @@ try {
     Invoke-Value $sources 'Replace' @($first, $files, $cancel) | Out-Null
     $matches = Invoke-Value $store 'Search' @($query, $cancel)
     $entry = $matches.Entries[0]
-    Require (@(Invoke-Value $store 'Pending' @('tmdb', $cancel)).Count -gt 0) 'Session attempts survived reopening instead of consulting durable request protection.'
+    $shown = [Collections.Generic.HashSet[long]]::new()
+    Require (@(Invoke-Value $store 'Pending' @('tmdb', $shown, $cancel)).Count -eq 0) 'A video not on screen was queued for identification.'
+    $shown.Add($entry.EntryId) | Out-Null
+    Require (@(Invoke-Value $store 'Pending' @('tmdb', $shown, $cancel)).Count -gt 0) 'Session attempts survived reopening instead of consulting durable request protection.'
     $retryTarget = New-Value 'Library.VideoTarget' @($entry, 'tmdb', $explicit)
     $retry = Invoke-Value $store 'Begin' @($retryTarget, $null, $cancel)
     Require ($null -ne $retry) 'A remembered no-match prevented an explicit retry.'
-    Invoke-Value $store 'Complete' @($retry, $null, 'no_match', $cancel) | Out-Null
+    Invoke-Value $store 'Complete' @($retry, $outcomeNoMatch, $cancel) | Out-Null
     $policy = New-Value 'Shared.Network.RequestPolicy' @($database)
     Invoke-Value $policy 'Initialize' @($cancel) | Out-Null
     $key = New-Value 'Shared.Network.RequestKey' @('tmdb', 'fixture-query')
@@ -256,7 +269,7 @@ try {
     $target = New-Value 'Library.VideoTarget' @($entry, $catalog, $explicit)
     $request = Invoke-Value $store 'Begin' @($target, $null, $cancel)
     Invoke-Value $store 'SaveChoices' @($savedVideo, $cancel) | Out-Null
-    Require (Invoke-Value $store 'Complete' @($request, $savedVideo, 'complete', $cancel)) 'A requested result was not saved.'
+    Require (Invoke-Value $store 'Complete' @($request, $savedVideo, $cancel)) 'A requested result was not saved.'
     Require ((Sql 'SELECT checked FROM video_records WHERE catalog_id=$catalog AND path=''title/tt1234567'';' @{ '$catalog' = $catalog }) -eq 1) 'Reusing cached metadata made an old response satisfy a fresh fetch.'
     $cached = Invoke-Value $store 'Saved' @($target, 'es', $cancel)
     $records = $cached.GetType().GetProperty('Records', $flags).GetValue($cached)
@@ -264,12 +277,12 @@ try {
     $automaticTarget = New-Value 'Library.VideoTarget' @($entry, $catalog, $automatic)
     Require ($null -eq (Invoke-Value $store 'Begin' @($automaticTarget, $null, $cancel))) 'A saved movie remained eligible for automatic lookups.'
     $request = Invoke-Value $store 'Begin' @($target, $null, $cancel)
-    Invoke-Value $store 'Complete' @($request, $null, 'failed', $cancel) | Out-Null
+    Invoke-Value $store 'Complete' @($request, $outcomeFailed, $cancel) | Out-Null
     $matches = Invoke-Value $store 'Search' @($query, $cancel)
     Require ($matches.Entries[0].Title -eq 'Example') 'A failed refresh discarded the saved movie.'
     $request = Invoke-Value $store 'Begin' @($target, $null, $cancel)
     Invoke-Value $store 'EraseMetadata' @((New-Values 'Library.Entry' @($entry)), $cancel) | Out-Null
-    Require (!(Invoke-Value $store 'Complete' @($request, $savedVideo, 'complete', $cancel))) 'A late provider reply overwrote a newer Clear identification.'
+    Require (!(Invoke-Value $store 'Complete' @($request, $savedVideo, $cancel))) 'A late provider reply overwrote a newer Clear identification.'
 
     Invoke-Value $sources 'Reconcile' @((New-Values 'Shared.Contribution' @($first, $second)), $cancel) | Out-Null
     $otherPath = Join-Path $directory 'Other/Example.2024.mkv'
@@ -279,9 +292,9 @@ try {
     $matches = Invoke-Value $store 'Search' @($query, $cancel)
     $otherEntry = $matches.Entries | Where-Object Path -eq $otherPath
     $chosen = Invoke-Value $store 'Begin' @((New-Value 'Library.VideoTarget' @($otherEntry, 'tmdb', $explicit)), $null, $cancel)
-    Require (Invoke-Value $store 'Complete' @($chosen, $video, 'success', $cancel)) 'An explicit identification was not saved.'
+    Require (Invoke-Value $store 'Complete' @($chosen, $video, $cancel)) 'An explicit identification was not saved.'
     Invoke-Value $sources 'Replace' @($second, $files, $cancel) | Out-Null
-    Require (!(Invoke-Value $store 'Complete' @($request, $savedVideo, 'complete', $cancel))) 'A late provider reply overwrote a newer identification merged by source reconciliation.'
+    Require (!(Invoke-Value $store 'Complete' @($request, $savedVideo, $cancel))) 'A late provider reply overwrote a newer identification merged by source reconciliation.'
     $matches = Invoke-Value $store 'Search' @($query, $cancel)
     Require ($matches.Entries.Count -eq 1 -and $matches.Entries[0].Title -eq 'Chosen title') 'Reconciliation lost the newer explicit identification.'
     Invoke-Value $sources 'Reconcile' @((New-Values 'Shared.Contribution' @($first)), $cancel) | Out-Null
@@ -311,7 +324,7 @@ try {
             Year = 2024; Keywords = [string[]]@($case.Keyword); Records = (New-Values 'Library.VideoRecord' @($record))
         }
         $attempt = Invoke-Value $store 'Begin' @($isolatedTarget, $null, $cancel)
-        Require (Invoke-Value $store 'Complete' @($attempt, $information, 'complete', $cancel)) 'A catalogue-qualified result could not be saved.'
+        Require (Invoke-Value $store 'Complete' @($attempt, $information, $cancel)) 'A catalogue-qualified result could not be saved.'
     }
     foreach ($case in $catalogueCases) {
         $isolatedQuery = New-Value 'Library.Query' @($case.Keyword, $configuration)
@@ -343,7 +356,7 @@ try {
             Year = 2024; Cast = [string[]]@('Saved actor'); Synopsis = 'Saved synopsis'
         }
         $attempt = Invoke-Value $store 'Begin' @($renameTarget, $null, $cancel)
-        Require (Invoke-Value $store 'Complete' @($attempt, $information, 'complete', $cancel)) 'A rename fixture could not save its initial identification.'
+        Require (Invoke-Value $store 'Complete' @($attempt, $information, $cancel)) 'A rename fixture could not save its initial identification.'
     }
     $afterPath = Join-Path $directory 'After.2025.mkv'
     $renamedPath = Join-Path $directory 'Renamed.2025.mkv'
@@ -360,7 +373,7 @@ try {
     $renameTarget = New-Value 'Library.VideoTarget' @($afterEntry, $catalog, $automatic)
     $attempt = Invoke-Value $store 'Begin' @($renameTarget, $null, $cancel)
     Require ($null -ne $attempt -and $null -eq $attempt.Choice) 'A renamed file reused its old automatic choice instead of matching again.'
-    Require (Invoke-Value $store 'Complete' @($attempt, $null, 'no_match', $cancel)) 'A renamed file could not record an ordinary miss.'
+    Require (Invoke-Value $store 'Complete' @($attempt, $outcomeNoMatch, $cancel)) 'A renamed file could not record an ordinary miss.'
     $detail = Invoke-Value $store 'Detail' @($afterEntry.EntryId, $null, $cancel)
     Require (!$detail.Entry.HasMetadata -and $detail.Entry.Title -eq 'After') 'A renamed-file miss displayed stale automatic metadata.'
     Require ($null -eq (Invoke-Value $store 'Begin' @($renameTarget, $null, $cancel))) 'A renamed-file miss was not remembered for automatic lookup.'
@@ -370,7 +383,7 @@ try {
     $renameTarget = New-Value 'Library.VideoTarget' @($deliberateEntry, $catalog, $explicit)
     $attempt = Invoke-Value $store 'Begin' @($renameTarget, $null, $cancel)
     Require ($null -ne $attempt -and $attempt.Choice.VideoId -eq 'deliberate') 'An explicit refresh lost the accepted choice after rename.'
-    Require (Invoke-Value $store 'Complete' @($attempt, $null, 'failed', $cancel)) 'A renamed file could not record its failed explicit refresh.'
+    Require (Invoke-Value $store 'Complete' @($attempt, $outcomeFailed, $cancel)) 'A renamed file could not record its failed explicit refresh.'
     $detail = Invoke-Value $store 'Detail' @($deliberateEntry.EntryId, $null, $cancel)
     Require ($detail.Entry.Title -eq 'Kept choice' -and $detail.Synopsis -eq 'Saved synopsis') 'A failed refresh discarded the explicit choice of a renamed file.'
     $seriesKind = [Enum]::Parse($assembly.GetType('Syno.TinyTorrent.VideoKind'), 'Series')
@@ -381,7 +394,7 @@ try {
         Episodes = (New-Values 'Library.Episode' @($episode))
     }
     $attempt = Invoke-Value $store 'Begin' @($renameTarget, $null, $cancel)
-    Require (Invoke-Value $store 'Complete' @($attempt, $information, 'success', $cancel)) 'An episode identification was not saved.'
+    Require (Invoke-Value $store 'Complete' @($attempt, $information, $cancel)) 'An episode identification was not saved.'
     $detail = Invoke-Value $store 'Detail' @($deliberateEntry.EntryId, $null, $cancel)
     $series = $detail.GetType().GetProperty('Series', $flags).GetValue($detail)
     $episodes = $detail.GetType().GetProperty('Episodes', $flags).GetValue($detail)
@@ -432,7 +445,7 @@ try {
         $currentEntry = $entries | Where-Object Name -eq 'Remake.2024.mkv'
         $attempt = Invoke-Value $store 'Begin' @((New-Value 'Library.VideoTarget' @($currentEntry, 'omdb', $explicit)), $null, $cancel)
         $attempt.GetType().GetProperty('BlockedRequest', $flags).SetValue($attempt, $resourceKey)
-        Invoke-Value $store 'Complete' @($attempt, $null, 'blocked', $cancel) | Out-Null
+        Invoke-Value $store 'Complete' @($attempt, $outcomeBlocked, $cancel) | Out-Null
         $plan = @(Invoke-Value $videos 'Plan' @($entries, $option, $cancel))
         Require (($plan | Where-Object { $_.Entry.Name -eq 'Remake.2024.mkv' }).Answer.ToString() -eq 'NotFound' -and
             ($plan | Where-Object { $_.Entry.Name -eq 'Remake.2000.mkv' }).Answer.ToString() -eq 'Unasked') 'A known missing detail was not counted as not found, or marked another movie.'
@@ -486,7 +499,7 @@ try {
         $subsource = [Enum]::Parse($supplierType, 'SubSource')
         Invoke-Value $batch 'SelectSupplier' @($subsource) | Out-Null
         $draft = Invoke-Value $batch 'Edit' @($subsource)
-        $draft.GetType().GetProperty('Secret', $flags).SetValue($draft, 'offline-fixture')
+        $draft.GetType().GetProperty('Input', $flags).SetValue($draft, (New-Value 'Shared.AccountInput+OwnKey' @((New-Value 'Shared.Secret+Typed' @('offline-fixture')))))
         Invoke-Value $batch 'Save' @($draft) | Out-Null
         $releases = @('Remake.2024.1080p.WEB-DL.One.mkv', 'Remake.2024.1080p.WEB-DL.Two.mkv')
         $releaseFiles = 0..1 | ForEach-Object {
@@ -558,7 +571,7 @@ try {
         $subdl = [Enum]::Parse($supplierType, 'SubDL')
         Invoke-Value $batch 'SelectSupplier' @($subdl) | Out-Null
         $draft = Invoke-Value $batch 'Edit' @($subdl)
-        $draft.GetType().GetProperty('Secret', $flags).SetValue($draft, 'offline-fixture')
+        $draft.GetType().GetProperty('Input', $flags).SetValue($draft, (New-Value 'Shared.AccountInput+OwnKey' @((New-Value 'Shared.Secret+Typed' @('offline-fixture')))))
         Invoke-Value $batch 'Save' @($draft) | Out-Null
         $batchFiles = 0..3 | ForEach-Object {
             $movie = Join-Path $directory ("Batch." + $_ + ".2024.mkv")
@@ -665,6 +678,29 @@ public sealed class SubtitleReply : HttpMessageHandler {
             !$batch.GetType().GetProperty('CanCheck', $flags).GetValue($batch)) 'An incomplete account erased automatic intent or allowed Check.'
         Invoke-Value $batch 'SetEnabled' @($false) | Out-Null
         Require ((Sql 'SELECT COUNT(*) FROM subtitle_jobs WHERE manual=1;') -eq 1) 'Switching automatic downloads off cancelled a manual batch.'
+        # A kept password belongs to its saved user name, so another user
+        # name needs a typed password.
+        $savedUser = New-Value 'Subtitles.Account+SignedIn' @($accountSupplier, 'user', 'offline-password')
+        $batch.GetType().GetField('_account', $flags).SetValue($batch, $savedUser)
+        $kept = New-Value 'Shared.Secret+Kept' @()
+        $sameUser = New-Value 'Subtitles.Draft' @($accountSupplier, (New-Value 'Shared.AccountInput+SignedIn' @('user', $kept)))
+        Require ((Invoke-Value $batch 'Interpret' @($sameUser)) -eq $savedUser) 'A kept password was lost for its own user name.'
+        $otherUser = New-Value 'Subtitles.Draft' @($accountSupplier, (New-Value 'Shared.AccountInput+SignedIn' @('other', $kept)))
+        $reason = $null
+        try { Invoke-Value $batch 'Interpret' @($otherUser) | Out-Null }
+        catch {
+            $thrown = $_.Exception.GetBaseException()
+            if ($thrown.GetType().Name -eq 'SubtitleException') { $reason = $thrown.GetType().GetProperty('Reason', $flags).GetValue($thrown).ToString() }
+        }
+        Require ($reason -eq 'Unconfigured') 'A kept password was sent for another user name.'
+        # A failure to reach the supplier never hides a refused account.
+        $keyAccount = New-Value 'Subtitles.Account+OwnKey' @([Enum]::Parse($supplierType, 'SubDL'), 'offline-fixture')
+        $batch.GetType().GetField('_account', $flags).SetValue($batch, $keyAccount)
+        $failureType = $assembly.GetType('Syno.TinyTorrent.SubtitleFailure', $true)
+        Invoke-Value $batch 'Answered' @([Enum]::Parse($failureType, 'Authentication')) | Out-Null
+        Require ($batch.GetType().GetProperty('Failure', $flags).GetValue($batch).ToString() -eq 'Authentication') 'The refusal fixture is not a configured subtitle account.'
+        Invoke-Value $batch 'Answered' @([Enum]::Parse($failureType, 'Network')) | Out-Null
+        Require ($batch.GetType().GetProperty('Failure', $flags).GetValue($batch).ToString() -eq 'Authentication') 'A network failure hid a refused subtitle account.'
         Sql 'DELETE FROM subtitle_jobs; DELETE FROM subtitle_output_sources; DELETE FROM subtitle_outputs; UPDATE subtitle_settings SET enabled=0,supplier=0,username='''',secret=NULL;' | Out-Null
     }
     finally { $batch.DisposeAsync().AsTask().GetAwaiter().GetResult() | Out-Null }
@@ -780,7 +816,7 @@ public sealed class SubtitleSearchReply : HttpMessageHandler {
         Invoke-Value $search 'Initialize' @('en') | Out-Null
         Invoke-Value $search 'SelectSupplier' @([Enum]::Parse($supplierType, 'SubDL')) | Out-Null
         $draft = Invoke-Value $search 'Edit' @([Enum]::Parse($supplierType, 'SubDL'))
-        $draft.GetType().GetProperty('Secret', $flags).SetValue($draft, 'offline-fixture')
+        $draft.GetType().GetProperty('Input', $flags).SetValue($draft, (New-Value 'Shared.AccountInput+OwnKey' @((New-Value 'Shared.Secret+Typed' @('offline-fixture')))))
         Invoke-Value $search 'Save' @($draft) | Out-Null
         Invoke-Value $policy 'SaveLimit' @(1, $cancel) | Out-Null
         $movie = Join-Path $directory 'Search.Once.2024.mkv'
@@ -891,7 +927,7 @@ public sealed class SubtitleSearchReply : HttpMessageHandler {
         Require ($blocked -and $reply.Downloads -eq $before) 'Saving a subtitle renewed an old Force command and bypassed a newer download hold.'
         Sql 'DELETE FROM request_holds WHERE provider_id=''subdl'';' | Out-Null
         $supplier = New-Value 'Subtitles.Supplier' @((New-Value 'Subtitles.Suppliers.OpenSubtitles' @()), $policy)
-        $account = New-Value 'Subtitles.Account' @([Enum]::Parse($supplierType, 'OpenSubtitles'), '', '')
+        $account = New-Value 'Subtitles.Account+BuiltIn' @([Enum]::Parse($supplierType, 'OpenSubtitles'))
         $operation = New-Value 'Subtitles.Supplier+Operation' @($http, $account, $validate) @{ Purpose = 'download' }
         $api = [Enum]::Parse($assembly.GetType('Syno.TinyTorrent.SupplierRequest'), 'Api')
         foreach ($payment in @($false, $true)) {
@@ -925,7 +961,7 @@ public sealed class SubtitleSearchReply : HttpMessageHandler {
         $getJson = $assembly.GetType('Syno.TinyTorrent.Library.ProviderJson').GetMethod('Get', $staticFlags)
         $replyAccess = New-Value 'Shared.Network.ProviderAccess' @('replies', 'fixture', 'search')
         $subdlSupplier = New-Value 'Subtitles.Supplier' @((New-Value 'Subtitles.Suppliers.SubDL' @()), $policy)
-        $subdlAccount = New-Value 'Subtitles.Account' @([Enum]::Parse($supplierType, 'SubDL'), '', 'offline-fixture')
+        $subdlAccount = New-Value 'Subtitles.Account+OwnKey' @([Enum]::Parse($supplierType, 'SubDL'), 'offline-fixture')
         $subdlOperation = New-Value 'Subtitles.Supplier+Operation' @($http, $subdlAccount, $validate)
         $geolocation = New-Value 'Shared.Geolocation' @($http, $work)
         $cityPhase = [Enum]::Parse($assembly.GetType('Syno.TinyTorrent.CityPhase'), 'Downloading')
@@ -1015,8 +1051,12 @@ public sealed class SubtitleSearchReply : HttpMessageHandler {
         # whichever supplier lists the forced one or the other episode's.
         $unfitLookup = New-Value 'Subtitles.SubtitleLookup' @('Unfit.Show.S01E02.mkv', 'en', $validate)
         foreach ($name in @('OpenSubtitles', 'SubDL', 'SubSource')) {
-            $secret = if ($name -eq 'OpenSubtitles') { '' } else { 'offline-fixture' }
-            $unfitAccount = New-Value 'Subtitles.Account' @([Enum]::Parse($supplierType, $name), '', $secret)
+            $unfitSupplierId = [Enum]::Parse($supplierType, $name)
+            $unfitAccount = if ($name -eq 'OpenSubtitles') {
+                New-Value 'Subtitles.Account+BuiltIn' @($unfitSupplierId)
+            } else {
+                New-Value 'Subtitles.Account+OwnKey' @($unfitSupplierId, 'offline-fixture')
+            }
             $unfitSupplier = New-Value 'Subtitles.Supplier' @((New-Value "Subtitles.Suppliers.$name" @()), $policy)
             $offered = @((Invoke-Value $unfitSupplier 'Candidates' @($http, $unfitAccount, $unfitLookup, $cancel)).Candidates | ForEach-Object { $_.Release })
             Require ($offered.Count -eq 1 -and $offered[0] -eq 'Unfit.Show.S01E02.Full') "$name offered $($offered -join ', ') for Unfit.Show.S01E02."
@@ -1075,7 +1115,8 @@ public sealed class SubtitleSearchReply : HttpMessageHandler {
             $batchField = $videos.GetType().GetField('_batch', $flags)
             $accepted = $batchField.GetValue($videos)
             $queued = $accepted.GetType().GetProperty('Queue', $flags).GetValue($accepted)
-            $observation = $accepted.GetType().GetProperty('Observation', $flags).GetValue($accepted)
+            $batchWork = $accepted.GetType().GetProperty('Work', $flags).GetValue($accepted)
+            $observation = $batchWork.GetType().GetProperty('Observation', $flags).GetValue($batchWork)
             $progress = $observation.GetType().GetProperty('Progress', $flags).GetValue($observation)
             Require ($progress.GetType().GetProperty('Total', $flags).GetValue($progress) -eq 1) 'The metadata batch did not accept its file.'
             # Reload runs the replacement on a worker thread, where a script block has no runspace.
@@ -1367,8 +1408,11 @@ INSERT INTO subtitle_output_sources(path,language,origin,file_index,movie_path) 
     $policy = New-Value 'Shared.Network.RequestPolicy' @($database)
     $subtitles = New-Value 'Subtitles.Acquisition' @($database, $http, [Threading.Tasks.Task]::CompletedTask, $policy) @{ Work = $work }
     Invoke-Value $subtitles 'Initialize' @('en') | Out-Null
-    Require (!$subtitles.GetType().GetProperty('HasSecret', $flags).GetValue($subtitles)) 'An unreadable protected secret was retained.'
-    Require ($subtitles.GetType().GetProperty('Username', $flags).GetValue($subtitles) -eq 'Restored user') 'Secret recovery discarded the saved account name.'
+    $restoredSupplier = $subtitles.GetType().GetProperty('SupplierId', $flags).GetValue($subtitles)
+    $restoredDraft = Invoke-Value $subtitles 'Edit' @($restoredSupplier)
+    $restored = $restoredDraft.GetType().GetProperty('Input', $flags).GetValue($restoredDraft)
+    Require ($restored.GetType().Name -eq 'SignedIn' -and $null -eq $restored.GetType().GetProperty('Password', $flags).GetValue($restored)) 'An unreadable protected secret was retained.'
+    Require ($restored.GetType().GetProperty('Username', $flags).GetValue($restored) -eq 'Restored user') 'Secret recovery discarded the saved account name.'
     Require ($subtitles.GetType().GetProperty('Languages', $flags).GetValue($subtitles).Length -eq 0) 'Malformed subtitle settings did not recover to defaults.'
     Require ((Sql 'SELECT secret IS NULL AND languages=''[]'' FROM subtitle_settings;') -eq 1) 'Repaired subtitle settings were not saved.'
     Require ((Sql 'SELECT COUNT(*) FROM subtitle_outputs;') -eq $savedOutputs -and

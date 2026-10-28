@@ -71,23 +71,16 @@ public sealed partial class MainWindow
             return;
         var name = supplier.SupplierId.ToString();
         var saved = subtitles.Edit(supplier.SupplierId);
-        Draft Read(AccountInput input) =>
-            saved with
-            {
-                Username = input.Username,
-                Secret = input.Secret,
-                KeepSecret = input.KeepSecret,
-            };
         await ShowAccount(
             new AccountDialog(
                 Model.Text,
                 name,
                 supplier.Access,
                 supplier.HasBuiltInKey,
-                new(saved.Username, string.Empty, saved.KeepSecret),
+                saved.Input,
                 async input =>
                 {
-                    await subtitles.Save(Read(input));
+                    await subtitles.Save(saved with { Input = input });
                     try
                     {
                         await Model.Features.RetrySubtitles();
@@ -102,7 +95,7 @@ public sealed partial class MainWindow
                     {
                         try
                         {
-                            await subtitles.Check(Read(input), cancellation);
+                            await subtitles.Check(saved with { Input = input }, cancellation);
                             if (!cancellation.IsCancellationRequested)
                                 Model.Notifications.ShowOutcome("subtitles", "connected", name);
                         }

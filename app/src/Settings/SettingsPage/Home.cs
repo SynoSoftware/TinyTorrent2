@@ -22,7 +22,7 @@ public sealed partial class SettingsPage
             () =>
                 Main.ShowsFreeSpace
                     ? Model.Destination.ConfirmedText + " · " + Main.FreeSpaceStatus
-                    : Model.Destination.ConfirmedText,
+                    : Model.Destination.ConfirmedText ?? "—",
             new(SettingsCategory.Transfers, "download_locations"),
             Syno.Lucide.Folder
         );

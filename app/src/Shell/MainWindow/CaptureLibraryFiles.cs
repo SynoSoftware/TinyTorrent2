@@ -468,7 +468,10 @@ public sealed partial class MainWindow
             ?? throw new InvalidOperationException("Library has no subtitle acquisition.");
         await subtitles.SetEnabled(false);
         await subtitles.SelectSupplier(SubtitleSupplier.SubDL);
-        var account = subtitles.Edit(SubtitleSupplier.SubDL) with { Secret = "offline-capture" };
+        var account = subtitles.Edit(SubtitleSupplier.SubDL) with
+        {
+            Input = new AccountInput.OwnKey(new Secret.Typed("offline-capture")),
+        };
         await subtitles.Save(account);
         await subtitles.SetLanguages(["en"]);
         var entries = Model

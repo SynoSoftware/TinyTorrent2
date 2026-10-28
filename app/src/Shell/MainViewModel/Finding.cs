@@ -132,9 +132,9 @@ public sealed partial class MainViewModel
                     : Text.Get("about", "title");
             if (Page != WindowPage.Torrents)
                 return string.Empty;
-            if (_storageFailed && Torrents.Count == 0)
+            if (_startup == EngineStartup.Failed && Torrents.Count == 0)
                 return Text.Get("window", "torrents_unavailable");
-            if (_sessionId.Length == 0 || _loading)
+            if (_sessionId is null || _startup == EngineStartup.Loading)
                 return Text.Get("window", "connecting");
             var count =
                 Filter == TorrentFilter.All
@@ -150,7 +150,7 @@ public sealed partial class MainViewModel
                 count = Text.Format("window", "torrents_selected", count, _selected.Length);
             if (Inspector.PeerSummary is { Length: > 0 } peers)
                 count += " · " + peers;
-            return !_connected || _storageFailed
+            return !_connected || _startup == EngineStartup.Failed
                 ? Text.Format("window", "last_known", count)
                 : count;
         }
@@ -169,10 +169,15 @@ public sealed partial class MainViewModel
         filter switch
         {
             TorrentFilter.All => true,
-            TorrentFilter.Downloading => torrent.StatusCode is "downloading" or "metadata",
-            TorrentFilter.Seeding => torrent.StatusCode is "seeding" or "completed",
-            TorrentFilter.Paused => torrent.StatusCode == "paused",
-            TorrentFilter.Queued => torrent.StatusCode is "queued" or "waiting_check" or "waiting_move",
+            TorrentFilter.Downloading => torrent.State
+                is TorrentState.Downloading
+                    or TorrentState.Metadata,
+            TorrentFilter.Seeding => torrent.State is TorrentState.Seeding or TorrentState.Completed,
+            TorrentFilter.Paused => torrent.State == TorrentState.Paused,
+            TorrentFilter.Queued => torrent.State
+                is TorrentState.Queued
+                    or TorrentState.WaitingCheck
+                    or TorrentState.WaitingMove,
             TorrentFilter.Errors => torrent.IsError,
             _ => false,
         };
@@ -495,8 +500,12 @@ public sealed class FilterChoice(MainViewModel owner, TorrentFilter filter) : IN
         Filter switch
         {
             TorrentFilter.All => Lucide.List,
-            TorrentFilter.Errors => Torrent.GetGlyph("error"),
-            _ => Torrent.GetGlyph(Filter.ToString().ToLowerInvariant()),
+            TorrentFilter.Downloading => Torrent.GetGlyph(TorrentState.Downloading),
+            TorrentFilter.Seeding => Torrent.GetGlyph(TorrentState.Seeding),
+            TorrentFilter.Paused => Torrent.GetGlyph(TorrentState.Paused),
+            TorrentFilter.Queued => Torrent.GetGlyph(TorrentState.Queued),
+            TorrentFilter.Errors => Torrent.GetGlyph(TorrentState.Error),
+            _ => throw new ArgumentOutOfRangeException(nameof(Filter)),
         };
     public string Label => owner.Text.Get("filters", Filter.ToString().ToLowerInvariant());
     public int Count => _count;

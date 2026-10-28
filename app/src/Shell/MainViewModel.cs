@@ -37,8 +37,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     private Task? _spaceRead;
     private string? _spacePath;
     private long _spaceChecked;
-    private bool _loading = true;
-    private bool _storageFailed;
+
+    // The last startup state an engine reported; it stays after a disconnect,
+    // which shows the last known state.
+    private EngineStartup _startup = EngineStartup.Loading;
     private bool _languageSaved = true;
     private string? _startupError;
     private bool _changingLanguage;
@@ -46,11 +48,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     private int _languageRevision;
     private Task _languageLoad = Task.CompletedTask;
     private string[] _revealIds = [];
-    private string _sessionId = string.Empty;
+
+    // Null until an engine answers; then the last session that did.
+    private string? _sessionId;
     private bool _connected;
     private PipeClient.Disconnection? _disconnection;
     private bool _loaded;
-    private bool _ready;
     private bool _shuttingDown;
     private bool _closed;
     private bool _picking;
@@ -92,13 +95,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     internal SubtitleAcquisition? Subtitles => Features.Subtitles;
     internal Geolocation Geolocation { get; }
     internal int LookupLimit => Features.LookupLimit;
-    public string Theme =>
-        Settings.Theme.ConfirmedText.Length > 0 ? Settings.Theme.ConfirmedText : "system";
+    public string Theme => Settings.Theme.ConfirmedText is { Length: > 0 } theme ? theme : "system";
     public bool ShowsTitleSpeeds => Settings.ShowTitleSpeeds.IsOn;
     public bool ShowsFreeSpace =>
-        _connected
-        && !_loading
-        && !_storageFailed
+        IsRunning
         && Settings.ShowFreeSpace.IsOn
         && _spacePath == Settings.Destination.ConfirmedText
         && _freeSpace.HasValue;
@@ -115,13 +115,20 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     public string CheckSpeed => _checkRate is { } rate ? Text.CopyRate(rate) : string.Empty;
     public string CheckTip => Text.Format("window", "check_rate", CheckSpeed);
     public bool IsConnected => _connected;
+
+    // The engine answers and has loaded its saved settings and transfers.
+    internal bool IsRunning => _connected && _startup == EngineStartup.Ready;
+
+    // The window can show its first state: the saved settings, or the storage
+    // failure that replaces them.
+    private bool IsDisplayable => _connected && _startup != EngineStartup.Loading;
     internal double DownloadRate => _downloadRate;
     internal double UploadRate => _uploadRate;
     internal TransferTotals SessionTotals { get; private set; }
     internal TransferTotals LifetimeTotals { get; private set; }
-    public bool IsLoading => _loading || !_connected;
-    public bool IsStorageFailed => _storageFailed;
-    public bool IsEmptyVisible => !_storageFailed;
+    public bool IsLoading => !_connected || _startup == EngineStartup.Loading;
+    public bool IsStorageFailed => _startup == EngineStartup.Failed;
+    public bool IsEmptyVisible => _startup != EngineStartup.Failed;
     internal bool IsClosed => _closed;
     public bool CanClose =>
         !_changingLanguage
@@ -130,14 +137,22 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         && !AddDraft.IsBusy
         && !Inspector.IsPending
         && !Settings.IsPending
-        && !FileDraft.IsPending
+        && !MoveDraft.IsPending
+        && !RemovalDraft.IsPending
         && !SpeedLimit.IsPending
         && _limitsChoice is not { Sequence: null };
     public bool CanExit => _connected && CanClose;
     public string? DataDirectory => _client.DataDirectory;
-    public bool HasDraft => AddDraft.HasDraft || Inspector.HasDraft || FileDraft.HasDraft;
-    internal bool CanSave =>
-        _connected && !_loading && !_storageFailed && !_shuttingDown && !_picking;
+
+    // The first draft the window resolves before it closes, in the order it
+    // resolves them; null when none remains.
+    internal UnfinishedDraft? RemainingDraft =>
+        AddDraft.HasDraft ? UnfinishedDraft.Add
+        : MoveDraft.HasDraft ? UnfinishedDraft.Move
+        : Inspector.HasDraft ? UnfinishedDraft.Inspector
+        : null;
+    public bool HasDraft => RemainingDraft is not null;
+    internal bool CanSave => IsRunning && !_shuttingDown && !_picking;
     public bool CanEdit => CanSave && !IsClosing;
     public bool IsPicking
     {
@@ -179,12 +194,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         }
     }
     public ICommand SwitchToolbar { get; }
-    public bool IsSessionPaused => _connected && IsPaused;
 
-    private string Rate(double rate) =>
-        _connected && !_loading && !_storageFailed
-            ? Text.Rate(rate)
-            : "—";
+    private string Rate(double rate) => IsRunning ? Text.Rate(rate) : "—";
 
 #if CAPTURE
     private Status? _presentedStatus;
@@ -215,16 +226,16 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             var reason = _disconnection?.Reason ?? string.Empty;
             if (!_connected)
             {
-                if (_sessionId.Length == 0 && reason.Length == 0)
+                if (_sessionId is null && reason.Length == 0)
                     return null;
                 var title =
                     _disconnection is { IsOtherVersion: true } ? "other_version"
-                    : _sessionId.Length == 0 ? "not_started"
+                    : _sessionId is null ? "not_started"
                     : "stopped";
                 var stopped = Text.Get("window", "disconnected");
                 return new(
                     Text.Get("notifications", title),
-                    _sessionId.Length == 0 ? reason
+                    _sessionId is null ? reason
                         : reason.Length == 0 ? stopped
                         : Text.Format("errors", "detail", stopped, reason),
                     InfoBarSeverity.Error,
@@ -233,7 +244,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                         : null
                 );
             }
-            if (_storageFailed)
+            if (_startup == EngineStartup.Failed)
                 return new(
                     Text.Get("notifications", "storage"),
                     string.IsNullOrWhiteSpace(_startupError)
@@ -252,7 +263,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                         Text.Get("notifications", "storage_tip")
                     )
                 );
-            if (_loading)
+            if (_startup == EngineStartup.Loading)
                 return null;
             if (_stopped is { } condition)
                 return StoppedStatus(condition);
@@ -352,7 +363,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         };
         Settings = new Editor(this, _client);
         AddDraft = new AddDraft(this, _client, strings);
-        FileDraft = new FileDraft(this, _client);
+        MoveDraft = new MoveDraft(this, _client);
+        RemovalDraft = new RemovalDraft(this, _client);
         SpeedLimit = new SpeedLimit(this, _client);
         Geolocation = new Geolocation(_providerHttp, Work);
         Geolocation.Failed += (_, error) => Notifications.Report(error);
@@ -390,7 +402,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 _ = Features.ConfigureRoute();
             OnTaskChanged(sender, args);
         };
-        FileDraft.PropertyChanged += OnTaskChanged;
+        MoveDraft.PropertyChanged += OnTaskChanged;
+        RemovalDraft.PropertyChanged += OnTaskChanged;
         SpeedLimit.PropertyChanged += OnTaskChanged;
         Restart = new RelayCommand(
             () =>
@@ -523,7 +536,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         ResumeAll = new RelayCommand(() => SessionPause(false), () => CanEdit);
         ResolvePause = new RelayCommand(
             () =>
-                _pause == PauseReason.Adapter ? ShowSetting(Settings.Adapter) : SessionPause(false),
+                PausedBy == PauseReason.Adapter ? ShowSetting(Settings.Adapter) : SessionPause(false),
             () => CanEdit
         );
         Limits = new RelayCommand(
@@ -714,6 +727,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 _connected = false;
                 if (_limitsChoice is { Sequence: not null })
                     _limitsChoice = null;
+                _limits = null;
                 _waiting = null;
                 _restriction = null;
                 Unfinished = null;
@@ -722,7 +736,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 // The engine resolves its conditions only while connected.
                 _stopped = null;
                 _locations.Clear();
-                _ready = false;
                 AddDraft.Invalidate();
                 Inspector.Disconnect();
                 foreach (var torrent in Torrents)
@@ -778,18 +791,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private void ApplySnapshot(JsonElement snapshot)
     {
-        var previousAccess = (_connected, _loading, _storageFailed, _shuttingDown);
+        var previousAccess = (_connected, _startup, _shuttingDown);
         var previousError = _startupError;
-        var previousLimits = (
-            IsPaused,
-            _limitOrigin,
-            _appliedLimits,
-            _pause,
-            _downloadCap,
-            _uploadCap,
-            MissingAdapter,
-            LimitsIndex
-        );
+        var previousLimits = (_limits, MissingAdapter, LimitsIndex);
         var previousIncoming = (
             HasIncoming,
             MissingAdapter,
@@ -803,26 +807,30 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         var previousSelection = _selected.Length;
         var previousLanguageSaved = _languageSaved;
         var sessionId = snapshot.GetProperty("session_id").GetString()!;
-        var reconnected = !_connected || _sessionId != sessionId;
+        // Only a disconnect shows the first state again. A new session id alone
+        // does not, because a snapshot applied before a queued disconnect can
+        // already carry the next session.
+        var wasDisplayable = IsDisplayable;
         if (_sessionId != sessionId)
             AddDraft.Invalidate();
         _sessionId = sessionId;
         _connected = true;
         _disconnection = null;
-        _loading = snapshot.TryGetProperty("loading", out var startup) && startup.GetBoolean();
-        _storageFailed =
-            snapshot.TryGetProperty("storage_failed", out var storage) && storage.GetBoolean();
+        _startup =
+            snapshot.TryGetProperty("storage_failed", out var storage) && storage.GetBoolean()
+                ? EngineStartup.Failed
+            : snapshot.TryGetProperty("loading", out var loading) && loading.GetBoolean()
+                ? EngineStartup.Loading
+            : EngineStartup.Ready;
         _startupError = snapshot.TryGetProperty("startup_error", out var detail)
             ? detail.GetString()
             : null;
         _shuttingDown = snapshot.GetProperty("shutting_down").GetBoolean();
-        var accessChanged = previousAccess != (_connected, _loading, _storageFailed, _shuttingDown);
-        // The first state the window can show: the saved settings, or the
-        // storage failure that replaces them.
-        var first = !_ready && !_loading;
-        _ready |= first;
-        if (_loading || _storageFailed)
+        var accessChanged = previousAccess != (_connected, _startup, _shuttingDown);
+        var first = !wasDisplayable && IsDisplayable;
+        if (_startup != EngineStartup.Ready)
         {
+            _limits = null;
             if (accessChanged)
                 Refresh();
             else if (previousError != _startupError)
@@ -847,7 +855,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         {
             _applyingSettings = false;
         }
-        IsPaused = snapshot.GetProperty("session_paused").GetBoolean();
         HasIncoming = snapshot.GetProperty("has_incoming").GetBoolean();
         _externalIpv4 = snapshot.GetProperty("external_ipv4").GetString() ?? string.Empty;
         _externalIpv6 = snapshot.GetProperty("external_ipv6").GetString() ?? string.Empty;
@@ -942,8 +949,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 Changed(nameof(Torrents));
                 foreach (var choice in Filters)
                     choice.Refresh(false);
-                if (FileDraft.Torrents.Length > 0)
-                    FileDraft.Refresh();
+                if (MoveDraft.Torrents.Length > 0)
+                    MoveDraft.Refresh();
+                if (RemovalDraft.Torrents.Length > 0)
+                    RemovalDraft.Refresh();
             }
             if (
                 published
@@ -969,18 +978,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 Changed(nameof(FirstLast));
                 Changed(nameof(Limited));
             }
-            var limitsChanged =
-                previousLimits
-                != (
-                    IsPaused,
-                    _limitOrigin,
-                    _appliedLimits,
-                    _pause,
-                    _downloadCap,
-                    _uploadCap,
-                    MissingAdapter,
-                    LimitsIndex
-                );
+            var limitsChanged = previousLimits != (_limits, MissingAdapter, LimitsIndex);
             var minute = DateTime.Now.Ticks / TimeSpan.TicksPerMinute;
             if (limitsChanged || minute != _limitsMinute)
                 RefreshLimits();
@@ -1130,6 +1128,23 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             else
                 Notifications.AnnounceAccepted("commands", command);
         }
+        catch (CommandException refusal)
+            when (refusal.Code is "alias_conflict" or "metadata_unavailable"
+                && command is "retry" or "resume" or "force" or "verify")
+        {
+            // The engine acted on every other torrent, so the toast names
+            // only the refused ones and why.
+            Notifications.Report(
+                refusal,
+                command == "verify" ? "refused_verify" : "refused_start",
+                null,
+                () =>
+                    Text.Error(
+                        refusal.Code == "alias_conflict" ? "alias_listed" : refusal.Code,
+                        refusal.Detail
+                    )
+            );
+        }
         catch (Exception error)
         {
             Notifications.Report(error);
@@ -1242,7 +1257,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         Library.RefreshText();
         _ = Features.Refresh();
         Settings.RefreshText();
-        FileDraft.Refresh();
+        MoveDraft.Refresh();
+        RemovalDraft.Refresh();
         Refresh();
         TextChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -1252,7 +1268,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         await AddDraft.Discard();
         Inspector.CancelDraft();
         await Settings.CancelDraft();
-        await FileDraft.Discard();
+        await MoveDraft.Discard();
+        await RemovalDraft.Discard();
     }
 
     internal void Reveal(string[] torrentIds)
@@ -1285,7 +1302,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         if (_spacePath != path)
             _freeSpace = null;
         if (
-            !Settings.ShowFreeSpace.IsOn
+            path is null
+            || !Settings.ShowFreeSpace.IsOn
             || _spaceRead is { IsCompleted: false }
             || _spacePath == path && Environment.TickCount64 - _spaceChecked < 10000
         )
@@ -1312,7 +1330,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         AddDraft.Refresh();
         Inspector.Refresh();
         Settings.Refresh();
-        FileDraft.Refresh();
+        MoveDraft.Refresh();
+        RemovalDraft.Refresh();
         SpeedLimit.Refresh();
         RefreshWindow();
     }
@@ -1403,7 +1422,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private void RefreshLimits()
     {
-        Changed(nameof(IsPaused));
         Changed(nameof(IsSessionPaused));
         Changed(nameof(FixedLimits));
         Changed(nameof(FollowsSchedule));

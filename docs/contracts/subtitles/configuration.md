@@ -81,7 +81,10 @@ login belong to the person's configuration; the free OpenSubtitles application
 key belongs to the integration.
 Reopening the editor preserves a saved secret without returning it to its fields.
 Distinguish keeping, replacing and clearing that secret; masked placeholder text
-is never a credential. Check uses the same draft interpretation as Save.
+is never a credential. A kept password belongs to the user name it was saved
+with, so changing the user name asks for the password again instead of sending
+the old one for another account. An unreadable saved password keeps the user
+name and asks for the password. Check uses the same draft interpretation as Save.
 Configuration and protected secrets commit together in C# SQLite. No subtitle
 secret belongs in engine settings or the pipe.
 

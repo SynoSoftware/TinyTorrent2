@@ -32,19 +32,21 @@ public sealed partial class MainViewModel
 
     internal sealed record StatusAction(ICommand Command, string Text, string Glyph, string Tip);
 
-    // A lasting storage problem as the engine reports it, until the engine
-    // resolves it. The "stopped" condition counts the torrents that need
-    // Retry: Name and Detail describe the only one, and Code is the problem
-    // they share, empty when their problems differ. A location condition
-    // names its drive root or UNC share in Folder, the cause's error code in
-    // Detail, and the torrents that wait for it in Count.
-    internal sealed record Condition(
-        string Code,
-        string Detail,
-        string Name,
-        string Folder,
-        int Count
-    );
+    // The torrents that wait for the person's Retry, as the engine reports
+    // them until it resolves the condition.
+    internal abstract record StoppedCondition
+    {
+        private StoppedCondition() { }
+
+        internal sealed record One(string Name, string Code, string Detail) : StoppedCondition;
+
+        // SharedCode is the problem they share; null when their problems differ.
+        internal sealed record Several(int Count, string? SharedCode) : StoppedCondition;
+    }
+
+    // The torrents that wait for one drive root or UNC share. CauseKey is
+    // the errors text of the cause, when the engine names one.
+    internal sealed record LocationCondition(string Root, string? CauseKey, int Count);
 
     // The status the person closed. Fluent 2 brings a closed message bar
     // back while its problem lasts, so it returns when the problem changes
@@ -52,10 +54,10 @@ public sealed partial class MainViewModel
     private Status? _dismissedStatus;
     private bool _showsStatus;
 
-    private Condition? _stopped;
+    private StoppedCondition? _stopped;
 
     // In the order the engine raised them, keyed by its condition key.
-    private readonly List<(string Key, Condition Condition)> _locations = [];
+    private readonly List<(string Key, LocationCondition Location)> _locations = [];
 
     // The events the window reports as toasts.
     public Notifications Notifications { get; }
@@ -68,13 +70,13 @@ public sealed partial class MainViewModel
     public string ResumeMessage => _waiting is null ? string.Empty : Waiting(_waiting);
     public ICommand ResolvePause { get; }
     public string PauseAction =>
-        _pause == PauseReason.Adapter
+        PausedBy == PauseReason.Adapter
             ? Text.Get("notifications", "settings")
             : Text.Get("notifications", "resume");
     public string PauseActionTip =>
         Text.Get(
             "notifications",
-            _pause switch
+            PausedBy switch
             {
                 PauseReason.Adapter => "settings_tip",
                 PauseReason.Schedule => "resume_schedule_tip",
@@ -82,7 +84,7 @@ public sealed partial class MainViewModel
             }
         );
     public string PauseActionGlyph =>
-        _pause == PauseReason.Adapter ? Syno.Lucide.Wrench : Syno.Lucide.Play;
+        PausedBy == PauseReason.Adapter ? Syno.Lucide.Wrench : Syno.Lucide.Play;
 
     public void DismissResume()
     {
@@ -96,7 +98,7 @@ public sealed partial class MainViewModel
     {
         if (torrents.Length == 0)
             return Text.Format("notifications", "starts_all", MissingAdapter);
-        var (key, detail) = _pause switch
+        var (key, detail) = PausedBy switch
         {
             PauseReason.Adapter => ("starts_adapter", MissingAdapter),
             PauseReason.Schedule when Settings.Schedule.NextChange(DateTime.Now) is { } change => (
@@ -140,44 +142,53 @@ public sealed partial class MainViewModel
         SyncStatus();
     }
 
-    // Records a condition the engine raised or updated, or forgets it when
-    // condition is null because the engine resolved it.
-    internal void Observe(string key, Condition? condition)
+    // Records the stopped torrents the engine reported, or forgets them when
+    // stopped is null because the engine resolved the condition.
+    internal void ObserveStopped(StoppedCondition? stopped)
     {
-        if (key == "stopped")
-            _stopped = condition;
-        else
+        _stopped = stopped;
+        Changed(nameof(CurrentStatus));
+    }
+
+    // Records a location condition the engine raised or updated, or forgets
+    // it when location is null because the engine resolved it.
+    internal void ObserveLocation(string key, LocationCondition? location)
+    {
+        var index = _locations.FindIndex(known => known.Key == key);
+        if (location is null)
         {
-            var index = _locations.FindIndex(location => location.Key == key);
-            if (condition is null)
-            {
-                if (index >= 0)
-                    _locations.RemoveAt(index);
-            }
-            else if (index >= 0)
-                _locations[index] = (key, condition);
-            else
-                _locations.Add((key, condition));
+            if (index >= 0)
+                _locations.RemoveAt(index);
         }
+        else if (index >= 0)
+            _locations[index] = (key, location);
+        else
+            _locations.Add((key, location));
         Changed(nameof(CurrentStatus));
     }
 
     // One bar covers every torrent that needs Retry, and its Retry runs them
     // all, so torrents that stopped together need one click.
-    private Status StoppedStatus(Condition stopped)
+    private Status StoppedStatus(StoppedCondition stopped)
     {
-        var title =
-            stopped.Count == 1
-                ? Text.Get("notifications", Notifications.ProblemTitle(stopped.Code))
-                : Text.Format("notifications", "attention", stopped.Count);
-        var body =
-            stopped.Count == 1
-                ? Text.Format("errors", "line", stopped.Name, Text.Error(stopped.Code, stopped.Detail))
-            // A torrent error's text is each torrent's own libtorrent message,
-            // so several of them share no reason to show.
-            : stopped.Code is { Length: > 0 } and not "torrent_error"
-                ? Text.Error(stopped.Code, null)
-            : Text.Get("notifications", "different_problems");
+        var (title, body, tip) = stopped switch
+        {
+            StoppedCondition.One one => (
+                Text.Get("notifications", Notifications.ProblemTitle(one.Code)),
+                Text.Format("errors", "line", one.Name, Text.Error(one.Code, one.Detail)),
+                "retry_torrent_tip"
+            ),
+            StoppedCondition.Several several => (
+                Text.Format("notifications", "attention", several.Count),
+                // A torrent error's text is each torrent's own libtorrent
+                // message, so several of them share no reason to show.
+                several.SharedCode is { } code and not "torrent_error"
+                    ? Text.Error(code, null)
+                    : Text.Get("notifications", "different_problems"),
+                "retry_torrents_tip"
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(stopped)),
+        };
         return new(
             title,
             body,
@@ -186,7 +197,7 @@ public sealed partial class MainViewModel
                 RetryAll,
                 Text.Get("inspector", "retry"),
                 Syno.Lucide.RotateCcw,
-                Text.Get("notifications", stopped.Count == 1 ? "retry_torrent_tip" : "retry_torrents_tip")
+                Text.Get("notifications", tip)
             ),
             ShowErrorsAction
         );
@@ -196,13 +207,12 @@ public sealed partial class MainViewModel
     // the others, which Show torrents lists with it.
     private Status LocationStatus()
     {
-        var location = _locations[0].Condition;
+        var location = _locations[0].Location;
         var affected = Text.FormatCount("notifications", "location_torrents", location.Count);
-        var reason =
-            location.Detail.Length == 0
-                ? affected
-                : Text.Format("errors", "detail", Text.Get("errors", location.Detail), affected);
-        var body = Text.Format("errors", "line", location.Folder, reason);
+        var reason = location.CauseKey is { } cause
+            ? Text.Format("errors", "detail", Text.Get("errors", cause), affected)
+            : affected;
+        var body = Text.Format("errors", "line", location.Root, reason);
         if (_locations.Count > 1)
             body = Text.Format(
                 "errors",

@@ -69,7 +69,7 @@ public sealed partial class MainWindow
     {
         var library = Model.Page == WindowPage.Library;
         var about = Model.IsAbout;
-        var current = !Model.IsLoading && !Model.IsStorageFailed;
+        var current = Model.IsRunning;
         var transfers = Model.Torrents.Count > 0 || Model.IsLoading;
         var work = Model.Work.Items.Count > 0;
         var selected = library ? Model.Library.Selection.Items.Count : Model.Selected.Count;
@@ -130,7 +130,7 @@ public sealed partial class MainWindow
             Model.Text.Format(
                 "window",
                 "space_path",
-                Model.Settings.Destination.ConfirmedText,
+                Model.Settings.Destination.ConfirmedText ?? string.Empty,
                 Model.FreeSpaceStatus
             )
         );

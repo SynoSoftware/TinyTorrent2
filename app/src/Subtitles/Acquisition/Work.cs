@@ -7,6 +7,9 @@ internal sealed partial class Acquisition
     private WorkRun? _manualWork;
     private WorkRun? _automaticWork;
 
+    private ref WorkRun? Slot(bool manual) =>
+        ref manual ? ref _manualWork : ref _automaticWork;
+
     private async Task RefreshWork()
     {
         var pending = await Run(
@@ -39,7 +42,7 @@ internal sealed partial class Acquisition
             .ConfigureAwait(false);
         foreach (var manual in new[] { true, false })
         {
-            var run = manual ? _manualWork : _automaticWork;
+            var run = Slot(manual);
             if (run is { Ended: true })
                 run = null;
             var jobs = pending.Where(job => job.Job.Manual == manual).ToArray();
@@ -72,10 +75,7 @@ internal sealed partial class Acquisition
                 );
             lock (_requestSync)
             {
-                if (manual)
-                    _manualWork = run;
-                else
-                    _automaticWork = run;
+                Slot(manual) = run;
                 if (run is null || run.Stopping)
                     continue;
                 run.Jobs.UnionWith(jobs.Select(job => job.Job));
@@ -102,7 +102,7 @@ internal sealed partial class Acquisition
     {
         lock (_requestSync)
         {
-            var run = manual ? _manualWork : _automaticWork;
+            var run = Slot(manual);
             return
                 run is { Stopping: false, Ended: false }
                 && run.Jobs.Contains(new(path, language, manual))
@@ -156,9 +156,9 @@ internal sealed partial class Acquisition
             : result.cancelled > 0 ? WorkOutcome.Cancelled : WorkOutcome.Completed;
     }
 
-    private async Task StopWork(WorkRun run)
+    private async Task StopWork(WorkRun run, Task signalling)
     {
-        await run.Signal().ConfigureAwait(false);
+        await signalling.ConfigureAwait(false);
         if (run.Kind == SubtitleWork.Discovery)
             return;
         var entered = false;
@@ -217,16 +217,15 @@ internal sealed partial class Acquisition
     private sealed class WorkRun
     {
         private readonly Acquisition _owner;
-        private Task _signalling = Task.CompletedTask;
-        private Task? _finished;
+        private readonly CancellableWork _work;
         internal Task Stopped { get; private set; } = Task.CompletedTask;
-        internal WorkObservation Observation { get; private set; }
-        internal BackgroundWork.Operation Operation { get; }
-        internal CancellationTokenSource Cancellation { get; } = new();
+        internal WorkObservation Observation => _work.Observation;
+        internal BackgroundWork.Operation Operation => _work.Operation;
+        internal CancellationToken Token => _work.Token;
         internal HashSet<Job> Jobs { get; }
         internal SubtitleWork Kind { get; }
-        internal bool Stopping => Observation.Execution is WorkExecution.Cancelling;
-        internal bool Ended { get; private set; }
+        internal bool Stopping => _work.IsCancelling;
+        internal bool Ended => _work.IsEnded;
         internal IReadOnlyList<Discovery> Scans { get; set; } = [];
 
         internal WorkRun(Acquisition owner, SubtitleWork kind, IEnumerable<Job>? jobs = null)
@@ -234,12 +233,15 @@ internal sealed partial class Acquisition
             _owner = owner;
             Kind = kind;
             Jobs = jobs?.ToHashSet() ?? [];
-            Observation = new(
-                new WorkDescription.Subtitles(kind),
-                new WorkProgress.Unknown(),
-                new WorkExecution.Waiting()
+            _work = new(
+                owner.Work,
+                new(
+                    new WorkDescription.Subtitles(kind),
+                    new WorkProgress.Unknown(),
+                    new WorkExecution.Waiting()
+                ),
+                _ => Stop()
             );
-            Operation = owner.Work.Begin(Observation, Stop);
             // Only a manual search is something the person waits for; automatic
             // downloads and file scans show their results in place.
             Operation.ReportsSuccess = kind == SubtitleWork.Manual;
@@ -249,58 +251,33 @@ internal sealed partial class Acquisition
         {
             lock (_owner._requestSync)
             {
-                if (Ended || Stopping)
+                if (!_work.TryCancel(out var signalling))
                     return Stopped;
-                Stopped = _owner.StopWork(this);
+                _owner._cancelledScans.UnionWith(Scans.Where(scan => !scan.Scanned));
+                Stopped = _owner.StopWork(this, signalling);
                 return Stopped;
-            }
-        }
-
-        internal Task Signal()
-        {
-            lock (_owner._requestSync)
-            {
-                if (!Ended && !Stopping)
-                {
-                    _owner._cancelledScans.UnionWith(Scans.Where(scan => !scan.Scanned));
-                    Observation = Observation with { Execution = new WorkExecution.Cancelling() };
-                    Operation.Report(Observation);
-                    _signalling = Cancellation.CancelAsync();
-                }
-                return _signalling;
             }
         }
 
         internal void Report(WorkProgress progress, WorkExecution execution)
         {
             lock (_owner._requestSync)
-            {
-                if (Ended || Stopping)
-                    return;
-                Observation = Observation with { Progress = progress, Execution = execution };
-                Operation.Report(Observation);
-            }
+                _work.Report(
+                    _work.Observation with
+                    {
+                        Progress = progress,
+                        Execution = execution,
+                    }
+                );
         }
 
         internal Task Finish()
         {
             lock (_owner._requestSync)
-                return _finished ??= FinishCore();
-        }
-
-        private async Task FinishCore()
-        {
-            if (Operation.Error is null && (Stopping || _owner._disposed))
-                Operation.Outcome = WorkOutcome.Cancelled;
-            Ended = true;
-            try
             {
-                await _signalling.ConfigureAwait(false);
-            }
-            finally
-            {
-                Operation.Dispose();
-                Cancellation.Dispose();
+                if (!Ended && Operation.Error is null && (Stopping || _owner._disposed))
+                    Operation.Outcome = WorkOutcome.Cancelled;
+                return _work.DisposeAsync().AsTask();
             }
         }
     }

@@ -145,14 +145,18 @@ Browsing Library never inspects folders.
 Share movie and series information across associated files rather than fetching
 and storing a separate copy per file. Bound background work, honor provider
 throttling, and prioritize explicit identification over routine enrichment.
-Try an unidentified video once per session, with the persistent per-provider
+Try a displayed, unidentified video once per session, as the
+[no-scan ruling](../library.md#purpose-and-experience) requires, with the persistent per-provider
 search allowance limiting requests across restarts. **Owner ruling: a
 provider's no-match answer is remembered.** Background lookups never ask
 the same remote question again until the inputs change or the person requests
 Force fetch or resets search protection. An individual Fetch shows its local
 block before offering Force fetch. Remote waits cannot be forced.
 The table shows an em dash in that file's empty provider cells, so a file the
-provider does not have differs from one not looked up yet. Provider failure must not
+provider does not have differs from one not looked up yet. A lookup that the
+remembered answer holds back, because the provider had no match or the named
+title was missing, shows the dash too, so the table and Fetch metadata agree
+on what the provider does not have. Provider failure must not
 block local search, torrent operations or shutdown.
 
 ### Replaceable movie providers
@@ -274,9 +278,10 @@ so one bad page cannot suspend unrelated enrichment. Cancellation stays
 `OperationCanceledException`, and storage errors stay with the existing failure
 owner.
 
-The background sweep takes every video file that has no saved decision, no
-attempt in this session and no remembered no-match answer from the provider
-under the file's current name. Opening the database returns earlier failures,
+The background sweep takes each video file on screen that has no saved
+decision, no attempt in this session and no remembered no-match answer from
+the provider under the file's current name. A file that scrolls away before
+its turn waits until it shows again. Opening the database returns earlier failures,
 search-limit stops and unusable pages to the sweep; only the provider's own
 no-match answer is permanent. Automatic and batch lookups search the provider
 only within the shared [search limit](../architecture.md#third-party-provider-access),

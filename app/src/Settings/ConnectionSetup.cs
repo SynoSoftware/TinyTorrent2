@@ -73,7 +73,7 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
     private bool CanRelease =>
         _main.IsConnected && (IsTesting || _phase == ConnectionPhase.Holding);
     private bool HasCustomRoute =>
-        _settings.Proxy.IsInUse || _settings.Adapter.ConfirmedText.Length > 0;
+        _settings.Proxy.IsInUse || _settings.Adapter.ConfirmedText is { Length: > 0 };
     public bool CanTest => CanEdit && !_settings.IsPending && !HasCustomRoute;
     public bool CanCancelTest => _main.IsConnected && IsTesting && !IsPending;
     public bool IsHolding => _phase == ConnectionPhase.Holding;
@@ -172,19 +172,19 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
         : Changes() is { } changes
             ? Text.Get("connection_setup", changes.Count > 0 ? "ready" : "unchanged")
         : string.Empty;
-    public string PresetName => Name(SavedPreset);
+    public string PresetName => SavedPreset is { } preset ? Name(preset) : "—";
     public string SavedCapacity =>
-        _settings.CapacityDownload.ConfirmedNumber is > 0 and var download
-        && _settings.CapacityUpload.ConfirmedNumber is > 0 and var upload
+        _settings.CapacityDownload.ConfirmedNumber is double download and > 0
+        && _settings.CapacityUpload.ConfirmedNumber is double upload and > 0
             ? Text.Format("settings", "caps_summary", LinkSpeed(download), LinkSpeed(upload))
             : "—";
     public string StandardSummary => _settings.StandardSummary;
     public string AlternativeSummary => _settings.AlternativeSummary;
     public IReadOnlyList<string> Hierarchy { get; private set; } = [];
-    public string StandardDownload => Text.SpeedLimit(SavedStandard.Download);
-    public string StandardUpload => Text.SpeedLimit(SavedStandard.Upload);
-    public string AlternativeDownload => Text.SpeedLimit(SavedAlternative.Download);
-    public string AlternativeUpload => Text.SpeedLimit(SavedAlternative.Upload);
+    public string StandardDownload => Text.SpeedLimit(SavedStandard?.Download);
+    public string StandardUpload => Text.SpeedLimit(SavedStandard?.Upload);
+    public string AlternativeDownload => Text.SpeedLimit(SavedAlternative?.Download);
+    public string AlternativeUpload => Text.SpeedLimit(SavedAlternative?.Upload);
     public string StandardText
     {
         get
@@ -292,30 +292,37 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
         set => Move(ref _alternativeShare, ref _alternativeMoved, value);
     }
 
-    private Caps SavedStandard =>
-        new((int)_settings.Download.ConfirmedNumber, (int)_settings.Upload.ConfirmedNumber);
-    private Caps SavedAlternative =>
-        new(
-            (int)_settings.AlternativeDownload.ConfirmedNumber,
-            (int)_settings.AlternativeUpload.ConfirmedNumber
-        );
-    private QueueLimits SavedQueue =>
-        new(
-            (int)_settings.ActiveDownloads.ConfirmedNumber,
-            (int)_settings.ActiveSeeds.ConfirmedNumber,
-            (int)_settings.ActiveTotal.ConfirmedNumber
-        );
+    // The saved values, or null until a snapshot confirms them.
+    private Caps? SavedStandard => Pair(_settings.Download, _settings.Upload);
+    private Caps? SavedAlternative =>
+        Pair(_settings.AlternativeDownload, _settings.AlternativeUpload);
+    private QueueLimits? SavedQueue =>
+        _settings.ActiveDownloads.ConfirmedNumber is { } downloads
+        && _settings.ActiveSeeds.ConfirmedNumber is { } seeds
+        && _settings.ActiveTotal.ConfirmedNumber is { } total
+            ? new((int)downloads, (int)seeds, (int)total)
+            : null;
 
-    private TransferPreset SavedPreset
+    private static Caps? Pair(Setting download, Setting upload) =>
+        download.ConfirmedNumber is { } downloadBytes && upload.ConfirmedNumber is { } uploadBytes
+            ? new((int)downloadBytes, (int)uploadBytes)
+            : null;
+
+    private TransferPreset? SavedPreset
     {
         get
         {
-            var download = _settings.CapacityDownload.ConfirmedNumber;
-            var upload = _settings.CapacityUpload.ConfirmedNumber;
+            if (
+                _settings.CapacityDownload.ConfirmedNumber is not { } download
+                || _settings.CapacityUpload.ConfirmedNumber is not { } upload
+                || SavedStandard is not { } standard
+                || SavedQueue is not { } queue
+            )
+                return null;
             foreach (var preset in Presets)
                 if (
-                    CapsAt(Share(preset), download, upload) == SavedStandard
-                    && Queue(Share(preset)) == SavedQueue
+                    CapsAt(Share(preset), download, upload) == standard
+                    && Queue(Share(preset)) == queue
                 )
                     return preset;
             return TransferPreset.Custom;
@@ -325,8 +332,8 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
     // A slider shows the saved limits rounded to a 5% step, so a pair follows
     // its slider only after the person moves it or changes the capacity.
     private bool CapacityChanged =>
-        Parse(Download) != _settings.CapacityDownload.ConfirmedNumber
-        || Parse(Upload) != _settings.CapacityUpload.ConfirmedNumber;
+        Parse(Download) != (_settings.CapacityDownload.ConfirmedNumber ?? 0)
+        || Parse(Upload) != (_settings.CapacityUpload.ConfirmedNumber ?? 0);
     private bool StandardFollows => _standardMoved || CapacityChanged;
     private bool AlternativeFollows => _alternativeMoved || CapacityChanged;
     private bool NeedsCapacity =>
@@ -358,12 +365,12 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
         [
             Row(
                 Text.Get("settings", "active_downloads"),
-                saved.Downloads,
+                saved?.Downloads,
                 queue?.Downloads,
                 Count
             ),
-            Row(Text.Get("settings", "active_seeds"), saved.Seeds, queue?.Seeds, Count),
-            Row(Text.Get("settings", "active_total"), saved.Total, queue?.Total, Count),
+            Row(Text.Get("settings", "active_seeds"), saved?.Seeds, queue?.Seeds, Count),
+            Row(Text.Get("settings", "active_total"), saved?.Total, queue?.Total, Count),
         ];
     }
 
@@ -627,64 +634,76 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
     // Before the first setup no capacity is saved, so the slider starts at
     // its default share. A limited pair stays below the top position, which
     // means no limit.
-    private int SavedShare(Caps saved, int initial)
+    private int SavedShare(Caps? saved, int initial)
     {
-        var capacity = _settings.CapacityDownload.ConfirmedNumber;
-        if (capacity <= 0)
+        var capacity = _settings.CapacityDownload.ConfirmedNumber ?? 0;
+        if (capacity <= 0 || saved is not { } caps)
             return initial;
-        if (saved.Download == 0)
+        if (caps.Download == 0)
             return Unlimited;
-        return Math.Clamp((int)Math.Round(saved.Download / (capacity * 125000) * 20) * 5, 5, 95);
+        return Math.Clamp((int)Math.Round(caps.Download / (capacity * 125000) * 20) * 5, 5, 95);
     }
 
+    // Nothing is proposed until the saved values are known, because each
+    // change is measured against them.
     private Proposal? Propose()
     {
+        if (
+            SavedStandard is not { } savedStandard
+            || SavedAlternative is not { } savedAlternative
+            || SavedQueue is not { } savedQueue
+        )
+            return null;
         var download = Parse(Download);
         var upload = Parse(Upload);
         var optional = !NeedsCapacity;
         if (!IsCapacity(download, optional) || !IsCapacity(upload, optional))
             return null;
-        var standard = StandardFollows ? CapsAt(_standardShare, download, upload) : SavedStandard;
+        var standard = StandardFollows ? CapsAt(_standardShare, download, upload) : savedStandard;
         var alternative = AlternativeFollows
             ? CapsAt(_alternativeShare, download, upload)
-            : SavedAlternative;
+            : savedAlternative;
         if (standard is not { } nextStandard || alternative is not { } nextAlternative)
             return null;
         // A new install starts with No limits, so Apply turns on the standard
         // limits it sets. Any other choice is the person's and stays.
         var enables =
             _main.FixedLimits == LimitProfile.None
-            && nextStandard != SavedStandard
+            && nextStandard != savedStandard
             && nextStandard is not { Download: 0, Upload: 0 };
         return new(
             nextStandard,
             nextAlternative,
-            _standardMoved ? Queue(_standardShare) : SavedQueue,
+            _standardMoved ? Queue(_standardShare) : savedQueue,
             enables
         );
     }
 
-    private IReadOnlyList<ConnectionChange> PairRows(Caps saved, Caps? next) =>
+    private IReadOnlyList<ConnectionChange> PairRows(Caps? saved, Caps? next) =>
         [
             Row(
                 Text.Get("limits", "download_limit"),
-                saved.Download,
+                saved?.Download,
                 next?.Download,
-                Rate
+                bytes => Text.SpeedLimit(bytes)
             ) with { Glyph = Syno.Lucide.Download },
-            Row(Text.Get("limits", "upload_limit"), saved.Upload, next?.Upload, Rate)
-                with { Glyph = Syno.Lucide.Upload },
+            Row(
+                Text.Get("limits", "upload_limit"),
+                saved?.Upload,
+                next?.Upload,
+                bytes => Text.SpeedLimit(bytes)
+            ) with { Glyph = Syno.Lucide.Upload },
         ];
 
     private static ConnectionChange Row(
         string label,
-        int current,
+        int? current,
         int? next,
         Func<int, string> display
     ) =>
         new(
             label,
-            display(current),
+            current is { } saved ? display(saved) : "—",
             next is { } value ? display(value) : "—",
             next is { } changed && changed != current
         );
@@ -697,8 +716,6 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
             ? Text.Format("units", "speed", mbps / 1000, Text.Get("units", "gbps"))
             : Text.Format("units", "speed", mbps, Text.Get("units", "mbps"));
 
-    private string Rate(int bytes) => Text.SpeedLimit(bytes);
-
     private string Count(int number) =>
         number == 0
             ? Text.Get("transfer_limits", "unlimited")
@@ -710,7 +727,12 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
             return Text.Get("connection_setup", "enter_capacity");
         if (share == Unlimited)
             return Text.Get("transfer_limits", "unlimited");
-        return Text.Format("settings", "caps_summary", Rate(caps.Download), Rate(caps.Upload));
+        return Text.Format(
+            "settings",
+            "caps_summary",
+            Text.SpeedLimit(caps.Download),
+            Text.SpeedLimit(caps.Upload)
+        );
     }
 
     private string Percent(int share) => Text.Format("units", "percent", share / 100.0);
@@ -752,8 +774,9 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
 
     private static string Input(Setting setting)
     {
-        var number = setting.ConfirmedNumber;
-        return number > 0 ? number.ToString("G", CultureInfo.CurrentCulture) : string.Empty;
+        return setting.ConfirmedNumber is double number and > 0
+            ? number.ToString("G", CultureInfo.CurrentCulture)
+            : string.Empty;
     }
 
     private static int Share(TransferPreset preset) =>

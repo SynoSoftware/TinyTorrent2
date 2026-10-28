@@ -121,21 +121,38 @@ public sealed class Notifications
         var torrentId = message.GetProperty("torrent_id").GetString() ?? string.Empty;
         var count = message.TryGetProperty("count", out var total) ? total.GetInt32() : 1;
         var @switch = message.GetProperty("switch").GetString();
+        // Only conditions and failures carry a folder.
+        string? Folder() =>
+            message.GetProperty("folder").GetString() is { Length: > 0 } named ? named : null;
         // A lasting problem shows in the message bar instead of a toast.
         if (message.TryGetProperty("condition", out var condition) && condition.ValueKind == JsonValueKind.Object)
         {
-            _owner.Observe(
-                condition.GetProperty("key").GetString()!,
-                condition.GetProperty("change").GetString() == "resolved"
-                    ? null
-                    : new MainViewModel.Condition(
-                        message.GetProperty("code").GetString() ?? string.Empty,
-                        message.GetProperty("detail").GetString() ?? string.Empty,
-                        name,
-                        message.GetProperty("folder").GetString() ?? string.Empty,
-                        count
-                    )
-            );
+            var key = condition.GetProperty("key").GetString()!;
+            var resolved = condition.GetProperty("change").GetString() == "resolved";
+            var cause = message.GetProperty("code").GetString() ?? string.Empty;
+            var reason = message.GetProperty("detail").GetString() ?? string.Empty;
+            // For the stopped condition the engine describes one torrent; for
+            // several it sends only the code they share, empty when their
+            // problems differ.
+            if (key != "stopped")
+                _owner.ObserveLocation(
+                    key,
+                    resolved
+                        ? null
+                        : new MainViewModel.LocationCondition(
+                            Folder() ?? string.Empty,
+                            reason.Length > 0 ? reason : null,
+                            count
+                        )
+                );
+            else if (resolved)
+                _owner.ObserveStopped(null);
+            else if (count == 1)
+                _owner.ObserveStopped(new MainViewModel.StoppedCondition.One(name, cause, reason));
+            else
+                _owner.ObserveStopped(
+                    new MainViewModel.StoppedCondition.Several(count, cause.Length > 0 ? cause : null)
+                );
             return;
         }
         if (kind == "completed")
@@ -178,19 +195,12 @@ public sealed class Notifications
                 "delete_failed" => "not_deleted",
                 _ => ProblemTitle(code),
             };
-            var folder = message.GetProperty("folder").GetString();
-            ReportProblem(
-                new CommandFailure(
-                    error,
-                    title,
-                    () => name,
-                    Reason,
-                    folder is { Length: > 0 } ? folder : null,
-                    @switch,
-                    kind == "error" && torrentId.Length > 0 ? torrentId : null
-                ),
-                kind
-            );
+            var folder = Folder();
+            FailurePlace? place =
+                kind == "error" && torrentId.Length > 0 ? new FailurePlace.OfTorrent(torrentId, folder)
+                : folder is not null ? new FailurePlace.Folder(folder)
+                : null;
+            ReportProblem(new CommandFailure(error, title, () => name, Reason, place, @switch), kind);
         }
     }
 
@@ -426,13 +436,11 @@ public sealed class Notifications
                 error.Title = _text.Get("notifications", failure.Title);
                 error.Subject = failure.Subject?.Invoke() ?? string.Empty;
                 error.Message = failure.Reason?.Invoke() ?? _text.Error(failure.Error);
-                error.Folder = failure.TorrentId is { } torrentId
-                    ? _owner.Find(torrentId)?.SavePath ?? string.Empty
-                    : failure.Folder ?? string.Empty;
-                error.ShowTorrent = failure.TorrentId is null ? null : error.Reveal;
+                error.Folder = error.OpenPath ?? string.Empty;
+                error.ShowTorrent = failure.Place is FailurePlace.OfTorrent ? error.Reveal : null;
                 error.ShowText = _text.Get("notifications", "show_torrent");
                 error.ShowTip = _text.Get("notifications", "show_torrent_tip");
-                error.Action = failure.Folder is null && failure.TorrentId is null ? null : error.Open;
+                error.Action = failure.Place is null ? null : error.Open;
                 error.ActionText = _text.Get("commands", "open_folder");
                 error.ActionTip = _text.Get("notifications", "files_folder_tip");
                 error.ActionGlyph = Syno.Lucide.FolderOpen;
@@ -485,18 +493,30 @@ public sealed class Notifications
 
 // A failed command as its toast describes it: a title key from the
 // notifications text, the torrent it names, the reason when the engine sent
-// one instead of an error code, the folder where the person finishes a failed
-// deletion, the Settings switch that turns off the problem, and the durable
-// torrent identity used to inspect it and resolve its current folder.
+// one instead of an error code, where Open folder goes, and the Settings
+// switch that turns off the problem.
 internal sealed record CommandFailure(
     Exception Error,
     string Title,
     Func<string>? Subject,
     Func<string>? Reason,
-    string? Folder,
-    string? Switch,
-    string? TorrentId = null
+    FailurePlace? Place,
+    string? Switch
 );
+
+// Where a failure's Open folder goes.
+internal abstract record FailurePlace
+{
+    private FailurePlace() { }
+
+    // A torrent's current folder, found by its durable identity, which also
+    // shows the torrent. Path is the folder the engine named, which Open
+    // folder uses once the torrent is gone.
+    internal sealed record OfTorrent(string TorrentId, string? Path) : FailurePlace;
+
+    // The folder where the person finishes a failed deletion.
+    internal sealed record Folder(string Path) : FailurePlace;
+}
 
 // One message in the window's toast stack. Each kind carries the facts it
 // reports, so closing the toast is what forgets them. Notifications describes
@@ -668,34 +688,49 @@ public abstract class Toast : INotifyPropertyChanged
         internal CommandError(CommandFailure failure, MainViewModel owner, string? key = null)
             : base(InfoBarSeverity.Error, null)
         {
+            _owner = owner;
             Failure = failure;
             Key = key;
+            // Opening a listed torrent's folder asks the engine for it.
             Open = new RelayCommand(
                 async () =>
                 {
-                    if (Failure.TorrentId is { } torrentId && owner.Find(torrentId) is { } torrent)
+                    if (Listed is { } torrent)
                         await owner.OpenTorrent(torrent, true);
-                    else if (Failure.Folder is { } folder)
+                    else if (OpenPath is { } folder)
                         owner.RequestOpen(folder);
                 },
-                () => Failure.TorrentId is { } torrentId
-                    ? owner.CanEdit && owner.Find(torrentId) is not null
-                    : Failure.Folder is not null
+                () => Listed is not null ? owner.CanEdit : OpenPath is not null
             );
             Reveal = new RelayCommand(
                 () =>
                 {
-                    if (Failure.TorrentId is { } torrentId)
-                        owner.Reveal([torrentId]);
+                    if (Listed is { } torrent)
+                        owner.Reveal([torrent.TorrentId]);
                 },
-                () => owner.CanEdit && Failure.TorrentId is { } torrentId && owner.Find(torrentId) is not null
+                () => owner.CanEdit && Listed is not null
             );
         }
 
+        private readonly MainViewModel _owner;
         internal CommandFailure Failure { get; set; }
         internal string? Key { get; }
         internal RelayCommand Open { get; }
         internal RelayCommand Reveal { get; }
+
+        // The listed torrent the failure names; null once it is gone.
+        private Torrents.Torrent? Listed =>
+            Failure.Place is FailurePlace.OfTorrent place ? _owner.Find(place.TorrentId) : null;
+
+        // The folder that Open folder shows.
+        internal string? OpenPath =>
+            Listed?.SavePath
+            ?? Failure.Place switch
+            {
+                FailurePlace.OfTorrent place => place.Path,
+                FailurePlace.Folder place => place.Path,
+                _ => null,
+            };
     }
 
     // The latest subtitle file that failed, and how many failed.

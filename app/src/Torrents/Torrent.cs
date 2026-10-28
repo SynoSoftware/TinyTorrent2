@@ -53,18 +53,23 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
                 ? 0
                 : double.PositiveInfinity
             : (double)Uploaded / Downloaded;
-    public string StatusCode { get; private set; } = string.Empty;
+    public TorrentState State { get; private set; }
+
+    // The status column names a waiting job by its short label; StatusTip
+    // says that it waits.
     public string Status =>
-        strings.Status(
-            StatusCode switch
-            {
-                "waiting_check" => "check",
-                "waiting_move" => "move",
-                _ => StatusCode,
-            }
-        );
-    public bool IsPaused => StatusCode is "paused" or "all_paused";
-    public bool IsError => StatusCode == "error" || ErrorCode.Length > 0;
+        State switch
+        {
+            TorrentState.WaitingCheck => strings.Get("status", "check"),
+            TorrentState.WaitingMove => strings.Get("status", "move"),
+            _ => StateText,
+        };
+    public bool IsPaused => State is TorrentState.Paused or TorrentState.AllPaused;
+
+    // The row names its problem in ErrorCode. The engine names one whenever it
+    // classifies the torrent as Error, and also for some problems while the
+    // torrent keeps another state, such as a hash failure while it downloads.
+    public bool IsError => ErrorCode.Length > 0;
 
     // The engine could not recover the torrent by itself, so the torrent, or
     // its failed move, runs again only when the person selects Retry.
@@ -72,7 +77,10 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
     public bool IsProgressMuted =>
         !IsError
         && !IsMoving
-        && (IsPaused || (Progress >= 1 && StatusCode is not ("checking" or "waiting_check")));
+        && (
+            IsPaused
+            || (Progress >= 1 && State is not (TorrentState.Checking or TorrentState.WaitingCheck))
+        );
 
     // The drive a waiting check or move waits for, as its own folder names it,
     // and the torrent whose job uses it; empty while the engine does not
@@ -95,28 +103,66 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
                     : strings.Format("status", "waiting_for", WaitingDrive);
             if (!IsWaiting)
                 return detail;
-            var waiting = strings.Status(StatusCode);
+            var waiting = StateText;
             return detail is null ? waiting : waiting + " · " + detail;
         }
     }
-    public bool IsDownloading => StatusCode == "downloading" && !IsError;
+
+    // The list shows one of three status icons, so a downloading torrent with
+    // a problem shows the error icon.
+    public bool IsDownloading => State == TorrentState.Downloading && !IsError;
     public bool IsStatusNeutral => !IsDownloading && !IsError;
-    private bool IsWaiting => StatusCode is "queued" or "waiting_check" or "waiting_move";
-    public string StatusGlyph => GetGlyph(StatusCode);
-    public static string GetGlyph(string status) =>
-        status switch
+    private bool IsWaiting =>
+        State is TorrentState.Queued or TorrentState.WaitingCheck or TorrentState.WaitingMove;
+    public string StatusGlyph => GetGlyph(State);
+    public static string GetGlyph(TorrentState state) =>
+        state switch
         {
-            "downloading" => Syno.Lucide.ArrowDownToLine,
-            "seeding" => Syno.Lucide.Sprout,
-            "paused" => Syno.Lucide.Square,
-            "all_paused" => Syno.Lucide.Pause,
-            "completed" => Syno.Lucide.CircleCheck,
-            "checking" => Syno.Lucide.RefreshCw,
-            "moving" => Syno.Lucide.Folder,
-            "queued" or "waiting_check" or "waiting_move" or "metadata" => Syno.Lucide.Hourglass,
-            "error" => Syno.Lucide.CircleAlert,
+            TorrentState.Downloading => Syno.Lucide.ArrowDownToLine,
+            TorrentState.Seeding => Syno.Lucide.Sprout,
+            TorrentState.Paused => Syno.Lucide.Square,
+            TorrentState.AllPaused => Syno.Lucide.Pause,
+            TorrentState.Completed => Syno.Lucide.CircleCheck,
+            TorrentState.Checking => Syno.Lucide.RefreshCw,
+            TorrentState.Moving => Syno.Lucide.Folder,
+            TorrentState.Queued
+            or TorrentState.WaitingCheck
+            or TorrentState.WaitingMove
+            or TorrentState.Metadata => Syno.Lucide.Hourglass,
+            TorrentState.Error => Syno.Lucide.CircleAlert,
             _ => Syno.Lucide.CircleQuestionMark,
         };
+
+    // The engine's word for each torrent state, which is also the state's key
+    // in the status catalogue. A word this version does not know reads as
+    // Unknown and shows the unknown text.
+    private static readonly Dictionary<TorrentState, string> Words = new()
+    {
+        [TorrentState.Unknown] = "unknown",
+        [TorrentState.Downloading] = "downloading",
+        [TorrentState.Seeding] = "seeding",
+        [TorrentState.Completed] = "completed",
+        [TorrentState.Paused] = "paused",
+        [TorrentState.AllPaused] = "all_paused",
+        [TorrentState.Checking] = "checking",
+        [TorrentState.WaitingCheck] = "waiting_check",
+        [TorrentState.Moving] = "moving",
+        [TorrentState.WaitingMove] = "waiting_move",
+        [TorrentState.Metadata] = "metadata",
+        [TorrentState.Queued] = "queued",
+        [TorrentState.Error] = "error",
+    };
+    private static readonly Dictionary<string, TorrentState> States = Words.ToDictionary(
+        pair => pair.Value,
+        pair => pair.Key
+    );
+
+    internal static TorrentState ReadState(JsonElement value) =>
+        value.GetString() is { } word && States.TryGetValue(word, out var state)
+            ? state
+            : TorrentState.Unknown;
+
+    private string StateText => strings.Get("status", Words[State]);
     public double DownloadRate { get; private set; }
     public double UploadRate { get; private set; }
     public string ErrorCode { get; private set; } = string.Empty;
@@ -173,7 +219,7 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
     public string CompletedOnText => Ago(CompletedOn);
     public string? CompletedOnTip => Time(CompletedOn);
     public string QueueText => IsQueued ? (Queue + 1).ToString(CultureInfo.CurrentCulture) : "—";
-    internal string SearchText => _searchText ??= FileName.Normalize(Name + " " + strings.Status(StatusCode));
+    internal string SearchText => _searchText ??= FileName.Normalize(Name + " " + StateText);
 
     // The limits that are set, such as "↓ 0.5 MB/s"; empty without one.
     public string LimitText => Limits(string.Empty);
@@ -231,7 +277,7 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
         var changed = !_connected;
         _connected = true;
         var previousName = Name;
-        var previousStatus = StatusCode;
+        var previousState = State;
         Name = ReadText("name", Name);
         SavePath = ReadText("save_path", SavePath);
         FinalFolder = ReadText("final_folder", FinalFolder);
@@ -266,7 +312,7 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
         DownloadLimit = Set(DownloadLimit, row.GetProperty("download_limit").GetInt32());
         UploadLimit = Set(UploadLimit, row.GetProperty("upload_limit").GetInt32());
         Progress = Set(Progress, row.GetProperty("progress").GetDouble());
-        StatusCode = ReadText("status", StatusCode);
+        State = Set(State, ReadState(row.GetProperty("status")));
         WaitingDrive = ReadText("waiting_drive", WaitingDrive);
         WaitingTorrentId = ReadText("waiting_torrent_id", WaitingTorrentId);
         WaitingFiles = ReadText("waiting_files", WaitingFiles);
@@ -275,7 +321,7 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
         ErrorCode = ReadText("error", ErrorCode);
         ErrorDetail = ReadText("detail", ErrorDetail);
         CanRetry = Set(CanRetry, row.GetProperty("retry").GetBoolean());
-        if (Name != previousName || StatusCode != previousStatus)
+        if (Name != previousName || State != previousState)
             _searchText = null;
         var now = DateTimeOffset.UtcNow;
         if (changed)

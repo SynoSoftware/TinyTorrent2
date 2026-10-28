@@ -105,8 +105,11 @@ public sealed partial class Inspector : INotifyPropertyChanged
     public int PieceCount { get; private set; }
     public bool? IsPrivate { get; private set; }
     public bool HasMetadata => IsPrivate.HasValue;
-    public bool IsIndeterminate => !HasMetadata && _target is { StatusCode: not "error" };
-    public bool ShowsStatus => _target is { StatusCode: not "error" };
+    public bool IsIndeterminate => !HasMetadata && _target is { IsError: false };
+
+    // Summary shows the error text, which the Error state's word would only
+    // repeat. Another state with a problem keeps its word.
+    public bool ShowsStatus => _target is { State: not TorrentState.Error };
     public string ProgressText =>
         HasMetadata ? _target?.ProgressText ?? string.Empty : string.Empty;
     public string Summary

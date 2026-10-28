@@ -6,13 +6,35 @@ using Syno.TinyTorrent.Controls;
 
 namespace Syno.TinyTorrent.Shared;
 
-/// <summary>The values in an <see cref="AccountDialog"/>.</summary>
-/// <param name="Secret">The typed password or API key, or empty when none was typed.</param>
-/// <param name="KeepSecret">
-/// Whether an empty <paramref name="Secret"/> keeps the saved one. With
-/// neither, there is no password, or the provider uses its built-in key.
-/// </param>
-internal sealed record AccountInput(string Username, string Secret, bool KeepSecret);
+/// <summary>A typed password or API key, or the saved one, which the dialog never shows.</summary>
+internal abstract record Secret
+{
+    private Secret() { }
+
+    internal sealed record Kept : Secret;
+
+    internal sealed record Typed(string Value) : Secret;
+}
+
+/// <summary>
+/// The values in an <see cref="AccountDialog"/>: the built-in key or no
+/// sign-in, the person's own API key, or a user name and password.
+/// </summary>
+internal abstract record AccountInput
+{
+    private AccountInput() { }
+
+    internal sealed record BuiltIn : AccountInput;
+
+    internal sealed record OwnKey(Secret Key) : AccountInput;
+
+    /// <summary>
+    /// A user name and its password. A kept password belongs to the saved
+    /// user name only. The password is null when none is typed or saved, as
+    /// after a saved password could not be read.
+    /// </summary>
+    internal sealed record SignedIn(string Username, Secret? Password) : AccountInput;
+}
 
 /// <summary>
 /// Asks for what a Library provider or subtitle supplier declares in its
@@ -57,7 +79,7 @@ internal sealed class AccountDialog : UserControl, IDraft
     public event PropertyChangedEventHandler? PropertyChanged;
 
     /// <param name="title">The provider or supplier name, which the key hint also names.</param>
-    /// <param name="saved">The saved values; its secret is always empty.</param>
+    /// <param name="saved">The saved values. A saved password or key is <see cref="Secret.Kept"/>.</param>
     /// <param name="check">
     /// Checks access without saving and reports the result itself, or null
     /// when the opener has no check.
@@ -79,8 +101,8 @@ internal sealed class AccountDialog : UserControl, IDraft
         _saved = saved;
         _save = save;
         _check = check;
-        _own.IsChecked = saved.KeepSecret;
-        _username.Text = saved.Username;
+        _own.IsChecked = saved is AccountInput.OwnKey;
+        _username.Text = saved is AccountInput.SignedIn signedIn ? signedIn.Username : string.Empty;
         _username.Header = _usernameHeader;
         _secret.Header = _secretHeader;
         AutomationProperties.SetAutomationId(_own, "AccountOwnKey");
@@ -108,26 +130,43 @@ internal sealed class AccountDialog : UserControl, IDraft
     // than leaving the built-in key in use.
     private bool Own => UsesPassword || !_builtIn || _own.IsChecked == true;
 
-    private AccountInput Input =>
-        UsesPassword ? new(_username.Text.Trim(), _secret.Password, _saved.KeepSecret)
-        : Own ? new(string.Empty, _secret.Password.Trim(), _saved.KeepSecret)
-        : new(string.Empty, string.Empty, false);
+    // Whether an empty secret field keeps the saved password or key. A saved
+    // password belongs to the saved user name, so another one needs a typed
+    // password.
+    private bool CanKeep =>
+        _saved switch
+        {
+            AccountInput.OwnKey { Key: Secret.Kept } => true,
+            AccountInput.SignedIn { Password: Secret.Kept } signedIn =>
+                signedIn.Username == _username.Text.Trim(),
+            _ => false,
+        };
 
-    // A user name needs a password and a password needs a user name; with
-    // neither, the supplier is used without signing in. The person's own key
-    // needs a typed or saved key.
-    private bool IsComplete
+    // The values, or null while they are incomplete. A user name needs a
+    // password and a password needs a user name; with neither, the supplier
+    // is used without signing in. The person's own key needs a typed or saved
+    // key.
+    private AccountInput? Input
     {
         get
         {
-            var input = Input;
-            if (UsesPassword)
-                return input.Username.Length > 0
-                    ? input.Secret.Length > 0 || input.KeepSecret
-                    : input.Secret.Length == 0;
-            return !Own || input.Secret.Length > 0 || input.KeepSecret;
+            var typed = UsesPassword ? _secret.Password : _secret.Password.Trim();
+            Secret? secret =
+                typed.Length > 0 ? new Secret.Typed(typed)
+                : CanKeep ? new Secret.Kept()
+                : null;
+            if (!UsesPassword)
+                return !Own ? new AccountInput.BuiltIn()
+                    : secret is null ? null
+                    : new AccountInput.OwnKey(secret);
+            var username = _username.Text.Trim();
+            if (username.Length == 0)
+                return typed.Length == 0 ? new AccountInput.BuiltIn() : null;
+            return secret is null ? null : new AccountInput.SignedIn(username, secret);
         }
     }
+
+    private bool IsComplete => Input is not null;
 
     internal void RefreshText()
     {
@@ -146,7 +185,7 @@ internal sealed class AccountDialog : UserControl, IDraft
             : string.Empty;
         _usernameHeader.Error = UsesPassword ? _secretHeader.Error : string.Empty;
         _secret.IsEnabled = Own;
-        _secret.PlaceholderText = _saved.KeepSecret && Own ? T(placeholder) : string.Empty;
+        _secret.PlaceholderText = CanKeep && Own ? T(placeholder) : string.Empty;
         TextEditor.RevealTip(
             _secret,
             Text.Get("dialog", UsesPassword ? "reveal_password" : "reveal_key")
@@ -195,6 +234,7 @@ internal sealed class AccountDialog : UserControl, IDraft
             _check is null
             || !_status.Check.IsEnabled
             || _checking is { IsCancellationRequested: false }
+            || Input is not { } input
         )
             return;
         using var cancellation = new CancellationTokenSource();
@@ -203,7 +243,7 @@ internal sealed class AccountDialog : UserControl, IDraft
         RefreshText();
         try
         {
-            await _check(Input, cancellation.Token);
+            await _check(input, cancellation.Token);
         }
         catch (Exception) when (cancellation.IsCancellationRequested)
         {
@@ -222,7 +262,7 @@ internal sealed class AccountDialog : UserControl, IDraft
         if (IsPending)
             return false;
         Stop();
-        if (!IsComplete)
+        if (Input is not { } input)
         {
             _incomplete = true;
             RefreshText();
@@ -237,7 +277,7 @@ internal sealed class AccountDialog : UserControl, IDraft
         RefreshText();
         try
         {
-            await _save(Input);
+            await _save(input);
             return true;
         }
         catch (Exception error)
@@ -260,7 +300,7 @@ internal sealed class AccountDialog : UserControl, IDraft
     public Task Discard()
     {
         Stop();
-        _own.IsChecked = _saved.KeepSecret;
+        _own.IsChecked = _saved is AccountInput.OwnKey;
         _secret.Password = string.Empty;
         return Task.CompletedTask;
     }

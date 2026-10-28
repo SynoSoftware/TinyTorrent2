@@ -388,11 +388,12 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
 
     // Whether the selected provider, $catalog, searched for the row's file
     // under its current name and found no match.
-    private const string Unmatched = """
-        EXISTS(SELECT 1 FROM source_files s JOIN video_attempts x USING(origin,file_index)
-            WHERE s.entry_id=r.entry_id AND x.catalog_id=$catalog AND x.evidence=s.name
-                AND x.outcome='no_match') AS unmatched
-        """;
+    private static string Unmatched =>
+        $"""
+            EXISTS(SELECT 1 FROM source_files s JOIN video_attempts a USING(origin,file_index)
+                WHERE s.entry_id=r.entry_id AND a.catalog_id=$catalog AND a.evidence=s.name
+                    AND {NotFound}) AS unmatched
+            """;
 
     internal Task<Detail?> Detail(
         long entryId,
@@ -521,8 +522,8 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
         command.Parameters.AddWithValue("$explicit", isExplicit);
         command.Parameters.AddWithValue("$time", DateTime.UtcNow.Ticks);
         command.ExecuteNonQuery();
-        command.CommandText = """
-            UPDATE video_attempts SET request='',outcome=COALESCE(outcome,'cancelled')
+        command.CommandText = $"""
+            UPDATE video_attempts SET request='',outcome=COALESCE(outcome,{(int)AttemptOutcome.Cancelled})
             WHERE (origin,file_index) IN (SELECT origin,file_index FROM source_files WHERE entry_id=$entry);
             """;
         command.ExecuteNonQuery();
@@ -823,7 +824,6 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
             Title = reader.GetString(5),
             Type = reader.GetString(6),
             Year = (int?)Number(7),
-            HasMetadata = !reader.IsDBNull(reader.GetOrdinal("video_id")),
             CatalogId = reader.IsDBNull(reader.GetOrdinal("catalog_id"))
                 ? null
                 : reader.GetString(reader.GetOrdinal("catalog_id")),

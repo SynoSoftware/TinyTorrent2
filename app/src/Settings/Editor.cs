@@ -127,25 +127,32 @@ public sealed partial class Editor : INotifyPropertyChanged
     public Schedule Schedule { get; }
     public Setting Language { get; }
     public Setting Theme { get; }
+    // Settings.Apply confirms every engine setting from one snapshot, and the
+    // engine sends them all, so a summary is "—" until the first snapshot and
+    // reads only confirmed values after it.
     public string SeedingSummary
     {
         get
         {
+            if (
+                Ratio.ConfirmedNumber is not { } ratio
+                || SeedingMinutes.ConfirmedNumber is not { } seeding
+                || InactiveTime.ConfirmedNumber is not { } idle
+                || SeedRule.ConfirmedText is not { } rule
+            )
+                return "—";
             var limits = new List<string>();
-            if (Ratio.ConfirmedNumber > 0)
-                limits.Add(Text.Format("settings", "ratio_summary", Ratio.ConfirmedNumber));
-            if (SeedingMinutes.ConfirmedNumber > 0)
+            if (ratio > 0)
+                limits.Add(Text.Format("settings", "ratio_summary", ratio));
+            if (seeding > 0)
                 limits.Add(
                     Text.Format("settings", "seed_time_summary", DurationText(SeedingMinutes))
                 );
-            if (InactiveTime.ConfirmedNumber > 0)
+            if (idle > 0)
                 limits.Add(Text.Format("settings", "idle_summary", DurationText(InactiveTime)));
             if (limits.Count > 1)
                 limits.Add(
-                    Text.Get(
-                        "settings",
-                        SeedRule.ConfirmedText == "all" ? "seed_all_summary" : "seed_any_summary"
-                    )
+                    Text.Get("settings", rule == "all" ? "seed_all_summary" : "seed_any_summary")
                 );
             return limits.Count == 0
                 ? Text.Get("settings", "no_seeding_limits")
@@ -154,41 +161,44 @@ public sealed partial class Editor : INotifyPropertyChanged
     }
 
     public string StartupSummary =>
-        Text.Get(
-            "settings",
-            StartInTray.ConfirmedOn ? "startup_tray_summary" : "startup_window_summary"
-        )
-        + (
-            StartPaused.ConfirmedOn
-                ? " · " + Text.Get("settings", "startup_paused_summary")
-                : string.Empty
-        );
+        StartInTray.ConfirmedOn is { } tray && StartPaused.ConfirmedOn is { } paused
+            ? Text.Get("settings", tray ? "startup_tray_summary" : "startup_window_summary")
+                + (paused ? " · " + Text.Get("settings", "startup_paused_summary") : string.Empty)
+            : "—";
     public string AddingSummary =>
-        Text.Get(
-            "settings",
-            StartDownload.ConfirmedOn ? "adding_start_summary" : "adding_paused_summary"
-        )
-        + " · "
-        + Text.Get("settings", QueueTop.ConfirmedOn ? "queue_top_summary" : "queue_bottom_summary");
+        StartDownload.ConfirmedOn is { } start && QueueTop.ConfirmedOn is { } top
+            ? Text.Get("settings", start ? "adding_start_summary" : "adding_paused_summary")
+                + " · "
+                + Text.Get("settings", top ? "queue_top_summary" : "queue_bottom_summary")
+            : "—";
     public string PowerSummary =>
-        Text.Get(
-            "settings",
-            !PreventSleep.ConfirmedOn ? "power_off_summary"
-                : SeedingSleep.ConfirmedOn ? "power_both_summary"
-                : "power_download_summary"
-        );
+        PreventSleep.ConfirmedOn is { } prevent && SeedingSleep.ConfirmedOn is { } seeding
+            ? Text.Get(
+                "settings",
+                !prevent ? "power_off_summary"
+                    : seeding ? "power_both_summary"
+                    : "power_download_summary"
+            )
+            : "—";
     public string ConfirmationsSummary
     {
         get
         {
+            if (
+                TorrentDialog.ConfirmedOn is not { } torrent
+                || MagnetDialog.ConfirmedOn is not { } magnet
+                || ConfirmDelete.ConfirmedOn is not { } delete
+                || ConfirmExit.ConfirmedOn is not { } exit
+            )
+                return "—";
             var disabled = new List<string>();
-            if (!TorrentDialog.ConfirmedOn)
+            if (!torrent)
                 disabled.Add(Text.Get("settings", "torrent_dialog_off"));
-            if (!MagnetDialog.ConfirmedOn)
+            if (!magnet)
                 disabled.Add(Text.Get("settings", "magnet_dialog_off"));
-            if (!ConfirmDelete.ConfirmedOn)
+            if (!delete)
                 disabled.Add(Text.Get("settings", "delete_confirmation_off"));
-            if (!ConfirmExit.ConfirmedOn)
+            if (!exit)
                 disabled.Add(Text.Get("settings", "exit_confirmation_off"));
             return disabled.Count == 0
                 ? Text.Get("settings", "confirmations_on_summary")
@@ -196,43 +206,62 @@ public sealed partial class Editor : INotifyPropertyChanged
         }
     }
     public string AccountingSummary =>
-        Text.Get(
-            "settings",
-            IncludeOverhead.ConfirmedOn ? "accounting_overhead" : "accounting_payload"
-        )
-        + " · "
-        + Text.Get(
-            "settings",
-            LimitLan.ConfirmedOn ? "accounting_lan" : "accounting_lan_unlimited"
-        );
+        IncludeOverhead.ConfirmedOn is { } overhead && LimitLan.ConfirmedOn is { } lan
+            ? Text.Get("settings", overhead ? "accounting_overhead" : "accounting_payload")
+                + " · "
+                + Text.Get("settings", lan ? "accounting_lan" : "accounting_lan_unlimited")
+            : "—";
     internal string QueueDownloads => QueueCount(ActiveDownloads, "queue_download");
     internal string QueueSeeds => QueueCount(ActiveSeeds, "queue_seed");
-    internal string QueueTotal => ActiveTotal.ConfirmedNumber == 0
-        ? Text.Get("settings", "queue_unlimited")
-        : Text.Format("settings", "queue_total", CountText(ActiveTotal));
-    public string QueueSummary => string.Join(" · ", QueueDownloads, QueueSeeds, QueueTotal);
+    internal string QueueTotal =>
+        ActiveTotal.ConfirmedNumber switch
+        {
+            null => "—",
+            0 => Text.Get("settings", "queue_unlimited"),
+            _ => Text.Format("settings", "queue_total", CountText(ActiveTotal)),
+        };
+    public string QueueSummary =>
+        ActiveDownloads.ConfirmedNumber is null
+        || ActiveSeeds.ConfirmedNumber is null
+        || ActiveTotal.ConfirmedNumber is null
+            ? "—"
+            : string.Join(" · ", QueueDownloads, QueueSeeds, QueueTotal);
 
-    private string QueueCount(Setting setting, string key) => setting.ConfirmedNumber == 0
-        ? Text.Get("settings", key + "_unlimited")
-        : Text.FormatCount("settings", key, (long)setting.ConfirmedNumber);
+    private string QueueCount(Setting setting, string key) =>
+        setting.ConfirmedNumber switch
+        {
+            null => "—",
+            0 => Text.Get("settings", key + "_unlimited"),
+            { } count => Text.FormatCount("settings", key, (long)count),
+        };
     public string PeersSummary =>
-        Text.Format(
-            "settings",
-            "peers_summary",
-            CountText(ConnectionLimit),
-            CountText(TorrentConnections),
-            Text.Get("settings", "transport_" + Transport.ConfirmedText)
-        );
+        ConnectionLimit.ConfirmedNumber is null
+        || TorrentConnections.ConfirmedNumber is null
+        || Transport.ConfirmedText is not { } transport
+            ? "—"
+            : Text.Format(
+                "settings",
+                "peers_summary",
+                CountText(ConnectionLimit),
+                CountText(TorrentConnections),
+                Text.Get("settings", "transport_" + transport)
+            );
     public string DiscoverySummary
     {
         get
         {
+            if (
+                Dht.ConfirmedOn is not { } dht
+                || Pex.ConfirmedOn is not { } pex
+                || Lsd.ConfirmedOn is not { } lsd
+            )
+                return "—";
             var enabled = new List<string>();
-            if (Dht.ConfirmedOn)
+            if (dht)
                 enabled.Add(Text.Get("settings", "discovery_dht"));
-            if (Pex.ConfirmedOn)
+            if (pex)
                 enabled.Add(Text.Get("settings", "discovery_pex"));
-            if (Lsd.ConfirmedOn)
+            if (lsd)
                 enabled.Add(Text.Get("settings", "discovery_lsd"));
             return enabled.Count == 0
                 ? Text.Get("settings", "discovery_off")
@@ -241,32 +270,32 @@ public sealed partial class Editor : INotifyPropertyChanged
     }
 
     public string IncomingSummary =>
-        Proxy.IsInUse
-            ? PortHint
-            : Text.Format(
-                "settings",
-                "incoming_summary",
-                Port.ConfirmedNumber,
-                PortMapping.ConfirmedOn ? OnText : OffText
-            );
+        Proxy.IsInUse ? PortHint
+        : Port.ConfirmedNumber is { } port && PortMapping.ConfirmedOn is { } mapping
+            ? Text.Format("settings", "incoming_summary", port, mapping ? OnText : OffText)
+        : "—";
     public string WatchedSummary =>
-        Watch.ConfirmedOn
-            ? WatchPath.ConfirmedText
-                + (
-                    WatchRecursive.ConfirmedOn
-                        ? " · " + Text.Get("settings", "watch_children_summary")
-                        : string.Empty
-                )
-            : Text.Get("settings", "watch_off_summary");
+        Watch.ConfirmedOn is { } watch
+        && WatchPath.ConfirmedText is { } path
+        && WatchRecursive.ConfirmedOn is { } recursive
+            ? watch
+                ? path
+                    + (
+                        recursive
+                            ? " · " + Text.Get("settings", "watch_children_summary")
+                            : string.Empty
+                    )
+                : Text.Get("settings", "watch_off_summary")
+            : "—";
     public string CheckingSummary =>
-        Text.FormatCount("settings", "checking_threads", (int)HashingThreads.ConfirmedNumber);
+        HashingThreads.ConfirmedNumber is { } threads
+            ? Text.FormatCount("settings", "checking_threads", (int)threads)
+            : "—";
     public string HistorySummary =>
-        Text.Format(
-            "settings",
-            "history_summary",
-            RecentInterval.ConfirmedNumber,
-            HistoryInterval.ConfirmedNumber
-        );
+        RecentInterval.ConfirmedNumber is { } recent
+        && HistoryInterval.ConfirmedNumber is { } history
+            ? Text.Format("settings", "history_summary", recent, history)
+            : "—";
 
     public string RaiseAddHint => DependentHint(RaiseAdd, null, "enable_add_dialog");
     public string SeedingSleepHint => DependentHint(SeedingSleep, null, "enable_sleep_prevention");
@@ -291,26 +320,36 @@ public sealed partial class Editor : INotifyPropertyChanged
         : Text.Get("settings", enabled);
 
     private string CountText(Setting setting) =>
-        setting.ConfirmedNumber == 0
-            ? Text.Get("transfer_limits", "unlimited")
-            : setting.ConfirmedNumber.ToString("G", CultureInfo.CurrentCulture);
+        setting.ConfirmedNumber switch
+        {
+            null => "—",
+            0 => Text.Get("transfer_limits", "unlimited"),
+            { } count => count.ToString("G", CultureInfo.CurrentCulture),
+        };
 
     private string DurationText(Setting setting) =>
-        (setting.ConfirmedNumber / setting.DurationScale).ToString("G", CultureInfo.CurrentCulture)
-        + " "
-        + Text.Get("settings", setting.DurationUnit + "_unit");
+        setting.ConfirmedNumber is { } minutes
+            ? (minutes / setting.DurationScale).ToString("G", CultureInfo.CurrentCulture)
+                + " "
+                + Text.Get("settings", setting.DurationUnit + "_unit")
+            : "—";
 
     public string StandardSummary => LimitSummary(Download, Upload);
     public string AlternativeSummary => LimitSummary(AlternativeDownload, AlternativeUpload);
     public string EncryptionSummary =>
-        Encryption.ConfirmedText.Length == 0
-            ? "—"
-            : Text.Get("settings", "encryption_" + Encryption.ConfirmedText);
+        Encryption.ConfirmedText is { Length: > 0 } encryption
+            ? Text.Get("settings", "encryption_" + encryption)
+            : "—";
 
     private string LimitSummary(Setting download, Setting upload) =>
-        Text.Format("settings", "caps_summary", LimitText(download), LimitText(upload));
-
-    private string LimitText(Setting setting) => Text.SpeedLimit(setting.ConfirmedNumber);
+        download.ConfirmedNumber is null || upload.ConfirmedNumber is null
+            ? "—"
+            : Text.Format(
+                "settings",
+                "caps_summary",
+                Text.SpeedLimit(download.ConfirmedNumber),
+                Text.SpeedLimit(upload.ConfirmedNumber)
+            );
 
     public IReadOnlyList<Setting> All => _all;
     public bool IsPending =>

@@ -744,6 +744,7 @@ internal sealed class CommandException(
 ) : Exception
 {
     public string Code { get; } = code;
+    public string? Detail { get; } = detail;
     public string? Command { get; } = command;
-    public override string Message => strings.Error(Code, detail);
+    public override string Message => strings.Error(Code, Detail);
 }

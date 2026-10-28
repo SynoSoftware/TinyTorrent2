@@ -14,12 +14,7 @@ public sealed partial class MainViewModel
     public string UpdateText => Text.Get("about", "update");
 
     private bool CanCheckUpdates =>
-        !_closed
-        && _connected
-        && !_loading
-        && !_storageFailed
-        && Features.HasRoute
-        && Settings.Updates.IsOn;
+        !_closed && IsRunning && Features.HasRoute && Settings.Updates.IsOn;
 
     private void ObserveUpdates()
     {
@@ -40,9 +35,8 @@ public sealed partial class MainViewModel
         IsConnected && _engineMemory is { } bytes ? Text.Bytes(bytes) : "—";
     internal string UiMemory => _uiMemory is { } bytes ? Text.Bytes(bytes) : "—";
     internal string LifetimeDownloaded =>
-        !IsLoading && !IsStorageFailed ? Text.Bytes(LifetimeTotals.Downloaded) : "—";
-    internal string LifetimeUploaded =>
-        !IsLoading && !IsStorageFailed ? Text.Bytes(LifetimeTotals.Uploaded) : "—";
+        IsRunning ? Text.Bytes(LifetimeTotals.Downloaded) : "—";
+    internal string LifetimeUploaded => IsRunning ? Text.Bytes(LifetimeTotals.Uploaded) : "—";
 
     private void ObserveMemory()
     {

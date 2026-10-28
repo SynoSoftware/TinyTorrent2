@@ -61,7 +61,7 @@ internal sealed partial class OpenSubtitles : ISupplier
 
     public async Task Check(SupplierClient client, CancellationToken cancellation)
     {
-        var personal = client.Account.Username.Length > 0;
+        var personal = client.Account is Account.SignedIn;
         var reply = await Request(
                 client,
                 personal ? "/api/v1/infos/user" : "/api/v1/infos/languages",
@@ -329,8 +329,9 @@ internal sealed partial class OpenSubtitles : ISupplier
         }
     }
 
-    // Sends a request to the API with the account's session, signing in
-    // again once when the API refuses the session.
+    // Sends a request to the API with the signed-in account's session,
+    // signing in again once when the API refuses the session. Without sign-in
+    // a request sends only the API key.
     private async Task<ProviderReply> Request(
         SupplierClient client,
         string path,
@@ -338,16 +339,18 @@ internal sealed partial class OpenSubtitles : ISupplier
         CancellationToken cancellation
     )
     {
-        var account = client.Account;
-        var session = await Login(client, cancellation).ConfigureAwait(false);
+        var signedIn = client.Account as Account.SignedIn;
+        var session = signedIn is null
+            ? null
+            : await Login(client, signedIn, cancellation).ConfigureAwait(false);
         for (var attempt = 0; ; attempt++)
         {
             using var request = new HttpRequestMessage(
                 body is null ? HttpMethod.Get : HttpMethod.Post,
-                new Uri(session.Origin, path)
+                new Uri(session?.Origin ?? Origin, path)
             );
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-            if (session.Token.Length > 0)
+            if (session is not null)
                 request.Headers.Authorization = new AuthenticationHeaderValue(
                     "Bearer",
                     session.Token
@@ -363,7 +366,7 @@ internal sealed partial class OpenSubtitles : ISupplier
                 return await client
                     .Send(
                         request,
-                        session.Token.Length > 0 && attempt == 0
+                        session is not null && attempt == 0
                             ? SupplierRequest.Session
                             : SupplierRequest.Api,
                         cancellation
@@ -372,22 +375,23 @@ internal sealed partial class OpenSubtitles : ISupplier
             }
             catch (SubtitleException error)
                 when (error.Reason == SubtitleFailure.Authentication
-                    && account.Username.Length > 0
+                    && signedIn is not null
                     && attempt == 0
                 )
             {
                 lock (_sync)
-                    _sessions.Remove(AccountKey(account));
-                session = await Login(client, cancellation).ConfigureAwait(false);
+                    _sessions.Remove(AccountKey(signedIn));
+                session = await Login(client, signedIn, cancellation).ConfigureAwait(false);
             }
         }
     }
 
-    private async Task<Session> Login(SupplierClient client, CancellationToken cancellation)
+    private async Task<Session> Login(
+        SupplierClient client,
+        Account.SignedIn account,
+        CancellationToken cancellation
+    )
     {
-        var account = client.Account;
-        if (account.Username.Length == 0)
-            return new Session(string.Empty, Origin);
         var key = AccountKey(account);
         lock (_sync)
             if (_sessions.TryGetValue(key, out var session))
@@ -399,7 +403,7 @@ internal sealed partial class OpenSubtitles : ISupplier
         {
             Content = new StringContent(
                 JsonSerializer.Serialize(
-                    new { username = account.Username, password = account.Secret }
+                    new { username = account.Username, password = account.Password }
                 ),
                 Encoding.UTF8,
                 "application/json"
@@ -424,10 +428,10 @@ internal sealed partial class OpenSubtitles : ISupplier
         return signedIn;
     }
 
-    private static string AccountKey(Account account)
+    private static string AccountKey(Account.SignedIn account)
     {
         var bytes = Encoding.UTF8.GetBytes(
-            account.SupplierId + "\n" + account.Username + "\n" + account.Secret
+            account.SupplierId + "\n" + account.Username + "\n" + account.Password
         );
         try
         {

@@ -9,9 +9,10 @@ public sealed record Entry(long EntryId, string Path, string Name, long Size)
     // "movie" or "episode" for a video, from its provider match or else its name.
     public string Type { get; init; } = string.Empty;
 
-    // The file has a provider match, which supplies its Library metadata.
-    public bool HasMetadata { get; init; }
+    // The catalogue of the provider match that supplies the file's Library
+    // metadata, or null when the file has none.
     internal string? CatalogId { get; init; }
+    public bool HasMetadata => CatalogId is not null;
 
     // The selected provider searched for the file and found no match.
     public bool IsUnmatched { get; init; }

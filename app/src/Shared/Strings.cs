@@ -177,8 +177,6 @@ public sealed class Strings
     internal string FormatCount(string group, string key, long count, params object[] values) =>
         Format(group, key + (count == 1 ? "_one" : "_other"), [count, .. values]);
 
-    public string Status(string code) => Find("status", code) ?? Get("status", "unknown");
-
     public string Error(string code, string? detail)
     {
         if (code == "torrent_error" && !string.IsNullOrWhiteSpace(detail))
@@ -239,11 +237,13 @@ public sealed class Strings
     public string RateUnit(RateScale scale) =>
         Get("units", scale == RateScale.KibPerSecond ? "kib_per_second" : "mb_per_second");
 
-    public string SpeedLimit(double bytes)
+    // A speed limit in bytes per second, or "—" while it is not known.
+    public string SpeedLimit(double? bytes)
     {
         var unit = RateUnit(RateScale.MbPerSecond);
         return bytes switch
         {
+            null => "—",
             0 => Get("transfer_limits", "unlimited"),
             < 10000 => Format("units", "speed_under", 0.01, unit),
             _ => Format("units", "speed", bytes / (double)RateScale.MbPerSecond, unit),
