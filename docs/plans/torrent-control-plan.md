@@ -19,11 +19,11 @@ need a share that can be disconnected, and the separate work.
 
 ## Push the fork (owner)
 
-`engine/src/Dependencies.ps1` pins the libtorrent fork at df0da6bf1. That
-commit and the two before it exist only in the local checkout
-`3rdParty/libtorrent`, branch `Synapse/TinyTorrent`. A machine without that
-checkout cannot fetch the pin until the owner pushes the branch to
-`SynoSoftware/libtorrent`.
+`engine/src/Dependencies.ps1` pins the libtorrent fork at c8b004ff0. The
+local branch `Synapse/TinyTorrent` in `3rdParty/libtorrent` now holds one
+commit per feature on top of upstream v2.1.2, and replaces the three commits
+on `SynoSoftware/libtorrent`, so it reaches the fork only with a force push.
+A machine without that checkout cannot fetch the pin until then.
 
 ## Manual checks with a real share
 
