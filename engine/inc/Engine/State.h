@@ -1170,8 +1170,9 @@ public:
     void CheckStopped(std::string const& folder, std::vector<Attempt> attempts);
     // The failed move's minute check of its final folder.
     void CheckFinalFolder(Attempt const& attempt);
-    // Opens each root that holds a running torrent once a minute, and keeps
-    // the roots whose probe has not returned.
+    // Opens once a minute each root that holds a running torrent, and each
+    // root of the file work that EachRootWait reports, and keeps the roots
+    // whose probe has not returned.
     void ProbeRoots();
     void Reload(Torrent& torrent, std::shared_ptr<Control::Job const> job);
     // Drops the pieces of `files` from the resume data, so the torrent
@@ -1431,10 +1432,13 @@ public:
     // Whether the give-back of the torrent's abandoned move waits for the
     // person's Retry.
     bool GiveBackFailed(std::string const& id) const;
-    // Calls `visit` with the folder that did not answer and the torrent, for
-    // each piece of file work that waits for a root: abandonments, removed
-    // torrents' give-backs and deletions.
-    void EachRootWait(std::function<void(std::optional<std::string>& unanswered, std::string const& id)> const& visit);
+    // Calls `visit` for each piece of file work that waits for a root:
+    // abandonments, removed torrents' give-backs and deletions. It passes the
+    // folder that did not answer, the folders that the work's job uses while
+    // it runs, and the torrent. A job on a root that hangs never returns to
+    // report it, so only the root's probe shows that it waits.
+    void EachRootWait(std::function<void(std::optional<std::string>& unanswered,
+        std::vector<std::string> const& running, std::string const& id)> const& visit);
     // The give-back of the torrent's move as its record holds it: the
     // torrent's own files at its marker's destination, paired with their
     // sources in the save folder, without the files that the move found

@@ -712,6 +712,10 @@ void Engine::State::SaveMove(Move& moving)
         torrent.filesPending = true;
         torrent.namePhase = NamePhase::Pending;
         torrent.renameAt = {};
+        // The torrent's storage failure and name problem belonged to its old
+        // folder.
+        Steer(torrent, Control::Replaced{});
+        torrent.nameError.reset();
         EndMove(torrent, std::nullopt, false);
         CleanMove(moving, sources, origin);
     };
@@ -863,12 +867,10 @@ void Engine::State::EndMove(Torrent& torrent, std::optional<Problem> problem, bo
     torrent.pathWork.reset();
     torrent.moveError = problem;
     Steer(torrent, Control::MoveEnded{problem, final});
+    // SaveMove ends the old folder's storage failure and name problem itself.
+    // A give-back that ends leaves the torrent in its folder, so both stay.
     if (!problem)
     {
-        // The torrent's storage failure belonged to its old folder, and the
-        // names are prepared again at the new one.
-        Steer(torrent, Control::Replaced{});
-        torrent.nameError.reset();
         ContinueNames();
         return;
     }

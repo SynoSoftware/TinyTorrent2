@@ -72,9 +72,11 @@ window:
   root and affected count, without listing torrent names or offering Show
   torrent, and Open folder targets the root; each affected row retains its own
   reason. A share that hangs gets the same notice, whatever work waits on it:
-  the engine opens each root that holds a running torrent once a minute, on a
-  thread of its own, and a root whose open has not returned after two minutes
-  does not answer, so the notice counts the running torrents under it at once.
+  the engine opens each root that holds a running torrent, or on which a
+  deletion or a give-back of files runs, once a minute, on a thread of its
+  own. A root whose open has not returned after two minutes does not answer,
+  so the notice counts at once the running torrents under it and the torrents
+  whose deletion or give-back runs there, removed ones included.
   A popup that shows a notice whose count changes also changes its buttons and
   what selecting it does. Missing or invalid paths, known drive/share
   disconnections and full disks use typed native error codes. Healthy seeds on

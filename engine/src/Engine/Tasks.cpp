@@ -1134,17 +1134,36 @@ bool Engine::State::GiveBackFailed(std::string const& id) const
         { return abandonment.torrentId == id && abandonment.tries.failure; });
 }
 
-void Engine::State::EachRootWait(
-    std::function<void(std::optional<std::string>& unanswered, std::string const& id)> const& visit)
+void Engine::State::EachRootWait(std::function<void(std::optional<std::string>& unanswered,
+    std::vector<std::string> const& running, std::string const& id)> const& visit)
 {
+    auto runs = [](std::shared_ptr<Store> const& worker) { return worker && !worker->IsIdle(); };
+    // A give-back reads its destination and renames into the save folder.
     for (auto& abandonment : abandonments)
-        visit(abandonment.tries.unanswered, abandonment.torrentId);
-    for (auto& running : returning)
-        visit(running.tries.unanswered, running.task.torrentId);
+    {
+        std::vector<std::string> folders;
+        auto torrent = FindWorking(abandonment.torrentId);
+        if (runs(abandonment.worker) && torrent && torrent->facts.marker)
+            folders = {torrent->facts.marker->destination, torrent->facts.savePath};
+        visit(abandonment.tries.unanswered, folders, abandonment.torrentId);
+    }
+    for (auto& entry : returning)
+    {
+        std::vector<std::string> folders;
+        if (runs(entry.worker) && !entry.task.files.empty())
+            folders = {Utf8(entry.task.root.wstring()), Utf8(entry.task.files.front().source.wstring())};
+        visit(entry.tries.unanswered, folders, entry.task.torrentId);
+    }
     for (auto& deletion : deletions)
     {
+        std::vector<std::string> folders;
+        if (deletion.phase == DeletionPhase::Deleting)
+        {
+            for (auto const& root : deletion.roots)
+                folders.push_back(Utf8(root.wstring()));
+        }
         for (auto const& id : deletion.ids)
-            visit(deletion.unanswered, id);
+            visit(deletion.unanswered, folders, id);
     }
 }
 

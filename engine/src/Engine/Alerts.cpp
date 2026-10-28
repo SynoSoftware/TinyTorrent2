@@ -383,13 +383,20 @@ void Engine::State::UpdateProblems()
         auto cause = absent ? *torrent.control.Cause() : Problem{ProblemKind::DownloadPathUnavailable};
         locate(key, *root, cause, id);
     }
-    // The file work whose root did not answer waits for it, and counts its
-    // torrents there, removed ones included.
-    EachRootWait([&locate](std::optional<std::string>& unanswered, std::string const& id)
+    // The file work whose root did not answer waits for it, and so does file
+    // work that runs on a hung root. Each counts its torrents there, removed
+    // ones included.
+    EachRootWait([&locate, &hung](std::optional<std::string>& unanswered, std::vector<std::string> const& running,
+        std::string const& id)
     {
         if (unanswered)
             locate(NoticeKey(*unanswered), NoticeRoot(*unanswered).value_or(*unanswered),
                 Problem{ProblemKind::DownloadPathUnavailable}, id);
+        for (auto const& folder : running)
+        {
+            if (auto key = NoticeKey(folder); hung.contains(key))
+                locate(key, NoticeRoot(folder).value_or(folder), Problem{ProblemKind::DownloadPathUnavailable}, id);
+        }
     });
     // A removed torrent's give-back has no row, so its failure waits for the
     // Retry of the stopped notice.

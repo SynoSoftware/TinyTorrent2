@@ -8,7 +8,7 @@ namespace
 {
 // How often the engine checks whether the cause of a stopped torrent is gone.
 constexpr auto stoppedCheck = std::chrono::minutes(1);
-// How often a probe opens each root that holds a running torrent.
+// How often a probe opens each root that a running torrent or file work uses.
 constexpr auto rootProbe = std::chrono::minutes(1);
 
 // The files of one torrent that lost the data they held.
@@ -542,12 +542,16 @@ void Engine::State::ProbeRoots()
             wanted.insert(RootKey(Wide(*root)));
         }
     }
-    // File work whose root did not answer waits for that root's probe, also
-    // when no listed torrent uses the root.
-    EachRootWait([&wanted](std::optional<std::string>& unanswered, std::string const&)
+    // File work whose root did not answer waits for that root's probe, and
+    // the roots of file work that runs are probed so that a job that hangs
+    // there shows, also when no listed torrent uses the root.
+    EachRootWait([&wanted](std::optional<std::string>& unanswered, std::vector<std::string> const& running,
+        std::string const&)
     {
         if (unanswered)
             wanted.insert(NoticeKey(*unanswered));
+        for (auto const& folder : running)
+            wanted.insert(NoticeKey(folder));
     });
     // A root whose probe has not returned stays, so its notice remains after
     // its torrents are held. A root probed within the last minute stays too,
@@ -591,7 +595,8 @@ void Engine::State::ProbeRoots()
             // waiting.
             if (!opened || !*opened)
                 return;
-            EachRootWait([&key](std::optional<std::string>& unanswered, std::string const&)
+            EachRootWait([&key](std::optional<std::string>& unanswered, std::vector<std::string> const&,
+                std::string const&)
             {
                 if (unanswered && NoticeKey(*unanswered) == key)
                     unanswered.reset();

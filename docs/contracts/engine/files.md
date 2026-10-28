@@ -41,9 +41,13 @@ as an [unfinished task](#unfinished-tasks), and a removal whose commit fails
 leaves no deletion behind; recovery does not restore the removed torrent. A
 deletion whose drive or share does not answer keeps its task: the location
 notice counts its torrents, and it deletes again once the root's probe opens
-the root. libtorrent also reports a failed deletion without an error for a
-torrent that has no storage, such as a magnet without metadata; that one ends
-without a notice, because there are no files to delete.
+the root. A deletion whose job hangs on its drive or share never returns to
+say so, so while it runs the engine also probes the roots of the folders it
+deletes in, and the location notice counts its torrents once that probe has
+not returned for two minutes. libtorrent also reports a failed deletion
+without an error for a torrent that has no storage, such as a magnet without
+metadata; that one ends without a notice, because there are no files to
+delete.
 
 Ordinary Remove also retains a transient file hold until libtorrent reports
 that its disk work has stopped. It keeps payload and partfiles, and removes the
@@ -440,9 +444,12 @@ of a move that the person abandoned, which its marker records. A deletion of
 the removed torrent's files waits until they are back. A give-back whose
 destination does not answer keeps its task and waits: the location notice of
 its drive or share counts its torrent, and it runs again once that root's
-probe, about once a minute, opens the root, also before the next start. A
-give-back that fails with an error tries once more at once and then keeps its
-task and waits for the person. A removed torrent's give-back has no row, so
+probe, about once a minute, opens the root, also before the next start.
+While a give-back runs, the engine probes the roots of its destination and
+of the save folder it renames into, so a give-back that hangs there counts in
+that root's location notice once the probe has not returned for two minutes,
+as a deletion does. A give-back that fails with an error tries once more at
+once and then keeps its task and waits for the person. A removed torrent's give-back has no row, so
 it shows with its error in the notice of the torrents that wait for Retry.
 Every Retry tries it again, so the Retry of that notice in the window and in
 the engine's popup does, and so does the next start.
