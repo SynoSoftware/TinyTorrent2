@@ -2326,8 +2326,8 @@ try {
                 'A damaged resume file lost its torrent'
         }
         'DiskError' {
-            function Wait-Transfer([scriptblock] $condition, [string] $failure) {
-                $until = [DateTime]::UtcNow.AddSeconds(20)
+            function Wait-Transfer([scriptblock] $condition, [string] $failure, [int] $seconds = 20) {
+                $until = [DateTime]::UtcNow.AddSeconds($seconds)
                 do {
                     $row = (Send-Command @{ command = 'snapshot' }).data.torrents[0]
                     if (& $condition $row) { return $row }
@@ -2364,8 +2364,10 @@ try {
                 'Payload write failure was hidden by normal transfer status'
             Assert ([IO.Directory]::GetFiles($collision).Length -eq 0) 'Collision fixture unexpectedly contains files'
             Remove-Item -LiteralPath $collision
+            # When the failure returns after the automatic resume, the torrent
+            # stops, and the once-a-minute check of its cause continues it.
             $null = Wait-Transfer { param($row) $row.downloaded -gt 0 -and $row.status -ne 'error' } `
-                'A repaired destination did not resume downloading automatically'
+                'A repaired destination did not resume downloading automatically' 75
             $null = Wait-Transfer { param($row) $row.complete } 'The recovered download did not finish'
             $reply = Send-Command @{ command = 'pause'; torrent_ids = @($torrentId) }
             Assert $reply.ok 'Recovered torrent could not pause'
