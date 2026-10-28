@@ -10,7 +10,6 @@ namespace Syno.TinyTorrent.Subtitles;
 internal sealed partial class Acquisition(
     Database database,
     ProviderHttp http,
-    Task settled,
     RequestPolicy policy
 ) : IAsyncDisposable
 {
@@ -142,11 +141,7 @@ internal sealed partial class Acquisition(
             await Load().ConfigureAwait(false);
             await RefreshCounts().ConfigureAwait(false);
             _databaseFailure = null;
-            if (_worker is null)
-            {
-                _worker = Task.Run(Pump);
-                _ = settled.ContinueWith(_ => Wake(), TaskScheduler.Default);
-            }
+            _worker ??= Task.Run(Pump);
         }
         finally
         {
@@ -290,23 +285,6 @@ internal sealed partial class Acquisition(
                         );
                         if (!enabled)
                             Cancel(connection, manual: false);
-                        else
-                            Execute(
-                                connection,
-                                """
-                                UPDATE subtitle_jobs SET outcome=$pending,retry_at=0
-                                WHERE manual=0 AND outcome=$cancelled
-                                    AND (reference IS NOT NULL OR lower(path) LIKE '%.'||lower(language)||'.srt')
-                                    AND EXISTS (
-                                    SELECT 1 FROM subtitle_job_sources s JOIN collected_files f
-                                        ON f.origin=s.origin AND f.file_index=s.file_index
-                                    JOIN new_origins n ON n.origin=f.origin
-                                    WHERE s.path=subtitle_jobs.path AND s.language=subtitle_jobs.language
-                                        AND f.wanted=1 AND f.complete=0);
-                                """,
-                                ("$pending", (int)SubtitleOutcome.Pending),
-                                ("$cancelled", (int)SubtitleOutcome.Cancelled)
-                            );
                         return true;
                     },
                     _lifetime.Token
@@ -708,26 +686,27 @@ internal sealed partial class Acquisition(
         await _saves.ConfigureAwait(false);
         _disposed = true;
         _lifetime.Cancel();
-        Task? reconciling;
+        Task?[] background;
         lock (_requestSync)
         {
             _requests.Cancel();
-            reconciling = _reconciling;
+            background = [_reconciling, _inspecting];
         }
         if (_worker is not null)
             await _worker.ConfigureAwait(false);
-        if (reconciling is not null)
-        {
-            try
+        foreach (var task in background)
+            if (task is not null)
             {
-                await reconciling.ConfigureAwait(false);
+                try
+                {
+                    await task.ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+                catch (Exception error)
+                {
+                    System.Diagnostics.Debug.WriteLine(error);
+                }
             }
-            catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
-            catch (Exception error)
-            {
-                System.Diagnostics.Debug.WriteLine(error);
-            }
-        }
         foreach (var run in new[] { _manualWork, _automaticWork })
             if (run is not null)
             {

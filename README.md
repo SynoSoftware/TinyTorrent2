@@ -91,8 +91,9 @@ Put every peer on a world map. Close the panels when you're done.
 
 - **Set it once.** Choose OpenSubtitles, SubDL, or SubSource. No account
   needed.
-- **Ready early.** Subtitles appear beside your movies, even before the
-  download finishes.
+- **Ready when the download is.** When a download finishes, its subtitles
+  appear beside the movies. For any other movie, select it in the Library and
+  download its subtitles.
 - **Works with any player.** Each subtitle is saved next to its movie with a
   matching name, so your player finds it on its own.
 - **Your pick when you want it.** Browse every subtitle offered for a movie

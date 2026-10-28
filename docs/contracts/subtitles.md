@@ -18,7 +18,7 @@ contract with the same authority.
 | Change | Reference |
 | --- | --- |
 | Settings, languages, automatic intent, batch actions or access checks | [Configuration](subtitles/configuration.md) |
-| Early lookup, hash readiness, ranking, extra matches or the choice dialog | [Matching](subtitles/matching.md) |
+| Lookup timing, hash readiness, ranking, extra matches or the choice dialog | [Matching](subtitles/matching.md) |
 | Subtitle records, inventory, local scans, saving, publication, moves, renames or removal | [Files](subtitles/files.md) |
 | Supplier endpoints, credentials, quota facts, disclosures or privacy | [Suppliers](subtitles/suppliers.md), together with the matching and file rules for those calls |
 
@@ -43,15 +43,34 @@ only. There is no exception for a small native helper, generic byte interface,
 subtitle-aware payload operation or feature-specific invalidation cache. The
 pipe carries no subtitle-settings, supplier Check, Find, Recheck, credential,
 provider-search, job-status or database messages: views call their C# owners
-directly, and SQLite is not linked into the engine. Early lookup uses
-filename and release evidence; no engine piece demand or early-hash interface
-exists.
+directly, and SQLite is not linked into the engine. Lookups use filename and
+release evidence and a movie hash computed in C#; no engine piece demand or
+early-hash interface exists.
 
-**Owner ruling: after configuration, subtitles appear beside the movie without
-interaction, preferably before the movie finishes downloading.** Early arrival
-lets the person start watching with subtitles. Supplier availability and useful
-filename/release evidence determine when that is possible; movie completion is
-not a prerequisite for searching or saving subtitles.
+**Owner ruling (2026-10-28): subtitles download automatically only when a
+torrent finishes downloading, and only for that torrent.** Every other
+subtitle search or download happens because the person asked for it. An
+automatic search in any other way floods the suppliers' servers with requests
+and delays the app in a way the person did not ask for. So no automatic
+request is sent while a torrent downloads, opening the window starts no search
+of its own, a torrent whose completion search was already decided is never
+searched again automatically, and TinyTorrent never walks the library's folders
+on its own. It checks for subtitle files only in the folders of a torrent that
+just finished and of the movies Library displays, as the
+[no-scan ruling](library.md#purpose-and-experience) allows. When a subtitle
+does not exist, the person selects the movies in Library and chooses Download
+subtitles, or uses Find in Settings.
+
+When TinyTorrent sees a torrent finish, it looks for bundled subtitles in that
+torrent's folders. When the switch Download when a torrent finishes is On, it
+then searches once for each wanted video in each wanted language that still
+has no subtitle. A torrent that finished while the window was closed, or whose
+search the window closed before deciding, gets this search when the window
+next connects, because subtitle work runs only in the window. The search is decided
+once per torrent, whatever its videos and languages: a torrent that finished
+while the switch was Off, or a language added or a supplier fixed later, starts
+no search for it. [Configuration](subtitles/configuration.md#configuration)
+owns the details.
 
 Normal operation has no dialogs, notifications, torrent columns or inspector
 statuses. Running subtitle work shows in the shared
@@ -145,7 +164,7 @@ change or observed removal cancels obsolete work; an uncancellable late result
 cannot replace newer state. The [concurrent file-operation limitation](subtitles/files.md#saving-and-following-the-movie)
 applies to publication. An already transmitted request cannot be
 recalled. Window closure cancels outstanding work without waiting indefinitely
-for a supplier, preserving accepted unfinished jobs for the next window.
+for a supplier, preserving accepted unfinished manual jobs for the next window.
 
 Persist the pending work and subtitle records in SQLite so work resumes after a
 restart. The records, and the check before each lookup, keep
@@ -170,10 +189,11 @@ it. Settings shows only state: whether access was checked and when a used-up
 allowance returns. This lets the person understand missing subtitles without
 reading logs; routine success and transient retries remain invisible.
 Diagnostics retain technical detail without credentials.
-When early release matching finds no match, retry
-once with a C# movie hash after confirmed torrent completion if the supplier
-supports it; otherwise retry release evidence once at per-file completion.
-Do not repeat a lookup already made with that eligible evidence. Further polling would
+A completion search uses the C# movie hash at once when the supplier supports
+it, and then the release name. A requested search for a finished video in an
+unfinished torrent has no hash yet, so when it finds no match it is tried once
+more with the hash after confirmed torrent completion.
+Do not repeat a lookup already made with that evidence. Further polling would
 spend requests without new local evidence. Unresolved outcomes survive restart
 so reopening TinyTorrent does not reset those limits.
 
@@ -185,8 +205,9 @@ owners.
 **Owner ruling, 2026-10-09:** benchmarks, agent interaction runs, exhaustive
 supplier/route/failure matrices and comprehensive test checklists are
 **cancelled for this delivery**. Reuse useful work and valid evidence. Keep the
-behavioral rules in this design, including early arrival, languages, quiet
-recovery, source validation, no-replace publication and file ownership.
+behavioral rules in this design, including completion-only automatic searches,
+languages, quiet recovery, source validation, no-replace publication and file
+ownership.
 
 ## Verification and contract integration
 

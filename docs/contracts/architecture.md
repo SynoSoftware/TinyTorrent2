@@ -103,15 +103,19 @@ request for the selected data, including locally blocked data. Provider waits
 and pacing still apply. Reset in Settings clears local protection without
 starting work; [search protection](search-protection.md) owns the precise
 counting, retry and reset rules.
-Automatic subtitle searches run only for new torrents, because a subtitle
-search spends the supplier's allowance. A torrent is new when the database's list of known
-torrents does not contain it: it was added in this session or while the window
-was closed. A torrent becomes known once the window has seen it finished, so a
-download that finishes after a restart still gets its subtitles. A database with no history takes the torrents it first sees as
-known, so their subtitles wait for Find. Removing a torrent while the window is
-open forgets it, so adding it again makes it new. Automatic work starts 30
-seconds after the window first connects to the engine, so it does not compete
-with startup. Only an explicit fresh request overrides local protection.
+Automatic subtitle searches run only when a new torrent finishes, under the
+[completion ruling](subtitles.md#outcome), because a subtitle search spends the
+supplier's allowance. A torrent is new when the database's list of known
+torrents does not contain it. A torrent becomes known only when subtitles
+decide its completion search, once its files are finished, at rest and read,
+so a download that finishes after a restart, or before a window close let the
+decision happen, still gets its search, once. A database with no history takes the
+torrents it first sees as known, so their subtitles wait for the person's
+request. Removing a torrent while the window is open forgets it, so adding it
+again makes it new. Automatic Library lookups start 30 seconds after the window
+first connects to the engine, so they do not compete with startup; a
+completion search starts at once. Only an explicit fresh request overrides
+local protection.
 
 ### Product boundaries
 

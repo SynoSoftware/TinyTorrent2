@@ -50,10 +50,19 @@ in place. Re-enabling does not revive cancelled finished targets.
 
 ## Subtitle inventory and lookup counts
 
-Completed, readable movie folders are inspected once per current path and torrent
-stamp. Discovery walks the content folder derived from confirmed mapped file
-paths, including nested folders; when the files sit directly in the save path,
-it checks only siblings and Subs/Subtitles folders to avoid other torrents.
+A torrent's folders are inspected once when it finishes, under the
+[completion ruling](../subtitles.md#outcome), before its completion search. A
+movie Library displays has its folder inspected once per path and torrent
+stamp, in the background, as the
+[no-scan ruling](../library.md#purpose-and-experience) allows, so a move or a
+later bundled download shows its languages when the row is on screen. The
+person did not start that check, so it shows no work item and no failure. Scan
+torrent folders inspects the folders of every finished torrent when the person
+chooses it. Nothing else inspects a folder, because a walk over the library
+costs disk work the person did not ask for. Discovery walks the content folder
+derived from confirmed mapped file paths, including nested folders; when the
+files sit directly in the save path, it checks only siblings and
+Subs/Subtitles folders to avoid other torrents.
 Directory links are not followed. A subtitle must identify one movie through its
 name or containing folder, or belong to a folder with only one movie. Language
 tags and names take precedence; otherwise a text sample is detected locally.
@@ -63,7 +72,7 @@ as Windows players read it, and a detected language that Windows writes in
 another code page is rejected as a misreading.
 Ambiguous, weak and forced-only subtitles do not satisfy a language.
 Found files and downloads share the same records and Library language inventory.
-Browsing and ordinary counts never inspect folders. Explicit rescanning refreshes
+Counts never inspect folders. Explicit rescanning refreshes
 found associations, checks whether recorded downloads still exist, and leaves
 files alone. Missing downloads lose their output record while search history
 remains. Unreadable paths retain their ownership records and report read errors.
@@ -104,13 +113,16 @@ distinction such as `pt-BR` stays distinct. A found language uses the same tag a
 names, so it compares equal to a wanted one.
 
 Each identified subtitle becomes a found record with its association, after
-the video is confirmed current. Created records never become found. The scan
-stamp changes when the torrent's path, completion, settled state or selected
-size changes, so a bundled subtitle that was not selected at the first scan
-and is downloaded later gets its identification without routine folder walks.
-A moved video is scanned at its new location. A folder that cannot be read
-keeps its existing records and gets no marker, so the next reconciliation
-tries again. A late result for a torrent removed during the scan is dropped.
+the video is confirmed current. Created records never become found. A scan
+marker records each video's path and torrent stamp, so a completion scan that
+a settings change interrupted continues at the next reconciliation without
+repeating the folders it finished, and a displayed movie is inspected again
+only after its path or stamp changes. A folder that cannot be read keeps its
+existing records and gets no marker. Its movies, like those of a scan the person
+stopped, are not inspected automatically again in that session until their path
+or stamp changes, so a displayed movie in an unreadable folder fails once, not
+at every scroll. A late result for a torrent removed during the scan is
+dropped.
 
 Subtitle searches follow the owner's
 [shared search limit](../architecture.md#third-party-provider-access), 5 by

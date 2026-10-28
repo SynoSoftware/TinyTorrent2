@@ -14,8 +14,8 @@ internal sealed partial class Acquisition
     private bool CanAcquire => _connected && Ready && !NeedsSetup(Failure);
     internal bool CanFind => _connected && Ready && !Finding;
 
-    // Reconcile decides which automatic jobs exist, so the worker only waits
-    // for the switch and the start delay before running them.
+    // Reconcile decides which automatic jobs exist, so the worker only checks
+    // the switch before running them.
     private const string Due = "outcome=$pending AND (manual=1 OR $automatic)";
 
     // These failures persist until the person changes the supplier setup, so
@@ -64,10 +64,7 @@ internal sealed partial class Acquisition
                                     using var command = connection.CreateCommand();
                                     command.CommandText =
                                         $"SELECT path,language,manual,retry_at FROM subtitle_jobs WHERE {Due};";
-                                    command.Parameters.AddWithValue(
-                                        "$automatic",
-                                        Enabled && settled.IsCompleted
-                                    );
+                                    command.Parameters.AddWithValue("$automatic", Enabled);
                                     command.Parameters.AddWithValue(
                                         "$pending",
                                         (int)SubtitleOutcome.Pending
@@ -119,10 +116,7 @@ internal sealed partial class Acquisition
                                         "$pending",
                                         (int)SubtitleOutcome.Pending
                                     );
-                                    command.Parameters.AddWithValue(
-                                        "$automatic",
-                                        Enabled && settled.IsCompleted
-                                    );
+                                    command.Parameters.AddWithValue("$automatic", Enabled);
                                     command.Parameters.AddWithValue(
                                         "$now",
                                         DateTimeOffset.UtcNow.ToUnixTimeSeconds()

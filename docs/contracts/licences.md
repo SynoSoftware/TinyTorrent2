@@ -351,10 +351,11 @@ or content-filter requirements depend on the actual rating/content rule, not a
 universal subtitle-login assumption.
 
 Store 7.19 sections 10.1 and 10.3 require accurate representation and a testable
-product. Certification notes should describe early downloading faithfully and
-provide a lawful movie/subtitle fixture and working access where needed. The
-reviewed rules do not establish a blanket ban on early subtitle matching or
-torrent clients; renaming functionality is not a rights or privacy remedy.
+product. Certification notes should describe downloading at torrent completion
+faithfully and provide a lawful movie/subtitle fixture and working access where
+needed. The reviewed rules do not establish a blanket ban on subtitle matching
+for downloaded movies or on torrent clients; renaming functionality is not a
+rights or privacy remedy.
 
 ### Remaining release blockers
 

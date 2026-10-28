@@ -59,9 +59,9 @@ SubDL's [API documentation](https://subdl.com/developers) and
   asks only for an API key, never a SubDL password.
 - Matching uses the release filename search, `GET /api/v2/files/search`, and
   accepts an individual SRT only when its release and language match exactly
-  under the [matching rules](matching.md#early-lookup-and-matching). Explicit forced or foreign-part labels are
-  rejected. SubDL has no movie-hash search, so [step 4's completed-file hashing](matching.md#early-lookup-and-matching)
-  does not apply; filename search can start as soon as metadata names the file.
+  under the [matching rules](matching.md#lookup-and-matching). Explicit forced or foreign-part labels are
+  rejected. SubDL has no movie-hash search, so [step 4's completed-file hashing](matching.md#lookup-and-matching)
+  does not apply; a requested search can start as soon as the file is finished.
 - Check calls `GET /api/v2/me`, which needs no movie information; a reply
   confirms the key.
 - A free key allows 2,000 searches and 50 downloads a day. Quota waits use the
@@ -84,9 +84,9 @@ SubSource's [API documentation](https://subsource.net/api-docs) and
   the season for an episode; TinyTorrent compares the year itself and gives up
   when more than one title matches. `GET /subtitles` then lists that title's
   subtitles by `movieId` and language. Accept a result only when its
-  release information names the file's release, under [rule 3](matching.md#early-lookup-and-matching). Results marked
+  release information names the file's release, under [rule 3](matching.md#lookup-and-matching). Results marked
   `foreignParts` are forced-only and never accepted. SubSource has no
-  movie-hash search, so [step 4's completed-file hashing](matching.md#early-lookup-and-matching) does not apply. A
+  movie-hash search, so [step 4's completed-file hashing](matching.md#lookup-and-matching) does not apply. A
   movie year may be missing from the title search only while exact release
   matching and a unique movie identity still protect the download.
 - Language filters use names such as `english`; the shipped catalog maps
@@ -106,5 +106,4 @@ Keep matching, languages, file work, and recovery independent of a supplier's
 account model. The three suppliers differ in credentials, search steps, the
 access check, download format, and quota reporting; one supplier interface
 owns those differences.
-Legal uncertainty is resolved at release, without delaying matching until movie
-completion or disguising torrent features.
+Legal uncertainty is resolved at release, without disguising torrent features.

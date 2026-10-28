@@ -6,16 +6,16 @@ ownership and recovery rules before the sections here that the change affects.
 Acquisition also follows the [record and inventory rules](files.md#subtitle-records-and-accepted-work),
 so existing subtitles and accepted jobs govern whether a lookup is needed.
 
-## Early lookup and matching
+## Lookup and matching
 
-1. Once metadata is available, inspect wanted video files, excluding recognizable
-   samples and trailers. Work per video rather than choosing the largest file,
-   so movie collections receive the same behavior as a single movie.
-2. Search as soon as the video file exists on disk, using the video's filename
-   and release name, with title and year derived when useful. A file not yet
-   created is tried again a minute later. Automatic searches start 30 seconds
-   after the window opens, so they do not compete with its start for the
-   network; requested searches start at once. Torrent identity and file index identify the
+1. Inspect wanted video files, excluding recognizable samples and trailers.
+   Work per video rather than choosing the largest file, so movie collections
+   receive the same behavior as a single movie.
+2. Search at once when a torrent finishes, under the
+   [completion ruling](../subtitles.md#outcome), or when the person asks, using
+   the video's filename and release name, with title and year derived when
+   useful. A file not yet in its folder is tried again a minute later. Torrent
+   identity and file index identify the
    target inside TinyTorrent; the supplier receives search information, not
    TinyTorrent's internal identity or an absolute local path.
 3. Accept a result in the requested language as exact when its release name
@@ -109,10 +109,10 @@ The next available footer action is the default; asynchronous results do not
 move keyboard focus.
 
 There are no subtitle piece priorities, early-byte requests or read_piece hooks
-in C++. Early arrival uses filename/release matching; hash matching waits for
-confirmed torrent completion. An episode can receive a release-matched subtitle
-while its season pack is unfinished; hash fallback waits for the torrent's
-completion, rather than guessing readiness from a filename or file length.
+in C++. Hash matching waits for confirmed torrent completion. A requested
+search for a finished episode in an unfinished season pack uses release
+matching; hash fallback waits for the torrent's completion, rather than
+guessing readiness from a filename or file length.
 Existing torrent priorities, pauses, queue policy and bandwidth
 limits remain unchanged. Only accepted files participate, never Add previews.
 

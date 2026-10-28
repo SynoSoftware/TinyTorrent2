@@ -17,21 +17,21 @@ beside the wanted languages. Dividers separate configuration from Library
 subtitle search and supplier operations from the local subtitle-folder scan, so
 the saved limit stays distinct from the choices for one batch.
 
-**Owner ruling: Download automatically controls automatic downloading only.**
+**Owner ruling: Download when a torrent finishes controls automatic downloading only.**
 It does not enable the subtitle feature. Supplier setup, language selection,
 batch downloads and local scans remain available while it is Off, so choosing
 manual downloads never requires enabling automatic work.
 
 | Input | Behavior and reason |
 | --- | --- |
-| Download automatically | Saves automatic intent independently of readiness. Missing credentials or temporary failures pause work without changing the switch. |
+| Download when a torrent finishes | Saves automatic intent independently of readiness. While it is On, each torrent that finishes gets one search. Missing credentials or temporary failures pause work without changing the switch. |
 | Additional automatic matches | Saves 0 to 3 alternatives for new automatic searches, default 1. Accepted jobs retain their matching choice, and batch choices remain independent. |
 | Supplier | Selection applies immediately, with empty credentials for a different supplier. Only Account opens the account dialog. Selection preserves automatic intent. |
 | API key | OpenSubtitles uses the free application key without customer setup. SubDL and SubSource use the free application key built into the release, and the person may enter their own key instead, following [third-party provider access](../architecture.md#third-party-provider-access). |
 | User name and password | OpenSubtitles optionally accepts a personal login alongside the application key. Both blank omits user login; entering either requires the complete pair. Other suppliers show only the key. |
 | Wanted languages | A choice between the interface language and chosen languages. Chosen languages are a checklist of the supplier's catalog, narrowed by a filter box; typing filters the list and never adds a language. An explicit choice downloads one suitable subtitle for **each** selected language, so this is not an ordered fallback list. |
 | Library subtitle search | Movies to search: New, Missing data, All selected, with nested movie counts. Matches to download: Exact match only, Best match, Up to 2, 3, or 4 subtitles. These choices apply only to the requested batch. |
-| Scan torrent folders | Finds bundled subtitles again without supplier access or changes to files. Reports files found and read errors. |
+| Scan torrent folders | On request, finds bundled subtitles in the folders of every finished torrent, without supplier access or changes to files. Reports files found and read errors. |
 
 **Owner ruling: when subtitle languages are unset, use the current interface
 language.** Do not save a copy of that default: an interface-language change
@@ -119,20 +119,32 @@ never vanishes on its own, because the person chose it and may switch back.
 Unsupported choices do not enter Find's missing counts or queued work; if none
 of the effective languages is supported, the configuration is not usable.
 
-Automatic downloading searches only for
-[new torrents](../architecture.md#third-party-provider-access), once their files
-are known. Changing languages reconsiders missing subtitles for them and for
-accepted work. Changing supplier preserves the automatic switch and accepted
-work, and drops the pending candidate references of extra subtitles, because a
-reference is valid only at the supplier that returned it. Correcting the same
-supplier's account preserves accepted work. Work waits until the supplier is
-configured. Every other file needs Find,
-so enabling the feature or reopening the window never starts a backlog against
-the supplier's allowance. Reopening cancels unfinished automatic jobs for
-previously finished torrents while retaining their search history. Accepted
-manual jobs resume, and torrents not previously seen finished remain new. A
-requested search that a failure stopped is tried once more on reopening,
-because the reason for the failure is not saved.
+Automatic downloading searches only when a torrent finishes, under the
+[completion ruling](../subtitles.md#outcome). A torrent whose completion search
+is not decided yet is [new](../architecture.md#third-party-provider-access).
+When a new torrent's files are complete, at rest and confirmed, TinyTorrent
+scans its folders for bundled subtitles and decides its completion search: one
+search for each wanted video and wanted language without a subtitle, when the
+switch is On. The torrent is then known, whatever its videos, languages and
+supplier, so the decision is made once: switching on, adding a language or
+fixing the supplier later starts no search for it. A torrent whose movie moved
+during the scan stays new until the reconciliation that follows the move,
+because its search would use the old path. Stopping that scan in the
+work list decides the search as none, so no subtitle is downloaded beside one
+the scan had not found yet. The completion search replaces an automatic job an
+earlier version left for the same subtitle. Because the files are confirmed,
+the search can use the movie hash at once. Changing languages
+cancels accepted work in a language no longer wanted. Changing supplier
+preserves the automatic switch and accepted work, and drops the pending
+candidate references of extra subtitles, because a reference is valid only at
+the supplier that returned it. Correcting the same supplier's account preserves
+accepted work. Work waits until the supplier is configured. Every other file
+needs Download subtitles or Find, so enabling the feature or reopening the
+window never starts a backlog against the supplier's allowance. Reopening
+cancels a completion search that had not finished, while retaining its search
+history. Accepted manual jobs resume. A requested search that a failure stopped
+is tried once more on reopening, because the reason for the failure is not
+saved.
 
 **Owner ruling: Batch download works while automatic downloading is Off.**
 Scope refers to the selected matching goal, not simply files on disk. New
@@ -144,8 +156,9 @@ batch control, limiting both counts and requests to its captured selection.
 Find is the dialog's primary action beside Close. The host owns attaching the
 batch control to acquisition, so a visual reload preserves its selection and counts.
 While a batch runs, Find becomes Stop in both places. Stop ends the batch
-and the manual jobs kept from an earlier session. Saved subtitles stay, and
-automatic work that Find took over returns to the automatic queue.
+and the manual jobs kept from an earlier session. Saved subtitles stay, and a
+stopped movie whose torrent has not finished yet still gets its completion
+search.
 
 Find queues complete, wanted movies in every supported wanted language through
 the existing acquisition owner. An exact release or hash match gets one
@@ -159,8 +172,9 @@ large library searches every movie once, and the supplier's own quota slows that
 traffic. There is no billing ledger or unconditional maximum.
 
 Find works on finished movies only, so Library, the Plugins coverage count and
-Find describe one set of movies; a movie still downloading is automatic work's
-job. The batch count is derived from SQLite when it is read, with the selection
+Find describe one set of movies; a movie still downloading gets its automatic
+search when its torrent finishes. The batch count is derived from SQLite when
+it is read, with the selection
 the batch captured, and is never kept as a copy that can disagree with
 Library's queries. Manual jobs still advance through their evidence stages
 while automatic downloading is Off, so a manual job reaches its hash stage.
@@ -174,7 +188,8 @@ Settings action and enqueues no searches.
 
 ## Discovery and permission
 
-The Settings index carries the Download subtitles automatically switch, the
+The Settings index carries the Download subtitles when a torrent finishes
+switch, the
 same saved setting as on the Subtitles card, and a link to that card. The Help
 menu has no setup entry, because subtitles, the IMDb data and city-level peer
 locations are all optional and Settings already leads to each of them.

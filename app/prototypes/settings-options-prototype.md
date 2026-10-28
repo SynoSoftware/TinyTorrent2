@@ -138,7 +138,7 @@ copy of every label and range here.
 | --- | --- |
 | General | Default-app integration; sign-in/background startup, splash and start-paused choices; exit confirmation; notifications; sleep prevention on mains power; updates. Closing a window and exiting the engine remain distinct operations. |
 | Transfers | Background versus dialog-based addition, start/queue placement, folder layout and duplicates, skipped files, download/incomplete folders, suffix and allocation, seeding stop rules, watched folders. Defaults for new torrents must not relocate existing data or rewrite existing torrent choices. |
-| Subtitles | Automatic downloading, supplier access, and wanted languages. Follow the [subtitle design](../../docs/contracts/subtitles.md) for early lookup, quiet recovery, and file ownership. |
+| Subtitles | Automatic downloading, supplier access, and wanted languages. Follow the [subtitle design](../../docs/contracts/subtitles.md) for completion searches, quiet recovery, and file ownership. |
 | Network | Adapter, incoming port/mapping, encryption, transport and address family, connection attempts, proxy and peer discovery. Reuse the existing network and proxy owners, including private-torrent restrictions. |
 | Speed limits | Connection setup, active speed-limit mode, standard caps, queue limits, peer limits, alternative caps, bandwidth accounting. Queue activity and transfer speed are separate concepts even though they share this category. |
 | Schedule | Weekly schedule and its existing editing capabilities, plus a compact summary of the actual standard and alternative speeds. |

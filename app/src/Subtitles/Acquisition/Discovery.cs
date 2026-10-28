@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Shared.Storage;
 
@@ -5,7 +6,125 @@ namespace Syno.TinyTorrent.Subtitles;
 
 internal sealed partial class Acquisition
 {
-    private readonly HashSet<Discovery> _cancelledScans = [];
+    // Movies whose scan the person stopped or whose folder could not be read,
+    // by scan marker key. They are not scanned automatically again this
+    // session until their path or stamp changes.
+    private readonly HashSet<(string Origin, int Index, string Path, string Stamp)> _skippedScans = [];
+    private IReadOnlySet<long> _displayed = new HashSet<long>();
+    private Task? _inspecting;
+    private bool _inspectPending;
+
+    /// <summary>
+    /// Sets the Library entries on screen. Their folders are checked for
+    /// subtitle files once per path and torrent stamp, in the background, as
+    /// the Library contract's no-scan ruling allows.
+    /// </summary>
+    internal void SetDisplayed(IReadOnlySet<long> entries)
+    {
+        lock (_requestSync)
+        {
+            var same = _displayed.SetEquals(entries);
+            _displayed = entries;
+            if (!same)
+                QueueInspect();
+        }
+    }
+
+    // Callers hold _requestSync. The check runs on its own task, so a folder
+    // walk that hangs on a sleeping drive never delays a reconciliation.
+    private void QueueInspect()
+    {
+        if (_disposed || !_connected || _displayed.Count == 0)
+            return;
+        _inspectPending = true;
+        _inspecting ??= Task.Run(InspectChanges);
+    }
+
+    private async Task InspectChanges()
+    {
+        try
+        {
+            while (true)
+            {
+                lock (_requestSync)
+                {
+                    if (!_inspectPending || _disposed || !_connected)
+                    {
+                        _inspecting = null;
+                        return;
+                    }
+                    _inspectPending = false;
+                }
+                await Inspect().ConfigureAwait(false);
+            }
+        }
+        catch
+        {
+            lock (_requestSync)
+                _inspecting = null;
+            throw;
+        }
+    }
+
+    // Checks the folders of the displayed movies that are not scanned at their
+    // path and stamp yet. The person did not start this check, so it shows no
+    // work item and no failure, and it holds _operation only to record what it
+    // found, so other subtitle work never waits for its folder walk.
+    private async Task Inspect()
+    {
+        try
+        {
+            CancellationToken cancellation;
+            IReadOnlySet<long> displayed;
+            lock (_requestSync)
+            {
+                if (_disposed || !_connected)
+                    return;
+                cancellation = _requests.Token;
+                displayed = _displayed;
+            }
+            if (displayed.Count == 0)
+                return;
+            bool Pending(Discovery movie) =>
+                displayed.Contains(movie.Video.EntryId) && Unscanned(movie);
+            // The displayed movies are usually scanned already, so only one that
+            // is not reads the whole library, whose other movies in the same
+            // folder decide which movie a subtitle file belongs to.
+            var shown = await Movies(cancellation, displayed).ConfigureAwait(false);
+            lock (_requestSync)
+                if (!shown.Any(Pending))
+                    return;
+            var movies = await Movies(cancellation).ConfigureAwait(false);
+            HashSet<Discovery> accepted;
+            lock (_requestSync)
+                accepted = movies.Where(Pending).ToHashSet();
+            if (accepted.Count == 0)
+                return;
+            await Scan(null, movies, accepted, cancellation).ConfigureAwait(false);
+            await _operation.WaitAsync(cancellation).ConfigureAwait(false);
+            try
+            {
+                await RefreshCounts().ConfigureAwait(false);
+            }
+            finally
+            {
+                _operation.Release();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            System.Diagnostics.Debug.WriteLine("Subtitle file check of displayed movies cancelled.");
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException) { }
+    }
+
+    // Whether an automatic scan still has to check the movie. Callers hold
+    // _requestSync.
+    private bool Unscanned(Discovery movie) =>
+        movie.Video.Eligible
+        && movie.Video.Readable
+        && !movie.Scanned
+        && !_skippedScans.Contains(movie.Key);
 
     internal async Task<ScanResult> Rescan()
     {
@@ -82,8 +201,10 @@ internal sealed partial class Acquisition
                     .ConfigureAwait(false);
                 LanguagesChanged?.Invoke(this, EventArgs.Empty);
             }
-            var (movies, accepted) = await PlanScan(cancellation, force: true)
-                .ConfigureAwait(false);
+            var movies = await Movies(cancellation).ConfigureAwait(false);
+            var accepted = movies
+                .Where(movie => movie.Video.Eligible && movie.Video.Readable)
+                .ToHashSet();
             var result = await Scan(run, movies, accepted, cancellation).ConfigureAwait(false);
             await RefreshCounts().ConfigureAwait(false);
             run.Operation.Summarize("scan_result", result.Found, result.Unreadable + unreadable);
@@ -116,12 +237,15 @@ internal sealed partial class Acquisition
         }
     }
 
-    // The automatic scan, which shows in the work list only when it has movies
-    // to scan.
+    // Scans the folders of torrents that just finished, before their
+    // completion search, so a bundled subtitle stops a download. It shows in
+    // the work list only when it has movies to scan.
     private async Task Discover(CancellationToken cancellation)
     {
-        var (movies, accepted) = await PlanScan(cancellation, force: false)
-            .ConfigureAwait(false);
+        var movies = await Movies(cancellation).ConfigureAwait(false);
+        HashSet<Discovery> accepted;
+        lock (_requestSync)
+            accepted = movies.Where(movie => movie.Video.JustFinished && Unscanned(movie)).ToHashSet();
         if (accepted.Count == 0)
             return;
         var run = new WorkRun(this, SubtitleWork.Discovery);
@@ -152,11 +276,10 @@ internal sealed partial class Acquisition
         }
     }
 
-    // Reads every movie and the ones that need a scan: all eligible readable
-    // movies when forced, otherwise those not scanned or cancelled yet.
-    private async Task<(List<Discovery> Movies, HashSet<Discovery> Accepted)> PlanScan(
+    // Reads every movie, or with entries only those Library entries.
+    private async Task<List<Discovery>> Movies(
         CancellationToken cancellation,
-        bool force
+        IReadOnlySet<long>? entries = null
     )
     {
         var movies = await Run(
@@ -164,8 +287,14 @@ internal sealed partial class Acquisition
                 {
                     using var command = connection.CreateCommand();
                     command.CommandText = """
-                        SELECT f.origin,l.path FROM collected_files f JOIN locations l USING(entry_id);
+                        SELECT f.origin,l.path FROM collected_files f JOIN locations l USING(entry_id)
+                        WHERE $entries IS NULL OR f.origin IN (SELECT origin FROM collected_files
+                            WHERE entry_id IN (SELECT value FROM json_each($entries)));
                         """;
+                    command.Parameters.AddWithValue(
+                        "$entries",
+                        entries is null ? DBNull.Value : JsonSerializer.Serialize(entries)
+                    );
                     var folders = new Dictionary<string, string?>(StringComparer.Ordinal);
                     using (var reader = command.ExecuteReader())
                         while (reader.Read())
@@ -181,13 +310,15 @@ internal sealed partial class Acquisition
                             }
                             folders[origin] = parent;
                         }
-                    command.CommandText = """
+                    command.CommandText = $"""
                         SELECT s.origin,s.file_index,s.path,l.path,s.size,s.complete,f.readable,s.entry_id,s.wanted,
                             c.save_path,c.stamp,EXISTS(SELECT 1 FROM subtitle_scans a WHERE a.origin=s.origin
-                                AND a.file_index=s.file_index AND a.path=l.path COLLATE PATH AND a.stamp=c.stamp)
+                                AND a.file_index=s.file_index AND a.path=l.path COLLATE PATH AND a.stamp=c.stamp),
+                            s.origin IN ({Finished})
                         FROM collected_files s JOIN locations l USING(entry_id)
                         JOIN current_files f USING(entry_id) JOIN file_reads c USING(origin)
-                        WHERE s.kind=$kind;
+                        WHERE s.kind=$kind AND ($entries IS NULL
+                            OR f.entry_id IN (SELECT value FROM json_each($entries)));
                         """;
                     command.Parameters.AddWithValue("$kind", (int)FileKind.Video);
                     var result = new List<Discovery>();
@@ -206,6 +337,7 @@ internal sealed partial class Acquisition
                                 Readable = reader.GetBoolean(6),
                                 EntryId = reader.GetInt64(7),
                                 Wanted = reader.GetBoolean(8),
+                                JustFinished = reader.GetBoolean(12),
                             };
                             var folder = folders[video.Origin];
                             var savePath = reader.GetString(9);
@@ -228,31 +360,28 @@ internal sealed partial class Acquisition
                 cancellation
             )
             .ConfigureAwait(false);
-        HashSet<Discovery> accepted;
-        lock (_requestSync)
-        {
-            _cancelledScans.IntersectWith(movies.Where(movie => !movie.Scanned));
-            accepted = movies
-                .Where(movie =>
-                    movie.Video.Eligible
-                    && movie.Video.Readable
-                    && (force || !movie.Scanned && !_cancelledScans.Contains(movie))
-                )
-                .ToHashSet();
-        }
-        return (movies, accepted);
+        // A full read forgets the skipped scans of movies whose path or stamp
+        // changed.
+        if (entries is null)
+            lock (_requestSync)
+                _skippedScans.IntersectWith(
+                    movies.Where(movie => !movie.Scanned).Select(movie => movie.Key)
+                );
+        return movies;
     }
 
-    // Finds the subtitles beside the accepted movies and records them.
+    // Finds the subtitles beside the accepted movies and records them. Without
+    // a run the scan shows nothing in the work list.
     private async Task<ScanResult> Scan(
-        WorkRun run,
+        WorkRun? run,
         List<Discovery> movies,
         HashSet<Discovery> accepted,
         CancellationToken cancellation
     )
     {
-        lock (_requestSync)
-            run.Scans = accepted.ToArray();
+        if (run is not null)
+            lock (_requestSync)
+                run.Scans = accepted.ToArray();
         var changed = false;
         try
         {
@@ -288,7 +417,7 @@ internal sealed partial class Acquisition
             foreach (var folder in folders)
             {
                 cancellation.ThrowIfCancellationRequested();
-                run.Report(
+                run?.Report(
                     new WorkProgress.Fraction(done++, folders.Length, WorkUnit.Folders),
                     new WorkExecution.Running()
                 );
@@ -353,23 +482,38 @@ internal sealed partial class Acquisition
                 catch (Exception error) when (error is IOException or UnauthorizedAccessException)
                 {
                     failures++;
+                    // A displayed movie in this folder then fails once, not on
+                    // every scroll.
+                    lock (_requestSync)
+                        _skippedScans.UnionWith(pending.Select(movie => movie.Key));
                     continue;
                 }
-                changed |= await Run(
+                // The quiet check takes _operation only for this step; the
+                // other scans hold it already.
+                if (run is null)
+                    await _operation.WaitAsync(cancellation).ConfigureAwait(false);
+                var outdated = new List<Discovery>();
+                try
+                {
+                    changed |= await Run(
                         connection =>
                         {
                             var recorded = false;
                             foreach (var movie in pending)
                             {
                                 var video = movie.Video;
-                                if (!Current(connection, [video], readable: true))
-                                    continue;
                                 using var stamp = connection.CreateCommand();
                                 stamp.CommandText =
                                     "SELECT stamp FROM file_reads WHERE origin=$origin;";
                                 stamp.Parameters.AddWithValue("$origin", video.Origin);
-                                if (!Equals(stamp.ExecuteScalar(), movie.Stamp))
+                                if (
+                                    !Current(connection, [video], readable: true)
+                                    || !Equals(stamp.ExecuteScalar(), movie.Stamp)
+                                )
+                                {
+                                    outdated.Add(movie);
                                     continue;
+                                }
                                 Execute(
                                     connection,
                                     """
@@ -421,6 +565,16 @@ internal sealed partial class Acquisition
                         cancellation
                     )
                     .ConfigureAwait(false);
+                }
+                finally
+                {
+                    if (run is null)
+                        _operation.Release();
+                }
+                // A movie that is not current at its path and stamp gets no
+                // marker, so it is skipped instead of staying due.
+                lock (_requestSync)
+                    _skippedScans.UnionWith(outdated.Select(movie => movie.Key));
             }
             return new(found.Count, failures);
         }
@@ -467,7 +621,12 @@ internal sealed partial class Acquisition
         bool Recursive,
         string Stamp,
         bool Scanned
-    );
+    )
+    {
+        // The key of its subtitle_scans marker.
+        internal (string Origin, int Index, string Path, string Stamp) Key =>
+            (Video.Origin, Video.Index, Video.FinalPath, Stamp);
+    }
 }
 
 internal sealed record ScanResult(int Found, int Unreadable);

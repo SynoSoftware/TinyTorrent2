@@ -15,22 +15,9 @@ internal sealed partial class Acquisition
         var settings = await Run(
                 connection =>
                 {
-                    // Finished torrents never restart automatic searches; unfinished
-                    // torrents still qualify when they complete while the window is closed.
+                    // A completion search ends with the window that accepted it,
+                    // so reopening never starts a backlog of searches.
                     Cancel(connection, manual: false);
-                    Execute(
-                        connection,
-                        """
-                        UPDATE subtitle_jobs SET outcome=$pending WHERE manual=0 AND outcome=$cancelled
-                            AND (reference IS NOT NULL OR lower(path) LIKE '%.'||lower(language)||'.srt')
-                            AND EXISTS (SELECT 1 FROM subtitle_job_sources s WHERE s.path=subtitle_jobs.path
-                                AND s.language=subtitle_jobs.language
-                                AND (s.origin NOT IN (SELECT origin FROM known_torrents)
-                                    OR s.origin IN (SELECT origin FROM new_origins)));
-                        """,
-                        ("$pending", (int)SubtitleOutcome.Pending),
-                        ("$cancelled", (int)SubtitleOutcome.Cancelled)
-                    );
                     Resume(connection);
                     using var command = connection.CreateCommand();
                     command.CommandText =
@@ -136,6 +123,13 @@ internal sealed partial class Acquisition
             ? await supplier.Allowance(_account).ConfigureAwait(false)
             : new();
 
+    // The torrents whose completion search is not decided yet and whose files
+    // are complete, at rest and read.
+    private const string Finished = """
+        SELECT n.origin FROM new_origins n JOIN file_reads r USING(origin)
+        WHERE r.complete=1 AND r.settled=1 AND r.collected=1
+        """;
+
     private Task<Target[]> Targets(CancellationToken cancellation) =>
         Run(
             connection =>
@@ -162,9 +156,9 @@ internal sealed partial class Acquisition
                             SubtitleFile.Rank(reader.GetString(0), reader.GetString(1))
                         );
                     }
-                command.CommandText = """
+                command.CommandText = $"""
                     SELECT f.origin,f.file_index,f.path,l.path,f.size,f.complete,current_files.readable,f.entry_id,f.wanted,
-                        f.origin IN (SELECT origin FROM new_origins)
+                        f.origin IN ({Finished})
                     FROM collected_files f JOIN locations l USING(entry_id)
                     JOIN current_files USING(entry_id)
                     WHERE f.kind=$kind;
@@ -185,7 +179,7 @@ internal sealed partial class Acquisition
                             Readable = reader.GetBoolean(6),
                             EntryId = reader.GetInt64(7),
                             Wanted = reader.GetBoolean(8),
-                            IsNew = reader.GetBoolean(9),
+                            JustFinished = reader.GetBoolean(9),
                         };
                         files.Add(video);
                     }
@@ -236,6 +230,10 @@ internal sealed partial class Acquisition
                     _reconcilePending = false;
                 }
                 await ReconcileOnce().ConfigureAwait(false);
+                // A reconciliation can follow a move of a displayed movie, so
+                // the displayed movies are checked after it too.
+                lock (_requestSync)
+                    QueueInspect();
             }
         }
         catch
@@ -263,13 +261,16 @@ internal sealed partial class Acquisition
             var index = new TargetIndex(targets);
             await ReconcileJobs(index, cancellation).ConfigureAwait(false);
             await ReconcileFiles(index, cancellation).ConfigureAwait(false);
+            var stopped = false;
             try
             {
                 await Discover(cancellation).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (!cancellation.IsCancellationRequested)
             {
-                System.Diagnostics.Debug.WriteLine("Automatic subtitle file discovery cancelled.");
+                // Stopping the scan also stops the completion searches it
+                // precedes, so no subtitle is downloaded beside a bundled one.
+                stopped = true;
             }
             var eligible = targets
                 .Where(Eligible)
@@ -286,20 +287,35 @@ internal sealed partial class Acquisition
                         // Work stopped by a folder that refused its file tries again.
                         if (_saveFailed)
                             Resume(connection);
+                        var stale = new HashSet<string>(StringComparer.Ordinal);
                         foreach (var target in targets)
                         {
                             if (target.Rank != 1 || !Eligible(target))
                                 continue;
-                            if (!Current(connection, target.Videos))
-                                continue;
+                            var current = Current(connection, target.Videos);
                             // A manual job advances to its hash stage whatever the
-                            // automatic switch says; an automatic job only while its
-                            // torrent is new, because a known torrent's earlier miss
-                            // waits for Find.
-                            Advance(connection, target);
-                            if (Enabled && target.IsNew && !Recorded(connection, target))
-                                Accept(connection, target, false, 1 + Extras);
+                            // automatic switch says.
+                            if (current)
+                                Advance(connection, target);
+                            if (!Enabled || stopped || !target.JustFinished)
+                                continue;
+                            // A movie that moved after the snapshot leaves its
+                            // torrent undecided for the reconciliation the move
+                            // causes.
+                            if (
+                                !current
+                                || (
+                                    !Recorded(connection, target)
+                                    && !Accept(connection, target, false, 1 + Extras)
+                                )
+                            )
+                                stale.UnionWith(
+                                    target
+                                        .Videos.Where(video => video.JustFinished)
+                                        .Select(video => video.Origin)
+                                );
                         }
+                        Decide(connection, targets, stale);
                         using var jobs = connection.CreateCommand();
                         jobs.CommandText = """
                             SELECT j.path,j.language,s.origin,s.file_index FROM subtitle_jobs j
@@ -385,6 +401,39 @@ internal sealed partial class Acquisition
             );
     }
 
+    // Makes each finished torrent in the snapshot known, eligible or not, so
+    // its completion search is decided once: switching on, adding a language
+    // or reopening later searches nothing for it. A finished torrent without
+    // videos has nothing to search. Stale torrents stay undecided.
+    private static void Decide(
+        SqliteConnection connection,
+        Target[] targets,
+        IReadOnlySet<string> stale
+    )
+    {
+        foreach (
+            var origin in targets
+                .SelectMany(target => target.Videos)
+                .Where(video => video.JustFinished && !stale.Contains(video.Origin))
+                .Select(video => video.Origin)
+                .Distinct()
+        )
+            Execute(
+                connection,
+                "INSERT OR IGNORE INTO known_torrents SELECT origin FROM new_origins WHERE origin=$origin;",
+                ("$origin", origin)
+            );
+        Execute(
+            connection,
+            $"""
+            INSERT OR IGNORE INTO known_torrents SELECT origin FROM ({Finished}) finished
+            WHERE NOT EXISTS(SELECT 1 FROM collected_files c WHERE c.origin=finished.origin AND c.kind=$video);
+            DELETE FROM new_origins WHERE origin IN (SELECT origin FROM known_torrents);
+            """,
+            ("$video", (int)FileKind.Video)
+        );
+    }
+
     private static void Unblock(SqliteConnection connection) =>
         Execute(
             connection,
@@ -402,7 +451,7 @@ internal sealed partial class Acquisition
         );
 
     // Cancellation retains search history and the decision not to revive automatic
-    // work; Stop can return manual work to the automatic queue while its torrent is new.
+    // work; a torrent's completion search can still take over a cancelled manual job.
     private static void Cancel(
         SqliteConnection connection,
         bool? manual = null,
@@ -449,13 +498,12 @@ internal sealed partial class Acquisition
             """
             UPDATE subtitle_jobs SET stage=$next,outcome=$pending,retry_at=0,attempts=0
             WHERE path=$path AND language=$language AND stage=$previous AND outcome=$nomatch
-                AND (manual=1 OR $new);
+                AND manual=1;
             """,
             ("$pending", (int)SubtitleOutcome.Pending),
             ("$nomatch", (int)SubtitleOutcome.NoMatch),
             ("$path", target.Path),
             ("$language", target.Language),
-            ("$new", target.IsNew),
             ("$next", (int)SubtitleStage.Complete),
             ("$previous", (int)SubtitleStage.Release)
         );
@@ -465,6 +513,8 @@ internal sealed partial class Acquisition
     {
         if (!Eligible(target) || !Current(connection, target.Videos.Where(video => video.Eligible)))
             return false;
+        // Automatic work replaces an automatic job an earlier search left and a
+        // stopped manual job; a manual job that ran keeps its result.
         Execute(
             connection,
             """
@@ -472,20 +522,12 @@ internal sealed partial class Acquisition
             VALUES($path,$language,$stage,$pending,$manual,$guesses,$fresh)
             ON CONFLICT(path,language) DO UPDATE SET stage=excluded.stage,outcome=excluded.outcome,
                 retry_at=0,attempts=0,manual=excluded.manual,guesses=excluded.guesses,fresh=excluded.fresh,
-                reference=CASE WHEN $manual OR subtitle_jobs.manual=1 THEN NULL ELSE subtitle_jobs.reference END
-                WHERE $manual OR (subtitle_jobs.outcome=$cancelled
-                    AND subtitle_jobs.manual=1);
+                reference=NULL
+                WHERE $manual OR subtitle_jobs.manual=0 OR subtitle_jobs.outcome=$cancelled;
             """,
             ("$path", target.Path),
             ("$language", target.Language),
-            (
-                "$stage",
-                (int)(
-                    Supplier?.SupportsHash == true && !manual
-                        ? SubtitleStage.Release
-                        : Stage(target)
-                )
-            ),
+            ("$stage", (int)Stage(target)),
             ("$pending", (int)SubtitleOutcome.Pending),
             ("$manual", manual),
             ("$guesses", guesses),
@@ -869,7 +911,8 @@ internal sealed partial class Acquisition
         internal bool Complete { get; init; }
         internal bool Readable { get; init; }
         internal bool Wanted { get; init; }
-        internal bool IsNew { get; init; }
+        // Its torrent has finished, and its completion search is not decided yet.
+        internal bool JustFinished { get; init; }
         internal bool Eligible => Wanted && !IsExtra;
         internal bool CanHash =>
             Eligible && Complete && Readable && Size >= SubtitleFile.HashMinimum;
@@ -886,7 +929,8 @@ internal sealed partial class Acquisition
         internal string? Reference { get; init; }
         internal SubtitleMatch? Match { get; init; }
         internal bool Complete => Videos.Any(video => video.Eligible && video.Complete);
-        internal bool IsNew => Videos.Any(video => video.Eligible && video.IsNew);
+        internal bool JustFinished =>
+            Videos.Any(video => video.Eligible && video.JustFinished);
         internal bool IsAmbiguous { get; } =
             Videos
                 .Select(video => video.FinalPath)

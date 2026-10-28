@@ -304,8 +304,8 @@ provider's title, type and year; the user fetches or erases metadata.
 
 ### Subtitles
 
-**Automatic subtitles**: finding and saving subtitles beside managed movies
-without interaction, once the person turns it on.
+**Automatic subtitles**: finding and saving subtitles beside the movies of a
+torrent when it finishes, without interaction, once the person turns it on.
 
 **Subtitle supplier**: the online service that subtitle searches and downloads
 use, such as OpenSubtitles or SubDL.

@@ -60,6 +60,7 @@ internal sealed class Features
             if (args.PropertyName is nameof(Library.Failure) or "")
                 Raise();
         };
+        Library.DisplayedChanged += (_, _) => Subtitles?.SetDisplayed(Library.Displayed);
     }
 
     /// <summary>
@@ -145,8 +146,8 @@ internal sealed class Features
         if (_opening is not { IsCompletedSuccessfully: true, Result: true })
             return;
         var policy = _policy ??= new RequestPolicy(_database);
-        // Automatic lookups and subtitle searches wait, so starting the
-        // window does not compete with them for the network.
+        // Automatic lookups wait, so starting the window does not compete
+        // with them for the network.
         var settled = _settled ??= Task.Delay(TimeSpan.FromSeconds(30));
         var imdb = new ImdbDataset(_http, directory, policy);
         var store = new Store(_database, imdb);
@@ -169,11 +170,12 @@ internal sealed class Features
         };
         Library.Attach(store, videos, new FileFacts(_database, Work));
         Geolocation.Attach(directory, policy);
-        var subtitles = new SubtitleAcquisition(_database, _http, settled, policy)
+        var subtitles = new SubtitleAcquisition(_database, _http, policy)
         {
             Work = Work,
         };
         Subtitles = subtitles;
+        subtitles.SetDisplayed(Library.Displayed);
         subtitles.Changed += (_, _) => Post(subtitles, () => Subtitles, Raise);
         subtitles.LanguagesChanged += (_, _) =>
             Post(subtitles, () => Subtitles, Library.StoredChanged);

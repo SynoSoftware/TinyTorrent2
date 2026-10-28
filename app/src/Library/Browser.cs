@@ -749,14 +749,24 @@ public sealed partial class Browser
         ShareDisplayed();
     }
 
+    /// <summary>
+    /// The entries on screen while the page shows. The host passes them to
+    /// the subtitle feature, which checks only their folders for subtitle files.
+    /// </summary>
+    internal IReadOnlySet<long> Displayed { get; private set; } = new HashSet<long>();
+
+    /// <summary>Raised on the UI thread when <see cref="Displayed"/> changes.</summary>
+    internal event EventHandler? DisplayedChanged;
+
     private void ShareDisplayed()
     {
         // Only rows of the current results can be on screen.
-        IReadOnlySet<long> shown = _visible
+        Displayed = _visible
             ? _displayed.Where(_rows.ContainsKey).ToHashSet()
             : new HashSet<long>();
-        _facts?.SetDisplayed(shown);
-        _videos?.SetDisplayed(shown);
+        _facts?.SetDisplayed(Displayed);
+        _videos?.SetDisplayed(Displayed);
+        DisplayedChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public void Filter(string section, string? value, int? season = null)

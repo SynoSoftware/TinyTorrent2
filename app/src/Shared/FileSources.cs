@@ -128,12 +128,14 @@ internal sealed class FileSources(Database database)
                     update.Parameters["$stamp"].Value = contribution.Stamp;
                     update.ExecuteNonQuery();
                 }
-                // known_torrents lists every torrent the window has seen finished,
-                // and only a torrent missing from it gets automatic subtitle
-                // searches, so a download that finishes after a restart is still
-                // searched. The first list is taken as known, even when empty,
-                // so a new database does not search the whole collection. A removed
-                // torrent is forgotten, so adding it again is new.
+                // known_torrents lists every torrent whose subtitle completion
+                // search is decided, and new_origins the present torrents
+                // missing from it. Subtitles move a torrent from one to the
+                // other when they decide, so a download that finishes after a
+                // restart, or before a window close let them decide, is still
+                // searched, once. The first list is taken as known, even when
+                // empty, so a new database does not search the whole collection.
+                // A removed torrent is forgotten, so adding it again is new.
                 using var history = connection.CreateCommand();
                 history.CommandText = "SELECT initialized FROM source_state WHERE singleton=1;";
                 var recorded = Convert.ToInt64(history.ExecuteScalar()) != 0;
@@ -142,8 +144,8 @@ internal sealed class FileSources(Database database)
                     WHERE $recorded AND origin NOT IN (SELECT origin FROM known_torrents);
                     DELETE FROM new_origins WHERE origin NOT IN (SELECT origin FROM present);
                     DELETE FROM known_torrents WHERE origin NOT IN (SELECT origin FROM present);
-                    INSERT OR IGNORE INTO known_torrents SELECT origin FROM file_reads
-                    WHERE origin IN (SELECT origin FROM present) AND (complete=1 OR NOT $recorded);
+                    INSERT OR IGNORE INTO known_torrents SELECT origin FROM present
+                    WHERE NOT $recorded;
                     UPDATE source_state SET initialized=1 WHERE singleton=1 AND initialized=0;
                     """;
                 history.Parameters.AddWithValue("$recorded", recorded);

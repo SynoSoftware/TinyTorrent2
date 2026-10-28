@@ -176,7 +176,7 @@ try {
     $sources = New-Value 'Shared.FileSources' @($database)
     $store = New-Value 'Library.Store' @($database, $imdb)
     Invoke-Value $sources 'Reconcile' @((New-Values 'Shared.Contribution' @($second)), $cancel) | Out-Null
-    Require ((Sql 'SELECT COUNT(*) FROM new_origins;') -eq 0) 'Reopening treated a known torrent as new.'
+    Require ((Sql 'SELECT group_concat(origin) FROM new_origins;') -eq 'second') 'Reopening forgot a finished torrent whose completion search was not decided.'
     $matches = Invoke-Value $store 'Search' @($query, $cancel)
     Require ($matches.Entries.Count -eq 1 -and $matches.Entries[0].EntryId -eq $entry.EntryId) 'Reopening lost the cached list or changed its row identity before engine file replies.'
     Require ((Sql 'SELECT COUNT(*) FROM collected_files;') -eq 0 -and (Sql 'SELECT readable FROM current_files;') -eq 0) 'A saved file list authorized work before current confirmation.'
@@ -492,7 +492,7 @@ try {
     }
     finally { $videos.DisposeAsync().AsTask().GetAwaiter().GetResult() | Out-Null }
 
-    $batch = New-Value 'Subtitles.Acquisition' @($database, $http, [Threading.Tasks.Task]::CompletedTask, $policy) @{ Work = $work }
+    $batch = New-Value 'Subtitles.Acquisition' @($database, $http, $policy) @{ Work = $work }
     try {
         Invoke-Value $batch 'Load' @() | Out-Null
         $supplierType = $assembly.GetType('Syno.TinyTorrent.SubtitleSupplier')
@@ -806,7 +806,7 @@ public sealed class SubtitleSearchReply : HttpMessageHandler {
     }
 }
 '@
-    $search = New-Value 'Subtitles.Acquisition' @($database, $http, [Threading.Tasks.Task]::CompletedTask, $policy) @{ Work = $work }
+    $search = New-Value 'Subtitles.Acquisition' @($database, $http, $policy) @{ Work = $work }
     $reply = [SubtitleSearchReply]::new()
     $client = [Net.Http.HttpClient]::new($reply)
     try {
@@ -1143,7 +1143,7 @@ public sealed class SubtitleSearchReply : HttpMessageHandler {
         Get-ChildItem -LiteralPath $directory -Filter 'Search.Once.2024*' | Remove-Item
     }
     Invoke-Value $sources 'Replace' @($first, $files, $cancel) | Out-Null
-    $inventory = New-Value 'Subtitles.Acquisition' @($database, $http, [Threading.Tasks.Task]::CompletedTask, $policy) @{ Work = $work }
+    $inventory = New-Value 'Subtitles.Acquisition' @($database, $http, $policy) @{ Work = $work }
     try {
         $french = [IO.Path]::ChangeExtension($path, '.fr.srt')
         $movieFolder = [IO.Path]::GetDirectoryName($path)
@@ -1154,14 +1154,17 @@ public sealed class SubtitleSearchReply : HttpMessageHandler {
         [IO.File]::WriteAllText((Join-Path $movieFolder 'Other.Movie.de.srt'), 'Unrelated fixture')
         Invoke-Value $inventory 'Initialize' @('en') | Out-Null
         Invoke-Value $inventory 'SetConnected' @($true) | Out-Null
+        # The torrent has just finished, so its folder is scanned once.
+        Sql "INSERT OR IGNORE INTO new_origins VALUES('first');" | Out-Null
         Invoke-Value $inventory 'Reconcile' @() | Out-Null
         $languages = Sql "SELECT group_concat(language,',') FROM (SELECT language FROM subtitle_languages WHERE origin='first' AND file_index=0 ORDER BY language);"
         Require ($languages -eq 'es,fr') 'Folder discovery missed named or generic subtitle languages, or included another movie.'
+        Require ((Sql "SELECT COUNT(*) FROM new_origins WHERE origin='first';") -eq 0) 'A finished torrent kept waiting for its completion search.'
         $matches = Invoke-Value $store 'Search' @($query, $cancel)
         Require (($matches.Entries[0].Subtitles -join ',') -eq 'es,fr') 'Library did not read the discovered languages from SQLite.'
         [IO.File]::WriteAllText([IO.Path]::ChangeExtension($path, '.de.srt'), 'Later fixture')
         Invoke-Value $inventory 'Reconcile' @() | Out-Null
-        Require ((Sql "SELECT COUNT(*) FROM subtitle_languages WHERE origin='first' AND language='de';") -eq 0) 'A normal refresh rescanned an unchanged movie folder.'
+        Require ((Sql "SELECT COUNT(*) FROM subtitle_languages WHERE origin='first' AND language='de';") -eq 0) 'A normal refresh rescanned a movie folder.'
         $nested = Join-Path $subsFolder 'Captions/English'
         [IO.Directory]::CreateDirectory($nested) | Out-Null
         $english = Join-Path $nested '2_English.srt'
@@ -1211,7 +1214,19 @@ public sealed class SubtitleSearchReply : HttpMessageHandler {
         $movedFile = New-Value 'Shared.SourceFile' @(0, $movedPath, $movedPath, [long]100) @{ Complete = $true; Wanted = $true }
         Invoke-Value $sources 'Replace' @($first, (New-Values 'Shared.SourceFile' @($movedFile)), $cancel) | Out-Null
         Invoke-Value $inventory 'Reconcile' @() | Out-Null
-        Require ((Sql "SELECT group_concat(language) FROM subtitle_languages WHERE origin='first';") -eq 'de') 'Moving a movie kept languages from the previous folder.'
+        Require ((Sql "SELECT COUNT(*) FROM subtitle_languages WHERE origin='first';") -eq 0) 'Moving a movie kept languages from the previous folder, or a refresh scanned a folder Library does not display.'
+        # Library displays the moved movie, so its new folder is checked.
+        $displayed = [Collections.Generic.HashSet[long]]::new()
+        $displayed.Add([long](Sql "SELECT entry_id FROM collected_files WHERE origin='first' AND file_index=0;")) | Out-Null
+        Invoke-Value $inventory 'SetDisplayed' (,$displayed) | Out-Null
+        Invoke-Value $inventory 'Reconcile' @() | Out-Null
+        # The check of displayed movies runs on its own task, after the reconciliation.
+        function Wait-Inspection {
+            $inspecting = $inventory.GetType().GetField('_inspecting', $flags).GetValue($inventory)
+            if ($inspecting) { $inspecting.GetAwaiter().GetResult() }
+        }
+        Wait-Inspection
+        Require ((Sql "SELECT group_concat(language) FROM subtitle_languages WHERE origin='first';") -eq 'de') 'A displayed movie was not checked for subtitles at its new folder.'
         Require ([IO.File]::Exists($english)) 'Moving a movie moved or deleted a bundled subtitle.'
         $captions = Join-Path $movedFolder 'Captions/English'
         [IO.Directory]::CreateDirectory($captions) | Out-Null
@@ -1225,7 +1240,8 @@ public sealed class SubtitleSearchReply : HttpMessageHandler {
         Invoke-Value $sources 'Reconcile' @((New-Values 'Shared.Contribution' @($first)), $cancel) | Out-Null
         Invoke-Value $sources 'Replace' @($first, (New-Values 'Shared.SourceFile' @($movedFile)), $cancel) | Out-Null
         Invoke-Value $inventory 'Reconcile' @() | Out-Null
-        Require ((Sql "SELECT COUNT(*) FROM subtitle_outputs WHERE path=`$path AND language='fr';" @{ '$path' = $laterCaption }) -eq 1) 'A changed torrent stamp did not discover a later bundled subtitle.'
+        Wait-Inspection
+        Require ((Sql "SELECT COUNT(*) FROM subtitle_outputs WHERE path=`$path AND language='fr';" @{ '$path' = $laterCaption }) -eq 1) 'A changed torrent stamp did not check the folder of a displayed movie again.'
         $samplePath = Join-Path $movedFolder 'Sample/Movie.sample.mkv'
         $sample = New-Value 'Shared.SourceFile' @(2, $samplePath, $samplePath, [long]100) @{ Complete = $true; Wanted = $true }
         Invoke-Value $sources 'Replace' @($first, (New-Values 'Shared.SourceFile' @($movedFile, $sample)), $cancel) | Out-Null
@@ -1238,7 +1254,7 @@ public sealed class SubtitleSearchReply : HttpMessageHandler {
         Invoke-Value $sources 'Replace' @($first, $files, $cancel) | Out-Null
     }
     finally { $inventory.DisposeAsync().AsTask().GetAwaiter().GetResult() | Out-Null }
-    $subtitles = New-Value 'Subtitles.Acquisition' @($database, $http, [Threading.Tasks.Task]::CompletedTask, $policy) @{ Work = $work }
+    $subtitles = New-Value 'Subtitles.Acquisition' @($database, $http, $policy) @{ Work = $work }
     $caption = [IO.Path]::ChangeExtension($path, '.en.srt')
     [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($caption)) | Out-Null
     [IO.File]::WriteAllText($caption, "1`n00:00:00,000 --> 00:00:01,000`nFixture`n")
@@ -1406,7 +1422,7 @@ INSERT INTO subtitle_output_sources(path,language,origin,file_index,movie_path) 
     $database.DisposeAsync().AsTask().GetAwaiter().GetResult() | Out-Null
     $database = New-Value 'Shared.Storage.Database' @($directory)
     $policy = New-Value 'Shared.Network.RequestPolicy' @($database)
-    $subtitles = New-Value 'Subtitles.Acquisition' @($database, $http, [Threading.Tasks.Task]::CompletedTask, $policy) @{ Work = $work }
+    $subtitles = New-Value 'Subtitles.Acquisition' @($database, $http, $policy) @{ Work = $work }
     Invoke-Value $subtitles 'Initialize' @('en') | Out-Null
     $restoredSupplier = $subtitles.GetType().GetProperty('SupplierId', $flags).GetValue($subtitles)
     $restoredDraft = Invoke-Value $subtitles 'Edit' @($restoredSupplier)
@@ -1474,7 +1490,7 @@ INSERT INTO subtitle_output_sources(path,language,origin,file_index,movie_path) 
     # Closing right after a settings change applies the change instead of
     # cancelling it.
     $policy = New-Value 'Shared.Network.RequestPolicy' @($database)
-    $subtitles = New-Value 'Subtitles.Acquisition' @($database, $http, [Threading.Tasks.Task]::CompletedTask, $policy) @{ Work = $work }
+    $subtitles = New-Value 'Subtitles.Acquisition' @($database, $http, $policy) @{ Work = $work }
     Invoke-Value $subtitles 'Initialize' @('en') | Out-Null
     $enabled = -not $subtitles.GetType().GetProperty('Enabled', $flags).GetValue($subtitles)
     $saving = $subtitles.GetType().GetMethod('SetEnabled', $flags).Invoke($subtitles, @($enabled))
@@ -1484,7 +1500,7 @@ INSERT INTO subtitle_output_sources(path,language,origin,file_index,movie_path) 
     $database.DisposeAsync().AsTask().GetAwaiter().GetResult() | Out-Null
     $database = New-Value 'Shared.Storage.Database' @($directory)
     $policy = New-Value 'Shared.Network.RequestPolicy' @($database)
-    $subtitles = New-Value 'Subtitles.Acquisition' @($database, $http, [Threading.Tasks.Task]::CompletedTask, $policy) @{ Work = $work }
+    $subtitles = New-Value 'Subtitles.Acquisition' @($database, $http, $policy) @{ Work = $work }
     Invoke-Value $subtitles 'Initialize' @('en') | Out-Null
     Require ($subtitles.GetType().GetProperty('Enabled', $flags).GetValue($subtitles) -eq $enabled) 'A subtitle setting changed just before closing was not saved.'
     Write-Output 'PASS: source membership, cached payload, stale replies, deletion recovery, subtitle ownership, one-search alternatives, saved lookup limits, failure exclusion, recursive inventory, local language detection, scan markers, moves, allowance restoration and settings saved at close.'

@@ -253,7 +253,9 @@ internal sealed partial class Acquisition
             {
                 if (!_work.TryCancel(out var signalling))
                     return Stopped;
-                _owner._cancelledScans.UnionWith(Scans.Where(scan => !scan.Scanned));
+                _owner._skippedScans.UnionWith(
+                    Scans.Where(scan => !scan.Scanned).Select(scan => scan.Key)
+                );
                 Stopped = _owner.StopWork(this, signalling);
                 return Stopped;
             }

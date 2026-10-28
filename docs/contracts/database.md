@@ -71,7 +71,7 @@ seconds. No performance claims are implied without measurement.
 | Tables | Reason to persist and lifetime |
 | --- | --- |
 | `contributions`, `source_files`, `locations` | Last accepted file lists and one identity per shared location let Library reopen without collecting every torrent again. A contribution records its accepted name and stamp, including a successfully empty list. Confirmed withdrawal prunes it. |
-| `source_state`, `known_torrents` | Distinguish first connection from a genuinely empty collection and remember which additions are already known for automatic subtitle eligibility. Confirmed withdrawal removes an origin. They contain no saved file catalogue. |
+| `source_state`, `known_torrents` | Distinguish first connection from a genuinely empty collection and remember which additions already had their [completion search](subtitles.md#outcome) decided, so each gets one. Only that decision adds an origin, apart from the first connection, which takes every present origin as known. Confirmed withdrawal removes an origin. They contain no saved file catalogue. |
 | `identifications` | Accepted provider matches and explicit user decisions, including an explicit clear. They belong to source-file identity, survive moves, and end with confirmed withdrawal. Ordinary unsuccessful attempts are not decisions. |
 | `video_information`, `video_references` | Parsed metadata used by current identifications and links to its provider responses. Unreferenced metadata is pruned; deleting it cascades its response links. |
 | `title_facts` | Ratings per site, directors, age rating and box office, shared by every provider's metadata that names the same IMDb ID. A row no metadata names is pruned. |
@@ -86,7 +86,7 @@ seconds. No performance claims are implied without measurement.
 | `subtitle_output_sources` | Associations of actual subtitle outputs with source files and the movie location they served. A failed move retains old ownership without claiming a subtitle at the new location. Deleting an output cascades its associations. |
 | `subtitle_jobs` | Accepted work, evidence stage, retry, outcome and match history for an output/language. An extra subtitle's job holds its candidate reference, prefixed with the supplier as `subtitle_outputs.reference` is, so it downloads without searching again; the reference is valid only at the supplier that returned it. Cancellation stops work without erasing its history. Jobs and outputs are removed when no accepted source remains. |
 | `subtitle_job_sources` | Accepted jobs' source files, independent of output ownership. Jobs and search history follow the movie even when a caption is missing, found-file discovery replaces its associations, or a created caption cannot move. Deleting a job cascades its associations. |
-| `subtitle_scans` | Completed one-time discovery stamps per source file and path. Explicit rescan bypasses these; ordinary refresh does not repeatedly walk folders. |
+| `subtitle_scans` | Completed discovery stamps per source file and path, so an interrupted completion scan does not repeat the folders it finished and a displayed movie is inspected again only after its path or stamp changes. A movie whose scan was stopped or whose folder could not be read gets no row; the session remembers it in memory. Explicit rescan bypasses these. |
 
 File identity uses the engine's addition identity and file index. Paths coalesce
 current shared locations but do not resurrect removed identities. Membership
@@ -102,7 +102,7 @@ never recreates an association after its last source leaves.
 | --- | --- |
 | `file_reads` | Current engine summary, file-list confirmation and scheduling. A reconnect clears confirmation; a command only schedules every list for another read while confirmed lists stay in use. Process-relative retry times never survive the connection. Every connection still reads every torrent's files in the background, because the summary stamp (save path, completion, settlement, size) cannot see a renamed file or one file finishing inside an incomplete torrent. |
 | `present`, `received` | Transaction scratch sets for replacing complete origin and file lists without treating partial reads as deletion. |
-| `new_origins` | Current-session subtitle eligibility, derived while reconciling durable known-origin history. |
+| `new_origins` | Present torrents missing from `known_torrents`. Source reconciliation adds them; the subtitle completion decision moves each one to `known_torrents`. |
 | `collected_files`, `pending_origins`, `current_files` | Shared membership and file-read readiness rules, including path settlement. |
 | `video_attempts`, `fact_attempts` | In-flight work and session failures/misses. A blocked video attempt names its required request; batch projection joins the current RequestPolicy hold instead of copying it. Reopening clears attempts; durable remote history belongs to RequestPolicy. Withdrawn locations are pruned. |
 | `subtitle_languages` | Languages actually associated with a movie's current location, derived from ownership and current source facts. |
