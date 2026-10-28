@@ -118,8 +118,9 @@ do not define this product.
   15 W laptop, which agents share, so a task compiles only when nothing else
   can answer its remaining questions, and then once for all of them.
 - **Owner ruling: finish the requested work, including its validation.** An
-  implementation, fix or review authorizes the focused tests and application
-  inspection its open questions need. Validation is complete when every open
+  implementation or fix authorizes the focused tests and application
+  inspection its open questions need; a review reads code and names a question
+  reading cannot settle as unverified. Validation is complete when every open
   question has an answer; when source review leaves none, source review
   completes it. Use shared build outputs and choose checks under
   [testing](docs/agents/testing.md), including its separately restricted checks.

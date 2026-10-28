@@ -38,7 +38,7 @@ These are routing preferences for the model family the host actually offers.
 | Economy: narrow passes | Sonnet | Terra |
 | Mechanical checks only | | Luna6 |
 
-Escalate to Fable or Astra only for a consequential question the evidence cannot settle, as SKILL.md's Escalation section says. Luna6 is far weaker than Terra: give it preparation, inventory, and narrow checks that a stronger reviewer verifies, never a whole pass.
+Apart from the `plan deep` challenger, use Fable or Astra only for a consequential question the evidence cannot settle, as SKILL.md's Escalation section says. The challenger uses the top tier because a plan's architecture is cheapest to correct before code exists. Luna6 is far weaker than Terra: give it preparation, inventory, and narrow checks that a stronger reviewer verifies, never a whole pass.
 
 ## Code review routing (`deep`)
 
