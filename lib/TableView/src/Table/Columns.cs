@@ -168,8 +168,9 @@ public sealed partial class Table
     /// <remarks>
     /// One factor keeps the fitted proportions, so the columns a fit found widest, which are the
     /// most likely to hold longer values in rows not yet shown, keep the most room. A column the
-    /// factor would take below its fill minimum stays there and the others share what is left;
-    /// when even the minimums do not fit, the columns run past the edge as section 8 allows.
+    /// factor would take below its fill minimum or above its fill maximum stays there and the
+    /// others share what is left; when even the minimums do not fit, the columns run past the edge
+    /// as section 8 allows.
     /// </remarks>
     private bool ScaleToWidth(List<EffectiveColumn> columns, double width)
     {
@@ -185,11 +186,14 @@ public sealed partial class Table
         while (scaled.Count > 0)
         {
             double factor = Math.Max(room, 0) / scaled.Sum(column => column.Width);
-            EffectiveColumn[] floored = scaled
-                .Where(column => column.Width * factor < FillMinimum(column))
+            EffectiveColumn[] held = scaled
+                .Where(column =>
+                    column.Width * factor < FillMinimum(column)
+                    || column.Width * factor > FillMaximum(column)
+                )
                 .ToArray();
 
-            if (floored.Length == 0)
+            if (held.Length == 0)
             {
                 foreach (EffectiveColumn column in scaled)
                 {
@@ -199,11 +203,15 @@ public sealed partial class Table
                 break;
             }
 
-            foreach (EffectiveColumn column in floored)
+            foreach (EffectiveColumn column in held)
             {
-                double minimum = FillMinimum(column);
-                changed |= SetColumnWidth(column, minimum, publish: false);
-                room -= minimum;
+                double bound = Math.Clamp(
+                    column.Width * factor,
+                    FillMinimum(column),
+                    FillMaximum(column)
+                );
+                changed |= SetColumnWidth(column, bound, publish: false);
+                room -= bound;
                 scaled.Remove(column);
             }
         }
@@ -213,6 +221,11 @@ public sealed partial class Table
     // Scaling starts from fitted widths, so a protected column keeps that width as its floor.
     private static double FillMinimum(EffectiveColumn column) =>
         column.Column.CanShrink ? column.Column.MinWidth : column.Width;
+
+    // Scaling starts from fitted widths, so a column that cannot grow keeps that width as its
+    // ceiling.
+    private static double FillMaximum(EffectiveColumn column) =>
+        column.Column.CanGrow ? double.PositiveInfinity : column.Width;
 
     /// <returns>False when no width changed.</returns>
     private bool FitVisible(bool publish = true, bool reuse = false)

@@ -558,6 +558,30 @@ public class ColumnFitTests
             );
         });
 
+    [TestMethod]
+    public Task FillingKeepsAColumnThatCannotGrowAtItsFit() =>
+        TestHost.RunAsync(async () =>
+        {
+            Column value = Column("value", 300);
+            value.CanGrow = false;
+            Table table = await LoadAsync(Rows(20, 100), Column("a", 300), value);
+
+            table.FillWidth();
+
+            double edge = Descendants<Header.Strip>(table).First().ActualWidth;
+            Assert.AreEqual(
+                100 + Inset(table),
+                TableHarness.EffectiveWidth(table, "value"),
+                0.001,
+                "the value keeps its fitted width"
+            );
+            Assert.AreEqual(
+                edge - 100 - Inset(table),
+                TableHarness.EffectiveWidth(table, "a"),
+                0.001
+            );
+        });
+
     /// <summary>
     /// A shortfall the empty columns can absorb leaves the columns with content at their fit, and
     /// the empty columns give up only the missing width rather than collapsing to MinWidth.

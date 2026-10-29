@@ -102,6 +102,11 @@ public sealed partial class Column : DependencyObject
     /// </summary>
     public bool CanShrink { get; set; } = true;
 
+    /// <summary>
+    /// Whether fills may widen the column past its fitted width. Direct resizing has no maximum.
+    /// </summary>
+    public bool CanGrow { get; set; } = true;
+
     // No per-column icon here on purpose. The one place it would be drawn is the generated menu's
     // column list, and that list is a set of on/off states where the checkmark is the glyph the eye
     // reads. A second glyph beside it competes with the check, and a host that gave icons to some

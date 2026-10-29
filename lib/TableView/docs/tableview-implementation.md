@@ -101,6 +101,8 @@ The first change discards the fitted widths; following changes reuse them and
 the empty columns that measurement found, restarting the timer each time.
 The scale uses one fill minimum for both empty-column slack and width clamping:
 the declared minimum, or the unscaled fitted width when `CanShrink` is false.
+Width clamping also uses a fill maximum: the unscaled fitted width when `CanGrow`
+is false, and none otherwise.
 When the size settles, the timer performs a fresh fit at the final bounds. Explicit
 fit commands still measure immediately. This applies to every source of width
 changes without window or host gesture tracking. It avoids repeated unbounded
