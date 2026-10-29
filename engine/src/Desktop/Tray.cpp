@@ -348,7 +348,7 @@ std::wstring Tray::Counts() const
 
 bool Tray::ShowsError() const
 {
-    return activity_.toasts.contains(ToastSwitch::Problems) && activity_.errorCount;
+    return activity_.toasts.contains(Setting::NotifyProblems) && activity_.errorCount;
 }
 
 std::wstring Tray::Tooltip() const

@@ -5,7 +5,9 @@
 #include <filesystem>
 #include <functional>
 #include <optional>
+#include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 #include <windows.h>
 
@@ -71,7 +73,7 @@ public:
         std::vector<Action> actions;
         // The More menu, under its title and a separator. With any items, the
         // More button that opens it shows in the header while the pointer is
-        // over the popup.
+        // over the popup or the popup has keyboard focus.
         std::wstring menuTitle;
         std::vector<MenuItem> menu;
         // Shown beside the product name in place of the product icon.
@@ -83,11 +85,15 @@ public:
         ToastStay stay = ToastStay::Timed;
     };
 
-    // A choice the person must make before the engine continues. A prompt
-    // never closes by itself, and Escape, Alt+F4 and its close button cancel
-    // it.
     struct Prompt
     {
+        Prompt(std::wstring title, std::wstring body, Action answer)
+            : title(std::move(title)), body(std::move(body)), answer(std::move(answer))
+        {
+            if (!this->answer.run)
+                throw std::invalid_argument("A prompt needs an answer action.");
+        }
+
         std::wstring title;
         std::wstring body;
         std::optional<Location> location;
@@ -113,13 +119,14 @@ public:
     // Updates a shown toast, its buttons included, without another
     // announcement or lifetime restart.
     void Update(Content const& toast);
-    // The first Ask shows the prompt, requests the foreground and focuses the
-    // answer when it is enabled. While the prompt is open, asking again
-    // changes its text and buttons in place, without requesting the
-    // foreground. The focused button keeps focus while it stays enabled.
+    // A prompt never closes by itself; Escape, Alt+F4 and Close cancel it.
+    // The first Ask requests the foreground and focuses the answer when it
+    // is enabled. Asking again changes the open prompt's text and buttons
+    // in place, without requesting the foreground. The focused button keeps
+    // focus while it stays enabled.
     // Without a focused button, the answer takes the focus as soon as it is
     // enabled, so the focus ring shows where Enter goes.
-    void Ask(Prompt prompt);
+    void Ask(Prompt prompt, std::vector<MenuItem> menu = {});
     void Close();
     void SetTheme(Theme theme);
     bool IsOpen() const { return window_ != nullptr; }
@@ -174,7 +181,7 @@ private:
     std::size_t Answer() const;
     // Shows the current content, creating the window when there is none.
     void Present();
-    void OpenMenu();
+    void OpenMenu(bool keyboard = false);
     void PaintMenu(HWND window);
     // Where the first menu item begins, below the title and separator.
     int MenuItemsTop(UINT dpi) const;

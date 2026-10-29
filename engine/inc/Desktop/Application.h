@@ -35,7 +35,6 @@ private:
     LRESULT Handle(UINT message, WPARAM first, LPARAM second);
     // Retries every torrent that waits for the person's Retry.
     void RetryAll();
-    void TurnOff(std::vector<ToastSwitch> toasts);
     void OnTimer();
     void Dispatch(std::shared_ptr<Pipe::Connection> client, Json request, Reply reply);
     void Receive(std::shared_ptr<Pipe::Connection> const& client, Json const& request, Reply const& reply);

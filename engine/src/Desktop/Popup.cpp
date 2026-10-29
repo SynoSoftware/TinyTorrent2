@@ -727,7 +727,7 @@ Popup::Action Popup::Dismiss() const
         .automationId = L"Dismiss"};
 }
 
-void Popup::Ask(Prompt prompt)
+void Popup::Ask(Prompt prompt, std::vector<MenuItem> menu)
 {
     // A toast's window has other styles, so it closes before the prompt
     // replaces the content. Its More menu closes with it and reads the content
@@ -737,8 +737,14 @@ void Popup::Ask(Prompt prompt)
     {
         Close();
     }
+    else if (menu_)
+    {
+        DestroyWindow(menu_);
+    }
+    auto menuTitle = prompt.title;
     Content content{.title = std::move(prompt.title), .body = std::move(prompt.body),
-        .location = std::move(prompt.location), .stay = ToastStay::Interactive};
+        .location = std::move(prompt.location), .menuTitle = std::move(menuTitle),
+        .menu = std::move(menu), .stay = ToastStay::Interactive};
     content.actions.push_back(std::move(prompt.answer));
     for (auto& action : prompt.others)
     {
@@ -1069,9 +1075,8 @@ void Popup::Paint(HWND window)
         }
         return hover_ == target ? hoverOpacity : rest;
     };
-    // As in Windows' own notifications, More shows only while the pointer is
-    // over the popup, so the message is all the person reads.
-    auto showsMore = !content_.menu.empty() && (hover_ || menu_);
+    // Keyboard users see More while the popup has focus, without a pointer.
+    auto showsMore = !content_.menu.empty() && (hover_ || menu_ || GetFocus() == window_);
     RECT name{header_.left + size + Scale(iconGap, dpi), header_.top, showsMore ? more_.left : header_.right,
         header_.bottom};
     canvas.Text(productName, name, labelFormat, caption_, foreground);
@@ -1538,6 +1543,11 @@ LRESULT Popup::Handle(HWND window, UINT message, WPARAM first, LPARAM second)
         }
         break;
     case WM_CONTEXTMENU:
+        if (GET_X_LPARAM(second) == -1 && GET_Y_LPARAM(second) == -1 && !content_.menu.empty())
+        {
+            OpenMenu(true);
+            return 0;
+        }
         if (content_.location)
         {
             POINT point{GET_X_LPARAM(second), GET_Y_LPARAM(second)};
@@ -1713,6 +1723,8 @@ bool Popup::HandleKey(UINT message, WPARAM key, LPARAM flags)
 {
     if (message == WM_KEYUP)
     {
+        if (key == VK_F10 && !content_.menu.empty())
+            return true;
         // Space acts on its release, as on Windows' buttons.
         if (key != VK_SPACE || !focused_ || pressed_ != Target{PopupPart::Action, *focused_})
         {
@@ -1731,6 +1743,11 @@ bool Popup::HandleKey(UINT message, WPARAM key, LPARAM flags)
     }
     switch (key)
     {
+    case VK_F10:
+        if (GetKeyState(VK_SHIFT) < 0 || content_.menu.empty())
+            return false;
+        OpenMenu(true);
+        return true;
     case VK_ESCAPE:
         Close();
         return true;
@@ -1776,7 +1793,7 @@ bool Popup::HandleKey(UINT message, WPARAM key, LPARAM flags)
 // The menu opens above the More button, aligned to its right edge, as
 // Windows' own notification menu does, or below it when the work area leaves
 // no room above. It takes the focus, so Escape and a click elsewhere close it.
-void Popup::OpenMenu()
+void Popup::OpenMenu(bool keyboard)
 {
     auto dpi = GetDpiForWindow(window_);
     auto device = GetDC(window_);
@@ -1827,6 +1844,8 @@ void Popup::OpenMenu()
     SetFocus(menu_);
     NotifyWinEvent(EVENT_SYSTEM_MENUPOPUPSTART, menu_, OBJID_CLIENT, CHILDID_SELF);
     NotifyWinEvent(EVENT_OBJECT_FOCUS, menu_, OBJID_CLIENT, CHILDID_SELF);
+    if (keyboard)
+        HoverMenu(0);
     InvalidateRect(window_, nullptr, FALSE);
 }
 
@@ -1968,10 +1987,17 @@ LRESULT Popup::HandleMenu(HWND window, UINT message, WPARAM first, LPARAM second
         return 0;
     case WM_KEYDOWN:
     {
+        if (first == VK_F10 && (second & keyHeld))
+            return 0;
         auto count = content_.menu.size();
-        if (first == VK_ESCAPE)
+        if (first == VK_ESCAPE || first == VK_F10)
         {
             DestroyWindow(window);
+            if (Interactive())
+            {
+                SetForegroundWindow(window_);
+                SetFocus(window_);
+            }
         }
         else if (first == VK_DOWN)
         {
@@ -1987,6 +2013,10 @@ LRESULT Popup::HandleMenu(HWND window, UINT message, WPARAM first, LPARAM second
         }
         return 0;
     }
+    case WM_KEYUP:
+        if (first == VK_F10)
+            return 0;
+        break;
     case WM_ACTIVATE:
         // A click elsewhere closes the menu, as it closes Windows' own.
         if (LOWORD(first) == WA_INACTIVE)

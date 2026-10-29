@@ -146,17 +146,16 @@ Application::Application(std::filesystem::path directory, std::wstring sid, bool
             .pause = [this] { Pause(); },
             .exit = [this] { Exit(); },
             .refresh = [this] { Refresh(); }});
-    toasts_ = std::make_unique<Toasts>(strings_, headless_, errorIcon_.get(), Toasts::Commands{
+    auto data = directory.wstring();
+    engine_ = std::make_unique<Engine>(std::move(directory),
+        [this] { PostMessageW(owner_.get(), wake, 0, 0); });
+    toasts_ = std::make_unique<Toasts>(*engine_, strings_, headless_, errorIcon_.get(), Toasts::Commands{
         .open = [this] { window_->Open(); },
         .openTorrent = [this](std::string torrentId) { window_->OpenTorrent(std::move(torrentId)); },
         .retryAll = [this] { RetryAll(); },
         .openSettings = [this](std::string card) { window_->OpenSettings(std::move(card)); },
         .folder = [this](std::string const& torrentId) { return engine_->Folder(torrentId); },
-        .turnOff = [this](std::vector<ToastSwitch> toasts) { TurnOff(std::move(toasts)); },
         .window = [this](Toast const& toast) { return window_->Notify(toast); }});
-    auto data = directory.wstring();
-    engine_ = std::make_unique<Engine>(std::move(directory),
-        [this] { PostMessageW(owner_.get(), wake, 0, 0); });
     window_ = std::make_unique<Window>(strings_, *engine_, *toasts_, headless_, Window::Commands{
         .shutdown = [this] { Shutdown(); },
         .cancelExit = [this] { CancelExit(); },
@@ -286,18 +285,6 @@ void Application::RetryAll()
         if (outcome.error)
         {
             toasts_->Report({.code = "retry", .detail = Wide(outcome.detail), .interactive = true});
-        }
-        Refresh();
-    });
-}
-
-void Application::TurnOff(std::vector<ToastSwitch> toasts)
-{
-    engine_->TurnOff(toasts, [this](Outcome outcome)
-    {
-        if (outcome.error)
-        {
-            toasts_->Report({.code = "notification", .detail = Wide(outcome.detail), .interactive = true});
         }
         Refresh();
     });
@@ -490,9 +477,9 @@ bool Application::ConfirmExit()
     bool confirmed = false;
     exit_ = ExitPhase::Confirming;
     // Lucide's power glyph, as the tray's Exit shows.
-    toasts_->Ask({.title = strings_.Text("exit", "title"), .body = strings_.Text("exit", "active"),
-        .answer = {.glyph = L'\uE140', .label = strings_.Text("tray", "exit"),
-            .run = [&confirmed] { confirmed = true; }, .automationId = L"Exit"}});
+    toasts_->Ask({strings_.Text("exit", "title"), strings_.Text("exit", "active"),
+        {.glyph = L'\uE140', .label = strings_.Text("tray", "exit"),
+            .run = [&confirmed] { confirmed = true; }, .automationId = L"Exit"}}, Setting::ConfirmExit);
     MSG message{};
     while (toasts_->IsOpen() && exit_ == ExitPhase::Confirming && GetMessageW(&message, nullptr, 0, 0) > 0)
     {
@@ -795,7 +782,7 @@ void Application::FinishSource(Outcome const& outcome, Added const& added)
 // broken.
 void Application::CheckPrograms()
 {
-    if (!activity_.toasts.contains(ToastSwitch::Problems))
+    if (!activity_.toasts.contains(Setting::NotifyProblems))
     {
         return;
     }

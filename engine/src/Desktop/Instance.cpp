@@ -211,9 +211,10 @@ void Conflict::Ask()
     // Both answers leave the prompt open until the other engine has ended.
     auto force = Toasts::ForceExit(strings_, [this] { Force(); });
     force.closes = false;
-    popup_.Ask({.title = strings_.Text("conflict", "title"), .body = strings_.Text("conflict", reason),
-        .location = Popup::Location{strings_.Text("conflict", "location"), *other_.engine},
-        .answer = std::move(exit), .others = {std::move(force)}});
+    Popup::Prompt prompt(strings_.Text("conflict", "title"), strings_.Text("conflict", reason), std::move(exit));
+    prompt.location = Popup::Location{strings_.Text("conflict", "location"), *other_.engine};
+    prompt.others = {std::move(force)};
+    popup_.Ask(std::move(prompt));
 }
 
 // The other engine may take seconds to answer, so the request runs on its own

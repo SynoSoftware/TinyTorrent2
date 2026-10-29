@@ -125,7 +125,7 @@ struct Activity
     bool seeding = false;
     bool hasIncoming = false;
     // The notification switches that are on.
-    std::set<ToastSwitch> toasts;
+    std::set<Setting> toasts;
     bool preventsSleep = true;
     bool preventsSleepSeeding = false;
     std::vector<std::string> reportedPrograms;
@@ -154,8 +154,12 @@ public:
     // process at once. A second call while saving changes nothing.
     void Shutdown(std::function<void(ShutdownEnd end)> report);
     void PauseSession(bool paused, std::function<void(Outcome)> completion);
-    // Saves the switches that turn `toasts` off, in one settings change.
-    void TurnOff(std::vector<ToastSwitch> const& toasts, std::function<void(Outcome)> completion);
+    bool IsOn(Setting setting) const;
+    static std::optional<std::string_view> SwitchWord(Setting setting);
+    static std::optional<Setting> FindSwitch(std::string_view word);
+    static std::vector<Setting> NotificationSettings();
+    // Saves the selected boolean settings as false in one change.
+    void TurnOff(std::vector<Setting> const& switches, std::function<void(Outcome)> completion);
     // Retries every torrent that waits for the person's Retry.
     void RetryAll(std::function<void(Outcome)> completion);
     // Saves the missing programs that torrent handlers start, once reported.
@@ -202,14 +206,6 @@ std::optional<Value> Parse(std::pair<std::string_view, Value> const (&names)[Siz
     }
     return std::nullopt;
 }
-
-// The protocol word of each notification switch. It lists every switch, so
-// Turn off all notifications turns off each one in it.
-inline constexpr std::pair<std::string_view, ToastSwitch> toastSwitches[] = {
-    {"finished", ToastSwitch::Finished},
-    {"added", ToastSwitch::Added},
-    {"problems", ToastSwitch::Problems},
-    {"background", ToastSwitch::Background}};
 
 // Reads a value from settings.json, or returns `fallback` when the key is
 // missing or holds a value of another type, so a damaged file still loads with
@@ -268,8 +264,6 @@ std::wstring Executable();
 // nothing when Windows does not reveal it.
 std::optional<std::filesystem::path> ProcessImage(void* process);
 char const* ToString(ToastKind kind);
-std::string ToString(ToastSwitch toasts);
-std::vector<ToastSwitch> AllToastSwitches();
 char const* ToString(ErrorCode code);
 Json Success(Json data = Json::object());
 Json Failure(ErrorCode code, std::string detail = {});

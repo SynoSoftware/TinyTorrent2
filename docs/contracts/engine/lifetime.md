@@ -334,6 +334,8 @@ confirmation is on by default and belongs to the desktop host, so tray Exit and
 window Exit use one check even when WinUI is closed. While the window is open,
 the host asks it to show the prompt in the app's dialog style; the host asks in
 its popup when the window is closed or cannot show a dialog at that moment.
+The popup's More menu offers Exit and don't ask again, following the shared
+[prompt opt-out behavior](notifications.md).
 Windows shutdown and headless operation bypass it. After confirmation, engine Exit closes
 the window by the same rules as Close: a prompt appears only for actual unfinished
 input, and Cancel in that prompt cancels Exit.

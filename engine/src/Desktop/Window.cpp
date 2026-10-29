@@ -332,6 +332,7 @@ bool Window::Notify(Toast const& toast)
         return false;
     }
     auto toasts = Switch(toast.kind);
+    auto word = toasts ? Engine::SwitchWord(*toasts) : std::nullopt;
     Json condition = nullptr;
     if (toast.condition)
     {
@@ -342,7 +343,7 @@ bool Window::Notify(Toast const& toast)
     client_->Send(Json{{"type", "toast"}, {"kind", ToString(toast.kind)},
         {"torrent_id", toast.torrentId}, {"name", toast.name}, {"detail", toast.detail}, {"code", toast.code},
         {"folder", toast.folder}, {"count", toast.count}, {"condition", std::move(condition)},
-        {"switch", toasts ? Json(ToString(*toasts)) : Json(nullptr)}});
+        {"switch", word ? Json(std::string(*word)) : Json(nullptr)}});
     return true;
 }
 

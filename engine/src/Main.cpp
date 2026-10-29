@@ -175,10 +175,9 @@ void ShowRefusal(tt::Strings const& strings, tt::desktop::Refusal refusal)
 {
     using tt::desktop::Toasts;
     tt::OwnedIcon icon(tt::desktop::ErrorIcon());
-    // Without commands, selecting the message does nothing, so it never
-    // starts the launch again unasked. The refusal answers the person's
-    // launch, so it takes the focus.
-    Toasts toasts(strings, false, icon.get(), {});
+    // Only Retry starts another launch; selecting the message does nothing.
+    // The refusal answers the person's launch, so it takes the focus.
+    tt::desktop::Popup popup(strings);
     Toasts::Failure failure{.code = std::move(refusal.key), .detail = std::move(refusal.detail),
         .interactive = true};
     if (refusal.retry)
@@ -203,9 +202,9 @@ void ShowRefusal(tt::Strings const& strings, tt::desktop::Refusal refusal)
         failure.actions.push_back(
             Toasts::OpenFolder(strings, *refusal.folder, strings.Text("notification", "open_folder_tip")));
     }
-    toasts.ShowFailure(std::move(failure));
+    popup.Show(failure.Content(strings, icon.get()));
     MSG message{};
-    while (toasts.IsOpen() && GetMessageW(&message, nullptr, 0, 0) > 0)
+    while (popup.IsOpen() && GetMessageW(&message, nullptr, 0, 0) > 0)
     {
         TranslateMessage(&message);
         DispatchMessageW(&message);

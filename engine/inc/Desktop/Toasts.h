@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <functional>
 #include <map>
+#include <memory>
 #include <optional>
 
 namespace tt::desktop
@@ -14,7 +15,7 @@ namespace tt::desktop
 // they do not raise the window.
 bool UsesWindow(ToastKind kind);
 // The Settings switch that turns off toasts of `kind`, wherever they show.
-std::optional<ToastSwitch> Switch(ToastKind kind);
+std::optional<Setting> Switch(ToastKind kind);
 // The product icon with Windows' error mark, which the tray and the popups
 // show for problems. The caller destroys it.
 HICON ErrorIcon();
@@ -35,7 +36,6 @@ public:
         std::function<void(std::string card)> openSettings;
         // The folder that holds a torrent's files; empty when it has none.
         std::function<std::string(std::string const& torrentId)> folder;
-        std::function<void(std::vector<ToastSwitch> toasts)> turnOff;
         // Shows a toast in the product window; false when none is connected.
         std::function<bool(Toast const& toast)> window;
     };
@@ -62,10 +62,12 @@ public:
         // window cannot open, such as during the final save, leaves this off,
         // so selecting its message does nothing.
         bool opens = true;
+        // Startup failures use the same content before an engine exists.
+        Popup::Content Content(Strings const& strings, HICON errorIcon) const;
     };
 
     // The caller keeps `errorIcon`, which marks problems and failures, alive.
-    Toasts(Strings const& strings, bool headless, HICON errorIcon, Commands commands);
+    Toasts(Engine& engine, Strings const& strings, bool headless, HICON errorIcon, Commands commands);
     Toasts(Toasts const&) = delete;
     Toasts& operator=(Toasts const&) = delete;
     // Takes the notification switches and the theme.
@@ -89,8 +91,10 @@ public:
     void ShowFailure(Failure failure);
     // Replaces the shown popup with a prompt. A failure it shows and later
     // toasts wait behind the prompt.
-    void Ask(Popup::Prompt prompt);
-    bool IsOpen() const { return popup_.IsOpen(); }
+    // An off setting gives the enabled answer without showing a prompt.
+    // Its opt-out menu saves the setting before giving the answer.
+    void Ask(Popup::Prompt prompt, std::optional<Setting> setting = {});
+    bool IsOpen() const { return popup_.IsOpen() || (answering_ && answering_->pending); }
     // The buttons that failures and prompts offer, so each looks and reads the
     // same wherever it shows.
     static Popup::Action Retry(Strings const& strings, std::wstring tooltip, std::function<void()> run);
@@ -101,6 +105,11 @@ public:
     void ShowSample();
 #endif
 private:
+    struct Answer
+    {
+        Popup::Action action;
+        bool pending = true;
+    };
     // The toasts that wait to share the next popup.
     struct Batch
     {
@@ -109,15 +118,18 @@ private:
         ULONGLONG due;
     };
     void ShowBackground();
-    // Offers the More menu when there is a switch that turns `toasts` off.
-    void Show(Popup::Content content, std::optional<ToastSwitch> toasts);
+    void Show(Popup::Content content, std::optional<Setting> setting);
+    void SetMenu(Popup::Content& content, std::optional<Setting> setting);
+    Popup::MenuItem OptOut(Setting setting, std::wstring label, std::shared_ptr<Answer> answer = {});
+    void TurnOff(std::vector<Setting> switches, std::function<void(bool saved)> completion = {});
     Popup::Content Message(Toast const& toast) const;
     Popup::Content Problems(Toast const& first, unsigned count) const;
     // The code's sentence. A code without one gets the generic sentence,
     // unless `explained`, because a detail follows that says what failed.
-    std::wstring ErrorText(std::string const& code, bool explained = false) const;
+    static std::wstring ErrorText(Strings const& strings, std::string const& code, bool explained = false);
     // What selecting the message of a popup that shows `toast` does.
     std::function<void()> Selection(Toast const& toast) const;
+    Engine& engine_;
     Strings const& strings_;
     bool headless_;
     HICON errorIcon_;
@@ -129,6 +141,8 @@ private:
     // The failure that the open popup shows; none while it shows a toast.
     std::optional<Failure> shownFailure_;
     std::optional<std::string> shownCondition_;
+    // Keeps other toasts behind the prompt until its caller consumes the answer.
+    std::shared_ptr<Answer> answering_;
     Popup popup_;
 };
 }

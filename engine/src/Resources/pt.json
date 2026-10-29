@@ -74,6 +74,7 @@
     "close": "Fechar",
     "dismiss": "Ignorar",
     "more": "Mais",
+    "remember_answer": "{0} e não perguntar novamente",
     "open_folder_tip": "Abrir a pasta dos arquivos do programa TinyTorrent",
     "force_exit": "Forçar saída",
     "force_exit_tip": "Sair agora sem salvar as alterações mais recentes",
@@ -145,7 +146,7 @@
     "save": "O TinyTorrent ainda não conseguiu salvar. Ele continua tentando e sai quando o salvamento der certo.",
     "pause": "Não foi possível salvar a configuração de pausa das transferências.",
     "retry": "Não foi possível tentar os torrents novamente.",
-    "notification": "Não foi possível salvar a configuração de notificações.",
+    "setting": "Não foi possível salvar a configuração.",
     "window_open": "A janela do TinyTorrent ainda está aberta.\nFeche-a e escolha Tentar novamente.",
     "unresponsive": "A janela não respondeu ao comando Sair. Nada foi descartado. Tente sair novamente quando a janela responder."
   }

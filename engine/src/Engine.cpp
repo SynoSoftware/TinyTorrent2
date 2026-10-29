@@ -163,26 +163,35 @@ char const* ToString(ToastKind kind)
     return "";
 }
 
-std::string ToString(ToastSwitch toasts)
+std::optional<std::string_view> Engine::SwitchWord(Setting setting)
 {
-    for (auto const& [name, value] : toastSwitches)
-    {
-        if (value == toasts)
-        {
-            return std::string(name);
-        }
-    }
-    return {};
+    return State::Settings::SwitchFor(setting).word;
 }
 
-std::vector<ToastSwitch> AllToastSwitches()
+std::optional<Setting> Engine::FindSwitch(std::string_view word)
 {
-    std::vector<ToastSwitch> toasts;
-    for (auto const& [name, value] : toastSwitches)
+    for (auto const& entry : State::Settings::Switches())
     {
-        toasts.push_back(value);
+        if (entry.word == word)
+            return entry.setting;
     }
-    return toasts;
+    return std::nullopt;
+}
+
+bool Engine::IsOn(Setting setting) const
+{
+    return state_->settings.*State::Settings::SwitchFor(setting).field;
+}
+
+std::vector<Setting> Engine::NotificationSettings()
+{
+    std::vector<Setting> settings;
+    for (auto const& entry : State::Settings::Switches())
+    {
+        if (entry.word)
+            settings.push_back(entry.setting);
+    }
+    return settings;
 }
 
 
@@ -212,14 +221,14 @@ void Engine::PauseSession(bool paused, std::function<void(Outcome)> completion)
     }
     state_->PauseSession(paused, std::move(completion));
 }
-void Engine::TurnOff(std::vector<ToastSwitch> const& toasts, std::function<void(Outcome)> completion)
+void Engine::TurnOff(std::vector<Setting> const& switches, std::function<void(Outcome)> completion)
 {
     if (auto refusal = state_->Refusal())
     {
         completion({*refusal});
         return;
     }
-    state_->TurnOff(toasts, std::move(completion));
+    state_->TurnOff(switches, std::move(completion));
 }
 void Engine::RetryAll(std::function<void(Outcome)> completion)
 {

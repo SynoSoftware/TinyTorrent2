@@ -22,6 +22,7 @@
 #include <mutex>
 #include <optional>
 #include <set>
+#include <span>
 #include <stop_token>
 #include <string>
 #include <variant>
@@ -274,8 +275,15 @@ public:
         // The mode's name in settings.json, the settings command and the snapshot.
         static char const* Name(LimitMode mode);
         static std::optional<LimitMode> Named(Json const& value);
-        // The setting that holds each notification switch.
-        static auto Switch(ToastSwitch toast) -> bool Settings::*;
+        struct Switch
+        {
+            Setting setting;
+            char const* name;
+            bool Settings::* field;
+            std::optional<std::string_view> word;
+        };
+        static std::span<Switch const> Switches();
+        static Switch const& SwitchFor(Setting setting);
     private:
         // Visits each setting that settings.json, the settings reply and the
         // settings command share, with its key and the values it accepts.
@@ -1089,9 +1097,7 @@ public:
     void Configure(Json const& choices, std::function<void(Outcome)> completion);
     // Saves every setting at its default, as a new installation starts.
     void ResetSettings(std::function<void(Outcome)> completion);
-    // Saves each switch in `toasts` as off, for the popup's and the window's
-    // More menus alike.
-    void TurnOff(std::vector<ToastSwitch> const& toasts, std::function<void(Outcome)> completion);
+    void TurnOff(std::vector<Setting> const& switches, std::function<void(Outcome)> completion);
     // Saves `next` as the settings and applies it; `settled` runs once it
     // applies, before the snapshot is published.
     void SaveSettings(Settings next, std::function<void()> settled, std::function<void(Outcome)> completion);

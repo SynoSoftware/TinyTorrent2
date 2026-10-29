@@ -35,9 +35,12 @@ appear over a full-screen app or a presentation, and waits until Windows shows
 notifications again, so a torrent that stopped meanwhile is still reported.
 The toast that the window closed is the exception: it is dropped, because it
 only helps at the moment the window closes.
-While the pointer is over a popup, its header shows a More button (…) beside
-the close button, as Windows' own notifications do; otherwise each popup shows
-only its message. More opens a menu laid out as Windows' own, drawn on the
+While the pointer is over a popup or it has keyboard focus, its header shows a
+More button (…) beside the close button; otherwise each popup shows only its
+message. F10, Shift+F10 and the context-menu key open More from the keyboard,
+with the first item selected. Arrow keys select an item, Enter runs it, and
+Escape closes the menu and returns to an interactive popup. More opens a menu
+laid out as Windows' own, drawn on the
 popup's acrylic surface in the popup's theme: the title See fewer
 notifications, a separator, and commands that each show their Lucide icon
 from the font beside the engine: a command that turns off the
@@ -109,6 +112,11 @@ file. Keep only bounded pending notification context, identified by durable
 torrent identity rather than a stale path. While the window is open, problems
 appear in it instead, following
 [feedback placement](../ui/feedback.md#feedback-placement).
+
+A prompt can offer its answer together with Don't ask again. Choosing that
+command saves the preference, then gives the answer; a failed save is reported
+and gives no answer. Cancel, Escape and Close save nothing. With the preference
+off, the prompt gives its answer without asking.
 
 In the open window, a finished download shows a short message with Open folder.
 A torrent finishes when its currently wanted files finish downloading, not when

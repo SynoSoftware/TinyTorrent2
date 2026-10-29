@@ -734,13 +734,14 @@ enum class ToastKind
     Unfinished
 };
 
-// The Settings switches that each turn off one kind of toast.
-enum class ToastSwitch
+// Boolean settings that an opt-out menu may turn off.
+enum class Setting
 {
-    Finished,
-    Added,
-    Problems,
-    Background
+    ConfirmExit,
+    NotifyFinished,
+    NotifyAdded,
+    NotifyProblems,
+    NotifyBackground
 };
 
 // Tray menu item IDs. TrackPopupMenu returns 0 when the person chooses

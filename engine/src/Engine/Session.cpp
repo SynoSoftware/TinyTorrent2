@@ -613,11 +613,11 @@ tt::Activity Engine::State::Activity() const
     activity.pausedByChoice = paused == PauseReason::Manual || paused == PauseReason::Schedule;
     if (IsAdapterMissing())
         activity.missingAdapter = settings.networkAdapter;
-    for (auto const& [word, toast] : toastSwitches)
+    for (auto const& entry : Settings::Switches())
     {
-        if (settings.*Settings::Switch(toast))
+        if (entry.word && settings.*entry.field)
         {
-            activity.toasts.insert(toast);
+            activity.toasts.insert(entry.setting);
         }
     }
     activity.preventsSleep = settings.preventsSleep;

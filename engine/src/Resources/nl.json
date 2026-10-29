@@ -74,6 +74,7 @@
     "close": "Sluiten",
     "dismiss": "Negeren",
     "more": "Meer",
+    "remember_answer": "{0} en niet meer vragen",
     "open_folder_tip": "De map met de programmabestanden van TinyTorrent openen",
     "force_exit": "Geforceerd afsluiten",
     "force_exit_tip": "Nu afsluiten zonder de laatste wijzigingen op te slaan",
@@ -145,7 +146,7 @@
     "save": "TinyTorrent kon nog niet opslaan. Het blijft het proberen en sluit af zodra opslaan lukt.",
     "pause": "De instelling voor het pauzeren van overdrachten kon niet worden opgeslagen.",
     "retry": "De torrents konden niet opnieuw worden geprobeerd.",
-    "notification": "De meldingsinstelling kon niet worden opgeslagen.",
+    "setting": "De instelling kon niet worden opgeslagen.",
     "window_open": "Het TinyTorrent-venster is nog open.\nSluit het en kies Opnieuw.",
     "unresponsive": "Het venster heeft niet gereageerd op Afsluiten. Er is niets verloren gegaan. Probeer Afsluiten opnieuw zodra het venster reageert."
   }

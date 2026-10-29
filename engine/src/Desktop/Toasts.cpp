@@ -35,22 +35,22 @@ bool UsesWindow(ToastKind kind)
     return IsProblem(kind) || kind == ToastKind::Completed;
 }
 
-std::optional<ToastSwitch> Switch(ToastKind kind)
+std::optional<Setting> Switch(ToastKind kind)
 {
     switch (kind)
     {
     case ToastKind::Completed:
-        return ToastSwitch::Finished;
+        return Setting::NotifyFinished;
     case ToastKind::Added:
     case ToastKind::Duplicate:
-        return ToastSwitch::Added;
+        return Setting::NotifyAdded;
     case ToastKind::Error:
     case ToastKind::AddFailed:
     case ToastKind::DeleteFailed:
     case ToastKind::MissingProgram:
-        return ToastSwitch::Problems;
+        return Setting::NotifyProblems;
     case ToastKind::Background:
-        return ToastSwitch::Background;
+        return Setting::NotifyBackground;
     case ToastKind::Aggregate:
     case ToastKind::Unfinished:
         return std::nullopt;
@@ -86,8 +86,8 @@ HICON ErrorIcon()
     return result;
 }
 
-Toasts::Toasts(Strings const& strings, bool headless, HICON errorIcon, Commands commands)
-    : strings_(strings), headless_(headless), errorIcon_(errorIcon), commands_(std::move(commands)),
+Toasts::Toasts(Engine& engine, Strings const& strings, bool headless, HICON errorIcon, Commands commands)
+    : engine_(engine), strings_(strings), headless_(headless), errorIcon_(errorIcon), commands_(std::move(commands)),
       popup_(strings)
 {
 }
@@ -100,6 +100,7 @@ void Toasts::Update(Activity const& activity)
 
 void Toasts::Close()
 {
+    answering_.reset();
     popup_.Close();
 }
 
@@ -181,7 +182,7 @@ void Toasts::Report(Failure failure)
 {
     if (headless_)
     {
-        auto message = ErrorText(failure.code);
+        auto message = ErrorText(strings_, failure.code);
         if (!failure.detail.empty())
         {
             message += L"\n\n" + failure.detail;
@@ -232,7 +233,7 @@ void Toasts::Notify()
     }
     // Let the displayed popup finish its lifetime, including hover and menu
     // interaction, before showing another.
-    if (popup_.IsOpen())
+    if (popup_.IsOpen() || answering_)
     {
         return;
     }
@@ -284,19 +285,26 @@ void Toasts::Notify()
     }
 }
 
+Popup::Content Toasts::Failure::Content(Strings const& strings, HICON errorIcon) const
+{
+    return {.title = title.value_or(strings.Text("notification", "failure")),
+        .body = ErrorText(strings, code), .detail = detail, .actions = actions, .icon = errorIcon,
+        .stay = interactive ? ToastStay::Interactive : ToastStay::Persistent};
+}
+
 // Selecting the message opens the window, where the person can act on it.
 void Toasts::ShowFailure(Failure failure)
 {
     shownCondition_.reset();
-    shownFailure_ = failure;
-    popup_.Show({.title = failure.title.value_or(strings_.Text("notification", "failure")),
-        .body = ErrorText(failure.code), .select = failure.opens ? commands_.open : nullptr,
-        .detail = std::move(failure.detail), .actions = std::move(failure.actions), .icon = errorIcon_,
-        .stay = failure.interactive ? ToastStay::Interactive : ToastStay::Persistent});
+    auto content = failure.Content(strings_, errorIcon_);
+    content.select = failure.opens ? commands_.open : nullptr;
+    shownFailure_ = std::move(failure);
+    popup_.Show(std::move(content));
 }
 
-void Toasts::Ask(Popup::Prompt prompt)
+void Toasts::Ask(Popup::Prompt prompt, std::optional<Setting> setting)
 {
+    answering_.reset();
     // A failure stays until the person closes it, so it shows again after
     // the prompt.
     if (popup_.IsOpen() && shownFailure_)
@@ -306,7 +314,20 @@ void Toasts::Ask(Popup::Prompt prompt)
     }
     shownFailure_.reset();
     shownCondition_.reset();
-    popup_.Ask(std::move(prompt));
+    std::vector<Popup::MenuItem> menu;
+    if (setting && prompt.answer.enabled)
+    {
+        if (!engine_.IsOn(*setting))
+        {
+            popup_.Close();
+            prompt.answer.run();
+            return;
+        }
+        auto answer = std::make_shared<Answer>(Answer{prompt.answer});
+        menu.push_back(OptOut(*setting,
+            strings_.Format("notification", "remember_answer", {answer->action.label}), answer));
+    }
+    popup_.Ask(std::move(prompt), std::move(menu));
 }
 
 Popup::Content Toasts::Message(Toast const& toast) const
@@ -330,7 +351,7 @@ Popup::Content Toasts::Message(Toast const& toast) const
         content.body = strings_.Format("notification", toast.count == 1 ? "location_torrents_one" : "location_torrents_other",
             {Strings::Number(toast.count)});
         if (!toast.detail.empty())
-            content.body = ErrorText(toast.detail) + L"\n" + content.body;
+            content.body = ErrorText(strings_, toast.detail) + L"\n" + content.body;
         content.location = Popup::Location{strings_.Text("notification", "download_folder"), Wide(toast.folder)};
         content.actions = {OpenFolder(strings_, Wide(toast.folder), strings_.Text("notification", "files_folder_tip"))};
     }
@@ -339,7 +360,7 @@ Popup::Content Toasts::Message(Toast const& toast) const
     else if (stopped && toast.count > 1)
     {
         content.title = strings_.Format("notification", "torrents_stopped", {Strings::Number(toast.count)});
-        content.body = ErrorText(toast.code, true);
+        content.body = ErrorText(strings_, toast.code, true);
         content.select = commands_.open;
         content.actions = {Retry(strings_, strings_.Text("notification", "retry_all_tip"), commands_.retryAll)};
     }
@@ -360,7 +381,7 @@ Popup::Content Toasts::Message(Toast const& toast) const
             content.title = strings_.Text("notification", "torrent_stopped");
         content.body = Wide(toast.name);
         auto problem = toast.code == "torrent_error" && !toast.detail.empty() ?
-            std::wstring() : ErrorText(toast.code, !toast.detail.empty());
+            std::wstring() : ErrorText(strings_, toast.code, !toast.detail.empty());
         if (!toast.detail.empty())
         {
             if (!problem.empty())
@@ -441,13 +462,13 @@ Popup::Content Toasts::Problems(Toast const& first, unsigned count) const
     return content;
 }
 
-std::wstring Toasts::ErrorText(std::string const& code, bool explained) const
+std::wstring Toasts::ErrorText(Strings const& strings, std::string const& code, bool explained)
 {
     if (code.empty())
     {
         return {};
     }
-    return strings_.Find("error", code).value_or(explained ? std::wstring() : strings_.Text("error", "unknown"));
+    return strings.Find("error", code).value_or(explained ? std::wstring() : strings.Text("error", "unknown"));
 }
 
 // A completed torrent opens its folder; a missing program opens its Settings
@@ -507,40 +528,81 @@ Popup::Action Toasts::ForceExit(Strings const& strings, std::function<void()> ru
 // window the person just closed would undo their action.
 void Toasts::ShowBackground()
 {
-    if (popup_.IsPersistent() || popup_.IsMenuOpen())
+    if (answering_ || popup_.IsPersistent() || popup_.IsMenuOpen())
     {
         return;
     }
     if (AcceptsNotifications())
     {
         Show({.title = strings_.Text("notification", "background"),
-            .body = strings_.Text("tray", "background")}, ToastSwitch::Background);
+            .body = strings_.Text("tray", "background")}, Setting::NotifyBackground);
     }
 }
 
-void Toasts::Show(Popup::Content content, std::optional<ToastSwitch> toasts)
+void Toasts::Show(Popup::Content content, std::optional<Setting> setting)
 {
+    if (answering_)
+        return;
     shownFailure_.reset();
     shownCondition_.reset();
-    if (toasts)
-    {
-        content.menuTitle = strings_.Text("notification", "fewer");
-        // Lucide's bell-minus, bell-off and settings glyphs.
-        content.menu = {
-            {L'\uE1F0', strings_.Text("notification", "off_" + ToString(*toasts)),
-                [this, shown = *toasts] { commands_.turnOff({shown}); }, L"TurnOff"},
-            {L'\uE05A', strings_.Text("notification", "off_all"),
-                [this] { commands_.turnOff(AllToastSwitches()); }, L"TurnOffAll"},
-            {L'\uE154', strings_.Text("notification", "settings"),
-                [this] { commands_.openSettings("notifications"); }, L"NotificationSettings"}};
-    }
+    SetMenu(content, setting);
     popup_.Show(std::move(content));
+}
+
+void Toasts::SetMenu(Popup::Content& content, std::optional<Setting> setting)
+{
+    auto word = setting ? Engine::SwitchWord(*setting) : std::nullopt;
+    if (!word)
+        return;
+    content.menuTitle = strings_.Text("notification", "fewer");
+    content.menu = {
+        OptOut(*setting, strings_.Text("notification", "off_" + std::string(*word))),
+        {L'\uE05A', strings_.Text("notification", "off_all"), [this]
+        {
+            TurnOff(Engine::NotificationSettings());
+        }, L"TurnOffAll"},
+        {L'\uE154', strings_.Text("notification", "settings"),
+            [this] { commands_.openSettings("notifications"); }, L"NotificationSettings"}};
+}
+
+Popup::MenuItem Toasts::OptOut(Setting setting, std::wstring label, std::shared_ptr<Answer> answer)
+{
+    return {L'\uE1F0', std::move(label), [this, setting, answer]
+    {
+        if (answer)
+            answering_ = answer;
+        TurnOff({setting}, [this, answer](bool saved)
+        {
+            if (!answer || answering_ != answer)
+                return;
+            answer->pending = false;
+            if (saved)
+                answer->action.run();
+        });
+    }, L"TurnOff"};
+}
+
+void Toasts::TurnOff(std::vector<Setting> switches, std::function<void(bool saved)> completion)
+{
+    engine_.TurnOff(switches, [this, completion = std::move(completion)](Outcome outcome)
+    {
+        if (outcome.error)
+        {
+            Report({.code = "setting", .detail = Wide(outcome.detail), .interactive = true});
+        }
+        else
+        {
+            Update(engine_.Activity());
+        }
+        if (completion)
+            completion(!outcome.error);
+    });
 }
 
 #ifdef _DEBUG
 void Toasts::ShowSample()
 {
-    Show(Message({.kind = ToastKind::Added, .name = "Sample torrent"}), ToastSwitch::Added);
+    Show(Message({.kind = ToastKind::Added, .name = "Sample torrent"}), Setting::NotifyAdded);
 }
 #endif
 }

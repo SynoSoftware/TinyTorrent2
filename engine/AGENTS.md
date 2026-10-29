@@ -16,7 +16,10 @@ and the popups stop behaving alike:
   last, to every toast, so no caller adds it. A caller passes
   content and answers to `Show` or `Ask`, and ends a prompt through `Close`.
 - `Toasts` owns which toasts show, which share a popup, and the buttons that
-  failures and prompts reuse (`Retry`, `OpenFolder`, `ForceExit`).
+  failures and prompts reuse (`Retry`, `OpenFolder`, `ForceExit`). It owns
+  prompt suppression, opt-out menus and their save failures, so native prompt
+  callers supply an answer and an optional typed switch rather than repeating
+  checks, menus and persistence callbacks.
 - Callers, such as `ExitOther`, own their business logic: what each answer
   does, when the prompt changes, and whether a failure answers the person's
   own action and so takes the focus.

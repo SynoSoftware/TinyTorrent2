@@ -74,6 +74,7 @@
     "close": "Cerrar",
     "dismiss": "Descartar",
     "more": "Más",
+    "remember_answer": "{0} y no volver a preguntar",
     "open_folder_tip": "Abrir la carpeta con los archivos del programa TinyTorrent",
     "force_exit": "Forzar salida",
     "force_exit_tip": "Salir ahora sin guardar los últimos cambios",
@@ -145,7 +146,7 @@
     "save": "TinyTorrent aún no pudo guardar. Sigue intentándolo y se cierra cuando se guarde.",
     "pause": "No se pudo guardar el ajuste de pausa de las transferencias.",
     "retry": "No se pudieron reintentar los torrents.",
-    "notification": "No se pudo guardar el ajuste de notificaciones.",
+    "setting": "No se pudo guardar el ajuste.",
     "window_open": "La ventana de TinyTorrent sigue abierta.\nCiérrala y selecciona Reintentar.",
     "unresponsive": "La ventana no respondió a Salir. No se descartó nada. Inténtalo de nuevo cuando responda."
   }

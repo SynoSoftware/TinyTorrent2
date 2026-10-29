@@ -74,6 +74,7 @@
     "close": "Fermer",
     "dismiss": "Ignorer",
     "more": "Plus",
+    "remember_answer": "{0} et ne plus demander",
     "open_folder_tip": "Ouvrir le dossier des fichiers du programme TinyTorrent",
     "force_exit": "Forcer la fermeture",
     "force_exit_tip": "Quitter maintenant sans enregistrer les dernières modifications",
@@ -145,7 +146,7 @@
     "save": "TinyTorrent n’a pas encore pu enregistrer. Il continue d’essayer et se ferme dès que l’enregistrement réussit.",
     "pause": "Impossible d’enregistrer le réglage de pause des transferts.",
     "retry": "Impossible de réessayer les torrents.",
-    "notification": "Impossible d’enregistrer le réglage des notifications.",
+    "setting": "Impossible d’enregistrer le réglage.",
     "window_open": "La fenêtre de TinyTorrent est toujours ouverte.\nFermez-la, puis choisissez Réessayer.",
     "unresponsive": "La fenêtre n’a pas répondu à Quitter. Rien n’a été abandonné. Réessayez lorsqu’elle répondra."
   }

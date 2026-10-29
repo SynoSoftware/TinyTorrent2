@@ -261,21 +261,21 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
     case Command::TurnOff:
     {
         auto word = request.at("switch").get<std::string>();
-        std::vector<ToastSwitch> toasts;
+        std::vector<Setting> switches;
         if (word == "all")
         {
-            toasts = AllToastSwitches();
+            switches = NotificationSettings();
         }
-        else if (auto toast = Parse(toastSwitches, word))
+        else if (auto setting = FindSwitch(word))
         {
-            toasts.push_back(*toast);
+            switches.push_back(*setting);
         }
         else
         {
             reply(Failure(ErrorCode::InvalidRequest));
             break;
         }
-        TurnOff(toasts, Acknowledge(reply));
+        TurnOff(switches, Acknowledge(reply));
         break;
     }
     case Command::Preview:

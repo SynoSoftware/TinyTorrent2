@@ -8,6 +8,7 @@
 #include <cmath>
 #include <expected>
 #include <span>
+#include <stdexcept>
 #include <utility>
 
 namespace tt
@@ -273,20 +274,25 @@ std::optional<LimitMode> Engine::State::Settings::Named(Json const& value)
     return std::nullopt;
 }
 
-auto Engine::State::Settings::Switch(ToastSwitch toast) -> bool Settings::*
+auto Engine::State::Settings::Switches() -> std::span<Switch const>
 {
-    switch (toast)
+    static constexpr Switch switches[] = {
+        {Setting::ConfirmExit, "confirm_exit", &Settings::confirmsExit, {}},
+        {Setting::NotifyFinished, "notifications_enabled", &Settings::notificationsEnabled, "finished"},
+        {Setting::NotifyAdded, "notify_added", &Settings::notifiesAdded, "added"},
+        {Setting::NotifyProblems, "notify_problems", &Settings::notifiesProblems, "problems"},
+        {Setting::NotifyBackground, "notify_background", &Settings::notifiesBackground, "background"}};
+    return switches;
+}
+
+auto Engine::State::Settings::SwitchFor(Setting setting) -> Switch const&
+{
+    for (auto const& entry : Switches())
     {
-    case ToastSwitch::Finished:
-        return &Settings::notificationsEnabled;
-    case ToastSwitch::Added:
-        return &Settings::notifiesAdded;
-    case ToastSwitch::Problems:
-        return &Settings::notifiesProblems;
-    case ToastSwitch::Background:
-        break;
+        if (entry.setting == setting)
+            return entry;
     }
-    return &Settings::notifiesBackground;
+    throw std::invalid_argument("Unknown opt-out setting.");
 }
 
 Engine::State::Settings::Limits Engine::State::Settings::Caps(LimitMode mode) const
@@ -344,7 +350,8 @@ void Engine::State::Settings::Fields(Self& settings, Visit&& visit)
     visit(setting::incompleteFolder, settings.incompleteFolder, Text{.valid = folder});
     visit("use_incomplete_folder", settings.usesIncompleteFolder, Bool{});
     visit("append_suffix", settings.appendsSuffix, Bool{});
-    visit("confirm_exit", settings.confirmsExit, Bool{});
+    for (auto const& entry : Switches())
+        visit(entry.name, settings.*entry.field, Bool{});
     visit("show_external_ip", settings.showsExternalIp, Bool{});
     visit("show_title_speeds", settings.showsTitleSpeeds, Bool{});
     visit("show_free_space", settings.showsFreeSpace, Bool{});
@@ -399,10 +406,6 @@ void Engine::State::Settings::Fields(Self& settings, Visit&& visit)
     visit("upload_limit", settings.limits.upload, Limit{0, INT_MAX});
     visit("alternative_download_limit", settings.alternative.download, Limit{0, INT_MAX});
     visit("alternative_upload_limit", settings.alternative.upload, Limit{0, INT_MAX});
-    visit("notifications_enabled", settings.notificationsEnabled, Bool{});
-    visit("notify_problems", settings.notifiesProblems, Bool{});
-    visit("notify_added", settings.notifiesAdded, Bool{});
-    visit("notify_background", settings.notifiesBackground, Bool{});
     visit("prevent_sleep", settings.preventsSleep, Bool{});
     visit("prevent_sleep_seeding", settings.preventsSleepSeeding, Bool{});
     visit("unfinished_tasks", settings.unfinished, Words{taskAnswers});
@@ -661,20 +664,14 @@ void Engine::State::Configure(Json const& choices, std::function<void(Outcome)> 
     }
 }
 
-void Engine::State::TurnOff(std::vector<ToastSwitch> const& toasts, std::function<void(Outcome)> completion)
+void Engine::State::TurnOff(std::vector<Setting> const& switches, std::function<void(Outcome)> completion)
 {
-    if (!changes.Queue([this, toasts, completion]
+    auto choices = Json::object();
+    for (auto setting : switches)
     {
-        auto next = settings;
-        for (auto toast : toasts)
-        {
-            next.*Settings::Switch(toast) = false;
-        }
-        SaveSettings(std::move(next), [] {}, completion);
-    }))
-    {
-        completion({ErrorCode::Overloaded});
+        choices[Settings::SwitchFor(setting).name] = false;
     }
+    Configure(choices, std::move(completion));
 }
 
 // Pause all and the reported programs are kept: one is the person's choice

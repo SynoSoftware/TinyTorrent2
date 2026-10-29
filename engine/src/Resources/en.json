@@ -74,6 +74,7 @@
     "close": "Close",
     "dismiss": "Dismiss",
     "more": "More",
+    "remember_answer": "{0} and don't ask again",
     "open_folder_tip": "Open the folder that holds TinyTorrent's program files",
     "force_exit": "Force exit",
     "force_exit_tip": "Exit now without saving the latest changes",
@@ -145,7 +146,7 @@
     "save": "TinyTorrent keeps trying and exits by itself once saving works. Force exit closes it now and loses the changes since the last save. Downloaded files stay on disk.",
     "pause": "The transfer pause setting could not be saved.",
     "retry": "The torrents could not be retried.",
-    "notification": "The notification setting could not be saved.",
+    "setting": "The setting could not be saved.",
     "window_open": "The TinyTorrent window is still open.\nClose it, then select Retry.",
     "unresponsive": "The window did not respond to Exit. Nothing was discarded. Try Exit again when the window responds."
   }
