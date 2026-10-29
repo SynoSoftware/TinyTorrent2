@@ -13,7 +13,8 @@
 namespace tt
 {
 // The rows a file browser holds, and the most entries one `tree` reply
-// carries; `filePageNames` bounds the bytes of their names.
+// carries; `filePageNames` bounds the bytes of their names and, for a
+// torrent, of its files' paths on disk.
 constexpr std::size_t fileWindow = 10'000;
 
 // The words of a search query. Text matches when each word starts a word of
@@ -24,9 +25,9 @@ constexpr std::size_t fileWindow = 10'000;
 class Search
 {
 public:
-    // Throws std::invalid_argument for more than 64 words.
+    // Throws std::invalid_argument for a query without words or with more
+    // than 64.
     explicit Search(std::string_view query);
-    bool IsEmpty() const { return words_.empty(); }
     // The words that start a word of `text`, which Normalize gave, as bits
     // by the words' order.
     std::uint64_t Found(std::wstring_view text) const;
@@ -44,16 +45,18 @@ private:
 // never touches the engine's state.
 struct Listing
 {
-    // A torrent's downloaded bytes per file, nothing until libtorrent reports
-    // them.
-    using Progress = std::optional<std::vector<std::int64_t>>;
-
     std::shared_ptr<lt::torrent_info const> metadata;
     Layout layout = Layout::Keep;
     // One per file.
     std::vector<lt::download_priority_t> priorities;
-    // Nothing for a preview, which downloads nothing.
-    std::optional<Progress> progress;
+    // A torrent's downloaded bytes per file; nothing until libtorrent
+    // reports them, and always nothing for a preview.
+    std::optional<std::vector<std::int64_t>> progress;
+    // A torrent's replies carry downloaded bytes and each file's path on
+    // disk; a preview's carry neither. A path on disk is about as long as the
+    // file's path in the torrent, which then counts toward `filePageNames`
+    // with its name.
+    bool torrent = false;
 };
 
 // A preview's or a torrent's folders and files, built from a Listing for one
@@ -72,7 +75,8 @@ public:
     // The `tree` reply for `target`, whose file objects carry no disk_path
     // yet. Nothing when it names no folder, no file or a padding file.
     std::optional<Json> Describe(Target const& target) const;
-    // The files `target` covers. Nothing when it names no folder or file.
+    // The files a folder or query `target` covers; a file choice needs no
+    // tree. Nothing when it names no folder.
     std::optional<std::vector<lt::file_index_t>> Files(Target const& target) const;
     // `path` and the folder values of each of `paths` that names a folder.
     Json Values(std::vector<std::string> const& paths) const;
@@ -86,7 +90,8 @@ private:
         int parent = -1;
         std::vector<int> folders;
         std::vector<lt::file_index_t> files;
-        // The bytes of the names of its direct entries.
+        // The bytes that its direct entries' names, and its files' paths on
+        // disk, add to a reply.
         std::size_t names = 0;
         std::int64_t count = 0;
         std::int64_t size = 0;

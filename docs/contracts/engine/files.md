@@ -451,25 +451,23 @@ again at every start. The save at Exit clears that record.
 
 Giving files back is what either answer would do, so it continues at start
 without asking: the give-back of a removed torrent's move, and the give-back
-of a move that the person abandoned, which its marker records. A deletion of
-the removed torrent's files waits until they are back. A give-back whose
-destination does not answer keeps its task and waits: the location notice of
-its drive or share counts its torrent, and it runs again once that root's
-probe, about once a minute, opens the root, also before the next start. The
-engine asks whether the roots answer again after a failure, so a give-back
-that fails because a root stopped answering waits for that root too. A listed
-torrent's give-back waits for its drives in turn, as a move does. A removed
-torrent's give-back takes no turn, because Delete files never waits for other
-work, but it claims its drives while it runs. Every give-back gives up when it
-stops making progress as a move does, and until it ends the engine probes the roots of its destination
-and of the save folder it renames into, so a give-back that hangs there
-counts in that root's location notice once the probe has not returned for two
-minutes, as a deletion does. A give-back that fails with an error while its
-roots answer tries once more at once and then keeps its task and waits for
-the person. A removed torrent's give-back has no row, so it shows with its
-error in the notice of the torrents that wait for Retry.
-Every Retry tries it again, so the Retry of that notice in the window and in
-the engine's popup does, and so does the next start.
+of a move that the person abandoned. A deletion of the removed torrent's files
+runs once they are back. A give-back whose folder does not answer waits,
+counted in the location notice of that drive or share, and runs again as soon
+as the drive or share answers, also before the next start. A give-back that
+fails with an error while its folders answer tries once more, then waits for
+the person: a listed torrent's on its row, and a removed torrent's, which has
+no row, with its error in the notice of the torrents that wait for Retry.
+Retry in the window or in the engine's popup tries it again, and so does the
+next start.
+
+An abandoned move and its later removal retain one give-back operation.
+Removal changes its owner, preserving an in-flight worker and retry state,
+including while its prerequisite or final save runs. A successful return stays
+active until its marker settlement ends, so removal cannot start the disk work
+again in that interval. Path work is read from the moves, renames and returns
+that own it; each completed operation releases its ownership before the
+torrent's status or running intent is refreshed.
 
 Continue runs the work in the saved order:
 
@@ -497,9 +495,9 @@ Abandon drops the work:
   to a new folder ends them. The marker records the give-back from the saved
   answer on, and that the torrent's files are checked before its pieces are
   trusted again, so an end that cuts the give-back off after its renames still
-  leads to the check. When Exit stops the give-back, the next start continues it without
-  asking. When the destination does not answer, the give-back waits and runs
-  again once the root's probe opens the root. A give-back that fails with an
+  leads to the check. A give-back that Exit stops, or whose destination does
+  not answer, continues as [unfinished tasks](#unfinished-tasks) describes. A
+  give-back that fails with an
   error, or whose save fails, tries once more at once; a move whose files then
   cannot be given back keeps its marker and shows Move interrupted. From the
   saved answer until the give-back ends, also while it waits for its drives,
@@ -631,33 +629,26 @@ destination, not by the drive letter in the configured path. A save folder
 the NAS hangs, only its torrents wait, and the location notice names
 `\\nas\media`.
 
-Every drive, server and root in this reference is where the folder really is:
-libtorrent's disk threads, the drive workers, the file-work gates, stalled
-checks, renames, the probes and the location notices. The engine finds that
-place from metadata alone, because opening a link opens its target, and that
-open hangs on the target that this rule keeps apart:
+Every drive, server and root in this reference is where the folder really
+is: for transfers, checks, renames, moves, deletions and the location
+notices. The engine finds that place without opening the link, because
+opening a link opens its target, and that open hangs on the target that this
+rule keeps apart:
 
-- It walks the path from its root. A symbolic link, junction or volume mount
-  point on the way is replaced by its target, read with
-  `FSCTL_GET_REPARSE_POINT` from the volume that holds the link. A `subst`
-  letter becomes its folder and a mapped letter its server and share, read
-  with `QueryDosDevice`.
-- It stops at a network path, because the engine cannot see behind a server.
-- An entry that it cannot read, such as a missing folder or a volume mounted
-  without a drive letter, ends the walk where it is. A link to a drive letter
-  that is gone, such as a removed USB drive or `subst` letter, therefore ends
-  at that letter, and the location notice names that drive.
-- The key of the real path is `lt::storage_root_key`, so one parser names
-  every root.
+- A symbolic link, junction or volume mounted in a folder leads to its
+  target, and a `subst` or mapped drive letter leads to its folder or share.
+- A network path is where the folder is, because the engine cannot see
+  behind a server.
+- A link that cannot be read, a missing folder, or a volume mounted without a
+  drive letter is where the folder is. A link to a drive letter that is gone,
+  such as a removed USB drive or `subst` letter, therefore belongs to that
+  letter, and the location notice names that drive.
 
-`State::locations` keeps the real path of each folder that a torrent, an
-addition, a move or file work uses, and of the default download folders. Each
-lookup reads only one root at a time, on that root's own lookup worker: when
-the path reaches another root, that root's worker follows it on, so a volume
-that hangs holds only the lookups that need it. Each worker takes the waiting
-lookups as one batch, so any number of folders is looked up. The engine looks
-each folder up again once a minute, so a link that now points elsewhere moves
-its work.
+The engine looks up each folder that a torrent, an addition, a move or file
+work uses, and the default download folders. A lookup reads one drive at a
+time, so a drive that hangs holds only the lookups that need it. The engine
+looks each folder up again once a minute, so a link that now points elsewhere
+moves its work.
 
 At startup, each torrent waits to be added to libtorrent until its folder's
 lookup answers, and is then added on the root where its folder really is, so
@@ -669,10 +660,10 @@ adds one that still waits on the root its path names. Drive turns wait for
 the lookup too, as they wait for their drive lookup. A torrent that waits for
 its add waits for nothing from the person: Verify and Move wait and run once
 it is added, a reannounce happens with the add, its file list comes from its
-saved metadata, and only its detail and edits reply `starting`. The engine
-gives libtorrent the root when it adds, reloads or moves a torrent, and gives
-it the new root when a lookup changes it; libtorrent then finishes the
-torrent's queued disk work and moves it to the new root's threads.
+saved metadata, and only its detail and edits reply `starting`. When a
+lookup finds a torrent's folder on another drive, the torrent moves there
+once its old drive answers, because its work on the old drive must end
+first; until then it counts in the old drive's location notice.
 
 ## Unfinished files
 

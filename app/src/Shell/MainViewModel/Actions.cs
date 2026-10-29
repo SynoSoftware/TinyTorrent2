@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Windows.Input;
 using Syno.TinyTorrent.Library;
 using Syno.TinyTorrent.Shared;
+using Syno.TinyTorrent.Shared.Engine;
 using Syno.TinyTorrent.Torrents;
 
 namespace Syno.TinyTorrent.Shell;
@@ -375,9 +376,12 @@ public sealed partial class MainViewModel
             string? extension = null;
             if (!folder && await SingleFile(torrent) is { } only)
             {
-                path = Path.Combine(destination, only.Physical);
-                if (only.Logical != only.Physical)
-                    extension = Path.GetExtension(only.Logical);
+                // The disk path is the logical path until the engine has read
+                // the names.
+                var disk = only.DiskPath ?? only.Path;
+                path = Path.Combine(destination, disk);
+                if (only.Path != disk)
+                    extension = Path.GetExtension(only.Path);
             }
             OpenRequested?.Invoke(this, new(path, extension));
         }
@@ -388,21 +392,14 @@ public sealed partial class MainViewModel
     }
 
     // The torrent's only payload file, or null when it has none or several.
-    // The disk path is the logical path until the engine has read the names.
-    private async Task<(string Logical, string Physical)?> SingleFile(Torrent torrent)
+    private async Task<DetailFile?> SingleFile(Torrent torrent)
     {
-        (string Logical, string Physical)? single = null;
-        await foreach (var page in _client.TorrentFiles(torrent.TorrentId))
+        DetailFile? single = null;
+        await foreach (var file in _client.TorrentFiles(torrent.TorrentId))
         {
-            foreach (var file in page.GetProperty("files").EnumerateArray())
-            {
-                if (file.GetProperty("padding").GetBoolean())
-                    continue;
-                if (single is not null)
-                    return null;
-                var logical = file.GetProperty("path").GetString()!;
-                single = (logical, file.GetProperty("disk_path").GetString() ?? logical);
-            }
+            if (single is not null)
+                return null;
+            single = file;
         }
         return single;
     }

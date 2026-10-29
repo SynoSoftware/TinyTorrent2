@@ -212,6 +212,11 @@ used by torrents outside the operation. Removal and deletion have separate outco
 verifying files already at the destination.
 _Avoid_: relocation.
 
+**Give-back**: undoing an unfinished move, so the files it placed return to the
+torrent's earlier folder: after the person abandons the move, or after they
+remove the torrent during it.
+_Avoid_: rollback, undo, when naming this work.
+
 **Adoption**: updating a torrent's location to use its files already present
 elsewhere, without physically moving them. It is distinct from permission to
 download missing payload.

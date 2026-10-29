@@ -68,6 +68,9 @@ incomplete scans retain the records. The 10,000-source bound applies to files
 currently in that scope, not lifetime imports; exceeding it reports a failure
 and resumes scanning when the folder is reduced. Unrelated files do not consume
 the source limit.
+Scan and save failures are reported once until a successful scan or save. A
+change to the watched folder, its recursive scope or whether watching is on
+starts a new failure episode, so an earlier folder's failure cannot silence it.
 
 Keep full v1/v2 info hashes and discovered hybrid aliases for content and
 duplicate detection. Metadata can reveal an alias conflict after initial

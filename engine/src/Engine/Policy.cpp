@@ -491,7 +491,7 @@ void Engine::State::LimitSeeds()
         // Idle torrents do not emit state updates as their elapsed durations increase.
         for (auto const& [id, torrent] : torrents)
         {
-            if (!torrent.restore && torrent.status.is_finished &&
+            if (!torrent.waiting && torrent.status.is_finished &&
                 torrent.facts.intent != Intent::Paused && !torrent.facts.ignoresSeedLimits)
             {
                 seedQueue.push_back(torrent.handle);

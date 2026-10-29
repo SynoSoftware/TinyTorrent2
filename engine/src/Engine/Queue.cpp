@@ -29,7 +29,7 @@ std::vector<std::string> Engine::State::CurrentQueue() const
 {
     auto queued = [](Torrent const& torrent)
     {
-        return !torrent.restore &&
+        return !torrent.waiting &&
             (torrent.queueReport != QueueReport::Reported || IsQueued(torrent.status.queue_position));
     };
     std::vector<std::string> order;

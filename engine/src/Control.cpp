@@ -1,4 +1,6 @@
 #include "Torrent.h"
+#include <algorithm>
+#include <iterator>
 
 namespace tt
 {
@@ -33,6 +35,22 @@ bool Control::Ladder::Waits() const
     return stage == FailureStage::Stopped || stage == FailureStage::Person;
 }
 
+void Control::Ladder::Return()
+{
+    stage = FailureStage::Recovering;
+}
+
+void Control::Ladder::LoseLocation()
+{
+    stage = FailureStage::Absent;
+    level = StorageRetry::Automatic;
+}
+
+void Control::Ladder::FindLocation()
+{
+    stage = FailureStage::Recovering;
+}
+
 Control::Effects Control::Decide(Event const& event, Reality const& reality)
 {
     auto before = *this;
@@ -44,7 +62,7 @@ Control::Effects Control::Decide(Event const& event, Reality const& reality)
 
 bool Control::Holds() const
 {
-    return (storage_ && storage_->ladder.stage != FailureStage::Continued) || Busy();
+    return (storage_ && storage_->ladder.stage != FailureStage::Continued) || Busy() || AwaitsReload();
 }
 
 bool Control::Busy() const
@@ -54,7 +72,13 @@ bool Control::Busy() const
 
 bool Control::Recovers() const
 {
-    return (storage_ && storage_->ladder.stage == FailureStage::Recovering) || Busy();
+    return (storage_ && (storage_->ladder.stage == FailureStage::Recovering ||
+        storage_->ladder.stage == FailureStage::Absent)) || Busy();
+}
+
+bool Control::AwaitsReload() const
+{
+    return !lost_.empty();
 }
 
 std::optional<Problem> Control::Cause() const
@@ -78,35 +102,23 @@ bool Control::StorageWaits() const
 
 bool Control::AwaitsLocation() const
 {
-    return storage_ && storage_->ladder.stage == FailureStage::Recovering && storage_->absent;
+    return storage_ && storage_->ladder.stage == FailureStage::Absent;
 }
 
 bool Control::Failing() const
 {
-    return storage_ || finalMove_;
+    return storage_ || finalMove_ || AwaitsReload();
 }
 
 bool Control::WantsProbe() const
 {
-    return storage_ && storage_->ladder.stage == FailureStage::Recovering && !job_;
+    return storage_ && (storage_->ladder.stage == FailureStage::Recovering ||
+        storage_->ladder.stage == FailureStage::Absent) && !job_;
 }
 
 bool Control::Owns(std::shared_ptr<Job const> const& job) const
 {
     return job && (job == job_ || job == checkJob_);
-}
-
-std::vector<lt::file_index_t> Control::Lost() const
-{
-    if (storage_)
-    {
-        return storage_->lost;
-    }
-    if (job_ && job_->kind == JobKind::Reload)
-    {
-        return job_->lost;
-    }
-    return {};
 }
 
 void Control::On(Failed const& failed, Reality const& reality, Effects& effects)
@@ -124,7 +136,7 @@ void Control::On(Failed const& failed, Reality const& reality, Effects& effects)
     {
         // The status reports the error each second; it is the same failure.
         storage_->cause = failed.cause;
-        storage_->retryable = failed.retryable;
+        storage_->retryable = storage_->retryable && failed.retryable;
         return;
     }
     else if (Further(reality.progress, storage_->progress))
@@ -133,10 +145,9 @@ void Control::On(Failed const& failed, Reality const& reality, Effects& effects)
     }
     else
     {
-        // The failure returned, so it recovers again at the same level.
-        storage_->ladder.stage = FailureStage::Recovering;
+        storage_->ladder.Return();
         storage_->cause = failed.cause;
-        storage_->retryable = failed.retryable;
+        storage_->retryable = storage_->retryable && failed.retryable;
     }
     if (!Busy())
     {
@@ -156,7 +167,7 @@ void Control::On(Released const& released, Reality const& reality, Effects& effe
         effects.clear = true;
         return;
     }
-    if (storage_->ladder.stage == FailureStage::Recovering && !reality.fileWork)
+    if (WantsProbe() && !reality.fileWork)
     {
         Start(job_, {.kind = JobKind::Probe}, effects);
     }
@@ -164,22 +175,26 @@ void Control::On(Released const& released, Reality const& reality, Effects& effe
 
 void Control::On(Probed const& probed, Reality const& reality, Effects& effects)
 {
-    if (!End(job_, probed.job, JobKind::Probe) || !probed.finding || !storage_ ||
-        storage_->ladder.stage != FailureStage::Recovering)
+    if (!End(job_, probed.job, JobKind::Probe) || !probed.finding)
     {
         return;
     }
     auto usable = std::get_if<Usable>(&*probed.finding);
-    if (!usable)
+    if (usable)
     {
-        // Waiting fixes a location that does not answer, so its next continue
-        // is automatic again.
-        storage_->absent = true;
-        storage_->ladder.level = StorageRetry::Automatic;
+        Lose(usable->lost);
+    }
+    if (!WantsProbe())
+    {
         return;
     }
-    storage_->absent = false;
-    Judge(usable->lost, reality, effects);
+    if (!usable)
+    {
+        storage_->ladder.LoseLocation();
+        return;
+    }
+    storage_->ladder.FindLocation();
+    Judge(reality, effects);
 }
 
 void Control::On(Checked const& checked, Reality const& reality, Effects& effects)
@@ -199,64 +214,77 @@ void Control::On(Checked const& checked, Reality const& reality, Effects& effect
         return;
     }
     auto usable = std::get_if<Usable>(&*checked.finding);
+    if (usable)
+    {
+        Lose(usable->lost);
+    }
     if (!storage_ || storage_->ladder.stage != FailureStage::Stopped)
     {
         return;
     }
     if (std::holds_alternative<Absent>(*checked.finding))
     {
-        // A location that stops answering makes the next continue automatic
-        // again, and the location notice replaces the Retry button.
-        storage_->ladder = Ladder{};
-        storage_->absent = true;
+        // The location notice replaces the Retry button.
+        storage_->ladder.LoseLocation();
         return;
     }
-    if (usable)
+    if (usable && !reality.fileWork)
     {
-        storage_->lost = usable->lost;
-        if (!reality.fileWork)
-        {
-            Continue(usable->lost, reality, effects);
-        }
+        Continue(reality, effects);
     }
 }
 
-void Control::On(Reloaded const& reloaded, Reality const& reality, Effects& effects)
+void Control::On(Reloaded const& reloaded, Reality const&, Effects& effects)
 {
     if (!End(job_, reloaded.job, JobKind::Reload))
     {
         return;
     }
-    // The person answered while the reload ran, so its error clears whether
-    // or not the torrent got its new handle.
+    if (!reloaded.failure)
+    {
+        lost_.clear();
+    }
     if (!storage_)
     {
+        // Files that lost their data still wait for this reload, so its
+        // failure begins a failure of its own, which recovers as any other.
+        if (reloaded.failure && !lost_.empty())
+        {
+            storage_ = Failure{.cause = *reloaded.failure};
+            return;
+        }
         effects.clear = true;
         return;
     }
     // A reload is a continue, also when it fails: its failure returned.
     storage_->ladder.Continue();
-    if (!reloaded.done)
+    if (reloaded.failure)
     {
-        storage_->ladder.Stop(Retryable(reality));
+        storage_->ladder.Stop(storage_->retryable);
         return;
     }
     // The reload changed the torrent's progress, so the first progress after
     // its resume-data check becomes the failure's.
     storage_->progress.reset();
-    storage_->absent = false;
-    storage_->lost.clear();
     effects.clear = true;
 }
 
 void Control::On(Answered const& answered, Reality const&, Effects& effects)
 {
     finalMove_.reset();
-    if (!answered.storage)
+    if (answered.answer == FailureAnswer::Stop || answered.answer == FailureAnswer::Move)
     {
         return;
     }
     storage_.reset();
+    // After any other answer than a removal the lost files still wait for
+    // their reload, so they download again instead of the torrent writing
+    // around zeros. A check waits for that reload too: a checkpoint saved
+    // before the check would otherwise claim their data again.
+    if (answered.answer == FailureAnswer::Remove)
+    {
+        lost_.clear();
+    }
     // A release or reload that runs clears the error when it ends.
     effects.clear = !Busy();
 }
@@ -301,6 +329,10 @@ void Control::On(Due const& due, Reality const& reality, Effects& effects)
     else if (WantsProbe() && !reality.fileWork)
     {
         Start(job_, {.kind = JobKind::Probe}, effects);
+    }
+    else if (!storage_ && !lost_.empty() && !job_ && !reality.fileWork)
+    {
+        Start(job_, {.kind = JobKind::Reload}, effects);
     }
     if (!due.minute || reality.fileWork)
     {
@@ -359,37 +391,40 @@ void Control::Start(std::shared_ptr<Job>& slot, Job job, Effects& effects)
     effects.jobs.push_back(slot);
 }
 
-bool Control::Retryable(Reality const& reality) const
+void Control::Lose(std::vector<lt::file_index_t> lost)
 {
-    return storage_->retryable && reality.retryable;
+    // lost_ stays sorted and unique, whatever order the result found them in.
+    std::sort(lost.begin(), lost.end());
+    lost.erase(std::unique(lost.begin(), lost.end()), lost.end());
+    std::vector<lt::file_index_t> merged;
+    std::set_union(lost_.begin(), lost_.end(), lost.begin(), lost.end(), std::back_inserter(merged));
+    lost_ = std::move(merged);
 }
 
-void Control::Judge(std::vector<lt::file_index_t> const& lost, Reality const& reality, Effects& effects)
+void Control::Judge(Reality const& reality, Effects& effects)
 {
-    storage_->lost = lost;
     // Windows reports an absent share with many codes, so only an answering
     // location shows that waiting cannot fix the error.
-    if (!Retryable(reality) || storage_->ladder.level != StorageRetry::Automatic)
+    if (!storage_->retryable || storage_->ladder.level != StorageRetry::Automatic)
     {
-        storage_->ladder.Stop(Retryable(reality));
+        storage_->ladder.Stop(storage_->retryable);
         return;
     }
     if (!reality.fileWork)
     {
-        Continue(lost, reality, effects);
+        Continue(reality, effects);
     }
 }
 
-void Control::Continue(std::vector<lt::file_index_t> const& lost, Reality const& reality, Effects& effects)
+void Control::Continue(Reality const& reality, Effects& effects)
 {
-    if (reality.checking || !lost.empty())
+    if (reality.checking || !lost_.empty())
     {
-        Start(job_, {.kind = JobKind::Reload, .lost = lost}, effects);
+        Start(job_, {.kind = JobKind::Reload}, effects);
         return;
     }
     storage_->ladder.Continue();
     storage_->progress = reality.progress;
-    storage_->absent = false;
     effects.clear = true;
 }
 }

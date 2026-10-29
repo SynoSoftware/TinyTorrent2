@@ -223,8 +223,8 @@ enum class MoveCancel
     Keep
 };
 
-// The work that changes a torrent's file paths. At most one runs per torrent,
-// and the owner that started it ends it.
+// The work that changes a torrent's file paths. At most one runs per torrent;
+// a rename that ends passes the torrent to its waiting give-back.
 enum class PathWork
 {
     // A move to another folder, from when it joins the moves, before its
@@ -232,8 +232,8 @@ enum class PathWork
     Move,
     // The rename of a finished file from its unfinished name.
     Rename,
-    // The give-back of an abandoned move's files, from when the torrent joins
-    // the abandonments, also while it waits for its drives.
+    // The give-back of an abandoned move's files, also while it waits for
+    // its drives, and an admitted return inherited by removal.
     Abandon
 };
 
@@ -268,6 +268,18 @@ enum class MovePhase
     Saving
 };
 
+// The workers a root has, each for one kind of work, so that work never
+// waits behind another kind's work there.
+enum class WorkerKind
+{
+    // Drive lookups, storage probes and checks, reloads, names and renames.
+    Volume,
+    // The names an addition chooses.
+    Addition,
+    // The lookups of where folders really are.
+    Lookup
+};
+
 // The kinds of file work that FileWork records, each with its own rules.
 enum class WorkKind
 {
@@ -280,10 +292,7 @@ enum class WorkKind
     // One root's part of a deletion: libtorrent's removal of the torrents
     // saved there, then the deletion of their files there. It holds the
     // renames and name choices on its root.
-    Deletion,
-    // A removed torrent that waits for its own file work to end before
-    // libtorrent takes it.
-    Removal
+    Deletion
 };
 
 // How a piece of file work stands, named by what ends each wait.
@@ -350,6 +359,9 @@ enum class FailureStage
     // The torrent is held while the engine releases its files and probes
     // its location each second.
     Recovering,
+    // Recovering while the location does not answer, so its next continue
+    // is automatic.
+    Absent,
     // The torrent is held, and once a minute the engine checks, without
     // starting it, whether the cause is gone.
     Stopped,

@@ -70,7 +70,7 @@ void Engine::State::ReadDetail(Reading::Read read)
     if (read.context && !Refusal())
     {
         auto found = torrents.find(read.torrentId);
-        if (found != torrents.end() && !found->second.restore)
+        if (found != torrents.end() && !found->second.waiting)
         {
             auto& torrent = found->second;
             read.started = std::chrono::steady_clock::now();
@@ -126,9 +126,15 @@ void Engine::State::CollectDetail(Reading::Read read)
         read.reply(Failure(ErrorCode::Starting));
         return;
     }
-    if (torrent.restore)
+    if (torrent.HeldByAlias())
     {
         read.reply(Failure(ErrorCode::AliasConflict, torrent.conflict));
+        return;
+    }
+    // libtorrent refused the add, and the person's Retry adds it again.
+    if (torrent.waiting)
+    {
+        read.reply(Failure(ErrorCode::AddFailed, torrent.waiting->refusal->detail));
         return;
     }
     if (reading && reading->torrentId != torrent.torrentId)
@@ -162,8 +168,6 @@ void Engine::State::Respond(Torrent const& torrent, Reading::Read const& read, D
         read.reply(Success(std::move(data)));
         return;
     }
-    data.erase("downloaded");
-    data.erase("priority");
     for (auto key : {"wanted_count", "wanted_size", "folders", "files"})
         data[key] = nullptr;
     auto metadata = torrent.handle.torrent_file();
@@ -174,14 +178,14 @@ void Engine::State::Respond(Torrent const& torrent, Reading::Read const& read, D
     if (metadata && priorities)
     {
         listing = Listing{metadata, Layout::Keep, std::move(*priorities),
-            detail.Has(DetailKind::Progress) ? Listing::Progress(detail.progress) : std::nullopt};
+            detail.Has(DetailKind::Progress) ? std::optional(detail.progress) : std::nullopt, true};
     }
     trees.Run([listing = std::move(listing), loaded = *read.loaded]() mutable
     {
         Json values;
         if (!listing)
             return values;
-        auto const& progress = *listing->progress;
+        auto const& progress = listing->progress;
         auto count = static_cast<int>(listing->priorities.size());
         values["files"] = Json::array();
         for (auto file : loaded.files)
@@ -211,22 +215,21 @@ void Engine::State::Respond(Torrent const& torrent, Reading::Read const& read, D
 
 std::expected<Listing, Outcome> Engine::State::Listed(Torrent const& torrent) const
 {
-    if (torrent.restore && !torrent.AwaitsAdd())
+    if (torrent.HeldByAlias())
     {
         return std::unexpected(Outcome{ErrorCode::AliasConflict, torrent.conflict});
     }
-    // A torrent that waits for its add has its saved metadata.
-    auto metadata = torrent.restore ? torrent.restore->ti : torrent.handle.torrent_file();
+    auto metadata = torrent.Metadata();
     if (!metadata)
     {
         return std::unexpected(Outcome{ErrorCode::MetadataUnavailable});
     }
-    Listing::Progress progress;
+    std::optional<std::vector<std::int64_t>> progress;
     if (reading && reading->torrentId == torrent.torrentId && reading->detail.Has(DetailKind::Progress))
     {
         progress = reading->detail.progress;
     }
-    return Listing{metadata, Layout::Keep, torrent.ChosenPriorities(metadata), std::move(progress)};
+    return Listing{metadata, Layout::Keep, torrent.ChosenPriorities(metadata), std::move(progress), true};
 }
 
 void Engine::State::ReadTree(Listing listing, Tree::Target target,

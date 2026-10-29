@@ -201,11 +201,6 @@ Engine::State::Location::Walk Engine::State::FollowLinks(Location::Walk walk)
     return walk;
 }
 
-std::string Engine::State::LocationKey(std::string const& folder)
-{
-    return RootKey(FullPath(Wide(folder)));
-}
-
 std::string Engine::State::RealPath(std::string const& path) const
 {
     if (locations.empty())
@@ -213,7 +208,7 @@ std::string Engine::State::RealPath(std::string const& path) const
     auto full = FullPath(Wide(path));
     for (auto folder = full;; folder = folder.parent_path())
     {
-        auto found = locations.find(RootKey(folder));
+        auto found = locations.find(folder);
         if (found != locations.end() && found->second.real)
         {
             auto rest = full.wstring().substr(folder.wstring().size());
@@ -229,6 +224,17 @@ std::string Engine::State::RealPath(std::string const& path) const
 std::string Engine::State::RootOf(std::string const& folder) const
 {
     return lt::storage_root_key(RealPath(folder));
+}
+
+Torrent::StorageRoot Engine::State::StorageRootOf(std::string const& folder, std::string key) const
+{
+    return {std::move(key), NoticeRoot(folder).value_or(folder)};
+}
+
+std::string Engine::State::NoticeRootOf(Torrent const& torrent) const
+{
+    auto const& folder = torrent.facts.savePath;
+    return torrent.waiting ? NoticeRoot(folder).value_or(folder) : torrent.storageRoot.notice;
 }
 
 std::optional<std::string> Engine::State::NoticeRoot(std::string const& location) const
@@ -253,7 +259,7 @@ std::string Engine::State::NoticeKey(std::string const& location) const
 
 bool Engine::State::Locate(std::string const& folder)
 {
-    auto key = LocationKey(folder);
+    auto key = FullPath(Wide(folder));
     auto [entry, added] = locations.try_emplace(key, Location{folder});
     if (added)
         LookUp(key);
@@ -262,11 +268,11 @@ bool Engine::State::Locate(std::string const& folder)
 
 void Engine::State::LocateFolders()
 {
-    std::map<std::string, std::string> wanted;
+    std::map<std::filesystem::path, std::string, FullPathLess> wanted;
     auto want = [&wanted](std::string const& folder)
     {
         if (!folder.empty())
-            wanted.try_emplace(LocationKey(folder), folder);
+            wanted.try_emplace(FullPath(Wide(folder)), folder);
     };
     EachWorking([&want](Torrent const& torrent)
     {
@@ -306,7 +312,7 @@ void Engine::State::LocateFolders()
     ContinueLookups();
 }
 
-void Engine::State::LookUp(std::string const& key)
+void Engine::State::LookUp(std::filesystem::path const& key)
 {
     auto& location = locations.at(key);
     location.at = std::chrono::steady_clock::now();
@@ -316,7 +322,7 @@ void Engine::State::LookUp(std::string const& key)
 
 void Engine::State::ContinueLookups()
 {
-    using Batch = std::vector<std::pair<std::string, Location::Walk>>;
+    using Batch = std::vector<std::pair<std::filesystem::path, Location::Walk>>;
     auto rootOf = [](Location::Walk const& walk) { return lt::storage_root_key(Utf8(walk.path.wstring())); };
     std::set<std::string> busy;
     for (auto const& [key, location] : locations)
@@ -337,12 +343,9 @@ void Engine::State::ContinueLookups()
     }
     for (auto& [root, batch] : batches)
     {
-        // Kept apart from the root's volume worker by the prefix, so a
-        // lookup never waits behind a copy or a drive lookup there.
-        auto& worker = volumes["link " + root];
-        if (!worker)
-            worker = std::make_unique<Store>(wake);
-        worker->Run([batch]
+        // Kept apart from the root's volume worker, so a lookup never waits
+        // behind a copy or a drive lookup there.
+        Worker(WorkerKind::Lookup, root).Run([batch]
         {
             auto walked = batch;
             for (auto& [key, walk] : walked)
@@ -366,50 +369,58 @@ void Engine::State::ContinueLookups()
                 if (entry == locations.end() || !entry->second.walk)
                     continue;
                 auto& location = entry->second;
-                // A batch that the worker refused, as at Exit, ends each walk
-                // where it had got to.
-                auto walk = walked ? (*walked)[index].second : *location.walk;
-                if (walked && rootOf(walk) != root && walk.links < linkLimit)
+                // A batch that the worker did not run is sent again by the
+                // next maintenance pass.
+                if (!walked)
+                {
+                    location.walk->sent = false;
+                    continue;
+                }
+                auto& walk = (*walked)[index].second;
+                if (rootOf(walk) != root && walk.links < linkLimit)
                 {
                     walk.sent = false;
                     location.walk = std::move(walk);
                     continue;
                 }
                 location.walk.reset();
-                auto real = Utf8(walk.path.wstring());
-                if (location.real == real)
-                    continue;
-                location.real = std::move(real);
-                // The drives of its old real path are not the drives of the
-                // folder, or of the folders inside it, now.
-                auto const& key = entry->first;
-                auto inside = key.ends_with('\\') ? key : key + '\\';
-                std::erase_if(drives, [&key, &inside](auto const& known)
-                {
-                    auto folder = LocationKey(known.first);
-                    return folder == key || folder.starts_with(inside);
-                });
+                location.real = Utf8(walk.path.wstring());
             }
-            ContinueLookups();
+            if (walked)
+                ContinueLookups();
         });
     }
 }
 
 void Engine::State::Rekey()
 {
+    auto now = std::chrono::steady_clock::now();
     for (auto& [id, torrent] : torrents)
     {
         // A move gives libtorrent the root of its destination itself, and the
         // folder changes only when the move ends.
-        if (torrent.restore || torrent.pathWork == PathWork::Move)
+        if (torrent.waiting || torrent.PathWork() == PathWork::Move)
             continue;
-        Isolate(id, [this, &torrent]
+        Isolate(id, [this, &torrent, now]
         {
-            auto root = RootOf(torrent.facts.savePath);
-            if (root == torrent.storageRoot)
+            auto& given = torrent.storageRoot;
+            auto root = StorageRootOf(torrent.facts.savePath, RootOf(torrent.facts.savePath));
+            if (root.key == given.key)
+            {
+                given = std::move(root);
                 return;
-            torrent.handle.set_root_key(root);
-            torrent.storageRoot = std::move(root);
+            }
+            if (!given.left)
+            {
+                given.left = now;
+                return;
+            }
+            auto probe = rootProbes.find(RootKey(Wide(given.notice)));
+            if (probe == rootProbes.end() || probe->second.pending || !probe->second.at ||
+                *probe->second.at < *given.left)
+                return;
+            given = std::move(root);
+            torrent.handle.set_root_key(given.key);
         });
     }
 }

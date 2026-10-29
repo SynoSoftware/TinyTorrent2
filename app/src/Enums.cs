@@ -846,6 +846,7 @@ internal enum CaptureMode
     Desktop,
     Details,
     DetailsFiles,
+    FileControls,
     Files,
     FilesLayout,
     Search,

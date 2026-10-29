@@ -186,10 +186,11 @@ Deleting a test because it is red is the failure mode, not this.
 ## Windows evidence
 
 `app/tests/AddSourceChecks.ps1 -BinaryDirectory <built-app-folder>` checks that
-duplicate recovery preserves file choices and that a dialog's opt-out turns off
-the settings passed to it in one save. It reads the settings command the
-`Editor` queues instead of connecting to an engine. It does not exercise native
-checkbox input or which setting Add passes for a magnet link or a torrent file.
+a reconnect preserves file choices, including one whose send failed, and that a
+dialog's opt-out turns off the settings passed to it in one save. It reads the
+commands that `AddDraft` and the `Editor` queue instead of connecting to an
+engine. It does not exercise native checkbox input or which setting Add passes
+for a magnet link or a torrent file.
 
 `app/tests/SettingChecks.ps1 -BinaryDirectory <built-app-folder>` checks that a
 refused earlier save neither discards newer input nor marks it as refused. It
@@ -430,6 +431,9 @@ layout matrix. It captures populated Trackers in both languages and themes at
 the three review sizes after saving several URLs and tiers through the real
 editor, then restores the original list. The disposable fixture stays paused;
 this establishes populated layout and edit outcomes, not live tracker responses.
+`file-controls` runs the native Add file preview, Inspector priority commit and
+restoration, and the Pieces file-page load, so a file-browser change does not
+repeat tracker and settings journeys.
 `details-files` limits correction captures to Files and localized selected
 Settings choices; it does not repeat those behavioral journeys.
 Use `TINYTORRENT_CAPTURE_REVIEW=files` through the launcher for

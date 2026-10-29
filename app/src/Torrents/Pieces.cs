@@ -1,13 +1,12 @@
 using System.Text.Json;
 using Microsoft.UI.Xaml.Controls;
 using Syno.TinyTorrent.Shared;
+using Syno.TinyTorrent.Shared.Engine;
 
 namespace Syno.TinyTorrent.Torrents;
 
 public sealed class Pieces
 {
-    private const int Listed = 3;
-
     public bool MetadataReady { get; }
     public int PieceSize { get; }
     public int PeerCount { get; }
@@ -15,11 +14,11 @@ public sealed class Pieces
     public IReadOnlyList<bool> Wanted { get; }
     public IReadOnlyList<int> Availability { get; }
     public IReadOnlyDictionary<int, double> Downloading { get; }
-    public IReadOnlyList<PieceFile> Files { get; }
+    internal PieceFiles Files { get; }
     public IReadOnlyList<PieceKind> States { get; }
     public int Count => Verified.Count;
 
-    internal Pieces(JsonElement data, IReadOnlyList<PieceFile> files)
+    internal Pieces(JsonElement data, PieceFiles files)
     {
         MetadataReady = data.GetProperty("metadata_ready").GetBoolean();
         PieceSize = data.GetProperty("piece_size").GetInt32();
@@ -77,7 +76,7 @@ public sealed class Pieces
         && Verified.SequenceEqual(other.Verified)
         && Wanted.SequenceEqual(other.Wanted)
         && Availability.SequenceEqual(other.Availability)
-        && (ReferenceEquals(Files, other.Files) || Files.SequenceEqual(other.Files))
+        && Files == other.Files
         && Downloading.Count == other.Downloading.Count
         && Downloading.All(piece =>
             other.Downloading.TryGetValue(piece.Key, out var progress) && progress == piece.Value
@@ -115,9 +114,9 @@ public sealed class Pieces
                 + (Wanted[index] && States[index] == PieceKind.Unavailable ? 1 : 0);
         if (unavailable[Count] == 0)
             return Known(text, "available", InfoBarSeverity.Success);
-        var names = Names(
+        var names = Files.Names(
             text,
-            Files.Where(file => unavailable[file.End] > unavailable[file.First])
+            pieces => unavailable[pieces.End] > unavailable[pieces.First]
         );
         return new(
             text.Get("pieces", "cannot_finish"),
@@ -154,26 +153,50 @@ public sealed class Pieces
             : text.Format("pieces", "copies_range", copies.Min(), copies.Max());
         var files = string.Join(
             ", ",
-            Names(text, Files.Where(file => file.First < end && file.End > first))
+            Files.Names(text, pieces => pieces.First < end && pieces.End > first)
         );
         return new PieceDetail(range, peers, Counts(first, end), files);
     }
+}
 
-    private static string[] Names(Strings text, IEnumerable<PieceFile> files)
+// The payload files of a map, in file order. A torrent above the file
+// browser's window is read without its names, which would cost tens of
+// megabytes, so its map counts files instead of naming them.
+internal abstract record PieceFiles
+{
+    private PieceFiles() { }
+
+    // No files, while the map's files are unread. It is one instance, so two
+    // such maps compare equal.
+    internal static readonly PieceFiles None = new Named([]);
+
+    // How the map lists the files whose pieces `covers` accepts.
+    internal abstract string[] Names(Strings text, Func<PieceRange, bool> covers);
+
+    internal sealed record Named(IReadOnlyList<PieceFile> Files) : PieceFiles
     {
-        var listed = files.ToArray();
-        string[] paths = [.. listed.Select(file => file.Path).OfType<string>()];
-        if (paths.Length < listed.Length)
-            return [text.FormatCount("pieces", "files", listed.Length)];
-        return paths.Length <= Listed
-            ? paths
-            : [.. paths.Take(Listed), text.Format("pieces", "more", paths.Length - Listed)];
+        private const int Listed = 3;
+
+        internal override string[] Names(Strings text, Func<PieceRange, bool> covers)
+        {
+            string[] paths = [.. Files.Where(file => covers(file.Pieces)).Select(file => file.Path)];
+            return paths.Length <= Listed
+                ? paths
+                : [.. paths.Take(Listed), text.Format("pieces", "more", paths.Length - Listed)];
+        }
+    }
+
+    internal sealed record Counted(IReadOnlyList<PieceRange> Files) : PieceFiles
+    {
+        internal override string[] Names(Strings text, Func<PieceRange, bool> covers)
+        {
+            var count = Files.Count(covers);
+            return count == 0 ? [] : [text.FormatCount("pieces", "files", count)];
+        }
     }
 }
 
-// Path is null for a torrent above the file browser's window, whose map counts
-// files instead of naming them.
-public sealed record PieceFile(string? Path, int First, int End);
+internal sealed record PieceFile(string Path, PieceRange Pieces);
 
 // Whether the download can finish: the answer, and the reason behind it.
 public sealed record Conclusion(string Answer, string Reason, InfoBarSeverity Severity)

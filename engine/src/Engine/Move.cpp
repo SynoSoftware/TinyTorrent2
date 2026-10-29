@@ -22,9 +22,9 @@ void Engine::State::StartMove(std::vector<std::string> const& ids, std::string c
         auto& torrent = torrents.at(id);
         auto const& marker = torrent.facts.marker;
         if (marker && marker->stage != MoveStage::Staged && !SameFolder(marker->destination, destination) &&
-            !torrent.pathWork && !torrent.restore && !torrent.Paths().empty())
+            !torrent.PathWork() && !torrent.waiting && !torrent.Paths().empty())
         {
-            JoinAbandonments(torrent);
+            AbandonMove(torrent);
         }
     }
     if (auto ready = FilesReady(ids, destination); ready.error)
@@ -125,7 +125,6 @@ void Engine::State::StartMove(std::vector<std::string> const& ids, std::string c
     for (auto const& id : ids)
     {
         auto& torrent = torrents.at(id);
-        torrent.pathWork = PathWork::Move;
         torrent.ApplyIntent();
     }
     CommitFacts(ids, [destination, continued](std::string const& id, Facts& facts)
@@ -137,13 +136,13 @@ void Engine::State::StartMove(std::vector<std::string> const& ids, std::string c
     {
         if (outcome.error)
         {
-            for (auto const& id : started.ids)
+            auto ids = started.ids;
+            moves.remove_if([&started](Move const& other) { return &other == &started; });
+            for (auto const& id : ids)
             {
                 auto& torrent = torrents.at(id);
-                torrent.pathWork.reset();
                 torrent.ApplyIntent();
             }
-            moves.remove_if([&started](Move const& other) { return &other == &started; });
             accepted(std::move(outcome));
             return;
         }
@@ -154,7 +153,8 @@ void Engine::State::StartMove(std::vector<std::string> const& ids, std::string c
             // The latest move the person asked for replaces one that waited,
             // and its marker replaces the abandoned move's.
             torrent.waitingMove.reset();
-            std::erase_if(abandonments, [&id](Abandonment const& abandonment) { return abandonment.torrentId == id; });
+            std::erase_if(returning, [&id](Returning const& running)
+                { return std::holds_alternative<Returning::Listed>(running.target) && running.TorrentId() == id; });
             torrent.moveError.reset();
             Steer(torrent, Control::MoveStarted{started.final});
             torrent.ApplyIntent();
@@ -415,7 +415,6 @@ void Engine::State::ContinueMove(Move& moving)
             continue;
         }
         auto& torrent = Working(*member);
-        torrent.pathWork.reset();
         torrent.facts.marker.reset();
         member = moving.ids.erase(member);
     }
@@ -552,9 +551,10 @@ void Engine::State::ContinueMove(Move& moving)
         auto& member = Working(moving.ids.at(moving.current));
         auto priorities = member.handle.get_file_priorities();
         bool skips = std::find(priorities.begin(), priorities.end(), lt::dont_download) != priorities.end();
-        member.storageRoot = RootOf(moving.destination);
+        member.storageRoot = StorageRootOf(moving.destination, RootOf(moving.destination));
         member.handle.move_storage(moving.destination,
-            skips ? lt::move_flags_t::dont_replace : lt::move_flags_t::reset_save_path_unchecked, member.storageRoot);
+            skips ? lt::move_flags_t::dont_replace : lt::move_flags_t::reset_save_path_unchecked,
+            member.storageRoot.key);
     });
 }
 
@@ -627,13 +627,16 @@ void Engine::State::ReloadMove(Move& moving)
     auto replacement = std::make_shared<Replacement>();
     moving.phase = MovePhase::Saving;
     moving.job->worker->Run([this, handle, replacement, pieces = *moving.pieces, logical = Working(id).Paths(true),
-        stop = exitStop.get_token()]
+        lost = Working(id).control.Lost(), stop = exitStop.get_token()]
     {
         auto& params = replacement->params;
         params = handle.get_resume_data(lt::torrent_handle::save_info_dict);
         params.have_pieces = pieces;
         params.verified_pieces.clear();
         params.unfinished_pieces.clear();
+        // The move's resume data, which its continuation saves, must not
+        // claim the data of files that lost it.
+        DropPieces(params, lost);
         std::size_t position = 0;
         for (auto index : params.ti->layout().file_range())
         {
@@ -744,12 +747,12 @@ void Engine::State::SaveMove(Move& moving)
         // folder.
         Steer(torrent, Control::Replaced{});
         torrent.nameError.reset();
+        ++moving.current;
         EndMove(torrent, std::nullopt, false);
         // The sources go as a deletion's files do, also when the next start
         // continues their task, and the rest of the group moves meanwhile.
         AddDeletion(*std::exchange(moving.cleaning, std::nullopt));
         ContinueDeletion();
-        ++moving.current;
         moving.phase = MovePhase::Ready;
         ContinueMove(moving);
     };
@@ -762,7 +765,7 @@ void Engine::State::SaveMove(Move& moving)
         if (!torrents.contains(id))
         {
             relocate(id, Working(id).facts);
-            returning.remove_if([&id](Returning const& running) { return running.task.torrentId == id; });
+            returning.remove_if([&id](Returning const& running) { return running.TorrentId() == id; });
             changes.Commit([document = Saved()] { return document.ToJson(); }, [this, id, settle](Outcome outcome)
             {
                 if (outcome.error)
@@ -826,20 +829,17 @@ void Engine::State::FailMove(Move& moving, Problem problem)
     // continuing a failed move on its own would repeat the failure.
     auto clears = [&moving, interrupted = problem.kind == ProblemKind::MoveInterrupted](std::string const& id)
         { return !interrupted && !Contains(moving.recovering, id); };
-    // The failure deleted the unfinished copies, so their proof goes too.
     auto settle = [](Facts& facts, bool clear)
     {
         if (clear)
             facts.marker.reset();
         else if (facts.marker)
-        {
-            facts.marker->failed = true;
-            facts.marker->copy.reset();
-        }
+            facts.marker->Fail();
     };
     // A marker whose clearing was not saved stays, and waits like a kept one.
     auto end = [this, &moving, failed, problem, clears, settle](bool saved)
     {
+        moving.current += failed.size();
         for (auto const& id : failed)
         {
             auto& torrent = Working(id);
@@ -848,7 +848,6 @@ void Engine::State::FailMove(Move& moving, Problem problem)
             // run again by itself.
             EndMove(torrent, problem, moving.final && !torrent.facts.marker);
         }
-        moving.current += failed.size();
         moving.phase = MovePhase::Ready;
         ContinueMove(moving);
     };
@@ -873,7 +872,6 @@ void Engine::State::FailMove(Move& moving, Problem problem)
 
 void Engine::State::EndMove(Torrent& torrent, std::optional<Problem> problem, bool final)
 {
-    torrent.pathWork.reset();
     torrent.moveError = problem;
     Steer(torrent, Control::MoveEnded{problem, final});
     // SaveMove ends the old folder's storage failure and name problem itself.
@@ -901,7 +899,7 @@ std::optional<double> Engine::State::MoveProgress(Torrent const& torrent) const
 {
     if (torrent.MoveWaits())
         return 0.0;
-    if (torrent.pathWork != PathWork::Move)
+    if (torrent.PathWork() != PathWork::Move)
         return std::nullopt;
     for (auto const& moving : moves)
     {

@@ -733,6 +733,12 @@ void Engine::State::SaveSettings(Settings next, std::function<void()> settled, s
         {
             limitOverride.reset();
         }
+        if (settings.watches != next.watches || settings.watchPath != next.watchPath ||
+            settings.watchesRecursively != next.watchesRecursively)
+        {
+            watchFailed = false;
+            watchSaveFailed = false;
+        }
         settings = next;
         RefreshPolicy();
         finish();

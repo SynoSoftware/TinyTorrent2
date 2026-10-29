@@ -8,24 +8,57 @@ internal sealed partial class PipeClient
     private PendingFiles? _files;
     private (Request Request, long Context, TaskCompletionSource Completion)? _inspector;
 
-    // A torrent's files, one page at a time. The caller reads each page before
-    // the next one is requested.
-    internal IAsyncEnumerable<JsonElement> TorrentFiles(string torrentId) =>
-        Pages(offset => new { torrent_id = torrentId, offset });
+    // A torrent's payload files with their paths.
+    internal IAsyncEnumerable<DetailFile> TorrentFiles(string torrentId) =>
+        Files(
+            async offset =>
+                await Read("files", new { torrent_id = torrentId, offset }).ConfigureAwait(false),
+            DetailFile.Read
+        );
 
-    private async IAsyncEnumerable<JsonElement> Pages(Func<int, object> request)
+    // The pieces of a torrent's payload files, read without their paths, so
+    // the names of a large torrent are never sent.
+    internal IAsyncEnumerable<PieceRange> TorrentPieces(string torrentId) =>
+        Files(
+            async offset =>
+                await Read(
+                        "files",
+                        new { torrent_id = torrentId, offset, paths = false }
+                    )
+                    .ConfigureAwait(false),
+            PieceRange.Read
+        );
+
+    // A torrent's file count, padding files included, which a page past its
+    // last file carries with no files.
+    internal async Task<int> FileCount(string torrentId) =>
+        (
+            await Read(
+                    "files",
+                    new { torrent_id = torrentId, offset = int.MaxValue, paths = false }
+                )
+                .ConfigureAwait(false)
+        )
+            .GetProperty("file_count")
+            .GetInt32();
+
+    // A torrent's payload files, page by page. `read` gives the page at an
+    // offset, or null to end the files early. The next page is requested only
+    // after the caller has taken every file of the current one.
+    private static async IAsyncEnumerable<T> Files<T>(
+        Func<int, Task<JsonElement?>> read,
+        Func<JsonElement, T> parse
+    )
     {
         var offset = 0;
-        while (true)
+        while (await read(offset).ConfigureAwait(false) is { } page)
         {
-            var page = await Send("files", request(offset), Requester.Window)
-                .ConfigureAwait(false);
-            var length = page.GetProperty("files").GetArrayLength();
-            if (length == 0)
-                yield break;
-            yield return page;
-            offset += length;
-            if (offset >= page.GetProperty("file_count").GetInt32())
+            var files = page.GetProperty("files");
+            foreach (var file in files.EnumerateArray())
+                if (!file.GetProperty("padding").GetBoolean())
+                    yield return parse(file);
+            offset += files.GetArrayLength();
+            if (files.GetArrayLength() == 0 || offset >= page.GetProperty("file_count").GetInt32())
                 yield break;
         }
     }
@@ -42,37 +75,20 @@ internal sealed partial class PipeClient
     )
     {
         List<DetailFile> files = [];
-        var offset = 0;
-        var count = 1;
-        while (offset < count)
-        {
-            if (
-                await ReadPage(torrentId, offset, cancellation).ConfigureAwait(false)
-                is not { } page
-            )
-                return null;
-            var listed = page.GetProperty("files");
-            count = page.GetProperty("file_count").GetInt32();
-            if (listed.GetArrayLength() == 0)
-                break;
-            foreach (var file in listed.EnumerateArray())
+        var withdrawn = false;
+        var payload = Files(
+            async offset =>
             {
-                if (file.GetProperty("padding").GetBoolean())
-                    continue;
-                files.Add(
-                    new DetailFile(
-                        file.GetProperty("index").GetInt32(),
-                        file.GetProperty("path").GetString()!,
-                        file.GetProperty("disk_path").GetString(),
-                        file.GetProperty("size").GetInt64(),
-                        file.GetProperty("first_piece").GetInt32(),
-                        file.GetProperty("end_piece").GetInt32(),
-                        file.GetProperty("priority").GetInt32()
-                    )
-                );
-            }
-            offset += listed.GetArrayLength();
-        }
+                var page = await ReadPage(torrentId, offset, cancellation).ConfigureAwait(false);
+                withdrawn = page is null;
+                return page;
+            },
+            DetailFile.Read
+        );
+        await foreach (var file in payload.ConfigureAwait(false))
+            files.Add(file);
+        if (withdrawn)
+            return null;
         bool[]? verified = null;
         if (completed && files.Count > 0)
         {
@@ -287,7 +303,24 @@ internal sealed record DetailFile(
     string Path,
     string? DiskPath,
     long Size,
-    int FirstPiece,
-    int EndPiece,
+    PieceRange Pieces,
     int Priority
-);
+)
+{
+    internal static DetailFile Read(JsonElement file) =>
+        new(
+            file.GetProperty("index").GetInt32(),
+            file.GetProperty("path").GetString()!,
+            file.GetProperty("disk_path").GetString(),
+            file.GetProperty("size").GetInt64(),
+            PieceRange.Read(file),
+            file.GetProperty("priority").GetInt32()
+        );
+}
+
+// A file's pieces, End exclusive.
+internal readonly record struct PieceRange(int First, int End)
+{
+    internal static PieceRange Read(JsonElement file) =>
+        new(file.GetProperty("first_piece").GetInt32(), file.GetProperty("end_piece").GetInt32());
+}

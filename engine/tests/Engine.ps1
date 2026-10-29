@@ -65,7 +65,7 @@ function Connect-Pipe {
         throw 'TinyTorrent is already running. The check refuses to command an engine it did not start.'
     }
     $hello = Read-Frame $stream
-    Assert ($hello.type -eq 'hello' -and $hello.version -eq 36) 'Invalid version handshake'
+    Assert ($hello.type -eq 'hello' -and $hello.version -eq 37) 'Invalid version handshake'
     return $stream
 }
 
@@ -80,23 +80,32 @@ function Send-Command([hashtable] $fields) {
     return $reply
 }
 
+function Get-Detail([hashtable] $fields) {
+    $fields.command = 'torrent'
+    # After a restart a torrent answers detail reads with `starting` until it
+    # is added to libtorrent.
+    $until = [DateTime]::UtcNow.AddSeconds(15)
+    do {
+        $reply = Send-Command $fields
+        if ($reply.ok -or $reply.error.code -ne 'starting') { break }
+        Start-Sleep -Milliseconds 100
+    } while ([DateTime]::UtcNow -lt $until)
+    Assert $reply.ok "Engine refused the detail: $($reply.error.code)"
+    return $reply.data
+}
+
 # The torrent's files from the first page, each with its downloaded bytes and
 # libtorrent's priority from the Files detail. The fixtures fit in one page.
 function Get-Files([string] $torrentId) {
     $page = Send-Command @{ command = 'files'; torrent_id = $torrentId }
     Assert $page.ok 'Engine refused the file list'
-    # After a restart a torrent answers detail reads with `starting` until it
-    # is added to libtorrent.
-    $until = [DateTime]::UtcNow.AddSeconds(15)
-    do {
-        $reply = Send-Command @{ command = 'torrent'; torrent_id = $torrentId; view = 'files' }
-        if ($reply.ok -or $reply.error.code -ne 'starting') { break }
-        Start-Sleep -Milliseconds 100
-    } while ([DateTime]::UtcNow -lt $until)
-    $detail = $reply.data
+    $detail = Get-Detail @{ torrent_id = $torrentId; view = 'files'; files = @($page.data.files.index) }
+    $values = @{}
+    foreach ($file in $detail.files) { $values[$file.index] = $file }
     foreach ($file in $page.data.files) {
-        $file | Add-Member downloaded ($null -ne $detail.downloaded ? $detail.downloaded[$file.index] : $null)
-        $file | Add-Member -Force priority ($null -ne $detail.priority ? $detail.priority[$file.index] : $null)
+        $current = $values[$file.index]
+        $file | Add-Member downloaded $current.downloaded
+        $file | Add-Member -Force priority $current.priority
     }
     return ,$page.data.files
 }

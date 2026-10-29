@@ -624,7 +624,10 @@ public sealed class AddDraft : IDraft
 
     // The root of a preview's files when the source does not show that
     // preview's files yet, read before the source applies the preview so it
-    // never shows an empty list.
+    // never shows an empty list. A new preview, such as one after a
+    // reconnect, starts from the default choices, so the person's choices are
+    // sent to it first and its rows show them; a preview that holds them
+    // already stays as it is.
     private async Task<JsonElement?> ReadFiles(AddSource source, JsonElement preview)
     {
         var previewId = preview.GetProperty("preview_id").GetString()!;
@@ -633,6 +636,16 @@ public sealed class AddDraft : IDraft
             || SourceContent.Read(preview) is not SourceContent.Files
         )
             return null;
+        foreach (var choices in source.Choices)
+            await _client.Send(
+                "edit",
+                new
+                {
+                    preview_id = previewId,
+                    changes = FileChoice.Changes(choices),
+                },
+                Requester.Window
+            );
         return await ReadTree(previewId, new() { ["folder"] = string.Empty });
     }
 
@@ -643,7 +656,7 @@ public sealed class AddDraft : IDraft
                 new IOException(_strings.Get("connection", "unavailable"))
             );
         request["preview_id"] = previewId;
-        return _client.Send("tree", request, Requester.Window);
+        return _client.Read("tree", request);
     }
 
     // Sends a file choice to the preview at once, because a preview's choices
@@ -668,6 +681,10 @@ public sealed class AddDraft : IDraft
         }
         catch (Exception error)
         {
+            // The rows read again without a refused choice, so a new preview
+            // does not get it either. Any other failure keeps it.
+            if (error is CommandException { Code: not "preview_expired" })
+                source.Refuse(choices);
             Fail(error);
             source.Files.Reload();
             return null;
@@ -1104,7 +1121,7 @@ public sealed class AddDraft : IDraft
     {
         foreach (var source in Sources)
         {
-            source.Files.IsEnabled = CanEdit;
+            source.Files.IsEnabled = CanEdit && source.PreviewId is not null;
             source.Refresh();
         }
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
@@ -1116,6 +1133,10 @@ public sealed class AddSource : INotifyPropertyChanged
     private readonly Strings _strings;
     private readonly AddDraft _draft;
     private readonly List<Task> _edits = [];
+
+    // The file choices the person made, in order and each as one edit sent
+    // them, so a new preview applies them as the engine applied them before.
+    private readonly List<IReadOnlyList<FileChoice>> _choices = [];
     internal List<string> Inputs { get; }
     public string Source => Inputs[0];
     public FileSelection Files { get; }
@@ -1165,7 +1186,7 @@ public sealed class AddSource : INotifyPropertyChanged
                 Files.SelectAll();
                 return Task.CompletedTask;
             },
-            () => draft.CanEdit && NeedsFiles
+            () => Files.IsEnabled && NeedsFiles
         );
     }
 
@@ -1195,6 +1216,9 @@ public sealed class AddSource : INotifyPropertyChanged
 
     // The file choices sent to the preview whose replies have not arrived.
     internal Task Edits => Task.WhenAll(_edits);
+    internal IReadOnlyList<IReadOnlyList<FileChoice>> Choices => _choices;
+
+    internal void Refuse(IReadOnlyList<FileChoice> choices) => _choices.Remove(choices);
 
     // Files is the root of the preview's files when the source does not show
     // them yet.
@@ -1230,6 +1254,7 @@ public sealed class AddSource : INotifyPropertyChanged
                 request => _draft.ReadTree(PreviewId, request),
                 choices =>
                 {
+                    _choices.Add(choices);
                     _edits.RemoveAll(edit => edit.IsCompleted);
                     var edit = _draft.Edit(this, choices);
                     _edits.Add(edit);

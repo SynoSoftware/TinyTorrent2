@@ -74,7 +74,15 @@ internal sealed partial class PipeClient : IDisposable
         }
     }
 
-    internal Task<JsonElement> Send(string name, object? arguments, Requester requester)
+    internal Task<JsonElement> Send(string name, object? arguments, Requester requester) =>
+        Enqueue(new Request(name, arguments, requester));
+
+    // Each caller needs its own reply; these reads neither coalesce nor
+    // announce a command that would invalidate the Inspector's context.
+    internal Task<JsonElement> Read(string name, object? arguments) =>
+        Enqueue(new Request(name, arguments, (Requester?)null));
+
+    private Task<JsonElement> Enqueue(Request request)
     {
         lock (_gate)
         {
@@ -86,7 +94,6 @@ internal sealed partial class PipeClient : IDisposable
                 return Task.FromException<JsonElement>(
                     new IOException(_strings.Get("connection", "overload"))
                 );
-            var request = new Request(name, arguments, requester);
             _commands.Enqueue(request);
             _commandCount++;
             _queued.Release();
@@ -584,7 +591,7 @@ internal sealed partial class PipeClient : IDisposable
 
     private static void CheckVersion(NamedPipeClientStream pipe, JsonElement hello, Strings strings)
     {
-        if (hello.TryGetProperty("version", out var version) && version.GetInt32() == 36)
+        if (hello.TryGetProperty("version", out var version) && version.GetInt32() == 37)
             return;
         throw new VersionException(EngineProcess.VersionMessage(pipe, strings));
     }
@@ -701,11 +708,11 @@ internal sealed partial class PipeClient : IDisposable
             new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 
-    // A command names who requested it, and a read names the view it
-    // refreshes; the other of the two is null.
+    // Commands name their requester, refreshes name their consumer, and
+    // independent reads name neither.
     private sealed class Request
     {
-        internal Request(string name, object? arguments, Requester requester)
+        internal Request(string name, object? arguments, Requester? requester)
         {
             Name = name;
             Arguments = arguments;

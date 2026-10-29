@@ -88,10 +88,11 @@ void Engine::State::Remove(std::vector<std::string> const& ids,
         }
         queueOrder = order;
         Unask(ids);
-        for (auto const& returned : givesBack)
-            AddGiveBack(returned);
         for (auto const& id : ids)
         {
+            auto found = std::find_if(givesBack.begin(), givesBack.end(),
+                [&id](Task::Return const& task) { return task.torrentId == id; });
+            RemoveReturn(torrents.at(id), found == givesBack.end() ? std::nullopt : std::optional(*found));
             Extract(id, mode);
         }
         RemoveHandles(ready, deletion);
@@ -208,7 +209,7 @@ void Engine::State::RemoveHandles(std::vector<std::string> const& ids, std::list
     for (auto const& id : ids)
     {
         auto const& torrent = removed.at(id).torrent;
-        if (!torrent.restore)
+        if (!torrent.waiting)
         {
             if (deletion->mode)
             {
@@ -265,8 +266,9 @@ void Engine::State::RemoveHandles(std::vector<std::string> const& ids, std::list
 // because FileScope cannot see the files an addition shares.
 bool Engine::State::CanRemove(Torrent const& torrent, std::optional<DeletionMode> mode) const
 {
-    auto const& marker = torrent.facts.marker;
-    bool adding = Adding(RootOf(torrent.facts.savePath)) || (marker && Adding(RootOf(marker->destination)));
+    auto folders = torrent.Folders();
+    bool adding = std::any_of(folders.begin(), folders.end(),
+        [this](auto const& folder) { return Adding(RootOf(folder)); });
     return !torrent.FilesBusy() && torrent.checkReads == CheckReads::None && (!mode || !adding);
 }
 
@@ -289,17 +291,15 @@ void Engine::State::Extract(std::string const& id, std::optional<DeletionMode> m
     Answer(torrent, FailureAnswer::Remove);
     handles.erase(torrent.handle);
     seedQueries.erase(torrent.handle);
-    auto job = fileWork.Start(WorkKind::Removal, {{torrent.facts.savePath, id}});
-    job->Run();
-    removed.emplace(id, Removal{std::move(torrents.extract(id).mapped()), mode, std::move(job)});
+    removed.emplace(id, Removal{std::move(torrents.extract(id).mapped()), mode});
 }
 
 bool Engine::State::Removing(lt::info_hash_t const& hashes) const
 {
-    // A conflicting restore was never loaded, so libtorrent does not hold it.
+    // libtorrent never held one that waited for its add.
     auto values = Hashes(hashes);
     return std::any_of(removed.begin(), removed.end(), [&values](auto const& entry)
-        { return !entry.second.torrent.restore && Overlaps(values, entry.second.torrent.Hashes()); });
+        { return !entry.second.torrent.waiting && Overlaps(values, entry.second.torrent.Hashes()); });
 }
 
 void Engine::State::RemoveDeferred()
@@ -412,7 +412,8 @@ bool Engine::State::Held(Deletion const& deletion, std::string const& root) cons
         return holds(other.holds) && std::any_of(other.parts.begin(), other.parts.end(), writes);
     }) || std::any_of(returning.begin(), returning.end(), [&files](Returning const& running)
     {
-        return std::any_of(running.task.files.begin(), running.task.files.end(), [&files](auto const& file)
+        auto task = std::get_if<Task::Return>(&running.target);
+        return task && std::any_of(task->files.begin(), task->files.end(), [&files](auto const& file)
             { return std::binary_search(files.begin(), files.end(), file.source, PathBefore); });
     });
 }

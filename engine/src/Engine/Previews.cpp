@@ -36,14 +36,18 @@ std::vector<std::string> Engine::State::SharedFiles(std::shared_ptr<lt::torrent_
         return Utf8((std::filesystem::path(Wide(folder)) / Wide(part)).wstring());
     };
     std::vector<std::string> tops;
-    for (auto const& part : Tops(metadata->layout(),
-        [this, &metadata](lt::file_index_t index) { return ContentPath(metadata->layout(), index, settings.layout); }))
+    auto const& layout = metadata->layout();
+    auto visitPaths = [this, &layout](auto const& visit)
+    {
+        for (auto index : layout.file_range())
+            if (!layout.pad_file_at(index))
+                visit(ContentPath(layout, index, settings.layout));
+    };
+    for (auto const& part : Tops(visitPaths))
         tops.push_back(join(destination, part));
     auto overlaps = [&tops, &join](Torrent const& torrent)
     {
-        std::vector<std::string> roots = {torrent.facts.savePath};
-        if (torrent.facts.marker)
-            roots.push_back(torrent.facts.marker->destination);
+        auto roots = torrent.Folders();
         for (bool logical : {true, false})
             for (auto const& part : torrent.Tops(logical))
                 for (auto const& root : roots)
@@ -55,7 +59,7 @@ std::vector<std::string> Engine::State::SharedFiles(std::shared_ptr<lt::torrent_
     std::optional<std::vector<std::filesystem::path>> wanted;
     auto visit = [this, &metadata, &destination, &overlaps, &wanted, &names](Torrent const& torrent)
     {
-        auto other = torrent.restore ? torrent.restore->ti : torrent.handle.torrent_file();
+        auto other = torrent.Metadata();
         if (!other || !overlaps(torrent))
         {
             return;
@@ -163,7 +167,7 @@ bool Engine::State::CanMerge(Preview const& preview) const
 {
     auto duplicate = FindDuplicate(preview.InfoHashes());
     return duplicate &&
-        !torrents.at(*duplicate).restore &&
+        !torrents.at(*duplicate).waiting &&
         !Missing(preview.params.trackers, Urls(torrents.at(*duplicate).Trackers())).empty();
 }
 
@@ -180,22 +184,6 @@ Json Engine::State::Describe(Preview const& preview, std::string const& destinat
         {"error", preview.error}, {"shared_with", SharedFiles(params.ti, settings.SavePath(destination))}};
 }
 
-Json Engine::State::DescribeFilePage(Preview const& preview, int offset) const
-{
-    auto const& metadata = preview.params.ti;
-    Json data = {{"preview_id", preview.previewId}, {"offset", offset},
-        {"file_count", metadata ? metadata->num_files() : 0}, {"files", Json::array()}};
-    if (metadata)
-    {
-        auto const& layout = metadata->layout();
-        data["files"] = FilePage(*metadata, offset, [this, &preview, &layout](lt::file_index_t index, Json& file)
-        {
-            file["path"] = ContentPath(layout, index, settings.layout);
-            file["priority"] = static_cast<std::uint8_t>(preview.priorities[static_cast<int>(index)]);
-        });
-    }
-    return data;
-}
 
 std::expected<Listing, Outcome> Engine::State::Listed(Preview& preview)
 {

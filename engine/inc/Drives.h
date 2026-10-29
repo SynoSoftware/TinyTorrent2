@@ -12,6 +12,9 @@ namespace tt
 struct Drives
 {
     std::set<std::string> names;
+    // The RootOf keys whose hashing threads a check uses; none for other
+    // jobs.
+    std::set<std::string> roots;
 
     // Finds the drives of `folder`, or of its nearest existing parent, through
     // any link in its path. A folder the engine cannot identify is a drive of

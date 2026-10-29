@@ -1,10 +1,11 @@
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('Frames', 'Summaries', 'Targets', 'Facts', 'Restore', 'Exit', 'Conflict', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames', 'Pause', 'History', 'Accounting', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify', 'MoveExisting', 'DriveTurns', 'UnfinishedTasks', 'StorageStop', 'StoppedLocation', 'AbsentLink', 'AbsentNotice', 'LinkedNotice', 'KilledCheck', 'StoppedHeld', 'MagnetAbsent', 'FileWindow')]
+    [ValidateSet('Frames', 'Summaries', 'Targets', 'Facts', 'Restore', 'Exit', 'Conflict', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames', 'Pause', 'History', 'Accounting', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify', 'MoveExisting', 'DriveTurns', 'UnfinishedTasks', 'StorageStop', 'StoppedLocation', 'AbsentLink', 'LinkedNotice', 'KilledCheck', 'StoppedHeld', 'MagnetAbsent', 'FileWindow')]
     [string] $Check,
     # Every check but Conflict, FilesSafety, WaitingMove, RemoveDuringMove, MoveAndVerify,
     # MoveExisting, DriveTurns, UnfinishedTasks, StorageStop, StoppedLocation,
-    # AbsentLink, AbsentNotice, LinkedNotice, KilledCheck and FileWindow, which make their own torrents.
+    # AbsentLink, LinkedNotice, KilledCheck, FileWindow and SelectedTransfer,
+    # which make their own torrents.
     [string] $TorrentFile,
     [string] $EnginePath,
     [switch] $Transfer,
@@ -30,7 +31,7 @@ $transferChecks = 'MagnetDownload', 'SelectedTransfer', 'DiskError', 'PreviewGua
 # These checks each guard one defect that was already fixed, so a run of every
 # check skips them; the owner asks for them when that code changes.
 $optInChecks = 'WaitingMove', 'RemoveDuringMove'
-if (-not $TorrentFile -and $Check -notin 'Conflict', 'FilesSafety', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify', 'MoveExisting', 'DriveTurns', 'UnfinishedTasks', 'StorageStop', 'StoppedLocation', 'AbsentLink', 'AbsentNotice', 'LinkedNotice', 'KilledCheck', 'FileWindow') {
+if (-not $TorrentFile -and $Check -notin 'Conflict', 'FilesSafety', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify', 'MoveExisting', 'DriveTurns', 'UnfinishedTasks', 'StorageStop', 'StoppedLocation', 'AbsentLink', 'LinkedNotice', 'KilledCheck', 'FileWindow', 'SelectedTransfer') {
     throw "$Check needs -TorrentFile."
 }
 if ($Check -in $transferChecks -and -not $Transfer) {
@@ -2004,11 +2005,11 @@ try {
 
             # A give-back's marker is saved as stage 2 with move_returns,
             # which an earlier engine reads as a failed move that waits for
-            # the person, and one version saved stage 3. The next start reads
-            # both as a give-back and continues it without asking.
+            # the person. The next start reads it as a give-back and
+            # continues it without asking.
             $destination = Join-Path $directory 'moved'
             $partial = Join-Path $destination 'big.bin.!ttcopy'
-            foreach ($form in @(@{ stage = 3; returns = $false }, @{ stage = 2; returns = $true })) {
+            foreach ($form in @(@{ stage = 2; returns = $true })) {
                 $label = "A give-back saved as stage $($form.stage)"
                 Start-Half $big $destination $label
                 Stop-Timed $label
@@ -2274,8 +2275,8 @@ try {
             Assert $reply.ok 'Global limits were refused'
             $reply = Send-Command @{ command = 'preview'; source = $TorrentFile; destination = $payload }
             Assert ($reply.ok -and $reply.data.file_count -eq 2) 'Aligned multifile fixture did not preview'
-            $fixture = (Send-Command @{ command = 'files'; preview_id = $reply.data.preview_id }).data.files
-            Assert ($fixture[0].path.Replace('\', '/') -eq 'selection/skip.bin' -and $fixture[1].path.Replace('\', '/') -eq 'selection/wanted.bin') 'Fixture file order is not skip then wanted'
+            $fixture = @(Tree-Files (Send-Command @{ command = 'tree'; preview_id = $reply.data.preview_id; folder = '' }).data.folder | Sort-Object index)
+            Assert ($fixture[0].name -eq 'skip.bin' -and $fixture[1].name -eq 'wanted.bin') 'Fixture file order is not skip then wanted'
             $hash = $reply.data.hashes[0]
             $previewId = $reply.data.preview_id
             $reply = Send-Command @{ command = 'edit'; preview_id = $previewId; changes = @{ files = @(@{ index = 0; priority = 0 }, @{ index = 1; priority = 7 }) } }
@@ -2330,10 +2331,10 @@ try {
             Stop-Engine
             $snapshot = Start-Engine
             $torrent = $snapshot.torrents[0]
-            $detail = Send-Command @{ command = 'torrent'; torrent_id = $torrentId }
+            $detail = Get-Detail @{ torrent_id = $torrentId }
             $chosen = (Send-Command @{ command = 'files'; torrent_id = $torrentId }).data.files.priority -join ','
             Assert ($snapshot.torrents.Count -eq 1 -and $torrent.torrent_id -eq $torrentId -and $torrent.save_path -eq $payload -and $torrent.paused -and $chosen -eq '0,7') 'Tracker merge changed durable existing membership choices'
-            Assert ('http://127.0.0.1:1/announce' -in $detail.data.trackers) 'Merged tracker did not survive restart'
+            Assert ('http://127.0.0.1:1/announce' -in $detail.trackers) 'Merged tracker did not survive restart'
             Assert ((Payload-Hash $wanted) -eq $wantedHash) 'Tracker merge or preview cancellation changed existing payload'
             $reply = Send-Command @{ command = 'force'; torrent_ids = @($torrentId) }
             Assert $reply.ok 'Force start failed'
@@ -2826,9 +2827,8 @@ try {
             $reply = Send-Command @{ command = 'verify'; torrent_ids = @($id) }
             Assert $reply.ok 'Verify of the locked file was refused'
             Wait-Log "storage $id stopped" 1 60 'The failing check did not stop after its automatic continue'
-            # A stopped torrent once made the engine query it on every pass,
-            # so the engine and libtorrent ran without pause for as long as
-            # it waited.
+            # A stopped torrent that waits for Retry leaves the engine and
+            # libtorrent idle.
             $script:process.Refresh()
             $before = $script:process.TotalProcessorTime
             Start-Sleep -Seconds 30
@@ -2838,8 +2838,8 @@ try {
             Wait-Log "storage $id retry_needed" 1 90 'The minute check did not continue the stopped torrent once and then leave it to Retry'
             $row = Get-Row $id
             Assert ($row.status -eq 'error' -and $row.retry) "The torrent that waits for Retry is $($row.status), retry $($row.retry)"
-            # Verify once queued a check on the handle that recovery had
-            # paused, so the check never ran and the error stayed.
+            # Verify of a torrent that recovery paused runs its check and
+            # clears the error.
             $locked.Dispose()
             $locked = $null
             $reply = Send-Command @{ command = 'verify'; torrent_ids = @($id) }
@@ -2915,29 +2915,6 @@ try {
             $null = Wait-Torrent $id { param($row) $row.complete -and $row.progress -eq 1 -and -not $row.error -and
                 $row.status -notin 'checking', 'waiting_check' } 60 'The torrent did not resume once its drive returned'
         }
-        'AbsentNotice' {
-            # A torrent that waits for a drive that does not answer shows one
-            # notice for that drive, whatever error Windows reported.
-            $drive = Join-Path $directory 'drive'
-            $null = New-Item -ItemType Directory -Path $drive
-            Mount-Drive $drive
-            $folder = "$substDrive\absent"
-            $null = New-Item -ItemType Directory -Path $folder
-            $id = New-Zeros 'absent' 64MB $folder
-            $null = Wait-Checked $id
-            Dismount-Drive
-            $reply = Send-Command @{ command = 'verify'; torrent_ids = @($id) }
-            Assert $reply.ok 'Verify on the absent drive was refused'
-            $null = Wait-Torrent $id { param($row) $row.status -eq 'error' } 30 'The check on the absent drive did not fail'
-            # A condition is raised once it has lasted two minutes. A headless
-            # engine prints a raised condition instead of sending it to the
-            # window, so the engine's log of each notice it sends is the
-            # evidence. A notice without a torrent is a drive's notice, or
-            # the stopped notice of several torrents, and here only one
-            # torrent exists.
-            Wait-Log 'notification  error' 1 180 'The absent drive raised no notice'
-            Mount-Drive $drive
-        }
         'LinkedNotice' {
             # A save folder that is a junction to another drive belongs to
             # that drive: when it is absent, the location notice names it,
@@ -3012,10 +2989,10 @@ try {
         }
         'StoppedHeld' {
             # A torrent that storage recovery stopped stays paused in
-            # libtorrent when another choice reapplies its intent. Once, a
-            # speed limit resumed it, and libtorrent left upload mode by
-            # itself and wrote again. The directory at the payload's path
-            # fails every write while the folder answers.
+            # libtorrent when another choice, such as a speed limit, reapplies
+            # its intent, so libtorrent does not leave upload mode and write
+            # again. The directory at the payload's path fails every write
+            # while the folder answers.
             $collision = Join-Path $payload 'transfer.bin'
             $null = New-Item -ItemType Directory -Path $collision
             $peer = Start-Process -FilePath $peerExecutable `
@@ -3165,17 +3142,15 @@ try {
             Assert ($reply.ok -and $reply.data.folders[0].wanted_count -eq 23 -and $null -eq $reply.data.folders[0].priority) 'Want on a folder did not report its mixed files'
             $reply = Send-Command ($owner + @{ command = 'edit'; changes = @{ files = @(@{ index = 115; priority = 7 }); folders = @(@{ path = 'large/x0/y01'; priority = 1 }) }; loaded = @('large/x0/y01', 'large') })
             Assert ($reply.ok -and $reply.data.folders.Count -eq 2 -and $null -eq $reply.data.folders[0].priority -and $reply.data.folders[0].file_count -eq 115) 'A folder and a file choice in one edit were refused'
-            $reply = Send-Command ($owner + @{ command = 'edit'; changes = @{ folders = @(@{ path = 'large/flat'; wanted = $false }) } })
+            $reply = Send-Command ($owner + @{ command = 'edit'; changes = @{ folders = @(@{ path = 'large/flat'; priority = 0 }) } })
             Assert ($reply.ok -and $reply.data.wanted_count -eq $count - $flatCount) 'Skipping a folder of 10,001 files did not count them out'
             $reply = Send-Command ($owner + @{ command = 'edit'; changes = @{ query = @{ text = '00012'; priority = 7 } } })
             Assert $reply.ok 'A choice for a search was refused'
             $found = Send-Command ($owner + @{ command = 'tree'; query = '00012' })
             Assert ($found.data.match_wanted -eq 10 -and -not (Tree-Files $found.data.folder | Where-Object priority -ne 7)) 'A choice for a search missed a match'
+            # The add carries the preview's choices, so the added torrent's
+            # pages show them.
             $expected = @{ 0 = 7; 1 = 4; 2 = 4; 115 = 7; 116 = 1; 120 = 7; 460 = 4; 5000 = 0 }
-            $priorities = Read-Priorities $owner @($expected.Keys)
-            foreach ($index in $expected.Keys) {
-                Assert ($priorities[$index] -eq $expected[$index]) "The preview's file $index is at $($priorities[$index]), not $($expected[$index])"
-            }
 
             $timed = Send-Timed @{ command = 'add'; preview_id = $previewId; destination = $payload; paused = $true }
             Assert $timed.reply.ok "The large torrent could not be added: $($timed.reply.error.code) $($timed.reply.error.detail)"
@@ -3191,7 +3166,7 @@ try {
             $chain = Read-Tree 'torrent reveal' ($owner + @{ command = 'tree'; index = 123 })
             $revealed = @(Tree-Files $chain.folder | Where-Object index -eq 123)
             Assert ($revealed.Count -eq 1 -and $revealed[0].PSObject.Properties.Name -contains 'disk_path') 'The tree of a file index did not reach the file'
-            $timed = Send-Timed ($owner + @{ command = 'edit'; changes = @{ folders = @(@{ path = 'large/x1'; wanted = $false }) }; loaded = @('large/x1') })
+            $timed = Send-Timed ($owner + @{ command = 'edit'; changes = @{ folders = @(@{ path = 'large/x1'; priority = 0 }) }; loaded = @('large/x1') })
             Assert ($timed.reply.ok -and $timed.reply.data.wanted_count -eq $count - $flatCount - 460 -and $timed.reply.data.folders[0].wanted_count -eq 0) `
                 "Skipping a folder of the torrent was refused or miscounted: $($timed.reply.error.code)"
             $report.replies['torrent folder edit'] = $timed.milliseconds

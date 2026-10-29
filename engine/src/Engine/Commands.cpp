@@ -84,12 +84,7 @@ Tree::Target ReadTarget(Json const& request)
     {
         return lt::file_index_t(request.at("index").get<int>());
     }
-    Search search(request.at("query").get<std::string>());
-    if (search.IsEmpty())
-    {
-        throw std::invalid_argument("A search has no words.");
-    }
-    return search;
+    return Search(request.at("query").get<std::string>());
 }
 
 // The folder paths a request names, at most as many as the browser holds.
@@ -386,22 +381,11 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
     case Command::Files:
     {
         auto offset = request.value("offset", 0);
-        if (offset < 0 || request.contains("preview_id") == request.contains("torrent_id"))
+        auto paths = request.value("paths", true);
+        if (offset < 0)
         {
             reply(Failure(ErrorCode::InvalidRequest));
             return;
-        }
-        if (request.contains("preview_id"))
-        {
-            auto preview = FindPreview(request.at("preview_id").get<std::string>(), connectionId);
-            if (!preview)
-            {
-                reply(Failure(ErrorCode::PreviewExpired));
-                return;
-            }
-            UpdatePreview(*preview);
-            reply(Success(DescribeFilePage(*preview, offset)));
-            break;
         }
         auto found = torrents.find(request.at("torrent_id").get<std::string>());
         if (found == torrents.end())
@@ -410,19 +394,12 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
             return;
         }
         auto const& torrent = found->second;
-        // Its saved metadata names its files; where each lies on disk is
-        // known once it is added.
-        if (torrent.AwaitsAdd())
-        {
-            reply(Success(torrent.DescribeFilePage(torrent.restore->ti, offset)));
-            return;
-        }
-        if (torrent.restore)
+        if (torrent.HeldByAlias())
         {
             reply(Failure(ErrorCode::AliasConflict, torrent.conflict));
             return;
         }
-        reply(Success(torrent.DescribeFilePage(torrent.handle.torrent_file(), offset)));
+        reply(Success(torrent.DescribeFilePage(torrent.Metadata(), offset, paths)));
         break;
     }
     case Command::Tree:
@@ -433,64 +410,17 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
             return;
         }
         auto target = ReadTarget(request);
-        if (request.contains("preview_id"))
+        // A read of files whose edit is in flight lists that edit's choices.
+        auto read = [this, request, connectionId, target = std::move(target), reply]
         {
-            auto preview = FindPreview(request.at("preview_id").get<std::string>(), connectionId);
-            if (!preview)
-            {
-                reply(Failure(ErrorCode::PreviewExpired));
-                return;
-            }
-            auto listing = Listed(*preview);
-            if (!listing)
-            {
-                reply(Failure(*listing.error().error, listing.error().detail));
-                return;
-            }
-            ReadTree(std::move(*listing), std::move(target),
-                [reply, previewId = preview->previewId](std::expected<Json, Outcome> tree)
-            {
-                if (!tree)
-                {
-                    reply(Failure(*tree.error().error, tree.error().detail));
-                    return;
-                }
-                (*tree)["preview_id"] = previewId;
-                reply(Success(std::move(*tree)));
-            });
+            AnswerTree(request, connectionId, target, reply);
+        };
+        if (auto found = editing.find(EditedId(request)); found != editing.end())
+        {
+            found->second.reads.push_back(std::move(read));
             break;
         }
-        auto torrentId = request.at("torrent_id").get<std::string>();
-        auto found = torrents.find(torrentId);
-        if (found == torrents.end())
-        {
-            reply(Failure(ErrorCode::TorrentRemoved));
-            return;
-        }
-        auto listing = Listed(found->second);
-        if (!listing)
-        {
-            reply(Failure(*listing.error().error, listing.error().detail));
-            return;
-        }
-        ReadTree(std::move(*listing), std::move(target), [this, reply, torrentId](std::expected<Json, Outcome> tree)
-        {
-            if (!tree)
-            {
-                reply(Failure(*tree.error().error, tree.error().detail));
-                return;
-            }
-            // Names on disk change, so they are read when the reply is sent.
-            auto found = torrents.find(torrentId);
-            if (found == torrents.end())
-            {
-                reply(Failure(ErrorCode::TorrentRemoved));
-                return;
-            }
-            (*tree)["torrent_id"] = torrentId;
-            NameFiles(found->second, (*tree)["folder"]);
-            reply(Success(std::move(*tree)));
-        });
+        read();
         break;
     }
     case Command::Edit:
@@ -507,16 +437,19 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
             return;
         }
         auto loaded = ReadPaths(request, "loaded");
-        auto finish = [reply](Outcome outcome, Json data)
+        auto id = EditedId(request);
+        ++editing[id].edits;
+        auto finish = [this, reply, id](Outcome outcome, Json data)
         {
             reply(outcome.error ? Failure(*outcome.error, outcome.detail) : Success(std::move(data)));
+            EndEdit(id);
         };
         if (request.contains("preview_id"))
         {
             auto preview = FindPreview(request.at("preview_id").get<std::string>(), connectionId);
             if (!preview)
             {
-                reply(Failure(ErrorCode::PreviewExpired));
+                finish({ErrorCode::PreviewExpired}, {});
                 return;
             }
             Edit(*preview, std::move(*choices), std::move(loaded), finish);
@@ -529,16 +462,16 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
         Act({request.at("torrent_id").get<std::string>()}, Acknowledge(reply), [this](auto const& ids, auto done)
         {
             auto const& torrent = torrents.at(ids.front());
-            // libtorrent announces a torrent that it adds, so one that waits
-            // for its add announces then.
-            if (torrent.AwaitsAdd())
+            if (torrent.HeldByAlias())
             {
-                done({});
+                done({ErrorCode::AliasConflict, torrent.conflict});
                 return;
             }
-            if (torrent.restore)
+            // libtorrent announces a torrent that it adds, so one that waits
+            // for its add announces then.
+            if (torrent.waiting)
             {
-                done({ErrorCode::AliasConflict});
+                done({});
                 return;
             }
             torrent.handle.force_reannounce();
@@ -807,6 +740,84 @@ void Engine::State::MergeTrackers(Preview& preview, std::string const& torrentId
     });
 }
 
+void Engine::State::AnswerTree(Json const& request, std::string const& connectionId, Tree::Target target, Reply reply)
+{
+    if (request.contains("preview_id"))
+    {
+        auto preview = FindPreview(request.at("preview_id").get<std::string>(), connectionId);
+        if (!preview)
+        {
+            reply(Failure(ErrorCode::PreviewExpired));
+            return;
+        }
+        auto listing = Listed(*preview);
+        if (!listing)
+        {
+            reply(Failure(*listing.error().error, listing.error().detail));
+            return;
+        }
+        ReadTree(std::move(*listing), std::move(target),
+            [reply, previewId = preview->previewId](std::expected<Json, Outcome> tree)
+        {
+            if (!tree)
+            {
+                reply(Failure(*tree.error().error, tree.error().detail));
+                return;
+            }
+            (*tree)["preview_id"] = previewId;
+            reply(Success(std::move(*tree)));
+        });
+        return;
+    }
+    auto torrentId = request.at("torrent_id").get<std::string>();
+    auto found = torrents.find(torrentId);
+    if (found == torrents.end())
+    {
+        reply(Failure(ErrorCode::TorrentRemoved));
+        return;
+    }
+    auto listing = Listed(found->second);
+    if (!listing)
+    {
+        reply(Failure(*listing.error().error, listing.error().detail));
+        return;
+    }
+    ReadTree(std::move(*listing), std::move(target), [this, reply, torrentId](std::expected<Json, Outcome> tree)
+    {
+        if (!tree)
+        {
+            reply(Failure(*tree.error().error, tree.error().detail));
+            return;
+        }
+        // Names on disk change, so they are read when the reply is sent.
+        auto found = torrents.find(torrentId);
+        if (found == torrents.end())
+        {
+            reply(Failure(ErrorCode::TorrentRemoved));
+            return;
+        }
+        (*tree)["torrent_id"] = torrentId;
+        NameFiles(found->second, (*tree)["folder"]);
+        reply(Success(std::move(*tree)));
+    });
+}
+
+std::string Engine::State::EditedId(Json const& request)
+{
+    return request.at(request.contains("preview_id") ? "preview_id" : "torrent_id").get<std::string>();
+}
+
+void Engine::State::EndEdit(std::string const& id)
+{
+    auto found = editing.find(id);
+    if (--found->second.edits > 0)
+        return;
+    auto reads = std::move(found->second.reads);
+    editing.erase(found);
+    for (auto const& read : reads)
+        read();
+}
+
 // Runs the action after the changes queued before it, once every listed
 // torrent still exists. Its completion first invalidates their detail. Busy
 // files never refuse an action: one that changes files waits for them after
@@ -860,8 +871,7 @@ void Engine::State::Verify(std::vector<std::string> const& ids, std::function<vo
         // A recheck queues behind the reads of a stalled check, so it waits
         // until they return; meanwhile the stalled check continues and can
         // stall again.
-        if (torrent.AwaitsAdd() || torrent.control.Recovers() || torrent.FilesBusy() ||
-            torrent.checkReads == CheckReads::Stalled)
+        if (torrent.WorkWaits() || torrent.checkReads == CheckReads::Stalled)
             torrent.needsRecheck = true;
         else
             Recheck(torrent);
@@ -885,16 +895,14 @@ void Engine::State::Retry(std::vector<std::string> const& ids, std::function<voi
 
 std::optional<ErrorCode> Engine::State::Refuses(Torrent const& torrent, FailureAnswer answer) const
 {
-    // A torrent that waits for its add has its metadata in `restore`.
-    bool metadata = torrent.AwaitsAdd() ? bool(torrent.restore->ti) :
-        !torrent.restore && torrent.handle.torrent_file();
+    bool metadata = !torrent.HeldByAlias() && torrent.Metadata();
     if (answer == FailureAnswer::Verify && !metadata)
     {
         return ErrorCode::MetadataUnavailable;
     }
     // While the other identity is listed, the conflict comes straight back.
-    if (answer == FailureAnswer::Retry && (torrent.restore || !torrent.conflict.empty()) &&
-        FindDuplicate(torrent.status.info_hashes, torrent.torrentId))
+    if (answer == FailureAnswer::Retry && (torrent.waiting || !torrent.conflict.empty()) &&
+        SharesIdentity(torrent, false))
     {
         return ErrorCode::AliasConflict;
     }
@@ -932,6 +940,10 @@ void Engine::State::Answer(Torrent& torrent, FailureAnswer answer)
 {
     if (answer == FailureAnswer::Retry)
         torrent.Retry();
+    // The check reads the files once libtorrent holds the torrent, so Verify
+    // adds a refused torrent again too.
+    else if (answer == FailureAnswer::Verify && torrent.waiting)
+        torrent.waiting->refusal.reset();
     if (answer == FailureAnswer::Retry || answer == FailureAnswer::Move)
         RetryGiveBack(torrent.torrentId);
     // The person's new move replaces the problem of the last one, also an
@@ -940,7 +952,7 @@ void Engine::State::Answer(Torrent& torrent, FailureAnswer answer)
         torrent.moveError.reset();
     else
         torrent.AnswerMoveProblem();
-    Steer(torrent, Control::Answered{.storage = answer != FailureAnswer::Stop && answer != FailureAnswer::Move});
+    Steer(torrent, Control::Answered{answer});
     torrent.ApplyIntent();
 }
 
@@ -964,7 +976,7 @@ void Engine::State::Recheck(Torrent& torrent)
 
 void Engine::State::ApplyWaiting(Torrent& torrent)
 {
-    if (torrent.restore || torrent.control.Recovers() || torrent.FilesBusy() || torrent.namePhase != NamePhase::Ready)
+    if (torrent.WorkWaits() || torrent.namePhase != NamePhase::Ready)
         return;
     if (torrent.prioritiesPending)
     {

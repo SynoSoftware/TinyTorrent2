@@ -81,10 +81,10 @@ void Engine::State::WatchFolder()
                 std::erase_if(document.watchedSources, absent);
                 auto retained = document.watchedSources;
                 changes.Commit([document = std::move(document)] { return document.ToJson(); },
-                    [this, folder, retained = std::move(retained)](Outcome outcome)
+                    [this, folder, isCurrent, retained = std::move(retained)](Outcome outcome)
                 {
                     watchPhase = WatchPhase::Idle;
-                    if (outcome.error == ErrorCode::Overloaded)
+                    if (outcome.error == ErrorCode::Overloaded || (outcome.error && !isCurrent()))
                         return;
                     if (outcome.error)
                     {
@@ -94,7 +94,8 @@ void Engine::State::WatchFolder()
                         return;
                     }
                     watchedSources = retained;
-                    watchSaveFailed = false;
+                    if (isCurrent())
+                        watchSaveFailed = false;
                 });
             }))
                 watchPhase = WatchPhase::Idle;

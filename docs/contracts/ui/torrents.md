@@ -263,10 +263,11 @@ choices until this explicit action; adding another source does not reset them.
 
 Equivalent staged sources keep all their original inputs on the one draft entry.
 Reconnect previews them again through the engine's existing preview owner,
-preserving distinct tracker URLs. Their file choices return to the defaults,
-because the engine holds a preview's choices for one connection, and a
-reconnect is rare. Literal input deduplication keeps case-sensitive tracker
-paths distinct.
+preserving distinct tracker URLs and the user's file choices. The engine holds
+a preview's choices for one connection, so the source keeps the choices the
+person made, including one whose send failed when the connection dropped, and
+sends them to the new preview before its rows show. Literal input
+deduplication keeps case-sensitive tracker paths distinct.
 
 When sources require the Add dialog, those arriving during another modal task
 remain in the Add draft and open when that task closes. Turning a source kind's
@@ -396,6 +397,10 @@ it adds the torrent; the inspector's draft sends one edit at a time, as
 host's error; in Add the rows are then read again.
 
 ## Inspector and edits
+
+While the engine restores a selected torrent, the inspector keeps its loading
+state and retries detail reads with the existing summary updates. This wait
+asks for no action from the person.
 
 Filters and Inspector use the shared [Pane](workspace.md#panes-and-filters)
 for chrome, controls and compact presentation. Docking determines the compact

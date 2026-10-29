@@ -7,15 +7,11 @@
 
 namespace tt
 {
-lt::download_priority_t Engine::State::FileChoice::Apply(lt::download_priority_t current) const
+lt::download_priority_t Engine::State::ResolvedChoice::Apply(lt::download_priority_t current) const
 {
     if (auto const* priority = std::get_if<lt::download_priority_t>(&action))
     {
         return *priority;
-    }
-    if (!std::get<bool>(action))
-    {
-        return lt::dont_download;
     }
     return current == lt::dont_download ? lt::default_priority : current;
 }
@@ -26,10 +22,10 @@ std::expected<Engine::State::EditChoices, ErrorCode> Engine::State::ReadChoices(
     {
         return std::unexpected(ErrorCode::InvalidRequest);
     }
-    // Reads a file choice's action, `priority` or `wanted`; nothing when it
-    // has neither or both, and an invalid priority when it is not one a
-    // person picks.
-    auto readAction = [](Json const& entry, bool& invalid) -> std::optional<std::variant<lt::download_priority_t, bool>>
+    // Reads a file choice's action, `priority` or `wanted: true`; nothing
+    // when it has neither or both, and an invalid priority when it is not
+    // one a person picks.
+    auto readAction = [](Json const& entry, bool& invalid) -> std::optional<FileAction>
     {
         if (entry.contains("priority") == entry.contains("wanted"))
         {
@@ -37,11 +33,11 @@ std::expected<Engine::State::EditChoices, ErrorCode> Engine::State::ReadChoices(
         }
         if (entry.contains("wanted"))
         {
-            if (!entry["wanted"].is_boolean())
+            if (entry["wanted"] != true)
             {
                 return std::nullopt;
             }
-            return entry["wanted"].get<bool>();
+            return Want{};
         }
         auto const& value = entry["priority"];
         if (!value.is_number_integer() || value < 0 || value > static_cast<std::uint8_t>(lt::top_priority) ||
@@ -99,12 +95,7 @@ std::expected<Engine::State::EditChoices, ErrorCode> Engine::State::ReadChoices(
             {
                 return std::unexpected(invalid ? ErrorCode::InvalidPriorities : ErrorCode::InvalidRequest);
             }
-            Search search(values["text"].get<std::string>());
-            if (search.IsEmpty())
-            {
-                return std::unexpected(ErrorCode::InvalidRequest);
-            }
-            query = FileChoice{std::move(search), *action};
+            query = FileChoice{Search(values["text"].get<std::string>()), *action};
         }
         else if (key == "trackers" && values.is_array())
         {
@@ -161,7 +152,7 @@ void Engine::State::Edit(std::string const& torrentId, EditChoices choices, std:
     std::function<void(Outcome, Json)> completion)
 {
     auto commit = [this, torrentId, trackers = std::move(choices.trackers), loaded = std::move(loaded), completion]
-        (std::vector<FileChoice> files)
+        (std::vector<ResolvedChoice> files)
     {
         bool chosen = !files.empty();
         Act({torrentId}, [this, torrentId, chosen, loaded, completion](Outcome outcome)
@@ -202,7 +193,7 @@ void Engine::State::Edit(std::string const& torrentId, EditChoices choices, std:
         return;
     }
     Resolve(std::move(*listing), std::move(choices.files),
-        [commit, completion](std::expected<std::vector<FileChoice>, Outcome> resolved)
+        [commit, completion](std::expected<std::vector<ResolvedChoice>, Outcome> resolved)
     {
         if (!resolved)
         {
@@ -229,7 +220,7 @@ void Engine::State::Edit(Preview& preview, EditChoices choices, std::vector<std:
     }
     Resolve(std::move(*listing), std::move(choices.files),
         [this, previewId = preview.previewId, loaded = std::move(loaded), completion]
-        (std::expected<std::vector<FileChoice>, Outcome> resolved)
+        (std::expected<std::vector<ResolvedChoice>, Outcome> resolved)
     {
         if (!resolved)
         {
@@ -244,16 +235,7 @@ void Engine::State::Edit(Preview& preview, EditChoices choices, std::vector<std:
             return;
         }
         auto& preview = found->second;
-        auto priorities = preview.priorities;
-        for (auto const& choice : *resolved)
-        {
-            for (auto file : choice.files)
-            {
-                auto& priority = priorities[static_cast<int>(file)];
-                priority = choice.Apply(priority);
-            }
-        }
-        auto chosen = Priorities(std::move(priorities), preview.params.ti);
+        auto chosen = ApplyChoices(*resolved, preview.priorities, preview.params.ti);
         if (!chosen)
         {
             completion({ErrorCode::InvalidPriorities}, {});
@@ -271,22 +253,23 @@ void Engine::State::Edit(Preview& preview, EditChoices choices, std::vector<std:
 }
 
 void Engine::State::Resolve(Listing listing, std::vector<FileChoice> choices,
-    std::function<void(std::expected<std::vector<FileChoice>, Outcome>)> completion)
+    std::function<void(std::expected<std::vector<ResolvedChoice>, Outcome>)> completion)
 {
     trees.Run([listing = std::move(listing), choices = std::move(choices)]() mutable
     {
         // Only folder and query choices need the tree of every path.
         std::optional<Tree> tree;
         auto count = listing.metadata->num_files();
-        for (auto& choice : choices)
+        std::vector<ResolvedChoice> resolved;
+        for (auto const& choice : choices)
         {
             if (auto const* file = std::get_if<lt::file_index_t>(&choice.target))
             {
                 if (static_cast<int>(*file) >= count)
                 {
-                    return std::optional<std::vector<FileChoice>>();
+                    return std::optional<std::vector<ResolvedChoice>>();
                 }
-                choice.files = {*file};
+                resolved.push_back({{*file}, choice.action});
                 continue;
             }
             if (!tree)
@@ -296,12 +279,12 @@ void Engine::State::Resolve(Listing listing, std::vector<FileChoice> choices,
             auto files = tree->Files(choice.target);
             if (!files)
             {
-                return std::optional<std::vector<FileChoice>>();
+                return std::optional<std::vector<ResolvedChoice>>();
             }
-            choice.files = std::move(*files);
+            resolved.push_back({std::move(*files), choice.action});
         }
-        return std::optional(std::move(choices));
-    }, [completion](std::expected<std::optional<std::vector<FileChoice>>, StorageOutcome> resolved)
+        return std::optional(std::move(resolved));
+    }, [completion](std::expected<std::optional<std::vector<ResolvedChoice>>, StorageOutcome> resolved)
     {
         if (!resolved)
         {
@@ -316,6 +299,21 @@ void Engine::State::Resolve(Listing listing, std::vector<FileChoice> choices,
             completion(std::move(**resolved));
         }
     });
+}
+
+std::optional<std::vector<lt::download_priority_t>> Engine::State::ApplyChoices(
+    std::vector<ResolvedChoice> const& choices, std::vector<lt::download_priority_t> priorities,
+    std::shared_ptr<lt::torrent_info const> const& metadata)
+{
+    for (auto const& choice : choices)
+    {
+        for (auto file : choice.files)
+        {
+            auto& priority = priorities[static_cast<int>(file)];
+            priority = choice.Apply(priority);
+        }
+    }
+    return Priorities(std::move(priorities), metadata);
 }
 
 void Engine::State::DescribeChoices(Listing listing, std::vector<std::string> loaded,
@@ -336,13 +334,11 @@ void Engine::State::DescribeChoices(Listing listing, std::vector<std::string> lo
     });
 }
 
-void Engine::State::CommitEdit(std::string const& id, std::vector<FileChoice> const& choices,
+void Engine::State::CommitEdit(std::string const& id, std::vector<ResolvedChoice> const& choices,
     std::optional<std::vector<lt::announce_entry>> const& trackers, std::function<void(Outcome)> completion)
 {
     auto& torrent = torrents.at(id);
-    // A torrent that waits for its add takes the choices once it is added.
-    bool waits = torrent.AwaitsAdd();
-    if (torrent.restore && !waits)
+    if (torrent.HeldByAlias())
     {
         completion({ErrorCode::AliasConflict, torrent.conflict});
         return;
@@ -355,26 +351,13 @@ void Engine::State::CommitEdit(std::string const& id, std::vector<FileChoice> co
     auto facts = torrent.facts;
     if (!choices.empty())
     {
-        auto metadata = waits ? torrent.restore->ti : torrent.handle.torrent_file();
+        auto metadata = torrent.Metadata();
         if (!metadata)
         {
             completion({ErrorCode::MetadataUnavailable});
             return;
         }
-        if (facts.priorities.empty())
-        {
-            facts.priorities = DefaultPriorities(metadata->layout(), facts.skipPatterns);
-        }
-        facts.priorities.resize(metadata->num_files(), lt::dont_download);
-        for (auto const& choice : choices)
-        {
-            for (auto file : choice.files)
-            {
-                auto& priority = facts.priorities[static_cast<int>(file)];
-                priority = choice.Apply(priority);
-            }
-        }
-        auto chosen = Priorities(facts.priorities, metadata);
+        auto chosen = ApplyChoices(choices, torrent.ChosenPriorities(metadata), metadata);
         if (!chosen)
         {
             completion({ErrorCode::InvalidPriorities});
@@ -404,11 +387,11 @@ void Engine::State::CommitEdit(std::string const& id, std::vector<FileChoice> co
         torrent.unsaved = true;
         // Its add applies the saved trackers and, through ApplyIntent, the
         // saved priorities, which its parameters also carry.
-        if (torrent.restore)
+        if (torrent.waiting)
         {
             if (hasPriorities)
             {
-                torrent.restore->file_priorities = torrent.facts.priorities;
+                torrent.waiting->params.file_priorities = torrent.facts.priorities;
             }
             completion({});
             return;
@@ -426,6 +409,7 @@ void Engine::State::CommitEdit(std::string const& id, std::vector<FileChoice> co
         }
         else if (hasPriorities)
         {
+            torrent.prioritiesPending = false;
             torrent.priorityCompletion = completion;
             torrent.handle.prioritize_files(torrent.facts.priorities);
             Invalidate(id);
@@ -440,7 +424,7 @@ void Engine::State::CommitEdit(std::string const& id, std::vector<FileChoice> co
 
 void Engine::State::QueryPriorities(Torrent& torrent)
 {
-    if (!torrent.restore && (torrent.priorityCompletion || torrent.piecesPending) && torrent.handle.torrent_file())
+    if (!torrent.waiting && (torrent.priorityCompletion || torrent.piecesPending) && torrent.handle.torrent_file())
     {
         Query(torrent, DetailKind::Priorities);
     }

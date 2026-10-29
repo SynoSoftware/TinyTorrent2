@@ -361,16 +361,11 @@ remains:
   task continues it at the next start.
 - A deletion, permanent or to the Recycle Bin, deletes no further file. Its
   task holds its files, and continuing it deletes the ones that remain.
-- A move that the person abandoned gives its files back, and its marker
-  records that. The next start continues the give-back without asking,
-  because either answer would give the files back.
-- A move whose torrent the person removed during the move cannot continue,
-  because the torrent has left the list. Its task, saved with the removal,
-  gives the files back to the old folder at the next start, without asking.
-  When the person deleted the files, their deletion runs after the files are
-  back.
-- A mark of the web stops before it writes. A file that finishes from the
-  start of Exit on is not marked until the next start.
+- A give-back, of an abandoned move or of a move whose torrent the person
+  removed, stops between files, and the next start
+  [continues it without asking](files.md#unfinished-tasks).
+- A mark of the web stops before it writes, and the next start
+  [marks the files](../engine.md#mark-of-the-web) that completed during Exit.
 
 Nothing before the final save waits on a drive. The moves, give-backs and
 additions get 2 seconds to stop, and then the proofs of the copies are saved.
@@ -379,9 +374,9 @@ stays paused, and the next start chooses them: its names are chosen on the drive
 worker, its new folder and renames are made on libtorrent's disk threads, and
 a share that does not answer can hold either. A reload that has not yet
 replaced its torrent's handle stops: once Exit starts, its end leaves the old
-handle in place, which Exit pauses and saves. From the start of a reload until
-a reload succeeds, each save of the torrent leaves out the pieces of its lost
-files, so the next start downloads only those files again instead of checking
+handle in place, which Exit pauses and saves. From the probe or check that
+finds lost files until a reload succeeds, each save of the torrent leaves out
+the pieces of those files, so the next start downloads only those files again instead of checking
 every file. Pending priority edits, the torrents' pauses and the final
 transfer sample get 2 seconds each; one that times out is logged and Exit
 continues, because the resume data still records what each torrent has.

@@ -421,11 +421,11 @@ internal sealed class TorrentSource : IAsyncDisposable
 
     private static bool IsVerified(DetailFile file, bool[]? bits) =>
         bits is not null
-        && file.FirstPiece >= 0
-        && file.EndPiece <= bits.Length
-        && file.EndPiece >= file.FirstPiece
+        && file.Pieces.First >= 0
+        && file.Pieces.End <= bits.Length
+        && file.Pieces.End >= file.Pieces.First
         && Enumerable
-            .Range(file.FirstPiece, file.EndPiece - file.FirstPiece)
+            .Range(file.Pieces.First, file.Pieces.End - file.Pieces.First)
             .All(index => bits[index]);
 
     public async ValueTask DisposeAsync()

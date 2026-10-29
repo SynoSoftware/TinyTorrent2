@@ -83,9 +83,9 @@ Search::Search(std::string_view query)
         }
         at = end;
     }
-    if (words_.size() > 64)
+    if (words_.empty() || words_.size() > 64)
     {
-        throw std::invalid_argument("A search has at most 64 words.");
+        throw std::invalid_argument("A search has 1 to 64 words.");
     }
 }
 
@@ -153,13 +153,11 @@ Tree::Tree(Listing listing) : listing_(std::move(listing))
     nodes_.emplace_back();
     paths_.emplace("", 0);
     folderOf_.assign(storage.num_files(), -1);
-    // A store that saved a wrong count still lists every file.
-    listing_.priorities.resize(storage.num_files(), lt::dont_download);
-    if (listing_.progress && *listing_.progress && (*listing_.progress)->size() != folderOf_.size())
+    if (listing_.progress && listing_.progress->size() != folderOf_.size())
     {
-        listing_.progress->reset();
+        listing_.progress.reset();
     }
-    auto const* progress = listing_.progress && *listing_.progress ? &**listing_.progress : nullptr;
+    auto const* progress = listing_.progress ? &*listing_.progress : nullptr;
     // Files of one folder usually follow each other, so the last folder's
     // path answers most lookups.
     std::optional<std::string> last;
@@ -181,7 +179,7 @@ Tree::Tree(Listing listing) : listing_(std::move(listing))
         auto item = static_cast<int>(index);
         folderOf_[item] = folder;
         nodes_[folder].files.push_back(index);
-        nodes_[folder].names += Name(index).size();
+        nodes_[folder].names += Name(index).size() + (listing_.torrent ? path.size() : 0);
         auto size = storage.file_size(index);
         auto priority = listing_.priorities[item];
         for (auto at = folder; at >= 0; at = nodes_[at].parent)
@@ -407,7 +405,9 @@ std::optional<Json> Tree::Describe(Target const& target) const
             {
                 ++count;
                 wanted += listing_.priorities[item] != lt::dont_download;
-                if (show(parent, Name(file).size()))
+                auto bytes = Name(file).size() +
+                    (listing_.torrent ? ContentPath(listing_.metadata->layout(), file, listing_.layout).size() : 0);
+                if (show(parent, bytes))
                 {
                     shown.files[parent].push_back(file);
                     shown.matches[nodes_.size() + item] = true;
@@ -427,7 +427,8 @@ std::optional<std::vector<lt::file_index_t>> Tree::Files(Target const& target) c
     std::vector<lt::file_index_t> files;
     if (auto const* file = std::get_if<lt::file_index_t>(&target))
     {
-        if (static_cast<int>(*file) < 0 || static_cast<int>(*file) >= static_cast<int>(folderOf_.size()))
+        auto item = static_cast<int>(*file);
+        if (item < 0 || item >= static_cast<int>(folderOf_.size()))
         {
             return std::nullopt;
         }
@@ -528,9 +529,9 @@ Json Tree::DescribeFile(lt::file_index_t file, bool match) const
     Json value = {{"index", item}, {"name", Name(file)}, {"size", listing_.metadata->layout().file_size(file)},
         {"priority", static_cast<std::uint8_t>(listing_.priorities[item])}, {"first_piece", pieces.first},
         {"end_piece", pieces.end}, {"match", match}};
-    if (listing_.progress)
+    if (listing_.torrent)
     {
-        value["downloaded"] = *listing_.progress ? Json((**listing_.progress)[item]) : Json();
+        value["downloaded"] = listing_.progress ? Json((*listing_.progress)[item]) : Json();
         value["disk_path"] = nullptr;
     }
     return value;
@@ -543,9 +544,9 @@ void Tree::Values(Node const& node, Json& value) const
     value["wanted_count"] = node.wantedCount;
     value["wanted_size"] = node.wantedSize;
     value["priority"] = node.mixed ? Json() : Json(static_cast<std::uint8_t>(node.priority));
-    if (listing_.progress)
+    if (listing_.torrent)
     {
-        value["downloaded"] = *listing_.progress ? Json(node.downloaded) : Json();
+        value["downloaded"] = listing_.progress ? Json(node.downloaded) : Json();
     }
 }
 

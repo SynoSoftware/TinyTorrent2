@@ -207,6 +207,12 @@ bool Engine::State::PathLess::operator()(std::string const& left, std::string co
     return PathBefore(FullPath(Wide(left)), FullPath(Wide(right)));
 }
 
+bool Engine::State::FullPathLess::operator()(std::filesystem::path const& left,
+    std::filesystem::path const& right) const
+{
+    return PathBefore(left, right);
+}
+
 // Compares two UTF-8 folders, such as save paths, as full paths.
 bool Engine::State::SameFolder(std::string const& left, std::string const& right)
 {
@@ -275,8 +281,8 @@ void Engine::State::ContinueNames()
     {
         // A deletion or rename can change the files among which the names
         // are chosen, so it holds the names on its own root.
-        if (torrent.restore || torrent.control.Recovers() || torrent.namePhase != NamePhase::Pending ||
-            torrent.FilesBusy() || now < torrent.renameAt || DeletingOrRenaming(RootOf(torrent.facts.savePath)))
+        if (torrent.WorkWaits() || torrent.namePhase != NamePhase::Pending || now < torrent.renameAt ||
+            DeletingOrRenaming(RootOf(torrent.facts.savePath)))
             continue;
         auto metadata = torrent.handle.torrent_file();
         if (!metadata)
@@ -460,7 +466,7 @@ void Engine::State::QueryFiles()
     EachWorking([this, &groups, &count, now](Torrent const& torrent)
     {
         bool recovers = torrent.namePhase == NamePhase::Recovering;
-        if (count == 64 || !torrent.filesPending || torrent.restore ||
+        if (count == 64 || !torrent.filesPending || torrent.waiting ||
             (torrent.FilesBusy() && !recovers) || now < torrent.renameAt || !torrent.handle.torrent_file())
             return;
         auto root = RootOf(torrent.facts.savePath);
@@ -554,8 +560,8 @@ void Engine::State::FinishFiles(Torrent& torrent, std::optional<lt::file_index_t
     // and only the torrents whose files can lie under this folder need their
     // names, which say whether one of their files takes the final name.
     auto root = RootOf(torrent.facts.savePath);
-    if (IsShuttingDown() || torrent.restore || torrent.control.Holds() || !torrents.contains(torrent.torrentId) ||
-        torrent.pathWork || torrent.filesPending ||
+    if (IsShuttingDown() || torrent.waiting || torrent.control.Holds() || !torrents.contains(torrent.torrentId) ||
+        torrent.PathWork() || torrent.filesPending ||
         torrent.namePhase != NamePhase::Ready ||
         torrent.completedFiles.empty() || std::chrono::steady_clock::now() < torrent.renameAt ||
         Adding(root) || !changes.IsIdle() || FilesBusy(root))
@@ -590,7 +596,7 @@ void Engine::State::FinishFiles(Torrent& torrent, std::optional<lt::file_index_t
         {
             if (outside.torrentId == torrent.torrentId)
                 return;
-            if (outside.restore)
+            if (outside.waiting)
             {
                 auto paths = FilePaths(outside, std::nullopt, false);
                 ready &= !Overlaps(torrent.Hashes(), outside.Hashes()) &&
@@ -606,7 +612,7 @@ void Engine::State::FinishFiles(Torrent& torrent, std::optional<lt::file_index_t
                 auto full = FullPath(Wide(mappings.file_path(other->layout(), file, outside.facts.savePath)));
                 if (other->layout().pad_file_at(file) || !SamePath(full, path))
                     continue;
-                ready &= !outside.pathWork && outside.renaming.empty() && outside.marking.empty() &&
+                ready &= !outside.PathWork() && outside.renaming.empty() && outside.marking.empty() &&
                     outside.namePhase != NamePhase::Preparing;
                 auto relative = target.lexically_relative(Wide(outside.facts.savePath));
                 operation.owners.push_back(
@@ -631,7 +637,6 @@ void Engine::State::FinishFiles(Torrent& torrent, std::optional<lt::file_index_t
             for (auto const& owner : started.owners)
             {
                 auto& member = Working(owner.torrentId);
-                member.pathWork = PathWork::Rename;
                 member.ApplyIntent();
             }
             ContinueRename(root);
@@ -644,8 +649,9 @@ void Engine::State::FinishFiles(Torrent& torrent, std::optional<lt::file_index_t
 // sends the Completed toast that is due.
 void Engine::State::FinishDownload(Torrent& torrent)
 {
-    if (IsShuttingDown() || torrent.restore || torrent.control.Recovers() || torrent.filesPending ||
-        torrent.completion.NeedsSample() || torrent.completion.IsWorking() || !torrent.status.is_finished || torrent.namePhase != NamePhase::Ready || torrent.FilesBusy() ||
+    if (IsShuttingDown() || torrent.WorkWaits() || torrent.control.AwaitsReload() || torrent.filesPending ||
+        torrent.completion.NeedsSample() || torrent.completion.IsWorking() || !torrent.status.is_finished ||
+        torrent.namePhase != NamePhase::Ready ||
         !torrent.completedFiles.empty() || torrent.facts.marker || torrent.waitingMove || torrent.unfinished)
         return;
     if (!torrent.facts.finalFolder.empty())
@@ -848,11 +854,6 @@ void Engine::State::EndRename(std::string const& root)
     for (auto const& owner : owners)
     {
         auto& torrent = Working(owner.torrentId);
-        torrent.pathWork.reset();
-        // A torrent that joined the abandonments during the rename gives its
-        // files back next, so no turn sees it there without path work.
-        if (Abandoning(owner.torrentId))
-            torrent.pathWork = PathWork::Abandon;
         torrent.ApplyIntent();
     }
 }
@@ -945,7 +946,7 @@ void Engine::State::Mark(Torrent& torrent, lt::file_index_t index)
 void Engine::State::MarkWaiting(Torrent& torrent)
 {
     auto found = waitingMarks.find(torrent.torrentId);
-    if (found == waitingMarks.end() || torrent.restore)
+    if (found == waitingMarks.end() || torrent.waiting)
         return;
     auto metadata = torrent.handle.torrent_file();
     if (!metadata)
@@ -1062,25 +1063,17 @@ std::vector<std::filesystem::path> Engine::State::FilePaths(lt::torrent_info con
 std::vector<std::filesystem::path> Engine::State::FilePaths(Torrent const& torrent,
     std::optional<std::string> const& folder, bool logical) const
 {
-    auto at = [&torrent, logical](std::string const& root)
+    auto folders = folder ? std::vector<std::string>{*folder} : torrent.Folders();
+    auto paths = torrent.Paths(logical);
+    std::vector<std::filesystem::path> files;
+    for (auto const& name : folders)
     {
-        std::vector<std::filesystem::path> files;
-        for (auto const& path : torrent.Paths(logical))
-            files.push_back(FullPath(std::filesystem::path(Wide(root)) / path));
-        std::sort(files.begin(), files.end(), PathBefore);
-        files.erase(std::unique(files.begin(), files.end(), SamePath), files.end());
-        return files;
-    };
-    if (folder)
-        return at(*folder);
-    auto files = at(torrent.facts.savePath);
-    if (torrent.facts.marker)
-    {
-        auto staged = at(torrent.facts.marker->destination);
-        files.insert(files.end(), staged.begin(), staged.end());
-        std::sort(files.begin(), files.end(), PathBefore);
-        files.erase(std::unique(files.begin(), files.end(), SamePath), files.end());
+        auto root = std::filesystem::path(Wide(name));
+        for (auto const& path : paths)
+            files.push_back(FullPath(root / path));
     }
+    std::sort(files.begin(), files.end(), PathBefore);
+    files.erase(std::unique(files.begin(), files.end(), SamePath), files.end());
     return files;
 }
 
@@ -1099,8 +1092,9 @@ bool Engine::State::NamesReady(std::string const& folder) const
     bool ready = true;
     EachWorking([&folder, &ready](Torrent const& torrent)
     {
-        ready &= torrent.NamesKnown() || !(FoldersOverlap(torrent.facts.savePath, folder) ||
-            (torrent.facts.marker && FoldersOverlap(torrent.facts.marker->destination, folder)));
+        auto folders = torrent.Folders();
+        ready &= torrent.NamesKnown() || std::none_of(folders.begin(), folders.end(),
+            [&folder](auto const& own) { return FoldersOverlap(own, folder); });
     });
     return ready;
 }
@@ -1109,9 +1103,9 @@ bool Engine::State::NamesReadyFor(std::vector<std::string> const& ids) const
 {
     return std::all_of(ids.begin(), ids.end(), [this](std::string const& id)
     {
-        auto const& torrent = Working(id);
-        auto const& marker = torrent.facts.marker;
-        return NamesReady(torrent.facts.savePath) && (!marker || NamesReady(marker->destination));
+        auto folders = Working(id).Folders();
+        return std::all_of(folders.begin(), folders.end(),
+            [this](auto const& folder) { return NamesReady(folder); });
     });
 }
 
@@ -1130,8 +1124,8 @@ Outcome Engine::State::FilesReady(std::vector<std::string> const& ids, std::stri
     };
     auto reaches = [&ids, &overlaps](Torrent const& torrent)
     {
-        return Contains(ids, torrent.torrentId) || overlaps(torrent.facts.savePath) ||
-            (torrent.facts.marker && overlaps(torrent.facts.marker->destination));
+        auto folders = torrent.Folders();
+        return Contains(ids, torrent.torrentId) || std::any_of(folders.begin(), folders.end(), overlaps);
     };
     // Only the parts that remain still change files; a part on a root that
     // does not answer holds no other root's moves.
@@ -1175,11 +1169,11 @@ Outcome Engine::State::FilesReady(std::vector<std::string> const& ids, std::stri
         bool own = Contains(ids, torrent.torrentId);
         // A torrent in another move does not hold this move back, because
         // moves share no drive and so never reach the same files.
-        bool elsewhere = torrent.pathWork && !own;
+        bool elsewhere = torrent.PathWork() && !own;
         // Files whose names are unknown lie under their torrent's save folder,
         // so only a save folder that overlaps the destination can hold one
         // the move would write.
-        bool unknown = torrent.restore || !torrent.handle.torrent_file();
+        bool unknown = torrent.waiting || !torrent.handle.torrent_file();
         // One that waits for its add is added by itself, so the move waits
         // for it as for busy files.
         if (torrent.AwaitsAdd() && (own || FoldersOverlap(torrent.facts.savePath, destination)))
@@ -1208,10 +1202,7 @@ Engine::State::Scope Engine::State::FileScope(std::vector<std::string> const& id
         scope.holds.insert(scope.holds.end(), held.begin(), held.end());
         auto physical = torrent.Paths();
         auto logical = torrent.Paths(true);
-        std::vector<std::string> folders{torrent.facts.savePath};
-        if (torrent.facts.marker)
-            folders.push_back(torrent.facts.marker->destination);
-        for (auto const& folder : folders)
+        for (auto const& folder : torrent.Folders())
         {
             if (folder.empty())
                 continue;
@@ -1238,7 +1229,7 @@ Engine::State::Scope Engine::State::FileScope(std::vector<std::string> const& id
                 return;
             }
             auto files = Footprint(torrent);
-            if (torrent.restore && !torrent.restore->ti)
+            if (torrent.waiting && !torrent.waiting->params.ti)
             {
                 for (auto const& selected : ids)
                 {

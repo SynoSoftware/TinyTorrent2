@@ -72,10 +72,6 @@ The [ring copy research](plans/ring-copy-plan.md) keeps the evidence and the
 design of a copy engine of the engine's own, for moves between hard disks. It
 will not be implemented.
 
-The [torrent control plan](plans/torrent-control-plan.md) keeps what remains
-of the storage controller work, whose steps are all implemented: the checks
-that need a share that can be disconnected.
-
 The [communication plan](plans/communication-plan.md) is paused. It holds the
 scoped-subscription design for torrent detail, which the owner has not decided
 to implement; its implemented first stage lives in the protocol and engine

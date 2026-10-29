@@ -41,6 +41,7 @@ public sealed partial class MainWindow
         "desktop" => CaptureMode.Desktop,
         "details" => CaptureMode.Details,
         "details-files" => CaptureMode.DetailsFiles,
+        "file-controls" => CaptureMode.FileControls,
         "files" => CaptureMode.Files,
         "files-layout" => CaptureMode.FilesLayout,
         "search" => CaptureMode.Search,
@@ -504,6 +505,15 @@ public sealed partial class MainWindow
             if (ready())
                 completion.TrySetResult();
             await completion.Task.WaitAsync(timeout ?? TimeSpan.FromSeconds(20));
+        }
+        catch (TimeoutException error) when (owner is Inspector inspector)
+        {
+            throw new TimeoutException(
+                $"Inspector did not settle: visible={inspector.IsVisible}, "
+                    + $"available={inspector.IsAvailable}, loading={inspector.IsLoading}, "
+                    + $"files={inspector.HasFiles}, error={inspector.Message}",
+                error
+            );
         }
         finally
         {
@@ -1949,7 +1959,7 @@ public sealed partial class MainWindow
         }
     }
 
-    private async Task CaptureDetails(Torrent target, List<object> outcomes)
+    private async Task CaptureFileControls(Torrent target, List<object> outcomes)
     {
         var directory =
             Model.DataDirectory
@@ -2073,7 +2083,23 @@ public sealed partial class MainWindow
             throw new InvalidOperationException(
                 "The native priority choice could not be restored."
             );
+        Model.Inspector.Select(InspectorSection.Pieces);
+        await CaptureReady(
+            Model.Inspector,
+            () => !Model.Inspector.IsLoading && Model.Inspector.Pieces is { MetadataReady: true }
+        );
+        outcomes.Add(
+            new
+            {
+                journey = "Inspector piece files",
+                pieces = Model.Inspector.Pieces!.Count,
+            }
+        );
+    }
 
+    private async Task CaptureDetails(Torrent target, List<object> outcomes)
+    {
+        await CaptureFileControls(target, outcomes);
         Model.Inspector.Select(InspectorSection.Trackers);
         await CaptureReady(
             Model.Inspector,
@@ -2588,6 +2614,11 @@ public sealed partial class MainWindow
             if (ReviewMode == CaptureMode.Details)
             {
                 await CaptureDetails(target, outcomes);
+                return;
+            }
+            if (ReviewMode == CaptureMode.FileControls)
+            {
+                await CaptureFileControls(target, outcomes);
                 return;
             }
             if (ReviewMode == CaptureMode.Edits)

@@ -52,6 +52,19 @@ bool IsPriority(Json const& value)
 {
     return value.is_number_integer() && value >= 0 && value <= 255;
 }
+
+// The priority a person can choose that is nearest to a saved one, so a
+// saved value that is not a choice never makes a later edit fail.
+lt::download_priority_t NearestChoice(std::uint8_t saved)
+{
+    if (saved == 0)
+        return lt::dont_download;
+    if (saved <= 2)
+        return lt::low_priority;
+    if (saved <= 5)
+        return lt::default_priority;
+    return lt::top_priority;
+}
 }
 
 Problem Problem::From(Outcome const& failure, ProblemKind kind)
@@ -252,23 +265,19 @@ std::vector<lt::download_priority_t> DefaultPriorities(lt::file_storage const& f
     return priorities;
 }
 
-std::vector<std::string> Tops(lt::file_storage const& files,
-    std::function<std::string(lt::file_index_t)> const& path)
+std::vector<std::string> Tops(std::function<void(std::function<void(std::string)> const&)> const& visitPaths)
 {
     auto separator = [](char character) { return character == '/' || character == '\\'; };
     std::vector<std::string> tops;
-    for (auto index : files.file_range())
+    visitPaths([&tops, &separator](std::string top)
     {
-        if (files.pad_file_at(index))
-            continue;
-        auto top = path(index);
         bool full = top.size() > 1 && (top[1] == ':' || (separator(top[0]) && separator(top[1])));
         if (!full)
             top.resize(std::min(top.size(), top.find_first_of("/\\")));
         // Files of one folder follow each other, so most repeats end here.
         if (tops.empty() || tops.back() != top)
             tops.push_back(std::move(top));
-    }
+    });
     std::sort(tops.begin(), tops.end());
     tops.erase(std::unique(tops.begin(), tops.end()), tops.end());
     return tops;
@@ -283,55 +292,41 @@ PieceRange Pieces(lt::torrent_info const& metadata, lt::file_index_t index)
     return {start / length, size == 0 ? start / length : (start + size + length - 1) / length};
 }
 
-Json FilePage(lt::torrent_info const& metadata, int offset,
-    std::function<void(lt::file_index_t, Json&)> const& describe)
+
+void Torrent::VisitPaths(bool logical, std::function<void(std::string)> const& visit) const
 {
-    auto const& storage = metadata.layout();
-    Json files = Json::array();
-    std::size_t paths = 0;
-    for (int item = offset; item < storage.num_files() && files.size() < filePage && paths < filePageNames; ++item)
+    auto metadata = waiting ? waiting->params.ti : names ? names->metadata : nullptr;
+    if (logical && !waiting)
+        metadata = handle.torrent_file();
+    if (!metadata)
     {
-        lt::file_index_t index(item);
-        auto path = storage.file_path(index);
-        paths += path.size();
-        auto pieces = Pieces(metadata, index);
-        Json file = {{"index", item}, {"path", std::move(path)}, {"size", storage.file_size(index)},
-            {"padding", storage.pad_file_at(index)}, {"first_piece", pieces.first}, {"end_piece", pieces.end}};
-        describe(index, file);
-        files.push_back(std::move(file));
+        return;
     }
-    return files;
+    auto const& layout = metadata->layout();
+    if (logical)
+    {
+        for (auto index : layout.file_range())
+            if (!layout.pad_file_at(index))
+                visit(ContentPath(layout, index, facts.layout));
+        return;
+    }
+    lt::renamed_files restored;
+    if (waiting)
+        restored.import_filenames(layout, waiting->params.renamed_files);
+    lt::filenames files(layout, waiting ? restored : names->mappings);
+    for (auto index : files.file_range())
+    {
+        if (!layout.pad_file_at(index))
+        {
+            visit(files.file_path(index));
+        }
+    }
 }
 
 std::vector<std::filesystem::path> Torrent::Paths(bool logical) const
 {
-    auto metadata = restore ? restore->ti : names ? names->metadata : nullptr;
-    if (logical && !restore)
-        metadata = handle.torrent_file();
-    if (!metadata)
-    {
-        return {};
-    }
-    if (logical)
-    {
-        std::vector<std::filesystem::path> paths;
-        for (auto index : metadata->layout().file_range())
-            if (!metadata->layout().pad_file_at(index))
-                paths.push_back(Wide(ContentPath(metadata->layout(), index, facts.layout)));
-        return paths;
-    }
-    lt::renamed_files restored;
-    if (restore)
-        restored.import_filenames(metadata->layout(), restore->renamed_files);
-    lt::filenames files(metadata->layout(), restore ? restored : names->mappings);
     std::vector<std::filesystem::path> paths;
-    for (auto index : files.file_range())
-    {
-        if (!metadata->layout().pad_file_at(index))
-        {
-            paths.push_back(Wide(files.file_path(index)));
-        }
-    }
+    VisitPaths(logical, [&paths](std::string path) { paths.push_back(Wide(path)); });
     return paths;
 }
 
@@ -408,9 +403,9 @@ Facts Facts::Read(Json const& saved)
         // versions saved 2 for a checked move that waited for the person. A
         // move that gives its files back is saved as 2 with `move_returns`,
         // so an earlier version waits for the person instead of continuing
-        // the move, and one version saved it as 3.
+        // the move.
         auto stage = ReadSaved(saved, "move_stage", 0);
-        bool returns = stage == 3 || (stage == 2 && ReadSaved(saved, "move_returns", false));
+        bool returns = stage == 2 && ReadSaved(saved, "move_returns", false);
         if (returns)
             facts.marker->stage = MoveStage::Returning;
         else if (stage == 1 || stage == 2)
@@ -444,7 +439,7 @@ Facts Facts::Read(Json const& saved)
     {
         for (auto const& value : *found)
         {
-            facts.priorities.push_back(IsPriority(value) ? lt::download_priority_t(value.get<std::uint8_t>()) :
+            facts.priorities.push_back(IsPriority(value) ? NearestChoice(value.get<std::uint8_t>()) :
                 lt::default_priority);
         }
     }
@@ -480,6 +475,15 @@ Facts Facts::Read(Json const& saved)
     return facts;
 }
 
+Torrent::Torrent(std::string torrentId, WorkQuery work) : torrentId(std::move(torrentId)), work_(std::move(work))
+{
+}
+
+std::optional<tt::PathWork> Torrent::PathWork() const
+{
+    return work_(torrentId);
+}
+
 std::string Torrent::Name() const
 {
     return tt::Name(status.name, Hashes());
@@ -503,7 +507,7 @@ std::vector<std::string> Torrent::Hashes() const
 std::string Torrent::Folder() const
 {
     std::filesystem::path folder = Wide(facts.savePath);
-    auto metadata = restore ? restore->ti : handle.torrent_file();
+    auto metadata = Metadata();
     if (!metadata)
         return Utf8(folder.wstring());
     std::optional<std::filesystem::path> first;
@@ -529,30 +533,14 @@ std::string Torrent::Folder() const
     return Utf8(folder.wstring());
 }
 
+std::vector<std::string> Torrent::Tops(bool logical) const
+{
+    return tt::Tops([this, logical](auto const& visit) { VisitPaths(logical, visit); });
+}
+
 // The problem that stops the torrent, if any. libtorrent switches a torrent
 // to upload mode when a disk write fails, so a torrent that still downloads
 // stops there.
-std::vector<std::string> Torrent::Tops(bool logical) const
-{
-    auto metadata = restore ? restore->ti : names ? names->metadata : nullptr;
-    if (logical && !restore)
-        metadata = handle.torrent_file();
-    if (!metadata)
-    {
-        return {};
-    }
-    auto const& layout = metadata->layout();
-    if (logical)
-    {
-        return tt::Tops(layout, [this, &layout](lt::file_index_t index) { return ContentPath(layout, index, facts.layout); });
-    }
-    lt::renamed_files restored;
-    if (restore)
-        restored.import_filenames(layout, restore->renamed_files);
-    lt::filenames files(layout, restore ? restored : names->mappings);
-    return tt::Tops(layout, [&files](lt::file_index_t index) { return files.file_path(index); });
-}
-
 std::optional<Problem> Torrent::Error() const
 {
     if (moveError)
@@ -561,12 +549,12 @@ std::optional<Problem> Torrent::Error() const
     }
     if (waitingMove && waitingMove->refusal)
         return waitingMove->refusal;
-    if (restoreError)
-        return restoreError;
+    if (waiting && waiting->refusal)
+        return waiting->refusal;
     if (control.Cause() || nameError)
         return StorageProblem();
     // A waiting move the person asked for replaces the interrupted one.
-    if (!pathWork && !waitingMove && facts.marker)
+    if (!PathWork() && !waitingMove && facts.marker)
     {
         return Problem{unfinished ? ProblemKind::MoveUnfinished : ProblemKind::MoveInterrupted,
             facts.marker->destination};
@@ -617,17 +605,23 @@ bool Torrent::NeedsPerson() const
 {
     // libtorrent's error for an alias conflict belongs to the conflict, not
     // to the storage control, and waits for the person too.
-    return control.NeedsPerson() || restoreError || (!conflict.empty() && status.errc);
+    return control.NeedsPerson() || (waiting && waiting->refusal) || (!conflict.empty() && status.errc);
 }
 
 bool Torrent::MoveWaits() const
 {
-    return !pathWork && (waitingMove || unfinished == TaskKind::Move) && !Error();
+    return !PathWork() && (waitingMove || unfinished == TaskKind::Move) && !Error();
+}
+
+bool Torrent::ShowsPathWork() const
+{
+    auto work = PathWork();
+    return work && !(work == tt::PathWork::Abandon && waitingMove && waitingMove->refusal);
 }
 
 bool Torrent::FileWork() const
 {
-    return pathWork || NameWork();
+    return PathWork() || NameWork();
 }
 
 bool Torrent::NameWork() const
@@ -641,11 +635,16 @@ bool Torrent::FilesBusy() const
     return control.Busy() || FileWork();
 }
 
+bool Torrent::WorkWaits() const
+{
+    return waiting || control.Recovers() || FileWork();
+}
+
 bool Torrent::IsHeld(bool hasMetadata) const
 {
     // A stopped torrent that stayed auto-managed would leave upload mode by
     // itself every few minutes and fail its writes again.
-    return control.Holds() || !conflict.empty() || pathWork || facts.marker || cacheWrite == CacheWrite::Flushing ||
+    return control.Holds() || !conflict.empty() || PathWork() || facts.marker || cacheWrite == CacheWrite::Flushing ||
         CheckWaits() || unfinished == TaskKind::Check || (hasMetadata && namePhase != NamePhase::Ready);
 }
 
@@ -656,18 +655,49 @@ bool Torrent::CheckWaits() const
 
 bool Torrent::NamesKnown() const
 {
-    return namePhase != NamePhase::Recovering && (restore || !handle.torrent_file() || names);
+    return namePhase != NamePhase::Recovering && (waiting || !handle.torrent_file() || names);
+}
+
+std::vector<std::string> Torrent::Folders() const
+{
+    std::vector<std::string> folders{facts.savePath};
+    if (facts.marker)
+        folders.push_back(facts.marker->destination);
+    return folders;
+}
+
+bool Torrent::HeldByAlias() const
+{
+    return waiting && !conflict.empty();
+}
+
+void Torrent::Attach(lt::torrent_handle added, StorageRoot root)
+{
+    handle = std::move(added);
+    storageRoot = std::move(root);
+    waiting.reset();
+}
+
+void Torrent::WaitForAdd(lt::add_torrent_params params)
+{
+    handle = {};
+    waiting = Waiting{std::move(params)};
 }
 
 bool Torrent::AwaitsAdd() const
 {
-    return restore && !restoreError && conflict.empty();
+    return waiting && !waiting->refusal && conflict.empty();
+}
+
+std::shared_ptr<lt::torrent_info const> Torrent::Metadata() const
+{
+    return waiting ? waiting->params.ti : handle.torrent_file();
 }
 
 bool Torrent::ChecksFiles(bool sessionPaused) const
 {
     return !sessionPaused && status.state == lt::torrent_status::checking_files &&
-        !(status.flags & lt::torrent_flags::paused) && !pathWork && !CheckWaits();
+        !(status.flags & lt::torrent_flags::paused) && !PathWork() && !CheckWaits();
 }
 
 bool Torrent::MoveBlocked() const
@@ -683,7 +713,7 @@ void Torrent::AnswerMoveProblem()
 
 Status Torrent::Classify(bool sessionPaused) const
 {
-    if (pathWork)
+    if (ShowsPathWork())
     {
         return Status::Moving;
     }
@@ -1177,28 +1207,11 @@ Json DescribeGeneral(Torrent const& torrent, std::shared_ptr<lt::torrent_info co
     return data;
 }
 
-Json DescribeFiles(Torrent const& torrent, std::shared_ptr<lt::torrent_info const> const& metadata, Detail const& detail,
-    std::chrono::steady_clock::time_point since)
+// Names, sizes and pieces come in pages from the `files` command, and the
+// values that change while it downloads come for the rows the browser names.
+Json DescribeFiles(std::shared_ptr<lt::torrent_info const> const& metadata)
 {
-    // Names, sizes and pieces come in pages from the `files` command; the
-    // detail holds one number per file for what changes while it downloads.
-    // Above the browser's window it holds none, because a browser that holds
-    // part of the tree reads the values of what it holds instead.
-    Json data;
-    data["file_count"] = metadata ? metadata->num_files() : 0;
-    data["downloaded"] = Json();
-    data["priority"] = Json();
-    if (metadata && static_cast<std::size_t>(metadata->num_files()) > fileWindow)
-        return data;
-    if (detail.Has(DetailKind::Progress, since))
-        data["downloaded"] = detail.progress;
-    if (auto priorities = torrent.ShownPriorities(detail, since))
-    {
-        data["priority"] = Json::array();
-        for (auto priority : *priorities)
-            data["priority"].push_back(static_cast<std::uint8_t>(priority));
-    }
-    return data;
+    return {{"file_count", metadata ? metadata->num_files() : 0}};
 }
 
 Json DescribePieces(Torrent const& torrent, std::shared_ptr<lt::torrent_info const> const& metadata,
@@ -1246,21 +1259,33 @@ Json DescribePieces(Torrent const& torrent, std::shared_ptr<lt::torrent_info con
 }
 }
 
-Json Torrent::DescribeFilePage(std::shared_ptr<lt::torrent_info const> const& metadata, int offset) const
+Json Torrent::DescribeFilePage(std::shared_ptr<lt::torrent_info const> const& metadata, int offset, bool paths) const
 {
     Json data = {{"torrent_id", torrentId}, {"offset", offset}, {"file_count", metadata ? metadata->num_files() : 0},
         {"files", Json::array()}};
-    if (metadata)
+    if (!metadata)
     {
-        // As ChosenPriorities, for the page's files only.
-        auto masks = facts.priorities.empty() ? SkipMasks(facts.skipPatterns) : std::vector<std::wstring>();
-        data["files"] = FilePage(*metadata, offset, [this, &metadata, &masks](lt::file_index_t index, Json& file)
+        return data;
+    }
+    auto const& storage = metadata->layout();
+    auto masks = ChoiceMasks();
+    auto& files = data["files"];
+    std::size_t names = 0;
+    for (int item = offset; item < storage.num_files() && files.size() < filePage && names < filePageNames; ++item)
+    {
+        lt::file_index_t index(item);
+        auto pieces = Pieces(*metadata, index);
+        Json file = {{"index", item}, {"size", storage.file_size(index)}, {"padding", storage.pad_file_at(index)},
+            {"first_piece", pieces.first}, {"end_piece", pieces.end},
+            {"priority", static_cast<std::uint8_t>(ChosenPriority(storage, index, masks))}};
+        if (paths)
         {
-            auto item = static_cast<std::size_t>(static_cast<int>(index));
+            auto path = storage.file_path(index);
+            names += path.size();
+            file["path"] = std::move(path);
             file["disk_path"] = DiskPath(index);
-            file["priority"] = static_cast<std::uint8_t>(item < facts.priorities.size() ? facts.priorities[item] :
-                DefaultPriority(metadata->layout(), index, masks));
-        });
+        }
+        files.push_back(std::move(file));
     }
     return data;
 }
@@ -1295,7 +1320,7 @@ Json Torrent::Describe(TorrentView view, Detail const& detail,
             data["magnet"] = nullptr;
         break;
     case TorrentView::Files:
-        data.update(DescribeFiles(*this, metadata, detail, since));
+        data.update(DescribeFiles(metadata));
         break;
     case TorrentView::Pieces:
         if (!metadata || (detail.Has(DetailKind::Status, since) &&
@@ -1314,7 +1339,7 @@ Json Torrent::Row(bool sessionPaused, int queue, std::optional<double> moveProgr
     auto complete = completion.IsReached(status);
     auto saved = status.state == lt::torrent_status::checking_resume_data ? savedProgress : std::nullopt;
     return {{"torrent_id", torrentId}, {"save_path", facts.savePath}, {"final_folder", facts.finalFolder},
-        {"moving", pathWork.has_value()}, {"move_destination", facts.marker ? facts.marker->destination : std::string()},
+        {"moving", ShowsPathWork()}, {"move_destination", facts.marker ? facts.marker->destination : std::string()},
         {"paused", facts.intent == Intent::Paused}, {"forced", facts.intent == Intent::Forced},
         {"sequential", facts.sequential}, {"first_last", facts.firstLast},
         {"download_limit", facts.downloadLimit}, {"upload_limit", facts.uploadLimit},
@@ -1340,30 +1365,52 @@ Json Torrent::Row(bool sessionPaused, int queue, std::optional<double> moveProgr
 
 // Choices that wait for busy files are saved, so they show before libtorrent
 // has them.
-std::optional<std::vector<lt::download_priority_t>> Torrent::ShownPriorities(Detail const& detail,
-    std::chrono::steady_clock::time_point since) const
+std::optional<std::vector<lt::download_priority_t>> Torrent::ShownPriorities(Detail const& detail) const
 {
     if (prioritiesPending)
         return facts.priorities;
-    if (detail.Has(DetailKind::Priorities, since))
+    if (detail.Has(DetailKind::Priorities))
         return detail.priorities;
     return std::nullopt;
+}
+
+std::vector<std::wstring> Torrent::ChoiceMasks() const
+{
+    return facts.priorities.empty() ? SkipMasks(facts.skipPatterns) : std::vector<std::wstring>();
 }
 
 std::vector<lt::download_priority_t> Torrent::ChosenPriorities(
     std::shared_ptr<lt::torrent_info const> const& metadata) const
 {
-    auto priorities = facts.priorities;
     if (!metadata)
-        std::fill(priorities.begin(), priorities.end(), lt::dont_download);
-    if (priorities.empty() && metadata)
-        priorities = DefaultPriorities(metadata->layout(), facts.skipPatterns);
+    {
+        return std::vector<lt::download_priority_t>(facts.priorities.size(), lt::dont_download);
+    }
+    auto masks = ChoiceMasks();
+    std::vector<lt::download_priority_t> priorities;
+    for (auto index : metadata->layout().file_range())
+    {
+        priorities.push_back(ChosenPriority(metadata->layout(), index, masks));
+    }
     return priorities;
+}
+
+lt::download_priority_t Torrent::ChosenPriority(lt::file_storage const& files, lt::file_index_t index,
+    std::vector<std::wstring> const& masks) const
+{
+    if (facts.priorities.empty())
+    {
+        return DefaultPriority(files, index, masks);
+    }
+    // Only a damaged store saves a list of another length; a file it misses
+    // takes the priority libtorrent gives a file without one.
+    auto item = static_cast<std::size_t>(static_cast<int>(index));
+    return item < facts.priorities.size() ? facts.priorities[item] : DefaultPriority(files, index, {});
 }
 
 void Torrent::ApplyIntent()
 {
-    if (restore)
+    if (waiting)
     {
         return;
     }
@@ -1408,13 +1455,14 @@ void Torrent::ApplyIntent()
 void Torrent::Retry()
 {
     conflict.clear();
-    restoreError.reset();
+    if (waiting)
+        waiting->refusal.reset();
 }
 
 void Torrent::ClearDiskError()
 {
     diskClearedAt = lt::clock_type::now();
-    if (!restore)
+    if (!waiting)
     {
         handle.clear_error();
         handle.unset_flags(lt::torrent_flags::upload_mode);
@@ -1431,7 +1479,7 @@ void Torrent::ClearDiskError()
 // piece, which covers a media header and an AVI index.
 void Torrent::PrioritizePieces(std::vector<lt::download_priority_t> const& priorities) const
 {
-    if (restore)
+    if (waiting)
     {
         return;
     }
@@ -1473,7 +1521,7 @@ void Torrent::PrioritizePieces(std::vector<lt::download_priority_t> const& prior
 
 void Torrent::Checkpoint(bool force)
 {
-    if (restore)
+    if (waiting)
     {
         unsaved = false;
         return;

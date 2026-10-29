@@ -45,7 +45,7 @@ void Engine::State::CheckpointUnsaved()
         }
         auto& [id, torrent] = *entry;
         ++entry;
-        if (torrent.unsaved && (!torrent.pathWork || shutdownPhase == ShutdownPhase::Saving) &&
+        if (torrent.unsaved && (!torrent.PathWork() || shutdownPhase == ShutdownPhase::Saving) &&
             torrent.checkpointPhase == CheckpointPhase::Idle && now >= torrent.retryAt)
         {
             torrent.Checkpoint(IsShuttingDown());
@@ -152,7 +152,7 @@ void Engine::State::SaveCheckpoint(Torrent& torrent, lt::add_torrent_params para
                 }
                 auto& torrent = found->second;
                 if (torrent.handle != handle || torrent.generation != generation || torrent.pendingCheckpoint ||
-                    !torrent.facts.verifyFiles || torrent.namePhase != NamePhase::Ready || torrent.pathWork ||
+                    !torrent.facts.verifyFiles || torrent.namePhase != NamePhase::Ready || torrent.PathWork() ||
                     torrent.facts.marker || !SameFolder(path, torrent.facts.savePath))
                 {
                     FinishCheckpoint(torrent);

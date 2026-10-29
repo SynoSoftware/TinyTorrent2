@@ -42,7 +42,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
     private string _trackerOriginal = string.Empty;
     private JsonElement? _confirmedFiles;
     private JsonElement? _fileReply;
-    private IReadOnlyList<PieceFile>? _pieceFiles;
+    private PieceFiles? _pieceFiles;
 
     public Strings Text => _owner.Text;
     public Torrent? Target => _target;
@@ -66,16 +66,17 @@ public sealed partial class Inspector : INotifyPropertyChanged
         _target is not null && _owner.Contains(_target) && IsAvailable && _owner.CanSave;
     public bool CanEdit => _visible && CanSave && !_owner.IsClosing;
     public bool IsPending => _pending is not null;
-    public bool IsLoading => _fetching;
+    private bool IsStarting => _readFailure is CommandException { Code: "starting" };
+    public bool IsLoading => _fetching || (IsAvailable && IsStarting);
     public bool HasDraft => !IsPending && (HasFileChanges || HasTrackerChanges);
     internal bool HasTrackerChanges => _editingTrackers && _trackerInput != _trackerOriginal;
     private bool IsRemoved =>
         !IsGlobal && _owner.IsConnected && _target is not null && !_owner.Contains(_target);
-    public bool HasError => IsRemoved || _readFailure is not null || _editFailure is not null;
+    public bool HasError => IsRemoved || (_readFailure is not null && !IsStarting) || _editFailure is not null;
     public string Message =>
         IsRemoved ? Text.Get("inspector", "removed")
         : _editFailure is { } edit ? Text.Error(edit)
-        : _readFailure is { } read ? Text.Error(read)
+        : !IsStarting && _readFailure is { } read ? Text.Error(read)
         : string.Empty;
     public FileSelection Files { get; }
 
@@ -531,9 +532,9 @@ public sealed partial class Inspector : INotifyPropertyChanged
                 ["context"] = context,
                 ["view"] = section.ToString().ToLowerInvariant(),
             };
-            // Rows that are not the whole tree get the values of what they hold.
-            if (section == InspectorSection.Files && Files.Keys is { } keys)
+            if (section == InspectorSection.Files)
             {
+                var keys = Files.Keys;
                 arguments["folders"] = keys.Folders;
                 arguments["files"] = keys.Files;
             }
@@ -667,7 +668,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
             case InspectorSection.Pieces:
                 if (reply.TryGetProperty("verified", out _))
                 {
-                    Pieces = new Pieces(reply, _pieceFiles ?? []);
+                    Pieces = new Pieces(reply, _pieceFiles ?? PieceFiles.None);
                     changed = true;
                 }
                 break;
@@ -797,28 +798,40 @@ public sealed partial class Inspector : INotifyPropertyChanged
         }
         else if (section == InspectorSection.Pieces && _pieceFiles is null)
         {
-            // Above the browser's window the names would cost tens of
-            // megabytes, so the map counts files instead of naming them.
-            List<PieceFile> files = [];
-            await foreach (var page in _client.TorrentFiles(torrent.TorrentId))
+            // A torrent without metadata has no files yet.
+            var count = await _client.FileCount(torrent.TorrentId);
+            if (!IsCurrent(context) || count == 0)
             {
-                if (!IsCurrent(context))
-                {
-                    return;
-                }
-                var named = page.GetProperty("file_count").GetInt32() <= FileSelection.Window;
-                files.AddRange(
-                    page.GetProperty("files")
-                        .EnumerateArray()
-                        .Where(file => !file.GetProperty("padding").GetBoolean())
-                        .Select(file => new PieceFile(
-                            named ? file.GetProperty("path").GetString()! : null,
-                            file.GetProperty("first_piece").GetInt32(),
-                            file.GetProperty("end_piece").GetInt32()
-                        ))
-                );
+                return;
             }
-            if (IsCurrent(context) && files.Count > 0)
+            PieceFiles files;
+            if (count <= FileSelection.Window)
+            {
+                List<PieceFile> named = [];
+                await foreach (var file in _client.TorrentFiles(torrent.TorrentId))
+                {
+                    if (!IsCurrent(context))
+                    {
+                        return;
+                    }
+                    named.Add(new PieceFile(file.Path, file.Pieces));
+                }
+                files = new PieceFiles.Named(named);
+            }
+            else
+            {
+                List<PieceRange> counted = [];
+                await foreach (var pieces in _client.TorrentPieces(torrent.TorrentId))
+                {
+                    if (!IsCurrent(context))
+                    {
+                        return;
+                    }
+                    counted.Add(pieces);
+                }
+                files = new PieceFiles.Counted(counted);
+            }
+            if (IsCurrent(context))
             {
                 _pieceFiles = files;
             }
@@ -848,7 +861,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
     private Task<JsonElement> ReadTree(Torrent torrent, Dictionary<string, object> request)
     {
         request["torrent_id"] = torrent.TorrentId;
-        return _client.Send("tree", request, Requester.Window);
+        return _client.Read("tree", request);
     }
 
     // The browser's choices join the draft, which sends them one edit at a

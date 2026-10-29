@@ -72,8 +72,10 @@ window:
   torrent. Retry keeps each torrent's Start, Stop or Force choice. Torrents
   that wait for a drive or share to answer get one notice per drive root or
   UNC share, even across different folders and bursts. A folder that links
-  elsewhere counts under the root or share it links to, so `C:\Media`, a link
-  to `\\nas\media`, counts under `\\nas\media`. It gives the cause,
+  elsewhere counts under the root or share that
+  [it really is on](files.md#where-a-folder-really-is). When the link changes, the
+  torrent counts under the old root until that root answers, because its work
+  there must end first. It gives the cause,
   root and affected count, without listing torrent names or offering Show
   torrent, and Open folder targets the root; each affected row retains its own
   reason. A share that hangs gets the same notice, whatever work waits on it:
@@ -82,7 +84,9 @@ window:
   the person, once a minute, on a thread of its own. A root whose open has not returned after two
   minutes does not answer, so the notice counts at once the running torrents
   under it and the torrents whose file work uses a folder there, removed ones
-  included.
+  included. A rename is not such work, so a rename that waits for a share that
+  no running torrent uses shows no notice
+  ([#564](https://github.com/SynoSoftware/TinyTorrent2/issues/564)).
   A popup that shows a notice whose count changes also changes its buttons and
   what selecting it does. Missing or invalid paths, known drive/share
   disconnections and full disks use typed native error codes. Healthy seeds on

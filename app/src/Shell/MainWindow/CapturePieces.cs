@@ -128,7 +128,9 @@ public sealed partial class MainWindow
                         downloading,
                     }
                 ),
-                [new PieceFile("Synthetic renderer fixture.bin", 0, count)]
+                new PieceFiles.Named(
+                    [new PieceFile("Synthetic renderer fixture.bin", new(0, count))]
+                )
             );
         }
     }

@@ -234,7 +234,9 @@ asynchronously; merging does not need to wait for those observations.
 File edits accept the same priorities as addition, with padding always unwanted,
 but may make every file unwanted. A torrent already in the list can keep its
 content and seed while the person changes its selection; only addition needs at
-least one wanted file to give the new download useful work.
+least one wanted file to give the new download useful work. A saved priority
+that is not one of these loads as the nearest of them, so a later edit of the
+torrent still succeeds.
 
 Download in sequential order and Download first and last pieces first are
 choices saved with each torrent in `settings.json`. Addition accepts them, and
@@ -418,12 +420,12 @@ finished downloads, leaves it as it is. Each answer acts on every listed
 torrent it can and refuses only the others, so one torrent never blocks the
 rest. Retry, Start and Force cannot act on an alias conflict while another
 listed torrent still holds the other identity, because the conflict comes
-straight back; Verify cannot act without metadata. One rule per answer decides
-this, and the row offers Retry, the stopped notice counts the torrent, and
-Retry all collects it only when Retry can act. A new error after a stop ended starts
-again with its automatic resume. A failed move to the final folder that left
-the files complete where they were follows the same rule: it waits until the
-check finds the final folder answering and usable, with the room that the
+straight back; Verify cannot act without metadata. One rule per answer
+decides this, and the row offers Retry, the stopped notice counts the torrent,
+and Retry all collects it only when Retry can act. A new error after a stop
+ended starts again with its automatic resume. A failed move to the final
+folder that left the files complete where they were follows the same rule:
+it waits until the check finds the final folder answering and usable, with the room that the
 move's copies need by the move's own rule, runs once more, and then waits for
 Retry. A move the person asks for ends that wait, also one that waits for its
 turn, and so does the person's Stop. Both minute checks run when the torrent
@@ -435,7 +437,14 @@ failure its release, probe, own-folder check or reload, and the failed move to
 the final folder its final-folder check. A
 release or reload that still runs when the person answers, or when the torrent
 is removed, only clears the error when it ends; a probe or minute check then
-changes nothing, and a removed torrent starts no other job. A job on a handle
+only records the files it found without their data, and a removed torrent
+starts no other job. Files that lost
+their data keep the torrent paused until a reload without their pieces
+succeeds, so they download again instead of the torrent writing around zeros.
+Only the torrent's removal forgets them: after any answer, and after other
+work ends the stop, the reload runs first, once no file work uses the
+torrent's files, and a check waits for it. A reload that fails while no stop
+holds the torrent starts a new failure. A job on a handle
 that a reload or a move replaced, or on a folder that a move replaced, ends
 with it, also for a removed torrent, and its late result changes nothing. Native release callbacks, rather than
 droppable alerts, establish that the old disk work has ended, and the engine
@@ -457,8 +466,7 @@ libtorrent continues a check after the pieces its resume data lists. A worker
 reads the resume data and waits for the release; the engine thread then
 removes the old handle and adds the new one in one step, so no engine call ever
 uses a removed handle. One handle swap serves every reload and move: it forgets
-the state bound to the old handle (its status queries, checkpoint, check reads,
-release and turn, and cache write), installs the new handle or, when libtorrent
+the state bound to the old handle, installs the new handle or, when libtorrent
 did not add the torrent, the parameters to add it from, and only then ends the
 jobs on the old handle, so no event finds a torrent with neither. When
 libtorrent does not add the torrent again, the torrent keeps its identity,
@@ -468,7 +476,7 @@ start, the row shows the error and Retry, which adds it again.
 Every replacement restores the status-update subscription that native resume
 data omits, so the list and transfer policy keep following the new handle.
 
-Mark each payload file as downloaded from the internet when it completes while
+<a id="mark-of-the-web"></a>Mark each payload file as downloaded from the internet when it completes while
 its torrent is downloading, by writing the internet zone to the file's
 `Zone.Identifier` stream, as browsers do. Windows then shows its SmartScreen or
 Protected View warning before the person runs or edits a file from a torrent.

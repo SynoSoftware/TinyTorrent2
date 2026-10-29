@@ -227,7 +227,7 @@ void Engine::State::ContinueShutdown()
         {
             for (auto const& [id, torrent] : torrents)
             {
-                if (!torrent.restore && !torrent.control.Recovers() && !torrent.pathWork &&
+                if (!torrent.waiting && !torrent.control.Recovers() && !torrent.PathWork() &&
                     !bool(torrent.handle.flags() & lt::torrent_flags::paused) &&
                     torrent.status.state != lt::torrent_status::checking_files)
                 {

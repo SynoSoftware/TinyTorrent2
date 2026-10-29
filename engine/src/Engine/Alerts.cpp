@@ -24,6 +24,18 @@ bool Engine::State::RootProbe::Hangs(std::chrono::steady_clock::time_point now) 
     return pending && at && now - *at >= noticeDelay;
 }
 
+bool Engine::State::ProbePending(std::string const& location) const
+{
+    auto probe = rootProbes.find(NoticeKey(location));
+    return probe != rootProbes.end() && probe->second.pending;
+}
+
+bool Engine::State::RootHangs(std::string const& location, std::chrono::steady_clock::time_point now) const
+{
+    auto probe = rootProbes.find(NoticeKey(location));
+    return probe != rootProbes.end() && probe->second.Hangs(now);
+}
+
 void Engine::State::Handle(lt::alert* alert)
 {
     switch (alert->type())
@@ -358,15 +370,13 @@ void Engine::State::UpdateProblems()
         // the probe, not the error, shows that the torrent waits for its
         // location.
         bool absent = torrent.control.AwaitsLocation();
-        auto root = NoticeRoot(torrent.facts.savePath);
-        if (!root)
-            continue;
-        auto key = RootKey(Wide(*root));
+        auto root = NoticeRootOf(torrent);
+        auto key = RootKey(Wide(root));
         bool waits = hung.contains(key) && torrent.facts.intent != Intent::Paused;
         if (!absent && !waits)
             continue;
         auto cause = absent ? *torrent.control.Cause() : Problem{ProblemKind::DownloadPathUnavailable};
-        locate(key, *root, cause, id);
+        locate(key, root, cause, id);
     }
     // File work waits for the root that did not answer, or for a hung root
     // that one of its folders lies under, unless it waits for the person.
@@ -386,12 +396,19 @@ void Engine::State::UpdateProblems()
                     use.torrentId);
         }
     });
+    for (auto const& [id, removal] : removed)
+    {
+        auto const& folder = removal.torrent.facts.savePath;
+        if (auto key = NoticeKey(folder); hung.contains(key))
+            locate(key, NoticeRoot(folder).value_or(folder), Problem{ProblemKind::DownloadPathUnavailable}, id);
+    }
     // A removed torrent's give-back has no row, so its failure waits for the
     // Retry of the stopped notice.
     for (auto const& running : returning)
     {
-        if (auto const& failure = running.job->Failure())
-            stop(running.task.name, *failure, "", Utf8(running.task.root.wstring()));
+        auto task = std::get_if<Task::Return>(&running.target);
+        if (auto const& failure = running.job->Failure(); task && failure)
+            stop(task->name, *failure, "", Utf8(task->root.wstring()));
     }
     for (auto& [key, entry] : current)
     {
@@ -449,7 +466,7 @@ void Engine::State::QueryCompletions()
         if (pending >= 64)
             break;
         bool fails = !torrent.control.Holds() && StatusFailure(torrent, torrent.status);
-        if ((!torrent.completion.NeedsSample() && !fails) || torrent.restore ||
+        if ((!torrent.completion.NeedsSample() && !fails) || torrent.waiting ||
             torrent.queries.contains(DetailKind::Status))
             continue;
         Query(torrent, DetailKind::Status);
@@ -544,7 +561,7 @@ void Engine::State::On(lt::metadata_received_alert const& alert)
     {
         // The next file query reads its names, which every file check waits
         // for.
-        if (!torrent->restore && !torrent->names)
+        if (!torrent->waiting && !torrent->names)
             torrent->filesPending = true;
         MarkWaiting(*torrent);
         ContinueNames();
@@ -606,12 +623,12 @@ void Engine::State::On(lt::alerts_dropped_alert const& alert)
     for (auto& [id, removal] : removed)
     {
         if (alert.dropped_alerts[lt::torrent_paused_alert::alert_type] &&
-            removal.torrent.checkReads != CheckReads::None && !removal.torrent.restore)
+            removal.torrent.checkReads != CheckReads::None && !removal.torrent.waiting)
             AwaitCheckReads(removal.torrent);
     }
     for (auto& [id, torrent] : torrents)
     {
-        if (torrent.restore)
+        if (torrent.waiting)
         {
             continue;
         }
