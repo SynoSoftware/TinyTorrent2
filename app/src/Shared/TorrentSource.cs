@@ -19,6 +19,10 @@ internal sealed class TorrentSource : IAsyncDisposable
     private string? _session;
     private long _revision;
     private Dictionary<string, (Contribution Contribution, long Size)>? _contributions;
+
+    // The torrents with wanted bytes present in the latest snapshot, whose
+    // verified pieces the collection reads.
+    private HashSet<string> _completed = [];
     private CancellationTokenSource _generation = new();
 
     internal event EventHandler? Changed;
@@ -81,8 +85,13 @@ internal sealed class TorrentSource : IAsyncDisposable
         var changesFiles =
             reply.Command is "add" or "remove" or "delete_files" or "move" or "verify"
             || reply.Command == "edit"
+                && reply.Arguments.TryGetProperty("torrent_id", out _)
                 && reply.Arguments.TryGetProperty("changes", out var changes)
-                && changes.TryGetProperty("priorities", out _);
+                && (
+                    changes.TryGetProperty("files", out _)
+                    || changes.TryGetProperty("folders", out _)
+                    || changes.TryGetProperty("query", out _)
+                );
         if (!reply.Succeeded || !changesFiles)
             return;
         bool current;
@@ -206,10 +215,13 @@ internal sealed class TorrentSource : IAsyncDisposable
                 }
                 FileDetail? detail = null;
                 var failed = false;
+                bool completed;
+                lock (_gate)
+                    completed = _completed.Contains(next.Origin);
                 try
                 {
                     detail = await _client
-                        .ReadFiles(next.Origin, cancellation)
+                        .ReadFiles(next.Origin, completed, cancellation)
                         .ConfigureAwait(false);
                 }
                 catch (Exception error)
@@ -303,8 +315,17 @@ internal sealed class TorrentSource : IAsyncDisposable
     private async Task<bool> Reconcile(JsonElement snapshot, CancellationToken cancellation)
     {
         Dictionary<string, (Contribution Contribution, long Size)>? previous;
+        var completed = snapshot
+            .GetProperty("torrents")
+            .EnumerateArray()
+            .Where(row => row.GetProperty("completed").GetInt64() > 0)
+            .Select(row => row.GetProperty("torrent_id").GetString()!)
+            .ToHashSet();
         lock (_gate)
+        {
             previous = _contributions;
+            _completed = completed;
+        }
         var contributions = snapshot
             .GetProperty("torrents")
             .EnumerateArray()

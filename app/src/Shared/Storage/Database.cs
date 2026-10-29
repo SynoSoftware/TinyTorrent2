@@ -194,6 +194,11 @@ internal sealed partial class Database : IAsyncDisposable
                 "PATH",
                 (left, right) => StringComparer.OrdinalIgnoreCase.Compare(left, right)
             );
+            connection.CreateFunction<string, string, bool>(
+                "starts_word",
+                Shared.FileName.StartsWord,
+                isDeterministic: true
+            );
             using var command = connection.CreateCommand();
             command.CommandText = "PRAGMA foreign_keys = ON; PRAGMA temp_store = MEMORY;";
             command.ExecuteNonQuery();

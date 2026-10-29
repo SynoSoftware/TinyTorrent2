@@ -237,7 +237,7 @@ public sealed partial class MainWindow
         );
         var files = Model
             .Inspector.Files.Roots.SelectMany(node => node.Nodes())
-            .Where(node => node.Index >= 0 && !node.IsPadding)
+            .Where(node => !node.IsFolder)
             .ToArray();
         if (
             Model.Inspector.Target?.TorrentId != bundle.TorrentId
@@ -272,7 +272,7 @@ public sealed partial class MainWindow
         var descendants = folder.Children.ToArray();
         var child = descendants.First(file => list.Items.Contains(file));
         var outside = files.First(file => !descendants.Contains(file) && list.Items.Contains(file));
-        var priorities = Model.Inspector.Files.Priorities();
+        var priorities = ShownPriorities();
         var expanded = folder.IsExpanded;
         var parent = (ItemsControlAutomationPeer)
             FrameworkElementAutomationPeer.CreatePeerForElement(list);
@@ -326,7 +326,7 @@ public sealed partial class MainWindow
             var retained =
                 table.Selection.Items.Count == 1
                 && ReferenceEquals(table.Selection.Items.Single(), outside);
-            var unchanged = priorities.SequenceEqual(Model.Inspector.Files.Priorities());
+            var unchanged = priorities.SequenceEqual(ShownPriorities());
             outcomes.Add(
                 new
                 {
@@ -348,6 +348,14 @@ public sealed partial class MainWindow
                 branch.Expand();
             await CaptureLayout();
         }
+        int[] ShownPriorities() =>
+            [
+                .. Model
+                    .Inspector.Files.Roots.SelectMany(node => node.Nodes())
+                    .Where(node => !node.IsFolder)
+                    .OrderBy(node => node.Index)
+                    .Select(node => node.Priority),
+            ];
         async Task<int[]> ReadPriorities()
         {
             using var saved = JsonDocument.Parse(
@@ -445,7 +453,7 @@ public sealed partial class MainWindow
             var saved = await ReadPriorities();
             var restored =
                 priorities.SequenceEqual(saved)
-                && priorities.SequenceEqual(Model.Inspector.Files.Priorities());
+                && priorities.SequenceEqual(ShownPriorities());
             outcomes.Add(
                 new
                 {

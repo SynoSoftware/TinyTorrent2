@@ -8,13 +8,10 @@ namespace
 std::vector<DetailKind> Kinds(std::optional<TorrentView> view, bool metadata)
 {
     // A request without a view, from Open torrent or Open folder, describes
-    // the torrent with its General and Files detail.
+    // the torrent with its General detail; those actions read no file.
     if (!view)
     {
-        auto kinds = Kinds(TorrentView::General, metadata);
-        auto files = Kinds(TorrentView::Files, metadata);
-        kinds.insert(kinds.end(), files.begin(), files.end());
-        return kinds;
+        return Kinds(TorrentView::General, metadata);
     }
     switch (*view)
     {
@@ -91,7 +88,7 @@ void Engine::State::ReadDetail(Reading::Read read)
             data["session_id"] = sessionId;
             data["context"] = *read.context;
             data["ready"] = ready;
-            read.reply(Success(std::move(data)));
+            Respond(torrent, read, detail, std::move(data));
 
             read.reply = [reply = std::move(read.reply), session = sessionId,
                 torrentId = read.torrentId, context = *read.context](Json response)
@@ -156,6 +153,111 @@ void Engine::State::CollectDetail(Reading::Read read)
     read.started = std::chrono::steady_clock::now();
     reading->held.push_back(std::move(read));
     ContinueReading();
+}
+
+void Engine::State::Respond(Torrent const& torrent, Reading::Read const& read, Detail const& detail, Json data)
+{
+    if (!read.loaded)
+    {
+        read.reply(Success(std::move(data)));
+        return;
+    }
+    data.erase("downloaded");
+    data.erase("priority");
+    for (auto key : {"wanted_count", "wanted_size", "folders", "files"})
+        data[key] = nullptr;
+    auto metadata = torrent.handle.torrent_file();
+    auto priorities = torrent.ShownPriorities(detail);
+    // Every such reply goes through the worker, so they reach the browser
+    // in the order they were sent.
+    std::optional<Listing> listing;
+    if (metadata && priorities)
+    {
+        listing = Listing{metadata, Layout::Keep, std::move(*priorities),
+            detail.Has(DetailKind::Progress) ? Listing::Progress(detail.progress) : std::nullopt};
+    }
+    trees.Run([listing = std::move(listing), loaded = *read.loaded]() mutable
+    {
+        Json values;
+        if (!listing)
+            return values;
+        auto const& progress = *listing->progress;
+        auto count = static_cast<int>(listing->priorities.size());
+        values["files"] = Json::array();
+        for (auto file : loaded.files)
+        {
+            auto item = static_cast<int>(file);
+            if (item >= 0 && item < count)
+            {
+                values["files"].push_back({{"index", item},
+                    {"priority", static_cast<std::uint8_t>(listing->priorities[item])},
+                    {"downloaded", progress && item < static_cast<int>(progress->size()) ? Json((*progress)[item]) :
+                        Json()}});
+            }
+        }
+        Tree tree(std::move(*listing));
+        values.update(tree.Totals());
+        values["folders"] = tree.Values(loaded.folders);
+        return values;
+    }, [data = std::move(data), reply = read.reply](std::expected<Json, StorageOutcome> values) mutable
+    {
+        // A worker that is too busy leaves the values unknown, as before
+        // libtorrent reports them.
+        if (values && values->is_object())
+            data.update(*values);
+        reply(Success(std::move(data)));
+    });
+}
+
+std::expected<Listing, Outcome> Engine::State::Listed(Torrent const& torrent) const
+{
+    if (torrent.restore && !torrent.AwaitsAdd())
+    {
+        return std::unexpected(Outcome{ErrorCode::AliasConflict, torrent.conflict});
+    }
+    // A torrent that waits for its add has its saved metadata.
+    auto metadata = torrent.restore ? torrent.restore->ti : torrent.handle.torrent_file();
+    if (!metadata)
+    {
+        return std::unexpected(Outcome{ErrorCode::MetadataUnavailable});
+    }
+    Listing::Progress progress;
+    if (reading && reading->torrentId == torrent.torrentId && reading->detail.Has(DetailKind::Progress))
+    {
+        progress = reading->detail.progress;
+    }
+    return Listing{metadata, Layout::Keep, torrent.ChosenPriorities(metadata), std::move(progress)};
+}
+
+void Engine::State::ReadTree(Listing listing, Tree::Target target,
+    std::function<void(std::expected<Json, Outcome>)> completion)
+{
+    trees.Run([listing = std::move(listing), target = std::move(target)]() mutable
+    {
+        return Tree(std::move(listing)).Describe(target);
+    }, [completion](std::expected<std::optional<Json>, StorageOutcome> described)
+    {
+        if (!described)
+            completion(std::unexpected(described.error().ToOutcome(ErrorCode::InvalidRequest)));
+        else if (!*described)
+            completion(std::unexpected(Outcome{ErrorCode::InvalidRequest}));
+        else
+            completion(std::move(**described));
+    });
+}
+
+void Engine::State::NameFiles(Torrent const& torrent, Json& folder) const
+{
+    if (folder["files"].is_array())
+    {
+        for (auto& file : folder["files"])
+            file["disk_path"] = torrent.DiskPath(lt::file_index_t(file["index"].get<int>()));
+    }
+    if (folder["folders"].is_array())
+    {
+        for (auto& child : folder["folders"])
+            NameFiles(torrent, child);
+    }
 }
 
 void Engine::State::Query(Torrent& torrent, DetailKind kind)
@@ -225,7 +327,7 @@ void Engine::State::ContinueReading(bool changed)
                 data["context"] = *read.context;
                 data["ready"] = complete;
             }
-            read.reply(Success(std::move(data)));
+            Respond(torrent, read, detail, std::move(data));
         }
         if (!complete)
             reading->held.push_back(std::move(read));

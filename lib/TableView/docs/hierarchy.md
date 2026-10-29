@@ -20,11 +20,13 @@ arrow; other cells remain aligned with their headers regardless of depth.
 There is one header, one column layout, one selection model and one scroller.
 Flat hosts, including the torrent queue, keep their existing behavior.
 
-The extension covers finite, already available hierarchies, sibling sorting,
-expansion, selection, keyboard navigation and accessible expansion. Lazy loading,
-group summaries, arbitrary grouping, tree editing and hierarchical row dragging
-are outside this scope because Files requires none of them. No separate tree
-control, rendering system or general hierarchy framework is introduced.
+The extension covers finite hierarchies, sibling sorting, expansion, selection,
+keyboard navigation and accessible expansion. A host may supply a row's children
+later; see [rows with unrealized children](#rows-with-unrealized-children). The
+table never loads anything itself. Group summaries, arbitrary grouping, tree
+editing and hierarchical row dragging are outside this scope because Files
+requires none of them. No separate tree control, rendering system or general
+hierarchy framework is introduced.
 
 ## Ordinary tables stay ordinary
 
@@ -75,7 +77,8 @@ public Schema<TRow> Hierarchy(
     Column column,
     Func<TRow, IEnumerable<TRow>> children,
     Func<TRow, bool> isExpanded,
-    Action<TRow, bool> setExpanded);
+    Action<TRow, bool> setExpanded,
+    Func<TRow, bool>? hasUnrealizedChildren = null);
 ```
 
 For the existing Files model, hierarchy setup follows the same schema chain as
@@ -96,8 +99,12 @@ table.ItemsSource = model.Roots;
 `column` identifies the cell containing hierarchy navigation. `children` returns
 immediate children in natural order, with an empty enumerable for a leaf.
 `isExpanded` reads host state; `setExpanded` writes the requested value for both
-expansion and collapse. No new row interface, node wrapper, options object or
-binding-expression compiler is needed to describe these four facts.
+expansion and collapse. The optional `hasUnrealizedChildren` reads whether the
+host has children for the row that it has not supplied yet; omit it when every
+row's children are supplied. It is the fifth parameter because it is optional and
+existing declarations stay unchanged. WinUI's `TreeViewNode.HasUnrealizedChildren`
+names the same fact. No new row interface, node wrapper, options object or
+binding-expression compiler is needed to describe these facts.
 
 `Hierarchy` follows the existing fluent schema vocabulary of `Key` and `SortKey`:
 it declares a relationship, not a runtime command. The boolean reader and state
@@ -118,8 +125,10 @@ required. Row templates, sort keys and selection packets receive the original
 The read callbacks are pure. `setExpanded` is a synchronous state write, not a
 policy callback or a request event: when it returns, `isExpanded` returns the
 requested value. It may raise the row's normal property notification, but does
-not call the table, change source membership or start asynchronous work. A
-request for the current state does nothing. TableView then commits the view
+not call the table, change source membership or wait for asynchronous work. A
+request for the current state does nothing. The table calls `setExpanded` only
+for the person's request (arrow, keyboard or automation); a host write such as
+Expand all or Collapse all does not call it. TableView then commits the view
 and selection through their existing owners; the host need not call
 `RefreshView()` in this callback. Callback defects follow the existing failure
 boundary, without a new rollback or accept/reject protocol.
@@ -175,7 +184,8 @@ The private view is a depth-first sequence: each row precedes its visible
 descendants. Roots have depth zero. A child is visible only when all its
 ancestors are expanded. Having children is determined from the supplied
 hierarchy, not from the expanded flag. A row with no supplied children has no
-expand arrow and is a leaf for navigation and automation.
+expand arrow and is a leaf for navigation and automation, unless the host
+reports that it has unrealized children.
 
 Expansion inserts the visible descendant sequence; collapse removes it.
 Expansion changes neither source order nor descendant expansion flags, so
@@ -193,6 +203,38 @@ rows; the host carries expansion to replacement objects because it owns it.
 does not implicitly expand its ancestors; a host that intends to reveal it
 expands the path, refreshes once, then scrolls to it. This keeps scrolling from
 silently changing host expansion state.
+
+## Rows with unrealized children
+
+A host can load a folder's contents only when the person opens it. Without
+this rule a folder whose contents are not loaded would look like a leaf.
+
+- A row for which `hasUnrealizedChildren` returns true and that has no supplied
+  children shows a collapsed expand arrow, as a row with children does. The
+  Right key and a click on the arrow expand it, and UI Automation reports
+  `ExpandCollapseState.Collapsed`, not `LeafNode`. A row with supplied children
+  is expandable whatever the flag says.
+- Expanding such a row is the person's request, so the table calls
+  `setExpanded(row, true)` and then refreshes, as for any row. The host learns of
+  the request there and starts its own load; the load is the host's work and the
+  table never calls the host to start one.
+- Until the children arrive, the row shows the expanded arrow and reports
+  `Expanded`, with no child rows below it and no progress indicator, as WinUI's
+  TreeView does. The host shows its own progress in the row's content if it
+  wants any.
+- The children arrive the way all children do: the host adds them to the row's
+  notifying child collection, or publishes a replacement root enumerable. They
+  then appear under the open row in the active sort order. The host sets
+  `hasUnrealizedChildren` to false when the load ends. If the load ends with no
+  children, the row becomes a leaf. If the load fails and the flag stays true,
+  the person can collapse and expand the row to ask again.
+- Collapse all, an expansion state the host restores, `RefreshView()` and a
+  republished `ItemsSource` start no loads, because the table calls
+  `setExpanded` only for the person's request. A restored expanded row whose
+  children are unrealized shows the expanded arrow without children until the
+  host loads them.
+- `hasUnrealizedChildren` is a pure read, re-read by `RefreshView()` like
+  `isExpanded`. The expander slot is reserved while any shown row is expandable.
 
 ## Cost of enabled hierarchy
 
@@ -322,6 +364,9 @@ For the passive row surface, use tree navigation in the reading direction:
 | Left on an expanded parent | Collapse it using the transition above. |
 | Left on a collapsed parent or leaf | Move to the nearest interactive visible ancestor; at a root, stay. |
 
+A row with unrealized children is a parent in this table; once expanded and
+still without children, Right on it stays.
+
 Swap Left and Right in right-to-left layout, matching the mirrored arrow.
 Navigation to another row uses the existing selection-mode and modifier rules:
 Ctrl preserves selection and anchor, Shift extends through visible rows, and
@@ -358,7 +403,7 @@ filtering. Counts describe siblings, not every flattened row or just realized
 containers, so scrolling does not change a row's announced position.
 
 Rows expose `ExpandCollapse` with Expanded, Collapsed or LeafNode state as
-appropriate. Expand and Collapse use the same host write and reconciliation
+appropriate; a row with unrealized children is never LeafNode. Expand and Collapse use the same host write and reconciliation
 path as pointer and keyboard input. Repeated requests for the current state
 are no-ops; leaf and unavailable operations follow the platform pattern rules.
 Selection remains the existing `SelectionItem` behavior; the file checkbox

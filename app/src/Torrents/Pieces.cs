@@ -161,14 +161,19 @@ public sealed class Pieces
 
     private static string[] Names(Strings text, IEnumerable<PieceFile> files)
     {
-        var paths = files.Select(file => file.Path).ToArray();
+        var listed = files.ToArray();
+        string[] paths = [.. listed.Select(file => file.Path).OfType<string>()];
+        if (paths.Length < listed.Length)
+            return [text.FormatCount("pieces", "files", listed.Length)];
         return paths.Length <= Listed
             ? paths
             : [.. paths.Take(Listed), text.Format("pieces", "more", paths.Length - Listed)];
     }
 }
 
-public sealed record PieceFile(string Path, int First, int End);
+// Path is null for a torrent above the file browser's window, whose map counts
+// files instead of naming them.
+public sealed record PieceFile(string? Path, int First, int End);
 
 // Whether the download can finish: the answer, and the reason behind it.
 public sealed record Conclusion(string Answer, string Reason, InfoBarSeverity Severity)

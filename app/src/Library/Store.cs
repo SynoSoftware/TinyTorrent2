@@ -126,11 +126,7 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
         database.Run(
             connection =>
             {
-                var terms = FileName
-                    .Normalize(query.Text)
-                    .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
-                    .Distinct(StringComparer.Ordinal)
-                    .ToArray();
+                var terms = FileName.SearchWords(query.Text);
                 using var snapshot = connection.CreateCommand();
                 snapshot.CommandText = "SELECT valid FROM library_state WHERE singleton=1;";
                 if (Convert.ToInt64(snapshot.ExecuteScalar()) == 0)
@@ -146,12 +142,16 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
                 for (var index = 0; index < terms.Length; index++)
                 {
                     var parameter = "$term" + index;
+                    // instr finds the candidates fast; starts_word keeps the
+                    // ones where the term starts a word.
+                    string Found(string column) =>
+                        $"(instr({column},{parameter})>0 AND starts_word({column},{parameter}))";
                     text.Append(
                         $"""
-                         AND (instr(r.file_search,{parameter})>0 OR instr(r.music_search,{parameter})>0 OR
+                         AND ({Found("r.file_search")} OR {Found("r.music_search")} OR
                             (r.catalog_id,r.video_id) IN (SELECT v.catalog_id,v.video_id FROM video_information v
                                 WHERE (v.catalog_id,v.video_id) IN (SELECT catalog_id,video_id FROM library_rows WHERE video_id IS NOT NULL)
-                                    AND instr(v.search,{parameter})>0))
+                                    AND {Found("v.search")}))
                         """
                     );
                     snapshot.Parameters.AddWithValue(parameter, terms[index]);

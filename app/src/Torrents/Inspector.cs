@@ -15,7 +15,9 @@ public sealed partial class Inspector : INotifyPropertyChanged
     private readonly MainViewModel _owner;
     private readonly PipeClient _client;
     private readonly ICommand[] _commands;
-    private readonly Dictionary<int, int> _fileChanges = [];
+
+    // File choices not yet sent, in the order the person made them.
+    private readonly List<FileChoice> _fileChanges = [];
     private Torrent? _target;
 
     private InspectorSection _section;
@@ -38,7 +40,8 @@ public sealed partial class Inspector : INotifyPropertyChanged
     private Exception? _editFailure;
     private string _trackerInput = string.Empty;
     private string _trackerOriginal = string.Empty;
-    private FileStatus? _confirmedFiles;
+    private JsonElement? _confirmedFiles;
+    private JsonElement? _fileReply;
     private IReadOnlyList<PieceFile>? _pieceFiles;
 
     public Strings Text => _owner.Text;
@@ -238,11 +241,10 @@ public sealed partial class Inspector : INotifyPropertyChanged
             () => true
         );
         Files = new FileSelection(owner.Text) { ShowsProgress = true, IsEnabled = false };
-        Files.Edited += (_, changes) =>
+        Files.Failed += (_, error) =>
         {
-            foreach (var (index, priority) in changes)
-                _fileChanges[index] = priority;
-            _ = SaveFiles();
+            _readFailure = error;
+            Refresh();
         };
         EditTrackers = new RelayCommand(
             () =>
@@ -523,16 +525,19 @@ public sealed partial class Inspector : INotifyPropertyChanged
         );
         try
         {
-            var read = _client.Read(
-                Consumer.Inspector,
-                "torrent",
-                new
-                {
-                    torrent_id = torrent.TorrentId,
-                    context,
-                    view = section.ToString().ToLowerInvariant(),
-                }
-            );
+            var arguments = new Dictionary<string, object>
+            {
+                ["torrent_id"] = torrent.TorrentId,
+                ["context"] = context,
+                ["view"] = section.ToString().ToLowerInvariant(),
+            };
+            // Rows that are not the whole tree get the values of what they hold.
+            if (section == InspectorSection.Files && Files.Keys is { } keys)
+            {
+                arguments["folders"] = keys.Folders;
+                arguments["files"] = keys.Files;
+            }
+            var read = _client.Read(Consumer.Inspector, "torrent", arguments);
             // Invalidate withdraws an unsent read; a cancelled task is awaited
             // without throwing, because every refresh can abandon one.
             await ((Task)read).ConfigureAwait(
@@ -766,31 +771,34 @@ public sealed partial class Inspector : INotifyPropertyChanged
         IsPrivate = privacy.ValueKind == JsonValueKind.Null ? null : privacy.GetBoolean();
     }
 
-    // Names, sizes and pieces come from the file pages, which ReadPages reads
-    // before this view, so the rows exist once the engine has the metadata.
+    // Names, sizes and pieces come from the file tree and pages, which
+    // ReadPages reads before this view, so the rows exist once the engine has
+    // the metadata.
     private async Task ReadPages(Torrent torrent, InspectorSection section, int context)
     {
         if (section == InspectorSection.Files && !_filesLoaded)
         {
-            var load = Files.Load();
-            await foreach (var page in _client.TorrentFiles(torrent.TorrentId))
+            JsonElement root;
+            try
             {
-                if (!IsCurrent(context))
-                {
-                    return;
-                }
-                load.Add(page);
+                root = await ReadTree(torrent, new() { ["folder"] = string.Empty });
             }
-            if (!IsCurrent(context) || load.Count == 0)
+            catch (CommandException error) when (error.Code == "metadata_unavailable")
             {
                 return;
             }
-            load.Commit();
+            if (!IsCurrent(context))
+            {
+                return;
+            }
+            Files.Show(root, request => ReadTree(torrent, request), EditFiles);
             _filesLoaded = true;
             Refresh();
         }
         else if (section == InspectorSection.Pieces && _pieceFiles is null)
         {
+            // Above the browser's window the names would cost tens of
+            // megabytes, so the map counts files instead of naming them.
             List<PieceFile> files = [];
             await foreach (var page in _client.TorrentFiles(torrent.TorrentId))
             {
@@ -798,12 +806,13 @@ public sealed partial class Inspector : INotifyPropertyChanged
                 {
                     return;
                 }
+                var named = page.GetProperty("file_count").GetInt32() <= FileSelection.Window;
                 files.AddRange(
                     page.GetProperty("files")
                         .EnumerateArray()
                         .Where(file => !file.GetProperty("padding").GetBoolean())
                         .Select(file => new PieceFile(
-                            file.GetProperty("path").GetString()!,
+                            named ? file.GetProperty("path").GetString()! : null,
                             file.GetProperty("first_piece").GetInt32(),
                             file.GetProperty("end_piece").GetInt32()
                         ))
@@ -818,46 +827,61 @@ public sealed partial class Inspector : INotifyPropertyChanged
 
     private void ApplyFiles(JsonElement reply)
     {
-        if (!reply.GetProperty("metadata_ready").GetBoolean())
+        if (!reply.GetProperty("metadata_ready").GetBoolean() || !_filesLoaded)
             return;
-        if (_filesLoaded && reply.GetProperty("file_count").GetInt32() != Files.Count)
-        {
-            // The rows no longer match the engine's list, so the next read
-            // builds them again from the pages.
-            Files.Clear();
-            _filesLoaded = false;
-            _confirmedFiles = null;
-        }
-        if (!_filesLoaded)
-            return;
-        var status = FileStatus.Read(reply);
         var ready = reply.GetProperty("ready").GetBoolean();
         if (ready)
-            _confirmedFiles = status;
-        if (!ready)
+            _confirmedFiles = reply;
+        if (
+            ready
+            && !IsPending
+            && _fileChanges.Count > 0
+            && _fileChanges.All(change => Files.Holds(reply, change))
+        )
         {
-            Files.Apply(status, IsPending || HasFileChanges);
-            return;
+            _fileChanges.Clear();
+            _editFailure = null;
         }
-        if (!IsPending && _fileChanges.Count > 0)
+        Files.Apply(reply, IsPending || HasFileChanges);
+    }
+
+    private Task<JsonElement> ReadTree(Torrent torrent, Dictionary<string, object> request)
+    {
+        request["torrent_id"] = torrent.TorrentId;
+        return _client.Send("tree", request, Requester.Window);
+    }
+
+    // The browser's choices join the draft, which sends them one edit at a
+    // time. Gives the reply to the last send once the draft is sent, or null
+    // while choices remain.
+    private async Task<JsonElement?> EditFiles(IReadOnlyList<FileChoice> choices)
+    {
+        foreach (var choice in choices)
         {
-            if (
-                _fileChanges.All(change =>
-                    status.Priorities is { } priorities
-                    && change.Key < priorities.Length
-                    && priorities[change.Key] == change.Value
-                )
-            )
+            // A choice replaces an earlier one for the same file or folder,
+            // and a folder's choice replaces those under it. A query choice
+            // keeps the choices before it, which are sent first.
+            var queued = _fileChanges.FindLastIndex(change => change.Target is FileTarget.Query) + 1;
+            for (var index = _fileChanges.Count - 1; index >= queued; index--)
             {
-                _fileChanges.Clear();
-                _editFailure = null;
+                var target = _fileChanges[index].Target;
+                if (
+                    target == choice.Target
+                    || choice.Target is FileTarget.Folder folder && target.IsUnder(folder)
+                )
+                    _fileChanges.RemoveAt(index);
             }
+            _fileChanges.Add(choice);
         }
-        Files.Apply(status, IsPending || HasFileChanges);
+        Refresh();
+        await SaveFiles();
+        return HasFileChanges ? null : _fileReply;
     }
 
     // A choice made while a save runs joins that save, which sends it when it
-    // ends. A choice the engine already holds is dropped; a changed one stays.
+    // ends. One edit sends the choices up to the next query choice, which the
+    // engine takes only alone; it applies folders before files, so a file
+    // chosen after its folder keeps its own choice.
     private async Task SaveFiles()
     {
         if (_fileSave is { } running)
@@ -872,28 +896,26 @@ public sealed partial class Inspector : INotifyPropertyChanged
         {
             while (CanSave && _fileChanges.Count > 0)
             {
-                var sent = new Dictionary<int, int>(_fileChanges);
-                var priorities = sent.Select(change => new
-                    {
-                        index = change.Key,
-                        priority = change.Value,
-                    })
-                    .ToArray();
-                await Apply(
+                var sent = _fileChanges[0].Target is FileTarget.Query
+                    ? new[] { _fileChanges[0] }
+                    : _fileChanges.TakeWhile(change => change.Target is not FileTarget.Query).ToArray();
+                var reply = await Apply(
                     "edit",
-                    new { torrent_id = _target!.TorrentId, changes = new { priorities } },
+                    new
+                    {
+                        torrent_id = _target!.TorrentId,
+                        changes = FileChoice.Changes(sent),
+                        loaded = Files.Loaded(sent),
+                    },
                     () =>
                     {
-                        foreach (var (index, priority) in sent)
-                            if (
-                                _fileChanges.TryGetValue(index, out var current)
-                                && current == priority
-                            )
-                                _fileChanges.Remove(index);
+                        foreach (var choice in sent)
+                            _fileChanges.Remove(choice);
                     }
                 );
                 if (_editFailure is not null)
                     break;
+                _fileReply = reply;
             }
         }
         finally
@@ -966,7 +988,12 @@ public sealed partial class Inspector : INotifyPropertyChanged
         );
     }
 
-    private async Task Apply(string command, object arguments, Action? confirmed = null)
+    // Gives the engine's reply, or null when the command failed.
+    private async Task<JsonElement?> Apply(
+        string command,
+        object arguments,
+        Action? confirmed = null
+    )
     {
         while (_pending is { } running)
             await running.Task;
@@ -977,12 +1004,14 @@ public sealed partial class Inspector : INotifyPropertyChanged
         Refresh();
         try
         {
-            await _client.Send(command, arguments, Requester.Person);
+            var reply = await _client.Send(command, arguments, Requester.Person);
             confirmed?.Invoke();
+            return reply;
         }
         catch (Exception error)
         {
             _editFailure = error;
+            return null;
         }
         finally
         {
@@ -1046,6 +1075,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
         Files.Clear();
         _filesLoaded = false;
         _confirmedFiles = null;
+        _fileReply = null;
         Peers = null;
         _located.Clear();
         Trackers = null;

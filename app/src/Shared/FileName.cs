@@ -98,6 +98,39 @@ internal static partial class FileName
     internal static string[] Words(string text) =>
         Separators().Split(text).Where(word => word.Length > 0).ToArray();
 
+    /// <summary>
+    /// The normalized words of a search query, which <see cref="Matches"/>
+    /// finds in normalized text.
+    /// </summary>
+    internal static string[] SearchWords(string query) =>
+        Words(Normalize(query)).Distinct(StringComparer.Ordinal).ToArray();
+
+    /// <summary>
+    /// Whether every one of <paramref name="words"/> starts a word of the
+    /// normalized <paramref name="text"/>, in any order, as the repository's
+    /// search ruling requires: "50 para" matches "paracetamol 500mg", and
+    /// "para" does not match "comparable".
+    /// </summary>
+    internal static bool Matches(string text, IReadOnlyCollection<string> words) =>
+        words.All(word => StartsWord(text, word));
+
+    /// <summary>
+    /// Whether <paramref name="word"/> occurs at the start of
+    /// <paramref name="text"/> or after a character that is not a letter or a
+    /// digit, the separators <see cref="Words"/> splits at.
+    /// </summary>
+    internal static bool StartsWord(string text, string word)
+    {
+        for (
+            var index = text.IndexOf(word, StringComparison.Ordinal);
+            index >= 0;
+            index = text.IndexOf(word, index + 1, StringComparison.Ordinal)
+        )
+            if (index == 0 || !(char.IsLetter(text[index - 1]) || char.IsNumber(text[index - 1])))
+                return true;
+        return false;
+    }
+
     internal static Release Interpret(string path)
     {
         var stem = Path.GetFileNameWithoutExtension(path);

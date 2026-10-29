@@ -61,15 +61,19 @@ public sealed partial class Table
             _hierarchy.Accept(snapshot);
         Dictionary<object, int> counts = new(_identity);
         int roots = 0;
+        bool expandable = false;
         for (int i = 0; i < order.Count; i++)
         {
             object item = order[i];
-            object? parent = snapshot.Nodes[item].Parent;
+            var node = snapshot.Nodes[item];
+            expandable = expandable || _hierarchy.IsExpandable(node);
+            object? parent = node.Parent;
             int position = parent is null ? ++roots : counts.GetValueOrDefault(parent) + 1;
             if (parent is not null)
                 counts[parent] = position;
             _positions.Add(item, (i, position));
         }
+        _hierarchy.HasChildren = expandable;
         _preparedHierarchy = null;
     }
 
@@ -80,7 +84,8 @@ public sealed partial class Table
         if (
             _hierarchy is null
             || ResolveItem(item) is not { } current
-            || _hierarchy.Find(current) is not { Children.Count: > 0 }
+            || _hierarchy.Find(current) is not { } node
+            || !_hierarchy.IsExpandable(node)
             || !IsInteractive(current)
             || _hierarchy.IsExpanded(current) == expanded
         )
@@ -115,7 +120,7 @@ public sealed partial class Table
         bool open =
             key
             == (FlowDirection == FlowDirection.LeftToRight ? VirtualKey.Right : VirtualKey.Left);
-        if (node.Children.Count > 0 && _hierarchy.IsExpanded(item) != open)
+        if (_hierarchy.IsExpandable(node) && _hierarchy.IsExpanded(item) != open)
         {
             Expand(item, open);
             return true;

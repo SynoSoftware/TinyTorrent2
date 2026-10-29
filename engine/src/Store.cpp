@@ -9,9 +9,6 @@ namespace tt
 namespace
 {
 constexpr std::size_t jobLimit = 64;
-// The largest file Store reads. Writes keep to it too, so every file written
-// can be read back.
-constexpr std::streamoff fileLimit = 16 * 1024 * 1024;
 
 // Runs `attempt`, which returns ERROR_SUCCESS or a Windows error, again while
 // another program holds the file for a moment, as a virus scanner or an
@@ -153,13 +150,13 @@ void Store::Run(std::function<void()> work, std::function<void(StorageOutcome)> 
 }
 
 void Store::Write(std::filesystem::path path, std::function<std::string()> encode,
-    std::function<void(StorageOutcome)> completion)
+    std::function<void(StorageOutcome)> completion, std::size_t limit)
 {
-    Run([path = std::move(path), encode = std::move(encode)]
+    Run([path = std::move(path), encode = std::move(encode), limit]
     {
         auto bytes = encode();
         // A refused write keeps the previous file, which startup can still read.
-        if (bytes.size() > static_cast<std::size_t>(fileLimit))
+        if (bytes.size() > limit)
         {
             throw std::runtime_error("File exceeds limit");
         }
@@ -260,7 +257,7 @@ void Store::Detach()
         worker_.detach();
 }
 
-std::string Store::Read(std::filesystem::path const& path)
+std::string Store::Read(std::filesystem::path const& path, std::size_t limit)
 {
     std::ifstream stream(path, std::ios::binary | std::ios::ate);
     if (!stream)
@@ -268,7 +265,7 @@ std::string Store::Read(std::filesystem::path const& path)
         throw std::runtime_error("Cannot read " + Utf8(path.wstring()));
     }
     auto size = stream.tellg();
-    if (size < 0 || size > fileLimit)
+    if (size < 0 || static_cast<std::uintmax_t>(size) > limit)
     {
         throw std::runtime_error("File exceeds limit");
     }

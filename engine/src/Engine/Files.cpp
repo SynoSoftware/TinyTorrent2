@@ -304,7 +304,8 @@ void Engine::State::ContinueNames()
             auto current = handle.get_renamed_files();
             params.renamed_files = current.export_filenames(params.ti->layout());
             PrepareNames(params, appendsSuffix, layout);
-            return NameChoice{std::move(params), std::move(current)};
+            auto renames = Renames(params, current);
+            return NameChoice{std::move(params), std::move(renames)};
         }, [this, id](std::expected<NameChoice, StorageOutcome> choice)
         {
             auto found = FindWorking(id);
@@ -316,7 +317,7 @@ void Engine::State::ContinueNames()
                 FailNames(torrent, choice.error());
                 return;
             }
-            torrent.needsRecheck |= ApplyNames(torrent.handle, choice->params, choice->current, torrent.renaming);
+            torrent.needsRecheck |= ApplyNames(torrent.handle, choice->renames, torrent.renaming);
             if (torrent.renaming.empty())
                 FinishNames(torrent);
         });
@@ -381,22 +382,30 @@ void Engine::State::PrepareNames(lt::add_torrent_params& params, bool appendsSuf
     CheckReachable(root);
 }
 
-bool Engine::State::ApplyNames(lt::torrent_handle const& handle, lt::add_torrent_params const& prepared,
-    lt::renamed_files const& current, std::set<lt::file_index_t>& pending)
+std::vector<std::pair<lt::file_index_t, std::string>> Engine::State::Renames(lt::add_torrent_params const& prepared,
+    lt::renamed_files const& current)
 {
     auto const& files = prepared.ti->layout();
-    bool changed = false;
+    std::vector<std::pair<lt::file_index_t, std::string>> renames;
     for (auto index : files.file_range())
     {
         auto desired = prepared.renamed_files.find(index);
         auto name = desired == prepared.renamed_files.end() ? files.file_path(index) : desired->second;
-        if (SamePath(FullPath(Wide(current.file_path(files, index))), FullPath(Wide(name))))
-            continue;
+        if (!SamePath(FullPath(Wide(current.file_path(files, index))), FullPath(Wide(name))))
+            renames.emplace_back(index, std::move(name));
+    }
+    return renames;
+}
+
+bool Engine::State::ApplyNames(lt::torrent_handle const& handle,
+    std::vector<std::pair<lt::file_index_t, std::string>> const& renames, std::set<lt::file_index_t>& pending)
+{
+    for (auto const& [index, name] : renames)
+    {
         pending.insert(index);
         handle.rename_file(index, name);
-        changed = true;
     }
-    return changed;
+    return !renames.empty();
 }
 
 void Engine::State::FinishNames(Torrent& torrent)
@@ -430,8 +439,12 @@ void Engine::State::QueryFiles()
         std::string torrentId;
         lt::torrent_handle handle;
         std::uint64_t generation;
+        Layout layout;
         FileNames names;
         std::vector<std::int64_t> progress;
+        // The files that hold all their bytes under their unfinished name;
+        // nothing when libtorrent's progress does not cover every file.
+        std::optional<std::set<lt::file_index_t>> completed;
     };
     // One job per root, on its worker, so a share that does not answer holds
     // up only the names of its own torrents.
@@ -455,7 +468,7 @@ void Engine::State::QueryFiles()
             return;
         auto& group = groups[root];
         group.folder = torrent.facts.savePath;
-        group.observations->push_back({torrent.torrentId, torrent.handle, torrent.generation});
+        group.observations->push_back({torrent.torrentId, torrent.handle, torrent.generation, torrent.facts.layout});
         ++count;
         if (recovers)
             group.recovering.push_back(torrent.handle);
@@ -480,6 +493,11 @@ void Engine::State::QueryFiles()
                             observation.handle.file_progress(lt::torrent_handle::piece_granularity);
                 }
             });
+            for (auto& observation : *observations)
+            {
+                if (observation.names.metadata)
+                    observation.completed = Completed(observation.names, observation.progress, observation.layout);
+            }
         }, [this, root = root, observations = group.observations](StorageOutcome outcome)
         {
             queryingFiles.erase(root);
@@ -499,7 +517,11 @@ void Engine::State::QueryFiles()
                     (torrent.FilesBusy() && torrent.namePhase != NamePhase::Recovering) || !observation.names.metadata)
                     continue;
                 torrent.names = std::move(observation.names);
-                CompleteFiles(torrent, observation.progress);
+                if (observation.completed)
+                {
+                    torrent.completedFiles.insert(observation.completed->begin(), observation.completed->end());
+                    torrent.filesPending = false;
+                }
                 if (torrent.namePhase == NamePhase::Recovering)
                     torrent.namePhase = NamePhase::Pending;
             }
@@ -507,20 +529,20 @@ void Engine::State::QueryFiles()
     }
 }
 
-void Engine::State::CompleteFiles(Torrent& torrent, lt::span<std::int64_t const> progress)
+std::optional<std::set<lt::file_index_t>> Engine::State::Completed(FileNames const& names,
+    std::vector<std::int64_t> const& progress, Layout layout)
 {
-    if (!torrent.names)
-        return;
-    auto const& files = torrent.names->metadata->layout();
-    if (progress.size() < files.num_files())
-        return;
+    auto const& files = names.metadata->layout();
+    if (progress.size() < static_cast<std::size_t>(files.num_files()))
+        return std::nullopt;
+    std::set<lt::file_index_t> completed;
     for (auto index : files.file_range())
     {
-        if (IsUnfinished(torrent.names->mappings.file_path(files, index), ContentPath(files, index, torrent.facts.layout)) &&
-            progress[static_cast<int>(index)] >= files.file_size(index))
-            torrent.completedFiles.insert(index);
+        if (progress[static_cast<int>(index)] >= files.file_size(index) &&
+            IsUnfinished(names.mappings.file_path(files, index), ContentPath(files, index, layout)))
+            completed.insert(index);
     }
-    torrent.filesPending = false;
+    return completed;
 }
 
 void Engine::State::FinishFiles(Torrent& torrent, std::optional<lt::file_index_t> after)

@@ -148,6 +148,19 @@ try {
     $mixed = New-Value 'Library.Query' @('2024 nonexistentfilm', $configuration)
     $matches = Invoke-Value $store 'Search' @($mixed, $cancel)
     Require ($matches.Entries.Count -eq 0 -and $matches.Counts[$configuration] -eq 0) 'An unmatched term reused an earlier video match or behaved as OR across terms.'
+    $mixed = New-Value 'Library.Query' @('hosen', $configuration)
+    $matches = Invoke-Value $store 'Search' @($mixed, $cancel)
+    Require ($matches.Entries.Count -eq 0) 'Library search matched text inside a word.'
+    $fileName = $assembly.GetType('Syno.TinyTorrent.Shared.FileName', $true)
+    foreach ($case in @(
+        @('Paracetamol 500mg', '50 para', $true),
+        @('comparable', 'para', $false),
+        @('Paracetamol.500mg-[Group]', 'group 500', $true),
+        @('Amélie.2001.mkv', 'amelie', $true))) {
+        $text = $fileName.GetMethod('Normalize', $staticFlags).Invoke($null, @($case[0]))
+        $words = $fileName.GetMethod('SearchWords', $staticFlags).Invoke($null, @($case[1]))
+        Require ($fileName.GetMethod('Matches', $staticFlags).Invoke($null, @($text, $words)) -eq $case[2]) "Search '$($case[1])' broke the word-start rule on '$($case[0])'."
+    }
     $connection = $database.GetType().GetField('_connection', $flags).GetValue($database)
     $command = $connection.CreateCommand()
     try {

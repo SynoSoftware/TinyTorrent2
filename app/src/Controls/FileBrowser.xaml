@@ -10,6 +10,7 @@
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
     <Grid x:Name="Toolbar" ColumnSpacing="12">
       <Grid.ColumnDefinitions>
@@ -32,7 +33,7 @@
         <Button
           Style="{StaticResource TinyTorrentSubtleButtonStyle}"
           Click="OnExpand"
-          Visibility="{x:Bind Model.HasFolders, Mode=OneWay}"
+          Visibility="{x:Bind Model.CanExpand, Mode=OneWay}"
           ToolTipService.ToolTip="{x:Bind Model.Text.Get('files', 'expand_all'), Mode=OneWay}"
           AutomationProperties.Name="{x:Bind Model.Text.Get('files', 'expand_all'), Mode=OneWay}"
         >
@@ -78,6 +79,8 @@
                 x:Name="All"
                 IsChecked="{x:Bind Model.AllMatching, Mode=OneWay}"
                 IsEnabled="{x:Bind Model.IsEnabled, Mode=OneWay}"
+                ToolTipService.ToolTip="{x:Bind Model.AllLabel, Mode=OneWay}"
+                AutomationProperties.Name="{x:Bind Model.AllLabel, Mode=OneWay}"
                 Click="OnAll"
               />
               <TextBlock
@@ -93,6 +96,7 @@
                   <ColumnDefinition Width="Auto" />
                   <ColumnDefinition Width="Auto" />
                   <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <CheckBox
                   MinWidth="0"
@@ -114,6 +118,22 @@
                   Style="{StaticResource TinyTorrentIdentityTextStyle}"
                   VerticalAlignment="Center"
                   TextTrimming="CharacterEllipsis"
+                />
+                <ProgressRing
+                  Grid.Column="3"
+                  Width="{StaticResource TinyTorrentInlineIconSize}"
+                  Height="{StaticResource TinyTorrentInlineIconSize}"
+                  IsActive="{x:Bind IsLoading, Mode=OneWay}"
+                  Visibility="{x:Bind IsLoading, Mode=OneWay}"
+                  AutomationProperties.AccessibilityView="Raw"
+                />
+                <TextBlock
+                  Grid.Column="3"
+                  Text="{x:Bind TooMany, Mode=OneWay}"
+                  Visibility="{x:Bind IsTooMany, Mode=OneWay}"
+                  Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                  VerticalAlignment="Center"
+                  TextWrapping="NoWrap"
                 />
               </Grid>
             </DataTemplate>
@@ -183,5 +203,12 @@
         </table:Column>
       </table:Table.Columns>
     </table:Table>
+    <TextBlock
+      Grid.Row="2"
+      Text="{x:Bind Model.Note, Mode=OneWay}"
+      Visibility="{x:Bind Model.HasNote, Mode=OneWay}"
+      Style="{StaticResource CaptionTextBlockStyle}"
+      Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+    />
   </Grid>
 </UserControl>

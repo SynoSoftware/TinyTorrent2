@@ -26,7 +26,7 @@ void Engine::State::WriteResume(std::string const& id, lt::add_torrent_params pa
     {
         auto bytes = lt::write_resume_data_buf(params);
         return std::string(bytes.begin(), bytes.end());
-    }, std::move(completion));
+    }, std::move(completion), resumeLimit);
 }
 
 void Engine::State::CheckpointUnsaved()

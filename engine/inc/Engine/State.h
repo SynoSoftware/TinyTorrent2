@@ -8,6 +8,7 @@
 #include "SpeedHistory.h"
 #include "Store.h"
 #include "Torrent.h"
+#include "Tree.h"
 #include <libtorrent/add_torrent_params.hpp>
 #include <libtorrent/alert_types.hpp>
 #include <libtorrent/session.hpp>
@@ -50,6 +51,19 @@ class Engine::State
 {
 public:
     static constexpr std::size_t torrentLimit = 10'000;
+    // The bdecode tokens a .torrent file or magnet metadata may hold:
+    // libtorrent's default for a .torrent, which a preview reads with. What a
+    // resume file adds per file (a priority, a renamed path, and for v2 its
+    // `trees` entry) never costs more tokens than the file's own entry in the
+    // info dictionary, so twice this reads the resume file of every torrent
+    // the preview accepts, and the next start never re-adds it from its
+    // hashes for its size.
+    static constexpr int metadataTokens = 3'000'000;
+    // A resume file holds the info dictionary and, while the unfinished-file
+    // suffix is on, a full path per unfinished file, which repeats the
+    // torrent's folder name: 250,000 files with 400-character paths take
+    // about 120 MB.
+    static constexpr std::size_t resumeLimit = 256 << 20;
     // How long a failed save waits before it runs again.
     static constexpr auto checkpointRetry = std::chrono::seconds(30);
 
@@ -63,6 +77,9 @@ public:
         lt::torrent_handle handle;
         std::string error;
         bool cancelled = false;
+        // The person's choice for each file, which `add` downloads with:
+        // the default priorities once the metadata arrives, then each edit.
+        std::vector<lt::download_priority_t> priorities;
 
         lt::info_hash_t InfoHashes() const
         {
@@ -84,7 +101,6 @@ public:
         {
             std::string destination;
             Intent intent = Intent::Resumed;
-            std::vector<lt::download_priority_t> priorities;
             bool sequential = false;
             bool firstLast = false;
             bool queueTop = false;
@@ -498,6 +514,10 @@ public:
     Store sources;
     // Checks proxies, which can wait for one that does not answer.
     Store checks;
+    // Builds file trees and finds the files that folder and query choices
+    // cover, so a scan of every path of a large torrent never holds up the
+    // engine thread or waits behind a preview source on a slow share.
+    Store trees;
     // Serializes route cancellation with nonblocking proxy connect/send calls.
     std::mutex checkGate;
     // Ends proxy checks when their route changes or the engine closes.
@@ -941,6 +961,11 @@ public:
     // only detail the engine keeps, so nothing accumulates for other torrents.
     struct Reading
     {
+        struct Loaded
+        {
+            std::vector<std::string> folders;
+            std::vector<lt::file_index_t> files;
+        };
         // A torrent request, with no view when it asks for the torrent itself.
         struct Read
         {
@@ -950,6 +975,9 @@ public:
             Reply reply;
             std::chrono::steady_clock::time_point started{};
             std::optional<std::int64_t> context;
+            // A Files read from a browser that holds part of the tree names
+            // what it holds, and gets their values instead of every file's.
+            std::optional<Loaded> loaded;
         };
         // Cached readiness and action reads accept facts this much older than
         // the request. Display can use older facts while fresh queries finish.
@@ -1084,6 +1112,14 @@ public:
     // saved layout and the priority the Add dialog starts from.
     Json DescribeFilePage(Preview const& preview, int offset) const;
     void Inspect(std::string source, std::string connectionId, std::function<void(Outcome, Preview*)> completion);
+    // What the tree worker reads of the files: nothing before the metadata
+    // arrives, or, for a torrent, while its identity conflicts.
+    std::expected<Listing, Outcome> Listed(Preview& preview);
+    std::expected<Listing, Outcome> Listed(Torrent const& torrent) const;
+    // Builds the `tree` reply for `target` on the tree worker.
+    void ReadTree(Listing listing, Tree::Target target, std::function<void(std::expected<Json, Outcome>)> completion);
+    // Adds each listed file's name on disk to a `tree` folder object.
+    void NameFiles(Torrent const& torrent, Json& folder) const;
     Preview* FindPreview(std::string const& previewId, std::string const& connectionId);
     void Discard(std::function<bool(Preview const&)> const& matches);
     void Disconnect(std::string const& connectionId);
@@ -1445,15 +1481,21 @@ public:
     struct NameChoice
     {
         lt::add_torrent_params params;
-        lt::renamed_files current;
+        // The files whose name on disk differs from the prepared one, with
+        // that name.
+        std::vector<std::pair<lt::file_index_t, std::string>> renames;
     };
     // Whether a file named `actual` still carries the suffix of an unfinished
     // download of the file `name`.
     static bool IsUnfinished(std::string const& actual, std::string const& name);
     static void PrepareNames(lt::add_torrent_params& params, bool appendsSuffix, Layout layout);
+    // The renames that give each file its prepared name. A worker finds
+    // them, because comparing every path of a large torrent is slow.
+    static std::vector<std::pair<lt::file_index_t, std::string>> Renames(lt::add_torrent_params const& prepared,
+        lt::renamed_files const& current);
     // Returns whether any rename was requested.
-    static bool ApplyNames(lt::torrent_handle const& handle, lt::add_torrent_params const& prepared,
-        lt::renamed_files const& current, std::set<lt::file_index_t>& pending);
+    static bool ApplyNames(lt::torrent_handle const& handle,
+        std::vector<std::pair<lt::file_index_t, std::string>> const& renames, std::set<lt::file_index_t>& pending);
     void ContinueNames();
     // Name preparation failed: it runs again after renameRetry, or when
     // storage recovery finds the folder answering.
@@ -1461,7 +1503,11 @@ public:
     void FinishNames(Torrent& torrent);
     void RecoverNames(Torrent& torrent);
     void QueryFiles();
-    void CompleteFiles(Torrent& torrent, lt::span<std::int64_t const> progress);
+    // The files that hold all their bytes under their unfinished name, or
+    // nothing when `progress` misses files. The names worker finds them,
+    // because comparing every path of a large torrent is slow.
+    static std::optional<std::set<lt::file_index_t>> Completed(FileNames const& names,
+        std::vector<std::int64_t> const& progress, Layout layout);
     void FinishFiles(Torrent& torrent, std::optional<lt::file_index_t> after = {});
     // Marks the torrent's finished file as downloaded from the internet, on
     // its drive's worker.
@@ -1488,7 +1534,40 @@ public:
     // Saves `change` to each listed torrent's facts, then applies them.
     void ChangeFacts(std::vector<std::string> const& ids, std::function<void(Facts&)> const& change,
         std::function<void(Outcome)> completion);
-    void Edit(std::string const& id, Json const& choices, std::function<void(Outcome)> completion);
+    // A person's choice for files: the files its target names, and a
+    // priority to set or whether they are wanted. Want makes skipped files
+    // Normal and keeps the others' priorities.
+    struct FileChoice
+    {
+        Tree::Target target;
+        std::variant<lt::download_priority_t, bool> action;
+        // The files the target covers, once the tree worker has found them.
+        std::vector<lt::file_index_t> files;
+
+        lt::download_priority_t Apply(lt::download_priority_t current) const;
+    };
+    // An edit's changes: its file choices, in the order they apply, and its
+    // tracker list.
+    struct EditChoices
+    {
+        std::vector<FileChoice> files;
+        std::optional<std::vector<lt::announce_entry>> trackers;
+    };
+    // Reads an edit's `changes`, or returns why they are refused.
+    static std::expected<EditChoices, ErrorCode> ReadChoices(Json const& changes);
+    // Finds the files of the file choices on the tree worker, then saves and
+    // applies them. A file choice completes with the totals and the values of
+    // the `loaded` folders that exist.
+    void Edit(std::string const& torrentId, EditChoices choices, std::vector<std::string> loaded,
+        std::function<void(Outcome, Json)> completion);
+    void Edit(Preview& preview, EditChoices choices, std::vector<std::string> loaded,
+        std::function<void(Outcome, Json)> completion);
+    // Finds the files each choice covers on the tree worker.
+    void Resolve(Listing listing, std::vector<FileChoice> choices,
+        std::function<void(std::expected<std::vector<FileChoice>, Outcome>)> completion);
+    // The totals and the values of the `loaded` folders, from the tree worker.
+    void DescribeChoices(Listing listing, std::vector<std::string> loaded,
+        std::function<void(Outcome, Json)> completion);
     void QueryPriorities(Torrent& torrent);
 
     static bool IsQueued(lt::queue_position_t position);
@@ -1515,6 +1594,10 @@ public:
     // action reads wait for the complete detail they need.
     void ReadDetail(Reading::Read read);
     void CollectDetail(Reading::Read read);
+    // Replies `data` to the read. A Files read that names what the browser
+    // holds gets those values from the tree worker, in order with its other
+    // replies.
+    void Respond(Torrent const& torrent, Reading::Read const& read, Detail const& detail, Json data);
     // Asks libtorrent for that part of the torrent's detail, unless a query of
     // that kind is outstanding.
     void Query(Torrent& torrent, DetailKind kind);
@@ -1719,8 +1802,10 @@ private:
 
     SpeedHistory history;
 
-    void CommitEdit(std::string const& id,
-        std::map<int, lt::download_priority_t> const& priorities,
+    // Saves the resolved file choices and the trackers, and applies them: at
+    // once, once the torrent's files are free, or at the add of a torrent
+    // that waits for it.
+    void CommitEdit(std::string const& id, std::vector<FileChoice> const& choices,
         std::optional<std::vector<lt::announce_entry>> const& trackers, std::function<void(Outcome)> completion);
 };
 }

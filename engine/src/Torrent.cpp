@@ -1,5 +1,6 @@
 #include "Torrent.h"
 #include "Store.h"
+#include "Tree.h"
 #include <Windows.h>
 #include <libtorrent/hex.hpp>
 #include <libtorrent/magnet_uri.hpp>
@@ -222,20 +223,24 @@ lt::download_priority_t DefaultPriority(lt::file_storage const& files, lt::file_
             ++pattern;
         return pattern == mask.size();
     };
-    auto name = std::filesystem::path(Wide(files.file_path(index))).filename().wstring();
+    auto name = Wide(std::string(files.file_name(index)));
     bool skipped = std::any_of(masks.begin(), masks.end(), [&](auto const& mask) { return matches(name, mask); });
     return skipped ? lt::dont_download : lt::default_priority;
 }
 
+// The file browser builds this path for every file of a torrent, so it stays
+// in UTF-8 rather than converting each one through std::filesystem::path.
 std::string ContentPath(lt::file_storage const& files, lt::file_index_t index, Layout layout)
 {
-    auto path = std::filesystem::path(Wide(files.file_path(index)));
-    bool hasFolder = path.has_parent_path() && *path.begin() == std::filesystem::path(Wide(files.name()));
+    auto path = files.file_path(index);
+    std::replace(path.begin(), path.end(), '\\', '/');
+    auto const& name = files.name();
+    bool hasFolder = path.size() > name.size() && path[name.size()] == '/' && path.starts_with(name);
     if (layout == Layout::Strip && hasFolder)
-        path = path.lexically_relative(*path.begin());
+        path.erase(0, name.size() + 1);
     else if (layout == Layout::Create && !hasFolder)
-        path = std::filesystem::path(Wide(files.name())) / path;
-    return Utf8(path.generic_wstring());
+        path = name + '/' + path;
+    return path;
 }
 
 std::vector<lt::download_priority_t> DefaultPriorities(lt::file_storage const& files, std::string const& patterns)
@@ -247,23 +252,51 @@ std::vector<lt::download_priority_t> DefaultPriorities(lt::file_storage const& f
     return priorities;
 }
 
+std::vector<std::string> Tops(lt::file_storage const& files,
+    std::function<std::string(lt::file_index_t)> const& path)
+{
+    auto separator = [](char character) { return character == '/' || character == '\\'; };
+    std::vector<std::string> tops;
+    for (auto index : files.file_range())
+    {
+        if (files.pad_file_at(index))
+            continue;
+        auto top = path(index);
+        bool full = top.size() > 1 && (top[1] == ':' || (separator(top[0]) && separator(top[1])));
+        if (!full)
+            top.resize(std::min(top.size(), top.find_first_of("/\\")));
+        // Files of one folder follow each other, so most repeats end here.
+        if (tops.empty() || tops.back() != top)
+            tops.push_back(std::move(top));
+    }
+    std::sort(tops.begin(), tops.end());
+    tops.erase(std::unique(tops.begin(), tops.end()), tops.end());
+    return tops;
+}
+
+PieceRange Pieces(lt::torrent_info const& metadata, lt::file_index_t index)
+{
+    auto const& storage = metadata.layout();
+    std::int64_t const length = metadata.piece_length();
+    auto start = storage.file_offset(index);
+    auto size = storage.file_size(index);
+    return {start / length, size == 0 ? start / length : (start + size + length - 1) / length};
+}
+
 Json FilePage(lt::torrent_info const& metadata, int offset,
     std::function<void(lt::file_index_t, Json&)> const& describe)
 {
     auto const& storage = metadata.layout();
-    std::int64_t const pieceLength = metadata.piece_length();
     Json files = Json::array();
     std::size_t paths = 0;
     for (int item = offset; item < storage.num_files() && files.size() < filePage && paths < filePageNames; ++item)
     {
         lt::file_index_t index(item);
-        auto start = storage.file_offset(index);
-        auto size = storage.file_size(index);
         auto path = storage.file_path(index);
         paths += path.size();
-        Json file = {{"index", item}, {"path", std::move(path)}, {"size", size},
-            {"padding", storage.pad_file_at(index)}, {"first_piece", start / pieceLength},
-            {"end_piece", size == 0 ? start / pieceLength : (start + size + pieceLength - 1) / pieceLength}};
+        auto pieces = Pieces(metadata, index);
+        Json file = {{"index", item}, {"path", std::move(path)}, {"size", storage.file_size(index)},
+            {"padding", storage.pad_file_at(index)}, {"first_piece", pieces.first}, {"end_piece", pieces.end}};
         describe(index, file);
         files.push_back(std::move(file));
     }
@@ -447,24 +480,6 @@ Facts Facts::Read(Json const& saved)
     return facts;
 }
 
-std::vector<lt::download_priority_t> ReadPriorities(Json const& values)
-{
-    if (!values.is_array())
-    {
-        throw std::invalid_argument("File priorities are not a list.");
-    }
-    std::vector<lt::download_priority_t> priorities;
-    for (auto const& value : values)
-    {
-        if (!IsPriority(value))
-        {
-            throw std::invalid_argument("A file priority is not a whole number from 0 to 255.");
-        }
-        priorities.emplace_back(value.get<std::uint8_t>());
-    }
-    return priorities;
-}
-
 std::string Torrent::Name() const
 {
     return tt::Name(status.name, Hashes());
@@ -517,6 +532,27 @@ std::string Torrent::Folder() const
 // The problem that stops the torrent, if any. libtorrent switches a torrent
 // to upload mode when a disk write fails, so a torrent that still downloads
 // stops there.
+std::vector<std::string> Torrent::Tops(bool logical) const
+{
+    auto metadata = restore ? restore->ti : names ? names->metadata : nullptr;
+    if (logical && !restore)
+        metadata = handle.torrent_file();
+    if (!metadata)
+    {
+        return {};
+    }
+    auto const& layout = metadata->layout();
+    if (logical)
+    {
+        return tt::Tops(layout, [this, &layout](lt::file_index_t index) { return ContentPath(layout, index, facts.layout); });
+    }
+    lt::renamed_files restored;
+    if (restore)
+        restored.import_filenames(layout, restore->renamed_files);
+    lt::filenames files(layout, restore ? restored : names->mappings);
+    return tt::Tops(layout, [&files](lt::file_index_t index) { return files.file_path(index); });
+}
+
 std::optional<Problem> Torrent::Error() const
 {
     if (moveError)
@@ -870,8 +906,10 @@ std::vector<lt::announce_entry> const& Torrent::Trackers() const
 Json Torrent::Describe(Detail const& detail, std::shared_ptr<lt::torrent_info const> const& metadata) const
 {
     auto data = facts.ToJson();
+    // One number per file would make the reply grow with the torrent; file
+    // pages carry each file's choice.
+    data.erase("priorities");
     data.update(Describe(TorrentView::General, detail, metadata));
-    data.update(Describe(TorrentView::Files, detail, metadata));
     if (facts.trackers)
     {
         data["trackers"] = Urls(*facts.trackers);
@@ -1144,19 +1182,20 @@ Json DescribeFiles(Torrent const& torrent, std::shared_ptr<lt::torrent_info cons
 {
     // Names, sizes and pieces come in pages from the `files` command; the
     // detail holds one number per file for what changes while it downloads.
+    // Above the browser's window it holds none, because a browser that holds
+    // part of the tree reads the values of what it holds instead.
     Json data;
     data["file_count"] = metadata ? metadata->num_files() : 0;
     data["downloaded"] = Json();
     data["priority"] = Json();
+    if (metadata && static_cast<std::size_t>(metadata->num_files()) > fileWindow)
+        return data;
     if (detail.Has(DetailKind::Progress, since))
         data["downloaded"] = detail.progress;
-    // Choices that wait for busy files are saved, so they show before
-    // libtorrent has them.
-    auto const& priorities = torrent.prioritiesPending ? torrent.facts.priorities : detail.priorities;
-    if (torrent.prioritiesPending || detail.Has(DetailKind::Priorities, since))
+    if (auto priorities = torrent.ShownPriorities(detail, since))
     {
         data["priority"] = Json::array();
-        for (auto priority : priorities)
+        for (auto priority : *priorities)
             data["priority"].push_back(static_cast<std::uint8_t>(priority));
     }
     return data;
@@ -1181,10 +1220,8 @@ Json DescribePieces(Torrent const& torrent, std::shared_ptr<lt::torrent_info con
             if (files.pad_file_at(index) || files.file_size(index) == 0 ||
                 priorities[static_cast<int>(index)] == lt::dont_download)
                 continue;
-            auto first = files.file_offset(index) / metadata->piece_length();
-            auto end = (files.file_offset(index) + files.file_size(index) + metadata->piece_length() - 1) /
-                metadata->piece_length();
-            std::fill(wanted.begin() + first, wanted.begin() + end, true);
+            auto pieces = Pieces(*metadata, index);
+            std::fill(wanted.begin() + pieces.first, wanted.begin() + pieces.end, true);
         }
     }
     data["wanted"] = std::move(wanted);
@@ -1215,12 +1252,22 @@ Json Torrent::DescribeFilePage(std::shared_ptr<lt::torrent_info const> const& me
         {"files", Json::array()}};
     if (metadata)
     {
-        data["files"] = FilePage(*metadata, offset, [this, &metadata](lt::file_index_t index, Json& file)
+        // As ChosenPriorities, for the page's files only.
+        auto masks = facts.priorities.empty() ? SkipMasks(facts.skipPatterns) : std::vector<std::wstring>();
+        data["files"] = FilePage(*metadata, offset, [this, &metadata, &masks](lt::file_index_t index, Json& file)
         {
-            file["disk_path"] = names ? Json(names->mappings.file_path(metadata->layout(), index)) : Json();
+            auto item = static_cast<std::size_t>(static_cast<int>(index));
+            file["disk_path"] = DiskPath(index);
+            file["priority"] = static_cast<std::uint8_t>(item < facts.priorities.size() ? facts.priorities[item] :
+                DefaultPriority(metadata->layout(), index, masks));
         });
     }
     return data;
+}
+
+Json Torrent::DiskPath(lt::file_index_t index) const
+{
+    return names && names->metadata ? Json(names->mappings.file_path(names->metadata->layout(), index)) : Json();
 }
 
 Json Torrent::Describe(TorrentView view, Detail const& detail,
@@ -1289,6 +1336,18 @@ Json Torrent::Row(bool sessionPaused, int queue, std::optional<double> moveProgr
         {"queue", queue},
         {"complete", complete}, {"completed_on", complete ? status.completed_time : 0},
         {"incoming", status.has_incoming}, {"hashes", Hashes()}};
+}
+
+// Choices that wait for busy files are saved, so they show before libtorrent
+// has them.
+std::optional<std::vector<lt::download_priority_t>> Torrent::ShownPriorities(Detail const& detail,
+    std::chrono::steady_clock::time_point since) const
+{
+    if (prioritiesPending)
+        return facts.priorities;
+    if (detail.Has(DetailKind::Priorities, since))
+        return detail.priorities;
+    return std::nullopt;
 }
 
 std::vector<lt::download_priority_t> Torrent::ChosenPriorities(

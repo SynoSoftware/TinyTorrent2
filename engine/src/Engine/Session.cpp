@@ -44,7 +44,7 @@ lt::info_hash_t SavedHashes(std::vector<std::string> const& hashes)
 }
 
 Engine::State::State(std::filesystem::path path, std::function<void()> wake) :
-    directory(std::move(path)), store(wake), sources(wake), checks(wake),
+    directory(std::move(path)), store(wake), sources(wake), checks(wake), trees(wake),
     wake(std::move(wake)), language(settings.language)
 {
     // Without a saved document the engine starts from the default settings.
@@ -86,8 +86,10 @@ Engine::State::State(std::filesystem::path path, std::function<void()> wake) :
             {
                 try
                 {
-                    auto bytes = Store::Read(ResumeFile(id));
-                    resumes[id] = lt::read_resume_data(lt::span<char const>(bytes.data(), bytes.size()));
+                    auto bytes = Store::Read(ResumeFile(id), resumeLimit);
+                    lt::load_torrent_limits limits;
+                    limits.max_decode_tokens = 2 * metadataTokens;
+                    resumes[id] = lt::read_resume_data(lt::span<char const>(bytes.data(), bytes.size()), limits);
                 }
                 catch (std::exception const&)
                 {
@@ -148,6 +150,9 @@ void Engine::State::Start(Document const& saved, Resumes& resumes)
         lt::generate_fingerprint("TY", TT_VERSION_MAJOR, TT_VERSION_MINOR, TT_VERSION_BUILD));
     pack.set_str(lt::settings_pack::dht_bootstrap_nodes,
         "dht.libtorrent.org:25401,dht.transmissionbt.com:6881,router.bittorrent.com:6881");
+    // Metadata from peers is read with the preview's limit, so a torrent that
+    // the next start re-adds from its hashes is not refused for its size.
+    pack.set_int(lt::settings_pack::metadata_token_limit, metadataTokens);
     pack.set_int(lt::settings_pack::alert_mask,
         lt::alert_category::error | lt::alert_category::storage | lt::alert_category::status |
         lt::alert_category::file_progress);
@@ -880,6 +885,7 @@ Engine::State::~State()
     if (connectionTest)
         connectionTest->stop.request_stop();
     checks.Abandon();
+    trees.Abandon();
 }
 
 void Engine::State::Tick()
@@ -904,6 +910,7 @@ void Engine::State::Tick()
         probe.worker->Drain(failed);
     sources.Drain(failed);
     checks.Drain(failed);
+    trees.Drain(failed);
     if (session)
     {
         std::vector<lt::alert*> alerts;

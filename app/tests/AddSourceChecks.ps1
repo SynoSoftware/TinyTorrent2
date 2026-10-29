@@ -8,9 +8,8 @@ $assembly = [Reflection.Assembly]::LoadFrom((Join-Path $binary 'TinyTorrentUI.dl
 $flags = [Reflection.BindingFlags]'Instance,Public,NonPublic'
 $strings = [Activator]::CreateInstance($assembly.GetType('Syno.TinyTorrent.Shared.Strings', $true))
 $type = $assembly.GetType('Syno.TinyTorrent.Torrents.AddSource', $true)
-$source = $type.GetConstructors($flags)[0].Invoke([object[]]@('source.torrent', $strings, $null))
 
-function Apply-Preview([string] $TorrentId, $Target = $source) {
+function Apply-Preview([string] $TorrentId, $Target) {
     $preview = @{
         preview_id = 'preview'
         torrent_id = $TorrentId
@@ -21,30 +20,15 @@ function Apply-Preview([string] $TorrentId, $Target = $source) {
         error = $null
         hashes = @('hash')
         shared_with = @()
-        files = @(@{ index = 0; path = 'content.bin'; size = 12; padding = $false; priority = 4 })
     } | ConvertTo-Json -Depth 4
     $document = [Text.Json.JsonDocument]::Parse($preview)
     try {
-        $type.GetMethod('Apply', $flags).Invoke($Target, [object[]]@($document.RootElement, 'C:\Downloads'))
+        $type.GetMethod('Apply', $flags).Invoke($Target, [object[]]@($document.RootElement, 'C:\Downloads', $null))
     }
     finally {
         $document.Dispose()
     }
 }
-
-Apply-Preview 'existing'
-Apply-Preview ''
-if ($source.NeedsFiles -or !$source.Files.HasWanted) {
-    throw 'A formerly duplicate source did not acquire its file choices when it became addable.'
-}
-$source.Files.SelectMatching($false)
-Apply-Preview 'existing'
-Apply-Preview ''
-if (!$source.NeedsFiles -or $source.Files.HasWanted) {
-    throw 'Preview recovery discarded the user''s unwanted-file choices.'
-}
-
-Write-Output 'PASS: duplicate recovery initializes file choices and preserves later edits.'
 
 # A timeout is a lost reply, so the add may have happened.
 $lostReply = [TimeoutException]::new('The add reply timed out.')

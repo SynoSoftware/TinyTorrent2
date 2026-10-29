@@ -65,7 +65,7 @@ function Connect-Pipe {
         throw 'TinyTorrent is already running. The check refuses to command an engine it did not start.'
     }
     $hello = Read-Frame $stream
-    Assert ($hello.type -eq 'hello' -and $hello.version -eq 35) 'Invalid version handshake'
+    Assert ($hello.type -eq 'hello' -and $hello.version -eq 36) 'Invalid version handshake'
     return $stream
 }
 
@@ -81,22 +81,31 @@ function Send-Command([hashtable] $fields) {
 }
 
 # The torrent's files from the first page, each with its downloaded bytes and
-# priority from the Files detail. The fixtures fit in one page.
+# libtorrent's priority from the Files detail. The fixtures fit in one page.
 function Get-Files([string] $torrentId) {
     $page = Send-Command @{ command = 'files'; torrent_id = $torrentId }
     Assert $page.ok 'Engine refused the file list'
-    $detail = (Send-Command @{ command = 'torrent'; torrent_id = $torrentId; view = 'files' }).data
+    # After a restart a torrent answers detail reads with `starting` until it
+    # is added to libtorrent.
+    $until = [DateTime]::UtcNow.AddSeconds(15)
+    do {
+        $reply = Send-Command @{ command = 'torrent'; torrent_id = $torrentId; view = 'files' }
+        if ($reply.ok -or $reply.error.code -ne 'starting') { break }
+        Start-Sleep -Milliseconds 100
+    } while ([DateTime]::UtcNow -lt $until)
+    $detail = $reply.data
     foreach ($file in $page.data.files) {
         $file | Add-Member downloaded ($null -ne $detail.downloaded ? $detail.downloaded[$file.index] : $null)
-        $file | Add-Member priority ($null -ne $detail.priority ? $detail.priority[$file.index] : $null)
+        $file | Add-Member -Force priority ($null -ne $detail.priority ? $detail.priority[$file.index] : $null)
     }
     return ,$page.data.files
 }
 
-function Start-Engine {
+# `seconds` bounds the wait for the saved torrents to load.
+function Start-Engine([int] $seconds = 15) {
     $script:process = Start-Process -FilePath $executable -ArgumentList @('--headless', '--background', '--data', ('"' + $directory + '"')) -WindowStyle Hidden -PassThru
     $script:pipe = Connect-Pipe
-    $until = [DateTime]::UtcNow.AddSeconds(15)
+    $until = [DateTime]::UtcNow.AddSeconds($seconds)
     do {
         $reply = Send-Command @{ command = 'snapshot' }
         Assert $reply.ok 'Engine refused its initial snapshot'

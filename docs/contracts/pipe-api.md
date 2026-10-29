@@ -305,9 +305,10 @@ other torrents were acted on.
 A torrent that waits to be added to libtorrent, such as at startup until the
 engine knows [where its folder really is](engine/files.md#where-a-folder-really-is),
 refuses nothing that can wait: `verify` and `move` reply at once and run once
-it is added, `reannounce` succeeds and the add announces it, and `files` lists
-its files from its saved metadata, with a null `disk_path` while their names
-on disk are unknown. Its `detail` reads and `edit` fail with `starting`.
+it is added, `reannounce` succeeds and the add announces it, `edit` replies
+once its choices are saved and applies them at the add, and `files` and
+`tree` list its files from its saved metadata, with a null `disk_path` while
+their names on disk are unknown. Its `detail` reads fail with `starting`.
 
 No command is refused because files are busy, following
 [the busy-files ruling](engine/files.md#removal-and-moves). A command on torrents
@@ -389,9 +390,9 @@ isolation guarantee; an extra token would not create a stronger boundary.
 
 ## Wire representation
 
-Protocol version 35 uses a four-byte little-endian UTF-8 JSON frame length,
+Protocol version 36 uses a four-byte little-endian UTF-8 JSON frame length,
 bounded to 16 MiB. The endpoint is `TinyTorrent.<logon SID>`; each connecting
-client first receives `{type:"hello",version:35,session_id:"...",data_directory:"..."}`. The absolute data directory
+client first receives `{type:"hello",version:36,session_id:"...",data_directory:"..."}`. The absolute data directory
 keeps the same store for explicit Restart, which starts the engine beside the
 window rather than a path a pipe peer reports. Requests are
 `{request_id:signed-64-bit-integer,command:string,...}`. Replies repeat `request_id` and have
@@ -456,10 +457,13 @@ formats these snapshot values.
 
 Commands are `snapshot`, `preview` (source, destination), `preview_detail`
 (preview_id, destination), `add` (preview_id, destination, paused, optional
-priorities, optional sequential, first_last and queue_top booleans that default to false),
+sequential, first_last and queue_top booleans that default to false; the files
+download with the preview's choices, which `edit` sets; an edit counts once
+it has replied),
 `cancel_preview` (preview_id), `merge_trackers` (preview_id,
 torrent_id), `torrent` (torrent_id), `files` (preview_id or torrent_id, and
-offset, as [file pages](#file-pages) describes), `pause`, `resume`, `force`, `verify`, and
+offset, as [file pages](#file-pages) describes), `tree` and `edit` (as the
+[file browser](#file-browser) describes), `pause`, `resume`, `force`, `verify`, and
 `remove` (torrent_ids), `retry` (torrent_ids: clears each torrent's problems as
 Start does but keeps its current intent, so a stopped torrent continues and a
 failed move to the final folder runs again; every `retry` also tries again
@@ -602,25 +606,145 @@ downloaded/uploaded (bytes), queue
 (libtorrent position), complete, completed_on (Unix seconds when libtorrent
 finished the wanted files; 0 until complete), incoming, forced, sequential, first_last, and
 hashes. Protocol version 6 adds `completed`, so content totals and remaining time
-do not mistake verification progress for downloaded bytes. `torrent` returns
-the torrent's facts, name, metadata_ready, file_count, hashes, current content folder,
-and magnet link. Its Files view carries file_count, `downloaded` (bytes per
-file, in file order) and `priority` (one number per file), each null until
-libtorrent reports it.
+do not mistake verification progress for downloaded bytes. `torrent` without
+a view returns the torrent's saved facts with its General view: torrent_id,
+metadata_ready, name, folder (the current content folder), hashes, comment,
+creator, created, piece_size, piece_count, private and magnet. It reads no
+file detail and carries no per-file priorities, because Open torrent and Open
+folder use only `save_path` and `folder`; file pages carry each file's choice.
+
+<a id="files-view"></a>The Files view (`view:"files"`) carries file_count, the
+number of files including padding. A request without `folders` and `files`
+also gets `downloaded` (bytes per file, in file order) and `priority` (one
+number per file), each null until libtorrent reports it, and both null when
+file_count is above 10,000, the [file browser's window](#file-browser), so a
+reply never carries a large torrent's whole list. A browser that holds only
+part of the tree names what it holds instead: `folders`, an array of folder
+paths, and `files`, an array of file indexes, at most 10,000 of each; either
+may be empty. Its reply carries `wanted_count` and `wanted_size`, the
+torrent's totals, `folders`, one object per named folder that exists with
+`path` and the [folder values](#folder-values), and `files`, one object per
+named file with `index`, `priority` and `downloaded`. Until libtorrent
+reports the priorities, these four fields are null; `downloaded` is null until
+it reports progress. Choices that wait for busy files show before libtorrent
+has them. A path or index that names nothing is left out, and the browser
+drops values for folders it no longer holds. Naming more than 10,000 of either
+fails with `invalid_request`.
 
 <a id="file-pages"></a>File names come in pages, so neither side holds a large
 torrent's whole file list as one message, and the engine keeps no copy of it:
 it builds each page from libtorrent's file table when asked. `files` takes a
 preview_id or a torrent_id and an offset (default 0), and replies with
 file_count, offset and files. Each file carries index, path, size, padding,
-first_piece and end_piece (its pieces, end exclusive). A preview's files carry
-the path in the saved folder layout and the priority the Add dialog starts
-from; a torrent's carry disk_path, its current name on disk, or null until the
+first_piece and end_piece (its pieces, end exclusive), and priority, the
+file's chosen priority: a preview's current choice, or the choice a torrent
+saved. A preview's files carry the path in the saved folder layout; a
+torrent's carry disk_path, its current name on disk, or null until the
 engine has read its names. A page holds at most 5,000 files and ends earlier
 when its paths are long, so the next page starts at offset plus the number of
 files received. An offset at or past file_count gives an empty page.
 `files` fails with `preview_expired`, `torrent_removed`, or `alias_conflict`
 for a torrent whose restored identity conflicts with a listed one.
+
+<a id="file-browser"></a>The file browser of the Add dialog and the inspector
+reads a torrent's tree in parts, so neither a reply nor the browser's rows
+hold a large torrent's whole list. Its window is 10,000 rows. A `tree` reply
+holds at most 10,000 entries and 2 MiB of entry names; both are engine
+limits. The engine reads trees and resolves folder and query choices on a
+worker of its own, so a scan of every path never holds up other commands.
+
+A path names a folder by its names joined with `/`, without a leading or
+trailing `/`; the empty path names the root. A preview's paths follow the
+saved folder layout, as its pages show them; a torrent's follow libtorrent's
+names, as the inspector shows them. Padding files are never entries and are
+counted nowhere in the tree.
+
+<a id="folder-values"></a>Folder values are `file_count` and `size` (its files
+and their bytes), `wanted_count` and `wanted_size` (its files whose priority is
+not 0, and their bytes), `priority` (the priority all its files share, or null
+when they differ, shown as Mixed) and, for a torrent only, `downloaded` (its
+files' downloaded bytes, or null until libtorrent reports progress).
+
+`tree` takes a preview_id or a torrent_id and exactly one of `folder` (a
+path), `query` (search text) or `index` (a file index). It replies with
+`wanted_count` and `wanted_size`, the totals of the whole torrent; `path`, the
+path of `folder`; and `folder`, the object of that folder:
+
+- A folder object carries `name` (empty for the root), the folder values,
+  `too_many` (true when its direct entries alone do not fit one reply, so it
+  never opens and takes choices only as a whole), `match` (true when it is one
+  of a query's highest matches), and `folders` and `files`, the arrays of its
+  entries, both null when its entries are not in the reply.
+- A file object carries `index`, `name`, `size`, `priority`, `first_piece`,
+  `end_piece` and `match`, and for a torrent `disk_path` (its current name on
+  disk, or null until the engine has read its names) and `downloaded` (bytes,
+  or null until libtorrent reports progress).
+
+With `folder`, the reply is that folder with its direct entries, and then each
+deeper level of its subtree whole, while the entries still fit. A folder whose
+direct entries do not fit comes back with `too_many` and no entries. With
+`index`, `path` is the root, and the reply holds the direct entries of the root
+and of each folder on that file's path, down to the file, while they fit; a
+folder on the path that is `too_many`, or whose entries no longer fit, ends
+the chain unopened. With `query`, `path` is the root, and the reply also
+carries `match_count`, the number of files that match, and `match_wanted`,
+how many of them are wanted. A file matches when each word of the query starts
+a word of its path, as the [search ruling](../../AGENTS.md#working-rules)
+says; a folder matches the same way on its own path, and then every file
+under it matches. The reply holds the highest matches in file order, each with
+the folders on its path, until the next one does not fit; those folders list
+only the matches under them. Then each matching folder's subtree follows level
+by level, as with `folder`, while whole levels fit. Entries are in file order;
+the browser sorts what it shows.
+
+`tree` fails with `invalid_request` when it names both or neither of
+preview_id and torrent_id, not exactly one of `folder`, `query` and `index`,
+a path that names no folder, an index that names no file or a padding file, or
+a query without words; with `metadata_unavailable` before the metadata
+arrives; with `preview_expired`, `torrent_removed` or `alias_conflict` as
+`files` does; and with `overloaded` when the engine's worker has too much
+waiting.
+
+`edit` takes a preview_id or a torrent_id and `changes`, an object with at
+least one of:
+
+- `files`: an array of `{index, priority}` or `{index, wanted}` file choices;
+- `folders`: an array of `{path, priority}` or `{path, wanted}` folder
+  choices, each for every file under the folder;
+- `query`: one `{text, priority}` or `{text, wanted}` choice for every file
+  that matches the text as `tree` matches it, never together with `files` or
+  `folders`;
+- `trackers`, for a torrent only: the replacement tracker list of
+  `{url, tier}` objects.
+
+`priority` is 0 (skip), 1 (low), 4 (normal) or 7 (high), and sets that
+priority on every file the choice covers. `wanted: true` makes covered files at
+0 Normal and keeps every other priority; `wanted: false` sets 0. The engine
+applies the folder choices in their order, then the query, then the file
+choices, so a later file choice wins over a folder choice in the same edit.
+Padding files stay at 0. A preview's choices start, once its metadata
+arrives, at the default priorities with the skip patterns applied, and belong
+to its connection, so a reconnect previews the source again with default
+choices. A preview may end with no file wanted; `add` then fails with
+`invalid_priorities`.
+
+An `edit` with file choices replies with `wanted_count` and `wanted_size`,
+the totals of the whole torrent, and `folders`, read from the choices just
+saved. It may carry `loaded`, an array of at most 10,000 folder paths: the
+folders the browser holds that the choice changes. `folders` holds one object
+with `path` and the folder values for each loaded folder that exists. An edit of a torrent replies
+once libtorrent has applied the choices, or once they are saved while its
+files are busy or while it waits for its add. A trackers-only edit replies with
+no data.
+
+`edit` fails with `invalid_request` for a malformed request, `trackers` on a
+preview, or `query` beside `files` or `folders`; with `invalid_priorities`
+for a priority outside 0, 1, 4 and 7, an index named twice, or an index or path
+that names no file or folder; with `invalid_trackers` for an invalid tracker
+list; with `metadata_unavailable` for file choices before the metadata
+arrives; with `overloaded` while a torrent's earlier file choice still waits
+for libtorrent, or when the engine's worker has too much waiting; and with
+`preview_expired`, `torrent_removed` or `alias_conflict` as `files` does.
 All identities are strings. Settings are intended changes rather than replacement
 snapshots. `reset_settings` saves every setting at the default a new
 installation starts with and replies like `settings`. It keeps Pause all,

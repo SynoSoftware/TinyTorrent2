@@ -25,6 +25,7 @@ constexpr CommandEntry commands[] = {
     {"merge_trackers", Command::MergeTrackers, Publication::Execute},
     {"torrent", Command::Torrent, Publication::None},
     {"files", Command::Files, Publication::None},
+    {"tree", Command::Tree, Publication::None},
     {"edit", Command::Edit, Publication::Execute},
     {"reannounce", Command::Reannounce, Publication::Execute},
     {"history", Command::History, Publication::None},
@@ -65,6 +66,41 @@ constexpr std::pair<std::string_view, TorrentView> views[] = {
 std::vector<std::string> TorrentIds(Json const& request)
 {
     return request.at("torrent_ids").get<std::vector<std::string>>();
+}
+
+// What a `tree` request reads: exactly one of a folder, a query or a file
+// index. Throws for anything else.
+Tree::Target ReadTarget(Json const& request)
+{
+    if (request.contains("folder") + request.contains("query") + request.contains("index") != 1)
+    {
+        throw std::invalid_argument("A tree request reads one folder, query or file.");
+    }
+    if (request.contains("folder"))
+    {
+        return Tree::Folder{request.at("folder").get<std::string>()};
+    }
+    if (request.contains("index"))
+    {
+        return lt::file_index_t(request.at("index").get<int>());
+    }
+    Search search(request.at("query").get<std::string>());
+    if (search.IsEmpty())
+    {
+        throw std::invalid_argument("A search has no words.");
+    }
+    return search;
+}
+
+// The folder paths a request names, at most as many as the browser holds.
+std::vector<std::string> ReadPaths(Json const& request, char const* key)
+{
+    auto paths = request.value(key, std::vector<std::string>());
+    if (paths.size() > fileWindow)
+    {
+        throw std::invalid_argument("A request names more folders than a browser holds.");
+    }
+    return paths;
 }
 
 // The completion of a command whose reply carries no data.
@@ -285,7 +321,6 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
         Addition::Choices choices;
         choices.destination = request.at("destination").get<std::string>();
         choices.intent = request.value("paused", !settings.startsDownload) ? Intent::Paused : Intent::Resumed;
-        choices.priorities = ReadPriorities(request.value("priorities", Json::array()));
         choices.sequential = request.value("sequential", false);
         choices.firstLast = request.value("first_last", false);
         choices.queueTop = request.value("queue_top", settings.queueTop);
@@ -326,6 +361,16 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
             }
         }
         Reading::Read read{connectionId, request.at("torrent_id").get<std::string>(), view, reply};
+        if (request.contains("folders") || request.contains("files"))
+        {
+            auto files = request.value("files", std::vector<int>());
+            if (view != TorrentView::Files || files.size() > fileWindow)
+            {
+                reply(Failure(ErrorCode::InvalidRequest));
+                return;
+            }
+            read.loaded = Reading::Loaded{ReadPaths(request, "folders"), {files.begin(), files.end()}};
+        }
         if (request.contains("context"))
         {
             if (!view || !request.at("context").is_number_integer())
@@ -354,6 +399,7 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
                 reply(Failure(ErrorCode::PreviewExpired));
                 return;
             }
+            UpdatePreview(*preview);
             reply(Success(DescribeFilePage(*preview, offset)));
             break;
         }
@@ -379,9 +425,106 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
         reply(Success(torrent.DescribeFilePage(torrent.handle.torrent_file(), offset)));
         break;
     }
-    case Command::Edit:
-        Edit(request.at("torrent_id").get<std::string>(), request.at("changes"), Acknowledge(reply));
+    case Command::Tree:
+    {
+        if (request.contains("preview_id") == request.contains("torrent_id"))
+        {
+            reply(Failure(ErrorCode::InvalidRequest));
+            return;
+        }
+        auto target = ReadTarget(request);
+        if (request.contains("preview_id"))
+        {
+            auto preview = FindPreview(request.at("preview_id").get<std::string>(), connectionId);
+            if (!preview)
+            {
+                reply(Failure(ErrorCode::PreviewExpired));
+                return;
+            }
+            auto listing = Listed(*preview);
+            if (!listing)
+            {
+                reply(Failure(*listing.error().error, listing.error().detail));
+                return;
+            }
+            ReadTree(std::move(*listing), std::move(target),
+                [reply, previewId = preview->previewId](std::expected<Json, Outcome> tree)
+            {
+                if (!tree)
+                {
+                    reply(Failure(*tree.error().error, tree.error().detail));
+                    return;
+                }
+                (*tree)["preview_id"] = previewId;
+                reply(Success(std::move(*tree)));
+            });
+            break;
+        }
+        auto torrentId = request.at("torrent_id").get<std::string>();
+        auto found = torrents.find(torrentId);
+        if (found == torrents.end())
+        {
+            reply(Failure(ErrorCode::TorrentRemoved));
+            return;
+        }
+        auto listing = Listed(found->second);
+        if (!listing)
+        {
+            reply(Failure(*listing.error().error, listing.error().detail));
+            return;
+        }
+        ReadTree(std::move(*listing), std::move(target), [this, reply, torrentId](std::expected<Json, Outcome> tree)
+        {
+            if (!tree)
+            {
+                reply(Failure(*tree.error().error, tree.error().detail));
+                return;
+            }
+            // Names on disk change, so they are read when the reply is sent.
+            auto found = torrents.find(torrentId);
+            if (found == torrents.end())
+            {
+                reply(Failure(ErrorCode::TorrentRemoved));
+                return;
+            }
+            (*tree)["torrent_id"] = torrentId;
+            NameFiles(found->second, (*tree)["folder"]);
+            reply(Success(std::move(*tree)));
+        });
         break;
+    }
+    case Command::Edit:
+    {
+        if (request.contains("preview_id") == request.contains("torrent_id"))
+        {
+            reply(Failure(ErrorCode::InvalidRequest));
+            return;
+        }
+        auto choices = ReadChoices(request.at("changes"));
+        if (!choices)
+        {
+            reply(Failure(choices.error()));
+            return;
+        }
+        auto loaded = ReadPaths(request, "loaded");
+        auto finish = [reply](Outcome outcome, Json data)
+        {
+            reply(outcome.error ? Failure(*outcome.error, outcome.detail) : Success(std::move(data)));
+        };
+        if (request.contains("preview_id"))
+        {
+            auto preview = FindPreview(request.at("preview_id").get<std::string>(), connectionId);
+            if (!preview)
+            {
+                reply(Failure(ErrorCode::PreviewExpired));
+                return;
+            }
+            Edit(*preview, std::move(*choices), std::move(loaded), finish);
+            break;
+        }
+        Edit(request.at("torrent_id").get<std::string>(), std::move(*choices), std::move(loaded), finish);
+        break;
+    }
     case Command::Reannounce:
         Act({request.at("torrent_id").get<std::string>()}, Acknowledge(reply), [this](auto const& ids, auto done)
         {

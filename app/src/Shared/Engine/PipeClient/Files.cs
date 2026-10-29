@@ -1,5 +1,4 @@
 using System.Text.Json;
-using Syno.TinyTorrent.Torrents;
 
 namespace Syno.TinyTorrent.Shared.Engine;
 
@@ -9,11 +8,8 @@ internal sealed partial class PipeClient
     private PendingFiles? _files;
     private (Request Request, long Context, TaskCompletionSource Completion)? _inspector;
 
-    // A preview's files, one page at a time. The caller reads each page before
+    // A torrent's files, one page at a time. The caller reads each page before
     // the next one is requested.
-    internal IAsyncEnumerable<JsonElement> PreviewFiles(string previewId) =>
-        Pages(offset => new { preview_id = previewId, offset });
-
     internal IAsyncEnumerable<JsonElement> TorrentFiles(string torrentId) =>
         Pages(offset => new { torrent_id = torrentId, offset });
 
@@ -35,24 +31,19 @@ internal sealed partial class PipeClient
     }
 
     // Null when the inspector took the connection first; the caller asks again.
-    internal async Task<FileDetail?> ReadFiles(string torrentId, CancellationToken cancellation)
+    // The pieces are read only when the torrent has wanted bytes present
+    // (`completed`), because only then can a file be verified. A torrent
+    // without metadata gives an empty list, which is complete and does not
+    // hold back cleanup that waits for unread lists.
+    internal async Task<FileDetail?> ReadFiles(
+        string torrentId,
+        bool completed,
+        CancellationToken cancellation
+    )
     {
-        if (
-            await ReadSection(torrentId, "files", cancellation).ConfigureAwait(false)
-            is not { } view
-        )
-            return null;
-        // A torrent without metadata has no files yet, so its empty list is
-        // complete and does not hold back cleanup that waits for unread lists.
-        if (!view.GetProperty("metadata_ready").GetBoolean())
-            return new FileDetail([], null);
-        var status = FileStatus.Read(view);
-        var priorities =
-            status.Priorities ?? throw new InvalidDataException("Files without priorities.");
         List<DetailFile> files = [];
-        var downloaded = false;
         var offset = 0;
-        var count = view.GetProperty("file_count").GetInt32();
+        var count = 1;
         while (offset < count)
         {
             if (
@@ -61,32 +52,29 @@ internal sealed partial class PipeClient
             )
                 return null;
             var listed = page.GetProperty("files");
+            count = page.GetProperty("file_count").GetInt32();
             if (listed.GetArrayLength() == 0)
                 break;
             foreach (var file in listed.EnumerateArray())
             {
                 if (file.GetProperty("padding").GetBoolean())
                     continue;
-                var index = file.GetProperty("index").GetInt32();
-                var size = file.GetProperty("size").GetInt64();
-                downloaded |= status.Downloaded is { } bytes && bytes[index] >= size;
                 files.Add(
                     new DetailFile(
-                        index,
+                        file.GetProperty("index").GetInt32(),
                         file.GetProperty("path").GetString()!,
                         file.GetProperty("disk_path").GetString(),
-                        size,
+                        file.GetProperty("size").GetInt64(),
                         file.GetProperty("first_piece").GetInt32(),
                         file.GetProperty("end_piece").GetInt32(),
-                        priorities[index]
+                        file.GetProperty("priority").GetInt32()
                     )
                 );
             }
             offset += listed.GetArrayLength();
-            count = page.GetProperty("file_count").GetInt32();
         }
         bool[]? verified = null;
-        if (downloaded)
+        if (completed && files.Count > 0)
         {
             if (
                 await ReadSection(torrentId, "pieces", cancellation).ConfigureAwait(false)
@@ -287,9 +275,9 @@ internal sealed partial class PipeClient
     }
 }
 
-// The payload files of a torrent as the engine's file pages and views describe
-// them. Verified holds the torrent's verified pieces; it is null when no file
-// was complete, so the pieces were not read.
+// The payload files of a torrent as the engine's file pages describe them.
+// Verified holds the torrent's verified pieces; it is null when the torrent had
+// no wanted bytes present, so the pieces were not read.
 internal sealed record FileDetail(IReadOnlyList<DetailFile> Files, bool[]? Verified);
 
 // DiskPath is the file's current name on disk, or null until the engine has
@@ -303,17 +291,3 @@ internal sealed record DetailFile(
     int EndPiece,
     int Priority
 );
-
-// What a Files view reply reports for each file index. Each array is null
-// until libtorrent reports it.
-internal sealed record FileStatus(long[]? Downloaded, int[]? Priorities)
-{
-    internal static FileStatus Read(JsonElement view) =>
-        new(
-            Numbers(view.GetProperty("downloaded"), number => number.GetInt64()),
-            Numbers(view.GetProperty("priority"), number => number.GetInt32())
-        );
-
-    private static T[]? Numbers<T>(JsonElement array, Func<JsonElement, T> read) =>
-        array.ValueKind == JsonValueKind.Null ? null : [.. array.EnumerateArray().Select(read)];
-}

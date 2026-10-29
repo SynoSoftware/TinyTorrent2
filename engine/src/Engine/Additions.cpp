@@ -80,9 +80,7 @@ void Engine::State::Add(Preview& preview, Addition::Choices choices, std::functi
         return;
     }
     auto patterns = settings.excludes ? settings.patterns : std::string();
-    if (choices.priorities.empty() && preview.params.ti)
-        choices.priorities = DefaultPriorities(preview.params.ti->layout(), patterns);
-    auto chosen = Priorities(std::move(choices.priorities), preview.params.ti);
+    auto chosen = Priorities(preview.priorities, preview.params.ti);
     if (!chosen || (preview.params.ti && std::none_of(chosen->begin(), chosen->end(),
         [](auto priority) { return priority != lt::dont_download; })))
     {
@@ -217,7 +215,8 @@ void Engine::State::PrepareAddition(std::string const& id, lt::torrent_handle ha
         auto current = handle.get_renamed_files();
         params.renamed_files = current.export_filenames(params.ti->layout());
         PrepareNames(params, appendsSuffix, layout);
-        return NameChoice{std::move(params), std::move(current)};
+        auto renames = Renames(params, current);
+        return NameChoice{std::move(params), std::move(renames)};
     }, [this, id](std::expected<NameChoice, StorageOutcome> choice)
     {
         auto found = additions.find(id);
@@ -234,7 +233,7 @@ void Engine::State::PrepareAddition(std::string const& id, lt::torrent_handle ha
         auto& addition = found->second;
         addition.params.ti = choice->params.ti;
         addition.params.renamed_files = choice->params.renamed_files;
-        ApplyNames(addition.handle, choice->params, choice->current, addition.renaming);
+        ApplyNames(addition.handle, choice->renames, addition.renaming);
         addition.named = true;
         if (addition.renaming.empty())
             SaveAddition(id, addition.handle);

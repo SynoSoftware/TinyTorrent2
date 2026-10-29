@@ -2040,7 +2040,7 @@ public sealed partial class MainWindow
         await CaptureLayout();
         var file = Model
             .Inspector.Files.Roots.SelectMany(root => root.Nodes())
-            .First(node => node.Index >= 0 && !node.IsPadding);
+            .First(node => !node.IsFolder);
         var priority = CaptureElements(InspectorContent).OfType<ComboBox>().First();
         var originalPriority = priority.SelectedIndex;
         priority.SelectedIndex = 4;

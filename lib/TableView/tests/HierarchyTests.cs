@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.ObjectModel;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Automation.Provider;
 using Microsoft.UI.Xaml.Controls;
@@ -15,6 +16,7 @@ public class HierarchyTests
         internal string Name { get; } = name;
         internal ObservableCollection<Node> Children { get; } = new(children);
         internal bool IsExpanded { get; set; } = true;
+        internal bool HasUnrealizedChildren { get; set; }
 
         public override string ToString() => Name;
     }
@@ -65,6 +67,60 @@ public class HierarchyTests
             Assert.AreEqual(1, branch.GetLevel());
             Assert.AreEqual(2, branch.GetPositionInSet());
             Assert.AreEqual(2, branch.GetSizeOfSet());
+        });
+
+    [TestMethod]
+    public Task UnrealizedChildrenExpandOnRequestOnlyAndAppearWhenSupplied() =>
+        TestHost.RunAsync(async () =>
+        {
+            Node folder = new("folder") { IsExpanded = false, HasUnrealizedChildren = true },
+                leaf = new("leaf");
+            List<bool> requests = new();
+            Column name = TestData.Column("name");
+            Table table = TestData.Table(name);
+            table
+                .Schema<Node>()
+                .Key(row => row.Name)
+                .Hierarchy(
+                    name,
+                    row => row.Children,
+                    row => row.IsExpanded,
+                    (row, value) =>
+                    {
+                        row.IsExpanded = value;
+                        requests.Add(value);
+                    },
+                    row => row.HasUnrealizedChildren
+                );
+            table.ItemsSource = new[] { folder, leaf };
+            await TableHarness.LoadAsync(table);
+            table.UpdateLayout();
+            var list = SelectionHarness.Descendant<ListView>(table)!;
+            var peer = FrameworkElementAutomationPeer.CreatePeerForElement(list);
+            var rows = peer.GetChildren();
+            var branch = (IExpandCollapseProvider)
+                rows.Single(row => row.GetName() == "folder")
+                    .GetPattern(PatternInterface.ExpandCollapse);
+            var file = (IExpandCollapseProvider)
+                rows.Single(row => row.GetName() == "leaf")
+                    .GetPattern(PatternInterface.ExpandCollapse);
+            Assert.AreEqual(ExpandCollapseState.Collapsed, branch.ExpandCollapseState);
+            Assert.AreEqual(ExpandCollapseState.LeafNode, file.ExpandCollapseState);
+
+            folder.IsExpanded = true;
+            table.RefreshView();
+            folder.IsExpanded = false;
+            table.RefreshView();
+            Assert.AreEqual(0, requests.Count);
+
+            branch.Expand();
+            CollectionAssert.AreEqual(new[] { true }, requests);
+            Assert.AreEqual(ExpandCollapseState.Expanded, branch.ExpandCollapseState);
+            CollectionAssert.AreEqual(new[] { "folder", "leaf" }, Names(table));
+
+            folder.Children.Add(new("child"));
+            folder.HasUnrealizedChildren = false;
+            CollectionAssert.AreEqual(new[] { "folder", "child", "leaf" }, Names(table));
         });
 
     [TestMethod]

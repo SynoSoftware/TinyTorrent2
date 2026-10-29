@@ -106,10 +106,6 @@ struct Facts
     static Facts Read(Json const& saved);
 };
 
-// Reads file priorities as the add command sends them. Throws when a value is
-// not a whole number from 0 to 255.
-std::vector<lt::download_priority_t> ReadPriorities(Json const& values);
-
 // libtorrent's latest answers to the detail queries for one torrent.
 struct Detail
 {
@@ -611,6 +607,8 @@ struct Torrent
     std::vector<std::string> Hashes() const;
     std::string Folder() const;
     std::vector<std::filesystem::path> Paths(bool logical = false) const;
+    // The first part of each of Paths(logical), as Tops gives them.
+    std::vector<std::string> Tops(bool logical = false) const;
     std::optional<Problem> Error() const;
     std::optional<Problem> StorageProblem() const;
     // A storage failure, a failed move to the final folder or an alias
@@ -657,14 +655,16 @@ struct Torrent
     bool IsChanged() const;
     // Takes the newest status, and remembers when it shows new payload.
     void Update(lt::torrent_status latest, lt::time_point at);
-    // The torrent's facts with its General and Files detail.
+    // The torrent's facts with its General detail.
     Json Describe(Detail const& detail, std::shared_ptr<lt::torrent_info const> const& metadata) const;
     Json Describe(TorrentView view, Detail const& detail,
         std::shared_ptr<lt::torrent_info const> const& metadata,
         std::chrono::steady_clock::time_point since = {}) const;
-    // One `files` reply: the page from FilePage, with each file's current
-    // name on disk once its names are read.
+    // One `files` reply: the page from FilePage, with each file's chosen
+    // priority and current name on disk once its names are read.
     Json DescribeFilePage(std::shared_ptr<lt::torrent_info const> const& metadata, int offset) const;
+    // The file's current name on disk, or null until its names are read.
+    Json DiskPath(lt::file_index_t index) const;
     // `queue` is the torrent's place in the download queue, or -1 outside it.
     // `moveProgress` replaces the progress while the torrent's files move.
     // `retry` offers the person's Retry.
@@ -672,6 +672,10 @@ struct Torrent
         bool retry) const;
     std::vector<lt::download_priority_t> ChosenPriorities(
         std::shared_ptr<lt::torrent_info const> const& metadata) const;
+    // The priorities the Files view shows: libtorrent's, or the saved choice
+    // while it waits for busy files; nothing until libtorrent reports them.
+    std::optional<std::vector<lt::download_priority_t>> ShownPriorities(Detail const& detail,
+        std::chrono::steady_clock::time_point since = {}) const;
     std::vector<lt::announce_entry> const& Trackers() const;
     void ApplyIntent();
     // Clears libtorrent's error and upload mode, and the copies of them that
@@ -699,6 +703,18 @@ std::string ContentPath(lt::file_storage const& files, lt::file_index_t index, L
 // a reply with a disk path beside each path well under the frame limit.
 constexpr std::size_t filePage = 5000;
 constexpr std::size_t filePageNames = 2 << 20;
+// The first part of each file's path, which `path` gives, sorted and each
+// once: the files and folders at the save folder that hold every file. A
+// path that is already full is its own part.
+std::vector<std::string> Tops(lt::file_storage const& files,
+    std::function<std::string(lt::file_index_t)> const& path);
+// The pieces a file covers, end exclusive.
+struct PieceRange
+{
+    std::int64_t first = 0;
+    std::int64_t end = 0;
+};
+PieceRange Pieces(lt::torrent_info const& metadata, lt::file_index_t index);
 // The page of the files of `metadata` that starts at `offset`: each file's
 // index, path, size, padding and pieces, with what `describe` adds.
 Json FilePage(lt::torrent_info const& metadata, int offset,

@@ -1,10 +1,10 @@
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('Frames', 'Summaries', 'Targets', 'Facts', 'Restore', 'Exit', 'Conflict', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames', 'Pause', 'History', 'Accounting', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify', 'MoveExisting', 'DriveTurns', 'UnfinishedTasks', 'StorageStop', 'StoppedLocation', 'AbsentLink', 'AbsentNotice', 'LinkedNotice', 'KilledCheck', 'StoppedHeld', 'MagnetAbsent')]
+    [ValidateSet('Frames', 'Summaries', 'Targets', 'Facts', 'Restore', 'Exit', 'Conflict', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames', 'Pause', 'History', 'Accounting', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify', 'MoveExisting', 'DriveTurns', 'UnfinishedTasks', 'StorageStop', 'StoppedLocation', 'AbsentLink', 'AbsentNotice', 'LinkedNotice', 'KilledCheck', 'StoppedHeld', 'MagnetAbsent', 'FileWindow')]
     [string] $Check,
     # Every check but Conflict, FilesSafety, WaitingMove, RemoveDuringMove, MoveAndVerify,
     # MoveExisting, DriveTurns, UnfinishedTasks, StorageStop, StoppedLocation,
-    # AbsentLink, AbsentNotice, LinkedNotice and KilledCheck, which make their own torrents.
+    # AbsentLink, AbsentNotice, LinkedNotice, KilledCheck and FileWindow, which make their own torrents.
     [string] $TorrentFile,
     [string] $EnginePath,
     [switch] $Transfer,
@@ -30,7 +30,7 @@ $transferChecks = 'MagnetDownload', 'SelectedTransfer', 'DiskError', 'PreviewGua
 # These checks each guard one defect that was already fixed, so a run of every
 # check skips them; the owner asks for them when that code changes.
 $optInChecks = 'WaitingMove', 'RemoveDuringMove'
-if (-not $TorrentFile -and $Check -notin 'Conflict', 'FilesSafety', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify', 'MoveExisting', 'DriveTurns', 'UnfinishedTasks', 'StorageStop', 'StoppedLocation', 'AbsentLink', 'AbsentNotice', 'LinkedNotice', 'KilledCheck') {
+if (-not $TorrentFile -and $Check -notin 'Conflict', 'FilesSafety', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify', 'MoveExisting', 'DriveTurns', 'UnfinishedTasks', 'StorageStop', 'StoppedLocation', 'AbsentLink', 'AbsentNotice', 'LinkedNotice', 'KilledCheck', 'FileWindow') {
     throw "$Check needs -TorrentFile."
 }
 if ($Check -in $transferChecks -and -not $Transfer) {
@@ -308,6 +308,82 @@ function Read-Window {
 function Stop-Window {
     $null = New-Item -ItemType File -Path (Join-Path $directory 'window-stop') -Force
     Assert ($script:standIn.WaitForExit(15000)) 'The stand-in window did not end'
+}
+
+# Reads `count` bytes of a reply, waiting up to `seconds` for them.
+function Read-Within([int] $count, [int] $seconds) {
+    $bytes = [byte[]]::new($count)
+    $offset = 0
+    while ($offset -lt $count) {
+        $read = $script:pipe.ReadAsync($bytes, $offset, $count - $offset)
+        Assert $read.Wait($seconds * 1000) "The reply did not arrive in $seconds seconds"
+        Assert ($read.Result -gt 0) 'Pipe disconnected during a frame'
+        $offset += $read.Result
+    }
+    return ,$bytes
+}
+
+# Sends a command whose reply can take longer than Send-Command waits, as one
+# about a torrent of many files can, and returns the reply, the size of its
+# frame and the milliseconds until its frame began.
+function Send-Timed([hashtable] $fields, [int] $seconds = 300) {
+    $fields.request_id = ++$script:sequence
+    $bytes = [Text.Encoding]::UTF8.GetBytes(($fields | ConvertTo-Json -Depth 20 -Compress))
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    $script:pipe.Write([BitConverter]::GetBytes([int]$bytes.Length), 0, 4)
+    $script:pipe.Write($bytes, 0, $bytes.Length)
+    do {
+        $size = [BitConverter]::ToInt32((Read-Within 4 $seconds), 0)
+        $elapsed = $clock.ElapsedMilliseconds
+        Assert ($size -gt 0 -and $size -le 16MB) 'Reply frame violates its limit'
+        $reply = [Text.Encoding]::UTF8.GetString((Read-Within $size $seconds)) | ConvertFrom-Json
+    } while ($reply.type -eq 'detail')
+    Assert ($reply.request_id -eq $fields.request_id) 'Reply belongs to another request'
+    return [pscustomobject]@{ reply = $reply; bytes = $size; milliseconds = $elapsed }
+}
+
+# Writes a v1 torrent named `name` whose `files` are bencoded file entries of
+# one byte each, `count` in all.
+function Write-Torrent([string] $path, [string] $name, [string] $files, [int] $count) {
+    $pieceLength = 16384
+    $data = [byte[]]::new($count)
+    [Array]::Fill($data, [byte]0x61)
+    $hasher = [Security.Cryptography.SHA1]::Create()
+    $pieces = [IO.MemoryStream]::new()
+    for ($at = 0; $at -lt $count; $at += $pieceLength) {
+        $hash = $hasher.ComputeHash($data, $at, [Math]::Min($pieceLength, $count - $at))
+        $pieces.Write($hash, 0, $hash.Length)
+    }
+    $stream = [IO.File]::Create($path)
+    try {
+        $head = [Text.Encoding]::UTF8.GetBytes("d4:infod5:filesl$($files)e4:name$([Text.Encoding]::UTF8.GetByteCount($name)):$($name)12:piece lengthi$($pieceLength)e6:pieces$($pieces.Length):")
+        $stream.Write($head, 0, $head.Length)
+        $pieces.Position = 0
+        $pieces.CopyTo($stream)
+        $stream.Write([Text.Encoding]::ASCII.GetBytes('ee'), 0, 2)
+    }
+    finally { $stream.Dispose() }
+}
+
+# The file objects of a `tree` folder object and of the folders it lists.
+function Tree-Files($folder) {
+    if ($folder.files) { $folder.files }
+    foreach ($child in @($folder.folders | Where-Object { $_ })) { Tree-Files $child }
+}
+
+# The entries a `tree` reply lists and the bytes of their names.
+function Measure-Tree($folder) {
+    $size = [pscustomobject]@{ entries = 0; names = 0 }
+    foreach ($entry in @($folder.folders | Where-Object { $_ }) + @($folder.files | Where-Object { $_ })) {
+        $size.entries++
+        $size.names += [Text.Encoding]::UTF8.GetByteCount($entry.name)
+    }
+    foreach ($child in @($folder.folders | Where-Object { $_ })) {
+        $inner = Measure-Tree $child
+        $size.entries += $inner.entries
+        $size.names += $inner.names
+    }
+    return $size
 }
 
 # Returns the index after the bencoded value that starts at `at`.
@@ -2006,7 +2082,7 @@ try {
             $files = (Get-Files $torrentId)
             $wanted = $files | Where-Object { -not $_.padding } | Select-Object -First 1
             Assert ($null -ne $wanted) 'The file-edit fixture has no payload files'
-            $reply = Send-Command @{ command = 'edit'; torrent_id = $torrentId; changes = @{ priorities = @(@{ index = $wanted.index; priority = 7 }); trackers = @(@{ url = 'http://127.0.0.1:1/announce'; tier = 3 }) } }
+            $reply = Send-Command @{ command = 'edit'; torrent_id = $torrentId; changes = @{ files = @(@{ index = $wanted.index; priority = 7 }); trackers = @(@{ url = 'http://127.0.0.1:1/announce'; tier = 3 }) } }
             Assert $reply.ok 'A committed priority and tracker edit was refused'
             Stop-Engine
             $null = Start-Engine
@@ -2015,7 +2091,7 @@ try {
             $trackers = (Send-Command @{ command = 'torrent'; torrent_id = $torrentId; view = 'trackers' }).data.trackers
             Assert ($trackers.Count -eq 1 -and $trackers[0].url -eq 'http://127.0.0.1:1/announce' -and $trackers[0].tier -eq 3) 'A saved tracker choice lost its URL or tier'
             $choices = @($files | ForEach-Object { @{ index = $_.index; priority = 0 } })
-            $reply = Send-Command @{ command = 'edit'; torrent_id = $torrentId; changes = @{ priorities = $choices; trackers = @() } }
+            $reply = Send-Command @{ command = 'edit'; torrent_id = $torrentId; changes = @{ files = $choices; trackers = @() } }
             Assert $reply.ok 'Select none or clearing the tracker list was refused'
             Stop-Engine
             $snapshot = Start-Engine
@@ -2201,7 +2277,10 @@ try {
             $fixture = (Send-Command @{ command = 'files'; preview_id = $reply.data.preview_id }).data.files
             Assert ($fixture[0].path.Replace('\', '/') -eq 'selection/skip.bin' -and $fixture[1].path.Replace('\', '/') -eq 'selection/wanted.bin') 'Fixture file order is not skip then wanted'
             $hash = $reply.data.hashes[0]
-            $reply = Send-Command @{ command = 'add'; preview_id = $reply.data.preview_id; destination = $payload; paused = $false; priorities = @(0, 7) }
+            $previewId = $reply.data.preview_id
+            $reply = Send-Command @{ command = 'edit'; preview_id = $previewId; changes = @{ files = @(@{ index = 0; priority = 0 }, @{ index = 1; priority = 7 }) } }
+            Assert $reply.ok 'The preview refused the file selection'
+            $reply = Send-Command @{ command = 'add'; preview_id = $previewId; destination = $payload; paused = $false }
             Assert $reply.ok 'Selected files could not be confirmed'
             $torrentId = $reply.data.torrent_id
             $until = [DateTime]::UtcNow.AddSeconds(30)
@@ -2252,7 +2331,8 @@ try {
             $snapshot = Start-Engine
             $torrent = $snapshot.torrents[0]
             $detail = Send-Command @{ command = 'torrent'; torrent_id = $torrentId }
-            Assert ($snapshot.torrents.Count -eq 1 -and $torrent.torrent_id -eq $torrentId -and $torrent.save_path -eq $payload -and $torrent.paused -and ($detail.data.priorities -join ',') -eq '0,7') 'Tracker merge changed durable existing membership choices'
+            $chosen = (Send-Command @{ command = 'files'; torrent_id = $torrentId }).data.files.priority -join ','
+            Assert ($snapshot.torrents.Count -eq 1 -and $torrent.torrent_id -eq $torrentId -and $torrent.save_path -eq $payload -and $torrent.paused -and $chosen -eq '0,7') 'Tracker merge changed durable existing membership choices'
             Assert ('http://127.0.0.1:1/announce' -in $detail.data.trackers) 'Merged tracker did not survive restart'
             Assert ((Payload-Hash $wanted) -eq $wantedHash) 'Tracker merge or preview cancellation changed existing payload'
             $reply = Send-Command @{ command = 'force'; torrent_ids = @($torrentId) }
@@ -2530,7 +2610,7 @@ try {
                 -ArgumentList @(('"' + $peerDirectory + '"'), '6881') -WindowStyle Hidden -PassThru `
                 -RedirectStandardOutput (Join-Path $directory 'peer.log') -RedirectStandardError (Join-Path $directory 'peer-error.log')
             $previewId = Preview
-            $reply = Send-Command @{ command = 'add'; preview_id = $previewId; destination = $payload; paused = $false; priorities = @(4) }
+            $reply = Send-Command @{ command = 'add'; preview_id = $previewId; destination = $payload; paused = $false }
             Assert $reply.ok 'Removal fixture addition failed'
             $torrentId = $reply.data.torrent_id
             $until = [DateTime]::UtcNow.AddSeconds(30)
@@ -2990,6 +3070,158 @@ try {
             $row = Get-Row $reply.data.torrent_id
             Assert ($row -and $row.save_path -eq $destination) 'The magnet added to an absent drive is not in the list'
             Mount-Drive $drive
+        }
+        'FileWindow' {
+            # The search ruling's examples, a copy of the table in
+            # app/tests/SourceChecks.ps1, because the app and the engine each
+            # implement the rule.
+            $examples = @(
+                @('Paracetamol 500mg', '50 para', $true),
+                @('comparable', 'para', $false),
+                @('Paracetamol.500mg-[Group]', 'group 500', $true),
+                @("Am`u{e9}lie.2001.mkv", 'amelie', $true))
+            $listed = [Text.StringBuilder]::new()
+            foreach ($example in $examples) {
+                $null = $listed.Append("d6:lengthi1e4:pathl$([Text.Encoding]::UTF8.GetByteCount($example[0])):$($example[0])ee")
+            }
+            $source = Join-Path $directory 'search.torrent'
+            Write-Torrent $source 'search' $listed.ToString() $examples.Count
+            $reply = Send-Command @{ command = 'preview'; source = $source; destination = $payload }
+            Assert $reply.ok 'The search fixture did not preview'
+            foreach ($example in $examples) {
+                $found = Send-Command @{ command = 'tree'; preview_id = $reply.data.preview_id; query = $example[1] }
+                Assert $found.ok "Search '$($example[1])' was refused: $($found.error.code)"
+                $matched = @(Tree-Files $found.data.folder | Where-Object { $_.name -eq $example[0] -and $_.match }).Count -eq 1
+                Assert ($matched -eq $example[2]) "Search '$($example[1])' broke the word-start rule on '$($example[0])'"
+            }
+
+            # A v1 torrent of one-byte files just past the window:
+            # large/xN/yNN/zNN holds 23 files each, numbered in file order, and
+            # large/flat/f/f holds 10,001, more than one reply lists.
+            $flatCount = 10001
+            $count = 920 + $flatCount
+            $files = [Text.StringBuilder]::new(1MB)
+            $index = 0
+            for ($x = 0; $x -lt 2; $x++) {
+                for ($y = 0; $y -lt 4; $y++) {
+                    for ($z = 0; $z -lt 5; $z++) {
+                        for ($k = 0; $k -lt 23; $k++) {
+                            $null = $files.Append(('d6:lengthi1e4:pathl2:x{0}3:y{1:D2}3:z{2:D2}6:{3:D6}ee' -f $x, $y, $z, $index))
+                            $index++
+                        }
+                    }
+                }
+            }
+            for (; $index -lt $count; $index++) {
+                $null = $files.Append(('d6:lengthi1e4:pathl4:flat1:f1:f6:{0:D6}ee' -f $index))
+            }
+            $source = Join-Path $directory 'large.torrent'
+            Write-Torrent $source 'large' $files.ToString() $count
+            $files = $null
+            $report = [ordered]@{ torrent_bytes = (Get-Item -LiteralPath $source).Length; replies = [ordered]@{}; pages = @() }
+            $timed = Send-Timed @{ command = 'preview'; source = $source; destination = $payload }
+            Assert $timed.reply.ok "The large torrent did not preview: $($timed.reply.error.code) $($timed.reply.error.detail)"
+            Assert ($timed.reply.data.file_count -eq $count) "The preview lists $($timed.reply.data.file_count) files"
+            $report.replies.preview = $timed.milliseconds
+            $previewId = $timed.reply.data.preview_id
+
+            # Each tree reply stays within the browser's window.
+            function Read-Tree([string] $label, [hashtable] $fields) {
+                $timed = Send-Timed $fields
+                Assert $timed.reply.ok "$label was refused: $($timed.reply.error.code) $($timed.reply.error.detail)"
+                $size = Measure-Tree $timed.reply.data.folder
+                Assert ($size.entries -le 10000 -and $size.names -le 2MB) "$label listed $($size.entries) entries with $($size.names) bytes of names"
+                $report.replies[$label] = [ordered]@{ entries = $size.entries; names = $size.names; frame = $timed.bytes; milliseconds = $timed.milliseconds }
+                return $timed.reply.data
+            }
+            function Read-Priorities([hashtable] $owner, [int[]] $indexes) {
+                $priorities = @{}
+                foreach ($index in $indexes) {
+                    $timed = Send-Timed ($owner + @{ command = 'files'; offset = $index })
+                    Assert ($timed.reply.ok -and $timed.reply.data.files[0].index -eq $index) "The page at $index was refused"
+                    $priorities[$index] = $timed.reply.data.files[0].priority
+                    $report.pages += $timed.milliseconds
+                }
+                return $priorities
+            }
+            $owner = @{ preview_id = $previewId }
+            $tree = Read-Tree 'preview root' ($owner + @{ command = 'tree'; folder = '' })
+            Assert ($tree.wanted_count -eq $count -and $tree.folder.file_count -eq $count) 'The root does not count every file'
+            $flat = Read-Tree 'preview flat' ($owner + @{ command = 'tree'; folder = 'large/flat/f' })
+            Assert ($flat.folder.folders[0].too_many -and $null -eq $flat.folder.folders[0].files) 'A folder of 10,001 files was not too many to list'
+            $flat = Read-Tree 'preview too many' ($owner + @{ command = 'tree'; folder = 'large/flat/f/f' })
+            Assert ($flat.folder.too_many -and $null -eq $flat.folder.files) 'Opening a folder of 10,001 files listed them'
+            $null = Read-Tree 'preview folder' ($owner + @{ command = 'tree'; folder = 'large/x0' })
+            $found = Read-Tree 'preview search' ($owner + @{ command = 'tree'; query = '00012' })
+            $matched = @(Tree-Files $found.folder | Where-Object match)
+            Assert ($found.match_count -eq 10 -and $matched.Count -eq 10 -and -not ($matched | Where-Object { -not $_.name.StartsWith('00012') })) `
+                "Search '00012' did not find exactly the 10 names that start with it"
+
+            # Want on a folder keeps its High files and makes its skipped files
+            # Normal, and a file chosen after its folder keeps its own choice.
+            $reply = Send-Command ($owner + @{ command = 'edit'; changes = @{ files = @(@{ index = 0; priority = 7 }, @{ index = 1; priority = 0 }) } })
+            Assert $reply.ok "File choices on the preview were refused: $($reply.error.code)"
+            $reply = Send-Command ($owner + @{ command = 'edit'; changes = @{ folders = @(@{ path = 'large/x0/y00/z00'; wanted = $true }) }; loaded = @('large/x0/y00/z00') })
+            Assert ($reply.ok -and $reply.data.folders[0].wanted_count -eq 23 -and $null -eq $reply.data.folders[0].priority) 'Want on a folder did not report its mixed files'
+            $reply = Send-Command ($owner + @{ command = 'edit'; changes = @{ files = @(@{ index = 115; priority = 7 }); folders = @(@{ path = 'large/x0/y01'; priority = 1 }) }; loaded = @('large/x0/y01', 'large') })
+            Assert ($reply.ok -and $reply.data.folders.Count -eq 2 -and $null -eq $reply.data.folders[0].priority -and $reply.data.folders[0].file_count -eq 115) 'A folder and a file choice in one edit were refused'
+            $reply = Send-Command ($owner + @{ command = 'edit'; changes = @{ folders = @(@{ path = 'large/flat'; wanted = $false }) } })
+            Assert ($reply.ok -and $reply.data.wanted_count -eq $count - $flatCount) 'Skipping a folder of 10,001 files did not count them out'
+            $reply = Send-Command ($owner + @{ command = 'edit'; changes = @{ query = @{ text = '00012'; priority = 7 } } })
+            Assert $reply.ok 'A choice for a search was refused'
+            $found = Send-Command ($owner + @{ command = 'tree'; query = '00012' })
+            Assert ($found.data.match_wanted -eq 10 -and -not (Tree-Files $found.data.folder | Where-Object priority -ne 7)) 'A choice for a search missed a match'
+            $expected = @{ 0 = 7; 1 = 4; 2 = 4; 115 = 7; 116 = 1; 120 = 7; 460 = 4; 5000 = 0 }
+            $priorities = Read-Priorities $owner @($expected.Keys)
+            foreach ($index in $expected.Keys) {
+                Assert ($priorities[$index] -eq $expected[$index]) "The preview's file $index is at $($priorities[$index]), not $($expected[$index])"
+            }
+
+            $timed = Send-Timed @{ command = 'add'; preview_id = $previewId; destination = $payload; paused = $true }
+            Assert $timed.reply.ok "The large torrent could not be added: $($timed.reply.error.code) $($timed.reply.error.detail)"
+            $report.replies.add = $timed.milliseconds
+            $torrentId = $timed.reply.data.torrent_id
+            $owner = @{ torrent_id = $torrentId }
+            $priorities = Read-Priorities $owner @($expected.Keys)
+            foreach ($index in $expected.Keys) {
+                Assert ($priorities[$index] -eq $expected[$index]) "The added torrent's file $index is at $($priorities[$index]), not $($expected[$index])"
+            }
+            $null = Read-Tree 'torrent root' ($owner + @{ command = 'tree'; folder = '' })
+            $null = Read-Tree 'torrent search' ($owner + @{ command = 'tree'; query = '00012' })
+            $chain = Read-Tree 'torrent reveal' ($owner + @{ command = 'tree'; index = 123 })
+            $revealed = @(Tree-Files $chain.folder | Where-Object index -eq 123)
+            Assert ($revealed.Count -eq 1 -and $revealed[0].PSObject.Properties.Name -contains 'disk_path') 'The tree of a file index did not reach the file'
+            $timed = Send-Timed ($owner + @{ command = 'edit'; changes = @{ folders = @(@{ path = 'large/x1'; wanted = $false }) }; loaded = @('large/x1') })
+            Assert ($timed.reply.ok -and $timed.reply.data.wanted_count -eq $count - $flatCount - 460 -and $timed.reply.data.folders[0].wanted_count -eq 0) `
+                "Skipping a folder of the torrent was refused or miscounted: $($timed.reply.error.code)"
+            $report.replies['torrent folder edit'] = $timed.milliseconds
+            $view = (Send-Timed ($owner + @{ command = 'torrent'; view = 'files' })).reply
+            Assert ($view.ok -and $null -eq $view.data.priority -and $null -eq $view.data.downloaded) 'The Files view sent every file of a torrent above the window'
+            $view = (Send-Timed ($owner + @{ command = 'torrent'; view = 'files'; folders = @('large/x1', 'large/x0/y00/z00'); files = @(0, 1) })).reply
+            Assert ($view.ok -and $view.data.folders.Count -eq 2 -and $view.data.folders[0].wanted_count -eq 0 -and
+                $view.data.folders[1].wanted_count -eq 23 -and $view.data.files[0].priority -eq 7 -and $view.data.files[1].priority -eq 4) `
+                'The Files view did not give the values of the folders and files it names'
+
+            # The next start reads the resume file, so the torrent keeps its
+            # metadata and choices instead of coming back from its hashes.
+            Stop-Engine
+            $resume = Get-Item -LiteralPath (Join-Path $directory "$torrentId.resume") -ErrorAction SilentlyContinue
+            Assert ($null -ne $resume) 'The large torrent has no resume file'
+            $report.resume_bytes = $resume.Length
+            # A debug engine loads a large torrent for longer than a small store.
+            $clock = [Diagnostics.Stopwatch]::StartNew()
+            $null = Start-Engine 300
+            $report.restart = $clock.ElapsedMilliseconds
+            $expected[460] = 0
+            $page = Send-Command ($owner + @{ command = 'files' })
+            Assert ($page.ok -and $page.data.file_count -eq $count) 'The restarted torrent lost its metadata'
+            $priorities = Read-Priorities $owner @($expected.Keys)
+            foreach ($index in $expected.Keys) {
+                Assert ($priorities[$index] -eq $expected[$index]) "After a restart the file $index is at $($priorities[$index]), not $($expected[$index])"
+            }
+            Stop-Engine
+            Assert ((Count-Log 'resume_unreadable') -eq 0) 'The large torrent came back from its hashes instead of its resume file'
+            $report | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $directory 'FileWindow.json')
         }
     }
     Stop-Engine

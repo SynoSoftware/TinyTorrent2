@@ -31,6 +31,11 @@ struct StorageOutcome
 class Store
 {
 public:
+    // The largest file Store reads and writes unless its caller allows more.
+    // Writes keep to the limit their reads use, so every file written can be
+    // read back.
+    static constexpr std::size_t fileLimit = 16 * 1024 * 1024;
+
     explicit Store(std::function<void()> wake);
     ~Store();
     void Run(std::function<void()> work, std::function<void(StorageOutcome)> completion);
@@ -53,7 +58,7 @@ public:
         });
     }
     void Write(std::filesystem::path path, std::function<std::string()> encode,
-        std::function<void(StorageOutcome)> completion);
+        std::function<void(StorageOutcome)> completion, std::size_t limit = fileLimit);
     // Runs the completions of finished work. A completion that throws goes to
     // `failed`, and the others still run.
     void Drain(std::function<void(std::exception const&)> const& failed);
@@ -66,7 +71,7 @@ public:
     // waits until the process ends, such as a parked copy. Its completion
     // never runs, and the destructor returns at once.
     void Detach();
-    static std::string Read(std::filesystem::path const& path);
+    static std::string Read(std::filesystem::path const& path, std::size_t limit = fileLimit);
 
 private:
     struct Job

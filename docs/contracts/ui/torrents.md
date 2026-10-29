@@ -262,9 +262,11 @@ Select all files beside that source restores a valid choice. Keep prior file
 choices until this explicit action; adding another source does not reset them.
 
 Equivalent staged sources keep all their original inputs on the one draft entry.
-Reconnect reacquires them through the engine's existing preview owner, preserving
-distinct tracker URLs and the user's choices. Literal input deduplication keeps
-case-sensitive tracker paths distinct.
+Reconnect previews them again through the engine's existing preview owner,
+preserving distinct tracker URLs. Their file choices return to the defaults,
+because the engine holds a preview's choices for one connection, and a
+reconnect is rare. Literal input deduplication keeps case-sensitive tracker
+paths distinct.
 
 When sources require the Add dialog, those arriving during another modal task
 remain in the Add draft and open when that task closes. Turning a source kind's
@@ -329,18 +331,38 @@ has no automatic Replace action.
 
 ## File browser
 
-Search within files changes visibility, not wanted choices. Bulk selection has
-an explicit scope. Filtering retains folders that still match, so their existing
-expansion does not collapse when the person types. Folders form an expandable hierarchy. A folder's wanted checkbox
-and priority apply to every descendant, including filtered or collapsed files.
+The engine holds the files, their choices and the search; the browser shows a
+window of at most 10,000 rows, the
+[file browser's window](../pipe-api.md#file-browser), so a torrent of 250,000
+files costs little memory. A torrent whose whole tree fits the window is held
+whole. Above it, the browser shows the levels that fit from the top and reads
+a folder's entries when the person opens it; the folder shows as loading until
+they arrive. When the window is full, the folders opened longest ago collapse,
+only as many as the opened folder's own entries need; its deeper levels use
+only the rows still free. Collapsing such a folder forgets its rows, so opening
+it again shows the engine's current values. A folder whose entries do not fit
+says Too many to list, never opens, and still takes a checkbox and a priority.
+
+Search within files changes which rows show, not wanted choices. The engine
+searches after a short typing pause: each query word must start a word of the
+file's path, as the [search ruling](../../../AGENTS.md#working-rules) requires.
+The results show the matching files with the folders on their paths, and each
+matching folder with its contents, within the window; beyond it, a line under
+the list says how many matches are not shown, and sorting orders only the shown
+matches. Clearing the search shows the tree again and opens the folders that
+were open, in the order they were opened. Bulk selection has an explicit
+scope: Select all/none acts on every file matching the search, and its label
+gives their count. Folders form an expandable hierarchy. A folder's wanted
+checkbox and priority apply to every descendant, including collapsed and
+unloaded files.
 Folder priority offers Leave unchanged to preserve individual child priorities;
 Normal, High, and Low apply once to all descendants. Mixed wanted choices show
-an indeterminate checkbox. Bulk Select all/none acts on files matching the
-search. The same file browser serves Add and the inspector, so these rules have
+an indeterminate checkbox. The same file browser serves Add and the inspector, so these rules have
 one owner. Keep its summary, search, and bulk actions on one compact row and give
 the list the remaining viewport, because files are the task's primary content.
-Expand all and Collapse all appear when the list has folders, and each row shows
-an icon for its file type so a long list can be scanned.
+Collapse all appears when the list has folders, and Expand all when it also
+holds the whole tree, because expanding unloaded folders would read the whole
+torrent. Each row shows an icon for its file type so a long list can be scanned.
 The compact action row offers Priority for selected rows, with the same choices
 in the row context menu. F2 on a passive row opens that choice for the selection
 when the current row belongs to it, otherwise for the current row alone. The
@@ -358,15 +380,20 @@ percentages never wrap. Neither host permits row reordering.
 Sorting applies to siblings, using file names and numeric sizes, priorities
 and byte-weighted progress rather than formatted text. A new torrent clears
 row selection so paths shared with the previous torrent cannot inherit command
-targets. Search preserves wanted choices, priorities and expansion; selection
-follows the table's visible-row pruning. Folder values include all descendants,
-so a displayed total describes the same files its command changes.
+targets. Search preserves wanted choices and priorities; selection follows the
+table's visible-row pruning. Folder values include all descendants, as the
+engine counts them, so a displayed total describes the same files its command
+changes.
 Row Ctrl+A selects visible command targets without changing wanted state.
 Changing a wanted checkbox preserves row selection, and Space uses the native
 checkbox behavior. Mixed priority does not present a uniform value or change
 files merely by opening its menu; it sorts before Skip in ascending order.
-The context menu follows the table's target selection, and priority changes
-retain the existing Add-draft or inspector commit and failure path.
+The context menu follows the table's target selection. A choice shows on the
+rows at once and goes to the engine, because the product has no Apply step: Add
+sends each choice to the preview at once, and Add waits for those replies before
+it adds the torrent; the inspector's draft sends one edit at a time, as
+[Unfinished input](#unfinished-input) describes. A refused choice shows the
+host's error; in Add the rows are then read again.
 
 ## Inspector and edits
 
@@ -693,7 +720,10 @@ rule below preserve its visual language. Change that design only with
   availability is unknown. Naming the files lets the user skip them and let the
   rest finish. A list of files, here and in the detail line, names the first
   three and counts the rest, so a long list cannot push the map out of view or
-  fill the screen; Files lists every file.
+  fill the screen; Files lists every file. For a torrent above the
+  [file browser's window](../pipe-api.md#file-browser), the list gives only the
+  number of files, because the names of 250,000 files would cost tens of
+  megabytes in the window.
 - **Legend.** On the same line as the status, at the opposite end, as a chart
   places its key beside its title, each state shows its swatch, its name, and
   its count in semibold, as the Speed legend shows its values. Sharing the line

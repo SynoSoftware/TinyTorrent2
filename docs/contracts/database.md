@@ -11,7 +11,7 @@ this database.
 
 `Shared/Storage/Database/Schema.cs` is the authoritative initial schema, including
 tables, indexes, views, defaults and temporary working tables. `Database.Open`
-registers path comparison, enables foreign keys, reads `PRAGMA user_version`,
+registers path comparison and the `starts_word` search test, enables foreign keys, reads `PRAGMA user_version`,
 and initializes the schema transactionally before exposing the connection to
 any feature. A new database receives the current schema revision in the same
 transaction as its schema. Version 0 initializes only an empty schema; existing unversioned storage

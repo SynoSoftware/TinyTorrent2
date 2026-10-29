@@ -28,11 +28,20 @@ public sealed class Schema<TRow>
     /// the host. Children must be finite with globally unique row identities. After changing
     /// expansion in the host, call <see cref="Table.RefreshView"/> once for the batch.
     /// </summary>
+    /// <remarks>
+    /// <paramref name="hasUnrealizedChildren"/> marks a row whose children the host has not
+    /// supplied yet. The row shows a collapsed expander and can be expanded. The table calls
+    /// <paramref name="setExpanded"/> only for the person's request, and never loads children
+    /// itself: the host starts its load from that call and later supplies the children through
+    /// <paramref name="children"/>. Supplied children take precedence over the flag. Omit it
+    /// when every row's children are supplied.
+    /// </remarks>
     public Schema<TRow> Hierarchy(
         Column column,
         Func<TRow, IEnumerable<TRow>> children,
         Func<TRow, bool> isExpanded,
-        Action<TRow, bool> setExpanded
+        Action<TRow, bool> setExpanded,
+        Func<TRow, bool>? hasUnrealizedChildren = null
     )
     {
         ArgumentNullException.ThrowIfNull(column);
@@ -45,7 +54,8 @@ public sealed class Schema<TRow>
                 column,
                 item => children((TRow)item),
                 item => isExpanded((TRow)item),
-                (item, value) => setExpanded((TRow)item, value)
+                (item, value) => setExpanded((TRow)item, value),
+                hasUnrealizedChildren is null ? null : item => hasUnrealizedChildren((TRow)item)
             )
         );
         return this;

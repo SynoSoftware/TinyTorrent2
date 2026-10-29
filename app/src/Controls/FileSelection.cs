@@ -2,19 +2,63 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Text.Json;
 using Syno.TinyTorrent.Shared;
-using Syno.TinyTorrent.Shared.Engine;
 
 namespace Syno.TinyTorrent.Controls;
 
-public sealed class FileSelection(Strings strings) : INotifyPropertyChanged
+// The rows of the file browser in the Add dialog and the inspector, built from
+// the engine's `tree` replies for one preview or torrent. A tree that fits the
+// window is held whole; a larger one holds the folders the person opens, as
+// the pipe API's file browser describes. The engine holds every choice and
+// runs every search.
+public sealed class FileSelection : INotifyPropertyChanged
 {
-    private readonly List<FileNode> _roots = [];
-    private readonly List<FileNode> _files = [];
+    // The rows a browser holds, the window of the engine's `tree` replies.
+    internal const int Window = 10_000;
+
+    private static readonly TimeSpan Pause = TimeSpan.FromMilliseconds(200);
+
+    private readonly Strings _strings;
+    private readonly Dictionary<string, FileNode> _folders = [];
+    private readonly Dictionary<int, FileNode> _files = [];
+
+    // The folders an ordinary open listed, oldest first, which a full window
+    // collapses in this order. A whole tree and a search's own folders are
+    // never collapsed to make room, so they are not listed.
+    private readonly List<FileNode> _opened = [];
+    private FileNode _root;
+    private Func<Dictionary<string, object>, Task<JsonElement>>? _read;
+    private Func<IReadOnlyList<FileChoice>, Task<JsonElement?>>? _edit;
+
+    // Counts each replacement of the rows, so a reply asked for older rows is
+    // dropped.
+    private int _generation;
+    private bool _whole = true;
+
+    // The engine sends this torrent's Files view without per-file arrays, so
+    // the refresh names the rows instead.
+    private bool _large;
     private string _search = string.Empty;
-    private string _query = string.Empty;
+
+    // The search the rows show; null while they show the tree.
+    private string? _query;
+
+    // The folders that clearing the search opens again, in the order they
+    // were opened.
+    private IReadOnlyList<string> _restore = [];
+    private long _matchCount;
+    private long _matchWanted;
+    private long _hidden;
     private bool _showsProgress;
     private bool _enabled = true;
-    public Strings Text => strings;
+
+    public FileSelection(Strings strings)
+    {
+        _strings = strings;
+        _root = Root();
+        _folders.Add(string.Empty, _root);
+    }
+
+    public Strings Text => _strings;
     public IReadOnlyList<FileNode> Roots { get; private set; } = [];
     public bool ShowsProgress
     {
@@ -46,216 +90,657 @@ public sealed class FileSelection(Strings strings) : INotifyPropertyChanged
             if (_search == value)
                 return;
             _search = value;
-            _query = FileName.Normalize(value);
-            Project();
+            _ = Find(value);
         }
     }
-    public bool HasFolders => _roots.Any(root => root.IsFolder);
-    public bool HasWanted => _files.Any(file => file.Priority > 0);
+    public bool HasFolders => _root.Children.Any(node => node.IsFolder);
+
+    // Expanding every folder needs no load only when the tree is whole.
+    public bool CanExpand => _whole && HasFolders;
+    public bool HasWanted => _root.WantedCount > 0;
+    public long WantedBytes => _root.WantedSize;
     public bool? AllMatching
     {
         get
         {
-            var matching = _files.Where(file => !file.IsPadding && Matches(file)).ToArray();
-            if (matching.Any(file => file.Priority < 0))
-                return null;
-            var wanted = matching.Count(file => file.Priority > 0);
+            var (count, wanted) =
+                _query is null ? (_root.Count, _root.WantedCount) : (_matchCount, _matchWanted);
             return wanted == 0 ? false
-                : wanted == matching.Length ? true
+                : wanted == count ? true
                 : null;
         }
     }
-    public long WantedBytes => _files.Where(file => file.Priority > 0).Sum(file => file.Size);
+    public string AllLabel =>
+        _query is null
+            ? _strings.Get("files", "all_matching")
+            : _strings.FormatCount("files", "all_count", _matchCount);
     public string Summary =>
-        _files.Any(file => !file.IsPadding && file.Priority < 0)
-            ? "—"
-            : strings.Format(
-                "files",
-                "summary",
-                _files.Count(file => file.Priority > 0),
-                _files.Count(file => !file.IsPadding),
-                strings.Bytes(WantedBytes)
+        _strings.Format(
+            "files",
+            "summary",
+            _root.WantedCount,
+            _root.Count,
+            _strings.Bytes(_root.WantedSize)
+        );
+
+    // What the list cannot show: the matches beyond the window, or a root
+    // whose own entries do not fit.
+    public string Note =>
+        _query is not null && _hidden > 0 ? _strings.FormatCount("files", "hidden", _hidden)
+        : _root.State == FolderState.TooMany ? _strings.Get("files", "too_many")
+        : string.Empty;
+    public bool HasNote => Note.Length > 0;
+
+    // The values of a whole tree are derived from its files; otherwise the
+    // engine reports each folder's values, because its files are not all held.
+    private bool Derives => _whole && _query is null;
+    private int Rows => _folders.Count - 1 + _files.Count;
+
+    // What the inspector's refresh names, or null when the Files view's
+    // per-file arrays cover every row.
+    internal FileKeys? Keys =>
+        Derives && !_large
+            ? null
+            : new(
+                Derives ? [] : [.. _folders.Keys.Where(path => path.Length > 0)],
+                [.. _files.Keys]
             );
     public event PropertyChangedEventHandler? PropertyChanged;
     public event EventHandler? Changed;
-    public event EventHandler<IReadOnlyDictionary<int, int>>? Edited;
+
+    // A read the person started failed; the host shows its command error.
+    internal event EventHandler<Exception>? Failed;
 
     internal void Clear()
     {
-        _roots.Clear();
-        _files.Clear();
+        _read = null;
+        _edit = null;
         _search = string.Empty;
-        _query = string.Empty;
-        Refresh(project: true);
+        _query = null;
+        _restore = [];
+        _whole = true;
+        _large = false;
+        Build(null);
+        Publish();
     }
 
-    internal int Count => _files.Count;
-
-    // Builds the rows from pages of files while the current rows stay shown,
-    // so a page that never arrives leaves them as they were.
-    internal Loader Load() => new(this);
-
-    internal sealed class Loader
+    // Shows the tree whose root `tree` reply is `root`. `read` sends a `tree`
+    // request with the host's preview or torrent added; `edit` sends choices
+    // and gives the engine's reply, or null when the host reported a failure.
+    internal void Show(
+        JsonElement root,
+        Func<Dictionary<string, object>, Task<JsonElement>> read,
+        Func<IReadOnlyList<FileChoice>, Task<JsonElement?>> edit
+    )
     {
-        private readonly FileSelection _owner;
-        private readonly Dictionary<int, int> _choices;
-        private readonly Dictionary<string, bool> _expanded;
-        private readonly Dictionary<(FileNode? Parent, string Name), FileNode> _folders = [];
-        private readonly List<FileNode> _roots = [];
-        private readonly List<FileNode> _files = [];
+        _read = read;
+        _edit = edit;
+        _search = string.Empty;
+        _query = null;
+        _restore = [];
+        _large = false;
+        ShowTree(root);
+    }
 
-        internal Loader(FileSelection owner)
+    // Reads the current rows again, after a choice the engine refused.
+    internal void Reload()
+    {
+        if (_query is { } query)
         {
-            _owner = owner;
-            _choices = owner._files.ToDictionary(file => file.Index, file => file.Priority);
-            _expanded = owner
-                ._roots.SelectMany(root => root.Nodes())
-                .Where(node => node.IsFolder)
-                .ToDictionary(node => node.Path, node => node.IsExpanded);
+            _ = Query(query);
+            return;
         }
+        _restore = Expanded();
+        _ = Restore();
+    }
 
-        internal int Count => _files.Count;
+    private FileNode Root() => new(this, string.Empty, null, -1);
 
-        // A page without a priority leaves each file's choice unknown until the
-        // Files view reports it.
-        internal void Add(JsonElement page)
+    private void Build(JsonElement? reply)
+    {
+        _generation++;
+        _folders.Clear();
+        _files.Clear();
+        _opened.Clear();
+        _root = Root();
+        _folders.Add(string.Empty, _root);
+        if (reply is { } value)
+            Open(_root, value.GetProperty("folder"), new HashSet<FileNode>());
+    }
+
+    private void ShowTree(JsonElement reply)
+    {
+        Build(reply);
+        _whole = _folders.Values.All(folder => folder.State == FolderState.Loaded);
+        if (_whole)
+            _opened.Clear();
+        Publish();
+    }
+
+    // Lists `value`'s entries under `folder`, collapsing the folders opened
+    // longest ago, except those in `keep`, until they fit; then each deeper
+    // level the reply holds, in the rows still free.
+    private void Open(FileNode folder, JsonElement value, IReadOnlySet<FileNode> keep)
+    {
+        if (!List(folder, value, keep))
+            return;
+        var level = new Queue<(FileNode Folder, JsonElement Value)>(Listed(folder, value));
+        while (level.TryDequeue(out var next))
+            if (List(next.Folder, next.Value, null))
+                foreach (var child in Listed(next.Folder, next.Value))
+                    level.Enqueue(child);
+    }
+
+    // The folders under `folder` whose entries the reply holds.
+    private IEnumerable<(FileNode, JsonElement)> Listed(FileNode folder, JsonElement value) =>
+        value
+            .GetProperty("folders")
+            .EnumerateArray()
+            .Where(child => child.GetProperty("folders").ValueKind == JsonValueKind.Array)
+            .Select(child =>
+                (_folders[FileNode.Join(folder.Path, child.GetProperty("name").GetString()!)], child)
+            )
+            .ToArray();
+
+    // Lists a folder's direct entries from its reply value. With `keep`, the
+    // folders opened longest ago that are not in it collapse until the entries
+    // fit, and a folder whose entries still do not fit is too many to list;
+    // without it, a folder that does not fit stays closed.
+    private bool List(FileNode folder, JsonElement value, IReadOnlySet<FileNode>? keep)
+    {
+        folder.Read(value);
+        var folders = value.GetProperty("folders");
+        var files = value.GetProperty("files");
+        if (folders.ValueKind != JsonValueKind.Array)
         {
-            foreach (var item in page.GetProperty("files").EnumerateArray())
+            folder.Close(
+                value.GetProperty("too_many").GetBoolean()
+                    ? FolderState.TooMany
+                    : FolderState.Unloaded
+            );
+            return false;
+        }
+        var count = folders.GetArrayLength() + files.GetArrayLength();
+        while (
+            keep is not null
+            && Rows + count > Window
+            && _opened.FirstOrDefault(open => !keep.Contains(open)) is { } oldest
+        )
+            Forget(oldest);
+        if (Rows + count > Window)
+        {
+            folder.Close(keep is null ? FolderState.Unloaded : FolderState.TooMany);
+            return false;
+        }
+        foreach (var entry in folders.EnumerateArray())
+        {
+            var child = new FileNode(this, entry.GetProperty("name").GetString()!, folder, -1);
+            child.Read(entry);
+            child.Close(
+                entry.GetProperty("too_many").GetBoolean()
+                    ? FolderState.TooMany
+                    : FolderState.Unloaded
+            );
+            folder.Add(child);
+            _folders.Add(child.Path, child);
+        }
+        foreach (var entry in files.EnumerateArray())
+        {
+            var index = entry.GetProperty("index").GetInt32();
+            var child = new FileNode(this, entry.GetProperty("name").GetString()!, folder, index);
+            child.Read(entry);
+            folder.Add(child);
+            _files.Add(index, child);
+        }
+        folder.Open();
+        if (folder != _root)
+            _opened.Add(folder);
+        return true;
+    }
+
+    // Collapses a folder and drops its rows, so opening it again reads the
+    // engine's current values.
+    private void Forget(FileNode folder)
+    {
+        foreach (var node in folder.Children.SelectMany(child => child.Nodes()))
+        {
+            if (node.IsFolder)
             {
-                var path = item.GetProperty("path").GetString()!;
-                var parts = path.Replace('\\', '/')
-                    .Split('/', StringSplitOptions.RemoveEmptyEntries);
-                var siblings = _roots;
-                FileNode? parent = null;
-                for (var i = 0; i < parts.Length; i++)
-                {
-                    var leaf = i == parts.Length - 1;
-                    var node = leaf ? null : _folders.GetValueOrDefault((parent, parts[i]));
-                    if (node is null)
-                    {
-                        var index = leaf ? item.GetProperty("index").GetInt32() : -1;
-                        node = new FileNode(_owner, parts[i], parent, index)
-                        {
-                            Path = string.Join('/', parts.Take(i + 1)),
-                            IsPadding = leaf && item.GetProperty("padding").GetBoolean(),
-                            Size = leaf ? item.GetProperty("size").GetInt64() : 0,
-                        };
-                        if (leaf)
-                        {
-                            node.SetPriority(
-                                node.IsPadding ? 0
-                                : _choices.TryGetValue(index, out var choice) ? choice
-                                : item.TryGetProperty("priority", out var priority) ? priority.GetInt32()
-                                : -1
-                            );
-                            _files.Add(node);
-                        }
-                        else
-                            node.IsExpanded = _expanded.GetValueOrDefault(node.Path, true);
-                        siblings.Add(node);
-                        if (!leaf)
-                            _folders.Add((parent, parts[i]), node);
-                    }
-                    parent = node;
-                    siblings = node.Descendants;
-                }
+                _folders.Remove(node.Path);
+                _opened.Remove(node);
             }
+            else
+                _files.Remove(node.Index);
         }
-
-        internal void Commit()
-        {
-            _owner._roots.Clear();
-            _owner._roots.AddRange(_roots);
-            _owner._files.Clear();
-            _owner._files.AddRange(_files);
-            _owner.Refresh(project: true);
-        }
+        _opened.Remove(folder);
+        folder.Close(FolderState.Unloaded);
     }
 
-    public void SelectMatching(bool wanted) => Want(_files.Where(Matches), wanted);
+    private bool IsHeld(FileNode folder) =>
+        _folders.TryGetValue(folder.Path, out var held) && held == folder;
 
-    internal void SelectAll() => Want(_files, true);
-
-    internal FileNode? Reveal(int index)
+    // The table's expansion request. It only writes state, as the table
+    // requires; the load and the forgetting of rows run after it returns.
+    internal void Expand(FileNode folder, bool expanded)
     {
-        var file = _files.FirstOrDefault(file => file.Index == index);
-        if (file is null)
-            return null;
-        for (var parent = file.Parent; parent is not null; parent = parent.Parent)
-            parent.IsExpanded = true;
-        Search = string.Empty;
-        return file;
+        folder.IsExpanded = expanded;
+        if (expanded && folder.State == FolderState.Unloaded)
+        {
+            folder.State = FolderState.Loading;
+            _ = Load(folder);
+        }
+        else if (!expanded && folder.State == FolderState.Loading)
+            folder.State = FolderState.Unloaded;
+        else if (!expanded && _opened.Contains(folder))
+            _ = Collapse(folder);
+    }
+
+    private async Task Load(FileNode folder)
+    {
+        if (_read is not { } read)
+            return;
+        var generation = _generation;
+        JsonElement reply;
+        try
+        {
+            reply = await read(new() { ["folder"] = folder.Path });
+        }
+        catch (Exception error)
+        {
+            if (generation == _generation && IsHeld(folder) && folder.State == FolderState.Loading)
+            {
+                folder.Close(FolderState.Unloaded);
+                Publish();
+                Failed?.Invoke(this, error);
+            }
+            return;
+        }
+        if (generation != _generation || !IsHeld(folder) || folder.State != FolderState.Loading)
+            return;
+        Open(folder, reply.GetProperty("folder"), folder.Lineage().ToHashSet());
+        Publish();
+    }
+
+    private async Task Collapse(FileNode folder)
+    {
+        await Task.Yield();
+        if (folder.IsExpanded || !_opened.Contains(folder))
+            return;
+        Forget(folder);
+        Publish();
     }
 
     public void Expand(bool expanded)
     {
-        foreach (var node in _roots.SelectMany(root => root.Nodes()).Where(node => node.IsFolder))
-            node.IsExpanded = expanded;
+        var forgot = false;
+        foreach (var folder in _folders.Values.Where(folder => folder != _root).ToArray())
+        {
+            if (expanded)
+                folder.IsExpanded |= folder.State == FolderState.Loaded;
+            else if (!IsHeld(folder))
+                continue;
+            else if (_opened.Contains(folder))
+            {
+                Forget(folder);
+                forgot = true;
+            }
+            else
+            {
+                folder.IsExpanded = false;
+                if (folder.State == FolderState.Loading)
+                    folder.State = FolderState.Unloaded;
+            }
+        }
+        if (forgot)
+            Publish();
     }
 
-    internal void Apply(FileStatus status, bool preserveChoices)
+    // Shows a file, opening the folders on its path. Gives the file's row, or
+    // the deepest folder on the path that could open.
+    internal async Task<FileNode?> Reveal(int index)
     {
-        foreach (var file in _files)
+        if (_query is not null)
         {
-            if (status.Downloaded is { } downloaded && file.Index < downloaded.Length)
-                file.Downloaded = downloaded[file.Index];
+            _search = string.Empty;
+            PropertyChanged?.Invoke(this, new(nameof(Search)));
+            await Restore();
+        }
+        if (_files.TryGetValue(index, out var file))
+        {
+            foreach (var folder in file.Ancestors())
+                folder.IsExpanded = true;
+            return file;
+        }
+        if (_read is not { } read)
+            return null;
+        var generation = _generation;
+        JsonElement reply;
+        try
+        {
+            reply = await read(new() { ["index"] = index });
+        }
+        catch (Exception error)
+        {
+            if (generation == _generation)
+                Failed?.Invoke(this, error);
+            return null;
+        }
+        if (generation != _generation)
+            return null;
+        // The reply lists the root and each folder on the file's path.
+        var keep = new HashSet<FileNode>();
+        var reached = _root;
+        var value = reply.GetProperty("folder");
+        while (true)
+        {
+            keep.Add(reached);
+            if (reached.State != FolderState.Loaded && !List(reached, value, keep))
+                break;
+            reached.IsExpanded = true;
+            var next = value
+                .GetProperty("folders")
+                .EnumerateArray()
+                .FirstOrDefault(child =>
+                    child.GetProperty("folders").ValueKind == JsonValueKind.Array
+                );
+            if (
+                next.ValueKind != JsonValueKind.Object
+                || !_folders.TryGetValue(
+                    FileNode.Join(reached.Path, next.GetProperty("name").GetString()!),
+                    out var child
+                )
+            )
+                break;
+            reached = child;
+            value = next;
+        }
+        Publish();
+        return _files.GetValueOrDefault(index) ?? (reached == _root ? null : reached);
+    }
+
+    private async Task Find(string text)
+    {
+        await Task.Delay(Pause);
+        if (text != _search || _read is null)
+            return;
+        if (FileName.SearchWords(text).Length == 0)
+        {
+            if (_query is not null)
+                await Restore();
+        }
+        else if (text != _query)
+            await Query(text);
+    }
+
+    private async Task Query(string text)
+    {
+        if (_read is not { } read)
+            return;
+        var generation = _generation;
+        JsonElement reply;
+        try
+        {
+            reply = await read(new() { ["query"] = text });
+        }
+        catch (Exception error)
+        {
+            if (generation == _generation && text == _search)
+                Failed?.Invoke(this, error);
+            return;
+        }
+        if (generation != _generation || text != _search)
+            return;
+        if (_query is null)
+            _restore = Expanded();
+        _query = text;
+        Build(reply);
+        _opened.Clear();
+        _matchCount = reply.GetProperty("match_count").GetInt64();
+        _matchWanted = reply.GetProperty("match_wanted").GetInt64();
+        _hidden =
+            _matchCount
+            - _files.Values.Count(node => node.IsMatch)
+            - _folders.Values.Where(node => node.IsMatch).Sum(node => node.Count);
+        Publish();
+    }
+
+    // Shows the tree again: the root, and then each folder in `_restore`, as
+    // an ordinary open does.
+    private async Task Restore()
+    {
+        if (_read is not { } read)
+            return;
+        var generation = _generation;
+        JsonElement reply;
+        try
+        {
+            reply = await read(new() { ["folder"] = string.Empty });
+        }
+        catch (Exception error)
+        {
+            if (generation == _generation)
+                Failed?.Invoke(this, error);
+            return;
+        }
+        if (generation != _generation || FileName.SearchWords(_search).Length > 0)
+            return;
+        var restore = _restore;
+        _query = null;
+        _restore = [];
+        ShowTree(reply);
+        if (_whole)
+        {
+            var expanded = restore.ToHashSet();
+            foreach (var folder in _folders.Values)
+                folder.IsExpanded = expanded.Contains(folder.Path);
+            Publish();
+            return;
+        }
+        generation = _generation;
+        foreach (var path in restore)
+        {
+            if (generation != _generation)
+                return;
+            if (!_folders.TryGetValue(path, out var folder) || folder.State != FolderState.Unloaded)
+                continue;
+            folder.IsExpanded = true;
+            folder.State = FolderState.Loading;
+            Publish();
+            await Load(folder);
+        }
+    }
+
+    // The expanded folders, in the order they were opened.
+    private string[] Expanded() =>
+        _whole
+            ? [
+                .. _folders
+                    .Values.Where(folder => folder != _root && folder.IsExpanded)
+                    .Select(folder => folder.Path),
+            ]
+            : [.. _opened.Select(folder => folder.Path)];
+
+    public void SelectMatching(bool wanted)
+    {
+        FileAction action = wanted ? new FileAction.Want() : new FileAction.Set(0);
+        if (_query is not { } query)
+        {
+            Choose([_root], action);
+            return;
+        }
+        if (!IsEnabled || _edit is not { } edit)
+            return;
+        foreach (var node in _folders.Values.Concat(_files.Values).Where(node => node.IsMatch))
+            node.Choose(action);
+        _matchWanted = wanted ? _matchCount : 0;
+        Refresh(notify: false);
+        _ = Send(edit, [new FileChoice(new FileTarget.Query(query), action)]);
+    }
+
+    internal void SelectAll() => Choose([_root], new FileAction.Want());
+
+    // Applies the choice to the chosen rows at once and sends it. A row under
+    // a chosen folder is covered by the folder's choice, so each file is
+    // chosen once.
+    internal void Choose(IEnumerable<FileNode> nodes, FileAction action)
+    {
+        if (!IsEnabled || _edit is not { } edit)
+            return;
+        var chosen = nodes.ToHashSet();
+        FileNode[] targets =
+        [
+            .. chosen.Where(node =>
+                !node.Ancestors().Any(chosen.Contains) && !node.Holds(action)
+            ),
+        ];
+        if (targets.Length == 0)
+            return;
+        foreach (var node in targets)
+            node.Choose(action);
+        Refresh(notify: false);
+        _ = Send(edit, [.. targets.Select(node => new FileChoice(node.Target, action))]);
+    }
+
+    // The engine's reply gives the values the choice changed. A search is
+    // read again, because its matches' wanted count changed with them.
+    private async Task Send(
+        Func<IReadOnlyList<FileChoice>, Task<JsonElement?>> edit,
+        IReadOnlyList<FileChoice> choices
+    )
+    {
+        var generation = _generation;
+        if (await edit(choices) is not { } reply || generation != _generation)
+            return;
+        if (_query is { } query)
+            await Query(query);
+        else
+            Apply(reply, false);
+    }
+
+    // The folder rows whose values the choices change, for an edit's
+    // `loaded`: each chosen folder with the folders held under it, and the
+    // folders on each chosen path.
+    internal string[] Loaded(IEnumerable<FileChoice> choices)
+    {
+        if (Derives)
+            return [];
+        var paths = new HashSet<string>();
+        foreach (var choice in choices)
+        {
+            var node = choice.Target switch
+            {
+                FileTarget.File file => _files.GetValueOrDefault(file.Index),
+                FileTarget.Folder folder => _folders.GetValueOrDefault(folder.Path),
+                _ => null,
+            };
+            if (node is null)
+                continue;
+            paths.UnionWith(node.Ancestors().Select(folder => folder.Path));
+            paths.UnionWith(node.Nodes().Where(child => child.IsFolder).Select(child => child.Path));
+        }
+        return [.. paths];
+    }
+
+    // Applies the engine's values: a Files view, with per-file arrays or with
+    // the values of the named rows, or the reply to an edit. A draft keeps its
+    // choices on the rows until the engine confirms them.
+    internal void Apply(JsonElement values, bool preserveChoices)
+    {
+        if (values.TryGetProperty("file_count", out var count) && count.GetInt32() > Window)
+            _large = true;
+        var priorities = preserveChoices ? null : Numbers(values, "priority");
+        var downloaded = Numbers(values, "downloaded");
+        if (priorities is not null || downloaded is not null)
+            foreach (var (index, file) in _files)
+                file.Report(
+                    priorities is not null && index < priorities.Length ? priorities[index] : null,
+                    downloaded is not null && index < downloaded.Length ? downloaded[index] : null
+                );
+        if (values.TryGetProperty("files", out var files) && files.ValueKind == JsonValueKind.Array)
+            foreach (var entry in files.EnumerateArray())
+                if (_files.TryGetValue(entry.GetProperty("index").GetInt32(), out var file))
+                    file.Read(entry, preserveChoices);
+        if (!Derives)
+        {
+            if (
+                values.TryGetProperty("folders", out var folders)
+                && folders.ValueKind == JsonValueKind.Array
+            )
+                foreach (var entry in folders.EnumerateArray())
+                    if (_folders.TryGetValue(entry.GetProperty("path").GetString()!, out var folder))
+                        folder.Read(entry, preserveChoices);
             if (
                 !preserveChoices
-                && status.Priorities is { } priorities
-                && file.Index < priorities.Length
+                && values.TryGetProperty("wanted_count", out var wanted)
+                && wanted.ValueKind == JsonValueKind.Number
             )
-                file.SetPriority(priorities[file.Index]);
+                _root.Total(wanted.GetInt64(), values.GetProperty("wanted_size").GetInt64());
         }
         Refresh(notify: false);
     }
 
-    internal void Want(FileNode node, bool wanted) => Want(node.Files(), wanted);
-
-    private void Want(IEnumerable<FileNode> files, bool wanted)
+    // Whether a Files view reply already holds the choice, which the
+    // inspector's draft then no longer needs to send.
+    internal bool Holds(JsonElement values, FileChoice choice)
     {
-        if (wanted)
-            files = files.Where(file => file.Priority <= 0);
-        Change(files, wanted ? 4 : 0);
-    }
-
-    internal void Change(IEnumerable<FileNode> nodes, int priority)
-    {
-        if (!IsEnabled || priority < 0)
-            return;
-        var changes = new Dictionary<int, int>();
-        var current = _files.ToHashSet();
-        foreach (var file in nodes.SelectMany(node => node.Files()).DistinctBy(file => file.Index))
+        var priorities = Numbers(values, "priority");
+        switch (choice.Target)
         {
-            if (!current.Contains(file) || file.Priority == priority)
-                continue;
-            file.SetPriority(priority);
-            changes.Add(file.Index, priority);
+            case FileTarget.File file when priorities is not null:
+                return file.Index < priorities.Length
+                    && choice.Action.Holds((int)priorities[file.Index]);
+            case FileTarget.Folder folder when priorities is not null:
+                return _folders.TryGetValue(folder.Path, out var node)
+                    && node.Nodes()
+                        .Where(child => !child.IsFolder)
+                        .All(child =>
+                            child.Index < priorities.Length
+                            && choice.Action.Holds((int)priorities[child.Index])
+                        );
+            case FileTarget.File file:
+                return Entries(values, "files")
+                    .Any(entry =>
+                        entry.GetProperty("index").GetInt32() == file.Index
+                        && entry.GetProperty("priority").ValueKind == JsonValueKind.Number
+                        && choice.Action.Holds(entry.GetProperty("priority").GetInt32())
+                    );
+            case FileTarget.Folder folder:
+                return Entries(values, "folders")
+                    .Any(entry =>
+                        entry.GetProperty("path").GetString() == folder.Path
+                        && choice.Action.Holds(
+                            entry.GetProperty("wanted_count").GetInt64(),
+                            entry.GetProperty("file_count").GetInt64(),
+                            entry.GetProperty("priority") is { ValueKind: JsonValueKind.Number } shared
+                                ? shared.GetInt32()
+                                : -1
+                        )
+                    );
+            default:
+                return false;
         }
-        Refresh(notify: false);
-        if (changes.Count > 0)
-            Edited?.Invoke(this, changes);
     }
 
-    internal int[] Priorities() =>
-        _files.OrderBy(file => file.Index).Select(file => file.Priority).ToArray();
+    private static IEnumerable<JsonElement> Entries(JsonElement values, string key) =>
+        values.TryGetProperty(key, out var entries) && entries.ValueKind == JsonValueKind.Array
+            ? entries.EnumerateArray().AsEnumerable()
+            : [];
 
-    private bool Matches(FileNode file) =>
-        _search.Length == 0 || file.SearchText.Contains(_query, StringComparison.Ordinal);
+    private static long[]? Numbers(JsonElement values, string key) =>
+        values.TryGetProperty(key, out var array) && array.ValueKind == JsonValueKind.Array
+            ? [.. array.EnumerateArray().Select(number => number.GetInt64())]
+            : null;
 
-    private void Project()
+    private void Publish()
     {
-        Roots = _roots.Where(root => root.Project(Matches)).ToArray();
+        Roots = [.. _root.Children];
+        Refresh();
+    }
+
+    internal void Refresh(bool notify = true)
+    {
+        _root.Refresh(Derives, notify);
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
-    }
-
-    internal void Refresh(bool project = false, bool notify = true)
-    {
-        foreach (var root in _roots)
-            root.Refresh(notify);
-        if (project)
-            Project();
-        else
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
         Changed?.Invoke(this, EventArgs.Empty);
     }
 }
@@ -263,58 +748,83 @@ public sealed class FileSelection(Strings strings) : INotifyPropertyChanged
 public sealed class FileNode : INotifyPropertyChanged
 {
     private readonly FileSelection _owner;
-    private int _choice = 4;
-    private int _priority = 4;
-    private bool _hasFiles;
-    private long _totalSize;
+    private readonly List<FileNode> _children = [];
+
+    // A file's own values. A folder's are those the engine reported, or in a
+    // whole tree those its files add up to.
+    private long _size;
+    private long _count;
+    private long _wantedCount;
+    private long _wantedSize;
+
+    // A folder's is the priority all its files share, or -1 when they differ.
+    private int _priority;
     private long? _downloaded;
-    private bool? _wanted = true;
-    private string _path = string.Empty;
-    internal List<FileNode> Descendants { get; } = [];
-    public IReadOnlyList<FileNode> Children { get; private set; } = [];
+    private FolderState _state = FolderState.Loaded;
+    private (long, long, long, int, long?, FolderState) _shown;
+    public IReadOnlyList<FileNode> Children => _children;
     public string Name { get; }
-    public string Path
-    {
-        get => _path;
-        internal set
-        {
-            _path = value;
-            SearchText = IsFolder ? string.Empty : FileName.Normalize(value);
-        }
-    }
-    internal string SearchText { get; private set; } = string.Empty;
+    public string Path { get; }
     public FileNode? Parent { get; }
     public int Index { get; }
     public bool IsFolder => Index < 0;
-    public bool IsPadding { get; internal set; }
-    public bool IsExpanded { get; set; } = true;
-    public long Size { get; internal set; }
-    public long? Downloaded { get; internal set; }
+    public bool IsExpanded { get; internal set; }
+    internal FolderState State
+    {
+        get => _state;
+        set
+        {
+            _state = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+        }
+    }
+
+    // One of a search's highest matches.
+    internal bool IsMatch { get; private set; }
+    internal long Count => _count;
+    internal long WantedCount => _wantedCount;
+    internal long WantedSize => _wantedSize;
+    public long Size => _size;
+    public long? Downloaded => _downloaded;
+    internal FileTarget Target =>
+        IsFolder ? new FileTarget.Folder(Path) : new FileTarget.File(Index, Path);
     public string Glyph => IsFolder ? Lucide.Folder : FileName.Glyph(FileName.Kind(Name));
-    public long TotalSize => _totalSize;
-    public string SizeText => _owner.Text.Bytes(TotalSize);
+    public string SizeText => _owner.Text.Bytes(_size);
     public double? Progress =>
         _downloaded is not { } downloaded ? null
-        : _totalSize == 0 ? 1
-        : Math.Clamp((double)downloaded / _totalSize, 0, 1);
+        : _size == 0 ? 1
+        : Math.Clamp((double)downloaded / _size, 0, 1);
     public string ProgressText => Progress?.ToString("P1", CultureInfo.CurrentCulture) ?? "—";
     public double ProgressValue => Progress ?? 0;
     public bool IsIndeterminate => Progress is null;
     public bool IsComplete => Progress is >= 1;
     public bool IsEnabled => _owner.IsEnabled;
+    public bool IsLoading => _state == FolderState.Loading;
+    public bool IsTooMany => _state == FolderState.TooMany;
+    public string TooMany => _owner.Text.Get("files", "too_many");
     public bool? Wanted
     {
-        get => _wanted;
+        get =>
+            _wantedCount == 0 ? false
+            : _wantedCount == _count ? true
+            : null;
         set
         {
             if (value is { } wanted)
-                _owner.Want(this, wanted);
+                _owner.Choose(
+                    [this],
+                    wanted ? new FileAction.Want() : new FileAction.Set(0)
+                );
         }
     }
     public int Priority
     {
         get => _priority;
-        set => _owner.Change([this], value);
+        set
+        {
+            if (value >= 0)
+                _owner.Choose([this], new FileAction.Set(value));
+        }
     }
     public int PriorityIndex
     {
@@ -350,71 +860,215 @@ public sealed class FileNode : INotifyPropertyChanged
         Name = name;
         Parent = parent;
         Index = index;
+        Path = parent is null ? name : Join(parent.Path, name);
     }
 
-    internal IEnumerable<FileNode> Files() =>
-        Index >= 0
-            ? IsPadding
-                ? []
-                : [this]
-            : Descendants.SelectMany(child => child.Files());
+    internal static string Join(string folder, string name) =>
+        folder.Length == 0 ? name : folder + "/" + name;
 
     internal IEnumerable<FileNode> Nodes() =>
-        new[] { this }.Concat(Descendants.SelectMany(child => child.Nodes()));
+        new[] { this }.Concat(_children.SelectMany(child => child.Nodes()));
 
-    internal void SetPriority(int priority) => _choice = priority;
-
-    internal bool Project(Func<FileNode, bool> matches)
+    internal IEnumerable<FileNode> Ancestors()
     {
-        Children = Descendants.Where(child => child.Project(matches)).ToArray();
-        return Index >= 0 ? !IsPadding && matches(this) : Children.Count > 0;
+        for (var parent = Parent; parent is not null; parent = parent.Parent)
+            yield return parent;
     }
 
-    internal void Refresh(bool notify)
+    // The node and its ancestors.
+    internal IEnumerable<FileNode> Lineage() => new[] { this }.Concat(Ancestors());
+
+    internal void Add(FileNode child) => _children.Add(child);
+
+    internal void Open()
     {
-        var previous = (_totalSize, _downloaded, _wanted, _priority);
-        if (IsFolder)
+        _state = FolderState.Loaded;
+        IsExpanded = true;
+    }
+
+    internal void Close(FolderState state)
+    {
+        _children.Clear();
+        _state = state;
+        IsExpanded = false;
+    }
+
+    // Reads the values a `tree`, edit or Files view reply gives for this row.
+    // A draft keeps the choices it shows.
+    internal void Read(JsonElement value, bool preserveChoices = false)
+    {
+        if (value.TryGetProperty("downloaded", out var downloaded))
+            _downloaded = downloaded.ValueKind == JsonValueKind.Number ? downloaded.GetInt64() : null;
+        if (value.TryGetProperty("size", out var size))
+            _size = size.GetInt64();
+        if (value.TryGetProperty("file_count", out var count))
+            _count = count.GetInt64();
+        if (value.TryGetProperty("match", out var match))
+            IsMatch = match.GetBoolean();
+        if (preserveChoices || !value.TryGetProperty("priority", out var priority))
+            return;
+        if (!IsFolder)
         {
-            _hasFiles = false;
-            _totalSize = 0;
-            _downloaded = 0;
-            _priority = -1;
-            var wanted = true;
-            var skipped = true;
-            foreach (var child in Descendants)
-            {
-                child.Refresh(notify);
-                if (!child._hasFiles)
-                    continue;
-                _priority =
-                    !_hasFiles ? child._priority
-                    : _priority == child._priority ? _priority
-                    : -1;
-                _hasFiles = true;
-                _totalSize += child._totalSize;
-                _downloaded += child._downloaded;
-                wanted &= child._wanted == true;
-                skipped &= child._wanted == false;
-            }
-            _wanted =
-                wanted ? true
-                : skipped ? false
-                : null;
+            if (priority.ValueKind == JsonValueKind.Number)
+                _priority = priority.GetInt32();
+            return;
         }
-        else
+        _priority = priority.ValueKind == JsonValueKind.Number ? priority.GetInt32() : -1;
+        _wantedCount = value.GetProperty("wanted_count").GetInt64();
+        _wantedSize = value.GetProperty("wanted_size").GetInt64();
+    }
+
+    // A file's values from the Files view's per-file arrays; null leaves one
+    // unchanged.
+    internal void Report(long? priority, long? downloaded)
+    {
+        if (priority is { } chosen)
+            _priority = (int)chosen;
+        if (downloaded is { } bytes)
+            _downloaded = bytes;
+    }
+
+    internal void Total(long wantedCount, long wantedSize)
+    {
+        _wantedCount = wantedCount;
+        _wantedSize = wantedSize;
+    }
+
+    // Whether the choice would change nothing here.
+    internal bool Holds(FileAction action) =>
+        IsFolder ? action.Holds(_wantedCount, _count, _priority) : action.Holds(_priority);
+
+    // Shows the choice on this row and the rows held under it, by the rule
+    // the engine applies. A folder's priority stays Mixed after Want when its
+    // files differed, because only the engine knows whether they still do.
+    internal void Choose(FileAction action)
+    {
+        _priority = action.Apply(_priority);
+        if (!IsFolder)
+            return;
+        (_wantedCount, _wantedSize) = action is FileAction.Set { Priority: 0 } ? (0, 0) : (_count, _size);
+        foreach (var child in _children)
+            child.Choose(action);
+    }
+
+    internal void Refresh(bool derive, bool notify)
+    {
+        if (!IsFolder)
         {
-            _hasFiles = !IsPadding;
-            _totalSize = IsPadding ? 0 : Size;
-            _downloaded = IsPadding ? 0 : Downloaded;
-            _priority = _choice;
-            _wanted =
-                IsPadding || _priority > 0 ? true
-                : _priority == 0 ? false
-                : null;
+            _count = 1;
+            (_wantedCount, _wantedSize) = _priority > 0 ? (1, _size) : (0, 0);
         }
-        if (notify || previous != (_totalSize, _downloaded, _wanted, _priority))
+        foreach (var child in _children)
+            child.Refresh(derive, notify);
+        if (IsFolder && derive && _state == FolderState.Loaded && _children.Count > 0)
+        {
+            _count = _children.Sum(child => child._count);
+            _size = _children.Sum(child => child._size);
+            _wantedCount = _children.Sum(child => child._wantedCount);
+            _wantedSize = _children.Sum(child => child._wantedSize);
+            _downloaded = _children.Any(child => child._downloaded is null)
+                ? null
+                : _children.Sum(child => child._downloaded ?? 0);
+            _priority = _children.All(child => child._priority == _children[0]._priority)
+                ? _children[0]._priority
+                : -1;
+        }
+        var shown = (_size, _count, _wantedCount, _priority, _downloaded, _state);
+        if (notify || shown != _shown)
+        {
+            _shown = shown;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+        }
     }
 
     public override string ToString() => Path;
+}
+
+// The rows a refresh names: folder paths and file indexes.
+internal sealed record FileKeys(string[] Folders, int[] Files);
+
+// The files a choice covers.
+internal abstract record FileTarget
+{
+    private FileTarget() { }
+
+    // The path places the file under the folders a draft also holds.
+    internal sealed record File(int Index, string Path) : FileTarget;
+
+    // Every file under the folder; the empty path is the root.
+    internal sealed record Folder(string Path) : FileTarget;
+
+    // Every file that matches the search.
+    internal sealed record Query(string Text) : FileTarget;
+
+    // Whether this file or folder lies under `folder`.
+    internal bool IsUnder(Folder folder) =>
+        this switch
+        {
+            File file => Within(file.Path, folder.Path),
+            Folder other => other.Path != folder.Path && Within(other.Path, folder.Path),
+            _ => false,
+        };
+
+    private static bool Within(string path, string folder) =>
+        folder.Length == 0 || path.StartsWith(folder + "/", StringComparison.Ordinal);
+}
+
+// What a choice sets on every file it covers, by the rule of the pipe API's
+// `edit`.
+internal abstract record FileAction
+{
+    private FileAction() { }
+
+    // That priority: 0 skips the file.
+    internal sealed record Set(int Priority) : FileAction;
+
+    // Normal on a skipped file; another priority stays.
+    internal sealed record Want : FileAction;
+
+    internal int Apply(int priority) =>
+        this is Set set ? set.Priority
+        : priority == 0 ? 4
+        : priority;
+
+    internal bool Holds(int priority) => this is Set set ? priority == set.Priority : priority > 0;
+
+    // Whether a folder with these values already holds the choice; its
+    // priority is -1 when its files differ.
+    internal bool Holds(long wantedCount, long count, int priority) =>
+        this is Set { Priority: 0 } ? wantedCount == 0
+        : this is Set set ? priority == set.Priority
+        : wantedCount == count;
+}
+
+internal sealed record FileChoice(FileTarget Target, FileAction Action)
+{
+    // The `changes` of one `edit` that sends these choices. A query choice is
+    // sent alone, as the engine requires.
+    internal static Dictionary<string, object> Changes(IEnumerable<FileChoice> choices)
+    {
+        var changes = new Dictionary<string, object>();
+        foreach (var choice in choices)
+        {
+            var (key, entry) = choice.Target switch
+            {
+                FileTarget.File file => ("files", Entry("index", file.Index, choice.Action)),
+                FileTarget.Folder folder => ("folders", Entry("path", folder.Path, choice.Action)),
+                FileTarget.Query query => ("query", Entry("text", query.Text, choice.Action)),
+                _ => throw new InvalidOperationException(),
+            };
+            if (key == "query")
+                changes[key] = entry;
+            else if (changes.TryGetValue(key, out var list))
+                ((List<Dictionary<string, object>>)list).Add(entry);
+            else
+                changes[key] = new List<Dictionary<string, object>> { entry };
+        }
+        return changes;
+    }
+
+    private static Dictionary<string, object> Entry(string key, object value, FileAction action) =>
+        action is FileAction.Set set
+            ? new() { [key] = value, ["priority"] = set.Priority }
+            : new() { [key] = value, ["wanted"] = true };
 }

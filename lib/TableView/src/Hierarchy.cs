@@ -7,7 +7,8 @@ internal sealed class Hierarchy(
     Column column,
     Func<object, IEnumerable> children,
     Func<object, bool> isExpanded,
-    Action<object, bool> setExpanded
+    Action<object, bool> setExpanded,
+    Func<object, bool>? hasUnrealizedChildren
 )
 {
     internal sealed record Node(
@@ -20,8 +21,7 @@ internal sealed class Hierarchy(
     internal sealed record Snapshot(
         IReadOnlyList<object> Roots,
         Dictionary<object, Node> Nodes,
-        Dictionary<IEnumerable, IReadOnlyList<object>> Sources,
-        bool HasChildren
+        Dictionary<IEnumerable, IReadOnlyList<object>> Sources
     )
     {
         internal bool MatchesStructure(Snapshot other, ItemIdentity identity)
@@ -59,7 +59,15 @@ internal sealed class Hierarchy(
 
     internal Node? Find(object item) => Captured?.Nodes.GetValueOrDefault(item);
 
-    internal bool HasChildren => Captured?.HasChildren == true;
+    /// <summary>Whether any shown row is expandable, so the expander slot is reserved.</summary>
+    internal bool HasChildren { get; set; }
+
+    /// <summary>
+    /// Whether the person can expand the row: it has children, or the host has some it has
+    /// not supplied yet. Supplied children take precedence over the host's flag.
+    /// </summary>
+    internal bool IsExpandable(Node node) =>
+        node.Children.Count > 0 || hasUnrealizedChildren?.Invoke(node.Item) == true;
 
     internal void Invalidate() => _recapture = true;
 
@@ -70,7 +78,6 @@ internal sealed class Hierarchy(
             ReferenceEqualityComparer.Instance
         );
         Stack<(object Item, object? Parent, int Depth)> pending = new();
-        bool hasChildren = false;
         for (int i = roots.Count - 1; i >= 0; i--)
             pending.Push((roots[i], null, 0));
         while (pending.TryPop(out var next))
@@ -115,11 +122,10 @@ internal sealed class Hierarchy(
                 sources.Add(source, items);
             }
             nodes.Add(next.Item, new(next.Item, next.Parent, next.Depth, items));
-            hasChildren |= items.Count > 0;
             for (int i = items.Count - 1; i >= 0; i--)
                 pending.Push((items[i], next.Item, next.Depth + 1));
         }
-        return new(roots, nodes, sources, hasChildren);
+        return new(roots, nodes, sources);
     }
 
     internal void Accept(Snapshot snapshot)

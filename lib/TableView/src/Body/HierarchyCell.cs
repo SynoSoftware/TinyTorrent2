@@ -95,8 +95,9 @@ internal sealed partial class HierarchyCell : Grid
                 ? new(indent, 0, 0, 0)
                 : new(0, 0, indent, 0);
         _expander.Visibility = hierarchy.HasChildren ? Visibility.Visible : Visibility.Collapsed;
-        _expander.Opacity = node.Children.Count > 0 ? 1 : 0;
-        _expander.IsHitTestVisible = node.Children.Count > 0;
+        bool expandable = hierarchy.IsExpandable(node);
+        _expander.Opacity = expandable ? 1 : 0;
+        _expander.IsHitTestVisible = expandable;
         _expander.IsEnabled = _table.IsInteractive(item);
         _glyph.Glyph =
             hierarchy.IsExpanded(item) ? Lucide.ChevronDown

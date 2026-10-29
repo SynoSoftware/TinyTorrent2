@@ -1,5 +1,4 @@
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
@@ -44,10 +43,11 @@ public sealed partial class FileBrowser : UserControl
                 NameColumn,
                 node => node.Children,
                 node => node.IsExpanded,
-                (node, expanded) => node.IsExpanded = expanded
+                (node, expanded) => Model.Expand(node, expanded),
+                node => node.State is FolderState.Unloaded or FolderState.Loading
             )
             .SortKey(NameColumn, node => node.Name)
-            .SortKey(SizeColumn, node => node.TotalSize)
+            .SortKey(SizeColumn, node => node.Size)
             .SortKey(PriorityColumn, node => node.Priority);
         if (Model.ShowsProgress)
             schema.SortKey(ProgressColumn, node => node.Progress);
@@ -103,23 +103,27 @@ public sealed partial class FileBrowser : UserControl
         SizeColumn.DisplayName = Model.Text.Get("columns", "size");
         ProgressColumn.DisplayName = Model.Text.Get("columns", "progress");
         PriorityColumn.DisplayName = Model.Text.Get("files", "priority");
-        string matching = Model.Text.Get("files", "all_matching");
-        ToolTipService.SetToolTip(All, matching);
-        AutomationProperties.SetName(All, matching);
         Model.Refresh();
     }
 
+    // Starts showing the file once the table can; the file's folders may
+    // need a load first.
     internal bool Reveal(int index)
     {
         if (!Files.IsLoaded || Files.ActualHeight <= 0 || Files.ActualWidth <= 0)
             return false;
-        if (Model.Reveal(index) is not { } file)
-            return true;
-        Files.RefreshView();
-        Files.Selection = new Selection([file], file);
-        Files.ScrollIntoView(file);
-        Files.Focus(FocusState.Keyboard);
+        _ = Select(Model, index);
         return true;
+    }
+
+    private async Task Select(FileSelection model, int index)
+    {
+        if (await model.Reveal(index) is not { } node || model != Model || !Files.IsLoaded)
+            return;
+        Files.RefreshView();
+        Files.Selection = new Selection([node], node);
+        Files.ScrollIntoView(node);
+        Files.Focus(FocusState.Keyboard);
     }
 
     private void OnChanged(object? sender, EventArgs args)
@@ -183,7 +187,10 @@ public sealed partial class FileBrowser : UserControl
                 Model.Text.Get("files", key),
                 glyph,
                 nodes.All(node => node.Priority == priority),
-                new RelayCommand(() => Model.Change(nodes, priority), () => true)
+                new RelayCommand(
+                    () => Model.Choose(nodes, new FileAction.Set(priority)),
+                    () => true
+                )
             )
             {
                 AccessKey = Model.Text.Get("files", key + "_key"),

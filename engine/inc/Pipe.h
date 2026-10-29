@@ -91,7 +91,7 @@ public:
         std::set<std::int64_t> requests_;
     };
     // The protocol version that the hello message announces.
-    static constexpr int version = 35;
+    static constexpr int version = 36;
     // Receives each request with the reply that answers it, and a null request
     // with no reply when a client that sent a request disconnects.
     using Dispatch = std::function<void(std::shared_ptr<Connection>, Json, Reply)>;

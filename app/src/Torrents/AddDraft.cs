@@ -364,7 +364,16 @@ public sealed class AddDraft : IDraft
     private void Own(AddSource source)
     {
         source.Files.Changed += (_, _) => Refresh();
+        source.Files.Failed += (_, error) => Fail(error);
         Sources.Add(source);
+    }
+
+    // A file browser's read or choice failed; the error bar shows it.
+    private void Fail(Exception error)
+    {
+        _failure = error;
+        _owner.Notifications.Announce(_strings.Error(error));
+        Refresh();
     }
 
     public async Task PrepareMagnet()
@@ -613,28 +622,63 @@ public sealed class AddDraft : IDraft
         return preview;
     }
 
-    // The files of a preview that the source does not show yet, read before the
-    // source applies the preview so it never shows an empty list.
-    private async Task<FileSelection.Loader?> ReadFiles(AddSource source, JsonElement preview)
+    // The root of a preview's files when the source does not show that
+    // preview's files yet, read before the source applies the preview so it
+    // never shows an empty list.
+    private async Task<JsonElement?> ReadFiles(AddSource source, JsonElement preview)
     {
+        var previewId = preview.GetProperty("preview_id").GetString()!;
         if (
-            source.Content is SourceContent.Files
+            source.Content is SourceContent.Files && source.PreviewId == previewId
             || SourceContent.Read(preview) is not SourceContent.Files
         )
             return null;
-        var load = source.Files.Load();
-        await foreach (
-            var page in _client.PreviewFiles(preview.GetProperty("preview_id").GetString()!)
-        )
-            load.Add(page);
-        return load;
+        return await ReadTree(previewId, new() { ["folder"] = string.Empty });
+    }
+
+    internal Task<JsonElement> ReadTree(string? previewId, Dictionary<string, object> request)
+    {
+        if (previewId is null)
+            return Task.FromException<JsonElement>(
+                new IOException(_strings.Get("connection", "unavailable"))
+            );
+        request["preview_id"] = previewId;
+        return _client.Send("tree", request, Requester.Window);
+    }
+
+    // Sends a file choice to the preview at once, because a preview's choices
+    // are never busy. A refused choice shows in the error bar, and the rows
+    // are read again.
+    internal async Task<JsonElement?> Edit(AddSource source, IReadOnlyList<FileChoice> choices)
+    {
+        try
+        {
+            if (source.PreviewId is not { } previewId)
+                throw new IOException(_strings.Get("connection", "unavailable"));
+            return await _client.Send(
+                "edit",
+                new
+                {
+                    preview_id = previewId,
+                    changes = FileChoice.Changes(choices),
+                    loaded = source.Files.Loaded(choices),
+                },
+                Requester.Person
+            );
+        }
+        catch (Exception error)
+        {
+            Fail(error);
+            source.Files.Reload();
+            return null;
+        }
     }
 
     private async Task ApplyPreview(
         AddSource source,
         JsonElement preview,
         string destination,
-        FileSelection.Loader? files
+        JsonElement? files
     )
     {
         source.Apply(preview, destination, files);
@@ -751,13 +795,13 @@ public sealed class AddDraft : IDraft
                     revealed.Add(present.TorrentId);
                     continue;
                 }
+                // The engine counts a file choice once it has replied.
+                await source.Edits;
                 var previewId = source.PreviewId;
                 source.PreviewId = null;
                 JsonElement addition;
                 try
                 {
-                    var priorities =
-                        source.Content is SourceContent.Files ? source.Files.Priorities() : [];
                     addition = await _client.Send(
                         "add",
                         new
@@ -768,7 +812,6 @@ public sealed class AddDraft : IDraft
                             queue_top = queueTop,
                             sequential,
                             first_last = firstLast,
-                            priorities,
                         },
                         Requester.Person
                     );
@@ -1072,6 +1115,7 @@ public sealed class AddSource : INotifyPropertyChanged
 {
     private readonly Strings _strings;
     private readonly AddDraft _draft;
+    private readonly List<Task> _edits = [];
     internal List<string> Inputs { get; }
     public string Source => Inputs[0];
     public FileSelection Files { get; }
@@ -1149,11 +1193,13 @@ public sealed class AddSource : INotifyPropertyChanged
             Problem = null;
     }
 
-    // Files holds the rows read from the preview's file pages when the source
-    // shows no files yet and the preview now has them.
-    internal void Apply(JsonElement preview, string destination, FileSelection.Loader? files)
+    // The file choices sent to the preview whose replies have not arrived.
+    internal Task Edits => Task.WhenAll(_edits);
+
+    // Files is the root of the preview's files when the source does not show
+    // them yet.
+    internal void Apply(JsonElement preview, string destination, JsonElement? files)
     {
-        var hadFiles = Content is SourceContent.Files;
         PreviewId = preview.GetProperty("preview_id").GetString();
         Name = preview.GetProperty("name").GetString()!;
         Size = preview.GetProperty("size").GetInt64();
@@ -1178,8 +1224,18 @@ public sealed class AddSource : INotifyPropertyChanged
             .Select(name => name.GetString()!)
             .ToArray();
         SharedDestination = destination;
-        if (!hadFiles && Content is SourceContent.Files)
-            files?.Commit();
+        if (Content is SourceContent.Files && files is { } root)
+            Files.Show(
+                root,
+                request => _draft.ReadTree(PreviewId, request),
+                choices =>
+                {
+                    _edits.RemoveAll(edit => edit.IsCompleted);
+                    var edit = _draft.Edit(this, choices);
+                    _edits.Add(edit);
+                    return edit;
+                }
+            );
         Refresh();
     }
 

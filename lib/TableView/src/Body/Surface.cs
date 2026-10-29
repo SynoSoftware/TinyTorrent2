@@ -172,7 +172,7 @@ public sealed partial class Surface : ListView
             get
             {
                 var hierarchy = parent.Table?.Hierarchy;
-                if (hierarchy?.Find(Item) is not { Children.Count: > 0 } node)
+                if (hierarchy?.Find(Item) is not { } node || !hierarchy.IsExpandable(node))
                     return ExpandCollapseState.LeafNode;
                 return hierarchy.IsExpanded(node.Item)
                     ? ExpandCollapseState.Expanded

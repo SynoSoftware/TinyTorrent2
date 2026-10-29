@@ -56,12 +56,13 @@ tags.
 The initial text behavior is deliberately simple:
 
 - Update results as the person types.
-- Require each whitespace-separated term to match somewhere in an entry's
-  searchable fields; different terms may match different fields.
+- Require each term to start a word in one of an entry's searchable fields,
+  following the [search ruling](../../../AGENTS.md#working-rules); different
+  terms may match different fields.
 - Match without case differences or Latin accent differences, preserving
   original text for display.
-- Support filename and title fragments, including one- and two-character
-  queries.
+- Support the starts of filename and title words, including one- and
+  two-character queries.
 - Treat punctuation as text, not database query syntax.
 - Show the current source-backed collection when the query is empty.
 

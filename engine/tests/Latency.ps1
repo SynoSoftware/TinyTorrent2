@@ -100,7 +100,7 @@ try {
                 1 { @{ command = 'speed_limit'; torrent_ids = @($torrentId); upload_limit = $(if (($index / 6) % 2 -lt 1) { 0 } else { 65536 }) } }
                 2 { @{ command = 'reannounce'; torrent_id = $torrentId } }
                 3 { @{ command = 'file_scope'; torrent_ids = @($torrentId) } }
-                4 { @{ command = 'edit'; torrent_id = $torrentId; changes = @{ priorities = @(@{ index = 0; priority = $(if (($index / 6) % 2 -lt 1) { 1 } else { 4 }) }) } } }
+                4 { @{ command = 'edit'; torrent_id = $torrentId; changes = @{ files = @(@{ index = 0; priority = $(if (($index / 6) % 2 -lt 1) { 1 } else { 4 }) }) } } }
                 5 { @{ command = 'queue'; torrent_ids = @($torrentId); direction = $(if (($index / 6) % 2 -lt 1) { 'top' } else { 'bottom' }) } }
             }
             $null = Measure-Reply $command $phase 'command'

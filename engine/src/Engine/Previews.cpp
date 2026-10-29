@@ -28,17 +28,43 @@ std::vector<std::string> Engine::State::SharedFiles(std::shared_ptr<lt::torrent_
     {
         return names;
     }
-    auto wanted = FilePaths(*metadata, destination, settings.layout);
-    auto visit = [this, &wanted, &names](Torrent const& torrent)
+    // Two torrents share a file only where a top folder or file of one holds
+    // or is one of the other's, so only those compare every path, which takes
+    // seconds for a torrent of many files.
+    auto join = [](std::string const& folder, std::string const& part)
+    {
+        return Utf8((std::filesystem::path(Wide(folder)) / Wide(part)).wstring());
+    };
+    std::vector<std::string> tops;
+    for (auto const& part : Tops(metadata->layout(),
+        [this, &metadata](lt::file_index_t index) { return ContentPath(metadata->layout(), index, settings.layout); }))
+        tops.push_back(join(destination, part));
+    auto overlaps = [&tops, &join](Torrent const& torrent)
+    {
+        std::vector<std::string> roots = {torrent.facts.savePath};
+        if (torrent.facts.marker)
+            roots.push_back(torrent.facts.marker->destination);
+        for (bool logical : {true, false})
+            for (auto const& part : torrent.Tops(logical))
+                for (auto const& root : roots)
+                    for (auto const& top : tops)
+                        if (FoldersOverlap(top, join(root, part)))
+                            return true;
+        return false;
+    };
+    std::optional<std::vector<std::filesystem::path>> wanted;
+    auto visit = [this, &metadata, &destination, &overlaps, &wanted, &names](Torrent const& torrent)
     {
         auto other = torrent.restore ? torrent.restore->ti : torrent.handle.torrent_file();
-        if (!other)
+        if (!other || !overlaps(torrent))
         {
             return;
         }
+        if (!wanted)
+            wanted = FilePaths(*metadata, destination, settings.layout);
         for (auto const& full : Footprint(torrent))
         {
-            if (std::binary_search(wanted.begin(), wanted.end(), full, PathBefore))
+            if (std::binary_search(wanted->begin(), wanted->end(), full, PathBefore))
             {
                 names.push_back(other->name());
                 break;
@@ -77,17 +103,22 @@ std::vector<std::string> Engine::State::Missing(std::vector<std::string> const& 
     return missing;
 }
 
-// A magnet preview learns its metadata through its guarded torrent.
+// A magnet preview learns its metadata through its guarded torrent. The
+// person's choices start at the default priorities once the metadata is known.
 void Engine::State::UpdatePreview(Preview& preview)
 {
-    if (!preview.handle.is_valid())
+    if (preview.handle.is_valid())
     {
-        return;
+        if (auto metadata = preview.handle.torrent_file())
+        {
+            preview.params.ti = metadata;
+            preview.params.info_hashes = metadata->info_hashes();
+        }
     }
-    if (auto metadata = preview.handle.torrent_file())
+    if (preview.params.ti && preview.priorities.empty())
     {
-        preview.params.ti = metadata;
-        preview.params.info_hashes = metadata->info_hashes();
+        preview.priorities = DefaultPriorities(preview.params.ti->layout(),
+            settings.excludes ? settings.patterns : std::string());
     }
 }
 
@@ -156,15 +187,24 @@ Json Engine::State::DescribeFilePage(Preview const& preview, int offset) const
         {"file_count", metadata ? metadata->num_files() : 0}, {"files", Json::array()}};
     if (metadata)
     {
-        auto masks = SkipMasks(settings.excludes ? settings.patterns : std::string());
         auto const& layout = metadata->layout();
-        data["files"] = FilePage(*metadata, offset, [this, &masks, &layout](lt::file_index_t index, Json& file)
+        data["files"] = FilePage(*metadata, offset, [this, &preview, &layout](lt::file_index_t index, Json& file)
         {
             file["path"] = ContentPath(layout, index, settings.layout);
-            file["priority"] = static_cast<std::uint8_t>(DefaultPriority(layout, index, masks));
+            file["priority"] = static_cast<std::uint8_t>(preview.priorities[static_cast<int>(index)]);
         });
     }
     return data;
+}
+
+std::expected<Listing, Outcome> Engine::State::Listed(Preview& preview)
+{
+    UpdatePreview(preview);
+    if (!preview.params.ti)
+    {
+        return std::unexpected(Outcome{ErrorCode::MetadataUnavailable});
+    }
+    return Listing{preview.params.ti, settings.layout, preview.priorities};
 }
 
 void Engine::State::Inspect(std::string source, std::string connectionId,
@@ -191,7 +231,9 @@ void Engine::State::Inspect(std::string source, std::string connectionId,
             return lt::parse_magnet_uri(source);
         }
         auto bytes = Store::Read(std::filesystem::path(Wide(source)));
-        return lt::load_torrent_buffer(lt::span<char const>(bytes.data(), bytes.size()));
+        lt::load_torrent_limits limits;
+        limits.max_decode_tokens = metadataTokens;
+        return lt::load_torrent_buffer(lt::span<char const>(bytes.data(), bytes.size()), limits);
     }, [this, preview, completion, source](std::expected<lt::add_torrent_params, StorageOutcome> parsed)
     {
         std::erase(parsing, preview);
@@ -213,6 +255,7 @@ void Engine::State::Inspect(std::string source, std::string connectionId,
         if (!IsMagnet(source))
             preview->torrentFile = source;
         preview->params.info_hashes = preview->InfoHashes();
+        UpdatePreview(*preview);
         auto merge = [this, preview, completion]
         {
             auto hashes = Hashes(preview->InfoHashes());

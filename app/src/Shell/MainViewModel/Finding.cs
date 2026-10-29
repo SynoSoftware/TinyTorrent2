@@ -225,9 +225,7 @@ public sealed partial class MainViewModel
 
     public IReadOnlyList<Suggestion> FindSuggestions(string query)
     {
-        var words = FileName
-            .Normalize(query)
-            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        var words = FileName.SearchWords(query);
         var commands = CommandSuggestions().Where(suggestion => suggestion.IsEnabled);
         if (words.Length == 0)
             return commands
@@ -248,9 +246,7 @@ public sealed partial class MainViewModel
             .Take(30)
             .ToArray();
         var torrents = Torrents
-            .Where(torrent =>
-                words.All(word => torrent.SearchText.Contains(word, StringComparison.Ordinal))
-            )
+            .Where(torrent => FileName.Matches(torrent.SearchText, words))
             .Take(30 - actions.Length)
             .Select(torrent => new Suggestion(
                 torrent.Name,
@@ -409,11 +405,8 @@ public sealed partial class MainViewModel
             );
     }
 
-    private static bool MatchesQuery(string text, string[] words)
-    {
-        var normalized = FileName.Normalize(text);
-        return words.All(word => normalized.Contains(word, StringComparison.Ordinal));
-    }
+    private static bool MatchesQuery(string text, string[] words) =>
+        FileName.Matches(FileName.Normalize(text), words);
 
     private static bool MatchesQuery(Suggestion suggestion, string[] words) =>
         MatchesQuery(

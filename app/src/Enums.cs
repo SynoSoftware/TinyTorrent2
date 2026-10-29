@@ -115,6 +115,17 @@ public enum FileKind
     Other,
 }
 
+// Whether a file browser holds a folder's entries.
+internal enum FolderState
+{
+    // Not read yet, or collapsed and forgotten: its row shows an expand arrow.
+    Unloaded,
+    Loading,
+    // Its entries do not fit the window, so it never opens.
+    TooMany,
+    Loaded,
+}
+
 public enum WindowPage
 {
     Torrents,
