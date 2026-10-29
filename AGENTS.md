@@ -105,6 +105,15 @@ do not define this product.
   update the affected messages in every language catalogue, so users receive the
   same information in their selected language.
   [Localisation](docs/contracts/localisation.md) owns catalogue structure and fallback.
+- **Owner ruling: search matches word starts.** Every search, in the app and
+  the engine, splits the query into words and finds the items where each word
+  starts a word of the item's text, in any order, ignoring case and accents:
+  "50 para" finds "Paracetamol 500mg", and "para" does not find "comparable".
+  A word starts at the beginning of the text or after any character that is
+  not a letter or a digit, so dots, dashes and brackets in torrent names
+  separate words. Other matching is used only where the owner asks for it,
+  because every one of the owner's apps searches this way and users rely on
+  one predictable search.
 - State assumptions and verifiable success criteria before implementing. Resolve
   material ambiguity before dependent changes.
 - Inspect the existing owner, data flow, and adjacent patterns before editing.

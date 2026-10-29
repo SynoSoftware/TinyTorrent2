@@ -38,7 +38,10 @@ The engine checks that start the Transfer peer download real payload and take
 minutes, so they run only when the owner asks for them. `engine/tests/Checks.ps1`
 refuses them without `-Transfer`. Checks that each guard one defect already
 fixed, such as `WaitingMove`, also run only when the owner asks, so a run of
-every check skips them; `Checks.ps1` refuses them without `-OptIn`.
+every check skips them; `Checks.ps1` refuses them without `-OptIn`. A check of
+a size limit uses a fixture just past the limit, such as `FileWindow`'s folder
+of 10,001 files for the 10,000-entry window, because the rule takes the same
+path at every size and a larger fixture only loads the machine.
 `WaitingMove` checks that a Move waiting for another torrent's metadata
 replies at once, sends one toast, and starts once the metadata is no longer
 missing.
