@@ -82,7 +82,8 @@ use the same owners, so both entry points preserve immediate, in-place updates.
 are peer pages.** Torrents remains the main page.
 
 The inset app-icon position contains a native DropDownButton showing the current
-workspace's icon and localized name. Its menu opens below the button, with
+workspace's icon and localized name. It has no fill or border until pointed at,
+like the menus beside it, so the title bar reads as one flat strip. Its menu opens below the button, with
 Torrents and Library as native radio choices rendered by MenuItems, using
 the same descriptions and commands as View. Moving through choices does not
 navigate; activating one uses the same navigation owner and departure guards

@@ -69,6 +69,37 @@
           Margin="8,0,0,0"
           AutomationProperties.AutomationId="PageSwitch"
         >
+          <!-- Flat until pointed at, like the menus beside it in the title bar. -->
+          <DropDownButton.Resources>
+            <ResourceDictionary>
+              <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                  <StaticResource x:Key="ButtonBackground" ResourceKey="AppBarButtonBackground" />
+                  <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="AppBarButtonBackgroundPointerOver" />
+                  <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="AppBarButtonBackgroundPressed" />
+                  <StaticResource x:Key="ButtonBorderBrush" ResourceKey="AppBarButtonBorderBrush" />
+                  <StaticResource x:Key="ButtonBorderBrushPointerOver" ResourceKey="AppBarButtonBorderBrushPointerOver" />
+                  <StaticResource x:Key="ButtonBorderBrushPressed" ResourceKey="AppBarButtonBorderBrushPressed" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                  <StaticResource x:Key="ButtonBackground" ResourceKey="AppBarButtonBackground" />
+                  <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="AppBarButtonBackgroundPointerOver" />
+                  <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="AppBarButtonBackgroundPressed" />
+                  <StaticResource x:Key="ButtonBorderBrush" ResourceKey="AppBarButtonBorderBrush" />
+                  <StaticResource x:Key="ButtonBorderBrushPointerOver" ResourceKey="AppBarButtonBorderBrushPointerOver" />
+                  <StaticResource x:Key="ButtonBorderBrushPressed" ResourceKey="AppBarButtonBorderBrushPressed" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="HighContrast">
+                  <StaticResource x:Key="ButtonBackground" ResourceKey="AppBarButtonBackground" />
+                  <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="AppBarButtonBackgroundPointerOver" />
+                  <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="AppBarButtonBackgroundPressed" />
+                  <StaticResource x:Key="ButtonBorderBrush" ResourceKey="AppBarButtonBorderBrush" />
+                  <StaticResource x:Key="ButtonBorderBrushPointerOver" ResourceKey="AppBarButtonBorderBrushPointerOver" />
+                  <StaticResource x:Key="ButtonBorderBrushPressed" ResourceKey="AppBarButtonBorderBrushPressed" />
+                </ResourceDictionary>
+              </ResourceDictionary.ThemeDictionaries>
+            </ResourceDictionary>
+          </DropDownButton.Resources>
           <StackPanel Orientation="Horizontal" Spacing="8">
             <Grid Width="{StaticResource TinyTorrentSurfaceIconSize}" Height="{StaticResource TinyTorrentSurfaceIconSize}" AutomationProperties.AccessibilityView="Raw">
               <Image x:Name="TorrentsFace" Source="ms-appx:///Assets/tinyTorrent.svg" Width="{StaticResource TinyTorrentSurfaceIconSize}" Height="{StaticResource TinyTorrentSurfaceIconSize}" />
