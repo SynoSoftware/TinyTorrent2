@@ -89,7 +89,7 @@ Configuration and protected secrets commit together in C# SQLite. No subtitle
 secret belongs in engine settings or the pipe.
 
 The supplier dialog reuses the proxy editor's matching field presentation and
-dialog mechanics, as the [handoff](../../../app/prototypes/settings-options-prototype.md#subtitles)
+dialog mechanics, as the [Settings contract](../ui/settings.md#proxy-server)
 describes. Proxy and supplier drafts, validation, secrets and network operations
 keep their own owners: shared controls do not require a configurable editor
 workflow with mode flags or callback lists. Supplier Check and saved-access

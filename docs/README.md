@@ -123,8 +123,9 @@ the contract merely to describe whatever the code currently does.
 
 ## Historical material
 
-Prototype files describe their reviewed versions; current interface rulings
-decide which parts remain applicable.
+The [archived prototypes](https://github.com/SynoSoftware/TinyTorrent2/tree/c614b77/app/prototypes)
+remain in Git history as design background. Current contracts own the interface
+rules; historical prototypes do not define implementation requirements.
 
 [Archived TableView documents](../lib/TableView/docs/archive/README.md) preserve
 earlier control construction reasoning. These are reference material, not

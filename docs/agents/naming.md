@@ -259,8 +259,7 @@ stays local. The root holds `App`, `Enums.cs`, the project and manifest;
 Each area is a namespace, such as `Syno.TinyTorrent.Torrents`. Only the listed
 provider, supplier and Shared supporting folders add namespace segments. Parts
 folders retain their owner's namespace; a record created by one type stays in
-that type's file. Prototype HTML and Markdown live flat in `app/prototypes/`;
-tests, fixtures and build scripts retain their component paths.
+that type's file. Tests, fixtures and build scripts retain their component paths.
 
 **Owner ruling:** SettingsPage retains Page because the shorter name collides
 with WinUI; LibraryTable and SubtitleFile retain their established names. These

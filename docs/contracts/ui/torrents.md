@@ -571,9 +571,8 @@ appears as automation help. These details add no columns or network requests.
 
 ### General
 
-General follows `app/prototypes/general-prototype.html`, variant H, in two titled
-groups. Its statistic captions, larger values, state heading and monospaced
-identifiers retain their approved roles, making the summary distinct from
+General has two titled groups. Its statistic captions, larger values, state
+heading and monospaced identifiers retain their approved roles, making the summary distinct from
 detailed property rows.
 Transfer holds the status and percentage, a native progress bar coloured as the
 same torrent's bar in the table, so completion adds no colour of its own, then

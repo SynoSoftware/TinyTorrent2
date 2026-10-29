@@ -29,8 +29,7 @@ The absence of a published logo requirement is not permission to use a trademark
 
 Evidence for current notices: [native Credits](../../app/src/Shell/CreditsPage.xaml.cs),
 [English catalogue](../../app/src/Resources/en.json),
-[Spanish catalogue](../../app/src/Resources/es.json), and
-[prototype Credits](../../app/prototypes/about-prototype.html).
+[Spanish catalogue](../../app/src/Resources/es.json).
 
 The prescribed TMDB and IMDb statements retain their English wording in both
 catalogues. Their legal quotations are source notices, not translated UI prose.

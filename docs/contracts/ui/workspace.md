@@ -7,15 +7,12 @@ owns the footer and notifications.
 
 ## Native controls and visual authority
 
-The visual and interaction reference is `app/prototypes/prototype.html`, variant
-C, commit `8614126` on `main`. Preserve its compact table, collapsible status
-drawer, caption search and Settings composition.
+Preserve the compact table, collapsible status drawer and caption search.
 Implement them with native WinUI controls and the existing TableView and command
-owners. The [Inspector ruling](torrents.md#inspector-and-edits) supersedes the
-prototype's vertical inspector sections, and the MenuBar ruling below supersedes its shell
-and navigation. Keep the prototype unchanged; it is a historical reference,
-not an implementation target for those parts. Prototype sample data and browser
-code are not production architecture.
+owners. The [Inspector ruling](torrents.md#inspector-and-edits) owns Inspector
+composition, [Settings](settings.md) owns its composition, and the MenuBar ruling
+below owns shell navigation. Historical prototypes remain in Git history as
+design background; this contract owns the current workspace rules.
 
 **Owner's decision: keep the native WinUI MenuBar.** It is the discoverable home
 for commands and replaces the application navigation pane. Its dropdown commands

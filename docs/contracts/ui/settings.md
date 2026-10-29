@@ -37,8 +37,7 @@ draws that outline. A target that names only a page focuses the page heading.
 own.** The title-bar search already finds settings, including advanced settings;
 a second box duplicates the task and takes a row away from the settings. Keep
 the title-bar search's existing scope of torrents, commands and settings.
-Settings uses the approved Windows Settings composition in
-`app/prototypes/settings-windows-prototype.html`, variant C, and its accompanying notes.
+Settings follows the Windows Settings composition described below.
 Its sidebar contains Home, General, Transfers, Speed limits, Schedule,
 Appearance, Network, Plugins, and Advanced. Advanced appears while
 Advanced mode is on. The sidebar's TinyTorrent logo and name form a
@@ -198,10 +197,7 @@ existing reveal and focus path runs. Batch status is observed only while its
 task is shown; leaving that task does not stop the underlying search.
 The task viewport has a 320-DIP minimum height to keep the following cards
 steady for the ordinary controls, and grows with text scaling and expanded
-options. The approved Task tabs design and its alternatives are preserved in
-`app/prototypes/plugins-subtitles-prototype.html` on the throwaway branch
-`codex/prototype-subtitle-task-tabs`; the implementation keeps only the chosen
-composition. Action buttons keep their natural label width, including after an
+options. Action buttons keep their natural label width, including after an
 expander opens or the language changes; a width measured while content is
 collapsed must not clip a later label. Search protection owns the shared
 provider search limit and skipped-search reset. Collapsed headers show the

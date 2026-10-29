@@ -3,12 +3,10 @@
 Part of the [Library contract](../library.md). Read its shared ownership,
 membership and SQLite rules before changing Library presentation.
 
-The [Library prototype](../../../app/prototypes/library-prototype.html) opens directly and reuses
-the canonical assets in `resources/`. Its layout selector compares A — Reading,
-B — Inspector and C — Sections. C is the owner's approved implementation target.
-The [implementation review](#prototype-implementation-review)
-records the accumulated decisions and outstanding work. Sample data and browser
-code are not production architecture.
+The owner approved the Sections composition described below. The
+[implementation review](#prototype-implementation-review) records the accumulated
+decisions and outstanding work. Historical alternatives remain in Git history;
+this contract owns the current presentation rules.
 
 Every part of the page reuses what the product already has for the same job:
 the same controls, the same implementation and the same labels. A second
@@ -26,7 +24,7 @@ This is the acceptance checklist for the current Library design work, recorded
 on 2026-10-10. It owns the pending prototype-to-app review, not a second UI
 contract. The owner approved C — Sections and authorized native implementation.
 Validation follows the current [root instructions](../../../AGENTS.md#working-rules)
-and [testing policy](../../agents/testing.md). Prototype screenshot review is
+and [testing policy](../../agents/testing.md). Application inspection is
 authorized when a concrete visual question remains under the
 [verification gate](../../agents/testing.md#verification-must-answer-a-question).
 
@@ -37,7 +35,7 @@ The checklist does not require a screenshot per item. Record the
 changed owner and evidence against each item when implementing; carry unfinished
 items forward rather than asking the owner to rediscover them.
 
-### Shared ownership and prototype scope
+### Shared ownership
 
 - [ ] Reuse the existing Inspector shell, Section, Field, responsive layout,
   typography, spacing, brushes, icons and commands. Audit their owners before
@@ -45,14 +43,9 @@ items forward rather than asking the owner to rediscover them.
 - [ ] Where a heading composition is missing, polish the shared composition
   and move its applicable consumers to that owner. Do not copy a Library-only
   implementation or add tokens without a distinct, demonstrated need.
-- [ ] Keep one Library prototype, `app/prototypes/library-prototype.html`. The former
-  `library-details-prototype.html`, wrapper, duplicate renderers and obsolete
-  references must stay removed. Canonical app assets remain referenced, not
-  copied into a second icon catalogue.
-- [ ] Preserve all three Inspector alternatives during review. Implement the
-  finally approved composition; the earlier B selection does not override the
-  later approval of C. Keep the prototype's labels, commands and surrounding
-  shell aligned with the mature app except for explicitly requested experiments.
+- [ ] Reuse canonical app assets rather than copying them into a second icon catalogue.
+- [ ] Implement the approved Sections composition below. Reuse the mature app's
+  labels, commands and surrounding shell.
 
 ### Inspector composition
 
@@ -90,7 +83,7 @@ items forward rather than asking the owner to rediscover them.
   More and Close. Fetch metadata belongs in More at every width. A vertical divider
   separates these item actions from the inspector's Pin, Maximize and Close controls. Show in
   Torrents uses LocateFixed, never the software logo or a download action glyph.
-  The prototype must not replace Play with an external-window glyph.
+  Play keeps its playback glyph rather than an external-window glyph.
 - [ ] Retain readable synopsis line spacing, heading-to-body spacing and the
   established File tab and Inspector shell behavior. Review the entire window,
   not just the changed text block.
@@ -151,8 +144,8 @@ the approved navigation and caption behavior.
 ### Outstanding decisions
 
 - Library status-bar emphasis is under discussion. Review file counts and
-  active filters against transfer/environment readings, including the
-  prototype's repeated filtered count. Preserve one shared status-bar owner;
+  active filters against transfer/environment readings, including whether to
+  repeat the filtered count. Preserve one shared status-bar owner;
   no new arrangement has been approved.
 
 ### Native composition
@@ -174,7 +167,7 @@ jump is still open.
 
 - [ ] Audit all unbuilt native changes against the approved composition and
   interactions; earlier partial edits do not establish parity.
-- [ ] Compare native code with this checklist and the approved prototype item
+- [ ] Compare native code with this checklist item
   by item. Resolve drift in the owning control, formatter or command, and remove
   implementations made obsolete by the change.
 - [ ] Build and run only the checks justified by

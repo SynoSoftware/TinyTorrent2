@@ -3,8 +3,8 @@
 This is the contract for automatic subtitles. The Plugins settings page keeps
 the Library card unchanged, groups the subtitle settings, shows SQLite
 coverage, and keeps batch scope and matching separate from automatic
-downloads; the [Settings handoff](../../app/prototypes/settings-options-prototype.md#subtitles)
-holds the presentation. Existing ownership and recovery rules come from
+downloads; the [Settings contract](ui/settings.md#cards-and-categories)
+owns the presentation. Existing ownership and recovery rules come from
 [architecture](architecture.md), [engine](engine.md), and
 [pipe API](pipe-api.md). Subtitle acquisition has no native part: the engine
 has no acquisition, early-piece or companion-file code.
@@ -223,5 +223,5 @@ not a mandate to create a test for each scenario.
 
 The architecture, engine, pipe API and UI contracts own the rules for
 their concerns. This contract links to them instead of restating them, so
-implemented behavior has one authority. The [Settings handoff](../../app/prototypes/settings-options-prototype.md#subtitles)
-remains the presentation reference.
+implemented behavior has one authority. The [Settings contract](ui/settings.md#cards-and-categories)
+owns the presentation.

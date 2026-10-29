@@ -498,7 +498,7 @@ Broader platform lists in individual C# projects do not add release targets.
 | --- | --- |
 | `engine/src/` | The native engine project. |
 | `engine/inc/` | The native project's headers. Includes name a header from this root, such as `Engine/State.h`. |
-| `app/` | The WinUI product host and its instructions. Prototype documents live in `app/prototypes/`. |
+| `app/` | The WinUI product host and its instructions. |
 | `lib/TableView/` | The only TableView: the library in `src/`, focused verification in `tests/`, and a demonstration host in `sample/`. [TableView.slnx](../../lib/TableView/TableView.slnx) holds only these, with Lucide. |
 | `lib/Lucide/` | The Lucide icon font and its glyph names, for any WinUI project. |
 | `resources/` | Product branding: the application icon and logo. |
