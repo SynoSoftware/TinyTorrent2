@@ -138,8 +138,7 @@ public sealed class FileSelection : INotifyPropertyChanged
 
     internal void Clear()
     {
-        _read = null;
-        _edit = null;
+        Detach();
         _search = string.Empty;
         _matches = null;
         _restore = [];
@@ -148,13 +147,21 @@ public sealed class FileSelection : INotifyPropertyChanged
         Publish();
     }
 
+    internal void Detach()
+    {
+        _read = null;
+        _edit = null;
+        _generation++;
+    }
+
     // Shows the tree whose root `tree` reply is `root`. `read` sends a `tree`
     // request with the host's preview or torrent added; `edit` sends choices
     // and gives the engine's reply, or null when the host reported a failure.
     internal void Show(
         JsonElement root,
         Func<Dictionary<string, object>, Task<JsonElement>> read,
-        Func<IReadOnlyList<FileChoice>, Task<JsonElement?>> edit
+        Func<IReadOnlyList<FileChoice>, Task<JsonElement?>> edit,
+        CancellationToken cancellation = default
     )
     {
         _read = read;
@@ -162,7 +169,7 @@ public sealed class FileSelection : INotifyPropertyChanged
         _search = string.Empty;
         _matches = null;
         _restore = [];
-        ShowTree(root);
+        ShowTree(root, cancellation);
     }
 
     // Reads the current rows again, after a choice the engine refused.
@@ -179,7 +186,7 @@ public sealed class FileSelection : INotifyPropertyChanged
 
     private FileNode Root() => new(this, string.Empty, null, -1);
 
-    private void Build(JsonElement? reply)
+    private void Build(JsonElement? reply, CancellationToken cancellation = default)
     {
         _generation++;
         _folders.Clear();
@@ -188,12 +195,12 @@ public sealed class FileSelection : INotifyPropertyChanged
         _root = Root();
         _folders.Add(string.Empty, _root);
         if (reply is { } value)
-            Open(_root, value.GetProperty("folder"), new HashSet<FileNode>());
+            Open(_root, value.GetProperty("folder"), new HashSet<FileNode>(), cancellation);
     }
 
-    private void ShowTree(JsonElement reply)
+    private void ShowTree(JsonElement reply, CancellationToken cancellation = default)
     {
-        Build(reply);
+        Build(reply, cancellation);
         _whole = _folders.Values.All(folder => folder.State == FolderState.Loaded);
         if (_whole)
             _opened.Clear();
@@ -203,13 +210,14 @@ public sealed class FileSelection : INotifyPropertyChanged
     // Lists `value`'s entries under `folder`, collapsing the folders opened
     // longest ago, except those in `keep`, until they fit; then each deeper
     // level the reply holds, in the rows still free.
-    private void Open(FileNode folder, JsonElement value, IReadOnlySet<FileNode> keep)
+    private void Open(FileNode folder, JsonElement value, IReadOnlySet<FileNode> keep,
+        CancellationToken cancellation = default)
     {
-        if (!List(folder, value, keep))
+        if (!List(folder, value, keep, cancellation))
             return;
         var level = new Queue<(FileNode Folder, JsonElement Value)>(Listed(folder, value));
         while (level.TryDequeue(out var next))
-            if (List(next.Folder, next.Value, null))
+            if (List(next.Folder, next.Value, null, cancellation))
                 foreach (var child in Listed(next.Folder, next.Value))
                     level.Enqueue(child);
     }
@@ -229,8 +237,10 @@ public sealed class FileSelection : INotifyPropertyChanged
     // folders opened longest ago that are not in it collapse until the entries
     // fit, and a folder whose entries still do not fit is too many to list;
     // without it, a folder that does not fit stays closed.
-    private bool List(FileNode folder, JsonElement value, IReadOnlySet<FileNode>? keep)
+    private bool List(FileNode folder, JsonElement value, IReadOnlySet<FileNode>? keep,
+        CancellationToken cancellation = default)
     {
+        cancellation.ThrowIfCancellationRequested();
         folder.Read(value);
         var folders = value.GetProperty("folders");
         var files = value.GetProperty("files");
@@ -257,6 +267,7 @@ public sealed class FileSelection : INotifyPropertyChanged
         }
         foreach (var entry in folders.EnumerateArray())
         {
+            cancellation.ThrowIfCancellationRequested();
             var child = new FileNode(this, entry.GetProperty("name").GetString()!, folder, -1);
             child.Read(entry);
             child.Close(
@@ -269,6 +280,7 @@ public sealed class FileSelection : INotifyPropertyChanged
         }
         foreach (var entry in files.EnumerateArray())
         {
+            cancellation.ThrowIfCancellationRequested();
             var index = entry.GetProperty("index").GetInt32();
             var child = new FileNode(this, entry.GetProperty("name").GetString()!, folder, index);
             child.Read(entry);

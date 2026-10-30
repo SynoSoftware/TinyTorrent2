@@ -54,8 +54,13 @@ public sealed class Peer : INotifyPropertyChanged
         get;
         set
         {
+            if (field == value)
+                return;
             field = value;
-            RefreshText();
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CountryCode)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CountryText)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CityText)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LocationText)));
         }
     }
 
@@ -161,30 +166,72 @@ public sealed class Peer : INotifyPropertyChanged
         TorrentId = torrentId;
         Endpoint = endpoint;
         Location = location;
-        Update(data);
+        var known = data.GetProperty("state").ValueEquals("known");
+        State = data.GetProperty("state").GetString() switch
+        {
+            "known" => PeerState.Known,
+            "connecting" => PeerState.Connecting,
+            "handshake" => PeerState.Handshake,
+            "connected" => PeerState.Connected,
+            _ => PeerState.Unknown,
+        };
+        Role = data.TryGetProperty("role", out var role) ? role.GetString() switch
+        {
+            "seed" => PeerRole.Seed,
+            "leecher" => PeerRole.Leecher,
+            _ => PeerRole.Unknown,
+        } : PeerRole.Unknown;
+        Client = known ? string.Empty : data.GetProperty("client").GetString()!;
+        _transport = (known ? null : data.GetProperty("transport").GetString()) switch
+        {
+            "tcp" => PeerTransport.Tcp,
+            "utp" => PeerTransport.Utp,
+            "i2p" => PeerTransport.I2p,
+            "http" => PeerTransport.Http,
+            _ => PeerTransport.Unknown,
+        };
+        _encryption = (known ? null : data.GetProperty("encryption").GetString()) switch
+        {
+            "plain" => PeerEncryption.Plain,
+            "handshake" => PeerEncryption.Handshake,
+            "rc4" => PeerEncryption.Rc4,
+            "tls" => PeerEncryption.Tls,
+            _ => PeerEncryption.Unknown,
+        };
+        foreach (var source in data.GetProperty("sources").EnumerateArray())
+            _sources |= source.GetString() switch
+            {
+                "tracker" => PeerSource.Tracker,
+                "dht" => PeerSource.Dht,
+                "pex" => PeerSource.Pex,
+                "lsd" => PeerSource.Lsd,
+                "resume" => PeerSource.Resume,
+                "incoming" => PeerSource.Incoming,
+                _ => PeerSource.None,
+            };
+        Incoming = !known && data.GetProperty("incoming").GetBoolean();
+        _interested = !known && data.GetProperty("interested").GetBoolean();
+        _choked = !known && data.GetProperty("choked").GetBoolean();
+        _remoteInterested = !known && data.GetProperty("remote_interested").GetBoolean();
+        _remoteChoked = !known && data.GetProperty("remote_choked").GetBoolean();
+        _readWait = known ? TransferWait.None : ReadWaits(data.GetProperty("read_wait"));
+        _writeWait = known ? TransferWait.None : ReadWaits(data.GetProperty("write_wait"));
+        Progress = known ? 0 : data.GetProperty("progress").GetDouble();
+        DownloadRate = known ? 0 : data.GetProperty("download_rate").GetDouble();
+        UploadRate = known ? 0 : data.GetProperty("upload_rate").GetDouble();
+        Downloaded = known ? 0 : data.GetProperty("downloaded").GetInt64();
+        Uploaded = known ? 0 : data.GetProperty("uploaded").GetInt64();
     }
 
     /// <summary>
     /// Applies the engine's latest record and raises PropertyChanged for the
     /// properties whose values changed; returns whether any did.
     /// </summary>
-    internal bool Update(JsonElement data)
+    internal bool Update(Peer data)
     {
         HashSet<string>? changed = null;
-        var known = data.GetProperty("state").ValueEquals("known");
-        Role = Set(
-            Role,
-            data.TryGetProperty("role", out var role)
-                ? role.GetString() switch
-                {
-                    "seed" => PeerRole.Seed,
-                    "leecher" => PeerRole.Leecher,
-                    _ => PeerRole.Unknown,
-                }
-                : PeerRole.Unknown,
-            nameof(Role)
-        );
-        var client = known ? string.Empty : data.GetProperty("client").GetString()!;
+        Role = Set(Role, data.Role, nameof(Role));
+        var client = data.Client;
         if (client != Client)
         {
             Client = client;
@@ -192,14 +239,7 @@ public sealed class Peer : INotifyPropertyChanged
         }
         _transport = Set(
             _transport,
-            (known ? null : data.GetProperty("transport").GetString()) switch
-            {
-                "tcp" => PeerTransport.Tcp,
-                "utp" => PeerTransport.Utp,
-                "i2p" => PeerTransport.I2p,
-                "http" => PeerTransport.Http,
-                _ => PeerTransport.Unknown,
-            },
+            data._transport,
             nameof(ClientHint),
             nameof(DownloadHint),
             nameof(UploadHint),
@@ -208,21 +248,14 @@ public sealed class Peer : INotifyPropertyChanged
         );
         Incoming = Set(
             Incoming,
-            !known && data.GetProperty("incoming").GetBoolean(),
+            data.Incoming,
             nameof(Incoming),
             nameof(DirectionGlyph),
             nameof(ConnectionHint)
         );
         State = Set(
             State,
-            data.GetProperty("state").GetString() switch
-            {
-                "known" => PeerState.Known,
-                "connecting" => PeerState.Connecting,
-                "handshake" => PeerState.Handshake,
-                "connected" => PeerState.Connected,
-                _ => PeerState.Unknown,
-            },
+            data.State,
             nameof(State),
             nameof(StateText),
             nameof(StateGlyph),
@@ -241,87 +274,39 @@ public sealed class Peer : INotifyPropertyChanged
         );
         _encryption = Set(
             _encryption,
-            (known ? null : data.GetProperty("encryption").GetString()) switch
-            {
-                "plain" => PeerEncryption.Plain,
-                "handshake" => PeerEncryption.Handshake,
-                "rc4" => PeerEncryption.Rc4,
-                "tls" => PeerEncryption.Tls,
-                _ => PeerEncryption.Unknown,
-            },
+            data._encryption,
             nameof(EncryptionGlyph),
             nameof(ConnectionHint)
         );
-        var sources = PeerSource.None;
-        foreach (var source in data.GetProperty("sources").EnumerateArray())
-            sources |= source.GetString() switch
-            {
-                "tracker" => PeerSource.Tracker,
-                "dht" => PeerSource.Dht,
-                "pex" => PeerSource.Pex,
-                "lsd" => PeerSource.Lsd,
-                "resume" => PeerSource.Resume,
-                "incoming" => PeerSource.Incoming,
-                _ => PeerSource.None,
-            };
-        _sources = Set(_sources, sources, nameof(StateHint));
-        _interested = Set(
-            _interested,
-            !known && data.GetProperty("interested").GetBoolean(),
-            nameof(DownloadHint)
-        );
-        _choked = Set(
-            _choked,
-            !known && data.GetProperty("choked").GetBoolean(),
-            nameof(UploadHint)
-        );
-        _remoteInterested = Set(
-            _remoteInterested,
-            !known && data.GetProperty("remote_interested").GetBoolean(),
-            nameof(UploadHint)
-        );
-        _remoteChoked = Set(
-            _remoteChoked,
-            !known && data.GetProperty("remote_choked").GetBoolean(),
-            nameof(DownloadHint)
-        );
-        _readWait = Set(
-            _readWait,
-            known ? TransferWait.None : ReadWaits(data.GetProperty("read_wait")),
-            nameof(DownloadHint)
-        );
-        _writeWait = Set(
-            _writeWait,
-            known ? TransferWait.None : ReadWaits(data.GetProperty("write_wait")),
-            nameof(UploadHint)
-        );
-        Progress = Set(
-            Progress,
-            known ? 0 : data.GetProperty("progress").GetDouble(),
-            nameof(Progress),
-            nameof(ProgressText)
-        );
+        _sources = Set(_sources, data._sources, nameof(StateHint));
+        _interested = Set(_interested, data._interested, nameof(DownloadHint));
+        _choked = Set(_choked, data._choked, nameof(UploadHint));
+        _remoteInterested = Set(_remoteInterested, data._remoteInterested, nameof(UploadHint));
+        _remoteChoked = Set(_remoteChoked, data._remoteChoked, nameof(DownloadHint));
+        _readWait = Set(_readWait, data._readWait, nameof(DownloadHint));
+        _writeWait = Set(_writeWait, data._writeWait, nameof(UploadHint));
+        Progress = Set(Progress, data.Progress, nameof(Progress), nameof(ProgressText));
         DownloadRate = Set(
             DownloadRate,
-            known ? 0 : data.GetProperty("download_rate").GetDouble(),
+            data.DownloadRate,
             nameof(DownloadRate),
             nameof(DownloadText)
         );
         UploadRate = Set(
             UploadRate,
-            known ? 0 : data.GetProperty("upload_rate").GetDouble(),
+            data.UploadRate,
             nameof(UploadRate),
             nameof(UploadText)
         );
         Downloaded = Set(
             Downloaded,
-            known ? 0 : data.GetProperty("downloaded").GetInt64(),
+            data.Downloaded,
             nameof(Downloaded),
             nameof(DownloadedText)
         );
         Uploaded = Set(
             Uploaded,
-            known ? 0 : data.GetProperty("uploaded").GetInt64(),
+            data.Uploaded,
             nameof(Uploaded),
             nameof(UploadedText)
         );

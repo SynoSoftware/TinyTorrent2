@@ -23,6 +23,10 @@ describes: headings, commands, choices, submenus and separators. MenuItems
 renders all of them, so two menus cannot differ in appearance. It puts a
 separator under each heading and keeps native menu fonts and theme colors;
 owners do not create menu items or style headings.
+Selection-dependent torrent menu descriptions prepare on a worker through
+TableView's cancellable preparation API. A new click cancels old preparation;
+only the current result reaches the UI dispatcher. MenuItems skips unchanged
+entries, so a refresh does not rewrite every closed menu's controls.
 Choices retain their content icons beside native state indicators, including
 in menus that also contain commands. Mutually exclusive choices use native
 radio items in named groups; independent options use native toggle items, so

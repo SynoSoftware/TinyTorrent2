@@ -1,10 +1,12 @@
 using Syno.TinyTorrent.Torrents;
+using Syno.TinyTorrent.Shared;
 
 namespace Syno.TinyTorrent.Shell;
 
 public sealed partial class MainViewModel
 {
     private bool _selectionPending;
+    private FrameCallback? _selectionFrame;
     public IReadOnlyList<Torrent> Selected => _selected;
     public Torrent? Current => _current;
 
@@ -73,12 +75,39 @@ public sealed partial class MainViewModel
                 Inspector.RefreshScope();
             // The inspector shows the selected count when it has no target.
             Inspector.Refresh();
-            RefreshWindow();
+            QueueSelection();
             return true;
         }
         finally
         {
             _selectionPending = false;
         }
+    }
+
+    private void QueueSelection()
+    {
+        _selectionFrame?.Dispose();
+        _selectionFrame = new FrameCallback(_dispatcher, () =>
+        {
+            _selectionFrame = null;
+            if (_closed)
+                return;
+            RefreshSelection();
+            Changed(nameof(CountStatus));
+            foreach (RelayCommand command in _commands)
+                command.Refresh();
+        });
+    }
+
+    private void RefreshSelection()
+    {
+        Changed(nameof(Selected));
+        Changed(nameof(Current));
+        Changed(nameof(SelectionText));
+        Changed(nameof(HasSelection));
+        Changed(nameof(CanEditSelection));
+        Changed(nameof(Sequential));
+        Changed(nameof(FirstLast));
+        Changed(nameof(Limited));
     }
 }

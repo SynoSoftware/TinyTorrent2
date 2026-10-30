@@ -1,7 +1,9 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using System.Windows.Input;
+using Microsoft.UI.Dispatching;
 using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Settings;
 using Syno.TinyTorrent.Shared;
@@ -12,9 +14,14 @@ namespace Syno.TinyTorrent.Torrents;
 
 public sealed partial class Inspector : INotifyPropertyChanged
 {
+    private static readonly TimeSpan UpdateBudget = TimeSpan.FromMilliseconds(16);
     private readonly MainViewModel _owner;
     private readonly PipeClient _client;
+    private readonly DispatcherQueue _dispatcher;
     private readonly ICommand[] _commands;
+    private FrameCallback? _refreshFrame;
+    private FrameCallback? _readFrame;
+    private CancellationTokenSource _reading = new();
 
     // File choices not yet sent, in the order the person made them.
     private readonly List<FileChoice> _fileChanges = [];
@@ -51,6 +58,8 @@ public sealed partial class Inspector : INotifyPropertyChanged
     public string SizeText => IsGlobal ? string.Empty : _target?.SizeText ?? string.Empty;
 
     internal bool IsVisible => _visible;
+    internal CancellationToken Cancellation => _reading.Token;
+    internal bool IsReplacing { get; private set; }
     private int SelectionCount => PeerSelection is null ? _owner.Selected.Count : Scope.Count();
     public string EmptyText =>
         SelectionCount == 0
@@ -64,10 +73,10 @@ public sealed partial class Inspector : INotifyPropertyChanged
     // A save keeps its controls enabled so later input keeps focus.
     private bool CanSave =>
         _target is not null && _owner.Contains(_target) && IsAvailable && _owner.CanSave;
-    public bool CanEdit => _visible && CanSave && !_owner.IsClosing;
+    public bool CanEdit => _visible && CanSave && !IsReplacing && !_owner.IsClosing;
     public bool IsPending => _pending is not null;
     private bool IsStarting => _readFailure is CommandException { Code: "starting" };
-    public bool IsLoading => _fetching || (IsAvailable && IsStarting);
+    public bool IsLoading => _fetching || (_readFrame is not null && _visible && IsAvailable) || (IsAvailable && IsStarting);
     public bool HasDraft => !IsPending && (HasFileChanges || HasTrackerChanges);
     internal bool HasTrackerChanges => _editingTrackers && _trackerInput != _trackerOriginal;
     private bool IsRemoved =>
@@ -78,7 +87,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
         : _editFailure is { } edit ? Text.Error(edit)
         : !IsStarting && _readFailure is { } read ? Text.Error(read)
         : string.Empty;
-    public FileSelection Files { get; }
+    public FileSelection Files { get; private set; }
 
     // Section data stays until another torrent is shown or the engine session
     // ends, so returning to a section or to the torrent shows it at once. A
@@ -215,10 +224,11 @@ public sealed partial class Inspector : INotifyPropertyChanged
     public ICommand ShowConnectionLimit { get; }
     internal ICommand DownloadCities { get; }
 
-    internal Inspector(MainViewModel owner, PipeClient client)
+    internal Inspector(MainViewModel owner, PipeClient client, DispatcherQueue dispatcher)
     {
         _owner = owner;
         _client = client;
+        _dispatcher = dispatcher;
         DownloadCities = new RelayCommand(
             () => _owner.DownloadData(_owner.Geolocation),
             () => _owner.Geolocation.CanDownload && !_owner.IsClosing
@@ -228,11 +238,11 @@ public sealed partial class Inspector : INotifyPropertyChanged
         OpenFolder = new RelayCommand(
             () => _owner.OpenTorrent(_target!, true),
             () =>
-                _target is not null && _owner.Contains(_target) && IsAvailable && !_owner.IsClosing
+                _target is not null && _owner.Contains(_target) && IsAvailable && !IsReplacing && !_owner.IsClosing
         );
-        CopyV1 = new RelayCommand(() => _owner.Copy(HashV1), () => HashV1.Length > 0);
-        CopyV2 = new RelayCommand(() => _owner.Copy(HashV2), () => HashV2.Length > 0);
-        CopyMagnet = new RelayCommand(() => _owner.Copy(Magnet), () => Magnet.Length > 0);
+        CopyV1 = new RelayCommand(() => _owner.Copy(HashV1), () => !IsReplacing && HashV1.Length > 0);
+        CopyV2 = new RelayCommand(() => _owner.Copy(HashV2), () => !IsReplacing && HashV2.Length > 0);
+        CopyMagnet = new RelayCommand(() => _owner.Copy(Magnet), () => !IsReplacing && Magnet.Length > 0);
         ShowRatioLimit = new RelayCommand(
             () => _owner.ShowSetting(_owner.Settings.Ratio),
             () => true
@@ -241,12 +251,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
             () => _owner.ShowSetting(_owner.Settings.ConnectionLimit),
             () => true
         );
-        Files = new FileSelection(owner.Text) { ShowsProgress = true, IsEnabled = false };
-        Files.Failed += (_, error) =>
-        {
-            _readFailure = error;
-            Refresh();
-        };
+        Files = CreateFiles();
         EditTrackers = new RelayCommand(
             () =>
             {
@@ -297,6 +302,19 @@ public sealed partial class Inspector : INotifyPropertyChanged
         };
     }
 
+    private FileSelection CreateFiles()
+    {
+        var files = new FileSelection(Text) { ShowsProgress = true, IsEnabled = false };
+        files.Failed += (sender, error) =>
+        {
+            if (!ReferenceEquals(sender, Files))
+                return;
+            _readFailure = error;
+            Refresh();
+        };
+        return files;
+    }
+
     // Another target starts at the given section, so the previous section is
     // not read first.
     internal bool Show(
@@ -329,13 +347,15 @@ public sealed partial class Inspector : INotifyPropertyChanged
             return false;
         _readFailure = _editFailure = null;
         CancelDraft();
+        IsReplacing = _visible && HasContent
+            && (target is not null || section is InspectorSection.Peers or InspectorSection.Speed);
         Clear();
         _target = target;
         ShowsAllPeers = allPeers;
         PeerSelection = selection;
         _section = section;
         Invalidate();
-        _ = Read();
+        QueueRead();
         return true;
     }
 
@@ -362,7 +382,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
         Invalidate();
         _readFailure = null;
         Refresh();
-        _ = Read();
+        QueueRead();
     }
 
     internal void Observe(string session, bool changed)
@@ -386,7 +406,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
         }
         if (_visible && (changed || _access != (IsAvailable, CanEdit)))
             Refresh();
-        _ = Read();
+        QueueRead();
     }
 
     internal void Disconnect()
@@ -407,12 +427,23 @@ public sealed partial class Inspector : INotifyPropertyChanged
         Invalidate();
         Refresh();
         if (visible)
+            QueueRead();
+    }
+
+    private void QueueRead()
+    {
+        if (_readFrame is not null || !_visible || !IsAvailable || _fetching || IsPending || _owner.IsClosing)
+            return;
+        _readFrame = new FrameCallback(_dispatcher, () =>
+        {
+            _readFrame = null;
             _ = Read();
+        });
     }
 
     private async Task Read()
     {
-        if (!_visible || !IsAvailable || _fetching || IsPending)
+        if (!_visible || !IsAvailable || _fetching || IsPending || _owner.IsClosing)
             return;
         _fetching = true;
         var context = ++_context;
@@ -430,6 +461,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
                     return;
                 }
                 History = history;
+                IsReplacing = false;
                 _readFailure = null;
                 changed = true;
                 return;
@@ -448,9 +480,9 @@ public sealed partial class Inspector : INotifyPropertyChanged
                 target,
                 section,
                 context,
-                detail =>
+                async detail =>
                 {
-                    if (ApplyDetail(detail))
+                    if (await ApplyDetail(detail, context))
                     {
                         Refresh();
                     }
@@ -493,8 +525,6 @@ public sealed partial class Inspector : INotifyPropertyChanged
         {
             var data = PipeClient.ReadOutcome(message, Text, "torrent");
             awaited.Apply(data);
-            if (data.GetProperty("ready").GetBoolean())
-                awaited.Completion.TrySetResult();
         }
         catch (Exception error)
         {
@@ -508,20 +538,23 @@ public sealed partial class Inspector : INotifyPropertyChanged
         Torrent torrent,
         InspectorSection section,
         int context,
-        Action<JsonElement> apply
+        Func<JsonElement, Task> apply
     )
     {
+        var cancellation = _reading.Token;
         var completion = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously
         );
         var receivedPush = false;
+        (JsonElement Data, bool Fresh)? latest = null;
+        var applying = false;
         _awaitedPush = (
             torrent.TorrentId,
             completion,
             data =>
             {
                 receivedPush = true;
-                Apply(data);
+                Queue(data, true);
             }
         );
         try
@@ -538,7 +571,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
                 arguments["folders"] = keys.Folders;
                 arguments["files"] = keys.Files;
             }
-            var read = _client.Read(Consumer.Inspector, "torrent", arguments);
+            var read = _client.Read(Consumer.Inspector, "torrent", arguments).WaitAsync(cancellation);
             // Invalidate withdraws an unsent read; a cancelled task is awaited
             // without throwing, because every refresh can abandon one.
             await ((Task)read).ConfigureAwait(
@@ -554,9 +587,9 @@ public sealed partial class Inspector : INotifyPropertyChanged
             // is then newer than the held facts.
             if (!completion.Task.IsCompleted && !receivedPush)
             {
-                Apply(reply);
+                Queue(reply, false);
             }
-            await completion.Task.WaitAsync(PipeClient.RequestTimeout);
+            await completion.Task.WaitAsync(PipeClient.RequestTimeout, cancellation);
         }
         catch (TimeoutException)
         {
@@ -575,22 +608,49 @@ public sealed partial class Inspector : INotifyPropertyChanged
             }
         }
 
-        void Apply(JsonElement data)
+        void Queue(JsonElement data, bool fresh)
         {
-            if (IsCurrent(context) && _owner.Contains(torrent))
-                apply(data);
+            if (!IsCurrent(context) || !_owner.Contains(torrent))
+                return;
+            latest = (data, fresh);
+            if (!applying)
+                _ = Drain();
+        }
+
+        async Task Drain()
+        {
+            applying = true;
+            try
+            {
+                while (IsCurrent(context) && latest is { } next)
+                {
+                    latest = null;
+                    await apply(next.Data);
+                    if (latest is null && next.Fresh && next.Data.GetProperty("ready").GetBoolean())
+                        completion.TrySetResult();
+                }
+            }
+            catch (Exception error)
+            {
+                completion.TrySetException(error);
+            }
+            finally
+            {
+                applying = false;
+            }
         }
     }
 
     internal void RefreshScope()
     {
+        IsReplacing = _visible && HasContent;
         Clear();
         _readFailure = null;
         if (!CanShow(_section))
             _section = InspectorSection.Peers;
         Invalidate();
         Refresh();
-        _ = Read();
+        QueueRead();
     }
 
     internal void RefreshDetail()
@@ -598,12 +658,13 @@ public sealed partial class Inspector : INotifyPropertyChanged
         if (!_visible)
             return;
         Invalidate();
-        _ = Read();
+        QueueRead();
     }
 
-    private bool ApplyDetail(JsonElement reply)
+    private async Task<bool> ApplyDetail(JsonElement reply, int context)
     {
-        var changed = _readFailure is not null;
+        var cancellation = _reading.Token;
+        var changed = _readFailure is not null || IsReplacing;
         switch (_section)
         {
             case InspectorSection.General:
@@ -632,6 +693,8 @@ public sealed partial class Inspector : INotifyPropertyChanged
                     );
                 break;
             case InspectorSection.Files:
+                if (!_filesLoaded && reply.GetProperty("metadata_ready").GetBoolean())
+                    return false;
                 var files = (HasFiles, HasFileChanges, _confirmedFiles is not null, _editFailure);
                 ApplyFiles(reply);
                 changed |=
@@ -639,24 +702,32 @@ public sealed partial class Inspector : INotifyPropertyChanged
                 break;
             case InspectorSection.Trackers:
                 if (reply.GetProperty("trackers").ValueKind == JsonValueKind.Null)
-                    break;
-                var trackers = (Trackers ?? []).ToDictionary(tracker => tracker.Url);
-                var nextTrackers = reply
-                    .GetProperty("trackers")
-                    .EnumerateArray()
-                    .Select(data =>
+                    return false;
+                var nextTrackers = await Task.Run(() => reply.GetProperty("trackers")
+                    .EnumerateArray().Select(data =>
                     {
-                        if (
-                            !trackers.TryGetValue(
-                                data.GetProperty("url").GetString()!,
-                                out var tracker
-                            )
-                        )
-                            return new Tracker(Text, data);
-                        tracker.Update(data);
-                        return tracker;
-                    })
-                    .ToArray();
+                        cancellation.ThrowIfCancellationRequested();
+                        return new Tracker(Text, data);
+                    }).ToArray(), cancellation);
+                await Yield();
+                if (!IsCurrent(context))
+                    return false;
+                var started = Stopwatch.GetTimestamp();
+                var trackers = (Trackers ?? []).ToDictionary(tracker => tracker.Url);
+                for (var index = 0; index < nextTrackers.Length; index++)
+                {
+                    if (!trackers.TryGetValue(nextTrackers[index].Url, out var tracker))
+                        continue;
+                    if (Stopwatch.GetElapsedTime(started) >= UpdateBudget)
+                    {
+                        await Yield();
+                        if (!IsCurrent(context))
+                            return false;
+                        started = Stopwatch.GetTimestamp();
+                    }
+                    tracker.Update(nextTrackers[index]);
+                    nextTrackers[index] = tracker;
+                }
                 if (Trackers is null || !Trackers.SequenceEqual(nextTrackers))
                 {
                     Trackers = nextTrackers;
@@ -668,48 +739,63 @@ public sealed partial class Inspector : INotifyPropertyChanged
             case InspectorSection.Pieces:
                 if (reply.TryGetProperty("verified", out _))
                 {
-                    Pieces = new Pieces(reply, _pieceFiles ?? PieceFiles.None);
+                    var pieceFiles = _pieceFiles ?? PieceFiles.None;
+                    var pieces = await Task.Run(() => new Pieces(reply, pieceFiles, cancellation), cancellation);
+                    await Yield();
+                    if (!IsCurrent(context))
+                        return false;
+                    Pieces = pieces;
                     changed = true;
                 }
+                else
+                    return false;
                 break;
         }
+        IsReplacing = false;
         _readFailure = null;
         return changed;
+    }
+
+    private Task Yield()
+    {
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (!_dispatcher.TryEnqueue(DispatcherQueuePriority.Low, () => completion.TrySetResult()))
+            completion.TrySetCanceled();
+        return completion.Task;
     }
 
     // Switch histories at a shared sample end. Splitting a coarse average
     // cannot recover the rate of its older portion without its observations.
     private async Task<SpeedSample[]> ReadHistory(int context)
     {
+        var cancellation = _reading.Token;
         var target = _target;
         string[] ids = IsGlobal
             ? []
             : Scope.Select(torrent => torrent.TorrentId).ToArray();
         if (!ShowsAllPeers && PeerSelection is not null && ids.Length == 0)
             return [];
-        var day = Samples(
-            await _client.Read(Consumer.Inspector, "history", HistoryArguments("day"))
-        );
+        var data = await _client.Read(Consumer.Inspector, "history", HistoryArguments("day")).WaitAsync(cancellation);
+        var day = await Task.Run(() => Samples(data), cancellation);
         if (!IsCurrent(context))
             return [];
         if (History is null)
         {
             History = day;
+            IsReplacing = false;
             Refresh();
         }
-        var recent = Samples(
-            await _client.Read(Consumer.Inspector, "history", HistoryArguments("five_minutes"))
-        );
-        if (recent.Length == 0)
-            return day;
-        var ends = recent.Select(sample => sample.Time).ToHashSet();
-        var cut =
-            day.FirstOrDefault(sample => ends.Contains(sample.Time))?.Time ?? recent[0].Start - 1;
-        return
-        [
-            .. day.Where(sample => sample.Time <= cut),
-            .. recent.Where(sample => sample.Start > cut),
-        ];
+        data = await _client.Read(Consumer.Inspector, "history", HistoryArguments("five_minutes")).WaitAsync(cancellation);
+        return await Task.Run(() =>
+        {
+            var recent = Samples(data);
+            if (recent.Length == 0)
+                return day;
+            var ends = recent.Select(sample => sample.Time).ToHashSet();
+            var cut = day.FirstOrDefault(sample => ends.Contains(sample.Time))?.Time ?? recent[0].Start - 1;
+            return day.Where(sample => sample.Time <= cut)
+                .Concat(recent.Where(sample => sample.Start > cut)).ToArray();
+        }, cancellation);
 
         Dictionary<string, object> HistoryArguments(string range)
         {
@@ -725,24 +811,35 @@ public sealed partial class Inspector : INotifyPropertyChanged
             return arguments;
         }
 
-        static SpeedSample[] Samples(JsonElement reply) =>
+        SpeedSample[] Samples(JsonElement reply) =>
             reply
                 .GetProperty("samples")
                 .EnumerateArray()
-                .Select(sample => new SpeedSample(
-                    sample.GetProperty("time").GetInt64(),
-                    sample.GetProperty("download_rate").GetDouble(),
-                    sample.GetProperty("upload_rate").GetDouble(),
-                    sample.GetProperty("start").GetInt64(),
-                    sample.GetProperty("count").GetInt32()
-                ))
+                .Select(sample =>
+                {
+                    cancellation.ThrowIfCancellationRequested();
+                    return new SpeedSample(
+                        sample.GetProperty("time").GetInt64(),
+                        sample.GetProperty("download_rate").GetDouble(),
+                        sample.GetProperty("upload_rate").GetDouble(),
+                        sample.GetProperty("start").GetInt64(),
+                        sample.GetProperty("count").GetInt32()
+                    );
+                })
                 .ToArray();
     }
 
     // A read for the old context is stale, so an unsent one is withdrawn.
     private void Invalidate()
     {
+        _readFrame?.Dispose();
+        _readFrame = null;
+        _refreshFrame?.Dispose();
+        _refreshFrame = null;
         _context++;
+        _reading.Cancel();
+        _reading.Dispose();
+        _reading = new();
         _fetching = false;
         _awaitedPush?.Completion.TrySetResult();
         _awaitedPush = null;
@@ -777,12 +874,13 @@ public sealed partial class Inspector : INotifyPropertyChanged
     // the metadata.
     private async Task ReadPages(Torrent torrent, InspectorSection section, int context)
     {
+        var cancellation = _reading.Token;
         if (section == InspectorSection.Files && !_filesLoaded)
         {
             JsonElement root;
             try
             {
-                root = await ReadTree(torrent, new() { ["folder"] = string.Empty });
+                root = await ReadTree(torrent, new() { ["folder"] = string.Empty }).WaitAsync(cancellation);
             }
             catch (CommandException error) when (error.Code == "metadata_unavailable")
             {
@@ -792,14 +890,21 @@ public sealed partial class Inspector : INotifyPropertyChanged
             {
                 return;
             }
-            Files.Show(root, request => ReadTree(torrent, request), EditFiles);
+            var files = CreateFiles();
+            await Task.Run(() => files.Show(root,
+                request => ReadTree(torrent, request), EditFiles, cancellation), cancellation);
+            await Yield();
+            if (!IsCurrent(context))
+                return;
+            Files = files;
             _filesLoaded = true;
+            IsReplacing = false;
             Refresh();
         }
         else if (section == InspectorSection.Pieces && _pieceFiles is null)
         {
             // A torrent without metadata has no files yet.
-            var count = await _client.FileCount(torrent.TorrentId);
+            var count = await _client.FileCount(torrent.TorrentId).WaitAsync(cancellation);
             if (!IsCurrent(context) || count == 0)
             {
                 return;
@@ -1031,7 +1136,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
             _pending = null;
             pending.SetResult();
             Refresh();
-            _ = Read();
+            QueueRead();
         }
     }
 
@@ -1085,7 +1190,8 @@ public sealed partial class Inspector : INotifyPropertyChanged
 
     private void Clear()
     {
-        Files.Clear();
+        Files.Detach();
+        Files = CreateFiles();
         _filesLoaded = false;
         _confirmedFiles = null;
         _fileReply = null;
@@ -1113,6 +1219,8 @@ public sealed partial class Inspector : INotifyPropertyChanged
 
     internal void Refresh()
     {
+        if (_owner.IsClosed)
+            return;
         _access = (IsAvailable, CanEdit);
         _loading = IsLoading;
         var enabled = CanEdit && _confirmedFiles is not null;
@@ -1120,16 +1228,35 @@ public sealed partial class Inspector : INotifyPropertyChanged
             Files.IsEnabled = enabled;
         foreach (RelayCommand command in _commands)
             command.Refresh();
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+        if (_refreshFrame is not null)
+            return;
+        _refreshFrame = new FrameCallback(_dispatcher, () =>
+        {
+            _refreshFrame = null;
+            // Keep the displayed detail bound until its replacement is ready.
+            if (IsReplacing)
+            {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsReplacing)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasError)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Message)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanEdit)));
+            }
+            else
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+        });
+    }
+
+    internal void Close()
+    {
+        _visible = false;
+        Invalidate();
     }
 
     private void RefreshLoading()
     {
         if (_loading == IsLoading)
             return;
-        _loading = IsLoading;
-        ((RelayCommand)Retry).Refresh();
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsLoading)));
+        Refresh();
     }
 }
 

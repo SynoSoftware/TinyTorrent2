@@ -266,7 +266,7 @@ public sealed partial class InspectorPane
     {
         if (_mapQueued)
             return;
-        _mapQueued = DispatcherQueue.TryEnqueue(() =>
+        _mapQueued = DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
         {
             _mapQueued = false;
             if (
@@ -275,6 +275,7 @@ public sealed partial class InspectorPane
                 || _library is not null
                 || Model.Section != InspectorSection.Peers
                 || !Model.IsVisible
+                || Model.IsReplacing
                 || !ReferenceEquals(PeerDrawing.Content, _peerMap)
             )
                 return;

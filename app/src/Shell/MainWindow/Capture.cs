@@ -49,6 +49,7 @@ public sealed partial class MainWindow
         "library-files" => CaptureMode.LibraryFiles,
         "traffic" => CaptureMode.Traffic,
         "peers" => CaptureMode.Peers,
+        "selection" => CaptureMode.Selection,
         "connections" => CaptureMode.Connections,
         "edits" => CaptureMode.Edits,
         "add-layout" => CaptureMode.AddLayout,
@@ -2634,6 +2635,11 @@ public sealed partial class MainWindow
             if (ReviewMode == CaptureMode.Peers)
             {
                 await CapturePeers(target, outcomes, completed);
+                return;
+            }
+            if (ReviewMode == CaptureMode.Selection)
+            {
+                await CaptureSelection(outcomes);
                 return;
             }
             if (ReviewMode == CaptureMode.Connections)

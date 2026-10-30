@@ -1,4 +1,6 @@
 using System.Net;
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Shared.Engine;
@@ -152,6 +154,7 @@ public sealed partial class Inspector
                 }
                 _located.IntersectWith(Peers ?? []);
                 var peers = (Peers ?? []).Where(peer => !_located.Contains(peer)).ToArray();
+                var cancellation = _reading.Token;
                 var origin = _origin;
                 var needsOrigin = _originKey != key;
                 if (peers.Length == 0 && !needsOrigin)
@@ -159,11 +162,15 @@ public sealed partial class Inspector
                 var locations = await Task.Run(() =>
                     (
                         Peers: peers
-                            .Select(peer => (Peer: peer, Location: Locate(peer.Endpoint)))
+                            .Select(peer =>
+                            {
+                                cancellation.ThrowIfCancellationRequested();
+                                return (Peer: peer, Location: Locate(peer.Endpoint));
+                            })
                             .ToArray(),
                         Origin: needsOrigin ? Locate(key.PublicAddress) : origin
-                    )
-                );
+                    ), cancellation);
+                cancellation.ThrowIfCancellationRequested();
                 if (_owner.Geolocation.Version != key.Version)
                     continue;
                 if (
@@ -175,14 +182,29 @@ public sealed partial class Inspector
                     return;
                 var current = (Peers ?? []).ToHashSet();
                 var changed = false;
-                foreach (var location in locations.Peers)
+                var started = Stopwatch.GetTimestamp();
+                for (var index = 0; index < locations.Peers.Length; index++)
                 {
+                    if (Stopwatch.GetElapsedTime(started) >= UpdateBudget)
+                    {
+                        await Yield();
+                        started = Stopwatch.GetTimestamp();
+                        cancellation.ThrowIfCancellationRequested();
+                        if (!_visible || _section != InspectorSection.Peers || !IsAvailable || _owner.IsClosing)
+                            return;
+                        if (_owner.Geolocation.Version != key.Version)
+                            break;
+                        current = (Peers ?? []).ToHashSet();
+                    }
+                    var location = locations.Peers[index];
                     if (!current.Contains(location.Peer))
                         continue;
                     location.Peer.Location = location.Location;
                     _located.Add(location.Peer);
                     changed = true;
                 }
+                if (_owner.Geolocation.Version != key.Version)
+                    continue;
                 if (needsOrigin && _owner.PublicAddress == key.PublicAddress)
                 {
                     _originKey = key;
@@ -198,9 +220,15 @@ public sealed partial class Inspector
                 }
             }
         }
+        catch (OperationCanceledException)
+        {
+        }
         finally
         {
             _locating = false;
+            if (_visible && _section == InspectorSection.Peers && IsAvailable
+                && !_owner.IsClosing && (Peers ?? []).Any(peer => !_located.Contains(peer)))
+                _ = LocatePeers();
         }
     }
 
@@ -220,6 +248,7 @@ public sealed partial class Inspector
                     _peerCache.Find(entry => entry.TorrentId == torrent.TorrentId).Peers ?? []
                 )
                 .ToArray();
+            IsReplacing = false;
             Refresh();
         }
         if (Peers is { } previous && previous.Any(peer => !ids.Contains(peer.TorrentId)))
@@ -249,15 +278,18 @@ public sealed partial class Inspector
                     torrent,
                     InspectorSection.Peers,
                     context,
-                    detail =>
+                    async detail =>
                     {
                         if (detail.GetProperty("peers").ValueKind == JsonValueKind.Null)
                             return;
-                        var changed = ApplyPeers(
+                        var changed = await ApplyPeers(
                             torrent.TorrentId,
                             detail.GetProperty("peers"),
-                            groups
+                            groups,
+                            context
                         );
+                        if (!IsCurrent(context))
+                            return;
                         changed |= _readFailure is not null;
                         _readFailure = null;
                         if (changed)
@@ -274,52 +306,119 @@ public sealed partial class Inspector
         {
             return false;
         }
-        var changed = _readFailure is not null || Peers is null;
+        var changed = _readFailure is not null || Peers is null || IsReplacing;
         present = _owner.Torrents.Select(torrent => torrent.TorrentId).ToHashSet();
         var remaining = (Peers ?? []).Where(peer => present.Contains(peer.TorrentId)).ToArray();
         changed |= Peers is not null && remaining.Length != Peers.Count;
         if (changed)
             Peers = remaining;
+        IsReplacing = false;
         _readFailure = null;
         return changed;
     }
 
-    private bool ApplyPeers(string torrentId, JsonElement rows, Dictionary<string, Peer[]> groups)
+    private async Task<bool> ApplyPeers(string torrentId, JsonElement rows, Dictionary<string, Peer[]> groups, int context)
     {
+        var cancellation = _reading.Token;
         var group = groups.GetValueOrDefault(torrentId) ?? [];
         var previous = group.ToDictionary(peer => peer.Endpoint);
+        var received = new List<Peer>();
+        var next = (Peers ?? []).ToList();
         var changed = false;
-        var received = rows.EnumerateArray()
-            .Select(data => (Endpoint: data.GetProperty("endpoint").GetString()!, Data: data))
-            .DistinctBy(row => row.Endpoint)
-            .Select(row =>
+        var published = false;
+        await foreach (var batch in PreparePeers(torrentId, rows, cancellation))
+        {
+            await Yield();
+            if (!IsCurrent(context))
+                return false;
+            var started = Stopwatch.GetTimestamp();
+            var added = false;
+            foreach (var parsed in batch)
             {
-                if (!previous.TryGetValue(row.Endpoint, out var peer))
+                if (Stopwatch.GetElapsedTime(started) >= UpdateBudget)
                 {
-                    return new Peer(Text, torrentId, row.Endpoint, null, row.Data);
+                    await Yield();
+                    if (!IsCurrent(context))
+                        return false;
+                    started = Stopwatch.GetTimestamp();
                 }
-                changed |= peer.Update(row.Data);
-                return peer;
-            })
-            .ToArray();
-        groups[torrentId] = received;
+                if (previous.TryGetValue(parsed.Endpoint, out var peer))
+                {
+                    changed |= peer.Update(parsed);
+                    received.Add(peer);
+                }
+                else
+                {
+                    received.Add(parsed);
+                    next.Add(parsed);
+                    added = true;
+                }
+            }
+            if (added)
+            {
+                Peers = next.ToArray();
+                IsReplacing = false;
+                published = true;
+                Refresh();
+                _ = LocatePeers();
+            }
+            else if (changed)
+                RowsUpdated?.Invoke(this, InspectorSection.Peers);
+        }
+        if (!IsCurrent(context))
+            return false;
+        var complete = received.ToArray();
+        groups[torrentId] = complete;
         _peerCache.RemoveAll(entry => entry.TorrentId == torrentId);
-        _peerCache.Insert(0, (torrentId, received));
+        _peerCache.Insert(0, (torrentId, complete));
         // Keep recent selections instant without retaining every torrent's peers.
         if (_peerCache.Count > 8)
             _peerCache.RemoveAt(_peerCache.Count - 1);
-        if (Peers is not null && group.SequenceEqual(received))
+        if (Peers is not null && group.SequenceEqual(complete))
         {
             if (changed)
                 RowsUpdated?.Invoke(this, InspectorSection.Peers);
-            return false;
+            return published;
         }
-        var next = (Peers ?? []).ToList();
-        var index = next.FindIndex(peer => peer.TorrentId == torrentId);
+        var insertion = next.FindIndex(peer => peer.TorrentId == torrentId);
         next.RemoveAll(peer => peer.TorrentId == torrentId);
-        next.InsertRange(index < 0 ? next.Count : index, received);
+        next.InsertRange(insertion < 0 ? next.Count : insertion, complete);
         Peers = next;
+        IsReplacing = false;
         _ = LocatePeers();
         return true;
+    }
+
+    private async IAsyncEnumerable<Peer[]> PreparePeers(
+        string torrentId, JsonElement rows, [EnumeratorCancellation] CancellationToken cancellation)
+    {
+        var text = Text;
+        var endpoints = new HashSet<string>();
+        var source = rows.EnumerateArray();
+        var complete = false;
+        while (!complete)
+        {
+            var batch = await Task.Run(() =>
+            {
+                var peers = new List<Peer>();
+                var started = Stopwatch.GetTimestamp();
+                do
+                {
+                    cancellation.ThrowIfCancellationRequested();
+                    if (!source.MoveNext())
+                    {
+                        complete = true;
+                        break;
+                    }
+                    var data = source.Current;
+                    var endpoint = data.GetProperty("endpoint").GetString()!;
+                    if (endpoints.Add(endpoint))
+                        peers.Add(new Peer(text, torrentId, endpoint, null, data));
+                } while (Stopwatch.GetElapsedTime(started) < UpdateBudget);
+                return peers.ToArray();
+            }, cancellation).ConfigureAwait(false);
+            if (batch.Length > 0)
+                yield return batch;
+        }
     }
 }

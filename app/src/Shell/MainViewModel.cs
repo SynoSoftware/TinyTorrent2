@@ -368,7 +368,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         SpeedLimit = new SpeedLimit(this, _client);
         Geolocation = new Geolocation(_providerHttp, Work);
         Geolocation.Failed += (_, error) => Notifications.Report(error);
-        Inspector = new Inspector(this, _client);
+        Inspector = new Inspector(this, _client, dispatcher);
         Updates = new Updates(_providerHttp, Work, _client, Settings.Updates);
         Updates.Changed += (_, _) => Changed(nameof(HasUpdate));
         Settings.AttachLibrary();
@@ -975,14 +975,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 Changed(nameof(EmptyAction));
             }
             if (selectionChanged)
-            {
-                Changed(nameof(SelectionText));
-                Changed(nameof(HasSelection));
-                Changed(nameof(CanEditSelection));
-                Changed(nameof(Sequential));
-                Changed(nameof(FirstLast));
-                Changed(nameof(Limited));
-            }
+                RefreshSelection();
             var limitsChanged = previousLimits != (_limits, MissingAdapter, LimitsIndex);
             var minute = DateTime.Now.Ticks / TimeSpan.TicksPerMinute;
             if (limitsChanged || minute != _limitsMinute)
@@ -1088,7 +1081,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 return;
             _detailQueued = true;
         }
-        _dispatcher.TryEnqueue(() =>
+        _dispatcher.TryEnqueue(DispatcherQueuePriority.Low, () =>
         {
             JsonElement? latest;
             bool refresh;
@@ -1459,6 +1452,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     public void Dispose()
     {
         _closed = true;
+        _selectionFrame?.Dispose();
+        Inspector.Close();
         _ = Updates.Close();
         AddDraft.Close();
         Library.Dispose();

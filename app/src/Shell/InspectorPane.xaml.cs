@@ -15,12 +15,10 @@ public sealed partial class InspectorPane : UserControl
     private readonly SelectorBarItem[] _torrentSections;
     private readonly Motion _motion = new();
     private readonly Motion _arrival = new();
-    private Torrent? _target;
     private InspectorSection _section;
     private bool _refreshing;
     private bool _rowsQueued;
     private bool _tracking;
-    private bool _awaitingArrival;
     private bool _composing;
     private (Torrent Target, int Index)? _fileReveal;
     public Inspector Model { get; }
@@ -280,12 +278,12 @@ public sealed partial class InspectorPane : UserControl
 
     private void OnRows(object? sender, InspectorSection section)
     {
-        if (_library is not null || !Model.IsVisible || section != Model.Section || _rowsQueued)
+        if (_library is not null || !Model.IsVisible || Model.IsReplacing || section != Model.Section || _rowsQueued)
             return;
-        _rowsQueued = DispatcherQueue.TryEnqueue(() =>
+        _rowsQueued = DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
         {
             _rowsQueued = false;
-            if (!IsLoaded || _library is not null || !Model.IsVisible)
+            if (!IsLoaded || _library is not null || !Model.IsVisible || Model.IsReplacing)
                 return;
             if (Model.Section == InspectorSection.Peers)
             {
@@ -368,6 +366,8 @@ public sealed partial class InspectorPane : UserControl
 
     private void Refresh(bool workspace = false)
     {
+        SectionViews.IsHitTestVisible = _library is not null || !Model.IsReplacing;
+        TabActions.IsHitTestVisible = SectionViews.IsHitTestVisible;
         if (_library is not null)
         {
             _tracking = false;
@@ -380,10 +380,13 @@ public sealed partial class InspectorPane : UserControl
             StopTracking();
             return;
         }
+        if (Model.IsReplacing)
+            return;
         if (!_tracking)
             RefreshText();
         EmptyText.Text = Model.EmptyText;
         var inspecting = Model.HasContent && Model.IsVisible;
+        var sectionChanged = _section != Model.Section;
         var content = inspecting ? LoadSection(Model.Section) : EmptyState;
         if (workspace)
             _motion.Show(content, forward: false);
@@ -391,22 +394,6 @@ public sealed partial class InspectorPane : UserControl
             _motion.Show(content, forward: Model.Section >= _section);
         else
             _motion.CrossFade(content);
-        if (_target != Model.Target)
-        {
-            _awaitingArrival =
-                _target is not null
-                && inspecting
-                && _section == Model.Section
-                && Model.Section != InspectorSection.Pieces;
-            _target = Model.Target;
-        }
-        if (_section != Model.Section)
-            _awaitingArrival = false;
-        if (_awaitingArrival && !Model.IsLoading)
-        {
-            _arrival.Fade(SectionViews, Math.Min(SectionViews.Opacity, 0.65), 1);
-            _awaitingArrival = false;
-        }
         _section = Model.Section;
         _refreshing = true;
         Sections.IsEnabled = Model.IsVisible;
@@ -415,19 +402,24 @@ public sealed partial class InspectorPane : UserControl
         Sections.SelectedItem = Sections.Items.First(item => Equals(item.Tag, Model.Section));
         _refreshing = false;
         ShowActions(Model.Section == InspectorSection.Peers ? _peerMore : null);
-        ArrangePeers();
-        RefreshMap();
-        var loading = Model.IsAvailable && Model.IsLoading;
-        if (Peers is not null)
+        if (Model.Section == InspectorSection.Peers || sectionChanged)
         {
+            ArrangePeers();
+            RefreshMap();
+        }
+        var loading = Model.IsAvailable && Model.IsLoading;
+        if (Peers is not null && Model.Section == InspectorSection.Peers)
+        {
+            Peers.ItemsSource = Model.ShownPeers;
             Peers.Placeholder =
                 Model.Peers is null && loading
                     ? Syno.TableView.Placeholder.Loading
                     : Syno.TableView.Placeholder.Empty;
             NoPeers.Visibility = Model.Peers is null ? Visibility.Collapsed : Visibility.Visible;
         }
-        if (TrackerTable is not null)
+        if (TrackerTable is not null && Model.Section == InspectorSection.Trackers)
         {
+            TrackerTable.ItemsSource = Model.Trackers;
             TrackerTable.Placeholder =
                 Model.Trackers is null && loading
                     ? Syno.TableView.Placeholder.Loading
@@ -436,8 +428,13 @@ public sealed partial class InspectorPane : UserControl
                 ? Visibility.Collapsed
                 : Visibility.Visible;
         }
-        Map?.Show(Model.Pieces, Model.Text);
-        if (General is not null)
+        if (_files is not null && Model.Section == InspectorSection.Files)
+            _files.Model = Model.Files;
+        if (Speed is not null && Model.Section == InspectorSection.Speed)
+            Speed.Samples = Model.History;
+        if (Model.Section == InspectorSection.Pieces)
+            Map?.Show(Model.Pieces, Model.Text, Model.Cancellation);
+        if (General is not null && Model.Section == InspectorSection.General)
         {
             Progress.Style = Controls.Progress.SelectStyle(
                 Model.Target is { IsProgressMuted: true }
@@ -464,7 +461,8 @@ public sealed partial class InspectorPane : UserControl
             StopTracking();
             return;
         }
-        Bindings.Update();
+        if (!Model.IsReplacing || _library is not null)
+            Bindings.Update();
         _tracking = _library is null;
         if (Trackers is not null)
             ActionButton.Align([EditTrackers, Reannounce]);

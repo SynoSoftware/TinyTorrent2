@@ -854,6 +854,7 @@ internal enum CaptureMode
     Traffic,
     Peers,
     LibraryFiles,
+    Selection,
     Connections,
     Edits,
     AddLayout,

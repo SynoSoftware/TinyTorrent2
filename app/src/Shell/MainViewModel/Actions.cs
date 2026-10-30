@@ -79,11 +79,11 @@ public sealed partial class MainViewModel
 
     // Null when the selected torrents differ. Switching a mixed selection
     // turns the choice on for all of them.
-    public bool? Sequential => Shared(torrent => torrent.Sequential);
-    public bool? FirstLast => Shared(torrent => torrent.FirstLast);
+    public bool? Sequential => Shared(_selected, torrent => torrent.Sequential);
+    public bool? FirstLast => Shared(_selected, torrent => torrent.FirstLast);
     public ICommand SwitchSequential { get; }
     public ICommand SwitchFirstLast { get; }
-    public bool? Limited => Shared(torrent => torrent.IsLimited);
+    public bool? Limited => Shared(_selected, torrent => torrent.IsLimited);
     public ICommand LimitSpeed { get; }
     public SpeedLimit SpeedLimit { get; }
     public Inspector Inspector { get; }
@@ -303,10 +303,20 @@ public sealed partial class MainViewModel
         }
     }
 
-    private bool? Shared(Func<Torrent, bool> choice) =>
-        _selected.All(choice) ? _selected.Length > 0
-        : _selected.Any(choice) ? null
-        : false;
+    internal static bool? Shared(IReadOnlyList<Torrent> rows, Func<Torrent, bool> choice,
+        CancellationToken cancellation = default)
+    {
+        bool? shared = null;
+        foreach (var row in rows)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            var value = choice(row);
+            if (shared is { } previous && previous != value)
+                return null;
+            shared = value;
+        }
+        return shared ?? false;
+    }
 
     private static string PieceOrderKey(PieceOrder order, bool enabled) =>
         (order, enabled) switch

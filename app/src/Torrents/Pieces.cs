@@ -18,41 +18,58 @@ public sealed class Pieces
     public IReadOnlyList<PieceKind> States { get; }
     public int Count => Verified.Count;
 
-    internal Pieces(JsonElement data, PieceFiles files)
+    internal Pieces(JsonElement data, PieceFiles files, CancellationToken cancellation = default)
     {
         MetadataReady = data.GetProperty("metadata_ready").GetBoolean();
         PieceSize = data.GetProperty("piece_size").GetInt32();
         PeerCount = data.GetProperty("peer_count").GetInt32();
         Verified = data.GetProperty("verified")
             .EnumerateArray()
-            .Select(value => value.GetBoolean())
+            .Select(value =>
+            {
+                cancellation.ThrowIfCancellationRequested();
+                return value.GetBoolean();
+            })
             .ToArray();
         Wanted = data.GetProperty("wanted")
             .EnumerateArray()
-            .Select(value => value.GetBoolean())
+            .Select(value =>
+            {
+                cancellation.ThrowIfCancellationRequested();
+                return value.GetBoolean();
+            })
             .ToArray();
         Availability = data.GetProperty("availability")
             .EnumerateArray()
-            .Select(value => value.GetInt32())
+            .Select(value =>
+            {
+                cancellation.ThrowIfCancellationRequested();
+                return value.GetInt32();
+            })
             .ToArray();
         Downloading = data.GetProperty("downloading")
             .EnumerateArray()
             .ToDictionary(
-                value => value.GetProperty("index").GetInt32(),
+                value =>
+                {
+                    cancellation.ThrowIfCancellationRequested();
+                    return value.GetProperty("index").GetInt32();
+                },
                 value => value.GetProperty("progress").GetDouble()
             );
         Files = files;
         if (Availability.Count != Count || Wanted.Count != Count)
             throw new InvalidDataException("Incomplete piece availability.");
-        States = Classify();
+        States = Classify(cancellation);
     }
 
-    private PieceKind[] Classify()
+    private PieceKind[] Classify(CancellationToken cancellation)
     {
         var threshold = Math.Max(1, (int)Math.Ceiling(Availability.DefaultIfEmpty().Max() * 0.15));
         var states = new PieceKind[Count];
         for (var index = 0; index < Count; index++)
         {
+            cancellation.ThrowIfCancellationRequested();
             if (Verified[index])
                 states[index] = PieceKind.Verified;
             else if (Downloading.ContainsKey(index))

@@ -232,6 +232,7 @@ public sealed partial class Table : Control
             return;
         }
 
+        CancelPreparation();
         _detached = true;
         QueueRealized();
         LayoutUpdated -= OnFillLayout;

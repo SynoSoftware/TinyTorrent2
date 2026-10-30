@@ -144,6 +144,8 @@ internal static class MenuItems
 
     private static void Update(MenuFlyoutItemBase item, MenuEntry line, Strings text)
     {
+        if ((line is MenuCommand or MenuHeading or MenuSeparator) && Equals(item.DataContext, line))
+            return;
         item.DataContext = line;
         switch (line, item)
         {

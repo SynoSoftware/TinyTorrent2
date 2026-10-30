@@ -317,6 +317,10 @@ public sealed partial class MainWindow
                 desired.Current as Torrent,
                 LeaveInspector
             );
+            if (selection is null && accepted && ReferenceEquals(Torrents.Selection, desired)
+                && desired.Items.SequenceEqual(Model.Selected)
+                && ReferenceEquals(desired.Current, Model.Current))
+                return true;
             var visible = Model.VisibleTorrents.ToHashSet();
             var retained = Model.Selected.Where(visible.Contains).ToArray();
             Torrents.Selection = new Syno.TableView.Selection(

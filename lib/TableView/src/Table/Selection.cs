@@ -14,6 +14,43 @@ public sealed partial class Table
     private Selection _publishedSelection = Selection.Empty;
     private Selection? _pendingSelection;
     private ListViewSelectionMode _selectionMode = ListViewSelectionMode.Extended;
+    private Action? _cancelPreparation;
+
+    /// <summary>
+    /// Runs selection-dependent preparation on a worker thread. A newer selection,
+    /// another preparation, or cancellation ends the wait and cancels this work.
+    /// Call on the UI thread; marshal presentation back to it and check the token
+    /// before applying results. The returned task reports completion or failure.
+    /// </summary>
+    public async Task PrepareSelection(
+        Func<Selection, CancellationToken, Task> prepare,
+        CancellationToken cancellation = default)
+    {
+        ArgumentNullException.ThrowIfNull(prepare);
+        CancelPreparation();
+        using var source = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        var token = source.Token;
+        Task? cancelling = null;
+        Action cancel = () => cancelling ??= source.CancelAsync();
+        _cancelPreparation = cancel;
+        var selection = Selection;
+        try
+        {
+            await Task.Run(() => prepare(selection, token), token).WaitAsync(token);
+        }
+        finally
+        {
+            if (_cancelPreparation == cancel)
+                _cancelPreparation = null;
+            cancel();
+            await cancelling!;
+        }
+    }
+
+    private void CancelPreparation()
+    {
+        _cancelPreparation?.Invoke();
+    }
 
     /// <summary>
     /// Raised once after any completed selection or current-item change, including the ones caused
@@ -145,6 +182,8 @@ public sealed partial class Table
         Selection next = new(BuildSelectedPacket(), _selection.Current);
         bool changed = !SameSelection(previous, next);
         _publishedSelection = next;
+        if (changed)
+            CancelPreparation();
         if (!_detached)
         {
             RefreshContainers(previous);

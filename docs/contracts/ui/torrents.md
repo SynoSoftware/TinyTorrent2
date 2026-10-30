@@ -398,6 +398,33 @@ host's error; in Add the rows are then read again.
 
 ## Inspector and edits
 
+Selection cancels the previous inspector read and background preparation, then
+accepts the current row before new inspector reads and binding refreshes run.
+Inspector reads and notifications, selection bindings, command states, menus
+and status layout follow the selection's rendered frame at low dispatcher
+priority. A newer target cancels callbacks waiting for the previous frame as
+well as its reads. An accepted table selection does not enumerate the torrent
+view again unless it needs correction, so ordinary clicks do no work proportional
+to the number of visible torrents.
+Peer and tracker parsing, file-tree construction, piece classification and
+history assembly run in the background. Applying changes to live peers, trackers
+and locations yields after about 16 ms of work, so input can change the target
+without waiting for the whole reply. Peer preparation publishes ready batches
+after each 16 ms background slice instead of waiting for the entire list.
+Existing rows remain until the completed snapshot confirms their removal.
+Tracker rows are prepared in the background. Inspector refreshes coalesce
+at low dispatcher priority and only
+the visible section receives its data. Late replies belong to their original
+context and cannot replace the current detail. A pipe request already sent may
+finish, but the inspector stops waiting for it and ignores its reply.
+
+Changing the selected row keeps the displayed inspector content and heading
+until the new row's detail is available. Loading never clears a populated table
+or replaces it with a spinner. The ready rows replace the source directly,
+using TableView's native row transitions. Retained content cannot edit the new
+target while its replacement is pending. Pieces likewise keep their existing
+bitmap until the replacement has rendered.
+
 While the engine restores a selected torrent, the inspector keeps its loading
 state and retries detail reads with the existing summary updates. This wait
 asks for no action from the person.
@@ -421,6 +448,8 @@ SelectorBar and the Pin and Close icon buttons. The owner
 could not get used to a left navigation pane, and one row keeps the sections
 visible while the working view gets the full inspector width. The person
 adjusts the inspector's height with the split.
+The torrent heading shows its name and size without a status icon, so status
+does not compete with the subject's name.
 
 Pin collapses the shared inspector to a ten-pixel horizontal bar immediately
 above the status bar, within the workspace. The ten-pixel slot contains an

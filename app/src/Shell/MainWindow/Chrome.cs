@@ -1,4 +1,5 @@
 using Microsoft.UI;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -29,7 +30,7 @@ public sealed partial class MainWindow
     {
         if (_statusPending || _allowClose)
             return;
-        _statusPending = DispatcherQueue.TryEnqueue(() =>
+        _statusPending = DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () =>
         {
             _statusPending = false;
             if (!_allowClose)

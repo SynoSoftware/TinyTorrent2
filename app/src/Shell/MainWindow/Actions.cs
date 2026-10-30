@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Windows.Input;
+using DispatcherQueuePriority = Microsoft.UI.Dispatching.DispatcherQueuePriority;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
@@ -23,6 +24,8 @@ public sealed partial class MainWindow
     private MenuFlyout? _selectionMenu;
     private RelayCommand? _switchInspector;
     private bool _menusPending;
+    private int _menuVersion;
+    private IReadOnlyList<MenuEntry> _torrentCommands = [];
 
     private IReadOnlyList<MenuEntry> WorkspaceMenu(string group) =>
         [
@@ -103,7 +106,8 @@ public sealed partial class MainWindow
         HelpMenu.Title = Model.Text.Get("menus", "help");
         HelpMenu.AccessKey = MenuKey("help");
         AutomationProperties.SetName(Menus, Model.Text.Get("commands", "menu"));
-        FillMenus();
+        _torrentCommands = Selection(properties: true, includeRetry: true).ToArray();
+        QueueMenus();
         ClearFiltersButton.Text = Model.Text.Get("window", "clear_filters");
         ToolTipService.SetToolTip(
             ClearFiltersButton,
@@ -178,18 +182,70 @@ public sealed partial class MainWindow
     // after it.
     private void QueueMenus()
     {
+        _menuVersion++;
         if (_menusPending || _allowClose)
             return;
-        _menusPending = DispatcherQueue.TryEnqueue(() =>
+        _menusPending = DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, async () =>
         {
             _menusPending = false;
-            if (!_allowClose)
-                FillMenus();
+            if (_allowClose)
+                return;
+            var version = _menuVersion;
+            var rows = (Rows: Model.Selected.ToArray(), CanEdit: Model.CanEdit);
+            var commands = _torrentCommands;
+            var text = Model.Text;
+            try
+            {
+                await Torrents.PrepareSelection(async (_, cancellation) =>
+                {
+                    var entries = PrepareTorrentMenu(rows, commands, text, cancellation);
+                    var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    if (!DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () =>
+                    {
+                        try
+                        {
+                            if (!cancellation.IsCancellationRequested && version == _menuVersion && !_allowClose)
+                                FillMenus(entries);
+                            completion.TrySetResult();
+                        }
+                        catch (Exception error)
+                        {
+                            completion.TrySetException(error);
+                        }
+                    }))
+                        completion.TrySetCanceled();
+                    await completion.Task.WaitAsync(cancellation);
+                });
+            }
+            catch (OperationCanceledException)
+            {
+            }
         });
     }
 
-    // The menus stay built, so each model change refreshes them in place.
-    private void FillMenus()
+    private IReadOnlyList<MenuEntry> PrepareTorrentMenu(
+        (Torrent[] Rows, bool CanEdit) selection, IReadOnlyList<MenuEntry> commands,
+        Strings text, CancellationToken cancellation)
+    {
+        var sequential = MainViewModel.Shared(selection.Rows, row => row.Sequential, cancellation);
+        var firstLast = MainViewModel.Shared(selection.Rows, row => row.FirstLast, cancellation);
+        var limited = MainViewModel.Shared(selection.Rows, row => row.IsLimited, cancellation);
+        var retry = selection.CanEdit && selection.Rows.Any(row => row.CanRetry);
+        List<MenuEntry> entries = [new MenuHeading(text.Format("window", "selected", selection.Rows.Length), Lucide.ListChecks)];
+        foreach (var command in commands)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            if (command is MenuCommand action && action.Command == Model.Retry && !retry)
+                continue;
+            entries.Add(command is MenuChoice choice
+                ? choice with { State = choice.Command == Model.SwitchSequential ? sequential
+                    : choice.Command == Model.SwitchFirstLast ? firstLast : limited }
+                : command);
+        }
+        return entries;
+    }
+
+    private void FillMenus(IReadOnlyList<MenuEntry> torrent)
     {
         var library = Model.Page == WindowPage.Library;
         MenuItems.Fill(
@@ -211,8 +267,7 @@ public sealed partial class MainWindow
                 ? [.. LibraryMenu()]
                 :
                 [
-                    new MenuHeading(Model.SelectionText, Syno.Lucide.ListChecks),
-                    .. Selection(properties: true),
+                    .. torrent,
                     new MenuSeparator(),
                     Command("pause_all", Model.PauseAll, Syno.Lucide.Pause),
                     Command("resume_all", Model.ResumeAll, Syno.Lucide.Play),
@@ -301,12 +356,12 @@ public sealed partial class MainWindow
             _selectionMenu.ShowAt(target);
     }
 
-    private IEnumerable<MenuEntry> Selection(bool properties)
+    private IEnumerable<MenuEntry> Selection(bool properties, bool includeRetry = false)
     {
         yield return Command("pause", Model.Pause, Syno.Lucide.Square);
         yield return Command("resume", Model.Resume, Syno.Lucide.Play);
         yield return Command("force", Model.Force, Syno.Lucide.Zap);
-        if (Model.Retry.CanExecute(null))
+        if (includeRetry || Model.Retry.CanExecute(null))
             yield return Command("retry", Model.Retry, Syno.Lucide.RotateCcw);
         yield return new MenuSeparator();
         yield return Command("open", Model.Open, Syno.Lucide.File);

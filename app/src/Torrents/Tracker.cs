@@ -54,34 +54,30 @@ public sealed class Tracker : INotifyPropertyChanged
     {
         _text = text;
         Url = data.GetProperty("url").GetString()!;
-        Update(data);
+        Tier = data.GetProperty("tier").GetInt32();
+        Status = ReadStatus(data.GetProperty("status"));
+        SeedCount = data.GetProperty("seed_count").GetInt32();
+        LeecherCount = data.GetProperty("leecher_count").GetInt32();
+        DownloadCount = data.GetProperty("download_count").GetInt32();
+        NextAnnounce = data.GetProperty("next_announce").GetInt64();
+        Message = data.GetProperty("message").GetString()!;
+        _endpoints = data.GetProperty("endpoints").EnumerateArray()
+            .Select(endpoint => new Endpoint(endpoint)).ToArray();
     }
 
-    internal void Update(JsonElement data)
+    internal void Update(Tracker data)
     {
         var changed = false;
-        Tier = Set(Tier, data.GetProperty("tier").GetInt32());
-        Status = Set(Status, ReadStatus(data.GetProperty("status")));
-        SeedCount = Set(SeedCount, data.GetProperty("seed_count").GetInt32());
-        LeecherCount = Set(LeecherCount, data.GetProperty("leecher_count").GetInt32());
-        DownloadCount = Set(DownloadCount, data.GetProperty("download_count").GetInt32());
-        NextAnnounce = Set(NextAnnounce, data.GetProperty("next_announce").GetInt64());
-        var message = data.GetProperty("message");
-        if (!message.ValueEquals(Message))
+        Tier = Set(Tier, data.Tier);
+        Status = Set(Status, data.Status);
+        SeedCount = Set(SeedCount, data.SeedCount);
+        LeecherCount = Set(LeecherCount, data.LeecherCount);
+        DownloadCount = Set(DownloadCount, data.DownloadCount);
+        NextAnnounce = Set(NextAnnounce, data.NextAnnounce);
+        Message = Set(Message, data.Message);
+        if (!_endpoints.SequenceEqual(data._endpoints))
         {
-            Message = message.GetString()!;
-            changed = true;
-        }
-        var endpoints = data.GetProperty("endpoints");
-        var sameEndpoints = endpoints.GetArrayLength() == _endpoints.Length;
-        for (var index = 0; sameEndpoints && index < _endpoints.Length; index++)
-            sameEndpoints = _endpoints[index].Matches(endpoints[index]);
-        if (!sameEndpoints)
-        {
-            _endpoints = endpoints
-                .EnumerateArray()
-                .Select(endpoint => new Endpoint(endpoint))
-                .ToArray();
+            _endpoints = data._endpoints;
             changed = true;
         }
         if (changed)
@@ -123,19 +119,21 @@ public sealed class Tracker : INotifyPropertyChanged
             _ => TrackerStatus.Unknown,
         };
 
-    private sealed class Endpoint(JsonElement data)
+    private sealed record Endpoint
     {
-        public string Address { get; } = data.GetProperty("address").GetString()!;
-        public string Version { get; } = data.GetProperty("version").GetString()!;
-        public TrackerStatus Status { get; } = ReadStatus(data.GetProperty("status"));
-        public int Failures { get; } = data.GetProperty("failures").GetInt32();
-        public string Message { get; } = data.GetProperty("message").GetString()!;
+        public string Address { get; }
+        public string Version { get; }
+        public TrackerStatus Status { get; }
+        public int Failures { get; }
+        public string Message { get; }
 
-        internal bool Matches(JsonElement value) =>
-            value.GetProperty("address").ValueEquals(Address)
-            && value.GetProperty("version").ValueEquals(Version)
-            && ReadStatus(value.GetProperty("status")) == Status
-            && value.GetProperty("failures").GetInt32() == Failures
-            && value.GetProperty("message").ValueEquals(Message);
+        internal Endpoint(JsonElement data)
+        {
+            Address = data.GetProperty("address").GetString()!;
+            Version = data.GetProperty("version").GetString()!;
+            Status = ReadStatus(data.GetProperty("status"));
+            Failures = data.GetProperty("failures").GetInt32();
+            Message = data.GetProperty("message").GetString()!;
+        }
     }
 }

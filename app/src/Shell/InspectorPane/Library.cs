@@ -34,6 +34,9 @@ public sealed partial class InspectorPane
             ClearLibraryActions();
         }
         _library = library;
+        HeadingGlyph.Visibility = library is null ? Visibility.Collapsed : Visibility.Visible;
+        Grid.SetColumn(HeadingName, library is null ? 0 : 1);
+        Grid.SetColumnSpan(HeadingName, library is null ? 2 : 1);
         ArrangePeers();
         if (library is not null)
         {
@@ -53,8 +56,6 @@ public sealed partial class InspectorPane
             Retry.Command = Model.Retry;
         }
         _arrival.Stop();
-        _awaitingArrival = false;
-        _target = Model.Target;
         _section = Model.Section;
         Refresh(workspace: true);
     }

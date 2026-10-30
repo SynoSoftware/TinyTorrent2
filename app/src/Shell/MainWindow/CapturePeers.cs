@@ -19,6 +19,212 @@ namespace Syno.TinyTorrent.Shell;
 
 public sealed partial class MainWindow
 {
+    private async Task CaptureSelection(List<object> outcomes)
+    {
+        await ShowTorrents();
+        Model.Filter = TorrentFilter.All;
+        var targets = Model.Torrents.Take(2).ToArray();
+        if (targets.Length != 2)
+            throw new InvalidOperationException("Selection review requires two torrents.");
+        Torrents.Selection = new Syno.TableView.Selection([targets[0]], targets[0]);
+        Run(Model.Properties);
+        var inspector = Model.Inspector;
+        await CaptureLayout();
+        var preparingSelection = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var preparedInBackground = false;
+        var preparation = Torrents.PrepareSelection(async (_, cancellation) =>
+        {
+            preparedInBackground = !DispatcherQueue.HasThreadAccess;
+            preparingSelection.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellation);
+        });
+        await preparingSelection.Task.WaitAsync(TimeSpan.FromSeconds(20));
+        Torrents.Selection = new Syno.TableView.Selection([targets[1]], targets[1]);
+        try
+        {
+            await preparation.WaitAsync(TimeSpan.FromSeconds(20));
+            throw new InvalidOperationException("Changing selection did not cancel its preparation.");
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        if (!preparedInBackground || Model.Current != targets[1])
+            throw new InvalidOperationException("Background preparation blocked immediate selection.");
+        outcomes.Add(new { journey = "nonblocking TableView preparation", workerThread = true, cancelledOnSelection = true });
+        Torrents.Selection = new Syno.TableView.Selection([targets[0]], targets[0]);
+        foreach (var section in new[]
+        {
+            InspectorSection.General, InspectorSection.Files, InspectorSection.Trackers, InspectorSection.Pieces,
+            InspectorSection.Speed, InspectorSection.Peers,
+        })
+        {
+            inspector.Select(section);
+            await CaptureReady(inspector, () => !inspector.IsLoading && !inspector.HasError);
+            await CaptureLayout();
+            var notifications = 0;
+            var windowNotifications = 0;
+            System.ComponentModel.PropertyChangedEventHandler changed = (_, _) => notifications++;
+            System.ComponentModel.PropertyChangedEventHandler windowChanged = (_, _) => windowNotifications++;
+            inspector.PropertyChanged += changed;
+            Model.PropertyChanged += windowChanged;
+            var times = new List<double>();
+            try
+            {
+                for (var index = 0; index < 20; index++)
+                {
+                    var target = targets[(index + 1) % targets.Length];
+                    var clock = Stopwatch.StartNew();
+                    Torrents.Selection = new Syno.TableView.Selection([target], target);
+                    times.Add(clock.Elapsed.TotalMilliseconds);
+                    if (Model.Current != target || inspector.Target != target)
+                        throw new InvalidOperationException("Selection did not accept the latest row immediately.");
+                    if (notifications != 0 || windowNotifications != 0)
+                        throw new InvalidOperationException("Selection ran inspector or window bindings inline.");
+                }
+                await CaptureReady(inspector, () => !inspector.IsLoading && !inspector.HasError);
+                await CaptureLayout();
+                if (inspector.Target != targets[0] || notifications == 0)
+                    throw new InvalidOperationException("Deferred inspector refresh lost the final selection.");
+                outcomes.Add(new
+                {
+                    journey = "selection before inspector refresh",
+                    section = section.ToString(),
+                    selections = times.Count,
+                    maximumMilliseconds = times.Max(),
+                    averageMilliseconds = times.Average(),
+                    notifications,
+                });
+            }
+            finally
+            {
+                inspector.PropertyChanged -= changed;
+                Model.PropertyChanged -= windowChanged;
+            }
+        }
+
+        var flags = BindingFlags.Instance | BindingFlags.NonPublic;
+        var invalidate = typeof(Inspector).GetMethod("Invalidate", flags)!;
+        var context = typeof(Inspector).GetField("_context", flags)!;
+        var fetching = typeof(Inspector).GetField("_fetching", flags)!;
+        var apply = typeof(Inspector).GetMethod("ApplyPeers", flags)!;
+        invalidate.Invoke(inspector, null);
+        fetching.SetValue(inspector, true);
+        var groups = new Dictionary<string, Peer[]>();
+        var rows = PeerRows(10000);
+        try
+        {
+            var cold = Stopwatch.StartNew();
+            var pane = (InspectorPane)InspectorContent.Content;
+            var table = (Syno.TableView.Table)pane.FindName("Peers");
+            var firstBatch = 0;
+            var visible = true;
+            Task<bool>? preparing = null;
+            System.ComponentModel.PropertyChangedEventHandler published = (_, _) =>
+            {
+                if (firstBatch != 0 || inspector.Peers is not { Count: > 0 } ready)
+                    return;
+                firstBatch = ready.Count;
+                if (firstBatch < 10000 && (preparing is not { IsCompleted: false }
+                    || !ReferenceEquals(table.ItemsSource, inspector.ShownPeers)))
+                    visible = false;
+            };
+            inspector.PropertyChanged += published;
+            try
+            {
+                preparing = (Task<bool>)apply.Invoke(inspector,
+                    [targets[0].TorrentId, rows, groups, context.GetValue(inspector)!])!;
+                await preparing;
+                cold.Stop();
+                inspector.Refresh();
+                await CaptureReady(inspector, () => ReferenceEquals(table.ItemsSource, inspector.ShownPeers));
+                await CaptureLayout();
+            }
+            finally
+            {
+                inspector.PropertyChanged -= published;
+            }
+            var coldMilliseconds = cold.Elapsed.TotalMilliseconds;
+            if (!visible)
+                throw new InvalidOperationException("Prepared peers did not reach the table before completion.");
+            if (firstBatch == 0 || inspector.Peers is not { Count: 10000 } peers)
+                throw new InvalidOperationException("Background peer preparation lost rows.");
+            var first = peers[0];
+            first.Update(new Peer(Model.Text, targets[0].TorrentId, first.Endpoint, null,
+                JsonSerializer.SerializeToElement(new { state = "known", role = "leecher", sources = new[] { "dht" } })));
+            await (Task<bool>)apply.Invoke(inspector,
+                [targets[0].TorrentId, rows, groups, context.GetValue(inspector)!])!;
+            if (!ReferenceEquals(inspector.Peers![0], first) || first.Role != PeerRole.Seed)
+                throw new InvalidOperationException("Background refresh replaced a live peer or lost its update.");
+            inspector.Refresh();
+            await CaptureReady(inspector, () => ReferenceEquals(table.ItemsSource, inspector.ShownPeers));
+            await CaptureLayout();
+            var displayed = table.ItemsSource;
+            var heading = ((TextBlock)pane.FindName("HeadingName")).Text;
+
+            first.Update(new Peer(Model.Text, targets[0].TorrentId, first.Endpoint, null,
+                JsonSerializer.SerializeToElement(new { state = "known", role = "leecher", sources = new[] { "dht" } })));
+            var interrupted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var cancellation = ((CancellationTokenSource)typeof(Inspector).GetField("_reading", flags)!
+                .GetValue(inspector)!).Token;
+            Task<bool>? applying = null;
+            System.ComponentModel.PropertyChangedEventHandler select = (_, _) =>
+            {
+                // A slow row binding forces a time slice even on fast machines.
+                Thread.Sleep(20);
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    var pending = applying is { IsCompleted: false };
+                    Torrents.Selection = new Syno.TableView.Selection([targets[1]], targets[1]);
+                    fetching.SetValue(inspector, true);
+                    interrupted.TrySetResult(pending);
+                });
+            };
+            first.PropertyChanged += select;
+            try
+            {
+                applying = (Task<bool>)apply.Invoke(inspector,
+                    [targets[0].TorrentId, rows, groups, context.GetValue(inspector)!])!;
+                if (!await interrupted.Task.WaitAsync(TimeSpan.FromSeconds(20))
+                    || Model.Current != targets[1] || inspector.Target != targets[1]
+                    || !cancellation.IsCancellationRequested)
+                    throw new InvalidOperationException("Selection waited for the whole peer update.");
+                await applying;
+            }
+            finally
+            {
+                first.PropertyChanged -= select;
+            }
+            if (inspector.Peers is { } stale && stale.Any(peer => peer.TorrentId == targets[0].TorrentId))
+                throw new InvalidOperationException("A stale background reply replaced the new selection.");
+            await CaptureLayout();
+            if (!ReferenceEquals(table.ItemsSource, displayed)
+                || ((TextBlock)pane.FindName("HeadingName")).Text != heading)
+                throw new InvalidOperationException("Pending inspector work cleared the displayed detail.");
+            await CaptureUi("selection-peers-waiting");
+            await (Task<bool>)apply.Invoke(inspector,
+                [targets[1].TorrentId, PeerRows(128), new Dictionary<string, Peer[]>(), context.GetValue(inspector)!])!;
+            inspector.Refresh();
+            await CaptureReady(inspector, () => ReferenceEquals(table.ItemsSource, inspector.ShownPeers));
+            await CaptureLayout();
+            if (ReferenceEquals(table.ItemsSource, displayed)
+                || inspector.Peers is not { Count: 128 } replacement
+                || replacement.Any(peer => peer.TorrentId != targets[1].TorrentId))
+                throw new InvalidOperationException("The ready replacement did not reach the inspector table.");
+            await CaptureUi("selection-peers-replaced");
+            outcomes.Add(new { journey = "selection during populated peer refresh", peers = 10000,
+                coldPreparationMilliseconds = coldMilliseconds,
+                firstPublishedPeers = firstBatch,
+                previousReadCancelled = true, staleReplyDiscarded = true,
+                displayedRowsRetained = true, replacementPeers = 128 });
+        }
+        finally
+        {
+            fetching.SetValue(inspector, false);
+            inspector.RefreshDetail();
+        }
+        await CaptureReady(inspector, () => !inspector.IsLoading && !inspector.HasError);
+    }
+
     private async Task CaptureSpeedCoverage(Inspector inspector, InspectorPane pane, string theme, List<string> completed)
     {
         inspector.Select(InspectorSection.Speed);
@@ -905,7 +1111,9 @@ public sealed partial class MainWindow
                 var groups = new Dictionary<string, Peer[]>();
                 typeof(Inspector).GetProperty(nameof(Inspector.Peers))!.SetValue(inspector, null);
                 var started = Stopwatch.GetTimestamp();
-                apply.Invoke(inspector, [target.TorrentId, rows, groups]);
+                await (Task<bool>)apply.Invoke(inspector, [target.TorrentId, rows, groups,
+                    typeof(Inspector).GetField("_context", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(inspector)!
+                ])!;
                 var create = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
                 var known = inspector.Peers!;
                 var lookup = await Task.Run(() =>

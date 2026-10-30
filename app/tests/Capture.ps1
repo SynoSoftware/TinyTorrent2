@@ -1,6 +1,6 @@
 param(
     [ValidateSet('1', 'smoke', 'shell', 'schedule', 'desktop', 'details', 'details-files', 'file-controls', 'files', 'files-layout',
-        'search', 'library', 'library-files', 'traffic', 'peers', 'connections', 'edits', 'add-layout', 'settings-layout', 'settings-prototype', 'subtitle-tasks', 'memory', 'footer', 'workspace')]
+        'search', 'library', 'library-files', 'traffic', 'peers', 'selection', 'connections', 'edits', 'add-layout', 'settings-layout', 'settings-prototype', 'subtitle-tasks', 'memory', 'footer', 'workspace')]
     [string] $Review = '1',
     [ValidateSet('en', 'es')]
     [string] $Language,
@@ -133,7 +133,7 @@ function Test-Idle($torrents) {
     return -not ($torrents | Where-Object { -not $_.paused -or $_.peer_count -or $_.download_rate -or $_.upload_rate })
 }
 
-if ($Review -in 'files', 'files-layout', 'library', 'library-files', 'traffic', 'workspace') {
+if ($Review -in 'files', 'files-layout', 'library', 'library-files', 'traffic', 'workspace', 'selection') {
     $document = @{ format = 1; torrents = @(); settings = @{ language = 'en'; theme = 'light'; port_mapping = $false;
         check_for_updates = $false; show_splash = $false; notifications_enabled = $false; prevent_sleep = $false } }
 } else {
@@ -143,7 +143,7 @@ if ($Review -in 'files', 'files-layout', 'library', 'library-files', 'traffic', 
 }
 $document.settings.default_destination = $payload
 $document.settings.all_paused = $Review -notin 'add-layout', 'traffic', 'library-files'
-if ($Review -eq 'workspace') {
+if ($Review -in 'workspace', 'selection') {
     $document.settings.dht = $false
     $document.settings.pex = $false
     $document.settings.lsd = $false
@@ -181,7 +181,7 @@ foreach ($name in 'TINYTORRENT_CAPTURE_DIRECTORY', 'TINYTORRENT_CAPTURE_REVIEW',
 try {
     $null = Start-Engine
     switch ($Review) {
-        'workspace' {
+        { $_ -in 'workspace', 'selection' } {
             $members = foreach ($name in 'Open field atlas', 'Open ocean notes') {
                 $paths = if ($name -eq 'Open field atlas') { 'Chapter 01.txt', 'Maps/Coastline.dat' }
                     else { 'Chapter 01.txt', 'Chapter 02.txt' }

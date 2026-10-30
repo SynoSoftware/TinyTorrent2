@@ -185,6 +185,24 @@ Deleting a test because it is red is the failure mode, not this.
 
 ## Windows evidence
 
+`Capture.ps1 -Review selection` verifies that TableView preparation runs on a
+worker and a new selection cancels it without waiting. It then switches the real
+torrent table twenty times in each of General, Files, Trackers, Pieces, Speed and
+Peers. It checks that selection and the inspector target change immediately
+without inline inspector or window notifications, then that the deferred
+inspector settles on the last row. It records selection-handler
+times without asserting a machine-dependent time limit. A populated 10,000-peer
+refresh also checks stable row identity and a selection change while background
+preparation is pending. The previous read is cancelled and an old reply cannot
+populate the new selection.
+The populated table and its heading stay displayed while the replacement waits;
+128 ready peers then replace its 10,000 previous peers directly. The two saved
+scenes support visual review of this handoff.
+It records the first published batch and cold peer preparation separately,
+checks that partial rows reach the table before preparation completes,
+and makes one row binding slow to check that elapsed work yields to selection
+independently of the peer count.
+
 `app/tests/AddSourceChecks.ps1 -BinaryDirectory <built-app-folder>` checks that
 a reconnect preserves file choices, including one whose send failed, and that a
 dialog's opt-out turns off the settings passed to it in one save. It reads the

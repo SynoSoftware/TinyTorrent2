@@ -604,6 +604,17 @@ anchor or focus item that no longer survives clears. Without a selector, object
 reference is identity, so a replacement object is a removal and an addition.
 Null configured keys or duplicate effective identities fail fast.
 
+`PrepareSelection(Func<Selection, CancellationToken, Task>, CancellationToken)`
+starts selection-dependent work on a worker thread and returns its task, so
+preparation never runs inside pointer handling. Call it on the UI thread. A
+changed selection, a newer preparation, unloading, or the supplied token cancels
+the previous work without waiting for it. The callback receives the immutable
+selection packet and cooperates with cancellation. It marshals presentation to
+the UI dispatcher and checks the token before applying a result, so obsolete
+work cannot replace the current selection's presentation. Errors reach the
+returned task. `SelectionChanged` remains an immediate notification for short
+state projections; expensive consumers use `PrepareSelection`.
+
 If an update removes an item or makes it non-interactive, the table prunes the
 effective selection/current item atomically. If that removes the current item
 while selected items remain, the first retained selected item in current visual

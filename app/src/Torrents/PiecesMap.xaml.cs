@@ -43,6 +43,7 @@ public sealed partial class PiecesMap : UserControl
     private int _revision;
     private bool _queued;
     private bool _drawing;
+    private CancellationToken _cancellation;
     private XamlRoot? _root;
 
     public PiecesMap()
@@ -110,8 +111,10 @@ public sealed partial class PiecesMap : UserControl
             DetailVerifiedLabel,
         ];
 
-    internal void Show(Pieces? data, Strings text)
+    internal void Show(Pieces? data, Strings text, CancellationToken cancellation = default)
     {
+        var resumed = _cancellation.IsCancellationRequested && !cancellation.IsCancellationRequested;
+        _cancellation = cancellation;
         if (_data is null && data is null && _language == text.Language)
             return;
         var changed =
@@ -123,7 +126,6 @@ public sealed partial class PiecesMap : UserControl
             _selectedPiece = -1;
             _layout = null;
             Drawing.IsHitTestVisible = false;
-            _arrival.Fade(Bitmap, 0.25);
         }
         _data = data;
         _text = text;
@@ -158,7 +160,7 @@ public sealed partial class PiecesMap : UserControl
             AutomationProperties.SetName(this, text.Get("inspector", "pieces"));
             Refresh();
         }
-        if (changed)
+        if (changed || resumed)
             QueueDraw();
     }
 
@@ -235,6 +237,7 @@ public sealed partial class PiecesMap : UserControl
         }
         _drawing = true;
         var revision = _revision;
+        var cancellation = _cancellation;
         try
         {
             var palette = new Palette
@@ -258,7 +261,8 @@ public sealed partial class PiecesMap : UserControl
                 FlowDirection == FlowDirection.RightToLeft,
                 radius
             );
-            var layout = await Task.Run(() => Render(data, space, palette));
+            var layout = await Task.Run(() => Render(data, space, palette, cancellation), cancellation);
+            cancellation.ThrowIfCancellationRequested();
             if (revision != _revision || !IsLoaded)
                 return;
             var arriving = _layout is null;
@@ -290,6 +294,9 @@ public sealed partial class PiecesMap : UserControl
             }
             Refresh();
         }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+        }
         finally
         {
             _drawing = false;
@@ -313,7 +320,7 @@ public sealed partial class PiecesMap : UserControl
         return count;
     }
 
-    private static Raster Render(Pieces data, Space space, Palette palette)
+    private static Raster Render(Pieces data, Space space, Palette palette, CancellationToken cancellation)
     {
         var scale = space.Scale;
         var rtl = space.IsRightToLeft;
@@ -350,6 +357,7 @@ public sealed partial class PiecesMap : UserControl
         var blocks = new Block[count];
         for (var index = 0; index < count; index++)
         {
+            cancellation.ThrowIfCancellationRequested();
             var first = (int)((long)index * data.Count / count);
             var end = (int)((long)(index + 1) * data.Count / count);
             var counts = data.Counts(first, end);

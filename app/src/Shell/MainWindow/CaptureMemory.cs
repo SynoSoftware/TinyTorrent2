@@ -110,9 +110,10 @@ public sealed partial class MainWindow
         foreach (var count in new[] { 100, 1000, 10000 })
         {
             property.SetValue(inspector, null);
-            apply.Invoke(inspector, [
-                original[0].TorrentId, PeerRows(count), new Dictionary<string, Peer[]>()
-            ]);
+            await (Task<bool>)apply.Invoke(inspector, [
+                original[0].TorrentId, PeerRows(count), new Dictionary<string, Peer[]>(),
+                typeof(Inspector).GetField("_context", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(inspector)!
+            ])!;
             for (var index = 0; index < count; index++)
                 inspector.Peers![index].Location = original[index % original.Count].Location;
             inspector.Refresh();
