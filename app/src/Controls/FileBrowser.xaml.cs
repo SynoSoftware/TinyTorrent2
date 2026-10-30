@@ -126,11 +126,12 @@ public sealed partial class FileBrowser : UserControl
         Files.Focus(FocusState.Keyboard);
     }
 
-    private void OnChanged(object? sender, EventArgs args)
+    private void OnChanged(object? sender, bool changed)
     {
         RefreshActions();
         if (
-            Files.Sort is { } sort
+            changed
+            && Files.Sort is { } sort
             && (sort.Column == ProgressColumn || sort.Column == PriorityColumn)
         )
             Files.RefreshView();

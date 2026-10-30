@@ -909,23 +909,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             previousSelection != _selected.Length || rowsChanged && _selected.Length > 0;
         if (_current is not null && !present.Contains(_current.TorrentId))
             _current = null;
-        var inspected = Inspector.Target;
-        if (inspected is { } target && !Contains(target))
-            Inspector.Show(
-                null,
-                allPeers: Inspector.ShowsAllPeers,
-                selection: Inspector.PeerSelection
-            );
-        if (
-            Inspector.Target is null
-            && (previousSelection != _selected.Length || inspected is not null)
-        )
-        {
-            if (HasInspector && _selected.Length == 1 && !Inspector.HasPeerScope)
-                Inspector.Show(_selected[0]);
-            else
-                Inspector.RefreshScope();
-        }
+        if (previousSelection != _selected.Length)
+            SelectionChanged?.Invoke(this, EventArgs.Empty);
         var languageSaved = snapshot.GetProperty("language_saved").GetBoolean();
         _languageSaved = languageSaved;
         AddDraft.ApplyDefaults(

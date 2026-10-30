@@ -76,7 +76,7 @@ public sealed partial class MainWindow
                     var clock = Stopwatch.StartNew();
                     Torrents.Selection = new Syno.TableView.Selection([target], target);
                     times.Add(clock.Elapsed.TotalMilliseconds);
-                    if (Model.Current != target || inspector.Target != target)
+                    if (Model.Current != target)
                         throw new InvalidOperationException("Selection did not accept the latest row immediately.");
                     if (notifications != 0 || windowNotifications != 0)
                         throw new InvalidOperationException("Selection ran inspector or window bindings inline.");
@@ -175,8 +175,12 @@ public sealed partial class MainWindow
                 {
                     var pending = applying is { IsCompleted: false };
                     Torrents.Selection = new Syno.TableView.Selection([targets[1]], targets[1]);
-                    fetching.SetValue(inspector, true);
-                    interrupted.TrySetResult(pending);
+                    _ = new FrameCallback(DispatcherQueue, () =>
+                    {
+                        invalidate.Invoke(inspector, null);
+                        fetching.SetValue(inspector, true);
+                        interrupted.TrySetResult(pending);
+                    });
                 });
             };
             first.PropertyChanged += select;
@@ -223,6 +227,88 @@ public sealed partial class MainWindow
             inspector.RefreshDetail();
         }
         await CaptureReady(inspector, () => !inspector.IsLoading && !inspector.HasError);
+        await CaptureInspectorLifecycle(outcomes);
+    }
+
+    private async Task CaptureInspectorLifecycle(List<object> outcomes)
+    {
+        var inspector = Model.Inspector;
+        var flags = BindingFlags.Instance | BindingFlags.NonPublic;
+        var context = typeof(Inspector).GetField("_context", flags)!;
+        var reading = typeof(Inspector).GetField("_reading", flags)!;
+        var frame = typeof(Inspector).GetField("_subjectFrame", flags)!;
+        Model.CloseInspector();
+        var closed = context.GetValue(inspector);
+        foreach (var torrent in Model.Torrents)
+            Torrents.Selection = new Syno.TableView.Selection([torrent], torrent);
+        await CaptureLayout();
+        if (inspector.IsActive || !Equals(closed, context.GetValue(inspector)) || frame.GetValue(inspector) is not null)
+            throw new InvalidOperationException("Closed inspector observed torrent selection.");
+        Model.OpenInspector();
+        await CaptureReady(inspector, () => !inspector.IsLoading && !inspector.IsReplacing);
+        if (inspector.Target != Model.Current)
+            throw new InvalidOperationException("Reopened inspector missed the current selection.");
+        Model.IsInspectorCompact = true;
+        closed = context.GetValue(inspector);
+        var target = Model.Torrents.First(torrent => torrent != Model.Current);
+        Torrents.Selection = new Syno.TableView.Selection([target], target);
+        await CaptureLayout();
+        if (inspector.IsActive || !Equals(closed, context.GetValue(inspector)))
+            throw new InvalidOperationException("Compact inspector observed torrent selection.");
+        Model.IsInspectorCompact = false;
+        await CaptureReady(inspector, () => !inspector.IsLoading && !inspector.IsReplacing);
+        if (inspector.Target != target)
+            throw new InvalidOperationException("Expanded inspector missed the current selection.");
+
+        Model.Features.CanStart = true;
+        Model.RequestSnapshot();
+        await Model.Navigation.Navigate(WindowPage.Library);
+        Model.Library.Configuration = LibraryConfiguration.Files;
+        await CaptureReady(Model.Library, () => Model.Library.IsAvailable && Model.Library.Rows.Count >= 2);
+        var rows = Model.Library.Rows.DistinctBy(row => row.Name).Take(2).ToArray();
+        Model.Library.Select(rows[0]);
+        await CaptureReady(inspector, () => inspector.Library is not null && !inspector.IsReplacing);
+        var pane = (InspectorPane)InspectorContent.Content;
+        if (((TextBlock)pane.FindName("HeadingName")).Text != rows[0].Name)
+            throw new InvalidOperationException("Library inspector did not display its selected file.");
+        var open = ((Button)typeof(InspectorPane).GetField("_libraryOpen", flags)!.GetValue(pane)!).Command;
+        var oldOrigin = Library.OriginActions.Create(Model.Library) as Controls.MenuCommand;
+        Model.Library.Select(rows[1]);
+        if (open?.CanExecute(null) == true || oldOrigin?.Command.CanExecute(null) == true)
+            throw new InvalidOperationException("Retained Library actions targeted the new selection.");
+        Model.Library.Select(rows[0]);
+        Model.CloseInspector();
+        closed = context.GetValue(inspector);
+        var detail = typeof(Library.Browser).GetField("_loadedDetail", flags)!;
+        var held = detail.GetValue(Model.Library);
+        Model.Library.Select(rows[1]);
+        await CaptureLayout();
+        if (inspector.IsActive || !Equals(closed, context.GetValue(inspector))
+            || !ReferenceEquals(held, detail.GetValue(Model.Library)) || frame.GetValue(inspector) is not null)
+            throw new InvalidOperationException("Closed inspector read Library detail.");
+        await CaptureReady(Model.Library, () => Model.Library.HasOrigins(rows[1].Entry.EntryId));
+        if (Library.OriginActions.Create(Model.Library) is not Controls.MenuCommand origin
+            || !origin.Command.CanExecute(null))
+            throw new InvalidOperationException("Closed Library inspector prevented Show in Torrents.");
+        Model.OpenInspector();
+        await CaptureReady(inspector, () => inspector.Library is not null && !inspector.IsReplacing);
+        if (((TextBlock)pane.FindName("HeadingName")).Text != rows[1].Name)
+            throw new InvalidOperationException("Reopened Library inspector missed the current file.");
+        Model.IsMinimized = true;
+        closed = context.GetValue(inspector);
+        Model.Library.Select(rows[0]);
+        await CaptureLayout();
+        if (inspector.IsActive || !Equals(closed, context.GetValue(inspector)))
+            throw new InvalidOperationException("Minimized inspector observed Library selection.");
+        Model.IsMinimized = false;
+        var cancellation = ((CancellationTokenSource)reading.GetValue(inspector)!).Token;
+        await Model.Navigation.Navigate(WindowPage.Torrents);
+        if (!cancellation.IsCancellationRequested || inspector.Library is not null)
+            throw new InvalidOperationException("Workspace navigation retained old inspector work.");
+        await CaptureReady(inspector, () => !inspector.IsLoading && !inspector.IsReplacing);
+        outcomes.Add(new { journey = "shared inspector lifetime", closedTorrentsIdle = true,
+            closedLibraryIdle = true, compactTorrentsIdle = true, reopenFollowsSelection = true, minimizedLibraryIdle = true,
+            workspaceCancelsPrevious = true, retainedActionsGuarded = true, closedOriginsAvailable = true });
     }
 
     private async Task CaptureSpeedCoverage(Inspector inspector, InspectorPane pane, string theme, List<string> completed)

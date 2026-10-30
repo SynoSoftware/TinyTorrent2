@@ -435,5 +435,12 @@ _Avoid_: form.
 **Pane**: a side area of a page, such as the Inspector beside the torrent list.
 _Avoid_: form, panel.
 
+**Inspector**: the shared pane that presents details of the current subject in
+Torrents or Library.
+
+**Inspector subject**: the torrent, file or peer scope whose details the person
+is examining. During replacement, the displayed subject can differ from the
+new selection awaiting details.
+
 **TableView**: the reusable, domain-neutral table library used to present the
 product's collections.

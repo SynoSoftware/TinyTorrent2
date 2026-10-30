@@ -194,10 +194,19 @@ public sealed partial class MainWindow
             var rows = (Rows: Model.Selected.ToArray(), CanEdit: Model.CanEdit);
             var commands = _torrentCommands;
             var text = Model.Text;
+            var entry =
+                Model.Page == WindowPage.Library
+                && Model.Library.Selected is { } selected
+                && !Model.Library.HasOrigins(selected.Entry.EntryId)
+                    ? selected.Entry
+                    : null;
             try
             {
                 await Torrents.PrepareSelection(async (_, cancellation) =>
                 {
+                    var origins = entry is null
+                        ? null
+                        : await Model.Library.ReadOrigins(entry.EntryId, cancellation);
                     var entries = PrepareTorrentMenu(rows, commands, text, cancellation);
                     var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                     if (!DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () =>
@@ -205,7 +214,11 @@ public sealed partial class MainWindow
                         try
                         {
                             if (!cancellation.IsCancellationRequested && version == _menuVersion && !_allowClose)
+                            {
+                                if (entry is not null && origins is not null)
+                                    Model.Library.ApplyOrigins(entry.EntryId, origins);
                                 FillMenus(entries);
+                            }
                             completion.TrySetResult();
                         }
                         catch (Exception error)
@@ -219,6 +232,10 @@ public sealed partial class MainWindow
             }
             catch (OperationCanceledException)
             {
+            }
+            catch (Exception error)
+            {
+                Model.Library.ReportCommand(error);
             }
         });
     }

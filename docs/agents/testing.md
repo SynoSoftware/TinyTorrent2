@@ -188,7 +188,7 @@ Deleting a test because it is red is the failure mode, not this.
 `Capture.ps1 -Review selection` verifies that TableView preparation runs on a
 worker and a new selection cancels it without waiting. It then switches the real
 torrent table twenty times in each of General, Files, Trackers, Pieces, Speed and
-Peers. It checks that selection and the inspector target change immediately
+Peers. It checks that selection changes immediately
 without inline inspector or window notifications, then that the deferred
 inspector settles on the last row. It records selection-handler
 times without asserting a machine-dependent time limit. A populated 10,000-peer
@@ -202,6 +202,13 @@ It records the first published batch and cold peer preparation separately,
 checks that partial rows reach the table before preparation completes,
 and makes one row binding slow to check that elapsed work yields to selection
 independently of the peer count.
+The same disposable fixture verifies that closed torrent and Library inspectors,
+compact torrent inspectors and minimized Library inspectors perform no
+selection-driven detail work. Reopening follows the latest selection, workspace
+navigation cancels the previous content, and retained Library commands reject a
+different selected file. Library's origins-only menu preparation remains available
+while its inspector is closed. These checks distinguish inspector detail from
+independent menu preparation and visible-row enrichment.
 
 `app/tests/AddSourceChecks.ps1 -BinaryDirectory <built-app-folder>` checks that
 a reconnect preserves file choices, including one whose send failed, and that a

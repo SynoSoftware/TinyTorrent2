@@ -294,6 +294,23 @@ implementation and layout: the card under a splitter, its title row, the
 SelectorBar in that title row, the Wide and Narrow states, the empty state and
 the error InfoBar with Retry. Library adds no second card.
 
+The shared inspector owns Library detail observation and cancellation as it does
+for Torrents. `Browser` publishes accepted selection and detail invalidation;
+selection does not read detail. Only an active inspector requests the stored
+details, with its cancellation token, after the selection render turn. Its view
+observes the shared owner rather than subscribing independently to `Browser`.
+Closed, compact and minimized inspectors perform no Library detail reads.
+The previous card and heading stay until the replacement is available, with
+old content unable to act on the newly selected file. Visible-row enrichment
+keeps its separate table lifetime.
+
+Show in Torrents also works with the inspector closed. Its menu preparation
+reads only the current file's origins through the store, with its own cancellation
+and captured entry identity; it never activates or fills the inspector. Cached
+origins from a different selection cannot enable a command. Refresh metadata's
+inspector-scoped request ends with inspector deactivation; explicit Fetch metadata
+and dataset operations retain their existing command lifetimes.
+
 - The title row shows the file's type glyph, its name and its size. The
   SelectorBar offers "Info" and "File" for both video and audio. A file that is
   neither opens on File, with the first item disabled.

@@ -786,3 +786,11 @@ public sealed partial class SpeedGraph : UserControl
             new((time - Start) * Width / Length, Height * (1 - rate / Top));
     }
 }
+
+public sealed record SpeedSample(
+    long Time,
+    double DownloadRate,
+    double UploadRate,
+    long Start,
+    double Weight
+);

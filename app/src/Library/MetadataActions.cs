@@ -16,13 +16,17 @@ internal static class MetadataActions
     /// <summary>The Info page's Fetch button: per-movie providers, then provider settings.</summary>
     internal static ActionButton Button(Browser browser)
     {
+        var row = browser.Selected;
         var button = new ActionButton
         {
             Glyph = browser.FetchMetadataGlyph,
             Text = browser.Text.Get("library", "fetch"),
             Flyout = MenuItems.Flyout(
                 () =>
-                    [
+                {
+                    if (!ReferenceEquals(row, browser.Selected))
+                        return [];
+                    return [
                         .. Providers(browser),
                         new MenuSeparator(),
                         new MenuCommand(
@@ -33,7 +37,8 @@ internal static class MetadataActions
                         {
                             ToolTip = browser.Text.Get("library", "settings_tip"),
                         },
-                    ],
+                    ];
+                },
                 () => browser.Text
             ),
         };
@@ -41,13 +46,19 @@ internal static class MetadataActions
         return button;
     }
 
-    private static IEnumerable<MenuEntry> Providers(Browser browser) =>
-        browser.DownloadProviders.Select(option => new MenuCommand(
-            option.Name,
-            Lucide.Database,
-            new RelayCommand(
-                () => browser.Fetch(option),
-                () => browser.FetchMetadata.CanExecute(null)
+    private static IEnumerable<MenuEntry> Providers(Browser browser)
+    {
+        var row = browser.Selected;
+        return browser.DownloadProviders.Select(option =>
+            new MenuCommand(
+                option.Name,
+                Lucide.Database,
+                new RelayCommand(
+                    () => browser.Fetch(option),
+                    () => ReferenceEquals(row, browser.Selected)
+                        && browser.FetchMetadata.CanExecute(null)
+                )
             )
-        ));
+        );
+    }
 }

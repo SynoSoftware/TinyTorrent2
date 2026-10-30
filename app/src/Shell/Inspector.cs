@@ -8,9 +8,9 @@ using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Settings;
 using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Shared.Engine;
-using Syno.TinyTorrent.Shell;
+using Syno.TinyTorrent.Torrents;
 
-namespace Syno.TinyTorrent.Torrents;
+namespace Syno.TinyTorrent.Shell;
 
 public sealed partial class Inspector : INotifyPropertyChanged
 {
@@ -42,7 +42,6 @@ public sealed partial class Inspector : INotifyPropertyChanged
     private TaskCompletionSource? _fileSave;
     private bool _filesLoaded;
     private bool _editingTrackers;
-    private bool _visible;
     private Exception? _readFailure;
     private Exception? _editFailure;
     private string _trackerInput = string.Empty;
@@ -57,7 +56,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
         _target?.Name ?? (IsGlobal ? Text.Get("peers", "all_torrents") : EmptyText);
     public string SizeText => IsGlobal ? string.Empty : _target?.SizeText ?? string.Empty;
 
-    internal bool IsVisible => _visible;
+    internal bool IsVisible => _workspace == WindowPage.Torrents;
     internal CancellationToken Cancellation => _reading.Token;
     internal bool IsReplacing { get; private set; }
     private int SelectionCount => PeerSelection is null ? _owner.Selected.Count : Scope.Count();
@@ -68,15 +67,19 @@ public sealed partial class Inspector : INotifyPropertyChanged
     public bool IsAvailable =>
         _owner.IsConnected && HasContent && (_target is null || _owner.Contains(_target));
 
-    private bool IsCurrent(int context) => context == _context && _visible && IsAvailable;
+    private bool IsCurrent(int context) => context == _context && IsVisible && IsAvailable;
 
     // A save keeps its controls enabled so later input keeps focus.
     private bool CanSave =>
         _target is not null && _owner.Contains(_target) && IsAvailable && _owner.CanSave;
-    public bool CanEdit => _visible && CanSave && !IsReplacing && !_owner.IsClosing;
+    public bool CanEdit => IsVisible && CanSave && !IsReplacing && !_owner.IsClosing;
     public bool IsPending => _pending is not null;
     private bool IsStarting => _readFailure is CommandException { Code: "starting" };
-    public bool IsLoading => _fetching || (_readFrame is not null && _visible && IsAvailable) || (IsAvailable && IsStarting);
+    public bool IsLoading =>
+        _subjectFrame is not null
+        || _fetching
+        || (_readFrame is not null && IsVisible && IsAvailable)
+        || (IsAvailable && IsStarting);
     public bool HasDraft => !IsPending && (HasFileChanges || HasTrackerChanges);
     internal bool HasTrackerChanges => _editingTrackers && _trackerInput != _trackerOriginal;
     private bool IsRemoved =>
@@ -326,6 +329,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
     {
         if (!Retarget(target, section ?? _section, allPeers, selection))
             return false;
+        _selection = _owner.Selected;
         Refresh();
         return true;
     }
@@ -347,7 +351,8 @@ public sealed partial class Inspector : INotifyPropertyChanged
             return false;
         _readFailure = _editFailure = null;
         CancelDraft();
-        IsReplacing = _visible && HasContent
+        IsReplacing =
+            IsVisible && HasContent
             && (target is not null || section is InspectorSection.Peers or InspectorSection.Speed);
         Clear();
         _target = target;
@@ -400,39 +405,45 @@ public sealed partial class Inspector : INotifyPropertyChanged
             Pieces = null;
             _pieceFiles = null;
             History = null;
-            Invalidate();
+            if (IsVisible)
+                Invalidate();
+            else if (!IsActive)
+                CancelReading();
             _readFailure = null;
             changed = true;
         }
-        if (_visible && (changed || _access != (IsAvailable, CanEdit)))
+        if (!IsVisible)
+            return;
+        if (_target is not null && !_owner.Contains(_target))
+        {
+            QueueSubject();
+            return;
+        }
+        if (changed || _access != (IsAvailable, CanEdit))
             Refresh();
         QueueRead();
     }
 
     internal void Disconnect()
     {
-        Invalidate();
+        if (IsVisible)
+            Invalidate();
         _peerCache.Clear();
         History = null;
         Refresh();
     }
 
-    internal void SetVisible(bool visible)
-    {
-        if (_visible == visible)
-            return;
-        _visible = visible;
-        if (visible && !CanShow(_section))
-            _section = InspectorSection.Peers;
-        Invalidate();
-        Refresh();
-        if (visible)
-            QueueRead();
-    }
-
     private void QueueRead()
     {
-        if (_readFrame is not null || !_visible || !IsAvailable || _fetching || IsPending || _owner.IsClosing)
+        if (
+            _subjectFrame is not null
+            || _readFrame is not null
+            || !IsVisible
+            || !IsAvailable
+            || _fetching
+            || IsPending
+            || _owner.IsClosing
+        )
             return;
         _readFrame = new FrameCallback(_dispatcher, () =>
         {
@@ -443,7 +454,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
 
     private async Task Read()
     {
-        if (!_visible || !IsAvailable || _fetching || IsPending || _owner.IsClosing)
+        if (!IsVisible || !IsAvailable || _fetching || IsPending || _owner.IsClosing)
             return;
         _fetching = true;
         var context = ++_context;
@@ -643,7 +654,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
 
     internal void RefreshScope()
     {
-        IsReplacing = _visible && HasContent;
+        IsReplacing = IsVisible && HasContent;
         Clear();
         _readFailure = null;
         if (!CanShow(_section))
@@ -655,7 +666,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
 
     internal void RefreshDetail()
     {
-        if (!_visible)
+        if (!IsVisible)
             return;
         Invalidate();
         QueueRead();
@@ -714,6 +725,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
                     return false;
                 var started = Stopwatch.GetTimestamp();
                 var trackers = (Trackers ?? []).ToDictionary(tracker => tracker.Url);
+                var updated = false;
                 for (var index = 0; index < nextTrackers.Length; index++)
                 {
                     if (!trackers.TryGetValue(nextTrackers[index].Url, out var tracker))
@@ -725,7 +737,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
                             return false;
                         started = Stopwatch.GetTimestamp();
                     }
-                    tracker.Update(nextTrackers[index]);
+                    updated |= tracker.Update(nextTrackers[index]);
                     nextTrackers[index] = tracker;
                 }
                 if (Trackers is null || !Trackers.SequenceEqual(nextTrackers))
@@ -733,7 +745,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
                     Trackers = nextTrackers;
                     changed = true;
                 }
-                else
+                else if (updated)
                     RowsUpdated?.Invoke(this, InspectorSection.Trackers);
                 break;
             case InspectorSection.Pieces:
@@ -832,6 +844,14 @@ public sealed partial class Inspector : INotifyPropertyChanged
     // A read for the old context is stale, so an unsent one is withdrawn.
     private void Invalidate()
     {
+        CancelReading();
+        _client.Withdraw(Consumer.Inspector);
+        if (!IsVisible || IsGlobal || _section == InspectorSection.Speed || _target is null)
+            _ = Release();
+    }
+
+    private void CancelReading()
+    {
         _readFrame?.Dispose();
         _readFrame = null;
         _refreshFrame?.Dispose();
@@ -843,9 +863,6 @@ public sealed partial class Inspector : INotifyPropertyChanged
         _fetching = false;
         _awaitedPush?.Completion.TrySetResult();
         _awaitedPush = null;
-        _client.Withdraw(Consumer.Inspector);
-        if (!_visible || IsGlobal || _section == InspectorSection.Speed || _target is null)
-            _ = Release();
     }
 
     // The outcome does not matter, and a later Invalidate often withdraws
@@ -1219,7 +1236,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
 
     internal void Refresh()
     {
-        if (_owner.IsClosed)
+        if (_owner.IsClosed || !IsVisible)
             return;
         _access = (IsAvailable, CanEdit);
         _loading = IsLoading;
@@ -1246,12 +1263,6 @@ public sealed partial class Inspector : INotifyPropertyChanged
         });
     }
 
-    internal void Close()
-    {
-        _visible = false;
-        Invalidate();
-    }
-
     private void RefreshLoading()
     {
         if (_loading == IsLoading)
@@ -1259,11 +1270,3 @@ public sealed partial class Inspector : INotifyPropertyChanged
         Refresh();
     }
 }
-
-public sealed record SpeedSample(
-    long Time,
-    double DownloadRate,
-    double UploadRate,
-    long Start,
-    double Weight
-);

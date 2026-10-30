@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Numerics;
 using Syno.TinyTorrent.Shared;
+using Syno.TinyTorrent.Shell;
 
 namespace Syno.TinyTorrent.Torrents;
 

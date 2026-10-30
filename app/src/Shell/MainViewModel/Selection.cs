@@ -9,6 +9,7 @@ public sealed partial class MainViewModel
     private FrameCallback? _selectionFrame;
     public IReadOnlyList<Torrent> Selected => _selected;
     public Torrent? Current => _current;
+    internal event EventHandler? SelectionChanged;
 
     public async Task<bool> Select(
         IEnumerable<Torrent> items,
@@ -32,22 +33,11 @@ public sealed partial class MainViewModel
         _selectionPending = true;
         try
         {
-            // The table drops a row that leaves the view, such as a torrent that
-            // finishes under the Downloading filter. The person did not choose
-            // another torrent, so the selection follows the table while the
-            // inspector, and any unfinished edit in it, stays on its torrent.
-            var previous = _selected.ToHashSet();
-            var dropped =
-                selected.All(previous.Contains)
-                && !_selected.Except(selected).ToHashSet().Overlaps(VisibleTorrents);
-            var keepsTarget = dropped && Inspector.Target is not null;
-            var next = selected.Length == 1 ? selected[0] : null;
-            var changesTarget =
+            if (
                 HasInspector
-                && !keepsTarget
-                && (!dropped || !Inspector.HasPeerScope)
-                && (next != Inspector.Target || Inspector.HasPeerScope);
-            if (changesTarget)
+                && (Inspector.IsPending || Inspector.HasDraft)
+                && Inspector.ChangesSubject(_selected, selected)
+            )
             {
                 if (Inspector.IsPending)
                     return false;
@@ -63,18 +53,9 @@ public sealed partial class MainViewModel
                 || current is not null && !Contains(current)
             )
                 return false;
-            if (changesTarget && !Inspector.Show(next))
-                return false;
             _selected = selected;
             _current = current;
-            if (
-                Inspector.Target is null
-                && !Inspector.HasPeerScope
-                && !previous.SetEquals(selected)
-            )
-                Inspector.RefreshScope();
-            // The inspector shows the selected count when it has no target.
-            Inspector.Refresh();
+            SelectionChanged?.Invoke(this, EventArgs.Empty);
             QueueSelection();
             return true;
         }

@@ -44,13 +44,19 @@ internal static class OriginActions
             button.Flyout = MenuItems.Flyout(() => choices.Entries, () => browser.Text);
     }
 
-    private static RelayCommand Command(Browser browser, Origin? origin) =>
-        new(
+    private static RelayCommand Command(Browser browser, Origin? origin)
+    {
+        var row = browser.Selected;
+        return new(
             () =>
             {
                 if (origin is not null)
                     browser.ShowTorrent(origin.OriginId);
             },
-            () => browser.CanShowTorrent && origin is not null
+            () => browser.CanShowTorrent
+                && ReferenceEquals(row, browser.Selected)
+                && origin is not null
+                && browser.Origins.Contains(origin)
         );
+    }
 }

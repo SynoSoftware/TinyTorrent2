@@ -332,8 +332,16 @@ from owning edits.
   dropped, pasted, picked and activated sources: it takes them in arrival
   order, adds several together without a dialog, and tells `MainViewModel`
   whether the Add dialog or the merge question opens. `MainWindow` tells it
-  when its dialog opens and closes. `Inspector` keeps peer and tracker row
-  identity within the current session and target.
+  when its dialog opens and closes. `Shell.Inspector` owns the shared inspector's
+  activity, accepted-selection observation and current publication lifetime for
+  Torrents and Library. Selection owners publish accepted state; the active
+  inspector cancels obsolete work and schedules its response after selection
+  renders. Inactive inspectors detach their observations and keep only inert
+  cached content and guarded drafts. Torrent detail uses the existing pipe;
+  Library detail uses `Browser.ReadDetail` with the inspector's cancellation
+  token. Torrent rows, files, pieces and map models retain their domain owners.
+  The inspector keeps peer and tracker row identity within the current session
+  and target.
 - Views bind to those owners. `MainWindow` keeps native pickers, dialogs,
   window chrome, control-specific focus and scrolling, and TableView gestures.
   Around the model's close steps it hides and shows the window, suspends the
@@ -354,7 +362,7 @@ and priority changes for explicit edits and merges; each entry point keeps its
 own legality checks. `SpeedHistory` owns its buffers and aggregation, while the
 engine owns sampling cadence and the session envelope.
 
-The peer map follows the same ownership inside `Torrents`. `Inspector` owns
+The peer map keeps its models inside `Torrents`. The shared `Inspector` owns
 scope, geolocation and the chosen place, and retains its plain `MapModel`.
 That model aggregates observations and distributes estimated destinations.
 `PeerMap` owns native input, focus and inspection; `MapViewport` owns the shared

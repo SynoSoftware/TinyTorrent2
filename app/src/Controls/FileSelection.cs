@@ -131,7 +131,7 @@ public sealed class FileSelection : INotifyPropertyChanged
     internal FileKeys Keys =>
         new([.. _folders.Keys.Where(path => path.Length > 0)], [.. _files.Keys]);
     public event PropertyChangedEventHandler? PropertyChanged;
-    public event EventHandler? Changed;
+    public event EventHandler<bool>? Changed;
 
     // A read the person started failed; the host shows its command error.
     internal event EventHandler<Exception>? Failed;
@@ -688,9 +688,9 @@ public sealed class FileSelection : INotifyPropertyChanged
 
     internal void Refresh(bool notify = true)
     {
-        _root.Refresh(notify);
+        var changed = _root.Refresh(notify);
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
-        Changed?.Invoke(this, EventArgs.Empty);
+        Changed?.Invoke(this, changed);
     }
 
     // A search's results. Count and Wanted cover every match; Hidden counts
@@ -893,21 +893,24 @@ public sealed class FileNode : INotifyPropertyChanged
             child.Choose(action);
     }
 
-    internal void Refresh(bool notify)
+    internal bool Refresh(bool notify)
     {
         if (!IsFolder)
         {
             _count = 1;
             (_wantedCount, _wantedSize) = _priority > 0 ? (1, _size) : (0, 0);
         }
+        var changed = false;
         foreach (var child in _children)
-            child.Refresh(notify);
+            changed |= child.Refresh(notify);
         var shown = (_size, _count, _wantedCount, _priority, _downloaded, _state);
-        if (notify || shown != _shown)
+        var updated = shown != _shown;
+        if (notify || updated)
         {
             _shown = shown;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
         }
+        return changed || updated;
     }
 
     public override string ToString() => Path;

@@ -65,7 +65,7 @@ public sealed class Tracker : INotifyPropertyChanged
             .Select(endpoint => new Endpoint(endpoint)).ToArray();
     }
 
-    internal void Update(Tracker data)
+    internal bool Update(Tracker data)
     {
         var changed = false;
         Tier = Set(Tier, data.Tier);
@@ -82,6 +82,7 @@ public sealed class Tracker : INotifyPropertyChanged
         }
         if (changed)
             RefreshText();
+        return changed;
 
         T Set<T>(T previous, T value)
         {

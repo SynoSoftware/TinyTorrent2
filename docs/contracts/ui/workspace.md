@@ -198,6 +198,14 @@ command for the selection from a command for all torrents.
 
 ## Panes and filters
 
+One shared inspector owner derives its activity from workspace, open/compact
+state and minimization, so Torrents and Library have the same lifetime. Closing,
+collapsing, minimizing or switching workspace ends the previous content's
+observation and cancels its reads and preparation. Only leaving Torrents releases
+its pipe detail demand; Library uses its own store. Opening or restoring observes
+the current accepted selection, rather than replaying selections made while
+inactive. Inactive inspectors do no selection-driven loading or rendering.
+
 The shared `Pane` control owns the Filters and Inspector surfaces: its template
 uses the platform's `LayerOnMicaBaseAltFillColorDefaultBrush` background,
 a one-pixel `SurfaceStrokeColorDefaultBrush` outline that stays visible in Light

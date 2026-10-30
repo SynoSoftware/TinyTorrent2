@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Library;
+using Syno.TinyTorrent.Shared;
 using LibraryBrowser = Syno.TinyTorrent.Library.Browser;
 
 namespace Syno.TinyTorrent.Shell;
@@ -17,22 +18,18 @@ public sealed partial class InspectorPane
     // The other tab's host, so the previous tab's content slides out while the
     // chosen tab's content slides in.
     private ScrollViewer? _librarySpare;
-    private ICommand? _downloadSubtitles;
+    private readonly ICommand _downloadSubtitles;
     private (LibraryBrowser Browser, Entry? Entry, bool File, string Language)? _libraryView;
     private readonly Button _libraryOpen;
     private readonly Button _libraryTorrents;
     private readonly Button _libraryMore;
 
-    internal void ShowLibrary(LibraryBrowser? library, ICommand? downloadSubtitles)
+    private void ShowLibrary(LibraryBrowser? library)
     {
-        _downloadSubtitles = downloadSubtitles;
         if (ReferenceEquals(_library, library))
             return;
         if (_library is not null)
-        {
-            _library.PropertyChanged -= OnLibrary;
             ClearLibraryActions();
-        }
         _library = library;
         HeadingGlyph.Visibility = library is null ? Visibility.Collapsed : Visibility.Visible;
         Grid.SetColumn(HeadingName, library is null ? 0 : 1);
@@ -41,8 +38,6 @@ public sealed partial class InspectorPane
         if (library is not null)
         {
             Bindings.StopTracking();
-            if (IsLoaded)
-                library.PropertyChanged += OnLibrary;
             if (_libraryContent is null)
             {
                 _libraryContent = AddLibraryView();
@@ -76,18 +71,7 @@ public sealed partial class InspectorPane
     {
         if (_library is not { } library)
             return;
-        if (args.PropertyName == nameof(LibraryBrowser.IsInspectorVisible))
-        {
-            if (library.IsInspectorVisible)
-                RefreshLibrary();
-            else
-            {
-                ClearLibraryActions();
-                ShowActions(null);
-            }
-            return;
-        }
-        if (!library.IsInspectorVisible)
+        if (!Model.IsActive || Model.IsReplacing)
             return;
         if (args.PropertyName == nameof(LibraryBrowser.Section))
         {
@@ -156,7 +140,7 @@ public sealed partial class InspectorPane
 
     private void RefreshLibrary(bool workspace = false)
     {
-        if (_library is not { IsInspectorVisible: true } library || _libraryContent is null)
+        if (!Model.IsActive || Model.IsReplacing || _library is not { } library || _libraryContent is null)
         {
             ShowActions(null);
             return;
@@ -215,26 +199,24 @@ public sealed partial class InspectorPane
         if (_library is not { } library || _libraryContent is null)
             return;
         var text = library.Text;
+        var row = library.Selected;
         ClearLibraryActions();
         AutomationProperties.SetName(_libraryOpen, text.Get("commands", "open"));
-        _libraryOpen.Command = library.Open;
+        _libraryOpen.Command = LibraryCommand(library.Open, row);
         RefreshLibraryOpenTip();
         AutomationProperties.SetName(_libraryTorrents, text.Get("library", "show_torrents"));
         ToolTipService.SetToolTip(_libraryTorrents, text.Get("library", "show_torrents"));
         RefreshLibraryOrigins();
         AutomationProperties.SetName(_libraryMore, text.Get("library", "more"));
         ToolTipService.SetToolTip(_libraryMore, text.Get("library", "more"));
-        _libraryMore.Flyout = MenuItems.Flyout(LibraryMenu, () => Model.Text);
+        _libraryMore.Flyout = MenuItems.Flyout(() => LibraryMenu(row), () => Model.Text);
         _libraryMore.IsEnabled = library.IsAvailable;
     }
 
     // Providers and their availability can change while the inspector stays open.
-    private List<MenuEntry> LibraryMenu()
+    private List<MenuEntry> LibraryMenu(LibraryRow? row)
     {
-        if (
-            _library is not { IsInspectorVisible: true } library
-            || _downloadSubtitles is not { } subtitles
-        )
+        if (!Model.IsActive || Model.IsReplacing || _library is not { } library)
             return [];
         var text = library.Text;
         List<MenuEntry> menu = [];
@@ -249,31 +231,45 @@ public sealed partial class InspectorPane
         );
         if (ActionsOverflow)
             menu.Add(OriginActions.Create(library));
-        if (!library.SupportsMetadata)
-            return menu;
-        menu.AddRange([
-            new MenuSeparator(),
-            MetadataActions.Create(library),
-            new MenuCommand(
-                text.Get("library", "refresh_metadata"),
-                Lucide.RefreshCw,
-                library.RefreshMetadata
-            ),
-            new MenuCommand(text.Get("subtitles", "choose"), Lucide.Download, subtitles),
-            new MenuSeparator(),
-            new MenuCommand(
-                text.Get("library", "erase_metadata"),
-                Lucide.Eraser,
-                library.EraseMetadata
-            ),
-        ]);
-        return menu;
+        if (library.SupportsMetadata)
+            menu.AddRange([
+                new MenuSeparator(),
+                MetadataActions.Create(library),
+                new MenuCommand(
+                    text.Get("library", "refresh_metadata"),
+                    Lucide.RefreshCw,
+                    library.RefreshMetadata
+                ),
+                new MenuCommand(text.Get("subtitles", "choose"), Lucide.Download, _downloadSubtitles),
+                new MenuSeparator(),
+                new MenuCommand(
+                    text.Get("library", "erase_metadata"),
+                    Lucide.Eraser,
+                    library.EraseMetadata
+                ),
+            ]);
+        return menu.Select(Guard).ToList();
+
+        MenuEntry Guard(MenuEntry entry) => entry switch
+        {
+            MenuCommand command => command with { Command = LibraryCommand(command.Command, row) },
+            MenuSubmenu submenu => submenu with { Entries = submenu.Entries.Select(Guard).ToArray() },
+            _ => entry,
+        };
     }
+
+    private ICommand LibraryCommand(ICommand command, LibraryRow? row) =>
+        new GuardedCommand(
+            command,
+            () => Model.IsActive
+                && !Model.IsReplacing
+                && ReferenceEquals(row, _library?.Selected)
+        );
 
     private void RefreshLibraryOrigins()
     {
         if (
-            _library is not { IsInspectorVisible: true } library
+            !Model.IsActive || Model.IsReplacing || _library is not { } library
             || _libraryTorrents.Flyout?.IsOpen == true
         )
             return;

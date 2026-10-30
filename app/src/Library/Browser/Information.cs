@@ -430,20 +430,6 @@ public sealed partial class Browser
         Changed(nameof(CanDownload));
     }
 
-    internal void WatchInspector(bool visible)
-    {
-        if (IsInspectorVisible == visible)
-            return;
-        IsInspectorVisible = visible;
-        if (!visible)
-            CancelInformation();
-        else
-            _ = ReadDetail();
-        Changed(nameof(IsInspectorVisible));
-    }
-
-    internal bool IsInspectorVisible { get; private set; }
-
     private void RefreshInformation()
     {
         if (_disposed)

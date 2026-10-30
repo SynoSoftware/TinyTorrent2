@@ -13,6 +13,24 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
     // splits on.
     internal const string Separator = " · ";
 
+    internal Task<IReadOnlyList<Origin>> ReadOrigins(long entryId, CancellationToken cancellation) =>
+        database.Run(connection => ReadOrigins(connection, entryId), cancellation);
+
+    private static IReadOnlyList<Origin> ReadOrigins(SqliteConnection connection, long entryId)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT DISTINCT c.origin,c.name,f.file_index FROM source_files f
+            JOIN contributions c USING(origin) WHERE f.entry_id=$entry;
+            """;
+        command.Parameters.AddWithValue("$entry", entryId);
+        var origins = new List<Origin>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+            origins.Add(new(reader.GetString(0), reader.GetString(1), reader.GetInt32(2)));
+        return origins;
+    }
+
     internal Task<Coverage> ReadCoverage() =>
         database.Run(connection =>
         {
@@ -445,16 +463,7 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
                         ? []
                         : JsonSerializer.Deserialize<Episode[]>(reader.GetString(ordinal)) ?? [];
                 }
-                command.CommandText = """
-                    SELECT DISTINCT c.origin,c.name,f.file_index FROM source_files f
-                    JOIN contributions c USING(origin) WHERE f.entry_id=$entry;
-                    """;
-                var origins = new List<Origin>();
-                using (var reader = command.ExecuteReader())
-                    while (reader.Read())
-                        origins.Add(
-                            new(reader.GetString(0), reader.GetString(1), reader.GetInt32(2))
-                        );
+                var origins = ReadOrigins(connection, entryId);
                 return new Detail(entry, cast, synopsis, origins)
                 {
                     Series = series,

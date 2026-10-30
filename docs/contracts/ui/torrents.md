@@ -398,8 +398,11 @@ host's error; in Add the rows are then read again.
 
 ## Inspector and edits
 
-Selection cancels the previous inspector read and background preparation, then
-accepts the current row before new inspector reads and binding refreshes run.
+Selection accepts the current row and publishes it. Only the active shared
+inspector observes that state; its handler cancels obsolete work and schedules
+the new subject without resetting or loading detail in the selection call stack.
+The small unfinished-edit departure guard remains before selection acceptance.
+Closing detaches observation, so later selections perform no inspector work.
 Inspector reads and notifications, selection bindings, command states, menus
 and status layout follow the selection's rendered frame at low dispatcher
 priority. A newer target cancels callbacks waiting for the previous frame as
@@ -424,6 +427,12 @@ or replaces it with a spinner. The ready rows replace the source directly,
 using TableView's native row transitions. Retained content cannot edit the new
 target while its replacement is pending. Pieces likewise keep their existing
 bitmap until the replacement has rendered.
+
+Peer batches retain the last published list when completion adds no membership
+or order change. Value-only updates do not rebuild an unsorted peer or tracker
+view. Unchanged peer, tracker and file replies do not request another sort pass.
+TableView owns collection reconciliation and row transitions, whether the source
+notifies changes or is replaced as a snapshot.
 
 While the engine restores a selected torrent, the inspector keeps its loading
 state and retries detail reads with the existing summary updates. This wait

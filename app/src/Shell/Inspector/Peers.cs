@@ -4,8 +4,9 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Shared.Engine;
+using Syno.TinyTorrent.Torrents;
 
-namespace Syno.TinyTorrent.Torrents;
+namespace Syno.TinyTorrent.Shell;
 
 public sealed partial class Inspector
 {
@@ -104,7 +105,7 @@ public sealed partial class Inspector
         section is InspectorSection.Peers or InspectorSection.Speed || _target is not null;
 
     internal string PeerSummary =>
-        _visible && _section == InspectorSection.Peers && HasContent && Peers is { } peers
+        IsVisible && _section == InspectorSection.Peers && HasContent && Peers is { } peers
             ? Text.Format(
                 "peers",
                 "summary",
@@ -142,7 +143,7 @@ public sealed partial class Inspector
         try
         {
             while (
-                _visible && _section == InspectorSection.Peers && IsAvailable && !_owner.IsClosing
+                IsVisible && _section == InspectorSection.Peers && IsAvailable && !_owner.IsClosing
             )
             {
                 var key = (_owner.PublicAddress, _owner.Geolocation.Version);
@@ -174,7 +175,7 @@ public sealed partial class Inspector
                 if (_owner.Geolocation.Version != key.Version)
                     continue;
                 if (
-                    !_visible
+                    !IsVisible
                     || _section != InspectorSection.Peers
                     || !IsAvailable
                     || _owner.IsClosing
@@ -190,7 +191,7 @@ public sealed partial class Inspector
                         await Yield();
                         started = Stopwatch.GetTimestamp();
                         cancellation.ThrowIfCancellationRequested();
-                        if (!_visible || _section != InspectorSection.Peers || !IsAvailable || _owner.IsClosing)
+                        if (!IsVisible || _section != InspectorSection.Peers || !IsAvailable || _owner.IsClosing)
                             return;
                         if (_owner.Geolocation.Version != key.Version)
                             break;
@@ -226,7 +227,7 @@ public sealed partial class Inspector
         finally
         {
             _locating = false;
-            if (_visible && _section == InspectorSection.Peers && IsAvailable
+            if (IsVisible && _section == InspectorSection.Peers && IsAvailable
                 && !_owner.IsClosing && (Peers ?? []).Any(peer => !_located.Contains(peer)))
                 _ = LocatePeers();
         }
@@ -324,7 +325,6 @@ public sealed partial class Inspector
         var previous = group.ToDictionary(peer => peer.Endpoint);
         var received = new List<Peer>();
         var next = (Peers ?? []).ToList();
-        var changed = false;
         var published = false;
         await foreach (var batch in PreparePeers(torrentId, rows, cancellation))
         {
@@ -333,6 +333,7 @@ public sealed partial class Inspector
                 return false;
             var started = Stopwatch.GetTimestamp();
             var added = false;
+            var changed = false;
             foreach (var parsed in batch)
             {
                 if (Stopwatch.GetElapsedTime(started) >= UpdateBudget)
@@ -375,14 +376,12 @@ public sealed partial class Inspector
         if (_peerCache.Count > 8)
             _peerCache.RemoveAt(_peerCache.Count - 1);
         if (Peers is not null && group.SequenceEqual(complete))
-        {
-            if (changed)
-                RowsUpdated?.Invoke(this, InspectorSection.Peers);
             return published;
-        }
         var insertion = next.FindIndex(peer => peer.TorrentId == torrentId);
         next.RemoveAll(peer => peer.TorrentId == torrentId);
         next.InsertRange(insertion < 0 ? next.Count : insertion, complete);
+        if (Peers is not null && Peers.SequenceEqual(next))
+            return published;
         Peers = next;
         IsReplacing = false;
         _ = LocatePeers();

@@ -96,7 +96,7 @@ public sealed partial class MainViewModel
             if (_minimized == value)
                 return;
             _minimized = value;
-            RefreshInspector();
+            Inspector.Activate();
         }
     }
     private bool _inspectorOpen;
@@ -108,7 +108,7 @@ public sealed partial class MainViewModel
             if (_inspectorOpen == value)
                 return;
             _inspectorOpen = value;
-            RefreshInspector();
+            Inspector.Activate();
             Changed(nameof(HasInspector));
         }
     }
@@ -121,7 +121,7 @@ public sealed partial class MainViewModel
             if (_inspectorCompact == value)
                 return;
             _inspectorCompact = value;
-            RefreshInspector();
+            Inspector.Activate();
             Changed(nameof(IsInspectorCompact));
         }
     }
@@ -482,18 +482,10 @@ public sealed partial class MainViewModel
 
     public bool CloseInspector()
     {
-        if (Inspector.HasDraft || Inspector.IsPending || !Inspector.Show(null))
+        if (Inspector.HasDraft || Inspector.IsPending)
             return false;
         HasInspector = false;
         return true;
-    }
-
-    private void RefreshInspector()
-    {
-        Inspector.SetVisible(
-            !IsMinimized && HasInspector && !IsInspectorCompact && Page == WindowPage.Torrents
-        );
-        Library.WatchInspector(HasInspector && !IsInspectorCompact && Page == WindowPage.Library);
     }
 
     internal event EventHandler? DatabaseDeletionRequested;

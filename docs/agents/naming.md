@@ -231,12 +231,12 @@ stays local. The root holds `App`, `Enums.cs`, the project and manifest;
 `Assets/`, `Resources/` and `Properties/` retain their packaging roles.
 
 - `Shell/` owns MainWindow, MainViewModel, Navigation, Notifications,
-  AboutPage, CreditsPage, InspectorPane, Features, which hosts the
+  AboutPage, CreditsPage, Inspector, InspectorPane, Features, which hosts the
   features that share the Library database, and Updates, which checks for
   and installs a newer TinyTorrent. It composes the features and
   coordinates their lifetime and native window interactions; feature rules
   remain with their existing owners.
-- `Torrents/` owns torrent state, Inspector, peers, trackers, pieces, torrent
+- `Torrents/` owns torrent state, peers, trackers, pieces, torrent
   visualizations, addition, file operations and speed-limit editing.
 - `Settings/` owns Editor, SettingsPage, connection and proxy setup, scheduling,
   limits, theme and Windows integration. MainViewModel.Settings retains its

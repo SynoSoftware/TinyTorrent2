@@ -57,6 +57,8 @@ public sealed partial class Browser
 
     public Strings Text { get; }
     public IReadOnlyList<LibraryRow> Rows { get; private set; } = [];
+    internal event EventHandler? SelectionChanged;
+    internal event EventHandler? DetailChanged;
 
     // Results keep their configuration while a search for another one is pending.
     internal LibraryConfiguration RowsConfiguration => _rowsQuery?.Configuration ?? Configuration;
@@ -198,6 +200,7 @@ public sealed partial class Browser
                     }
             );
     private Detail? _loadedDetail;
+    private (long EntryId, IReadOnlyList<Origin> Rows)? _origins;
     public string Cast => _loadedDetail?.Cast ?? string.Empty;
     public string Synopsis => _loadedDetail?.Synopsis ?? string.Empty;
     internal VideoChoice? Series => _loadedDetail?.Series;
@@ -213,7 +216,23 @@ public sealed partial class Browser
     public string DownloadLabel => Text.Get("library", "download_information");
     public string FetchMetadataLabel => Text.Get("library", "fetch_metadata");
     public string FetchMetadataGlyph => Lucide.Download;
-    public IReadOnlyList<Origin> Origins => _loadedDetail?.Origins ?? [];
+    public IReadOnlyList<Origin> Origins =>
+        _origins is { } origins && origins.EntryId == Selected?.Entry.EntryId ? origins.Rows : [];
+
+    internal bool HasOrigins(long entryId) => _origins?.EntryId == entryId;
+
+    internal Task<IReadOnlyList<Origin>> ReadOrigins(long entryId, CancellationToken cancellation) =>
+        _store?.ReadOrigins(entryId, cancellation) ?? Task.FromResult<IReadOnlyList<Origin>>([]);
+
+    internal void ApplyOrigins(long entryId, IReadOnlyList<Origin> origins)
+    {
+        if (!IsAvailable || Selected?.Entry.EntryId != entryId)
+            return;
+        var changed = _origins?.EntryId != entryId || !Origins.SequenceEqual(origins);
+        _origins = (entryId, origins);
+        if (changed)
+            Changed(nameof(Origins));
+    }
     public string FileType { get; private set; } = string.Empty;
     public string Application { get; private set; } = string.Empty;
     public ImageSource? ApplicationIcon { get; private set; }
@@ -822,7 +841,7 @@ public sealed partial class Browser
         if (_disposed)
             return;
         RefreshRows();
-        _ = ReadDetail();
+        DetailChanged?.Invoke(this, EventArgs.Empty);
         RefreshState();
         RefreshCommands();
         CoverageChanged?.Invoke(this, EventArgs.Empty);
@@ -832,6 +851,11 @@ public sealed partial class Browser
     {
         if (_disposed)
             return;
+        if (_origins is not null)
+        {
+            _origins = null;
+            Changed(nameof(Origins));
+        }
         _refresh = true;
         if (
             _visible
@@ -948,7 +972,7 @@ public sealed partial class Browser
                     && ReferenceEquals(previous, Selected)
                     && previousEntry != Selected.Entry
                 )
-                    _ = ReadDetail();
+                    DetailChanged?.Invoke(this, EventArgs.Empty);
                 if (Selected is not null && previousEntry?.Path != Selected.Entry.Path)
                     Changed(nameof(Selected));
                 if (rowsChanged)
@@ -1021,7 +1045,7 @@ public sealed partial class Browser
             if (changed)
             {
                 Changed(nameof(Rows));
-                _ = ReadDetail();
+                DetailChanged?.Invoke(this, EventArgs.Empty);
             }
         }
         catch (OperationCanceledException)
@@ -1054,32 +1078,38 @@ public sealed partial class Browser
         Selection = selection;
         if (!ReferenceEquals(previous, Selected))
         {
-            _detail?.Cancel();
             CancelInformation();
-            _loadedDetail = null;
-            _outcome = null;
             FileType = Application = string.Empty;
             ApplicationIcon = null;
-            if (Selected is not null)
-                _ = ReadDetail();
             Changed(nameof(Selected));
             Changed(nameof(Section));
             Changed(nameof(CanShowInformation));
             Changed(nameof(SupportsMetadata));
             Changed(nameof(Message));
         }
+        SelectionChanged?.Invoke(this, EventArgs.Empty);
         Changed(nameof(Selection));
         Changed(nameof(Status));
         RefreshCommands();
     }
 
-    private async Task ReadDetail()
+    internal async Task ReadDetail(CancellationToken token)
     {
-        if (_store is null || Selected is not { } selected || !IsAvailable || !_visible)
+        if (_loadedDetail?.Entry.EntryId != Selected?.Entry.EntryId)
+        {
+            _loadedDetail = null;
+            _outcome = null;
+        }
+        if (
+            token.IsCancellationRequested
+            || _store is null
+            || Selected is not { } selected
+            || !IsAvailable
+        )
             return;
         _detail?.Cancel();
         var entry = selected.Entry;
-        using var cancellation = new CancellationTokenSource();
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
         _detail = cancellation;
         try
         {
@@ -1089,7 +1119,6 @@ public sealed partial class Browser
                 || selected.Entry != entry
                 || cancellation.IsCancellationRequested
                 || !IsAvailable
-                || !_visible
             )
                 return;
             var changed =
@@ -1100,14 +1129,13 @@ public sealed partial class Browser
                 || Directors != (detail?.Directors ?? string.Empty)
                 || Certification != (detail?.Certification ?? string.Empty)
                 || _loadedDetail?.BoxOffice != detail?.BoxOffice
-                || !Episodes.SequenceEqual(detail?.Episodes ?? [])
-                || !Origins.SequenceEqual(detail?.Origins ?? []);
+                || !Episodes.SequenceEqual(detail?.Episodes ?? []);
             _loadedDetail = detail;
+            ApplyOrigins(entry.EntryId, detail?.Origins ?? []);
             if (changed)
             {
                 Changed(nameof(Cast));
                 Changed(nameof(Synopsis));
-                Changed(nameof(Origins));
             }
         }
         catch (OperationCanceledException)

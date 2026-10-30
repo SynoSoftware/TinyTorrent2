@@ -509,7 +509,10 @@ internal sealed partial class Details : UserControl, IDisposable
         {
             var button = new Button
             {
-                Command = command,
+                Command = new GuardedCommand(
+                    command,
+                    () => ReferenceEquals(library.Selected, row)
+                ),
                 Style = (Style)Application.Current.Resources["TinyTorrentSubtleButtonStyle"],
                 Content = new FontIcon
                 {
@@ -530,6 +533,8 @@ internal sealed partial class Details : UserControl, IDisposable
             link.Inlines.Add(new Run { Text = value });
             link.Click += (_, _) =>
             {
+                if (!ReferenceEquals(library.Selected, row))
+                    return;
                 if (apply is null)
                     library.Filter(section, value);
                 else
@@ -642,7 +647,7 @@ internal sealed partial class Details : UserControl, IDisposable
     internal void RefreshCommands()
     {
         foreach (var action in _actions)
-            if (action.Command is RelayCommand command)
+            if (action.Command is GuardedCommand command)
                 command.Refresh();
     }
 

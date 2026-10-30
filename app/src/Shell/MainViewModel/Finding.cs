@@ -24,14 +24,7 @@ public sealed partial class MainViewModel
 
     private void RefreshNavigation()
     {
-        if (
-            HasInspector
-            && Page == WindowPage.Torrents
-            && Inspector.Target is null
-            && !Inspector.HasPeerScope
-        )
-            Inspector.Show(_selected.Length == 1 ? _selected[0] : null);
-        RefreshInspector();
+        Inspector.Activate();
         Library.SetVisible(Page == WindowPage.Library);
         ObserveMemory();
         Changed(nameof(Page));

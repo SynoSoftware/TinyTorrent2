@@ -543,10 +543,6 @@ public sealed partial class MainWindow
             return;
         }
         var frame = InspectorFrame ?? CreateInspector();
-        ((InspectorPane)InspectorContent.Content).ShowLibrary(
-            Model.Page == WindowPage.Library ? Model.Library : null,
-            Model.DownloadSubtitles
-        );
         frame.IsCompact = Model.IsInspectorCompact;
         frame.IsMaximized = Model.IsInspectorMaximized;
         if (Model.IsInspectorCompact)
@@ -568,7 +564,7 @@ public sealed partial class MainWindow
     // first opens.
     private Pane CreateInspector()
     {
-        var pane = new InspectorPane(Model.Inspector);
+        var pane = new InspectorPane(Model.Inspector, Model.DownloadSubtitles);
         pane.LayoutChanged += (_, _) => KeepMap();
         if (_placement?.Inspector is { } layout)
             pane.Layout = layout;

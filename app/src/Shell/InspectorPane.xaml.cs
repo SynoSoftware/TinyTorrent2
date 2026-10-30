@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Syno.TinyTorrent.Controls;
+using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Torrents;
 
 namespace Syno.TinyTorrent.Shell;
@@ -69,9 +70,10 @@ public sealed partial class InspectorPane : UserControl
         }
     }
 
-    public InspectorPane(Inspector model)
+    public InspectorPane(Inspector model, ICommand downloadSubtitles)
     {
         Model = model;
+        _downloadSubtitles = downloadSubtitles;
         InitializeComponent();
         _libraryOpen = CreateAction(Lucide.Play, "LibraryOpen");
         _libraryTorrents = CreateAction(Lucide.LocateFixed, "LibraryTorrents");
@@ -96,8 +98,8 @@ public sealed partial class InspectorPane : UserControl
             Model.PropertyChanged += OnModel;
             Model.RowsUpdated += OnRows;
             Model.RecoveryRequested += OnRecovery;
-            if (_library is { } library)
-                library.PropertyChanged += OnLibrary;
+            Model.LibraryChanged += OnLibrary;
+            ShowLibrary(Model.Library);
             RefreshText();
             Refresh();
         };
@@ -110,14 +112,14 @@ public sealed partial class InspectorPane : UserControl
             Model.PropertyChanged -= OnModel;
             Model.RowsUpdated -= OnRows;
             Model.RecoveryRequested -= OnRecovery;
-            if (_library is { } library)
-                library.PropertyChanged -= OnLibrary;
+            Model.LibraryChanged -= OnLibrary;
             ClearLibraryActions();
             StopTracking();
             ClearLibraryContent(_libraryContent);
             ClearLibraryContent(_librarySpare);
         };
         RefreshText();
+        ShowLibrary(Model.Library);
         Refresh();
     }
 
@@ -287,18 +289,20 @@ public sealed partial class InspectorPane : UserControl
                 return;
             if (Model.Section == InspectorSection.Peers)
             {
-                if (_layout.View.Layout != PeerLayout.Map)
-                    Peers?.RefreshView();
+                if (_layout.View.Layout != PeerLayout.Map && Peers?.Sort is not null)
+                    Peers.RefreshView();
                 RefreshMap();
             }
-            else if (Model.Section == InspectorSection.Trackers)
-                TrackerTable?.RefreshView();
+            else if (Model.Section == InspectorSection.Trackers && TrackerTable?.Sort is not null)
+                TrackerTable.RefreshView();
         });
     }
 
     private void OnModel(object? sender, PropertyChangedEventArgs args)
     {
-        if (_library is null)
+        if (args.PropertyName == nameof(Inspector.IsActive) && Model.IsActive)
+            ShowLibrary(Model.Library);
+        if (_library is null || args.PropertyName is nameof(Inspector.IsActive) or nameof(Inspector.IsReplacing))
             Refresh();
     }
 
@@ -368,16 +372,19 @@ public sealed partial class InspectorPane : UserControl
     {
         SectionViews.IsHitTestVisible = _library is not null || !Model.IsReplacing;
         TabActions.IsHitTestVisible = SectionViews.IsHitTestVisible;
+        if (_libraryContent is not null)
+            _libraryContent.IsEnabled = Model.IsActive && !Model.IsReplacing;
+        (_libraryOpen.Command as GuardedCommand)?.Refresh();
+        if (!Model.IsActive)
+        {
+            ShowActions(null);
+            StopTracking();
+            return;
+        }
         if (_library is not null)
         {
             _tracking = false;
             RefreshLibrary(workspace);
-            return;
-        }
-        if (!Model.IsVisible)
-        {
-            ShowActions(null);
-            StopTracking();
             return;
         }
         if (Model.IsReplacing)

@@ -142,7 +142,7 @@ if ($Review -in 'files', 'files-layout', 'library', 'library-files', 'traffic', 
     $document = Get-Content -LiteralPath (Join-Path $fixture 'settings.json') -Raw | ConvertFrom-Json -AsHashtable
 }
 $document.settings.default_destination = $payload
-$document.settings.all_paused = $Review -notin 'add-layout', 'traffic', 'library-files'
+$document.settings.all_paused = $Review -notin 'add-layout', 'traffic', 'library-files', 'selection'
 if ($Review -in 'workspace', 'selection') {
     $document.settings.dht = $false
     $document.settings.pex = $false
@@ -186,9 +186,24 @@ try {
                 $paths = if ($name -eq 'Open field atlas') { 'Chapter 01.txt', 'Maps/Coastline.dat' }
                     else { 'Chapter 01.txt', 'Chapter 02.txt' }
                 $files = foreach ($path in $paths) {
-                    @{ path = $path; bytes = [Text.Encoding]::ASCII.GetBytes('Local workspace fixture. ' * 8) }
+                    $bytes = [Text.Encoding]::ASCII.GetBytes('Local workspace fixture. ' * 8)
+                    if ($Review -eq 'selection') {
+                        $full = Join-Path (Join-Path $payload $name) $path
+                        Write-File $full $bytes
+                        $preserved[$full] = Payload-Hash $full
+                    }
+                    @{ path = $path; bytes = $bytes }
                 }
-                Add-Torrent (New-Torrent $name @($files)) $payload
+                Add-Torrent (New-Torrent $name @($files)) $payload @{ paused = $Review -ne 'selection' }
+            }
+            if ($Review -eq 'selection') {
+                Wait-Until {
+                    -not ((Send-Command @{ command = 'snapshot' }).data.torrents | Where-Object { -not $_.complete })
+                } 'The selection fixture did not verify'
+                $reply = Send-Command @{ command = 'pause'; torrent_ids = @($members) }
+                Assert $reply.ok 'The verified selection torrents did not pause'
+                $reply = Send-Command @{ command = 'session_pause'; paused = $true }
+                Assert $reply.ok 'The verified selection fixture did not pause'
             }
         }
         { $_ -in 'files', 'files-layout' } {
