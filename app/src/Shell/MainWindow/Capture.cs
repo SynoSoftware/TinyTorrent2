@@ -37,6 +37,7 @@ public sealed partial class MainWindow
         "1" => CaptureMode.Full,
         "smoke" => CaptureMode.Smoke,
         "shell" => CaptureMode.Shell,
+        "menus" => CaptureMode.Menus,
         "schedule" => CaptureMode.Schedule,
         "desktop" => CaptureMode.Desktop,
         "dialogs" => CaptureMode.Dialogs,
@@ -2677,6 +2678,11 @@ public sealed partial class MainWindow
             if (ReviewMode == CaptureMode.Shell)
             {
                 await CaptureShell(target, outcomes);
+                return;
+            }
+            if (ReviewMode == CaptureMode.Menus)
+            {
+                await CaptureMenus(target, outcomes);
                 return;
             }
             var filesOnly = ReviewMode == CaptureMode.DetailsFiles;

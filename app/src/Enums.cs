@@ -849,6 +849,7 @@ internal enum CaptureMode
     Full,
     Smoke,
     Shell,
+    Menus,
     Schedule,
     Desktop,
     Dialogs,

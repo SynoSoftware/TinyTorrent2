@@ -27,12 +27,13 @@ Selection-dependent torrent menu descriptions prepare on a worker through
 TableView's cancellable preparation API. A new click cancels old preparation;
 only the current result reaches the UI dispatcher. MenuItems skips unchanged
 entries, so a refresh does not rewrite every closed menu's controls.
-Choices retain their content icons beside native state indicators, including
-in menus that also contain commands. Mutually exclusive choices use native
-radio items in named groups; independent options use native toggle items, so
-the control communicates whether several choices can apply. A mixed option
-keeps the mixed-square indicator. The described state remains authoritative
-when navigation is refused by an unfinished draft.
+When every choice has a content icon, as in View, choices retain those icons
+beside native state indicators. Mutually exclusive choices use native radio
+items in named groups; independent options use native toggle items. If a choice
+has no content icon, as in Torrent, all choices use Lucide checked, empty or mixed
+squares in the existing icon column. A native toggle there would reserve an
+otherwise empty checkmark column beside every command. The described state
+remains authoritative when navigation is refused by an unfinished draft.
 
 The custom title bar contains one row: workspace dropdown, File/Torrent/View/Help
 MenuBar, bounded Search, the language switch, the light/dark switch, and native caption

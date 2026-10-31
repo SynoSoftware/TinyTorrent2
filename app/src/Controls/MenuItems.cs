@@ -83,36 +83,40 @@ internal static class MenuItems
         var lines = entries
             .SelectMany(entry => entry is MenuHeading ? new[] { entry, Separator } : [entry])
             .ToArray();
+        // A native check reserves a second column for every row. Keep it only
+        // when choices have content icons to show beside their state.
+        var checks = lines.OfType<MenuChoice>().All(choice =>
+            choice.Glyph is not null || choice.FlagRegion is not null);
         if (
             items.Count != lines.Length
-            || !items.Zip(lines).All(pair => Matches(pair.First, pair.Second))
+            || !items.Zip(lines).All(pair => Matches(pair.First, pair.Second, checks))
         )
         {
             Clear(items);
             foreach (var line in lines)
-                items.Add(Create(line, items));
+                items.Add(Create(line, items, checks));
         }
         for (var index = 0; index < lines.Length; index++)
             Update(items[index], lines[index], text);
     }
 
-    private static bool Matches(MenuFlyoutItemBase item, MenuEntry line) =>
+    private static bool Matches(MenuFlyoutItemBase item, MenuEntry line, bool checks) =>
         Equals(item.Tag, line.GetType().Name)
         && (line switch
         {
-            MenuChoice { State: null } => item is MenuFlyoutItem and not ToggleMenuFlyoutItem and not RadioMenuFlyoutItem,
+            MenuChoice choice when !checks || choice.State is null => item is MenuFlyoutItem and not ToggleMenuFlyoutItem and not RadioMenuFlyoutItem,
             MenuChoice { Group: not null } => item is RadioMenuFlyoutItem,
             MenuChoice => item is ToggleMenuFlyoutItem,
             _ => true,
         });
 
-    private static MenuFlyoutItemBase Create(MenuEntry line, IList<MenuFlyoutItemBase> siblings)
+    private static MenuFlyoutItemBase Create(MenuEntry line, IList<MenuFlyoutItemBase> siblings, bool checks)
     {
         MenuFlyoutItemBase item = line switch
         {
             MenuSeparator => new MenuFlyoutSeparator(),
             MenuSubmenu => new MenuFlyoutSubItem(),
-            MenuChoice { State: null } => new MenuFlyoutItem(),
+            MenuChoice choice when !checks || choice.State is null => new MenuFlyoutItem(),
             MenuChoice { Group: not null } => new RadioMenuFlyoutItem(),
             MenuChoice => new ToggleMenuFlyoutItem(),
             MenuHeading => new MenuFlyoutItem
@@ -159,11 +163,17 @@ internal static class MenuItems
                 ToolTipService.SetToolTip(shown, command.ToolTip);
                 break;
             case (MenuChoice choice, MenuFlyoutItem shown):
-                if (choice.FlagRegion is { } region)
+                var checks = shown is ToggleMenuFlyoutItem or RadioMenuFlyoutItem;
+                if (checks && choice.FlagRegion is { } region)
                     Show(shown, choice.Text, Flags.Font, Flags.Glyph(region), choice.Command, choice.AccessKey);
                 else
                     Show(shown, choice.Text, Lucide.Font,
-                        choice.State is null ? Lucide.SquareMinus : choice.Glyph,
+                        checks ? choice.Glyph : choice.State switch
+                        {
+                            true => Lucide.SquareCheck,
+                            false => Lucide.Square,
+                            null => Lucide.SquareMinus,
+                        },
                         choice.Command, choice.AccessKey);
                 if (shown is ToggleMenuFlyoutItem toggle)
                     toggle.IsChecked = choice.State == true;

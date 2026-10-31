@@ -374,6 +374,12 @@ icon, menu and command centers, and unused caption space. This catches controls
 classified as draggable or an icon without system-menu semantics. It sends no
 input and establishes only top-level hit classification, not physical pointer
 delivery, child input routing or native caption-button actions.
+`Capture.ps1 -Review menus` checks the rendered text inset in Torrent and its
+context menu against File's icon-only column, with off, on and mixed choices.
+The owner explicitly requested this layout assertion to catch the return of an
+extra checkmark column. View retains native choices and its wider inset also
+proves that the measurement detects that column. The run saves those menus for
+visual review without changing any torrent options.
 Use `TINYTORRENT_CAPTURE_REVIEW=settings-layout` for General Settings and
 completion feedback in English and Spanish, Light and Dark, at the three review
 sizes. It reveals Startup and Default app sections, checks native registration
