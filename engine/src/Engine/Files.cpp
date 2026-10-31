@@ -1109,14 +1109,15 @@ bool Engine::State::NamesReadyFor(std::vector<std::string> const& ids) const
     });
 }
 
-Outcome Engine::State::FilesReady(std::vector<std::string> const& ids, std::string const& destination) const
+Outcome Engine::State::FilesReady(std::vector<std::string> const& ids, std::string const& destination, MoveMode mode) const
 {
     // Other torrents' renames and name preparation delay the move where they
     // can reach the move's files: under the destination, or under a member's
-    // save folder, where the shared-files refusal reads the other torrents'
-    // file names; an addition there has no names yet. A deletion changes only
-    // its own files, which the move can meet only at the destination.
-    auto folders = Folders(ids, destination);
+    // save folder for a physical move, where the shared-files refusal reads
+    // other torrents' file names; an addition there has no names yet. A
+    // deletion changes only its own files, which the move can meet only at
+    // the destination.
+    auto folders = Folders(ids, destination, mode);
     auto overlaps = [&folders](std::string const& folder)
     {
         return std::any_of(folders.begin(), folders.end(), [&folder](auto const& used)

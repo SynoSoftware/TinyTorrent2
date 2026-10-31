@@ -58,7 +58,7 @@ public sealed partial class LibraryTable : UserControl
             _table.Layout = layout;
     }
 
-    internal void FocusRows(FocusState state) => _table?.Focus(state);
+    internal void FocusRows(FocusState state) => _table?.FocusRows(state);
 
     private void OnModel(object? sender, PropertyChangedEventArgs args)
     {

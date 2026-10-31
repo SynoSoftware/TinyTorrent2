@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Data;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Syno.TinyTorrent.Controls;
 using Windows.UI.ViewManagement;
@@ -22,6 +23,7 @@ public sealed partial class Dialog : ContentDialog
     private CheckBox? _optOut;
     private string _optOutText = string.Empty;
     private long _checkText;
+    private bool _focusInitialized;
 
     public static readonly DependencyProperty GlyphProperty = DependencyProperty.Register(
         nameof(Glyph),
@@ -166,8 +168,8 @@ public sealed partial class Dialog : ContentDialog
         Opened += (_, _) =>
         {
             AlignActions();
-            FocusOnOpen();
         };
+        Closed += (_, _) => _focusInitialized = false;
         Loaded += (_, _) => _display.TextScaleFactorChanged += OnTextScale;
         Unloaded += (_, _) => _display.TextScaleFactorChanged -= OnTextScale;
         RegisterPropertyChangedCallback(TitleProperty, (_, _) => ShowTitle());
@@ -210,7 +212,14 @@ public sealed partial class Dialog : ContentDialog
 
     protected override void OnApplyTemplate()
     {
+        _focusInitialized = false;
         base.OnApplyTemplate();
+        if (GetTemplateChild("LayoutRoot") is FrameworkElement root)
+        {
+            root.GettingFocus += OnGettingFocus;
+            root.Loading += (_, _) => _focusInitialized = false;
+            root.Loaded += (_, _) => _focusInitialized = true;
+        }
         foreach (
             var name in new[] { "CommandSpace", "PrimaryButton", "SecondaryButton", "CloseButton" }
         )
@@ -293,15 +302,13 @@ public sealed partial class Dialog : ContentDialog
         }
     }
 
-    // Focus starts in the first text field, or on the default button when
-    // there is no editable text, so the person can act without first tabbing.
-    private void FocusOnOpen()
+    // Redirect the initial focus before it lands, so the cue never appears
+    // on a content control before moving to the default button.
+    private void OnGettingFocus(UIElement sender, GettingFocusEventArgs args)
     {
-        if (Content is DependencyObject content && Field(content) is { } field)
-        {
-            field.Focus(FocusState.Programmatic);
+        if (_focusInitialized)
             return;
-        }
+        Control? target = Content is DependencyObject content ? Field(content) : null;
         var name = DefaultButton switch
         {
             ContentDialogButton.Primary => "PrimaryButton",
@@ -309,8 +316,10 @@ public sealed partial class Dialog : ContentDialog
             ContentDialogButton.Close => "CloseButton",
             _ => null,
         };
-        if (name is not null && GetTemplateChild(name) is Button { IsEnabled: true } button)
-            button.Focus(FocusState.Programmatic);
+        if (target is null && name is not null)
+            target = GetTemplateChild(name) as Button;
+        if (target is { IsEnabled: true } && target != args.NewFocusedElement)
+            args.TrySetNewFocusedElement(target);
     }
 
     // A combo box uses Enter and Escape for its own list.

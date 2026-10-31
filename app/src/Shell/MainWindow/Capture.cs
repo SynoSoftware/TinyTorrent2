@@ -39,6 +39,8 @@ public sealed partial class MainWindow
         "shell" => CaptureMode.Shell,
         "schedule" => CaptureMode.Schedule,
         "desktop" => CaptureMode.Desktop,
+        "dialogs" => CaptureMode.Dialogs,
+        "recovery" => CaptureMode.Recovery,
         "details" => CaptureMode.Details,
         "details-files" => CaptureMode.DetailsFiles,
         "file-controls" => CaptureMode.FileControls,
@@ -2558,7 +2560,7 @@ public sealed partial class MainWindow
                                 throw new InvalidOperationException(
                                     "Editing search did not postpone completion feedback."
                                 );
-                            Torrents.Focus(FocusState.Programmatic);
+                            Torrents.FocusRows(FocusState.Programmatic);
                             await CaptureLayout();
                             if (ToastStack.Visibility != Visibility.Visible)
                                 throw new InvalidOperationException(
@@ -2592,6 +2594,16 @@ public sealed partial class MainWindow
             if (ReviewMode == CaptureMode.Schedule)
             {
                 await CaptureSchedule(outcomes, completed);
+                return;
+            }
+            if (ReviewMode == CaptureMode.Dialogs)
+            {
+                await CaptureDialogs(outcomes, completed);
+                return;
+            }
+            if (ReviewMode == CaptureMode.Recovery)
+            {
+                await CaptureRecovery(outcomes, completed);
                 return;
             }
             if (ReviewMode is CaptureMode.Files or CaptureMode.FilesLayout)

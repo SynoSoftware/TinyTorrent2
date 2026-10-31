@@ -72,7 +72,13 @@
             ItemTemplate="{StaticResource FileDialogTorrentTemplate}"
             IsTabStop="False"
           />
-          <StackPanel Spacing="8" Visibility="{x:Bind Move.HasShared, Mode=OneWay}">
+          <TextBlock
+            Text="{x:Bind Move.Explanation, Mode=OneWay}"
+            Visibility="{x:Bind Move.IsDownload, Mode=OneWay}"
+            Style="{StaticResource TinyTorrentBodyTextStyle}"
+            TextWrapping="Wrap"
+          />
+          <StackPanel Spacing="8" Visibility="{x:Bind Move.ShowsShared, Mode=OneWay}">
             <TextBlock
               Text="{x:Bind Move.SharedText, Mode=OneWay}"
               Style="{StaticResource TinyTorrentBodyTextStyle}"

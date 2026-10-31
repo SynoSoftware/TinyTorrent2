@@ -840,7 +840,7 @@
     >
       <ItemsControl
         x:Name="ToastStack"
-        Width="400"
+        Width="480"
         Visibility="Collapsed"
         IsTabStop="False"
         ItemsSource="{x:Bind Model.Notifications.Toasts}"
@@ -890,7 +890,8 @@
                        chosen from code without losing the window's theme. -->
               <Grid
                 Grid.RowSpan="3"
-                VerticalAlignment="Center"
+                VerticalAlignment="Top"
+                Margin="0,2,0,0"
                 AutomationProperties.AccessibilityView="Raw"
               >
                 <FontIcon
@@ -922,8 +923,6 @@
                   Visibility="{x:Bind IsError, Mode=OneWay}"
                 />
               </Grid>
-              <!-- Every line keeps to one line, as work-surface text does; the
-                       full text shows in a tooltip only when cut. -->
               <TextBlock
                 Grid.Column="1"
                 VerticalAlignment="Center"
@@ -937,10 +936,9 @@
                 Grid.Column="1"
                 Grid.Row="1"
                 Text="{x:Bind Subject, Mode=OneWay}"
+                Grid.ColumnSpan="2"
                 Visibility="{x:Bind HasSubject, Mode=OneWay}"
-                TextWrapping="NoWrap"
-                TextTrimming="CharacterEllipsis"
-                IsTextTrimmedChanged="OnToastTextTrimmed"
+                TextWrapping="Wrap"
               />
               <TextBlock
                 Grid.Column="1"
@@ -949,10 +947,8 @@
                 Text="{x:Bind Message, Mode=OneWay}"
                 Visibility="{x:Bind HasMessage, Mode=OneWay}"
                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                TextWrapping="NoWrap"
-                TextTrimming="CharacterEllipsis"
+                TextWrapping="Wrap"
                 IsTextSelectionEnabled="True"
-                IsTextTrimmedChanged="OnToastTextTrimmed"
               />
               <TextBlock
                 Grid.Column="1"
@@ -961,10 +957,8 @@
                 Text="{x:Bind Folder, Mode=OneWay}"
                 Visibility="{x:Bind HasFolder, Mode=OneWay}"
                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                TextWrapping="NoWrap"
-                TextTrimming="CharacterEllipsis"
+                TextWrapping="Wrap"
                 IsTextSelectionEnabled="True"
-                IsTextTrimmedChanged="OnToastTextTrimmed"
               />
               <StackPanel
                 Grid.Column="1"
@@ -972,7 +966,7 @@
                 Grid.Row="4"
                 Margin="0,12,0,0"
                 HorizontalAlignment="Right"
-                Visibility="{x:Bind HasAction, Mode=OneWay}"
+                Visibility="{x:Bind HasButtons, Mode=OneWay}"
                 Orientation="Horizontal"
                 Spacing="8"
               >

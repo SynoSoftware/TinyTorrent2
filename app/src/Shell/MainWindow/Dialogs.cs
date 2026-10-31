@@ -155,7 +155,7 @@ public sealed partial class MainWindow
         try
         {
             await ShowDialog(interaction, dialog, refreshText);
-            if (interaction.IsSuspended)
+            if (interaction.IsSuspended && !interaction.IsResolved)
             {
                 // CloseWindow resolves the draft after the dialog has closed.
                 // An unchanged draft stays unresolved, and so does a Discard

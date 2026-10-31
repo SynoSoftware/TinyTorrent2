@@ -93,6 +93,7 @@ public sealed partial class MainWindow
         Model.RemovalDraft.DeleteDownloaded = false;
         Model.RemovalDraft.DeleteTorrentFiles = false;
         Require(await Model.RemovalDraft.Submit(), "The disposable transfer could not be removed.");
+        await Model.RemovalDraft.Discard();
         await CaptureReady(Model, () => !Model.Contains(target));
         await GoBack();
         Require(Model.Inspector.Target is null && Model.Inspector.Section == InspectorSection.Peers,

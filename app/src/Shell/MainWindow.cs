@@ -161,6 +161,7 @@ public sealed partial class MainWindow : Window
         Model.MergeRequested += async (_, _) => await ConfirmMerge();
         Model.DatabaseDeletionRequested += async (_, _) => await ConfirmDatabaseDeletion();
         Model.MoveRequested += async (_, torrents) => await ShowMove(torrents);
+        Model.DownloadRequested += async (_, torrents) => await ShowMove(torrents, download: true);
         Model.SpeedLimitRequested += async (_, torrents) => await ShowSpeedLimit(torrents);
         Model.OpenRequested += (_, args) => Open(args);
         Model.CopyRequested += (_, text) =>

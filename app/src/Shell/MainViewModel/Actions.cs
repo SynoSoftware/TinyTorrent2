@@ -145,6 +145,7 @@ public sealed partial class MainViewModel
     public ICommand Verify { get; }
     public ICommand Remove { get; }
     public ICommand MoveFiles { get; }
+    public ICommand SetFolder { get; }
     public MoveDraft MoveDraft { get; }
     public RemovalDraft RemovalDraft { get; }
     public ICommand Up { get; }
@@ -163,6 +164,7 @@ public sealed partial class MainViewModel
     public event EventHandler<Torrent[]>? RemoveRequested;
     public event EventHandler? MergeRequested;
     public event EventHandler<Torrent[]>? MoveRequested;
+    internal event EventHandler<Torrent[]>? DownloadRequested;
     public event EventHandler<Torrent[]>? SpeedLimitRequested;
     public event EventHandler<OpenRequestedEventArgs>? OpenRequested;
     public event EventHandler<string>? CopyRequested;
@@ -190,6 +192,13 @@ public sealed partial class MainViewModel
                 && torrents.All(torrent => Contains(torrent) && !torrent.IsMoving)
         );
 
+    internal ICommand DownloadCommand(Func<Torrent[]> targets) =>
+        new RelayCommand(
+            () => DownloadRequested?.Invoke(this, targets().ToArray()),
+            () => CanEdit && targets() is { Length: > 0 } torrents &&
+                torrents.All(torrent => Contains(torrent) && !torrent.IsMoving)
+        );
+
     internal Torrent? Find(IEnumerable<string> hashes) =>
         Torrents.FirstOrDefault(torrent =>
             torrent.Hashes.Intersect(hashes, StringComparer.OrdinalIgnoreCase).Any()
@@ -198,6 +207,31 @@ public sealed partial class MainViewModel
     internal Torrent? Find(string torrentId) => _byId.GetValueOrDefault(torrentId);
 
     internal void RequestOpen(string folder) => OpenRequested?.Invoke(this, new(folder));
+
+    internal async Task SetDownloadFolder(string[] torrentIds, string destination)
+    {
+        await _client.Send("redownload", new { torrent_ids = torrentIds, destination }, Requester.Person);
+        Notifications.ResolveMove(torrentIds);
+        Notifications.AnnounceAccepted("commands", "set_folder");
+    }
+
+    internal async Task RecoverMove(MoveRecovery recovery)
+    {
+        if (!CanEdit)
+            return;
+        var ids = recovery.TorrentIds.Where(id =>
+            Find(id) is { IsMoving: false, ErrorCode: "move_source_unavailable" }).ToArray();
+        if (ids.Length == 0)
+            return;
+        try
+        {
+            await SetDownloadFolder(ids, recovery.Destination);
+        }
+        catch (Exception error)
+        {
+            Notifications.Report(error);
+        }
+    }
 
     // Picked sources come from Add torrent file; the others are dropped,
     // pasted or sent by another instance.

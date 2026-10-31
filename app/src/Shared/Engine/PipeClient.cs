@@ -58,6 +58,7 @@ internal sealed partial class PipeClient : IDisposable
     // The engine names the Settings card to open.
     internal event Action<string>? SettingsRequested;
     internal event Action<string>? TorrentRequested;
+    internal event Action<string[], string>? DownloadRequested;
     internal event Action<JsonElement>? Toast;
     internal event Action<JsonElement>? Detail;
     internal event Action<CommandReply>? CommandReplied;
@@ -463,6 +464,10 @@ internal sealed partial class PipeClient : IDisposable
                         SettingsRequested?.Invoke(message.GetProperty("setting").GetString()!);
                     else if (type.GetString() == "torrent")
                         TorrentRequested?.Invoke(message.GetProperty("torrent_id").GetString()!);
+                    else if (type.GetString() == "redownload")
+                        DownloadRequested?.Invoke(
+                            message.GetProperty("torrent_ids").EnumerateArray().Select(id => id.GetString()!).ToArray(),
+                            message.GetProperty("destination").GetString()!);
                     else if (type.GetString() == "toast")
                         Toast?.Invoke(message);
                     else if (type.GetString() == "detail")

@@ -323,6 +323,7 @@ public:
         {
             std::vector<std::string> ids;
             std::string destination;
+            MoveMode mode = MoveMode::Files;
 
             bool operator==(Move const&) const = default;
         };
@@ -780,6 +781,8 @@ public:
     {
         std::vector<std::string> ids;
         std::string destination;
+        MoveMode mode = MoveMode::Files;
+        std::vector<std::string> unavailable;
         // Members that had a marker before this move, so their files can
         // still be in two folders.
         std::vector<std::string> recovering;
@@ -846,6 +849,7 @@ public:
         // The give-back's file work, which names its folders; nothing for a
         // check or a move.
         FileWork::Job const* giveBack = nullptr;
+        MoveMode mode = MoveMode::Files;
     };
     struct Deletion
     {
@@ -1277,9 +1281,10 @@ public:
     // and their markers' destinations.
     bool NamesReadyFor(std::vector<std::string> const& ids) const;
     // Whether the files of the torrents `ids` can move to `destination` now.
-    Outcome FilesReady(std::vector<std::string> const& ids, std::string const& destination) const;
+    Outcome FilesReady(std::vector<std::string> const& ids, std::string const& destination,
+        MoveMode mode = MoveMode::Files) const;
     void StartMove(std::vector<std::string> const& ids, std::string const& destination, MoveStart start,
-        std::function<void(Outcome)> accepted);
+        std::function<void(Outcome)> accepted, MoveMode mode = MoveMode::Files);
     // Busy files and another torrent's missing metadata only delay a move,
     // because they clear by themselves; the second shows on the torrents.
     static bool DelaysMove(Outcome const& outcome);
@@ -1325,10 +1330,10 @@ public:
     // The drives of the folders together, or nothing while a lookup runs.
     // Starts the lookup of a folder it has not seen.
     std::optional<Drives> FindDrives(std::vector<std::string> const& folders);
-    // The folders whose drives a job uses: each torrent's save folder, and a
-    // move's destination.
+    // Download claims only its destination, so an unavailable source cannot
+    // hold recovery behind its drive lookup.
     std::vector<std::string> Folders(std::vector<std::string> const& ids,
-        std::optional<std::string> const& destination) const;
+        std::optional<std::string> const& destination, MoveMode mode = MoveMode::Files) const;
     // The waiting jobs in their order: forced checks first, then by turn.
     std::vector<Job> WaitingJobs() const;
     // The moves that wait for their turn; the torrents of one request move
@@ -1336,7 +1341,7 @@ public:
     std::vector<Job> WaitingMoves() const;
     // Whether a move gets its drives now: after the jobs that wait, or, for a
     // move that `waited` for its turn, in that turn.
-    bool DrivesFree(std::vector<std::string> const& ids, std::string const& destination, bool waited);
+    bool DrivesFree(std::vector<std::string> const& ids, std::string const& destination, bool waited, MoveMode mode);
     // What the job of a row with `status` waits for, from the drives in use.
     DriveWait WaitOf(Torrent const& torrent, Status status, Claims const& inUse) const;
     // The checks that stalled while their reads remain, keyed by the RootOf
@@ -1461,6 +1466,7 @@ public:
     // The root that the torrent's location notice and root probe name: the
     // one its storage runs on, or, while it waits to be added, its folder's.
     std::string NoticeRootOf(Torrent const& torrent) const;
+    std::string ProbeFolder(Torrent const& torrent) const;
     // A NoticeRoot in upper case, so one root has one key however it is
     // written.
     static std::string RootKey(std::filesystem::path const& root);
@@ -1742,7 +1748,7 @@ public:
     // Adds `id` to the move to `destination` among `tasks` from `first` on,
     // or adds that move.
     static void AddMove(std::vector<Task>& tasks, std::size_t first, std::string const& id,
-        std::string const& destination);
+        std::string const& destination, MoveMode mode);
     // Gives each move its turn, checks each torrent again, gives back the
     // files of removed torrents' moves and deletes the files, in the tasks'
     // order.

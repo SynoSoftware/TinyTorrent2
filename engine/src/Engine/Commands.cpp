@@ -37,6 +37,7 @@ constexpr CommandEntry commands[] = {
     {"remove", Command::Remove, Publication::Execute},
     {"file_scope", Command::FileScope, Publication::None},
     {"move", Command::Move, Publication::Execute},
+    {"redownload", Command::Redownload, Publication::Execute},
     {"delete_files", Command::DeleteFiles, Publication::Execute},
     {"queue", Command::Queue, Publication::Execute},
     {"piece_order", Command::PieceOrder, Publication::Execute},
@@ -617,9 +618,11 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
         break;
     }
     case Command::Move:
-        Act(TorrentIds(request), Acknowledge(reply), [this, destination = request.at("destination").get<std::string>()](auto const& ids, auto done)
+    case Command::Redownload:
+        Act(TorrentIds(request), Acknowledge(reply), [this, destination = request.at("destination").get<std::string>(),
+            mode = command == Command::Redownload ? MoveMode::Download : MoveMode::Files](auto const& ids, auto done)
         {
-            StartMove(ids, destination, MoveStart::Requested, [this, ids, destination, done](Outcome outcome)
+            StartMove(ids, destination, MoveStart::Requested, [this, ids, destination, done, mode](Outcome outcome)
             {
                 // The move waits its turn and replaces an earlier problem.
                 if (DelaysMove(outcome))
@@ -631,7 +634,7 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
                     for (auto const& id : ids)
                     {
                         auto& torrent = torrents.at(id);
-                        torrent.waitingMove = WaitingMove{destination, turn};
+                        torrent.waitingMove = WaitingMove{.destination = destination, .turn = turn, .mode = mode};
                         Answer(torrent, FailureAnswer::Move);
                         if (outcome.error == ErrorCode::MetadataUnavailable)
                             RefuseMove(torrent, outcome);
@@ -640,7 +643,7 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
                     return;
                 }
                 done(std::move(outcome));
-            });
+            }, mode);
         });
         break;
     case Command::Queue:

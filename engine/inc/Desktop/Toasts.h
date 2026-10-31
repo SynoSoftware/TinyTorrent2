@@ -30,6 +30,7 @@ public:
     {
         std::function<void()> open;
         std::function<void(std::string torrentId)> openTorrent;
+        std::function<void(MoveRecovery recovery)> recoverMove;
         // Continues every torrent that waits for the person's Retry.
         std::function<void()> retryAll;
         // Opens the window at a card on the General page of Settings.

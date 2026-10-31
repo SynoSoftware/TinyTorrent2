@@ -64,6 +64,12 @@ inline void NormaliseMagnet(std::string& source)
     }
 }
 
+struct MoveRecovery
+{
+    std::vector<std::string> torrentIds;
+    std::string destination;
+};
+
 struct Toast
 {
     struct Condition
@@ -90,6 +96,7 @@ struct Toast
     unsigned count = 1;
     // Absent for an event; present for an engine-owned storage condition.
     std::optional<Condition> condition;
+    std::optional<MoveRecovery> recovery;
 };
 
 // The completion or failure of an operation. A failure has its error code

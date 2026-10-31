@@ -53,6 +53,7 @@ public:
     // which the window highlights.
     void OpenSettings(std::string card);
     void OpenTorrent(std::string torrentId);
+    void RecoverMove(MoveRecovery recovery);
     // Opens the window the person asked for once its old process has ended.
     void Reopen();
     // Asks the connected window to confirm Exit; false without one.
@@ -93,6 +94,7 @@ private:
     {
         WindowTarget kind;
         std::string key;
+        std::optional<MoveRecovery> recovery;
     };
     struct Wait
     {

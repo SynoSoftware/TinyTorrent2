@@ -184,7 +184,7 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
                     ? strings.Get("notifications", "torrent_stopped")
                     : strings.Format("errors", "torrent_stopped", reason);
             }
-            var message = strings.Find("torrent_errors", ErrorCode)
+            var message = ErrorCode == "move_destination_unavailable" ? strings.Get("errors", ErrorCode) : strings.Find("torrent_errors", ErrorCode)
                 ?? strings.Get("torrent_errors", "unknown");
             return detail.Length == 0
                 ? message

@@ -123,7 +123,7 @@ public sealed partial class FileBrowser : UserControl
         Files.RefreshView();
         Files.Selection = new Selection([node], node);
         Files.ScrollIntoView(node);
-        Files.Focus(FocusState.Keyboard);
+        Files.FocusRows(FocusState.Keyboard);
     }
 
     private void OnChanged(object? sender, bool changed)

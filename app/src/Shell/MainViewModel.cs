@@ -533,6 +533,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             () => CanEdit && _selected.Length > 0
         );
         MoveFiles = MoveCommand(() => _selected);
+        SetFolder = DownloadCommand(() => _selected);
         Up = new RelayCommand(() => Queue("up"), () => CanMove);
         Down = new RelayCommand(() => Queue("down"), () => CanMove);
         Top = new RelayCommand(() => Queue("top"), () => CanMove);
@@ -677,6 +678,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             Verify,
             Remove,
             MoveFiles,
+            SetFolder,
             Up,
             Down,
             Top,
@@ -711,6 +713,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 _dispatcher.TryEnqueue(Notifications.ClearError);
         };
         _client.Toast += toast => _dispatcher.TryEnqueue(() => Notifications.Receive(toast));
+        _client.DownloadRequested += (ids, destination) =>
+            _dispatcher.TryEnqueue(async () =>
+            {
+                if (!_closed)
+                    await RecoverMove(new(ids, destination));
+            });
         _client.TorrentRequested += torrentId =>
             _dispatcher.TryEnqueue(() =>
             {
@@ -1305,7 +1313,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         var space = await Task.Run(() => DiskSpace.Read(path));
         if (_closed || path != Settings.Destination.ConfirmedText)
             return;
-        _freeSpace = space;
+        _freeSpace = (space as DiskSpace.Available)?.Bytes;
         Changed(nameof(FreeSpaceStatus));
         Changed(nameof(ShowsFreeSpace));
     }

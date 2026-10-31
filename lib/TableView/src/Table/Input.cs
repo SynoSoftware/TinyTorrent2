@@ -1093,6 +1093,9 @@ public sealed partial class Table
     /// </summary>
     private (object Item, FocusState Focus)? _pendingReveal;
 
+    /// <summary>Focus the row surface without changing selection or requiring a surviving row.</summary>
+    public bool FocusRows(FocusState state) => _surface?.Focus(state) == true;
+
     /// <summary>
     /// Reveal an item without changing selection or keyboard focus. A source arrival waiting
     /// under the pointer is released before scrolling. After a view change in the same turn the

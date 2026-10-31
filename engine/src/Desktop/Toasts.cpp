@@ -28,6 +28,11 @@ bool IsProblem(ToastKind kind)
 {
     return kind == ToastKind::Error || kind == ToastKind::AddFailed || kind == ToastKind::DeleteFailed;
 }
+
+bool DestinationError(Toast const& toast)
+{
+    return toast.code == "move_destination_unavailable" || toast.code == "invalid_destination";
+}
 }
 
 bool UsesWindow(ToastKind kind)
@@ -113,7 +118,9 @@ bool Toasts::IsOn(ToastKind kind) const
 void Toasts::Queue(Toast toast)
 {
     auto kind = toast.kind;
-    auto key = std::make_pair(kind, toast.condition ? toast.condition->key : std::string());
+    auto key = std::make_pair(kind, toast.condition ? toast.condition->key :
+        toast.recovery ? "move:" + toast.recovery->torrentIds.front() :
+        DestinationError(toast) ? "destination:" + toast.folder : std::string());
     if (toast.condition && toast.condition->change != ProblemChange::Raised)
     {
         auto pending = batches_.find(key);
@@ -150,6 +157,8 @@ void Toasts::Queue(Toast toast)
     {
         return;
     }
+    if ((toast.recovery || headless_) && commands_.window && commands_.window(toast))
+        return;
     if (headless_)
     {
         auto content = Message(toast);
@@ -371,6 +380,16 @@ Popup::Content Toasts::Message(Toast const& toast) const
         content.body = strings_.Text("notification", "unfinished");
         content.stay = ToastStay::Persistent;
     }
+    else if (toast.recovery)
+    {
+        content.title = strings_.Text("notification", "move_failed");
+        content.body = strings_.Text("error", "move_source_unavailable");
+        content.location = Popup::Location{strings_.Text("notification", "download_folder"), Wide(toast.recovery->destination)};
+        content.actions.push_back({.glyph = L'\uE0B2', .label = strings_.Text("notification", "download"),
+            .tooltip = strings_.Text("notification", "download_tip"),
+            .run = [this, recovery = *toast.recovery] { commands_.recoverMove(recovery); },
+            .automationId = L"DownloadElsewhere"});
+    }
     else
     {
         content.title = strings_.Text("notification", ToString(toast.kind));
@@ -400,8 +419,9 @@ Popup::Content Toasts::Message(Toast const& toast) const
         }
         if (toast.kind == ToastKind::Error && !toast.torrentId.empty())
         {
-            auto folder = commands_.folder(toast.torrentId);
-            if (!folder.empty())
+            bool destinationError = DestinationError(toast);
+            auto folder = destinationError ? toast.folder : commands_.folder(toast.torrentId);
+            if (!folder.empty() && toast.code != "move_failed" && toast.code != "move_interrupted")
                 content.location = Popup::Location{strings_.Text("notification", "download_folder"), Wide(folder)};
             content.actions.push_back({.glyph = L'\uE106', .label = strings_.Text("notification", "show_torrent"),
                 .tooltip = strings_.Text("notification", "show_torrent_tip"), .run = content.select,
@@ -413,7 +433,7 @@ Popup::Content Toasts::Message(Toast const& toast) const
                 content.actions.push_back(Retry(strings_, strings_.Text("notification", "retry_torrent_tip"),
                     commands_.retryAll));
             }
-            else
+            else if (!destinationError)
             {
                 content.actions.push_back({.glyph = L'\uE247', .label = strings_.Text("notification", "open_folder"),
                     .tooltip = strings_.Text("notification", "files_folder_tip"),
@@ -456,7 +476,8 @@ Popup::Content Toasts::Problems(Toast const& first, unsigned count) const
     {
         content.title = strings_.Format("notification", "failures", {Strings::Number(count)});
         content.select = commands_.open;
-        content.location.reset();
+        if (!DestinationError(toast))
+            content.location.reset();
         content.actions.clear();
     }
     return content;

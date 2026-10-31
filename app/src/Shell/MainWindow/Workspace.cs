@@ -41,7 +41,7 @@ public sealed partial class MainWindow
     {
         if (!await Model.Navigation.Navigate(WindowPage.Torrents))
             return false;
-        Torrents.Focus(FocusState.Programmatic);
+        Torrents.FocusRows(FocusState.Programmatic);
         return true;
     }
 
@@ -104,7 +104,7 @@ public sealed partial class MainWindow
         if (NavigationPage == WindowPage.Library)
             _libraryTable?.FocusRows(state);
         else
-            Torrents.Focus(state);
+            Torrents.FocusRows(state);
     }
 
     private Task ReturnToSettings() =>
@@ -375,14 +375,11 @@ public sealed partial class MainWindow
                         );
                     }
                 );
-                var resolved = false;
-                if (choice == ContentDialogResult.Primary)
-                    resolved = await draft.Submit();
-                else if (choice == ContentDialogResult.Secondary)
-                {
+                var resolved = choice == ContentDialogResult.Primary
+                    ? await draft.Submit()
+                    : choice == ContentDialogResult.Secondary;
+                if (resolved)
                     await draft.Discard();
-                    resolved = true;
-                }
                 if (!resolved && focused is { IsLoaded: true })
                     focused.Focus(FocusState.Programmatic);
                 return resolved;

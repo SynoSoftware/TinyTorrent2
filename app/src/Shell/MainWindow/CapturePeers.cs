@@ -769,7 +769,7 @@ public sealed partial class MainWindow
                 await CaptureUi("peers-navigation-visible");
                 await hidden.Task.WaitAsync(TimeSpan.FromSeconds(5));
                 await CaptureUi("peers-navigation-idle");
-                Torrents.Focus(Microsoft.UI.Xaml.FocusState.Keyboard);
+                Torrents.FocusRows(Microsoft.UI.Xaml.FocusState.Keyboard);
                 await CaptureLayout();
                 centred.Focus(Microsoft.UI.Xaml.FocusState.Keyboard);
                 await CaptureLayout();

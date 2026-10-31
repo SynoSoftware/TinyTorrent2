@@ -97,6 +97,16 @@ Drives Drives::Of(std::filesystem::path const& folder)
     Drives drives;
     std::error_code ignored;
     auto full = std::filesystem::absolute(folder, ignored).lexically_normal();
+    // A UNC path already names its server; opening it would retry an absent
+    // share for every torrent before the shared reachability probe runs.
+    auto root = full.root_name().wstring();
+    if (root.starts_with(LR"(\\)") && root != LR"(\\?)" && root != LR"(\\.)")
+    {
+        for (auto& letter : root)
+            letter = static_cast<wchar_t>(std::towlower(letter));
+        drives.names.insert("server " + Utf8(root.substr(2)));
+        return drives;
+    }
     auto unknown = [&full]
     {
         auto name = full.wstring();

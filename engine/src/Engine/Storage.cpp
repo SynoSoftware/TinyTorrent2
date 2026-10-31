@@ -289,18 +289,18 @@ void Engine::State::RetryStorage()
     std::map<std::string, std::vector<Attempt>, PathLess> probes;
     std::map<std::string, std::vector<Attempt>, PathLess> stopped;
     std::vector<Attempt> finals;
-    auto collect = [&probes, &stopped, &finals](Torrent const& torrent, Control::Effects const& effects)
+    auto collect = [this, &probes, &stopped, &finals](Torrent const& torrent, Control::Effects const& effects)
     {
         for (auto const& job : effects.jobs)
         {
             Attempt attempt{torrent.torrentId, torrent.handle, job};
             if (job->kind == JobKind::Probe)
             {
-                probes[torrent.facts.savePath].push_back(std::move(attempt));
+                probes[ProbeFolder(torrent)].push_back(std::move(attempt));
             }
             else if (job->kind == JobKind::Check)
             {
-                stopped[torrent.facts.savePath].push_back(std::move(attempt));
+                stopped[ProbeFolder(torrent)].push_back(std::move(attempt));
             }
             else if (job->kind == JobKind::FinalCheck)
             {
@@ -348,13 +348,13 @@ void Engine::State::RetryStorage()
         {
             continue;
         }
-        if (torrent.control.WantsProbe() && probes.size() == probesPerPass && !probes.contains(torrent.facts.savePath))
+        if (torrent.control.WantsProbe() && probes.size() == probesPerPass && !probes.contains(ProbeFolder(torrent)))
         {
             continue;
         }
         Isolate(id, [this, &id, &torrent, &collect, minute]
         {
-            auto effects = Steer(torrent, Control::Due{minute && !stoppedChecks.contains(torrent.facts.savePath)});
+            auto effects = Steer(torrent, Control::Due{minute && !stoppedChecks.contains(ProbeFolder(torrent))});
             if (std::any_of(effects.jobs.begin(), effects.jobs.end(),
                 [](auto const& job) { return job->kind == JobKind::Probe; }))
             {
@@ -380,20 +380,24 @@ void Engine::State::RetryStorage()
 void Engine::State::Probe(std::string const& folder, std::vector<Attempt> attempts)
 {
     std::vector<lt::torrent_handle> handles;
+    std::vector<std::string> folders;
     for (auto const& attempt : attempts)
     {
         handles.push_back(attempt.handle);
+        folders.push_back(Working(attempt.torrentId).facts.savePath);
     }
     // Once the folder answers, which files each torrent lost; nothing while
     // it does not answer.
-    VolumeWorker(folder).Run([folder, handles]() -> std::optional<std::vector<LostFiles>>
+    VolumeWorker(folder).Run([folder, handles, folders]() -> std::optional<std::vector<std::optional<LostFiles>>>
     {
-        std::vector<LostFiles> found;
-        auto unanswered = Reach({folder}, [&found, &handles]
+        std::vector<std::optional<LostFiles>> found(handles.size());
+        auto unanswered = Reach({folder}, [&]
         {
-            for (auto const& handle : handles)
+            for (std::size_t item = 0; item < handles.size(); ++item)
             {
-                found.push_back(LostData(handle));
+                auto absent = Reach({folders[item]}, [&] { found[item] = LostData(handles[item]); });
+                if (absent)
+                    found[item].reset();
             }
         });
         if (unanswered)
@@ -401,22 +405,20 @@ void Engine::State::Probe(std::string const& folder, std::vector<Attempt> attemp
             return std::nullopt;
         }
         return found;
-    }, [this, folder, attempts = std::move(attempts)](
-        std::expected<std::optional<std::vector<LostFiles>>, StorageOutcome> lost)
+    }, [this, folders, attempts = std::move(attempts)](
+        std::expected<std::optional<std::vector<std::optional<LostFiles>>>, StorageOutcome> lost)
     {
         bool answered = lost && *lost;
-        // A drive lookup made while the folder did not answer could name no
-        // drive, so the next job that asks looks it up again.
-        if (auto found = drives.find(RealPath(folder)); answered && found != drives.end() && found->second)
-        {
-            drives.erase(found);
-        }
         for (std::size_t item = 0; item < attempts.size(); ++item)
         {
             Control::Probed probed{attempts[item].job};
-            if (answered)
+            if (answered && (**lost)[item])
             {
-                probed.finding = Control::Usable{std::move((**lost)[item])};
+                // A lookup made while this folder did not answer could name
+                // no drive, so the next job looks it up again.
+                if (auto found = drives.find(RealPath(folders[item])); found != drives.end() && found->second)
+                    drives.erase(found);
+                probed.finding = Control::Usable{std::move(*(**lost)[item])};
             }
             else if (lost)
             {
@@ -448,6 +450,7 @@ void Engine::State::CheckStopped(std::string const& folder, std::vector<Attempt>
         std::filesystem::path file;
         bool write = true;
         std::uint64_t needed = 0;
+        std::string folder;
     };
     std::vector<Request> requests;
     for (auto const& attempt : attempts)
@@ -455,6 +458,7 @@ void Engine::State::CheckStopped(std::string const& folder, std::vector<Attempt>
         auto const& torrent = Working(attempt.torrentId);
         // A seed only reads; a download needs room for what it still lacks.
         Request request{attempt.handle};
+        request.folder = torrent.facts.savePath;
         request.write = !torrent.status.is_seeding;
         auto index = torrent.status.error_file;
         if (torrent.names && index >= lt::file_index_t(0) && index < torrent.names->metadata->layout().end_file())
@@ -473,18 +477,21 @@ void Engine::State::CheckStopped(std::string const& folder, std::vector<Attempt>
     VolumeWorker(folder).Run([folder, requests]
     {
         std::vector<Control::Finding> found;
-        for (auto const& request : requests)
+        auto unanswered = Reach({folder}, [&]
         {
-            Control::Finding finding = Control::Unusable{};
-            auto unanswered = Reach({folder}, [&finding, &folder, &request]
+            for (auto const& request : requests)
             {
-                if (Usable(Wide(folder), request.file, request.write, request.needed))
+                Control::Finding finding = Control::Unusable{};
+                auto absent = Reach({request.folder}, [&]
                 {
-                    finding = Control::Usable{LostData(request.handle)};
-                }
-            });
-            found.push_back(unanswered ? Control::Finding{Control::Absent{}} : std::move(finding));
-        }
+                    if (Usable(Wide(request.folder), request.file, request.write, request.needed))
+                        finding = Control::Usable{LostData(request.handle)};
+                });
+                found.push_back(absent ? Control::Finding{Control::Absent{}} : std::move(finding));
+            }
+        });
+        if (unanswered)
+            found.assign(requests.size(), Control::Absent{});
         return found;
     }, [this, folder, attempts](std::expected<std::vector<Control::Finding>, StorageOutcome> found)
     {

@@ -256,8 +256,9 @@ button that runs it. Dialog's footer type has only these kinds and refuses to
 replace the check box, because two stacked items crowd the row. A dialog with
 the check box shows its other facts in the body. The buttons keep the Windows order: the action first, then Cancel. A
 dialog opens with focus on its first text box that leaves Enter and Escape to
-the dialog, or otherwise on its default button, so the person can type or press
-Enter at once.
+the dialog, or otherwise on its default button. GettingFocus redirects WinUI's
+initial target before focus lands, so Remove starts on Remove and no cue jumps
+from a content check box to the action after the dialog opens.
 
 Natural button widths share `ContentDialogButtonMinWidth`. Add's Paste and
 Preview actions reuse that width token and the same uniform padding token as

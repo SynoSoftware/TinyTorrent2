@@ -11,6 +11,8 @@ public sealed class MoveDraft : FileDraft
     private string _destination = string.Empty;
     private string _original = string.Empty;
     private bool _includeShared;
+    public bool IsDownload { get; private set; }
+    public string Explanation => Text.Get("file_action", "download_explanation");
 
     // The engine refuses a folder, so a refused folder shows under the field
     // until the person changes it.
@@ -21,15 +23,16 @@ public sealed class MoveDraft : FileDraft
     public override bool HasDraft =>
         HasDestination && (Destination != _original || IncludeShared);
     public override bool CanSubmit =>
-        CanSend && IsLoaded && HasDestination && (!HasShared || IncludeShared);
+        CanSend && IsLoaded && HasDestination && (IsDownload || !HasShared || IncludeShared);
     public override ClosePolicy ClosePolicy =>
-        new ClosePolicy.Ask("move", Lucide.FolderInput, () => Destination, () => SubmitText);
+        new ClosePolicy.Ask(IsDownload ? "download" : "move", Glyph, () => Destination, () => SubmitText);
     public override string Title =>
-        Text.FormatCount("file_action", "move_title", Locations.Length);
-    public override string Glyph => Lucide.FolderInput;
-    public override string SubmitText => Text.Get("file_action", "move");
-    public override string SubmitGlyph => Lucide.FolderInput;
-    public override string SubmitToolTip => Text.Get("file_action", "move_tip");
+        Text.FormatCount("file_action", IsDownload ? "download_title" : "move_title", Locations.Length);
+    public override string Glyph => IsDownload ? Lucide.Download : Lucide.FolderInput;
+    public override string SubmitText => Text.Get("file_action", IsDownload ? "download" : "move");
+    public override string SubmitGlyph => Glyph;
+    public override string SubmitToolTip => Text.Get("file_action", IsDownload ? "download_tip" : "move_tip");
+    public bool ShowsShared => !IsDownload && HasShared;
     public bool HasDestination => !string.IsNullOrWhiteSpace(Destination);
 
     // The one folder that holds the torrents, or null when they are in several.
@@ -91,10 +94,11 @@ public sealed class MoveDraft : FileDraft
         : base(owner, client) { }
 
     // The destination starts at a move the engine has not finished.
-    internal void Begin(Torrent[] torrents)
+    internal void Begin(Torrent[] torrents, bool download = false, string? destination = null)
     {
         Load(torrents);
-        _destination =
+        IsDownload = download;
+        _destination = destination ??
             torrents
                 .Select(torrent => torrent.MoveDestination)
                 .FirstOrDefault(path => path.Length > 0)
@@ -113,24 +117,25 @@ public sealed class MoveDraft : FileDraft
         _destinationFailure = null;
         try
         {
-            await Client.Send(
-                "move",
-                new { torrent_ids = torrentIds, destination = Destination },
-                Requester.Person
-            );
+            if (IsDownload)
+                await Owner.SetDownloadFolder(torrentIds, Destination);
+            else
+                await Client.Send("move", new { torrent_ids = torrentIds, destination = Destination }, Requester.Person);
         }
         catch (Exception error) when (AddDraft.IsDestinationError(error))
         {
             _destinationFailure = error;
             return false;
         }
-        Owner.Notifications.AnnounceAccepted("commands", "move");
+        if (!IsDownload)
+            Owner.Notifications.AnnounceAccepted("commands", "move");
         return true;
     }
 
     private protected override void Clear()
     {
         _destination = string.Empty;
+        IsDownload = false;
         _original = string.Empty;
         _includeShared = false;
         _destinationFailure = null;

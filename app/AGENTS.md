@@ -48,7 +48,7 @@ any unresolved questions accurately.
 ## Dialogs
 
 Every dialog is a `Shared.Dialog` that `MainWindow` opens through `Interact`
-and then `ShowDialog`, or `ShowEditor` when the primary button saves a draft.
+and then `ShowDialog`, or `ShowEditor` when the primary button saves an editor's draft.
 These owners hold what every dialog shares, so a dialog states only its title,
 content, buttons and outcome:
 
@@ -66,6 +66,9 @@ content, buttons and outcome:
   dialog closes, it stops the draft's running work and discards the draft.
   When the window closes, it applies the draft's `ClosePolicy`: save, discard,
   or ask, as Add and Move do.
+- Remove confirms through `ShowDialog` and submits only after it closes, so
+  membership changes cannot overlap the modal popup's teardown. A refused
+  command is reported in the window; the confirmation does not reopen itself.
 
 A view other than `MainWindow` raises an event and lets `MainWindow` open its
 dialog, as `SettingsPage.ProxyRequested` does, so the one-dialog rule holds.

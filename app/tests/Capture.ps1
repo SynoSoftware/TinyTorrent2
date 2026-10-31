@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('1', 'smoke', 'shell', 'schedule', 'desktop', 'details', 'details-files', 'file-controls', 'files', 'files-layout',
+    [ValidateSet('1', 'smoke', 'shell', 'schedule', 'desktop', 'dialogs', 'recovery', 'details', 'details-files', 'file-controls', 'files', 'files-layout',
         'search', 'library', 'library-files', 'traffic', 'peers', 'selection', 'connections', 'edits', 'add-layout', 'settings-layout', 'settings-prototype', 'subtitle-tasks', 'memory', 'footer', 'workspace')]
     [string] $Review = '1',
     [ValidateSet('en', 'es')]
@@ -133,7 +133,7 @@ function Test-Idle($torrents) {
     return -not ($torrents | Where-Object { -not $_.paused -or $_.peer_count -or $_.download_rate -or $_.upload_rate })
 }
 
-if ($Review -in 'files', 'files-layout', 'library', 'library-files', 'traffic', 'workspace', 'selection') {
+if ($Review -in 'files', 'files-layout', 'library', 'library-files', 'traffic', 'workspace', 'selection', 'dialogs', 'recovery') {
     $document = @{ format = 1; torrents = @(); settings = @{ language = 'en'; theme = 'light'; port_mapping = $false;
         check_for_updates = $false; show_splash = $false; notifications_enabled = $false; prevent_sleep = $false } }
 } else {
@@ -142,8 +142,15 @@ if ($Review -in 'files', 'files-layout', 'library', 'library-files', 'traffic', 
     $document = Get-Content -LiteralPath (Join-Path $fixture 'settings.json') -Raw | ConvertFrom-Json -AsHashtable
 }
 $document.settings.default_destination = $payload
+if ($Review -eq 'dialogs') { $document.settings.confirm_delete = $true }
+if ($Review -eq 'recovery') {
+    $document.settings.notifications_enabled = $true
+    $document.settings.notify_problems = $true
+    $document.settings.append_suffix = $false
+    $document.settings.unfinished_tasks = 'continue'
+}
 $document.settings.all_paused = $Review -notin 'add-layout', 'traffic', 'library-files', 'selection'
-if ($Review -in 'workspace', 'selection') {
+if ($Review -in 'workspace', 'selection', 'dialogs', 'recovery') {
     $document.settings.dht = $false
     $document.settings.pex = $false
     $document.settings.lsd = $false
@@ -181,6 +188,25 @@ foreach ($name in 'TINYTORRENT_CAPTURE_DIRECTORY', 'TINYTORRENT_CAPTURE_REVIEW',
 try {
     $null = Start-Engine
     switch ($Review) {
+        'recovery' {
+            $absent = '\\127.0.0.1\TinyTorrent-absent-' + [guid]::NewGuid()
+            $members = foreach ($name in 'Recovery fixture one.bin', 'Recovery fixture two.bin') {
+                $bytes = [Text.Encoding]::ASCII.GetBytes('Isolated recovery fixture.')
+                $full = Join-Path $payload $name
+                Write-File $full $bytes
+                $preserved[$full] = Payload-Hash $full
+                Add-Torrent (New-Torrent $name @(@{ path = $name; bytes = $bytes })) $absent
+            }
+        }
+        'dialogs' {
+            foreach ($name in 'Dialog fixture one.bin', 'Dialog fixture two.bin') {
+                $bytes = [Text.Encoding]::ASCII.GetBytes('Isolated dialog fixture.')
+                $full = Join-Path $payload $name
+                Write-File $full $bytes
+                $preserved[$full] = Payload-Hash $full
+                $null = Add-Torrent (New-Torrent $name @(@{ path = $name; bytes = $bytes })) $payload
+            }
+        }
         { $_ -in 'workspace', 'selection' } {
             $members = foreach ($name in 'Open field atlas', 'Open ocean notes') {
                 $paths = if ($name -eq 'Open field atlas') { 'Chapter 01.txt', 'Maps/Coastline.dat' }

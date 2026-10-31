@@ -16,6 +16,7 @@ public sealed class RemovalDraft : FileDraft
 
     // Closing the window drops a removal, so it holds no draft to resolve.
     public override bool HasDraft => false;
+    private protected override bool MeasuresSources => true;
 
     // Removal does not need the scope, so a failed scope neither blocks it nor
     // shows an error: the dialog lists the save folders, and the engine still

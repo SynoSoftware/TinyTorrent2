@@ -252,6 +252,12 @@ std::optional<std::string> Engine::State::NoticeRoot(std::string const& location
     return Utf8(root.wstring());
 }
 
+std::string Engine::State::ProbeFolder(Torrent const& torrent) const
+{
+    auto root = NoticeRootOf(torrent);
+    return root.starts_with("\\\\") ? root : torrent.facts.savePath;
+}
+
 std::string Engine::State::NoticeKey(std::string const& location) const
 {
     return RootKey(Wide(NoticeRoot(location).value_or(location)));

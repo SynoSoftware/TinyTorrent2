@@ -152,6 +152,7 @@ Application::Application(std::filesystem::path directory, std::wstring sid, bool
     toasts_ = std::make_unique<Toasts>(*engine_, strings_, headless_, errorIcon_.get(), Toasts::Commands{
         .open = [this] { window_->Open(); },
         .openTorrent = [this](std::string torrentId) { window_->OpenTorrent(std::move(torrentId)); },
+        .recoverMove = [this](MoveRecovery recovery) { window_->RecoverMove(std::move(recovery)); },
         .retryAll = [this] { RetryAll(); },
         .openSettings = [this](std::string card) { window_->OpenSettings(std::move(card)); },
         .folder = [this](std::string const& torrentId) { return engine_->Folder(torrentId); },

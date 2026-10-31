@@ -310,7 +310,7 @@ message cannot be the only explanation of unfinished or failed work.
 | Torrents that wait for their drive or share to answer | The message bar as a warning, naming the drive root or UNC share and counting the torrents, with Show torrents. |
 | The selected torrent has an error | The details pane shows the error in its summary and progress bar; the window adds no message for it. |
 | A finished download | A success toast for each download, titled Download finished, with the torrent name below it and Open folder, as the [notification policy](../engine/notifications.md#notifications-and-sleep) defines a finished download. It closes by itself. |
-| Another torrent error, a move the person asked for that failed, or a deletion that failed after removal | A background error toast, titled Torrent stopped, Move failed or Files not deleted, separate from a failed user-command toast. A failed move's body gives the reason, then the file it concerns, because the engine's detail for it is only that file. A stopped torrent also stays in the Errors count. With the window closed, the engine's [notification policy](../engine/notifications.md#notifications-and-sleep) shows its native popup instead. |
+| Another torrent error, a move the person asked for that failed, or a deletion that failed after removal | A background error toast, titled Torrent stopped, Move failed or Files not deleted, separate from a failed user-command toast. A failed move's body gives the reason, then the file it concerns; it does not repeat the original folder below it. An unavailable-source move failure reports its failed group once, retains the destination, and offers Download here instead of Open folder. That action starts recovery directly for the failed group. An accepted recovery retires its earlier toast; an unavailable destination reports the attempted folder without offering to open it. A stopped torrent also stays in the Errors count. With the window closed, the engine's [notification policy](../engine/notifications.md#notifications-and-sleep) shows its native popup instead. |
 | A decision requiring consent | The existing dialog for that operation. |
 
 **Owner ruling: a message bar or toast never repeats itself.** The person
@@ -400,9 +400,9 @@ off.
   and a past-tense verb, such as Download finished, Stop failed or Torrent
   stopped. A failed command's title names the command, so the error text
   below keeps only the reason and the next step.
-- Every line keeps to one line, as work-surface text does. A line that does
-  not fit ends with an ellipsis, and its full text shows in a tooltip only
-  then, because a tooltip that repeats readable text adds nothing.
+- The title stays on one line. The subject, explanation and folder wrap, so
+  the person can read the failure and next step without finding a tooltip.
+  The stack uses up to 480 DIPs of the available window width.
 - The action is a specific verb, such as Open folder.
 - A new toast arrives at the bottom and moves older ones up, 16 pixels apart.
 - A finished download closes after seven seconds on screen. At most four

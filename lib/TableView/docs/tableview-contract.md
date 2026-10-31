@@ -1413,6 +1413,10 @@ clears selection, and interactive descendants keep their own input.
 The control MUST scroll the current item into view when keyboard navigation
 moves beyond the viewport.
 
+`FocusRows` gives focus to the row surface without changing selection. A host
+returns focus there after an operation removes the invoking row, so keyboard
+input stays in the table rather than moving to another page control.
+
 Selection MUST survive sorting, column changes, row recycling, and same-key
 source rehydration. Removed or unavailable items are pruned as defined in
 section 5.3.

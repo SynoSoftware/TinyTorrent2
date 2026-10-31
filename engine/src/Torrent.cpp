@@ -146,6 +146,8 @@ char const* ToString(ProblemKind kind)
     case ProblemKind::MoveInterrupted: return "move_interrupted";
     case ProblemKind::MoveUnfinished: return "move_unfinished";
     case ProblemKind::MoveFailed: return "move_failed";
+    case ProblemKind::MoveSourceUnavailable: return "move_source_unavailable";
+    case ProblemKind::MoveDestinationUnavailable: return "move_destination_unavailable";
     case ProblemKind::DestinationExists: return "destination_exists";
     case ProblemKind::SameLocation: return "same_location";
     case ProblemKind::AliasConflict: return "alias_conflict";
@@ -360,6 +362,7 @@ Json Facts::ToJson() const
         {"move_copy_bytes", marker && marker->copy ? marker->copy->bytes : 0},
         {"move_found", marker ? marker->found : std::vector<std::string>{}},
         {"move_failed", marker && marker->failed},
+        {"move_download", marker && marker->mode == MoveMode::Download},
         {"torrent_file", torrentFile},
         {"verify_files", verifyFiles},
         {"paused", intent == Intent::Paused},
@@ -399,6 +402,7 @@ Facts Facts::Read(Json const& saved)
     if (auto destination = ReadSaved(saved, "move_destination", std::string()); !destination.empty())
     {
         facts.marker = Facts::Marker{std::move(destination)};
+        facts.marker->mode = ReadSaved(saved, "move_download", false) ? MoveMode::Download : MoveMode::Files;
         // A move saved without a valid stage counts as unchecked. Earlier
         // versions saved 2 for a checked move that waited for the person. A
         // move that gives its files back is saved as 2 with `move_returns`,

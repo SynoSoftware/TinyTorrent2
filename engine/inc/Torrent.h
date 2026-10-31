@@ -75,6 +75,7 @@ struct Facts
         // The move failed by itself and left files in both folders, so it
         // waits for the person, not for the next start.
         bool failed = false;
+        MoveMode mode = MoveMode::Files;
 
         // The move or its give-back failed. A failure can delete the
         // unfinished copies, so their proof goes too.
@@ -156,6 +157,7 @@ struct WaitingMove
     // The engine's own move of a finished torrent to its final folder, whose
     // failure waits for the minute check instead of the person.
     bool final = false;
+    MoveMode mode = MoveMode::Files;
 };
 
 // What a waiting check or move waits for: a drive, named by the letter or

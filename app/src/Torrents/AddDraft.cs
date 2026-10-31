@@ -37,7 +37,7 @@ public sealed class AddDraft : IDraft
     private Task _poller = Task.CompletedTask;
     private Task _pass = Task.CompletedTask;
     private Task _spaceReader = Task.CompletedTask;
-    private long? _space;
+    private DiskSpace? _space;
     private readonly FileSelection _emptyFiles;
     private AdditionPhase _phase;
     private Addition? _addition;
@@ -155,12 +155,12 @@ public sealed class AddDraft : IDraft
     // Magnet text not yet accepted becomes one more source when Add runs.
     private int SubmitCount => Sources.Count + (Magnet.Trim().Length > 0 ? 1 : 0);
     public string Space =>
-        _space is not { } free ? string.Empty
+        _space is not DiskSpace.Available(var free) ? string.Empty
         : Needed > free
             ? _strings.Format("add", "short", _strings.Bytes(Needed), _strings.Bytes(free))
         : _strings.Format("add", "free", _strings.Bytes(free));
-    public bool HasSpace => _space is not null;
-    public bool LacksSpace => _space is { } free && Needed > free;
+    public bool HasSpace => _space is DiskSpace.Available;
+    public bool LacksSpace => _space is DiskSpace.Available(var free) && Needed > free;
     private long Needed =>
         Sources
             .Where(source => source.Content is SourceContent.Files)
@@ -201,9 +201,11 @@ public sealed class AddDraft : IDraft
     internal static bool IsDestinationError(Exception error) =>
         error is CommandException { Code: "invalid_destination" };
 
-    public bool HasDestinationError => _destinationFailure is not null;
+    public bool HasDestinationError => _destinationFailure is not null || _space is DiskSpace.Unavailable;
     public string DestinationMessage =>
-        _destinationFailure is { } failure ? _strings.Error(failure) : string.Empty;
+        _destinationFailure is { } failure ? _strings.Error(failure)
+        : _space is DiskSpace.Unavailable ? _strings.Get("errors", "download_path_unavailable")
+        : string.Empty;
     public string Message =>
         !_owner.IsConnected && _owner.CurrentStatus is { } status
             ? status.Body.Length == 0
@@ -939,6 +941,8 @@ public sealed class AddDraft : IDraft
             PropertyChanged?.Invoke(this, new(nameof(Space)));
             PropertyChanged?.Invoke(this, new(nameof(HasSpace)));
             PropertyChanged?.Invoke(this, new(nameof(LacksSpace)));
+            PropertyChanged?.Invoke(this, new(nameof(HasDestinationError)));
+            PropertyChanged?.Invoke(this, new(nameof(DestinationMessage)));
             return;
         }
     }

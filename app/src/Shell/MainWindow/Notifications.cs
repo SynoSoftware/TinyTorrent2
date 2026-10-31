@@ -173,7 +173,7 @@ public sealed partial class MainWindow
     {
         if (Root.XamlRoot is null)
             return;
-        ToastStack.Width = Math.Min(400, Math.Max(0, Root.ActualWidth - 32));
+        ToastStack.Width = Math.Min(480, Math.Max(0, Root.ActualWidth - 32));
         var visible =
             Model.Notifications.Toasts.Count > 0
             && !HasEditorFocus()

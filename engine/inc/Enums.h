@@ -27,6 +27,7 @@ enum class Command
     Remove,
     FileScope,
     Move,
+    Redownload,
     DeleteFiles,
     Queue,
     PieceOrder,
@@ -170,6 +171,12 @@ enum class MoveStart
 {
     Requested,
     Waited
+};
+
+enum class MoveMode
+{
+    Files,
+    Download
 };
 
 // How far a saved move got, which decides what continuing or abandoning it
@@ -316,7 +323,8 @@ enum class JobPhase
 enum class MoveFailure
 {
     Restored,
-    Split
+    Split,
+    SourceUnavailable
 };
 
 enum class RenamePhase
@@ -662,6 +670,8 @@ enum class ProblemKind
     // work that the last end left unfinished.
     MoveUnfinished,
     MoveFailed,
+    MoveSourceUnavailable,
+    MoveDestinationUnavailable,
     DestinationExists,
     // The destination is another path, such as a link, to the files' folder.
     SameLocation,
@@ -804,7 +814,8 @@ enum class WindowWait
 enum class WindowTarget
 {
     Settings,
-    Torrent
+    Torrent,
+    Recovery
 };
 
 enum class TrayClick

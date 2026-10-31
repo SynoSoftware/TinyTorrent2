@@ -83,6 +83,21 @@ deletion.
 
 A move takes only the torrent's own files: other files in its folder, such as
 added subtitles, stay where they are, and only folders left empty are removed.
+Before inspecting source files, a requested move checks each source share once
+for the batch. An unavailable source fails its members together, while unrelated
+members continue. Its recovery notification retains those torrent identities and
+the chosen destination, so one answer covers the failed group.
+
+Set download folder uses the move owner in download mode. It leaves every
+original file untouched, replaces each native handle through the shared reload
+owner without its old piece claims, and checks only the destination before
+downloading missing data. Identity, history, intent and file choices remain.
+Before replacing storage, it probes the destination once for the batch and
+checks that it accepts files. An unavailable destination leaves each torrent's
+current folder and piece claims intact and reports the attempted destination.
+The saved move marker and unfinished task retain this mode, so continuing after
+a restart cannot turn it into a physical move or delete the originals. The
+destination still refuses files claimed by torrents outside the operation.
 The engine moves the files itself, because libtorrent's
 [`move_storage`](https://github.com/arvidn/libtorrent/blob/v2.1.2/include/libtorrent/torrent_handle.hpp)
 reports no bytes, so the row could show no percentage. Afterwards

@@ -78,24 +78,24 @@ std::set<std::string> Engine::State::Holders(std::vector<Task> const& tasks)
 }
 
 void Engine::State::AddMove(std::vector<Task>& tasks, std::size_t first, std::string const& id,
-    std::string const& destination)
+    std::string const& destination, MoveMode mode)
 {
     for (auto task = tasks.begin() + first; task != tasks.end(); ++task)
     {
         auto move = std::get_if<Task::Move>(&task->work);
-        if (move && SameFolder(move->destination, destination))
+        if (move && move->mode == mode && SameFolder(move->destination, destination))
         {
             move->ids.push_back(id);
             return;
         }
     }
-    tasks.push_back({Task::Move{{id}, destination}});
+    tasks.push_back({Task::Move{{id}, destination, mode}});
 }
 
 Json Engine::State::Task::ToJson() const
 {
     if (auto move = std::get_if<Move>(&work))
-        return {{"kind", "move"}, {"ids", move->ids}, {"destination", move->destination}};
+        return {{"kind", "move"}, {"ids", move->ids}, {"destination", move->destination}, {"download", move->mode == MoveMode::Download}};
     if (auto check = std::get_if<Check>(&work))
         return {{"kind", "check"}, {"torrent_id", check->torrentId}};
     if (auto returned = std::get_if<Return>(&work))
@@ -125,7 +125,8 @@ std::optional<Engine::State::Task> Engine::State::Task::Read(Json const& saved)
         auto destination = ReadSaved(saved, "destination", std::string());
         if (!ids || ids->empty() || !IsAbsolute(destination))
             return std::nullopt;
-        return Task{Move{std::move(*ids), std::move(destination)}};
+        return Task{Move{std::move(*ids), std::move(destination),
+            ReadSaved(saved, "download", false) ? MoveMode::Download : MoveMode::Files}};
     }
     if (kind == "check")
     {
@@ -244,7 +245,7 @@ std::vector<Engine::State::Task> Engine::State::Tasks() const
                 ids.push_back(*id);
         }
         if (!ids.empty())
-            tasks.push_back({Task::Move{std::move(ids), moving.destination}});
+            tasks.push_back({Task::Move{std::move(ids), moving.destination, moving.mode}});
     }
     // The checks and the moves that wait for their turn, in the order of
     // their turns.
@@ -258,7 +259,8 @@ std::vector<Engine::State::Task> Engine::State::Tasks() const
     {
         std::erase_if(job.ids, [&held](auto const& id) { return held.contains(id); });
         if (!job.ids.empty())
-            turns.push_back({job.turn, {Task::Move{std::move(job.ids), *job.destination}}});
+            turns.push_back({job.turn, {Task::Move{job.ids, *job.destination,
+                job.mode}}});
     }
     std::stable_sort(turns.begin(), turns.end(), [](auto const& left, auto const& right)
         { return left.first < right.first; });
@@ -441,7 +443,7 @@ void Engine::State::Unfinished(std::vector<Task> tasks, bool continued)
         if (!marker || marker->failed || held.contains(id))
             continue;
         if (marker->stage != MoveStage::Returning)
-            AddMove(tasks, first, id, marker->destination);
+            AddMove(tasks, first, id, marker->destination, marker->mode);
         else
             AbandonMove(torrent);
     }
@@ -564,7 +566,7 @@ void Engine::State::ContinueTasks(std::vector<Task> const& tasks)
             {
                 auto found = torrents.find(id);
                 if (found != torrents.end() && found->second.PathWork() != PathWork::Move)
-                    found->second.waitingMove = WaitingMove{move->destination, turn};
+                    found->second.waitingMove = WaitingMove{.destination = move->destination, .turn = turn, .mode = move->mode};
             }
         }
         else if (auto check = std::get_if<Task::Check>(&task.work))

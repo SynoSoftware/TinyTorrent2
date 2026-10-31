@@ -175,7 +175,20 @@
                       </Grid>
                     </StackPanel>
                   </Grid>
-                  <controls:FieldHeader Error="{x:Bind Model.AddDraft.DestinationMessage, Mode=OneWay}" />
+                  <StackPanel
+                    Orientation="Horizontal"
+                    Spacing="6"
+                    Visibility="{x:Bind Model.AddDraft.HasDestinationError, Mode=OneWay}"
+                  >
+                    <FontIcon
+                      Style="{StaticResource TinyTorrentStatusIconStyle}"
+                      FontFamily="{x:Bind icons:Lucide.Font}"
+                      Glyph="{x:Bind icons:Lucide.CircleAlert}"
+                      Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                      AutomationProperties.AccessibilityView="Raw"
+                    />
+                    <controls:FieldHeader Error="{x:Bind Model.AddDraft.DestinationMessage, Mode=OneWay}" />
+                  </StackPanel>
                 </Grid>
                 <!-- An empty TextBlock still takes a line, so the line
                      collapses until another torrent shares the folder. -->

@@ -326,7 +326,7 @@ std::vector<Outcome> Engine::State::ShareDrives(std::vector<Job> const& jobs, Cl
     for (auto const& job : jobs)
     {
         bool check = !job.destination && !job.giveBack;
-        auto folders = job.giveBack ? job.giveBack->Folders() : Folders(job.ids, job.destination);
+        auto folders = job.giveBack ? job.giveBack->Folders() : Folders(job.ids, job.destination, job.mode);
         auto needed = FindDrives(folders);
         // A check does not start behind a stalled check's reads on its drive
         // letter or server.
@@ -339,7 +339,7 @@ std::vector<Outcome> Engine::State::ShareDrives(std::vector<Job> const& jobs, Cl
             outcomes.push_back({ErrorCode::FilesBusy});
             continue;
         }
-        auto ready = job.destination ? FilesReady(job.ids, *job.destination) : Outcome{};
+        auto ready = job.destination ? FilesReady(job.ids, *job.destination, job.mode) : Outcome{};
         if (!ready.error)
             Reserve(claims, *needed, {job.ids.front(), check});
         outcomes.push_back(std::move(ready));
@@ -422,11 +422,13 @@ Store& Engine::State::AdditionWorker(std::string const& folder)
 }
 
 std::vector<std::string> Engine::State::Folders(std::vector<std::string> const& ids,
-    std::optional<std::string> const& destination) const
+    std::optional<std::string> const& destination, MoveMode mode) const
 {
     std::vector<std::string> folders;
     if (destination)
         folders.push_back(*destination);
+    if (mode == MoveMode::Download)
+        return folders;
     for (auto const& id : ids)
     {
         if (auto torrent = FindWorking(id))
@@ -484,7 +486,8 @@ std::vector<Engine::State::Job> Engine::State::WaitingMoves() const
         auto turn = torrent.waitingMove->turn;
         auto group = std::find_if(jobs.begin(), jobs.end(), [turn](Job const& job) { return job.turn == turn; });
         if (group == jobs.end())
-            jobs.push_back({{id}, torrent.waitingMove->destination, turn, false});
+            jobs.push_back({.ids = {id}, .destination = torrent.waitingMove->destination, .turn = turn,
+                .mode = torrent.waitingMove->mode});
         else
             group->ids.push_back(id);
     }
@@ -506,7 +509,7 @@ bool Engine::State::GetsDrives(FileWork::Job const& job)
     return false;
 }
 
-bool Engine::State::DrivesFree(std::vector<std::string> const& ids, std::string const& destination, bool waited)
+bool Engine::State::DrivesFree(std::vector<std::string> const& ids, std::string const& destination, bool waited, MoveMode mode)
 {
     // A new move comes after the jobs that wait, as it would at the next
     // pass; a waiting move of its own torrents is the one it replaces. A move
@@ -515,7 +518,7 @@ bool Engine::State::DrivesFree(std::vector<std::string> const& ids, std::string 
     auto jobs = waited ? std::vector<Job>{} : WaitingJobs();
     std::erase_if(jobs, [&ids](Job const& job)
         { return std::any_of(job.ids.begin(), job.ids.end(), [&ids](auto const& id) { return Contains(ids, id); }); });
-    jobs.push_back({ids, destination});
+    jobs.push_back({.ids = ids, .destination = destination, .mode = mode});
     auto claims = DrivesInUse();
     return !ShareDrives(jobs, claims).back().error;
 }
@@ -526,6 +529,7 @@ DriveWait Engine::State::WaitOf(Torrent const& torrent, Status status, Claims co
         { return Utf8(std::filesystem::path(Wide(RealPath(folder))).root_name().wstring()); };
     std::vector<std::string> ids{torrent.torrentId};
     std::optional<std::string> destination;
+    auto mode = MoveMode::Files;
     if (status == Status::WaitingCheck)
     {
         auto stalled = StalledChecks();
@@ -540,12 +544,14 @@ DriveWait Engine::State::WaitOf(Torrent const& torrent, Status status, Claims co
                 ids = std::move(job.ids);
         }
         destination = torrent.waitingMove->destination;
+        mode = torrent.waitingMove->mode;
     }
     else if (torrent.facts.marker)
     {
         destination = torrent.facts.marker->destination;
+        mode = torrent.facts.marker->mode;
     }
-    for (auto const& folder : Folders(ids, destination))
+    for (auto const& folder : Folders(ids, destination, mode))
     {
         // The job waits until the lookup of its folder's drives returns.
         auto known = drives.find(RealPath(folder));
@@ -560,7 +566,7 @@ DriveWait Engine::State::WaitOf(Torrent const& torrent, Status status, Claims co
     // A move whose drives are free can still wait for file work it reaches.
     if (destination)
     {
-        if (auto ready = FilesReady(ids, *destination); ready.error == ErrorCode::FilesBusy)
+        if (auto ready = FilesReady(ids, *destination, mode); ready.error == ErrorCode::FilesBusy)
             return {{}, {}, ready.detail};
     }
     return {};

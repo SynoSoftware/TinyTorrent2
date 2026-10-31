@@ -1,9 +1,9 @@
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('Frames', 'Summaries', 'Targets', 'Facts', 'Restore', 'Exit', 'Conflict', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames', 'Pause', 'History', 'Accounting', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify', 'MoveExisting', 'DriveTurns', 'UnfinishedTasks', 'StorageStop', 'StoppedLocation', 'AbsentLink', 'LinkedNotice', 'KilledCheck', 'StoppedHeld', 'MagnetAbsent', 'FileWindow')]
+    [ValidateSet('Frames', 'Summaries', 'Targets', 'Facts', 'Restore', 'Exit', 'Conflict', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames', 'Pause', 'History', 'Accounting', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify', 'MoveExisting', 'MoveRecovery', 'DriveTurns', 'UnfinishedTasks', 'StorageStop', 'StoppedLocation', 'AbsentLink', 'LinkedNotice', 'KilledCheck', 'StoppedHeld', 'MagnetAbsent', 'FileWindow')]
     [string] $Check,
     # Every check but Conflict, FilesSafety, WaitingMove, RemoveDuringMove, MoveAndVerify,
-    # MoveExisting, DriveTurns, UnfinishedTasks, StorageStop, StoppedLocation,
+    # MoveExisting, MoveRecovery, DriveTurns, UnfinishedTasks, StorageStop, StoppedLocation,
     # AbsentLink, LinkedNotice, KilledCheck, FileWindow and SelectedTransfer,
     # which make their own torrents.
     [string] $TorrentFile,
@@ -31,7 +31,7 @@ $transferChecks = 'MagnetDownload', 'SelectedTransfer', 'DiskError', 'PreviewGua
 # These checks each guard one defect that was already fixed, so a run of every
 # check skips them; the owner asks for them when that code changes.
 $optInChecks = 'WaitingMove', 'RemoveDuringMove'
-if (-not $TorrentFile -and $Check -notin 'Conflict', 'FilesSafety', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify', 'MoveExisting', 'DriveTurns', 'UnfinishedTasks', 'StorageStop', 'StoppedLocation', 'AbsentLink', 'LinkedNotice', 'KilledCheck', 'FileWindow', 'SelectedTransfer') {
+if (-not $TorrentFile -and $Check -notin 'Conflict', 'FilesSafety', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify', 'MoveExisting', 'MoveRecovery', 'DriveTurns', 'UnfinishedTasks', 'StorageStop', 'StoppedLocation', 'AbsentLink', 'LinkedNotice', 'KilledCheck', 'FileWindow', 'SelectedTransfer') {
     throw "$Check needs -TorrentFile."
 }
 if ($Check -in $transferChecks -and -not $Transfer) {
@@ -2886,6 +2886,67 @@ try {
             $locked = $null
             $null = Wait-Torrent $id { param($row) $row.progress -eq 1 -and -not $row.error -and
                 $row.status -notin 'checking', 'waiting_check' } 75 "After its drive was absent and returned, the failure took no automatic retry ($outcome)"
+        }
+        'MoveRecovery' {
+            $reply = Send-Command @{ command = 'settings'; changes = @{ append_suffix = $false; unfinished_tasks = 'continue' } }
+            Assert $reply.ok 'The recovery fixture could not turn off unfinished suffixes'
+            $drive = Join-Path $directory 'drive'
+            $destination = Join-Path $directory 'destination'
+            $null = New-Item -ItemType Directory -Path $drive, $destination
+            Mount-Drive $drive
+            $folder = "$substDrive\media"
+            $null = New-Item -ItemType Directory -Path $folder
+            $first = New-Zeros 'first' 4MB $folder
+            $second = New-Zeros 'second' 4MB $folder
+            $healthy = New-Zeros 'healthy' 4MB
+            foreach ($id in $first, $second, $healthy) { $null = Wait-Checked $id }
+            $reply = Send-Command @{ command = 'edit'; torrent_id = $second; changes = @{ files = @(@{ index = 0; priority = 7 }) } }
+            Assert $reply.ok 'The recovery fixture could not save a file choice'
+            $added = (Get-Row $second).added
+            Copy-Item -LiteralPath (Join-Path $folder 'first.bin') -Destination $destination
+            $original = Payload-Hash (Join-Path $folder 'first.bin')
+            Stop-Engine
+            Dismount-Drive
+            $null = Start-Engine
+            Start-Window
+            $reply = Send-Command @{ command = 'move'; torrent_ids = @($first, $second, $healthy); destination = $destination }
+            Assert $reply.ok 'The batch move was refused'
+            $null = Wait-Torrent $healthy { param($row) $row.save_path -eq $destination -and -not $row.moving } 30 'The healthy member did not move'
+            $until = [DateTime]::UtcNow.AddSeconds(15)
+            do {
+                $toasts = @(Read-Window | Where-Object { $_.type -eq 'toast' -and $_.recovery })
+                if (-not $toasts.Count) { Start-Sleep -Milliseconds 100 }
+            } while (-not $toasts.Count -and [DateTime]::UtcNow -lt $until)
+            Assert ($toasts.Count -eq 1) 'The failed move did not offer one batch recovery'
+            $recovery = $toasts[0].recovery
+            Assert ($recovery.destination -eq $destination -and $recovery.torrent_ids.Count -eq 2 -and
+                $first -in $recovery.torrent_ids -and $second -in $recovery.torrent_ids) 'The recovery lost its destination or included a successful torrent'
+            $absent = '\\127.0.0.1\TinyTorrent-destination-absent-' + [guid]::NewGuid()
+            $before = (Get-Row $first).progress
+            $reply = Send-Command @{ command = 'redownload'; torrent_ids = $recovery.torrent_ids; destination = $absent }
+            Assert $reply.ok 'The missing-destination preflight did not start'
+            foreach ($id in $recovery.torrent_ids) {
+                $row = Wait-Torrent $id { param($row) -not $row.moving -and $row.error -eq 'move_destination_unavailable' } 30 'The unavailable destination was not reported'
+                Assert ($row.save_path -eq $folder) 'The unavailable destination replaced the original download folder'
+                if ($id -eq $first) { Assert ($row.progress -eq $before) 'Destination preflight discarded the original piece claims' }
+            }
+            $reply = Send-Command @{ command = 'redownload'; torrent_ids = $recovery.torrent_ids; destination = $recovery.destination }
+            Assert $reply.ok 'The batch could not download at its destination'
+            $null = Wait-Torrent $first { param($row) $row.save_path -eq $destination -and $row.complete -and -not $row.moving -and -not $row.error } 30 'The destination file was not reused'
+            $row = Wait-Torrent $second { param($row) $row.save_path -eq $destination -and -not $row.moving -and -not $row.error -and
+                $row.status -notin 'checking', 'waiting_check' } 30 'The missing file could not download at the destination'
+            Assert ($row.progress -eq 0 -and $row.added -eq $added) 'Recovery kept old piece claims or lost torrent history'
+            $files = Get-Files $second
+            Assert ($files[0].priority -eq 7 -and $files[0].downloaded -eq 0) 'Recovery lost the file choice or claimed missing data'
+            Stop-Window
+            Stop-Engine
+            $null = Start-Engine
+            $row = Wait-Torrent $second { param($row) $row.save_path -eq $destination -and -not $row.error -and
+                $row.status -notin 'checking', 'waiting_check' } 30 'The recovered destination did not survive restart'
+            Assert ($row.progress -eq 0 -and $row.added -eq $added) 'A restart restored stale progress or replaced the torrent'
+            Mount-Drive $drive
+            Assert ((Payload-Hash (Join-Path $folder 'first.bin')) -eq $original -and
+                (Payload-Hash (Join-Path $folder 'second.bin')) -eq $original) 'Recovery changed the original files'
         }
         'AbsentLink' {
             # A save folder that is a junction to a drive that is absent does

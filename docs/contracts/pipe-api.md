@@ -359,6 +359,18 @@ A saved move that Exit or a crash cut off is an
 files a failure left in two folders waits until the person chooses its
 location through Move, as [engine moves](engine/files.md#removal-and-moves)
 describes.
+`redownload` takes the same `torrent_ids` and `destination`, and uses the move
+owner without moving or deleting source files. It retains torrent identity and
+choices, clears old piece claims, verifies destination files and downloads missing
+data. Busy work queues it as it queues Move; its saved task retains download mode.
+A failed move from an unavailable source sends one error toast with code
+`move_source_unavailable` and `recovery: {torrent_ids, destination}` for its failed
+members. The native popup's Download action opens the product window and sends
+`{type: "redownload", torrent_ids, destination}` to start downloading at that
+destination directly, without asking for the same folder again.
+An unavailable recovery destination reports `move_destination_unavailable`
+with the attempted destination in `folder`, retaining the current save path.
+
 `recovery_required` remains the general unconfirmed-operation code for other
 commands, so file-specific instructions cannot misdirect an Add or priority
 edit.

@@ -469,6 +469,13 @@ launcher's `files-capture.json` manifest; they are not general-purpose actions
 against an existing store. The system folder picker is outside XAML capture,
 so the diagnostic supplies its disposable destination to the existing owner.
 
+`Capture.ps1 -Review recovery` uses two disposable torrents on an absent
+localhost share. It invokes the real Download here action, checks that the
+batch changes folders without another editor and retires its old toast, then
+submits another absent destination and checks that the previous folders remain.
+Its two captures support review of the wrapped explanation and attempted path;
+no transfer peer or desktop input is involved.
+
 First review functionality and recovery through the existing owners. When a
 visual question requires screenshots, use the relevant images to examine
 hierarchy, spacing, alignment, typography, grouping,

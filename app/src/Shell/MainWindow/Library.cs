@@ -82,7 +82,7 @@ public sealed partial class MainWindow
                 return;
             if (!Model.VisibleTorrents.Contains(torrent))
                 await Model.ClearFinding();
-            Torrents.Focus(FocusState.Programmatic);
+            Torrents.FocusRows(FocusState.Programmatic);
             if (!await SelectTorrent(new Syno.TableView.Selection([torrent], torrent)))
                 return;
             Model.OpenInspector();

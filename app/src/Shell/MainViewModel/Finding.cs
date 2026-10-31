@@ -331,6 +331,7 @@ public sealed partial class MainViewModel
                 ("verify", Verify),
                 ("remove", Remove),
                 ("move", MoveFiles),
+                ("set_folder", SetFolder),
                 ("speed_limit", LimitSpeed),
                 ("open", Open),
                 ("open_folder", OpenFolder),

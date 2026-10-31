@@ -390,6 +390,7 @@ public sealed partial class MainWindow
         yield return new MenuSeparator();
         yield return Command("verify", Model.Verify, Syno.Lucide.BookOpenCheck);
         yield return Command("move", Model.MoveFiles, Syno.Lucide.FolderInput);
+        yield return Command("set_folder", Model.SetFolder, Syno.Lucide.FolderInput);
         yield return new MenuSubmenu(
             Model.Text.Get("menus", "queue"),
             Syno.Lucide.ListOrdered,
@@ -482,16 +483,16 @@ public sealed partial class MainWindow
         });
     }
 
-    private async Task ShowMove(Torrent[] torrents, bool initialize = true)
+    private async Task ShowMove(Torrent[] torrents, bool initialize = true, bool download = false, string? destination = null)
     {
         await Interact(async interaction =>
         {
             var draft = Model.MoveDraft;
             if (initialize)
-                draft.Begin(torrents);
+                draft.Begin(torrents, download, destination);
             interaction.Restore = () =>
                 torrents.All(Model.Contains)
-                    ? ShowMove(torrents, initialize: false)
+                    ? ShowMove(torrents, initialize: false, download, destination)
                     : Task.CompletedTask;
             var content = new FileDialog(Model, draft);
             content.DestinationRequested += async (_, _) =>
@@ -521,14 +522,24 @@ public sealed partial class MainWindow
 
     private async Task ShowRemoval(Torrent[] torrents, DeletionMode deletion)
     {
+        var focus = FocusManager.GetFocusedElement(Root.XamlRoot) is Control
+        {
+            FocusState: FocusState.Keyboard,
+        }
+            ? FocusState.Keyboard
+            : FocusState.Pointer;
         await Interact(async interaction =>
         {
             var draft = Model.RemovalDraft;
             draft.Begin(torrents, deletion);
-            Task<bool> Submit()
+            var submitted = false;
+            async Task<bool> Submit()
             {
+                if (!Model.IsClosing && Model.Page is WindowPage.Torrents or WindowPage.Library)
+                    FocusRows(focus);
                 Torrents.Release(torrents);
-                return draft.Submit();
+                submitted = await draft.Submit();
+                return submitted;
             }
             if (
                 // CanSubmit needs the engine, which has confirmed every setting by then.
@@ -536,7 +547,10 @@ public sealed partial class MainWindow
                 && draft.CanSubmit
                 && await Submit()
             )
+            {
+                await draft.Discard();
                 return true;
+            }
             var content = new FileDialog(Model, draft);
             var dialog = new Dialog
             {
@@ -556,7 +570,7 @@ public sealed partial class MainWindow
             {
                 draft.PropertyChanged -= FollowChoices;
             }
-            return true;
+            return submitted;
         });
     }
 
@@ -585,20 +599,47 @@ public sealed partial class MainWindow
         // files, so the dialog opens with every row it shows.
         if (initialize)
             await draft.RefreshScope();
+        void RefreshText()
+        {
+            ShowLabels(dialog, draft);
+            refreshFooter?.Invoke();
+            content.RefreshText();
+        }
         try
         {
-            await ShowEditor(
-                interaction,
-                dialog,
-                draft,
-                () =>
+            if (draft is RemovalDraft)
+            {
+                dialog.SetBinding(
+                    ContentDialog.IsPrimaryButtonEnabledProperty,
+                    new Binding
+                    {
+                        Source = draft,
+                        Path = new PropertyPath(nameof(FileDraft.CanSubmit)),
+                        Mode = BindingMode.OneWay,
+                    }
+                );
+                try
                 {
-                    ShowLabels(dialog, draft);
-                    refreshFooter?.Invoke();
-                    content.RefreshText();
-                },
-                submit
-            );
+                    // Membership changes only after WinUI finishes closing its
+                    // modal popup and restores focus to the existing table.
+                    if (
+                        await ShowDialog(interaction, dialog, RefreshText) == ContentDialogResult.Primary
+                        && !Model.IsClosing
+                    )
+                    {
+                        interaction.IsResolved = true;
+                        if (!await submit() && draft.Failure is { } error)
+                            Model.Notifications.Report(error);
+                    }
+                }
+                finally
+                {
+                    await draft.Discard();
+                    dialog.Content = null;
+                }
+            }
+            else
+                await ShowEditor(interaction, dialog, draft, RefreshText, submit);
         }
         finally
         {

@@ -241,6 +241,11 @@ void Window::OpenTorrent(std::string torrentId)
     OpenTarget({WindowTarget::Torrent, std::move(torrentId)});
 }
 
+void Window::RecoverMove(MoveRecovery recovery)
+{
+    OpenTarget({WindowTarget::Recovery, {}, std::move(recovery)});
+}
+
 void Window::OpenTarget(Target target)
 {
     // Set first, so a launch failure inside Open can clear it.
@@ -334,6 +339,9 @@ bool Window::Notify(Toast const& toast)
     auto toasts = Switch(toast.kind);
     auto word = toasts ? Engine::SwitchWord(*toasts) : std::nullopt;
     Json condition = nullptr;
+    Json recovery = nullptr;
+    if (toast.recovery)
+        recovery = {{"torrent_ids", toast.recovery->torrentIds}, {"destination", toast.recovery->destination}};
     if (toast.condition)
     {
         auto change = toast.condition->change == ProblemChange::Raised ? "raised" :
@@ -342,7 +350,7 @@ bool Window::Notify(Toast const& toast)
     }
     client_->Send(Json{{"type", "toast"}, {"kind", ToString(toast.kind)},
         {"torrent_id", toast.torrentId}, {"name", toast.name}, {"detail", toast.detail}, {"code", toast.code},
-        {"folder", toast.folder}, {"count", toast.count}, {"condition", std::move(condition)},
+        {"folder", toast.folder}, {"count", toast.count}, {"condition", std::move(condition)}, {"recovery", std::move(recovery)},
         {"switch", word ? Json(std::string(*word)) : Json(nullptr)}});
     return true;
 }
@@ -679,6 +687,9 @@ void Window::ShowTarget()
     {
         if (target_->kind == WindowTarget::Settings)
             client_->Send(Json{{"type", "settings"}, {"setting", target_->key}});
+        else if (target_->kind == WindowTarget::Recovery)
+            client_->Send(Json{{"type", "redownload"}, {"torrent_ids", target_->recovery->torrentIds},
+                {"destination", target_->recovery->destination}});
         else
             client_->Send(Json{{"type", "torrent"}, {"torrent_id", target_->key}});
         target_.reset();

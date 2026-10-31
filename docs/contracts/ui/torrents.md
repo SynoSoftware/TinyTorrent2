@@ -130,6 +130,8 @@ Shift+Delete then remove directly with the saved check boxes, and a refused
 operation opens the dialog with its error.
 Settings can restore confirmation. The dialog's default,
 focus and buttons follow the ruling in [Buttons](../ui.md#buttons).
+After confirmation closes, focus returns to the table's row surface before removal, without
+changing selection or introducing a keyboard focus cue after pointer focus.
 Routine stop, start, and applied settings need no confirmation.
 
 <a id="unfinished-tasks"></a>**Unfinished tasks.** Exit, its 10-second end or a
@@ -289,8 +291,9 @@ from the list. Dropping a single
 folder on the open dialog makes it the destination. Free space for the destination's
 drive appears under it, and a warning replaces it when the wanted files do not
 fit; the warning never blocks Add, because the person may free space first.
-Network drives show no free space, because asking a disconnected one can block the
-window.
+Free-space reads run off the UI thread, including for network paths. An unavailable
+drive or share shows an error icon and explanation in the free-space row; other
+failed reads remain unknown rather than declaring the destination invalid.
 
 The dialog shows the folder and options on the left and files on the right, with a splitter between
 them that keeps its share of the width while the dialog is open. An icon toggle,
@@ -661,6 +664,12 @@ least one wanted file, because a new download otherwise has no useful work.
 
 ### Move and Remove dialogs
 
+Move keeps its facts intact through its close animation and discards the draft
+after closure. Remove is a confirmation: it finishes closing before submitting
+the command, so row removal never overlaps the modal popup's teardown. A refused
+confirmed removal is reported in the window. Its draft is discarded after the
+attempt; a removal without confirmation discards it after the command succeeds.
+
 Move torrent moves the torrent's own files; other files in its folder stay.
 Its title is Move torrents for multiple selections. List each torrent's name
 and size once in a bounded scroll area, using the same row as Remove torrents.
@@ -671,6 +680,15 @@ To is editable. The list scrolls while these rows and the dialog's actions stay
 visible. Multiple selections show count and total size in the existing footer.
 Preserve choices when submission is refused. When other torrents use the files,
 name them and offer to move them together.
+
+Set download folder is available beside Move files in the row context menu and
+in command search. It opens the same editor for the whole selection, with a
+Download button and an explanation that destination files are checked, missing
+data downloads again, and original files remain untouched. A failed batch move
+from an unavailable location offers Download here with the attempted destination
+and only its failed torrents. Download here starts that recovery directly;
+Set download folder opens the editor when the person needs another destination.
+Opening the editor reads no original source files.
 
 Move files and Remove are available from selection actions, the row context
 menu and command search; Remove has the bin icon. Remove torrents names the

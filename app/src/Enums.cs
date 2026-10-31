@@ -844,6 +844,8 @@ internal enum CaptureMode
     Shell,
     Schedule,
     Desktop,
+    Dialogs,
+    Recovery,
     Details,
     DetailsFiles,
     FileControls,

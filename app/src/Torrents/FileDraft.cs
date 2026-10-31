@@ -57,12 +57,13 @@ public abstract class FileDraft : IDraft
     private protected FileLocation[] SharedLocations { get; private set; } = [];
 
     // The last submit's error, until the input changes or a submit succeeds.
-    private protected Exception? Failure { get; set; }
+    internal Exception? Failure { get; private protected set; }
 
     // The last scope read's error, until a read succeeds.
     private protected Exception? ScopeFailure { get; private set; }
     private protected bool IsLoaded { get; private set; }
     private protected bool IsReading => _reading;
+    private protected virtual bool MeasuresSources => false;
 
     // Starts a new dialog for these torrents; the subclass then sets its own
     // input and refreshes.
@@ -100,9 +101,9 @@ public abstract class FileDraft : IDraft
                 new { torrent_ids = torrentIds },
                 Requester.Window
             );
-            var torrents = await Task.Run(() =>
-                MeasureTorrentFiles(ReadLocations(scope.GetProperty("torrents")))
-            );
+            var torrents = ReadLocations(scope.GetProperty("torrents"));
+            if (MeasuresSources)
+                torrents = await Task.Run(() => MeasureTorrentFiles(torrents));
             if (torrentIds != _torrentIds)
                 return;
             var changed = !Locations
@@ -143,8 +144,6 @@ public abstract class FileDraft : IDraft
         {
             var accepted = await Send();
             Failure = null;
-            if (accepted)
-                await Discard();
             return accepted;
         }
         catch (Exception error)
