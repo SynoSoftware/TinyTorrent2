@@ -170,8 +170,8 @@ public sealed partial class Pane : ContentControl
         _toggleClip = (Grid)GetTemplateChild("ToggleClip");
         _toggleGlyph = (FontIcon)GetTemplateChild("ToggleGlyph");
         _maximizeGlyph = (FontIcon)GetTemplateChild("MaximizeGlyph");
-        ((FontIcon)_collapse.Content).Glyph = Lucide.Pin;
-        ((FontIcon)_close.Content).Glyph = Lucide.X;
+        ((FontIcon)_collapse.Content).Glyph = Segoe.Pin;
+        ((FontIcon)_close.Content).Glyph = Segoe.X;
         _collapse.Click += OnCollapse;
         _maximize.Click += OnMaximize;
         _close.Click += OnClose;
@@ -278,7 +278,7 @@ public sealed partial class Pane : ContentControl
         _collapse.Visibility = Dock == Syno.TinyTorrent.Dock.None ? Visibility.Collapsed : Visibility.Visible;
         _maximize.Visibility = CanMaximize ? Visibility.Visible : Visibility.Collapsed;
         _close.Visibility = CanClose ? Visibility.Visible : Visibility.Collapsed;
-        _maximizeGlyph.Glyph = IsMaximized ? Lucide.Minimize2 : Lucide.Maximize2;
+        _maximizeGlyph.Glyph = IsMaximized ? Segoe.Minimize2 : Segoe.Maximize2;
         var vertical = Dock is Syno.TinyTorrent.Dock.Left or Syno.TinyTorrent.Dock.Right;
         _toggle.Width = vertical ? 8 : double.NaN;
         _toggle.Height = vertical ? double.NaN : 8;
@@ -303,7 +303,7 @@ public sealed partial class Pane : ContentControl
         {
             Rect = new Rect(0, 0, _toggleClip.Width, _toggleClip.Height),
         };
-        _toggleGlyph.Glyph = vertical ? Lucide.EllipsisVertical : Lucide.Ellipsis;
+        _toggleGlyph.Glyph = vertical ? Segoe.EllipsisVertical : Segoe.Ellipsis;
         if (_text is { } text && _section is { } section)
         {
             Name(_close, "close");

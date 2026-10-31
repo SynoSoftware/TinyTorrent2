@@ -13,19 +13,19 @@ internal sealed class Settings : UserControl
     private readonly ComboBox _extras = new() { Width = 260 };
     private readonly Batch _batch;
     private readonly ActionButton _find = new();
-    private readonly ActionButton _scan = new() { Glyph = Lucide.FolderSearch };
+    private readonly ActionButton _scan = new() { Glyph = Segoe.FolderSearch };
     private readonly CheckStatus _scanStatus = new();
     private readonly SettingsRow _scanRow;
     private bool _scanning;
     private ScanResult? _scanned;
-    private readonly ActionButton _check = new() { Glyph = Lucide.Plug };
-    private readonly ActionButton _edit = new() { Glyph = Lucide.Pencil };
+    private readonly ActionButton _check = new() { Glyph = Segoe.Plug };
+    private readonly ActionButton _edit = new() { Glyph = Segoe.Pencil };
     private readonly Button _information = new()
     {
         Content = new FontIcon
         {
-            FontFamily = Lucide.Font,
-            Glyph = Lucide.Info,
+            FontFamily = Segoe.Font,
+            Glyph = Segoe.Info,
             FontSize = (double)Application.Current.Resources["TinyTorrentButtonIconSize"],
         },
         Style = (Style)Application.Current.Resources["TinyTorrentSubtleButtonStyle"],
@@ -231,7 +231,7 @@ internal sealed class Settings : UserControl
         _tasks.SelectionChanged += OnTask;
         _section = new SettingsSection
         {
-            Glyph = Lucide.Captions,
+            Glyph = Segoe.Captions,
             Content = new StackPanel
             {
                 Spacing = 8,

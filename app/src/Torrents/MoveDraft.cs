@@ -28,7 +28,7 @@ public sealed class MoveDraft : FileDraft
         new ClosePolicy.Ask(IsDownload ? "download" : "move", Glyph, () => Destination, () => SubmitText);
     public override string Title =>
         Text.FormatCount("file_action", IsDownload ? "download_title" : "move_title", Locations.Length);
-    public override string Glyph => IsDownload ? Lucide.Download : Lucide.FolderInput;
+    public override string Glyph => IsDownload ? Segoe.Download : Segoe.FolderInput;
     public override string SubmitText => Text.Get("file_action", IsDownload ? "download" : "move");
     public override string SubmitGlyph => Glyph;
     public override string SubmitToolTip => Text.Get("file_action", IsDownload ? "download_tip" : "move_tip");

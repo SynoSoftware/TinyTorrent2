@@ -10,7 +10,7 @@
     Header="{x:Bind Model.Text.Get('settings', 'windows_integration'), Mode=OneWay}"
     Style="{StaticResource TinyTorrentSettingsGroupStyle}"
     Padding="16,0"
-    Glyph="{x:Bind icons:Lucide.AppWindow}"
+    Glyph="{x:Bind icons:Segoe.AppWindow}"
   >
     <StackPanel>
       <controls:SettingsRow
@@ -89,8 +89,8 @@
                 <ColumnDefinition Width="*" />
               </Grid.ColumnDefinitions>
               <FontIcon
-                FontFamily="{x:Bind icons:Lucide.Font}"
-                Glyph="{x:Bind icons:Lucide.TriangleAlert}"
+                FontFamily="{x:Bind icons:Segoe.Font}"
+                Glyph="{x:Bind icons:Segoe.TriangleAlert}"
                 FontSize="{StaticResource TinyTorrentInlineIconSize}"
                 Foreground="{ThemeResource SystemFillColorCautionBrush}"
               />
@@ -112,7 +112,7 @@
         <StackPanel Orientation="Horizontal" Spacing="12">
           <controls:ActionButton
             Text="{x:Bind Model.Text.Get('settings', 'use'), Mode=OneWay}"
-            Glyph="{x:Bind icons:Lucide.ArrowLeftRight}"
+            Glyph="{x:Bind icons:Segoe.ArrowLeftRight}"
             Visibility="{x:Bind Model.StartupUsesOtherCopy, Mode=OneWay}"
             AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'startup_use_hint'), Mode=OneWay}"
             ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'startup_use_hint'), Mode=OneWay}"
@@ -142,8 +142,8 @@
               <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
             <FontIcon
-              FontFamily="{x:Bind icons:Lucide.Font}"
-              Glyph="{x:Bind icons:Lucide.TriangleAlert}"
+              FontFamily="{x:Bind icons:Segoe.Font}"
+              Glyph="{x:Bind icons:Segoe.TriangleAlert}"
               FontSize="{StaticResource TinyTorrentInlineIconSize}"
               Foreground="{ThemeResource SystemFillColorCautionBrush}"
             />

@@ -67,7 +67,7 @@ public sealed partial class MainWindow
         {
             entries =
             [
-                new MenuHeading(target.Name, Lucide.ListChecks),
+                new MenuHeading(target.Name, Segoe.ListChecks),
                 .. Selection(properties: true).Select(entry => entry is MenuChoice choice
                     ? choice with { State = state }
                     : entry),

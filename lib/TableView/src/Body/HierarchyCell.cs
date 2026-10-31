@@ -23,7 +23,7 @@ internal sealed partial class HierarchyCell : Grid
         content.Padding = default;
         ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
-        _glyph = new() { FontFamily = Lucide.Font, FontSize = 12 };
+        _glyph = new() { FontFamily = Segoe.Font, FontSize = 12 };
         _expander = new()
         {
             Content = _glyph,
@@ -100,8 +100,8 @@ internal sealed partial class HierarchyCell : Grid
         _expander.IsHitTestVisible = expandable;
         _expander.IsEnabled = _table.IsInteractive(item);
         _glyph.Glyph =
-            hierarchy.IsExpanded(item) ? Lucide.ChevronDown
-            : FlowDirection == FlowDirection.LeftToRight ? Lucide.ChevronRight
-            : Lucide.ChevronLeft;
+            hierarchy.IsExpanded(item) ? Segoe.ChevronDown
+            : FlowDirection == FlowDirection.LeftToRight ? Segoe.ChevronRight
+            : Segoe.ChevronLeft;
     }
 }

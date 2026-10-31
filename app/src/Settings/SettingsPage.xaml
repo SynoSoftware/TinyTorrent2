@@ -24,7 +24,7 @@
       <!-- SettingsRow supplies 12 DIPs; the remaining gap aligns labels with
            expander headers. -->
       <Style x:Key="SettingsIconStyle" TargetType="FontIcon" BasedOn="{StaticResource TinyTorrentGroupIconStyle}">
-        <Setter Property="FontFamily" Value="{ThemeResource LucideFont}" />
+        <Setter Property="FontFamily" Value="{ThemeResource SegoeFont}" />
         <Setter Property="Margin" Value="0,0,12,0" />
       </Style>
       <Style x:Key="SettingsMarkStyle" TargetType="FontIcon">
@@ -100,8 +100,8 @@
                 <SvgImageSource UriSource="ms-appx:///Assets/tinyTorrent.svg" />
               </Setter.Value>
             </Setter>
-            <Setter Target="FirstFact.Glyph" Value="{x:Bind icons:Lucide.Clock}" />
-            <Setter Target="SecondFact.Glyph" Value="{x:Bind icons:Lucide.History}" />
+            <Setter Target="FirstFact.Glyph" Value="{x:Bind icons:Segoe.Clock}" />
+            <Setter Target="SecondFact.Glyph" Value="{x:Bind icons:Segoe.History}" />
           </VisualState.Setters>
         </VisualState>
         <VisualState x:Name="HeaderGeneral">
@@ -110,8 +110,8 @@
           </VisualState.StateTriggers>
           <VisualState.Setters>
             <Setter Target="PageHeader.Artwork" Value="ms-appx:///Assets/Settings/general.png" />
-            <Setter Target="FirstFact.Glyph" Value="{x:Bind icons:Lucide.File}" />
-            <Setter Target="SecondFact.Glyph" Value="{x:Bind icons:Lucide.Power}" />
+            <Setter Target="FirstFact.Glyph" Value="{x:Bind icons:Segoe.File}" />
+            <Setter Target="SecondFact.Glyph" Value="{x:Bind icons:Segoe.Power}" />
           </VisualState.Setters>
         </VisualState>
         <VisualState x:Name="HeaderTransfers">
@@ -120,8 +120,8 @@
           </VisualState.StateTriggers>
           <VisualState.Setters>
             <Setter Target="PageHeader.Artwork" Value="ms-appx:///Assets/Settings/transfers.png" />
-            <Setter Target="FirstFact.Glyph" Value="{x:Bind icons:Lucide.ListOrdered}" />
-            <Setter Target="SecondFact.Glyph" Value="{x:Bind icons:Lucide.Upload}" />
+            <Setter Target="FirstFact.Glyph" Value="{x:Bind icons:Segoe.ListOrdered}" />
+            <Setter Target="SecondFact.Glyph" Value="{x:Bind icons:Segoe.Upload}" />
           </VisualState.Setters>
         </VisualState>
         <VisualState x:Name="HeaderLimits">
@@ -130,8 +130,8 @@
           </VisualState.StateTriggers>
           <VisualState.Setters>
             <Setter Target="PageHeader.Artwork" Value="ms-appx:///Assets/Settings/speed.png" />
-            <Setter Target="FirstFact.Glyph" Value="{x:Bind icons:Lucide.Gauge}" />
-            <Setter Target="SecondFact.Glyph" Value="{x:Bind icons:Lucide.Gauge}" />
+            <Setter Target="FirstFact.Glyph" Value="{x:Bind icons:Segoe.Gauge}" />
+            <Setter Target="SecondFact.Glyph" Value="{x:Bind icons:Segoe.Gauge}" />
           </VisualState.Setters>
         </VisualState>
         <VisualState x:Name="HeaderSchedule">
@@ -140,8 +140,8 @@
           </VisualState.StateTriggers>
           <VisualState.Setters>
             <Setter Target="PageHeader.Artwork" Value="ms-appx:///Assets/Settings/schedule.png" />
-            <Setter Target="FirstFact.Glyph" Value="{x:Bind icons:Lucide.SlidersHorizontal}" />
-            <Setter Target="SecondFact.Glyph" Value="{x:Bind icons:Lucide.CalendarClock}" />
+            <Setter Target="FirstFact.Glyph" Value="{x:Bind icons:Segoe.SlidersHorizontal}" />
+            <Setter Target="SecondFact.Glyph" Value="{x:Bind icons:Segoe.CalendarClock}" />
           </VisualState.Setters>
         </VisualState>
         <VisualState x:Name="HeaderAppearance">
@@ -150,8 +150,8 @@
           </VisualState.StateTriggers>
           <VisualState.Setters>
             <Setter Target="PageHeader.Artwork" Value="ms-appx:///Assets/Settings/appearance.png" />
-            <Setter Target="FirstFact.Glyph" Value="{x:Bind icons:Lucide.Palette}" />
-            <Setter Target="SecondFact.Glyph" Value="{x:Bind icons:Lucide.Languages}" />
+            <Setter Target="FirstFact.Glyph" Value="{x:Bind icons:Segoe.Palette}" />
+            <Setter Target="SecondFact.Glyph" Value="{x:Bind icons:Segoe.Languages}" />
           </VisualState.Setters>
         </VisualState>
         <VisualState x:Name="HeaderNetwork">
@@ -160,8 +160,8 @@
           </VisualState.StateTriggers>
           <VisualState.Setters>
             <Setter Target="PageHeader.Artwork" Value="ms-appx:///Assets/Settings/network.png" />
-            <Setter Target="FirstFact.Glyph" Value="{x:Bind icons:Lucide.Globe}" />
-            <Setter Target="SecondFact.Glyph" Value="{x:Bind icons:Lucide.Shield}" />
+            <Setter Target="FirstFact.Glyph" Value="{x:Bind icons:Segoe.Globe}" />
+            <Setter Target="SecondFact.Glyph" Value="{x:Bind icons:Segoe.Shield}" />
           </VisualState.Setters>
         </VisualState>
         <VisualState x:Name="HeaderPlugins">
@@ -170,8 +170,8 @@
           </VisualState.StateTriggers>
           <VisualState.Setters>
             <Setter Target="PageHeader.Artwork" Value="ms-appx:///Assets/Settings/plugins.png" />
-            <Setter Target="FirstFact.Glyph" Value="{x:Bind icons:Lucide.Film}" />
-            <Setter Target="SecondFact.Glyph" Value="{x:Bind icons:Lucide.Captions}" />
+            <Setter Target="FirstFact.Glyph" Value="{x:Bind icons:Segoe.Film}" />
+            <Setter Target="SecondFact.Glyph" Value="{x:Bind icons:Segoe.Captions}" />
           </VisualState.Setters>
         </VisualState>
         <VisualState x:Name="HeaderAdvanced">
@@ -180,8 +180,8 @@
           </VisualState.StateTriggers>
           <VisualState.Setters>
             <Setter Target="PageHeader.Artwork" Value="ms-appx:///Assets/Settings/advanced.png" />
-            <Setter Target="FirstFact.Glyph" Value="{x:Bind icons:Lucide.Check}" />
-            <Setter Target="SecondFact.Glyph" Value="{x:Bind icons:Lucide.History}" />
+            <Setter Target="FirstFact.Glyph" Value="{x:Bind icons:Segoe.Check}" />
+            <Setter Target="SecondFact.Glyph" Value="{x:Bind icons:Segoe.History}" />
           </VisualState.Setters>
         </VisualState>
       </VisualStateGroup>
@@ -190,16 +190,16 @@
              gear marks. See Settings in docs/contracts/ui.md. -->
     <FontIcon
       Style="{StaticResource SettingsMarkStyle}"
-      FontFamily="{x:Bind icons:Lucide.Font}"
-      Glyph="{x:Bind icons:Lucide.Cog}"
+      FontFamily="{x:Bind icons:Segoe.Font}"
+      Glyph="{x:Bind icons:Segoe.Cog}"
       HorizontalAlignment="Left"
       VerticalAlignment="Top"
       Margin="-120,-100,0,0"
     />
     <FontIcon
       Style="{StaticResource SettingsMarkStyle}"
-      FontFamily="{x:Bind icons:Lucide.Font}"
-      Glyph="{x:Bind icons:Lucide.Cog}"
+      FontFamily="{x:Bind icons:Segoe.Font}"
+      Glyph="{x:Bind icons:Segoe.Cog}"
       HorizontalAlignment="Right"
       VerticalAlignment="Bottom"
       Margin="0,0,-160,-140"
@@ -343,7 +343,7 @@
           <NavigationViewItem.Icon>
             <FontIcon
               x:Name="AdvancedModeIcon"
-              FontFamily="{x:Bind icons:Lucide.Font}"
+              FontFamily="{x:Bind icons:Segoe.Font}"
               FontSize="{StaticResource NavigationViewItemOnLeftIconBoxHeight}"
             />
           </NavigationViewItem.Icon>
@@ -362,8 +362,8 @@
           </NavigationViewItem.Content>
           <NavigationViewItem.Icon>
             <FontIcon
-              FontFamily="{x:Bind icons:Lucide.Font}"
-              Glyph="{x:Bind icons:Lucide.ArrowLeft}"
+              FontFamily="{x:Bind icons:Segoe.Font}"
+              Glyph="{x:Bind icons:Segoe.ArrowLeft}"
               FontSize="{StaticResource NavigationViewItemOnLeftIconBoxHeight}"
             />
           </NavigationViewItem.Icon>
@@ -487,7 +487,7 @@
                     <controls:SettingsSection
                       Header="{x:Bind Model.Text.Get('settings', 'video_information'), Mode=OneWay}"
                       Summary="{x:Bind Model.VideoSummary, Mode=OneWay}"
-                      Glyph="{x:Bind icons:Lucide.Film}"
+                      Glyph="{x:Bind icons:Segoe.Film}"
                     >
                       <StackPanel>
                         <controls:SettingsRow
@@ -504,8 +504,8 @@
                               AutomationProperties.Name="{x:Bind Model.Text.Get('library', 'provider_information'), Mode=OneWay}"
                             >
                               <FontIcon
-                                FontFamily="{x:Bind icons:Lucide.Font}"
-                                Glyph="{x:Bind icons:Lucide.Info}"
+                                FontFamily="{x:Bind icons:Segoe.Font}"
+                                Glyph="{x:Bind icons:Segoe.Info}"
                                 FontSize="{StaticResource TinyTorrentButtonIconSize}"
                               />
                             </Button>
@@ -519,8 +519,8 @@
                               AutomationProperties.AutomationId="ProviderKey"
                             >
                               <FontIcon
-                                FontFamily="{x:Bind icons:Lucide.Font}"
-                                Glyph="{x:Bind icons:Lucide.KeyRound}"
+                                FontFamily="{x:Bind icons:Segoe.Font}"
+                                Glyph="{x:Bind icons:Segoe.KeyRound}"
                                 FontSize="{StaticResource TinyTorrentButtonIconSize}"
                               />
                             </Button>
@@ -571,7 +571,7 @@
                     <controls:SettingsSection
                       Header="{x:Bind Model.Text.Get('request_protection', 'title'), Mode=OneWay}"
                       Summary="{x:Bind Model.ProtectionSummary, Mode=OneWay}"
-                      Glyph="{x:Bind icons:Lucide.ShieldCheck}"
+                      Glyph="{x:Bind icons:Segoe.ShieldCheck}"
                     >
                       <StackPanel>
                         <controls:SettingsRow
@@ -607,7 +607,7 @@
                             <controls:ActionButton
                               Click="OnProtectionReset"
                               IsEnabled="{x:Bind Main.CanResetProtection, Mode=OneWay}"
-                              Glyph="{x:Bind icons:Lucide.RotateCcw}"
+                              Glyph="{x:Bind icons:Segoe.RotateCcw}"
                               Text="{x:Bind Model.Text.Get('request_protection', 'reset_button'), Mode=OneWay}"
                               ToolTipService.ToolTip="{x:Bind Model.Text.Get('request_protection', 'reset_hint'), Mode=OneWay}"
                               AutomationProperties.HelpText="{x:Bind Model.Text.Get('request_protection', 'reset_hint'), Mode=OneWay}"
@@ -623,7 +623,7 @@
                     >
                       <shared:DatasetRow x:Name="CityRow">
                         <shared:DatasetRow.Icon>
-                          <FontIcon Style="{StaticResource SettingsIconStyle}" Glyph="{x:Bind icons:Lucide.MapPin}" />
+                          <FontIcon Style="{StaticResource SettingsIconStyle}" Glyph="{x:Bind icons:Segoe.MapPin}" />
                         </shared:DatasetRow.Icon>
                       </shared:DatasetRow>
                     </Border>
@@ -643,8 +643,8 @@
                             <ColumnDefinition Width="*" />
                           </Grid.ColumnDefinitions>
                           <FontIcon
-                            FontFamily="{x:Bind icons:Lucide.Font}"
-                            Glyph="{x:Bind icons:Lucide.Database}"
+                            FontFamily="{x:Bind icons:Segoe.Font}"
+                            Glyph="{x:Bind icons:Segoe.Database}"
                             Style="{StaticResource TinyTorrentGroupIconStyle}"
                           />
                           <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
@@ -696,7 +696,7 @@
                       Header="{x:Bind Model.Text.Get('settings', 'startup_closing'), Mode=OneWay}"
                       Margin="0,16,0,0"
                       Summary="{x:Bind Model.StartupSummary, Mode=OneWay}"
-                      Glyph="{x:Bind icons:Lucide.Power}"
+                      Glyph="{x:Bind icons:Segoe.Power}"
                     >
                       <StackPanel>
                         <controls:SettingsRow
@@ -758,7 +758,7 @@
                       x:Name="NotificationsSection"
                       Header="{x:Bind Model.Text.Get('settings', 'notifications'), Mode=OneWay}"
                       Description="{x:Bind Model.Text.Get('settings', 'notifications_hint'), Mode=OneWay}"
-                      Glyph="{x:Bind icons:Lucide.Bell}"
+                      Glyph="{x:Bind icons:Segoe.Bell}"
                     >
                       <StackPanel>
                         <controls:SettingsRow
@@ -805,7 +805,7 @@
                       x:Name="PowerSection"
                       Header="{x:Bind Model.Text.Get('settings', 'power'), Mode=OneWay}"
                       Summary="{x:Bind Model.PowerSummary, Mode=OneWay}"
-                      Glyph="{x:Bind icons:Lucide.PlugZap}"
+                      Glyph="{x:Bind icons:Segoe.PlugZap}"
                     >
                       <StackPanel>
                         <controls:SettingsRow
@@ -840,7 +840,7 @@
                         StateText="{x:Bind controls:SettingsRow.State(Main.ShowsSettingsIndex, Model.OnText, Model.OffText), Mode=OneWay}"
                       >
                         <controls:SettingsRow.Icon>
-                          <FontIcon Style="{StaticResource SettingsIconStyle}" Glyph="{x:Bind icons:Lucide.House}" />
+                          <FontIcon Style="{StaticResource SettingsIconStyle}" Glyph="{x:Bind icons:Segoe.House}" />
                         </controls:SettingsRow.Icon>
                         <ToggleSwitch
                           x:Name="IndexSwitch"
@@ -855,7 +855,7 @@
                       x:Name="ConfirmationsSection"
                       Header="{x:Bind Model.Text.Get('settings', 'confirmations'), Mode=OneWay}"
                       Summary="{x:Bind Model.ConfirmationsSummary, Mode=OneWay}"
-                      Glyph="{x:Bind icons:Lucide.MessageSquare}"
+                      Glyph="{x:Bind icons:Segoe.MessageSquare}"
                     >
                       <StackPanel>
                         <controls:SettingsRow
@@ -916,7 +916,7 @@
                         StateText="{x:Bind controls:SettingsRow.State(Model.Updates.IsOn, Model.OnText, Model.OffText), Mode=OneWay}"
                       >
                         <controls:SettingsRow.Icon>
-                          <FontIcon Style="{StaticResource SettingsIconStyle}" Glyph="{x:Bind icons:Lucide.RefreshCw}" />
+                          <FontIcon Style="{StaticResource SettingsIconStyle}" Glyph="{x:Bind icons:Segoe.RefreshCw}" />
                         </controls:SettingsRow.Icon>
                         <ToggleSwitch
                           IsOn="{x:Bind Model.Updates.IsOn, Mode=OneWay}"
@@ -930,7 +930,7 @@
                       x:Name="DownloadsSection"
                       Header="{x:Bind Model.Text.Get('settings', 'files'), Mode=OneWay}"
                       Style="{StaticResource TinyTorrentSettingsGroupStyle}"
-                      Glyph="{x:Bind icons:Lucide.FolderDown}"
+                      Glyph="{x:Bind icons:Segoe.FolderDown}"
                     >
                       <StackPanel>
                         <controls:SettingsRow
@@ -973,7 +973,7 @@
                             <controls:ActionButton
                               x:Name="Browse"
                               Grid.Column="1"
-                              Glyph="{x:Bind icons:Lucide.FolderSearch}"
+                              Glyph="{x:Bind icons:Segoe.FolderSearch}"
                               Text="{x:Bind Model.Text.Get('add', 'browse'), Mode=OneWay}"
                               ToolTipService.ToolTip="{x:Bind Model.Text.Get('add', 'browse_tip'), Mode=OneWay}"
                               Click="OnFolder"
@@ -1013,7 +1013,7 @@
                             <controls:ActionButton
                               x:Name="BrowseIncomplete"
                               Grid.Column="1"
-                              Glyph="{x:Bind icons:Lucide.FolderSearch}"
+                              Glyph="{x:Bind icons:Segoe.FolderSearch}"
                               Text="{x:Bind Model.Text.Get('add', 'browse'), Mode=OneWay}"
                               ToolTipService.ToolTip="{x:Bind Model.Text.Get('add', 'browse_tip'), Mode=OneWay}"
                               Click="OnFolder"
@@ -1039,7 +1039,7 @@
                       Header="{x:Bind Model.Text.Get('settings', 'adding'), Mode=OneWay}"
                       Margin="0,16,0,0"
                       Summary="{x:Bind Model.AddingSummary, Mode=OneWay}"
-                      Glyph="{x:Bind icons:Lucide.Plus}"
+                      Glyph="{x:Bind icons:Segoe.Plus}"
                     >
                       <StackPanel>
                         <controls:SettingsRow
@@ -1111,7 +1111,7 @@
                       x:Name="QueueSection"
                       Header="{x:Bind Model.Text.Get('settings', 'queue'), Mode=OneWay}"
                       Summary="{x:Bind Model.QueueSummary, Mode=OneWay}"
-                      Glyph="{x:Bind icons:Lucide.ListOrdered}"
+                      Glyph="{x:Bind icons:Segoe.ListOrdered}"
                     >
                       <StackPanel>
                         <TextBlock
@@ -1214,7 +1214,7 @@
                       x:Name="SeedingSection"
                       Header="{x:Bind Model.Text.Get('settings', 'seeding'), Mode=OneWay}"
                       Summary="{x:Bind Model.SeedingSummary, Mode=OneWay}"
-                      Glyph="{x:Bind icons:Lucide.Sprout}"
+                      Glyph="{x:Bind icons:Segoe.Sprout}"
                     >
                       <StackPanel>
                         <TextBlock
@@ -1319,7 +1319,7 @@
                       x:Name="WatchedSection"
                       Header="{x:Bind Model.Text.Get('settings', 'watched_folder'), Mode=OneWay}"
                       Summary="{x:Bind Model.WatchedSummary, Mode=OneWay}"
-                      Glyph="{x:Bind icons:Lucide.FolderInput}"
+                      Glyph="{x:Bind icons:Segoe.FolderInput}"
                     >
                       <StackPanel>
                         <controls:SettingsRow
@@ -1349,7 +1349,7 @@
                             />
                             <controls:ActionButton
                               Grid.Column="1"
-                              Glyph="{x:Bind icons:Lucide.FolderSearch}"
+                              Glyph="{x:Bind icons:Segoe.FolderSearch}"
                               Text="{x:Bind Model.Text.Get('add', 'browse'), Mode=OneWay}"
                               Click="OnFolder"
                               IsEnabled="{x:Bind Model.WatchPath.CanEdit, Mode=OneWay}"
@@ -1384,7 +1384,7 @@
                             />
                             <controls:ActionButton
                               Grid.Column="1"
-                              Glyph="{x:Bind icons:Lucide.FolderSearch}"
+                              Glyph="{x:Bind icons:Segoe.FolderSearch}"
                               Text="{x:Bind Model.Text.Get('add', 'browse'), Mode=OneWay}"
                               Click="OnFolder"
                               IsEnabled="{x:Bind Model.WatchDestination.CanEdit, Mode=OneWay}"
@@ -1395,7 +1395,7 @@
                     </controls:SettingsSection>
                     <controls:SettingsSection
                       Header="{x:Bind Model.Text.Get('settings', 'file_selection'), Mode=OneWay}"
-                      Glyph="{x:Bind icons:Lucide.ListChecks}"
+                      Glyph="{x:Bind icons:Segoe.ListChecks}"
                       IsAdvanced="True"
                     >
                       <StackPanel>
@@ -1438,7 +1438,7 @@
                       x:Name="AccountingSection"
                       Header="{x:Bind Model.Text.Get('settings', 'bandwidth_accounting'), Mode=OneWay}"
                       Summary="{x:Bind Model.AccountingSummary, Mode=OneWay}"
-                      Glyph="{x:Bind icons:Lucide.Calculator}"
+                      Glyph="{x:Bind icons:Segoe.Calculator}"
                       IsAdvanced="True"
                     >
                       <StackPanel>
@@ -1479,7 +1479,7 @@
                       x:Name="ScheduleSpeedSection"
                       Header="{x:Bind Model.Text.Get('settings', 'limits'), Mode=OneWay}"
                       Summary="{x:Bind Main.LimitsSummary, Mode=OneWay}"
-                      Glyph="{x:Bind icons:Lucide.SlidersHorizontal}"
+                      Glyph="{x:Bind icons:Segoe.SlidersHorizontal}"
                       Padding="16"
                     >
                       <ContentControl
@@ -1503,7 +1503,7 @@
                         Error="{x:Bind Model.Adapter.Message, Mode=OneWay}"
                       >
                         <controls:SettingsRow.Icon>
-                          <FontIcon Style="{StaticResource SettingsIconStyle}" Glyph="{x:Bind icons:Lucide.Network}" />
+                          <FontIcon Style="{StaticResource SettingsIconStyle}" Glyph="{x:Bind icons:Segoe.Network}" />
                         </controls:SettingsRow.Icon>
                         <ComboBox
                           x:Name="Adapters"
@@ -1530,12 +1530,12 @@
                         Description="{x:Bind Model.Text.Get('settings', 'proxy_hint'), Mode=OneWay}"
                       >
                         <controls:SettingsRow.Icon>
-                          <FontIcon Style="{StaticResource SettingsIconStyle}" Glyph="{x:Bind icons:Lucide.Globe}" />
+                          <FontIcon Style="{StaticResource SettingsIconStyle}" Glyph="{x:Bind icons:Segoe.Globe}" />
                         </controls:SettingsRow.Icon>
                         <StackPanel Orientation="Horizontal" Spacing="12">
                           <FontIcon
-                            FontFamily="{x:Bind icons:Lucide.Font}"
-                            Glyph="{x:Bind icons:Lucide.CircleCheck}"
+                            FontFamily="{x:Bind icons:Segoe.Font}"
+                            Glyph="{x:Bind icons:Segoe.CircleCheck}"
                             FontSize="{StaticResource TinyTorrentInlineIconSize}"
                             Foreground="{ThemeResource SystemFillColorSuccessBrush}"
                             Visibility="{x:Bind Model.Proxy.IsWorking, Mode=OneWay}"
@@ -1543,8 +1543,8 @@
                             AutomationProperties.Name="{x:Bind Model.Proxy.StatusText, Mode=OneWay}"
                           />
                           <FontIcon
-                            FontFamily="{x:Bind icons:Lucide.Font}"
-                            Glyph="{x:Bind icons:Lucide.CircleX}"
+                            FontFamily="{x:Bind icons:Segoe.Font}"
+                            Glyph="{x:Bind icons:Segoe.CircleX}"
                             FontSize="{StaticResource TinyTorrentInlineIconSize}"
                             Foreground="{ThemeResource SystemFillColorCriticalBrush}"
                             Visibility="{x:Bind Model.Proxy.IsFailing, Mode=OneWay}"
@@ -1558,7 +1558,7 @@
                           />
                           <controls:ActionButton
                             x:Name="ProxyEdit"
-                            Glyph="{x:Bind icons:Lucide.Pencil}"
+                            Glyph="{x:Bind icons:Segoe.Pencil}"
                             Text="{x:Bind Model.Text.Get('settings', 'edit'), Mode=OneWay}"
                             ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'proxy_edit_tip'), Mode=OneWay}"
                             Click="OnProxy"
@@ -1571,7 +1571,7 @@
                     <controls:SettingsSection
                       x:Name="EncryptionSection"
                       Header="{x:Bind Model.Encryption.Label, Mode=OneWay}"
-                      Glyph="{x:Bind icons:Lucide.Shield}"
+                      Glyph="{x:Bind icons:Segoe.Shield}"
                       IsAdvanced="True"
                     >
                       <StackPanel>
@@ -1666,7 +1666,7 @@
                       x:Name="PeersSection"
                       Header="{x:Bind Model.Text.Get('settings', 'connections'), Mode=OneWay}"
                       Summary="{x:Bind Model.PeersSummary, Mode=OneWay}"
-                      Glyph="{x:Bind icons:Lucide.Network}"
+                      Glyph="{x:Bind icons:Segoe.Network}"
                       IsAdvanced="True"
                     >
                       <StackPanel>
@@ -1742,7 +1742,7 @@
                       x:Name="DiscoverySection"
                       Header="{x:Bind Model.Text.Get('settings', 'peer_discovery'), Mode=OneWay}"
                       Summary="{x:Bind Model.DiscoverySummary, Mode=OneWay}"
-                      Glyph="{x:Bind icons:Lucide.Radar}"
+                      Glyph="{x:Bind icons:Segoe.Radar}"
                       IsAdvanced="True"
                     >
                       <StackPanel>
@@ -1784,7 +1784,7 @@
                       x:Name="IncomingSection"
                       Summary="{x:Bind Model.IncomingSummary, Mode=OneWay}"
                       Header="{x:Bind Model.Text.Get('settings', 'incoming_connections'), Mode=OneWay}"
-                      Glyph="{x:Bind icons:Lucide.Network}"
+                      Glyph="{x:Bind icons:Segoe.Network}"
                       IsAdvanced="True"
                     >
                       <StackPanel>
@@ -1844,7 +1844,7 @@
                   <StackPanel x:Name="Advanced" x:Load="False" Spacing="8" Visibility="Collapsed">
                     <controls:SettingsSection
                       Header="{x:Bind Model.Text.Get('settings', 'interface'), Mode=OneWay}"
-                      Glyph="{x:Bind icons:Lucide.RefreshCw}"
+                      Glyph="{x:Bind icons:Segoe.RefreshCw}"
                     >
                       <StackPanel>
                         <controls:SettingsRow
@@ -1863,7 +1863,7 @@
                     </controls:SettingsSection>
                     <controls:SettingsSection
                       Header="{x:Bind Model.Text.Get('settings', 'memory'), Mode=OneWay}"
-                      Glyph="{x:Bind icons:Lucide.Gauge}"
+                      Glyph="{x:Bind icons:Segoe.Gauge}"
                     >
                       <StackPanel>
                         <controls:SettingsRow
@@ -1894,7 +1894,7 @@
                     <controls:SettingsSection
                       Header="{x:Bind Model.Text.Get('settings', 'checking'), Mode=OneWay}"
                       Summary="{x:Bind Model.CheckingSummary, Mode=OneWay}"
-                      Glyph="{x:Bind icons:Lucide.Check}"
+                      Glyph="{x:Bind icons:Segoe.Check}"
                     >
                       <StackPanel>
                         <controls:SettingsRow
@@ -1936,7 +1936,7 @@
                     <controls:SettingsSection
                       Header="{x:Bind Model.Text.Get('settings', 'speed_history'), Mode=OneWay}"
                       Summary="{x:Bind Model.HistorySummary, Mode=OneWay}"
-                      Glyph="{x:Bind icons:Lucide.ChartLine}"
+                      Glyph="{x:Bind icons:Segoe.ChartLine}"
                     >
                       <StackPanel>
                         <controls:SettingsRow
@@ -1979,7 +1979,7 @@
                     <controls:SettingsSection
                       Header="{x:Bind Model.Text.Get('settings', 'personalization'), Mode=OneWay}"
                       Style="{StaticResource TinyTorrentSettingsGroupStyle}"
-                      Glyph="{x:Bind icons:Lucide.Palette}"
+                      Glyph="{x:Bind icons:Segoe.Palette}"
                     >
                       <StackPanel>
                         <controls:SettingsRow
@@ -2020,7 +2020,7 @@
                         StateText="{x:Bind controls:SettingsRow.State(Model.ShowFreeSpace.IsOn, Model.OnText, Model.OffText), Mode=OneWay}"
                       >
                         <controls:SettingsRow.Icon>
-                          <FontIcon Style="{StaticResource SettingsIconStyle}" Glyph="{x:Bind icons:Lucide.HardDrive}" />
+                          <FontIcon Style="{StaticResource SettingsIconStyle}" Glyph="{x:Bind icons:Segoe.HardDrive}" />
                         </controls:SettingsRow.Icon>
                         <ToggleSwitch
                           IsOn="{x:Bind Model.ShowFreeSpace.IsOn, Mode=OneWay}"
@@ -2041,7 +2041,7 @@
                         StateText="{x:Bind controls:SettingsRow.State(Model.ShowExternalIp.IsOn, Model.OnText, Model.OffText), Mode=OneWay}"
                       >
                         <controls:SettingsRow.Icon>
-                          <FontIcon Style="{StaticResource SettingsIconStyle}" Glyph="{x:Bind icons:Lucide.Globe}" />
+                          <FontIcon Style="{StaticResource SettingsIconStyle}" Glyph="{x:Bind icons:Segoe.Globe}" />
                         </controls:SettingsRow.Icon>
                         <ToggleSwitch
                           IsOn="{x:Bind Model.ShowExternalIp.IsOn, Mode=OneWay}"
@@ -2062,7 +2062,7 @@
                         StateText="{x:Bind controls:SettingsRow.State(Model.ShowMemory.IsOn, Model.OnText, Model.OffText), Mode=OneWay}"
                       >
                         <controls:SettingsRow.Icon>
-                          <FontIcon Style="{StaticResource SettingsIconStyle}" Glyph="{x:Bind icons:Lucide.MemoryStick}" />
+                          <FontIcon Style="{StaticResource SettingsIconStyle}" Glyph="{x:Bind icons:Segoe.MemoryStick}" />
                         </controls:SettingsRow.Icon>
                         <ToggleSwitch
                           IsOn="{x:Bind Model.ShowMemory.IsOn, Mode=OneWay}"
@@ -2078,7 +2078,7 @@
                         StateText="{x:Bind controls:SettingsRow.State(Model.ShowTitleSpeeds.IsOn, Model.OnText, Model.OffText), Mode=OneWay}"
                       >
                         <controls:SettingsRow.Icon>
-                          <FontIcon Style="{StaticResource SettingsIconStyle}" Glyph="{x:Bind icons:Lucide.Gauge}" />
+                          <FontIcon Style="{StaticResource SettingsIconStyle}" Glyph="{x:Bind icons:Segoe.Gauge}" />
                         </controls:SettingsRow.Icon>
                         <ToggleSwitch
                           IsOn="{x:Bind Model.ShowTitleSpeeds.IsOn, Mode=OneWay}"
@@ -2098,11 +2098,11 @@
                         BorderThickness="0"
                       >
                         <controls:SettingsRow.Icon>
-                          <FontIcon Style="{StaticResource SettingsIconStyle}" Glyph="{x:Bind icons:Lucide.RotateCcw}" />
+                          <FontIcon Style="{StaticResource SettingsIconStyle}" Glyph="{x:Bind icons:Segoe.RotateCcw}" />
                         </controls:SettingsRow.Icon>
                         <controls:ActionButton
                           Click="OnResetAll"
-                          Glyph="{x:Bind icons:Lucide.RotateCcw}"
+                          Glyph="{x:Bind icons:Segoe.RotateCcw}"
                           Text="{x:Bind Model.Text.Get('settings', 'reset_all_button'), Mode=OneWay}"
                           ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'reset_all_tip'), Mode=OneWay}"
                           AutomationProperties.AutomationId="ResetAll"

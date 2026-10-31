@@ -271,8 +271,8 @@ try {
     if (Get-ChildItem -LiteralPath $publish -Recurse -File -Filter '*WebView2*') {
         throw 'The published application contains WebView2 components. The installer was not generated.'
     }
-    foreach ($resource in $metadata.ProjectPriFileName, 'TableView.pri', 'Lucide.pri', 'Lucide/Fonts/lucide.ttf',
-        'Lucide/Fonts/twemoji.ttf', 'Assets/dbip-country-lite.mmdb') {
+    foreach ($resource in $metadata.ProjectPriFileName, 'TableView.pri', 'Glyphs.pri',
+        'Glyphs/Fonts/twemoji.ttf', 'Assets/dbip-country-lite.mmdb') {
         if (-not (Test-Path -LiteralPath (Join-Path $publish $resource) -PathType Leaf)) {
             throw "The published application is missing $resource. The installer was not generated."
         }
@@ -347,8 +347,8 @@ try {
 
     $licenses = Join-Path $publish 'licenses'
     $notices = @{
-        TinyTorrent = 'LICENSE'; Branding = 'resources/LICENSE'; Lucide = 'lib/Lucide/LICENSE'
-        Twemoji = 'lib/Lucide/LICENSE.Twemoji'
+        TinyTorrent = 'LICENSE'; Branding = 'resources/LICENSE'
+        Twemoji = 'lib/Glyphs/LICENSE.Twemoji'
         Libtorrent = '3rdParty/libtorrent/LICENSE'; OpenSSL = '3rdParty/openssl/LICENSE.txt'
         Json = '3rdParty/json/LICENSE.MIT'
         MicrosoftDataSqlite = 'installer/notices/Microsoft.Data.Sqlite.txt'
@@ -390,7 +390,7 @@ try {
             Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
         if (-not $signTool) { throw 'Windows SDK SignTool is missing. Install the Windows SDK to sign this release.' }
         $signing = @('sign', '/sha1', $Certificate, '/fd', 'SHA256', '/tr', 'http://timestamp.digicert.com', '/td', 'SHA256')
-        foreach ($name in "$engine.exe", "$window.exe", "$window.dll", 'TableView.dll', 'Lucide.dll') {
+        foreach ($name in "$engine.exe", "$window.exe", "$window.dll", 'TableView.dll', 'Glyphs.dll') {
             Invoke-Tool $signTool ($signing + (Join-Path $publish $name)) (Join-Path $session "$name-sign.log")
         }
         $signCommand = '$q' + $signTool + '$q sign /sha1 ' + $Certificate + ' /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $f'

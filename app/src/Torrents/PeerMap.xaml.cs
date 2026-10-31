@@ -69,8 +69,8 @@ public sealed partial class PeerMap : UserControl
         };
         KeyDown += OnKey;
         ContextRequested += (_, _) => EndDrag(true);
-        FitGlyph.FontFamily = Syno.Lucide.Font;
-        FitGlyph.Glyph = Syno.Lucide.Maximize;
+        FitGlyph.FontFamily = Syno.Segoe.Font;
+        FitGlyph.Glyph = Syno.Segoe.Maximize;
     }
 
     /// <summary>

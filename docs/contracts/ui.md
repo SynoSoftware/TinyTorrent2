@@ -43,8 +43,7 @@ implements them: the
 [Windows design guidance](https://learn.microsoft.com/en-us/windows/apps/design/)
 for geometry, color, typography, materials, layering, and motion. A departure is
 a defect unless this document or the TableView contract records it as an
-exception with its reason. Lucide icons are the recorded exception for
-iconography. Surfaces that Windows draws, including pickers, system dialogs, and
+exception with its reason. Surfaces that Windows draws, including pickers, system dialogs, and
 the tray menu, keep the appearance Windows gives them.
 
 The logo uses the canonical SVG so it remains sharp at different display scales;
@@ -147,9 +146,11 @@ filter content. Genre links flow as whole names onto further lines so every
 filter remains available; they do not turn ordinary metadata fields into wrapped
 rows. Artist and Album retain their whole filter value in their content section.
 
-Every button carries a Lucide icon, as [Buttons](#buttons) rules; elsewhere,
-add an icon when it helps recognition or scanning. Keep Lucide for
-application-authored icons and retain platform-owned control glyphs. Preserve
+Every button carries a Segoe icon, as [Buttons](#buttons) rules; elsewhere,
+add an icon when it helps recognition or scanning. Application-authored icons
+come from Windows' own icon font through `Syno.Segoe`: Segoe Fluent Icons on
+Windows 11 and Segoe MDL2 Assets on Windows 10, so the product ships no icon
+font. Retain platform-owned control glyphs. Preserve
 native sizing, padding, hit areas, and button semantics. Decorative icons stay
 out of automation; icon-only actions have explicit accessible names.
 Actionable controls carry a stable `AutomationProperties.AutomationId`, so UI
@@ -158,7 +159,7 @@ checks find them; decorative content has none.
 **Owner ruling: an application-authored icon is larger than the text beside it,
 and it never enlarges its container.** The icon may extend into the container's
 padding but never into its margin, so it does not touch neighbouring controls.
-This holds for every Lucide icon in the product. Icon size is part of the
+This holds for every Segoe icon in the product. Icon size is part of the
 product's visual language: a larger icon is found at a glance, and rows and
 buttons with icons keep the same height and alignment as those without.
 Platform-owned glyphs, such as menu-item icons and control chevrons, keep their
@@ -266,7 +267,7 @@ the footer, with the pair at the right. The supplier/proxy
 footer is the approved exception: Check, Save and Cancel share the widest action
 width, so the related actions align without clipping localized labels.
 
-**Owner ruling: a button is one word, one leading Lucide icon, and a tooltip
+**Owner ruling: a button is one word, one leading Segoe icon, and a tooltip
 that carries everything the word does not say.** The three are one rule. The
 word is one that people already know from other software, such as Add, Remove,
 Move, Browse or Retry, never a synonym coined for this screen. A second word is
@@ -309,7 +310,7 @@ Label wording and icon use follow
 [Text, icons, and typography](#text-icons-and-typography).
 
 - **One act, one name.** The same act has the same label, the same accelerator,
-  and, where it shows one, the same Lucide icon in the toolbar, the context menu,
+  and, where it shows one, the same Segoe icon in the toolbar, the context menu,
   and dialogs. Menus use the [torrent command names](ui/torrents.md#commands),
   and a button uses its one word, with the full name in the tooltip. A
   person who learns Stop once recognizes it everywhere, while two names for one

@@ -686,13 +686,13 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
                 saved?.Download,
                 next?.Download,
                 bytes => Text.SpeedLimit(bytes)
-            ) with { Glyph = Syno.Lucide.Download },
+            ) with { Glyph = Syno.Segoe.Download },
             Row(
                 Text.Get("limits", "upload_limit"),
                 saved?.Upload,
                 next?.Upload,
                 bytes => Text.SpeedLimit(bytes)
-            ) with { Glyph = Syno.Lucide.Upload },
+            ) with { Glyph = Syno.Segoe.Upload },
         ];
 
     private static ConnectionChange Row(

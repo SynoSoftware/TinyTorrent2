@@ -4,8 +4,8 @@
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <Platforms>x64;ARM64</Platforms>
     <RootNamespace>Syno</RootNamespace>
-    <!-- A WinUI library, so its content reaches every referencing app under Lucide/ and
-         its fonts resolve under ms-appx:///Lucide/Fonts/. -->
+    <!-- A WinUI library, so its content reaches every referencing app under Glyphs/ and
+         its fonts resolve under ms-appx:///Glyphs/Fonts/. -->
     <UseWinUI>true</UseWinUI>
     <WinUISDKReferences>false</WinUISDKReferences>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -21,9 +21,6 @@
     <PackageReference Include="Microsoft.WindowsAppSDK.InteractiveExperiences" Version="2.1.9" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Content Include="Fonts\lucide.ttf" />
-  </ItemGroup>
   <ItemGroup>
     <Content Include="Fonts\twemoji.ttf" />
   </ItemGroup>

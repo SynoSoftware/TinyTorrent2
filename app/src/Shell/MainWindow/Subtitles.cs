@@ -24,7 +24,7 @@ public sealed partial class MainWindow
             };
             content.Attach(subtitles);
             content.SetVisible(true);
-            var dialog = new Dialog { Content = content, Glyph = Lucide.Captions };
+            var dialog = new Dialog { Content = content, Glyph = Segoe.Captions };
             content.PropertyChanged += (_, _) =>
             {
                 dialog.IsPrimaryButtonEnabled = content.CanAct;
@@ -131,9 +131,9 @@ public sealed partial class MainWindow
             var dialog = new Dialog
             {
                 Content = content,
-                Glyph = Lucide.Captions,
-                PrimaryGlyph = Lucide.Download,
-                SecondaryGlyph = Lucide.Search,
+                Glyph = Segoe.Captions,
+                PrimaryGlyph = Segoe.Download,
+                SecondaryGlyph = Segoe.Search,
             };
             void RefreshActions(object? sender, PropertyChangedEventArgs args)
             {

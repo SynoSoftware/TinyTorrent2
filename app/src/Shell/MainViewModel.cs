@@ -240,7 +240,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                         : Text.Format("errors", "detail", stopped, reason),
                     InfoBarSeverity.Error,
                     CanRestart
-                        ? new StatusAction(Restart, RestartText, Syno.Lucide.RotateCcw, Text.Get("connection", "restart_tip"))
+                        ? new StatusAction(Restart, RestartText, Syno.Segoe.RotateCcw, Text.Get("connection", "restart_tip"))
                         : null
                 );
             }
@@ -259,7 +259,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                     new(
                         OpenDataFolder,
                         Text.Get("commands", "open_folder"),
-                        Syno.Lucide.FolderOpen,
+                        Syno.Segoe.FolderOpen,
                         Text.Get("notifications", "storage_tip")
                     )
                 );
@@ -291,13 +291,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                         ? new StatusAction(
                             RetrySubtitleWork,
                             Text.Get("inspector", "retry"),
-                            Syno.Lucide.RotateCcw,
+                            Syno.Segoe.RotateCcw,
                             Text.Get("notifications", "subtitles_retry_tip")
                         )
                         : new StatusAction(
                             ShowSubtitleSettings,
                             Text.Get("notifications", "settings"),
-                            Syno.Lucide.Settings,
+                            Syno.Segoe.Settings,
                             Text.Get("notifications", "subtitles_tip")
                         )
                 );
@@ -309,7 +309,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                     new(
                         ShowSettings,
                         Text.Get("notifications", "settings"),
-                        Syno.Lucide.Settings,
+                        Syno.Segoe.Settings,
                         Text.Get("notifications", "language_tip")
                     )
                 );

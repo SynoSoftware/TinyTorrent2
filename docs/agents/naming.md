@@ -213,8 +213,8 @@ Avoid namespace references that a member hides: inside a type with a `Rows` memb
 `Rows.View` fails with CS0119, which is why the table's row folder is `Body`.
 For established feature names such as Library and Subtitles, import their types
 or fully qualify an ambiguous reference instead of renaming the feature.
-A library with a single type puts it in the company namespace under the library's name: the class
-`Syno.Lucide`, used as `Lucide.Font`. A `Syno.Lucide` namespace beside it would make the name
+A library of a few standalone types puts them directly in the company namespace: Glyphs holds the
+class `Syno.Segoe`, used as `Segoe.Font`. A `Syno.Segoe` namespace beside it would make the name
 resolve to the namespace (CS0118).
 
 Each component is one folder with the same shape: the project in `src/` and, when the component

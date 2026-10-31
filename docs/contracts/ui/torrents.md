@@ -461,7 +461,7 @@ open inspector. Pin and Close keep the maximized choice for the next time the
 inspector expands.
 
 **Owner ruling:** the six inspector sections use a native SelectorBar at the
-start of one header row. Each section, and each Library section, shows a Lucide
+start of one header row. Each section, and each Library section, shows a Segoe
 icon before its name, as Microsoft's SelectorBar guidance does. The torrent name is centred in the space between the
 SelectorBar and the Pin and Close icon buttons. The owner
 could not get used to a left navigation pane, and one row keeps the sections
@@ -473,7 +473,7 @@ does not compete with the subject's name.
 Pin collapses the shared inspector to a ten-pixel horizontal bar immediately
 above the status bar, within the workspace. The ten-pixel slot contains an
 eight-pixel button and a two-pixel top gap separating it from the content.
-A centred Lucide Ellipsis opens it
+A centred Segoe Ellipsis opens it
 again. The bar clips the icon without increasing its height. Collapsing preserves
 the target, section, requested height and unfinished edits; it does not close the
 inspector. Close hides it through the existing draft guards. View > Inspector is
@@ -496,7 +496,7 @@ failed trackers stand out without colouring every healthy row.
 ### Peers and connections map
 
 Peers has one compact State column: Known, Connecting, Handshake, or Connected, with
-a leading Lucide icon. Known means a retained address without a current connection;
+a leading Segoe icon. Known means a retained address without a current connection;
 its connection statistics show a dash. Tracker Status likewise has a leading state icon. Icons
 are static, use the existing inline size, and stay out of automation; the text
 still names every state. An unidentified client shows a dash. Connection uses
@@ -546,7 +546,7 @@ the columns show what the installed data can resolve
 
 Peers shows the map and table by default, so a fresh install exposes both peer
 locations and connection details. A saved view choice takes precedence.
-The Peers header has one icon-only Lucide ellipsis button beside the existing
+The Peers header has one icon-only Segoe ellipsis button beside the existing
 pane actions. Its flyout groups Map only, Table only and Map and table under View,
 and Countries and Cities under Map detail. Cities is disabled without city data;
 Get city data starts the download directly and disappears once installed. Download
@@ -637,7 +637,7 @@ piece count and size, privacy, creation time and creator. Folder and copy
 buttons follow their values and act on the inspected torrent. Each group opens
 with its group icon and title, as Settings and Add groups do. Both groups sit on
 the inspector's own surface, which is already a card, and a divider separates
-them, so the groups add no surface of their own. A Lucide icon in the secondary text colour leads
+them, so the groups add no surface of their own. A Segoe icon in the secondary text colour leads
 each label; privacy shows a lock or a globe, so its icon also states the value.
 Double-clicking a value opens the place that changes it:
 a rate or the speed limit opens the torrent's Speed limit dialog, which also

@@ -90,7 +90,7 @@ public sealed partial class MainViewModel
             }
         );
     public string PauseActionGlyph =>
-        PausedBy == PauseReason.Adapter ? Syno.Lucide.Wrench : Syno.Lucide.Play;
+        PausedBy == PauseReason.Adapter ? Syno.Segoe.Wrench : Syno.Segoe.Play;
 
     public void DismissResume()
     {
@@ -228,7 +228,7 @@ public sealed partial class MainViewModel
             new(
                 RetryAll,
                 Text.Get("inspector", "retry"),
-                Syno.Lucide.RotateCcw,
+                Syno.Segoe.RotateCcw,
                 Text.Get("notifications", tip)
             ),
             ShowErrorsAction
@@ -266,7 +266,7 @@ public sealed partial class MainViewModel
         new(
             ShowErrors,
             Text.Get("notifications", "show_torrents"),
-            Syno.Lucide.List,
+            Syno.Segoe.List,
             Text.Get("notifications", "show_torrents_tip")
         );
 
@@ -303,7 +303,7 @@ public sealed partial class MainViewModel
                 new(
                     DeleteDatabase,
                     Text.Get("file_action", "delete"),
-                    Syno.Lucide.Trash2,
+                    Syno.Segoe.Trash2,
                     Text.Get("window", "delete_database_tip")
                 )
             );
@@ -315,7 +315,7 @@ public sealed partial class MainViewModel
                 new(
                     RepairDatabase,
                     Text.Get("window", "repair_database"),
-                    Syno.Lucide.Wrench,
+                    Syno.Segoe.Wrench,
                     Text.Get("window", "repair_database_tip")
                 )
             );
@@ -338,7 +338,7 @@ public sealed partial class MainViewModel
                 new(
                     OpenDataFolder,
                     Text.Get("commands", "open_folder"),
-                    Syno.Lucide.FolderOpen,
+                    Syno.Segoe.FolderOpen,
                     Text.Get("window", "database_folder_tip")
                 )
             );
@@ -351,7 +351,7 @@ public sealed partial class MainViewModel
                 new(
                     RetryFeatures,
                     Text.Get("inspector", "retry"),
-                    Syno.Lucide.RotateCcw,
+                    Syno.Segoe.RotateCcw,
                     Text.Get("window", "retry_features_tip")
                 ),
                 dataFolder

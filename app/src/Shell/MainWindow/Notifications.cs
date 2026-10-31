@@ -228,11 +228,11 @@ public sealed partial class MainWindow
         var menu = MenuItems.Flyout(
             () =>
                 [
-                    new MenuCommand(Model.Text.Get("notifications", "silence_hour"), Lucide.BellOff,
+                    new MenuCommand(Model.Text.Get("notifications", "silence_hour"), Segoe.BellOff,
                         new RelayCommand(() => Model.SilenceLocations(TimeSpan.FromHours(1)), () => true)),
-                    new MenuCommand(Model.Text.Get("notifications", "silence_hours"), Lucide.BellOff,
+                    new MenuCommand(Model.Text.Get("notifications", "silence_hours"), Segoe.BellOff,
                         new RelayCommand(() => Model.SilenceLocations(TimeSpan.FromHours(8)), () => true)),
-                    new MenuCommand(Model.Text.Get("notifications", "silence_restart"), Lucide.BellOff,
+                    new MenuCommand(Model.Text.Get("notifications", "silence_restart"), Segoe.BellOff,
                         new RelayCommand(() => Model.SilenceLocations(Timeout.InfiniteTimeSpan), () => true)),
                 ],
             () => Model.Text
@@ -255,17 +255,17 @@ public sealed partial class MainWindow
                 [
                     new MenuCommand(
                         Model.Text.Get("notifications", "off_" + @switch),
-                        Lucide.BellMinus,
+                        Segoe.BellMinus,
                         new RelayCommand(() => Model.TurnOffToasts(toast), () => Model.CanEdit)
                     ),
                     new MenuCommand(
                         Model.Text.Get("notifications", "off_all"),
-                        Lucide.BellOff,
+                        Segoe.BellOff,
                         new RelayCommand(() => Model.TurnOffAllToasts(toast), () => Model.CanEdit)
                     ),
                     new MenuCommand(
                         Model.Text.Get("notifications", "notification_settings"),
-                        Lucide.Settings,
+                        Segoe.Settings,
                         new RelayCommand(() => Model.ShowNotificationSettings(toast), () => true)
                     ),
                 ],

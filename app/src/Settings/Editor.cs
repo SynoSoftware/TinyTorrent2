@@ -425,7 +425,7 @@ public sealed partial class Editor : INotifyPropertyChanged
     public string DefaultsText =>
         HasBrokenHandlers ? Text.Get("settings", "repair_defaults") : Text.Get("settings", "use");
     public string DefaultsGlyph =>
-        HasBrokenHandlers ? (Elevates ? Lucide.Shield : Lucide.Wrench) : Lucide.ArrowLeftRight;
+        HasBrokenHandlers ? (Elevates ? Segoe.Shield : Segoe.Wrench) : Segoe.ArrowLeftRight;
 
     // The apps Windows opens each kind with, so the person sees what a click
     // on a torrent file or magnet link starts.

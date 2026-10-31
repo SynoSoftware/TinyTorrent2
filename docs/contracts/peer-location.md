@@ -67,9 +67,9 @@ data lacks, a web seed's host name or an I2P destination has no location.
 
 ## Flags
 
-The flags are glyphs of `lib/Lucide/src/Fonts/twemoji.ttf`, a flags-only
+The flags are glyphs of `lib/Glyphs/src/Fonts/twemoji.ttf`, a flags-only
 subset of Mozilla's Twemoji colour font: 184 KB for the flag of every
-two-letter region code, vendored beside the Lucide icon font with its
+two-letter region code, vendored with its
 licence. It is a COLR version 0 colour font, which Windows draws in colour
 the way it draws its own emoji. `Flags.Glyph` turns a country code into the
 pair of regional indicator characters that the font joins into one flag, and
@@ -271,7 +271,7 @@ wheel deltas. A drag does not select a location. Show the SizeAll cursor only
 after the drag threshold is crossed, restoring the normal cursor when the drag
 ends or is cancelled. Input moves the view directly, without added easing,
 inertia or a zoom animation. A compact control at the bottom centre
-shows the zoom factor, such as 2×, and a Lucide Fit button when the view is zoomed
+shows the zoom factor, such as 2×, and a Segoe Fit button when the view is zoomed
 or panned. It hides after three seconds of inactivity and returns on pointer
 interaction, focus or navigation. The Fit button stays visible while focused.
 Fit shows the whole world with the origin in the centre and returns

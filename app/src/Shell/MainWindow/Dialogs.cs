@@ -206,8 +206,8 @@ public sealed partial class MainWindow
             {
                 Content = content,
                 Footer = content.Status is { } status ? new DialogFooter.Check(status) : null,
-                Glyph = Lucide.KeyRound,
-                PrimaryGlyph = Lucide.Check,
+                Glyph = Segoe.KeyRound,
+                PrimaryGlyph = Segoe.Check,
             };
             dialog.SizeToContent();
             try
@@ -237,7 +237,7 @@ public sealed partial class MainWindow
     {
         await Interact(async interaction =>
         {
-            var dialog = new Dialog { Glyph = Lucide.Database, PrimaryGlyph = Lucide.Trash2 };
+            var dialog = new Dialog { Glyph = Segoe.Database, PrimaryGlyph = Segoe.Trash2 };
             var choice = await ShowDialog(
                 interaction,
                 dialog,
@@ -269,9 +269,9 @@ public sealed partial class MainWindow
             var preference = new DialogPreference(Model.Settings);
             var dialog = new Dialog
             {
-                Glyph = Lucide.ListChecks,
-                PrimaryGlyph = Lucide.Play,
-                SecondaryGlyph = Lucide.Undo2,
+                Glyph = Segoe.ListChecks,
+                PrimaryGlyph = Segoe.Play,
+                SecondaryGlyph = Segoe.Undo2,
                 Footer = new DialogFooter.OptOut(preference),
             };
             async Task<bool> Answer(UnfinishedAnswer answer)

@@ -28,9 +28,9 @@
     <EmbeddedResource Include="Resources\*.json" LogicalName="%(Filename)%(Extension)" />
   </ItemGroup>
 
-  <!-- The table's generated menu and sort glyphs draw from Lucide, so a host does not have to
-       supply an icon font for them to look right. -->
+  <!-- The table's generated menu and sort glyphs draw from Windows' icon font through Glyphs, so
+       a host does not have to supply an icon font for them to look right. -->
   <ItemGroup>
-    <ProjectReference Include="..\..\Lucide\src\Lucide.csproj" />
+    <ProjectReference Include="..\..\Glyphs\src\Glyphs.csproj" />
   </ItemGroup>
 </Project>

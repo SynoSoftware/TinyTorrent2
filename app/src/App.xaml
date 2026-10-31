@@ -1001,7 +1001,7 @@
                           Style="{StaticResource TinyTorrentSubtleButtonStyle}"
                         >
                           <FontIcon
-                            FontFamily="{ThemeResource LucideFont}"
+                            FontFamily="{ThemeResource SegoeFont}"
                             FontSize="{StaticResource TinyTorrentButtonIconSize}"
                             AutomationProperties.AccessibilityView="Raw"
                           />
@@ -1012,7 +1012,7 @@
                         >
                           <FontIcon
                             x:Name="MaximizeGlyph"
-                            FontFamily="{ThemeResource LucideFont}"
+                            FontFamily="{ThemeResource SegoeFont}"
                             FontSize="{StaticResource TinyTorrentButtonIconSize}"
                             AutomationProperties.AccessibilityView="Raw"
                           />
@@ -1022,7 +1022,7 @@
                           Style="{StaticResource TinyTorrentSubtleButtonStyle}"
                         >
                           <FontIcon
-                            FontFamily="{ThemeResource LucideFont}"
+                            FontFamily="{ThemeResource SegoeFont}"
                             FontSize="{StaticResource TinyTorrentButtonIconSize}"
                             AutomationProperties.AccessibilityView="Raw"
                           />
@@ -1049,7 +1049,7 @@
                   <Grid x:Name="ToggleClip" AutomationProperties.AccessibilityView="Raw">
                     <FontIcon
                       x:Name="ToggleGlyph"
-                      FontFamily="{ThemeResource LucideFont}"
+                      FontFamily="{ThemeResource SegoeFont}"
                       Width="16"
                       Height="16"
                       FontSize="16"
@@ -1247,7 +1247,7 @@
                       <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <FontIcon
-                      FontFamily="{ThemeResource LucideFont}"
+                      FontFamily="{ThemeResource SegoeFont}"
                       Glyph="{TemplateBinding Glyph}"
                       FontSize="{StaticResource TinyTorrentHeaderIconSize}"
                       VerticalAlignment="Center"
@@ -1463,7 +1463,7 @@
                   <FontIcon
                     x:Name="Icon"
                     Glyph="{TemplateBinding Glyph}"
-                    FontFamily="{ThemeResource LucideFont}"
+                    FontFamily="{ThemeResource SegoeFont}"
                     Style="{StaticResource TinyTorrentGroupIconStyle}"
                   />
                   <StackPanel Grid.Column="1" Spacing="4">
@@ -1574,7 +1574,7 @@
                     <ColumnDefinition Width="120" />
                   </Grid.ColumnDefinitions>
                   <FontIcon
-                    FontFamily="{ThemeResource LucideFont}"
+                    FontFamily="{ThemeResource SegoeFont}"
                     Glyph="{TemplateBinding Glyph}"
                     Style="{StaticResource InspectorIconStyle}"
                   />
@@ -1621,7 +1621,7 @@
             <ControlTemplate TargetType="controls:Field">
               <StackPanel Orientation="Horizontal" Spacing="12" Background="Transparent">
                 <FontIcon
-                  FontFamily="{ThemeResource LucideFont}"
+                  FontFamily="{ThemeResource SegoeFont}"
                   Glyph="{TemplateBinding Glyph}"
                   Style="{StaticResource InspectorIconStyle}"
                   FontSize="{StaticResource TinyTorrentStatisticIconSize}"
@@ -1654,7 +1654,7 @@
                   <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
                 <FontIcon
-                  FontFamily="{ThemeResource LucideFont}"
+                  FontFamily="{ThemeResource SegoeFont}"
                   Glyph="{TemplateBinding Glyph}"
                   Foreground="{TemplateBinding Foreground}"
                   Style="{StaticResource TinyTorrentStatusIconStyle}"
@@ -1710,13 +1710,10 @@
                   Height="{StaticResource TinyTorrentStatisticIconSize}"
                   VerticalAlignment="Center"
                 >
-                  <!-- Lucide's glyphs fill the em; its Latin cap height
-                       would shift them above the slot. -->
                   <TextBlock
-                    FontFamily="{ThemeResource LucideFont}"
+                    FontFamily="{ThemeResource SegoeFont}"
                     Text="{TemplateBinding Glyph}"
                     FontSize="{StaticResource TinyTorrentStatisticIconSize}"
-                    TextLineBounds="TrimToBaseline"
                     IsTextScaleFactorEnabled="False"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center"

@@ -256,7 +256,7 @@ public sealed class AddDraft : IDraft
         && !Sources.Any(source => source.NeedsFiles);
     public bool HasDraft => Sources.Count > 0 || !string.IsNullOrWhiteSpace(Magnet);
     public ClosePolicy ClosePolicy =>
-        new ClosePolicy.Ask("add", Lucide.CirclePlus, () => Heading, () => SubmitText);
+        new ClosePolicy.Ask("add", Segoe.CirclePlus, () => Heading, () => SubmitText);
     public event PropertyChangedEventHandler? PropertyChanged;
 
     internal AddDraft(MainViewModel owner, PipeClient client, Strings strings)

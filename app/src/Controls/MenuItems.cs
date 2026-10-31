@@ -154,10 +154,10 @@ internal static class MenuItems
         switch (line, item)
         {
             case (MenuHeading heading, MenuFlyoutItem shown):
-                Show(shown, heading.Text, Lucide.Font, heading.Glyph, null, string.Empty);
+                Show(shown, heading.Text, Segoe.Font, heading.Glyph, null, string.Empty);
                 break;
             case (MenuCommand command, MenuFlyoutItem shown):
-                Show(shown, command.Text, Lucide.Font, command.Glyph, command.Command, command.AccessKey);
+                Show(shown, command.Text, Segoe.Font, command.Glyph, command.Command, command.AccessKey);
                 shown.KeyboardAcceleratorTextOverride = command.Shortcut;
                 AutomationProperties.SetName(shown, command.Name ?? string.Empty);
                 ToolTipService.SetToolTip(shown, command.ToolTip);
@@ -167,12 +167,12 @@ internal static class MenuItems
                 if (checks && choice.FlagRegion is { } region)
                     Show(shown, choice.Text, Flags.Font, Flags.Glyph(region), choice.Command, choice.AccessKey);
                 else
-                    Show(shown, choice.Text, Lucide.Font,
+                    Show(shown, choice.Text, Segoe.Font,
                         checks ? choice.Glyph : choice.State switch
                         {
-                            true => Lucide.SquareCheck,
-                            false => Lucide.Square,
-                            null => Lucide.SquareMinus,
+                            true => Segoe.SquareCheck,
+                            false => Segoe.Square,
+                            null => Segoe.SquareMinus,
                         },
                         choice.Command, choice.AccessKey);
                 if (shown is ToggleMenuFlyoutItem toggle)
@@ -197,7 +197,7 @@ internal static class MenuItems
                 break;
             case (MenuSubmenu submenu, MenuFlyoutSubItem shown):
                 shown.Text = submenu.Text;
-                var icon = Icon(shown.Icon, Lucide.Font, submenu.Glyph);
+                var icon = Icon(shown.Icon, Segoe.Font, submenu.Glyph);
                 if (icon != shown.Icon)
                     shown.Icon = icon;
                 shown.AccessKey = submenu.AccessKey;

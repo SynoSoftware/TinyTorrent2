@@ -29,8 +29,8 @@
       />
       <FontIcon
         Style="{StaticResource TinyTorrentSurfaceIconStyle}"
-        FontFamily="{x:Bind icons:Lucide.Font}"
-        Glyph="{x:Bind icons:Lucide.CirclePlus}"
+        FontFamily="{x:Bind icons:Segoe.Font}"
+        Glyph="{x:Bind icons:Segoe.CirclePlus}"
         Visibility="{x:Bind controls:Visibilities.Unless(Model.AddDraft.GettingMetadata), Mode=OneWay}"
       />
       <!-- Left-aligned, so the size follows a short name and a long name trims before it. -->
@@ -59,7 +59,7 @@
       >
         <FontIcon
           x:Name="ChoicesIcon"
-          FontFamily="{x:Bind icons:Lucide.Font}"
+          FontFamily="{x:Bind icons:Segoe.Font}"
           FontSize="{StaticResource TinyTorrentButtonIconSize}"
         />
       </Button>
@@ -71,7 +71,7 @@
       >
         <FontIcon
           x:Name="ResizeIcon"
-          FontFamily="{x:Bind icons:Lucide.Font}"
+          FontFamily="{x:Bind icons:Segoe.Font}"
           FontSize="{StaticResource TinyTorrentButtonIconSize}"
         />
       </Button>
@@ -82,8 +82,8 @@
         Click="OnClose"
       >
         <FontIcon
-          FontFamily="{x:Bind icons:Lucide.Font}"
-          Glyph="{x:Bind icons:Lucide.X}"
+          FontFamily="{x:Bind icons:Segoe.Font}"
+          Glyph="{x:Bind icons:Segoe.X}"
           FontSize="{StaticResource TinyTorrentButtonIconSize}"
         />
       </Button>
@@ -101,8 +101,8 @@
               <StackPanel Orientation="Horizontal" Spacing="8">
                 <FontIcon
                   Style="{StaticResource TinyTorrentGroupIconStyle}"
-                  Glyph="{x:Bind icons:Lucide.FolderDown}"
-                  FontFamily="{x:Bind icons:Lucide.Font}"
+                  Glyph="{x:Bind icons:Segoe.FolderDown}"
+                  FontFamily="{x:Bind icons:Segoe.Font}"
                 />
                 <TextBlock
                   x:Name="DestinationLabel"
@@ -130,7 +130,7 @@
                     ToolTipService.ToolTip="{x:Bind Model.AddDraft.Destination, Mode=OneWay}"
                   />
                   <controls:ActionButton
-                    Glyph="{x:Bind icons:Lucide.FolderSearch}"
+                    Glyph="{x:Bind icons:Segoe.FolderSearch}"
                     ToolTipService.ToolTip="{x:Bind Model.Text.Get('add', 'browse_tip'), Mode=OneWay}"
                     x:Name="Browse"
                     AccessKey="{x:Bind Model.Text.Get('add', 'browse_key'), Mode=OneWay}"
@@ -154,8 +154,8 @@
                     >
                       <FontIcon
                         Style="{StaticResource TinyTorrentStatusIconStyle}"
-                        FontFamily="{x:Bind icons:Lucide.Font}"
-                        Glyph="{x:Bind icons:Lucide.HardDrive}"
+                        FontFamily="{x:Bind icons:Segoe.Font}"
+                        Glyph="{x:Bind icons:Segoe.HardDrive}"
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                         AutomationProperties.AccessibilityView="Raw"
                       />
@@ -182,8 +182,8 @@
                   >
                     <FontIcon
                       Style="{StaticResource TinyTorrentStatusIconStyle}"
-                      FontFamily="{x:Bind icons:Lucide.Font}"
-                      Glyph="{x:Bind icons:Lucide.CircleAlert}"
+                      FontFamily="{x:Bind icons:Segoe.Font}"
+                      Glyph="{x:Bind icons:Segoe.CircleAlert}"
                       Foreground="{ThemeResource SystemFillColorCriticalBrush}"
                       AutomationProperties.AccessibilityView="Raw"
                     />
@@ -220,8 +220,8 @@
               <StackPanel Orientation="Horizontal" Spacing="8">
                 <FontIcon
                   Style="{StaticResource TinyTorrentGroupIconStyle}"
-                  Glyph="{x:Bind icons:Lucide.SlidersHorizontal}"
-                  FontFamily="{x:Bind icons:Lucide.Font}"
+                  Glyph="{x:Bind icons:Segoe.SlidersHorizontal}"
+                  FontFamily="{x:Bind icons:Segoe.Font}"
                 />
                 <TextBlock
                   x:Name="OptionsLabel"
@@ -314,8 +314,8 @@
               <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,12">
                 <FontIcon
                   Style="{StaticResource TinyTorrentGroupIconStyle}"
-                  Glyph="{x:Bind icons:Lucide.Link}"
-                  FontFamily="{x:Bind icons:Lucide.Font}"
+                  Glyph="{x:Bind icons:Segoe.Link}"
+                  FontFamily="{x:Bind icons:Segoe.Font}"
                 />
                 <TextBlock
                   x:Name="MagnetLabel"
@@ -353,7 +353,7 @@
               <controls:ActionButton
                 Grid.Column="1"
                 MinWidth="{ThemeResource ContentDialogButtonMinWidth}"
-                Glyph="{x:Bind icons:Lucide.ClipboardPaste}"
+                Glyph="{x:Bind icons:Segoe.ClipboardPaste}"
                 ToolTipService.ToolTip="{x:Bind Model.Text.Get('add', 'paste_tip'), Mode=OneWay}"
                 x:Name="Paste"
                 AccessKey="{x:Bind Model.Text.Get('add', 'paste_key'), Mode=OneWay}"
@@ -364,7 +364,7 @@
               <controls:ActionButton
                 Grid.Column="3"
                 MinWidth="{ThemeResource ContentDialogButtonMinWidth}"
-                Glyph="{x:Bind icons:Lucide.ScanSearch}"
+                Glyph="{x:Bind icons:Segoe.ScanSearch}"
                 ToolTipService.ToolTip="{x:Bind Model.Text.Get('add', 'review_tip'), Mode=OneWay}"
                 x:Name="Preview"
                 AccessKey="{x:Bind Model.Text.Get('add', 'review_key'), Mode=OneWay}"
@@ -397,7 +397,7 @@
                       Visibility="{x:Bind MergeAvailable, Mode=OneWay}"
                     />
                     <controls:ActionButton
-                      Glyph="{x:Bind icons:Lucide.ListChecks}"
+                      Glyph="{x:Bind icons:Segoe.ListChecks}"
                       ToolTipService.ToolTip="{x:Bind AllToolTip, Mode=OneWay}"
                       Text="{x:Bind AllLabel, Mode=OneWay}"
                       Command="{x:Bind SelectAll}"
@@ -429,7 +429,7 @@
     >
       <InfoBar.ActionButton>
         <controls:ActionButton
-          Glyph="{x:Bind icons:Lucide.RotateCcw}"
+          Glyph="{x:Bind icons:Segoe.RotateCcw}"
           ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection', 'restart_tip'), Mode=OneWay}"
           AutomationProperties.AutomationId="Restart"
           Text="{x:Bind Model.RestartText, Mode=OneWay}"

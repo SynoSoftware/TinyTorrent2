@@ -38,8 +38,8 @@
           AutomationProperties.Name="{x:Bind Model.Text.Get('files', 'expand_all'), Mode=OneWay}"
         >
           <FontIcon
-            FontFamily="{x:Bind icons:Lucide.Font}"
-            Glyph="{x:Bind icons:Lucide.ChevronsUpDown}"
+            FontFamily="{x:Bind icons:Segoe.Font}"
+            Glyph="{x:Bind icons:Segoe.ChevronsUpDown}"
             FontSize="{StaticResource TinyTorrentButtonIconSize}"
           />
         </Button>
@@ -51,8 +51,8 @@
           AutomationProperties.Name="{x:Bind Model.Text.Get('files', 'collapse_all'), Mode=OneWay}"
         >
           <FontIcon
-            FontFamily="{x:Bind icons:Lucide.Font}"
-            Glyph="{x:Bind icons:Lucide.ChevronsDownUp}"
+            FontFamily="{x:Bind icons:Segoe.Font}"
+            Glyph="{x:Bind icons:Segoe.ChevronsDownUp}"
             FontSize="{StaticResource TinyTorrentButtonIconSize}"
           />
         </Button>
@@ -106,7 +106,7 @@
                 />
                 <FontIcon
                   Grid.Column="1"
-                  FontFamily="{x:Bind icons:Lucide.Font}"
+                  FontFamily="{x:Bind icons:Segoe.Font}"
                   Glyph="{x:Bind Glyph}"
                   FontSize="{StaticResource TinyTorrentInlineIconSize}"
                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"

@@ -221,7 +221,7 @@ public sealed partial class MainWindow
                                 "selected",
                                 Model.Library.Selection.Items.Count
                             ),
-                        Syno.Lucide.ListChecks
+                        Syno.Segoe.ListChecks
                     ),
                     .. LibraryMenu(),
                 ],
@@ -230,15 +230,15 @@ public sealed partial class MainWindow
 
     private IEnumerable<MenuEntry> LibraryMenu()
     {
-        yield return Command("open", Model.Library.Open, Syno.Lucide.Play);
-        yield return Command("open_folder", Model.Library.OpenFolder, Syno.Lucide.FolderOpen);
-        yield return Command("properties", Model.Library.Properties, Syno.Lucide.Info);
+        yield return Command("open", Model.Library.Open, Syno.Segoe.Play);
+        yield return Command("open_folder", Model.Library.OpenFolder, Syno.Segoe.FolderOpen);
+        yield return Command("properties", Model.Library.Properties, Syno.Segoe.Info);
         yield return OriginActions.Create(Model.Library);
         yield return new MenuSeparator();
         yield return MetadataActions.Create(Model.Library);
         yield return new MenuCommand(
             Model.Text.Get("library", "refresh_metadata"),
-            Lucide.RefreshCw,
+            Segoe.RefreshCw,
             Model.Library.RefreshMetadata
         );
         yield return new MenuCommand(
@@ -246,13 +246,13 @@ public sealed partial class MainWindow
                 "subtitles",
                 Model.Library.Selection.Items.Count == 1 ? "choose" : "download_title"
             ),
-            Lucide.Download,
+            Segoe.Download,
             Model.DownloadSubtitles
         );
         yield return new MenuSeparator();
         yield return new MenuCommand(
             Model.Text.Get("library", "erase_metadata"),
-            Lucide.Eraser,
+            Segoe.Eraser,
             Model.Library.EraseMetadata
         );
     }
@@ -265,9 +265,9 @@ public sealed partial class MainWindow
                 Model.Text.Get("library", configuration.ToString().ToLowerInvariant()),
                 configuration switch
                 {
-                    LibraryConfiguration.Videos => Syno.Lucide.Film,
-                    LibraryConfiguration.Music => Syno.Lucide.Music,
-                    _ => Syno.Lucide.Files,
+                    LibraryConfiguration.Videos => Syno.Segoe.Film,
+                    LibraryConfiguration.Music => Syno.Segoe.Music,
+                    _ => Syno.Segoe.Files,
                 },
                 Model.Library.Configuration == configuration,
                 new RelayCommand(() => Model.Library.Configuration = configuration, () => true)
@@ -321,8 +321,8 @@ public sealed partial class MainWindow
                 var dialog = new Dialog
                 {
                     Content = content,
-                    Glyph = Lucide.Film,
-                    PrimaryGlyph = Lucide.Download,
+                    Glyph = Segoe.Film,
+                    PrimaryGlyph = Segoe.Download,
                 };
                 await ShowEditor(
                     interaction,
@@ -353,8 +353,8 @@ public sealed partial class MainWindow
             var dialog = new Dialog
             {
                 Content = content,
-                Glyph = Lucide.Film,
-                PrimaryGlyph = Lucide.Check,
+                Glyph = Segoe.Film,
+                PrimaryGlyph = Segoe.Check,
             };
             dialog.Opened += async (_, _) =>
             {
@@ -454,21 +454,21 @@ public sealed partial class MainWindow
                 {
                     var icon = new FontIcon
                     {
-                        FontFamily = Lucide.Font,
+                        FontFamily = Segoe.Font,
                         Glyph = section.Key switch
                         {
-                            "type" => Lucide.Clapperboard,
-                            "genres" => Lucide.Tags,
-                            "year" or "modified" => Lucide.Calendar,
-                            "series" => Lucide.Tv,
-                            "season" => Lucide.ListOrdered,
-                            "artist" => Lucide.Users,
-                            "album" => Lucide.Disc,
-                            "size" => Lucide.HardDrive,
-                            "resolution" => Lucide.Monitor,
-                            "subtitles" => Lucide.Captions,
-                            "metadata" => Lucide.FileSearch,
-                            _ => Lucide.File,
+                            "type" => Segoe.Clapperboard,
+                            "genres" => Segoe.Tags,
+                            "year" or "modified" => Segoe.Calendar,
+                            "series" => Segoe.Tv,
+                            "season" => Segoe.ListOrdered,
+                            "artist" => Segoe.Users,
+                            "album" => Segoe.Disc,
+                            "size" => Segoe.HardDrive,
+                            "resolution" => Segoe.Monitor,
+                            "subtitles" => Segoe.Captions,
+                            "metadata" => Segoe.FileSearch,
+                            _ => Segoe.File,
                         },
                         Style = (Style)Application.Current.Resources["TinyTorrentStatusIconStyle"],
                     };

@@ -81,8 +81,8 @@
                 />
                 <FontIcon
                   x:Name="Selected"
-                  FontFamily="{ThemeResource LucideFont}"
-                  Glyph="{x:Bind icons:Lucide.Check}"
+                  FontFamily="{ThemeResource SegoeFont}"
+                  Glyph="{x:Bind icons:Segoe.Check}"
                   FontSize="{StaticResource TinyTorrentInlineIconSize}"
                   Opacity="0"
                   AutomationProperties.AccessibilityView="Raw"

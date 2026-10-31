@@ -50,7 +50,7 @@ public sealed partial class InspectorPane
         var installed = Model.HasCities;
         List<MenuEntry> menu =
         [
-            new MenuHeading(text.Get("peer_map", "view"), Lucide.Columns2),
+            new MenuHeading(text.Get("peer_map", "view"), Segoe.Columns2),
             Choice("map", view.Layout == PeerLayout.Map, view with { Layout = PeerLayout.Map }),
             Choice(
                 "table",
@@ -62,7 +62,7 @@ public sealed partial class InspectorPane
             ),
             Choice("both", view.Layout == PeerLayout.Both, view with { Layout = PeerLayout.Both }),
             new MenuSeparator(),
-            new MenuHeading(text.Get("peer_map", "geography"), Lucide.Globe2),
+            new MenuHeading(text.Get("peer_map", "geography"), Segoe.Globe2),
             Choice("countries", !view.Cities || !installed, view with { Cities = false }),
             Choice("cities", view.Cities && installed, view with { Cities = true }, installed),
         ];
@@ -70,7 +70,7 @@ public sealed partial class InspectorPane
             menu.Add(
                 new MenuCommand(
                     text.Get("peer_map", "download"),
-                    Lucide.Download,
+                    Segoe.Download,
                     Model.DownloadCities
                 )
             );
@@ -78,7 +78,7 @@ public sealed partial class InspectorPane
         menu.Add(
             new MenuSubmenu(
                 text.Get("peer_map", "speed_position"),
-                Lucide.Move,
+                Segoe.Move,
                 [
                     Choice(
                         "top_left",

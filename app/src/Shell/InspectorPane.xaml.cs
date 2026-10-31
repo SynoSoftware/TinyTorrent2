@@ -75,10 +75,10 @@ public sealed partial class InspectorPane : UserControl
         Model = model;
         _downloadSubtitles = downloadSubtitles;
         InitializeComponent();
-        _libraryOpen = CreateAction(Lucide.Play, "LibraryOpen");
-        _libraryTorrents = CreateAction(Lucide.LocateFixed, "LibraryTorrents");
-        _libraryMore = CreateAction(Lucide.Ellipsis, "LibraryMore");
-        _peerMore = CreateAction(Lucide.Ellipsis, "PeerMore");
+        _libraryOpen = CreateAction(Segoe.Play, "LibraryOpen");
+        _libraryTorrents = CreateAction(Segoe.LocateFixed, "LibraryTorrents");
+        _libraryMore = CreateAction(Segoe.Ellipsis, "LibraryMore");
+        _peerMore = CreateAction(Segoe.Ellipsis, "PeerMore");
         SectionContent.SizeChanged += Motion.Clip;
         _torrentSections = new[]
         {

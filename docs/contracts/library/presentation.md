@@ -133,7 +133,7 @@ the approved navigation and caption behavior.
 - [ ] Add no navigation row. Switch pages through the workspace picker at the
   app-icon position; keep the File/current-page/View/Help menus.
 - [ ] Use the actual `resources/tinyTorrent.svg` for Torrents and the Library
-  face for Library. Do not substitute a Lucide download glyph for the brand.
+  face for Library. Do not substitute a Segoe download glyph for the brand.
 - [ ] Make the switch the workspace picker that the
   [title-bar contract](../ui/workspace.md#native-controls-and-visual-authority)
   describes: the current page's icon and name, with Torrents and Library as its
@@ -195,7 +195,7 @@ Library, the menus are:
 | Menu | Items |
 | --- | --- |
 | File | Unchanged. |
-| Library | Open, Open folder, Properties, Show in Torrents; Fetch metadata, Download Subtitle; Erase metadata. The row context menu has the same groups and a selection heading. Download Subtitle is a direct action; multiple selections use Download subtitles. Single and multiple selections use the same command owners and Lucide icons. |
+| Library | Open, Open folder, Properties, Show in Torrents; Fetch metadata, Download Subtitle; Erase metadata. The row context menu has the same groups and a selection heading. Download Subtitle is a direct action; multiple selections use Download subtitles. Single and multiple selections use the same command owners and Segoe icons. |
 | View | Filters, Inspector and Toolbar, as on every page; then Videos, Music, Files as choices. |
 | Help | Unchanged. |
 
@@ -263,7 +263,7 @@ Keep a selected choice visible even when its count reaches zero, so it can be
 cleared. Clear resets every section. Closing Filters returns keyboard focus to
 the active table, and count refreshes update the facet controls in place, so
 focus and open choices survive. The facet dimensions stay separate.
-Each section uses one compact row: a neutral Inline Lucide icon, its label and
+Each section uses one compact row: a neutral Inline Segoe icon, its label and
 a native ComboBox. Library gives the shared drawer enough width for these
 rows, so labels do not consume a second line above each selector. Full selected
 values remain available through tooltips and the native selector's automation.
@@ -389,7 +389,7 @@ override reads Force, with the protection reason in its tooltip. Save remains
 the dialog's default commit and applies only the selected match.
 Request status and the resulting match count appear above the results and are
 announced accessibly. No matches and errors remain inside the dialog. An
-automatic year search that broadens adds “Title only” and a neutral Lucide Search
+automatic year search that broadens adds “Title only” and a neutral Segoe Search
 icon to that existing, non-wrapping status line. Its tooltip and accessible help
 explain the fallback; no warning colour or additional row is used. A failed
 Save keeps the query and results available for correction. Successful Save closes

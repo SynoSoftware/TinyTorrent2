@@ -43,8 +43,8 @@ public sealed partial class Cell : Control
     /// two inches from the menu these headers open, so drawing them from a second family was the
     /// most visible place the control disagreed with itself about what an icon looks like.
     /// </summary>
-    private const string AscendingGlyph = Lucide.ChevronUp;
-    private const string DescendingGlyph = Lucide.ChevronDown;
+    private const string AscendingGlyph = Segoe.ChevronUp;
+    private const string DescendingGlyph = Segoe.ChevronDown;
 
     private ContentPresenter? _presenter;
     private FontIcon? _sortGlyph;
@@ -138,7 +138,7 @@ public sealed partial class Cell : Control
             return;
         }
 
-        _sortGlyph.FontFamily = Lucide.Font;
+        _sortGlyph.FontFamily = Segoe.Font;
         _sortGlyph.Glyph = _sort == SortDirection.Descending ? DescendingGlyph : AscendingGlyph;
         _sortGlyph.Visibility = _sort is null ? Visibility.Collapsed : Visibility.Visible;
     }

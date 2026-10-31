@@ -38,7 +38,7 @@ Windows App SDK, avoiding unused AI, machine-learning, widgets and search files.
 The published executables must be `TinyTorrent.exe` and `TinyTorrentUI.exe`.
 The publish step includes the UI resource index with its embedded compiled XAML;
 the release command rejects missing application or library resource indexes,
-the Lucide and flag fonts and the DB-IP country data, so published
+the flag font and the DB-IP country data, so published
 installations keep their icons and peer flags. The app build fetches the month's
 country data, as [peer location](../docs/contracts/peer-location.md) describes.
 The command compresses the staged engine with UPX, preserves its resources

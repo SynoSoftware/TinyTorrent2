@@ -430,7 +430,7 @@ public sealed class Notifications
                     work.Action = _owner.Updates.Install;
                     work.ActionText = _text.Get("about", "update");
                     work.ActionTip = _text.Get("about", "update_tip");
-                    work.ActionGlyph = Syno.Lucide.CircleFadingArrowUp;
+                    work.ActionGlyph = Syno.Segoe.CircleFadingArrowUp;
                 }
                 work.Title = update
                     ? _text.Get("about", "available")
@@ -466,7 +466,7 @@ public sealed class Notifications
                 );
                 limit.ActionText = _text.Get("notifications", "settings");
                 limit.ActionTip = _text.Get("notifications", "search_limit_tip");
-                limit.ActionGlyph = Syno.Lucide.Settings;
+                limit.ActionGlyph = Syno.Segoe.Settings;
                 break;
             case Toast.Resume resume:
                 resume.Title = _text.Get("notifications", "delayed");
@@ -500,8 +500,8 @@ public sealed class Notifications
                     : failure.Recovery is not null ? _text.Get("file_action", "download_here") : _text.Get("commands", "open_folder");
                 error.ActionTip = error.NeedsFolder ? _text.Get("commands", "set_folder")
                     : failure.Recovery is not null ? _text.Get("file_action", "download_tip") : _text.Get("notifications", "files_folder_tip");
-                error.ActionGlyph = error.NeedsFolder ? Syno.Lucide.FolderInput
-                    : failure.Recovery is not null ? Syno.Lucide.Download : Syno.Lucide.FolderOpen;
+                error.ActionGlyph = error.NeedsFolder ? Syno.Segoe.FolderInput
+                    : failure.Recovery is not null ? Syno.Segoe.Download : Syno.Segoe.FolderOpen;
                 error.Switch = failure.Switch;
                 error.Open.Refresh();
                 error.Reveal.Refresh();
@@ -533,7 +533,7 @@ public sealed class Notifications
                 subtitle.Action = _owner.ShowSubtitleSettings;
                 subtitle.ActionText = _text.Get("notifications", "settings");
                 subtitle.ActionTip = _text.Get("notifications", "subtitles_tip");
-                subtitle.ActionGlyph = Syno.Lucide.Settings;
+                subtitle.ActionGlyph = Syno.Segoe.Settings;
                 break;
             case Toast.Completion completion:
                 completion.Title = _text.Get("notifications", "finished");
@@ -543,7 +543,7 @@ public sealed class Notifications
                     "open_folder_tip",
                     completion.Subject
                 );
-                completion.ActionGlyph = Syno.Lucide.FolderOpen;
+                completion.ActionGlyph = Syno.Segoe.FolderOpen;
                 break;
         }
         toast.CloseText = _text.Get("commands", "close");

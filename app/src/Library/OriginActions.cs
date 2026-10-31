@@ -12,16 +12,16 @@ internal static class OriginActions
         if (browser.Origins.Count <= 1)
             return new MenuCommand(
                 text,
-                Lucide.LocateFixed,
+                Segoe.LocateFixed,
                 Command(browser, browser.Origins.FirstOrDefault())
             );
         return new MenuSubmenu(
             text,
-            Lucide.LocateFixed,
+            Segoe.LocateFixed,
             [
                 .. browser.Origins.Select(origin => new MenuCommand(
                     origin.Name,
-                    Lucide.LocateFixed,
+                    Segoe.LocateFixed,
                     Command(browser, origin)
                 )),
             ]

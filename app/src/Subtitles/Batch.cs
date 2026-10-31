@@ -49,7 +49,7 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
     // Each host draws one button for the batch: Find while none runs and Stop
     // while one does, so the pressed button stays enabled and keeps focus.
     public bool CanAct => Finding ? _model is not null : _model is { CanFind: true } && Count > 0;
-    internal string ActionGlyph => Finding ? Lucide.Square : Lucide.Search;
+    internal string ActionGlyph => Finding ? Segoe.Square : Segoe.Search;
     internal string ActionText => T(Finding ? "stop" : "find");
     internal string ActionHint => T(Finding ? "stop_hint" : "batch_hint");
     public event PropertyChangedEventHandler? PropertyChanged;

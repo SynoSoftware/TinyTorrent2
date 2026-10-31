@@ -167,19 +167,19 @@ public sealed partial class WorkStatus : UserControl
         Count.MinWidth = _probe.DesiredSize.Width;
         Icon.Glyph =
             observation.Execution is WorkExecution.Waiting
-                ? Lucide.Hourglass
+                ? Segoe.Hourglass
                 : observation.Description switch
                 {
-                    WorkDescription.Imdb => Lucide.Database,
-                    WorkDescription.City => Lucide.MapPin,
-                    WorkDescription.Metadata => Lucide.Download,
+                    WorkDescription.Imdb => Segoe.Database,
+                    WorkDescription.City => Segoe.MapPin,
+                    WorkDescription.Metadata => Segoe.Download,
                     WorkDescription.Subtitles { Work: SubtitleWork.Discovery } =>
-                        Lucide.FolderSearch,
-                    WorkDescription.Subtitles => Lucide.Captions,
-                    WorkDescription.FileProperties => Lucide.Files,
-                    WorkDescription.Update => Lucide.RefreshCw,
-                    WorkDescription.Sources => Lucide.FilePlus,
-                    _ => Lucide.Wrench,
+                        Segoe.FolderSearch,
+                    WorkDescription.Subtitles => Segoe.Captions,
+                    WorkDescription.FileProperties => Segoe.Files,
+                    WorkDescription.Update => Segoe.RefreshCw,
+                    WorkDescription.Sources => Segoe.FilePlus,
+                    _ => Segoe.Wrench,
                 };
         Icon.Visibility = _minimal && !IsExpanded ? Visibility.Collapsed : Visibility.Visible;
         Progress.IsIndeterminate =

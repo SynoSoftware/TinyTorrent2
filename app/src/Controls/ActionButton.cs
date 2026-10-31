@@ -4,7 +4,7 @@ using Microsoft.UI.Xaml.Controls;
 
 namespace Syno.TinyTorrent.Controls;
 
-// A labelled button: the Lucide Glyph before the one-word Text, as the
+// A labelled button: the Segoe Glyph before the one-word Text, as the
 // UI contract's button ruling requires of every labelled button.
 public sealed partial class ActionButton : Button
 {
@@ -13,7 +13,7 @@ public sealed partial class ActionButton : Button
 
     private readonly FontIcon _icon = new()
     {
-        FontFamily = Lucide.Font,
+        FontFamily = Segoe.Font,
         FontSize = (double)Application.Current.Resources["TinyTorrentInlineIconSize"],
         VerticalAlignment = VerticalAlignment.Center,
     };
@@ -27,9 +27,9 @@ public sealed partial class ActionButton : Button
     // Marks a button that opens a menu, as DropDownButton's chevron does.
     private readonly FontIcon _chevron = new()
     {
-        FontFamily = Lucide.Font,
+        FontFamily = Segoe.Font,
         FontSize = (double)Application.Current.Resources["TinyTorrentChevronIconSize"],
-        Glyph = Lucide.ChevronDown,
+        Glyph = Segoe.ChevronDown,
         VerticalAlignment = VerticalAlignment.Center,
         Visibility = Visibility.Collapsed,
     };

@@ -78,10 +78,10 @@ public sealed partial class MainWindow
             label.MaxWidth = double.PositiveInfinity;
         TransferStatus.Spacing = 16;
         ContextIcon.Glyph =
-            about ? Syno.Lucide.Info
+            about ? Syno.Segoe.Info
             : library ? Model.Library.StatusGlyph
-            : Model.Page == WindowPage.Settings ? Syno.Lucide.Settings
-            : Syno.Lucide.List;
+            : Model.Page == WindowPage.Settings ? Syno.Segoe.Settings
+            : Syno.Segoe.List;
         SetStatus(CountLabel, Model.CountStatus);
         SetStatus(InformationLabel, Model.Library.InformationStatus);
         var downloadTip = about
@@ -514,7 +514,7 @@ public sealed partial class MainWindow
     private void RefreshTheme()
     {
         Model.IsDark = Root.ActualTheme == ElementTheme.Dark;
-        ThemeIcon.Glyph = Model.IsDark ? Syno.Lucide.Lightbulb : Syno.Lucide.LightbulbOff;
+        ThemeIcon.Glyph = Model.IsDark ? Syno.Segoe.Lightbulb : Syno.Segoe.LightbulbOff;
         NameButton(ThemeButton, Model.Text.Get("chrome", Model.IsDark ? "light" : "dark"));
     }
 

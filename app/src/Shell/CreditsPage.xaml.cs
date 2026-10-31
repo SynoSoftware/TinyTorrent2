@@ -17,7 +17,7 @@ public sealed partial class CreditsPage : UserControl
     [
         new(
             "built",
-            Lucide.Package,
+            Segoe.Package,
             [
                 new(
                     "libtorrent",
@@ -101,14 +101,8 @@ public sealed partial class CreditsPage : UserControl
         ),
         new(
             "artwork",
-            Lucide.Palette,
+            Segoe.Palette,
             [
-                new(
-                    "Lucide",
-                    "lucide",
-                    "https://lucide.dev/",
-                    new("ISC / MIT", "https://lucide.dev/license")
-                ),
                 new(
                     "Fluent UI System Icons",
                     "fluent",
@@ -128,7 +122,7 @@ public sealed partial class CreditsPage : UserControl
         ),
         new(
             "location",
-            Lucide.MapPin,
+            Segoe.MapPin,
             [
                 new(
                     "DB-IP",
@@ -146,7 +140,7 @@ public sealed partial class CreditsPage : UserControl
         ),
         new(
             "video",
-            Lucide.Film,
+            Segoe.Film,
             [
                 new("TMDB", "tmdb", "https://www.themoviedb.org/"),
                 new("IMDb", "imdb", "https://www.imdb.com/"),
@@ -157,7 +151,7 @@ public sealed partial class CreditsPage : UserControl
         ),
         new(
             "subtitles",
-            Lucide.Captions,
+            Segoe.Captions,
             [
                 new("OpenSubtitles", "opensubtitles", "https://www.opensubtitles.com/"),
                 new("SubDL", "subdl", "https://subdl.com/"),
@@ -166,7 +160,7 @@ public sealed partial class CreditsPage : UserControl
         ),
         new(
             "connection",
-            Lucide.Network,
+            Segoe.Network,
             [new("Cloudflare", "cloudflare", "https://speed.cloudflare.com/")]
         ),
     ];
@@ -176,7 +170,7 @@ public sealed partial class CreditsPage : UserControl
     private readonly List<(SettingsLink Link, string Key)> _links = [];
     private readonly List<(TextBlock Text, string Section, string Key)> _notices = [];
     private TextBlock? _publicDomain;
-    private readonly SettingsSection _licences = new() { Glyph = Lucide.ScrollText };
+    private readonly SettingsSection _licences = new() { Glyph = Segoe.ScrollText };
     private readonly TextBlock _project = new()
     {
         Style = (Style)Application.Current.Resources["TinyTorrentTitleDetailTextStyle"],
@@ -208,7 +202,7 @@ public sealed partial class CreditsPage : UserControl
                 {
                     Header = credit.Name,
                     Glyph = group.Glyph,
-                    EndGlyph = Lucide.ExternalLink,
+                    EndGlyph = Segoe.ExternalLink,
                 };
                 AutomationProperties.SetAutomationId(link, "Credit_" + credit.Key);
                 link.Click += (_, _) => LinkRequested?.Invoke(this, new(credit.Address));
@@ -223,8 +217,8 @@ public sealed partial class CreditsPage : UserControl
             {
                 var icon = new FontIcon
                 {
-                    FontFamily = Lucide.Font,
-                    Glyph = Lucide.ExternalLink,
+                    FontFamily = Segoe.Font,
+                    Glyph = Segoe.ExternalLink,
                     FontSize = (double)Application.Current.Resources["TinyTorrentInlineIconSize"],
                 };
                 AutomationProperties.SetAccessibilityView(

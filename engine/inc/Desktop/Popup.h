@@ -22,15 +22,15 @@ class Popup
 public:
     struct MenuItem
     {
-        // A Lucide glyph, drawn when the app's Lucide font is installed beside
-        // the engine.
+        // A glyph of Windows' icon font, the code point the window's
+        // Syno.Segoe names.
         wchar_t glyph;
         std::wstring text;
         std::function<void()> run;
         std::wstring automationId;
     };
 
-    // A button under the message: a Lucide glyph before a short label, as the
+    // A button under the message: an icon glyph before a short label, as the
     // window's buttons are, with a tooltip for what the label does not say.
     struct Action
     {
@@ -185,8 +185,7 @@ private:
     void PaintMenu(HWND window);
     // Where the first menu item begins, below the title and separator.
     int MenuItemsTop(UINT dpi) const;
-    // The width the icons and their gap take before the menu's text; none
-    // without the Lucide font.
+    // The width the icons and their gap take before the menu's text.
     int MenuIconsWidth(UINT dpi) const;
     std::optional<std::size_t> MenuItemAt(POINT point) const;
     RECT MenuBounds(std::size_t item) const;
@@ -246,9 +245,6 @@ private:
     HFONT headline_ = nullptr;
     HFONT glyphs_ = nullptr;
     HFONT icons_ = nullptr;
-    // The app's Lucide font is installed beside the engine; a standalone
-    // engine build draws the menu without icons.
-    bool hasIcons_ = false;
     RECT header_{};
     RECT close_{};
     RECT title_{};

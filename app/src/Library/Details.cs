@@ -37,14 +37,14 @@ internal sealed partial class Details : UserControl, IDisposable
         var fields = new FieldColumns { Primary = left, Secondary = right };
         if (showsFile)
         {
-            Heading(text.Get("inspector", "properties"), Lucide.Info);
-            AddField(left, "name", row.Name, Lucide.File);
+            Heading(text.Get("inspector", "properties"), Segoe.Info);
+            AddField(left, "name", row.Name, Segoe.File);
             AddField(
                 left,
                 "folder",
                 row.Folder,
-                Lucide.Folder,
-                Action(Lucide.FolderOpen, text.Get("commands", "open_folder"), library.OpenFolder)
+                Segoe.Folder,
+                Action(Segoe.FolderOpen, text.Get("commands", "open_folder"), library.OpenFolder)
             );
             var origins = new StackPanel();
             left.Children.Add(origins);
@@ -64,7 +64,7 @@ internal sealed partial class Details : UserControl, IDisposable
                 foreach (var origin in shownOrigins)
                 {
                     var show = Action(
-                        Lucide.LocateFixed,
+                        Segoe.LocateFixed,
                         text.Get("library", "show_torrents"),
                         new RelayCommand(
                             () =>
@@ -79,14 +79,14 @@ internal sealed partial class Details : UserControl, IDisposable
                         new Field
                         {
                             Label = text.Get("menus", "torrent"),
-                            Glyph = Lucide.LocateFixed,
+                            Glyph = Segoe.LocateFixed,
                             Content = Value(origin.Name),
                             Action = show,
                         }
                     );
                 }
             });
-            AddField(right, "size", row.Size, Lucide.HardDrive);
+            AddField(right, "size", row.Size, Segoe.HardDrive);
             var fileType = new Field
             {
                 Label = text.Get("library", "file_type"),
@@ -105,7 +105,7 @@ internal sealed partial class Details : UserControl, IDisposable
             var application = new Field
             {
                 Label = text.Get("library", "opens_with"),
-                Glyph = Lucide.Play,
+                Glyph = Segoe.Play,
                 Content = associated,
             };
             right.Children.Add(application);
@@ -122,8 +122,8 @@ internal sealed partial class Details : UserControl, IDisposable
                 icon.Source = library.ApplicationIcon;
                 icon.Visibility = icon.Source is null ? Visibility.Collapsed : Visibility.Visible;
             });
-            AddField(right, "created", row.Created, Lucide.Calendar);
-            AddField(right, "modified", row.Modified, Lucide.Clock);
+            AddField(right, "created", row.Created, Segoe.Calendar);
+            AddField(right, "modified", row.Modified, Segoe.Clock);
         }
         else
         {
@@ -206,10 +206,10 @@ internal sealed partial class Details : UserControl, IDisposable
             WrapPanel? cast = null;
             if (row.Entry.Kind == FileKind.Audio)
             {
-                first = Section("artist", row.Artist, Lucide.Users, true);
-                second = Section("album", row.Album, Lucide.Disc, true);
-                AddField(right, "track", row.Track, Lucide.ListMusic);
-                AddField(right, "duration", row.Duration, Lucide.Clock);
+                first = Section("artist", row.Artist, Segoe.Users, true);
+                second = Section("album", row.Album, Segoe.Disc, true);
+                AddField(right, "track", row.Track, Segoe.ListMusic);
+                AddField(right, "duration", row.Duration, Segoe.Clock);
                 if (
                     first is null
                     && second is null
@@ -217,7 +217,7 @@ internal sealed partial class Details : UserControl, IDisposable
                     && row.Year.Length == 0
                     && row.Genres.Length == 0
                 )
-                    AddField(left, "tags", text.Get("library", "no_tags"), Lucide.Music);
+                    AddField(left, "tags", text.Get("library", "no_tags"), Segoe.Music);
             }
             else
             {
@@ -236,7 +236,7 @@ internal sealed partial class Details : UserControl, IDisposable
                     {
                         var message = library.AutomaticWait ?? text.Get("library", "no_metadata");
                         SetValue(metadata, message);
-                        metadata.Glyph = Lucide.ScanSearch;
+                        metadata.Glyph = Segoe.ScanSearch;
                         ToolTipService.SetToolTip(metadata, message);
                     });
                 }
@@ -248,7 +248,7 @@ internal sealed partial class Details : UserControl, IDisposable
                     first = new Controls.Section
                     {
                         Header = text.Get("library", "synopsis"),
-                        Glyph = Lucide.AlignLeft,
+                        Glyph = Segoe.AlignLeft,
                         Content = new TextBlock
                         {
                             Style = (Style)
@@ -266,7 +266,7 @@ internal sealed partial class Details : UserControl, IDisposable
                     second = new Controls.Section
                     {
                         Header = text.Get("library", "cast"),
-                        Glyph = Lucide.Users,
+                        Glyph = Segoe.Users,
                         Content = cast,
                     };
                     var synopsis = first!;
@@ -294,9 +294,9 @@ internal sealed partial class Details : UserControl, IDisposable
                         )
                             castNames.Children.Add(Listed(Value(name)));
                     });
-                    var boxOffice = AddFact("box_office", Lucide.Ticket);
-                    var certification = AddFact("certification", Lucide.ShieldCheck);
-                    var directors = AddFact("directors_one", Lucide.Clapperboard);
+                    var boxOffice = AddFact("box_office", Segoe.Ticket);
+                    var certification = AddFact("certification", Segoe.ShieldCheck);
+                    var directors = AddFact("directors_one", Segoe.Clapperboard);
                     _refresh.Add(() =>
                     {
                         SetValue(boxOffice, library.BoxOffice);
@@ -326,13 +326,13 @@ internal sealed partial class Details : UserControl, IDisposable
                 _fetchMessage = new Field
                 {
                     Label = text.Get("library", "metadata"),
-                    Glyph = Lucide.ScanSearch,
+                    Glyph = Segoe.ScanSearch,
                     Content = Value(library.FetchMessage),
                 };
                 left.Children.Add(_fetchMessage);
             }
-            AddField(right, "year", row.Year, Lucide.Calendar);
-            AddField(right, "genres", row.Genres, Lucide.Tag);
+            AddField(right, "year", row.Year, Segoe.Calendar);
+            AddField(right, "genres", row.Genres, Segoe.Tag);
             fields.Secondary = right.Children.Count > 0 ? right : null;
             var sections = new FieldColumns
             {
@@ -448,7 +448,7 @@ internal sealed partial class Details : UserControl, IDisposable
                     new Field
                     {
                         Label = text.Get("library", "ratings"),
-                        Glyph = Lucide.Star,
+                        Glyph = Segoe.Star,
                         Content = ratings,
                         VerticalContentAlignment = VerticalAlignment.Top,
                     }
@@ -516,7 +516,7 @@ internal sealed partial class Details : UserControl, IDisposable
                 Style = (Style)Application.Current.Resources["TinyTorrentSubtleButtonStyle"],
                 Content = new FontIcon
                 {
-                    FontFamily = Lucide.Font,
+                    FontFamily = Segoe.Font,
                     Glyph = glyph,
                     FontSize = (double)Application.Current.Resources["TinyTorrentButtonIconSize"],
                 },

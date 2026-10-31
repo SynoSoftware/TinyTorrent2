@@ -13,8 +13,8 @@
           <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
         <FontIcon
-          FontFamily="{x:Bind icons:Lucide.Font}"
-          Glyph="{x:Bind icons:Lucide.SlidersHorizontal}"
+          FontFamily="{x:Bind icons:Segoe.Font}"
+          Glyph="{x:Bind icons:Segoe.SlidersHorizontal}"
           FontSize="{StaticResource TinyTorrentHeaderIconSize}"
           VerticalAlignment="Center"
         />
@@ -79,8 +79,8 @@
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
         <FontIcon
-          FontFamily="{x:Bind icons:Lucide.Font}"
-          Glyph="{x:Bind icons:Lucide.Gauge}"
+          FontFamily="{x:Bind icons:Segoe.Font}"
+          Glyph="{x:Bind icons:Segoe.Gauge}"
           FontSize="{StaticResource TinyTorrentHeaderIconSize}"
           VerticalAlignment="Center"
         />
@@ -100,8 +100,8 @@
         </StackPanel>
         <FontIcon
           Grid.Column="2"
-          FontFamily="{x:Bind icons:Lucide.Font}"
-          Glyph="{x:Bind icons:Lucide.ChevronRight}"
+          FontFamily="{x:Bind icons:Segoe.Font}"
+          Glyph="{x:Bind icons:Segoe.ChevronRight}"
           FontSize="{StaticResource TinyTorrentChevronIconSize}"
         />
       </Grid>

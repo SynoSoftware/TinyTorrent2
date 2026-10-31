@@ -135,7 +135,7 @@
         <StackPanel Orientation="Horizontal" Spacing="12">
           <local:ActionButton
             x:Name="AddPeriod"
-            Glyph="{x:Bind icons:Lucide.Plus}"
+            Glyph="{x:Bind icons:Segoe.Plus}"
             IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}"
             Text="{x:Bind Model.Text.Get('settings', 'add_period'), Mode=OneWay}"
             ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'add_period_tip'), Mode=OneWay}"

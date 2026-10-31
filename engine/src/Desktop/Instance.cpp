@@ -203,9 +203,9 @@ void Conflict::Ask()
         reason = "failed";
         break;
     }
-    // Lucide's power glyph, as the tray's Exit shows. A pending request
+    // Syno.Segoe.Power, as the tray's Exit shows. A pending request
     // disables it, because a second one would wait behind the first.
-    Popup::Action exit{.glyph = L'\uE140', .label = strings_.Text("tray", "exit"),
+    Popup::Action exit{.glyph = L'\uE7E8', .label = strings_.Text("tray", "exit"),
         .tooltip = strings_.Text("conflict", "exit_tip"), .run = [this] { Exit(); }, .closes = false,
         .enabled = !request_.valid(), .automationId = L"Exit"};
     // Both answers leave the prompt open until the other engine has ended.

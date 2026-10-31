@@ -134,15 +134,15 @@ public sealed partial class SettingsPage : UserControl
         foreach (
             var (item, glyph, asset) in new[]
             {
-                (HomeCategory, Lucide.House, "home"),
-                (GeneralCategory, Lucide.Settings, "general"),
-                (TransfersCategory, Lucide.ArrowDownUp, "transfers"),
-                (LimitsCategory, Lucide.SlidersHorizontal, "limits"),
-                (ScheduleCategory, Lucide.CalendarClock, "schedule"),
-                (AppearanceCategory, Lucide.Palette, "appearance"),
-                (NetworkCategory, Lucide.Network, "network"),
-                (PluginsCategory, Lucide.Puzzle, "library"),
-                (AdvancedCategory, Lucide.Wrench, "advanced"),
+                (HomeCategory, Segoe.House, "home"),
+                (GeneralCategory, Segoe.Settings, "general"),
+                (TransfersCategory, Segoe.ArrowDownUp, "transfers"),
+                (LimitsCategory, Segoe.SlidersHorizontal, "limits"),
+                (ScheduleCategory, Segoe.CalendarClock, "schedule"),
+                (AppearanceCategory, Segoe.Palette, "appearance"),
+                (NetworkCategory, Segoe.Network, "network"),
+                (PluginsCategory, Segoe.Puzzle, "library"),
+                (AdvancedCategory, Segoe.Wrench, "advanced"),
             }
         )
         {
@@ -150,7 +150,7 @@ public sealed partial class SettingsPage : UserControl
             {
                 item.Icon = new FontIcon
                 {
-                    FontFamily = Lucide.Font,
+                    FontFamily = Segoe.Font,
                     Glyph = glyph,
                     FontSize = size,
                 };
@@ -514,14 +514,14 @@ public sealed partial class SettingsPage : UserControl
                 "schedule",
                 () => Main.ScheduleSummary,
                 new(SettingsCategory.Schedule, "weekly_schedule"),
-                Syno.Lucide.CalendarClock
+                Syno.Segoe.CalendarClock
             );
             AddLink(
                 RelatedLinks,
                 "queue",
                 () => Model.QueueSummary,
                 new(SettingsCategory.Transfers, "queue"),
-                Syno.Lucide.ListOrdered
+                Syno.Segoe.ListOrdered
             );
         }
         else if (_category == ScheduleCategory)
@@ -571,7 +571,7 @@ public sealed partial class SettingsPage : UserControl
 
     private void RefreshAdvancedMode()
     {
-        AdvancedModeIcon.Glyph = _showAdvanced ? Lucide.SquareCheck : Lucide.Square;
+        AdvancedModeIcon.Glyph = _showAdvanced ? Segoe.SquareCheck : Segoe.Square;
         AutomationProperties.SetItemStatus(
             AdvancedMode,
             _showAdvanced ? Model.OnText : Model.OffText

@@ -13,8 +13,8 @@ public sealed partial class ConnectionPage : UserControl
 {
     private readonly UISettings _display = new();
     private bool _composing;
-    private readonly Speedometer _downloadMeter = new(Syno.Lucide.Download);
-    private readonly Speedometer _uploadMeter = new(Syno.Lucide.Upload);
+    private readonly Speedometer _downloadMeter = new(Syno.Segoe.Download);
+    private readonly Speedometer _uploadMeter = new(Syno.Segoe.Upload);
     private string? _meterId;
     public ConnectionSetup Model { get; }
     public event EventHandler? ReturnRequested;

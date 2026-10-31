@@ -16,7 +16,7 @@ libtorrent's default sparse files.
 
 **Owner ruling: the Settings page background is the window's acrylic with two
 translucent gear marks.** The page sets no background of its own, so the
-window's acrylic shows between and around the cards. Two large Lucide Cog glyphs
+window's acrylic shows between and around the cards. Two large Segoe Cog glyphs
 in the accent colour overhang the top-left and bottom-right corners behind the
 content, at 4% opacity in the light theme and 3% in the dark theme, and hidden
 in High Contrast. They take no input and screen readers skip them. This is the
@@ -69,11 +69,11 @@ changes.
 
 Settings category icons use Microsoft's Fluent color SVGs at that
 [Surface](../ui.md#icon-sizes) size, to make the categories easier to recognize. This is
-the sidebar exception to Lucide iconography; High Contrast uses the existing
-Lucide glyphs at the same size and native colors. Only the used assets and their
+the sidebar exception to Segoe iconography; High Contrast uses the existing
+Segoe glyphs at the same size and native colors. Only the used assets and their
 MIT license ship with the app.
 
-**Owner ruling: both footer actions use neutral Lucide icons.** Advanced mode
+**Owner ruling: both footer actions use neutral Segoe icons.** Advanced mode
 uses checked and empty squares; the return action uses a plain left arrow.
 These familiar symbols make the actions and their state immediately readable.
 Both retain the shared 24-DIP size and inherit the native navigation foreground,
@@ -84,7 +84,7 @@ settings cover both downloading and uploading.
 ## Category headers
 
 **Owner ruling: Settings tab headers put the category title above a summary row
-with artwork and two compact facts with Lucide icons at the end.** The artwork
+with artwork and two compact facts with Segoe icons at the end.** The artwork
 stays visible on every tab. Summary text is optional: General, Appearance and
 Advanced omit the generic product name and version, because they add no context
 to those settings. Plugins summarises Library and its status.
@@ -331,7 +331,7 @@ row appears only when Apply makes that change. Any other choice belongs to the p
 Preset identity comes from confirmed settings, not a separate profile. Test measures
 real download and upload capacity through the engine's
 [temporary suspension](../engine/settings.md#connection-measurement). The full-width test
-card uses the approved C original sweep, large segmented numbers and Lucide
+card uses the approved C original sweep, large segmented numbers and Segoe
 download/upload captions. Both directions share one 1/2/5 scale, so equal
 speeds fill equal arcs. It starts from the larger entered capacity, or the
 first measured value when capacity is unknown, and expands without shrinking

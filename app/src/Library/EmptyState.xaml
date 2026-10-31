@@ -21,37 +21,37 @@
     />
     <controls:ActionButton
       x:Name="Videos"
-      Glyph="{x:Bind icons:Lucide.Film}"
+      Glyph="{x:Bind icons:Segoe.Film}"
       HorizontalAlignment="Center"
       AutomationProperties.AutomationId="LibraryMatches-Videos"
     />
     <controls:ActionButton
       x:Name="Music"
-      Glyph="{x:Bind icons:Lucide.Music}"
+      Glyph="{x:Bind icons:Segoe.Music}"
       HorizontalAlignment="Center"
       AutomationProperties.AutomationId="LibraryMatches-Music"
     />
     <controls:ActionButton
       x:Name="Files"
-      Glyph="{x:Bind icons:Lucide.Files}"
+      Glyph="{x:Bind icons:Segoe.Files}"
       HorizontalAlignment="Center"
       AutomationProperties.AutomationId="LibraryMatches-Files"
     />
     <controls:ActionButton
       x:Name="Torrents"
-      Glyph="{x:Bind icons:Lucide.Download}"
+      Glyph="{x:Bind icons:Segoe.Download}"
       HorizontalAlignment="Center"
       AutomationProperties.AutomationId="LibraryShowTorrents"
     />
     <controls:ActionButton
       x:Name="ClearSearch"
-      Glyph="{x:Bind icons:Lucide.X}"
+      Glyph="{x:Bind icons:Segoe.X}"
       HorizontalAlignment="Center"
       AutomationProperties.AutomationId="LibraryClearSearch"
     />
     <controls:ActionButton
       x:Name="ClearFilters"
-      Glyph="{x:Bind icons:Lucide.X}"
+      Glyph="{x:Bind icons:Segoe.X}"
       HorizontalAlignment="Center"
       AutomationProperties.AutomationId="LibraryClearFilters"
     />

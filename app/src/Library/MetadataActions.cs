@@ -31,7 +31,7 @@ internal static class MetadataActions
                         new MenuSeparator(),
                         new MenuCommand(
                             browser.Text.Get("commands", "settings"),
-                            Lucide.Settings,
+                            Segoe.Settings,
                             browser.ShowSettings
                         )
                         {
@@ -52,7 +52,7 @@ internal static class MetadataActions
         return browser.DownloadProviders.Select(option =>
             new MenuCommand(
                 option.Name,
-                Lucide.Database,
+                Segoe.Database,
                 new RelayCommand(
                     () => browser.Fetch(option),
                     () => ReferenceEquals(row, browser.Selected)

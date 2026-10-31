@@ -385,7 +385,7 @@ Popup::Content Toasts::Message(Toast const& toast) const
         content.title = strings_.Text("notification", "move_failed");
         content.body = strings_.Text("error", "move_source_unavailable");
         content.location = Popup::Location{strings_.Text("notification", "download_folder"), Wide(toast.recovery->destination)};
-        content.actions.push_back({.glyph = L'\uE0B2', .label = strings_.Text("notification", "download"),
+        content.actions.push_back({.glyph = L'\uE896', .label = strings_.Text("notification", "download"),
             .tooltip = strings_.Text("notification", "download_tip"),
             .run = [this, recovery = *toast.recovery] { commands_.recoverMove(recovery); },
             .automationId = L"DownloadElsewhere"});
@@ -423,7 +423,7 @@ Popup::Content Toasts::Message(Toast const& toast) const
             auto folder = destinationError ? toast.folder : commands_.folder(toast.torrentId);
             if (!folder.empty() && toast.code != "move_failed" && toast.code != "move_interrupted")
                 content.location = Popup::Location{strings_.Text("notification", "download_folder"), Wide(folder)};
-            content.actions.push_back({.glyph = L'\uE106', .label = strings_.Text("notification", "show_torrent"),
+            content.actions.push_back({.glyph = L'\uEA37', .label = strings_.Text("notification", "show_torrent"),
                 .tooltip = strings_.Text("notification", "show_torrent_tip"), .run = content.select,
                 .closes = false, .automationId = L"ShowTorrent"});
             // Retry answers an error that the engine stopped retrying; the
@@ -435,7 +435,7 @@ Popup::Content Toasts::Message(Toast const& toast) const
             }
             else if (!destinationError)
             {
-                content.actions.push_back({.glyph = L'\uE247', .label = strings_.Text("notification", "open_folder"),
+                content.actions.push_back({.glyph = L'\uE838', .label = strings_.Text("notification", "open_folder"),
                     .tooltip = strings_.Text("notification", "files_folder_tip"),
                     .run = [this, id = toast.torrentId]
                     {
@@ -522,25 +522,25 @@ std::function<void()> Toasts::Selection(Toast const& toast) const
     return commands_.open;
 }
 
-// Lucide's rotate-ccw glyph, as the window's Retry button shows.
+// Syno.Segoe.RotateCcw, as the window's Retry button shows.
 Popup::Action Toasts::Retry(Strings const& strings, std::wstring tooltip, std::function<void()> run)
 {
-    return {.glyph = L'\uE148', .label = strings.Text("notification", "retry"), .tooltip = std::move(tooltip),
+    return {.glyph = L'\uE777', .label = strings.Text("notification", "retry"), .tooltip = std::move(tooltip),
         .run = std::move(run), .automationId = L"Retry"};
 }
 
-// Lucide's folder-open glyph. Open alone would read as opening the window, so
+// Syno.Segoe.FolderOpen. Open alone would read as opening the window, so
 // the label names the folder. Showing a folder leaves the popup open.
 Popup::Action Toasts::OpenFolder(Strings const& strings, std::filesystem::path folder, std::wstring tooltip)
 {
-    return {.glyph = L'\uE247', .label = strings.Text("notification", "open_folder"), .tooltip = std::move(tooltip),
+    return {.glyph = L'\uE838', .label = strings.Text("notification", "open_folder"), .tooltip = std::move(tooltip),
         .run = [folder = std::move(folder)] { ShowFolder(folder); }, .closes = false, .automationId = L"OpenFolder"};
 }
 
-// Lucide's power glyph, as the window's Exit command shows.
+// Syno.Segoe.Power, as the window's Exit command shows.
 Popup::Action Toasts::ForceExit(Strings const& strings, std::function<void()> run)
 {
-    return {.glyph = L'\uE140', .label = strings.Text("notification", "force_exit"),
+    return {.glyph = L'\uE7E8', .label = strings.Text("notification", "force_exit"),
         .tooltip = strings.Text("notification", "force_exit_tip"), .run = std::move(run),
         .automationId = L"ForceExit"};
 }
@@ -578,17 +578,17 @@ void Toasts::SetMenu(Popup::Content& content, std::optional<Setting> setting)
     content.menuTitle = strings_.Text("notification", "fewer");
     content.menu = {
         OptOut(*setting, strings_.Text("notification", "off_" + std::string(*word))),
-        {L'\uE05A', strings_.Text("notification", "off_all"), [this]
+        {L'\uE7ED', strings_.Text("notification", "off_all"), [this]
         {
             TurnOff(Engine::NotificationSettings());
         }, L"TurnOffAll"},
-        {L'\uE154', strings_.Text("notification", "settings"),
+        {L'\uE713', strings_.Text("notification", "settings"),
             [this] { commands_.openSettings("notifications"); }, L"NotificationSettings"}};
 }
 
 Popup::MenuItem Toasts::OptOut(Setting setting, std::wstring label, std::shared_ptr<Answer> answer)
 {
-    return {L'\uE1F0', std::move(label), [this, setting, answer]
+    return {L'\uE7ED', std::move(label), [this, setting, answer]
     {
         if (answer)
             answering_ = answer;

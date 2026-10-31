@@ -113,8 +113,8 @@
                     <ColumnDefinition Width="*" />
                   </Grid.ColumnDefinitions>
                   <FontIcon
-                    FontFamily="{x:Bind icons:Lucide.Font}"
-                    Glyph="{x:Bind icons:Lucide.Folder}"
+                    FontFamily="{x:Bind icons:Segoe.Font}"
+                    Glyph="{x:Bind icons:Segoe.Folder}"
                     FontSize="{StaticResource TinyTorrentInlineIconSize}"
                     VerticalAlignment="Center"
                   />
@@ -191,7 +191,7 @@
         </Grid.ColumnDefinitions>
         <FontIcon
           x:Name="ConsequenceIcon"
-          FontFamily="{x:Bind icons:Lucide.Font}"
+          FontFamily="{x:Bind icons:Segoe.Font}"
           Glyph="{x:Bind Removal.ConsequenceGlyph, Mode=OneWay}"
           FontSize="{StaticResource TinyTorrentInlineIconSize}"
           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
@@ -275,7 +275,7 @@
           Error="{x:Bind Move.DestinationError, Mode=OneWay}"
         />
         <controls:ActionButton
-          Glyph="{x:Bind icons:Lucide.FolderSearch}"
+          Glyph="{x:Bind icons:Segoe.FolderSearch}"
           ToolTipService.ToolTip="{x:Bind Model.Text.Get('file_action', 'browse_tip'), Mode=OneWay}"
           x:Name="Browse"
           Text="{x:Bind Model.Text.Get('add', 'browse'), Mode=OneWay}"
@@ -308,7 +308,7 @@
       >
         <InfoBar.ActionButton>
           <controls:ActionButton
-            Glyph="{x:Bind icons:Lucide.RotateCw}"
+            Glyph="{x:Bind icons:Segoe.RotateCw}"
             ToolTipService.ToolTip="{x:Bind Model.Text.Get('file_action', 'refresh_tip'), Mode=OneWay}"
             x:Name="Refresh"
             Text="{x:Bind Model.Text.Get('file_action', 'refresh'), Mode=OneWay}"
@@ -330,7 +330,7 @@
       >
         <InfoBar.ActionButton>
           <controls:ActionButton
-            Glyph="{x:Bind icons:Lucide.RotateCcw}"
+            Glyph="{x:Bind icons:Segoe.RotateCcw}"
             ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection', 'restart_tip'), Mode=OneWay}"
             AutomationProperties.AutomationId="FileRestart"
             Text="{x:Bind Model.RestartText, Mode=OneWay}"

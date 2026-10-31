@@ -124,7 +124,7 @@
         Grid.Column="2"
         HorizontalAlignment="Right"
         VerticalAlignment="Bottom"
-        Glyph="{x:Bind icons:Lucide.Trash2}"
+        Glyph="{x:Bind icons:Segoe.Trash2}"
         Text="{x:Bind Model.Text.Get('settings', 'delete'), Mode=OneWay}"
         IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}"
         ToolTipService.ToolTip="{x:Bind Model.OpenPeriod.DeleteName, Mode=OneWay}"

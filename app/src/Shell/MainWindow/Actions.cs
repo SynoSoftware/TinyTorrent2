@@ -29,9 +29,9 @@ public sealed partial class MainWindow
 
     private IReadOnlyList<MenuEntry> WorkspaceMenu(string group) =>
         [
-            new MenuChoice(Model.Text.Get("window", "torrents"), Syno.Lucide.List,
+            new MenuChoice(Model.Text.Get("window", "torrents"), Syno.Segoe.List,
                 NavigationPage == WindowPage.Torrents, Model.ShowTorrents) { Group = group },
-            new MenuChoice(Model.Text.Get("library", "title"), Syno.Lucide.FolderOpen,
+            new MenuChoice(Model.Text.Get("library", "title"), Syno.Segoe.FolderOpen,
                 NavigationPage == WindowPage.Library, Model.ShowLibrary) { Group = group },
         ];
 
@@ -248,7 +248,7 @@ public sealed partial class MainWindow
         var firstLast = MainViewModel.Shared(selection.Rows, row => row.FirstLast, cancellation);
         var limited = MainViewModel.Shared(selection.Rows, row => row.IsLimited, cancellation);
         var retry = selection.CanEdit && selection.Rows.Any(row => row.CanRetry);
-        List<MenuEntry> entries = [new MenuHeading(text.Format("window", "selected", selection.Rows.Length), Lucide.ListChecks)];
+        List<MenuEntry> entries = [new MenuHeading(text.Format("window", "selected", selection.Rows.Length), Segoe.ListChecks)];
         foreach (var command in commands)
         {
             cancellation.ThrowIfCancellationRequested();
@@ -268,13 +268,13 @@ public sealed partial class MainWindow
         MenuItems.Fill(
             FileMenu.Items,
             [
-                Command("add_file", Model.Add, Syno.Lucide.FilePlus),
-                Command("add_magnet", Model.AddMagnet, Syno.Lucide.Link),
+                Command("add_file", Model.Add, Syno.Segoe.FilePlus),
+                Command("add_magnet", Model.AddMagnet, Syno.Segoe.Link),
                 new MenuSeparator(),
-                Command("settings", Model.ShowSettings, Syno.Lucide.Settings),
+                Command("settings", Model.ShowSettings, Syno.Segoe.Settings),
                 new MenuSeparator(),
-                Command("close", Model.CloseWindow, Syno.Lucide.X),
-                Command("exit", Model.Exit, Syno.Lucide.Power),
+                Command("close", Model.CloseWindow, Syno.Segoe.X),
+                Command("exit", Model.Exit, Syno.Segoe.Power),
             ],
             Model.Text
         );
@@ -286,9 +286,9 @@ public sealed partial class MainWindow
                 [
                     .. torrent,
                     new MenuSeparator(),
-                    Command("pause_all", Model.PauseAll, Syno.Lucide.Pause),
-                    Command("resume_all", Model.ResumeAll, Syno.Lucide.Play),
-                    Command("limits", Model.Limits, Syno.Lucide.Gauge),
+                    Command("pause_all", Model.PauseAll, Syno.Segoe.Pause),
+                    Command("resume_all", Model.ResumeAll, Syno.Segoe.Play),
+                    Command("limits", Model.Limits, Syno.Segoe.Gauge),
                 ],
             Model.Text
         );
@@ -298,7 +298,7 @@ public sealed partial class MainWindow
             new MenuSeparator(),
             new MenuChoice(
                 Model.Text.Get("filters", "title"),
-                Syno.Lucide.Funnel,
+                Syno.Segoe.Funnel,
                 Model.ShowsFilters,
                 Model.SwitchFilters
             )
@@ -307,7 +307,7 @@ public sealed partial class MainWindow
             },
             new MenuChoice(
                 Model.Text.Get("inspector", "title"),
-                Syno.Lucide.PanelBottom,
+                Syno.Segoe.PanelBottom,
                 Model.HasInspector,
                 _switchInspector ??= new RelayCommand(SwitchInspector, () => true)
             )
@@ -318,7 +318,7 @@ public sealed partial class MainWindow
         view.Add(
             new MenuChoice(
                 Model.Text.Get("menus", "toolbar"),
-                Syno.Lucide.PanelTop,
+                Syno.Segoe.PanelTop,
                 Model.IsToolbarOpen,
                 Model.SwitchToolbar
             )
@@ -329,21 +329,21 @@ public sealed partial class MainWindow
         if (library)
             view.AddRange(LibraryViewMenu());
         view.Add(new MenuSeparator());
-        view.Add(Command("selected_map", SelectedMap, Syno.Lucide.GraphStar));
-        view.Add(Command("all_map", AllMap, Syno.Lucide.Globe2));
+        view.Add(Command("selected_map", SelectedMap, Syno.Segoe.GraphStar));
+        view.Add(Command("all_map", AllMap, Syno.Segoe.Globe2));
         MenuItems.Fill(ViewMenu.Items, view, Model.Text);
         MenuItems.Fill(
             HelpMenu.Items,
             [
                 new MenuCommand(
                     Model.UpdateText,
-                    Syno.Lucide.CircleFadingArrowUp,
+                    Syno.Segoe.CircleFadingArrowUp,
                     Model.Updates.Check
                 )
                 {
                     AccessKey = MenuKey("update"),
                 },
-                new MenuCommand(Model.Text.Get("about", "title"), Syno.Lucide.Info, Model.ShowAbout)
+                new MenuCommand(Model.Text.Get("about", "title"), Syno.Segoe.Info, Model.ShowAbout)
                 {
                     AccessKey = MenuKey("about"),
                 },
@@ -361,7 +361,7 @@ public sealed partial class MainWindow
                         Torrents.Selection.Items.Count == 1
                             ? ((Torrent)Torrents.Selection.Items[0]).Name
                             : Model.SelectionText,
-                        Syno.Lucide.ListChecks
+                        Syno.Segoe.ListChecks
                     ),
                     .. Selection(properties: !Model.HasInspector),
                 ],
@@ -375,30 +375,30 @@ public sealed partial class MainWindow
 
     private IEnumerable<MenuEntry> Selection(bool properties, bool includeRetry = false)
     {
-        yield return Command("pause", Model.Pause, Syno.Lucide.Square);
-        yield return Command("resume", Model.Resume, Syno.Lucide.Play);
-        yield return Command("force", Model.Force, Syno.Lucide.Zap);
+        yield return Command("pause", Model.Pause, Syno.Segoe.Square);
+        yield return Command("resume", Model.Resume, Syno.Segoe.Play);
+        yield return Command("force", Model.Force, Syno.Segoe.Zap);
         if (includeRetry || Model.Retry.CanExecute(null))
-            yield return Command("retry", Model.Retry, Syno.Lucide.RotateCcw);
+            yield return Command("retry", Model.Retry, Syno.Segoe.RotateCcw);
         yield return new MenuSeparator();
-        yield return Command("open", Model.Open, Syno.Lucide.File);
-        yield return Command("open_folder", Model.OpenFolder, Syno.Lucide.FolderOpen);
-        yield return Command("copy_magnet", Model.CopyMagnet, Syno.Lucide.Link);
-        yield return Command("copy_hash", Model.CopyHash, Syno.Lucide.Hash);
+        yield return Command("open", Model.Open, Syno.Segoe.File);
+        yield return Command("open_folder", Model.OpenFolder, Syno.Segoe.FolderOpen);
+        yield return Command("copy_magnet", Model.CopyMagnet, Syno.Segoe.Link);
+        yield return Command("copy_hash", Model.CopyHash, Syno.Segoe.Hash);
         if (properties)
-            yield return Command("properties", Model.Properties, Syno.Lucide.Info);
+            yield return Command("properties", Model.Properties, Syno.Segoe.Info);
         yield return new MenuSeparator();
-        yield return Command("verify", Model.Verify, Syno.Lucide.BookOpenCheck);
-        yield return Command("move", Model.MoveFiles, Syno.Lucide.FolderInput);
-        yield return Command("set_folder", Model.SetFolder, Syno.Lucide.FolderInput);
+        yield return Command("verify", Model.Verify, Syno.Segoe.BookOpenCheck);
+        yield return Command("move", Model.MoveFiles, Syno.Segoe.FolderInput);
+        yield return Command("set_folder", Model.SetFolder, Syno.Segoe.FolderInput);
         yield return new MenuSubmenu(
             Model.Text.Get("menus", "queue"),
-            Syno.Lucide.ListOrdered,
+            Syno.Segoe.ListOrdered,
             [
-                Command("up", Model.Up, Syno.Lucide.ArrowUp),
-                Command("down", Model.Down, Syno.Lucide.ArrowDown),
-                Command("top", Model.Top, Syno.Lucide.ArrowUpToLine),
-                Command("bottom", Model.Bottom, Syno.Lucide.ArrowDownToLine),
+                Command("up", Model.Up, Syno.Segoe.ArrowUp),
+                Command("down", Model.Down, Syno.Segoe.ArrowDown),
+                Command("top", Model.Top, Syno.Segoe.ArrowUpToLine),
+                Command("bottom", Model.Bottom, Syno.Segoe.ArrowDownToLine),
             ]
         )
         {
@@ -409,7 +409,7 @@ public sealed partial class MainWindow
         yield return Choice("first_last", Model.SwitchFirstLast, Model.FirstLast);
         yield return Choice("speed_limit", Model.LimitSpeed, Model.Limited);
         yield return new MenuSeparator();
-        yield return Command("remove", Model.Remove, Syno.Lucide.Trash2);
+        yield return Command("remove", Model.Remove, Syno.Segoe.Trash2);
     }
 
     private MenuCommand Command(string name, ICommand command, string glyph) =>
@@ -450,7 +450,7 @@ public sealed partial class MainWindow
     {
         await Interact(async interaction =>
         {
-            var dialog = new Dialog { Glyph = Syno.Lucide.Merge, PrimaryGlyph = Syno.Lucide.Merge };
+            var dialog = new Dialog { Glyph = Syno.Segoe.Merge, PrimaryGlyph = Syno.Segoe.Merge };
             var choice = await ShowDialog(
                 interaction,
                 dialog,
@@ -669,8 +669,8 @@ public sealed partial class MainWindow
             var dialog = new Dialog
             {
                 Content = content,
-                Glyph = Syno.Lucide.Gauge,
-                PrimaryGlyph = Syno.Lucide.Check,
+                Glyph = Syno.Segoe.Gauge,
+                PrimaryGlyph = Syno.Segoe.Check,
             };
             await ShowEditor(
                 interaction,
@@ -701,8 +701,8 @@ public sealed partial class MainWindow
             {
                 Content = content,
                 Footer = new DialogFooter.Check(content.Status),
-                Glyph = Syno.Lucide.Route,
-                PrimaryGlyph = Syno.Lucide.Check,
+                Glyph = Syno.Segoe.Route,
+                PrimaryGlyph = Syno.Segoe.Check,
             };
             dialog.SizeToContent();
             try

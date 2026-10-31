@@ -171,10 +171,10 @@ public sealed partial class FileBrowser : UserControl
         var menu = MenuItems.Flyout(
             () =>
                 [
-                    Choice("skip", 0, Lucide.CircleSlash),
-                    Choice("low", 1, Lucide.ArrowDown),
-                    Choice("normal", 4, Lucide.Minus),
-                    Choice("high", 7, Lucide.ArrowUp),
+                    Choice("skip", 0, Segoe.CircleSlash),
+                    Choice("low", 1, Segoe.ArrowDown),
+                    Choice("normal", 4, Segoe.Minus),
+                    Choice("high", 7, Segoe.ArrowUp),
                 ],
             () => Model.Text
         );

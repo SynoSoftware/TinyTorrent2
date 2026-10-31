@@ -17,7 +17,7 @@
       TargetType="FontIcon"
       BasedOn="{StaticResource TinyTorrentStatusIconStyle}"
     >
-      <Setter Property="FontFamily" Value="{ThemeResource LucideFont}" />
+      <Setter Property="FontFamily" Value="{ThemeResource SegoeFont}" />
       <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
       <Setter Property="AutomationProperties.AccessibilityView" Value="Raw" />
     </Style>
@@ -97,7 +97,7 @@
           <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
         <FontIcon
-          Glyph="{x:Bind icons:Lucide.Ban}"
+          Glyph="{x:Bind icons:Segoe.Ban}"
           Style="{StaticResource BatchDialogNoteIconStyle}"
         />
         <TextBlock
@@ -120,7 +120,7 @@
                 <ColumnDefinition Width="*" />
               </Grid.ColumnDefinitions>
               <FontIcon
-                Glyph="{x:Bind icons:Lucide.Clock}"
+                Glyph="{x:Bind icons:Segoe.Clock}"
                 Style="{StaticResource BatchDialogNoteIconStyle}"
               />
               <TextBlock

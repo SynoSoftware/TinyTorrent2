@@ -692,7 +692,7 @@ public sealed partial class Week : UserControl
                 [
                     new MenuCommand(
                         _model.Text.Get("settings", "delete"),
-                        Lucide.Trash2,
+                        Segoe.Trash2,
                         new RelayCommand(() => _model.Delete(period), () => true)
                     )
                     {

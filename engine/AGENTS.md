@@ -31,7 +31,7 @@ acrylic popup, Fluent 2 principles apply within these rules, with no
 accent-coloured primary buttons, outlined buttons or other variants.
 
 - **Labels:** one or two familiar words. Buttons share one row in equal widths.
-- **Icons:** every engine-authored button has a leading Lucide icon, as the
+- **Icons:** every engine-authored button has a leading Segoe icon, as the
   window's buttons do. Platform-owned control glyphs stay: the popup's Close
   and More, native menus and Windows task dialogs.
 - **Appearance:** one filled, borderless style for every button, with no

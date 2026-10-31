@@ -740,7 +740,7 @@ public sealed class FileNode : INotifyPropertyChanged
     public long? Downloaded => _downloaded;
     internal FileTarget Target =>
         IsFolder ? new FileTarget.Folder(Path) : new FileTarget.File(Index, Path);
-    public string Glyph => IsFolder ? Lucide.Folder : FileName.Glyph(FileName.Kind(Name));
+    public string Glyph => IsFolder ? Segoe.Folder : FileName.Glyph(FileName.Kind(Name));
     public string SizeText => _owner.Text.Bytes(_size);
     public double? Progress =>
         _downloaded is not { } downloaded ? null

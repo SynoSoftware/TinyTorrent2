@@ -57,8 +57,8 @@
           Command="{x:Bind Back}"
         >
           <FontIcon
-            FontFamily="{x:Bind icons:Lucide.Font}"
-            Glyph="{x:Bind icons:Lucide.ArrowLeft}"
+            FontFamily="{x:Bind icons:Segoe.Font}"
+            Glyph="{x:Bind icons:Segoe.ArrowLeft}"
             FontSize="{StaticResource TinyTorrentInlineIconSize}"
           />
         </Button>
@@ -177,7 +177,7 @@
             ToolTipService.ToolTip="{x:Bind Model.DownloadTip, Mode=OneWay}"
           >
             <FontIcon
-              FontFamily="{x:Bind icons:Lucide.Font}"
+              FontFamily="{x:Bind icons:Segoe.Font}"
               Glyph="{ThemeResource TinyTorrentDownloadGlyph}"
               Style="{StaticResource TinyTorrentStatusIconStyle}"
               Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
@@ -197,7 +197,7 @@
             ToolTipService.ToolTip="{x:Bind Model.UploadTip, Mode=OneWay}"
           >
             <FontIcon
-              FontFamily="{x:Bind icons:Lucide.Font}"
+              FontFamily="{x:Bind icons:Segoe.Font}"
               Glyph="{ThemeResource TinyTorrentUploadGlyph}"
               Style="{StaticResource TinyTorrentStatusIconStyle}"
               Foreground="{ThemeResource TinyTorrentUploadBrush}"
@@ -228,7 +228,7 @@
       >
         <FontIcon
           x:Name="ThemeIcon"
-          FontFamily="{x:Bind icons:Lucide.Font}"
+          FontFamily="{x:Bind icons:Segoe.Font}"
           FontSize="{StaticResource TinyTorrentInlineIconSize}"
         />
       </Button>
@@ -265,7 +265,7 @@
               </Grid.RowDefinitions>
               <controls:ActionButton
                 x:Name="ClearFiltersButton"
-                Glyph="{x:Bind icons:Lucide.FunnelX}"
+                Glyph="{x:Bind icons:Segoe.FunnelX}"
                 Padding="8,4"
                 Command="{x:Bind Model.ClearFilters}"
                 HorizontalAlignment="Stretch"
@@ -288,7 +288,7 @@
                         <ColumnDefinition Width="Auto" />
                       </Grid.ColumnDefinitions>
                       <FontIcon
-                        FontFamily="{x:Bind icons:Lucide.Font}"
+                        FontFamily="{x:Bind icons:Segoe.Font}"
                         Glyph="{x:Bind Glyph}"
                         Style="{StaticResource TinyTorrentStatusIconStyle}"
                         AutomationProperties.AccessibilityView="Raw"
@@ -375,16 +375,16 @@
               <AppBarButton x:Name="AddButton" Command="{x:Bind Model.Add}">
                 <AppBarButton.Icon>
                   <FontIcon
-                    FontFamily="{x:Bind icons:Lucide.Font}"
-                    Glyph="{x:Bind icons:Lucide.FilePlus}"
+                    FontFamily="{x:Bind icons:Segoe.Font}"
+                    Glyph="{x:Bind icons:Segoe.FilePlus}"
                   />
                 </AppBarButton.Icon>
               </AppBarButton>
               <AppBarButton x:Name="MagnetButton" Command="{x:Bind Model.AddMagnet}">
                 <AppBarButton.Icon>
                   <FontIcon
-                    FontFamily="{x:Bind icons:Lucide.Font}"
-                    Glyph="{x:Bind icons:Lucide.Link}"
+                    FontFamily="{x:Bind icons:Segoe.Font}"
+                    Glyph="{x:Bind icons:Segoe.Link}"
                   />
                 </AppBarButton.Icon>
               </AppBarButton>
@@ -392,16 +392,16 @@
               <AppBarButton x:Name="ResumeButton" Command="{x:Bind Model.Resume}">
                 <AppBarButton.Icon>
                   <FontIcon
-                    FontFamily="{x:Bind icons:Lucide.Font}"
-                    Glyph="{x:Bind icons:Lucide.Play}"
+                    FontFamily="{x:Bind icons:Segoe.Font}"
+                    Glyph="{x:Bind icons:Segoe.Play}"
                   />
                 </AppBarButton.Icon>
               </AppBarButton>
               <AppBarButton x:Name="PauseButton" Command="{x:Bind Model.Pause}">
                 <AppBarButton.Icon>
                   <FontIcon
-                    FontFamily="{x:Bind icons:Lucide.Font}"
-                    Glyph="{x:Bind icons:Lucide.Square}"
+                    FontFamily="{x:Bind icons:Segoe.Font}"
+                    Glyph="{x:Bind icons:Segoe.Square}"
                   />
                 </AppBarButton.Icon>
               </AppBarButton>
@@ -409,16 +409,16 @@
               <AppBarButton x:Name="FolderButton" Command="{x:Bind Model.OpenFolder}">
                 <AppBarButton.Icon>
                   <FontIcon
-                    FontFamily="{x:Bind icons:Lucide.Font}"
-                    Glyph="{x:Bind icons:Lucide.FolderOpen}"
+                    FontFamily="{x:Bind icons:Segoe.Font}"
+                    Glyph="{x:Bind icons:Segoe.FolderOpen}"
                   />
                 </AppBarButton.Icon>
               </AppBarButton>
               <AppBarButton x:Name="PropertiesButton" Command="{x:Bind Model.Properties}">
                 <AppBarButton.Icon>
                   <FontIcon
-                    FontFamily="{x:Bind icons:Lucide.Font}"
-                    Glyph="{x:Bind icons:Lucide.Info}"
+                    FontFamily="{x:Bind icons:Segoe.Font}"
+                    Glyph="{x:Bind icons:Segoe.Info}"
                   />
                 </AppBarButton.Icon>
               </AppBarButton>
@@ -426,8 +426,8 @@
               <AppBarButton x:Name="VerifyButton" Command="{x:Bind Model.Verify}">
                 <AppBarButton.Icon>
                   <FontIcon
-                    FontFamily="{x:Bind icons:Lucide.Font}"
-                    Glyph="{x:Bind icons:Lucide.BookOpenCheck}"
+                    FontFamily="{x:Bind icons:Segoe.Font}"
+                    Glyph="{x:Bind icons:Segoe.BookOpenCheck}"
                   />
                 </AppBarButton.Icon>
               </AppBarButton>
@@ -435,8 +435,8 @@
               <AppBarButton x:Name="RemoveButton" Command="{x:Bind Model.Remove}">
                 <AppBarButton.Icon>
                   <FontIcon
-                    FontFamily="{x:Bind icons:Lucide.Font}"
-                    Glyph="{x:Bind icons:Lucide.Trash2}"
+                    FontFamily="{x:Bind icons:Segoe.Font}"
+                    Glyph="{x:Bind icons:Segoe.Trash2}"
                   />
                 </AppBarButton.Icon>
               </AppBarButton>
@@ -447,8 +447,8 @@
               >
                 <AppBarButton.Icon>
                   <FontIcon
-                    FontFamily="{x:Bind icons:Lucide.Font}"
-                    Glyph="{x:Bind icons:Lucide.Play}"
+                    FontFamily="{x:Bind icons:Segoe.Font}"
+                    Glyph="{x:Bind icons:Segoe.Play}"
                   />
                 </AppBarButton.Icon>
               </AppBarButton>
@@ -459,8 +459,8 @@
               >
                 <AppBarButton.Icon>
                   <FontIcon
-                    FontFamily="{x:Bind icons:Lucide.Font}"
-                    Glyph="{x:Bind icons:Lucide.FolderOpen}"
+                    FontFamily="{x:Bind icons:Segoe.Font}"
+                    Glyph="{x:Bind icons:Segoe.FolderOpen}"
                   />
                 </AppBarButton.Icon>
               </AppBarButton>
@@ -471,8 +471,8 @@
               >
                 <AppBarButton.Icon>
                   <FontIcon
-                    FontFamily="{x:Bind icons:Lucide.Font}"
-                    Glyph="{x:Bind icons:Lucide.Info}"
+                    FontFamily="{x:Bind icons:Segoe.Font}"
+                    Glyph="{x:Bind icons:Segoe.Info}"
                   />
                 </AppBarButton.Icon>
               </AppBarButton>
@@ -485,16 +485,16 @@
               <AppBarButton x:Name="SelectedMapButton" Command="{x:Bind SelectedMap}">
                 <AppBarButton.Icon>
                   <FontIcon
-                    FontFamily="{x:Bind icons:Lucide.Font}"
-                    Glyph="{x:Bind icons:Lucide.GraphStar}"
+                    FontFamily="{x:Bind icons:Segoe.Font}"
+                    Glyph="{x:Bind icons:Segoe.GraphStar}"
                   />
                 </AppBarButton.Icon>
               </AppBarButton>
               <AppBarButton x:Name="AllMapButton" Command="{x:Bind AllMap}">
                 <AppBarButton.Icon>
                   <FontIcon
-                    FontFamily="{x:Bind icons:Lucide.Font}"
-                    Glyph="{x:Bind icons:Lucide.Globe2}"
+                    FontFamily="{x:Bind icons:Segoe.Font}"
+                    Glyph="{x:Bind icons:Segoe.Globe2}"
                   />
                 </AppBarButton.Icon>
               </AppBarButton>
@@ -502,8 +502,8 @@
               <AppBarButton x:Name="SettingsButton" Command="{x:Bind Model.ShowSettings}">
                 <AppBarButton.Icon>
                   <FontIcon
-                    FontFamily="{x:Bind icons:Lucide.Font}"
-                    Glyph="{x:Bind icons:Lucide.Settings}"
+                    FontFamily="{x:Bind icons:Segoe.Font}"
+                    Glyph="{x:Bind icons:Segoe.Settings}"
                   />
                 </AppBarButton.Icon>
               </AppBarButton>
@@ -628,14 +628,14 @@
                             <ColumnDefinition Width="*" />
                           </Grid.ColumnDefinitions>
                           <FontIcon
-                            FontFamily="{x:Bind icons:Lucide.Font}"
+                            FontFamily="{x:Bind icons:Segoe.Font}"
                             Glyph="{x:Bind StatusGlyph, Mode=OneWay}"
                             FontSize="{StaticResource TinyTorrentInlineIconSize}"
                             Visibility="{x:Bind IsStatusNeutral, Mode=OneWay}"
                             AutomationProperties.AccessibilityView="Raw"
                           />
                           <FontIcon
-                            FontFamily="{x:Bind icons:Lucide.Font}"
+                            FontFamily="{x:Bind icons:Segoe.Font}"
                             Glyph="{x:Bind StatusGlyph, Mode=OneWay}"
                             FontSize="{StaticResource TinyTorrentInlineIconSize}"
                             Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
@@ -643,7 +643,7 @@
                             AutomationProperties.AccessibilityView="Raw"
                           />
                           <FontIcon
-                            FontFamily="{x:Bind icons:Lucide.Font}"
+                            FontFamily="{x:Bind icons:Segoe.Font}"
                             Glyph="{x:Bind StatusGlyph, Mode=OneWay}"
                             FontSize="{StaticResource TinyTorrentInlineIconSize}"
                             Foreground="{ThemeResource SystemFillColorCriticalBrush}"
@@ -718,7 +718,7 @@
                       <DataTemplate x:DataType="torrents:Torrent">
                         <controls:Field
                           Style="{StaticResource TinyTorrentInlineFieldStyle}"
-                          Glyph="{x:Bind icons:Lucide.Sprout}"
+                          Glyph="{x:Bind icons:Segoe.Sprout}"
                           DimsZeros="True"
                           Label="{x:Bind SeedsText, Mode=OneWay}"
                         />
@@ -730,7 +730,7 @@
                       <DataTemplate x:DataType="torrents:Torrent">
                         <controls:Field
                           Style="{StaticResource TinyTorrentInlineFieldStyle}"
-                          Glyph="{x:Bind icons:Lucide.UsersRoundCollaboration}"
+                          Glyph="{x:Bind icons:Segoe.UsersRoundCollaboration}"
                           DimsZeros="True"
                           Label="{x:Bind PeersText, Mode=OneWay}"
                         />
@@ -823,8 +823,8 @@
               AutomationProperties.AutomationId="StatusMore"
             >
               <FontIcon
-                FontFamily="{x:Bind icons:Lucide.Font}"
-                Glyph="{x:Bind icons:Lucide.Ellipsis}"
+                FontFamily="{x:Bind icons:Segoe.Font}"
+                Glyph="{x:Bind icons:Segoe.Ellipsis}"
                 FontSize="{StaticResource TinyTorrentButtonIconSize}"
               />
             </Button>
@@ -911,29 +911,29 @@
                 AutomationProperties.AccessibilityView="Raw"
               >
                 <FontIcon
-                  FontFamily="{x:Bind icons:Lucide.Font}"
-                  Glyph="{x:Bind icons:Lucide.CircleCheck}"
+                  FontFamily="{x:Bind icons:Segoe.Font}"
+                  Glyph="{x:Bind icons:Segoe.CircleCheck}"
                   Style="{StaticResource TinyTorrentStatusIconStyle}"
                   Foreground="{ThemeResource SystemFillColorSuccessBrush}"
                   Visibility="{x:Bind IsSuccess, Mode=OneWay}"
                 />
                 <FontIcon
-                  FontFamily="{x:Bind icons:Lucide.Font}"
-                  Glyph="{x:Bind icons:Lucide.Info}"
+                  FontFamily="{x:Bind icons:Segoe.Font}"
+                  Glyph="{x:Bind icons:Segoe.Info}"
                   Style="{StaticResource TinyTorrentStatusIconStyle}"
                   Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
                   Visibility="{x:Bind IsInformational, Mode=OneWay}"
                 />
                 <FontIcon
-                  FontFamily="{x:Bind icons:Lucide.Font}"
-                  Glyph="{x:Bind icons:Lucide.TriangleAlert}"
+                  FontFamily="{x:Bind icons:Segoe.Font}"
+                  Glyph="{x:Bind icons:Segoe.TriangleAlert}"
                   Style="{StaticResource TinyTorrentStatusIconStyle}"
                   Foreground="{ThemeResource SystemFillColorCautionBrush}"
                   Visibility="{x:Bind IsWarning, Mode=OneWay}"
                 />
                 <FontIcon
-                  FontFamily="{x:Bind icons:Lucide.Font}"
-                  Glyph="{x:Bind icons:Lucide.CircleAlert}"
+                  FontFamily="{x:Bind icons:Segoe.Font}"
+                  Glyph="{x:Bind icons:Segoe.CircleAlert}"
                   Style="{StaticResource TinyTorrentStatusIconStyle}"
                   Foreground="{ThemeResource SystemFillColorCriticalBrush}"
                   Visibility="{x:Bind IsError, Mode=OneWay}"
@@ -989,7 +989,7 @@
                 <controls:ActionButton
                   Visibility="{x:Bind HasTorrent, Mode=OneWay}"
                   Command="{x:Bind ShowTorrent, Mode=OneWay}"
-                  Glyph="{x:Bind icons:Lucide.List}"
+                  Glyph="{x:Bind icons:Segoe.List}"
                   Text="{x:Bind ShowText, Mode=OneWay}"
                   ToolTipService.ToolTip="{x:Bind ShowTip, Mode=OneWay}"
                   AutomationProperties.AutomationId="ShowTorrent"
@@ -1024,8 +1024,8 @@
                   Click="OnToastMore"
                 >
                   <FontIcon
-                    FontFamily="{x:Bind icons:Lucide.Font}"
-                    Glyph="{x:Bind icons:Lucide.Ellipsis}"
+                    FontFamily="{x:Bind icons:Segoe.Font}"
+                    Glyph="{x:Bind icons:Segoe.Ellipsis}"
                     FontSize="{StaticResource TinyTorrentButtonIconSize}"
                   />
                 </Button>
@@ -1036,8 +1036,8 @@
                   Click="OnCloseToast"
                 >
                   <FontIcon
-                    FontFamily="{x:Bind icons:Lucide.Font}"
-                    Glyph="{x:Bind icons:Lucide.X}"
+                    FontFamily="{x:Bind icons:Segoe.Font}"
+                    Glyph="{x:Bind icons:Segoe.X}"
                     FontSize="{StaticResource TinyTorrentButtonIconSize}"
                   />
                 </Button>
@@ -1072,8 +1072,8 @@
         <FontIcon
           x:Name="ContextIcon"
           Style="{StaticResource TinyTorrentStatusIconStyle}"
-          FontFamily="{x:Bind icons:Lucide.Font}"
-          Glyph="{x:Bind icons:Lucide.List}"
+          FontFamily="{x:Bind icons:Segoe.Font}"
+          Glyph="{x:Bind icons:Segoe.List}"
           AutomationProperties.AccessibilityView="Raw"
         />
         <TextBlock
@@ -1100,7 +1100,7 @@
         />
         <controls:ActionButton
           x:Name="WorkButton"
-          Glyph="{x:Bind icons:Lucide.ListTodo}"
+          Glyph="{x:Bind icons:Segoe.ListTodo}"
           Padding="6,0"
           MinHeight="32"
           Visibility="Collapsed"
@@ -1142,8 +1142,8 @@
           <FontIcon
             x:Name="InformationIcon"
             Style="{StaticResource TinyTorrentStatusIconStyle}"
-            FontFamily="{x:Bind icons:Lucide.Font}"
-            Glyph="{x:Bind icons:Lucide.Info}"
+            FontFamily="{x:Bind icons:Segoe.Font}"
+            Glyph="{x:Bind icons:Segoe.Info}"
             AutomationProperties.AccessibilityView="Raw"
           />
           <TextBlock
@@ -1175,8 +1175,8 @@
           <StackPanel x:Name="EngineMemory" Orientation="Horizontal" Spacing="6">
             <FontIcon
               Style="{StaticResource TinyTorrentStatusIconStyle}"
-              FontFamily="{x:Bind icons:Lucide.Font}"
-              Glyph="{x:Bind icons:Lucide.Cpu}"
+              FontFamily="{x:Bind icons:Segoe.Font}"
+              Glyph="{x:Bind icons:Segoe.Cpu}"
               AutomationProperties.AccessibilityView="Raw"
             />
             <TextBlock
@@ -1187,8 +1187,8 @@
           <StackPanel x:Name="UiMemory" Orientation="Horizontal" Spacing="6">
             <FontIcon
               Style="{StaticResource TinyTorrentStatusIconStyle}"
-              FontFamily="{x:Bind icons:Lucide.Font}"
-              Glyph="{x:Bind icons:Lucide.AppWindow}"
+              FontFamily="{x:Bind icons:Segoe.Font}"
+              Glyph="{x:Bind icons:Segoe.AppWindow}"
               AutomationProperties.AccessibilityView="Raw"
             />
             <TextBlock x:Name="UiMemoryLabel" Style="{StaticResource TinyTorrentStatusTextStyle}" />
@@ -1215,7 +1215,7 @@
         >
           <FontIcon
             Style="{StaticResource TinyTorrentStatusIconStyle}"
-            FontFamily="{x:Bind icons:Lucide.Font}"
+            FontFamily="{x:Bind icons:Segoe.Font}"
             Glyph="{ThemeResource TinyTorrentDownloadGlyph}"
             Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
             AutomationProperties.AccessibilityView="Raw"
@@ -1235,7 +1235,7 @@
         >
           <FontIcon
             Style="{StaticResource TinyTorrentStatusIconStyle}"
-            FontFamily="{x:Bind icons:Lucide.Font}"
+            FontFamily="{x:Bind icons:Segoe.Font}"
             Glyph="{ThemeResource TinyTorrentUploadGlyph}"
             Foreground="{ThemeResource TinyTorrentUploadBrush}"
             AutomationProperties.AccessibilityView="Raw"
@@ -1255,8 +1255,8 @@
         >
           <FontIcon
             Style="{StaticResource TinyTorrentStatusIconStyle}"
-            FontFamily="{x:Bind icons:Lucide.Font}"
-            Glyph="{x:Bind icons:Lucide.Folder}"
+            FontFamily="{x:Bind icons:Segoe.Font}"
+            Glyph="{x:Bind icons:Segoe.Folder}"
             AutomationProperties.AccessibilityView="Raw"
           />
           <TextBlock
@@ -1273,8 +1273,8 @@
         >
           <FontIcon
             Style="{StaticResource TinyTorrentStatusIconStyle}"
-            FontFamily="{x:Bind icons:Lucide.Font}"
-            Glyph="{x:Bind icons:Lucide.RefreshCw}"
+            FontFamily="{x:Bind icons:Segoe.Font}"
+            Glyph="{x:Bind icons:Segoe.RefreshCw}"
             AutomationProperties.AccessibilityView="Raw"
           />
           <TextBlock
@@ -1292,15 +1292,15 @@
           <Grid>
             <FontIcon
               Style="{StaticResource TinyTorrentStatusIconStyle}"
-              FontFamily="{x:Bind icons:Lucide.Font}"
-              Glyph="{x:Bind icons:Lucide.Pause}"
+              FontFamily="{x:Bind icons:Segoe.Font}"
+              Glyph="{x:Bind icons:Segoe.Pause}"
               Visibility="{x:Bind Model.IsSessionPaused, Mode=OneWay}"
               AutomationProperties.AccessibilityView="Raw"
             />
             <FontIcon
               Style="{StaticResource TinyTorrentStatusIconStyle}"
-              FontFamily="{x:Bind icons:Lucide.Font}"
-              Glyph="{x:Bind icons:Lucide.Turtle}"
+              FontFamily="{x:Bind icons:Segoe.Font}"
+              Glyph="{x:Bind icons:Segoe.Turtle}"
               Foreground="{ThemeResource SystemFillColorCautionBrush}"
               Visibility="{x:Bind Model.ShowsAlternativeLimits, Mode=OneWay}"
               AutomationProperties.AccessibilityView="Raw"
@@ -1326,8 +1326,8 @@
         >
           <FontIcon
             Style="{StaticResource TinyTorrentStatusIconStyle}"
-            FontFamily="{x:Bind icons:Lucide.Font}"
-            Glyph="{x:Bind icons:Lucide.HardDrive}"
+            FontFamily="{x:Bind icons:Segoe.Font}"
+            Glyph="{x:Bind icons:Segoe.HardDrive}"
             AutomationProperties.AccessibilityView="Raw"
           />
           <TextBlock
@@ -1345,8 +1345,8 @@
         >
           <FontIcon
             Style="{StaticResource TinyTorrentStatusIconStyle}"
-            FontFamily="{x:Bind icons:Lucide.Font}"
-            Glyph="{x:Bind icons:Lucide.Globe}"
+            FontFamily="{x:Bind icons:Segoe.Font}"
+            Glyph="{x:Bind icons:Segoe.Globe}"
             AutomationProperties.AccessibilityView="Raw"
           />
           <TextBlock
@@ -1365,14 +1365,14 @@
           <Grid>
             <FontIcon
               Style="{StaticResource TinyTorrentStatusIconStyle}"
-              FontFamily="{x:Bind icons:Lucide.Font}"
+              FontFamily="{x:Bind icons:Segoe.Font}"
               Glyph="{x:Bind Model.IncomingGlyph, Mode=OneWay}"
               Visibility="{x:Bind Model.IsIncomingProxied, Mode=OneWay}"
               AutomationProperties.AccessibilityView="Raw"
             />
             <FontIcon
               Style="{StaticResource TinyTorrentStatusIconStyle}"
-              FontFamily="{x:Bind icons:Lucide.Font}"
+              FontFamily="{x:Bind icons:Segoe.Font}"
               Glyph="{x:Bind Model.IncomingGlyph, Mode=OneWay}"
               Foreground="{ThemeResource SystemFillColorSuccessBrush}"
               Visibility="{x:Bind Model.IsIncomingOpen, Mode=OneWay}"
@@ -1380,7 +1380,7 @@
             />
             <FontIcon
               Style="{StaticResource TinyTorrentStatusIconStyle}"
-              FontFamily="{x:Bind icons:Lucide.Font}"
+              FontFamily="{x:Bind icons:Segoe.Font}"
               Glyph="{x:Bind Model.IncomingGlyph, Mode=OneWay}"
               Foreground="{ThemeResource SystemFillColorCautionBrush}"
               Visibility="{x:Bind Model.IsIncomingClosed, Mode=OneWay}"
@@ -1401,8 +1401,8 @@
         >
           <FontIcon
             Style="{StaticResource TinyTorrentStatusIconStyle}"
-            FontFamily="{x:Bind icons:Lucide.Font}"
-            Glyph="{x:Bind icons:Lucide.CircleFadingArrowUp}"
+            FontFamily="{x:Bind icons:Segoe.Font}"
+            Glyph="{x:Bind icons:Segoe.CircleFadingArrowUp}"
             AutomationProperties.AccessibilityView="Raw"
           />
           <TextBlock

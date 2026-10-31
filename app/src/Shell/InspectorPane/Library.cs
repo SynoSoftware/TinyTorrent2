@@ -221,11 +221,11 @@ public sealed partial class InspectorPane
         var text = library.Text;
         List<MenuEntry> menu = [];
         if (ActionsOverflow)
-            menu.Add(new MenuCommand(text.Get("commands", "open"), Lucide.Play, library.Open));
+            menu.Add(new MenuCommand(text.Get("commands", "open"), Segoe.Play, library.Open));
         menu.Add(
             new MenuCommand(
                 text.Get("commands", "open_folder"),
-                Lucide.FolderOpen,
+                Segoe.FolderOpen,
                 library.OpenFolder
             )
         );
@@ -237,14 +237,14 @@ public sealed partial class InspectorPane
                 MetadataActions.Create(library),
                 new MenuCommand(
                     text.Get("library", "refresh_metadata"),
-                    Lucide.RefreshCw,
+                    Segoe.RefreshCw,
                     library.RefreshMetadata
                 ),
-                new MenuCommand(text.Get("subtitles", "choose"), Lucide.Download, _downloadSubtitles),
+                new MenuCommand(text.Get("subtitles", "choose"), Segoe.Download, _downloadSubtitles),
                 new MenuSeparator(),
                 new MenuCommand(
                     text.Get("library", "erase_metadata"),
-                    Lucide.Eraser,
+                    Segoe.Eraser,
                     library.EraseMetadata
                 ),
             ]);
@@ -289,7 +289,7 @@ public sealed partial class InspectorPane
         FailureBar.IsOpen = library.Message.Length > 0;
         FailureBar.Message = library.Message;
         ToolTipService.SetToolTip(Retry, library.RetryTip);
-        HeadingGlyph.Glyph = library.Selected?.Glyph ?? Syno.Lucide.File;
+        HeadingGlyph.Glyph = library.Selected?.Glyph ?? Syno.Segoe.File;
     }
 
     private void RefreshLibraryEmpty()

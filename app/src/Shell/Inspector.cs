@@ -170,9 +170,9 @@ public sealed partial class Inspector : INotifyPropertyChanged
     public string PrivacyGlyph =>
         IsPrivate switch
         {
-            true => Syno.Lucide.Lock,
-            false => Syno.Lucide.Globe,
-            null => Syno.Lucide.Shield,
+            true => Syno.Segoe.Lock,
+            false => Syno.Segoe.Globe,
+            null => Syno.Segoe.Shield,
         };
     public string LimitText =>
         _target is { IsLimited: true } torrent

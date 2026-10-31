@@ -172,9 +172,9 @@ public sealed partial class Browser
     internal string StatusGlyph =>
         RowsConfiguration switch
         {
-            LibraryConfiguration.Videos => Lucide.Film,
-            LibraryConfiguration.Music => Lucide.Music,
-            _ => Lucide.Files,
+            LibraryConfiguration.Videos => Segoe.Film,
+            LibraryConfiguration.Music => Segoe.Music,
+            _ => Segoe.Files,
         };
     internal string InformationStatus =>
         _rowsQuery?.Configuration != LibraryConfiguration.Videos || !IsAvailable
@@ -215,7 +215,7 @@ public sealed partial class Browser
     private string? LookupCatalog => Option?.ProviderId;
     public string DownloadLabel => Text.Get("library", "download_information");
     public string FetchMetadataLabel => Text.Get("library", "fetch_metadata");
-    public string FetchMetadataGlyph => Lucide.Download;
+    public string FetchMetadataGlyph => Segoe.Download;
     public IReadOnlyList<Origin> Origins =>
         _origins is { } origins && origins.EntryId == Selected?.Entry.EntryId ? origins.Rows : [];
 
@@ -1362,8 +1362,8 @@ public sealed class LibraryRow(Entry entry, Browser library) : INotifyPropertyCh
     public Entry Entry { get; private set; } = entry;
     public string Name => Entry.Name;
     public string Glyph =>
-        OpeningFailure is not null ? Lucide.TriangleAlert
-        : Entry.Kind == FileKind.Video && Entry.Type == "episode" ? Lucide.Tv
+        OpeningFailure is not null ? Segoe.TriangleAlert
+        : Entry.Kind == FileKind.Video && Entry.Type == "episode" ? Segoe.Tv
         : FileName.Glyph(Entry.Kind);
     public string Folder => Entry.Folder;
     public string Title => Entry.Title;

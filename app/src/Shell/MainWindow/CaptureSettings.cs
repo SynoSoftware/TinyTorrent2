@@ -935,8 +935,8 @@ public sealed partial class MainWindow
                 {
                     var dialog = new Dialog
                     {
-                        Glyph = Lucide.Database,
-                        PrimaryGlyph = Lucide.Trash2,
+                        Glyph = Segoe.Database,
+                        PrimaryGlyph = Segoe.Trash2,
                     };
                     await ShowDialog(
                         interaction,

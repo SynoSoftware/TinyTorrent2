@@ -32,7 +32,7 @@ public sealed partial class Dialog : ContentDialog
         new PropertyMetadata(string.Empty, (dialog, _) => ((Dialog)dialog).ShowTitle())
     );
 
-    // Each button's Lucide icon and the tooltip that says what its one word does
+    // Each button's Segoe icon and the tooltip that says what its one word does
     // not. Every dialog's Close button is Cancel, so it defaults to Cancel's icon.
     public static readonly DependencyProperty PrimaryGlyphProperty = Text(
         nameof(PrimaryGlyph),
@@ -44,7 +44,7 @@ public sealed partial class Dialog : ContentDialog
     );
     public static readonly DependencyProperty CloseGlyphProperty = Text(
         nameof(CloseGlyph),
-        Lucide.X
+        Segoe.X
     );
     public static readonly DependencyProperty PrimaryToolTipProperty = Text(
         nameof(PrimaryToolTip),
@@ -115,7 +115,7 @@ public sealed partial class Dialog : ContentDialog
         }
     }
 
-    // The Lucide icon before the title.
+    // The Segoe icon before the title.
     public string Glyph
     {
         get => (string)GetValue(GlyphProperty);
@@ -282,14 +282,14 @@ public sealed partial class Dialog : ContentDialog
                 : new GridLength(0);
     }
 
-    // The template cannot reach Lucide.Font. An empty icon still takes the
+    // The template cannot reach Segoe.Font. An empty icon still takes the
     // column spacing, and an empty title row still takes its margin, which
     // pushes down content that draws its own heading.
     private void ShowTitle()
     {
         if (GetTemplateChild("TitleIcon") is FontIcon icon)
         {
-            icon.FontFamily = Lucide.Font;
+            icon.FontFamily = Segoe.Font;
             icon.Glyph = Glyph;
             icon.Visibility = Glyph.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         }

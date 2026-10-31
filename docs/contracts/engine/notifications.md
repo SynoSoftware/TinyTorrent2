@@ -42,7 +42,7 @@ with the first item selected. Arrow keys select an item, Enter runs it, and
 Escape closes the menu and returns to an interactive popup. More opens a menu
 laid out as Windows' own, drawn on the
 popup's acrylic surface in the popup's theme: the title See fewer
-notifications, a separator, and commands that each show their Lucide icon
+notifications, a separator, and commands that each show their Segoe icon
 from the font beside the engine: a command that turns off the
 switch for that kind of toast, named for the switch, such as Don't notify when
 a torrent is added; Turn off all notifications, which turns off every switch;

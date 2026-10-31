@@ -580,7 +580,7 @@ public sealed partial class MainWindow : Window
             var dialog = new Dialog
             {
                 Content = _addDialog,
-                PrimaryGlyph = Syno.Lucide.CirclePlus,
+                PrimaryGlyph = Syno.Segoe.CirclePlus,
                 Footer = new DialogFooter.OptOut(Model.AddDraft.Confirmation),
             };
             dialog.SizeToContent();
@@ -728,8 +728,8 @@ public sealed partial class MainWindow : Window
             var preference = new DialogPreference(Model.Settings);
             var dialog = new Dialog
             {
-                Glyph = Syno.Lucide.Power,
-                PrimaryGlyph = Syno.Lucide.Power,
+                Glyph = Syno.Segoe.Power,
+                PrimaryGlyph = Syno.Segoe.Power,
                 Footer = new DialogFooter.OptOut(preference),
             };
             await Model.DeferClose();
@@ -759,8 +759,8 @@ public sealed partial class MainWindow : Window
         {
             var dialog = new Dialog
             {
-                Glyph = Syno.Lucide.RotateCcw,
-                PrimaryGlyph = Syno.Lucide.RotateCcw,
+                Glyph = Syno.Segoe.RotateCcw,
+                PrimaryGlyph = Syno.Segoe.RotateCcw,
             };
             var choice = await ShowDialog(
                 interaction,

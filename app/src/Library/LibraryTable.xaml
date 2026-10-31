@@ -16,7 +16,7 @@
           <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
         <FontIcon
-          FontFamily="{ThemeResource LucideFont}"
+          FontFamily="{ThemeResource SegoeFont}"
           Glyph="{x:Bind Glyph, Mode=OneWay}"
           Style="{StaticResource TinyTorrentStatusIconStyle}"
           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
@@ -48,7 +48,7 @@
           <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
         <FontIcon
-          FontFamily="{ThemeResource LucideFont}"
+          FontFamily="{ThemeResource SegoeFont}"
           Glyph="{x:Bind Glyph, Mode=OneWay}"
           Style="{StaticResource TinyTorrentStatusIconStyle}"
           Foreground="{ThemeResource TextFillColorSecondaryBrush}"

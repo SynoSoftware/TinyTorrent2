@@ -21,8 +21,8 @@ public sealed partial class MainWindow
         {
             var dialog = new Dialog
             {
-                Glyph = Lucide.Database,
-                PrimaryGlyph = Lucide.Download,
+                Glyph = Segoe.Database,
+                PrimaryGlyph = Segoe.Download,
                 IsPrimaryButtonEnabled = dataset.CanDownload,
             };
             void Follow(object? sender, PropertyChangedEventArgs args)
@@ -92,8 +92,8 @@ public sealed partial class MainWindow
         {
             var dialog = new Dialog
             {
-                Glyph = Lucide.Database,
-                PrimaryGlyph = Lucide.Trash2,
+                Glyph = Segoe.Database,
+                PrimaryGlyph = Segoe.Trash2,
             };
             var choice = await ShowDialog(
                 interaction,
@@ -131,8 +131,8 @@ public sealed partial class MainWindow
     {
         var icon = new FontIcon
         {
-            FontFamily = Lucide.Font,
-            Glyph = Lucide.TriangleAlert,
+            FontFamily = Segoe.Font,
+            Glyph = Segoe.TriangleAlert,
             Style = (Style)Root.Resources["DataCautionIconStyle"],
         };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetAccessibilityView(

@@ -8,7 +8,7 @@
     <Platform Solution="*|x64" Project="x64" />
   </Project>
   <Folder Name="/lib/">
-    <Project Path="lib/Lucide/src/Lucide.csproj">
+    <Project Path="lib/Glyphs/src/Glyphs.csproj">
       <Platform Solution="*|x64" Project="x64" />
     </Project>
     <Project Path="lib/TableView/src/TableView.csproj">

@@ -49,9 +49,9 @@ public sealed partial class MainViewModel
                 : "no_incoming_status"
         );
     public string IncomingGlyph =>
-        MissingAdapter.Length > 0 ? Syno.Lucide.Unplug
-        : Settings.Proxy.IsInUse ? Syno.Lucide.Route
-        : Syno.Lucide.Network;
+        MissingAdapter.Length > 0 ? Syno.Segoe.Unplug
+        : Settings.Proxy.IsInUse ? Syno.Segoe.Route
+        : Syno.Segoe.Network;
 
     // A proxy route says nothing about the port, so only a direct connection
     // reports the port as open or closed.
@@ -70,7 +70,7 @@ public sealed partial class MainViewModel
     public string EmptyActionText =>
         Text.Get("window", Torrents.Count > 0 ? "clear_filters" : "add");
     public string EmptyActionGlyph =>
-        Torrents.Count > 0 ? Syno.Lucide.FunnelX : Syno.Lucide.FilePlus;
+        Torrents.Count > 0 ? Syno.Segoe.FunnelX : Syno.Segoe.FilePlus;
     public string EmptyActionToolTip =>
         Text.Get("window", Torrents.Count > 0 ? "clear_filters_tip" : "add_tip");
     public ICommand EmptyAction => Torrents.Count > 0 ? ClearFilters : Add;

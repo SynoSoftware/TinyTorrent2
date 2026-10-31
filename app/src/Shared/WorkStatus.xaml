@@ -20,7 +20,7 @@
       Grid.RowSpan="2"
       Style="{StaticResource TinyTorrentStatusIconStyle}"
       FontSize="{StaticResource TinyTorrentSurfaceIconSize}"
-      FontFamily="{x:Bind icons:Lucide.Font}"
+      FontFamily="{x:Bind icons:Segoe.Font}"
       AutomationProperties.AccessibilityView="Raw"
     />
     <TextBlock
@@ -46,8 +46,8 @@
       Style="{StaticResource TinyTorrentSubtleButtonStyle}"
     >
       <FontIcon
-        FontFamily="{x:Bind icons:Lucide.Font}"
-        Glyph="{x:Bind icons:Lucide.X}"
+        FontFamily="{x:Bind icons:Segoe.Font}"
+        Glyph="{x:Bind icons:Segoe.X}"
         FontSize="{StaticResource TinyTorrentInlineIconSize}"
         AutomationProperties.AccessibilityView="Raw"
       />

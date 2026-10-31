@@ -1549,9 +1549,9 @@ Row-context behavior:
 - let the host synchronously construct and show a native `MenuFlyout` or
   `CommandBarFlyout` with domain-specific commands at that placement target.
 
-The control draws its own icons from the Lucide library it references. A host
-building this row menu draws from the same set through `Lucide.Font` and the
-glyph names on the `Lucide` class, rather than through a path into the library's
+The control draws its own icons through the Glyphs library it references. A host
+building this row menu draws from the same set through `Segoe.Font` and the
+glyph names on the `Segoe` class, rather than through a path into the library's
 package or a theme key, which `Application.Current.Resources` cannot reach.
 
 The placement target is presentation context, not durable view-model state. A

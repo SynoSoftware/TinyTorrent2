@@ -217,8 +217,8 @@ public sealed partial class Scheduler : UserControl
             Children.Add(
                 new FontIcon
                 {
-                    FontFamily = Syno.Lucide.Font,
-                    Glyph = Syno.Lucide.Clock,
+                    FontFamily = Syno.Segoe.Font,
+                    Glyph = Syno.Segoe.Clock,
                     FontSize = (double)Application.Current.Resources["TinyTorrentHeaderIconSize"],
                     VerticalAlignment = VerticalAlignment.Center,
                 }

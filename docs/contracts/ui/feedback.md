@@ -13,7 +13,7 @@ background operations are underway, and what is happening to torrent transfers.
 A full-width, one-DIP top divider uses `DividerStrokeColorDefaultBrush` to
 separate it from the workspace while retaining the continuous acrylic surface.
 Its groups stay in one horizontal row, with collection context anchored left,
-work in the middle, and the torrent session anchored right. It uses shared Body text, Lucide
+work in the middle, and the torrent session anchored right. It uses shared Body text, Segoe
 icons and the established direction/state brushes. Its commands cancel tasks
 or open their list when concurrent work cannot fit; settings, filters and
 updates retain their visible command homes.
@@ -181,7 +181,7 @@ before ambient provider state. A displaced provider warning stays in the
 inspector and Settings, and no text claims that provider blocks a different
 batch. Competing messages never alternate on a timer.
 
-Metadata work uses the Lucide Download icon and a confirmed wait uses Clock;
+Metadata work uses the Segoe Download icon and a confirmed wait uses Clock;
 accepted subtitle work uses Captions. The X means **Stop fetching metadata**, not
 dismiss, and keeps its native focus, hover and pressed states, a full accessible
 name and a matching tooltip. After completion or failure the footer returns to
@@ -284,9 +284,9 @@ style at regular weight, never a smaller font to relieve crowding. Primary text
 carries count, selection, activity and holds; secondary text carries optional
 scope detail and background torrent telemetry. Small middle dots join a context
 phrase; groups sit about 16 DIP apart and an icon sits 6–8 DIP from its label.
-One leading Lucide List marks Torrents, and Film, Music or Files marks the
+One leading Segoe List marks Torrents, and Film, Music or Files marks the
 Library configuration; numbers carry no icons of their own. Transfer arrows are
-Lucide down and up arrows at 16 DIP, holds use Pause, Clock and the
+Segoe down and up arrows at 16 DIP, holds use Pause, Clock and the
 caution-coloured Turtle, and filtering is stated in text because a funnel alone
 cannot say which scope the count describes. The bar has no animated
 rearrangement, pulsing dot or rotating message.

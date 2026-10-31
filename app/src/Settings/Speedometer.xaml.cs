@@ -46,7 +46,7 @@ public sealed partial class Speedometer : UserControl
     internal Speedometer(string glyph)
     {
         InitializeComponent();
-        Icon.FontFamily = Syno.Lucide.Font;
+        Icon.FontFamily = Syno.Segoe.Font;
         Icon.Glyph = glyph;
         _animation = DispatcherQueue.CreateTimer();
         _animation.Interval = TimeSpan.FromMilliseconds(33);

@@ -95,7 +95,7 @@ public sealed partial class AddDialog : UserControl, IDisposable
     private void ShowResize()
     {
         var text = Model.Text.Get("add", _maximized ? "restore" : "maximize");
-        ResizeIcon.Glyph = _maximized ? Lucide.Minimize2 : Lucide.Maximize2;
+        ResizeIcon.Glyph = _maximized ? Segoe.Minimize2 : Segoe.Maximize2;
         ToolTipService.SetToolTip(Resize, text);
         AutomationProperties.SetName(Resize, text);
     }
@@ -128,7 +128,7 @@ public sealed partial class AddDialog : UserControl, IDisposable
         var share = FilesColumn.Width.Value / (ChoicesColumn.Width.Value + FilesColumn.Width.Value);
         Split.SetBounds(Available * 0.3, Available - ChoicesMinimum, Available * share);
         var text = Model.Text.Get("add", shown ? "hide_choices" : "show_choices");
-        ChoicesIcon.Glyph = shown ? Lucide.PanelLeftClose : Lucide.PanelLeftOpen;
+        ChoicesIcon.Glyph = shown ? Segoe.PanelLeftClose : Segoe.PanelLeftOpen;
         ToolTipService.SetToolTip(ChoicesButton, text);
         AutomationProperties.SetName(ChoicesButton, text);
     }

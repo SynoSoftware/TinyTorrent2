@@ -63,7 +63,7 @@
             <ColumnDefinition Width="*" />
           </Grid.ColumnDefinitions>
           <FontIcon
-            FontFamily="{x:Bind icons:Lucide.Font}"
+            FontFamily="{x:Bind icons:Segoe.Font}"
             Glyph="{x:Bind Glyph}"
             FontSize="{StaticResource TinyTorrentInlineIconSize}"
             AutomationProperties.AccessibilityView="Raw"
@@ -133,7 +133,7 @@
       >
         <settings:Header.First>
           <settings:Fact
-            Glyph="{x:Bind icons:Lucide.Gauge}"
+            Glyph="{x:Bind icons:Segoe.Gauge}"
             Label="{x:Bind Model.Text.Get('settings', 'standard_caps'), Mode=OneWay}"
             Value="{x:Bind Model.StandardSummary, Mode=OneWay}"
             ShowsTransfers="True"
@@ -144,7 +144,7 @@
         </settings:Header.First>
         <settings:Header.Second>
           <settings:Fact
-            Glyph="{x:Bind icons:Lucide.Gauge}"
+            Glyph="{x:Bind icons:Segoe.Gauge}"
             Label="{x:Bind Model.Text.Get('settings', 'alternative_caps'), Mode=OneWay}"
             Value="{x:Bind Model.AlternativeSummary, Mode=OneWay}"
             ShowsTransfers="True"
@@ -194,8 +194,8 @@
                     ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'about_test'), Mode=OneWay}"
                   >
                     <FontIcon
-                      FontFamily="{x:Bind icons:Lucide.Font}"
-                      Glyph="{x:Bind icons:Lucide.Info}"
+                      FontFamily="{x:Bind icons:Segoe.Font}"
+                      Glyph="{x:Bind icons:Segoe.Info}"
                       FontSize="{StaticResource TinyTorrentButtonIconSize}"
                     />
                     <Button.Flyout>
@@ -260,7 +260,7 @@
                   <controls:ActionButton
                     Text="{x:Bind Model.TestLabel, Mode=OneWay}"
                     HorizontalAlignment="Stretch"
-                    Glyph="{x:Bind icons:Lucide.Gauge}"
+                    Glyph="{x:Bind icons:Segoe.Gauge}"
                     ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'test_hint'), Mode=OneWay}"
                     Visibility="{x:Bind controls:Visibilities.Unless(Model.IsTesting), Mode=OneWay}"
                     IsEnabled="{x:Bind Model.CanTest, Mode=OneWay}"
@@ -270,7 +270,7 @@
                   <controls:ActionButton
                     Text="{x:Bind Model.Text.Get('connection_setup', 'cancel_test'), Mode=OneWay}"
                     HorizontalAlignment="Stretch"
-                    Glyph="{x:Bind icons:Lucide.X}"
+                    Glyph="{x:Bind icons:Segoe.X}"
                     ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'cancel_test_hint'), Mode=OneWay}"
                     Visibility="{x:Bind Model.IsTesting, Mode=OneWay}"
                     IsEnabled="{x:Bind Model.CanCancelTest, Mode=OneWay}"
@@ -328,7 +328,7 @@
                   <Grid Grid.Row="1" MinHeight="32" Margin="0,8,0,0">
                     <controls:ActionButton HorizontalAlignment="Right" Text="{x:Bind Model.Text.Get('connection_setup', 'resume'), Mode=OneWay}"
                       Visibility="{x:Bind Model.IsHolding, Mode=OneWay}" IsEnabled="{x:Bind Model.CanLeave, Mode=OneWay}"
-                      Glyph="{x:Bind icons:Lucide.Play}" Click="OnResume"
+                      Glyph="{x:Bind icons:Segoe.Play}" Click="OnResume"
                       ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'resume_hint'), Mode=OneWay}" />
                   </Grid>
                 </Grid>
@@ -354,16 +354,16 @@
                     <ColumnDefinition Width="Auto" />
                   </Grid.ColumnDefinitions>
                   <FontIcon
-                    FontFamily="{x:Bind icons:Lucide.Font}"
-                    Glyph="{x:Bind icons:Lucide.EthernetPort}"
+                    FontFamily="{x:Bind icons:Segoe.Font}"
+                    Glyph="{x:Bind icons:Segoe.EthernetPort}"
                     FontSize="{StaticResource TinyTorrentHeaderIconSize}"
                     VerticalAlignment="Center"
                     Visibility="{x:Bind controls:Visibilities.Unless(Model.HasLinkWarning), Mode=OneWay}"
                     AutomationProperties.AccessibilityView="Raw"
                   />
                   <FontIcon
-                    FontFamily="{x:Bind icons:Lucide.Font}"
-                    Glyph="{x:Bind icons:Lucide.TriangleAlert}"
+                    FontFamily="{x:Bind icons:Segoe.Font}"
+                    Glyph="{x:Bind icons:Segoe.TriangleAlert}"
                     FontSize="{StaticResource TinyTorrentHeaderIconSize}"
                     VerticalAlignment="Center"
                     Foreground="{ThemeResource SystemFillColorCautionBrush}"
@@ -446,8 +446,8 @@
                           <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
                         <FontIcon
-                          FontFamily="{x:Bind icons:Lucide.Font}"
-                          Glyph="{x:Bind icons:Lucide.Download}"
+                          FontFamily="{x:Bind icons:Segoe.Font}"
+                          Glyph="{x:Bind icons:Segoe.Download}"
                           FontSize="{StaticResource TinyTorrentInlineIconSize}"
                           AutomationProperties.AccessibilityView="Raw"
                         />
@@ -477,8 +477,8 @@
                           <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
                         <FontIcon
-                          FontFamily="{x:Bind icons:Lucide.Font}"
-                          Glyph="{x:Bind icons:Lucide.Upload}"
+                          FontFamily="{x:Bind icons:Segoe.Font}"
+                          Glyph="{x:Bind icons:Segoe.Upload}"
                           FontSize="{StaticResource TinyTorrentInlineIconSize}"
                           AutomationProperties.AccessibilityView="Raw"
                         />
@@ -618,8 +618,8 @@
                     <ColumnDefinition Width="*" />
                   </Grid.ColumnDefinitions>
                   <FontIcon
-                    FontFamily="{x:Bind icons:Lucide.Font}"
-                    Glyph="{x:Bind icons:Lucide.Gauge}"
+                    FontFamily="{x:Bind icons:Segoe.Font}"
+                    Glyph="{x:Bind icons:Segoe.Gauge}"
                     FontSize="{StaticResource TinyTorrentInlineIconSize}"
                     AutomationProperties.AccessibilityView="Raw"
                   />
@@ -648,8 +648,8 @@
                     <ColumnDefinition Width="*" />
                   </Grid.ColumnDefinitions>
                   <FontIcon
-                    FontFamily="{x:Bind icons:Lucide.Font}"
-                    Glyph="{x:Bind icons:Lucide.ArrowLeftRight}"
+                    FontFamily="{x:Bind icons:Segoe.Font}"
+                    Glyph="{x:Bind icons:Segoe.ArrowLeftRight}"
                     FontSize="{StaticResource TinyTorrentInlineIconSize}"
                     AutomationProperties.AccessibilityView="Raw"
                   />
@@ -698,7 +698,7 @@
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
               <controls:ActionButton
                 Text="{x:Bind Model.Text.Get('connection_setup', 'apply'), Mode=OneWay}"
-                Glyph="{x:Bind icons:Lucide.Check}"
+                Glyph="{x:Bind icons:Segoe.Check}"
                 Style="{StaticResource AccentButtonStyle}"
                 IsEnabled="{x:Bind Model.CanApply, Mode=OneWay}"
                 Click="OnApply"
@@ -707,7 +707,7 @@
               />
               <controls:ActionButton
                 Text="{x:Bind Model.Text.Get('dialog', 'cancel'), Mode=OneWay}"
-                Glyph="{x:Bind icons:Lucide.X}"
+                Glyph="{x:Bind icons:Segoe.X}"
                 ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'cancel_hint'), Mode=OneWay}"
                 IsEnabled="{x:Bind Model.CanLeave, Mode=OneWay}"
                 Click="OnCancel"

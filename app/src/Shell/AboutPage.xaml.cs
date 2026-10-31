@@ -11,15 +11,15 @@ public sealed partial class AboutPage : UserControl
     private readonly UISettings _display = new();
     private readonly SettingsLink _company = new()
     {
-        Glyph = Lucide.Building2,
-        EndGlyph = Lucide.ExternalLink,
+        Glyph = Segoe.Building2,
+        EndGlyph = Segoe.ExternalLink,
     };
     private readonly SettingsLink _source = new()
     {
-        Glyph = Lucide.CodeXml,
-        EndGlyph = Lucide.ExternalLink,
+        Glyph = Segoe.CodeXml,
+        EndGlyph = Segoe.ExternalLink,
     };
-    private readonly SettingsLink _credits = new() { Glyph = Lucide.Users };
+    private readonly SettingsLink _credits = new() { Glyph = Segoe.Users };
     public MainViewModel Main { get; }
     internal event EventHandler<Uri>? LinkRequested;
     internal event EventHandler? CreditsRequested;

@@ -485,7 +485,7 @@ public sealed class FilterChoice(MainViewModel owner, TorrentFilter filter) : IN
     public string Glyph =>
         Filter switch
         {
-            TorrentFilter.All => Lucide.List,
+            TorrentFilter.All => Segoe.List,
             TorrentFilter.Downloading => Torrent.GetGlyph(TorrentState.Downloading),
             TorrentFilter.Seeding => Torrent.GetGlyph(TorrentState.Seeding),
             TorrentFilter.Paused => Torrent.GetGlyph(TorrentState.Paused),

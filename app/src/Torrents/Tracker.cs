@@ -22,12 +22,12 @@ public sealed class Tracker : INotifyPropertyChanged
     public string StatusGlyph =>
         Status switch
         {
-            TrackerStatus.Waiting => Syno.Lucide.Hourglass,
-            TrackerStatus.Announcing => Syno.Lucide.RadioTower,
-            TrackerStatus.Working => Syno.Lucide.CircleCheck,
-            TrackerStatus.Error => Syno.Lucide.CircleAlert,
-            TrackerStatus.Disabled => Syno.Lucide.CircleOff,
-            _ => Syno.Lucide.CircleQuestionMark,
+            TrackerStatus.Waiting => Syno.Segoe.Hourglass,
+            TrackerStatus.Announcing => Syno.Segoe.RadioTower,
+            TrackerStatus.Working => Syno.Segoe.CircleCheck,
+            TrackerStatus.Error => Syno.Segoe.CircleAlert,
+            TrackerStatus.Disabled => Syno.Segoe.CircleOff,
+            _ => Syno.Segoe.CircleQuestionMark,
         };
     public string StatusHint =>
         _endpoints.Length == 0

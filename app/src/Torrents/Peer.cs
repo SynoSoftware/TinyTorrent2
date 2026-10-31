@@ -68,11 +68,11 @@ public sealed class Peer : INotifyPropertyChanged
     public string StateGlyph =>
         State switch
         {
-            PeerState.Known => Syno.Lucide.Unplug,
-            PeerState.Connecting => Syno.Lucide.PlugZap,
-            PeerState.Handshake => Syno.Lucide.Handshake,
-            PeerState.Connected => Syno.Lucide.Cable,
-            _ => Syno.Lucide.CircleQuestionMark,
+            PeerState.Known => Syno.Segoe.Unplug,
+            PeerState.Connecting => Syno.Segoe.PlugZap,
+            PeerState.Handshake => Syno.Segoe.Handshake,
+            PeerState.Connected => Syno.Segoe.Cable,
+            _ => Syno.Segoe.CircleQuestionMark,
         };
     public string StateHint => _text.Format("peers", "state_hint", StateExplanation, SourcesText);
     public string ClientHint =>
@@ -83,15 +83,15 @@ public sealed class Peer : INotifyPropertyChanged
             )
             : Client;
     public string DirectionGlyph =>
-        State == PeerState.Known ? string.Empty : Incoming ? Syno.Lucide.ArrowDown : Syno.Lucide.ArrowUp;
+        State == PeerState.Known ? string.Empty : Incoming ? Syno.Segoe.ArrowDown : Syno.Segoe.ArrowUp;
     public string EncryptionGlyph =>
         State == PeerState.Known
             ? string.Empty
             : _encryption switch
             {
-                PeerEncryption.Plain or PeerEncryption.Handshake => Syno.Lucide.ShieldOff,
-                PeerEncryption.Rc4 => Syno.Lucide.ShieldCheck,
-                PeerEncryption.Tls => Syno.Lucide.ShieldPlus,
+                PeerEncryption.Plain or PeerEncryption.Handshake => Syno.Segoe.ShieldOff,
+                PeerEncryption.Rc4 => Syno.Segoe.ShieldCheck,
+                PeerEncryption.Tls => Syno.Segoe.ShieldPlus,
                 _ => string.Empty,
             };
     public string ConnectionHint =>

@@ -24,35 +24,35 @@ public sealed partial class SettingsPage
                     ? Model.Destination.ConfirmedText + " · " + Main.FreeSpaceStatus
                     : Model.Destination.ConfirmedText ?? "—",
             new(SettingsCategory.Transfers, "download_locations"),
-            Syno.Lucide.Folder
+            Syno.Segoe.Folder
         );
         AddLink(
             HomeDownloads,
             "limits",
             () => Main.LimitsSummary,
             new(SettingsCategory.Limits, "limit_mode"),
-            Syno.Lucide.SlidersHorizontal
+            Syno.Segoe.SlidersHorizontal
         );
         AddLink(
             HomeDownloads,
             "seeding",
             () => Model.SeedingSummary,
             new(SettingsCategory.Transfers, "seeding"),
-            Syno.Lucide.Upload
+            Syno.Segoe.Upload
         );
         AddLink(
             HomeAppearance,
             "home_language",
             () => Model.Text.LanguageName(Model.Text.Language),
             new(SettingsCategory.Appearance, "language"),
-            Syno.Lucide.Languages
+            Syno.Segoe.Languages
         );
         AddLink(
             HomeLibrary,
             "video_information",
             () => Model.VideoProvider,
             new(SettingsCategory.Plugins, "video_provider"),
-            Syno.Lucide.Film
+            Syno.Segoe.Film
         );
         _automatic = new Syno.TinyTorrent.Subtitles.Automatic(
             Model.Text,
@@ -76,35 +76,35 @@ public sealed partial class SettingsPage
                         )
                     : "—",
             new(SettingsCategory.Plugins, "subtitle_supplier"),
-            Syno.Lucide.Captions
+            Syno.Segoe.Captions
         );
         AddLink(
             HomeNetwork,
             "network_interface",
             () => Model.SelectedAdapter?.Text ?? "—",
             new(SettingsCategory.Network, "network_interface"),
-            Syno.Lucide.Network
+            Syno.Segoe.Network
         );
         AddLink(
             HomeNetwork,
             "proxy_server",
             () => Model.Proxy.Summary,
             new(SettingsCategory.Network, "proxy"),
-            Syno.Lucide.Globe
+            Syno.Segoe.Globe
         );
         AddLink(
             HomeNetwork,
             "encryption",
             () => Model.EncryptionSummary,
             new(SettingsCategory.Network, "connection_encryption"),
-            Syno.Lucide.Shield
+            Syno.Segoe.Shield
         );
         AddLink(
             HomeSchedule,
             "weekly_schedule",
             () => Main.ScheduleSummary,
             new(SettingsCategory.Schedule, "weekly_schedule"),
-            Syno.Lucide.CalendarClock
+            Syno.Segoe.CalendarClock
         );
         var corners = (CornerRadius)Application.Current.Resources["ControlCornerRadius"];
         foreach (

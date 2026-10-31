@@ -24,10 +24,10 @@ public sealed partial class DatasetRow : UserControl
     };
     private readonly ActionButton _delete = new()
     {
-        Glyph = Lucide.Trash2,
+        Glyph = Segoe.Trash2,
         Visibility = Visibility.Collapsed,
     };
-    private readonly ActionButton _download = new() { Glyph = Lucide.Download };
+    private readonly ActionButton _download = new() { Glyph = Segoe.Download };
     private IDataset? _dataset;
     private Strings? _text;
     private FileInfo? _installed;

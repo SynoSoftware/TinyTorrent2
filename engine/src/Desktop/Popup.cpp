@@ -3,7 +3,6 @@
 #include "Resources.h"
 #include <algorithm>
 #include <cmath>
-#include <filesystem>
 #include <sstream>
 #include <utility>
 #include <oleacc.h>
@@ -32,8 +31,8 @@ constexpr ULONG defaultDuration = 5;
 constexpr wchar_t closeGlyph[] = L"\xE8BB";
 // Segoe MDL2 Assets' More, the button Windows' own notifications show.
 constexpr wchar_t moreGlyph[] = L"\xE712";
-// Lucide's x glyph, the Dismiss button's icon.
-constexpr wchar_t dismissGlyph = L'\uE1B2';
+// Syno.Segoe.X, the Dismiss button's icon.
+constexpr wchar_t dismissGlyph = L'\uE711';
 constexpr UINT textFormat = DT_WORDBREAK | DT_EDITCONTROL | DT_NOPREFIX | DT_END_ELLIPSIS;
 constexpr UINT labelFormat = DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_END_ELLIPSIS;
 constexpr UINT detailFormat = DT_SINGLELINE | DT_NOPREFIX;
@@ -115,11 +114,29 @@ UINT Duration()
     return seconds * 1000;
 }
 
-// The window ships the Lucide font beside the engine; sharing its copy keeps
-// the engine small.
-std::filesystem::path IconFont()
+// Segoe Fluent Icons, Windows 11's icon font, which the window's icons use.
+// Windows 10 lacks it; Segoe MDL2 Assets there has every glyph the popup draws.
+wchar_t const* IconFont()
 {
-    return std::filesystem::path(Executable()).parent_path() / L"Lucide" / L"Fonts" / L"lucide.ttf";
+    static wchar_t const* const face = []
+    {
+        LOGFONTW query{};
+        query.lfCharSet = DEFAULT_CHARSET;
+        wcscpy_s(query.lfFaceName, L"Segoe Fluent Icons");
+        auto found = false;
+        auto device = GetDC(nullptr);
+        EnumFontFamiliesExW(
+            device, &query,
+            [](LOGFONTW const*, TEXTMETRICW const*, DWORD, LPARAM found)
+            {
+                *reinterpret_cast<bool*>(found) = true;
+                return 0;
+            },
+            reinterpret_cast<LPARAM>(&found), 0);
+        ReleaseDC(nullptr, device);
+        return found ? L"Segoe Fluent Icons" : L"Segoe MDL2 Assets";
+    }();
+    return face;
 }
 }
 
@@ -621,16 +638,11 @@ Popup::Popup(Strings const& strings) : strings_(strings)
     type.lpfnWndProc = MenuProcedure;
     type.lpszClassName = menuClass;
     RegisterClassW(&type);
-    hasIcons_ = AddFontResourceExW(IconFont().c_str(), FR_PRIVATE, nullptr) > 0;
 }
 
 Popup::~Popup()
 {
     Close();
-    if (hasIcons_)
-    {
-        RemoveFontResourceExW(IconFont().c_str(), FR_PRIVATE, nullptr);
-    }
 }
 
 void Popup::Show(Content toast)
@@ -912,7 +924,7 @@ void Popup::Layout()
     wcscpy_s(glyph.lfFaceName, L"Segoe MDL2 Assets");
     glyphs_ = CreateFontIndirectW(&glyph);
     glyph.lfHeight = -Scale(menuIconSize, dpi);
-    wcscpy_s(glyph.lfFaceName, L"Lucide");
+    wcscpy_s(glyph.lfFaceName, IconFont());
     icons_ = CreateFontIndirectW(&glyph);
 
     auto width = Scale(popupWidth, dpi);
@@ -931,7 +943,7 @@ void Popup::Layout()
             widest = std::max(widest, label.cx);
         }
         SelectObject(device, previous);
-        auto icon = hasIcons_ ? Scale(actionIconSize, dpi) + Scale(actionIconGap, dpi) : 0;
+        auto icon = Scale(actionIconSize, dpi) + Scale(actionIconGap, dpi);
         auto count = static_cast<LONG>(content_.actions.size());
         auto button = widest + icon + 2 * Scale(actionInset, dpi);
         width = std::max<LONG>(width, 2 * inset + count * button + (count - 1) * Scale(actionSpacing, dpi));
@@ -1111,7 +1123,7 @@ void Popup::Paint(HWND window)
         canvas.Text(line, bounds, detailFormat | ellipsis, caption_, foreground);
         bounds.top = bounds.bottom + Scale(lineGap, dpi);
     }
-    auto iconWidth = hasIcons_ ? Scale(actionIconSize, dpi) + Scale(actionIconGap, dpi) : 0;
+    auto iconWidth = Scale(actionIconSize, dpi) + Scale(actionIconGap, dpi);
     auto focused = GetFocus() == window_;
     previous = SelectObject(canvas.Device(), font_);
     for (std::size_t index = 0; index < actions_.size(); ++index)
@@ -1140,11 +1152,8 @@ void Popup::Paint(HWND window)
         auto inner = Scale(actionInset, dpi);
         auto left = std::max<LONG>(button.left + inner,
             (button.left + button.right - iconWidth - label.cx) / 2);
-        if (hasIcons_)
-        {
-            RECT glyph{left, button.top, left + Scale(actionIconSize, dpi), button.bottom};
-            canvas.Text(std::wstring(1, action.glyph), glyph, DT_SINGLELINE | DT_CENTER | DT_VCENTER, icons_, color);
-        }
+        RECT glyph{left, button.top, left + Scale(actionIconSize, dpi), button.bottom};
+        canvas.Text(std::wstring(1, action.glyph), glyph, DT_SINGLELINE | DT_CENTER | DT_VCENTER, icons_, color);
         RECT text{left + iconWidth, button.top, button.right - inner, button.bottom};
         canvas.Text(action.label, text, labelFormat, font_, color);
     }
@@ -1871,12 +1880,8 @@ void Popup::PaintMenu(HWND window)
             canvas.Fill(row, foreground, hoverOpacity, Scale(radius, dpi));
         }
         auto left = row.left + inset;
-        if (hasIcons_)
-        {
-            RECT icon{left, row.top, left + Scale(menuIconSize, dpi), row.bottom};
-            canvas.Text(std::wstring(1, item.glyph), icon, DT_SINGLELINE | DT_CENTER | DT_VCENTER, icons_,
-                foreground);
-        }
+        RECT icon{left, row.top, left + Scale(menuIconSize, dpi), row.bottom};
+        canvas.Text(std::wstring(1, item.glyph), icon, DT_SINGLELINE | DT_CENTER | DT_VCENTER, icons_, foreground);
         RECT text{left + MenuIconsWidth(dpi), row.top, row.right - inset, row.bottom};
         canvas.Text(item.text, text, labelFormat, font_, foreground);
     }
@@ -1889,7 +1894,7 @@ int Popup::MenuItemsTop(UINT dpi) const
 
 int Popup::MenuIconsWidth(UINT dpi) const
 {
-    return hasIcons_ ? Scale(menuIconSize + menuIconGap, dpi) : 0;
+    return Scale(menuIconSize + menuIconGap, dpi);
 }
 
 std::optional<std::size_t> Popup::MenuItemAt(POINT point) const

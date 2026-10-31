@@ -354,7 +354,7 @@ public sealed partial class MainWindow
                     DefaultButton = ContentDialogButton.Close,
                     Glyph = question.Glyph,
                     PrimaryGlyph = question.Glyph,
-                    SecondaryGlyph = Syno.Lucide.Undo2,
+                    SecondaryGlyph = Syno.Segoe.Undo2,
                 };
                 var choice = await ShowDialog(
                     interaction,

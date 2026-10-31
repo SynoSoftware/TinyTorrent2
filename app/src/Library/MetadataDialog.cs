@@ -20,7 +20,7 @@ internal sealed class MetadataDialog : UserControl, IDraft
     private readonly HyperlinkButton _settings = new();
     private readonly ActionButton _fetch = new()
     {
-        Glyph = Lucide.Download,
+        Glyph = Segoe.Download,
         VerticalAlignment = VerticalAlignment.Bottom,
     };
     private RequestBlock? _block;
@@ -29,8 +29,8 @@ internal sealed class MetadataDialog : UserControl, IDraft
     private readonly NumberBox _year;
     private readonly FontIcon _broadenedIcon = new()
     {
-        FontFamily = Lucide.Font,
-        Glyph = Lucide.Search,
+        FontFamily = Segoe.Font,
+        Glyph = Segoe.Search,
         Style = (Style)Application.Current.Resources["TinyTorrentStatusIconStyle"],
         Visibility = Visibility.Collapsed,
     };

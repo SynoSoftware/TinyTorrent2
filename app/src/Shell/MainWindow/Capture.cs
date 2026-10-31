@@ -549,7 +549,7 @@ public sealed partial class MainWindow
                     new(
                         command,
                         Model.RestartText,
-                        Syno.Lucide.RotateCcw,
+                        Syno.Segoe.RotateCcw,
                         string.Empty
                     )
                 )
@@ -563,7 +563,7 @@ public sealed partial class MainWindow
                     new(
                         command,
                         text.Get("commands", "open_folder"),
-                        Syno.Lucide.FolderOpen,
+                        Syno.Segoe.FolderOpen,
                         string.Empty
                     )
                 )
@@ -577,13 +577,13 @@ public sealed partial class MainWindow
                     new(
                         command,
                         text.Get("inspector", "retry"),
-                        Syno.Lucide.RotateCcw,
+                        Syno.Segoe.RotateCcw,
                         string.Empty
                     ),
                     new(
                         Model.OpenDataFolder,
                         text.Get("commands", "open_folder"),
-                        Syno.Lucide.FolderOpen,
+                        Syno.Segoe.FolderOpen,
                         text.Get("window", "database_folder_tip")
                     )
                 )
@@ -597,7 +597,7 @@ public sealed partial class MainWindow
                     new(
                         command,
                         text.Get("notifications", "settings"),
-                        Syno.Lucide.Settings,
+                        Syno.Segoe.Settings,
                         string.Empty
                     )
                 )
@@ -611,7 +611,7 @@ public sealed partial class MainWindow
                     new(
                         command,
                         text.Get("notifications", "settings"),
-                        Syno.Lucide.Settings,
+                        Syno.Segoe.Settings,
                         string.Empty
                     )
                 )
@@ -2847,7 +2847,7 @@ public sealed partial class MainWindow
                             new(
                                 Model.Restart,
                                 Model.RestartText,
-                                Syno.Lucide.RotateCcw,
+                                Syno.Segoe.RotateCcw,
                                 Model.Text.Get("connection", "restart_tip")
                             )
                         );

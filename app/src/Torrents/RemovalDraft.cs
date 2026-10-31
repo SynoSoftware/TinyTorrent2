@@ -24,9 +24,9 @@ public sealed class RemovalDraft : FileDraft
     public override bool CanSubmit => CanSend;
     public override ClosePolicy ClosePolicy => new ClosePolicy.Discard();
     public override string Title => Text.FormatCount("remove", "title", Locations.Length);
-    public override string Glyph => Lucide.Trash2;
+    public override string Glyph => Segoe.Trash2;
     public override string SubmitText => Text.Get("commands", "remove");
-    public override string SubmitGlyph => Lucide.ListX;
+    public override string SubmitGlyph => Segoe.ListX;
     public override string SubmitToolTip =>
         DeletesFiles ? Text.Get("remove", Recycles ? "recycle_tip" : "delete_tip")
         : Text.Get("remove", "tip");
@@ -78,9 +78,9 @@ public sealed class RemovalDraft : FileDraft
     public bool DeletesPermanently => DeletesFiles && !Recycles;
     private bool DeletesTorrentFiles => DeleteTorrentFiles && HasTorrentFiles;
     public string ConsequenceGlyph =>
-        !DeletesFiles ? Lucide.Info
-        : Recycles ? Lucide.Trash2
-        : Lucide.TriangleAlert;
+        !DeletesFiles ? Segoe.Info
+        : Recycles ? Segoe.Trash2
+        : Segoe.TriangleAlert;
     public string Consequence
     {
         get

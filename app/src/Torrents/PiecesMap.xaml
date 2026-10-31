@@ -113,29 +113,29 @@
         <FontIcon
           x:Name="InformationalSign"
           Style="{StaticResource PiecesMapSignStyle}"
-          FontFamily="{x:Bind icons:Lucide.Font}"
-          Glyph="{x:Bind icons:Lucide.Hourglass}"
+          FontFamily="{x:Bind icons:Segoe.Font}"
+          Glyph="{x:Bind icons:Segoe.Hourglass}"
           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
         />
         <FontIcon
           x:Name="SuccessSign"
           Style="{StaticResource PiecesMapSignStyle}"
-          FontFamily="{x:Bind icons:Lucide.Font}"
-          Glyph="{x:Bind icons:Lucide.CircleCheck}"
+          FontFamily="{x:Bind icons:Segoe.Font}"
+          Glyph="{x:Bind icons:Segoe.CircleCheck}"
           Foreground="{ThemeResource SystemFillColorSuccessBrush}"
         />
         <FontIcon
           x:Name="WarningSign"
           Style="{StaticResource PiecesMapSignStyle}"
-          FontFamily="{x:Bind icons:Lucide.Font}"
-          Glyph="{x:Bind icons:Lucide.TriangleAlert}"
+          FontFamily="{x:Bind icons:Segoe.Font}"
+          Glyph="{x:Bind icons:Segoe.TriangleAlert}"
           Foreground="{ThemeResource SystemFillColorCautionBrush}"
         />
         <FontIcon
           x:Name="ErrorSign"
           Style="{StaticResource PiecesMapSignStyle}"
-          FontFamily="{x:Bind icons:Lucide.Font}"
-          Glyph="{x:Bind icons:Lucide.CircleAlert}"
+          FontFamily="{x:Bind icons:Segoe.Font}"
+          Glyph="{x:Bind icons:Segoe.CircleAlert}"
           Foreground="{ThemeResource SystemFillColorCriticalBrush}"
         />
         <TextBlock

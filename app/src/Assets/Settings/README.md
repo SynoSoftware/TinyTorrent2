@@ -23,6 +23,6 @@ and uses the teal gradient from the former Arrow Sync color asset.
 
 SettingsPage owns the category-to-icon mapping. It uses native ImageIcon for the
 SVGs and native FontIcon with inherited system colors in High Contrast.
-The footer actions use neutral Lucide icons: checked and empty squares for
+The footer actions use neutral Segoe icons: checked and empty squares for
 Advanced mode, and a left arrow for Back. The title-bar workspace switch reuses
-library.svg. Other application icons retain the existing Lucide authority.
+library.svg. Other application icons come from Segoe.

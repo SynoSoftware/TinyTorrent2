@@ -118,19 +118,19 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
     public static string GetGlyph(TorrentState state) =>
         state switch
         {
-            TorrentState.Downloading => Syno.Lucide.ArrowDownToLine,
-            TorrentState.Seeding => Syno.Lucide.Sprout,
-            TorrentState.Paused => Syno.Lucide.Square,
-            TorrentState.AllPaused => Syno.Lucide.Pause,
-            TorrentState.Completed => Syno.Lucide.CircleCheck,
-            TorrentState.Checking => Syno.Lucide.RefreshCw,
-            TorrentState.Moving => Syno.Lucide.Folder,
+            TorrentState.Downloading => Syno.Segoe.ArrowDownToLine,
+            TorrentState.Seeding => Syno.Segoe.Sprout,
+            TorrentState.Paused => Syno.Segoe.Square,
+            TorrentState.AllPaused => Syno.Segoe.Pause,
+            TorrentState.Completed => Syno.Segoe.CircleCheck,
+            TorrentState.Checking => Syno.Segoe.RefreshCw,
+            TorrentState.Moving => Syno.Segoe.Folder,
             TorrentState.Queued
             or TorrentState.WaitingCheck
             or TorrentState.WaitingMove
-            or TorrentState.Metadata => Syno.Lucide.Hourglass,
-            TorrentState.Error => Syno.Lucide.CircleAlert,
-            _ => Syno.Lucide.CircleQuestionMark,
+            or TorrentState.Metadata => Syno.Segoe.Hourglass,
+            TorrentState.Error => Syno.Segoe.CircleAlert,
+            _ => Syno.Segoe.CircleQuestionMark,
         };
 
     // The engine's word for each torrent state, which is also the state's key

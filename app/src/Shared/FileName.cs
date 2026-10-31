@@ -74,12 +74,12 @@ internal static partial class FileName
     internal static string Glyph(FileKind kind) =>
         kind switch
         {
-            FileKind.Video => Lucide.FileVideoCamera,
-            FileKind.Audio => Lucide.FileMusic,
-            FileKind.Picture => Lucide.FileImage,
-            FileKind.Document => Lucide.FileText,
-            FileKind.Archive => Lucide.FileArchive,
-            _ => Lucide.File,
+            FileKind.Video => Segoe.FileVideoCamera,
+            FileKind.Audio => Segoe.FileMusic,
+            FileKind.Picture => Segoe.FileImage,
+            FileKind.Document => Segoe.FileText,
+            FileKind.Archive => Segoe.FileArchive,
+            _ => Segoe.File,
         };
 
     internal static string Normalize(string text)

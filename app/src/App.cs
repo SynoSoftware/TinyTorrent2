@@ -51,10 +51,10 @@ public partial class App : Application
 
     protected override async void OnLaunched(LaunchActivatedEventArgs args)
     {
-        Resources["LucideFont"] = Syno.Lucide.Font;
+        Resources["SegoeFont"] = Syno.Segoe.Font;
         Resources["FlagsFont"] = Syno.Flags.Font;
-        Resources["TinyTorrentDownloadGlyph"] = Syno.Lucide.ArrowDown;
-        Resources["TinyTorrentUploadGlyph"] = Syno.Lucide.ArrowUp;
+        Resources["TinyTorrentDownloadGlyph"] = Syno.Segoe.ArrowDown;
+        Resources["TinyTorrentUploadGlyph"] = Syno.Segoe.ArrowUp;
         Marshal.ThrowExceptionForHR(SetCurrentProcessExplicitAppUserModelID("Syno.TinyTorrent"));
         // The engine owns startup isolation; only its window starts here.
         var fromEngine = Environment.GetCommandLineArgs().Contains("--engine");

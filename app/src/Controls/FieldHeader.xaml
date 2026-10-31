@@ -29,8 +29,8 @@
       Style="{StaticResource TinyTorrentSubtleButtonStyle}"
     >
       <FontIcon
-        FontFamily="{x:Bind icons:Lucide.Font}"
-        Glyph="{x:Bind icons:Lucide.TriangleAlert}"
+        FontFamily="{x:Bind icons:Segoe.Font}"
+        Glyph="{x:Bind icons:Segoe.TriangleAlert}"
         FontSize="{StaticResource TinyTorrentStatisticIconSize}"
         Foreground="{ThemeResource SystemFillColorCautionBrush}"
       />

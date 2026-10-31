@@ -16,7 +16,7 @@ design background; this contract owns the current workspace rules.
 
 **Owner's decision: keep the native WinUI MenuBar.** It is the discoverable home
 for commands and replaces the application navigation pane. Its dropdown commands
-use Lucide icons and separators between distinct action groups. Every expanded
+use Segoe icons and separators between distinct action groups. Every expanded
 menu item, including headings, choices and submenu parents, has an icon. Every
 menu, MenuBar menus and context menus alike, is a list of entries that its owner
 describes: headings, commands, choices, submenus and separators. MenuItems
@@ -30,7 +30,7 @@ entries, so a refresh does not rewrite every closed menu's controls.
 When every choice has a content icon, as in View, choices retain those icons
 beside native state indicators. Mutually exclusive choices use native radio
 items in named groups; independent options use native toggle items. If a choice
-has no content icon, as in Torrent, all choices use Lucide checked, empty or mixed
+has no content icon, as in Torrent, all choices use Segoe checked, empty or mixed
 squares in the existing icon column. A native toggle there would reserve an
 otherwise empty checkmark column beside every command. The described state
 remains authoritative when navigation is refused by an unfinished draft.
@@ -56,7 +56,7 @@ before the theme button, showing EN, ES, NL, 中文, PT or FR in the existing ca
 context-menu renderer's language choices, with flags, native names and the current choice
 checked. Its centred label uses the shared button dimensions and zero margin and
 padding, so the language shortcut stays the same size as its neighbours. The theme button uses
-Lucide Lightbulb for switching to light and LightbulbOff for switching to dark,
+Segoe Lightbulb for switching to light and LightbulbOff for switching to dark,
 so it remains distinct from the Settings gear. Its tooltip names the destination theme. It sits
 immediately beside the native caption buttons, with no extra gap.
 Windows still owns minimize, maximize and close; never simulate those controls.
@@ -239,7 +239,7 @@ chrome changes both surfaces together. Titles share `TinyTorrentGroupTitleTextSt
 
 The Filters toggle opens a collapsible native pane with All, Downloading,
 Seeding, Stopped, Queued and Errors choices and live counts. Each choice has one
-monochrome Inline Lucide icon; its label and count retain native row alignment.
+monochrome Inline Segoe icon; its label and count retain native row alignment.
 Closing the drawer
 keeps the chosen criteria, identified by the status label.
 Escape closes the drawer when focus is inside it. Clear filters lives inside
@@ -250,8 +250,8 @@ starts again by itself. Queued also includes Waiting to check and Waiting to
 move, because those torrents wait for their turn too. One shared owner keeps pane visibility and its expanded or compact
 presentation in both modes. Hiding preserves that presentation for the next show.
 Close hides the pane completely and unchecks View > Filters. Minimize uses the
-Lucide Pin icon and collapses the pane to a ten-pixel bar with a vertically
-centred Lucide EllipsisVertical, keeping View > Filters checked. The ten-pixel
+Segoe Pin icon and collapses the pane to a ten-pixel bar with a vertically
+centred Segoe EllipsisVertical, keeping View > Filters checked. The ten-pixel
 strip contains an eight-pixel button and a two-pixel right gap, separating its
 highlight from the table. The icon clips within the button without widening it;
 clicking the button expands the pane. View > Filters
@@ -328,7 +328,7 @@ Torrents, the groups follow a torrent's life, and the most used commands come
 first: Start and Stop; Open folder and Properties; Verify;
 Remove. Remove is a group of its own at the end of the selection commands, so
 the destructive command sits apart from the frequent ones. Library shows Open,
-Open folder and Properties. These use the same commands and Lucide icons as the
+Open folder and Properties. These use the same commands and Segoe icons as the
 page's menu. At the row's right end, Selected
 connections map and All connections map form one group, because they are two
 scopes of one view. Library shows only All connections map, because Selected

@@ -157,12 +157,8 @@
         <RelativePath>$(ProjectPriFileName)</RelativePath>
         <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
       </ResolvedFileToPublish>
-      <ResolvedFileToPublish Include="$(TargetDir)Lucide\Fonts\lucide.ttf">
-        <RelativePath>Lucide\Fonts\lucide.ttf</RelativePath>
-        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-      </ResolvedFileToPublish>
-      <ResolvedFileToPublish Include="$(TargetDir)Lucide\Fonts\twemoji.ttf">
-        <RelativePath>Lucide\Fonts\twemoji.ttf</RelativePath>
+      <ResolvedFileToPublish Include="$(TargetDir)Glyphs\Fonts\twemoji.ttf">
+        <RelativePath>Glyphs\Fonts\twemoji.ttf</RelativePath>
         <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
       </ResolvedFileToPublish>
       <ResolvedFileToPublish Include="$(TargetDir)Assets\dbip-country-lite.mmdb">

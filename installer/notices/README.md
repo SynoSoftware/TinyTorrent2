@@ -18,7 +18,7 @@ so their required distribution texts live here:
   <https://github.com/maxmind/MaxMind-DB-Reader-dotnet/blob/main/LICENSE>.
 
 `DB-IP.txt` is the attribution that DB-IP's CC BY 4.0 data requires. The
-flag font's notice is `lib/Lucide/LICENSE.Twemoji`, beside the Lucide notice.
+flag font's notice is `lib/Glyphs/LICENSE.Twemoji`.
 
 `Win2D.txt` preserves the native map renderer's MIT notice from
 <https://github.com/microsoft/Win2D/blob/master/LICENSE.txt>.

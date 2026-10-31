@@ -15,15 +15,15 @@ public sealed partial class SettingsLink : Button
     };
     private readonly FontIcon _icon = new()
     {
-        FontFamily = Lucide.Font,
+        FontFamily = Segoe.Font,
         FontSize = (double)Application.Current.Resources["TinyTorrentHeaderIconSize"],
         VerticalAlignment = VerticalAlignment.Center,
     };
     private readonly FontIcon _ending = new()
     {
-        FontFamily = Lucide.Font,
+        FontFamily = Segoe.Font,
         FontSize = (double)Application.Current.Resources["TinyTorrentChevronIconSize"],
-        Glyph = Lucide.ChevronRight,
+        Glyph = Segoe.ChevronRight,
     };
 
     public string Header

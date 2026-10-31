@@ -14,7 +14,7 @@
     <controls:ActionButton
       x:Name="Check"
       x:FieldModifier="internal"
-      Glyph="{x:Bind icons:Lucide.Plug}"
+      Glyph="{x:Bind icons:Segoe.Plug}"
     />
     <ProgressRing
       x:Name="Progress"
@@ -27,8 +27,8 @@
     <FontIcon
       x:Name="Success"
       Grid.Column="1"
-      FontFamily="{x:Bind icons:Lucide.Font}"
-      Glyph="{x:Bind icons:Lucide.CircleCheck}"
+      FontFamily="{x:Bind icons:Segoe.Font}"
+      Glyph="{x:Bind icons:Segoe.CircleCheck}"
       Style="{StaticResource TinyTorrentStatusIconStyle}"
       Foreground="{ThemeResource SystemFillColorSuccessBrush}"
       Visibility="Collapsed"
@@ -37,8 +37,8 @@
     <FontIcon
       x:Name="Failure"
       Grid.Column="1"
-      FontFamily="{x:Bind icons:Lucide.Font}"
-      Glyph="{x:Bind icons:Lucide.CircleX}"
+      FontFamily="{x:Bind icons:Segoe.Font}"
+      Glyph="{x:Bind icons:Segoe.CircleX}"
       Style="{StaticResource TinyTorrentStatusIconStyle}"
       Foreground="{ThemeResource SystemFillColorCriticalBrush}"
       Visibility="Collapsed"

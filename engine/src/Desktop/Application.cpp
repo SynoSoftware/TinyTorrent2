@@ -477,9 +477,9 @@ bool Application::ConfirmExit()
 {
     bool confirmed = false;
     exit_ = ExitPhase::Confirming;
-    // Lucide's power glyph, as the tray's Exit shows.
+    // Syno.Segoe.Power, as the tray's Exit shows.
     toasts_->Ask({strings_.Text("exit", "title"), strings_.Text("exit", "active"),
-        {.glyph = L'\uE140', .label = strings_.Text("tray", "exit"),
+        {.glyph = L'\uE7E8', .label = strings_.Text("tray", "exit"),
             .run = [&confirmed] { confirmed = true; }, .automationId = L"Exit"}}, Setting::ConfirmExit);
     MSG message{};
     while (toasts_->IsOpen() && exit_ == ExitPhase::Confirming && GetMessageW(&message, nullptr, 0, 0) > 0)
