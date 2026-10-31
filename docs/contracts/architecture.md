@@ -697,7 +697,7 @@ Updates use the same release installer, after the coordinated
 [Exit](engine/lifetime.md#closing-and-shutdown). When TinyTorrent was running before the
 update, the installer starts it again, so downloads do not stay stopped until
 the person remembers to open it. It starts in the tray, or with its window when
-Help > Update passed `/OPEN=1`, because that person was using the window. If the installed executable cannot start,
+Update now passed `/OPEN=1`, because that person was using the window. If the installed executable cannot start,
 Setup uses the bundled engine to request Exit; a running application's refused
 Exit still stops replacement to protect unfinished input. Windows Restart Manager
 handles remaining file locks. Stage and validate a complete release
@@ -707,8 +707,14 @@ Keep an interrupted update recoverable without modifying downloads.
 Without an update check, most installations keep an old libtorrent and its known
 network-facing defects. When the window opens, WinUI asks the project's release
 page for the latest version, at most once a day, unless the Check for updates
-setting is off. A newer release shows Update available in the window.
-Installing it is the person's action: Help > Update downloads the release's
+setting is off. A newer release shows an Update available notification with an
+Update now button, through the existing notification owner, and the passive
+footer notice when space permits. Automatic discovery never opens a dialog.
+Help > Check for updates is available regardless of that setting and checks
+immediately, bypassing the daily cache. A manual check reports either the same
+update notification or that TinyTorrent is up to date. A failed check reports
+the failure, and another manual check can retry immediately.
+Installing it is the person's action: Update now downloads the release's
 installer through the saved proxy and network adapter, checks it, and runs it
 without questions, as the update above describes. The check depends on the
 running program. A TinyTorrent whose signature Windows trusts runs only an
@@ -725,9 +731,11 @@ beside its window layout. The check uses the project's public latest-release
 API, without credentials, with an eight-second limit. Cache the attempt before
 requesting, including an unsuccessful attempt, so reopening an offline window
 does not repeat the request within 24 hours. Unavailable releases and network
-failures do not interrupt torrent work. Turning the setting off or closing
-WinUI cancels a pending request. The update command opens only the project's
-release page, never a download URL supplied in a reply.
+failures do not interrupt torrent work. Turning the setting off cancels an
+automatic check; a manual check remains independent of that preference.
+Closing WinUI or losing the confirmed route cancels either check. Requests use
+only the project's release API; downloading and running Setup requires the
+person's Update now action.
 
 Sign public release artifacts; validate installation, upgrade, and uninstall
 with the chosen prerequisites before publication. A future winget listing can

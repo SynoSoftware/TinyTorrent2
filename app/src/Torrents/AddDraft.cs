@@ -25,6 +25,7 @@ public sealed class AddDraft : IDraft
     private bool _queueTop;
     private bool _sequential;
     private bool _firstLast;
+    private bool _saveDestination;
     private Exception? _failure;
 
     // The engine refuses a folder, not one torrent, so a refused folder is the
@@ -81,9 +82,30 @@ public sealed class AddDraft : IDraft
             if (_destination == value)
                 return;
             _destination = value;
+            if (!HasNewDestination)
+                _saveDestination = false;
             _space = null;
             RefreshSpace();
             _destinationFailure = null;
+            Refresh();
+        }
+    }
+    private bool HasNewDestination =>
+        !string.IsNullOrWhiteSpace(_destination)
+        && !string.Equals(
+            Path.TrimEndingDirectorySeparator(_destination.Trim()),
+            Path.TrimEndingDirectorySeparator(
+                _owner.Settings.Destination.ConfirmedText?.Trim() ?? string.Empty
+            ),
+            StringComparison.OrdinalIgnoreCase
+        );
+    public bool CanSaveDestination => CanEdit && HasNewDestination;
+    public bool SaveDestination
+    {
+        get => _saveDestination && HasNewDestination;
+        set
+        {
+            _saveDestination = value;
             Refresh();
         }
     }
@@ -732,6 +754,7 @@ public sealed class AddDraft : IDraft
         );
         if (!await AcceptMagnet() || !CanSave || !IsValid)
             return false;
+        var saveDestination = SaveDestination;
         _phase = AdditionPhase.Submitting;
         _addStopped = false;
         Refresh();
@@ -883,6 +906,8 @@ public sealed class AddDraft : IDraft
                     _owner.Notifications.Announce(message);
                 return false;
             }
+            if (saveDestination)
+                await _owner.Settings.Save(new { default_destination = destination });
             Clear();
             _owner.Notifications.AnnounceAccepted("add", "title");
             return true;
@@ -1111,6 +1136,7 @@ public sealed class AddDraft : IDraft
         _paused = _defaultPaused;
         _queueTop = _defaultQueueTop;
         _sequential = _firstLast = false;
+        _saveDestination = false;
         Confirmation.NeverShow = false;
         _failure = null;
         _addStopped = false;

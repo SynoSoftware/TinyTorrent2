@@ -2,9 +2,11 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Data;
+using Microsoft.UI.Xaml.Input;
 using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Shell;
 using Windows.ApplicationModel.DataTransfer;
+using Windows.System;
 
 namespace Syno.TinyTorrent.Torrents;
 
@@ -158,6 +160,20 @@ public sealed partial class AddDialog : UserControl, IDisposable
             if (Model.AddDraft.CanEdit)
                 Model.AddDraft.Destination = editor.Text;
         };
+        // ComboBox commits typed text and handles Enter. Let that same key
+        // reach ContentDialog's default button unless it selected a list item.
+        var submitOnEnter = false;
+        Destination.PreviewKeyDown += (_, args) =>
+            submitOnEnter = args.Key == VirtualKey.Enter && !Destination.IsDropDownOpen;
+        Destination.AddHandler(
+            KeyDownEvent,
+            new KeyEventHandler((_, args) =>
+            {
+                if (submitOnEnter && args.Key == VirtualKey.Enter)
+                    args.Handled = false;
+            }),
+            handledEventsToo: true
+        );
     }
 
     public static GridLength PaneHeight(bool visible) => new(visible ? 1 : 0, GridUnitType.Star);

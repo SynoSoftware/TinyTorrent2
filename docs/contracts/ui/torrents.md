@@ -291,6 +291,13 @@ from the list. Dropping a single
 folder on the open dialog makes it the destination. Free space for the destination's
 drive appears under it, and a warning replaces it when the wanted files do not
 fit; the warning never blocks Add, because the person may free space first.
+Below free space, Set as default download folder is a draft choice saved through
+Settings after Add succeeds; Cancel leaves the saved default unchanged. It is
+disabled when the entered folder is empty or already the configured default,
+ignoring case and a trailing directory separator.
+Enter in the folder field commits the typed path and invokes Add through the
+dialog's default button. When the recent-folders list is open, Enter only selects
+its folder, so choosing a recent folder does not submit the dialog.
 Free-space reads run off the UI thread, including for network paths. An unavailable
 drive or share shows an error icon and explanation in the free-space row; other
 failed reads remain unknown rather than declaring the destination invalid.

@@ -247,8 +247,10 @@ tooltip; this optional fact needs no permanent unavailable message. Torrent IP r
 `Torrent IP: …` from reported torrent-network addresses. An unavailable IP
 measurement says so instead of showing a stale healthy value. Both yield when the
 footer has insufficient room. Update available remains passive discovery when
-space permits, at the lowest layout priority, because no other passive update
-notification exists; Help > Update owns its action. Passive footer text has no
+space permits, at the lowest layout priority. The existing notification owner
+reports a newer version with an Update now button; automatic discovery opens
+no dialog. Help > Check for updates always offers an immediate manual check,
+even with automatic checks off. Passive footer text has no
 hidden double-click navigation; the Windows status bar guidance discourages it,
 and settings, filters and updates have visible keyboard-accessible homes.
 

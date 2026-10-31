@@ -190,6 +190,18 @@
                     <controls:FieldHeader Error="{x:Bind Model.AddDraft.DestinationMessage, Mode=OneWay}" />
                   </StackPanel>
                 </Grid>
+                <CheckBox
+                  x:Name="SaveDestination"
+                  IsChecked="{x:Bind Model.AddDraft.SaveDestination, Mode=TwoWay}"
+                  IsEnabled="{x:Bind Model.AddDraft.CanSaveDestination, Mode=OneWay}"
+                  AutomationProperties.Name="{x:Bind Model.Text.Get('add', 'default_folder'), Mode=OneWay}"
+                >
+                  <TextBlock
+                    Text="{x:Bind Model.Text.Get('add', 'default_folder'), Mode=OneWay}"
+                    Style="{StaticResource TinyTorrentBodyTextStyle}"
+                    TextWrapping="Wrap"
+                  />
+                </CheckBox>
                 <!-- An empty TextBlock still takes a line, so the line
                      collapses until another torrent shares the folder. -->
                 <TextBlock

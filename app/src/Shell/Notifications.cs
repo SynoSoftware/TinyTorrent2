@@ -408,11 +408,19 @@ public sealed class Notifications
             case Toast.Work work:
             {
                 var result = work.Result;
-                work.Title = _text.Get(
-                    "work",
-                    "result_" + result.Outcome.ToString().ToLowerInvariant()
-                );
-                work.Subject = _text.Get(result.Observation.Description);
+                var update = result.Outcome == WorkOutcome.Completed
+                    && result.SummaryKey == "update_available";
+                if (update)
+                {
+                    work.Action = _owner.Updates.Install;
+                    work.ActionText = _text.Get("about", "update");
+                    work.ActionTip = _text.Get("about", "update_tip");
+                    work.ActionGlyph = Syno.Lucide.CircleFadingArrowUp;
+                }
+                work.Title = update
+                    ? _text.Get("about", "available")
+                    : _text.Get("work", "result_" + result.Outcome.ToString().ToLowerInvariant());
+                work.Subject = update ? string.Empty : _text.Get(result.Observation.Description);
                 var progress = result.Observation.Progress;
                 var summary = result.SummaryKey is { } key
                     ? _text.Format("work", key, result.Arguments)

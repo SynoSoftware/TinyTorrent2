@@ -30,9 +30,16 @@ internal enum UpdatePhase
     Installing,
 }
 
-// Why Help > Update left the current version running.
+internal enum UpdateTrigger
+{
+    Automatic,
+    Manual,
+}
+
+// Why an update check or installation did not complete.
 internal enum UpdateFailure
 {
+    Unavailable,
     Missing,
     Signature,
     Checksum,

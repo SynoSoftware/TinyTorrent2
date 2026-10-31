@@ -232,6 +232,12 @@ They also check that a temporary layout visit restores once after accepted
 departure, survives a secondary page and a refused departure, and can be kept
 without restoring the old layout.
 
+`app/tests/UpdateChecks.ps1 -BinaryDirectory <built-app-folder>` exercises the
+compiled update owner with in-memory HTTP replies and a disposable cache. It
+checks manual discovery with automatic checks off, the notification's install
+action, daily throttling, failure feedback and immediate manual retry. It does
+not download an installer or start Setup.
+
 `app/tests/NotificationChecks.ps1 -BinaryDirectory <built-app-folder>` exercises
 the compiled toast owner without starting WinUI or the engine. It watches a
 timed toast closing after its lifetime, a fifth timed toast removing the oldest,

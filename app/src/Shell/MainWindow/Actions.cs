@@ -338,7 +338,7 @@ public sealed partial class MainWindow
                 new MenuCommand(
                     Model.UpdateText,
                     Syno.Lucide.CircleFadingArrowUp,
-                    Model.Updates.Install
+                    Model.Updates.Check
                 )
                 {
                     AccessKey = MenuKey("update"),

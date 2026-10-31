@@ -11,10 +11,10 @@ public sealed partial class MainViewModel
     private Task? _memoryRead;
 
     public bool HasUpdate => Updates.HasUpdate;
-    public string UpdateText => Text.Get("about", "update");
+    public string UpdateText => Text.Get("about", "check");
 
     private bool CanCheckUpdates =>
-        !_closed && IsRunning && Features.HasRoute && Settings.Updates.IsOn;
+        !_closed && IsRunning && Features.HasRoute;
 
     private void ObserveUpdates()
     {

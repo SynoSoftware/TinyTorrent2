@@ -14,8 +14,7 @@ using Syno.TinyTorrent.Shared.Network;
 namespace Syno.TinyTorrent.Shell;
 
 /// <summary>
-/// Checks GitHub once a day for a newer TinyTorrent and installs it from
-/// Help &gt; Update.
+/// Checks GitHub for a newer TinyTorrent and installs it at the person's request.
 /// </summary>
 internal sealed class Updates
 {
@@ -30,50 +29,51 @@ internal sealed class Updates
     private ReleaseCheck? _releaseCheck;
     private string? _cachePath;
     private Task? _check;
+    private UpdateTrigger? _checking;
     private Task? _installation;
     private CancellationTokenSource? _request;
 
     /// <param name="client">Gives the data directory that holds the check's cache.</param>
-    /// <param name="setting">The Check for updates setting; while it is off, no update shows.</param>
+    /// <param name="setting">Controls only the daily automatic check.</param>
     internal Updates(ProviderHttp http, BackgroundWork work, PipeClient client, Setting setting)
     {
         _http = http;
         _work = work;
         _client = client;
         _setting = setting;
-        Install = new RelayCommand(
-            StartInstall,
-            () => HasUpdate && _installation is not { IsCompleted: false }
-        );
-        _setting.PropertyChanged += (_, _) => Raise();
+        Check = new RelayCommand(() => _check = StartCheck(UpdateTrigger.Manual), () => CanAct);
+        Install = new RelayCommand(StartInstall, () => HasUpdate && CanAct);
     }
 
     /// <summary>Raised on the UI thread when <see cref="HasUpdate"/> may have changed.</summary>
     internal event EventHandler? Changed;
 
     internal bool HasUpdate =>
-        _setting.IsOn && _releaseCheck?.Version is { } version && version > App.Version;
+        _releaseCheck?.Version is { } version && version > App.Version;
 
+    internal ICommand Check { get; }
     internal ICommand Install { get; }
 
     private bool CanCheck => _allowed && !_closed;
+    private bool CanAct =>
+        !_closed && _checking is null && _installation is not { IsCompleted: false };
 
     /// <summary>
-    /// Starts the daily check when <paramref name="allowed"/>, or stops a
-    /// running one when not. The caller passes false while the saved proxy or
+    /// Allows requests when the saved route is ready, and starts the daily
+    /// check when its setting is on. The caller passes false while the proxy or
     /// adapter does not apply yet, so no request leaves without it.
     /// </summary>
     internal void Observe(bool allowed)
     {
         _allowed = allowed;
-        if (!CanCheck)
+        if (!CanCheck || !_setting.IsOn && _checking == UpdateTrigger.Automatic)
         {
             _request?.Cancel();
             return;
         }
-        if (_check is { IsCompleted: false })
+        if (!_setting.IsOn || !CanAct)
             return;
-        _check = Check();
+        _check = StartCheck(UpdateTrigger.Automatic);
     }
 
     /// <summary>
@@ -84,20 +84,35 @@ internal sealed class Updates
     {
         _closed = true;
         _request?.Cancel();
+        Raise();
         return _check ?? Task.CompletedTask;
     }
 
     private void Raise()
     {
         Changed?.Invoke(this, EventArgs.Empty);
+        ((RelayCommand)Check).Refresh();
         ((RelayCommand)Install).Refresh();
     }
 
-    private async Task Check()
+    private async Task StartCheck(UpdateTrigger trigger)
     {
-        if (_client.DataDirectory is not { } directory)
-            return;
-        if (_cachePath is null)
+        _checking = trigger;
+        Raise();
+        try
+        {
+            await CheckRelease(trigger == UpdateTrigger.Automatic);
+        }
+        finally
+        {
+            _checking = null;
+            Raise();
+        }
+    }
+
+    private async Task CheckRelease(bool automatic)
+    {
+        if (_cachePath is null && _client.DataDirectory is { } directory)
         {
             _cachePath = Path.Combine(directory, "updates.json");
             try
@@ -116,16 +131,18 @@ internal sealed class Updates
         }
         // A check saved in the future, after the clock was wrong, counts as old.
         if (
-            !CanCheck
-            || _releaseCheck is { } previous
-                && previous.CheckedAt <= DateTimeOffset.UtcNow
-                && DateTimeOffset.UtcNow - previous.CheckedAt < TimeSpan.FromDays(1)
+            automatic
+            && (
+                !CanCheck
+                || !_setting.IsOn
+                || _releaseCheck is { } previous
+                    && previous.CheckedAt <= DateTimeOffset.UtcNow
+                    && DateTimeOffset.UtcNow - previous.CheckedAt < TimeSpan.FromDays(1)
+            )
         )
             return;
         _releaseCheck = new(DateTimeOffset.UtcNow, _releaseCheck?.Version);
         await SaveCheck();
-        if (!CanCheck)
-            return;
         var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(8));
         _request = cancellation;
         var work = new CancellableWork(
@@ -140,16 +157,21 @@ internal sealed class Updates
         var operation = work.Operation;
         try
         {
-            using var release = await FetchRelease(work.Token);
-            if (release is null)
-                return;
             if (!CanCheck)
+                throw new UpdateException(UpdateFailure.Unavailable);
+            if (automatic && !_setting.IsOn)
+            {
+                operation.Outcome = WorkOutcome.Cancelled;
+                return;
+            }
+            using var release = await FetchRelease(work.Token);
+            if (!CanCheck || automatic && !_setting.IsOn)
             {
                 operation.Outcome = WorkOutcome.Cancelled;
                 return;
             }
             if (!System.Version.TryParse(Tag(release.RootElement), out var version))
-                return;
+                throw new UpdateException(UpdateFailure.Unavailable);
             version = new Version(
                 version.Major,
                 version.Minor,
@@ -160,8 +182,7 @@ internal sealed class Updates
             Raise();
             await SaveCheck();
             operation.Summarize(HasUpdate ? "update_available" : "up_to_date", version);
-            // The check runs by itself, so only a new version is news.
-            operation.ReportsSuccess = HasUpdate;
+            operation.ReportsSuccess = !automatic || HasUpdate;
             operation.Outcome = WorkOutcome.Completed;
         }
         catch (OperationCanceledException)
@@ -173,7 +194,8 @@ internal sealed class Updates
         }
         catch (Exception error)
             when (error
-                    is HttpRequestException
+                    is UpdateException
+                        or HttpRequestException
                         or JsonException
                         or IOException
                         or InvalidOperationException
@@ -192,14 +214,14 @@ internal sealed class Updates
     private async Task StartInstall()
     {
         _installation = InstallLatest();
-        ((RelayCommand)Install).Refresh();
+        Raise();
         try
         {
             await _installation;
         }
         finally
         {
-            ((RelayCommand)Install).Refresh();
+            Raise();
         }
     }
 
@@ -220,9 +242,9 @@ internal sealed class Updates
         var cancellation = work.Token;
         try
         {
-            using var release =
-                await FetchRelease(cancellation)
-                ?? throw new UpdateException(UpdateFailure.Missing);
+            if (!CanCheck)
+                throw new UpdateException(UpdateFailure.Unavailable);
+            using var release = await FetchRelease(cancellation);
             // installer/Build.ps1 gives the installer this name.
             var name = $"TinyTorrent-{Tag(release.RootElement)}-x64-Setup.exe";
             var installer =
@@ -338,15 +360,15 @@ internal sealed class Updates
             throw new UpdateException(UpdateFailure.Checksum);
     }
 
-    // The latest release as GitHub describes it, or null when GitHub answers
-    // without one.
-    private async Task<JsonDocument?> FetchRelease(CancellationToken cancellation)
+    private async Task<JsonDocument> FetchRelease(CancellationToken cancellation)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, LatestRelease);
         request.Headers.Accept.ParseAdd("application/vnd.github+json");
         request.Headers.Add("X-GitHub-Api-Version", "2026-03-10");
         var reply = await _http.Send(request, ProviderHttp.JsonLimit, cancellation);
-        return reply.Status == HttpStatusCode.OK ? JsonDocument.Parse(reply.Bytes) : null;
+        if (reply.Status != HttpStatusCode.OK)
+            throw new HttpRequestException("The update check was refused.", null, reply.Status);
+        return JsonDocument.Parse(reply.Bytes);
     }
 
     // The release's version as its tag spells it, without the leading v.

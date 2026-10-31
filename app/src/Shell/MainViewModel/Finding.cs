@@ -281,8 +281,7 @@ public sealed partial class MainViewModel
             SuggestionScope.Command,
             ShowAbout
         );
-        if (HasUpdate)
-            yield return new(UpdateText, string.Empty, SuggestionScope.Command, Updates.Install);
+        yield return new(UpdateText, string.Empty, SuggestionScope.Command, Updates.Check);
         yield return new(
             Text.Get("commands", "add_file"),
             string.Empty,
