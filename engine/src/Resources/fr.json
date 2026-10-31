@@ -148,7 +148,7 @@
     "window_invalid": "Windows ne peut pas exécuter le programme de la fenêtre sur ce PC. TinyTorrent fonctionne toujours.\n\nRéinstallez la version de TinyTorrent adaptée à votre PC.",
     "window_dependency": "Un fichier nécessaire au programme de la fenêtre est manquant. TinyTorrent fonctionne toujours.\n\nRéinstallez TinyTorrent pour restaurer les fichiers nécessaires.",
     "startup": "La fenêtre ne s’est pas ouverte. TinyTorrent fonctionne toujours.",
-    "save": "TinyTorrent n’a pas encore pu enregistrer. Il continue d’essayer et se ferme dès que l’enregistrement réussit.",
+    "save": "TinyTorrent continue d’essayer et se ferme automatiquement dès que l’enregistrement réussit. « Forcer la fermeture » le ferme immédiatement et les modifications depuis le dernier enregistrement sont perdues. Les fichiers téléchargés restent sur le disque.",
     "pause": "Impossible d’enregistrer le réglage de pause des transferts.",
     "retry": "Impossible de réessayer les torrents.",
     "setting": "Impossible d’enregistrer le réglage.",

@@ -801,14 +801,14 @@
     "same_location": "已跳过移动：两个路径指向相同的文件。",
     "alias_conflict": "种子已停止：此种子与另一个下载冲突。",
     "storage_failed": "无法更新下载状态。",
-    "storage_overloaded": "无法更新下载状态：TinyTorrent 正忙。",
+    "storage_overloaded": "无法更新下载状态：微种下载器正忙。",
     "checkpoint_failed": "无法保存下载进度。",
     "drive_stalled": "种子已停止：驱动器已停止响应。",
     "invalid_destination": "无法开始移动：请选择已存在且可写入的下载文件夹。",
     "shared_files": "无法开始移动：请包含使用这些文件的其他种子。",
     "destination_conflict": "无法开始移动：所选种子的目标路径冲突。",
     "destination_in_use": "无法开始移动：另一个种子正在使用目标位置的文件。",
-    "overloaded": "无法开始移动：TinyTorrent 正忙。",
+    "overloaded": "无法开始移动：微种下载器正忙。",
     "metadata_unavailable": "移动正在等待：种子元数据尚不可用。"
   },
   "inspector": {

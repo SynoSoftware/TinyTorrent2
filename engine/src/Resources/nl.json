@@ -148,7 +148,7 @@
     "window_invalid": "Windows kan het vensterprogramma niet uitvoeren op deze pc. TinyTorrent blijft actief.\n\nInstalleer de versie van TinyTorrent die bij je pc past opnieuw.",
     "window_dependency": "Een bestand dat het vensterprogramma nodig heeft ontbreekt. TinyTorrent blijft actief.\n\nInstalleer TinyTorrent opnieuw om de benodigde bestanden te herstellen.",
     "startup": "Het venster is niet geopend. TinyTorrent blijft actief.",
-    "save": "TinyTorrent kon nog niet opslaan. Het blijft het proberen en sluit af zodra opslaan lukt.",
+    "save": "TinyTorrent blijft het proberen en sluit vanzelf af zodra opslaan lukt. Geforceerd afsluiten sluit het programma direct af. Wijzigingen sinds de laatste keer opslaan gaan dan verloren. Gedownloade bestanden blijven op de schijf staan.",
     "pause": "De instelling voor het pauzeren van overdrachten kon niet worden opgeslagen.",
     "retry": "De torrents konden niet opnieuw worden geprobeerd.",
     "setting": "De instelling kon niet worden opgeslagen.",

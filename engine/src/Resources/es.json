@@ -148,7 +148,7 @@
     "window_invalid": "Windows no puede ejecutar el programa de la ventana en este PC. TinyTorrent sigue en ejecución.\n\nReinstala la versión de TinyTorrent compatible con tu PC.",
     "window_dependency": "Falta un archivo necesario para el programa de la ventana. TinyTorrent sigue en ejecución.\n\nReinstala TinyTorrent para restaurar los archivos necesarios.",
     "startup": "La ventana no se abrió. TinyTorrent sigue en ejecución.",
-    "save": "TinyTorrent aún no pudo guardar. Sigue intentándolo y se cierra cuando se guarde.",
+    "save": "TinyTorrent sigue intentándolo y se cierra automáticamente cuando logra guardar. Forzar salida lo cierra de inmediato y se pierden los cambios desde el último guardado. Los archivos descargados permanecen en el disco.",
     "pause": "No se pudo guardar el ajuste de pausa de las transferencias.",
     "retry": "No se pudieron reintentar los torrents.",
     "setting": "No se pudo guardar el ajuste.",

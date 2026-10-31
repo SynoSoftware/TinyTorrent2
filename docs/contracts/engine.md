@@ -372,8 +372,8 @@ written but could not be read back for its hash check downloads again.
 
 Payload I/O errors, and a check that stalls on its drive, pause their torrent
 and release its storage through libtorrent's disk fence. The engine then checks
-the location on its volume's worker once a second, sharing each check between
-torrents in the same folder. When it answers, the engine clears the disk error
+the location on its volume's worker once a second, sharing availability checks
+between torrents on the same UNC share, or in the same local folder. When it answers, the engine clears the disk error
 and upload mode, and the torrent runs by its current intent, including forced
 downloads. This also reconnects seed peers with fresh piece availability and
 reopens invalidated network file handles. Stop, Pause all, schedules and
