@@ -533,6 +533,7 @@ public sealed partial class MainWindow
                 ? "中文"
                 : Model.Text.Language.Split('-')[0].ToUpperInvariant();
         NameButton(LanguageButton, Model.Text.Get("settings", "language"));
+        NameButton(StatusMore, Model.Text.Get("notifications", "silence_location"));
         NameButton(
             BackButton,
             Model.Text.Format(

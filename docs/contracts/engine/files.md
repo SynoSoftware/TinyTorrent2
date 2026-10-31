@@ -83,6 +83,14 @@ deletion.
 
 A move takes only the torrent's own files: other files in its folder, such as
 added subtitles, stay where they are, and only folders left empty are removed.
+Move and Set download folder ask the engine to check the destination before
+sending the operation or changing torrent state. The existing location lookup first
+resolves its actual drive or server. That volume worker checks its reachability
+and whether it accepts files once for the group, so
+an unavailable destination is refused even when the source is unavailable too.
+The check's refusal keeps the editor open beside the invalid path. Queued
+work still checks its destination when it starts, because availability can
+change after admission.
 Before inspecting source files, a requested move checks each source share once
 for the batch. An unavailable source fails its members together, while unrelated
 members continue. Its recovery notification retains those torrent identities and

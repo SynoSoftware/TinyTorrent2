@@ -48,6 +48,14 @@ public sealed class Notifications
 
     internal void Report(Exception error) => Report(error, ErrorTitle(error), null, null);
 
+    internal void Report(Exception error, MoveRecovery recovery)
+    {
+        var key = Toasts.OfType<Toast.CommandError>().FirstOrDefault(toast =>
+            toast.Failure.Recovery is { } earlier && earlier.TorrentIds.Intersect(recovery.TorrentIds).Any())?.Key
+            ?? "move:" + recovery.TorrentIds[0];
+        ReportProblem(new CommandFailure(error, "failed_redownload", null, null, null, null, recovery), key);
+    }
+
     internal void Report(
         Exception error,
         string title,
@@ -408,6 +416,13 @@ public sealed class Notifications
             case Toast.Work work:
             {
                 var result = work.Result;
+                if (result.Outcome == WorkOutcome.Completed && result.SummaryKey == "up_to_date")
+                {
+                    work.Title = _text.Get("work", "up_to_date");
+                    work.Subject = string.Empty;
+                    work.Message = _text.Format("about", "version", _owner.Version);
+                    break;
+                }
                 var update = result.Outcome == WorkOutcome.Completed
                     && result.SummaryKey == "update_available";
                 if (update)
@@ -419,8 +434,8 @@ public sealed class Notifications
                 }
                 work.Title = update
                     ? _text.Get("about", "available")
-                    : _text.Get("work", "result_" + result.Outcome.ToString().ToLowerInvariant());
-                work.Subject = update ? string.Empty : _text.Get(result.Observation.Description);
+                    : _text.Get(result);
+                work.Subject = string.Empty;
                 var progress = result.Observation.Progress;
                 var summary = result.SummaryKey is { } key
                     ? _text.Format("work", key, result.Arguments)
@@ -467,8 +482,9 @@ public sealed class Notifications
                 error.Subject = failure.Recovery is { } recovery
                     ? _text.FormatCount("window", "torrents", recovery.TorrentIds.Length)
                     : failure.Subject?.Invoke() ?? string.Empty;
-                error.Message = failure.Reason?.Invoke() ?? _text.Error(failure.Error);
-                var destinationError = failure.Error is CommandException { Code: "move_destination_unavailable" or "invalid_destination" };
+                error.Message = error.NeedsFolder && !error.IsDestinationError
+                    ? _text.Get("errors", "move_locations_unavailable")
+                    : failure.Reason?.Invoke() ?? _text.Error(failure.Error);
                 error.Folder = failure.Error switch
                 {
                     CommandException { Code: "move_destination_unavailable" or "invalid_destination" } when failure.Place is FailurePlace.OfTorrent destination => destination.Path ?? string.Empty,
@@ -478,14 +494,19 @@ public sealed class Notifications
                 error.ShowTorrent = failure.Recovery is not null || failure.Place is FailurePlace.OfTorrent ? error.Reveal : null;
                 error.ShowText = _text.Get("notifications", failure.Recovery is null ? "show_torrent" : "show_torrents");
                 error.ShowTip = _text.Get("notifications", failure.Recovery is null ? "show_torrent_tip" : "show_torrents_tip");
-                error.Action = destinationError ? null : failure.Recovery is not null ? error.Download : failure.Place is null ? null : error.Open;
-                error.ActionText = failure.Recovery is not null ? _text.Get("file_action", "download_here") : _text.Get("commands", "open_folder");
-                error.ActionTip = failure.Recovery is not null ? _text.Get("file_action", "download_tip") : _text.Get("notifications", "files_folder_tip");
-                error.ActionGlyph = failure.Recovery is not null ? Syno.Lucide.Download : Syno.Lucide.FolderOpen;
+                error.Action = error.NeedsFolder ? error.Choose : error.IsDestinationError ? null
+                    : failure.Recovery is not null ? error.Download : failure.Place is null ? null : error.Open;
+                error.ActionText = error.NeedsFolder ? _text.Get("file_action", "change_folder")
+                    : failure.Recovery is not null ? _text.Get("file_action", "download_here") : _text.Get("commands", "open_folder");
+                error.ActionTip = error.NeedsFolder ? _text.Get("commands", "set_folder")
+                    : failure.Recovery is not null ? _text.Get("file_action", "download_tip") : _text.Get("notifications", "files_folder_tip");
+                error.ActionGlyph = error.NeedsFolder ? Syno.Lucide.FolderInput
+                    : failure.Recovery is not null ? Syno.Lucide.Download : Syno.Lucide.FolderOpen;
                 error.Switch = failure.Switch;
                 error.Open.Refresh();
                 error.Reveal.Refresh();
                 error.Download.Refresh();
+                error.Choose.Refresh();
                 break;
             case Toast.SubtitleError subtitle:
                 var latest = subtitle.Latest;
@@ -767,9 +788,12 @@ public abstract class Toast : INotifyPropertyChanged
                     if (Failure.Recovery is { } recovery)
                         await owner.RecoverMove(recovery);
                 },
-                () => owner.CanEdit && Failure.Recovery is { } recovery &&
-                    recovery.TorrentIds.Any(id => owner.Find(id) is { IsMoving: false, ErrorCode: "move_source_unavailable" })
+                () => owner.CanEdit && !NeedsFolder && Failure.Recovery is { } recovery &&
+                    owner.FindRecoverable(recovery).Length > 0
             );
+            Choose = owner.DownloadCommand(() => Failure.Recovery is { } recovery
+                ? owner.FindRecoverable(recovery)
+                : []);
         }
 
         private readonly MainViewModel _owner;
@@ -778,6 +802,11 @@ public abstract class Toast : INotifyPropertyChanged
         internal RelayCommand Open { get; }
         internal RelayCommand Reveal { get; }
         internal RelayCommand Download { get; }
+        internal RelayCommand Choose { get; }
+        internal bool IsDestinationError => Failure.Error is CommandException
+            { Code: "move_destination_unavailable" or "invalid_destination" };
+        internal bool NeedsFolder => Failure.Recovery is { } recovery
+            && (IsDestinationError || _owner.IsLocationUnavailable(recovery.Destination));
 
         // The listed torrent the failure names; null once it is gone.
         private Torrents.Torrent? Listed =>

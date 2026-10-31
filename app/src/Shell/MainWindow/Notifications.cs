@@ -223,6 +223,24 @@ public sealed partial class MainWindow
 
     private void OnDismissStatus(InfoBar sender, object args) => Model.DismissStatus();
 
+    private void OnStatusMore(object sender, RoutedEventArgs args)
+    {
+        var menu = MenuItems.Flyout(
+            () =>
+                [
+                    new MenuCommand(Model.Text.Get("notifications", "silence_hour"), Lucide.BellOff,
+                        new RelayCommand(() => Model.SilenceLocations(TimeSpan.FromHours(1)), () => true)),
+                    new MenuCommand(Model.Text.Get("notifications", "silence_hours"), Lucide.BellOff,
+                        new RelayCommand(() => Model.SilenceLocations(TimeSpan.FromHours(8)), () => true)),
+                    new MenuCommand(Model.Text.Get("notifications", "silence_restart"), Lucide.BellOff,
+                        new RelayCommand(() => Model.SilenceLocations(Timeout.InfiniteTimeSpan), () => true)),
+                ],
+            () => Model.Text
+        );
+        menu.ShowAt((Button)sender,
+            new FlyoutShowOptions { Placement = FlyoutPlacementMode.TopEdgeAlignedRight });
+    }
+
     private void OnCloseToast(object sender, RoutedEventArgs args) =>
         Model.Notifications.Dismiss((Toast)((FrameworkElement)sender).DataContext);
 

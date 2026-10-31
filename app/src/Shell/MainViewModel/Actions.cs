@@ -192,7 +192,7 @@ public sealed partial class MainViewModel
                 && torrents.All(torrent => Contains(torrent) && !torrent.IsMoving)
         );
 
-    internal ICommand DownloadCommand(Func<Torrent[]> targets) =>
+    internal RelayCommand DownloadCommand(Func<Torrent[]> targets) =>
         new RelayCommand(
             () => DownloadRequested?.Invoke(this, targets().ToArray()),
             () => CanEdit && targets() is { Length: > 0 } torrents &&
@@ -219,19 +219,27 @@ public sealed partial class MainViewModel
     {
         if (!CanEdit)
             return;
-        var ids = recovery.TorrentIds.Where(id =>
-            Find(id) is { IsMoving: false, ErrorCode: "move_source_unavailable" }).ToArray();
+        var ids = FindRecoverable(recovery).Select(torrent => torrent.TorrentId).ToArray();
         if (ids.Length == 0)
             return;
         try
         {
+            await _client.Send("check_destination", new { destination = recovery.Destination }, Requester.Window);
+            ids = FindRecoverable(recovery).Select(torrent => torrent.TorrentId).ToArray();
+            if (!CanEdit || ids.Length == 0)
+                return;
             await SetDownloadFolder(ids, recovery.Destination);
         }
         catch (Exception error)
         {
-            Notifications.Report(error);
+            ids = FindRecoverable(recovery).Select(torrent => torrent.TorrentId).ToArray();
+            if (ids.Length > 0)
+                Notifications.Report(error, recovery with { TorrentIds = ids });
         }
     }
+
+    internal Torrent[] FindRecoverable(MoveRecovery recovery) => recovery.TorrentIds.Select(Find).OfType<Torrent>()
+        .Where(torrent => !torrent.IsMoving && torrent.ErrorCode == "move_source_unavailable").ToArray();
 
     // Picked sources come from Add torrent file; the others are dropped,
     // pasted or sent by another instance.

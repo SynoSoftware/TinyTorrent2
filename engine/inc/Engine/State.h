@@ -885,6 +885,12 @@ public:
         // once no part is left.
         std::map<std::string, Part> parts;
     };
+    struct DestinationCheck
+    {
+        std::string destination;
+        std::function<void(Outcome)> completion;
+    };
+    std::list<DestinationCheck> destinationChecks;
     // Moves share no drive, so they share no file. A list, so a move's
     // asynchronous steps can hold on to it.
     std::list<Move> moves;
@@ -1283,6 +1289,9 @@ public:
     // Whether the files of the torrents `ids` can move to `destination` now.
     Outcome FilesReady(std::vector<std::string> const& ids, std::string const& destination,
         MoveMode mode = MoveMode::Files) const;
+    static Outcome CheckDestination(std::string const& destination);
+    void CheckDestination(std::string const& destination, std::function<void(Outcome)> completion);
+    void ContinueDestinationChecks();
     void StartMove(std::vector<std::string> const& ids, std::string const& destination, MoveStart start,
         std::function<void(Outcome)> accepted, MoveMode mode = MoveMode::Files);
     // Busy files and another torrent's missing metadata only delay a move,

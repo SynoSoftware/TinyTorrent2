@@ -169,6 +169,24 @@ public sealed class Strings
             }
         );
 
+    internal string Get(WorkResult result)
+    {
+        var key = result.Observation.Description switch
+        {
+            WorkDescription.Imdb => "imdb",
+            WorkDescription.City => "city",
+            WorkDescription.Metadata => "metadata",
+            WorkDescription.Subtitles { Work: SubtitleWork.Discovery } => "scan",
+            WorkDescription.Subtitles => "subtitles",
+            WorkDescription.FileProperties => "file_properties",
+            WorkDescription.Update update => "update_" + update.Phase.ToString().ToLowerInvariant(),
+            WorkDescription.Sources => "sources",
+            WorkDescription.Maintenance maintenance => "maintenance_" + maintenance.Work.ToString().ToLowerInvariant(),
+            _ => throw new InvalidOperationException(),
+        };
+        return Get("work", key + "_" + result.Outcome.ToString().ToLowerInvariant());
+    }
+
     public string Format(string group, string key, params object[] values) =>
         FindFormat(group, key) is { } format
             ? string.Format(CultureInfo.CurrentCulture, format, values)

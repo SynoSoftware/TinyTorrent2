@@ -190,6 +190,8 @@ internal sealed class Updates
             // Only the person's Cancel shows Cancelling; the timeout, Observe
             // and Close cancel the token directly and fail the check.
             operation.Outcome = work.IsCancelling ? WorkOutcome.Cancelled : WorkOutcome.Failed;
+            if (!work.IsCancelling)
+                operation.Error = new UpdateException(UpdateFailure.Unavailable);
             Debug.WriteLine("Update check cancelled.");
         }
         catch (Exception error)

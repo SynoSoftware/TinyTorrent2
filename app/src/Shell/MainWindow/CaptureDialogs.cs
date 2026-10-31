@@ -14,6 +14,24 @@ public sealed partial class MainWindow
         var torrents = Model.Torrents.ToArray();
         var directory = Model.DataDirectory ?? throw new InvalidOperationException("Recovery has no disposable store.");
         var destination = Path.Combine(Path.GetDirectoryName(directory)!, "payload");
+        var source = torrents[0].SavePath;
+        var absent = @"\\127.0.0.1\TinyTorrent-destination-absent-" + Guid.NewGuid();
+        foreach (var download in new[] { false, true })
+        {
+            var invalid = download ? absent : Path.Combine(source, "another-folder");
+            var editing = ShowMove(torrents, download: download, destination: invalid);
+            await CaptureReady(Model.MoveDraft, () => Model.MoveDraft.CanSubmit);
+            await CaptureLayout();
+            CaptureInvoke(_interaction?.Dialog ?? throw new InvalidOperationException("The folder editor did not open."));
+            await CaptureReady(Model.MoveDraft, () => !Model.MoveDraft.IsPending && Model.MoveDraft.DestinationError.Length > 0);
+            if (_interaction?.Dialog is not { } dialog || editing.IsCompleted ||
+                torrents.Any(torrent => torrent.SavePath != source || torrent.IsMoving || torrent.MoveDestination.Length > 0))
+                throw new InvalidOperationException("An invalid destination closed the editor or changed a torrent.");
+            await CapturePage(download ? "invalid-download-folder" : "invalid-move-folder");
+            dialog.Hide();
+            await editing;
+            outcomes.Add(new { journey = "invalid destination stays inline", download, unchanged = true });
+        }
         var moving = ShowMove(torrents, destination: destination);
         await CaptureReady(Model.MoveDraft, () => Model.MoveDraft.CanSubmit);
         await CaptureLayout();
@@ -23,6 +41,29 @@ public sealed partial class MainWindow
             .Any(toast => toast.Failure.Recovery is not null));
         var recovery = Model.Notifications.Toasts.OfType<Toast.CommandError>().Single(toast => toast.Failure.Recovery is not null);
         await CaptureReady(Model, () => recovery.Download.CanExecute(null));
+        var original = recovery.Failure;
+        var root = Path.GetPathRoot(source)!;
+        const string location = "location:capture-recovery";
+        recovery.Failure = original with { Recovery = original.Recovery! with { Destination = Path.Combine(source, "new-folder") } };
+        Model.ObserveLocation(location, new(root, "download_path_unavailable", torrents.Length));
+        if (recovery.Action != recovery.Choose || recovery.Download.CanExecute(null)
+            || !recovery.Choose.CanExecute(null) || Model.IsLocationUnavailable(root.TrimEnd('\\') + "-other"))
+            throw new InvalidOperationException("A known unavailable share still offered Download here, or matched another share.");
+        await CapturePage("known-unavailable-recovery");
+        Model.ObserveLocation(location, null);
+        if (recovery.Action != recovery.Download)
+            throw new InvalidOperationException("The recovery action did not follow the resolved location.");
+        recovery.Failure = original with { Recovery = original.Recovery! with { Destination = absent } };
+        Model.Notifications.Sync();
+        recovery.Download.Execute(null);
+        await CaptureReady(recovery, () => recovery.IsDestinationError && recovery.Action == recovery.Choose);
+        if (torrents.Any(torrent => torrent.SavePath != source || torrent.IsMoving) ||
+            Model.Notifications.Toasts.OfType<Toast.CommandError>().Count(toast => toast.Failure.Recovery is not null) != 1)
+            throw new InvalidOperationException("A refused recovery changed storage or added another recovery toast.");
+        await CapturePage("unavailable-recovery-destination");
+        outcomes.Add(new { journey = "unavailable recovery destination", previousFolderRetained = true, oneToast = true });
+        recovery.Failure = original;
+        Model.Notifications.Sync();
         await CapturePage("move-recovery");
         recovery.Download.Execute(null);
         await CaptureReady(Model, () => torrents.All(torrent => torrent.SavePath == destination && !torrent.IsMoving && !torrent.IsError));
@@ -30,18 +71,6 @@ public sealed partial class MainWindow
             throw new InvalidOperationException("Download here opened an editor or retained the obsolete recovery toast.");
         outcomes.Add(new { journey = "direct batch recovery", torrents = torrents.Length, editorOpened = false, obsoleteToastRemoved = true });
 
-        var absent = @"\\127.0.0.1\TinyTorrent-destination-absent-" + Guid.NewGuid();
-        var changing = ShowMove(torrents, download: true, destination: absent);
-        await CaptureReady(Model.MoveDraft, () => Model.MoveDraft.CanSubmit);
-        await CaptureLayout();
-        CaptureInvoke(_interaction?.Dialog ?? throw new InvalidOperationException("Set download folder did not open."));
-        await changing;
-        await CaptureReady(Model, () => torrents.All(torrent => !torrent.IsMoving && torrent.ErrorCode == "move_destination_unavailable") &&
-            Model.Notifications.Toasts.OfType<Toast.CommandError>().Any(toast => toast.Folder == absent));
-        if (torrents.Any(torrent => torrent.SavePath != destination))
-            throw new InvalidOperationException("An unavailable destination replaced the current download folder.");
-        await CapturePage("unavailable-recovery-destination");
-        outcomes.Add(new { journey = "unavailable recovery destination", previousFolderRetained = true, failedDestination = absent });
         completed.Add("move-recovery");
         completed.Add("unavailable-recovery-destination");
     }

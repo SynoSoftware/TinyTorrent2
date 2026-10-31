@@ -139,13 +139,16 @@ toast notification owner after cleanup, including failures and cancellations,
 so a disappearing progress bar never leaves its outcome unexplained. Each
 operation's owner reports success only when it tells the person something
 new: work they started and wait for, such as a metadata batch, a manual
-subtitle search, a data download or a protection reset, and an update check
-that found a new version. Work that runs by itself, and work whose result
+subtitle search, a data download or a protection reset, and every manual update
+check. Automatic update checks report a new version. Work that runs by itself, and work whose result
 already shows in place, report only failures and cancellations: automatic
 metadata, subtitles and file properties, subtitle file scans, torrent
 additions, a details refresh, recovery and a deleted dataset. Background additions retain the
-engine's notification policy. Results include available counts or error details and follow later
-language changes.
+engine's notification policy. Result titles name the operation and its outcome,
+so a person understands what finished, failed or was cancelled without a
+generic task heading or the last running phase. Each title is a complete
+localized message; its body adds available counts or error details without
+repeating the title. Results follow later language changes.
 
 Use the stock WinUI 3 ProgressBar template, brushes and animation. Metadata
 shows completed attempts over the accepted total, including unmatched files;
@@ -250,8 +253,10 @@ footer has insufficient room. Update available remains passive discovery when
 space permits, at the lowest layout priority. The existing notification owner
 reports a newer version with an Update now button; automatic discovery opens
 no dialog. Help > Check for updates always offers an immediate manual check,
-even with automatic checks off. Passive footer text has no
-hidden double-click navigation; the Windows status bar guidance discourages it,
+even with automatic checks off. An up-to-date result names that result in the
+toast's title and shows the installed version beneath it; it does not repeat a
+generic completion heading or the finished checking phase. Passive footer text
+has no hidden double-click navigation; the Windows status bar guidance discourages it,
 and settings, filters and updates have visible keyboard-accessible homes.
 
 Decorative icons are excluded from the accessibility tree. Each semantic group
@@ -355,11 +360,33 @@ does not go at the top of the page.
 - The person may close it. It returns when the problem changes and at the
   next start while the problem lasts, as Fluent 2 asks, so a closed bar never
   hides an unresolved problem for good.
+- Download-location warnings also offer a More menu with Silence for 1 hour,
+  Silence for 8 hours and Silence until restart. Silence covers this category
+  for the current window session, including changing counts, reconnects and
+  other unavailable locations, because a share that keeps retrying must not
+  interrupt the person repeatedly. It changes no torrent or engine setting
+  and never hides higher-priority problems. A timed silence expires against
+  elapsed time; the next engine snapshot restores an unresolved warning.
 - It overlays the content instead of taking room, so showing or hiding it
   moves nothing under the person. The WinUI InfoBar takes room in the layout,
   but a message that appears must not move what the person is looking at.
   While it shows, it covers the bottom of the content; Close uncovers it. Its
   severity colour sits on a solid base so the page does not show through.
+
+Timed silence is specific to the download-location warning, whose automatic
+retries can keep changing the affected torrent count. Other message categories
+keep these dismissal policies, because hiding a failed action or a required
+repair would conceal work the person still needs to do:
+
+| Messages | Dismissal |
+| --- | --- |
+| Engine startup, disconnection, version mismatch or unreadable download state | Close until the condition changes; no timed silence. |
+| Stopped torrents that require Retry | Close until the condition changes; the row keeps Retry and its error. |
+| Library/subtitle failures, paused subtitle suppliers or an unsaved language | Close until the condition changes; no timed silence for a required setup, repair or save. |
+| Failed commands, subtitles or background work | Close the failure; no timed silence for the result of an attempted action. |
+| Starts waiting for the global pause | Close that explanation, or resume to clear it. |
+| Success and cancellation results | Expire after their time on screen. |
+| Engine download-completion and background problem toasts | Retain the engine-owned notification switches in More and Settings. |
 
 ### Toasts
 

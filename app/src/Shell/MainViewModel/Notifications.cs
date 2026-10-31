@@ -23,7 +23,8 @@ public sealed partial class MainViewModel
         string Body,
         InfoBarSeverity Severity,
         StatusAction? Action,
-        StatusAction? Secondary = null
+        StatusAction? Secondary = null,
+        bool CanSilence = false
     )
     {
         internal bool HasAction => Action is not null;
@@ -58,6 +59,11 @@ public sealed partial class MainViewModel
 
     // In the order the engine raised them, keyed by its condition key.
     private readonly List<(string Key, LocationCondition Location)> _locations = [];
+    private (long Started, TimeSpan Duration)? _locationSilence;
+
+    private bool LocationsSilenced => _locationSilence is { } silence
+        && (silence.Duration == Timeout.InfiniteTimeSpan
+            || Environment.TickCount64 - silence.Started < silence.Duration.TotalMilliseconds);
 
     // The events the window reports as toasts.
     public Notifications Notifications { get; }
@@ -142,6 +148,16 @@ public sealed partial class MainViewModel
         SyncStatus();
     }
 
+    internal void SilenceLocations(TimeSpan duration)
+    {
+        if (CurrentStatus?.CanSilence != true)
+            return;
+        _locationSilence = (Environment.TickCount64, duration);
+        if (_dismissedStatus?.CanSilence == true)
+            _dismissedStatus = null;
+        SyncStatus();
+    }
+
     // Records the stopped torrents the engine reported, or forgets them when
     // stopped is null because the engine resolved the condition.
     internal void ObserveStopped(StoppedCondition? stopped)
@@ -165,6 +181,22 @@ public sealed partial class MainViewModel
         else
             _locations.Add((key, location));
         Changed(nameof(CurrentStatus));
+    }
+
+    internal bool IsLocationUnavailable(string path)
+    {
+        if (!Path.IsPathFullyQualified(path))
+            return false;
+        var folder = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+        return _locations.Any(known =>
+        {
+            if (!Path.IsPathFullyQualified(known.Location.Root))
+                return false;
+            var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(known.Location.Root));
+            return folder.Equals(root, StringComparison.OrdinalIgnoreCase)
+                || folder.StartsWith(Path.EndsInDirectorySeparator(root) ? root : root + Path.DirectorySeparatorChar,
+                    StringComparison.OrdinalIgnoreCase);
+        });
     }
 
     // One bar covers every torrent that needs Retry, and its Retry runs them
@@ -224,7 +256,8 @@ public sealed partial class MainViewModel
             Text.Get("notifications", "location_unavailable"),
             body,
             InfoBarSeverity.Warning,
-            ShowErrorsAction
+            ShowErrorsAction,
+            CanSilence: true
         );
     }
 

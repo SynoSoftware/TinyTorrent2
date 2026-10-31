@@ -3,6 +3,73 @@
 
 namespace tt
 {
+namespace
+{
+constexpr std::size_t requestLimit = 64;
+}
+
+Outcome Engine::State::CheckDestination(std::string const& destination)
+{
+    Outcome outcome;
+    auto absent = Reach({destination}, [&]
+    {
+        if (!Usable(Wide(destination), {}, true, 0))
+            outcome.error = ErrorCode::InvalidDestination;
+    });
+    if (absent)
+        outcome.error = ErrorCode::MoveDestinationUnavailable;
+    return outcome;
+}
+
+void Engine::State::CheckDestination(std::string const& destination, std::function<void(Outcome)> completion)
+{
+    if (!IsAbsolute(destination))
+    {
+        completion({ErrorCode::InvalidDestination});
+        return;
+    }
+    if (destinationChecks.size() >= requestLimit)
+    {
+        completion({ErrorCode::Overloaded});
+        return;
+    }
+    destinationChecks.push_back({destination, std::move(completion)});
+    ContinueDestinationChecks();
+    ContinueLookups();
+}
+
+void Engine::State::ContinueDestinationChecks()
+{
+    for (auto pending = destinationChecks.begin(); pending != destinationChecks.end();)
+    {
+        if (auto refusal = Refusal())
+        {
+            auto completion = std::move(pending->completion);
+            pending = destinationChecks.erase(pending);
+            completion({*refusal});
+            continue;
+        }
+        if (!Locate(pending->destination))
+        {
+            ++pending;
+            continue;
+        }
+        auto request = std::move(*pending);
+        pending = destinationChecks.erase(pending);
+        auto destination = request.destination;
+        VolumeWorker(destination).Run([destination] { return CheckDestination(destination); },
+            [this, request = std::move(request)](std::expected<Outcome, StorageOutcome> checked)
+        {
+            if (auto refusal = Refusal())
+            {
+                request.completion({*refusal});
+                return;
+            }
+            request.completion(checked ? std::move(*checked) : checked.error().ToOutcome(ErrorCode::InvalidDestination));
+        });
+    }
+}
+
 void Engine::State::StartMove(std::vector<std::string> const& ids, std::string const& destination, MoveStart start,
     std::function<void(Outcome)> accepted, MoveMode mode)
 {
@@ -231,15 +298,12 @@ void Engine::State::PrepareMove(Move& moving)
         moving.phase = MovePhase::Preflight;
         moving.job->worker->Run([destination = moving.destination]() -> std::optional<Problem>
         {
-            std::optional<Problem> problem;
-            auto absent = Reach({destination}, [&]
-            {
-                if (!Usable(Wide(destination), {}, true, 0))
-                    problem = Problem{ProblemKind::MoveFailed, destination, ErrorCode::InvalidDestination};
-            });
-            if (absent)
+            auto outcome = CheckDestination(destination);
+            if (outcome.error == ErrorCode::MoveDestinationUnavailable)
                 return Problem{ProblemKind::MoveDestinationUnavailable, destination};
-            return problem;
+            if (outcome.error)
+                return Problem{ProblemKind::MoveFailed, destination, outcome.error};
+            return std::nullopt;
         }, [this, &moving](std::expected<std::optional<Problem>, StorageOutcome> checked)
         {
             if (IsShuttingDown())

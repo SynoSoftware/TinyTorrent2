@@ -238,6 +238,20 @@ checks manual discovery with automatic checks off, the notification's install
 action, daily throttling, failure feedback and immediate manual retry. It does
 not download an installer or start Setup.
 
+`Capture.ps1 -Review update-check` invokes Help's Check for updates command in
+the compiled window with a local current-version reply. It checks that the
+matching completion toast is visible after starting from the torrent list or
+the search field, and captures the result for presentation review. It also
+shows representative completed, cancelled and failed work results, with counts,
+error details and a title-only result, to review their information hierarchy.
+Requests do not leave the process, and no installer runs.
+
+`Capture.ps1 -Review location-warning` opens the real warning's silence menu
+and invokes all three choices. It checks that a cleared and re-raised condition
+with a changed count stays silent, a higher-priority torrent problem still
+shows, and a short silence expires. It captures the menu for layout review and
+uses only the disposable capture session.
+
 `app/tests/NotificationChecks.ps1 -BinaryDirectory <built-app-folder>` exercises
 the compiled toast owner without starting WinUI or the engine. It watches a
 timed toast closing after its lifetime, a fifth timed toast removing the oldest,
@@ -482,10 +496,14 @@ against an existing store. The system folder picker is outside XAML capture,
 so the diagnostic supplies its disposable destination to the existing owner.
 
 `Capture.ps1 -Review recovery` uses two disposable torrents on an absent
-localhost share. It invokes the real Download here action, checks that the
-batch changes folders without another editor and retires its old toast, then
-submits another absent destination and checks that the previous folders remain.
-Its two captures support review of the wrapped explanation and attempted path;
+localhost share. Move to that same share and Set download folder to a different
+absent share must stay in their editors with an inline error and unchanged
+torrents. The journey checks that a known unavailable recovery destination
+offers the folder editor, a resolved location restores Download here, and a
+newly refused recovery updates one toast without changing storage. It then
+invokes Download here at a usable destination, checking that the whole batch
+changes folders without another editor and retires the old toast. Captures
+support review of the inline errors, wrapped explanations and folder choice;
 no transfer peer or desktop input is involved.
 
 First review functionality and recovery through the existing owners. When a

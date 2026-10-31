@@ -359,6 +359,13 @@ A saved move that Exit or a crash cut off is an
 files a failure left in two folders waits until the person chooses its
 location through Move, as [engine moves](engine/files.md#removal-and-moves)
 describes.
+`check_destination` takes `destination` and checks the resolved volume's
+availability and write access without changing torrent state. Move and Set
+download folder await this read before sending their operation, so an invalid
+folder stays editable. A refused recovery check updates its existing toast.
+The operation still checks storage when it starts, because availability can
+change after the read.
+
 `redownload` takes the same `torrent_ids` and `destination`, and uses the move
 owner without moving or deleting source files. It retains torrent identity and
 choices, clears old piece claims, verifies destination files and downloads missing
@@ -408,9 +415,9 @@ isolation guarantee; an extra token would not create a stronger boundary.
 
 ## Wire representation
 
-Protocol version 37 uses a four-byte little-endian UTF-8 JSON frame length,
+Protocol version 38 uses a four-byte little-endian UTF-8 JSON frame length,
 bounded to 16 MiB. The endpoint is `TinyTorrent.<logon SID>`; each connecting
-client first receives `{type:"hello",version:37,session_id:"...",data_directory:"..."}`. The absolute data directory
+client first receives `{type:"hello",version:38,session_id:"...",data_directory:"..."}`. The absolute data directory
 keeps the same store for explicit Restart, which starts the engine beside the
 window rather than a path a pipe peer reports. Requests are
 `{request_id:signed-64-bit-integer,command:string,...}`. Replies repeat `request_id` and have

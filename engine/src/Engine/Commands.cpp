@@ -36,6 +36,7 @@ constexpr CommandEntry commands[] = {
     {"retry", Command::Retry, Publication::Execute},
     {"remove", Command::Remove, Publication::Execute},
     {"file_scope", Command::FileScope, Publication::None},
+    {"check_destination", Command::CheckDestination, Publication::None},
     {"move", Command::Move, Publication::Execute},
     {"redownload", Command::Redownload, Publication::Execute},
     {"delete_files", Command::DeleteFiles, Publication::Execute},
@@ -617,6 +618,9 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
         }, [](auto const&, auto done) { done({}); });
         break;
     }
+    case Command::CheckDestination:
+        CheckDestination(request.at("destination").get<std::string>(), Acknowledge(reply));
+        break;
     case Command::Move:
     case Command::Redownload:
         Act(TorrentIds(request), Acknowledge(reply), [this, destination = request.at("destination").get<std::string>(),

@@ -695,6 +695,10 @@ data downloads again, and original files remain untouched. A failed batch move
 from an unavailable location offers Download here with the attempted destination
 and only its failed torrents. Download here starts that recovery directly;
 Set download folder opens the editor when the person needs another destination.
+When the destination belongs to a location already reported unavailable, the
+toast offers Change folder instead, for the same failed group. A newly refused
+recovery destination updates that toast with its reason and folder choice;
+it does not leave Download here offered for the refused destination.
 Opening the editor reads no original source files.
 
 Move files and Remove are available from selection actions, the row context

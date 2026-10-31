@@ -850,6 +850,8 @@ internal enum CaptureMode
     Smoke,
     Shell,
     Menus,
+    UpdateCheck,
+    LocationWarning,
     Schedule,
     Desktop,
     Dialogs,

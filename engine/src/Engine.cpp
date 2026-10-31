@@ -82,6 +82,7 @@ constexpr std::pair<std::string_view, ErrorCode> errors[] = {
     {"invalid_source", ErrorCode::InvalidSource},
     {"invalid_sources", ErrorCode::InvalidSources},
     {"invalid_destination", ErrorCode::InvalidDestination},
+    {"move_destination_unavailable", ErrorCode::MoveDestinationUnavailable},
     {"invalid_priorities", ErrorCode::InvalidPriorities},
     {"invalid_trackers", ErrorCode::InvalidTrackers},
     {"invalid_torrents", ErrorCode::InvalidTorrents},

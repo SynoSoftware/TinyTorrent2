@@ -994,6 +994,7 @@ void Engine::State::Maintain()
         Rekey();
         RestorePending();
         ContinueAdditions();
+        ContinueDestinationChecks();
         WatchFolder();
         RefreshPolicy();
         RetryStorage();

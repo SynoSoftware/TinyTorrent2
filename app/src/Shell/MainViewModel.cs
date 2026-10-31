@@ -267,7 +267,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 return null;
             if (_stopped is { } condition)
                 return StoppedStatus(condition);
-            if (_locations.Count > 0)
+            if (_locations.Count > 0 && !LocationsSilenced)
                 return LocationStatus();
             if (Features.Failure is { } featureFailure)
                 return FeatureStatus(featureFailure);

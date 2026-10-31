@@ -296,6 +296,8 @@ void Engine::State::LocateFolders()
     }
     for (auto const& moving : moves)
         want(moving.destination);
+    for (auto const& check : destinationChecks)
+        want(check.destination);
     fileWork.Each([&want](FileWork::Job const& job)
     {
         for (auto const& use : job.uses)

@@ -38,6 +38,8 @@ public sealed partial class MainWindow
         "smoke" => CaptureMode.Smoke,
         "shell" => CaptureMode.Shell,
         "menus" => CaptureMode.Menus,
+        "update-check" => CaptureMode.UpdateCheck,
+        "location-warning" => CaptureMode.LocationWarning,
         "schedule" => CaptureMode.Schedule,
         "desktop" => CaptureMode.Desktop,
         "dialogs" => CaptureMode.Dialogs,
@@ -2683,6 +2685,16 @@ public sealed partial class MainWindow
             if (ReviewMode == CaptureMode.Menus)
             {
                 await CaptureMenus(target, outcomes);
+                return;
+            }
+            if (ReviewMode == CaptureMode.UpdateCheck)
+            {
+                await CaptureUpdateCheck(outcomes);
+                return;
+            }
+            if (ReviewMode == CaptureMode.LocationWarning)
+            {
+                await CaptureLocationWarning(outcomes);
                 return;
             }
             var filesOnly = ReviewMode == CaptureMode.DetailsFiles;

@@ -111,23 +111,33 @@ public sealed class MoveDraft : FileDraft
 
     private protected override async Task<bool> Send()
     {
+        var selection = TorrentIds;
+        var destination = Destination;
+        var download = IsDownload;
         var torrentIds = IncludeShared
-            ? TorrentIds.Concat(SharedLocations.Select(torrent => torrent.TorrentId)).ToArray()
-            : TorrentIds;
+            ? selection.Concat(SharedLocations.Select(torrent => torrent.TorrentId)).ToArray()
+            : selection;
         _destinationFailure = null;
         try
         {
-            if (IsDownload)
-                await Owner.SetDownloadFolder(torrentIds, Destination);
+            await Client.Send("check_destination", new { destination }, Requester.Window);
+            if (selection != TorrentIds)
+                return false;
+            if (download)
+                await Owner.SetDownloadFolder(torrentIds, destination);
             else
-                await Client.Send("move", new { torrent_ids = torrentIds, destination = Destination }, Requester.Person);
+                await Client.Send("move", new { torrent_ids = torrentIds, destination }, Requester.Person);
         }
-        catch (Exception error) when (AddDraft.IsDestinationError(error))
+        catch (Exception) when (selection != TorrentIds)
+        {
+            return false;
+        }
+        catch (Exception error) when (error is CommandException { Code: "invalid_destination" or "move_destination_unavailable" })
         {
             _destinationFailure = error;
             return false;
         }
-        if (!IsDownload)
+        if (!download)
             Owner.Notifications.AnnounceAccepted("commands", "move");
         return true;
     }
