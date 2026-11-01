@@ -61,6 +61,10 @@ internal static class Motion
         owner.UpdateLayout();
 
         IReadOnlyList<VisibleColumn> visible = owner.EffectiveLayout.VisibleColumns;
+        Compositor compositor = ElementCompositionPreview.GetElementVisual(owner).Compositor;
+        CubicBezierEasingFunction easing = compositor.CreateCubicBezierEasingFunction(
+            new Vector2(0.1f, 0.9f), new Vector2(0.2f, 1));
+        Dictionary<double, Vector3KeyFrameAnimation> animations = new();
 
         foreach (CellsPanel panel in owner.RealizedPanels())
         {
@@ -81,29 +85,24 @@ internal static class Motion
                 double distance = was - visible[i].Offset;
                 if (Math.Abs(distance) >= MinimumMoveDips)
                 {
-                    Slide(panel.Children[i], distance);
+                    if (!animations.TryGetValue(distance, out Vector3KeyFrameAnimation? slide))
+                    {
+                        slide = compositor.CreateVector3KeyFrameAnimation();
+                        slide.InsertKeyFrame(1, Vector3.Zero, easing);
+                        slide.Duration = Duration;
+                        animations.Add(distance, slide);
+                    }
+                    Slide(panel.Children[i], distance, slide);
                 }
             }
         }
     }
 
-    private static void Slide(UIElement cell, double distance)
+    private static void Slide(UIElement cell, double distance, Vector3KeyFrameAnimation slide)
     {
         ElementCompositionPreview.SetIsTranslationEnabled(cell, true);
         Visual visual = ElementCompositionPreview.GetElementVisual(cell);
         visual.Properties.InsertVector3("Translation", new Vector3((float)distance, 0, 0));
-
-        Compositor compositor = visual.Compositor;
-        Vector3KeyFrameAnimation slide = compositor.CreateVector3KeyFrameAnimation();
-        slide.InsertKeyFrame(
-            1,
-            Vector3.Zero,
-            compositor.CreateCubicBezierEasingFunction(
-                new Vector2(0.1f, 0.9f),
-                new Vector2(0.2f, 1)
-            )
-        );
-        slide.Duration = Duration;
 
         visual.StartAnimation("Translation", slide);
     }

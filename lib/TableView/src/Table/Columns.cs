@@ -185,11 +185,13 @@ public sealed partial class Table
 
         while (scaled.Count > 0)
         {
-            double factor = Math.Max(room, 0) / scaled.Sum(column => column.Width);
+            double total = scaled.Sum(column => column.Width);
+            bool equal = total == 0;
+            double factor = equal ? Math.Max(room, 0) / scaled.Count : Math.Max(room, 0) / total;
             EffectiveColumn[] held = scaled
                 .Where(column =>
-                    column.Width * factor < FillMinimum(column)
-                    || column.Width * factor > FillMaximum(column)
+                    (equal ? factor : column.Width * factor) < FillMinimum(column)
+                    || (equal ? factor : column.Width * factor) > FillMaximum(column)
                 )
                 .ToArray();
 
@@ -197,7 +199,7 @@ public sealed partial class Table
             {
                 foreach (EffectiveColumn column in scaled)
                 {
-                    changed |= SetColumnWidth(column, column.Width * factor, publish: false);
+                    changed |= SetColumnWidth(column, equal ? factor : column.Width * factor, publish: false);
                 }
 
                 break;
@@ -206,7 +208,7 @@ public sealed partial class Table
             foreach (EffectiveColumn column in held)
             {
                 double bound = Math.Clamp(
-                    column.Width * factor,
+                    equal ? factor : column.Width * factor,
                     FillMinimum(column),
                     FillMaximum(column)
                 );

@@ -18,13 +18,16 @@ for this documentation review.
 | Effective layout | [EffectiveLayout](../src/EffectiveLayout.cs). |
 | Realized items reported to the host | `RealizedItems` in [Table/View](../src/Table/View.cs), read from the row panel's cache range; the panel's `CacheLength` in [Generic.xaml](../src/Themes/Generic.xaml) sets the margin. |
 | Shared header and row arrangement | [CellsPanel](../src/CellsPanel.cs). |
-| Hierarchy cell indentation and disclosure | [Body.HierarchyCell](../src/Body/HierarchyCell.cs), created only for the hierarchy column, with a `SubtleButton` as its expander. |
+| Row drag/held visuals and cursor | [Body.Row](../src/Body/Row.cs) keeps its state owner and uses a presenter as its template root. |
+| Hierarchy cell indentation and disclosure | [Body.HierarchyCell](../src/Body/HierarchyCell.cs) creates its expander on the first expandable row and retains leaf indentation and slot geometry. |
 | Selection, current item, anchor, and logical focus | [SelectionState](../src/SelectionState.cs). |
 | Row pointer arbitration | [Table input](../src/Table/Input.cs). |
 | Held rows and the pointed row's frozen place | [Table holding](../src/Table/Holding.cs), applied by the view order in [Table sorting](../src/Table/Sorting.cs). |
 | Marquee geometry | [Body.Marquee](../src/Body/Marquee.cs), driven by the arbiter. |
 | Numbered order and drag wheel | [Order](../src/Order.cs) captures host positions; [Table/Reordering](../src/Table/Reordering.cs) owns the gesture snapshot and request; [Body.Wheel](../src/Body/Wheel.xaml.cs) owns popup rendering and gap geometry. |
 | Header gestures and generated menu | [Header.Strip](../src/Header/Strip.cs) and [Header.Menu](../src/Header/Menu.cs). |
+| Configured row/header drag distances | [DragDistance](../src/DragDistance.cs) reads the Windows axis metrics at 96 DPI for shared DIP distances. |
+| Column-move motion | [Motion](../src/Motion.cs) reuses one compositor/easing and one animation per distance within each move. |
 | Generic control text | [Strings](../src/Strings.cs), reading the embedded [en.json](../src/Resources/en.json). |
 
 The source capture and displayed sequence serve different roles: one receives
@@ -138,6 +141,13 @@ The table commits selection and refreshes hierarchy and row presentation before
 delivering automation and host selection events.
 Pointer, keyboard, menu, and automation paths must reach the same operations.
 Marquee and drag visuals do not decide which gesture is active.
+The marquee reports coverage additions/removals and bounds; the selection model
+captures its Ctrl baseline once and updates changed coverage or Shift-range
+edges. A source publish rebases coverage against the new view.
+Order captures provider entries and their identity map once per row drag. Its
+one validation pass checks subsequent provider entries without sorting another
+snapshot; packet membership uses the gesture's captured identity set. Provider
+references remain in the packet while current rows supply interaction policy.
 
 The private view sends native observable-vector insert, remove and replacement
 events. It avoids projecting .NET collection-event arguments and their item
@@ -160,6 +170,13 @@ The current arbiter has `None`, `Pressed`, `Marquee`, and `RowDrag` phases. Earl
 notes describing a `Committed` phase and calling the marquee during a row drag
 are stale; inspect the current transitions before proposing a fix. Deferred click
 decisions preserve the press/release contract, not an accidental processing delay.
+Page navigation uses realized row bounds. A deferred request listens for the
+scroller's final ViewChanged and runs after the next Rendering boundary, guarded
+by both request identity and stage. Public ScrollIntoView can produce no scroll
+event: its native panel command invalidates measure, so a reveal also arms that
+same frame once and continues only if its row then intersects the viewport.
+Otherwise it ends. Changed view/current, new input, unload and retemplate detach
+the request's handler.
 
 Keep reconciliation bounded by the containers the list actually holds. The
 implementation uses remove/insert notifications rather than `Move`, and never

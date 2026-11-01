@@ -20,9 +20,6 @@ namespace Syno.TableView;
 /// </remarks>
 public sealed partial class Table
 {
-    /// <summary>Movement below this is a click, not a drag or a marquee.</summary>
-    private const double DragThresholdDips = 4;
-
     private readonly Body.Marquee _marquee = new();
 
     private RowGesture _gesture;
@@ -254,6 +251,7 @@ public sealed partial class Table
 
     private void OnRowsPointerPressed(object sender, PointerRoutedEventArgs e)
     {
+        CancelPage();
         if (_surface is null)
         {
             return;
@@ -316,8 +314,8 @@ public sealed partial class Table
         }
 
         if (
-            Math.Abs(now.X - _gestureOrigin.X) < DragThresholdDips
-            && Math.Abs(now.Y - _gestureOrigin.Y) < DragThresholdDips
+            Math.Abs(now.X - _gestureOrigin.X) < DragDistance.Horizontal
+            && Math.Abs(now.Y - _gestureOrigin.Y) < DragDistance.Vertical
         )
         {
             return;
@@ -589,6 +587,7 @@ public sealed partial class Table
     private void BeginMarquee(ListView rows)
     {
         _gesture = RowGesture.Marquee;
+        _selection.BeginMarquee(_gestureSelection!, _gestureCtrl, _gestureShift);
         _marquee.Begin(
             rows,
             InnerScrollViewer(),
@@ -608,10 +607,12 @@ public sealed partial class Table
 
     private bool ClearGesture()
     {
+        CancelPage();
         bool wasDragging = _gesture == RowGesture.RowDrag;
 
         _gesture = RowGesture.None;
         _marquee.End();
+        _selection.EndMarquee();
         EndDrag();
         ReleaseGesturePointer();
         _gestureItem = null;
@@ -637,68 +638,10 @@ public sealed partial class Table
     /// Section 14's three compositions. The gesture's modifiers are the ones read at press, so a
     /// key pressed or released mid-drag does not change the rule the user started under.
     /// </summary>
-    private void ApplyMarqueeCoverage()
+    private void ApplyMarqueeCoverage(Body.Marquee.Coverage coverage)
     {
-        _selection.SetMarqueeSelection(MarqueeItems(), View);
+        _selection.UpdateMarquee(coverage.Added, coverage.Removed, coverage.Bounds);
         CommitSelection();
-    }
-
-    /// <summary>
-    /// What the rectangle selects, under the modifier the gesture started with. Read on every
-    /// pointer move and again whenever a source update reorders the rows beneath it, because the
-    /// answer is a question about the current view and not about the one the gesture began on.
-    /// </summary>
-    private List<object> MarqueeItems() =>
-        _gestureShift ? MarqueeExtendedFromAnchor()
-        : _gestureCtrl ? MarqueeToggledAgainstStart()
-        : MarqueeCovered();
-
-    private List<object> MarqueeCovered()
-    {
-        List<object> items = new();
-        foreach (int index in _marquee.CoveredIndices)
-        {
-            object item = View[index];
-            if (_selection.IsInteractive(item))
-            {
-                items.Add(item);
-            }
-        }
-
-        return items;
-    }
-
-    /// <summary>Ctrl: each covered row flips against the selection as it stood at press.</summary>
-    private List<object> MarqueeToggledAgainstStart()
-    {
-        IdentitySet items = new(_identity);
-        items.UnionWith(_gestureSelection!.Items);
-        items.SymmetricExceptWith(MarqueeCovered());
-        return items.ToList();
-    }
-
-    /// <summary>Shift: the inclusive run from the anchor out to the far edge of what is covered.</summary>
-    private List<object> MarqueeExtendedFromAnchor()
-    {
-        int anchor = IndexInView(_selection.Anchor);
-        if (anchor < 0 || _marquee.CoveredIndices.Count == 0)
-        {
-            return new List<object>(_gestureSelection!.Items);
-        }
-
-        int low = Math.Min(anchor, _marquee.LowestCovered);
-        int high = Math.Max(anchor, _marquee.HighestCovered);
-
-        List<object> items = new();
-        for (int i = low; i <= high; i++)
-        {
-            if (_selection.IsInteractive(View[i]))
-            {
-                items.Add(View[i]);
-            }
-        }
-
-        return items;
     }
 
     /// <summary>
@@ -845,8 +788,10 @@ public sealed partial class Table
                 return HitTarget.Suppressed;
             }
 
-            // A tab stop inside a cell is an editor, button, or selector and owns its own input.
-            if (node is Control { IsTabStop: true })
+            if (node is ButtonBase or TextBox or PasswordBox or RichEditBox or Selector
+                or Slider or ToggleSwitch or NumberBox or AutoSuggestBox or CalendarDatePicker
+                or DatePicker or TimePicker or RatingControl
+                || node is Control { IsTabStop: true })
             {
                 return HitTarget.Suppressed;
             }
@@ -885,14 +830,15 @@ public sealed partial class Table
 
         bool ctrl = IsDown(VirtualKey.Control);
         bool shift = IsDown(VirtualKey.Shift);
+        CancelPage();
 
         e.Handled = e.Key switch
         {
             VirtualKey.Left or VirtualKey.Right => NavigateHierarchy(e.Key, shift, ctrl),
             VirtualKey.Up => MoveCurrentBy(-1, shift, ctrl),
             VirtualKey.Down => MoveCurrentBy(1, shift, ctrl),
-            VirtualKey.PageUp => MoveCurrentBy(-RowsPerPage(), shift, ctrl),
-            VirtualKey.PageDown => MoveCurrentBy(RowsPerPage(), shift, ctrl),
+            VirtualKey.PageUp => MovePage(-1, shift, ctrl),
+            VirtualKey.PageDown => MovePage(1, shift, ctrl),
             VirtualKey.Home => MoveCurrentToEdge(first: true, shift, ctrl),
             VirtualKey.End => MoveCurrentToEdge(first: false, shift, ctrl),
             VirtualKey.A when ctrl => SelectAllFromKeyboard(),
@@ -1014,6 +960,7 @@ public sealed partial class Table
 
     private bool MoveCurrentTo(object item, bool extend, bool ctrl)
     {
+        CancelPage();
         _selection.Navigate(item, ctrl, extend, View);
         CommitSelection();
         if (_detached || !ReferenceEquals(_selection.Current, item))
@@ -1074,24 +1021,192 @@ public sealed partial class Table
         return true;
     }
 
-    private int RowsPerPage()
+    private PageNavigation? _pendingPage;
+
+    private sealed class PageNavigation(object current, int direction, VirtualKeyModifiers modifiers,
+        long version, ScrollViewer scroller)
     {
-        double viewport = InnerScrollViewer()?.ViewportHeight ?? 0;
-        double rowHeight = FirstVisibleRowHeight();
-        return viewport > 0 && rowHeight > 0 ? Math.Max(1, (int)(viewport / rowHeight)) : 1;
+        internal object Current { get; } = current;
+        internal int Direction { get; } = direction;
+        internal VirtualKeyModifiers Modifiers { get; } = modifiers;
+        internal long Version { get; } = version;
+        internal ScrollViewer Scroller { get; } = scroller;
+        internal PageStage Stage { get; set; }
+        internal EventHandler<ScrollViewerViewChangedEventArgs>? Handler { get; set; }
     }
 
-    /// <summary>The height of the first row in the viewport, or 0 while no row is realized.</summary>
-    private double FirstVisibleRowHeight()
+    private bool MovePage(int direction, bool extend, bool ctrl)
     {
-        if (_surface?.ItemsPanelRoot is not ItemsStackPanel rows || rows.FirstVisibleIndex < 0)
+        CancelPage();
+        SyncSelectionPolicy();
+        int current = IndexInView(_selection.Current);
+        if (current < 0)
         {
-            return 0;
+            return MoveCurrentToEdge(direction > 0, extend, ctrl);
         }
+        if (!IsLoaded || InnerScrollViewer() is not { ViewportHeight: > 0 } scroller)
+        {
+            return MoveCurrentBy(direction, extend, ctrl);
+        }
+        VirtualKeyModifiers modifiers = (extend ? VirtualKeyModifiers.Shift : VirtualKeyModifiers.None)
+            | (ctrl ? VirtualKeyModifiers.Control : VirtualKeyModifiers.None);
+        int boundary = PageBoundary(direction);
+        bool visible = _surface!.ContainerFromIndex(current) is FrameworkElement row
+            && RowBounds(row) is { Bottom: > 0 } bounds && bounds.Top < scroller.ViewportHeight;
+        if (visible && boundary >= 0 && (direction > 0 ? current < boundary : current > boundary))
+        {
+            return MoveBoundary(boundary, direction, modifiers);
+        }
+        PageNavigation request = new(_selection.Current!, direction, modifiers, _view.Version, scroller);
+        _pendingPage = request;
+        request.Handler = (_, args) =>
+        {
+            if (!ReferenceEquals(_pendingPage, request) || args.IsIntermediate)
+            {
+                return;
+            }
+            request.Stage = request.Stage switch
+            {
+                PageStage.Revealing => PageStage.ReadyToScroll,
+                PageStage.Scrolling => PageStage.Ready,
+                _ => request.Stage,
+            };
+            RequestFrame();
+        };
+        scroller.ViewChanged += request.Handler;
+        if (visible)
+        {
+            ScrollPage(request);
+        }
+        else
+        {
+            request.Stage = PageStage.Revealing;
+            _surface.ScrollIntoView(request.Current, ScrollIntoViewAlignment.Leading);
+            RequestFrame();
+        }
+        return true;
+    }
 
-        return _surface.ContainerFromIndex(rows.FirstVisibleIndex) is FrameworkElement container
-            ? container.ActualHeight
-            : 0;
+    private Rect RowBounds(FrameworkElement row) => row.TransformToVisual(_surface)
+        .TransformBounds(new(0, 0, row.ActualWidth, row.ActualHeight));
+
+    private int PageBoundary(int direction)
+    {
+        if (_surface?.ItemsPanelRoot is not ItemsStackPanel panel || InnerScrollViewer() is not { } scroller)
+        {
+            return -1;
+        }
+        int full = -1;
+        int partial = -1;
+        int first = Math.Max(0, panel.FirstVisibleIndex);
+        int last = Math.Min(View.Count - 1, panel.LastVisibleIndex);
+        for (int index = first; index <= last; index++)
+        {
+            if (_surface.ContainerFromIndex(index) is not FrameworkElement row)
+            {
+                continue;
+            }
+            Rect bounds = RowBounds(row);
+            if (bounds.Bottom > 0 && bounds.Top < scroller.ViewportHeight)
+            {
+                if (partial < 0 || direction > 0)
+                {
+                    partial = index;
+                }
+                if (bounds.Top >= 0 && bounds.Bottom <= scroller.ViewportHeight && (full < 0 || direction > 0))
+                {
+                    full = index;
+                }
+            }
+        }
+        return full >= 0 ? full : partial;
+    }
+
+    private void ScrollPage(PageNavigation request)
+    {
+        ScrollViewer scroller = request.Scroller;
+        double offset = Math.Clamp(scroller.VerticalOffset + request.Direction * scroller.ViewportHeight,
+            0, scroller.ScrollableHeight);
+        request.Stage = PageStage.Scrolling;
+        if (offset == scroller.VerticalOffset || !scroller.ChangeView(null, offset, null, disableAnimation: true))
+        {
+            request.Stage = PageStage.Ready;
+            CompletePage(request);
+        }
+    }
+
+    private void CompletePage(PageNavigation? request)
+    {
+        if (request is null || !ReferenceEquals(_pendingPage, request))
+        {
+            return;
+        }
+        if (_view.Version != request.Version || !ReferenceEquals(_selection.Current, request.Current))
+        {
+            CancelPage();
+            return;
+        }
+        if (request.Stage == PageStage.Revealing)
+        {
+            int index = IndexInView(request.Current);
+            if (_surface?.ContainerFromIndex(index) is not FrameworkElement row
+                || RowBounds(row) is not { Bottom: > 0 } bounds
+                || bounds.Top >= request.Scroller.ViewportHeight)
+            {
+                CancelPage();
+                return;
+            }
+            request.Stage = PageStage.ReadyToScroll;
+        }
+        if (request.Stage == PageStage.ReadyToScroll)
+        {
+            ScrollPage(request);
+            return;
+        }
+        if (request.Stage != PageStage.Ready)
+        {
+            return;
+        }
+        int target = PageBoundary(request.Direction);
+        int current = IndexInView(request.Current);
+        CancelPage();
+        if (target < 0 || target == current)
+        {
+            target = Math.Clamp(current + request.Direction, 0, View.Count - 1);
+        }
+        MoveBoundary(target, request.Direction, request.Modifiers);
+    }
+
+    private bool MoveBoundary(int target, int direction, VirtualKeyModifiers modifiers)
+    {
+        for (int index = target; index >= 0 && index < View.Count; index += direction)
+        {
+            if (_selection.IsInteractive(View[index]))
+            {
+                return MoveCurrentTo(View[index], modifiers.HasFlag(VirtualKeyModifiers.Shift),
+                    modifiers.HasFlag(VirtualKeyModifiers.Control));
+            }
+        }
+        for (int index = target - direction; index >= 0 && index < View.Count; index -= direction)
+        {
+            if (_selection.IsInteractive(View[index]))
+            {
+                return MoveCurrentTo(View[index], modifiers.HasFlag(VirtualKeyModifiers.Shift),
+                    modifiers.HasFlag(VirtualKeyModifiers.Control));
+            }
+        }
+        return false;
+    }
+
+    private void CancelPage()
+    {
+        PageNavigation? request = _pendingPage;
+        _pendingPage = null;
+        if (request?.Handler is { } handler)
+        {
+            request.Handler = null;
+            request.Scroller.ViewChanged -= handler;
+        }
     }
 
     /// <summary>

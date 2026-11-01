@@ -207,6 +207,7 @@ public sealed partial class Table : Control
 
     private void DetachTemplateParts()
     {
+        CancelPage();
         RestoreTransitions();
         DetachInput();
 
@@ -240,6 +241,7 @@ public sealed partial class Table : Control
 
         RestoreTransitions();
         CancelPreparation();
+        CancelPage();
         if (!_detached)
             _lifetimeRevision++;
         _detached = true;

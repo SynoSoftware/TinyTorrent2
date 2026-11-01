@@ -10,8 +10,8 @@ internal sealed partial class HierarchyCell : Grid
 {
     private readonly Table _table;
     private readonly ContentPresenter _content;
-    private readonly SubtleButton _expander;
-    private readonly FontIcon _glyph;
+    private SubtleButton? _expander;
+    private FontIcon? _glyph;
     private readonly RectangleGeometry _clip = new();
 
     internal HierarchyCell(Table table, ContentPresenter content)
@@ -23,25 +23,6 @@ internal sealed partial class HierarchyCell : Grid
         content.Padding = default;
         ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
-        _glyph = new() { FontFamily = Segoe.Font, FontSize = 12 };
-        _expander = new()
-        {
-            Content = _glyph,
-            Width = 40,
-            IsTabStop = false,
-            AllowFocusOnInteraction = false,
-        };
-        AutomationProperties.SetAccessibilityView(
-            _expander,
-            Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw
-        );
-        Table.SetIsRowGestureEnabled(_expander, false);
-        _expander.Click += (_, _) =>
-        {
-            if (_content.Content is { } item && _table.Hierarchy is { } hierarchy)
-                _table.Expand(item, !hierarchy.IsExpanded(item));
-        };
-        Children.Add(_expander);
         SetColumn(content, 1);
         Children.Add(content);
         // Unloaded is ignored while the cell is still in the tree, so Loaded
@@ -90,16 +71,43 @@ internal sealed partial class HierarchyCell : Grid
             return;
         // WinUI TreeView uses a 16-pixel depth step and a 12-pixel glyph between 14-pixel margins.
         double indent = node.Depth * 16;
+        bool expandable = hierarchy.IsExpandable(node);
+        ColumnDefinitions[0].Width = new(indent + (hierarchy.HasChildren ? 40 : 0));
+        if (expandable && _expander is null)
+        {
+            _glyph = new() { FontFamily = Segoe.Font, FontSize = 12 };
+            _expander = new()
+            {
+                Content = _glyph,
+                Width = 40,
+                IsTabStop = false,
+                AllowFocusOnInteraction = false,
+            };
+            AutomationProperties.SetAccessibilityView(_expander,
+                Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+            Table.SetIsRowGestureEnabled(_expander, false);
+            _expander.Click += (_, _) =>
+            {
+                if (_content.Content is { } current && _table.Hierarchy is { } currentHierarchy)
+                {
+                    _table.Expand(current, !currentHierarchy.IsExpanded(current));
+                }
+            };
+            Children.Insert(0, _expander);
+        }
+        if (_expander is null)
+        {
+            return;
+        }
         _expander.Margin =
             FlowDirection == FlowDirection.LeftToRight
                 ? new(indent, 0, 0, 0)
                 : new(0, 0, indent, 0);
         _expander.Visibility = hierarchy.HasChildren ? Visibility.Visible : Visibility.Collapsed;
-        bool expandable = hierarchy.IsExpandable(node);
         _expander.Opacity = expandable ? 1 : 0;
         _expander.IsHitTestVisible = expandable;
         _expander.IsEnabled = _table.IsInteractive(item);
-        _glyph.Glyph =
+        _glyph!.Glyph =
             hierarchy.IsExpanded(item) ? Segoe.ChevronDown
             : FlowDirection == FlowDirection.LeftToRight ? Segoe.ChevronRight
             : Segoe.ChevronLeft;

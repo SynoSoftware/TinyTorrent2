@@ -10,6 +10,8 @@ internal sealed class Order(
 
     private long _publishVersion = -1;
     private bool _canReorder;
+    private IdentitySet? _seen;
+    private readonly HashSet<int> _positions = new();
 
     internal bool AllowsReorder(long publishVersion)
     {
@@ -23,24 +25,72 @@ internal sealed class Order(
 
     internal bool Contains(object item) => position(item).HasValue;
 
-    internal Entry[] Capture(IIdentity identity)
+    internal Snapshot Capture(IIdentity identity)
     {
         var entries = new List<Entry>();
-        var seen = new IdentitySet(identity);
-        var positions = new HashSet<int>();
-        foreach (var item in items())
+        IdentityMap<Entry> captured = identity.CreateMap<Entry>(keepsKeys: true);
+        _seen = new(identity, keepsKeys: true);
+        _positions.Clear();
+        try
         {
-            if (position(item) is not int value)
-                continue;
-            if (!seen.Add(item) || !positions.Add(value))
-                throw new InvalidOperationException(
-                    "An order must have unique items and positions."
-                );
-            entries.Add(new(item, value));
+            foreach (object item in items())
+            {
+                if (position(item) is not int value)
+                {
+                    continue;
+                }
+                Entry entry = new(item, value);
+                if (!captured.TryAdd(item, entry) || !_positions.Add(value))
+                {
+                    throw InvalidOrder();
+                }
+                entries.Add(entry);
+            }
+        }
+        finally
+        {
+            _positions.Clear();
         }
         entries.Sort((left, right) => left.Position.CompareTo(right.Position));
-        return entries.ToArray();
+        return new(entries.ToArray(), captured);
     }
+
+    internal bool Matches(Snapshot snapshot)
+    {
+        IdentityMap<Entry> captured = snapshot.Map;
+        IdentitySet seen = _seen!;
+        seen.Clear();
+        _positions.Clear();
+        bool matches = true;
+        try
+        {
+            foreach (object item in items())
+            {
+                if (position(item) is not int value)
+                {
+                    continue;
+                }
+                bool added = captured.ContainsReference(item) ? seen.Add(item, captured) : seen.Add(item);
+                if (!added || !_positions.Add(value))
+                {
+                    throw InvalidOrder();
+                }
+                matches &= captured.TryGetValue(item, seen, out Entry before)
+                    && ReferenceEquals(before.Item, item) && before.Position == value;
+            }
+            return matches && seen.Count == captured.Count;
+        }
+        finally
+        {
+            seen.Clear();
+            _positions.Clear();
+        }
+    }
+
+    private static InvalidOperationException InvalidOrder() =>
+        new("An order must have unique items and positions.");
+
+    internal sealed record Snapshot(Entry[] Entries, IdentityMap<Entry> Map);
 
     internal readonly record struct Entry(object Item, int Position);
 }

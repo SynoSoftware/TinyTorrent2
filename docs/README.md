@@ -72,10 +72,6 @@ The [ring copy research](plans/ring-copy-plan.md) keeps the evidence and the
 design of a copy engine of the engine's own, for moves between hard disks. It
 will not be implemented.
 
-The [TableView performance plan](plans/tableview-performance-plan.md) makes the
-table's cost per source change follow the size of the change, for sources of
-10,000 to 100,000 rows.
-
 The [communication plan](plans/communication-plan.md) is paused. It holds the
 scoped-subscription design for torrent detail, which the owner has not decided
 to implement; its implemented first stage lives in the protocol and engine

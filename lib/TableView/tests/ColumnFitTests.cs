@@ -501,6 +501,31 @@ public class ColumnFitTests
         });
 
     [TestMethod]
+    public Task FillingZeroWidthEmptyColumnsSharesTheViewportWithoutNaN() =>
+        TestHost.RunAsync(async () =>
+        {
+            Column a = Column("a", 1);
+            Column b = Column("b", 1);
+            foreach (Column column in new[] { a, b })
+            {
+                column.MinWidth = 0;
+                column.Header = new Border();
+                column.CellTemplate = EmptyTemplate;
+            }
+            Table table = Build(a, b);
+            table.CellPadding = new(0);
+            table.ItemsSource = Array.Empty<FitRow>();
+            await TableHarness.LoadAsync(table);
+
+            table.FillWidth();
+
+            double width = Descendants<Header.Strip>(table).First().ActualWidth / 2;
+            Assert.IsTrue(width > 0);
+            Assert.AreEqual(width, TableHarness.EffectiveWidth(table, "a"), .001);
+            Assert.AreEqual(width, TableHarness.EffectiveWidth(table, "b"), .001);
+        });
+
+    [TestMethod]
     public Task FillingPreservesProtectedContentAndHeaders() =>
         TestHost.RunAsync(async () =>
         {

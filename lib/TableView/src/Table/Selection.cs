@@ -151,7 +151,7 @@ public sealed partial class Table
         if (_gesture == RowGesture.Marquee)
         {
             _marquee.Refresh();
-            _selection.SetMarqueeSelection(MarqueeItems(), View);
+            _selection.RebaseMarquee(_marquee.CoveredIndices, _marquee.Bounds);
         }
 
         if (!_detached)
@@ -197,6 +197,10 @@ public sealed partial class Table
             : ReferenceEquals(previous.Current, _selection.Current)
                 ? previous : new(previous, _selection.Current);
         _selectionItemsVersion = _selection.ItemsVersion;
+        if (!ReferenceEquals(previous.Current, next.Current))
+        {
+            CancelPage();
+        }
         bool changed = !SameSelection(previous, next);
         if (!changed)
         {

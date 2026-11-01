@@ -263,6 +263,10 @@ public sealed partial class Table
             IIdentityKeys keys = source is not null ? source : membership is not null ? membership
                 : _preparedHierarchy is { } preparedHierarchy ? preparedHierarchy : _hierarchy!.Captured!.Nodes;
             bool changed = edits is not null ? edits.Count > 0 : !_view.IsAlready(order);
+            if (changed)
+            {
+                CancelPage();
+            }
             if (changed && edits is null)
             {
                 _candidatePositions.Build(order, keys, _view.Positions);
@@ -430,6 +434,9 @@ public sealed partial class Table
         CompositionTarget.Rendering -= OnLaidOut;
         _frameRequested = false;
         QueuedSort? queued = _queuedSort;
+        PageNavigation? page = _pendingPage is { Stage: not PageStage.Scrolling } ready
+            ? ready : null;
+        PageStage? stage = page?.Stage;
         long version = _view.Version;
         long lifetime = _lifetimeRevision;
         // The tick ends when the frame returns, so the note clears and the reveal runs past it.
@@ -446,6 +453,10 @@ public sealed partial class Table
                     _layoutPending = false;
                     RestoreTransitions();
                     Reveal();
+                    if (page is not null && ReferenceEquals(_pendingPage, page) && page.Stage == stage)
+                    {
+                        CompletePage(page);
+                    }
                 }
                 else
                     RequestFrame();
@@ -460,6 +471,7 @@ public sealed partial class Table
             }
         }))
         {
+            CancelPage();
             RestoreTransitions();
         }
     }

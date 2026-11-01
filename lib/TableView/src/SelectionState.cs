@@ -14,6 +14,7 @@ internal sealed class SelectionState
     private readonly SortedSet<int> _indices = new();
     private long _indicesVersion = -1;
     private RangeGesture? _range;
+    private MarqueeGesture? _marquee;
 
     internal SelectionState(IIdentity identity, Body.View view)
     {
@@ -57,6 +58,16 @@ internal sealed class SelectionState
         IdentitySet? Baseline
     );
 
+    private readonly record struct Span(int Low, int High);
+
+    private sealed class MarqueeGesture(IdentitySet baseline, bool ctrl, bool shift)
+    {
+        internal IdentitySet Baseline { get; } = baseline;
+        internal bool Ctrl { get; } = ctrl;
+        internal bool Shift { get; } = shift;
+        internal Span? Span { get; set; }
+    }
+
     internal Checkpoint Capture(Selection packet) => new(packet.Items, Current, Anchor, Focus);
 
     internal void Restore(Checkpoint checkpoint, IReadOnlyList<object> view)
@@ -75,6 +86,7 @@ internal sealed class SelectionState
         _indices.Clear();
         _indicesVersion = -1;
         _range = null;
+        _marquee = null;
     }
 
     internal bool AllowsMultiple => Mode is ListViewSelectionMode.Multiple or ListViewSelectionMode.Extended;
@@ -261,12 +273,8 @@ internal sealed class SelectionState
         if (previous is not null && ReferenceEquals(previous.Anchor, anchor)
             && previous.Add == add && previous.ViewVersion == _view.Version)
         {
-            int oldLow = Math.Min(from, previous.End);
-            int oldHigh = Math.Max(from, previous.End);
-            RemoveSpan(oldLow, Math.Min(oldHigh, low - 1), previous.Baseline);
-            RemoveSpan(Math.Max(oldLow, high + 1), oldHigh, previous.Baseline);
-            AddSpan(low, Math.Min(high, oldLow - 1));
-            AddSpan(Math.Max(low, oldHigh + 1), high);
+            ChangeSpan(new(Math.Min(from, previous.End), Math.Max(from, previous.End)),
+                new(low, high), previous.Baseline);
             _range = previous with { End = to };
         }
         else
@@ -299,6 +307,14 @@ internal sealed class SelectionState
                 Add(_view[index]);
             }
         }
+    }
+
+    private void ChangeSpan(Span before, Span after, IdentitySet? baseline = null)
+    {
+        RemoveSpan(before.Low, Math.Min(before.High, after.Low - 1), baseline);
+        RemoveSpan(Math.Max(before.Low, after.High + 1), before.High, baseline);
+        AddSpan(after.Low, Math.Min(after.High, before.Low - 1));
+        AddSpan(Math.Max(after.Low, before.High + 1), after.High);
     }
 
     private void RemoveSpan(int low, int high, IdentitySet? baseline)
@@ -369,8 +385,104 @@ internal sealed class SelectionState
         }
     }
 
-    internal void SetMarqueeSelection(List<object> items, IReadOnlyList<object> view) =>
-        Apply(ResolveSelection(items), Current, Anchor, Focus);
+    internal void BeginMarquee(Checkpoint checkpoint, bool ctrl, bool shift)
+    {
+        _range = null;
+        IdentitySet baseline = new(_identity, keepsKeys: true);
+        foreach (object item in checkpoint.Items)
+        {
+            if (Resolve(item) is { } current)
+            {
+                baseline.Add(current, _view.Positions);
+            }
+        }
+        _marquee = new(baseline, ctrl, shift);
+        ResetMarquee();
+    }
+
+    internal void EndMarquee()
+    {
+        _marquee?.Baseline.Clear();
+        _marquee = null;
+    }
+
+    private void ResetMarquee()
+    {
+        MarqueeGesture gesture = _marquee!;
+        ClearItems();
+        gesture.Span = null;
+        if (gesture.Ctrl || gesture.Shift)
+        {
+            foreach (object item in gesture.Baseline)
+            {
+                int index = _view.Positions.IndexOf(item, gesture.Baseline);
+                if (index >= 0 && IsInteractive(_view[index]))
+                {
+                    Add(_view[index]);
+                }
+            }
+        }
+    }
+
+    internal void RebaseMarquee(IReadOnlyCollection<int> covered, (int Low, int High)? bounds)
+    {
+        ResetMarquee();
+        UpdateMarquee(covered, Array.Empty<int>(), bounds);
+    }
+
+    internal void UpdateMarquee(IReadOnlyCollection<int> added, IReadOnlyCollection<int> removed,
+        (int Low, int High)? covered)
+    {
+        MarqueeGesture gesture = _marquee!;
+        if (gesture.Shift)
+        {
+            int anchor = _view.IndexOfIdentity(Anchor);
+            if (anchor < 0 || covered is null)
+            {
+                if (gesture.Span is not null)
+                {
+                    ResetMarquee();
+                }
+                return;
+            }
+            Span span = new(Math.Min(anchor, covered.Value.Low), Math.Max(anchor, covered.Value.High));
+            if (gesture.Span is { } previous)
+            {
+                ChangeSpan(previous, span);
+            }
+            else
+            {
+                ClearItems();
+                AddSpan(span.Low, span.High);
+            }
+            gesture.Span = span;
+            return;
+        }
+        foreach (int index in removed)
+        {
+            object item = _view[index];
+            if (gesture.Ctrl && gesture.Baseline.Contains(item, _view.Positions) && IsInteractive(item))
+            {
+                Add(item);
+            }
+            else
+            {
+                Remove(item);
+            }
+        }
+        foreach (int index in added)
+        {
+            object item = _view[index];
+            if (IsInteractive(item) && (!gesture.Ctrl || !gesture.Baseline.Contains(item, _view.Positions)))
+            {
+                Add(item);
+            }
+            else
+            {
+                Remove(item);
+            }
+        }
+    }
 
     internal void SetSelection(IEnumerable<object> items, object? currentItem, IReadOnlyList<object> view)
     {

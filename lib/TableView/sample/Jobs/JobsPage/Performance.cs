@@ -835,10 +835,21 @@ public sealed partial class JobsPage
                 CheckContainerSelection(table, "scattered selection", requiresPinned: true);
                 table.Selection = new Selection(new[] { rows[1], rows[^1] }, rows[^1]);
                 CheckContainerSelection(table, "far-apart replacement", requiresPinned: true);
-                var marquee = model.GetType().GetMethod("SetMarqueeSelection", BindingFlags.Instance | BindingFlags.NonPublic)!
-                    .CreateDelegate<Action<List<object>, IReadOnlyList<object>>>(model);
-                marquee(new() { rows[0], rows[^1] }, view);
-                commit();
+                Type type = model.GetType();
+                const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+                object checkpoint = type.GetMethod("Capture", flags)!.Invoke(model, new object[] { table.Selection })!;
+                type.GetMethod("BeginMarquee", flags)!.Invoke(model, new object[] { checkpoint, false, false });
+                try
+                {
+                    var marquee = type.GetMethod("UpdateMarquee", flags)!
+                        .CreateDelegate<Action<IReadOnlyCollection<int>, IReadOnlyCollection<int>, (int Low, int High)?>>(model);
+                    marquee(new[] { 0, count - 1 }, Array.Empty<int>(), (0, count - 1));
+                    commit();
+                }
+                finally
+                {
+                    type.GetMethod("EndMarquee", flags)!.Invoke(model, null);
+                }
                 CheckContainerSelection(table, "marquee result", requiresPinned: true);
                 InvokeTable(table, "SelectItem", rows[^1], false, false);
                 CheckContainerSelection(table, "plain click", requiresPinned: true);

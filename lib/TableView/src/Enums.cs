@@ -99,3 +99,11 @@ internal enum HeaderGesture
     /// <summary>The threshold was crossed and the pressed header is being reordered.</summary>
     Dragging,
 }
+
+internal enum PageStage
+{
+    Revealing,
+    Scrolling,
+    ReadyToScroll,
+    Ready,
+}

@@ -156,9 +156,10 @@ public class SelectionTests
     public Task ACompleteOrderAliasStopsDraggingWhenItsShownRowBecomesHeld() =>
         TestHost.RunAsync(async () =>
         {
-            Row[] order = { new("k0"), new("k1"), new("k2") };
+            Row[] order = { new("k0") { Interactive = false }, new("k1"), new("k2") };
             SelectionHarness h = await SelectionHarness.LoadAsync(3, table =>
-                table.Schema<Row>().Order(table.Columns[0], row => row.Position, () => order));
+                table.Schema<Row>().CanInteract(row => row.Interactive)
+                    .Order(table.Columns[0], row => row.Position, () => order));
             h.Table.CanReorder = true;
             Row shown = h[0];
             h.Click(shown);
