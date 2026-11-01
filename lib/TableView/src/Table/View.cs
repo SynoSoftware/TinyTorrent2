@@ -447,7 +447,9 @@ public sealed partial class Table
             try
             {
                 if (_detached || lifetime != _lifetimeRevision || !IsLoaded)
+                {
                     return;
+                }
                 if (version == _view.Version)
                 {
                     _layoutPending = false;
@@ -459,9 +461,13 @@ public sealed partial class Table
                     }
                 }
                 else
+                {
                     RequestFrame();
+                }
                 if (queued is not null)
+                {
                     ConsumeSort(queued);
+                }
             }
             catch (Exception error)
             {
@@ -535,7 +541,9 @@ public sealed partial class Table
     private void RequestFrame()
     {
         if (_frameRequested || !IsLoaded)
+        {
             return;
+        }
         _frameRequested = true;
         CompositionTarget.Rendering += OnLaidOut;
     }

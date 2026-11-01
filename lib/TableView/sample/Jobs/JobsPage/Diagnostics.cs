@@ -145,6 +145,10 @@ public sealed partial class JobsPage
         {
             await MeasureNamedValuesAsync();
         }
+        if (_only?.Contains("Y") == true)
+        {
+            await MeasureNotificationsAsync();
+        }
         if (_only?.Contains("L") == true)
         {
             await ObserveLiveChangesAsync();

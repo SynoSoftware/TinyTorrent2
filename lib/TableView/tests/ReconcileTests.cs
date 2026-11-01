@@ -278,7 +278,9 @@ public class ReconcileTests
         MethodInfo add = keys.GetType().GetMethod("TryAdd", BindingFlags.Instance | BindingFlags.NonPublic,
             null, new[] { typeof(object), typeof(object) }, null)!;
         foreach (object row in snapshot)
+        {
             add.Invoke(keys, new[] { row, row });
+        }
         object positions = Activator.CreateInstance(Control.GetType("Syno.TableView.PositionIndex")!,
             BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null, new[] { identity }, null)!;
         object previous = view.GetType().GetProperty("Positions", BindingFlags.Instance | BindingFlags.NonPublic)!
@@ -290,7 +292,9 @@ public class ReconcileTests
         MethodInfo pin = pins.GetType().GetMethod("Add", BindingFlags.Instance | BindingFlags.NonPublic,
             null, new[] { typeof(object) }, null)!;
         foreach (object row in pinned ?? new HashSet<object>())
+        {
             pin.Invoke(pins, new[] { row });
+        }
         view.GetType()
             .GetMethod("Reconcile", BindingFlags.Instance | BindingFlags.NonPublic, null,
                 new[] { typeof(IReadOnlyList<object>), positions.GetType(), typeof(IReadOnlyList<int>), pins.GetType() }, null)!

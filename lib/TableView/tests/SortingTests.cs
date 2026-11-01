@@ -38,6 +38,106 @@ internal sealed class SortRow
 public class SortingTests
 {
     [TestMethod]
+    public Task WithheldArrivalsKeepCurrentPinsAndRetargetWhenThePointerMoves() =>
+        TestHost.RunAsync(async () =>
+        {
+            SortHarness h = await SortHarness.LoadAsync(new[] { 3, 1, 2 }, configure: table =>
+            {
+                table.Sort = new(table.Columns[0]);
+                table.SortInterval = TimeSpan.Zero;
+            });
+            Proof.Call(h.Table, "PointAt", h.Rows[1]);
+            h.Rows[1].Rank = 4;
+            h.Table.RefreshView();
+            CollectionAssert.AreEqual(new[] { "k1", "k2", "k0" }, h.ViewKeys());
+            Proof.Call(h.Table, "PointAt", h.Rows[0]);
+            h.Rows.Insert(0, new("waiting-a", 9));
+            CollectionAssert.AreEqual(new[] { "k2", "k1", "k0" }, h.ViewKeys());
+            h.Rows.Insert(0, new("waiting-b", 9));
+            CollectionAssert.AreEqual(new[] { "k2", "k1", "k0" }, h.ViewKeys());
+            h.Rows[3] = new("k1", 2);
+            CollectionAssert.AreEqual(new[] { "k1", "k2", "k0" }, h.ViewKeys());
+            Assert.AreSame(h.Rows[3], h.Surface().Items[0]);
+            Proof.Call(h.Table, "StopPointing");
+            CollectionAssert.AreEqual(new[] { "k1", "k2", "k0", "waiting-b", "waiting-a" }, h.ViewKeys());
+        });
+
+    [TestMethod]
+    [DataRow(SortDirection.Ascending)]
+    [DataRow(SortDirection.Descending)]
+    public Task CollectionTiesKeepSourceOrderAcrossDeferredOrdinalChanges(SortDirection direction) =>
+        TestHost.RunAsync(async () =>
+        {
+            bool reject = false;
+            SortHarness h = await SortHarness.LoadAsync(Enumerable.Repeat(1, 32).ToArray(), configure: table =>
+            {
+                table.Schema<SortRow>().SortKey(table.Columns[0], row =>
+                {
+                    if (reject && row.Key == "rejected")
+                    {
+                        throw new InvalidOperationException("Rejected entrant");
+                    }
+                    return row.Rank;
+                });
+                table.Sort = new(table.Columns[0], direction);
+                table.SortInterval = TimeSpan.Zero;
+            });
+            for (int turn = 0; turn < 64; turn++)
+            {
+                h.Rows.Insert(turn * 17 % (h.Rows.Count + 1), new($"arrival{turn}", 1));
+                if (turn % 3 == 0)
+                {
+                    h.Rows.RemoveAt(turn * 7 % h.Rows.Count);
+                }
+                Check(h.Rows);
+            }
+            h.Rows[5].Rank = 0;
+            h.Table.RefreshView(new object[] { h.Rows[5] });
+            Check(h.Rows);
+            h.Table.RefreshView();
+            h.Rows.Insert(0, new("after-refresh", 1));
+            Check(h.Rows);
+
+            string[] accepted = h.ViewKeys();
+            reject = true;
+            Expect.Throws<InvalidOperationException>(() => h.Rows.Insert(0, new("rejected", 1)));
+            CollectionAssert.AreEqual(accepted, h.ViewKeys());
+            reject = false;
+            h.Rows.RemoveAt(0);
+            Check(h.Rows);
+
+            NullSenderRows range = new();
+            range.AddRange(h.Rows);
+            h.Table.ItemsSource = range;
+            range.ReplaceNotified(3, 7, new SortRow("range-a", 0), new SortRow("range-b", 1), new SortRow("range-c", 2));
+            Check(range);
+            range.AddNotified(new("last", 1));
+            Check(range);
+
+            NullSenderRows indexed = new();
+            indexed.AddRange(h.Rows.Take(4));
+            h.Table.ItemsSource = indexed;
+            indexed.AddNotified(new("before-index-a", 1));
+            indexed.AddNotified(new("before-index-b", 1));
+            accepted = h.ViewKeys();
+            indexed.RefusedIndex = 0;
+            Expect.Throws<InvalidOperationException>(() => indexed.AddNotified(new("index-failure", 1)));
+            CollectionAssert.AreEqual(accepted, h.ViewKeys());
+            indexed.RefusedIndex = null;
+            indexed.RemoveAt(indexed.Count - 1);
+            h.Table.RefreshView();
+            indexed.AddNotified(new("after-index-failure", 1));
+            Check(indexed);
+
+            void Check(IEnumerable<SortRow> source)
+            {
+                IEnumerable<SortRow> sorted = direction == SortDirection.Ascending
+                    ? source.OrderBy(row => row.Rank) : source.OrderByDescending(row => row.Rank);
+                CollectionAssert.AreEqual(sorted.Select(row => row.Key).ToArray(), h.ViewKeys());
+            }
+        });
+
+    [TestMethod]
     public Task NotificationsCaptureOnlyEntrantsAndRecoverAfterARejectedDelta() =>
         TestHost.RunAsync(async () =>
         {
@@ -146,13 +246,35 @@ public class SortingTests
             CollectionAssert.AreEqual(new[] { "replacement", "current-arrival" }, h.ViewKeys());
         });
 
-    private sealed class NullSenderRows : List<SortRow>, INotifyCollectionChanged
+    private sealed class NullSenderRows : List<SortRow>, INotifyCollectionChanged, IReadOnlyList<SortRow>
     {
         public event NotifyCollectionChangedEventHandler? CollectionChanged;
+        internal int? RefusedIndex { get; set; }
+
+        SortRow IReadOnlyList<SortRow>.this[int index]
+        {
+            get
+            {
+                if (RefusedIndex == index)
+                {
+                    throw new InvalidOperationException("Rejected source read");
+                }
+                return this[index];
+            }
+        }
+
         internal void AddNotified(SortRow item)
         {
             Add(item);
             CollectionChanged?.Invoke(null, new(NotifyCollectionChangedAction.Add, item, Count - 1));
+        }
+
+        internal void ReplaceNotified(int index, int count, params SortRow[] items)
+        {
+            SortRow[] removed = GetRange(index, count).ToArray();
+            RemoveRange(index, count);
+            InsertRange(index, items);
+            CollectionChanged?.Invoke(null, new(NotifyCollectionChangedAction.Replace, items, removed, index));
         }
     }
 
@@ -305,13 +427,19 @@ public class SortingTests
                 table.SortInterval = arrival ? TimeSpan.FromHours(1) : TimeSpan.Zero;
             });
             if (arrival)
+            {
                 Proof.SetField(h.Table, "_orderSettledAt", DateTimeOffset.UtcNow.AddMinutes(-30));
+            }
             DateTimeOffset published = DateTimeOffset.UtcNow;
             h.Rows[0].Rank = 4;
             if (arrival)
+            {
                 h.Rows.Add(new("arrival", 0));
+            }
             else
+            {
                 h.Table.RefreshView();
+            }
             CollectionAssert.AreEqual(arrival ? new[] { "arrival", "k1", "k2", "k0" }
                 : new[] { "k1", "k2", "k0" }, h.ViewKeys());
             if (arrival)
@@ -386,12 +514,16 @@ public class SortingTests
             Assert.AreEqual(Visibility.Visible, h.Glyph(0).Visibility);
             switch (change)
             {
-                case "assignment": h.Table.Sort = null; break;
+                case "assignment":
+                    h.Table.Sort = null;
+                    break;
                 case "return":
                     h.Table.Sort = null;
                     h.Table.Sort = new(h.Table.Columns[1]);
                     break;
-                case "hidden": Proof.Call(h.Table, "SetColumnVisibility", TableHarness.EffectiveColumn(h.Table, "a"), false); break;
+                case "hidden":
+                    Proof.Call(h.Table, "SetColumnVisibility", TableHarness.EffectiveColumn(h.Table, "a"), false);
+                    break;
                 case "reload":
                     long lifetime = Proof.Field<long>(h.Table, "_lifetimeRevision");
                     TestHost.RootPanel.Children.Remove(h.Table);
@@ -404,7 +536,9 @@ public class SortingTests
                     Assert.AreEqual("b", h.Table.Sort?.Column.Id, "removal refuses the queued commit before reloading");
                     await TableHarness.LoadAsync(h.Table);
                     break;
-                case "noop": h.Table.Sort = h.Table.Sort; break;
+                case "noop":
+                    h.Table.Sort = h.Table.Sort;
+                    break;
             }
             await h.WaitForSortAsync();
             Assert.AreEqual(change == "noop" ? "a" : change == "assignment" ? null : "b",
@@ -452,7 +586,9 @@ public class SortingTests
             {
                 frames++;
                 if (frames == 1)
+                {
                     h.Activate(1);
+                }
             }
             h.Activate(0);
             Microsoft.UI.Xaml.Media.CompositionTarget.Rendering += OnFrame;
@@ -488,11 +624,17 @@ public class SortingTests
 
             fails = false;
             if (recovery == "sort")
+            {
                 h.Table.Sort = new(h.Table.Columns[0], SortDirection.Descending);
+            }
             else if (recovery == "layout")
+            {
                 h.Table.Layout = TestData.Layout(sortColumnId: "a", direction: SortDirection.Descending);
+            }
             else
+            {
                 h.Table.RefreshView();
+            }
 
             CollectionAssert.AreEqual(recovery == "refresh" ? new[] { "k0", "k1", "arrival" }
                 : new[] { "arrival", "k1", "k0" }, h.ViewKeys());

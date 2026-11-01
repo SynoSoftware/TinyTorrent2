@@ -180,7 +180,9 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
         foreach (int index in _selectedIndices())
         {
             if (start < 0)
+            {
                 start = index;
+            }
             else if (index != last + 1)
             {
                 ranges.Add(new ItemIndexRange(start, (uint)(last - start + 1)));
@@ -189,16 +191,19 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
             last = index;
         }
         if (start >= 0)
+        {
             ranges.Add(new ItemIndexRange(start, (uint)(last - start + 1)));
+        }
         return ranges;
     }
 
     /// <summary>Bring the view to <paramref name="snapshot"/>.</summary>
     /// <remarks>
     /// Per-row notifications preserve the list's native transitions and unchanged containers;
-    /// a reset drops every container. Every change comes through here as removals and insertions,
-    /// a sort included. Table's frame owner suppresses transitions for a disjoint visible-window
-    /// replacement, whose native delete/add delay would otherwise leave the panel empty.
+    /// a reset drops every container. Reorders use removals and insertions, a sort included;
+    /// same-position replacements update the item. Table's frame owner suppresses transitions
+    /// for a disjoint visible-window replacement, whose native delete/add delay would otherwise
+    /// leave the panel empty.
     /// <para>
     /// A snapshot that is already the view, the same instances in the same order, costs one
     /// comparison per row and nothing else. The host re-projects after ticks that changed nothing

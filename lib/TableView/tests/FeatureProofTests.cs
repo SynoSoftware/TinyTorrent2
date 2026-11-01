@@ -301,6 +301,16 @@ public class FeatureProofTests
             h.Table.IsMarqueeEnabled = false;
             Assert.IsFalse((bool)Proof.Call(h.Table, "CanCommitGesture")!);
 
+            Proof.Call(h.Table, "CancelGesture");
+            h.Click(h[1]);
+            Gesture.PressEmpty(h, new Point(10, 10));
+            h.Table.IsMarqueeEnabled = true;
+            Assert.AreEqual("Marquee", Proof.Call(h.Table, "GestureAtThreshold")!.ToString());
+            Proof.Call(h.Table, "BeginMarquee", h.Surface());
+            Proof.Call(h.Table, "RestoreSelectionBeforeMarquee");
+            Proof.Call(h.Table, "CommitSelection");
+            CollectionAssert.AreEqual(new[] { "k1" }, h.SelectedKeys());
+
             h = await SelectionHarness.LoadAsync(
                 6,
                 table => table.SelectionMode = ListViewSelectionMode.Single,

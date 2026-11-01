@@ -44,6 +44,7 @@ public sealed partial class Table
     /// <summary>The pointer is over the rows, or a row's context menu is open.</summary>
     private bool IsPointed => _pointerOver || _menuRow is not null;
     private bool KeepsMembership => _hierarchy is null && IsPointed && _view.Count > 0;
+    private bool PinsOrder => _hierarchy is null && SortsLocally && !SortsOrder;
 
     private sealed record HoldChange(IdentitySet Held, IReadOnlyList<int> Arrivals, bool Holds);
 
@@ -55,20 +56,17 @@ public sealed partial class Table
         {
             return null;
         }
-        IdentitySet held = _candidateHeld;
-        held.Clear();
         if (!KeepsMembership)
         {
-            return new(held, Enumerable.Range(0, source.Added.Count).ToArray(), false);
+            _candidateHeld.Clear();
+            return new(_candidateHeld, Enumerable.Range(0, source.Added.Count).ToArray(), false);
         }
-        foreach (object item in _held)
-        {
-            held.Add(item, _held);
-        }
+        IdentitySet held = _held;
         foreach (object item in source.Removed)
         {
-            if (_view.Positions.IndexOf(item, source.Leavers) >= 0)
+            if (_view.Positions.IndexOf(item, source.Leavers) >= 0 && !held.Contains(item, source.Leavers))
             {
+                CopyHeld();
                 held.Add(item, source.Leavers);
             }
         }
@@ -78,11 +76,29 @@ public sealed partial class Table
             object item = source.Added[index];
             if (_view.Positions.IndexOf(item, source.Additions) >= 0)
             {
-                held.Remove(item, source.Additions);
+                if (held.Contains(item, source.Additions))
+                {
+                    CopyHeld();
+                    held.Remove(item, source.Additions);
+                }
                 arrivals.Add(index);
             }
         }
         return new(held, arrivals, true);
+
+        void CopyHeld()
+        {
+            if (!ReferenceEquals(held, _held))
+            {
+                return;
+            }
+            held = _candidateHeld;
+            held.Clear();
+            foreach (object item in _held)
+            {
+                held.Add(item, _held);
+            }
+        }
     }
 
     /// <summary>A row shown although it left the source. It is dimmed and refuses every action.</summary>
@@ -276,7 +292,9 @@ public sealed partial class Table
         foreach (var entry in _released)
         {
             if ((Resolve(entry.Key, _released) is not null) == entry.Value)
+            {
                 released.Add(entry.Key);
+            }
         }
         if (released.Count > 0 || !holds)
         {
@@ -288,7 +306,9 @@ public sealed partial class Table
         foreach (object item in snapshot)
         {
             if (_view.Positions.IndexOf(item, preparation is null ? live : preparation) >= 0)
+            {
                 staying.Add(item);
+            }
         }
 
         foreach (object row in _view)
@@ -308,7 +328,10 @@ public sealed partial class Table
     private void AcceptHold(IdentitySet held, IReadOnlyList<object> released)
     {
         if (!ReferenceEquals(_held, held))
+        {
             (_held, _candidateHeld) = (held, _held);
+            _candidateHeld.Clear();
+        }
         foreach (object row in released)
             _released.Remove(row);
     }
@@ -329,11 +352,12 @@ public sealed partial class Table
         Body.Source.Preparation? preparation = null
     )
     {
-        bool reorders = _hierarchy is null && SortsLocally && !SortsOrder;
+        bool reorders = PinsOrder;
         object? menu = reorders ? _menuRow : null;
         object? pointed = reorders ? _pointedRow : null;
         if (held.Count == 0 && menu is null && pointed is null)
         {
+            _pinned.Clear();
             return (order, held);
         }
 
@@ -342,12 +366,16 @@ public sealed partial class Table
         List<object> result = _pinOrder;
         result.Clear();
         for (int index = 0; index < order.Count + held.Count; index++)
+        {
             result.Add(null!);
+        }
         foreach (object row in held)
         {
             int index = _view.Positions.IndexOf(row, held);
             if (index >= 0 && index < result.Count)
+            {
                 Keep(index, row, held.Map);
+            }
         }
         KeepPointed(menu);
         KeepPointed(pointed);
@@ -361,7 +389,9 @@ public sealed partial class Table
         for (int index = 0; index < result.Count; index++)
         {
             if (result[index] is not null)
+            {
                 continue;
+            }
 
             while (pinned.Contains(order[next], preparation is null ? live : preparation))
             {
@@ -381,17 +411,54 @@ public sealed partial class Table
 
         void KeepPointed(object? row)
         {
-            if (row is null)
-                return;
-            int index = _view.Positions.IndexOf(row);
-            if (index < 0 || index >= result.Count)
-                return;
-            object? current = preparation is null ? live.Resolve(row, _view.Positions.Map)
-                : preparation.Resolve(row, _view.Positions.Map);
-            if (current is not null)
+            var pin = ResolvePin(row, result.Count, live, preparation);
+            if (pin.Item is not null)
             {
-                Keep(index, current, preparation is null ? live : preparation);
+                Keep(pin.Index, pin.Item, preparation is null ? live : preparation);
             }
         }
+    }
+
+    // Zero-edit preparation keeps held membership; only live pin targets can change.
+    private bool SamePins(IdentitySet held, IdentityMap<object> live, Body.Source.Preparation preparation)
+    {
+        bool reorders = PinsOrder;
+        object? menu = reorders ? ResolvePin(_menuRow, View.Count, live, preparation).Item : null;
+        object? pointed = reorders ? ResolvePin(_pointedRow, View.Count, live, preparation).Item : null;
+        int count = held.Count;
+        if (menu is not null && !held.Contains(menu, preparation))
+        {
+            if (!_pinned.Contains(menu, preparation))
+            {
+                return false;
+            }
+            count++;
+        }
+        if (pointed is not null && !ReferenceEquals(pointed, menu) && !held.Contains(pointed, preparation))
+        {
+            if (!_pinned.Contains(pointed, preparation))
+            {
+                return false;
+            }
+            count++;
+        }
+        return count == _pinned.Count;
+    }
+
+    private (int Index, object? Item) ResolvePin(object? row, int count, IdentityMap<object> live,
+        Body.Source.Preparation? preparation)
+    {
+        if (row is null)
+        {
+            return (-1, null);
+        }
+        int index = _view.Positions.IndexOf(row);
+        if (index < 0 || index >= count)
+        {
+            return (-1, null);
+        }
+        object? current = preparation is null ? live.Resolve(row, _view.Positions.Map)
+            : preparation.Resolve(row, _view.Positions.Map);
+        return (index, current);
     }
 }

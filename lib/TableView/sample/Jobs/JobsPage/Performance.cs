@@ -26,7 +26,9 @@ public sealed partial class JobsPage
             set
             {
                 if (_name == value)
+                {
                     return;
+                }
                 _name = value;
                 PropertyChanged?.Invoke(this, new(nameof(Name)));
             }
@@ -36,6 +38,100 @@ public sealed partial class JobsPage
     private int _sortKeyReads;
     private int _policyReads;
     private sealed record Measurement(double Block, long Allocated, double Frame);
+
+    private async Task MeasureNotificationsAsync()
+    {
+        Section("Y. Repeated sorted collection notifications; distinct and equal keys");
+        ReportLoad();
+        const int batch = 64;
+        foreach (int count in new[] { 1000, 2000 })
+        {
+            foreach ((bool tied, bool held) in new[] { (false, false), (true, false), (true, true) })
+            {
+                await WithProbeAsync(count, async (table, rows) =>
+                {
+                    table.CanReorder = false;
+                    if (tied)
+                    {
+                        foreach (ProbeRow row in rows)
+                        {
+                            row.Name = "Tie";
+                        }
+                    }
+                    ObservableCollection<ProbeRow> source = new(rows);
+                    ProbeRow[] arrivals = Enumerable.Range(0, batch)
+                        .Select(index => new ProbeRow(count + index + 1,
+                            tied ? "Tie" : $"Render {count / 2:D6}.{index:D3}")).ToArray();
+                    table.ItemsSource = source;
+                    table.Sort = new(table.Columns[0]);
+                    table.SortInterval = TimeSpan.FromHours(1);
+                    ListView list = FindDescendant<ListView>(table)!;
+                    Action stopPointing = typeof(Table).GetMethod("StopPointing", BindingFlags.Instance | BindingFlags.NonPublic)!
+                        .CreateDelegate<Action>(table);
+                    Action<object?> pointAt = typeof(Table).GetMethod("PointAt", BindingFlags.Instance | BindingFlags.NonPublic)!
+                        .CreateDelegate<Action<object?>>(table);
+                    stopPointing();
+                    foreach (ProbeRow arrival in arrivals)
+                    {
+                        source.Insert(0, arrival);
+                    }
+                    for (int index = 0; index < batch; index++)
+                    {
+                        source.RemoveAt(0);
+                    }
+                    await PerformanceFrameAsync();
+                    List<Measurement> results = new();
+                    long comparisons = 0;
+                    long keys = 0;
+                    for (int trial = 0; trial < PerformanceTrials; trial++)
+                    {
+                        stopPointing();
+                        if (held)
+                        {
+                            source = new(rows);
+                            table.ItemsSource = source;
+                            pointAt(rows[0]);
+                            source = new(rows.Skip(count / 2));
+                            table.ItemsSource = source;
+                        }
+                        _sortKeyReads = 0;
+                        long before = SortComparisons(table);
+                        results.Add(await MeasureFrameAsync(() =>
+                        {
+                            foreach (ProbeRow arrival in arrivals)
+                            {
+                                source.Insert(0, arrival);
+                            }
+                        }));
+                        comparisons += SortComparisons(table) - before;
+                        keys += _sortKeyReads;
+                        ProbeRow[] expected = held ? rows
+                            : source.OrderBy(row => row.Name, StringComparer.CurrentCultureIgnoreCase).ToArray();
+                        if (!expected.SequenceEqual(list.Items.Cast<ProbeRow>(), ReferenceEqualityComparer.Instance))
+                        {
+                            throw new InvalidOperationException("Sorted notifications changed stable source order");
+                        }
+                        stopPointing();
+                        for (int index = 0; index < batch; index++)
+                        {
+                            source.RemoveAt(0);
+                        }
+                        await PerformanceFrameAsync();
+                    }
+                    string label = $"{count} {(tied ? "equal" : "distinct")} keys, held={held}, {batch} Insert notifications";
+                    ReportMeasurements(label, results);
+                    Measurement median = results.OrderBy(result => result.Block).ElementAt(PerformanceTrials / 2);
+                    W($"  batch-average UI block/Insert={median.Block / batch:0.0000} ms at median batch time; batch frame latency is reported above");
+                    W($"  sort-key reads/Insert={(double)keys / PerformanceTrials / batch:0.0}; comparisons/Insert={(double)comparisons / PerformanceTrials / batch:0.00}; stable order verified after each batch");
+                    if (held)
+                    {
+                        W($"  {count / 2} held leavers and {count / 2} live rows before each timed batch; setup and release are outside timing");
+                    }
+                }, sort: ProbeSort.Culture);
+            }
+        }
+        ReportLoad();
+    }
 
     private async Task MeasureChangesAsync()
     {
@@ -746,9 +842,15 @@ public sealed partial class JobsPage
                 total += bytes;
                 W($"  sort.{field}: capacity={array.Length} x {size}; backing={bytes} bytes; projected element backing 10k={Bytes(10000, size)}, 100k={Bytes(100000, size)}; LOH crossing={(85000 - 3 * IntPtr.Size + size - 1) / size} elements");
                 if (element.GetProperty("Collation") is { } property)
+                {
                     foreach (object entry in array)
+                    {
                         if (property.GetValue(entry) is byte[] key)
+                        {
                             collation.Add(key);
+                        }
+                    }
+                }
             }
             long keyBytes = collation.Sum(key => Bytes(((byte[])key).Length, sizeof(byte)));
             total += keyBytes;
@@ -817,13 +919,17 @@ public sealed partial class JobsPage
                 bool focus = focused.Focus(FocusState.Keyboard);
                 W($"rows={count} focus accepted={focus}, state={focused.FocusState}, offset={table.VerticalOffset:0.0}");
                 if (!focus)
+                {
                     throw new InvalidOperationException("The focused-container probe could not focus row zero.");
+                }
                 await PerformanceFrameAsync();
                 table.ScrollTo(100000);
                 await AwaitProbeAsync(table, () => list.ItemsPanelRoot is ItemsStackPanel panel
                     && panel.FirstVisibleIndex > count / 2 && table.VerticalOffset > 0);
                 if (!ReferenceEquals(FocusManager.GetFocusedElement(table.XamlRoot), focused))
+                {
                     throw new InvalidOperationException("The far scroll did not retain row zero's focus.");
+                }
                 table.Selection = new Selection(rows);
                 toggle(rows[0]);
                 commit();
@@ -938,7 +1044,9 @@ public sealed partial class JobsPage
             bool held = (bool)InvokeTable(table, "IsHeld", rows[1])!;
             W($"held fixture: held={held}, selection={table.Selection.Items.Count}");
             if (!held)
+            {
                 throw new InvalidOperationException("The held-row scene did not establish a held row.");
+            }
             await SavePngAsync(Path.Combine(AppContext.BaseDirectory, "performance-held.png"), table);
             InvokeTable(table, "StopPointing");
             table.ItemsSource = rows;
@@ -947,7 +1055,9 @@ public sealed partial class JobsPage
             bool dragging = (bool)InvokeTable(table, "IsDragging", rows[3])!;
             W($"drag fixture: dragging={dragging}");
             if (!dragging)
+            {
                 throw new InvalidOperationException("The drag scene did not establish a dragged row.");
+            }
             await SavePngAsync(Path.Combine(AppContext.BaseDirectory, "performance-drag.png"), table);
             InvokeTable(table, "CancelGesture");
         });
@@ -1089,7 +1199,9 @@ public sealed partial class JobsPage
         }
         W($"  {operation}: checked={checkedRows}, outside-cache={pinned}, selection mismatches={mismatches}; {ProbeState(table)}");
         if (checkedRows == 0 || mismatches != 0 || (requiresPinned && pinned == 0))
+        {
             throw new InvalidOperationException($"Container selection failed after {operation}.");
+        }
     }
 
     private static string ProbeState(Table table)
@@ -1106,7 +1218,9 @@ public sealed partial class JobsPage
         while (!ready())
         {
             if (Stopwatch.GetElapsedTime(started) >= TimeSpan.FromSeconds(5))
+            {
                 throw new TimeoutException("The container probe did not settle: " + ProbeState(table));
+            }
             await PerformanceFrameAsync();
             table.UpdateLayout();
         }
@@ -1121,7 +1235,9 @@ public sealed partial class JobsPage
                 try
                 {
                     if (process.ProcessName is "dotnet" or "MSBuild" or "MsMpEng" or "pwsh" or "TableViewSample" or "testhost")
+                    {
                         W($"load {DateTimeOffset.Now:O} {process.ProcessName} pid={process.Id}, cpu={process.TotalProcessorTime.TotalSeconds:0.000}s, working={process.WorkingSet64}");
+                    }
                 }
                 catch (System.ComponentModel.Win32Exception)
                 {

@@ -26,7 +26,9 @@ public class AutomationTests
             VectorChangedEventHandler<object> check = (_, args) =>
             {
                 if (args.CollectionChange != CollectionChange.ItemChanged)
+                {
                     return;
+                }
                 changes++;
                 var peer = parent.CreateItemAutomationPeer(replacement);
                 Assert.IsTrue(peer.IsEnabled());

@@ -1909,6 +1909,11 @@ throughput target.
   validates only entrants when it follows the validated accepted source;
   rejected updates recover through full validation. Position indexes update
   edited entries and amortize rebuilds over counted insertions/removals.
+  With retained immutable sort keys, collection deltas copy surviving row/key
+  runs in native blocks and compare only entrants for placement. Stable source
+  ties and position indexes amortize their full maintenance; they do not run
+  whole-order managed preparation for every notification. Required custom-
+  comparer proofs and due global settling retain their full preparation.
   View backing moves in linear passes with a gap buffer, so a half-removal
   does not repeatedly shift the whole tail. Bounded realized-row refresh and
   selection-packet publication remain additional costs.

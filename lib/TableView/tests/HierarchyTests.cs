@@ -129,7 +129,9 @@ public class HierarchyTests
             IEnumerable<Node> Children()
             {
                 if (++reads > 1)
+                {
                     throw new InvalidOperationException("Children were enumerated again");
+                }
                 yield return child;
             }
             IEnumerable<Node> children = Children();

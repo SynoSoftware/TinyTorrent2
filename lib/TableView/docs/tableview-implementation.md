@@ -47,6 +47,18 @@ collation keys and position index; candidate buffers are accepted only after
 comparisons succeed. Its stable index sort also sorts hierarchy siblings. Its
 one placement routine handles changed flat keys and arrivals among surviving
 kept keys. The shown order after pointer pinning stays outside this workspace.
+Eligible collection deltas binary-place entrants and copy retained row/key runs
+with native block copies, without a managed pass over every retained entry.
+Entry revisions defer source-ordinal shifts for stable ties. When that journal
+reaches roughly the square root of the source length, preparation compacts it
+through the existing candidate position index and one source-order walk. This
+keeps source reads and candidate normalization before acceptance, including
+failure from a custom source indexer; no second source-position map is retained.
+Zero-edit preparations reuse the current pinned presentation when the live pin
+targets still match; retargeting uses the ordinary pin projection. The empty
+edit facts remain available to skip whole-view comparison and reconciliation.
+Unchanged held membership reuses its accepted set; a candidate copy is made only
+before changing a held member, and acceptance releases the old candidate's items.
 Each preparation reports whether it performed a full sort, so the pipeline
 advances the settle clock for actual work rather than permission to move rows.
 The sorting owner combines remaining key work and pinned/held presentation

@@ -501,9 +501,13 @@ internal sealed class Hierarchy(
     internal void UpdatePresentation(IReadOnlyList<object> order, bool moved)
     {
         if (Captured is not { } snapshot)
+        {
             return;
+        }
         if (moved)
+        {
             _counts!.Clear();
+        }
         int roots = 0;
         _expandableRows = 0;
         foreach (object item in order)
@@ -512,14 +516,20 @@ internal sealed class Hierarchy(
             bool hasChildren = IsExpandable(node);
             bool expanded = IsExpanded(item);
             if (node.Expandable != hasChildren || node.Expanded != expanded)
+            {
                 Version++;
+            }
             node.Expandable = hasChildren;
             node.Expanded = expanded;
             _expandableRows += hasChildren ? 1 : 0;
             if (!moved)
+            {
                 continue;
+            }
             if (node.Parent is not { } parent)
+            {
                 node.Position = ++roots;
+            }
             else
             {
                 _counts!.TryGetValue(parent, snapshot.Nodes, out int count);

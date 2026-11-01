@@ -75,7 +75,9 @@ public sealed partial class Table
     private void AcceptHierarchy(IReadOnlyList<object> order, bool moved)
     {
         if (_hierarchy is null)
+        {
             return;
+        }
         _preparedHierarchy?.Accept();
         _hierarchy.UpdatePresentation(order, moved);
     }

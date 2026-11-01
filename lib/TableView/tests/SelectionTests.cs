@@ -183,7 +183,9 @@ public class SelectionTests
             h.Click(h[0]);
             Proof.Call(h.Table, "PointAt", h[1]);
             if (dragging)
+            {
                 Proof.Call(h.Table, "BeginDrag", h[0]);
+            }
             int refreshes = 0;
             typeof(Table).GetEvent("RowVisualsChanged", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
                 .GetAddMethod(nonPublic: true)!.Invoke(h.Table, new object[] { new EventHandler((_, _) => refreshes++) });

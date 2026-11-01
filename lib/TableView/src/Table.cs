@@ -243,7 +243,9 @@ public sealed partial class Table : Control
         CancelPreparation();
         CancelPage();
         if (!_detached)
+        {
             _lifetimeRevision++;
+        }
         _detached = true;
         Microsoft.UI.Xaml.Media.CompositionTarget.Rendering -= OnLaidOut;
         _frameRequested = false;
@@ -277,7 +279,9 @@ public sealed partial class Table : Control
         _source.Resume();
         _detached = false;
         if (_queuedSort is not null || _layoutPending)
+        {
             RequestFrame();
+        }
         if (_surface is not null)
             _surface.ItemsSource = _view;
         foreach (Column column in Columns)
@@ -579,14 +583,18 @@ public sealed partial class Table : Control
             rebuild && moved && _sortMode == SortMode.Local
                 ? PrepareSort(capture, workspace, direction, out membership) : null;
         if (order is not null && _hierarchy is null)
+        {
             workspace?.Accept(order!);
+        }
 
         foreach (EffectiveColumn column in ordered)
         {
             column.VisibilityOverride = visibility[column];
         }
         if (moved)
+        {
             CommitSort(sortColumn, direction, workspace);
+        }
 
         // SetOrder republishes the layout, which re-applies each header cell's sort indicator.
         EffectiveLayout.SetOrder(ordered);

@@ -485,8 +485,7 @@ public sealed partial class Table
     /// </remarks>
     private void ApplyPress()
     {
-        _gestureSelection = IsMarqueeEnabled && _selection.AllowsMultiple
-            ? _selection.Capture(_publishedSelection) : null;
+        _gestureSelection = _selection.Capture(_publishedSelection);
         _gestureDeferred =
             _gestureItem is null
             || (
@@ -1261,7 +1260,9 @@ public sealed partial class Table
             foreach (object arrival in arrivals)
             {
                 if (IndexInView(arrival) < 0 && _source.Membership.ContainsKey(arrival))
+                {
                     waiting.Add(arrival);
+                }
             }
             if (waiting.Count > 0)
                 Release(waiting);
