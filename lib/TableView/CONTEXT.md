@@ -49,6 +49,12 @@ ordered sequence. It does not describe the host's numbered order.
 **Natural order**: the host's order before header sorting, applied within each
 sibling group in a hierarchical table.
 
+**Sorted order**: the active column's stable order and the keys that last proved
+it sorted, before held and pointed rows keep their displayed positions.
+
+**Queued sort**: a header choice whose glyph is shown before its sorting work
+runs after a frame. It is distinct from the committed sort.
+
 **Row surface**: the scrollable area of the table that presents its rows.
 
 **Held row**: a row the private view keeps showing, dimmed and non-interactive,

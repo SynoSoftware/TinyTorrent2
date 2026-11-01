@@ -412,9 +412,9 @@ The control deliberately has two extension mechanisms, with no overlap:
 | `RealizedItemsChanged` | host event | load data only for the rows on screen | treat the list as the visible rows alone |
 
 Policy callbacks are called on the UI thread and MUST be pure, synchronous, and
-cheap. The table never calls them per render frame. A sort key is read
-`O(n log n)` times during an explicit sort and therefore must be especially
-cheap. `Comparer<TKey>.Default` supplies normal .NET ordering, including enums
+cheap. The table never calls them per render frame. An explicit sort reads a
+sort key once per row and compares the captured keys. `Comparer<TKey>.Default`
+supplies normal .NET ordering, including enums
 and nullable keys; default nulls come first ascending. An optional comparer
 expresses domain ordering, such as unknown values last or ordinal text. Preserve
 the host's intended ordering when removing sentinel values. Unsupported key types
@@ -981,6 +981,13 @@ passive header participates in the header strip's composite focus model;
 primary keyboard activation (Enter or Space) sorts only when that column is
 sortable.
 
+A header gesture shows its requested glyph before the sorting work runs after
+the next frame. The `Sort` property still reports the committed criterion and
+assignments remain synchronous. A later header gesture replaces the queued
+choice. A changed committed sort, a hidden requested column, or detachment
+invalidates it; returning to an earlier criterion or reloading does not revive
+it. A failed comparison leaves the committed sort and glyph in force.
+
 Sorting requirements:
 
 - sorting creates a private view; it does not reorder `ItemsSource`;
@@ -988,7 +995,7 @@ Sorting requirements:
 - equal values retain the exact current base-sequence order;
 - null placement is defined by the host comparer;
 - natural order means the current base-sequence order;
-- identity is the string the schema's key selector returns when one is
+- identity is the key the schema's key selector returns when one is
   supplied, otherwise object reference; invalid keys are source-contract errors and unavailable
   items are pruned from selection;
 - source updates and rehydration follow section 5.3;
@@ -1029,14 +1036,16 @@ two. Publishing a snapshot carries membership and position together, so a host
 that throttles its updates to stop a reshuffle also delays the completion that
 made the update necessary. The table holds both the previous order and the new
 one, so it is the only layer that can take the membership immediately and let
-the position wait. It does so by never merging the two. A snapshot that adds or
-removes a row is not a settling case at all: the table takes the sorted order
-for it whole, which is also where an arriving row belongs, and only a snapshot
-of exactly the same rows can hold its position. The rule is therefore structural
-rather than a promise — the settling path cannot defer a membership change,
-rather than choosing not to. Only section 5.3's hold defers one, for its own
-reason, and while it does the rows are the same rows, so settling sees no
-membership change either.
+the position wait. Removing a row leaves the surviving rows in their established
+order. An arrival is placed among the keys kept from the last proven sorted
+order, before pointer pinning; existing rows keep their relative order until
+the next settle. If their current values drifted, the arrival's position can
+differ from its eventual position at that settle. A changed relative base order
+of surviving items takes the full stable sort, because base order breaks ties.
+For mutable keys or a host comparer whose ordering can change without key
+equality changing, arrival placement first proves that the kept order is still
+sorted using the actual comparer. If it is not, the same full sort restores
+the order before placement. The control does not clone host key objects.
 
 Measured on the original host's 2,002-row list, per host publish, because with settling off
 every publish reorders and the two units are then the same one: sorted by

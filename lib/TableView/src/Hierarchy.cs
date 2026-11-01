@@ -239,7 +239,7 @@ internal sealed class Hierarchy(
 
     internal IReadOnlyList<object> Project(
         Snapshot snapshot,
-        Func<IEnumerable<object>, SortDirection, IOrderedEnumerable<object>>? sort,
+        SortedOrder? sort,
         SortDirection direction
     )
     {
@@ -275,7 +275,7 @@ internal sealed class Hierarchy(
         {
             if (sort is null)
                 return siblings;
-            return sort(siblings, direction);
+            return sort.SortSiblings(siblings, direction);
         }
     }
 

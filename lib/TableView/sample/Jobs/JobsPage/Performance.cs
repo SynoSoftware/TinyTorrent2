@@ -17,8 +17,100 @@ public sealed partial class JobsPage
     private int _keyReads;
     private const int PerformanceTrials = 16;
 
-    public sealed record ProbeRow(long RowId, string Name);
+    public sealed record ProbeRow(long RowId, string Name) : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _name = Name;
+        public string Name
+        {
+            get => _name;
+            set
+            {
+                if (_name == value)
+                    return;
+                _name = value;
+                PropertyChanged?.Invoke(this, new(nameof(Name)));
+            }
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+    }
+    private int _sortKeyReads;
     private sealed record Measurement(double Block, long Allocated, double Frame);
+
+    private async Task MeasureSortingAsync()
+    {
+        Section("T. Production culture-name sort: first sort, unchanged RefreshView, one changed key and one arrival");
+        W($"comparer=StringComparer.CurrentCultureIgnoreCase; culture={System.Globalization.CultureInfo.CurrentCulture.Name}; names='Render 000000'..; comparisons count actual collation-byte/raw ordering comparisons, not equality checks");
+        ReportLoad();
+        foreach (int count in new[] { 1000, 2000 })
+        {
+            await WithProbeAsync(count, async (table, rows) =>
+            {
+                List<Measurement> first = new();
+                List<Measurement> unchanged = new();
+                List<Measurement> changed = new();
+                List<Measurement> arrival = new();
+                long firstComparisons = 0;
+                long unchangedComparisons = 0;
+                long changedComparisons = 0;
+                long arrivalComparisons = 0;
+                long keyReads = 0;
+                table.SortInterval = TimeSpan.Zero;
+                table.Sort = new(table.Columns[0]);
+                table.Sort = null;
+                for (int trial = 0; trial < PerformanceTrials; trial++)
+                {
+                    _sortKeyReads = 0;
+                    first.Add(await MeasureFrameAsync(() => table.Sort = new(table.Columns[0])));
+                    firstComparisons += Comparisons(table);
+                    keyReads += _sortKeyReads;
+                    table.Sort = null;
+                }
+                table.Sort = new(table.Columns[0]);
+                table.RefreshView();
+                for (int trial = 0; trial < PerformanceTrials; trial++)
+                {
+                    long before = Comparisons(table);
+                    unchanged.Add(await MeasureFrameAsync(table.RefreshView));
+                    unchangedComparisons += Comparisons(table) - before;
+                }
+                ProbeRow moving = rows[count / 2];
+                string original = moving.Name;
+                for (int trial = 0; trial < PerformanceTrials; trial++)
+                {
+                    moving.Name = "Render 999999";
+                    long before = Comparisons(table);
+                    changed.Add(await MeasureFrameAsync(table.RefreshView));
+                    changedComparisons += Comparisons(table) - before;
+                    moving.Name = original;
+                    table.RefreshView();
+                }
+                table.SortInterval = TimeSpan.FromHours(1);
+                ProbeRow added = new(count + 1, $"Render {count / 2:D6}.5");
+                ProbeRow[] withArrival = rows.Append(added).ToArray();
+                for (int trial = 0; trial < PerformanceTrials; trial++)
+                {
+                    long before = Comparisons(table);
+                    arrival.Add(await MeasureFrameAsync(() => table.ItemsSource = withArrival));
+                    arrivalComparisons += Comparisons(table) - before;
+                    table.ItemsSource = rows;
+                }
+                ReportMeasurements($"{count} first synchronous Sort setter", first);
+                ReportMeasurements($"{count} unchanged name RefreshView", unchanged);
+                ReportMeasurements($"{count} one changed-name settle", changed);
+                ReportMeasurements($"{count} one arrival inside interval", arrival);
+                W($"  actual comparisons/operation: first={(double)firstComparisons / PerformanceTrials:0.0}, unchanged={(double)unchangedComparisons / PerformanceTrials:0.0}, changed={(double)changedComparisons / PerformanceTrials:0.0}, arrival={(double)arrivalComparisons / PerformanceTrials:0.0}; selector reads/first={(double)keyReads / PerformanceTrials:0.0}");
+                ReportStorage(table, count);
+            }, cultureSort: true);
+        }
+        W("100k gates: first-sort uninterrupted block >100ms decides worker; unchanged RefreshView >16ms decides changed-row overload. Extend measured growth, with n*log(n) first-sort comparison work and linear key/index passes; this name shape does not bound arbitrary strings or host comparers.");
+        ReportLoad();
+
+        static long Comparisons(Table table)
+        {
+            object workspace = typeof(Table).GetField("_sortedOrder", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(table)!;
+            return (long)workspace.GetType().BaseType!.GetProperty("Comparisons", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(workspace)!;
+        }
+    }
 
     private async Task MeasurePublishesAsync(bool measureTimings = true)
     {
@@ -109,7 +201,7 @@ public sealed partial class JobsPage
         object view = Read(table, "_view");
         object selection = Read(table, "_selection");
         object positions = view.GetType().GetProperty("Positions", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(view)!;
-        (string Name, object Owner)[] maps =
+        List<(string Name, object Owner)> maps = new()
         {
             ("source.accepted", Read(source, "_membership")), ("source.candidate", Read(source, "_candidate")),
             ("view", positions), ("view.candidate", Read(table, "_candidatePositions")),
@@ -118,6 +210,12 @@ public sealed partial class JobsPage
             ("selected", Read(selection, "_selected")), ("tracked", Read(selection, "_tracked")),
             ("selection.added", Read(selection, "_added")), ("selection.removed", Read(selection, "_removed")),
         };
+        object? sorted = table.GetType().GetField("_sortedOrder", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(table);
+        if (sorted is not null)
+        {
+            maps.Add(("sort", Read(sorted, "_positions")));
+            maps.Add(("sort.candidate", Read(sorted, "_candidatePositions")));
+        }
         long total = 0;
         foreach (var (name, owner) in maps)
         {
@@ -140,12 +238,35 @@ public sealed partial class JobsPage
         }
         object backing = view.GetType().GetProperty("Items", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(view)!;
         foreach (var (name, list) in new[] { ("view rows", backing), ("kept order", Read(table, "_keptRows")),
-            ("shown rows", Read(table, "_shownRows")), ("pin order", Read(table, "_pinOrder")) })
+            ("shown rows", Read(table, "_shownRows")), ("pin order", Read(table, "_pinOrder")) }
+            .Concat(sorted is null ? Array.Empty<(string, object)>()
+                : new[] { ("sorted rows", Read(sorted, "_rows")), ("sort candidate rows", Read(sorted, "_candidateRows")) }))
         {
             int capacity = (int)list.GetType().GetProperty("Capacity")!.GetValue(list)!;
             long bytes = Bytes(capacity, IntPtr.Size);
             total += bytes;
             W($"  {name}: count={((ICollection)list).Count}, capacity={capacity} x {IntPtr.Size}; backing={bytes} bytes");
+        }
+        if (sorted is not null)
+        {
+            HashSet<object> collation = new(ReferenceEqualityComparer.Instance);
+            foreach (string field in new[] { "_entries", "_candidateEntries", "_captured", "_indices", "_survivors", "_places" })
+            {
+                Array array = (Array)Read(sorted, field);
+                Type element = array.GetType().GetElementType()!;
+                int size = (int)typeof(System.Runtime.CompilerServices.Unsafe).GetMethod("SizeOf")!
+                    .MakeGenericMethod(element).Invoke(null, null)!;
+                long bytes = Bytes(array.Length, size);
+                total += bytes;
+                W($"  sort.{field}: capacity={array.Length} x {size}; backing={bytes} bytes");
+                if (element.GetProperty("Collation") is { } property)
+                    foreach (object entry in array)
+                        if (property.GetValue(entry) is byte[] key)
+                            collation.Add(key);
+            }
+            long keyBytes = collation.Sum(key => Bytes(((byte[])key).Length, sizeof(byte)));
+            total += keyBytes;
+            W($"  sort.collation: distinct arrays={collation.Count}; backing={keyBytes} bytes");
         }
         W($"rows={count} source-derived retained backing={total} bytes ({(double)total / count:0.00}/row); actual capacities x CLR entry sizes plus aligned array headers; excludes map/list objects, host rows/arrays, visual/native state and runtime caches");
 
@@ -340,7 +461,8 @@ public sealed partial class JobsPage
     private static object? InvokeTable(Table table, string method, params object[] arguments) =>
         typeof(Table).GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(table, arguments);
 
-    private async Task WithProbeAsync(int count, Func<Table, ProbeRow[], Task> action, bool hierarchy = false)
+    private async Task WithProbeAsync(int count, Func<Table, ProbeRow[], Task> action, bool hierarchy = false,
+        bool cultureSort = false)
     {
         ProbeRow[] rows = Enumerable.Range(0, count)
             .Select(index => new ProbeRow(index + 1, $"Render {index:D6}" )).ToArray();
@@ -357,7 +479,11 @@ public sealed partial class JobsPage
         {
             _keyReads++;
             return row.RowId;
-        }).SortKey(column, row => row.Name, StringComparer.Ordinal);
+        }).SortKey(column, row =>
+        {
+            _sortKeyReads++;
+            return row.Name;
+        }, cultureSort ? StringComparer.CurrentCultureIgnoreCase : StringComparer.Ordinal);
         if (hierarchy)
         {
             schema.Hierarchy(column, row => row.RowId == 1 ? rows[1..^1] : Array.Empty<ProbeRow>(),

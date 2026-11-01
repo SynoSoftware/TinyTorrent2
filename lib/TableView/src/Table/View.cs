@@ -22,6 +22,7 @@ public sealed partial class Table
     /// same tick, which would clear it too early.
     /// </remarks>
     private bool _layoutPending;
+    private bool _frameRequested;
     private PositionIndex _candidatePositions;
     private long _publishVersion;
 
@@ -176,7 +177,8 @@ public sealed partial class Table
     /// </summary>
     private void RebuildView(
         Body.Source.Capture? capture = null,
-        IReadOnlyList<object>? preparedOrder = null
+        IReadOnlyList<object>? preparedOrder = null,
+        IdentityMap<object>? preparedMembership = null
     )
     {
         _publishVersion++;
@@ -192,7 +194,7 @@ public sealed partial class Table
                 return;
             }
             IdentityMap<object>? membership = _hierarchy is null
-                ? _source.Prepare(capture, ValidateRows) : null;
+                ? preparedMembership ?? _source.Prepare(capture, ValidateRows) : null;
             IReadOnlyList<object> order;
             IdentitySet pinned;
             if (preparedOrder is null)
@@ -290,11 +292,8 @@ public sealed partial class Table
                 // later. This is the one thing the list must be told when it has been told nothing
                 // else, and it says only "look", not what changed.
                 _surface?.ItemsPanelRoot?.InvalidateMeasure();
-                if (!_layoutPending)
-                {
-                    _layoutPending = true;
-                    CompositionTarget.Rendering += OnLaidOut;
-                }
+                _layoutPending = true;
+                RequestFrame();
             }
 
             UpdatePlaceholder();
@@ -332,14 +331,69 @@ public sealed partial class Table
     private void OnLaidOut(object? sender, object e)
     {
         CompositionTarget.Rendering -= OnLaidOut;
+        _frameRequested = false;
+        QueuedSort? queued = _queuedSort;
+        long version = _view.Version;
+        long lifetime = _lifetimeRevision;
         // The tick ends when the frame returns, so the note clears and the reveal runs past it.
         // A view change made inside a frame, from a Loaded or a SizeChanged handler, is laid out
         // after this event in the same frame, which is why the note cannot clear here.
         DispatcherQueue.TryEnqueue(() =>
         {
-            _layoutPending = false;
-            Reveal();
+            try
+            {
+                if (_detached || lifetime != _lifetimeRevision || !IsLoaded)
+                    return;
+                if (version == _view.Version)
+                {
+                    _layoutPending = false;
+                    Reveal();
+                }
+                else
+                    RequestFrame();
+                if (queued is not null)
+                    ConsumeSort(queued);
+            }
+            catch (Exception error)
+            {
+                // Raw dispatcher exceptions bypass Application.UnhandledException
+                // (microsoft/microsoft-ui-xaml#10447); retain the host's error policy.
+                WinRT.ExceptionHelpers.ReportUnhandledError(error);
+            }
         });
+    }
+
+    private IReadOnlyList<object> PrepareSort(Body.Source.Capture capture, SortedOrder? workspace,
+        SortDirection direction, out IdentityMap<object>? membership)
+    {
+        membership = null;
+        if (_hierarchy is null)
+        {
+            membership = _source.Prepare(capture, ValidateRows);
+            return workspace is null ? capture.Rows
+                : workspace.Prepare(capture.Rows, membership, direction, allowMoves: true).Rows;
+        }
+
+        DateTimeOffset settled = _orderSettledAt;
+        try
+        {
+            PrepareHierarchy(capture);
+            return _hierarchy.Project(_preparedHierarchy!, workspace, direction);
+        }
+        catch
+        {
+            _orderSettledAt = settled;
+            _preparedHierarchy = null;
+            throw;
+        }
+    }
+
+    private void RequestFrame()
+    {
+        if (_frameRequested || !IsLoaded)
+            return;
+        _frameRequested = true;
+        CompositionTarget.Rendering += OnLaidOut;
     }
 
     private void ValidateRows(object item)

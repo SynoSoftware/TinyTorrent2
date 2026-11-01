@@ -35,7 +35,186 @@ internal sealed class SortRow
 public class SortingTests
 {
     [TestMethod]
-    public Task RefreshRetriesMembershipAfterANotifyingPublishFailsComparison() =>
+    [DataRow(false)]
+    [DataRow(true)]
+    public Task MutableRowKeysUseTheirComparerBeforeSortingOrArrivalPlacement(bool arrival) =>
+        TestHost.RunAsync(async () =>
+        {
+            SortHarness h = await SortHarness.LoadAsync(new[] { 1, 2, 3 }, configure: table =>
+            {
+                table.Schema<SortRow>().SortKey(table.Columns[0], row => row,
+                    Comparer<SortRow>.Create((left, right) => left.Rank.CompareTo(right.Rank)));
+                table.Sort = new(table.Columns[0]);
+                table.SortInterval = arrival ? TimeSpan.FromHours(1) : TimeSpan.Zero;
+            });
+            if (arrival)
+                Proof.SetField(h.Table, "_orderSettledAt", DateTimeOffset.UtcNow.AddMinutes(-30));
+            DateTimeOffset published = DateTimeOffset.UtcNow;
+            h.Rows[0].Rank = 4;
+            if (arrival)
+                h.Rows.Add(new("arrival", 0));
+            else
+                h.Table.RefreshView();
+            CollectionAssert.AreEqual(arrival ? new[] { "arrival", "k1", "k2", "k0" }
+                : new[] { "k1", "k2", "k0" }, h.ViewKeys());
+            if (arrival)
+            {
+                Assert.IsTrue(Proof.Field<DateTimeOffset>(h.Table, "_orderSettledAt") >= published,
+                    "the fallback full sort starts a fresh settle interval");
+                h.Rows.Add(new("second", 5));
+                Assert.IsFalse(Proof.Field<bool>(h.Table, "_settlePending"),
+                    "a successful current-key order proof and placement consumes the work");
+            }
+        });
+
+    [TestMethod]
+    public Task AnArrivalUsesKeptKeysAndChangedBaseTiesStillTakeTheFullSort() =>
+        TestHost.RunAsync(async () =>
+        {
+            SortHarness h = await SortHarness.LoadAsync(new[] { 1, 2, 3 }, configure: table =>
+            {
+                table.Sort = new(table.Columns[0]);
+                table.SortInterval = TimeSpan.FromHours(1);
+            });
+            h.Rows[0].Rank = 100;
+            h.Rows[1].Rank = -1;
+            h.Rows[2].Rank = -1;
+            h.Rows.Add(new("arrival", 0));
+            CollectionAssert.AreEqual(new[] { "arrival", "k0", "k1", "k2" }, h.ViewKeys());
+            h.Table.SortInterval = TimeSpan.Zero;
+            CollectionAssert.AreEqual(new[] { "k1", "k2", "arrival", "k0" }, h.ViewKeys());
+
+            h.Table.ItemsSource = new[] { h.Rows[2], h.Rows[1], new SortRow("next", -1), h.Rows[0] };
+            CollectionAssert.AreEqual(new[] { "k2", "k1", "next", "k0" }, h.ViewKeys());
+        });
+
+    [TestMethod]
+    public Task DefaultStringOrderingRechecksTheCurrentCulture() =>
+        TestHost.RunAsync(async () =>
+        {
+            var culture = System.Globalization.CultureInfo.CurrentCulture;
+            try
+            {
+                System.Globalization.CultureInfo.CurrentCulture = new("en-US");
+                SortHarness h = await SortHarness.LoadAsync(new[] { 0, 1 }, configure: table =>
+                {
+                    table.Schema<SortRow>().SortKey(table.Columns[0], row => row.Rank == 0 ? "ä" : "z");
+                    table.SortInterval = TimeSpan.Zero;
+                    table.Sort = new(table.Columns[0]);
+                });
+                CollectionAssert.AreEqual(new[] { "k0", "k1" }, h.ViewKeys());
+                System.Globalization.CultureInfo.CurrentCulture = new("sv-SE");
+                h.Table.RefreshView();
+                CollectionAssert.AreEqual(new[] { "k1", "k0" }, h.ViewKeys());
+            }
+            finally
+            {
+                System.Globalization.CultureInfo.CurrentCulture = culture;
+            }
+        });
+
+    [TestMethod]
+    [DataRow("assignment")]
+    [DataRow("return")]
+    [DataRow("hidden")]
+    [DataRow("reload")]
+    [DataRow("noop")]
+    public Task QueuedHeaderSortChecksTheCommittedAndDetachEpisodes(string change) =>
+        TestHost.RunAsync(async () =>
+        {
+            SortHarness h = await SortHarness.LoadAsync(new[] { 3, 1, 2 }, sortableColumns: 2);
+            h.Table.Sort = new(h.Table.Columns[1]);
+            h.Activate(0);
+            Assert.AreSame(h.Table.Columns[1], h.Table.Sort!.Value.Column);
+            Assert.AreEqual(Visibility.Visible, h.Glyph(0).Visibility);
+            switch (change)
+            {
+                case "assignment": h.Table.Sort = null; break;
+                case "return":
+                    h.Table.Sort = null;
+                    h.Table.Sort = new(h.Table.Columns[1]);
+                    break;
+                case "hidden": Proof.Call(h.Table, "SetColumnVisibility", TableHarness.EffectiveColumn(h.Table, "a"), false); break;
+                case "reload":
+                    long lifetime = Proof.Field<long>(h.Table, "_lifetimeRevision");
+                    TestHost.RootPanel.Children.Remove(h.Table);
+                    Proof.Note($"queued reload after removal: IsLoaded={h.Table.IsLoaded}, detached={Proof.Field<bool>(h.Table, "_detached")}, lifetime={Proof.Field<long>(h.Table, "_lifetimeRevision")}, committed={h.Table.Sort?.Column.Id}");
+                    Assert.IsFalse(h.Table.IsLoaded);
+                    Proof.Call(h.Table, "RequestFrame");
+                    await TableHarness.WaitUntilAsync(() => Proof.Field<bool>(h.Table, "_detached"), "actual detachment");
+                    Proof.Note($"queued reload after Unloaded: lifetime={Proof.Field<long>(h.Table, "_lifetimeRevision")}, committed={h.Table.Sort?.Column.Id}");
+                    Assert.IsTrue(Proof.Field<long>(h.Table, "_lifetimeRevision") > lifetime);
+                    Assert.AreEqual("b", h.Table.Sort?.Column.Id, "removal refuses the queued commit before reloading");
+                    await TableHarness.LoadAsync(h.Table);
+                    break;
+                case "noop": h.Table.Sort = h.Table.Sort; break;
+            }
+            await h.WaitForSortAsync();
+            Assert.AreEqual(change == "noop" ? "a" : change == "assignment" ? null : "b",
+                h.Table.Sort?.Column.Id);
+        });
+
+    [TestMethod]
+    public Task AFailedQueuedComparisonRestoresTheCommittedGlyphAndWorkspace() =>
+        TestHost.RunAsync(async () =>
+        {
+            InvalidOperationException failure = new("Unavailable key");
+            SortHarness h = await SortHarness.LoadAsync(new[] { 3, 1, 2 }, configure: table =>
+            {
+                table.Schema<SortRow>().SortKey<int>(table.Columns[1], _ =>
+                    throw failure);
+                table.Sort = new(table.Columns[0]);
+            });
+            Task<Exception> failed = TestHost.TrapAsync();
+            h.Activate(1);
+            Assert.AreSame(failure, await failed.WaitAsync(TimeSpan.FromSeconds(5)),
+                "the host receives the original queued failure");
+            await h.WaitForSortAsync();
+            Assert.AreEqual("a", h.Table.Sort?.Column.Id);
+            Assert.AreEqual(Visibility.Visible, h.Glyph(0).Visibility);
+            Assert.AreEqual(Visibility.Collapsed, h.Glyph(1).Visibility);
+            h.Table.SortInterval = TimeSpan.Zero;
+            h.Rows[0].Rank = 0;
+            h.Table.RefreshView();
+            CollectionAssert.AreEqual(new[] { "k0", "k1", "k2" }, h.ViewKeys());
+        });
+
+    [TestMethod]
+    public Task AHeaderChoiceAfterRenderingWaitsForItsOwnFrame()
+        => TestHost.RunAsync(async () =>
+        {
+            int frames = 0;
+            int comparedAt = -1;
+            SortHarness h = await SortHarness.LoadAsync(new[] { 3, 1, 2 }, configure: table =>
+                table.Schema<SortRow>().SortKey(table.Columns[1], row =>
+                {
+                    comparedAt = frames;
+                    return row.Rank;
+                }));
+            void OnFrame(object? sender, object args)
+            {
+                frames++;
+                if (frames == 1)
+                    h.Activate(1);
+            }
+            h.Activate(0);
+            Microsoft.UI.Xaml.Media.CompositionTarget.Rendering += OnFrame;
+            try
+            {
+                await TableHarness.WaitUntilAsync(() => h.Table.Sort?.Column.Id == "b", "the second header choice");
+                Assert.IsTrue(comparedAt >= 2, "the first callback cannot consume a choice whose glyph has not had a frame");
+            }
+            finally
+            {
+                Microsoft.UI.Xaml.Media.CompositionTarget.Rendering -= OnFrame;
+            }
+        });
+
+    [TestMethod]
+    [DataRow("refresh")]
+    [DataRow("sort")]
+    [DataRow("layout")]
+    public Task ARejectedNotifyingPublishCanRecoverThroughRefreshOrExplicitSort(string recovery) =>
         TestHost.RunAsync(async () =>
         {
             bool fails = false;
@@ -51,9 +230,50 @@ public class SortingTests
             CollectionAssert.AreEqual(new[] { "k0", "k1" }, h.ViewKeys());
 
             fails = false;
-            h.Table.RefreshView();
+            if (recovery == "sort")
+                h.Table.Sort = new(h.Table.Columns[0], SortDirection.Descending);
+            else if (recovery == "layout")
+                h.Table.Layout = TestData.Layout(sortColumnId: "a", direction: SortDirection.Descending);
+            else
+                h.Table.RefreshView();
 
-            CollectionAssert.AreEqual(new[] { "k0", "k1", "arrival" }, h.ViewKeys());
+            CollectionAssert.AreEqual(recovery == "refresh" ? new[] { "k0", "k1", "arrival" }
+                : new[] { "arrival", "k1", "k0" }, h.ViewKeys());
+        });
+
+    [TestMethod]
+    public Task AFrameCompletionCannotClearOrRearmAnExpiredLifetime() =>
+        TestHost.RunAsync(async () =>
+        {
+            SortHarness h = await SortHarness.LoadAsync(new[] { 3, 1, 2 }, sortableColumns: 2);
+            h.Table.Sort = new(h.Table.Columns[1]);
+            h.Activate(0);
+            object queued = Proof.Field<object>(h.Table, "_queuedSort");
+            long lifetime = Proof.Field<long>(h.Table, "_lifetimeRevision");
+            Proof.Call(h.Table, "OnLaidOut", null, new object());
+            TestHost.RootPanel.Children.Remove(h.Table);
+            Proof.Note($"frame after removal: IsLoaded={h.Table.IsLoaded}, detached={Proof.Field<bool>(h.Table, "_detached")}, lifetime={Proof.Field<long>(h.Table, "_lifetimeRevision")}");
+            Assert.IsFalse(h.Table.IsLoaded);
+            Proof.Call(h.Table, "RequestFrame");
+            Assert.IsFalse(Proof.Field<bool>(h.Table, "_frameRequested"),
+                "removal refuses a static frame subscription before deferred Unloaded");
+            Proof.Call(h.Table, "ConsumeSort", queued);
+            Assert.AreEqual("b", h.Table.Sort?.Column.Id);
+            Proof.Call(h.Table, "OnUnloaded", h.Table, new RoutedEventArgs());
+            Assert.IsTrue(Proof.Field<bool>(h.Table, "_detached"));
+            Assert.IsTrue(Proof.Field<long>(h.Table, "_lifetimeRevision") > lifetime);
+            Proof.SetField(h.Table, "_layoutPending", true);
+
+            TaskCompletionSource drained = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            Assert.IsTrue(TestHost.Dispatcher.TryEnqueue(() => drained.TrySetResult()));
+            await drained.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.IsTrue(Proof.Field<bool>(h.Table, "_layoutPending"),
+                "an old frame cannot clear another lifetime's pending work");
+            Assert.IsFalse(Proof.Field<bool>(h.Table, "_frameRequested"),
+                "an old frame cannot restore the detached static subscription");
+
+            await TableHarness.LoadAsync(h.Table);
+            Assert.IsFalse(Proof.Field<bool>(h.Table, "_layoutPending"));
         });
 
     [TestMethod]
@@ -188,13 +408,13 @@ public class SortingTests
         {
             SortHarness h = await SortHarness.LoadAsync(new[] { 3, 1, 2, 1, 3, 2 });
 
-            h.Activate(0);
+            await h.ActivateAsync(0);
             CollectionAssert.AreEqual(new[] { "k1", "k3", "k2", "k5", "k0", "k4" }, h.ViewKeys());
 
-            h.Activate(0);
+            await h.ActivateAsync(0);
             CollectionAssert.AreEqual(new[] { "k0", "k4", "k2", "k5", "k1", "k3" }, h.ViewKeys());
 
-            h.Activate(0);
+            await h.ActivateAsync(0);
             CollectionAssert.AreEqual(
                 new[] { "k0", "k1", "k2", "k3", "k4", "k5" },
                 h.ViewKeys(),
@@ -208,11 +428,11 @@ public class SortingTests
         {
             SortHarness h = await SortHarness.LoadAsync(new[] { 3, 1, 2 }, sortableColumns: 2);
 
-            h.Activate(0);
-            h.Activate(0);
+            await h.ActivateAsync(0);
+            await h.ActivateAsync(0);
             Assert.AreEqual(SortDirection.Descending, h.Table.Layout.SortDirection);
 
-            h.Activate(1);
+            await h.ActivateAsync(1);
 
             ColumnLayout state = h.Table.Layout;
             Assert.AreEqual("b", state.SortColumnId);
@@ -228,7 +448,7 @@ public class SortingTests
             h.Table.LayoutChanged += (_, _) => events++;
 
             // Column "b" declares no sort.
-            h.Activate(1);
+            await h.ActivateAsync(1);
 
             CollectionAssert.AreEqual(new[] { "k0", "k1", "k2" }, h.ViewKeys());
             Assert.IsNull(h.Table.Layout.SortColumnId);
@@ -241,7 +461,7 @@ public class SortingTests
         {
             SortHarness h = await SortHarness.LoadAsync(new[] { 3, 1, 2 });
 
-            h.Activate(0);
+            await h.ActivateAsync(0);
 
             CollectionAssert.AreEqual(new[] { "k1", "k2", "k0" }, h.ViewKeys());
             CollectionAssert.AreEqual(
@@ -259,15 +479,15 @@ public class SortingTests
             List<LayoutChange> raised = new();
             h.Table.LayoutChanged += (_, kind) => raised.Add(kind);
 
-            h.Activate(0);
+            await h.ActivateAsync(0);
 
             Assert.AreEqual(1, raised.Count);
             Assert.AreEqual(LayoutChange.Sort, raised[0]);
             Assert.AreEqual("a", h.Table.Layout.SortColumnId);
             Assert.AreEqual(SortDirection.Ascending, h.Table.Layout.SortDirection);
 
-            h.Activate(0);
-            h.Activate(0);
+            await h.ActivateAsync(0);
+            await h.ActivateAsync(0);
 
             Assert.AreEqual(3, raised.Count);
             Assert.IsNull(h.Table.Layout.SortColumnId, "the cycle ended in natural order");
@@ -299,7 +519,7 @@ public class SortingTests
         TestHost.RunAsync(async () =>
         {
             SortHarness h = await SortHarness.LoadAsync(new[] { 3, 1, 2 });
-            h.Activate(0);
+            await h.ActivateAsync(0);
 
             h.Table.Layout = TestData.Layout(order: new[] { "a" }, sortColumnId: "gone");
 
@@ -312,7 +532,7 @@ public class SortingTests
         TestHost.RunAsync(async () =>
         {
             SortHarness h = await SortHarness.LoadAsync(new[] { 3, 1, 2 });
-            h.Activate(0);
+            await h.ActivateAsync(0);
 
             // "b" declares no sort, so the saved sort cannot be honoured.
             h.Table.Layout = TestData.Layout(order: new[] { "a" }, sortColumnId: "b");
@@ -355,7 +575,7 @@ public class SortingTests
                 new[] { 3, 1, 2 },
                 configure: table => table.SortInterval = TimeSpan.Zero
             );
-            h.Activate(0);
+            await h.ActivateAsync(0);
             CollectionAssert.AreEqual(new[] { "k1", "k2", "k0" }, h.ViewKeys());
 
             // A batch changes the sorted value without any collection notification.
@@ -384,7 +604,7 @@ public class SortingTests
                 new[] { 1, 2, 3, 4, 5 },
                 configure: table => table.SortInterval = TimeSpan.Zero
             );
-            h.Activate(0);
+            await h.ActivateAsync(0);
             Proof.Call(h.Table, "PointAt", h.Rows[1]);
 
             h.Rows[1].Rank = 10;
@@ -419,7 +639,7 @@ public class SortingTests
         TestHost.RunAsync(async () =>
         {
             SortHarness h = await SortHarness.LoadAsync(new[] { 3, 1, 2 });
-            h.Activate(0);
+            await h.ActivateAsync(0);
 
             h.Rows.Add(new SortRow("k3", 0));
 
@@ -439,7 +659,7 @@ public class SortingTests
             h.Table.Selection = new(new object[] { h.Rows[0], h.Rows[4] }, h.Rows[4]);
             selectionEvents = 0;
 
-            h.Activate(0);
+            await h.ActivateAsync(0);
 
             CollectionAssert.AreEqual(
                 new[] { "k0", "k4" },
@@ -472,7 +692,7 @@ public class SortingTests
             Assert.AreEqual(Visibility.Collapsed, h.Glyph(0).Visibility, "unsorted shows nothing");
             Assert.AreEqual(string.Empty, AutomationProperties.GetItemStatus(h.Cell(0)));
 
-            h.Activate(0);
+            await h.ActivateAsync(0);
             h.Table.UpdateLayout();
 
             Assert.AreEqual(Visibility.Visible, h.Glyph(0).Visibility);
@@ -482,7 +702,7 @@ public class SortingTests
             Assert.AreEqual(Visibility.Collapsed, h.Glyph(1).Visibility, "only one column sorts");
             Assert.AreEqual(string.Empty, AutomationProperties.GetItemStatus(h.Cell(1)));
 
-            h.Activate(0);
+            await h.ActivateAsync(0);
             h.Table.UpdateLayout();
 
             Assert.AreEqual(Visibility.Visible, h.Glyph(0).Visibility);
@@ -499,7 +719,7 @@ public class SortingTests
                 "the status tells the directions apart"
             );
 
-            h.Activate(0);
+            await h.ActivateAsync(0);
             h.Table.UpdateLayout();
 
             Assert.AreEqual(Visibility.Collapsed, h.Glyph(0).Visibility);
@@ -511,7 +731,7 @@ public class SortingTests
         TestHost.RunAsync(async () =>
         {
             SortHarness h = await SortHarness.LoadAsync(new[] { 3, 1, 2 });
-            h.Activate(0);
+            await h.ActivateAsync(0);
 
             h.Table.Layout = TestData.Layout(order: new[] { "b", "c", "a" }, sortColumnId: "a");
             h.Table.UpdateLayout();
@@ -558,7 +778,7 @@ public class SortingTests
                 }
             );
 
-            h.Activate(0);
+            await h.ActivateAsync(0);
             h.Table.UpdateLayout();
 
             FontIcon glyph = h.Glyph(0);
@@ -789,6 +1009,20 @@ internal sealed class SortHarness
     }
 
     /// <summary>Run the header's sort cycle for the header at this visible index.</summary>
+    internal async Task ActivateAsync(int visibleIndex)
+    {
+        Activate(visibleIndex);
+        await WaitForSortAsync();
+    }
+
+    internal async Task WaitForSortAsync()
+    {
+        await TableHarness.WaitUntilAsync(() => typeof(Table)
+            .GetField("_queuedSort", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(Table) is null,
+            "the queued header sort to finish");
+        Table.UpdateLayout();
+    }
+
     internal void Activate(int visibleIndex)
     {
         MethodInfo method = typeof(Header.Strip).GetMethod(

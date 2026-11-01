@@ -183,9 +183,11 @@ Four rules apply to every row:
 | Column sort definition: key selector and comparer | `Column`, set by `Schema.SortKey` | `Column.Sort`, which it replaces | 2 | the sorted order | Hold sort state |
 | Sorting: the one stable sort routine (flat rows, and each sibling group of a hierarchy); for a flat table also the kept order before `Pin`, its kept keys and collation keys in arrays, its position index, whether the kept-key check is allowed, and the one placement routine | The sorted order of the active column, in `Table/Sorting.cs` | — | 2, 3, 5, 10 | `KeptOrder`, `SortedSnapshot`, `Hierarchy.Project` | Hold the shown order after `Pin`; place rows of a hierarchy by binary search; get a second sort or placement routine |
 | Count of key comparisons actually performed by the selected sort algorithm | The sorted-order owner, at its one key-comparison primitive | A sample wrapper comparer, which changes eligibility for the optimized path | 2 | The sample's measurement of the actual algorithm | Add a public diagnostic API or a second sorter; count selector calls that the sample can observe in its own selector |
+| The prepared order and whether preparing it performed a full sort | The sorted-order owner returns this operation's facts; the pipeline consumes them | Permission to move rows, which does not say whether a fallback actually sorted them | 2 | `ViewOrder`, to advance the settle clock after an actual full sort | Store another pending flag or derive the completed operation from the caller's permission |
 | A header sort waiting for the frame, and a worker sort's result | One queued-sort field in `Table/Sorting.cs`; that owner publishes a revision for actual committed-sort changes, and `Table` publishes a lifetime revision for actual detachments | `_pendingSort`, which holds a `Sort` assigned before the schema is captured: a different concept, kept as it is | 2 | the header | Get cancelled by other writers: it checks the captured revisions, that the table is loaded and its column is still shown |
 | The criterion the header shows | `Table/Sorting.cs`: the queued sort while it is still valid, otherwise the committed sort | — | 2 | `Header` | Get computed by the header |
 | Waiting for the next frame | `Table.OnLaidOut`'s `CompositionTarget.Rendering` step | — | 2 | the queued sort, the reveal | Get a second implementation |
+| Failure escaping deferred frame work | `Table.OnLaidOut`'s one dispatcher callback boundary, forwarded through the existing WinRT error reporter | A raw dispatcher exception that bypasses the host's XAML failure handler | 2 | The host's `Application.UnhandledException` policy | Swallow the failure, add a public failure event, or replace the application's synchronization context |
 | The view's rows and the notifications it raises; the view version and its counts of inserts and removals | `Body.View` and its gap-buffer list | — | 4, 5, 9 | `SelectionState`, the list | Raise `Move` or a reset; depend on `SelectionState` |
 | Selected set and selected view indices | `SelectionState`; the indices record the view version they were built from and are rebuilt when it differs | — | 1b, 5, 8 | `GetSelectedRanges`, the packet, the marquee | Get told by view writers that they changed |
 | The published selection packet | `Table.CommitSelection` | — | 1b | the host, the drag | Know about the host's positions |
@@ -514,8 +516,14 @@ never sees the keys or the comparer.
    differ from the comparer, or a custom comparer can read host state that
    changed. For those, check whether the kept order is still sorted, using
    the actual comparer and the base order as the tie-break (n−1 comparer
-   calls), and sort everything when it is not. `SortKey`'s contract then needs
-   no new restriction. No key changed: skip the sort. k keys changed: first
+   calls), and sort everything when it is not. This proof also precedes
+   arrival placement for those keys inside the interval: mutable key references
+   and host-dependent comparers cannot preserve historical ordering values.
+   If that proof fails, the same full sort runs; copying host objects or
+   inventing another placement policy would change the unrestricted comparer
+   contract. An unchanged-membership publish can still wait for the interval.
+   `SortKey`'s contract then needs no new restriction. No key changed: skip
+   the sort. k keys changed: first
    check whether any row must move (M2). The kept order was sorted, and the
    rows that did not change keep their keys and base order, so a pair of
    neighbours can be out of order only when it holds a changed row. The pass
@@ -575,7 +583,7 @@ never sees the keys or the comparer.
    `_pendingSort`, which holds a `Sort` assigned before the schema is
    captured; the two keep separate names. A second header click replaces the
    queued sort. No other code cancels it: when it runs, it applies only if
-   the table is loaded (`_detached` is false), both revisions still match,
+   the table is loaded (`IsLoaded` is true and `_detached` is false), both revisions still match,
    the committed sort is still the one it was made against, and its column
    is still shown. An actual sort commit advances the sorting owner's
    revision; an actual detachment advances the table's lifetime revision.
@@ -595,6 +603,12 @@ never sees the keys or the comparer.
    sort. The header reads it and never computes it. If the comparisons throw,
    the setter commits nothing, the queued sort is gone, and the header shows
    the committed sort again.
+   The shared dispatcher callback forwards exceptions with
+   `WinRT.ExceptionHelpers.ReportUnhandledError`, preserving the host's XAML
+   unhandled-exception policy after the glyph is restored. A raw exception
+   escaping `DispatcherQueueHandler` terminates the process before that policy
+   sees it, as B's isolated deliberate-failure run confirmed. Synchronous host
+   assignments still throw directly to their caller.
 6. **A first sort that would block too long runs on a worker (R2, R9, N4,
    L2).** At 100,000 rows the first sort of a name column still takes an
    **estimated** 100–250 ms after the glyph shows, and the UI does not respond
@@ -619,6 +633,11 @@ never sees the keys or the comparer.
    uninterrupted UI-thread work above 100 ms.** A host comparer that is not a
    culture `StringComparer` still sorts on the UI thread, because it is a
    host callback.
+   **Gate result: enabled for group C.** B's first-sort medians were 2.7859
+   and 5.1831 ms at 1,000 and 2,000 rows. The whole-block n log n projections
+   are 464.32 and 392.54 ms at 100,000; fitting a fixed overhead plus n log n
+   growth still estimates 333.54 ms. These are extrapolations for the measured
+   culture-name fixture, not full-size measurements or arbitrary-host bounds.
 7. **A settle that is no longer needed does not run (S2).** A full sort sets
    `_orderSettledAt` but leaves a pending settle timer running. After a
    header click has sorted everything, the old timer still fires, finds the
@@ -676,6 +695,12 @@ are placed, nothing else moves, and only the new row may need to move at the nex
 That is the better trade for a person whose pointer and eyes are on the
 rows.
 
+For keys outside the immutable fast path, placement first proves the kept order
+with the actual comparer as stage 2 specifies; if it is no longer ordered, the
+shared full-sort fallback applies. Those host keys/comparers cannot retain the
+historical values needed for binary placement, so this preserves correctness
+without copying or constraining host objects.
+
 This changes the positions at which `Membership` raises its inserts, not
 their kind or number. By E1 and E3 the animation and the panel's work stay the
 same. The no-flash checks apply: on screen, an arrival under a live sort
@@ -722,13 +747,12 @@ list passes them to every subscriber of its own `VectorChanged`, and not every
 subscriber was traced, so reusing one could hand a kept object new contents
 (W4).
 
-**Open question.** The list control's own cost per notification is **not
-measured** (L1). One notification per row that arrives or leaves stays,
-because `IObservableVector` has no range event and a reset flashes (E4). The
-work per event is constant (W4): an **estimated** few µs to 30 µs. At the top
-of that range, a filter change of 50,000 rows costs 1.5 s in the list alone at
-100,000 rows, and a change of 5,000 rows costs 150 ms at 10,000. Stage 9 owns
-the measurement and the decision.
+**Measured in group A.** The list's native event-only cost was 5.964 and
+9.118 microseconds at 1,000 and 2,000 rows. A linear projection of 50,000
+events is about 0.30–0.46 seconds, so stage 9's 2-microsecond gate is exceeded.
+This stage alone still raises one event per arrival/leaver because
+`IObservableVector` has no range event and a reset flashes (E4). Stage 9
+joins group C, subject to its shipped-runtime no-flash acceptance.
 
 **Contract.** None.
 
@@ -1061,6 +1085,13 @@ and 2, measure the cost of one update where nothing moved at 1,000 and 2,000
 rows and extend it to 100,000. Build this stage only if that cost exceeds one
 frame at 60 Hz (16 ms); the estimate of 1–10 ms says it will not.
 
+**Gate result: enabled for group C.** B's unchanged RefreshView medians were
+1.1784 and 1.5991 ms at 1,000 and 2,000 rows, with zero comparisons and a
+constant 1,880 allocated bytes. Whole-block linear projections are 117.84 and
+79.96 ms at 100,000; fitting a fixed overhead plus linear growth still
+estimates 42.83 ms. Both methods exceed 16 ms. These are extrapolations from
+the measured fixture; no 100,000-row fixture is run.
+
 **Contract.** Sections 5.3 and 9 gain the overload.
 
 ## Defects found during the review
@@ -1213,7 +1244,7 @@ runs the interactive and visual checks. No push is authorized.
   The lead inspected all five corrected V baseline scenes and confirmed held
   and drag setup; report and images: `V:\temp\TableViewPerformance\group-a-v.txt`
   and `group-a-{rows,selection,held,drag,hierarchy}.png`. All processes exited.
-  Group A is accepted; its local commit precedes group B implementation.
+  Group A is accepted and committed locally as `666f861`; group B follows it.
   Native event-only N measured 5.964 and 9.118 microseconds per event: stage 9
   is enabled for group C, subject to its shipped-runtime no-flash acceptance.
   Initial P/S/N report: `V:\temp\TableViewPerformance\group-a-psn-first.txt`.
@@ -1239,8 +1270,8 @@ runs the interactive and visual checks. No push is authorized.
   publication-owned packet, drag-owned selected-numbered fact, row-owned shown
   visual states, and sample-owned measurements. The coder's list names each
   map, field and helper under these owners; no core extension state is added.
-- Group B's complete owner/test/measurement list is approved, with implementation
-  released after group A's local commit. Column holds a stateless typed sort
+- Group B's complete owner/test/measurement list is approved and implementation
+  is in progress after group A's local commit. Column holds a stateless typed sort
   definition; one active sorted-order owner holds accepted/candidate keys,
   order and positions, with shared full-sort and placement routines. Its one
   monotonic comparison counter measures the actual algorithm; sample-owned
@@ -1249,6 +1280,68 @@ runs the interactive and visual checks. No push is authorized.
   revision and the one shared frame step. A frame snapshots its queued request,
   so a newer request waits for its own frame. Held/pinned shown work keeps
   settling pending independently of the already-settled sorted workspace.
+  Initial source review confirmed three corrections before the B build:
+  explicit sorts prepare the current capture through the pipeline, because a
+  rejected notifying update can leave its aliased rows ahead of accepted
+  membership; an actual fallback full sort restarts the settling interval;
+  and a dispatched frame completion checks the existing lifetime revision
+  before clearing, revealing or requesting another frame after detachment.
+  Initial record: `V:\temp\TableViewPerformance\group-b-review-r1.md`.
+  These corrections and their focused regressions passed all five delta
+  review passes; clean final record:
+  `V:\temp\TableViewPerformance\group-b-review-r2.md`. The lead read the
+  source and both records and released B's one Release project-only build,
+  its four prescribed test classes and T measurements. B's first Release
+  build passed with zero warnings/errors. Its test run exited after 47 passes
+  and one queued-sort reload failure (expected committed b, observed a), then
+  aborted because the host crashed. The coder is tracing the loaded/detached
+  validity window and crash before a reviewed correction batch. Reports:
+  `V:\temp\TableViewPerformance\group-b-build1-{sample,tests}.log`,
+  `group-b-tests.trx`, and `group-b-tests-console.log`. T has not run and B is
+  not accepted; C's conditional stages await those measurements.
+  Native source confirms that `IsLoaded` can become false before deferred
+  `Unloaded` advances the logical detach revision. Queued/frame eligibility
+  therefore checks the immediate platform fact as well as the existing
+  revision; no new lifetime flag is added. The failed reload TRX does not
+  record the flag at consumption, so that mismatch's exact ordering remains
+  unverified. The CoreMessaging crash is diagnosed separately by an isolated
+  unchanged-binary run of the deliberate queued-comparer failure test.
+  That isolated run crashed with only
+  `AFailedQueuedComparisonRestoresTheCommittedGlyphAndWorkspace` active,
+  independently of reload; blame/diagnostics are under
+  `V:\temp\TableViewPerformance\group-b-queue-diagnostic` and the adjacent
+  `group-b-queue-diagnostic-console.log`. The corrected boundary forwards the
+  exception through the existing WinRT reporter instead of letting it escape
+  CoreMessaging. The pinned runtime still needs to verify that delivery.
+  The IsLoaded and exception-forwarding batch passed all five focused review
+  passes; record `V:\temp\TableViewPerformance\group-b-review-r3.md`. The
+  lead read the corrected source, test outcomes and record and released one
+  corrective build plus the four-class retry, with separate retry artifacts.
+  The corrective Release build passed with zero warnings/errors; its retry
+  passed all 79 tests (FeatureProof 24, Hierarchy 7, LayoutState 9, Sorting 39)
+  in 11.278 seconds and exited normally. The lead checked the logs/TRX.
+  Runtime checks confirm original-exception delivery, immediate not-loaded
+  refusal, actual lifetime advancement and reload recovery. Reports:
+  `V:\temp\TableViewPerformance\group-b-build2-{sample,tests}.log` and
+  `group-b-tests-retry\group-b-tests-retry.trx`. T completed and the sample
+  exited normally; report `V:\temp\TableViewPerformance\group-b-t.txt`.
+  Actual comparison counts at 1,000→2,000 rows were: first 6,942→15,879,
+  unchanged 0→0, one changed key 11→12, one arrival 10→11. First-sort selectors
+  read exactly n keys. Median allocations were first 441,296→904,944 bytes,
+  unchanged 1,880 at both sizes, changed 3,632 at both, arrival 5,304 at both.
+  Changed/arrival blocks grew 1.6773×/2.1037×, consistent with linear copying
+  rather than another full comparison sort; no exact 2× timing claim is made.
+  First-frame medians for all four operations were 11.963–17.813 ms.
+  Actual retained backing, including six populated maps and sorting buffers,
+  was 950,968→1,972,856 bytes: approximately 95.10–98.64 MB at 100,000 by
+  linear projection, excluding object/host/visual/native/cache overhead and
+  subject to future dictionary capacities. Other accessible process CPU
+  snapshots were nearly unchanged; one process was inaccessible.
+  The lead read the raw report and computed both whole-block and fixed-overhead
+  projections. Both first-sort and full-refresh gates are exceeded, so change
+  6 and stage 10 join stage 9 in C. The two newly enabled items add the plan's
+  estimated 4–8 hours; all three conditional items total 6–12 hours beyond
+  the base estimate. B is accepted; its local commit precedes C implementation.
 - Stage 7 uses its permitted fallback: keep `Body.Row` as the one row-state
   owner and make its existing presenter the template root, removing the
   single-child Grid. `CellsPanel` is a Panel shared with headers, while the
@@ -1305,7 +1398,7 @@ runs the interactive and visual checks. No push is authorized.
 - The lead's project-only build switch is `-ProjectsOnly`; it and its usage
   in `docs/agents/compilation.md` join group A's review and commit. Use one `-Project` argument with both project paths as
   an array, because PowerShell does not accept a repeated named parameter.
-- Groups A–E remain open. The estimate remains 10–15 hours, four builds and
+- Groups B–E remain open. The estimate remains 10–15 hours, four builds and
   five group reviews; optional stages follow their measurement gates.
 
 ## How to execute
@@ -1494,10 +1587,9 @@ How:
      last round are steps 4 and 5 below, done once.
 4. **Build once**, from the repository root, with `-Release`, because the
    measurements decide stages and a Debug build overstates them, and every
-   group uses it so one output serves all of them: `pwsh -File Build.ps1
-   -Release` with the switch from "Before group A" and
-   `-Project lib\TableView\tests\TableViewTests.csproj -Project
-   lib\TableView\sample\TableViewSample.csproj`. On a failure, fix every
+   group uses it so one output serves all of them. In PowerShell, use
+   `& .\Build.ps1 -Release -ProjectsOnly -Project @('lib\TableView\tests\TableViewTests.csproj', 'lib\TableView\sample\TableViewSample.csproj')`.
+   On a failure, fix every
    error by reading and build again; the same error after a fix stops the
    group and is reported, as [compilation](../agents/compilation.md) says.
 5. **Test and measure from that build.** Run the group's test classes once:

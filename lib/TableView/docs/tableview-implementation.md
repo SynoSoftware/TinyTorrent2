@@ -38,6 +38,22 @@ the existing `Sort`, `Layout` and `LayoutChanged` interfaces. The same owner
 bypasses settling and local pointer-order pinning for external sorts. Hierarchy
 projection, membership holds and selection reconciliation remain shared.
 
+`Column` holds the typed sort definition installed by `Schema.SortKey`.
+`SortedOrder` in the sorting owner keeps the active flat order, captured keys,
+collation keys and position index; candidate buffers are accepted only after
+comparisons succeed. Its stable index sort also sorts hierarchy siblings. Its
+one placement routine handles changed flat keys and arrivals among surviving
+kept keys. The shown order after pointer pinning stays outside this workspace.
+Each preparation reports whether it performed a full sort, so the pipeline
+advances the settle clock for actual work rather than permission to move rows.
+The sorting owner combines remaining key work and pinned/held presentation
+work before scheduling a settle. Header choices carry committed-sort and
+detach revisions and run after the shared rendering frame wait; setters and
+layout restoration use the same synchronous commit boundary.
+The pipeline prepares the current source capture before an explicit sort and
+passes its captured-key map into the same publish for acceptance. Failed
+comparisons leave the source, criterion and active workspace unaccepted.
+
 The [hierarchy extension](hierarchy.md) keeps host expansion state outside the
 control. Captured child membership feeds the same private view, sorting cadence
 and selection reconciliation as flat rows. `Table/Hierarchy.cs` integrates

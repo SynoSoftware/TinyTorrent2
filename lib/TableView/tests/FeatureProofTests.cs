@@ -154,6 +154,8 @@ public class FeatureProofTests
             Proof.Call(strip, "CompleteResize");
             ActivateSort(strip, Downloads.HeaderCells(first).Single(c => ColumnId(c) == "queue"));
             ActivateSort(strip, Downloads.HeaderCells(first).Single(c => ColumnId(c) == "queue"));
+            await TableHarness.WaitUntilAsync(() => first.Sort?.Direction == SortDirection.Descending,
+                "the queued descending sort to finish");
 
             ColumnLayout saved = first.Layout;
             string json = JsonSerializer.Serialize(saved);

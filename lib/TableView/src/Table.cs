@@ -61,6 +61,7 @@ public sealed partial class Table : Control
     /// stopping it does not recall a tick the dispatcher has already picked up.
     /// </summary>
     private bool _detached;
+    private long _lifetimeRevision;
 
     /// <summary>
     /// Raised once after each completed effective sort, column move, resize, fit, visibility, or
@@ -237,7 +238,11 @@ public sealed partial class Table : Control
         }
 
         CancelPreparation();
+        if (!_detached)
+            _lifetimeRevision++;
         _detached = true;
+        Microsoft.UI.Xaml.Media.CompositionTarget.Rendering -= OnLaidOut;
+        _frameRequested = false;
         QueueRealized();
         LayoutUpdated -= OnFillLayout;
         StopWatchingVisibility();
@@ -267,6 +272,8 @@ public sealed partial class Table : Control
         _hierarchy?.Resume();
         _source.Resume();
         _detached = false;
+        if (_queuedSort is not null || _layoutPending)
+            RequestFrame();
         if (_surface is not null)
             _surface.ItemsSource = _view;
         foreach (Column column in Columns)
@@ -376,8 +383,8 @@ public sealed partial class Table : Control
         {
             if (_pendingSort is Sort requested && !Enum.IsDefined(requested.Direction))
                 throw ConfigurationError("The initial sort direction is invalid.");
-            _sortColumn = _pendingSort is Sort sort ? RequireSortable(sort.Column) : null;
-            _sortDirection = _pendingSort?.Direction ?? SortDirection.Ascending;
+            EffectiveColumn? column = _pendingSort is Sort sort ? RequireSortable(sort.Column) : null;
+            CommitSort(column, _pendingSort?.Direction ?? SortDirection.Ascending, CreateSort(column));
             _pendingSort = null;
             _hasPendingSort = false;
         }
@@ -561,20 +568,26 @@ public sealed partial class Table : Control
             !ReferenceEquals(sortColumn, _sortColumn)
             || (sortColumn is not null && direction != _sortDirection);
         // Initial capture resolves any later pending Sort before evaluating host comparisons.
+        SortedOrder? workspace = CreateSort(sortColumn);
+        Body.Source.Capture capture = _source.Current;
+        IdentityMap<object>? membership = null;
         IReadOnlyList<object>? order =
-            rebuild && moved ? SortedSnapshot(_source.Snapshot, sortColumn, direction) : null;
+            rebuild && moved && _sortMode == SortMode.Local
+                ? PrepareSort(capture, workspace, direction, out membership) : null;
+        if (order is not null && _hierarchy is null)
+            workspace?.Accept();
 
         foreach (EffectiveColumn column in ordered)
         {
             column.VisibilityOverride = visibility[column];
         }
-        _sortColumn = sortColumn;
-        _sortDirection = direction;
+        if (moved)
+            CommitSort(sortColumn, direction, workspace);
 
         // SetOrder republishes the layout, which re-applies each header cell's sort indicator.
         EffectiveLayout.SetOrder(ordered);
         if (order is not null)
-            RebuildView(preparedOrder: order);
+            RebuildView(capture, order, membership);
     }
 
     // ---------------------------------------------------------------- source

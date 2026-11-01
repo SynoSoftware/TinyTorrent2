@@ -8,8 +8,8 @@ namespace Syno.TableView;
 /// <remarks>
 /// WinUI 3 XAML cannot instantiate an open generic, so <see cref="Table"/> stays non-generic —
 /// but a non-generic class can have a generic method, and XAML never sees one. That is the whole
-/// mechanism: the host names its row type here, and the casts back to it happen inside this class
-/// rather than once per selector and comparer at the host.
+/// mechanism: the host names its row type here, and the typed schema keeps the row casts inside
+/// the control rather than repeating them in each host selector and comparer.
 /// <para>
 /// A column joins to its sort key through the field the XAML compiler already generates for
 /// <c>x:Name</c>, so renaming a column is a build break rather than a dictionary lookup that
@@ -120,10 +120,7 @@ public sealed class Schema<TRow>
         ArgumentNullException.ThrowIfNull(column);
         ArgumentNullException.ThrowIfNull(key);
         _table.RequireSetup();
-        column.Sort = (items, direction) =>
-            direction == SortDirection.Ascending
-                ? items.OrderBy(item => key((TRow)item), comparer)
-                : items.OrderByDescending(item => key((TRow)item), comparer);
+        column.Sort = new SortDefinition<TRow, TKey>(key, comparer ?? Comparer<TKey>.Default);
         return this;
     }
 

@@ -129,6 +129,10 @@ public sealed partial class JobsPage
         {
             await MeasureSelectionAsync();
         }
+        if (_only?.Contains("T") == true)
+        {
+            await MeasureSortingAsync();
+        }
         if (_only?.Contains("M") == true)
         {
             await MeasurePublishesAsync(measureTimings: false);
