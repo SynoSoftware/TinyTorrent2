@@ -16,7 +16,14 @@ Sources, each checked against the code before it was listed here:
 - the Opus review: local fixes O1–O7, redesigns P1–P6, second-pass findings
   N1–N11 and corrections A1–A4, and a third pass on the WinUI 3 list source
   (W1–W5, B1);
-- cold reviews the owner ran: K1–K11, Q1–Q11 and S1–S8.
+- cold reviews the owner ran: K1–K11, Q1–Q11 and S1–S8;
+- a comparison with Microsoft's TableView in `3rdParty/microsoft-ui-xaml`
+  (`controls/dev/ShapedItemsSource`): M2.
+
+TableView is a generic control, so every stage changes the table, never a
+host. The product's hosts (the torrent list, the Library, the file browser)
+appear only as evidence of real workloads. Work a host could do to call the
+table less often belongs to that host, not to this plan.
 
 A cost marked **estimate** comes from reading the code. Nobody has measured
 it yet. Where reviews estimate the same cost differently, the range covers
@@ -129,11 +136,73 @@ A host that raises one notification per row, such as an
 `ObservableCollection` filled in a loop, pays the whole table once per row:
 appending 1,000 rows to 100,000 runs it 1,000 times (F1, K8).
 
+## Owners
+
+Every stage changes one of these owners, or adds to it. A coder never creates
+a second owner for a concept below, never writes a second implementation of
+one, and never makes a decision listed here outside its owner. A concept a
+stage needs that this table does not list is a change to this plan, decided
+before the code is written. The table names owners, not new types: a stage
+may implement an owner as an existing class.
+
+Four rules apply to every row:
+- **State flows one way.** An owner publishes its state or a version of it,
+  and the code that depends on it reads it. An owner never calls into code
+  that depends on it to make it load, refresh, reset or cancel, because each
+  new writer would then have to remember that call. `Table.RebuildView` is
+  the one exception by design: it orchestrates the publish and calls its
+  steps in order (validate, order, reconcile the view, reconcile the
+  selection, commit, the hierarchy's steps, raise `RowVisualsChanged`),
+  because the contract requires each publish to finish all of them before
+  it returns. The rule governs every call outside that sequence.
+- **A condition names its decision.** Code that guards work reads the
+  owner's answer, never a nearby fact that usually agrees with it.
+- **The core holds no extension state.** The core owners hold none of the
+  hierarchy's or the drag's state. `RebuildView` may call the hierarchy's
+  steps, and the pipeline may branch on whether a hierarchy exists, as it
+  does today.
+- **Dependencies point down this order:** the identity part; then
+  `Body.Source` and `Body.View`; then `SelectionState`; then the table's
+  pipeline. `Body.View` answers `ISelectionInfo` through the delegates the
+  table hands it, as it takes `IsSelected` today, so it never depends on
+  `SelectionState`.
+
+| Concept | Owner | Replaces, or must not be confused with | Written by stages | Read by | Does not |
+|---|---|---|---|---|---|
+| Row identity: key read, equality, hash, null-key check; the map and set types every row-keyed collection uses | The identity part. A reference-identity instance exists from `Table`'s construction; schema capture installs the keyed one that `Schema<TRow>.Key<TKey>` creates, as `RehashIdentity` does today | `ItemIdentity` and `Schema.KeyEquality`, which it replaces | 1a | every owner below | Hold any rows; nothing else hashes or compares rows |
+| A position index over an ordered sequence: row to index, with a stale window sized from the sequence's own counts of inserts and removals, rebuilt after about √n changes and after any publish that moves rows without an event | One type, with one instance per sequence, owned by that sequence's owner: `Body.View` for the view, the sorted order for the kept order | `_positions`, `Body.View.Reconcile`'s `place`, `Hold`'s `shown`, `SelectionState`'s `indexOf` delegate | 1a, 5 | `Hold`, `Release`, `Pin`, `SelectionState`, `GetSelectedRanges`, the sorted order | Get written twice |
+| The new order of one publish and its index | `Table.RebuildView` builds it and hands it to `Body.View.Reconcile`; after the reconcile the view adopts it as its position index | — | 1a | `Body.View.Reconcile` | Get rebuilt by the view |
+| The source's rows by identity: membership and the current instance, no positions | `Body.Source` | `Hold`'s and `KeptOrder`'s `live` | 1a, 5 | `Hold`, `KeptOrder`, `Pin`, the duplicate check | Hold positions |
+| Any other map or set keyed by row | Its own owner, built from the identity part's map and set types | `HashSet<object>(identity)` and `Dictionary<object, …>(identity)` built in place | 1a, 8 | — | Use a comparer of its own |
+| Rows entering the table: null row, row type, null key | `Table.ValidateRows`, a check per row, run on rows that entered: an assignment, a notification's added rows, a hierarchy capture | — | 1a, 5, 6 | — | Exist as a copy in any path |
+| Unique identity of rows entering the table | The failed `Add` into the source's identity map for a flat table, or into the node index for a hierarchy, made before the snapshot or the hold is accepted | `ValidateRows`' own `HashSet` | 1a, 5, 6 | — | Get a set built only to check it, or a check of its own in `Hierarchy` |
+| Whether the stored snapshot passed validation | `Body.Source`, recorded when the snapshot passed | — | 1a | `RebuildView` | Get assumed from how `RebuildView` was called |
+| Held, released, pointed and menu rows | `Table/Holding.cs` | — | 1a, 5 | `KeptOrder`, `Pin`, the row element | — |
+| One entry into the pipeline | `Table.RebuildView`, which takes the change: a whole source, one notification's action, indices and items, or rows whose values changed | — | 1a, 5, 10 | — | Get an `ApplyChange` or other second pipeline beside it |
+| Column sort definition: key selector and comparer | `Column`, set by `Schema.SortKey` | `Column.Sort`, which it replaces | 2 | the sorted order | Hold sort state |
+| Sorting: the one stable sort routine (flat rows, and each sibling group of a hierarchy); for a flat table also the kept order before `Pin`, its kept keys and collation keys in arrays, its position index, whether the kept-key check is allowed, and the one placement routine | The sorted order of the active column, in `Table/Sorting.cs` | — | 2, 3, 5, 10 | `KeptOrder`, `SortedSnapshot`, `Hierarchy.Project` | Hold the shown order after `Pin`; place rows of a hierarchy by binary search; get a second sort or placement routine |
+| A header sort waiting for the frame, and a worker sort's result | One queued-sort field in `Table/Sorting.cs` | `_pendingSort`, which holds a `Sort` assigned before the schema is captured: a different concept, kept as it is | 2 | the header | Get cancelled by other writers: it checks, when it runs, that the table is loaded, the committed sort it was made against is unchanged and its column is still shown |
+| The criterion the header shows | `Table/Sorting.cs`: the queued sort while it is still valid, otherwise the committed sort | — | 2 | `Header` | Get computed by the header |
+| Waiting for the next frame | `Table.OnLaidOut`'s `CompositionTarget.Rendering` step | — | 2 | the queued sort, the reveal | Get a second implementation |
+| The view's rows and the notifications it raises; the view version and its counts of inserts and removals | `Body.View` and its gap-buffer list | — | 4, 5, 9 | `SelectionState`, the list | Raise `Move` or a reset; depend on `SelectionState` |
+| Selected set and selected view indices | `SelectionState`; the indices record the view version they were built from and are rebuilt when it differs | — | 1b, 5, 8 | `GetSelectedRanges`, the packet, the marquee | Get told by view writers that they changed |
+| The published selection packet | `Table.CommitSelection` | — | 1b | the host, the drag | Know about the host's positions |
+| The selected state a realized row shows | The row's container, `ListViewItem.IsSelected`, which the list sets | — | — | `RefreshContainers`, which compares it with the selection model | Get a second record |
+| The publish version | `Table.RebuildView`, incremented on every run | — | 1b | `Order`, the drag | — |
+| Whether the order allows a reorder | `Order`, recomputed on read when the publish version it recorded differs | `Order.CanReorder`'s walk of the host's order on every read | 1b | `Table.CanStartDrag` | Get refreshed by the pipeline |
+| Whether the selection holds a numbered row | The drag owner, `Table/Reordering.cs`, recomputed on read when the packet or the publish version changed | the scan of the selection in `CanStartDrag` | 1b | `Table.CanStartDrag` | Get computed by the selection commit |
+| Whether a row can start a drag | `Table.CanStartDrag`, from the two facts above | — | 1b | the press, the row element | Get decided again by a row element |
+| The `RowVisualsChanged` event | `RebuildView` raises it once per publish, because a publish can change any row's selection, drag cue, interactivity or expander. Outside a publish, a fact's owner raises it when its fact changes: a selection commit from a gesture, the drag gesture, expansion, and `Hierarchy` when a child change alters a shown row's expander | today's raise on every commit | 1b | the row element, `Body.HierarchyCell` | Get raised by one owner for another owner's fact |
+| The states a realized row shows | The one row-level element (`Body.Row`, then `CellsPanel` after stage 7): it reads the facts on each event and applies only the states that changed, so it is also the record of what the row shows | — | 1b, 7 | — | Get a second record in another owner |
+| The drag distance | One internal value read from the Windows setting, read by `Table` and `Header.Strip` | the two `DragThresholdDips` constants | defect Q10 | row and header gestures | — |
+| Drag capture and drag membership | `Table/Reordering.cs`: `Order.Capture`'s entries in an identity-part map, compared by reference, so a replaced instance cancels the drag as today; the packet in an identity-part set | — | 8 | `IsDragCurrent`, `IsDragging` | — |
+| Hierarchy membership: the node index, child collections, sibling positions | `Hierarchy`. It adopts a new capture whenever the capture is new, whatever the visible order; it computes sibling positions from the order when the order changed; from stage 6 it applies each child notification to the kept node index at every depth | `_positions`' sibling field | 1a, 6 | `HierarchyPosition`, `SortedSnapshot` | Live in the core position indexes |
+
 ## Stages
 
-Build order: stages 1a, 1b and 2 to 8 in the order listed, stage 9 and stage
-10 only if the measurements named in them require it, and the defect fixes at
-any time.
+Stages 1a, 1b and 2 to 8 are built in the order listed, stage 9 and stage 10
+only if the measurements named in them require it. "How to execute" groups
+them and says when each group is reviewed, compiled and tested.
 Ranked by return on effort. Stages 1–4 keep today's pipeline: one full pass
 per publish, but each pass costs much less. Stage 5 changes the pipeline and
 builds on stages 1–4. No stage changes what the person sees, except stage 2's
@@ -146,44 +215,79 @@ This is the path the torrent list runs on every engine update. It needs only
 the existing tests.
 
 - **Each row's key is read once per publish (R1, P3).** Read `keys[i]` once
-  at the start of `RebuildView`. The same pass does `ValidateRows`' null and
-  duplicate checks: a duplicate is a failed `Add`.
+  at the start of `RebuildView`. `ValidateRows` becomes the check per row
+  (row type, null row, null key). The duplicate check is the failed `Add`
+  into `Body.Source`'s identity map, which the same pass builds anyway, so no
+  set of n is built only to check identity. The pass validates into a
+  candidate map and accepts the snapshot, the map and the hold together
+  only when it succeeds, as the new-order index does, so a rejected source
+  is never stored, leaves the accepted map whole, and consumes no release.
 - **Validate only what entered (review).** `RefreshView()`, every settle
   tick, `Release`, a hold release and `SortInterval = 0` all rebuild from the
-  stored snapshot, which was validated when it was assigned or notified.
-  Section 5.3 makes assignment and notification the only ways rows enter, so
-  skip validation when `RebuildView` runs on the stored snapshot: about 2–4
-  ms of the floor at 100,000 rows (**estimate**).
-- **Three typed maps, kept between publishes (F2, R1, O1, P3, K2, review).**
-  One publish needs three key spaces at once, so one map cannot serve every
-  step:
-  - the view as it stands, before the change: `Hold`'s and `Release`'s
-    `shown`;
-  - the new snapshot: the duplicate check, `Hold`'s and `KeptOrder`'s `live`,
-    and `Pin`'s current instance;
-  - the new order: `Body.View.Reconcile`'s `place` and `_positions` after
-    `AcceptOrder`.
+  stored snapshot. `Body.Source` records when a stored snapshot passed
+  validation, and `RebuildView` skips validation only for a snapshot with
+  that record: about 2–4 ms of the floor at 100,000 rows (**estimate**). The
+  record, not the way `RebuildView` was called, decides, because a source
+  set before the schema is captured, the usual XAML setup, is stored without
+  validation and first validated by the rebuild at schema capture.
+- **Kept maps instead of maps built on every step (F2, R1, O1, P3, K2,
+  review).** One publish needs three key spaces at once, so one map cannot
+  serve every step:
+  - the view as it stands, before the change (`Hold`'s and `Release`'s
+    `shown`): `Body.View`'s position index;
+  - the new snapshot (the duplicate check, `Hold`'s and `KeptOrder`'s
+    `live`, and `Pin`'s current instance): `Body.Source`'s identity map,
+    membership and current instance only;
+  - the new order (`Body.View.Reconcile`'s `place` and `_positions` after
+    `AcceptOrder`): built by `RebuildView` and handed to `Reconcile`; after
+    the reconcile the view adopts it as its position index, so the next
+    publish's "view as it stands" costs nothing to build.
 
-  The new order differs from the snapshot whenever a sort, a held row or a
-  pin applies. Keep two order maps, the old view's and the new order's, and
-  swap them after the reconcile; today `AcceptOrder`'s `_positions` and
-  `Reconcile`'s `place` are the same map built twice. Skip the snapshot map
-  when the order is the snapshot. Each map is a field that is cleared, not
-  reallocated, so it keeps its capacity. If one map served every step,
-  `Hold` would see the new rows as already shown and would never hold a row.
-  `Table` stays non-generic for XAML, so `Schema<TRow>.Key<TKey>` creates the
-  typed part behind an internal interface.
-- **Check "nothing changed" first (K2).** `RebuildView` builds `_positions`
-  in `AcceptOrder` before it checks whether the order equals the view. Keep
-  `_positions` when the final instances and order are the same. Selection and
-  held-row reconciliation still run. Candidate state stays separate until
-  validation and the comparisons succeed.
-- **No boxing of value-type keys (R4, O4, K3).** The typed part hashes and
+  Today `AcceptOrder`'s `_positions` and `Reconcile`'s `place` are the same
+  map built twice. Each map is a field that is cleared, not reallocated, so
+  it keeps its capacity. If one map served every step, `Hold` would see the
+  new rows as already shown and would never hold a row. "Owners" names each
+  map's owner and the one position-index type.
+
+  `Table` stays non-generic for XAML, so the identity part sits behind an
+  internal interface. A reference-identity instance exists from `Table`'s
+  construction, because the selection, the view and the hold are built
+  with it before any schema; schema capture installs the keyed one that
+  `Schema<TRow>.Key<TKey>` creates, as `RehashIdentity` does today. It
+  replaces `ItemIdentity` and `Schema.KeyEquality`, holds no rows, and gives
+  every other row-keyed map or set, such as the drag's (stage 8) and
+  `Hierarchy.Capture`'s node index, its map and set types, so no one builds
+  one with a comparer of its own. `_positions`, `place`, `Hold`'s `shown`
+  and `live`, and `SelectionState`'s `indexOf` delegate are deleted in this
+  stage.
+
+  The new-order index holds the index only: today `_positions` also stores
+  each row's sibling position for the hierarchy, and that moves into the
+  hierarchy. `Hierarchy` keeps two jobs apart. It adopts a new capture
+  (sets `Captured`, clears its pending recaptures, subscribes to newly
+  reachable child collections) whenever the capture is new, whatever the
+  visible order, because a child change under a collapsed folder or a new
+  root array with the same visible rows still brings a new capture. It
+  computes sibling positions from the order only when the order changed.
+  `HasChildren`, which reserves the expander slot, stays computed on every
+  publish, as today, because a new capture or a `RefreshView` that reads
+  `hasUnrealizedChildren` again can change it with the order unchanged.
+  `HierarchyPosition` reads the positions, so a flat table's core state
+  holds nothing of the hierarchy.
+- **Check "nothing changed" first (K2).** Today `RebuildView` builds
+  `_positions` in `AcceptOrder` before it checks whether the order equals the
+  view. Check first, and keep the view's position index as it is when the
+  final instances and order are the same. Selection and held-row
+  reconciliation still run, and so does the hierarchy's adoption of a new
+  capture. Candidate state stays separate until validation and the
+  comparisons succeed.
+- **No boxing of value-type keys (R4, O4, K3).** The identity part hashes and
   compares `TKey` directly and does the null-key check. The Library's `long`
   key boxes on every hash and comparison today: an **estimated** 7–35 MB of
-  short-lived garbage per publish at 100,000 rows. In the host, `Peer.Key`
-  builds a new string on every call; reading the key once per publish removes
-  most of those calls. Without a key, identity stays the object reference.
+  short-lived garbage per publish at 100,000 rows. A key selector that builds
+  its key, such as a string joined from two fields, allocates on every call;
+  reading the key once per publish removes most of those calls. Without a key,
+  identity stays the object reference.
 - **Pooled working arrays (R1).** `present`, `slots` and similar per-call
   arrays come from `ArrayPool`. `Pin` builds its output once instead of a
   slots array plus a result list (K2).
@@ -192,11 +296,12 @@ the existing tests.
   `Array.GetValue`. The torrent host publishes arrays. Use a source that is
   already an `IReadOnlyList<object>` as it is (any `T[]` or `List<T>` of a
   reference type is one), and move the null-row check into `ValidateRows`'
-  pass. A hierarchical table never calls `ValidateRows`, so add the same check
-  to `Hierarchy.Capture`'s root loop; without it a null root fails first in
-  the row-type check with the wrong message, in the host's key selector, or
-  in `nodes.ContainsKey`. This corrects the no-copy change that is not
-  committed yet.
+  pass. A hierarchical table never calls `ValidateRows` today, so
+  `Hierarchy.Capture` calls the per-row check for each row it captures, and
+  its node index, which it builds anyway, is where a duplicate fails; it
+  keeps no checks of its own. Without the null check a null root fails first
+  in the row-type check with the wrong message, in the host's key selector,
+  or in `nodes.ContainsKey`.
 - **The remaining whole-view searches (R8, O5, K2)** use the index:
   `RebuildView`'s search for the focused row (`ResolveItem`), `Pin`'s search
   for the pointed and menu rows, `Release` (checks only the supplied items
@@ -211,8 +316,8 @@ the existing tests.
   view indices, in index order. The list's selection properties read only the
   first range, but its Ctrl+A handler (`ListViewBase_Partial_Interaction.cpp`)
   and `SelectedRanges` read them all, so returning one range would break them.
-  No event changes. Stage 1b supplies the selected view indices; until then,
-  build the ranges from the selected set through the new-order map.
+  No event changes. The ranges come from stage 1b's selected view indices;
+  1a and 1b are written together, so no interim builder is written.
 
 **Gain. Estimate.** From 25–100 ms and 14–25 MB per publish to a few
 milliseconds and near zero garbage at 100,000 rows. The floor is one key read
@@ -257,13 +362,24 @@ item.
   When most rows are selected, as after select all, build the packet by one
   walk of the view. The marquee's coverage step does not sort what the commit
   sorts again.
-- **Publish only what changed (R3, O2, K4, A1).** `CommitSelection` keeps the
-  published packet when its instances, order and current row are the same,
-  and raises `RowVisualsChanged` only when the selection, the view order, the
-  held rows or the drag state changed, when `RefreshView` was called, or when
-  the hierarchy changed. The last two matter because `Table.CanInteract`'s
-  remarks promise that `RefreshView` makes the rows read their interactivity
-  and cursor again, and `Body.HierarchyCell` reads expansion.
+- **Publish only what changed, and make the row event cheap (R3, O2, K4, A1,
+  K9).** `CommitSelection` keeps the published packet when its instances,
+  order and current row are the same. Today the commit raises
+  `RowVisualsChanged` on every commit, and every realized row then runs
+  `GoToState` and sets its cursor: about 120,000 `GoToState` calls for 1,000
+  notifications (C3). The cost is the state changes, not the event: a
+  publish can change any row's selection, drag cue, interactivity
+  (`Table.CanInteract`'s remarks promise that `RefreshView` makes rows read
+  it again) or expander (`Body.HierarchyCell` reads `HasChildren` and
+  `IsExpandable`, which a child change or a new root array changes). So
+  `RebuildView` raises the event once per publish, as the publish's own
+  fact, and outside a publish each fact's owner raises it for its fact: a
+  selection commit from a gesture, the drag gesture (which already does),
+  expansion, and from stage 6 `Hierarchy` when a child change alters a
+  shown row's expander. The row element applies only the states that changed: it
+  skips `GoToState` and the cursor when they are the same (K9), so a raise
+  costs a read of each realized row's facts, and it is the record of what
+  each row shows, so no other owner keeps one.
 - **One range call per commit (R3, E5, B1, S1).** `RefreshContainers` makes
   one `SelectRange` or `DeselectRange` per run of changed indices, off-screen
   rows included, and each call makes the list scan all n rows through
@@ -282,10 +398,9 @@ item.
   marquee, and a publish that prunes a selected row each leave every realized
   and pinned row with the right selection state, including a commit that
   changes rows far apart. To find whether a realized row changed,
-  `RefreshContainers` compares the realized rows before and after, instead of
-  building two sets of the whole selection. Stage 5 depends on this gate:
-  without it, applying each notification makes every realized row update its
-  states once per notification (C3).
+  `RefreshContainers` compares each realized container's `IsSelected`, which
+  the list already holds, with the selection model, instead of building two
+  sets of the whole selection or keeping a record of its own.
 - **Drag-ability is computed once (R17, K5, N1, Q2).** `Table.CanStartDrag`
   runs for every realized row on every commit, and on every container bind,
   so on every row a scroll recycles. Section 20 forbids work that scales with
@@ -293,10 +408,22 @@ item.
   list, every bound row scans the whole selection, an **estimated** 1–3.5 ms
   per row at 100,000 selected. Beside that scan, `Order.CanReorder` walks the
   host's whole order until it finds two numbered rows: O(n) when fewer than
-  two torrents are queued, which is usual for a seeding list. Compute "the order allows a
-  reorder" once per order refresh and "the selection holds a numbered row"
-  once per commit; `Row.UpdateStates` reads both. `Row.UpdateStates` also
-  skips `GoToState` and the cursor when they did not change (K9).
+  two torrents are queued, which is usual for a seeding list. `RebuildView`
+  keeps a publish version, which it increments on every run, so on every
+  publish and every `RefreshView`: the points where the table reads the host
+  again, because the table cannot see when the host's order callback would
+  answer differently. `Order` answers "the order allows a reorder" from a
+  value it recomputes when the publish version it recorded differs; no
+  pipeline step calls `Order`. The drag owner (`Table/Reordering.cs`) answers
+  "the selection holds a numbered row" the same way, recomputed on the first
+  `CanStartDrag` after the published packet or the publish version changed,
+  because "numbered" asks the host's order callback, which the selection
+  commit knows nothing of. `Table.CanStartDrag` stays the one decider and
+  reads the two facts instead of walking the order or the selection; the
+  press and the row's visuals both ask it. A publish can change a row's
+  answer without changing the selection, for example when a torrent enters
+  the queue under a name sort; the event `RebuildView` raises per publish
+  makes the row read it again.
 - **Selection gestures stop copying the whole set (R13, R14, S6).** Every
   press copies the selected set (`SelectionState.Capture`), in case the press
   becomes a marquee that Escape must undo: 800 KB per press with 100,000 rows
@@ -315,7 +442,8 @@ item.
   listens, `Body.Surface` builds two sets of the whole selection per commit
   to raise its events; compute them from the selection change instead. In a
   hierarchical table, `RefreshHierarchy` walks every live item peer on every
-  publish; walk them only when expansion changed. It removes dead weak
+  publish; walk them only when expansion or the hierarchy's capture changed,
+  because a peer's `Expansion` (leaf or collapsed) follows the children too. It removes dead weak
   references one `RemoveAt` at a time, which is quadratic when many are dead
   (S5); compact the list in one pass instead.
 
@@ -358,8 +486,11 @@ never sees the keys or the comparer.
    tie-break, so it stays stable as section 9 requires; descending reverses
    only the key comparison (F4, P1, K7). Keep the workspace for the active
    column only.
-2. **Sort only the rows whose key changed (R2).** The table keeps each row's
-   key from the last sort. On a publish where the rows and their base order
+2. **Sort only the rows whose key changed (R2).** Flat tables only: a
+   hierarchy's shown order is a tree whose sibling groups are sorted apart,
+   so it is not sorted by key and a binary search over it would separate
+   rows from their parents; a hierarchy keeps today's projection, sorted per
+   sibling group. The table keeps each row's key from the last sort. On a publish where the rows and their base order
    did not change, it reads each key and compares it with the kept one using
    `EqualityComparer<TKey>.Default`, an ordinal check much cheaper than the
    sort comparer. This check is used only when `TKey` is a value type or
@@ -372,11 +503,30 @@ never sees the keys or the comparer.
    changed. For those, check whether the kept order is still sorted, using
    the actual comparer and the base order as the tie-break (n−1 comparer
    calls), and sort everything when it is not. `SortKey`'s contract then needs
-   no new restriction. No key changed: skip the sort. k keys changed: take those k
-   rows out, sort them, find each one's place by binary search over the kept
+   no new restriction. No key changed: skip the sort. k keys changed: first
+   check whether any row must move (M2). The kept order was sorted, and the
+   rows that did not change keep their keys and base order, so a pair of
+   neighbours can be out of order only when it holds a changed row. The pass
+   that finds the changed rows reads the keys in kept order, and compares a
+   pair of neighbours, with the current keys of both and the base order as
+   the tie-break, only when one of them changed: at most min(2k, n−1)
+   comparer calls, in that same pass. When no pair is out of order, keep the
+   order and store the current keys as the kept keys, so the next publish
+   compares against the values the order was last proven sorted for;
+   otherwise a row that changed once would count as changed on every later
+   publish. This saves the steps below when values change but keep their
+   places, as progress values usually do. Microsoft's
+   `ShapedItemsSource.TryReshapeStaleSortedFlatProjection` makes the same
+   neighbour test but switches to a full scan above one changed row in eight,
+   because it learns only which rows changed, not where they are, and pays a
+   lookup for each; this pass knows each changed row's place, so it needs no
+   switch. When a row must move: take those k
+   rows out and place them with the sorted order's **placement routine**:
+   sort the k rows, find each one's place by binary search over the kept
    keys of the rows that stay (k·log n comparer calls), and build the new
    order in one pass that copies the runs between those places (n moves, no
-   comparer calls). Inserting each row into the array instead would move
+   comparer calls). This routine is written once, here, in the sorted order;
+   stages 3, 5 and 10 call it and write no placement of their own. Inserting each row into the array instead would move
    k·n/2 references: at 10,000 changed rows of 100,000, 0.25–0.5 s, slower
    than the full sort (review). A membership change keeps the kept keys:
    stage 3 drops the leaving rows' keys and places the arrivals. Only a
@@ -390,34 +540,60 @@ never sees the keys or the comparer.
    a culture-aware `StringComparer` (`StringComparer.IsWellKnownCultureAwareComparer`
    gives its `CompareInfo` and options), keep each row's
    `CompareInfo.GetSortKey` and sort by ordinal byte comparison. The order is
-   the same as the comparer's. The keys cost one `GetSortKey` per row when a
+   the same as the comparer's. A null key has no sort key
+   (`GetSortKey(null)` throws), so it sorts before every other key, where the
+   culture `StringComparer` places null, and only non-null keys get one. The keys cost one `GetSortKey` per row when a
    name first sorts or changes, and about 5–10 MB at 100,000 rows while that
    column is sorted. Opus proposed a public `SortKey` overload that takes a
    `CompareInfo` instead (N4); detecting the comparer gives the same result
    with no API change.
-4. **The header click answers first (R9, K7).** The header gesture shows the
-   new sort glyph, waits for `CompositionTarget.Rendering`, and enqueues the
-   sort from there, as `Table.OnLaidOut` does for a reveal. A sort queued
+4. **The header click answers first (R9, K7).** The header gesture stores a
+   **queued sort**, the header shows its glyph, and the sort runs after the
+   next frame, through the same `CompositionTarget.Rendering` step that
+   `Table.OnLaidOut` uses for a reveal, not a second one. A sort queued
    straight from the click can run before the next frame and block it, so the
    glyph would not paint first (the remarks on `Table._layoutPending` record
    why the wait goes through `Rendering`). The `Sort` setter itself stays
    synchronous, as section 5.3 requires; only the gesture waits for the frame.
-   If the comparisons then throw, the setter commits nothing, and the header
-   puts back the glyph of the criterion still in force.
 
-   One field owns the pending header sort. A second header click replaces
-   it. Anything else that sets the sort or the columns before it runs
-   cancels it and puts the header back: a `Sort` assignment, a layout
-   restore or `ResetLayout`, hiding the column, a new schema, and unloading.
-   When it runs, it applies only if it is still the pending request, and it
-   sorts the source as it stands then, not as it stood at the click.
+   One field in `Table/Sorting.cs` holds the queued sort, with the committed
+   sort it was made against. It is a different concept from the existing
+   `_pendingSort`, which holds a `Sort` assigned before the schema is
+   captured; the two keep separate names. A second header click replaces the
+   queued sort. No other code cancels it: when it runs, it applies only if
+   the table is loaded (`_detached` is false), the committed sort is still
+   the one it was made against, and its column is still shown. So a `Sort`
+   assignment, a layout restore or `ResetLayout` that changes the sort,
+   hiding the column, or unloading makes it drop itself. One case is
+   accepted: a host request for the sort already in force, in the frame
+   after the click, changes nothing and so loses to the click. `ActivateSort`
+   keeps the toggle rule and computes the queued criterion at the click; the
+   validity test runs before the queued sort calls the `Sort` setter, so the
+   setter, which throws for a hidden column, never sees one. It sorts the
+   source as it stands then, not as it stood at the click.
+
+   The header shows one criterion, which `Table/Sorting.cs` answers: the
+   queued sort while it is still valid by that test, otherwise the committed
+   sort. The header reads it and never computes it. If the comparisons throw,
+   the setter commits nothing, the queued sort is gone, and the header shows
+   the committed sort again.
 6. **A first sort that would block too long runs on a worker (R2, R9, N4,
    L2).** At 100,000 rows the first sort of a name column still takes an
    **estimated** 100–250 ms after the glyph shows, and the UI does not respond
    during it. The keys are read on the UI thread, as section 5.3 requires;
    sorting collation keys or numeric keys runs no host code, so that part can
-   run on a worker and the result is committed on the UI thread, superseded
-   by any later request like the pending header sort. **Decided: build it
+   run on a worker. The worker's job is held in the same queued-sort field as
+   change 4, and its result is committed on the UI thread only through that
+   field's test, so a later click or `Sort` assignment supersedes it with no
+   second mechanism. The job records the publish version it sorted at, not
+   the snapshot: `Body.Source` reads an indexable source in place, so a
+   recorded snapshot already shows the host's new contents. `RebuildView`
+   does not check that a prepared order has the snapshot's rows, so when the
+   publish version has moved, the commit compares the job's sorted rows with
+   the current snapshot through the identity part's maps, drops the rows
+   that left, and
+   places the rows that arrived with the placement routine, as stage 3 does;
+   no second reconciliation is written. **Decided: build it
    when stage 2's measurement, extended to 100,000 rows, puts one sort's
    uninterrupted UI-thread work above 100 ms.** A host comparer that is not a
    culture `StringComparer` still sorts on the UI thread, because it is a
@@ -438,12 +614,16 @@ rows follow in 5–25 ms at 10,000 rows, and 100–250 ms for the first sort at
 
 **Contract.** Section 9: the header shows the new criterion before the rows
 reorder. `O(n log n)` in section 20 stays the upper bound. `Hierarchy.Project`
-calls the sort for each group of siblings and changes with it.
+sorts each group of siblings with the sorted order's one stable sort
+routine, which replaces its call of `Column.Sort`; it gets no sort of its
+own.
 
 ### 3. A row that arrives or leaves does not re-sort the table
 
 Builds on stage 2's kept keys and collation keys: the search for each
 arrival's place reads them, so it never calls the culture comparer per row.
+Flat tables only, as stage 2's change 2: in a hierarchy an arrival or an
+expansion still sorts the projection per sibling group, as today.
 
 **Cost now.** Under a reordering sort, a publish that adds or removes even one
 row re-sorts every row at once (`KeptOrder` returns null when the row count
@@ -453,15 +633,16 @@ immediately: the reshuffle that the 3-second settle interval exists to stop.
 **Change.**
 - A row that leaves: drop it from the shown order. Removing a row cannot make
   the remaining order less sorted, so no sort is needed.
-- Rows that arrive: sort only the arrivals (k log k), find each one's place by
-  binary search over the kept keys of the last sorted order, before `Pin`
-  (k·log n comparer calls), and build the new order in one pass that copies
-  the runs between those places (n moves, no comparer calls). The other rows
-  stay where they are until the next settle. A merge that compares at every
+- Rows that arrive: place them with stage 2's placement routine over the kept
+  keys of the last sorted order, before `Pin`: k log k to sort the arrivals,
+  k·log n comparer calls to find their places, and one pass that copies the
+  runs (n moves). This stage adds no routine of its own; it calls that one
+  from `KeptOrder` when the rows changed. The other rows stay where they are
+  until the next settle. A merge that compares at every
   step would call the Name column's culture comparer about 100,000 times for
   one arriving torrent at 100,000 rows: 30–100 ms (review).
 
-**Decided: merge.** Inside the interval the shown order is the order of the
+**Decided: place the arrivals, do not re-sort.** Inside the interval the shown order is the order of the
 last settle, placed by the keys kept from that settle, and values change in
 between. So an arriving row lands where those kept keys put it. That is its
 sorted place when the values around it did not change, and it can be far from
@@ -469,20 +650,20 @@ it when they did: in an ascending order whose shown values are now
 `[100, -1, -1, …]`, a new row with value 0 lands before 100, at the top. The
 next settle, at most 3 seconds later, moves it to its place with the other
 rows. Today the arriving row is exact and every other row jumps at once,
-which is the reshuffle the settle interval exists to stop. Under the merge,
-nothing else moves, and only the new row may need to move at the next settle.
+which is the reshuffle the settle interval exists to stop. When the arrivals
+are placed, nothing else moves, and only the new row may need to move at the next settle.
 That is the better trade for a person whose pointer and eyes are on the
 rows.
 
 This changes the positions at which `Membership` raises its inserts, not
 their kind or number. By E1 and E3 the animation and the panel's work stay the
 same. The no-flash checks apply: on screen, an arrival under a live sort
-animates in at its merged place and nothing else jumps.
+animates in at its placed position and nothing else jumps.
 
 The `KeptOrder` remarks record why an earlier merge was removed: it scanned
 the shown order once per arrival, about 1.4 million comparer calls when a
-filter brought 900 rows back. The merge above compares each arrival once per
-step of one pass, so that cost does not return.
+filter brought 900 rows back. The placement routine finds each arrival by
+binary search, so that cost does not return.
 
 **Contract.** Section 9, the paragraph "The settling interval exists because…",
 which says a membership change takes the sorted order whole. The `KeptOrder`
@@ -525,8 +706,8 @@ measured** (L1). One notification per row that arrives or leaves stays,
 because `IObservableVector` has no range event and a reset flashes (E4). The
 work per event is constant (W4): an **estimated** few µs to 30 µs. At the top
 of that range, a filter change of 50,000 rows costs 1.5 s in the list alone at
-100,000 rows, and a change of 5,000 rows costs 150 ms at 10,000. Measure it
-with this stage; the result decides whether stage 9 is built.
+100,000 rows, and a change of 5,000 rows costs 150 ms at 10,000. Stage 9 owns
+the measurement and the decision.
 
 **Contract.** None.
 
@@ -537,18 +718,23 @@ F1, F6, K8, C3, C4, N8, N11. Subject to the no-flash checks.
 **Cost now.** Every notification runs the full pipeline, whatever changed.
 `Body.Source` does not read the event args.
 
-**Change.** Carry the notification's action, indices and items into the
-existing pipeline. Apply `Add`, `Remove`, `Replace` and `Move` from the args,
-and keep full validation for `Reset` and a new source. A host `Move` reaches
-the view as a removal and an insert, never as a `Move`, because the view never
-raises one. Each step then costs
-the size of the change:
-- validate only the added rows;
-- under a sort, place arrivals by stage 3's merge;
-- update stage 1a's order maps for the change, not rebuild it;
+**Change.** `RebuildView` stays the one entry into the pipeline and takes
+the change: a whole source, or one notification's action, indices and items.
+Every step reads that change; no second pipeline is written beside it. Apply
+`Add`, `Remove`, `Replace` and `Move` from the args, and keep full validation
+for `Reset` and a new source. A host `Move` reaches the view as a removal and
+an insert, never as a `Move`, because the view never raises one. Each step
+then costs the size of the change:
+- `ValidateRows` checks only the added rows, and a duplicate of a row
+  already in the source is a failed `Add` into `Body.Source`'s identity map;
+- under a sort, the sorted order places arrivals with stage 2's placement
+  routine;
+- the position indexes are updated for the change instead of rebuilt: the
+  pipeline's change step enters each arrival with its insert position and
+  removes each leaver, and the stale window below covers only the shift of
+  the other rows' stored positions;
 - carry the selection over only for rows that left or were replaced;
-- feed the same hold, selection and notification owners, with no second
-  implementation.
+- the same hold, selection and notification owners do the rest.
 
 Each notification is applied when it arrives, not collected and applied once
 per dispatcher tick, as Opus proposed (P4). Section 5.3 requires this: after
@@ -564,9 +750,10 @@ over several ticks each get their own, as a plain `ListView` over an
 `ObservableCollection` shows. By E6, each host event is applied outside
 layout and never while the list is handling another.
 
-**Depends on** stage 1b's "publish only what changed" gate (C3). Without it,
-1,000 arrivals in one tick make every realized row update its states 1,000
-times: about 120,000 `GoToState` calls.
+**Depends on** stage 1b's row element that applies only changed states (K9)
+(C3). Without it, 1,000 arrivals in one tick make every realized row run
+`GoToState` 1,000 times: about 120,000 calls. With it, each notification
+costs a read of the realized rows' facts.
 
 **What it does not fix.** Both product hosts publish a new list: the torrent
 list's `Finding.Project` and the Library's `Browser` (H1, H3). A replacement
@@ -576,33 +763,45 @@ then need its own diff of its projection, which is O(n) unless it tracks
 membership per torrent (C4). This stage is mainly for general use of the
 library.
 
-**Child collections too (N8, Q11).** In a hierarchy, every child-collection
-notification runs a full capture of the supplied tree and a full rebuild, so
-a host that fills a child `ObservableCollection` with k rows pays k full
-captures: adding 1,000 children to a 10,000-node tree visits and allocates
-over ten million nodes, even under a collapsed folder. Collecting the
-notifications per dispatcher turn is rejected for the same reason as for the
-root source. Apply child notifications the same way: insert or remove the
-child's rows under its parent when the parent is expanded, and only record
-the change when it is collapsed.
+Child-collection notifications in a hierarchy are stage 6's, because they
+need its kept node index.
 
-**The order map after a change (N11, review).** Every removal needs the row's
-view index, because `Body.View` removes by index and the view index differs
-from the source index under a sort, a held row or a hierarchy. After each
-change, a stored index is off by at most the number of changes since the
-last rebuild: a row stored at p now sits between p − removals and
-p + inserts. Find it by searching the view by reference inside that window,
-and rebuild the map once the change count reaches about √n (about 316 at
-100,000 rows). That costs about 1 µs per change at 100,000 rows and needs no
-new data structure. Rebuilding on every lookup below a stale mark instead
-would cost O(n) per removal in random order: 1.5–2.5 s for 1,000 removals at
-100,000 rows. The kept sort keys move with the view positions, in a second
-gap buffer beside stage 4's list, so an arrival under a sort can still search
-them. Stage 1b's selected view indices are not shifted on every change:
-a change marks them stale, and the next read rebuilds them from the selected
-set through the order map, once per commit, not once per notification. An
-order-statistic tree is not needed; it would make every `View[i]`
-read, the list's included, cost O(log n).
+**The position indexes after a change (N11, review).** Every removal needs
+the row's view index, because `Body.View` removes by index and the view
+index differs from the source index under a sort, a held row or a
+hierarchy. After each change, a stored index is off by at most the number of
+changes since the last rebuild: a row stored at p now sits between
+p − removals and p + inserts. The position index type in "Owners" owns this:
+it records its sequence's counts of inserts and removals when it was built,
+reads the current counts to size the window, searches the sequence by
+reference inside it, and rebuilds itself once the change count reaches about
+√n (about 316 at 100,000 rows). That costs about 1 µs per change at 100,000
+rows. Rebuilding on every lookup below a stale mark instead would cost O(n)
+per removal in random order: 1.5–2.5 s for 1,000 removals at 100,000 rows.
+The window holds only while every move of a row is a counted insert or
+removal. `Body.View.PlaceQuietly` moves rows outside the realized runs
+without an event, so a publish whose order is not the previous order plus
+this change (a settle, `SortInterval = 0`, a changed key that moves a row)
+rebuilds the indexes, as today's publish does.
+
+`Body.View` owns the view's index. The sorted order owns a second instance,
+over the kept order: a removal under a sort takes the row out of the kept
+order and its keys, which needs its place in the kept order, not its view
+index while rows are pinned or held, and the kept order leaves out held rows
+that the view still shows, so the view's counts cannot bound it. The kept
+keys stay in stage 2's arrays: an arrival or a removal shifts them once, a
+block copy within this stage's bound below, so stage 5 does not rewrite
+stage 2's storage. `Body.Source`'s identity map holds no positions, so a
+notification only adds and removes its rows there; a duplicate among the
+added rows, or a held row that returns, is decided against it, not against
+the view.
+
+Stage 1b's selected view indices are not shifted on every change: they
+record the view version they were built from, and the next read rebuilds
+them from the selected set through the view's index when the version
+differs, once per commit, not once per notification. No writer of the view
+tells the selection anything. An order-statistic tree is not needed; it
+would make every `View[i]` read, the list's included, cost O(log n).
 
 **The bound this stage gives.** One notification no longer runs the whole
 pipeline. Its cost is the change's own comparisons (log n per arrival under a
@@ -647,24 +846,42 @@ invalidation is pending. So every publish copies every child list, although
   is compared with its cached copy by an indexed loop, and the copy is reused
   only when they are equal. A plain list has to be read again, because the
   hierarchy extension makes a new root list the way a host publishes changes
-  to it, and `RefreshView()` reuses captured membership. The file browser's
-  `FileNode.Children` is a plain `List` that `FileSelection` changes in place
-  when a folder loads or closes, so keeping its cache without that comparison
-  would hide the loaded children. To remove the second rebuild per publish,
-  `FileNode.Children` becomes a notifying collection, so that stage 5's child
-  notifications carry its changes; then `FileSelection` stops assigning a new
-  root array when only values changed, and one publish runs one rebuild. The hierarchy extension's claim that "the
-  Files model already supplies" stable notifying collections is wrong today
-  and is corrected with this stage.
+  to it, and `RefreshView()` reuses captured membership. A host that changes
+  a plain child list in place, as the product's file browser does when a
+  folder loads or closes, relies on that recapture, so keeping the cache
+  without the comparison would hide the loaded children. The hierarchy
+  extension's claim that "the Files model already supplies" stable notifying
+  collections is wrong today and is corrected with this stage.
 - Project the visible tree once, with the sort, and answer membership from
   that list.
 - Compare children with an indexed loop.
 - Keep the node index and the child-source relations between captures. A
   child notification updates that collection and the descendants it adds or
-  removes, and checks their identities against the kept global index. The
-  first capture and a new root source still validate everything.
-- Let `AcceptOrder` write depth and sibling position into stage 1a's new-order map
-  instead of a second dictionary.
+  removes. `ValidateRows` checks each added row, and a duplicate anywhere in
+  the tree is a failed `Add` into the kept node index, as "Owners" says;
+  `Hierarchy` writes no check of its own. The first capture and a new root
+  source still validate everything.
+- **Apply child notifications, not a full capture (N8, Q11).** Every
+  child-collection notification runs a full capture of the supplied tree and
+  a full rebuild today, so a host that fills a child `ObservableCollection`
+  with k rows pays k full captures: adding 1,000 children to a 10,000-node
+  tree visits and allocates over ten million nodes, even under a collapsed
+  folder. Collecting the notifications per dispatcher turn is rejected for
+  the same reason as for the root source (stage 5). A child notification is
+  applied to the kept node index at once, at every depth, collapsed or
+  expanded: today's full capture reads a changed collection at once too, so
+  a collapsed folder that gains its first child shows an expander, one that
+  loses its last child loses it, and a duplicate identity added under a
+  collapsed folder is rejected before publishing, as the hierarchy
+  extension requires. Expansion decides only whether view rows change: when
+  the parent is expanded, the change enters `RebuildView` as stage 5's
+  notification change, at the positions of the rows under that parent, not
+  as a new kind of entry. When no view row changes, no publish runs, so
+  `Hierarchy` raises `RowVisualsChanged` itself when the change alters a
+  shown row's expander, and refreshes the automation peers whose
+  `Expansion` it changes; the structure is its own fact. The kept node index
+  is then the one record of child membership, and `_invalid` no longer marks
+  notified collections for a later recapture.
 
 **Contract.** None. The [hierarchy extension](../../lib/TableView/docs/hierarchy.md)
 keeps its rules: a repeated identity anywhere in the supplied tree, collapsed
@@ -687,11 +904,16 @@ a scroll builds these, and every layout pass measures them. This cost does
 not grow with n, but the person feels it on every scroll.
 
 **Change.**
-- `CellsPanel` sets its own opacity and cursor for the drag and held states
-  and listens to `RowVisualsChanged` itself, so the row template becomes
-  `CellsPanel` alone and `Body.Row` is removed. If that proves too large, at
-  least make the presenter the `Row` template's root and remove its
-  single-child `Grid` (K9).
+- `CellsPanel` takes over `Body.Row`'s whole job: it is the one row-level
+  element that listens to `RowVisualsChanged` and applies the row's states,
+  opacity and cursor, reading `Table.CanStartDrag` and `IsDragging` as
+  `Body.Row` does today. The row template becomes `CellsPanel` alone and
+  `Body.Row` is removed. It keeps stage 1b's skip of `GoToState` and the
+  cursor when they did not change (K9), moved, not rewritten. If that proves
+  too large, keep `Body.Row` as that element,
+  make the presenter its template's root and remove its single-child `Grid`.
+  `Body.HierarchyCell` keeps its own subscription and reads expansion on
+  each event, as today; the event carries no reason, and none is added.
 - `Body.HierarchyCell` creates its expander only when the row has children,
   keeps the indentation and slot geometry for leaves, and reuses the expander
   when a container changes rows.
@@ -716,10 +938,14 @@ drag check and the marquee grow with n or the selection.
   `IsDragCurrent`, which calls `Order.Capture`: it walks the host's whole
   order, builds two sets and sorts. Under a live sort that runs on every
   engine update while the button is held. **Estimate:** 30–60 ms and 5 MB per
-  update at 100,000 torrents. Keep a map from item to captured position at
-  `BeginDrag`, and check the current order against it in one pass, keeping the
-  duplicate check. `IsDragging` searches the drag packet linearly for every
-  realized row on every visuals change; give the packet an identity set.
+  update at 100,000 torrents. At `BeginDrag`, keep `Order.Capture`'s entries
+  in a map of the identity part's map type, and check the current order
+  against it in one pass, keeping the duplicate check and today's reference
+  comparison of each entry, so a row the host replaces with a new instance
+  still cancels the drag. `IsDragging` searches the drag packet linearly for
+  every realized row on every visuals change; keep the packet in the
+  identity part's set type instead, which matches as today's identity
+  search does.
 - **Marquee (R15, N3).** Every pointer move that changes coverage rebuilds the
   whole resulting selection, resolves it, sorts it and commits it. A
   Shift-marquee from a distant anchor rebuilds the range from the anchor each
@@ -741,8 +967,8 @@ drag check and the marquee grow with n or the selection.
 
 ### 9. Notify only the realized rows and the change in count
 
-P2, N10. Subject to the no-flash checks; built only if stage 4's
-measurement calls for it.
+P2, N10. Subject to the no-flash checks; built only if its measurement
+calls for it.
 
 **Cost now.** Section 5.3 requires one notification for every row that
 arrives or leaves, at its true position. A search that replaces 20,000 rows
@@ -760,9 +986,18 @@ containers for an event before them and not for one after them
 (`OnItemAdded`, `OnItemRemoved`): the realized rows then keep their
 containers and indices, and the visual test checks that side.
 
-**Decided: build it only when the measurement requires it.** Stage 4
-measures the list's cost per notification at 1,000 and 2,000 rows. Build this
-stage if that cost is above 2 µs, because 50,000 events, a filter change at
+**Decided: build it only when the measurement requires it.** Measure the
+list's cost per notification at 1,000 and 2,000 rows, on group A's build (see
+"How to execute"). The sample measures it without product code: a plain
+`ListView` over a collection of the sample's own that implements
+`IObservableVector<object>`, the native event path `Body.View` uses (an
+`ObservableCollection` would add interop work the table never pays), timed
+per insert and removal at a position outside the realized rows, less the
+collection's own cost. That is the list's work for one event, which does
+not depend on stages 1 to 4, and the internal `Body.View` stays out of the
+sample's reach. Publish time divided by the
+number of notifications is not this figure: it includes the whole
+pipeline. Build this stage if that cost is above 2 µs, because 50,000 events, a filter change at
 the product's 100,000-row target, would then exceed 100 ms in the list, the
 limit section 1.1 sets for a visible answer. Rows already on screen
 would then change through remove and insert animations inside the runs, where
@@ -788,10 +1023,12 @@ update, and the host knows which torrents changed. The table does not, so
 after stages 1 and 2 every update still reads n keys and walks n rows:
 **estimated** 1–10 ms at 100,000 rows.
 
-**Change.** Add `RefreshView(IEnumerable<object> changed)`. It reads keys
-and interactivity again only for those rows, moves each by stage 2's binary
-search, and skips validation and the index rebuild, because membership did
-not change. `RefreshView()` stays for "anything may have changed".
+**Change.** Add `RefreshView(IEnumerable<object> changed)`. It passes
+`RebuildView` a change of "these rows' values changed", through the same
+entry as stage 5's notifications, not a pipeline of its own. For that change
+the pipeline reads keys and interactivity again only for those rows, moves
+each with stage 2's placement routine, and skips validation and the index
+rebuild, because membership did not change. `RefreshView()` stays for "anything may have changed".
 
 **Gain. Estimate.** With about 100 changed torrents per update at 100,000
 rows, from 1–10 ms to 0.1–0.5 ms per update.
@@ -834,8 +1071,9 @@ frame at 60 Hz (16 ms); the estimate of 1–10 ms says it will not.
   `Header.Strip`). Windows lets the person set the drag distance
   (`SM_CXDRAG`, `SM_CYDRAG`, `SPI_SETDRAGWIDTH`), so a person who raised it
   for steadier clicks still starts a marquee or a column move with a small
-  movement. Fix: read the system drag distance once, converted to DIPs, for
-  both.
+  movement. Fix: one internal value reads the system drag distance once,
+  converted to DIPs, and replaces both constants; `Table` and `Header.Strip`
+  read it.
 
 These are not performance items, and each is independent of every stage.
 
@@ -869,8 +1107,8 @@ These are not performance items, and each is independent of every stage.
   platform's behavior. The gate counts layout ticks that carry a change, not
   events per tick, so no stage changes how often it closes.
 - **No type-ahead (W3).** Neither the table nor the list searches by typed
-  characters, so there is no cost today. A type-ahead added later searches
-  the kept sort keys or the identity index, not the rows.
+  characters, so there is no cost today. A type-ahead added later follows
+  the owner's word-start search ruling in the root instructions.
 
 ## Not planned
 
@@ -919,6 +1157,225 @@ it saves at 10,000–100,000 rows:
 - **Stopping marquee auto-scroll at the end of the list (S7).** Under 1 ms
   per 50 ms tick, only while the pointer rests in the edge band.
 
+## How to execute
+
+The aim is code that needs no refactoring later: every concept in the owner
+"Owners" names, implemented once, with state flowing one way. The protocol
+checks owners where a wrong one is cheapest to fix: in the coder's list
+before the code exists, then in a review before the next group builds on it.
+A build is a small cost beside that, so each group builds once.
+
+**Owner ruling: no build or test run during coding or between fixes.** While
+an agent writes code or fixes review findings, it does not compile or run
+tests to check an edit, a fix or a compiler error it suspects; it reads the
+code. Each group's one build, after its review, checks all of it.
+
+### Staffing
+
+One coder writes every group, in order, as one continued agent, because the
+groups extend the same owners and their design must stay in one head. The
+coder runs on Opus or Fable, named at launch, because it decides owners and
+the root instructions let only those models judge a design, with effort set
+to `high`: the plan already decides the owners, so the coder applies a
+settled design and needs care rather than the deliberation of `xhigh` or
+`max`, whose cost repeats on every group. The coder runs
+the review commands on its own code, so the review skill launches the
+reviewer as the coder's subagent; the coder continues that reviewer from
+group to group, so it keeps what it learned about each owner. The lead
+checks the coder's owner list before each group is written and the coder's
+report after it, and releases the next group.
+
+**Owner ruling: the work never stops to ask the owner.** The plan holds
+clear rules, so a question to the owner would only keep the owner busy. The
+lead and the coder decide every design, ownership, technical and UX
+question themselves, from this plan, the repository's `AGENTS.md` files and
+contracts, and Fluent 2 and Windows conventions. Where a judgment needs a
+point of view those do not give, the lead roleplays the expert or the user
+it needs (a WinUI and Fluent reviewer, a busy person with 10,000 torrents),
+decides, and writes the decision and its reason into the plan. Starting this plan authorizes
+everything "Before group A" lists. The only stop is one the rules already
+name: the same build error or test failure after a fix, which the lead
+reports in its final report and works around where it can.
+
+### Skills
+
+- `/codebase-design`: in step 1 of every group, for each type, enum,
+  interface or seam the group adds (the identity part, the position index,
+  `Body.Source`'s identity map, the sorted order, the queued sort, the gap
+  buffer), as the root instructions require.
+- `/domain-modeling`: when a group's code names a concept the
+  [table vocabulary](../../lib/TableView/CONTEXT.md) lacks, such as the
+  identity part, the position index or the queued sort, so the term enters
+  the vocabulary once, before the code uses it.
+- `/winui:winui-code-review`: added to the reviews of groups A and E, the
+  groups that change WinUI surfaces: automation peers in 1b, and the row
+  template, `Generic.xaml`, `CellsPanel` and `Body.HierarchyCell` in stage 7.
+- `/winui:winui-design`: the lens for stage 7 and 8's visual checks, in
+  place of a roleplayed WinUI and Fluent reviewer, because those stages must
+  leave the rows looking exactly as they do.
+- `/ui-ux-pro-max` is not used: the plan designs no new UI, and Fluent 2
+  and Windows conventions decide this product's look.
+
+### Groups
+
+| Group | Stages, and the harness code their measurements need | Review | Build | Test classes | Measurements | Decides |
+|---|---|---|---|---|---|---|
+| A | 1a, 1b; allocations per publish, the selection model's time, the plain-`ListView` measurement of one event over the sample's own `IObservableVector<object>`, and a notification counter that subscribes to the view's `VectorChanged` (today's attaches only to `INotifyCollectionChanged` and always reads 0) | deep | yes | `SchemaValidationTests`, `ReconcileTests`, `SelectionTests`, `HierarchyTests`, `KeyboardAndGestureTests`, `SortingTests`, `FeatureProofTests`, `AutomationTests` | stages 1a and 1b; the list's cost per notification | stage 9 |
+| B | 2, 3; comparer calls per settle and per arrival, the first sort's block, one `RefreshView()`'s block | plain | yes | `SortingTests`, `HierarchyTests`, `FeatureProofTests`, `LayoutStateTests` | stages 2 and 3 | change 6 of stage 2, and stage 10 |
+| C | 4, 5, and change 6, stage 9 and stage 10 when decided; the time to remove half the rows, the time per `Add` | deep | yes | `ReconcileTests`, `SortingTests`, `SelectionTests` | stages 4 and 5 | — |
+| D | 6 | plain | no: group E's build checks it | — | — | — |
+| E | 7, 8, and the defect fixes | plain | yes, for D and E | `HierarchyTests`, `SortingTests`, `SelectionTests`, `KeyboardAndGestureTests`, `ColumnMoveTests`, `ColumnFitTests`, `FeatureProofTests` | — | — |
+
+Why this shape:
+- Group A creates most of "Owners" (identity, the position indexes, validation, the
+  pipeline entry, the selection model, the publish version, the row event), so
+  it gets a deep review before anything is built on it. Group C finishes the
+  view and the pipeline, and gets the second deep review, of its own code
+  only. Groups B, D and E extend owners that a deep review has settled, so a
+  plain review is enough.
+- The list's cost per notification does not depend on stages 1 to 4, so
+  group A measures it, and stage 9, when needed, joins stages 4 and 5 under
+  one review of the WinUI list source and one visual test.
+- Stage 10, when decided, joins group C because it adds an entry to
+  `RebuildView`, a core owner.
+- Group D has no measurement or visual check, so its code waits for group
+  E's build; a `HierarchyTests` failure there points to stage 6. A plain
+  review is enough for it because stage 6 enters `RebuildView` through stage
+  5's notification change, which group C's deep review settled, and adds no
+  entry of its own; stage 10, which does add one, joins group C.
+- No group runs the whole test project: [testing](../agents/testing.md)
+  keeps a full suite for release work or an owner request, and group E's
+  classes cover every area the plan changes.
+
+**Estimate.** Five groups: five group reviews (two of them deep), about two
+fix rounds each, four builds of about 5 minutes, and perhaps two rebuilds
+after a failure. About 10–15 hours of agent time in all (**estimate**), and
+none of the owner's. Stages 9 and 10 and change 6, when their measurements
+call for them, add about 2–4 hours each to group C.
+
+The lead runs the interactive and visual checks itself, at three points:
+- **After group A:** `RealPointerTests`, for 1b's press checkpoint.
+- **After group C:** the no-flash visual test for stages 3, 4, 5 and 9 (one
+  test, as "Proving each stage" describes), and `RealSortTests` for stage
+  2's header click; group C does not build on the header input path.
+- **After group E:** `RealPointerTests`, `RealColumnDragTests`, and the
+  visual checks of stages 7 and 8.
+
+How:
+- The `Real…Tests` classes inject real input, so `.runsettings` excludes
+  them; they run with `TestCategory=Interactive` in the filter. They take
+  the pointer and keyboard for the minutes they run, so each point runs its
+  classes in one batch. A run that reports inconclusive because the session
+  is locked is repeated at the next point, and the last point's result is
+  reported, not waited for.
+- The no-flash visual test records rendering-frame samples in the sample's
+  harness, as the Settings capture review does for its motion, because
+  settled screenshots alone do not show animation
+  ([testing](../agents/testing.md)). Each frame records the realized
+  containers and the offset and opacity of the rows that move, arrive or
+  leave. It passes when no frame replaces every realized container or shows
+  the panel empty (the flash, E4), and the moving rows take intermediate
+  offsets or opacity across frames (the animation). Changes come at least 1
+  second apart, or the list does not animate them (W5).
+- The visual checks of stages 7 and 8 compare screenshots before and after
+  the change, judged with `/winui:winui-design`.
+
+### Before group A
+
+1. One local commit per group, authorized by starting this plan, made by
+   the coder when the group's checks pass (group D: after its review, because its checks come with group E's build), holding only `lib/TableView` and
+   this plan, never pushed. Each group's review then reads exactly that
+   group's code: the uncommitted changes under `lib/TableView`. Without the
+   commits, every review would read every earlier group again, and the
+   review skill cannot narrow an uncommitted change by lines.
+2. `Build.ps1` gains a switch that builds only the `-Project` list, keeping
+   its lock, output reuse, folder choice, priority and record. Today `-App`
+   always compiles the product app first, and a Release engine when none is
+   current: minutes per build for products no check here uses, and a broken
+   app change in another session stops every TableView build. The lead
+   writes it, reviews it with the group A review, and it ships in group A's
+   commit.
+3. One `/my-code-review plan docs/plans/tableview-performance-plan.md`,
+   unless the plan has not changed since its last plan review, so "Owners"
+   is checked against the code before anyone writes against it.
+
+### Each group
+
+1. **Name the owners.** Before writing, the coder lists, for each concept,
+   decision and visual the group touches, the owner from "Owners" it
+   changes, and for each type, field, map or helper it means to add, the
+   owner that will hold it. The lead checks the list against "Owners" before
+   any code is written: a concept mapped to the wrong owner costs minutes
+   here and a refactoring later. A concept "Owners" lacks is a plan change:
+   the lead adds the row before the code is written. Each type, enum,
+   interface or seam the group adds goes through `/codebase-design`, as the
+   root instructions require.
+2. **Write the group's stages and the harness code** its measurements need,
+   so the review covers the harness too and no second build follows. No
+   build, no test.
+3. **Review.** `/my-code-review fix`, with `deep` where the table says, on
+   the uncommitted changes under `lib/TableView`. The brief carries this
+   plan, not the coder's list, because the coder's view of where things
+   belong would anchor the reviewer. It states these rules for this plan:
+   - "Owners" already decides the design. A responsibility outside its
+     owner, a new owner for a concept "Owners" lists, a second
+     implementation of one, an owner that calls into code that depends on it
+     outside `RebuildView`'s sequence, a condition that stands for another
+     owner's decision, and a core owner that holds an extension's state are
+     each a **medium** finding, fixed in the round by moving the code to the
+     named owner, whether or not a defect is reachable yet. Such a finding
+     does not start the skill's escalation to an audit; escalation applies
+     only when "Owners" itself is wrong or has no row, and then the lead
+     changes the plan.
+   - A row of "Owners" or a requirement of the group's stages that the code
+     leaves unmet is in scope, whatever its origin, so an old map or check
+     the stage was to delete is not left as "already there".
+   - A convention finding in code a later group rewrites is reported, not
+     fixed.
+   - Check reflection-based test calls against the changed members, as
+     [testing](../agents/testing.md) asks: `ReconcileTests` builds
+     `ItemIdentity` and `Body.View` by reflection, and `SelectionHarness`
+     calls private `Table` methods by name.
+   - Each group whose stages change the reconciliation or the notifications
+     (B for stage 3, C) checks the WinUI list source for them, as "The table
+     never flashes" requires.
+   - The fix rounds only read. The skill's build and focused tests after its
+     last round are steps 4 and 5 below, done once.
+4. **Build once**, from the repository root, with `-Release`, because the
+   measurements decide stages and a Debug build overstates them, and every
+   group uses it so one output serves all of them: `pwsh -File Build.ps1
+   -Release` with the switch from "Before group A" and
+   `-Project lib\TableView\tests\TableViewTests.csproj -Project
+   lib\TableView\sample\TableViewSample.csproj`. On a failure, fix every
+   error by reading and build again; the same error after a fix stops the
+   group and is reported, as [compilation](../agents/compilation.md) says.
+5. **Test and measure from that build.** Run the group's test classes once:
+   `dotnet test lib\TableView\tests\TableViewTests.csproj -c Release
+   -p:Platform=x64 --no-build --filter <the classes>`, adding
+   `-p:ArtifactsPath=<the path the build printed>` when that is not the
+   repository's `artifacts\`, so the tests run this build and not an older
+   one. Check that the run reports tests from every named class: a filter
+   that matches nothing still passes. The test process must exit when its
+   tests end. Take the measurements "Proving each stage" lists from the same
+   output.
+   - **A failing test:** classify it as [testing](../agents/testing.md) says,
+     fix it by reading, have the continued reviewer review the fix, build
+     once, and run again the group's classes whose subject the fix touched.
+     The same failure again stops the group and is reported.
+   - **A measurement that misses its target:** the stage is not accepted.
+     The coder reports the figures to the lead, who decides the fix by
+     reading; it is reviewed as one more round and gets one build.
+   - **A visual test that shows a flash or a stopped animation:** the stage
+     is not accepted. The fix is designed by reading the table and the list
+     source, reviewed as one more round, and gets one build and one visual
+     test.
+6. **Report and commit.** The coder reports to the lead the review record's
+   path, the findings it did not fix or objected to, the test results and
+   the measurements. The lead reads the diff where it touches "Owners" and
+   checks the material claims, then the coder makes the group's commit and
+   the lead releases the next group. Group D commits after its review; group
+   E's build checks it, and a fix it needs joins group E's commit.
+
 ## Proving each stage
 
 Profile each stage at 1,000 and 2,000 rows, against the built
@@ -936,18 +1393,23 @@ block, the allocations, and the memory kept afterwards. The sample's
 - Stage 2: per settle under a name sort with one changed row, the comparer
   calls stay about the same from 1,000 to 2,000 rows; the glyph shows in the
   frame of the click. The first sort's UI-thread block, extended to 100,000
-  rows, decides whether change 6 is built.
+  rows, decides whether change 6 is built. The UI-thread block of one
+  `RefreshView()` under a name sort where no key changed, extended to 100,000
+  rows, decides whether stage 10 is built.
+- Stage 9's gate: the time inside one `VectorChanged` raise, on group A's
+  build, measured on a plain `ListView` as stage 9 describes.
 - Stage 3: per publish that adds one row under a sort, the comparer calls grow
   with log n and the time grows no faster than the rows (one copy of the
   order).
 - Stage 4: the time to remove half the rows doubles, not quadruples, from
-  1,000 to 2,000 rows. The time per notification, extended to 50,000
-  notifications, decides whether stage 9 is built.
+  1,000 to 2,000 rows.
 - Stage 5: per `Add` notification, the time grows no faster than the rows
   (at most one block copy), and no notification runs the whole pipeline.
-- Stages 3, 4, 5 and 9: a visual test of arrivals, removals and a sort under
-  a live source, showing the rows animate and nothing flashes, after the code
-  review of the table and the WinUI 3 list source.
+- Stages 3, 4, 5 and 9: one visual test of arrivals, removals and a sort
+  under a live source, showing the rows animate and nothing flashes, after
+  the code review of the table and the WinUI 3 list source. The lead runs
+  it after group C from rendering-frame samples, as "How to execute"
+  describes.
 - Stage 1b: the selection check listed with its range call. With all rows
   selected, the model update for a Shift+arrow or Ctrl+click stays about the
   same from 1,000 to 2,000 rows; publishing the new packet still grows with
@@ -955,16 +1417,13 @@ block, the allocations, and the memory kept afterwards. The sample's
 - Stage 7: a visual check of rows, cells, drag and held states, and a
   hierarchy row.
 - Stage 8: a visual check of the column-move slide.
-- Each stage runs the existing tests that cover what it touches, not all
-  four suites: `SortingTests` for stages 2 and 3, `SelectionTests` for 1b,
-  `ReconcileTests` for 4 and 5, `HierarchyTests` for 6, and the test process
-  exits when the tests end. Each stage adds a test only for the specific
-  failure the reviews found in it:
+- Each group runs the test classes "How to execute" lists for it. Each stage
+  adds a test only for the specific failure the reviews found in it:
   - stage 2: a key selector that returns the row itself, with a comparer by a
     property that changes, re-sorts after `RefreshView`;
-  - stage 2: a header sort that is still pending is dropped by a `Sort`
-    assignment, a hidden column or an unload, and a failing comparer puts the
-    glyph back;
+  - stage 2: a queued header sort drops itself after a `Sort` assignment, a
+    hidden column or an unload, and after a failing comparer the header shows
+    the committed sort;
   - stage 1b: "select A, Ctrl+click D, Shift+click C" selects C–D only, and a
     Ctrl+Shift range moved inward keeps rows earlier gestures selected;
   - stage 6: a plain child list changed in place and published with a new
