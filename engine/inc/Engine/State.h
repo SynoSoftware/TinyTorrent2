@@ -805,10 +805,13 @@ public:
         // members share files. On one volume, a member that shares one no
         // longer has it in its old folder.
         std::vector<std::filesystem::path> placed;
-        // Bytes per second copied between the last two status samples, and
-        // the current member's copied bytes at the last one.
+        // Bytes per second copied and checked between the last two status
+        // samples, and the current member's copied and compared bytes at the
+        // last one.
         double rate = 0;
+        double checkRate = 0;
         std::uint64_t sampled = 0;
+        std::uint64_t checkSampled = 0;
         // The current member's old files, from just before its new folder is
         // saved until a deletion takes them.
         std::optional<Task::Deletion> cleaning;

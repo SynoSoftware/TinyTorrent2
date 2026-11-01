@@ -79,11 +79,11 @@ are stale; inspect the current transitions before proposing a fix. Deferred clic
 decisions preserve the press/release contract, not an accidental processing delay.
 
 Keep reconciliation bounded by the containers the list actually holds. The
-implementation uses remove/insert notifications rather than `Move`, and avoids
-clearing the displayed collection. Earlier work observed whole-list flashing on
-`ObservableCollection.Move`; preserve this constraint. If new evidence differs,
-report it before changing the mechanism. Collection count and container identity
-must remain coherent through intermediate updates.
+implementation uses remove/insert notifications rather than `Move`, and never
+clears the displayed collection, because both make the whole list flash; the
+contract's owner ruling in section 5.3 says what a change to this mechanism
+must prove. Collection count and container identity must remain coherent
+through intermediate updates.
 
 ## Defaults and platform behavior
 
@@ -143,8 +143,10 @@ subscribe while open. The standalone default remains English. The product's
 captures switch language live with the table present, but they check retained
 input and focus, not that headers and menus show the new text.
 
-`Body.Source` suspends collection subscriptions on unload, recaptures notifying
-sources on reload and retains plain snapshots. Explicit detached setters reconcile
+`Body.Source` suspends collection subscriptions on unload, reads notifying
+sources again on reload, and reads an indexable source in place instead of
+copying it. A hierarchy keeps its own copy of the roots, because each capture
+compares its structure with the previous one. Explicit detached setters reconcile
 logical selection and ordering without touching containers. A snapshot is
 validated before it is accepted; the table does not undo an assignment when
 validation or a host handler throws. Source lifetime still needs a focused runtime check.

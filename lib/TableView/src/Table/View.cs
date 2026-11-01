@@ -183,9 +183,9 @@ public sealed partial class Table
     }
 
     /// <summary>
-    /// Re-evaluate the current source snapshot after a batch changed values the active sort or
-    /// <see cref="CanInteract"/> depends on. It re-sorts and reconciles, and does not
-    /// re-enumerate the source.
+    /// Re-evaluate the source as last assigned or notified after a batch changed values the active
+    /// sort or <see cref="CanInteract"/> depends on. It re-sorts and reconciles, and does not
+    /// enumerate a non-indexable source again.
     /// </summary>
     public void RefreshView() => RebuildView();
 

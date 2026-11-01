@@ -6,8 +6,8 @@ namespace Syno.TableView.Body;
 
 /// <summary>
 /// The source pipeline of specification section 5.3. It subscribes to
-/// <see cref="INotifyCollectionChanged"/>, captures one ordered snapshot per notification, and
-/// enforces UI-thread affinity. It never filters, dispatches, or reorders.
+/// <see cref="INotifyCollectionChanged"/>, presents the source as one ordered list per
+/// notification, and enforces UI-thread affinity. It never filters, dispatches, or reorders.
 /// </summary>
 internal sealed class Source
 {
@@ -83,23 +83,44 @@ internal sealed class Source
     }
 
     /// <summary>
-    /// One ordered enumeration. A one-shot iterator is consumed here and is therefore treated as a
-    /// snapshot; the host supplies a new iterator for a later source update.
+    /// The source as an ordered list. An indexable source is read in place, so a large source costs
+    /// no second list: section 5.3 has the host notify or assign again after every change, so a
+    /// later read gives the rows a copy taken now would hold. Any other enumerable is read once,
+    /// so a one-shot iterator is treated as a snapshot; the host supplies a new iterator for a
+    /// later source update.
     /// </summary>
     private static IReadOnlyList<object> Capture(IEnumerable? source)
     {
+        if (source is IList list)
+            return new Rows(list);
+
         List<object> next = new();
         if (source is not null)
         {
             foreach (object? item in source)
-            {
-                if (item is null)
-                    throw new InvalidOperationException("ItemsSource contains a null row.");
-                next.Add(item);
-            }
+                next.Add(item ?? throw NullRow());
         }
 
         return next;
+    }
+
+    private static InvalidOperationException NullRow() =>
+        new("ItemsSource contains a null row.");
+
+    /// <summary>An indexable source read in place.</summary>
+    private sealed class Rows(IList list) : IReadOnlyList<object>
+    {
+        public int Count => list.Count;
+
+        public object this[int index] => list[index] ?? throw NullRow();
+
+        public IEnumerator<object> GetEnumerator()
+        {
+            for (int index = 0; index < list.Count; index++)
+                yield return this[index];
+        }
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 
     private void RequireUiThread()

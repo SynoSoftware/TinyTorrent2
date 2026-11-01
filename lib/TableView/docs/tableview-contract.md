@@ -499,7 +499,10 @@ source. The table does not dispatch, serialize, cancel, or order external
 updates.
 
 On `ItemsSource` assignment, and after every observed collection notification,
-the table captures one ordered source snapshot. `Add`, `Remove`, `Move`,
+the table takes the source's current order as its base sequence. It reads an
+indexable source (`IList`) in place and keeps no copy of it, so a large source
+costs the table no second list of its rows; any other enumerable it reads into
+a list once. `Add`, `Remove`, `Move`,
 `Replace`, and `Reset` are all visible as a new snapshot; `Reset` is equivalent
 to replacement of the complete source input. The implementation may update a
 private view incrementally or rebuild it, but the observable result MUST be the
@@ -522,6 +525,20 @@ raises exactly the notifications it raised before this rule and no others.
 What falsifies the rule is a container whose content differs from the view's
 row at its index after a sort, a scroll, or `ScrollIntoView`; the reference
 host's diagnostics section R checks exactly that.
+
+**Owner ruling: the table never flashes and never breaks the list's
+animation.** A row that
+arrives, leaves or changes place on screen animates with the list's own
+transitions, wherever the list animates it. The private view never raises
+`Move` and never resets the list (`Clear` or `Reset`), because the list
+answers both by dropping and rebuilding its containers, and the whole table
+flashes. This is why the table reconciles the private view in place instead
+of replacing it. A change to the
+reconciliation, or to the notifications the view raises (their kind, order,
+number or positions), is accepted only after two checks: a code review of the
+table and of the WinUI 3 list source in `3rdParty/microsoft-ui-xaml/dxaml`,
+and a visual test on screen that shows the rows still animate and nothing
+flashes. A faster mechanism that flashes is a regression, whatever it saves.
 
 A source that implements `INotifyCollectionChanged` is live for membership and
 source-order changes. A plain `IEnumerable` is immutable from the table's
@@ -569,8 +586,8 @@ moving while they work.
 It does not automatically re-sort or re-evaluate interactivity.
 After a batch changes any value used by the active sort or the schema's
 interaction predicate, the host calls `RefreshView()` once.
-`RefreshView()` re-evaluates the current source snapshot, applies the current
-sort, and does not re-enumerate or fetch a non-notifying source. When rows are
+`RefreshView()` re-evaluates the source as last assigned or notified, applies
+the current sort, and does not enumerate a non-indexable source again. When rows are
 then allowed to trade places is section 9's settling question, not this one.
 Display-only updates need no call.
 
@@ -1869,7 +1886,7 @@ host integration, with validation scope set by [testing](../../../docs/agents/te
    aligns headers and rows, and does not traverse the full source during normal
    scrolling or direct column-layout gestures.
 3. A view-affecting batch followed by one `RefreshView()` applies interactivity
-   and sort without re-enumerating a plain source.
+   and sort without enumerating a non-indexable source again.
 4. Header mouse/pen click, touch tap, and keyboard activation cycle ascending,
    descending, and natural stable order without interfering with embedded
    controls. Equal values use current source order, and clearing or resetting

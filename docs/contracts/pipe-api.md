@@ -346,11 +346,14 @@ detects files already at the destination. It replies after the recovery marker
 commits, without occupying the pipe while files move. Rows carry `moving` and
 `move_destination`. While a row is `moving`, its `progress` is the share of its
 bytes that the move has placed, and 0 while it waits for its turn. The
-snapshot's `move_rate` is the bytes per second all running moves copied over
-the last second, which leaves out renames and the holes of a sparse file, and
-null while no move runs. Its `check_rate` is the bytes per second libtorrent checked over
-the last second across the torrents whose files it checks, and null while it
-checks none. Each torrent
+snapshot's `move_rate` is the bytes per second all running moves wrote to
+their destinations over the last second, which leaves out renames and the
+holes of a sparse file, and null while no move runs. Its `move_check_rate` is
+the bytes per second running moves read over the last second only to check
+them, from files already at the destination or an unfinished copy, and null
+while no move runs. Its `check_rate` is the bytes per second libtorrent checked
+over the last second across the torrents whose files it checks, and null while
+it checks none. Each torrent
 leaves `moving` and clears its marker when its own move ends, and failures
 remain visible on the torrents. Source sharing and destination use by an outside
 torrent have distinct refusals, so each offers an action that can resolve it.
@@ -594,7 +597,7 @@ metadata without creating a payload handle; destination is applied at Add.
 Another instance of the storage worker reads and parses preview sources, so a
 slow share cannot hold up metadata commits; destruction cancels its blocked read.
 Snapshot contains session_id, torrents, settings, language_saved, download_rate,
-upload_rate, move_rate, check_rate, paused, limits, has_incoming, proxy, proxy_check, stopping, loading, storage_failed, startup_error, and unfinished_tasks.
+upload_rate, move_rate, move_check_rate, check_rate, paused, limits, has_incoming, proxy, proxy_check, stopping, loading, storage_failed, startup_error, and unfinished_tasks.
 Protocol version 7 adds `proxy` and `proxy_check`. A proxy check's outcome is
 `connected`, `sign_in_failed`, `unreachable`, `not_found`, `wrong_type` or
 `timed_out`. `proxy` is the outcome of the engine's check of the proxy in use,

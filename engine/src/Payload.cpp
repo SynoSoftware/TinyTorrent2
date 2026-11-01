@@ -1021,16 +1021,13 @@ std::expected<Reconciled, Failure> Reconcile(Pieces const& pieces, std::vector<F
             }
             if (progress.cancel != MoveCancel::None)
                 return std::unexpected(Failure{MoveFailure::Split, "Move cancelled"});
+            // The placement copies these pieces' files after this pass, and
+            // they keep the pieces libtorrent verified, as in any move.
+            // Reading them here as well would read them twice.
             if (!affected)
             {
-                auto original = pieces.read(piece);
-                if (original)
-                {
-                    buffer = std::move(*original);
-                    progress.compared += buffer.size();
-                    if (valid(piece, slices))
-                        outcome.pieces->set_bit(piece);
-                }
+                if (pieces.have.get_bit(piece))
+                    outcome.pieces->set_bit(piece);
                 continue;
             }
             if (!merging && read(piece, slices) && valid(piece, slices))
@@ -1042,12 +1039,12 @@ std::expected<Reconciled, Failure> Reconcile(Pieces const& pieces, std::vector<F
             merging = true;
             auto original = pieces.read(piece);
             if (original)
-            {
                 buffer = std::move(*original);
-                progress.compared += buffer.size();
-            }
             if (!original || !valid(piece, slices))
             {
+                // A valid piece was read to copy it, and its write counts.
+                if (original)
+                    progress.compared += buffer.size();
                 unknown.push_back(piece);
                 progress.done += affected;
                 continue;

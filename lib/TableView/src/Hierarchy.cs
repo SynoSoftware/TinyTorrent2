@@ -125,7 +125,9 @@ internal sealed class Hierarchy(
             for (int i = items.Count - 1; i >= 0; i--)
                 pending.Push((items[i], next.Item, next.Depth + 1));
         }
-        return new(roots, nodes, sources);
+        // A copy, because the next capture compares its roots with these, and the source list
+        // they come from is read in place.
+        return new(roots.ToArray(), nodes, sources);
     }
 
     internal void Accept(Snapshot snapshot)

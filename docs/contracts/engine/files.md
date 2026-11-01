@@ -256,8 +256,10 @@ A moved torrent is verified at its new folder before transfer resumes only
 when the move found files of it there without a source containing data, or when
 the move recovers an interrupted move, whose files can be in two folders,
 unless reconciliation has established the full piece map. Reconciliation hashes
-the untouched destination pieces last and hashes the source pieces of files
-that the ordinary mover will place. It reloads the paused libtorrent handle
+the untouched destination pieces last. For pieces that lie only in files the
+ordinary mover will place, it takes libtorrent's piece map, as every move
+does for the files it places, so it does not read those files before they are
+copied. It reloads the paused libtorrent handle
 with that map, retaining the product torrent's identity, settings and history.
 The new resume checkpoint is saved after older checkpoints and before the new
 folder, so an old source map cannot survive deletion of its files. The reload

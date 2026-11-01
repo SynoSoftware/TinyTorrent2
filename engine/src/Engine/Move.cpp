@@ -597,6 +597,7 @@ void Engine::State::ContinueMove(Move& moving)
         [&current](FileWork::Use const& use) { return use.torrentId == current.torrentId; });
     job.progress = std::make_shared<Payload::Progress>();
     moving.sampled = 0;
+    moving.checkSampled = 0;
     moving.phase = MovePhase::Copying;
     job.worker->Run([this, handles, files = std::move(files), contents = std::move(contents), logical,
         origin = current.facts.savePath, destination = moving.destination, progress = job.progress]
@@ -621,7 +622,8 @@ void Engine::State::ContinueMove(Move& moving)
             auto metadata = handle.torrent_file();
             Payload::Pieces pieces{metadata, metadata->v2() ? handle.piece_layers() :
                 std::vector<std::vector<lt::sha256_hash>>{},
-                [this, handle](lt::piece_index_t piece) { return ReadPiece(handle, piece); }};
+                [this, handle](lt::piece_index_t piece) { return ReadPiece(handle, piece); },
+                handle.status(lt::torrent_handle::query_pieces).pieces};
             auto merged = Payload::Reconcile(pieces, contents, *progress);
             if (!merged)
                 return std::unexpected(merged.error());
@@ -1080,8 +1082,12 @@ void Engine::State::SampleMoves(std::chrono::steady_clock::duration elapsed)
     {
         auto const& progress = moving.job->progress;
         auto copied = progress ? progress->copied.load() : 0;
-        moving.rate = double(copied - moving.sampled) / std::chrono::duration<double>(elapsed).count();
+        auto compared = progress ? progress->compared.load() : 0;
+        auto seconds = std::chrono::duration<double>(elapsed).count();
+        moving.rate = double(copied - moving.sampled) / seconds;
+        moving.checkRate = double(compared - moving.checkSampled) / seconds;
         moving.sampled = copied;
+        moving.checkSampled = compared;
     }
 }
 

@@ -88,10 +88,13 @@ While torrents move, the move's copy rate follows the upload rate with the
 rows' Moving folder icon, such as `1,233.4 MiB/s`. It belongs with the rates,
 not with background work, because a move happens to torrents and its progress
 stays in their rows. It reads in KiB/s, or MiB/s from 1 MiB/s, never GiB/s,
-counts copied bytes only, because a rename moves none and a sparse file's holes
-copy at once, and yields with the rates. While torrents are verified, the rate
-libtorrent checks their files follows in the same way, with the rows'
-Checking icon.
+counts the bytes written to the destination only, because a rename moves none
+and a sparse file's holes copy at once, and yields with the rates. While
+libtorrent verifies torrents, the check rate follows in the same way, with the
+rows' Checking icon. A move that checks files already at its destination adds
+to that rate. Its check shows from its first checked bytes until it has stayed
+at 0 for 3 seconds, because a move checks only some of its files and a 0 for
+the rest of the move says nothing.
 
 Each rate keeps aligned digits and a compact width measured for the active
 format, units and cap, recomputed when language, scale, unit range or cap

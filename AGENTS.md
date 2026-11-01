@@ -149,6 +149,12 @@ do not define this product.
   unchanged behavior cannot change the outcome.
   [Testing](docs/agents/testing.md#verification-must-answer-a-question) owns
   the details.
+- **Owner ruling: a test run ends when its tests end.** A test suite whose
+  process stays after its tests pass or fail, until a timeout ends it, has
+  failed, whatever its tests reported. Fix the cause immediately, before other
+  work. A lingering process holds the owner's shared laptop for the whole
+  timeout, can lock files that the next build or run needs, and makes every
+  later run of the suite wait the same way.
 - **Owner ruling: end a TinyTorrent that blocks you, unless it is capturing.**
   A capture run belongs to another session taking screenshots, and ending it
   breaks that run, so leave it and wait for it. A capture run starts from a

@@ -661,13 +661,18 @@ Json Engine::State::Snapshot()
     // instead.
     auto pause = paused ? Word(pauseReasons, *paused) : std::string_view();
     std::optional<double> moveRate;
+    std::optional<double> moveCheckRate;
     for (auto const& moving : moves)
+    {
         moveRate = moveRate.value_or(0) + moving.rate;
+        moveCheckRate = moveCheckRate.value_or(0) + moving.checkRate;
+    }
     return {{"session_id", sessionId}, {"sequence", ++snapshotSequence},
         {"torrents", std::move(rows)}, {"settings", std::move(current)},
         {"language_saved", language == settings.language},
         {"download_rate", activity.downloadRate}, {"upload_rate", activity.uploadRate},
         {"move_rate", moveRate ? Json(*moveRate) : Json()},
+        {"move_check_rate", moveCheckRate ? Json(*moveCheckRate) : Json()},
         {"check_rate", checkRate ? Json(*checkRate) : Json()},
         {"transfers", {{"session", transferred.ToJson()}, {"all_time", TotalTransfers().ToJson()}}},
         {"session_paused", paused.has_value()},

@@ -33,6 +33,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     private double _uploadRate;
     private double? _moveRate;
     private double? _checkRate;
+    private long? _checkedAt;
     private long? _freeSpace;
     private Task? _spaceRead;
     private string? _spacePath;
@@ -111,7 +112,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     // Empty while no move runs.
     public string MoveSpeed => _moveRate is { } rate ? Text.CopyRate(rate) : string.Empty;
     public string MoveTip => Text.Format("window", "move_rate", MoveSpeed);
-    // Empty while no torrent's files are being verified.
+    // Empty while libtorrent checks no files and no move has checked any for
+    // 3 seconds.
     public string CheckSpeed => _checkRate is { } rate ? Text.CopyRate(rate) : string.Empty;
     public string CheckTip => Text.Format("window", "check_rate", CheckSpeed);
     public bool IsConnected => _connected;
@@ -931,7 +933,17 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         var moveRate = snapshot.GetProperty("move_rate");
         _moveRate = moveRate.ValueKind == JsonValueKind.Null ? null : moveRate.GetDouble();
         var checkRate = snapshot.GetProperty("check_rate");
-        _checkRate = checkRate.ValueKind == JsonValueKind.Null ? null : checkRate.GetDouble();
+        double? checking = checkRate.ValueKind == JsonValueKind.Null ? null : checkRate.GetDouble();
+        var moveCheckRate = snapshot.GetProperty("move_check_rate");
+        var moveChecking = moveCheckRate.ValueKind == JsonValueKind.Null ? 0 : moveCheckRate.GetDouble();
+        var now = Environment.TickCount64;
+        if (moveChecking > 0)
+            _checkedAt = now;
+        // Libtorrent's check shows while it runs. A move checks only some of
+        // its files, so its check shows while it reads and for 3 seconds
+        // after, not at 0 for the whole move.
+        _checkRate =
+            checking is not null || now - _checkedAt < 3000 ? (checking ?? 0) + moveChecking : null;
         var transfers = snapshot.GetProperty("transfers");
         SessionTotals = ReadTotals(transfers.GetProperty("session"));
         LifetimeTotals = ReadTotals(transfers.GetProperty("all_time"));

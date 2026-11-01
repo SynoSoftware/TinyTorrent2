@@ -39,6 +39,8 @@ struct Pieces
     // Libtorrent's storage reader includes the bytes of skipped files that
     // it keeps in its part file instead of their visible paths.
     std::function<std::optional<std::vector<std::byte>>(libtorrent::piece_index_t)> read;
+    // The pieces libtorrent has verified in the source files.
+    libtorrent::typed_bitfield<libtorrent::piece_index_t> have;
 };
 
 struct Reconciled
@@ -63,11 +65,13 @@ struct Progress
 {
     std::atomic<std::uint64_t> total{0};
     std::atomic<std::uint64_t> done{0};
-    // The part of `done` that was copied. A rename moves no bytes, so the
-    // copy rate leaves it out.
+    // The part of `done` that was written to the destination. A rename moves
+    // no bytes, so the move rate leaves it out.
     std::atomic<std::uint64_t> copied{0};
-    // The bytes that continuing an unfinished copy compared with the source.
-    // They change while `done` may not, and the stall rule counts them.
+    // The bytes read only to check them, not to copy them, such as files
+    // already at the destination or an unfinished copy that continues. They
+    // change while `done` may not, so the stall rule counts them, and the
+    // check rate shows them.
     std::atomic<std::uint64_t> compared{0};
     // Set by the worker once libtorrent released the files and their
     // placement begins, which starts the engine's stall clock. The engine
