@@ -129,7 +129,8 @@ public sealed partial class Table
     /// Bring the table-owned state to the view a snapshot left, and put row focus back where it
     /// was: the framework moves it when the focused container leaves.
     /// </summary>
-    private SelectionChange? ReconcileSelection(FocusState rowFocus, object? focusedItem = null)
+    private SelectionChange? ReconcileSelection(FocusState rowFocus, object? focusedItem = null,
+        Body.Source.Preparation? preparation = null)
     {
         SyncSelectionPolicy();
 
@@ -143,7 +144,8 @@ public sealed partial class Table
             _selection.Reconcile(
                 View,
                 CollapsedAncestor(_selection.Current),
-                CollapsedAncestor(_selection.Focus)
+                CollapsedAncestor(_selection.Focus),
+                preparation
             );
         }
         if (_gesture == RowGesture.Marquee)

@@ -243,6 +243,7 @@ public sealed class Table : Control
     public Sort? Sort { get; set; }
     public TimeSpan SortInterval { get; set; }
     public void RefreshView();
+    public void RefreshView(IEnumerable<object> changed);
     public void Release(IEnumerable<object> items);
     public void ScrollIntoView(object item);
     public void ScrollIntoView(object item, IEnumerable<object> arrivals);
@@ -510,33 +511,40 @@ same. The enumerable must be finite and stable for each enumeration. A one-shot
 iterator is treated as a snapshot and the host supplies a new iterator for a
 later source update.
 
-The private view is handed to the native row surface in full. That surface
-reads a row only when it realizes the row's position, and for every other
-position it keeps nothing but the count. A source update or sort therefore
-raises a collection notification for two things and nothing else: every
-membership change, at its true position, and every position the surface
-currently holds a container for, pinned and not-yet-recycled containers
-included. Every other position takes its new row without a notification. The
+The private view is handed to the native row surface in full. The surface
+keeps containers for realized rows, including pinned and not-yet-recycled
+containers; elsewhere it keeps only the count. Reconciliation therefore
+announces changes inside those realized runs and the net count change after
+the last surviving run. Other positions take their new rows quietly. An
+ordinary single arrival or removal may use its one true-position event,
+preserving the native containers' shifted indices and scroll anchoring. Each
+event follows its own backing mutation, with the true intermediate count and
+current row content, including synchronous replacement preparation. The
 observable result is the one this section already requires: the count is
-always right, a row that leaves or arrives at a held position animates, and a
-container never shows a row other than the view's row at its index. A
-membership-only update, such as a host filter over an already-ordered source,
-raises exactly the notifications it raised before this rule and no others.
+always right, a row that leaves or arrives at a held position uses the transition
+policy below, and a container never shows a row other than the view's row at its index.
 What falsifies the rule is a container whose content differs from the view's
 row at its index after a sort, a scroll, or `ScrollIntoView`; the reference
 host's diagnostics section R checks exactly that.
 
 **Owner ruling: the table never flashes and never breaks the list's
 animation.** A row that
-arrives, leaves or changes place on screen animates with the list's own
-transitions, wherever the list animates it. The private view never raises
+arrives, leaves or changes place on screen normally animates with the list's own
+transitions, wherever the list animates it. A completely disjoint visible-window
+replacement updates immediately: the native mixed delete/add transition can
+remove every visible row before its delayed arrivals, leaving an empty panel.
+The table suppresses transitions for that layout episode and restores their
+previous value source after layout. Other changes in the same layout episode
+share that suppression; ordinary native motion resumes afterward. An empty
+final source remains an ordinary removal, not a disjoint replacement.
+The private view never raises
 `Move` and never resets the list (`Clear` or `Reset`), because the list
 answers both by dropping and rebuilding its containers, and the whole table
 flashes. This is why the table reconciles the private view in place instead
 of replacing it. A change to the
 reconciliation, or to the notifications the view raises (their kind, order,
 number or positions), is accepted only after two checks: a code review of the
-table and of the WinUI 3 list source in `3rdParty/microsoft-ui-xaml/dxaml`,
+table and of the WinUI 3 list source in `3rdParty/microsoft-ui-xaml/src/dxaml`,
 and a visual test on screen that shows the rows still animate and nothing
 flashes. A faster mechanism that flashes is a regression, whatever it saves.
 
@@ -590,6 +598,21 @@ interaction predicate, the host calls `RefreshView()` once.
 the current sort, and does not enumerate a non-indexable source again. When rows are
 then allowed to trade places is section 9's settling question, not this one.
 Display-only updates need no call.
+
+`RefreshView(changed)` enumerates the supplied items once and resolves their
+identities to current source instances. Duplicate names are coalesced, valid
+unavailable identities are ignored, and a null enumerable throws. Invalid
+items and keys keep the identity contract's failures. This overload adds no
+membership. An eligible accepted flat delta rereads only named sort keys and
+interaction policy, with the normal bounded realized-row visual refresh and
+selection packet work. A due global settle, held/released membership recovery,
+stale-source recovery or a required actual-comparer/global fallback prepares
+the whole order. Ordinary eligible named updates do not scan all source keys.
+A hierarchy uses its full sibling projection. The host must name
+every item whose sort or interaction value changed; omitted items can retain
+their old place or interaction state until a full refresh. Settling and pointer
+holds apply to both overloads. An invalidated source is fully validated before
+either overload uses it again.
 
 `ScrollIntoView(item)` reveals an item without changing selection or keyboard
 focus. If the source has the item but the pointer hold delays its arrival, the
@@ -988,6 +1011,16 @@ choice. A changed committed sort, a hidden requested column, or detachment
 invalidates it; returning to an earlier criterion or reloading does not revive
 it. A failed comparison leaves the committed sort and glyph in force.
 
+Eligible queued first sorts order detached keys on a worker. Known immutable
+built-in default comparisons and well-known ordinal/culture `StringComparer`
+cases use that path for flat rows and hierarchy sibling groups. Custom or
+mutable keys/comparers and the culture-dependent default string comparer stay
+on UI. Host selectors, identity operations, collation capture, current-instance
+and base-order reconciliation, and the final publish remain on UI. A result
+commits only while its exact request is current and loaded; source changes are
+rebased through current validated membership, keys and base ties. Synchronous
+`Sort` and `Layout` assignments retain their synchronous failure boundary.
+
 Sorting requirements:
 
 - sorting creates a private view; it does not reorder `ItemsSource`;
@@ -1004,8 +1037,8 @@ Sorting requirements:
   header is the only place the sort shows and the only place it is changed, so
   a sort by a hidden column would be one the user can neither see nor undo;
 - normal property notification redraws cells but does not continuously resort;
-- the host calls `RefreshView()` after a batch changes any active
-  view-affecting value;
+- the host calls `RefreshView()` or `RefreshView(changed)` after a batch changes
+  any active view-affecting value;
 - while a sort is applied, the view converges on the sorted order within a
   bounded interval. Membership is deferred only by section 5.3's hold while
   the rows are pointed at; otherwise a row that arrives appears at once and a
@@ -1837,10 +1870,9 @@ throughput target.
   or visibility changes.
 - A display-only row update MUST NOT rebuild the whole table. A source, sort,
   or `RefreshView()` change may recompute the private view as specified.
-- A sort or source update raises collection notifications for membership
-  changes and for the positions the row surface holds a container for, and
-  for nothing else (section 5.3). The number of notifications a reorder
-  raises is bounded by realized containers, never by the row count. Measured
+- A sort or source update raises collection notifications bounded by realized
+  containers plus the net count change (section 5.3), never by offscreen
+  replacements or moves. Measured
   once, on the original host's 2,002 rows in Release, with no collection inside the
   span: a full reversal fell from 3,998 notifications to 34, and the collection
   change from 223 ms to 13 ms. Neither half can be reproduced now, and both are
@@ -1871,8 +1903,15 @@ throughput target.
 - Source updates, property updates, sorting, and scrolling MUST NOT measure
   content or change widths. Showing a table or changing its available width
   schedules one bounded fill after layout, without realizing rows for measurement.
-- Active sorting is `O(n log n)` and occurs only on source, sort, or explicit
-  `RefreshView()` changes.
+- Full sorting is `O(n log n)` and occurs only on source, sort, or explicit
+  refresh changes. Flat arrivals and named changed keys share stable placement
+  among retained keys rather than sorting every row again. A notification
+  validates only entrants when it follows the validated accepted source;
+  rejected updates recover through full validation. Position indexes update
+  edited entries and amortize rebuilds over counted insertions/removals.
+  View backing moves in linear passes with a gap buffer, so a half-removal
+  does not repeatedly shift the whole tail. Bounded realized-row refresh and
+  selection-packet publication remain additional costs.
 - Explicit fit commands measure only the header, visible rows, and one
   already-realized row above and below the viewport;
   they never create a second measurement surface or force off-screen

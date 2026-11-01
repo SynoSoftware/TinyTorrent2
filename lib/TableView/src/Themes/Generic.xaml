@@ -362,9 +362,9 @@
 
                 <!--
                                     No ItemContainerTransitions here on purpose: the platform's
-                                    default set is what the rows animate with. Entrance, content,
-                                    add/delete and reorder are all wanted, and the view never
-                                    resets, so none of them replays over rows that did not change.
+                                    default set is what the rows animate with. Table/View temporarily
+                                    suppresses a disjoint visible-window replacement through layout,
+                                    because the mixed delete/add delay can otherwise leave it empty.
                                 -->
                 <ListView.ItemsPanel>
                   <ItemsPanelTemplate>

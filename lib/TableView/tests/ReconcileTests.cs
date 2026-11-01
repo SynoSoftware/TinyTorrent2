@@ -72,6 +72,47 @@ public class ReconcileTests
     // ------------------------------------------------------------------ membership
 
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void AHalfRemovalKeepsTrueCountsAndTheSurvivingRealizedRun(bool distributed)
+    {
+        object[] rows = Rows(1000);
+        object view = NewView(rows);
+        Watcher watch = new(view);
+        ((IObservableVector<object>)view).VectorChanged += (_, _) =>
+            Assert.AreEqual(Rows(view).Length, watch.Count);
+        object[] snapshot = rows.Where((_, index) => distributed ? index % 2 == 1 : index >= 500).ToArray();
+        Reconcile(view, snapshot, Enumerable.Range(0, 12).Append(950).ToArray());
+        CollectionAssert.AreEqual(snapshot, Rows(view));
+        watch.AssertListAgreesAt(Enumerable.Range(0, 12).ToArray(), view);
+    }
+
+    [TestMethod]
+    public void GapMovementPreservesRowsAcrossAlternatingInsertAndRemoveDirections()
+    {
+        IList<object> rows = (IList<object>)Activator.CreateInstance(Control.GetType("Syno.TableView.Body.GapBuffer")!, true)!;
+        List<object> expected = new();
+        Random random = new(716);
+        for (int step = 0; step < 600; step++)
+        {
+            if (expected.Count == 0 || step % 3 != 0)
+            {
+                int at = random.Next(expected.Count + 1);
+                object item = new();
+                rows.Insert(at, item);
+                expected.Insert(at, item);
+            }
+            else
+            {
+                int at = random.Next(expected.Count);
+                rows.RemoveAt(at);
+                expected.RemoveAt(at);
+            }
+            CollectionAssert.AreEqual(expected.ToArray(), rows.Cast<object>().ToArray());
+        }
+    }
+
+    [TestMethod]
     public void IdentityLookupTracksEveryIntermediateVectorChange()
     {
         object[] rows = Rows(30);
@@ -251,7 +292,8 @@ public class ReconcileTests
         foreach (object row in pinned ?? new HashSet<object>())
             pin.Invoke(pins, new[] { row });
         view.GetType()
-            .GetMethod("Reconcile", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetMethod("Reconcile", BindingFlags.Instance | BindingFlags.NonPublic, null,
+                new[] { typeof(IReadOnlyList<object>), positions.GetType(), typeof(IReadOnlyList<int>), pins.GetType() }, null)!
             .Invoke(view, new object[] { snapshot, positions, realized, pins });
     }
 

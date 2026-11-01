@@ -34,7 +34,504 @@ public sealed partial class JobsPage
         public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
     }
     private int _sortKeyReads;
+    private int _policyReads;
     private sealed record Measurement(double Block, long Allocated, double Frame);
+
+    private async Task MeasureChangesAsync()
+    {
+        Section("U. Sparse half-removal and immediate collection Add; drag policy disabled");
+        ReportLoad();
+        foreach (int count in new[] { 1000, 2000 })
+        {
+            await WithProbeAsync(count, async (table, rows) =>
+            {
+                table.CanReorder = false;
+                ListView list = FindDescendant<ListView>(table)!;
+                IObservableVector<object> vector = (IObservableVector<object>)list.ItemsSource;
+                int notifications = 0;
+                void Changed(IObservableVector<object> sender, IVectorChangedEventArgs args) => notifications++;
+                vector.VectorChanged += Changed;
+                try
+                {
+                    foreach (bool distributed in new[] { false, true })
+                    {
+                        ProbeRow[] reduced = rows.Where((_, index) => distributed ? index % 2 == 1 : index >= count / 2).ToArray();
+                        List<Measurement> results = new();
+                        int events = 0;
+                        int identities = 0;
+                        for (int trial = 0; trial < PerformanceTrials; trial++)
+                        {
+                            table.ItemsSource = rows;
+                            await PerformanceFrameAsync();
+                            notifications = _keyReads = 0;
+                            results.Add(await MeasureFrameAsync(() => table.ItemsSource = reduced));
+                            events += notifications;
+                            identities += _keyReads;
+                        }
+                        ReportMeasurements($"{count} {(distributed ? "distributed" : "front")} half-removal assignment", results);
+                        W($"  vector events/operation={(double)events / PerformanceTrials:0.0}, identity reads={(double)identities / PerformanceTrials:0.0}; source assignment validates remaining rows; native packet commit included");
+                    }
+                    foreach (bool sorted in new[] { false, true })
+                    {
+                        ObservableCollection<ProbeRow> source = new(rows);
+                        ProbeRow arrival = new(count + 1, $"Render {count / 2:D6}.5");
+                        table.ItemsSource = source;
+                        table.Sort = sorted ? new(table.Columns[0]) : null;
+                        table.SortInterval = TimeSpan.FromHours(1);
+                        source.Add(arrival);
+                        source.RemoveAt(source.Count - 1);
+                        List<Measurement> results = new();
+                        long comparisons = 0;
+                        int identities = 0;
+                        int keys = 0;
+                        int events = 0;
+                        for (int trial = 0; trial < PerformanceTrials; trial++)
+                        {
+                            _keyReads = _sortKeyReads = notifications = 0;
+                            long before = SortComparisons(table);
+                            results.Add(await MeasureFrameAsync(() => source.Add(arrival)));
+                            identities += _keyReads;
+                            keys += _sortKeyReads;
+                            events += notifications;
+                            comparisons += SortComparisons(table) - before;
+                            source.RemoveAt(source.Count - 1);
+                            await PerformanceFrameAsync();
+                        }
+                        ReportMeasurements($"{count} warmed single Add, {(sorted ? "culture sort" : "natural")}", results);
+                        W($"  identity reads={(double)identities / PerformanceTrials:0.0}, sort-key reads={(double)keys / PerformanceTrials:0.0}, comparisons={(double)comparisons / PerformanceTrials:0.0}, vector events={(double)events / PerformanceTrials:0.0} per Add");
+                    }
+                    ReportStorage(table, count);
+                }
+                finally
+                {
+                    vector.VectorChanged -= Changed;
+                }
+            }, sort: ProbeSort.Culture);
+        }
+        ReportLoad();
+    }
+
+    private async Task MeasureNamedValuesAsync()
+    {
+        Section("X. Named and whole culture-name refresh; drag policy disabled");
+        ReportLoad();
+        foreach (int count in new[] { 1000, 2000 })
+        {
+            await WithProbeAsync(count, async (table, rows) =>
+            {
+                table.CanReorder = false;
+                table.SortInterval = TimeSpan.Zero;
+                table.Sort = new(table.Columns[0]);
+                ProbeRow moving = rows[count / 2];
+                object[] named = { moving };
+                string original = moving.Name;
+                foreach (bool changed in new[] { false, true })
+                {
+                    foreach (bool whole in new[] { false, true })
+                    {
+                        Action refresh = whole ? table.RefreshView : () => table.RefreshView(named);
+                        refresh();
+                        List<Measurement> results = new();
+                        int reads = 0;
+                        long comparisons = 0;
+                        for (int trial = 0; trial < PerformanceTrials; trial++)
+                        {
+                            moving.Name = changed ? "Render 999999" : original;
+                            _sortKeyReads = 0;
+                            long before = SortComparisons(table);
+                            results.Add(await MeasureFrameAsync(refresh));
+                            reads += _sortKeyReads;
+                            comparisons += SortComparisons(table) - before;
+                            moving.Name = original;
+                            table.RefreshView(named);
+                            await PerformanceFrameAsync();
+                        }
+                        ReportMeasurements($"{count} {(whole ? "whole" : "one named")} {(changed ? "changed" : "unchanged")} key", results);
+                        W($"  key reads={(double)reads / PerformanceTrials:0.0}, actual comparisons={(double)comparisons / PerformanceTrials:0.0} per operation");
+                    }
+                }
+                table.Sort = null;
+                table.Selection = new(rows, rows[0]);
+                List<Measurement> policy = new();
+                int policies = 0;
+                for (int trial = 0; trial < PerformanceTrials; trial++)
+                {
+                    _policyReads = 0;
+                    policy.Add(await MeasureFrameAsync(() => table.RefreshView(named)));
+                    policies += _policyReads;
+                }
+                ReportMeasurements($"{count} named policy-only refresh, all selected (packet commit included)", policy);
+                W($"  interaction callbacks/operation={(double)policies / PerformanceTrials:0.0}");
+                ReportStorage(table, count);
+            }, sort: ProbeSort.Culture);
+        }
+        W("Inline allocations are current UI-thread bytes inside the publish only; host arrays and strings are prepared outside. Frame latency includes scheduling/layout and is separate from uninterrupted publish time.");
+        ReportLoad();
+    }
+
+    private static long SortComparisons(Table table)
+    {
+        object? sorted = ReadMember(table, "_sortedOrder");
+        return sorted is null ? 0 : (long)ReadMember(sorted, "Comparisons")!;
+    }
+
+    private static object? ReadMember(object owner, string name)
+    {
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
+        return owner.GetType().GetField(name, flags)?.GetValue(owner)
+            ?? owner.GetType().GetProperty(name, flags)?.GetValue(owner);
+    }
+
+    private async Task MeasureWorkersAsync()
+    {
+        Section("W. Queued first sorts: UI capture/commit, detached ordering and frame latency");
+        ReportLoad();
+        foreach (int count in new[] { 1000, 2000 })
+        {
+            foreach (var mode in new[] { (Sort: ProbeSort.Culture, Hierarchy: false),
+                (Sort: ProbeSort.Number, Hierarchy: false), (Sort: ProbeSort.Culture, Hierarchy: true) })
+            {
+                await WithProbeAsync(count, async (table, rows) =>
+                {
+                    table.CanReorder = false;
+                    Action<Column> activate = typeof(Table).GetMethod("ActivateSort",
+                        BindingFlags.Instance | BindingFlags.NonPublic, null, new[] { typeof(Column) }, null)!
+                        .CreateDelegate<Action<Column>>(table);
+                    List<Measurement> results = new();
+                    List<double> captures = new();
+                    List<double> commits = new();
+                    List<double> ordering = new();
+                    List<double> glyphs = new();
+                    object? last = null;
+                    for (int trial = -1; trial < PerformanceTrials; trial++)
+                    {
+                        table.Sort = null;
+                        await PerformanceFrameAsync();
+                        long allocation = GC.GetTotalAllocatedBytes(false);
+                        long start = Stopwatch.GetTimestamp();
+                        activate(table.Columns[0]);
+                        object queued = ReadMember(table, "_queuedSort")!;
+                        long glyphFrame = await PerformanceFrameAsync();
+                        double glyph = Stopwatch.GetElapsedTime(start, glyphFrame).TotalMilliseconds;
+                        await AwaitProbeAsync(table, () => ReadMember(table, "_queuedSort") is null);
+                        double answer = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
+                        long allocated = GC.GetTotalAllocatedBytes(false) - allocation;
+                        double capture = ((TimeSpan)ReadMember(queued, "CaptureTime")!).TotalMilliseconds;
+                        double commit = ((TimeSpan)ReadMember(queued, "CommitTime")!).TotalMilliseconds;
+                        object context = ReadMember(queued, "Work")
+                            ?? throw new InvalidOperationException("The eligible queued sort did not use detached work.");
+                        object sorting = ReadMember(context, "Sorting")!;
+                        if (trial >= 0)
+                        {
+                            captures.Add(capture);
+                            commits.Add(commit);
+                            glyphs.Add(glyph);
+                            ordering.Add(((TimeSpan)ReadMember(sorting, "Duration")!).TotalMilliseconds);
+                            results.Add(new(Math.Max(capture, commit), allocated, answer));
+                        }
+                        last = context;
+                    }
+                    string label = $"{count} {mode.Sort}, hierarchy={mode.Hierarchy}";
+                    ReportMeasurements(label + " queued operation", results);
+                    W($"  UI capture median/max={Median(captures):0.0000}/{captures.Max():0.0000} ms; UI commit/rebase median/max={Median(commits):0.0000}/{commits.Max():0.0000} ms; worker ordering median/max={Median(ordering):0.0000}/{ordering.Max():0.0000} ms; glyph-frame callback latency median={Median(glyphs):0.000} ms (not physical-present time)");
+                    W("  allocation is whole-process managed growth across the queued operation (includes worker/runtime work), not isolated UI allocations; block is max(UI capture, UI commit), not worker/task/frame elapsed");
+                    ReportWorkerStorage(last!);
+                    ReportStorage(table, count);
+                    table.Sort = null;
+                    activate(table.Columns[0]);
+                    object superseded = ReadMember(table, "_queuedSort")!;
+                    typeof(Table).GetMethod("StartWork", BindingFlags.Instance | BindingFlags.NonPublic)!
+                        .Invoke(table, new[] { superseded });
+                    activate(table.Columns[0]);
+                    await AwaitProbeAsync(table, () => ReadMember(table, "_queuedSort") is null);
+                    W($"  superseded first-sort request: final direction={table.Sort?.Direction}; previous request retained only for this report");
+                    if (table.Sort?.Direction != SortDirection.Descending)
+                    {
+                        throw new InvalidOperationException("Superseded worker committed its old criterion.");
+                    }
+                    GC.KeepAlive(last);
+                    GC.KeepAlive(superseded);
+                }, hierarchy: mode.Hierarchy, sort: mode.Sort);
+            }
+        }
+        ReportLoad();
+
+        static double Median(List<double> values) => values.Order().ElementAt(values.Count / 2);
+    }
+
+    private void ReportWorkerStorage(object context)
+    {
+        object work = ReadMember(context, "Sorting")!;
+        object payload = ReadMember(work, "_payload")!;
+        long bytes = 0;
+        HashSet<byte[]> collation = new(ReferenceEqualityComparer.Instance);
+        foreach (string name in new[] { "Entries", "Indices" })
+        {
+            Array groups = (Array)ReadMember(payload, name)!;
+            bytes += ArrayBytes(groups);
+            foreach (Array array in groups)
+            {
+                long backing = ArrayBytes(array);
+                bytes += backing;
+                W($"  operation {name}: capacity={array.Length}, backing={backing} bytes, LOH={backing >= 85000}");
+                foreach (object entry in array)
+                {
+                    if (ReadMember(entry, "Collation") is byte[] key)
+                    {
+                        collation.Add(key);
+                    }
+                }
+            }
+        }
+        Array associations = (Array)ReadMember(work, "_groups")!;
+        bytes += ArrayBytes(associations);
+        foreach (object group in associations)
+        {
+            bytes += ArrayBytes((Array)ReadMember(group, "Rows")!);
+            bytes += ReportMapBacking("operation captured keys", ReadMember(group, "Keys")!);
+        }
+        if (ReadMember(context, "Hierarchy") is { } hierarchy)
+        {
+            bytes += ReportMapBacking("operation parent groups", ReadMember(hierarchy, "_parents")!);
+        }
+        bytes += collation.Sum(ArrayBytes);
+        W($"  operation/job backing={bytes} bytes; this report deliberately retains the completed queued context. Production releases it with the request; this is operation lifetime/peak backing, not permanent table retention. Excludes row/string objects, task/association objects, runtime/native caches.");
+    }
+
+    private long ReportMapBacking(string name, object owner)
+    {
+        object map = owner.GetType().GetMethod("CapturedFor")!.Invoke(owner, new[] { new object() })!;
+        long bytes = 0;
+        foreach (string field in new[] { "_entries", "_keys" })
+        {
+            if (ReadMember(map, field) is not IDictionary dictionary)
+            {
+                continue;
+            }
+            Array? entries = (Array?)ReadMember(dictionary, "_entries");
+            Array? buckets = (Array?)ReadMember(dictionary, "_buckets");
+            long backing = (entries is null ? 0 : ArrayBytes(entries)) + (buckets is null ? 0 : ArrayBytes(buckets));
+            bytes += backing;
+            W($"  {name}.{field}: count={dictionary.Count}, capacity={entries?.Length ?? 0}; backing={backing} bytes");
+        }
+        return bytes;
+    }
+
+    private static long ArrayBytes(Array array)
+    {
+        if (array.Length == 0)
+        {
+            return 0;
+        }
+        int size = (int)typeof(System.Runtime.CompilerServices.Unsafe).GetMethod("SizeOf")!
+            .MakeGenericMethod(array.GetType().GetElementType()!).Invoke(null, null)!;
+        return (3L * IntPtr.Size + (long)array.Length * size + IntPtr.Size - 1) / IntPtr.Size * IntPtr.Size;
+    }
+
+    private async Task ObserveLiveChangesAsync()
+    {
+        Section("L. Composed-window live mutation evidence; lead supplies WGC recording");
+        await WithProbeAsync(1000, async (table, rows) =>
+        {
+            table.CanReorder = false;
+            ObservableCollection<ProbeRow> source = new(rows);
+            table.ItemsSource = source;
+            table.Sort = new(table.Columns[0]);
+            InvokeTable(table, "StopPointing");
+            ListView list = FindDescendant<ListView>(table)!;
+            await AwaitProbeAsync(table, IsReady);
+
+            bool IsReady() => list.ItemsPanelRoot is ItemsStackPanel panel
+                && panel.FirstVisibleIndex == 0 && table.VerticalOffset == 0;
+
+            string prefix = Path.Combine(AppContext.BaseDirectory, $"performance-live-{Environment.ProcessId}");
+            string ready = prefix + ".ready.json";
+            string go = prefix + ".go";
+            nint hwnd = WinRT.Interop.WindowNative.GetWindowHandle(MainWindow.Instance!);
+            string phase = "ready";
+            int frames = 0;
+            long last = Stopwatch.GetTimestamp();
+            double longestGap = 0;
+            int events = 0;
+            Exception? failure = null;
+            IObservableVector<object> vector = (IObservableVector<object>)list.ItemsSource;
+            void Changed(IObservableVector<object> sender, IVectorChangedEventArgs args)
+            {
+                events++;
+                W($"L event utc={DateTimeOffset.UtcNow:O}, phase={phase}, kind={args.CollectionChange}, index={args.Index}, count={list.Items.Count}");
+            }
+            void Rendering(object? sender, object args)
+            {
+                if (failure is not null)
+                {
+                    return;
+                }
+                try
+                {
+                    if (phase is "ready" or "baseline" && !IsReady())
+                    {
+                        throw new InvalidOperationException($"The live scene lost its near-viewport premise before mutation; {ProbeState(table)}");
+                    }
+                    long now = Stopwatch.GetTimestamp();
+                    double gap = Stopwatch.GetElapsedTime(last, now).TotalMilliseconds;
+                    last = now;
+                    longestGap = Math.Max(longestGap, gap);
+                    frames++;
+                    var containers = Containers();
+                    W($"L frame utc={DateTimeOffset.UtcNow:O}, tick={now}, phase={phase}, gap={gap:0.000}ms, count={list.Items.Count}, containers={string.Join(';', containers.Select(pair => $"{pair.Key.RowId}:{System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(pair.Value)}@{list.IndexFromContainer(pair.Value)}[{Bounds(pair.Value)}]"))}; {ProbeState(table)}");
+                    if (containers.Count == 0 && list.Items.Count > 0)
+                    {
+                        throw new InvalidOperationException("The live scene lost every realized container.");
+                    }
+                }
+                catch (Exception error)
+                {
+                    failure = error;
+                }
+            }
+            vector.VectorChanged += Changed;
+            CompositionTarget.Rendering += Rendering;
+            try
+            {
+                File.WriteAllText(ready, System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    Pid = Environment.ProcessId, Hwnd = hwnd.ToInt64(), Go = go,
+                    TimeoutSeconds = 45, PhaseSeconds = 1.4,
+                    Protocol = "Start winapp ui record --frames --fps 30 --json by HWND; require WGC; create Go only after stderr recording-started."
+                }));
+                W($"L READY={ready}; GO={go}; PID={Environment.ProcessId}; HWND={hwnd}; ready timeout=45s; each phase>=1.4s");
+                Flush();
+                long waiting = Stopwatch.GetTimestamp();
+                while (!File.Exists(go))
+                {
+                    if (Stopwatch.GetElapsedTime(waiting) > TimeSpan.FromSeconds(45))
+                    {
+                        throw new TimeoutException("The live scene did not receive its recorder go marker.");
+                    }
+                    await PerformanceFrameAsync();
+                    if (failure is not null)
+                    {
+                        throw failure;
+                    }
+                }
+                await Phase("baseline", () => { });
+                ProbeRow arrival = new(2001, "Render 000005.5 arrival");
+                await Phase("notification-add", () => source.Insert(6, arrival),
+                    expected: (source.Count + 1, arrival, true));
+                ProbeRow removed = rows[8];
+                await Phase("notification-remove", () => source.Remove(removed),
+                    expected: (source.Count - 1, removed, false));
+                ProbeRow[] membership = source.ToArray();
+                membership[10] = new(2002, "Render 000009.5 whole");
+                await Phase("whole-source-membership", () => table.ItemsSource = membership, continuity: true,
+                    expected: (membership.Length, membership[10], true));
+                await Phase("disjoint-descending-sort", () => table.Sort = new(table.Columns[0], SortDirection.Descending), disjoint: true);
+                if (!ReferenceEquals(list.ReadLocalValue(ItemsControl.ItemContainerTransitionsProperty), DependencyProperty.UnsetValue))
+                {
+                    throw new InvalidOperationException("The disjoint scene did not restore the transition value source.");
+                }
+                ProbeRow restored = new(2003, "Render 000995.5 restored");
+                membership = membership.Append(restored).ToArray();
+                await Phase("restored-native-arrival", () => table.ItemsSource = membership,
+                    expected: (membership.Length, restored, true));
+                W($"L completed: Rendering callbacks={frames}, longest callback gap={longestGap:0.000}ms, vector events={events}. Proxy animation/no painted gap requires composed WGC frames; row transforms/base opacity are not animation proof.");
+                Flush();
+            }
+            finally
+            {
+                CompositionTarget.Rendering -= Rendering;
+                vector.VectorChanged -= Changed;
+            }
+
+            Dictionary<ProbeRow, ListViewItem> Containers()
+            {
+                Dictionary<ProbeRow, ListViewItem> containers = new(ReferenceEqualityComparer.Instance);
+                if (list.ItemsPanelRoot is Panel panel)
+                {
+                    foreach (UIElement child in panel.Children)
+                    {
+                        int index = list.IndexFromContainer(child);
+                        if (child is ListViewItem container && index >= 0
+                            && ReferenceEquals(list.ContainerFromIndex(index), child))
+                        {
+                            ProbeRow item = (ProbeRow)list.Items[index];
+                            if (!ReferenceEquals(list.ItemFromContainer(child), item))
+                            {
+                                throw new InvalidOperationException("A live container has stale row content.");
+                            }
+                            containers[item] = container;
+                        }
+                    }
+                }
+                return containers;
+            }
+
+            string Bounds(ListViewItem container)
+            {
+                Windows.Foundation.Rect bounds = container.TransformToVisual(list).TransformBounds(
+                    new(0, 0, container.ActualWidth, container.ActualHeight));
+                return $"{bounds.X:0.00},{bounds.Y:0.00},{bounds.Width:0.00},{bounds.Height:0.00}";
+            }
+
+            async Task Phase(string name, Action mutate, bool continuity = false, bool disjoint = false,
+                (int Count, ProbeRow Item, bool Present)? expected = null)
+            {
+                Dictionary<ProbeRow, ListViewItem> before = Containers();
+                ProbeRow[] visible = Visible();
+                if (expected is { Present: false } removal
+                    && !visible.Any(item => ReferenceEquals(item, removal.Item)))
+                {
+                    throw new InvalidOperationException($"The {name} removal target was not visible before mutation.");
+                }
+                phase = name;
+                W($"L phase-start utc={DateTimeOffset.UtcNow:O}, tick={Stopwatch.GetTimestamp()}, phase={phase}, count={list.Items.Count}");
+                long start = Stopwatch.GetTimestamp();
+                InvokeTable(table, "StopPointing");
+                mutate();
+                if (expected is { } expectedRows
+                    && (list.Items.Count != expectedRows.Count
+                        || list.Items.Cast<object>().Any(item => ReferenceEquals(item, expectedRows.Item)) != expectedRows.Present))
+                {
+                    throw new InvalidOperationException($"The {phase} membership did not apply immediately; check pointer interference.");
+                }
+                while (Stopwatch.GetElapsedTime(start) < TimeSpan.FromSeconds(1.4))
+                {
+                    await PerformanceFrameAsync();
+                    if (failure is not null)
+                    {
+                        throw failure;
+                    }
+                }
+                Dictionary<ProbeRow, ListViewItem> after = Containers();
+                int surviving = before.Keys.Count(after.ContainsKey);
+                int reused = before.Count(pair => after.TryGetValue(pair.Key, out ListViewItem? container)
+                    && ReferenceEquals(pair.Value, container));
+                ProbeRow[] visibleAfter = Visible();
+                if (expected is { Present: true } entered
+                    && !visibleAfter.Any(item => ReferenceEquals(item, entered.Item)))
+                {
+                    throw new InvalidOperationException($"The {phase} arrival did not enter the visible region.");
+                }
+                int sharedVisible = visibleAfter.Count(row => visible.Contains(row, ReferenceEqualityComparer.Instance));
+                W($"L phase-end utc={DateTimeOffset.UtcNow:O}, phase={phase}, surviving-realized-instances={surviving}, reused={reused}, visible-intersection={sharedVisible}; {ProbeState(table)}");
+                if (continuity && reused != surviving)
+                {
+                    throw new InvalidOperationException("The unchanged run survivors lost their containers.");
+                }
+                if (disjoint && sharedVisible != 0)
+                {
+                    throw new InvalidOperationException("The reversal did not establish disjoint visible identities.");
+                }
+            }
+
+            ProbeRow[] Visible()
+            {
+                var panel = (ItemsStackPanel)list.ItemsPanelRoot;
+                return list.Items.Cast<ProbeRow>().Skip(Math.Max(0, panel.FirstVisibleIndex))
+                    .Take(Math.Max(0, panel.LastVisibleIndex - panel.FirstVisibleIndex + 1)).ToArray();
+            }
+        }, sort: ProbeSort.Culture);
+    }
 
     private async Task MeasureSortingAsync()
     {
@@ -100,7 +597,7 @@ public sealed partial class JobsPage
                 ReportMeasurements($"{count} one arrival inside interval", arrival);
                 W($"  actual comparisons/operation: first={(double)firstComparisons / PerformanceTrials:0.0}, unchanged={(double)unchangedComparisons / PerformanceTrials:0.0}, changed={(double)changedComparisons / PerformanceTrials:0.0}, arrival={(double)arrivalComparisons / PerformanceTrials:0.0}; selector reads/first={(double)keyReads / PerformanceTrials:0.0}");
                 ReportStorage(table, count);
-            }, cultureSort: true);
+            }, sort: ProbeSort.Culture);
         }
         W("100k gates: first-sort uninterrupted block >100ms decides worker; unchanged RefreshView >16ms decides changed-row overload. Extend measured growth, with n*log(n) first-sort comparison work and linear key/index passes; this name shape does not bound arbitrary strings or host comparers.");
         ReportLoad();
@@ -204,6 +701,7 @@ public sealed partial class JobsPage
         List<(string Name, object Owner)> maps = new()
         {
             ("source.accepted", Read(source, "_membership")), ("source.candidate", Read(source, "_candidate")),
+            ("source.additions", Read(source, "_additions")), ("source.leavers", Read(source, "_leavers")),
             ("view", positions), ("view.candidate", Read(table, "_candidatePositions")),
             ("held", Read(table, "_held")), ("held.candidate", Read(table, "_candidateHeld")),
             ("pinned", Read(table, "_pinned")), ("released", Read(table, "_released")),
@@ -219,38 +717,26 @@ public sealed partial class JobsPage
         long total = 0;
         foreach (var (name, owner) in maps)
         {
-            object map = owner.GetType().GetProperty("Captured")!.GetValue(owner)!;
-            long bytes = 0;
-            string capacities = "";
-            foreach (string field in new[] { "_entries", "_keys" })
-            {
-                if (map.GetType().GetField(field, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(map) is not IDictionary dictionary)
-                    continue;
-                var entries = (Array?)dictionary.GetType().GetField("_entries", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(dictionary);
-                var buckets = (Array?)dictionary.GetType().GetField("_buckets", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(dictionary);
-                int size = entries is null ? 0 : (int)typeof(System.Runtime.CompilerServices.Unsafe)
-                    .GetMethod("SizeOf")!.MakeGenericMethod(entries.GetType().GetElementType()!).Invoke(null, null)!;
-                bytes += Bytes(entries?.Length ?? 0, size) + Bytes(buckets?.Length ?? 0, sizeof(int));
-                capacities += $" {field} count={dictionary.Count}, capacity={entries?.Length ?? 0} x {size}";
-            }
-            total += bytes;
-            W($"  {name}:{capacities}; backing={bytes} bytes");
+            total += ReportMapBacking(name, owner);
         }
         object backing = view.GetType().GetProperty("Items", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(view)!;
         foreach (var (name, list) in new[] { ("view rows", backing), ("kept order", Read(table, "_keptRows")),
             ("shown rows", Read(table, "_shownRows")), ("pin order", Read(table, "_pinOrder")) }
             .Concat(sorted is null ? Array.Empty<(string, object)>()
-                : new[] { ("sorted rows", Read(sorted, "_rows")), ("sort candidate rows", Read(sorted, "_candidateRows")) }))
+                : new[] { ("sorted rows", Read(sorted, "_rows")), ("sort candidate rows", Read(sorted, "_candidateRows")),
+                    ("sort edits", Read(sorted, "_edits")), ("sort key updates", Read(sorted, "_keyUpdates")) }))
         {
-            int capacity = (int)list.GetType().GetProperty("Capacity")!.GetValue(list)!;
-            long bytes = Bytes(capacity, IntPtr.Size);
+            Array array = (Array)Read(list, name == "view rows" ? "_buffer" : "_items");
+            int size = (int)typeof(System.Runtime.CompilerServices.Unsafe).GetMethod("SizeOf")!
+                .MakeGenericMethod(array.GetType().GetElementType()!).Invoke(null, null)!;
+            long bytes = Bytes(array.Length, size);
             total += bytes;
-            W($"  {name}: count={((ICollection)list).Count}, capacity={capacity} x {IntPtr.Size}; backing={bytes} bytes");
+            W($"  {name}: count={list.GetType().GetProperty("Count")!.GetValue(list)}, capacity={array.Length} x {size}; backing={bytes} bytes; LOH={(bytes >= 85000)}");
         }
         if (sorted is not null)
         {
             HashSet<object> collation = new(ReferenceEqualityComparer.Instance);
-            foreach (string field in new[] { "_entries", "_candidateEntries", "_captured", "_indices", "_survivors", "_places" })
+            foreach (string field in new[] { "_entries", "_candidateEntries", "_captured", "_indices", "_survivors", "_places", "_targets" })
             {
                 Array array = (Array)Read(sorted, field);
                 Type element = array.GetType().GetElementType()!;
@@ -258,7 +744,7 @@ public sealed partial class JobsPage
                     .MakeGenericMethod(element).Invoke(null, null)!;
                 long bytes = Bytes(array.Length, size);
                 total += bytes;
-                W($"  sort.{field}: capacity={array.Length} x {size}; backing={bytes} bytes");
+                W($"  sort.{field}: capacity={array.Length} x {size}; backing={bytes} bytes; projected element backing 10k={Bytes(10000, size)}, 100k={Bytes(100000, size)}; LOH crossing={(85000 - 3 * IntPtr.Size + size - 1) / size} elements");
                 if (element.GetProperty("Collation") is { } property)
                     foreach (object entry in array)
                         if (property.GetValue(entry) is byte[] key)
@@ -462,7 +948,7 @@ public sealed partial class JobsPage
         typeof(Table).GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(table, arguments);
 
     private async Task WithProbeAsync(int count, Func<Table, ProbeRow[], Task> action, bool hierarchy = false,
-        bool cultureSort = false)
+        ProbeSort sort = ProbeSort.Ordinal)
     {
         ProbeRow[] rows = Enumerable.Range(0, count)
             .Select(index => new ProbeRow(index + 1, $"Render {index:D6}" )).ToArray();
@@ -479,11 +965,23 @@ public sealed partial class JobsPage
         {
             _keyReads++;
             return row.RowId;
+        }).CanInteract(row =>
+        {
+            _policyReads++;
+            return row.RowId > 0;
         }).SortKey(column, row =>
         {
             _sortKeyReads++;
             return row.Name;
-        }, cultureSort ? StringComparer.CurrentCultureIgnoreCase : StringComparer.Ordinal);
+        }, sort == ProbeSort.Culture ? StringComparer.CurrentCultureIgnoreCase : StringComparer.Ordinal);
+        if (sort == ProbeSort.Number)
+        {
+            schema.SortKey(column, row =>
+            {
+                _sortKeyReads++;
+                return -row.RowId;
+            });
+        }
         if (hierarchy)
         {
             schema.Hierarchy(column, row => row.RowId == 1 ? rows[1..^1] : Array.Empty<ProbeRow>(),
@@ -626,15 +1124,15 @@ public sealed partial class JobsPage
         }
     }
 
-    private static async Task PerformanceFrameAsync()
+    private static async Task<long> PerformanceFrameAsync()
     {
-        TaskCompletionSource completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource<long> completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
         EventHandler<object>? rendering = null;
-        rendering = (_, _) => completion.TrySetResult();
+        rendering = (_, _) => completion.TrySetResult(Stopwatch.GetTimestamp());
         CompositionTarget.Rendering += rendering;
         try
         {
-            await completion.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            return await completion.Task.WaitAsync(TimeSpan.FromSeconds(5));
         }
         finally
         {

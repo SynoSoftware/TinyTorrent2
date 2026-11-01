@@ -10,7 +10,7 @@ internal interface IIdentity
 
 internal interface IIdentityKeys
 {
-    IIdentityKeys Captured { get; }
+    IIdentityKeys CapturedFor(object item);
     bool ContainsReference(object item);
 }
 
@@ -29,7 +29,7 @@ internal abstract class IdentityMap<T> : IIdentityKeys, IEnumerable<KeyValuePair
     internal abstract object? Resolve(object item);
     internal abstract object? Resolve(object item, IIdentityKeys keys);
     public abstract bool ContainsReference(object item);
-    public IIdentityKeys Captured => this;
+    public IIdentityKeys CapturedFor(object item) => this;
     internal bool ContainsKey(object item) => TryGetValue(item, out _);
     internal bool ContainsKey(object item, IIdentityKeys keys) => TryGetValue(item, keys, out _);
     internal T? GetValueOrDefault(object item) => TryGetValue(item, out T value) ? value : default;
@@ -113,7 +113,7 @@ internal sealed class Identity<TRow, TKey>(
         TKey IKeys.GetKey(object item) =>
             _identity._reference ? (TKey)item : _keys![item];
 
-        private static TKey Key(object item, IIdentityKeys keys) => ((IKeys)keys.Captured).GetKey(item);
+        private static TKey Key(object item, IIdentityKeys keys) => ((IKeys)keys.CapturedFor(item)).GetKey(item);
 
         internal override bool TryAdd(object item, T value) => Add(item, value, _identity.ReadKey(item));
 
@@ -197,7 +197,7 @@ internal sealed class Identity<TRow, TKey>(
 internal sealed class IdentitySet(IIdentity identity, bool keepsKeys = false) : IReadOnlyCollection<object>, IIdentityKeys
 {
     internal IdentityMap<byte> Map { get; } = identity.CreateMap<byte>(keepsKeys);
-    public IIdentityKeys Captured => Map;
+    public IIdentityKeys CapturedFor(object item) => Map;
     public int Count => Map.Count;
     public bool ContainsReference(object item) => Map.ContainsReference(item);
     public bool Contains(object item) => Map.ContainsKey(item);

@@ -133,6 +133,22 @@ public sealed partial class JobsPage
         {
             await MeasureSortingAsync();
         }
+        if (_only?.Contains("U") == true)
+        {
+            await MeasureChangesAsync();
+        }
+        if (_only?.Contains("W") == true)
+        {
+            await MeasureWorkersAsync();
+        }
+        if (_only?.Contains("X") == true)
+        {
+            await MeasureNamedValuesAsync();
+        }
+        if (_only?.Contains("L") == true)
+        {
+            await ObserveLiveChangesAsync();
+        }
         if (_only?.Contains("M") == true)
         {
             await MeasurePublishesAsync(measureTimings: false);

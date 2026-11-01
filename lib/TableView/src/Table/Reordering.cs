@@ -162,7 +162,8 @@ public sealed partial class Table
 
     private bool IsDragCurrent()
     {
-        if (!CanReorder || _order is null || _dragPacket.Any(item => !IsInteractive(item)))
+        if (!CanReorder || _order is null || _dragPacket.Any(item =>
+            ResolveItem(item) is not { } row || !IsInteractive(row)))
             return false;
         var current = _order.Capture(_identity);
         if (current.Length != _dragOrder.Length)

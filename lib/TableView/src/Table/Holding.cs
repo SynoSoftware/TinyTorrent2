@@ -43,10 +43,51 @@ public sealed partial class Table
 
     /// <summary>The pointer is over the rows, or a row's context menu is open.</summary>
     private bool IsPointed => _pointerOver || _menuRow is not null;
+    private bool KeepsMembership => _hierarchy is null && IsPointed && _view.Count > 0;
+
+    private sealed record HoldChange(IdentitySet Held, IReadOnlyList<int> Arrivals, bool Holds);
+
+    private HoldChange? PrepareHold(Body.Source.Preparation source)
+    {
+        if (!source.IsIncremental || _released.Count > 0
+            || source.Change is Change.Collection { Notification.Action: System.Collections.Specialized.NotifyCollectionChangedAction.Move }
+            || !KeepsMembership && (_held.Count > 0 || _view.Count != source.Membership.Count))
+        {
+            return null;
+        }
+        IdentitySet held = _candidateHeld;
+        held.Clear();
+        if (!KeepsMembership)
+        {
+            return new(held, Enumerable.Range(0, source.Added.Count).ToArray(), false);
+        }
+        foreach (object item in _held)
+        {
+            held.Add(item, _held);
+        }
+        foreach (object item in source.Removed)
+        {
+            if (_view.Positions.IndexOf(item, source.Leavers) >= 0)
+            {
+                held.Add(item, source.Leavers);
+            }
+        }
+        List<int> arrivals = new();
+        for (int index = 0; index < source.Added.Count; index++)
+        {
+            object item = source.Added[index];
+            if (_view.Positions.IndexOf(item, source.Additions) >= 0)
+            {
+                held.Remove(item, source.Additions);
+                arrivals.Add(index);
+            }
+        }
+        return new(held, arrivals, true);
+    }
 
     /// <summary>A row shown although it left the source. It is dimmed and refuses every action.</summary>
-    internal bool IsHeld(object? item) => item is not null && (_view.KeysFor(item) is { } keys
-        ? _held.Contains(item, keys) : _held.Contains(item));
+    internal bool IsHeld(object? item) => item is not null && _held.Count > 0 && (_view.KeysFor(item) is { } keys
+        ? _held.Contains(item, keys) : _held.ContainsReference(item));
 
     /// <summary>
     /// Section 5's interaction predicate as the table applies it: the host's answer, and never a
@@ -219,11 +260,12 @@ public sealed partial class Table
         IReadOnlyList<object> Shown,
         IdentitySet Held,
         IReadOnlyList<object> Released
-    ) Hold(IReadOnlyList<object> snapshot, IdentityMap<object> live, bool sortChanged = false)
+    ) Hold(IReadOnlyList<object> snapshot, IdentityMap<object> live, bool sortChanged = false,
+        Body.Source.Preparation? preparation = null)
     {
         IdentitySet held = _candidateHeld;
         held.Clear();
-        bool holds = !sortChanged && _hierarchy is null && IsPointed && _view.Count > 0;
+        bool holds = !sortChanged && KeepsMembership;
         if (!holds && _released.Count == 0)
         {
             return (snapshot, held, Array.Empty<object>());
@@ -233,7 +275,7 @@ public sealed partial class Table
         released.Clear();
         foreach (var entry in _released)
         {
-            if (live.ContainsKey(entry.Key, _released) == entry.Value)
+            if ((Resolve(entry.Key, _released) is not null) == entry.Value)
                 released.Add(entry.Key);
         }
         if (released.Count > 0 || !holds)
@@ -245,19 +287,22 @@ public sealed partial class Table
         staying.Clear();
         foreach (object item in snapshot)
         {
-            if (_view.Positions.IndexOf(item, live) >= 0)
+            if (_view.Positions.IndexOf(item, preparation is null ? live : preparation) >= 0)
                 staying.Add(item);
         }
 
         foreach (object row in _view)
         {
-            if (!live.ContainsKey(row, _view.Positions.Map))
+            if (Resolve(row, _view.Positions.Map) is null)
             {
                 held.Add(row, _view.Positions.Map);
             }
         }
 
         return (staying, held, released);
+
+        object? Resolve(object item, IIdentityKeys keys) => preparation is null
+            ? live.Resolve(item, keys) : preparation.Resolve(item, keys);
     }
 
     private void AcceptHold(IdentitySet held, IReadOnlyList<object> released)
@@ -280,7 +325,8 @@ public sealed partial class Table
     private (IReadOnlyList<object> Order, IdentitySet Pinned) Pin(
         IReadOnlyList<object> order,
         IdentitySet held,
-        IdentityMap<object> live
+        IdentityMap<object> live,
+        Body.Source.Preparation? preparation = null
     )
     {
         bool reorders = _hierarchy is null && SortsLocally && !SortsOrder;
@@ -317,7 +363,7 @@ public sealed partial class Table
             if (result[index] is not null)
                 continue;
 
-            while (pinned.Contains(order[next], live))
+            while (pinned.Contains(order[next], preparation is null ? live : preparation))
             {
                 next++;
             }
@@ -340,8 +386,12 @@ public sealed partial class Table
             int index = _view.Positions.IndexOf(row);
             if (index < 0 || index >= result.Count)
                 return;
-            if (live.TryGetValue(row, _view.Positions.Map, out object current))
-                Keep(index, current, live);
+            object? current = preparation is null ? live.Resolve(row, _view.Positions.Map)
+                : preparation.Resolve(row, _view.Positions.Map);
+            if (current is not null)
+            {
+                Keep(index, current, preparation is null ? live : preparation);
+            }
         }
     }
 }

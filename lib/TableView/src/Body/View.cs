@@ -1,4 +1,3 @@
-using System.Buffers;
 using System.Collections.ObjectModel;
 using Microsoft.UI.Xaml.Data;
 using Windows.Foundation.Collections;
@@ -18,12 +17,17 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
     private readonly Func<object, bool> _isSelected;
     private readonly Func<IReadOnlyCollection<int>> _selectedIndices;
     private PositionIndex? _reconcilingOrder;
+    private long _inserts;
+    private long _removals;
+    private IIdentityKeys? _changingKeys;
 
     internal View(IIdentity identity, Func<object, bool> isSelected, Func<IReadOnlyCollection<int>> selectedIndices)
+        : base(new GapBuffer())
     {
         _isSelected = isSelected;
         _selectedIndices = selectedIndices;
         Positions = new(identity);
+        Positions.Bind(this, () => new(_inserts, _removals));
     }
 
     internal PositionIndex Positions { get; private set; }
@@ -31,6 +35,7 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
 
     internal IIdentityKeys? KeysFor(object item) =>
         _reconcilingOrder?.ContainsReference(item) == true ? _reconcilingOrder
+            : _changingKeys?.ContainsReference(item) == true ? _changingKeys
             : Positions.ContainsReference(item) ? Positions : null;
 
     internal int IndexOfIdentity(object? item)
@@ -41,7 +46,34 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
         }
         if (_reconcilingOrder is not { } next)
         {
-            return Positions.IndexOf(item);
+            if (_changingKeys is Source.Preparation source)
+            {
+                IIdentityKeys? available = KeysFor(item);
+                object? previous = available is null ? Positions.Map.Resolve(item) : Positions.Map.Resolve(item, available);
+                available ??= previous is not null ? Positions : null;
+                object? current = available is null ? source.Membership.Resolve(item) : source.Resolve(item, available);
+                if (previous is null && current is null)
+                {
+                    return -1;
+                }
+                int stored = previous is not null && Positions.Map.TryGetValue(previous, Positions, out int known) ? known : -1;
+                if (ContainsAt(stored))
+                {
+                    return stored;
+                }
+                for (int at = 0; at < Count; at++)
+                {
+                    if (ContainsAt(at))
+                    {
+                        return at;
+                    }
+                }
+                return -1;
+
+                bool ContainsAt(int at) => at >= 0 && at < Count
+                    && (ReferenceEquals(this[at], previous) || ReferenceEquals(this[at], current));
+            }
+            return KeysFor(item) is { } captured ? Positions.IndexOf(item, captured) : Positions.IndexOf(item);
         }
 
         IIdentityKeys? keys = KeysFor(item);
@@ -79,6 +111,7 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
     internal void SetIdentity(IIdentity identity)
     {
         Positions = new(identity);
+        Positions.Bind(this, () => new(_inserts, _removals));
     }
 
     // Native vector events avoid marshaling a .NET collection event and its item lists per row.
@@ -87,22 +120,27 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
     protected override void InsertItem(int index, object item)
     {
         base.InsertItem(index, item);
-        VectorChanged?.Invoke(this, new Change(CollectionChange.ItemInserted, index));
+        _inserts++;
+        Version++;
+        VectorChanged?.Invoke(this, new VectorChange(CollectionChange.ItemInserted, index));
     }
 
     protected override void RemoveItem(int index)
     {
         base.RemoveItem(index);
-        VectorChanged?.Invoke(this, new Change(CollectionChange.ItemRemoved, index));
+        _removals++;
+        Version++;
+        VectorChanged?.Invoke(this, new VectorChange(CollectionChange.ItemRemoved, index));
     }
 
     protected override void SetItem(int index, object item)
     {
         base.SetItem(index, item);
-        VectorChanged?.Invoke(this, new Change(CollectionChange.ItemChanged, index));
+        Version++;
+        VectorChanged?.Invoke(this, new VectorChange(CollectionChange.ItemChanged, index));
     }
 
-    private sealed class Change(CollectionChange change, int index) : IVectorChangedEventArgs
+    private sealed class VectorChange(CollectionChange change, int index) : IVectorChangedEventArgs
     {
         public CollectionChange CollectionChange => change;
         public uint Index => (uint)index;
@@ -157,22 +195,21 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
 
     /// <summary>Bring the view to <paramref name="snapshot"/>.</summary>
     /// <remarks>
-    /// The owner's requirement: when the view is repopulated, the rows that leave animate out and
-    /// the rows that arrive animate in, and the table is never empty in between. Only per-row
-    /// notifications give the list that; a reset drops every container and shows the new rows in
-    /// one step. So every change comes through here as removals and insertions, a sort included.
+    /// Per-row notifications preserve the list's native transitions and unchanged containers;
+    /// a reset drops every container. Every change comes through here as removals and insertions,
+    /// a sort included. Table's frame owner suppresses transitions for a disjoint visible-window
+    /// replacement, whose native delete/add delay would otherwise leave the panel empty.
     /// <para>
     /// A snapshot that is already the view, the same instances in the same order, costs one
     /// comparison per row and nothing else. The host re-projects after ticks that changed nothing
     /// visible, and this is what keeps that free.
     /// </para>
     /// <para>
-    /// Otherwise four passes, and the order of them is the point. Membership first, raised where it
-    /// happens, because the count is the one thing the list keeps for a row it has not realized.
-    /// Then every row leaving a run of realized positions, highest first. Then every position
+    /// Rows leaving realized runs go first, highest index first. Then every position
     /// outside those runs, set without a notification. Last, what each run is missing, ascending.
     /// Removing before placing and placing before inserting is what keeps a row from being in the
-    /// view twice at any moment, which the list is never asked to make sense of.
+    /// view twice at any moment, which the list is never asked to make sense of. Net count
+    /// changes follow the last surviving run, so they cannot shift its containers.
     /// </para>
     /// <para>
     /// The list realizes only the rows on screen, a small cache around them, and whatever it has
@@ -198,19 +235,21 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
     )
     {
         _reconcilingOrder = place;
+        Positions.Bind(this);
         try
         {
             List<int> held = new(realized);
             held.Sort();
 
-            Membership(snapshot, place, held);
-
             List<(int Start, int End)> runs = Runs(held);
-            List<int> removed = RemoveFromRuns(place, runs, pinned);
+            int Target(object item) => place.IndexOfKnown(item, Positions);
+            List<int> removed = RemoveFromRuns(Target, runs, pinned);
+            runs = runs.Where(run => run.Start < snapshot.Count)
+                .Select(run => (run.Start, Math.Min(run.End, snapshot.Count))).ToList();
             PlaceQuietly(snapshot, runs, removed);
-            InsertIntoRuns(snapshot, place, runs);
+            InsertIntoRuns(snapshot, Target, runs);
 
-            place.Bind(this);
+            place.Bind(this, () => new(_inserts, _removals));
             Positions = place;
             Version++;
 
@@ -222,78 +261,145 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
         }
     }
 
-    /// <summary>
-    /// Rows joining or leaving, raised where they happen. The count is the one thing the list keeps
-    /// for a row it has not realized, so this pass is announced in full however far off screen it
-    /// is, and raising it at the true index leaves the panel's scroll anchoring as it is today.
-    /// </summary>
-    private void Membership(
-        IReadOnlyList<object> snapshot,
-        PositionIndex place,
-        List<int> held
-    )
+    internal bool Reconcile(IReadOnlyList<object> snapshot, IReadOnlyList<Change.Edit> changes,
+        Source.Preparation source, IReadOnlyList<int> realized, IdentitySet pinned)
     {
-        for (int i = Count - 1; i >= 0; i--)
+        List<(Change.Edit Edit, int Before)> edits = new(changes.Count);
+        foreach (Change.Edit edit in changes)
         {
-            if (place.IndexOfKnown(this[i], Positions) < 0)
-            {
-                RemoveAt(i);
-                Shift(held, i, -1);
-            }
+            edits.Add((edit, edit.Before is null ? -1 : IndexOfIdentity(edit.Before)));
+        }
+        if (changes.Count == 1 && (changes[0].Before is null || changes[0].After is null
+                || edits[0].Before == changes[0].Index)
+            || ReferenceEquals(snapshot, this))
+        {
+            return ApplyEdits(edits, source, realized);
         }
 
-        bool[] present = ArrayPool<bool>.Shared.Rent(snapshot.Count);
-        Array.Clear(present, 0, snapshot.Count);
+        int[] removedIndices = edits.Where(entry => entry.Before >= 0).Select(entry => entry.Before).Order().ToArray();
+        int[] insertedIndices = edits.Where(entry => entry.Edit.After is not null).Select(entry => entry.Edit.Index).Order().ToArray();
+        Dictionary<object, int> targets = new(ReferenceEqualityComparer.Instance);
+        foreach (int index in realized)
+        {
+            object item = this[index];
+            int edited = edits.FindIndex(entry => entry.Before == index);
+            if (edited >= 0)
+            {
+                Change.Edit edit = edits[edited].Edit;
+                targets[item] = edit.After is not null ? edit.Index : -1;
+                continue;
+            }
+            int target = index - removedIndices.Count(removed => removed < index);
+            foreach (int inserted in insertedIndices)
+            {
+                if (inserted <= target)
+                {
+                    target++;
+                }
+            }
+            targets[item] = target;
+        }
+        int Target(object item) => targets.GetValueOrDefault(item, -1);
+        _changingKeys = source;
         try
         {
-            for (int i = 0; i < Count; i++)
+            List<(int Start, int End)> runs = Runs(realized.Order().ToList());
+            List<int> removed = RemoveFromRuns(Target, runs, pinned);
+            runs = runs.Where(run => run.Start < snapshot.Count)
+                .Select(run => (run.Start, Math.Min(run.End, snapshot.Count))).ToList();
+            PlaceQuietly(snapshot, runs, removed);
+            InsertIntoRuns(snapshot, Target, runs);
+            foreach (var entry in edits)
             {
-                present[place.IndexOfKnown(this[i], Positions)] = true;
-            }
-
-            for (int i = 0; i < snapshot.Count; i++)
-            {
-                if (present[i])
+                if (entry.Edit.Before is not null)
                 {
-                    continue;
+                    Positions.Remove(entry.Edit.Before, source);
                 }
-
-                // The snapshot's index, clamped: the view is still in its old order here, so this is
-                // where the row belongs at the end rather than where it belongs now. The passes below
-                // put every row in its place; this one only has to get the membership and the count
-                // right, and to leave the index it inserted at valid.
-                int at = Math.Min(i, Count);
-                Insert(at, snapshot[i]);
-                Shift(held, at, 1);
             }
+            foreach (var entry in edits)
+            {
+                if (entry.Edit.After is not null)
+                {
+                    Positions.Insert(entry.Edit.After, entry.Edit.Index, source);
+                }
+                if (entry.Before != entry.Edit.Index)
+                {
+                    _removals += entry.Before >= 0 ? 1 : 0;
+                    _inserts += entry.Edit.After is not null ? 1 : 0;
+                }
+            }
+            Version++;
+            return changes.Count > 0;
         }
         finally
         {
-            ArrayPool<bool>.Shared.Return(present);
+            _changingKeys = null;
         }
     }
 
-    /// <summary>
-    /// The realized indices after a raised change at <paramref name="at"/>. An index the removal
-    /// took out is marked gone rather than moved.
-    /// </summary>
-    private static void Shift(List<int> held, int at, int delta)
+    private bool ApplyEdits(List<(Change.Edit Edit, int Before)> changes, Source.Preparation source,
+        IReadOnlyList<int> realized)
     {
-        for (int i = 0; i < held.Count; i++)
+        _changingKeys = source;
+        try
         {
-            if (held[i] < 0)
+            List<(Change.Edit Edit, int Before)> edits = new(changes.Count);
+            bool changed = false;
+            foreach (var entry in changes)
             {
-                continue;
+                Change.Edit edit = entry.Edit;
+                int before = entry.Before;
+                if (before == edit.Index && edit.After is not null)
+                {
+                    if (!ReferenceEquals(this[before], edit.After))
+                    {
+                        Positions.Insert(edit.After, before, source);
+                        if (realized.Contains(before))
+                        {
+                            this[before] = edit.After;
+                        }
+                        else
+                        {
+                            Items[before] = edit.After;
+                            Version++;
+                        }
+                        changed = true;
+                    }
+                    continue;
+                }
+                edits.Add((edit, before));
             }
-
-            if (delta < 0 && held[i] == at)
+            edits.Sort((left, right) => right.Before.CompareTo(left.Before));
+            foreach (var entry in edits)
             {
-                held[i] = -1;
+                if (entry.Before < 0)
+                {
+                    continue;
+                }
+                Positions.Remove(entry.Edit.Before!, source);
+                RemoveAt(entry.Before);
+                changed = true;
             }
-            else if (held[i] >= at)
+            edits.Sort((left, right) => left.Edit.Index.CompareTo(right.Edit.Index));
+            foreach (var entry in edits)
             {
-                held[i] += delta;
+                if (entry.Edit.After is not { } item)
+                {
+                    continue;
+                }
+                Positions.Insert(item, entry.Edit.Index, source);
+                Insert(entry.Edit.Index, item);
+                changed = true;
             }
+            if (changed)
+            {
+                Version++;
+            }
+            return changed;
+        }
+        finally
+        {
+            _changingKeys = null;
         }
     }
 
@@ -343,7 +449,7 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
     /// overwritten, and a focused row pinned far from the viewport makes a second run ordinary.
     /// </remarks>
     private List<int> RemoveFromRuns(
-        PositionIndex place,
+        Func<object, int> target,
         List<(int Start, int End)> runs,
         IdentitySet pinned
     )
@@ -353,7 +459,7 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
         for (int r = runs.Count - 1; r >= 0; r--)
         {
             (int start, int end) = runs[r];
-            bool[] stays = RunSurvivors(place, start, end, pinned);
+            bool[] stays = RunSurvivors(target, start, end, pinned);
 
             for (int i = end - 1; i >= start; i--)
             {
@@ -380,6 +486,12 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
         List<int> removed
     )
     {
+        int missing = removed.Count(index => index < snapshot.Count);
+        int count = snapshot.Count - missing;
+        while (Count > count)
+        {
+            RemoveAt(Count - 1);
+        }
         int gone = 0;
         int next = 0;
         int run = 0;
@@ -403,7 +515,15 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
             }
 
             // Its place right now is its final one less the removals the runs made below it.
-            Items[j - gone] = snapshot[j];
+            int at = j - gone;
+            if (at < Count)
+            {
+                Items[at] = snapshot[j];
+            }
+            else
+            {
+                Insert(at, snapshot[j]);
+            }
         }
     }
 
@@ -412,7 +532,7 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
     /// filled is already final by the time it is reached, so the row standing there can be read
     /// directly.
     /// </summary>
-    private void InsertIntoRuns(IReadOnlyList<object> snapshot, PositionIndex place, List<(int Start, int End)> runs)
+    private void InsertIntoRuns(IReadOnlyList<object> snapshot, Func<object, int> target, List<(int Start, int End)> runs)
     {
         foreach ((int start, int end) in runs)
         {
@@ -420,7 +540,7 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
             {
                 object next = snapshot[i];
 
-                if (i < Count && place.IndexOfKnown(this[i], Positions) == i)
+                if (i < Count && target(this[i]) == i)
                 {
                     // Same row, new instance: the host abandoned the object this container is bound
                     // to, so nothing would update that container again.
@@ -466,9 +586,9 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
     /// Per run, never over the whole view. With one survivor set for the whole view, the single row
     /// a reversal keeps could fall outside every run, and the run scripts would then neither remove
     /// it nor account for it: the list would be left holding a row at an index the view disagrees
-    /// with. Restricted to the run, the arithmetic also stays neutral — a run holds the same number
-    /// of positions in both orders, so what it removes here it takes back in insertions, and the
-    /// runs below it never move.
+    /// with. A surviving equal-sized run takes its removals back as insertions, so runs below it
+    /// keep their indices. A shrinking source clips or drops tail runs; net-count changes then
+    /// account for those positions after the last surviving run.
     /// <para>
     /// A row that would have to cross a pinned row moves instead of it. Every row left can then be
     /// joined by the pinned rows in an increasing run, so the longest run contains them all and a
@@ -476,7 +596,7 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
     /// </para>
     /// </remarks>
     private bool[] RunSurvivors(
-        PositionIndex place,
+        Func<object, int> targetIndex,
         int start,
         int end,
         IdentitySet pinned
@@ -486,7 +606,7 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
         int[] target = new int[count];
         for (int row = 0; row < count; row++)
         {
-            int to = place.IndexOfKnown(this[start + row], Positions);
+            int to = targetIndex(this[start + row]);
             target[row] = to >= start && to < end ? to : -1;
         }
 
@@ -500,7 +620,7 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
                     continue;
                 }
 
-                if (pinned.Contains(this[start + row], place.ContainsReference(this[start + row]) ? place : Positions))
+                if (pinned.Contains(this[start + row], KeysFor(this[start + row])!))
                 {
                     above = target[row];
                 }
@@ -518,7 +638,7 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
                     continue;
                 }
 
-                if (pinned.Contains(this[start + row], place.ContainsReference(this[start + row]) ? place : Positions))
+                if (pinned.Contains(this[start + row], KeysFor(this[start + row])!))
                 {
                     below = target[row];
                 }

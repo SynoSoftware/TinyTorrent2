@@ -50,9 +50,27 @@ The sorting owner combines remaining key work and pinned/held presentation
 work before scheduling a settle. Header choices carry committed-sort and
 detach revisions and run after the shared rendering frame wait; setters and
 layout restoration use the same synchronous commit boundary.
+Eligible header sorts capture detached immutable key/collation groups on UI,
+order them with the same stable routine on a worker, and return through that
+one frame owner. The queued request holds the generic job and an optional
+hierarchy-owned captured parent/group association. Completion checks the exact
+request and current revisions, then rebases current instances, keys and base
+ties before the ordinary publish accepts it. Capture and commit remain UI work;
+no host callback or identity map enters the worker payload. The captured
+dispatcher posts completion; refusal releases only that exact queued request.
 The pipeline prepares the current source capture before an explicit sort and
 passes its captured-key map into the same publish for acceptance. Failed
 comparisons leave the source, criterion and active workspace unaccepted.
+
+`Table/View.cs` also owns the disjoint visible-window transition exception.
+It compares final rows in the current panel's visible index interval with old
+positions using captured keys. With no overlap and a nonempty final source,
+it saves the surface's local transition value once and assigns a separate empty
+collection through that layout episode. The shared post-Rendering callback
+restores its original value source only when the view version is current;
+detach and retemplate restore the captured surface. A shrinking source clips
+the old interval conservatively; this does not predict a later native viewport
+clamp. The reconciliation script and notifications are unchanged.
 
 The [hierarchy extension](hierarchy.md) keeps host expansion state outside the
 control. Captured child membership feeds the same private view, sorting cadence
@@ -73,10 +91,21 @@ responsibilities.
 The identity module creates typed maps and sets, so value-type keys remain
 unboxed. Source membership and the view's position index retain captured keys;
 maps transfer those keys directly rather than calling the host selector again.
-The source prepares a candidate membership map and accepts it with the validated
-snapshot only after ordering succeeds. The pipeline compares the final instances
-and order before building a new position index, which the view adopts after
-reconciliation. Sibling positions belong to the hierarchy's nodes.
+The source prepares whole membership or an accepted-predecessor delta and
+accepts it only after ordering succeeds. Its subscription identity rejects
+stale callbacks even when their nullable sender carries no usable identity.
+Delta preparation retains entrant/leaver captured keys through hold, order,
+view and selection, then clears those transient references before host events.
+The one pipeline receives whole/collection/named-values changes. Named values
+use incremental flat keys; hierarchy values use full sibling projection.
+Due whole-order settling, held/released membership recovery, stale-source
+validation and required actual-comparer/global fallbacks retain whole preparation;
+ordinary eligible named updates do not read unaffected sort keys.
+Whole reorders build a candidate position index, adopted after reconciliation.
+Incremental changes update only edited entries; shared PositionIndex bounds
+stale positions by each sequence's insertion/removal counts, rebuilding after
+about the square root of its length. Quiet logical moves count too. Sibling
+positions belong to the hierarchy's nodes.
 While native vector callbacks observe an intermediate view, its lookup verifies
 the indexed reference and scans only when neither prepared position is current.
 The hierarchy owns visible membership for sorting; source capture versions decide
@@ -99,7 +128,13 @@ Marquee and drag visuals do not decide which gesture is active.
 The private view sends native observable-vector insert, remove and replacement
 events. It avoids projecting .NET collection-event arguments and their item
 lists for every membership change, a measured cost on large Library searches.
-The reconciliation algorithm and the positions it announces remain unchanged.
+The view stores rows in a gap buffer. Whole and incremental preparations share
+one realized-run remove/quiet-place/insert script, with count events after the
+last surviving run; a single arrival/removal retains its direct mutation.
+Incremental positional facts derive targets for realized rows without building
+another full map. Native callbacks see true intermediate rows and counts;
+selected-range lookup uses the view's transient reference check until edited
+map entries and counted shifts are committed.
 
 The private view also implements `ISelectionInfo`, answering from the table's
 selection model. The list reads a row's selected state from it when it builds

@@ -28,7 +28,15 @@ public sealed partial class Table
     private long _sortRevision;
     private bool _settlePending;
 
-    private sealed record QueuedSort(Sort? Requested, Sort? Committed, long SortRevision, long LifetimeRevision);
+    private sealed record QueuedSort(Sort? Requested, Sort? Committed, long SortRevision, long LifetimeRevision)
+    {
+        internal SortWork? Work { get; set; }
+        internal TimeSpan CaptureTime { get; set; }
+        internal TimeSpan CommitTime { get; set; }
+    }
+
+    private sealed record SortWork(SortedOrder Workspace, SortedOrder.Work Sorting,
+        Hierarchy.Work? Hierarchy, long PublishVersion);
 
     /// <summary>When the rows were last allowed to take their sorted places.</summary>
     private DateTimeOffset _orderSettledAt = DateTimeOffset.MinValue;
@@ -159,7 +167,7 @@ public sealed partial class Table
             IReadOnlyList<object>? order = _sortMode == SortMode.Local
                 ? PrepareSort(capture, workspace, direction, out membership) : null;
             if (_hierarchy is null)
-                workspace?.Accept();
+                workspace?.Accept(order!);
             CommitSort(column, direction, workspace);
 
             // Complete presentation before selection handlers can run or throw.
@@ -225,8 +233,8 @@ public sealed partial class Table
 
     private Sort? PresentedSort => _queuedSort is { } queued && IsValid(queued) ? queued.Requested : Sort;
 
-    private bool IsValid(QueuedSort queued) => !_detached && IsLoaded
-        && queued.SortRevision == _sortRevision && queued.LifetimeRevision == _lifetimeRevision
+    private bool IsValid(QueuedSort queued) => !_detached
+        && queued.SortRevision == _sortRevision && queued.LifetimeRevision == _lifetimeRevision && IsLoaded
         && queued.Committed == Sort
         && (queued.Requested is not Sort requested
             || EffectiveLayout.Order.Any(column => ReferenceEquals(column.Column, requested.Column) && column.IsVisible));
@@ -235,16 +243,119 @@ public sealed partial class Table
     {
         if (!ReferenceEquals(_queuedSort, queued))
             return;
-        _queuedSort = null;
         try
         {
-            if (IsValid(queued))
-                Sort = queued.Requested;
+            if (!IsValid(queued))
+            {
+                _queuedSort = null;
+                return;
+            }
+            if (queued.Work is null && StartWork(queued))
+            {
+                return;
+            }
+            if (queued.Work is { Sorting.Completion.IsCompleted: false })
+            {
+                return;
+            }
+            _queuedSort = null;
+            long start = System.Diagnostics.Stopwatch.GetTimestamp();
+            try
+            {
+                if (queued.Work is { } work)
+                {
+                    CommitWork(queued, work);
+                }
+                else
+                {
+                    Sort = queued.Requested;
+                }
+            }
+            finally
+            {
+                queued.CommitTime = System.Diagnostics.Stopwatch.GetElapsedTime(start);
+            }
+        }
+        catch
+        {
+            if (ReferenceEquals(_queuedSort, queued))
+            {
+                _queuedSort = null;
+            }
+            throw;
         }
         finally
         {
             _headerStrip?.Panel?.RefreshHeader();
         }
+    }
+
+    private bool StartWork(QueuedSort queued)
+    {
+        if (_sortMode != SortMode.Local || queued.Requested is not Sort requested)
+        {
+            return false;
+        }
+        long start = System.Diagnostics.Stopwatch.GetTimestamp();
+        EffectiveColumn column = RequireSortable(requested.Column);
+        SortedOrder workspace = column.Column.Sort!.Create(_identity);
+        if (!workspace.CanWork)
+        {
+            return false;
+        }
+        try
+        {
+            queued.Work = CaptureSort(workspace, requested.Direction);
+            Microsoft.UI.Dispatching.DispatcherQueue dispatcher = DispatcherQueue;
+            _ = queued.Work.Sorting.Completion.ContinueWith(completed =>
+            {
+                _ = completed.Exception;
+                if (!dispatcher.TryEnqueue(() => ResumeSort(queued)))
+                {
+                    Interlocked.CompareExchange(ref _queuedSort, null, queued);
+                }
+            }, TaskScheduler.Default);
+            return true;
+        }
+        finally
+        {
+            queued.CaptureTime = System.Diagnostics.Stopwatch.GetElapsedTime(start);
+        }
+    }
+
+    private void ResumeSort(QueuedSort queued)
+    {
+        if (!ReferenceEquals(_queuedSort, queued))
+        {
+            return;
+        }
+        if (!IsValid(queued))
+        {
+            _queuedSort = null;
+            if (!_detached && IsLoaded)
+            {
+                _headerStrip?.Panel?.RefreshHeader();
+            }
+            return;
+        }
+        RequestFrame();
+    }
+
+    private void CommitWork(QueuedSort queued, SortWork work)
+    {
+        Sort requested = queued.Requested!.Value;
+        work.Sorting.CountComparisons();
+        Body.Source.Capture capture = _source.Current;
+        IReadOnlyList<object> order = PrepareSort(capture, work.Workspace, requested.Direction,
+            out IdentityMap<object>? membership, work);
+        if (_hierarchy is null)
+        {
+            work.Workspace.Accept(order);
+        }
+        CommitSort(RequireSortable(requested.Column), requested.Direction, work.Workspace);
+        _headerStrip?.Panel?.RefreshHeader();
+        RebuildView(capture, order, membership);
+        RaiseLayoutChanged(LayoutChange.Sort);
     }
 
     /// <summary>
@@ -312,35 +423,51 @@ public sealed partial class Table
     /// </para>
     /// </remarks>
     /// <returns>The order, and the rows that keep their index, whose containers the reconcile keeps.</returns>
-    private (IReadOnlyList<object> Order, IdentitySet Pinned) ViewOrder(
+    private (IReadOnlyList<object> Order, IdentitySet Pinned, IReadOnlyList<Change.Edit>? Changes) ViewOrder(
         IReadOnlyList<object> snapshot,
-        IdentityMap<object> live
+        IdentityMap<object> live,
+        Body.Source.Preparation? source = null
     )
     {
         if (_hierarchy is not null && !SortsLocally)
-            return (snapshot, _held);
-        var (shown, held, released) = Hold(snapshot, live);
+            return (snapshot, _held, null);
         DateTimeOffset now = DateTimeOffset.UtcNow;
         bool allowMoves = !SortsLocally || SortsOrder || _view.Count == 0
             || _sortInterval == TimeSpan.Zero || now - _orderSettledAt >= _sortInterval;
+        HoldChange? delta = source is null ? null : PrepareHold(source);
+        if (delta?.Holds == true && allowMoves && _sortedOrder?.NeedsSettle == true)
+        {
+            delta = null;
+        }
+        var (shown, held, released) = delta is null ? Hold(snapshot, live, preparation: source)
+            : (snapshot, delta.Held, (IReadOnlyList<object>)Array.Empty<object>());
         if (_hierarchy is null)
         {
-            SortedOrder.Preparation prepared = _sortedOrder is null ? new(shown, false)
-                : _sortedOrder.Prepare(shown, live, _sortDirection, allowMoves);
+            bool incremental = delta is not null;
+            SortedOrder.Preparation prepared = _sortedOrder is null
+                ? new(shown, false, incremental ? NaturalChanges(source!, delta!) : null)
+                : incremental ? _sortedOrder.Prepare(source!, _sortDirection, allowMoves, delta!.Arrivals)
+                : _sortedOrder.Prepare(shown, source is null ? live : source, _sortDirection, allowMoves);
+            if (_sortedOrder is null && delta?.Holds == true)
+            {
+                AcceptHold(held, released);
+                return (_view, held, prepared.Changes);
+            }
             IReadOnlyList<object> sorted = prepared.Rows;
-            var result = Pin(sorted, held, live);
-            _sortedOrder?.Accept();
+            var result = Pin(sorted, held, live, source);
+            _sortedOrder?.Accept(prepared.Rows);
             AcceptHold(held, released);
             if (allowMoves || prepared.UsedFullSort)
                 _orderSettledAt = now;
             _settlePending = SortsLocally && !SortsOrder
                 && (_sortedOrder!.NeedsSettle || held.Count > 0 || shown.Count != snapshot.Count
-                    || !result.Order.SequenceEqual(sorted, ReferenceEqualityComparer.Instance));
+                    || !ReferenceEquals(result.Order, sorted)
+                        && !result.Order.SequenceEqual(sorted, ReferenceEqualityComparer.Instance));
             if (_settlePending)
                 ScheduleSettle(_sortInterval - (now - _orderSettledAt));
             else
                 _settleDue?.Stop();
-            return result;
+            return (result.Order, result.Pinned, ReferenceEquals(result.Order, sorted) ? prepared.Changes : null);
         }
 
         // Natural order belongs to the host, which reorders when it means to, and the row-order
@@ -366,7 +493,7 @@ public sealed partial class Table
 
         return Finish(kept, settled: false);
 
-        (IReadOnlyList<object> Order, IdentitySet Pinned) Finish(
+        (IReadOnlyList<object> Order, IdentitySet Pinned, IReadOnlyList<Change.Edit>? Changes) Finish(
             IReadOnlyList<object> order,
             bool settled
         )
@@ -385,8 +512,33 @@ public sealed partial class Table
                 _settlePending = true;
                 ScheduleSettle(_sortInterval - (now - _orderSettledAt));
             }
-            return result;
+            return (result.Order, result.Pinned, null);
         }
+    }
+
+    private IReadOnlyList<Change.Edit> NaturalChanges(Body.Source.Preparation source, HoldChange hold)
+    {
+        List<Change.Edit> changes = new();
+        if (source.Change is Change.Values)
+        {
+            return changes;
+        }
+        foreach (object item in source.Removed)
+        {
+            if (!hold.Holds && !source.Additions.ContainsKey(item, source.Leavers))
+            {
+                changes.Add(new(item, null, -1));
+            }
+        }
+        int start = ((Change.Collection)source.Change).Notification.NewStartingIndex;
+        foreach (int index in hold.Arrivals)
+        {
+            object item = source.Added[index];
+            object? before = hold.Holds ? _view.Positions.Map.Resolve(item, source.Additions)
+                : source.Leavers.Resolve(item, source.Additions);
+            changes.Add(new(before, item, hold.Holds ? _view.Positions.IndexOf(item, source.Additions) : start + index));
+        }
+        return changes;
     }
 
     /// <summary>
@@ -490,13 +642,30 @@ internal sealed class SortDefinition<TRow, TKey>(Func<TRow, TKey> key, IComparer
 
 internal abstract class SortedOrder
 {
-    internal readonly record struct Preparation(IReadOnlyList<object> Rows, bool UsedFullSort);
+    internal readonly record struct Preparation(IReadOnlyList<object> Rows, bool UsedFullSort,
+        IReadOnlyList<Change.Edit>? Changes = null);
     internal long Comparisons { get; private protected set; }
     internal abstract bool NeedsSettle { get; }
     internal abstract Preparation Prepare(IReadOnlyList<object> rows, IIdentityKeys keys,
         SortDirection direction, bool allowMoves);
-    internal abstract void Accept();
+    internal abstract Preparation Prepare(Body.Source.Preparation source, SortDirection direction, bool allowMoves,
+        IReadOnlyList<int>? arrivals = null);
+    internal abstract void Accept(IReadOnlyList<object> rows);
+    internal abstract void Complete();
     internal abstract IReadOnlyList<object> SortSiblings(IReadOnlyList<object> rows, SortDirection direction);
+    internal abstract bool CanWork { get; }
+    internal abstract Work CaptureWork(IReadOnlyList<IReadOnlyList<object>> groups, IIdentityKeys keys,
+        SortDirection direction);
+
+    internal abstract class Work
+    {
+        internal abstract Task Completion { get; }
+        internal abstract TimeSpan Duration { get; }
+        internal abstract IReadOnlyList<object> Prepare(IReadOnlyList<object> rows, IIdentityKeys keys, bool refresh);
+        internal abstract void CountComparisons();
+        internal abstract IReadOnlyList<object> Project(int group, IReadOnlyList<object> siblings,
+            IIdentityKeys keys, bool refresh);
+    }
 }
 
 internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
@@ -504,10 +673,13 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
     private readonly record struct Entry(TKey Key, int BaseIndex, byte[]? Collation);
 
     private readonly Func<TRow, TKey> _key;
+    private readonly IIdentity _identity;
     private readonly IComparer<TKey> _comparer;
     private readonly bool _usesKeyEquality;
     private readonly CompareInfo? _culture;
     private readonly CompareOptions _options;
+    private readonly bool _ordinal;
+    private readonly bool _ignoreCase;
     private List<object> _rows = new();
     private List<object> _candidateRows = new();
     private Entry[] _entries = Array.Empty<Entry>();
@@ -518,6 +690,12 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
     private int[] _indices = Array.Empty<int>();
     private int[] _survivors = Array.Empty<int>();
     private int[] _places = Array.Empty<int>();
+    private int[] _targets = Array.Empty<int>();
+    private readonly List<Change.Edit> _edits = new();
+    private readonly List<(int Index, Entry Value)> _keyUpdates = new();
+    private IIdentityKeys? _candidateKeys;
+    private long _inserts;
+    private long _removals;
     private SortDirection? _direction;
     private SortDirection _candidateDirection;
     private bool _needsSettle;
@@ -526,12 +704,15 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
     internal SortedOrder(IIdentity identity, Func<TRow, TKey> key, IComparer<TKey> comparer)
     {
         _key = key;
+        _identity = identity;
         _comparer = comparer;
         _positions = new(identity);
         _candidatePositions = new(identity);
         if (comparer is StringComparer strings)
         {
-            _usesKeyEquality = StringComparer.IsWellKnownOrdinalComparer(strings, out _);
+            _ordinal = StringComparer.IsWellKnownOrdinalComparer(strings, out bool ignoreCase);
+            _ignoreCase = ignoreCase;
+            _usesKeyEquality = _ordinal;
             if (StringComparer.IsWellKnownCultureAwareComparer(strings, out CompareInfo? culture, out CompareOptions options))
             {
                 _usesKeyEquality = true;
@@ -550,10 +731,135 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
     }
 
     internal override bool NeedsSettle => _needsSettle;
+    internal override bool CanWork => _usesKeyEquality;
+
+    private sealed record Association(object[] Rows, IdentityMap<int> Keys);
+    private readonly record struct WorkResult(long Comparisons, TimeSpan Duration);
+
+    private sealed class Payload(Entry[][] entries, SortDirection direction, bool collation,
+        bool ordinal, bool ignoreCase)
+    {
+        internal Entry[][] Entries { get; } = entries;
+        internal int[][] Indices { get; } = entries.Select(group => Enumerable.Range(0, group.Length).ToArray()).ToArray();
+
+        internal WorkResult Run()
+        {
+            long start = System.Diagnostics.Stopwatch.GetTimestamp();
+            IComparer<TKey> comparer = ordinal
+                ? (IComparer<TKey>)(object)(ignoreCase ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal)
+                : Comparer<TKey>.Default;
+            long comparisons = 0;
+            for (int group = 0; group < Entries.Length; group++)
+            {
+                comparisons += SortIndices(Entries[group], Indices[group], Indices[group].Length,
+                    direction, comparer, collation);
+            }
+            return new(comparisons, System.Diagnostics.Stopwatch.GetElapsedTime(start));
+        }
+    }
+
+    private sealed class CapturedWork : Work
+    {
+        private readonly SortedOrder<TRow, TKey> _owner;
+        private readonly Association[] _groups;
+        private readonly Payload _payload;
+        private readonly SortDirection _direction;
+        private readonly Task<WorkResult> _task;
+
+        internal CapturedWork(SortedOrder<TRow, TKey> owner, Association[] groups,
+            Payload payload, SortDirection direction)
+        {
+            _owner = owner;
+            _groups = groups;
+            _payload = payload;
+            _direction = direction;
+            _task = Task.Run(payload.Run);
+        }
+
+        internal override Task Completion => _task;
+        internal override TimeSpan Duration => _task.GetAwaiter().GetResult().Duration;
+        internal override void CountComparisons() => _owner.Comparisons += _task.GetAwaiter().GetResult().Comparisons;
+        internal override IReadOnlyList<object> Prepare(IReadOnlyList<object> rows, IIdentityKeys keys, bool refresh)
+        {
+            _task.GetAwaiter().GetResult();
+            Seed(_owner, 0);
+            if (!refresh)
+            {
+                return _owner._candidateRows;
+            }
+            _owner.Accept(_owner._candidateRows);
+            return _owner.Prepare(rows, keys, _direction, allowMoves: true).Rows;
+        }
+
+        private void Seed(SortedOrder<TRow, TKey> owner, int group)
+        {
+            Association captured = _groups[group];
+            int[] indices = _payload.Indices[group];
+            owner._candidateRows.Clear();
+            owner._candidateEntries = new Entry[indices.Length];
+            for (int index = 0; index < indices.Length; index++)
+            {
+                owner._candidateRows.Add(captured.Rows[indices[index]]);
+                owner._candidateEntries[index] = _payload.Entries[group][indices[index]];
+            }
+            owner._candidatePositions.Build(owner._candidateRows, captured.Keys);
+            owner._candidateDirection = _direction;
+            owner._candidateNeedsSettle = false;
+            owner._candidateKeys = null;
+        }
+
+        internal override IReadOnlyList<object> Project(int group, IReadOnlyList<object> siblings,
+            IIdentityKeys keys, bool refresh)
+        {
+            _task.GetAwaiter().GetResult();
+            if (group < 0)
+            {
+                return _owner.SortSiblings(siblings, _direction);
+            }
+            SortedOrder<TRow, TKey> order = new(_owner._identity, _owner._key, _owner._comparer);
+            Seed(order, group);
+            if (!refresh)
+            {
+                return order._candidateRows;
+            }
+            order.Accept(order._candidateRows);
+            Preparation prepared = order.Prepare(siblings, keys, _direction, allowMoves: true);
+            _owner.Comparisons += order.Comparisons;
+            return prepared.Rows;
+        }
+    }
+
+    internal override Work CaptureWork(IReadOnlyList<IReadOnlyList<object>> groups, IIdentityKeys keys,
+        SortDirection direction)
+    {
+        if (!CanWork)
+        {
+            throw new InvalidOperationException("This comparer requires the UI thread.");
+        }
+        Association[] associations = new Association[groups.Count];
+        Entry[][] entries = new Entry[groups.Count][];
+        for (int group = 0; group < groups.Count; group++)
+        {
+            object[] rows = groups[group].ToArray();
+            IdentityMap<int> captured = _identity.CreateMap<int>(keepsKeys: true);
+            entries[group] = new Entry[rows.Length];
+            for (int index = 0; index < rows.Length; index++)
+            {
+                TKey value = _key((TRow)rows[index]);
+                entries[group][index] = new(value, index, Collation(value));
+                captured.TryAdd(rows[index], index, keys);
+            }
+            associations[group] = new(rows, captured);
+        }
+        return new CapturedWork(this, associations,
+            new(entries, direction, _culture is not null, _ordinal, _ignoreCase), direction);
+    }
 
     internal override Preparation Prepare(IReadOnlyList<object> rows, IIdentityKeys keys,
         SortDirection direction, bool allowMoves)
     {
+        _candidateKeys = null;
+        _keyUpdates.Clear();
         EnsureCapacity(Math.Max(rows.Count, _rows.Count));
         try
         {
@@ -563,6 +869,262 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
         {
             Array.Clear(_captured, 0, rows.Count);
         }
+    }
+
+    private sealed class DeltaRows(IReadOnlyList<object> kept, IReadOnlyList<object> added) : IReadOnlyList<object>
+    {
+        public int Count => kept.Count + added.Count;
+        public object this[int index] => index < kept.Count ? kept[index] : added[index - kept.Count];
+        public IEnumerator<object> GetEnumerator()
+        {
+            for (int index = 0; index < Count; index++)
+            {
+                yield return this[index];
+            }
+        }
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    internal override Preparation Prepare(Body.Source.Preparation source, SortDirection direction, bool allowMoves,
+        IReadOnlyList<int>? arrivals = null)
+    {
+        if (!source.IsIncremental || _direction != direction || allowMoves && _needsSettle
+            || source.Change is Change.Collection { Notification.Action: System.Collections.Specialized.NotifyCollectionChangedAction.Move })
+        {
+            return Prepare(source.Capture.Rows, source, direction, allowMoves);
+        }
+        arrivals = source.Change is Change.Values ? Array.Empty<int>()
+            : arrivals ?? Enumerable.Range(0, source.Added.Count).ToArray();
+        DeltaRows rows = new(_rows, source.Change is Change.Values ? Array.Empty<object>() : source.Added);
+        EnsureCapacity(rows.Count);
+        _keyUpdates.Clear();
+        if (source.Change is Change.Values && PrepareValues(source, direction, allowMoves) is { } unchanged)
+        {
+            return unchanged;
+        }
+        if (_candidateEntries.Length < rows.Count)
+        {
+            Array.Resize(ref _candidateEntries, _captured.Length);
+        }
+        _candidateKeys = source;
+        int previousCount = _candidateRows.Count;
+        _candidateRows.Clear();
+        _candidateDirection = direction;
+        _candidateNeedsSettle = !allowMoves && _needsSettle;
+        _edits.Clear();
+        Array.Copy(_entries, _captured, _rows.Count);
+        Array.Clear(_places, 0, rows.Count);
+        try
+        {
+            if (source.Change is Change.Collection collection)
+            {
+                int from = collection.Notification.OldStartingIndex;
+                int to = collection.Notification.NewStartingIndex;
+                for (int index = 0; index < _rows.Count; index++)
+                {
+                    int baseIndex = _captured[index].BaseIndex;
+                    if (source.Removed.Count > 0 && baseIndex >= from + source.Removed.Count)
+                    {
+                        baseIndex -= source.Removed.Count;
+                    }
+                    if (source.Added.Count > 0 && baseIndex >= to)
+                    {
+                        baseIndex += source.Added.Count;
+                    }
+                    _captured[index] = _captured[index] with { BaseIndex = baseIndex };
+                }
+                foreach (object item in source.Removed)
+                {
+                    int index = _positions.IndexOf(item, source.Leavers);
+                    if (index >= 0)
+                    {
+                        _places[index] = -1;
+                        if (!source.Additions.ContainsKey(item, source.Leavers))
+                        {
+                            _edits.Add(new(item, null, -1));
+                        }
+                    }
+                }
+                foreach (int index in arrivals)
+                {
+                    TKey current = _key((TRow)source.Added[index]);
+                    _captured[_rows.Count + index] = new(current, to + index, Collation(current));
+                }
+            }
+            int changed = 0;
+            if (source.Change is Change.Values)
+            {
+                foreach (var update in _keyUpdates)
+                {
+                    _captured[update.Index] = update.Value;
+                    _indices[changed++] = update.Index;
+                    _places[update.Index] = 1;
+                }
+            }
+            int surviving = 0;
+            int previous = -1;
+            bool values = source.Change is Change.Values;
+            bool outOfOrder = values;
+            for (int index = 0; index < _rows.Count; index++)
+            {
+                if (_places[index] < 0)
+                {
+                    continue;
+                }
+                if (!values && previous >= 0 && (allowMoves || arrivals.Count > 0)
+                    && (!_usesKeyEquality || _places[index] == 1 || _places[previous] == 1))
+                {
+                    outOfOrder |= Compare(_captured[previous], _captured[index], direction) > 0;
+                }
+                previous = index;
+                _survivors[surviving++] = index;
+            }
+            bool full = !_usesKeyEquality && outOfOrder;
+            if (full)
+            {
+                Array.Copy(_survivors, _indices, surviving);
+                for (int index = 0; index < arrivals.Count; index++)
+                {
+                    _indices[surviving + index] = _rows.Count + arrivals[index];
+                }
+                SortIndices(surviving + arrivals.Count, direction);
+                for (int index = 0; index < surviving + arrivals.Count; index++)
+                {
+                    Append(_indices[index], rows);
+                }
+                _candidateNeedsSettle = false;
+            }
+            else if (outOfOrder || arrivals.Count > 0)
+            {
+                if (outOfOrder)
+                {
+                    int keep = 0;
+                    for (int index = 0; index < surviving; index++)
+                    {
+                        if (_places[_survivors[index]] != 1)
+                        {
+                            _survivors[keep++] = _survivors[index];
+                        }
+                    }
+                    surviving = keep;
+                }
+                else
+                {
+                    changed = 0;
+                }
+                for (int index = 0; index < arrivals.Count; index++)
+                {
+                    _indices[changed++] = _rows.Count + arrivals[index];
+                }
+                Place(rows, surviving, changed, direction);
+            }
+            else
+            {
+                for (int index = 0; index < surviving; index++)
+                {
+                    Append(_survivors[index], rows);
+                }
+            }
+            if (!_usesKeyEquality && (allowMoves || arrivals.Count > 0))
+            {
+                _candidateNeedsSettle = false;
+            }
+            int affected = source.Change is Change.Values ? source.Added.Count : arrivals.Count;
+            for (int added = 0; added < affected; added++)
+            {
+                int ordinal = source.Change is Change.Values ? added : arrivals[added];
+                object item = source.Added[ordinal];
+                int index = source.Change is Change.Values
+                    ? _positions.IndexOf(item, source.Additions)
+                    : _rows.Count + ordinal;
+                if (index >= 0)
+                {
+                    object? before = source.Change is Change.Values ? _rows[index]
+                        : source.Leavers.Resolve(item, source.Additions);
+                    if (!ReferenceEquals(before, item) || index != _targets[index])
+                    {
+                        _edits.Add(new(before, item, _targets[index]));
+                    }
+                }
+            }
+            if (full)
+            {
+                _candidateKeys = null;
+                _candidatePositions.Build(_candidateRows, source);
+            }
+            return new(_candidateRows, full, full ? null : _edits);
+        }
+        finally
+        {
+            if (_candidateRows.Count < previousCount)
+            {
+                Array.Clear(_candidateEntries, _candidateRows.Count, previousCount - _candidateRows.Count);
+            }
+            Array.Clear(_captured, 0, rows.Count);
+        }
+    }
+
+    private Preparation? PrepareValues(Body.Source.Preparation source, SortDirection direction, bool allowMoves)
+    {
+        _candidateKeys = null;
+        _candidateNeedsSettle = !allowMoves && _needsSettle;
+        try
+        {
+            foreach (object item in source.Added)
+            {
+                int index = _positions.IndexOf(item, source.Additions);
+                if (index < 0)
+                {
+                    continue;
+                }
+                TKey value = _key((TRow)item);
+                Entry kept = _entries[index];
+                bool changed = !_usesKeyEquality || !EqualityComparer<TKey>.Default.Equals(value, kept.Key);
+                _captured[index] = kept;
+                if (changed && allowMoves)
+                {
+                    Entry current = new(value, kept.BaseIndex, Collation(value));
+                    _captured[index] = current;
+                    _keyUpdates.Add((index, current));
+                }
+                else
+                {
+                    _candidateNeedsSettle |= changed;
+                }
+            }
+            bool outOfOrder = false;
+            if (_usesKeyEquality)
+            {
+                foreach (var update in _keyUpdates)
+                {
+                    int index = update.Index;
+                    outOfOrder |= index > 0 && Compare(Current(index - 1), update.Value, direction) > 0;
+                    outOfOrder |= index + 1 < _rows.Count && Compare(update.Value, Current(index + 1), direction) > 0;
+                }
+            }
+            else if (allowMoves && _keyUpdates.Count > 0)
+            {
+                for (int index = 1; index < _rows.Count; index++)
+                {
+                    outOfOrder |= Compare(Current(index - 1), Current(index), direction) > 0;
+                }
+            }
+            return outOfOrder ? null : new Preparation(_rows, false, Array.Empty<Change.Edit>());
+        }
+        finally
+        {
+            foreach (object item in source.Added)
+            {
+                int index = _positions.IndexOf(item, source.Additions);
+                if (index >= 0)
+                {
+                    _captured[index] = default;
+                }
+            }
+        }
+
+        Entry Current(int index) => source.Additions.ContainsKey(_rows[index], _positions)
+            ? _captured[index] : _entries[index];
     }
 
     private Preparation PrepareRows(IReadOnlyList<object> rows, IIdentityKeys keys,
@@ -699,17 +1261,68 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
 
     private void Append(int index, IReadOnlyList<object> rows)
     {
+        _targets[index] = _candidateRows.Count;
         _candidateEntries[_candidateRows.Count] = _captured[index];
         _candidateRows.Add(rows[index]);
     }
 
-    internal override void Accept()
+    internal override void Accept(IReadOnlyList<object> rows)
     {
+        if (ReferenceEquals(rows, _rows))
+        {
+            foreach (var update in _keyUpdates)
+            {
+                _entries[update.Index] = update.Value;
+            }
+            _needsSettle = _candidateNeedsSettle;
+            _keyUpdates.Clear();
+            return;
+        }
+        if (_candidateKeys is { } keys)
+        {
+            long removed = 0;
+            long inserted = 0;
+            foreach (Change.Edit edit in _edits)
+            {
+                int previous = edit.Before is null ? -1 : _positions.IndexOf(edit.Before, _positions);
+                if (edit.Before is not null)
+                {
+                    _positions.Remove(edit.Before, _positions);
+                }
+                if (edit.After is not null)
+                {
+                    _positions.Insert(edit.After, edit.Index, keys);
+                }
+                if (previous != edit.Index)
+                {
+                    removed += previous >= 0 ? 1 : 0;
+                    inserted += edit.After is not null ? 1 : 0;
+                }
+            }
+            _removals += removed;
+            _inserts += inserted;
+        }
         (_rows, _candidateRows) = (_candidateRows, _rows);
         (_entries, _candidateEntries) = (_candidateEntries, _entries);
-        (_positions, _candidatePositions) = (_candidatePositions, _positions);
+        if (_candidateKeys is null)
+        {
+            (_positions, _candidatePositions) = (_candidatePositions, _positions);
+            _positions.Bind(_rows, () => new(_inserts, _removals));
+        }
+        else
+        {
+            _positions.MoveTo(_rows);
+            _candidateKeys = null;
+        }
         _direction = _candidateDirection;
         _needsSettle = _candidateNeedsSettle;
+    }
+
+    internal override void Complete()
+    {
+        _candidateKeys = null;
+        _edits.Clear();
+        _keyUpdates.Clear();
     }
 
     internal override IReadOnlyList<object> SortSiblings(IReadOnlyList<object> rows, SortDirection direction)
@@ -736,13 +1349,30 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
     }
 
     private void SortIndices(int count, SortDirection direction) =>
-        Array.Sort(_indices, 0, count, Comparer<int>.Create((left, right) =>
-            Compare(_captured[left], _captured[right], direction)));
+        Comparisons += SortIndices(_captured, _indices, count, direction, _comparer, _culture is not null);
+
+    private static long SortIndices(Entry[] entries, int[] indices, int count, SortDirection direction,
+        IComparer<TKey> comparer, bool collation)
+    {
+        long comparisons = 0;
+        Array.Sort(indices, 0, count, Comparer<int>.Create((left, right) =>
+        {
+            comparisons++;
+            return Compare(entries[left], entries[right], direction, comparer, collation);
+        }));
+        return comparisons;
+    }
 
     private int Compare(Entry left, Entry right, SortDirection direction)
     {
         Comparisons++;
-        int order = _culture is null ? _comparer.Compare(left.Key, right.Key)
+        return Compare(left, right, direction, _comparer, _culture is not null);
+    }
+
+    private static int Compare(Entry left, Entry right, SortDirection direction,
+        IComparer<TKey> comparer, bool collation)
+    {
+        int order = !collation ? comparer.Compare(left.Key, right.Key)
             : left.Collation is null ? right.Collation is null ? 0 : -1
             : right.Collation is null ? 1 : left.Collation.AsSpan().SequenceCompareTo(right.Collation);
         if (order != 0)
@@ -762,5 +1392,6 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
         Array.Resize(ref _indices, capacity);
         Array.Resize(ref _survivors, capacity);
         Array.Resize(ref _places, capacity);
+        Array.Resize(ref _targets, capacity);
     }
 }

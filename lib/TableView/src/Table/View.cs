@@ -2,6 +2,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 
 namespace Syno.TableView;
 
@@ -12,11 +13,11 @@ public sealed partial class Table
     /// frame after that layout; see <see cref="ScrollIntoView(object)"/>.
     /// </summary>
     /// <remarks>
-    /// The list counts the rows inserted and removed per layout tick, and in a tick with an insert
-    /// it plays the insert animation on every container it builds: invisible for 300 ms, then a
-    /// fade. A scroll in that tick to a row that has no container yet makes the panel recycle every
+    /// With native transitions enabled, the list counts inserts and removals per layout tick
+    /// and can delay newly built containers before fading them in. A scroll in that tick to a
+    /// row that has no container yet makes the panel recycle every
     /// row and build them all again, and a scroll to a row off screen builds the rows it brings in,
-    /// so the rows built that way go blank for those 300 ms. The tick ends with the frame.
+    /// so the rows built that way can go blank during the arrival delay. The tick ends with the frame.
     /// <c>CompositionTarget.Rendering</c> fires only inside a frame, after that frame's layout, so it
     /// clears this. <c>LayoutUpdated</c> also fires from a synchronous <c>UpdateLayout</c> in the
     /// same tick, which would clear it too early.
@@ -25,6 +26,9 @@ public sealed partial class Table
     private bool _frameRequested;
     private PositionIndex _candidatePositions;
     private long _publishVersion;
+    private SuppressedTransitions? _suppressedTransitions;
+
+    private sealed record SuppressedTransitions(Body.Surface Surface, object LocalValue);
 
     /// <summary>The private view, in current visual row order.</summary>
     internal IReadOnlyList<object> View => _view;
@@ -166,6 +170,19 @@ public sealed partial class Table
     /// </summary>
     public void RefreshView() => RebuildView();
 
+    /// <summary>
+    /// Re-evaluate the named items after their sort or interaction values changed. Include every
+    /// changed item; omitted items can retain their previous order or interaction state.
+    /// Unavailable identities are ignored. A valid flat delta reads only named keys and policy;
+    /// due global settling, held/released membership recovery, stale source validation or a
+    /// required comparer/global fallback prepares the whole order. Hierarchies project siblings.
+    /// </summary>
+    public void RefreshView(IEnumerable<object> changed)
+    {
+        ArgumentNullException.ThrowIfNull(changed);
+        RebuildView(change: new Change.Values(changed));
+    }
+
     // ------------------------------------------------------------------ view reconciliation
 
     /// <summary>
@@ -178,7 +195,8 @@ public sealed partial class Table
     private void RebuildView(
         Body.Source.Capture? capture = null,
         IReadOnlyList<object>? preparedOrder = null,
-        IdentityMap<object>? preparedMembership = null
+        IdentityMap<object>? preparedMembership = null,
+        Change? change = null
     )
     {
         _publishVersion++;
@@ -186,22 +204,30 @@ public sealed partial class Table
         SelectionChange? selectionChange = null;
         try
         {
-            capture ??= _source.Current;
+            capture ??= change switch
+            {
+                Change.Whole whole => whole.Capture,
+                Change.Collection collection => collection.Capture,
+                _ => _source.Current,
+            };
             IReadOnlyList<object> snapshot = capture.Rows;
             if (!_schemaCaptured)
             {
                 _source.Accept(capture, validated: false);
                 return;
             }
+            Body.Source.Preparation? source = _hierarchy is null && preparedMembership is null
+                ? _source.Prepare(change ?? new Change.Whole(capture), ValidateRows) : null;
             IdentityMap<object>? membership = _hierarchy is null
-                ? preparedMembership ?? _source.Prepare(capture, ValidateRows) : null;
+                ? preparedMembership ?? source!.Membership : null;
             IReadOnlyList<object> order;
             IdentitySet pinned;
+            IReadOnlyList<Change.Edit>? edits = null;
             if (preparedOrder is null)
             {
                 if (_hierarchy is null)
                 {
-                    (order, pinned) = ViewOrder(snapshot, membership!);
+                    (order, pinned, edits) = ViewOrder(snapshot, membership!, source);
                 }
                 else
                 {
@@ -209,7 +235,14 @@ public sealed partial class Table
                     try
                     {
                         IReadOnlyList<object> projected = PrepareHierarchy(capture);
-                        (order, pinned) = ViewOrder(projected, _hierarchy.ProjectedMembership);
+                        if (change is Change.Values values)
+                        {
+                            foreach (object item in values.Rows)
+                            {
+                                _ = _preparedHierarchy!.Nodes.Resolve(item);
+                            }
+                        }
+                        (order, pinned, edits) = ViewOrder(projected, _hierarchy.ProjectedMembership);
                     }
                     catch
                     {
@@ -228,22 +261,29 @@ public sealed partial class Table
                 pinned = held;
                 _orderSettledAt = DateTimeOffset.UtcNow;
             }
-            bool changed = !_view.IsAlready(order);
-            if (changed)
+            IIdentityKeys keys = source is not null ? source : membership is not null ? membership
+                : (_preparedHierarchy ?? _hierarchy!.Captured)!.Nodes;
+            bool changed = edits is not null ? edits.Count > 0 : !_view.IsAlready(order);
+            if (changed && edits is null)
             {
-                IIdentityKeys keys = membership is not null ? membership
-                    : (_preparedHierarchy ?? _hierarchy!.Captured)!.Nodes;
                 _candidatePositions.Build(order, keys, _view.Positions);
             }
-            _source.Accept(capture, validated: true, membership);
+            if (source is null)
+            {
+                _source.Accept(capture, validated: true, membership);
+            }
+            else
+            {
+                _source.Accept(source);
+            }
             AcceptHierarchy(order, changed);
             if (_detached)
             {
                 if (changed)
                 {
-                    ReconcileRows(order, Array.Empty<int>(), pinned);
+                    ReconcileRows(order, Array.Empty<int>(), pinned, edits, source);
                 }
-                selectionChange = ReconcileSelection(FocusState.Unfocused);
+                selectionChange = ReconcileSelection(FocusState.Unfocused, preparation: source);
                 completed = true;
                 return;
             }
@@ -251,7 +291,7 @@ public sealed partial class Table
             {
                 ReconcileDrag();
                 UpdatePlaceholder();
-                selectionChange = ReconcileSelection(FocusState.Unfocused);
+                selectionChange = ReconcileSelection(FocusState.Unfocused, preparation: source);
                 completed = true;
                 return;
             }
@@ -278,7 +318,8 @@ public sealed partial class Table
                 _surface?.Focus(FocusState.Pointer);
             }
 
-            bool viewMoved = ReconcileRows(order, RealizedIndices(), pinned);
+            PrepareTransitions(order, keys);
+            bool viewMoved = ReconcileRows(order, RealizedIndices(), pinned, edits, source);
 
             ReconcileDrag();
             QueueRealized();
@@ -304,11 +345,13 @@ public sealed partial class Table
             {
                 ScrollIntoView(collapsing.Item);
             }
-            selectionChange = ReconcileSelection(rowFocus, retained);
+            selectionChange = ReconcileSelection(rowFocus, retained, source);
             completed = true;
         }
         finally
         {
+            _source.Complete();
+            _sortedOrder?.Complete();
             if (completed && !_detached)
             {
                 RowVisualsChanged?.Invoke(this, EventArgs.Empty);
@@ -320,12 +363,65 @@ public sealed partial class Table
         }
     }
 
-    private bool ReconcileRows(IReadOnlyList<object> order, IReadOnlyList<int> realized, IdentitySet pinned)
+    private bool ReconcileRows(IReadOnlyList<object> order, IReadOnlyList<int> realized, IdentitySet pinned,
+        IReadOnlyList<Change.Edit>? edits = null, Body.Source.Preparation? source = null)
     {
+        if (edits is not null)
+        {
+            return _view.Reconcile(order, edits, source!, realized, pinned);
+        }
         PositionIndex previous = _view.Positions;
         bool changed = _view.Reconcile(order, _candidatePositions, realized, pinned);
         _candidatePositions = previous;
         return changed;
+    }
+
+    private void PrepareTransitions(IReadOnlyList<object> order, IIdentityKeys keys)
+    {
+        if (_suppressedTransitions is not null || !IsLoaded || order.Count == 0
+            || _surface?.ItemsPanelRoot is not ItemsStackPanel panel)
+        {
+            return;
+        }
+        int first = Math.Max(0, panel.FirstVisibleIndex);
+        int last = Math.Min(panel.LastVisibleIndex, _view.Count - 1);
+        if (first > last)
+        {
+            return;
+        }
+        for (int index = first; index <= Math.Min(last, order.Count - 1); index++)
+        {
+            object item = order[index];
+            IIdentityKeys captured = keys.ContainsReference(item) ? keys : _view.Positions;
+            int previous = _view.Positions.IndexOf(item, captured);
+            if (previous >= first && previous <= last)
+            {
+                return;
+            }
+        }
+
+        // Mixed native transitions remove the old rows before their 600 ms arrival delay.
+        // Keep a disjoint visible replacement immediate until its layout tick has ended.
+        _suppressedTransitions = new(_surface, _surface.ReadLocalValue(ItemsControl.ItemContainerTransitionsProperty));
+        _surface.ItemContainerTransitions = new TransitionCollection();
+        RequestFrame();
+    }
+
+    private void RestoreTransitions()
+    {
+        if (_suppressedTransitions is not { } saved)
+        {
+            return;
+        }
+        _suppressedTransitions = null;
+        if (ReferenceEquals(saved.LocalValue, DependencyProperty.UnsetValue))
+        {
+            saved.Surface.ClearValue(ItemsControl.ItemContainerTransitionsProperty);
+        }
+        else
+        {
+            saved.Surface.SetValue(ItemsControl.ItemContainerTransitionsProperty, saved.LocalValue);
+        }
     }
 
     private void OnLaidOut(object? sender, object e)
@@ -338,7 +434,7 @@ public sealed partial class Table
         // The tick ends when the frame returns, so the note clears and the reveal runs past it.
         // A view change made inside a frame, from a Loaded or a SizeChanged handler, is laid out
         // after this event in the same frame, which is why the note cannot clear here.
-        DispatcherQueue.TryEnqueue(() =>
+        if (!DispatcherQueue.TryEnqueue(() =>
         {
             try
             {
@@ -347,6 +443,7 @@ public sealed partial class Table
                 if (version == _view.Version)
                 {
                     _layoutPending = false;
+                    RestoreTransitions();
                     Reveal();
                 }
                 else
@@ -360,16 +457,23 @@ public sealed partial class Table
                 // (microsoft/microsoft-ui-xaml#10447); retain the host's error policy.
                 WinRT.ExceptionHelpers.ReportUnhandledError(error);
             }
-        });
+        }))
+        {
+            RestoreTransitions();
+        }
     }
 
     private IReadOnlyList<object> PrepareSort(Body.Source.Capture capture, SortedOrder? workspace,
-        SortDirection direction, out IdentityMap<object>? membership)
+        SortDirection direction, out IdentityMap<object>? membership, SortWork? work = null)
     {
         membership = null;
         if (_hierarchy is null)
         {
             membership = _source.Prepare(capture, ValidateRows);
+            if (work is not null)
+            {
+                return work.Sorting.Prepare(capture.Rows, membership, work.PublishVersion != _publishVersion);
+            }
             return workspace is null ? capture.Rows
                 : workspace.Prepare(capture.Rows, membership, direction, allowMoves: true).Rows;
         }
@@ -378,13 +482,39 @@ public sealed partial class Table
         try
         {
             PrepareHierarchy(capture);
-            return _hierarchy.Project(_preparedHierarchy!, workspace, direction);
+            return work?.Hierarchy is { } groups
+                ? _hierarchy.Project(_preparedHierarchy!, groups, work.Sorting, work.PublishVersion != _publishVersion)
+                : _hierarchy.Project(_preparedHierarchy!, workspace, direction);
         }
         catch
         {
             _orderSettledAt = settled;
             _preparedHierarchy = null;
             throw;
+        }
+    }
+
+    private SortWork CaptureSort(SortedOrder workspace, SortDirection direction)
+    {
+        Body.Source.Capture capture = _source.Current;
+        if (_hierarchy is null)
+        {
+            IdentityMap<object> membership = _source.Prepare(capture, ValidateRows);
+            return new(workspace, workspace.CaptureWork(new[] { capture.Rows }, membership, direction), null,
+                _publishVersion);
+        }
+        DateTimeOffset settled = _orderSettledAt;
+        try
+        {
+            PrepareHierarchy(capture);
+            SortedOrder.Work sorting = _hierarchy.CaptureWork(_preparedHierarchy!, workspace, direction,
+                _identity, out Hierarchy.Work hierarchy);
+            return new(workspace, sorting, hierarchy, _publishVersion);
+        }
+        finally
+        {
+            _preparedHierarchy = null;
+            _orderSettledAt = settled;
         }
     }
 

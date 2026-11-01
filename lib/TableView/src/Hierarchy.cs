@@ -241,12 +241,44 @@ internal sealed class Hierarchy(
         Snapshot snapshot,
         SortedOrder? sort,
         SortDirection direction
-    )
+    ) => Project(snapshot, (_, siblings) => sort is null ? siblings : sort.SortSiblings(siblings, direction));
+
+    internal IReadOnlyList<object> Project(Snapshot snapshot, Work groups, SortedOrder.Work sorting, bool refresh) =>
+        Project(snapshot, (parent, siblings) =>
+            sorting.Project(groups.GroupFor(parent, snapshot.Nodes), siblings, snapshot.Nodes, refresh));
+
+    internal sealed class Work(IdentityMap<int> parents)
+    {
+        private readonly IdentityMap<int> _parents = parents;
+        internal int GroupFor(object? parent, IIdentityKeys keys) => parent is null ? 0
+            : _parents.TryGetValue(parent, keys, out int group) ? group : -1;
+    }
+
+    internal SortedOrder.Work CaptureWork(Snapshot snapshot, SortedOrder sort, SortDirection direction,
+        IIdentity identity, out Work hierarchy)
+    {
+        IdentityMap<int> parents = identity.CreateMap<int>(keepsKeys: true);
+        List<IReadOnlyList<object>> groups = new();
+        Project(snapshot, (parent, siblings) =>
+        {
+            if (parent is not null)
+            {
+                parents.TryAdd(parent, groups.Count, snapshot.Nodes);
+            }
+            groups.Add(siblings);
+            return siblings;
+        });
+        hierarchy = new(parents);
+        return sort.CaptureWork(groups, snapshot.Nodes, direction);
+    }
+
+    private IReadOnlyList<object> Project(Snapshot snapshot,
+        Func<object?, IReadOnlyList<object>, IReadOnlyList<object>> order)
     {
         _projected!.Clear();
         List<object> visible = new();
         Stack<IEnumerator<object>> levels = new();
-        levels.Push(Order(snapshot.Roots).GetEnumerator());
+        levels.Push(order(null, snapshot.Roots).GetEnumerator());
         try
         {
             while (levels.TryPeek(out var level))
@@ -261,7 +293,9 @@ internal sealed class Hierarchy(
                 _projected.TryAdd(item, item, snapshot.Nodes);
                 var node = snapshot.Nodes[item];
                 if (node.Children.Count > 0 && isExpanded(item))
-                    levels.Push(Order(node.Children).GetEnumerator());
+                {
+                    levels.Push(order(item, node.Children).GetEnumerator());
+                }
             }
         }
         finally
@@ -271,12 +305,6 @@ internal sealed class Hierarchy(
         }
         return visible;
 
-        IEnumerable<object> Order(IReadOnlyList<object> siblings)
-        {
-            if (sort is null)
-                return siblings;
-            return sort.SortSiblings(siblings, direction);
-        }
     }
 
     internal IdentityMap<object> ProjectedMembership => _projected!;

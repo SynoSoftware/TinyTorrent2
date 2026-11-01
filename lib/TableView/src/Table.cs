@@ -207,6 +207,7 @@ public sealed partial class Table : Control
 
     private void DetachTemplateParts()
     {
+        RestoreTransitions();
         DetachInput();
 
         LayoutUpdated -= OnFillLayout;
@@ -237,6 +238,7 @@ public sealed partial class Table : Control
             return;
         }
 
+        RestoreTransitions();
         CancelPreparation();
         if (!_detached)
             _lifetimeRevision++;
@@ -575,7 +577,7 @@ public sealed partial class Table : Control
             rebuild && moved && _sortMode == SortMode.Local
                 ? PrepareSort(capture, workspace, direction, out membership) : null;
         if (order is not null && _hierarchy is null)
-            workspace?.Accept();
+            workspace?.Accept(order!);
 
         foreach (EffectiveColumn column in ordered)
         {
@@ -613,8 +615,8 @@ public sealed partial class Table : Control
 
     private void SetItemsSource(IEnumerable? source) => _source.Set(source);
 
-    private void OnSnapshotChanged(object? sender, Body.Source.Capture snapshot) =>
-        RebuildView(snapshot);
+    private void OnSnapshotChanged(object? sender, Change change) =>
+        RebuildView(change: change);
 
     // -------------------------------------------------------- scroll offset
 

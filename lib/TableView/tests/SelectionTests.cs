@@ -13,6 +13,36 @@ namespace Syno.TableView.Tests;
 public class SelectionTests
 {
     [TestMethod]
+    public Task NamedPolicyRefreshPrunesOnlyTheAffectedSelectionAndRetainsCurrentInstances() =>
+        TestHost.RunAsync(async () =>
+        {
+            List<string> inspected = new();
+            SelectionHarness h = await SelectionHarness.LoadAsync(40, table =>
+                table.Schema<Row>().CanInteract(row =>
+                {
+                    inspected.Add(row.Key);
+                    return row.Interactive;
+                }));
+            h.Table.Selection = new(h.Rows.Cast<object>(), h[7]);
+            h.Events = 0;
+            h[7].Interactive = false;
+            inspected.Clear();
+            h.Table.RefreshView(new object[] { new Row("k7"), h[7] });
+            Assert.IsTrue(inspected.Count > 0);
+            Assert.IsTrue(inspected.All(key => key == "k7"), "this unordered fixture needs no unrelated policy call");
+            Assert.AreEqual(39, h.Table.Selection.Items.Count);
+            Assert.AreEqual("k0", h.CurrentKey());
+            Assert.AreEqual(1, h.Events);
+
+            Row replacement = new("k10");
+            h.Rows[10] = replacement;
+            Assert.IsTrue(h.Table.Selection.Items.Any(item => ReferenceEquals(item, replacement)));
+            h.Rows.RemoveAt(0);
+            Assert.AreEqual("k1", h.CurrentKey());
+            CollectionAssert.AreEqual(h.Rows.Where(row => row.Interactive).Select(row => row.Key).ToArray(), h.SelectedKeys());
+        });
+
+    [TestMethod]
     public Task PlainClickReplacesAndSetsTheAnchor() =>
         TestHost.RunAsync(async () =>
         {
@@ -120,6 +150,26 @@ public class SelectionTests
 
             CollectionAssert.AreEqual(new[] { "k0", "k1", "k2", "k3" }, h.SelectedKeys());
             CollectionAssert.AreEqual(h.SelectedKeys(), h.ContainerSelectedKeys());
+        });
+
+    [TestMethod]
+    public Task ACompleteOrderAliasStopsDraggingWhenItsShownRowBecomesHeld() =>
+        TestHost.RunAsync(async () =>
+        {
+            Row[] order = { new("k0"), new("k1"), new("k2") };
+            SelectionHarness h = await SelectionHarness.LoadAsync(3, table =>
+                table.Schema<Row>().Order(table.Columns[0], row => row.Position, () => order));
+            h.Table.CanReorder = true;
+            Row shown = h[0];
+            h.Click(shown);
+            Proof.Call(h.Table, "PointAt", h[1]);
+            Proof.Call(h.Table, "BeginDrag", shown);
+            Assert.AreSame(order[0], Proof.Field<IReadOnlyList<object>>(h.Table, "_dragPacket")[0]);
+
+            h.Rows.RemoveAt(0);
+
+            Assert.IsTrue(IsHeld(h, shown));
+            Assert.IsNull(Proof.Field<Body.Wheel?>(h.Table, "_wheel"), "a held identity cannot keep its drag");
         });
 
     [TestMethod]

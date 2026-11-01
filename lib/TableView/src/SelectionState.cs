@@ -92,7 +92,7 @@ internal sealed class SelectionState
         _indices.Clear();
         foreach (object item in _selected)
         {
-            int index = _view.Positions.IndexOf(item, _selected);
+            int index = _view.IndexOfIdentity(item);
             if (index >= 0)
             {
                 _indices.Add(index);
@@ -410,14 +410,23 @@ internal sealed class SelectionState
         return resolved;
     }
 
-    internal void Reconcile(IReadOnlyList<object> view, object? currentFallback = null, object? focusFallback = null)
+    internal void Reconcile(IReadOnlyList<object> view, object? currentFallback = null, object? focusFallback = null,
+        Body.Source.Preparation? preparation = null)
     {
         _range = null;
         bool moved = _indicesVersion != _view.Version;
         List<object>? replace = null;
         List<object>? remove = null;
-        foreach (object item in _selected)
+        IEnumerable<object> affected = preparation?.IsIncremental == true
+            ? preparation.Removed.Concat(preparation.Added) : _selected;
+        foreach (object named in affected)
         {
+            IIdentityKeys keys = preparation?.IsIncremental == true ? preparation : _selected;
+            object? item = _selected.Map.Resolve(named, keys);
+            if (item is null)
+            {
+                continue;
+            }
             int index = _view.Positions.IndexOf(item, _selected);
             if (index < 0 || !IsInteractive(_view[index]))
             {
@@ -460,7 +469,8 @@ internal sealed class SelectionState
         object? Retain(object? item)
         {
             int index = item is null ? -1 : _view.Positions.IndexOf(item, _tracked);
-            return index >= 0 && IsInteractive(_view[index]) ? _view[index] : null;
+            bool inspect = item is not null && (preparation?.IsIncremental != true || preparation.Affects(item, _tracked));
+            return index >= 0 && (!inspect || IsInteractive(_view[index])) ? _view[index] : null;
         }
     }
 

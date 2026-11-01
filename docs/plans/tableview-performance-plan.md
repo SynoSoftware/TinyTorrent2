@@ -36,29 +36,40 @@ flashes and never breaks the list's animation, so the view never raises
 `Move` and never resets the list. A stage
 that changes the reconciliation or the notifications the view raises (stages
 3, 4, 5 and 9) is accepted only after a code review of the table and of
-the WinUI 3 list source in `3rdParty/microsoft-ui-xaml/dxaml`, and a visual
+the WinUI 3 list source in `3rdParty/microsoft-ui-xaml/src/dxaml`, and a visual
 test that shows the rows still animate and nothing flashes. This holds for any
 idea a review proposes, however much it saves.
 
-The source is evidence for the design, not proof for the shipped runtime. The
-table ships with `Microsoft.WindowsAppSDK.WinUI` 2.3.9, and the checkout in
-`3rdParty/microsoft-ui-xaml` is a later `main`, commit `8da148dcd`. No source
-tag maps to 2.3.9, and the files below changed after the source was
-published: #11912 (2026-09-24) fixed add and delete transition sequencing,
-and #11887 (2026-10-08) added an opt-in for collection `Move` notifications.
-So the visual test on the shipped runtime decides every no-flash question.
+**Owner ruling, 2026-11-01:** the owner switched the inspection checkout to
+`winui3/release/2.6.4` to match the installed release, specifically to trace
+animation and prevent flashing. The lead verified the exact tag, clean
+checkout and commit `c29edd64ae8b4412d772c5768d835ebfd19b438e`. This source
+is for inspection only: no agent edits or builds it. It does not change the
+TableView project's package references or invalidate accepted TableView
+builds/tests. C rechecks the native assumptions against this tag before
+implementation; its final visual check still proves the actual built runtime's
+animation and no-flash behavior.
 
-What the list source shows at `8da148dcd` (files under `dxaml/xcp/dxaml/lib`):
+The following native findings were recorded against the previous inspection
+commit `8da148dcd`; C's dependency preparation revalidates the affected paths
+at `2.6.4` and records any changed conclusion (current files under
+`src/dxaml/xcp/dxaml/lib`):
 - **E1.** The list chooses the animation per layout tick from the number of
   inserts and removals in that tick
   (`ModernCollectionBasePanel_ICTCP_Partial.cpp`,
-  `TransitionContextManager`), not from their order or arguments. So the
-  same kinds of event in the same tick give the same animation.
-- **E2, E3.** Each `VectorChanged` is handled inside the call: the panel reads
-  the change kind and index, updates its own containers and keeps nothing.
-  It does not read the view's rows during the event. So the view must be in
-  the state that matches each event when it raises it; building the final
-  list first and raising the events afterwards cannot work.
+  `TransitionContextManager`), not from their order or indices. It distinguishes
+  single, multiple and mixed changes, so preserving only event kinds is not
+  enough to infer identical choreography when a sparse script changes a
+  category. Record that change and judge actual motion and gaps; do not add
+  artificial events solely to force the old counters.
+- **E2, E3, revalidated and corrected at 2.6.4.** Each `VectorChanged` is
+  handled inside the call: the panel reads the change kind and index and
+  updates its containers. Insert/remove bookkeeping does not retain event
+  arguments for later replay. Replacement also generates and prepares the
+  current row synchronously (`OnDataElementReplaced`, lines 1938–2060),
+  including focused and pinned containers. So the view and its identity/index
+  answers must match each event when it raises it; building the final list
+  first and raising events afterwards cannot work.
 - **E4.** A reset recycles every container, pinned ones included
   (`OnCollectionReset`). That is the flash.
 - **E5.** Every `SelectRange` or `DeselectRange` call makes the list call the
@@ -180,13 +191,17 @@ Four rules apply to every row:
 | Which source assignment a capture belongs to | `Body.Source`, carried by each capture, including the accepted capture | A hierarchy invalidation call from the source | 1a, 6 | `Hierarchy`, to recognize a new root assignment | Hold extension state; make a failed candidate change the accepted capture's assignment version |
 | Held, released, pointed and menu rows | `Table/Holding.cs` | — | 1a, 5 | `KeptOrder`, `Pin`, the row element | — |
 | One entry into the pipeline | `Table.RebuildView`, which takes the change: a whole source, one notification's action, indices and items, or rows whose values changed | — | 1a, 5, 10 | — | Get an `ApplyChange` or other second pipeline beside it |
+| Whether one source notification can be applied incrementally, and its prepared membership/entrant/leaver facts | `Body.Source.Preparation`, from the validated accepted predecessor and matching assignment; only `Source.Accept` adopts it | Inference from the notification action or an aliased current list | 5 | The existing pipeline's hold, order, view and selection steps | Clone the full accepted map for one delta; accept a candidate before all throwing preparation succeeds |
 | Column sort definition: key selector and comparer | `Column`, set by `Schema.SortKey` | `Column.Sort`, which it replaces | 2 | the sorted order | Hold sort state |
 | Sorting: the one stable sort routine (flat rows, and each sibling group of a hierarchy); for a flat table also the kept order before `Pin`, its kept keys and collation keys in arrays, its position index, whether the kept-key check is allowed, and the one placement routine | The sorted order of the active column, in `Table/Sorting.cs` | — | 2, 3, 5, 10 | `KeptOrder`, `SortedSnapshot`, `Hierarchy.Project` | Hold the shown order after `Pin`; place rows of a hierarchy by binary search; get a second sort or placement routine |
 | Count of key comparisons actually performed by the selected sort algorithm | The sorted-order owner, at its one key-comparison primitive | A sample wrapper comparer, which changes eligibility for the optimized path | 2 | The sample's measurement of the actual algorithm | Add a public diagnostic API or a second sorter; count selector calls that the sample can observe in its own selector |
 | The prepared order and whether preparing it performed a full sort | The sorted-order owner returns this operation's facts; the pipeline consumes them | Permission to move rows, which does not say whether a fallback actually sorted them | 2 | `ViewOrder`, to advance the settle clock after an actual full sort | Store another pending flag or derive the completed operation from the caller's permission |
+| Detached worker input, private sorting indices and UI-only associations used to accept or rebase the result | The sorted-order owner; the worker receives only immutable supported keys/collation, base ordinals and sibling ranges | Active/candidate workspace buffers and live source/identity maps | 2.6 | The queued-sort owner, whose existing validity check gates completion | Run identity/host callbacks or touch row/UI objects on a worker; add a second sort algorithm or commit workflow |
+| Matching a queued hierarchy sort's sibling groups to a newer capture | An operation-local hierarchy-owned capture, with a parent-to-group map from captured node keys and a separate root group | A persistent per-parent key history or hierarchy state in generic sorted-order work | 2.6 | Hierarchy's existing projection/rebase owner | Enter the detached worker payload or add another pending table field |
 | A header sort waiting for the frame, and a worker sort's result | One queued-sort field in `Table/Sorting.cs`; that owner publishes a revision for actual committed-sort changes, and `Table` publishes a lifetime revision for actual detachments | `_pendingSort`, which holds a `Sort` assigned before the schema is captured: a different concept, kept as it is | 2 | the header | Get cancelled by other writers: it checks the captured revisions, that the table is loaded and its column is still shown |
 | The criterion the header shows | `Table/Sorting.cs`: the queued sort while it is still valid, otherwise the committed sort | — | 2 | `Header` | Get computed by the header |
 | Waiting for the next frame | `Table.OnLaidOut`'s `CompositionTarget.Rendering` step | — | 2 | the queued sort, the reveal | Get a second implementation |
+| Native transitions temporarily suppressed for a disjoint visible-window replacement | `Table/View.cs`, with one `SuppressedTransitions` record holding the exact surface and original local dependency-property value; eligibility reads final visible rows through the old position index with captured keys | A second animation system, a second reconciliation preview, or changes to native notification counters | C visual correction | Existing version-current post-Rendering dispatcher branch; unload and template detachment restore the captured surface | Clear a shared transition collection, pin a formerly styled value locally, restore before actual layout, or claim isolation from other updates sharing that layout episode |
 | Failure escaping deferred frame work | `Table.OnLaidOut`'s one dispatcher callback boundary, forwarded through the existing WinRT error reporter | A raw dispatcher exception that bypasses the host's XAML failure handler | 2 | The host's `Application.UnhandledException` policy | Swallow the failure, add a public failure event, or replace the application's synchronization context |
 | The view's rows and the notifications it raises; the view version and its counts of inserts and removals | `Body.View` and its gap-buffer list | — | 4, 5, 9 | `SelectionState`, the list | Raise `Move` or a reset; depend on `SelectionState` |
 | Selected set and selected view indices | `SelectionState`; the indices record the view version they were built from and are rebuilt when it differs | — | 1b, 5, 8 | `GetSelectedRanges`, the packet, the marquee | Get told by view writers that they changed |
@@ -197,7 +212,7 @@ Four rules apply to every row:
 | Whether the selection holds a numbered row | The drag owner, `Table/Reordering.cs`, recomputed on read when the packet or the publish version changed | the scan of the selection in `CanStartDrag` | 1b | `Table.CanStartDrag` | Get computed by the selection commit |
 | Whether a row can start a drag | `Table.CanStartDrag`, from the two facts above | — | 1b | the press, the row element | Get decided again by a row element |
 | The `RowVisualsChanged` event | `RebuildView` raises it once per publish, because a publish can change any row's selection, drag cue, interactivity or expander. Outside a publish, a fact's owner raises it when its fact changes: a selection commit from a gesture, the drag gesture, expansion, and `Hierarchy` when a child change alters a shown row's expander | today's raise on every commit | 1b | the row element, `Body.HierarchyCell` | Get raised by one owner for another owner's fact |
-| The states a realized row shows | The one row-level element (`Body.Row`, then `CellsPanel` after stage 7): it reads the facts on each event and applies only the states that changed, so it is also the record of what the row shows | — | 1b, 7 | — | Get a second record in another owner |
+| The states a realized row shows | `Body.Row`: it reads the facts on each event and applies only the states that changed, so it is also the record of what the row shows | — | 1b, 7 | — | Get a second record in another owner |
 | The drag distance | One internal value read from the Windows setting, read by `Table` and `Header.Strip` | the two `DragThresholdDips` constants | defect Q10 | row and header gestures | — |
 | Drag capture and drag membership | `Table/Reordering.cs`: `Order.Capture`'s entries in an identity-part map, compared by reference, so a replaced instance cancels the drag as today; the packet in an identity-part set | — | 8 | `IsDragCurrent`, `IsDragging` | — |
 | Hierarchy membership: the node index, child collections, sibling positions | `Hierarchy`. It adopts a new capture whenever the capture is new, whatever the visible order; it computes sibling positions from the order when the order changed; from stage 6 it applies each child notification to the kept node index at every depth | `_positions`' sibling field | 1a, 6 | `HierarchyPosition`, `SortedSnapshot` | Live in the core position indexes |
@@ -906,6 +921,9 @@ invalidation is pending. So every publish copies every child list, although
   the tree is a failed `Add` into the kept node index, as "Owners" says;
   `Hierarchy` writes no check of its own. The first capture and a new root
   source still validate everything.
+  Cache reuse also requires an accepted predecessor: a rejected child change
+  or suspended observation forces recapture before another delta, so later
+  changes cannot apply indices to an older accepted child list.
 - **Apply child notifications, not a full capture (N8, Q11).** Every
   child-collection notification runs a full capture of the supplied tree and
   a full rebuild today, so a host that fills a child `ObservableCollection`
@@ -949,14 +967,12 @@ a scroll builds these, and every layout pass measures them. This cost does
 not grow with n, but the person feels it on every scroll.
 
 **Change.**
-- `CellsPanel` takes over `Body.Row`'s whole job: it is the one row-level
-  element that listens to `RowVisualsChanged` and applies the row's states,
-  opacity and cursor, reading `Table.CanStartDrag` and `IsDragging` as
-  `Body.Row` does today. The row template becomes `CellsPanel` alone and
-  `Body.Row` is removed. It keeps stage 1b's skip of `GoToState` and the
-  cursor when they did not change (K9), moved, not rewritten. If that proves
-  too large, keep `Body.Row` as that element,
-  make the presenter its template's root and remove its single-child `Grid`.
+- Keep `Body.Row` as the one row-level state owner; make its existing
+  presenter the template root and remove its single-child `Grid`. Preserve
+  the visual-state target name `Root` and stage 1b's unchanged-state skips.
+  This is the settled fallback: `CellsPanel` is also the header's Panel,
+  while the existing states belong to a Control template. Moving states
+  there would add a theme/state mechanism to remove one more wrapper.
   `Body.HierarchyCell` keeps its own subscription and reads expansion on
   each event, as today; the event carries no reason, and none is added.
 - `Body.HierarchyCell` creates its expander only when the row has children,
@@ -1048,10 +1064,16 @@ limit section 1.1 sets for a visible answer. Rows already on screen
 would then change through remove and insert animations inside the runs, where
 today the panel shifts its containers. So the stage is accepted only after the
 no-flash checks: a review of how the WinUI 3 list
-(`3rdParty/microsoft-ui-xaml/dxaml`) handles a row placed without a
+(`3rdParty/microsoft-ui-xaml/src/dxaml`) handles a row placed without a
 notification beside animated runs, and a visual test that shows the rows
 animate and nothing flashes. If the visual test shows any flash, the stage is
 dropped.
+
+An accepted single Add/Remove whose one true-position event already meets the
+bound keeps that path, so the panel can shift its existing containers and
+preserve its normal anchoring. The broader run script handles bulk changes and
+net-zero offscreen edits. The visual scene covers both notifying collections
+and whole-source membership publishes, including any changed transition category.
 
 **Contract.** Section 5.3's "every membership change, at its true position",
 and section 20's bound, which becomes realized containers plus the net count
@@ -1071,9 +1093,20 @@ after stages 1 and 2 every update still reads n keys and walks n rows:
 **Change.** Add `RefreshView(IEnumerable<object> changed)`. It passes
 `RebuildView` a change of "these rows' values changed", through the same
 entry as stage 5's notifications, not a pipeline of its own. For that change
-the pipeline reads keys and interactivity again only for those rows, moves
-each with stage 2's placement routine, and skips validation and the index
-rebuild, because membership did not change. `RefreshView()` stays for "anything may have changed".
+source, sort and selection preparation read keys and interactivity again only
+for those rows, move each with stage 2's placement routine, and skip validation
+and the index rebuild, because membership did not change. `RefreshView()` stays
+for "anything may have changed".
+The existing row-visual event can still read the bounded realized rows' facts,
+including interactivity for drag or hierarchy visuals. This is O(realized),
+not a reason to scan all selected/source rows or retain a new policy cache.
+
+The named-key bound applies while the accepted flat delta is eligible. A due
+global settle, held/released membership recovery, stale-source recovery or an
+actual-comparer fallback can require the existing whole preparation. The lead
+retains those shared paths: keeping another history of current versus kept
+keys solely for those episodes adds lifetime and acceptance rules to the
+settling owner. Ordinary accepted named updates do not scan all source keys.
 
 **Gain. Estimate.** With about 100 changed torrents per update at 100,000
 rows, from 1–10 ms to 0.1–0.5 ms per update.
@@ -1091,6 +1124,16 @@ constant 1,880 allocated bytes. Whole-block linear projections are 117.84 and
 79.96 ms at 100,000; fitting a fixed overhead plus linear growth still
 estimates 42.83 ms. Both methods exceed 16 ms. These are extrapolations from
 the measured fixture; no 100,000-row fixture is run.
+
+**Scope decision.** The incremental named-values path is flat-table work,
+consistent with stages 2 and 3's retained flat keys and the measured gate.
+A hierarchy uses the existing full sibling projection for this overload.
+Retaining a second history of every sibling group's keys would add unmeasured
+state and invalidation rules to optimize a different workload. This fallback
+preserves correct behavior without that cache. The contract states the scope.
+Unavailable valid identities are ignored, duplicate inputs are coalesced, and
+a null enumerable throws. The overload never adds source membership and keeps
+the identity part's existing invalid-input failures.
 
 **Contract.** Sections 5.3 and 9 gain the overload.
 
@@ -1270,8 +1313,8 @@ runs the interactive and visual checks. No push is authorized.
   publication-owned packet, drag-owned selected-numbered fact, row-owned shown
   visual states, and sample-owned measurements. The coder's list names each
   map, field and helper under these owners; no core extension state is added.
-- Group B's complete owner/test/measurement list is approved and implementation
-  is in progress after group A's local commit. Column holds a stateless typed sort
+- Group B's implementation, source review and required runtime checks are
+  complete after group A's local commit. Column holds a stateless typed sort
   definition; one active sorted-order owner holds accepted/candidate keys,
   order and positions, with shared full-sort and placement routines. Its one
   monotonic comparison counter measures the actual algorithm; sample-owned
@@ -1341,7 +1384,336 @@ runs the interactive and visual checks. No push is authorized.
   projections. Both first-sort and full-refresh gates are exceeded, so change
   6 and stage 10 join stage 9 in C. The two newly enabled items add the plan's
   estimated 4–8 hours; all three conditional items total 6–12 hours beyond
-  the base estimate. B is accepted; its local commit precedes C implementation.
+  the base estimate. B is accepted and committed locally as `0ee6a0a`.
+  Final record: `V:\temp\TableViewPerformance\group-b-evidence.md`.
+  C's approved owners and implementation release are recorded below.
+- The owner's WinUI inspection source is now tag `winui3/release/2.6.4`,
+  commit `c29edd64ae8b4412d772c5768d835ebfd19b438e`; native files now live
+  under `src/dxaml`. C's targeted source read confirms synchronous guarded
+  event handling (IICG2 1133–1256), realized/pinned index changes (1341–1498),
+  reset recycling (2070 onward), transition-category counts (ICTCP 104–314)
+  and the 1,000-ms mutation suppression (14–15, 166–172). The lead confirmed
+  the guarded event and suppression paths. No native source is edited/built.
+  The lead also confirmed transition retargeting to a
+  `CLayoutTransitionElement` (`core/core/elements/LayoutTransition.cpp:1165`).
+  `TransformToVisual` includes transition transforms, but an original row
+  need not expose the proxy's painted motion. C therefore combines per-render
+  container/count telemetry with composed-window video/frame evidence using
+  the available `winapp ui record` tool; it adds no sample capture framework.
+  The lead also checked native pinned-bound updates, reset recycling and
+  transition-category selection in this tag. `core/hw/hwwalk.cpp:207` confirms
+  that the transition proxy renders the target subgraph instead of the original
+  element, reinforcing the need for composed-pixel evidence.
+  Replacement is also synchronous: `OnDataElementReplaced` (IICG2 1938–2060)
+  generates/prepares a current realized or pinned row and restores focus/pin.
+  This corrects E2's older blanket claim that events never read row content.
+  Same-key new-instance replacement must preserve content and focus/pin
+  correctness, but cannot promise native container-reference reuse.
+  Consolidated native evidence and capture protocol:
+  `V:\temp\TableViewPerformance\group-c-native-evidence.md`.
+  A further targeted trace identifies a runtime question for L: mixed insert/
+  remove load choreography delays incoming rows by 600 ms (`LayoutTransition_partial.cpp`
+  1453–1558), while `ThemeGenerator.cpp` 539–562 can hold initial opacity
+  through that delay. A full reversal can move every old cached row outside
+  the new run. L therefore also captures a disjoint-visible-row sort through
+  that delay and arrival motion; nonempty container telemetry alone cannot
+  prove there is no painted gap. The gap is a risk, not a confirmed runtime
+  failure; no custom animation or overlay is added on that inference alone.
+- C's complete ownership proposal is approved with the flat-only named-values
+  fast path and correct full hierarchy fallback above. Record:
+  `V:\temp\TableViewPerformance\group-c-owners.md`. `Change` carries typed
+  whole/collection/values facts without workflow; `Source.Preparation` owns
+  incremental eligibility and recovery; sequence owners publish insertion/
+  removal counts to the shared `PositionIndex` count reader. All quiet logical
+  moves are counted, and arbitrary whole-order rewrites rebuild the index.
+  Known immutable built-in default comparisons and well-known ordinal/culture
+  `StringComparer` are worker-eligible; host comparers and default-string culture
+  fallback stay on UI. Both flat and sibling first sorts are covered, using
+  detached worker storage and one stable algorithm. Worker creation/collation,
+  identity association, stale-result rebase and commit remain UI work, measured
+  separately. Source/ordering candidates are accepted only after throwing
+  preparation succeeds. The sample owns bounded capture coordination and
+  telemetry; the lead owns composed-window capture and judgment. C coding is
+  released; no build/test/launch is released before its deep review.
+- C's deep source review and corrective delta are complete and clear.
+  Initial consolidated record: `V:\temp\TableViewPerformance\group-c-review-r1.md`;
+  final record: `group-c-review-r2.md` in the same folder. The lead read the
+  records and affected source. Corrections cover active-sort/visible-target
+  and geometry evidence in L, existing `StopPointing` fixture support,
+  callback-time glyph measurement in W, qualified named-refresh obligations,
+  and small comment/naming/formatting defects. No production behavior defect
+  was confirmed by the four specialists or delta reviewer. The lead released
+  one Release tests/sample build, then the three-class C test batch and U/W/X.
+  Results remain pending; the lead's RealSort and WGC L checks follow the
+  coder's normal exit. No C commit is released yet.
+- C build 1 completed in 152.019 seconds with exit 0 and no errors. Library
+  and sample were warning-free; the tests reported CS8600/CS8602 at the new
+  stale-subscription fixture cast, repeated by its two compiler passes.
+  `SortHarness.LoadAsync` assigns that nonnull collection immediately before
+  the setup callback, so one boundary annotation is justified. No runtime
+  check uses this warning-bearing output. The coder corrects the annotation,
+  obtains a focused continued-reviewer delta, and reports before the lead
+  releases one corrective build (estimated 2–3 more minutes). Logs:
+  `V:\temp\TableViewPerformance\group-c-build1-{sample,tests}.log`.
+  The annotation's continued-reviewer delta is clear:
+  `V:\temp\TableViewPerformance\group-c-review-r3.md`. The lead read it and
+  released build 2, followed by the unchanged focused C tests and U/W/X only
+  if the warnings disappear. The source remains frozen at that reviewed result.
+- C build 2 passed with zero warnings/errors in 176.356 seconds. Its focused
+  batch exited normally: 89 passed, one failed, 90 total; all three classes
+  appeared (Reconcile 11, Selection 30, Sorting 49). The failed replacement
+  guard observed one extra identity read. Native replacement defers clearing
+  its old container, whose row remains subscribed briefly. After transient
+  keys are cleared, its `IsHeld` query fell back to the host selector.
+  The lead rejected an empty-set-only fix as incomplete when another row is
+  held. The complete correction keeps captured-key matching and answers an
+  unknown reference from the held set's captured references, without calling
+  the selector. No cache or longer scratch lifetime is added. Continued delta
+  review is pending; no measurements or lead runtime check has started.
+  Evidence: `V:\temp\TableViewPerformance\group-c-build2.md` and
+  `group-c-tests-first.md` in the same folder. One further build is expected
+  (about 2–3 minutes). The continued review found one affected alias consumer:
+  `IsDragCurrent` can receive a complete-order supplier's different instance
+  of a selected identity. It must resolve that alias through `ResolveItem`
+  before testing current interactivity, so a newly held row still cancels the
+  drag. Supplier packet/reference semantics remain unchanged. The lead
+  approved that one predicate correction and one focused SelectionTests
+  regression before the build. Record: `group-c-review-r5.md` in the same
+  folder. After clean delta review, retry the failed Sorting method and
+  SelectionTests; unchanged Reconcile and other Sorting evidence carries
+  forward. U/W/X still waits for those passes and normal runner exit.
+  The final correction delta is clear: `group-c-review-r6.md` incorporates
+  r5 and the earlier review records. The lead read its affected code, test,
+  harness and native deferred-clear paths, and released build 3 plus that
+  reduced retry, then U/W/X if successful. No lead capture or commit is yet
+  released. The possible pre-existing supplier/current interaction-policy
+  distinction in `BeginDrag` is reserved for E's affected gesture-owner read.
+  Build 3 passed with zero warnings/errors in 98.537 seconds. The reduced
+  retry passed all 32 cases, with zero skipped/aborted cases and normal runner
+  exit; the lead read its counters and confirmed no test process remained.
+  Together with unchanged first-batch evidence this covers 91 distinct C
+  cases. Logs: `group-c-build3-{sample,tests}.log`; result:
+  `group-c-tests-retry\group-c-tests-retry.trx`, all in the evidence folder.
+  U/W/X is released from that output; RealSort, WGC L and commit remain pending.
+- U/W/X completed on build 3 with normal sample exit; raw results are
+  `V:\temp\TableViewPerformance\group-c-uwx.txt`. The lead's RealSort batch
+  exited normally with two passes and one failure: first mouse click committed,
+  but the second rapid click became `DoubleTapped`, which supplies no second
+  `Tapped`. The fixture claims independent primary clicks, so it will separate
+  them by configured `GetDoubleClickTime`, without changing product gestures
+  or extending result timeouts. The WinUI DoubleTapped documentation confirms
+  the routing. Enter/Space and drag-without-sort passed.
+  The first L recording used WGC successfully (420 samples at 29.98 fps),
+  but its baseline had returned to offset 0 after a queued focus reveal; the
+  intended index-996 arrival was offscreen and the scene correctly failed.
+  Artifacts: `group-c-live-1` in the evidence folder. No animation/no-flash
+  conclusion follows. The lead approved the existing A pinned-probe frame
+  boundary after focus and before far scroll, plus premise guards. Both fixture
+  corrections form one reviewed batch and one expected rebuild (about 2–3
+  minutes), then only the failed mouse method and L retry. Production,
+  successful functional tests and U/W/X remain unchanged.
+- C fixture delta r7 is clear (`group-c-review-r7.md`). Build 4 passed with
+  zero warnings/errors in 133.060 seconds; binary fingerprint
+  `DF3C27A8C351B21BEB82DB891BB1FDF2FB2B5358A2654631B45879A930C68DCF`.
+  The failed mouse method passed on retry with normal exit; earlier keyboard
+  and drag passes stand. L2 completed all six phases with the intended
+  far-scroll/focused-pin setup, current replacement content and retained-run
+  container continuity. WGC recorded 420 samples at 29.985 fps with 49 unique
+  images, without truncation. Evidence: `group-c-live-2` in the evidence folder.
+  **C is not accepted:** composed frames confirm the full descending reversal
+  paints an empty panel. Images at recorder elapsed 7,958 and 8,526 ms are
+  empty, between fading old rows at 7,897 ms and subsequent incoming rows.
+  This is at least 568 ms of sampled blank time and matches the native mixed
+  transition delay identified above. Nonempty containers do not prevent it.
+  The lead holds D/E and C's commit. Coder and lead trace the confirmed gap and
+  choose the simplest platform-supported correction before editing; no
+  artificial notifications, overlay or custom animation is justified merely
+  to conceal the native gap. The correction receives source review, one build
+  and the affected L retry; successful unrelated checks are not repeated.
+- The bounded source investigation found no public native seam that preserves
+  every current requirement for a disjoint reversal. Native reorder selects
+  suitable choreography through internal methods; private COM calls and fake
+  gestures are rejected. The public candidate for immediate updates is an empty
+  `ItemContainerTransitions` collection before reconciliation, retained through
+  actual layout, with the prior dependency-property value source restored in
+  the existing version-current post-Rendering dispatcher callback. Native
+  panel lookup reads that collection dynamically; it is not copied per row.
+  The suppression covers the layout episode, including any other updates in
+  that same tick, and does not itself cancel existing storyboards. Never clear
+  a shared effective collection. Detach, retemplate and failure restoration
+  must belong to the same table owner. This is source-supported but its pixels
+  remain unverified. The lead reported the conflict with contract 5.3 to the
+  owner. The owner could not choose the technical mechanism, would ideally
+  retain some animation and asked what the correct approach is. Applying the
+  plan's delegated design judgment and the owner's no-flash priority, the lead
+  settles the narrow immediate-update exception: retain ordinary native motion
+  when visible rows survive; suppress the layout episode only for completely
+  disjoint visible replacement. This is a lead design decision, not a new
+  Owner ruling or a claim that the owner selected a button. It avoids a second
+  animation system and a native dependency change. Proposal and independent
+  assessment: `group-c-gap-proposal.md` and `group-c-gap-review.md` in the
+  evidence folder. Before implementation, settle the concrete eligibility seam
+  and lifecycle owners. The contract gains the qualified exception in the same
+  correction. D/E and commit remain held until C's visual evidence passes.
+  Four C builds have cost 559.972 seconds in total; the fifth is not released.
+- The C gap-correction owner proposal is approved and coding is released.
+  `Table/View.cs` owns eligibility, the saved surface/local-value record and
+  restoration. The final rows over the native panel's actual current visible
+  interval are resolved through the old position index using captured keys,
+  falling back only to old captured keys for held references. Any identity
+  overlap retains native transitions. Empty final sources retain their normal
+  empty-state behavior. For shrink, clip the old interval conservatively;
+  this does not predict the later native scroll clamp. No duplicate survivor
+  algorithm, set, full delta position map or host selector call is added.
+  Save once, install a separate empty collection and arm the existing frame
+  before reconciliation. Restore in its guarded current-version dispatcher
+  branch before reveal/queued-sort consumption; version mismatch rearms the
+  same episode. Genuine unload/template detachment restores the recorded
+  surface, and original UnsetValue restores with ClearValue. Existing error
+  forwarding remains. L adds one separated ordinary visible arrival after
+  reversal to prove normal native motion returns. A retained-reviewer delta
+  precedes the one corrective build and affected L retry. No other check is
+  reopened merely by having another output.
+- C gap-correction review r8 is clear (`group-c-review-r8.md`). The lead read
+  its full affected-state/lifetime trace and the integrated implementation.
+  Captured-key eligibility, original property-value-source restoration,
+  overlapping publishes, version mismatch, retemplate between Rendering and
+  dispatch, failure, unload and queue refusal have no source blocker. The lead
+  released one corrective two-project Release build, then L3 only. Remaining
+  questions are disjoint pixels with no empty samples, restored ordinary
+  native motion and the fixture's existing content/pin/visibility outcomes.
+  Successful functional, RealSort and U/W/X evidence is not repeated. D owner
+  preparation may continue source-only; D code and C commit await L acceptance.
+- Build 5 passed with zero warnings/errors in 170.841 seconds; fingerprint
+  `8143F743281168CB89A3905F63F82EA0558A18B0B612E5A2ADF67FDFACD7ADFA`.
+  The lead's L3 attempt failed before its ready marker, at the same far-scroll
+  setup predicate: offset 0, visible 0..16, keyboard focus at row zero. No
+  recorder started and no owned process remains. Evidence:
+  `group-c-live-3\sample-results.txt`. The frame-boundary setup correction had
+  passed L2, so this establishes a nondeterministic fixture, not evidence about
+  the new transition suppression. The same-failure-after-fix stop applies to
+  this fixture path: no further timing patch, rebuild or repeat is released.
+  C's transition pixels remain unverified. Source-only workaround preparation
+  will isolate the two changed questions (disjoint pixels/restored native
+  motion), retaining L2's prior focus/pin/current evidence, rather than keep
+  repairing the keyboard-focus/scroll probe. Five C builds total 730.813 s.
+- The lead releases a source-only fixture workaround: replace existing L's
+  unstable keyboard-focus/far-scroll setup with an ordinary near-viewport
+  scene, not another mode or parallel diagnostic. Reuse its handshake,
+  per-Rendering content/geometry, bounded phases and WGC recorder. Keep
+  baseline, visible notification add/remove, whole-source membership with
+  continuity, disjoint descending reversal and a separated restored ordinary
+  arrival. The distant-pin/current-instance phase is explicitly outside this
+  narrowed retry; its valid L2 evidence stands, without claiming the corrected
+  binary reran it. All applicable membership/visibility/container/disjoint and
+  restored-property checks remain. This works around the stopped failing
+  fixture dependency; it adds no focus delay/retry and changes no production
+  code. A retained source review precedes a sample-only build and L retry.
+- The near-viewport fixture passed retained review r9, read in full by the
+  lead (`group-c-review-r9.md`; scope/evidence limits also in
+  `group-c-near-fixture.md`). Production r8 hashes are unchanged. The lead
+  released one sample-only Release ProjectsOnly build, then L4 from its printed
+  output. No tests, U/W/X, RealSort or stopped keyboard-focus setup repeat.
+- C is accepted. Sample-only build6 passed zero warnings/errors (66.984 s
+  outer;60.755 s build metadata). L4 completed all six near-viewport phases
+  with normal sample/recorder exit. WGC420 samples at29.976fps,48 unique images,
+  no truncation. Lead inspected all unique images plus critical full-size
+  frames: no sampled empty panel during reversal, immediate current high-name
+  rows, and restored ordinary native movement/fading on the next arrival.
+  Container/content/membership/visibility checks all passed; whole-source
+  membership retained all25 surviving realized containers. Artifacts:
+  `group-c-live-4`; full consolidated lead record:
+  `group-c-lead-runtime.md`. L2's earlier distant-pin evidence and L4's narrower
+  corrected-binary scope remain explicit. Source review r8 covers restoration
+  lifetime and captured keys; r9 covers the fixture workaround. Functional91
+  distinct cases, complete real-header cycle and U/W/X evidence stand.
+  Six C build commands cost797.797 s outer. The first-sort worker leaves linear
+  UI capture/commit; projected100k sub100ms UI response is not established.
+  C local commit is released, excluding root AGENTS. D's complete owner proposal
+  is next; no D implementation before its gate. D's review needs no build and
+  its validation joins E as planned.
+- C's captured-key seam is approved as a replacement, not a second route:
+  replace `IIdentityKeys.Captured` with `CapturedFor(object item)`. Ordinary
+  maps/sets/position indexes return their typed map; `Source.Preparation`
+  routes to its additions, retained leavers or accepted membership as needed.
+  The identity part remains the sole typed-key extractor. This lets existing
+  consumers transfer prepared keys without cloning the whole membership map
+  or learning source routing. Retain leaver keys through post-accept consumers;
+  captured-key availability does not mean the row is in resulting membership.
+- C's internal arities are accepted by the lead under the plan's delegated
+  design authority. `Source.Preparation` takes eight inputs describing one
+  prepared operation and is constructed only by its source owner. The shared
+  static `SortIndices` takes six inputs for detached storage, direction and
+  comparer/collation semantics. Another argument bag would duplicate the
+  existing prepared concept or hide the one UI/worker algorithm's inputs.
+  `PrepareSort` keeps its four synchronous preparation inputs plus the queued
+  operation context; L's private five-input phase helper adds immediate
+  membership proof alongside its existing continuity and disjointness checks.
+  Both remain at their existing owners without another options type.
+- Source subscription identity is part of the predecessor proof. An earlier
+  listener can reassign ItemsSource while an old collection's invocation list
+  is being delivered; its already-captured TableView callback must not apply
+  old indices to the new assignment. Source retains its subscribed handler,
+  and each handler forwards only while it is still that current handler.
+  Detach clears that identity before unsubscribing. This also rejects a stale
+  callback after suspend/re-attach to the same source and accepts a valid null
+  sender, without inferring subscription identity from event sender values.
+- W's timing facts live only on its queued operation: `QueuedSort.CaptureTime`
+  covers UI preparation/key/collation/association, and `CommitTime` covers UI
+  acceptance or rebase through `RebuildView`. The detached result reports its
+  own ordering duration. The sample retains the queued object by reflection
+  and reads it after observable completion. No public diagnostic API, global
+  last-result cache, callback or second event workflow is added; glyph/answer
+  frame latency remains a separate measurement.
+- Hierarchy worker handoff is approved: `Hierarchy.CaptureWork` gathers sibling
+  groups in its projection traversal and owns their parent-to-group association
+  in operation-local `Hierarchy.Work`. The root is ordinary group ordinal 0,
+  not a fabricated identity key. Generic `SortedOrder.Work.Project` takes an
+  ordinal, current siblings/keys and refresh fact; it knows no parent. The
+  existing queued-sort context retains workspace/job/capture version and may
+  reference that hierarchy-owned operation object. Keep one authoritative
+  worker handle and no persistent per-parent sort-key cache.
+- New C transient references end in the pipeline's cleanup after view,
+  selection and hierarchy consumers, before row/UIA/host delivery:
+  `Source.Complete` clears additions/leavers and `SortedOrder.Complete` clears
+  operation edits/prepared-key references, retaining only reusable capacity.
+  This timing prevents an older publish from clearing a reentrant publish's
+  facts. Worker associations keep their own captured keys, not references to
+  source scratch maps. Existing A/B accepted/candidate row-buffer retention
+  remains unchanged and is reported separately.
+- Queued completion captures the actual dispatcher reference on UI before its
+  continuation. If that queue refuses posting during shutdown, the queued
+  owner atomically compare-exchanges `_queuedSort` to null only while it is
+  still that exact request. It reads no UI property and mutates no buffers
+  there; a newer request survives, and an already-entered UI callback can
+  finish its local operation. No extra cancellation state or wait is added.
+  The operation context holds one nonnull generic worker and an optional
+  hierarchy-only parent-map association, rather than two nullable job modes.
+- Sparse deltas pass final order plus operation-local `Change.Edit` edits
+  to `Body.View`. It resolves old edit indices and realized target indices,
+  deriving untouched targets from those edits; an O(realized) reference map
+  feeds the same run/remove/quiet/insert script as whole reconciliation.
+  Ordinary single Add/Remove can use its one true-position mutation instead,
+  preserving native shifting/anchoring with the minimum event count; same-
+  position replacements retain their existing path. Net-zero offscreen moves
+  and bulk replacements follow the sparse policy. All quiet logical moves
+  count toward the position window. During partial edits, the existing view-
+  local transient lookup verifies canonical references and can scan; it does
+  not run a position reindex over an incomplete map or reset its count
+  baseline. `SelectionState.EnsureIndices` uses that view-owned lookup, so
+  native selected-range reads take the same path. After edits/maps complete,
+  ordinary counted lookup resumes. No second sparse algorithm is introduced.
+- C capture preparation is settled without another app run: installed
+  `winapp ui record` is 0.6.1 and supports `--frames --fps 30 --json`.
+  Its [versioned documentation](https://github.com/microsoft/winappCli/blob/v0.6.1/docs/ui-automation.md#record)
+  reports the backend and emits `recording-started` on stderr after the first
+  frame. The lead releases the fixture's go signal only after that event;
+  use its HWND, a bounded duration, timestamped frames and Rendering telemetry.
+  Require the reported `wgc` backend for composed-window proof. A PrintWindow
+  fallback is not equivalent pixel evidence; screen capture is an available
+  alternative only with an unobscured target. Thirty-fps samples show motion
+  alongside every Rendering callback's container/count record; report actual
+  cadence and gaps instead of claiming every physical display frame was seen.
 - Stage 7 uses its permitted fallback: keep `Body.Row` as the one row-state
   owner and make its existing presenter the template root, removing the
   single-child Grid. `CellsPanel` is a Panel shared with headers, while the
@@ -1349,6 +1721,17 @@ runs the interactive and visual checks. No push is authorized.
   into the panel would require a new theme/state mechanism to remove one more
   wrapper. The fallback removes an element while preserving the established
   WinUI state, theme and cursor behavior; lazy hierarchy expanders still apply.
+- Q10's drag-distance interpretation is settled for E. Keep axis thresholds:
+  horizontal for header moves, horizontal/vertical for row gestures, with
+  today's boundary comparisons. Read the configured `SM_CXDRAG`/`SM_CYDRAG`
+  values once at 96 DPI through
+  [GetSystemMetricsForDpi](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getsystemmetricsfordpi)
+  so the shared value is in DIPs without binding it to the first monitor's
+  rasterization scale. Use the whole configured distance on each axis, not a
+  half-width or diagonal distance. Matching-source `AutomaticDragHelper.cpp`
+  67–83 and `ListViewBaseItem_Partial.cpp` 1862–1877 confirm axis comparisons;
+  their extra 2x multiplier is a separate native drag policy and is not added
+  to Q10's replacement of the existing configured-distance threshold.
 - Group A review confirmed that passing flat source membership to a hierarchy
   makes `KeptOrder` reject every kept update and sort inside the interval.
   `Table/Sorting.cs` needs membership of the visible projection, not all nodes:
@@ -1398,7 +1781,7 @@ runs the interactive and visual checks. No push is authorized.
 - The lead's project-only build switch is `-ProjectsOnly`; it and its usage
   in `docs/agents/compilation.md` join group A's review and commit. Use one `-Project` argument with both project paths as
   an array, because PowerShell does not accept a repeated named parameter.
-- Groups B–E remain open. The estimate remains 10–15 hours, four builds and
+- Groups C–E remain open. The base estimate remains 10–15 hours, four builds and
   five group reviews; optional stages follow their measurement gates.
 
 ## How to execute
@@ -1516,11 +1899,20 @@ How:
   harness, as the Settings capture review does for its motion, because
   settled screenshots alone do not show animation
   ([testing](../agents/testing.md)). Each frame records the realized
-  containers and the offset and opacity of the rows that move, arrive or
-  leave. It passes when no frame replaces every realized container or shows
-  the panel empty (the flash, E4), and the moving rows take intermediate
-  offsets or opacity across frames (the animation). Changes come at least 1
+  containers and row geometry. Composed-window video/frame samples also
+  record the painted motion, because WinUI can retarget the animation to a
+  transition proxy while the original row already reports final geometry.
+  It passes when rows retained by the reconcile's run/pin decisions keep their
+  containers and no recorded frame shows an unexpectedly empty panel (the
+  flash, E4), while painted rows take intermediate offsets or opacity across
+  frames (the animation). Changes come at least 1
   second apart, or the list does not animate them (W5).
+  A genuine replacement of all visible identities does not require reusing
+  their departed containers; the arrival, removal and sort scene keeps visible
+  retained rows so their continuity can be checked. Same-key new instances
+  legitimately raise `ItemChanged`, which regenerates a native container;
+  these must show the current content and preserve focus/pin state, rather
+  than satisfy an impossible container-reference assertion.
 - The visual checks of stages 7 and 8 compare screenshots before and after
   the change, judged with `/winui:winui-design`.
 

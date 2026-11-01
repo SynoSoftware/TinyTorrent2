@@ -1,12 +1,15 @@
 using System.Collections;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.Reflection;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Windows.Storage.Streams;
+using Windows.Foundation.Collections;
 
 namespace Syno.TableView.Tests;
 
@@ -34,6 +37,260 @@ internal sealed class SortRow
 [TestClass]
 public class SortingTests
 {
+    [TestMethod]
+    public Task NotificationsCaptureOnlyEntrantsAndRecoverAfterARejectedDelta() =>
+        TestHost.RunAsync(async () =>
+        {
+            int identities = 0;
+            int keys = 0;
+            SortHarness h = await SortHarness.LoadAsync(new[] { 1, 3, 5 }, configure: table =>
+            {
+                table.Schema<SortRow>().Key(row =>
+                {
+                    identities++;
+                    return row.Key;
+                }).SortKey(table.Columns[0], row =>
+                {
+                    keys++;
+                    return row.Rank;
+                });
+                table.Sort = new(table.Columns[0]);
+            });
+            identities = keys = 0;
+            h.Rows.Add(new("arrival", 2));
+            Assert.AreEqual(1, identities);
+            Assert.AreEqual(1, keys);
+            CollectionAssert.AreEqual(new[] { "k0", "arrival", "k1", "k2" }, h.ViewKeys());
+            h.Rows[1] = new("k1", 4);
+            Assert.AreEqual(2, identities);
+            Assert.AreEqual(2, keys);
+            Assert.AreSame(h.Rows[1], h.Surface().Items[2]);
+            h.Rows.RemoveAt(0);
+            Assert.AreEqual(2, identities, "a removal transfers its accepted key");
+            Assert.AreEqual(2, keys, "a removal retains every survivor's sort key");
+            Expect.Throws<InvalidOperationException>(() => h.Rows.Add(new("arrival", 9)));
+            CollectionAssert.AreEqual(new[] { "arrival", "k1", "k2" }, h.ViewKeys());
+            h.Rows.RemoveAt(h.Rows.Count - 1);
+            CollectionAssert.AreEqual(new[] { "arrival", "k1", "k2" }, h.ViewKeys());
+            h.Rows.Move(2, 0);
+            CollectionAssert.AreEqual(new[] { "arrival", "k1", "k2" }, h.ViewKeys());
+        });
+
+    [TestMethod]
+    public Task NamedValuesCaptureOnlyCurrentNamedKeysAndKeepCountedPositionsCorrect() =>
+        TestHost.RunAsync(async () =>
+        {
+            int keys = 0;
+            SortHarness h = await SortHarness.LoadAsync(Enumerable.Range(0, 48).ToArray(), configure: table =>
+            {
+                table.Schema<SortRow>().SortKey(table.Columns[0], row =>
+                {
+                    keys++;
+                    return row.Rank;
+                });
+                table.SortInterval = TimeSpan.Zero;
+                table.Sort = new(table.Columns[0]);
+            });
+            for (int index = 0; index < 20; index++)
+            {
+                SortRow row = h.Rows[(index * 17) % h.Rows.Count];
+                row.Rank = -index - 1;
+                keys = 0;
+                int enumerated = 0;
+                IEnumerable<object> Named()
+                {
+                    enumerated++;
+                    yield return new SortRow(row.Key, 999);
+                    yield return row;
+                    yield return new SortRow("unavailable", 0);
+                }
+                h.Table.RefreshView(Named());
+                Assert.AreEqual(1, enumerated);
+                Assert.AreEqual(1, keys);
+                Assert.AreSame(row, h.Surface().Items[0]);
+                foreach (SortRow current in h.Rows)
+                {
+                    Assert.AreSame(current, Proof.Call(h.Table, "ResolveItem", current));
+                }
+            }
+            h.Table.SortInterval = TimeSpan.FromHours(1);
+            Proof.SetField(h.Table, "_orderSettledAt", DateTimeOffset.UtcNow);
+            h.Rows[0].Rank = -100;
+            keys = 0;
+            h.Table.RefreshView(new object[] { h.Rows[0] });
+            Assert.AreEqual(1, keys, "an eligible named update retains its key bound inside the interval");
+            Assert.AreNotSame(h.Rows[0], h.Surface().Items[0], "the interval keeps the previous place");
+            Proof.SetField(h.Table, "_orderSettledAt", DateTimeOffset.UtcNow.AddHours(-2));
+            keys = 0;
+            h.Table.RefreshView(new object[] { h.Rows[1] });
+            Assert.AreEqual(h.Rows.Count, keys, "due global settling uses whole preparation");
+            Assert.AreSame(h.Rows[0], h.Surface().Items[0]);
+            Expect.Throws<ArgumentNullException>(() => h.Table.RefreshView(null!));
+        });
+
+    [TestMethod]
+    public Task AnOldSubscriptionCannotApplyItsIndicesToANewSource() =>
+        TestHost.RunAsync(async () =>
+        {
+            SortRow replacement = new("replacement", 1);
+            SortHarness h = await SortHarness.LoadAsync(new[] { 1, 2 }, configure: table =>
+            {
+                var rows = (ObservableCollection<SortRow>)table.ItemsSource!;
+                rows.CollectionChanged += (_, _) => table.ItemsSource = new[] { replacement };
+            });
+            h.Rows.Add(new("old-arrival", 3));
+            CollectionAssert.AreEqual(new[] { "replacement" }, h.ViewKeys());
+            NullSenderRows current = new() { replacement };
+            h.Table.ItemsSource = current;
+            current.AddNotified(new("current-arrival", 2));
+            CollectionAssert.AreEqual(new[] { "replacement", "current-arrival" }, h.ViewKeys());
+        });
+
+    private sealed class NullSenderRows : List<SortRow>, INotifyCollectionChanged
+    {
+        public event NotifyCollectionChangedEventHandler? CollectionChanged;
+        internal void AddNotified(SortRow item)
+        {
+            Add(item);
+            CollectionChanged?.Invoke(null, new(NotifyCollectionChangedAction.Add, item, Count - 1));
+        }
+    }
+
+    [TestMethod]
+    public Task AWorkerRebasesCurrentInstancesKeysMembershipAndBaseTiesOnUI() =>
+        TestHost.RunAsync(async () =>
+        {
+            int ui = Environment.CurrentManagedThreadId;
+            SortHarness h = await SortHarness.LoadAsync(new[] { 3, 1, 2 }, configure: table =>
+                table.Schema<SortRow>().Key(row =>
+                {
+                    Assert.AreEqual(ui, Environment.CurrentManagedThreadId);
+                    return row.Key;
+                }).SortKey(table.Columns[0], row =>
+                {
+                    Assert.AreEqual(ui, Environment.CurrentManagedThreadId);
+                    return row.Rank;
+                }));
+            h.Activate(0);
+            object queued = Proof.Field<object>(h.Table, "_queuedSort");
+            Assert.IsTrue((bool)Proof.Call(h.Table, "StartWork", queued)!);
+            h.Rows[0].Rank = 0;
+            SortRow arrival = new("arrival", 2);
+            SortRow replacement = new("k1", 2);
+            h.Table.ItemsSource = new[] { arrival, replacement, h.Rows[0] };
+            await h.WaitForSortAsync();
+            CollectionAssert.AreEqual(new[] { "k0", "arrival", "k1" }, h.ViewKeys());
+            Assert.AreSame(replacement, h.Surface().Items[2]);
+        });
+
+    [TestMethod]
+    [DataRow("newer")]
+    [DataRow("assignment")]
+    [DataRow("hidden")]
+    [DataRow("reload")]
+    public Task ACompletedSupersededWorkerCannotCommitItsCriterion(string change) =>
+        TestHost.RunAsync(async () =>
+        {
+            SortHarness h = await SortHarness.LoadAsync(new[] { 3, 1, 2 }, sortableColumns: 2);
+            h.Table.Sort = new(h.Table.Columns[1], SortDirection.Descending);
+            h.Activate(0);
+            object queued = Proof.Field<object>(h.Table, "_queuedSort");
+            Assert.IsTrue((bool)Proof.Call(h.Table, "StartWork", queued)!);
+            switch (change)
+            {
+                case "newer":
+                    h.Activate(1);
+                    break;
+                case "assignment":
+                    h.Table.Sort = null;
+                    break;
+                case "hidden":
+                    Proof.Call(h.Table, "SetColumnVisibility", TableHarness.EffectiveColumn(h.Table, "a"), false);
+                    break;
+                case "reload":
+                    TestHost.RootPanel.Children.Remove(h.Table);
+                    await TableHarness.WaitUntilAsync(() => Proof.Field<bool>(h.Table, "_detached"), "worker detachment");
+                    await TableHarness.LoadAsync(h.Table);
+                    break;
+            }
+            await h.WaitForSortAsync();
+            Proof.Call(h.Table, "ResumeSort", queued);
+            Assert.AreEqual(change == "assignment" ? null : "b", h.Table.Sort?.Column.Id);
+            CollectionAssert.AreEqual(change == "assignment" ? new[] { "k0", "k1", "k2" }
+                : change == "newer" ? new[] { "k1", "k2", "k0" } : new[] { "k0", "k2", "k1" }, h.ViewKeys());
+        });
+
+    [TestMethod]
+    public Task AWorkerRebasesSiblingGroupsThroughTheirCapturedParentIdentities() =>
+        TestHost.RunAsync(async () =>
+        {
+            SortRow first = new("child-a", 2);
+            SortRow second = new("child-b", 1);
+            SortHarness h = await SortHarness.LoadAsync(new[] { 3, 1 }, configure: table =>
+                table.Schema<SortRow>().Hierarchy(table.Columns[0],
+                    row => row.Key == "k0" ? new[] { first, second } : Array.Empty<SortRow>(),
+                    _ => true, (_, _) => { }));
+            h.Activate(0);
+            object queued = Proof.Field<object>(h.Table, "_queuedSort");
+            Assert.IsTrue((bool)Proof.Call(h.Table, "StartWork", queued)!);
+            first.Rank = 4;
+            SortRow root = new("k0", 0);
+            h.Table.ItemsSource = new[] { h.Rows[1], root, new SortRow("new-root", 2) };
+            await h.WaitForSortAsync();
+            CollectionAssert.AreEqual(new[] { "k0", "child-b", "child-a", "k1", "new-root" }, h.ViewKeys());
+            Assert.AreSame(root, h.Surface().Items[0]);
+        });
+
+    [TestMethod]
+    public Task SparseEditsExposeCurrentRowsAndSelectedRangesDuringEveryVectorCallback() =>
+        TestHost.RunAsync(async () =>
+        {
+            SortHarness h = await SortHarness.LoadAsync(Enumerable.Range(0, 60).ToArray(), configure: table =>
+            {
+                table.SortInterval = TimeSpan.Zero;
+                table.Sort = new(table.Columns[0]);
+            });
+            SortRow[] selected = new[] { h.Rows[0], h.Rows[17], h.Rows[49] };
+            h.Table.Selection = new(selected);
+            object view = h.Surface().ItemsSource;
+            IObservableVector<object> vector = (IObservableVector<object>)view;
+            int callbacks = 0;
+            void Changed(IObservableVector<object> sender, IVectorChangedEventArgs args)
+            {
+                callbacks++;
+                SortRow[] current = ((IEnumerable)sender).Cast<SortRow>().ToArray();
+                Assert.AreEqual(current.Length, current.Select(row => row.Key).Distinct().Count());
+                foreach (SortRow row in current)
+                {
+                    Assert.AreSame(row, Proof.Call(h.Table, "ResolveItem", row));
+                }
+                List<int> indices = new();
+                foreach (ItemIndexRange range in ((ISelectionInfo)view).GetSelectedRanges())
+                {
+                    for (int offset = 0; offset < range.Length; offset++)
+                    {
+                        indices.Add(range.FirstIndex + offset);
+                    }
+                }
+                int[] expected = current.Select((row, index) => (row, index))
+                    .Where(entry => selected.Any(row => row.Key == entry.row.Key)).Select(entry => entry.index).ToArray();
+                CollectionAssert.AreEqual(expected, indices);
+            }
+            vector.VectorChanged += Changed;
+            try
+            {
+                h.Rows[49].Rank = -1;
+                h.Table.RefreshView(new object[] { h.Rows[49] });
+                h.Rows[17] = new("k17", 17);
+                h.Rows.RemoveAt(0);
+            }
+            finally
+            {
+                vector.VectorChanged -= Changed;
+            }
+            Assert.IsTrue(callbacks > 0);
+        });
+
     [TestMethod]
     [DataRow(false)]
     [DataRow(true)]

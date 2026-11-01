@@ -53,7 +53,11 @@ sibling group in a hierarchical table.
 it sorted, before held and pointed rows keep their displayed positions.
 
 **Queued sort**: a header choice whose glyph is shown before its sorting work
-runs after a frame. It is distinct from the committed sort.
+runs after a frame, including any detached ordering work until its UI commit.
+It is distinct from the committed sort.
+
+**Change**: one whole-source update, collection notification, or named-values
+refresh entering the table's publish workflow.
 
 **Row surface**: the scrollable area of the table that presents its rows.
 
