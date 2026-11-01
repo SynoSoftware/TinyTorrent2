@@ -175,7 +175,8 @@ For a plain collection, or replacement of a child collection without a
 collection notification, the host publishes a replacement root enumerable
 through `ItemsSource`, causing a fresh hierarchy capture. Assigning the same
 dependency-property value is not a refresh mechanism. Prefer stable notifying
-collections for a live hierarchy, as the Files model already supplies.
+collections for a live hierarchy. The Files model uses plain child lists and
+publishes new root arrays when their membership changes.
 `RefreshView()` reuses captured membership and re-evaluates expansion,
 interactivity and sort values. These two update paths retain the existing
 distinction between a source snapshot and its private view.

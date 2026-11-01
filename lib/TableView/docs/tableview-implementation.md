@@ -80,6 +80,20 @@ existing item peers. Flat schemas do not allocate this source state or cell
 chrome. The sample's Project plan page supplies a non-torrent hierarchy with a
 large collapsed branch.
 
+`Hierarchy.ChildSource` keeps each child enumerable's captured items, referring
+parents and subscription identity. An accepted child notification updates only
+that collection and added/removed descendants in the kept node index.
+`Hierarchy.Preparation` journals touched relations and captured keys until
+acceptance or rollback; its keys survive native reconciliation and are released
+before notifications reach host code. Rejected or unobserved changes require
+recapture before another delta. New root captures validate the whole tree,
+reuse current notifying snapshots and compare plain indexed child lists.
+Collapsed changes update disclosure/automation facts without a view publish.
+Expanded changes enter the existing pipeline, where one visible-tree group
+capture feeds kept-order selection or shared sibling sorting and one flatten.
+The same operation-local groups supply worker capture; no per-parent sort-key
+cache or second projection is kept.
+
 ## Rendering and interaction
 
 The body uses a virtualized `ListView`; the header is a sibling. Header and rows

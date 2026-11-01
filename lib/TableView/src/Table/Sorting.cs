@@ -429,8 +429,6 @@ public sealed partial class Table
         Body.Source.Preparation? source = null
     )
     {
-        if (_hierarchy is not null && !SortsLocally)
-            return (snapshot, _held, null);
         DateTimeOffset now = DateTimeOffset.UtcNow;
         bool allowMoves = !SortsLocally || SortsOrder || _view.Count == 0
             || _sortInterval == TimeSpan.Zero || now - _orderSettledAt >= _sortInterval;
@@ -441,79 +439,71 @@ public sealed partial class Table
         }
         var (shown, held, released) = delta is null ? Hold(snapshot, live, preparation: source)
             : (snapshot, delta.Held, (IReadOnlyList<object>)Array.Empty<object>());
-        if (_hierarchy is null)
+        bool incremental = delta is not null;
+        SortedOrder.Preparation prepared = _sortedOrder is null
+            ? new(shown, false, incremental ? NaturalChanges(source!, delta!) : null)
+            : incremental ? _sortedOrder.Prepare(source!, _sortDirection, allowMoves, delta!.Arrivals)
+            : _sortedOrder.Prepare(shown, source is null ? live : source, _sortDirection, allowMoves);
+        if (_sortedOrder is null && delta?.Holds == true)
         {
-            bool incremental = delta is not null;
-            SortedOrder.Preparation prepared = _sortedOrder is null
-                ? new(shown, false, incremental ? NaturalChanges(source!, delta!) : null)
-                : incremental ? _sortedOrder.Prepare(source!, _sortDirection, allowMoves, delta!.Arrivals)
-                : _sortedOrder.Prepare(shown, source is null ? live : source, _sortDirection, allowMoves);
-            if (_sortedOrder is null && delta?.Holds == true)
-            {
-                AcceptHold(held, released);
-                return (_view, held, prepared.Changes);
-            }
-            IReadOnlyList<object> sorted = prepared.Rows;
-            var result = Pin(sorted, held, live, source);
-            _sortedOrder?.Accept(prepared.Rows);
             AcceptHold(held, released);
-            if (allowMoves || prepared.UsedFullSort)
-                _orderSettledAt = now;
-            _settlePending = SortsLocally && !SortsOrder
-                && (_sortedOrder!.NeedsSettle || held.Count > 0 || shown.Count != snapshot.Count
-                    || !ReferenceEquals(result.Order, sorted)
-                        && !result.Order.SequenceEqual(sorted, ReferenceEqualityComparer.Instance));
-            if (_settlePending)
-                ScheduleSettle(_sortInterval - (now - _orderSettledAt));
-            else
-                _settleDue?.Stop();
-            return (result.Order, result.Pinned, ReferenceEquals(result.Order, sorted) ? prepared.Changes : null);
+            return (_view, held, prepared.Changes);
         }
-
-        // Natural order belongs to the host, which reorders when it means to, and the row-order
-        // column shows that same order, so holding it would delay the person's own reorder; an
-        // empty view has no established order to preserve; and a zero interval is the host asking
-        // for none of this.
-        if (!SortsLocally || SortsOrder || _view.Count == 0 || _sortInterval == TimeSpan.Zero)
+        IReadOnlyList<object> sorted = prepared.Rows;
+        var result = Pin(sorted, held, live, source);
+        _sortedOrder?.Accept(prepared.Rows);
+        AcceptHold(held, released);
+        if (allowMoves || prepared.UsedFullSort)
         {
-            return Finish(SortedSnapshot(), settled: true);
+            _orderSettledAt = now;
         }
-
-        if (now - _orderSettledAt >= _sortInterval)
+        _settlePending = SortsLocally && !SortsOrder
+            && (_sortedOrder!.NeedsSettle || held.Count > 0 || shown.Count != snapshot.Count
+                || !ReferenceEquals(result.Order, sorted)
+                    && !result.Order.SequenceEqual(sorted, ReferenceEqualityComparer.Instance));
+        if (_settlePending)
         {
-            return Finish(SortedSnapshot(), settled: true);
+            ScheduleSettle(_sortInterval - (now - _orderSettledAt));
         }
-
-        // Hierarchy order is sorted per sibling group; the flat placement routine cannot
-        // search it without separating children from their parents.
-        if (KeptOrder(shown, held, live) is not List<object> kept)
+        else
         {
-            return Finish(SortedSnapshot(), settled: true);
+            _settleDue?.Stop();
         }
+        return (result.Order, result.Pinned, ReferenceEquals(result.Order, sorted) ? prepared.Changes : null);
+    }
 
-        return Finish(kept, settled: false);
-
-        (IReadOnlyList<object> Order, IdentitySet Pinned, IReadOnlyList<Change.Edit>? Changes) Finish(
-            IReadOnlyList<object> order,
-            bool settled
-        )
+    private (IReadOnlyList<object> Order, IdentitySet Pinned, IReadOnlyList<Change.Edit>? Changes)
+        ViewOrder(Hierarchy.Projection projection)
+    {
+        if (!SortsLocally)
         {
-            var result = Pin(order, held, live);
-            // A failed comparison must not consume a release or change held-row interactivity.
-            AcceptHold(held, released);
-            if (settled)
-            {
-                _orderSettledAt = now;
-                _settlePending = false;
-                _settleDue?.Stop();
-            }
-            else
-            {
-                _settlePending = true;
-                ScheduleSettle(_sortInterval - (now - _orderSettledAt));
-            }
-            return (result.Order, result.Pinned, null);
+            return (projection.Order(null, _sortDirection), _held, null);
         }
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        bool settled = SortsOrder || _view.Count == 0 || _sortInterval == TimeSpan.Zero
+            || now - _orderSettledAt >= _sortInterval;
+        IReadOnlyList<object> order;
+        if (!settled && KeptOrder(projection.Membership) is { } kept)
+        {
+            order = kept;
+        }
+        else
+        {
+            order = projection.Order(_sortedOrder, _sortDirection);
+            settled = true;
+        }
+        if (settled)
+        {
+            _orderSettledAt = now;
+            _settlePending = false;
+            _settleDue?.Stop();
+        }
+        else
+        {
+            _settlePending = true;
+            ScheduleSettle(_sortInterval - (now - _orderSettledAt));
+        }
+        return (order, _held, null);
     }
 
     private IReadOnlyList<Change.Edit> NaturalChanges(Body.Source.Preparation source, HoldChange hold)
@@ -591,9 +581,9 @@ public sealed partial class Table
     /// The current hierarchy instances in their displayed order, or null when visible
     /// membership changed and the sibling groups need a fresh projection.
     /// </summary>
-    private List<object>? KeptOrder(IReadOnlyList<object> shown, IdentitySet held, IdentityMap<object> live)
+    private List<object>? KeptOrder(IdentityMap<object> live)
     {
-        if (shown.Count + held.Count != _view.Count)
+        if (live.Count != _view.Count)
         {
             return null;
         }
@@ -605,11 +595,6 @@ public sealed partial class Table
         order.Clear();
         foreach (object row in _view)
         {
-            if (held.Contains(row, _view.Positions.Map))
-            {
-                continue;
-            }
-
             if (!live.TryGetValue(row, _view.Positions.Map, out object? current))
             {
                 return null;
@@ -621,12 +606,6 @@ public sealed partial class Table
         return order;
     }
 
-    /// <summary>
-    /// The current hierarchy in stable sibling order. Descending reverses the key comparison,
-    /// preserving the base-order tie-break within each group.
-    /// </summary>
-    private IReadOnlyList<object> SortedSnapshot() =>
-        _hierarchy!.Project((_preparedHierarchy ?? _hierarchy.Captured)!, _sortedOrder, _sortDirection);
 }
 
 internal abstract class SortDefinition

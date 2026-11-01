@@ -234,7 +234,7 @@ public sealed partial class Table
                     DateTimeOffset settled = _orderSettledAt;
                     try
                     {
-                        IReadOnlyList<object> projected = PrepareHierarchy(capture);
+                        Hierarchy.Projection projected = PrepareHierarchy(capture);
                         if (change is Change.Values values)
                         {
                             foreach (object item in values.Rows)
@@ -242,12 +242,11 @@ public sealed partial class Table
                                 _ = _preparedHierarchy!.Nodes.Resolve(item);
                             }
                         }
-                        (order, pinned, edits) = ViewOrder(projected, _hierarchy.ProjectedMembership);
+                        (order, pinned, edits) = ViewOrder(projected);
                     }
                     catch
                     {
                         _orderSettledAt = settled;
-                        _preparedHierarchy = null;
                         throw;
                     }
                 }
@@ -262,7 +261,7 @@ public sealed partial class Table
                 _orderSettledAt = DateTimeOffset.UtcNow;
             }
             IIdentityKeys keys = source is not null ? source : membership is not null ? membership
-                : (_preparedHierarchy ?? _hierarchy!.Captured)!.Nodes;
+                : _preparedHierarchy is { } preparedHierarchy ? preparedHierarchy : _hierarchy!.Captured!.Nodes;
             bool changed = edits is not null ? edits.Count > 0 : !_view.IsAlready(order);
             if (changed && edits is null)
             {
@@ -350,6 +349,8 @@ public sealed partial class Table
         }
         finally
         {
+            _preparedHierarchy?.Complete();
+            _preparedHierarchy = null;
             _source.Complete();
             _sortedOrder?.Complete();
             if (completed && !_detached)
@@ -481,14 +482,15 @@ public sealed partial class Table
         DateTimeOffset settled = _orderSettledAt;
         try
         {
-            PrepareHierarchy(capture);
+            Hierarchy.Projection projection = PrepareHierarchy(capture);
             return work?.Hierarchy is { } groups
-                ? _hierarchy.Project(_preparedHierarchy!, groups, work.Sorting, work.PublishVersion != _publishVersion)
-                : _hierarchy.Project(_preparedHierarchy!, workspace, direction);
+                ? projection.Order(groups, work.Sorting, work.PublishVersion != _publishVersion)
+                : projection.Order(workspace, direction);
         }
         catch
         {
             _orderSettledAt = settled;
+            _preparedHierarchy?.Complete();
             _preparedHierarchy = null;
             throw;
         }
@@ -506,13 +508,13 @@ public sealed partial class Table
         DateTimeOffset settled = _orderSettledAt;
         try
         {
-            PrepareHierarchy(capture);
-            SortedOrder.Work sorting = _hierarchy.CaptureWork(_preparedHierarchy!, workspace, direction,
-                _identity, out Hierarchy.Work hierarchy);
+            Hierarchy.Projection projection = PrepareHierarchy(capture);
+            SortedOrder.Work sorting = projection.CaptureWork(workspace, direction, out Hierarchy.Work hierarchy);
             return new(workspace, sorting, hierarchy, _publishVersion);
         }
         finally
         {
+            _preparedHierarchy?.Complete();
             _preparedHierarchy = null;
             _orderSettledAt = settled;
         }

@@ -22,6 +22,77 @@ public class HierarchyTests
     }
 
     [TestMethod]
+    public Task ANewRootArrayPublishesPlainChildrenChangedInPlace() =>
+        TestHost.RunAsync(async () =>
+        {
+            Node root = new("root"), first = new("first"), added = new("added");
+            List<Node> children = new() { first };
+            Column name = TestData.Column("name");
+            Table table = TestData.Table(name);
+            table.Schema<Node>().Key(row => row.Name)
+                .Hierarchy(name, row => ReferenceEquals(row, root) ? children : row.Children,
+                    row => row.IsExpanded, (row, expanded) => row.IsExpanded = expanded);
+            table.ItemsSource = new[] { root };
+            await TableHarness.LoadAsync(table);
+
+            children.Add(added);
+            table.RefreshView();
+            CollectionAssert.AreEqual(new[] { "root", "first" }, Names(table));
+            table.ItemsSource = new[] { root };
+            CollectionAssert.AreEqual(new[] { "root", "first", "added" }, Names(table));
+        });
+
+    [TestMethod]
+    public Task RejectedChildChangesKeepTheAcceptedTreeAndRecoverBeforeAnotherDelta() =>
+        TestHost.RunAsync(async () =>
+        {
+            Node root = new("root", new Node("first")), outside = new("outside");
+            int outsideReads = 0;
+            bool fail = false;
+            Column name = TestData.Column("name");
+            Table table = TestData.Table(name);
+            table.Schema<Node>().Key(row => row.Name)
+                .Hierarchy(name, row =>
+                {
+                    outsideReads += ReferenceEquals(row, outside) ? 1 : 0;
+                    return row.Children;
+                }, row => row.IsExpanded, (row, expanded) => row.IsExpanded = expanded)
+                .SortKey(name, row => row.Name, Comparer<string>.Create((left, right) =>
+                    fail ? throw new InvalidOperationException("comparison") : StringComparer.Ordinal.Compare(left, right)));
+            ObservableCollection<Node> roots = new() { root, outside };
+            table.ItemsSource = roots;
+            await TableHarness.LoadAsync(table);
+            table.Sort = new(name);
+            outsideReads = 0;
+
+            Node added = new("second");
+            root.Children.Add(added);
+            Assert.AreEqual(0, outsideReads);
+            CollectionAssert.AreEqual(new[] { "outside", "root", "first", "second" }, Names(table));
+
+            Node duplicate = new("outside");
+            Expect.Throws<InvalidOperationException>(() => root.Children.Add(duplicate));
+            CollectionAssert.AreEqual(new[] { "outside", "root", "first", "second" }, Names(table));
+            root.Children.Remove(duplicate);
+            CollectionAssert.AreEqual(new[] { "outside", "root", "first", "second" }, Names(table));
+
+            Node rejected = new("third");
+            fail = true;
+            Expect.Throws<InvalidOperationException>(() => root.Children.Add(rejected));
+            CollectionAssert.AreEqual(new[] { "outside", "root", "first", "second" }, Names(table));
+            fail = false;
+            root.Children.Remove(rejected);
+            CollectionAssert.AreEqual(new[] { "outside", "root", "first", "second" }, Names(table));
+
+            Node rejectedRoot = new("outside"), observed = new("fourth");
+            Expect.Throws<InvalidOperationException>(() => roots.Add(rejectedRoot));
+            Expect.Throws<InvalidOperationException>(() => root.Children.Add(observed));
+            CollectionAssert.AreEqual(new[] { "outside", "root", "first", "second" }, Names(table));
+            roots.Remove(rejectedRoot);
+            CollectionAssert.AreEqual(new[] { "outside", "root", "first", "fourth", "second" }, Names(table));
+        });
+
+    [TestMethod]
     public Task SettlingUsesVisibleMembershipWhenExpansionExchangesEqualCounts() =>
         TestHost.RunAsync(async () =>
         {

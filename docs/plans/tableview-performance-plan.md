@@ -216,6 +216,9 @@ Four rules apply to every row:
 | The drag distance | One internal value read from the Windows setting, read by `Table` and `Header.Strip` | the two `DragThresholdDips` constants | defect Q10 | row and header gestures | — |
 | Drag capture and drag membership | `Table/Reordering.cs`: `Order.Capture`'s entries in an identity-part map, compared by reference, so a replaced instance cancels the drag as today; the packet in an identity-part set | — | 8 | `IsDragCurrent`, `IsDragging` | — |
 | Hierarchy membership: the node index, child collections, sibling positions | `Hierarchy`. It adopts a new capture whenever the capture is new, whatever the visible order; it computes sibling positions from the order when the order changed; from stage 6 it applies each child notification to the kept node index at every depth | `_positions`' sibling field | 1a, 6 | `HierarchyPosition`, `SortedSnapshot` | Live in the core position indexes |
+| A hierarchy child source's captured items, parent associations, current handler and accepted predecessor | One `Hierarchy.ChildSource` per enumerable, retaining all parents even for shared empty sources | Separate source-to-parent maps or sender-based subscription eligibility | 6 | Hierarchy capture, child preparation and observation | Reuse rejected/suspended predecessors or accept an old invocation after root reassignment |
+| Atomic hierarchy preparation and captured entrant/leaver keys | Operation-local `Hierarchy.Preparation`, journaling only touched accepted nodes and source relations; existing table acceptance/finally commits or restores it | A full kept-node map clone, a second duplicate validator, or a second publish pipeline | 6 | Existing hierarchy/table preparation and captured-key consumers | Lose removed keys before synchronous native consumers finish, or mutate accepted state after failed preparation |
+| Visible hierarchy groups and membership for one operation | Operation-local `Hierarchy.Projection`, collected in one expansion/tree walk, flattened once using the existing sibling sorter; reused by worker capture | Discarded unsorted flat projection followed by a second projection | 6 | Existing keep/settle decision, hierarchy projection and worker capture | Keep persistent per-parent sort-key history or add flat-table hierarchy work |
 | Membership and current instances of the hierarchy's visible projection | `Hierarchy.Project`, with a reusable identity-part map whose keys come from the node index | Flat `Body.Source` membership, which cannot describe child rows; the all-node index, which includes collapsed descendants | 1a, 6 | `KeptOrder` | Hold positions; create a second identity rule; serve as accepted source state |
 
 ## Stages
@@ -1632,6 +1635,61 @@ runs the interactive and visual checks. No push is authorized.
   C local commit is released, excluding root AGENTS. D's complete owner proposal
   is next; no D implementation before its gate. D's review needs no build and
   its validation joins E as planned.
+- The owner challenged roughly eight hours spent on this optimization. The
+  lead agrees execution overhead is excessive: repeated design/review cycles
+  and fixture repair, rather than the roughly13.3 minutes of C build commands,
+  account for the delay. Remaining D/E use concise owner decisions, one
+  continued coder, proportional retained review and the one combined final
+  build. No further measurement expansion or redundant check is released.
+  Existing results and settled design stay settled; the remaining agreed
+  stages are not silently dropped.
+- D's complete owner proposal is approved; implementation is released. Detail:
+  `group-d-owners.md` in the evidence folder. The kept node index and child
+  source relations remain Hierarchy-owned; preparation journals touched facts
+  and captured keys, rolls back rejected changes, and ends at existing pipeline
+  acceptance/finally points. Root assignments still validate the full candidate,
+  comparing plain child lists by indexed references and folding structural
+  comparison into capture. Child handler identity rotates on accepted root
+  reassignment and detach; stale invocation and null sender are handled by that
+  identity. Shared empty sources retain every parent; a later duplicated child
+  fails the one tree-wide identity-map insertion and rolls back.
+  **Lead refinement to stage6:** an expanded child change may run one visible
+  projection/selection/reconcile through existing RebuildView/Change.Collection.
+  It must not recapture/walk all supplied nodes or clone the kept node index.
+  A collapsed change with no visible result accepts membership and forwards one
+  presentation/UIA fact without publishing. This follows the hierarchy contract's
+  allowed visible projection and avoids a separate incremental tree-edit engine.
+  The operation-local grouped projection removes the discarded unsorted flat
+  list and repeated expansion/children reads, using the existing sort routine.
+  No new flat source/view algorithm or persistent sibling-key cache. One focused
+  retained review follows; no D build, tests or measurements before E's build.
+- D implementation and retained plain review are complete. Records:
+  `group-d-review-r1.md` and clean corrective `group-d-review-r2.md`. The one
+  medium finding was a child event bypassing a rejected root capture; the
+  handler now marks its child source stale before any throwing capture and
+  gives invalid/mismatched current roots priority over child-only preparation.
+  The combined rejection/recovery regression covers that sequence. The lead
+  read both records and the main implementation/acceptance/cleanup paths.
+  Iterative traversal preserves deep-tree behavior; reference parent sets and
+  per-relation journals avoid copying shared empty-source parent populations.
+  Only two focused regression methods were added; HierarchyTests run with E.
+  Preparation.Apply's five inputs are accepted at its existing concrete
+  hierarchy/identity/validation seam without an arbitrary options bag.
+  D source is accepted and its local commit is released, excluding AGENTS;
+  runtime validation remains explicitly pending the combined E build.
+- E's concise owner list is approved and implementation may start after D's
+  local commit: Row owns its template states/root; HierarchyCell owns lazy
+  expander/glyph creation and unchanged geometry. Order retains provider
+  enumeration/duplicate validation while gesture state retains captured order
+  and packet identity collections; provider aliases resolve current row policy.
+  Marquee owns coverage deltas and SelectionState owns incremental modifier and
+  range application. Motion owns per-SlideFrom compositor/easing/distance reuse,
+  without a global animation cache. Columns owns zero-sum fill; Input owns native
+  control isolation and realized page geometry; one shared system-metric value
+  owns configured drag distance in DIPs at96DPI as already settled. No alternate
+  implementation or new measurement/visual framework. Existing V images and
+  ordinary native UI suffice for final appearance/slide inspection. One focused
+  retained review and one combined D/E build/check batch remain.
 - C's captured-key seam is approved as a replacement, not a second route:
   replace `IIdentityKeys.Captured` with `CapturedFor(object item)`. Ordinary
   maps/sets/position indexes return their typed map; `Source.Preparation`

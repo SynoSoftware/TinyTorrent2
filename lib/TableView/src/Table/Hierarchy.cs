@@ -9,7 +9,7 @@ namespace Syno.TableView;
 public sealed partial class Table
 {
     private Hierarchy? _hierarchy;
-    private Hierarchy.Snapshot? _preparedHierarchy;
+    private Hierarchy.Preparation? _preparedHierarchy;
 
     internal Hierarchy? Hierarchy => _hierarchy;
 
@@ -20,41 +20,64 @@ public sealed partial class Table
         _hierarchy = hierarchy;
         hierarchy.Changed += (_, _) =>
         {
+            RowVisualsChanged?.Invoke(this, EventArgs.Empty);
+            _surface?.RefreshHierarchy();
+        };
+        hierarchy.CollectionChanged += (_, change) =>
+        {
             if (!DispatcherQueue.HasThreadAccess)
+            {
                 throw ConfigurationError("Hierarchy updates must use the table's UI thread.");
-            RebuildView();
+            }
+            hierarchy.Invalidate(change.Source);
+            Body.Source.Capture capture = _source.Current;
+            bool recapture = !capture.Validated || hierarchy.Captured?.AssignmentVersion != capture.AssignmentVersion;
+            _preparedHierarchy = recapture
+                ? hierarchy.Capture(capture.Rows, _identity, ValidateRows, capture.AssignmentVersion)
+                : hierarchy.Prepare(change, _identity, ValidateRows, _view.Positions);
+            if (recapture || _preparedHierarchy.RequiresProjection)
+            {
+                RebuildView(capture, change: new Change.Collection(capture, change.Notification, change.HasPredecessor));
+                return;
+            }
+            bool changed;
+            try
+            {
+                _preparedHierarchy.Accept();
+                changed = hierarchy.UpdateChanged(_preparedHierarchy, _view.Positions);
+            }
+            finally
+            {
+                _preparedHierarchy.Complete();
+                _preparedHierarchy = null;
+            }
+            if (changed)
+            {
+                hierarchy.PublishChanged();
+            }
         };
     }
 
-    private IReadOnlyList<object> PrepareHierarchy(Body.Source.Capture capture)
+    private Hierarchy.Projection PrepareHierarchy(Body.Source.Capture capture)
     {
         var hierarchy = _hierarchy!;
-        _preparedHierarchy =
+        _preparedHierarchy ??=
             !capture.Validated || hierarchy.NeedsCapture(capture.AssignmentVersion)
                 ? hierarchy.Capture(capture.Rows, _identity, ValidateRows, capture.AssignmentVersion)
-                : hierarchy.Captured!;
-        if (!ReferenceEquals(_preparedHierarchy, hierarchy.Captured))
+                : hierarchy.Reuse();
+        if (_preparedHierarchy.StructureChanged)
         {
-            if (
-                hierarchy.Captured is null
-                || !_preparedHierarchy.MatchesStructure(hierarchy.Captured)
-            )
-                _orderSettledAt = DateTimeOffset.MinValue;
+            _orderSettledAt = DateTimeOffset.MinValue;
         }
-        return hierarchy.Project(_preparedHierarchy, null, default);
+        return hierarchy.Project(_preparedHierarchy.Snapshot, _identity);
     }
 
     private void AcceptHierarchy(IReadOnlyList<object> order, bool moved)
     {
         if (_hierarchy is null)
             return;
-        var snapshot = _preparedHierarchy ?? _hierarchy.Captured;
-        if (snapshot is null)
-            return;
-        if (!ReferenceEquals(_hierarchy.Captured, snapshot))
-            _hierarchy.Accept(snapshot);
+        _preparedHierarchy?.Accept();
         _hierarchy.UpdatePresentation(order, moved);
-        _preparedHierarchy = null;
     }
 
     internal bool IsHierarchyColumn(Column column) => ReferenceEquals(_hierarchy?.Column, column);
