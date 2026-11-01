@@ -487,7 +487,8 @@ public sealed partial class Table
     /// </remarks>
     private void ApplyPress()
     {
-        _gestureSelection = _selection.Capture();
+        _gestureSelection = IsMarqueeEnabled && _selection.AllowsMultiple
+            ? _selection.Capture(_publishedSelection) : null;
         _gestureDeferred =
             _gestureItem is null
             || (
@@ -599,6 +600,14 @@ public sealed partial class Table
 
     private void CancelGesture()
     {
+        if (ClearGesture())
+        {
+            RowVisualsChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    private bool ClearGesture()
+    {
         bool wasDragging = _gesture == RowGesture.RowDrag;
 
         _gesture = RowGesture.None;
@@ -610,10 +619,7 @@ public sealed partial class Table
         _gestureCouldDrag = false;
         _gestureSelection = null;
 
-        if (wasDragging)
-        {
-            RowVisualsChanged?.Invoke(this, EventArgs.Empty);
-        }
+        return wasDragging;
     }
 
     private void ReleaseGesturePointer()
@@ -665,7 +671,8 @@ public sealed partial class Table
     /// <summary>Ctrl: each covered row flips against the selection as it stood at press.</summary>
     private List<object> MarqueeToggledAgainstStart()
     {
-        HashSet<object> items = new(_gestureSelection!.Items, _identity);
+        IdentitySet items = new(_identity);
+        items.UnionWith(_gestureSelection!.Items);
         items.SymmetricExceptWith(MarqueeCovered());
         return items.ToList();
     }
@@ -796,7 +803,7 @@ public sealed partial class Table
             _detached
             || !_selection.IsInteractive(item)
             || !SameSelection(packet, Selection)
-            || !View.Any(row => ReferenceEquals(row, item))
+            || !ReferenceEquals(ResolveItem(item), item)
             || _surface is null
             || !ReferenceEquals(_surface.ItemFromContainer(placementTarget), item)
         )
@@ -1103,7 +1110,7 @@ public sealed partial class Table
     /// </summary>
     public void ScrollIntoView(object item)
     {
-        if (IndexInView(item) < 0 && _source.Snapshot.Contains(item, _identity))
+        if (IndexInView(item) < 0 && _source.Membership.ContainsKey(item))
             Release([item]);
 
         if (_layoutPending)
@@ -1135,9 +1142,12 @@ public sealed partial class Table
         ArgumentNullException.ThrowIfNull(arrivals);
         if (_hierarchy is null)
         {
-            HashSet<object> waiting = new(arrivals, _identity);
-            waiting.ExceptWith(View);
-            waiting.IntersectWith(_source.Snapshot);
+            IdentitySet waiting = new(_identity);
+            foreach (object arrival in arrivals)
+            {
+                if (IndexInView(arrival) < 0 && _source.Membership.ContainsKey(arrival))
+                    waiting.Add(arrival);
+            }
             if (waiting.Count > 0)
                 Release(waiting);
         }

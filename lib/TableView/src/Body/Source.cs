@@ -14,26 +14,74 @@ internal sealed class Source
     private readonly DispatcherQueue _dispatcher;
     private IEnumerable? _source;
     private INotifyCollectionChanged? _notifier;
-    private IReadOnlyList<object> _snapshot = Array.Empty<object>();
+    private Capture _snapshot = new(Array.Empty<object>(), 0);
+    private long _assignmentVersion;
+    private IdentityMap<object> _membership;
+    private IdentityMap<object> _candidate;
     private bool _suspended = true;
 
-    internal Hierarchy? Hierarchy { get; set; }
+    internal Source(DispatcherQueue dispatcher, IIdentity identity)
+    {
+        _dispatcher = dispatcher;
+        _membership = identity.CreateMap<object>(keepsKeys: true);
+        _candidate = identity.CreateMap<object>(keepsKeys: true);
+    }
 
-    internal Source(DispatcherQueue dispatcher) => _dispatcher = dispatcher;
+    internal sealed class Capture(IReadOnlyList<object> rows, long assignmentVersion)
+    {
+        internal IReadOnlyList<object> Rows { get; } = rows;
+        internal long AssignmentVersion { get; } = assignmentVersion;
+        internal bool Validated { get; set; }
+    }
 
-    internal event EventHandler<IReadOnlyList<object>>? SnapshotChanged;
+    internal event EventHandler<Capture>? SnapshotChanged;
 
-    internal void Accept(IReadOnlyList<object> snapshot) => _snapshot = snapshot;
+    internal void SetIdentity(IIdentity identity)
+    {
+        _membership = identity.CreateMap<object>(keepsKeys: true);
+        _candidate = identity.CreateMap<object>(keepsKeys: true);
+        _snapshot.Validated = false;
+    }
+
+    internal IdentityMap<object> Prepare(Capture capture, Action<object> validate)
+    {
+        if (ReferenceEquals(capture, _snapshot) && capture.Validated)
+        {
+            return _membership;
+        }
+        _candidate.Clear();
+        foreach (object item in capture.Rows)
+        {
+            validate(item);
+            if (!_candidate.TryAdd(item, item))
+            {
+                throw new InvalidOperationException("The source contains duplicate row identities.");
+            }
+        }
+        return _candidate;
+    }
+
+    internal void Accept(Capture snapshot, bool validated, IdentityMap<object>? membership = null)
+    {
+        if (membership is not null && !ReferenceEquals(membership, _membership))
+        {
+            (_membership, _candidate) = (_candidate, _membership);
+        }
+        snapshot.Validated = validated;
+        _snapshot = snapshot;
+    }
+
+    internal Capture Current => _snapshot;
+    internal IdentityMap<object> Membership => _membership;
 
     /// <summary>The last accepted source snapshot.</summary>
-    internal IReadOnlyList<object> Snapshot => _snapshot;
+    internal IReadOnlyList<object> Snapshot => _snapshot.Rows;
 
     internal void Set(IEnumerable? source)
     {
         RequireUiThread();
 
-        IReadOnlyList<object> next = Capture(source);
-        Hierarchy?.Invalidate();
+        Capture next = new(CaptureRows(source), ++_assignmentVersion);
         Detach();
         _source = source;
         if (!_suspended)
@@ -44,7 +92,6 @@ internal sealed class Source
     internal void Suspend()
     {
         _suspended = true;
-        Hierarchy?.Suspend();
         Detach();
     }
 
@@ -53,12 +100,12 @@ internal sealed class Source
         if (!_suspended)
             return;
         _suspended = false;
-        Hierarchy?.Resume();
         Attach();
         if (_source is INotifyCollectionChanged)
-            SnapshotChanged?.Invoke(this, Capture(_source));
-        else if (Hierarchy is not null)
-            SnapshotChanged?.Invoke(this, _snapshot);
+        {
+            _snapshot.Validated = false;
+            SnapshotChanged?.Invoke(this, new(CaptureRows(_source), _assignmentVersion));
+        }
     }
 
     private void Attach()
@@ -79,7 +126,10 @@ internal sealed class Source
     {
         RequireUiThread();
         if (!_suspended)
-            SnapshotChanged?.Invoke(this, Capture(_source));
+        {
+            _snapshot.Validated = false;
+            SnapshotChanged?.Invoke(this, new(CaptureRows(_source), _assignmentVersion));
+        }
     }
 
     /// <summary>
@@ -89,8 +139,12 @@ internal sealed class Source
     /// so a one-shot iterator is treated as a snapshot; the host supplies a new iterator for a
     /// later source update.
     /// </summary>
-    private static IReadOnlyList<object> Capture(IEnumerable? source)
+    private static IReadOnlyList<object> CaptureRows(IEnumerable? source)
     {
+        if (source is IReadOnlyList<object> rows)
+        {
+            return rows;
+        }
         if (source is IList list)
             return new Rows(list);
 
@@ -98,21 +152,18 @@ internal sealed class Source
         if (source is not null)
         {
             foreach (object? item in source)
-                next.Add(item ?? throw NullRow());
+                next.Add(item!);
         }
 
         return next;
     }
-
-    private static InvalidOperationException NullRow() =>
-        new("ItemsSource contains a null row.");
 
     /// <summary>An indexable source read in place.</summary>
     private sealed class Rows(IList list) : IReadOnlyList<object>
     {
         public int Count => list.Count;
 
-        public object this[int index] => list[index] ?? throw NullRow();
+        public object this[int index] => list[index]!;
 
         public IEnumerator<object> GetEnumerator()
         {

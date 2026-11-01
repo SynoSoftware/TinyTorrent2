@@ -46,6 +46,9 @@ covers the whole list:
   everything the normal build does, so every check runs on it.
 - Add `-Project <path>` for each further project a check needs, such as
   `lib\TableView\tests\TableViewTests.csproj`.
+- Add `-ProjectsOnly` with `-Project` when checks need only those projects,
+  so neither product is compiled. Pass multiple paths as one PowerShell array;
+  this mode cannot be combined with `-Engine` or `-App`.
 - Add `-Release` only for optimised measurements or release work.
 
 A build takes minutes, so run it where your tool's command time limit cannot

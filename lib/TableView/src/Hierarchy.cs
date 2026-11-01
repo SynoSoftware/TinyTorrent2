@@ -16,29 +16,52 @@ internal sealed class Hierarchy(
         object? Parent,
         int Depth,
         IReadOnlyList<object> Children
-    );
+    )
+    {
+        internal int Position { get; set; }
+        internal bool Expandable { get; set; }
+        internal bool Expanded { get; set; }
+    }
 
     internal sealed record Snapshot(
         IReadOnlyList<object> Roots,
-        Dictionary<object, Node> Nodes,
-        Dictionary<IEnumerable, IReadOnlyList<object>> Sources
+        IdentityMap<Node> Nodes,
+        Dictionary<IEnumerable, IReadOnlyList<object>> Sources,
+        long AssignmentVersion
     )
     {
-        internal bool MatchesStructure(Snapshot other, ItemIdentity identity)
+        internal bool MatchesStructure(Snapshot other)
         {
-            if (Nodes.Count != other.Nodes.Count || !Roots.SequenceEqual(other.Roots, identity))
+            if (Nodes.Count != other.Nodes.Count || !SameSequence(Roots, other.Roots))
                 return false;
 
             foreach (var (item, node) in Nodes)
             {
-                if (!other.Nodes.TryGetValue(item, out var previous))
+                if (!other.Nodes.TryGetValue(item, Nodes, out var previous))
                     return false;
-                if (!identity.Equals(node.Parent, previous.Parent))
+                if ((node.Parent is null) != (previous.Parent is null))
                     return false;
-                if (!node.Children.SequenceEqual(previous.Children, identity))
+                if (previous.Parent is not null
+                    && (!Nodes.TryGetValue(previous.Parent, other.Nodes, out Node parent)
+                        || !ReferenceEquals(parent.Item, node.Parent)))
+                    return false;
+                if (!SameSequence(node.Children, previous.Children))
                     return false;
             }
             return true;
+
+            bool SameSequence(IReadOnlyList<object> next, IReadOnlyList<object> before)
+            {
+                if (next.Count != before.Count)
+                    return false;
+                for (int index = 0; index < next.Count; index++)
+                {
+                    if (!Nodes.TryGetValue(before[index], other.Nodes, out Node current)
+                        || !ReferenceEquals(current.Item, next[index]))
+                        return false;
+                }
+                return true;
+            }
         }
     }
 
@@ -46,8 +69,10 @@ internal sealed class Hierarchy(
     private readonly HashSet<INotifyCollectionChanged> _subscriptions = new(
         ReferenceEqualityComparer.Instance
     );
-    private bool _recapture;
     private bool _suspended;
+    private IdentityMap<int>? _counts;
+    private IdentityMap<object>? _projected;
+    internal long Version { get; private set; }
 
     internal Column Column => column;
     internal Snapshot? Captured { get; private set; }
@@ -69,11 +94,14 @@ internal sealed class Hierarchy(
     internal bool IsExpandable(Node node) =>
         node.Children.Count > 0 || hasUnrealizedChildren?.Invoke(node.Item) == true;
 
-    internal void Invalidate() => _recapture = true;
+    internal bool NeedsCapture(long assignmentVersion) =>
+        Captured is null || Captured.AssignmentVersion != assignmentVersion || _invalid.Count > 0;
 
-    internal Snapshot Capture(IReadOnlyList<object> roots, ItemIdentity identity, Type? rowType)
+    internal Snapshot Capture(IReadOnlyList<object> roots, IIdentity identity, Action<object> validate, long assignmentVersion)
     {
-        Dictionary<object, Node> nodes = new(identity);
+        IdentityMap<Node> nodes = identity.CreateMap<Node>(keepsKeys: true);
+        _counts ??= identity.CreateMap<int>();
+        _projected ??= identity.CreateMap<object>(keepsKeys: true);
         Dictionary<IEnumerable, IReadOnlyList<object>> sources = new(
             ReferenceEqualityComparer.Instance
         );
@@ -82,13 +110,8 @@ internal sealed class Hierarchy(
             pending.Push((roots[i], null, 0));
         while (pending.TryPop(out var next))
         {
-            if (rowType is not null && !rowType.IsInstanceOfType(next.Item))
-                throw new InvalidOperationException(
-                    $"The source contains a row outside {rowType}."
-                );
-            if (identity.KeySelector is not null && identity.KeySelector(next.Item) is null)
-                throw new InvalidOperationException("The schema key selector returned null.");
-            if (nodes.ContainsKey(next.Item))
+            validate(next.Item);
+            if (!nodes.TryAdd(next.Item, new(next.Item, next.Parent, next.Depth, Array.Empty<object>())))
                 throw new InvalidOperationException(
                     "The hierarchy contains duplicate row identities or a cycle."
                 );
@@ -98,7 +121,7 @@ internal sealed class Hierarchy(
             if (!sources.TryGetValue(source, out var items))
             {
                 if (
-                    !_recapture
+                    Captured?.AssignmentVersion == assignmentVersion
                     && !_invalid.Contains(source)
                     && Captured is not null
                     && Captured.Sources.TryGetValue(source, out var cached)
@@ -111,31 +134,67 @@ internal sealed class Hierarchy(
                     List<object> captured = new();
                     foreach (object? item in source)
                     {
-                        if (item is null)
-                            throw new InvalidOperationException(
-                                "The hierarchy contains a null row."
-                            );
-                        captured.Add(item);
+                        captured.Add(item!);
                     }
                     items = captured;
                 }
                 sources.Add(source, items);
             }
-            nodes.Add(next.Item, new(next.Item, next.Parent, next.Depth, items));
+            nodes.Set(next.Item, new(next.Item, next.Parent, next.Depth, items));
             for (int i = items.Count - 1; i >= 0; i--)
                 pending.Push((items[i], next.Item, next.Depth + 1));
         }
         // A copy, because the next capture compares its roots with these, and the source list
         // they come from is read in place.
-        return new(roots.ToArray(), nodes, sources);
+        return new(roots.ToArray(), nodes, sources, assignmentVersion);
     }
 
     internal void Accept(Snapshot snapshot)
     {
+        if (Captured is { } previous)
+        {
+            foreach (var entry in snapshot.Nodes)
+            {
+                if (previous.Nodes.TryGetValue(entry.Key, snapshot.Nodes, out Node before))
+                    entry.Value.Position = before.Position;
+            }
+        }
         Captured = snapshot;
+        Version++;
         _invalid.Clear();
-        _recapture = false;
         Subscribe();
+    }
+
+    internal void UpdatePresentation(IReadOnlyList<object> order, bool moved)
+    {
+        if (Captured is not { } snapshot)
+            return;
+        if (moved)
+            _counts!.Clear();
+        int roots = 0;
+        bool expandable = false;
+        foreach (object item in order)
+        {
+            Node node = snapshot.Nodes[item];
+            bool hasChildren = IsExpandable(node);
+            bool expanded = IsExpanded(item);
+            if (node.Expandable != hasChildren || node.Expanded != expanded)
+                Version++;
+            node.Expandable = hasChildren;
+            node.Expanded = expanded;
+            expandable |= hasChildren;
+            if (!moved)
+                continue;
+            if (node.Parent is not { } parent)
+                node.Position = ++roots;
+            else
+            {
+                _counts!.TryGetValue(parent, snapshot.Nodes, out int count);
+                node.Position = count + 1;
+                _counts.Set(parent, node.Position, snapshot.Nodes);
+            }
+        }
+        HasChildren = expandable;
     }
 
     internal void Suspend()
@@ -184,6 +243,7 @@ internal sealed class Hierarchy(
         SortDirection direction
     )
     {
+        _projected!.Clear();
         List<object> visible = new();
         Stack<IEnumerator<object>> levels = new();
         levels.Push(Order(snapshot.Roots).GetEnumerator());
@@ -198,6 +258,7 @@ internal sealed class Hierarchy(
                 }
                 object item = level.Current;
                 visible.Add(item);
+                _projected.TryAdd(item, item, snapshot.Nodes);
                 var node = snapshot.Nodes[item];
                 if (node.Children.Count > 0 && isExpanded(item))
                     levels.Push(Order(node.Children).GetEnumerator());
@@ -217,4 +278,6 @@ internal sealed class Hierarchy(
             return sort(siblings, direction);
         }
     }
+
+    internal IdentityMap<object> ProjectedMembership => _projected!;
 }

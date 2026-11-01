@@ -8,14 +8,25 @@ internal sealed class Order(
 {
     internal Column Column { get; } = column;
 
-    internal bool CanReorder => items().Where(Contains).Skip(1).Any();
+    private long _publishVersion = -1;
+    private bool _canReorder;
+
+    internal bool AllowsReorder(long publishVersion)
+    {
+        if (_publishVersion != publishVersion)
+        {
+            _canReorder = items().Where(Contains).Skip(1).Any();
+            _publishVersion = publishVersion;
+        }
+        return _canReorder;
+    }
 
     internal bool Contains(object item) => position(item).HasValue;
 
-    internal Entry[] Capture(IEqualityComparer<object> identity)
+    internal Entry[] Capture(IIdentity identity)
     {
         var entries = new List<Entry>();
-        var seen = new HashSet<object>(identity);
+        var seen = new IdentitySet(identity);
         var positions = new HashSet<int>();
         foreach (var item in items())
         {

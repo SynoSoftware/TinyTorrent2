@@ -20,6 +20,7 @@ public sealed partial class Table
     private bool _hasPendingSort;
     private TimeSpan _sortInterval = DefaultSortInterval;
     private SortMode _sortMode;
+    private readonly List<object> _keptRows = new();
 
     /// <summary>When the rows were last allowed to take their sorted places.</summary>
     private DateTimeOffset _orderSettledAt = DateTimeOffset.MinValue;
@@ -257,13 +258,14 @@ public sealed partial class Table
     /// </para>
     /// </remarks>
     /// <returns>The order, and the rows that keep their index, whose containers the reconcile keeps.</returns>
-    private (IReadOnlyList<object> Order, IReadOnlySet<object> Pinned) ViewOrder(
-        IReadOnlyList<object> snapshot
+    private (IReadOnlyList<object> Order, IdentitySet Pinned) ViewOrder(
+        IReadOnlyList<object> snapshot,
+        IdentityMap<object> live
     )
     {
         if (_hierarchy is not null && !SortsLocally)
             return (snapshot, _held);
-        var (shown, held, released) = Hold(snapshot);
+        var (shown, held, released) = Hold(snapshot, live);
         DateTimeOffset now = DateTimeOffset.UtcNow;
 
         // Natural order belongs to the host, which reorders when it means to, and the row-order
@@ -289,19 +291,19 @@ public sealed partial class Table
         // A membership change the hold let through is never kept back, so it is also never
         // settled: KeptOrder returns null for one, and the sorted order is what the arriving row
         // needs anyway.
-        if (KeptOrder(shown, held) is not List<object> kept)
+        if (KeptOrder(shown, held, live) is not List<object> kept)
         {
             return Finish(SortedSnapshot(shown, _sortColumn, _sortDirection), settled: true);
         }
 
         return Finish(kept, settled: false);
 
-        (IReadOnlyList<object> Order, IReadOnlySet<object> Pinned) Finish(
+        (IReadOnlyList<object> Order, IdentitySet Pinned) Finish(
             IReadOnlyList<object> order,
             bool settled
         )
         {
-            var result = Pin(order, held);
+            var result = Pin(order, held, live);
             // A failed comparison must not consume a release or change held-row interactivity.
             AcceptHold(held, released);
             if (settled)
@@ -377,7 +379,7 @@ public sealed partial class Table
     /// nothing about membership removes the merge, the cost and the arbitrary placement together.
     /// </para>
     /// </remarks>
-    private List<object>? KeptOrder(IReadOnlyList<object> shown, IReadOnlySet<object> held)
+    private List<object>? KeptOrder(IReadOnlyList<object> shown, IdentitySet held, IdentityMap<object> live)
     {
         if (shown.Count + held.Count != _view.Count)
         {
@@ -387,21 +389,16 @@ public sealed partial class Table
         // Always the snapshot's instances, never the view's: the host may have replaced a row with
         // an equal-identity instance, and keeping the old one would leave its container bound to an
         // object nothing updates any more.
-        Dictionary<object, object> live = new(shown.Count, _identity);
-        foreach (object row in shown)
-        {
-            live[row] = row;
-        }
-
-        List<object> order = new(shown.Count);
+        List<object> order = _keptRows;
+        order.Clear();
         foreach (object row in _view)
         {
-            if (held.Contains(row))
+            if (held.Contains(row, _view.Positions.Map))
             {
                 continue;
             }
 
-            if (!live.TryGetValue(row, out object? current))
+            if (!live.TryGetValue(row, _view.Positions.Map, out object? current))
             {
                 return null;
             }

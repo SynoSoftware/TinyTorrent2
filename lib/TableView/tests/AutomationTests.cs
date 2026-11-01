@@ -3,12 +3,48 @@ using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Automation.Provider;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Windows.Foundation.Collections;
 
 namespace Syno.TableView.Tests;
 
 [TestClass]
 public class AutomationTests
 {
+    [TestMethod]
+    public Task ReplacementPeerResolvesDuringTheVectorChangeAfterAnEarlierRemoval() =>
+        TestHost.RunAsync(async () =>
+        {
+            var h = await SelectionHarness.LoadAsync(2, table =>
+                table.Schema<Row>().Hierarchy(table.Columns[0], _ => Array.Empty<Row>(),
+                    _ => false, (_, _) => { }));
+            h.Click(h[1]);
+            Row replacement = new(h[1].Key);
+            var parent = (ItemsControlAutomationPeer)
+                FrameworkElementAutomationPeer.CreatePeerForElement(h.Surface());
+            var vector = (IObservableVector<object>)h.Surface().ItemsSource;
+            int changes = 0;
+            VectorChangedEventHandler<object> check = (_, args) =>
+            {
+                if (args.CollectionChange != CollectionChange.ItemChanged)
+                    return;
+                changes++;
+                var peer = parent.CreateItemAutomationPeer(replacement);
+                Assert.IsTrue(peer.IsEnabled());
+            };
+            vector.VectorChanged += check;
+            try
+            {
+                h.Table.ItemsSource = new[] { replacement };
+            }
+            finally
+            {
+                vector.VectorChanged -= check;
+            }
+
+            Assert.AreEqual(1, changes);
+            Assert.AreSame(replacement, h.Table.Selection.Items.Single());
+        });
+
     [TestMethod]
     public Task UnrealizedItemSelectionReachesTheTableAndSurvivesReplacement() =>
         TestHost.RunAsync(async () =>

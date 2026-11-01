@@ -50,6 +50,7 @@ public sealed partial class Surface : ListView
         private const int BulkChildrenLimit = 20;
 
         private List<WeakReference<ItemPeer>>? _itemPeers;
+        private long _hierarchyVersion = -1;
         internal Table? Table => Row.FindOwner(owner);
 
         protected override ItemAutomationPeer OnCreateItemAutomationPeer(object item)
@@ -65,15 +66,20 @@ public sealed partial class Surface : ListView
 
         internal void RefreshHierarchy()
         {
-            if (_itemPeers is null)
+            if (_itemPeers is null || Table?.Hierarchy is not { } hierarchy
+                || _hierarchyVersion == hierarchy.Version)
                 return;
-            for (int i = _itemPeers.Count - 1; i >= 0; i--)
+            _hierarchyVersion = hierarchy.Version;
+            int kept = 0;
+            for (int i = 0; i < _itemPeers.Count; i++)
             {
                 if (_itemPeers[i].TryGetTarget(out var peer))
+                {
+                    _itemPeers[kept++] = _itemPeers[i];
                     peer.RefreshHierarchy();
-                else
-                    _itemPeers.RemoveAt(i);
+                }
             }
+            _itemPeers.RemoveRange(kept, _itemPeers.Count - kept);
         }
 
         /// <summary>

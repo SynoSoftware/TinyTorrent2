@@ -1,5 +1,5 @@
-# Builds the engine, the app or both for development checks and prints the output
-# folder to launch. docs/agents/compilation.md says when to run it; the installer has
+# Builds development targets and prints their output root or product path.
+# docs/agents/compilation.md says when to run it; the installer has
 # its own Release build in installer/Build.ps1.
 param(
     [switch] $Capture,
@@ -10,11 +10,16 @@ param(
     # Builds only the app, with an engine of the current sources beside it:
     # one already built in any output folder, or one compiled when none is.
     [switch] $App,
+    # Skips both products when a check needs only the projects named below.
+    [switch] $ProjectsOnly,
     # Further projects to build last, such as the TableView tests.
     [string[]] $Project = @()
 )
 
 $ErrorActionPreference = 'Stop'
+if ($ProjectsOnly -and ($Engine -or $App -or -not $Project.Count)) {
+    throw '-ProjectsOnly requires -Project and cannot be combined with -Engine or -App.'
+}
 $repository = $PSScriptRoot
 $artifacts = Join-Path $repository 'artifacts'
 $records = Join-Path $artifacts 'compilation'
@@ -30,24 +35,40 @@ $windowName = $properties.WindowTargetName | Where-Object { $_ }
 # so an edit to one part does not rebuild the other.
 $engineInputs = @(':(exclude)app', ':(exclude)lib/TableView', ':(exclude)dotnet-tools.json')
 $parts = [ordered]@{}
-if (-not $App) { $parts.engine = $engineInputs }
-if (-not $Engine) { $parts.app = @(':(exclude)engine') }
-if (-not $parts.Count) { $parts.engine = @(); $parts.app = @() }
+if (-not $ProjectsOnly) {
+    if (-not $App) { $parts.engine = $engineInputs }
+    if (-not $Engine) { $parts.app = @(':(exclude)engine') }
+    if (-not $parts.Count) { $parts.engine = @(); $parts.app = @() }
+}
 if ($extras) { $parts.projects = @() }
 
 function Get-Folder([string] $Root) { Join-Path $Root "bin/TinyTorrent/$flavour" }
 
-# What the checks run: the engine itself after an engine-only build, otherwise
-# the app folder with its engine.
+# Product checks use the engine or app output; project-only checks resolve
+# their project outputs under the printed artifacts root.
 function Get-Output([string] $Root) {
-    if ($parts.Contains('app')) { Get-Folder $Root } else { Get-Product $Root 'engine' }
+    if ($parts.Contains('app')) { Get-Folder $Root }
+    elseif ($parts.Contains('engine')) { Get-Product $Root 'engine' }
+    else { $Root }
 }
 
-# The file each part builds, whose hash shows whether another tool rebuilt it.
+# Primary outputs whose hashes show whether another tool rebuilt them.
 function Get-Product([string] $Root, [string] $Part) {
     switch ($Part) {
         'engine' { Join-Path $Root "bin/Engine/$configuration/$engineName.exe" }
         'app' { Join-Path (Get-Folder $Root) "$windowName.dll" }
+        'projects' {
+            # Evaluated paths preserve project-specific outputs and the chosen lane.
+            $arguments = @("/p:Configuration=$configuration", '/p:Platform=x64', "/p:ArtifactsPath=$Root")
+            if ($Capture) { $arguments += '/p:EnableCapture=true' }
+            foreach ($project in $extras) {
+                $query = @(& $msbuild (Join-Path $repository $project) @arguments /nologo /nr:false /v:q /getProperty:TargetPath)
+                if ($LASTEXITCODE -ne 0) { return }
+                $path = $query | Where-Object { $_ } | Select-Object -Last 1
+                if (-not $path) { return }
+                $path
+            }
+        }
     }
 }
 
@@ -72,13 +93,25 @@ function Get-Source([string[]] $Excluded) {
     finally { $hash.Dispose() }
 }
 
-# Hashes the file each part built, so an output that another tool rebuilt no
+# Hashes each part's outputs, so an output that another tool rebuilt no
 # longer counts as this record's build.
 function Get-Binaries([string] $Root, [string[]] $Built) {
     $binaries = [ordered]@{}
     foreach ($part in $Built) {
-        $file = Get-Product $Root $part
-        if ($file -and (Test-Path -LiteralPath $file)) { $binaries[$part] = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash }
+        $files = @(Get-Product $Root $part)
+        if (-not $files.Count -or ($part -eq 'projects' -and $files.Count -ne $extras.Count)) { continue }
+        $hashes = @(
+            foreach ($file in $files) {
+                if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { break }
+                (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash
+            }
+        )
+        if ($hashes.Count -ne $files.Count) { continue }
+        $binaries[$part] = if ($part -eq 'projects') {
+            $bytes = [Text.Encoding]::UTF8.GetBytes($hashes -join "`n")
+            [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes))
+        }
+        else { $hashes[0] }
     }
     return $binaries
 }
@@ -128,6 +161,7 @@ function Find-Current([hashtable] $Sources) {
         foreach ($part in $Sources.Keys) {
             $build = $latest["$root|$part"]
             if (-not $build -or $build.result -ne 'succeeded' -or $build.sources.$part -ne $Sources[$part] -or
+                -not $build.binaries.$part -or
                 (Get-Binaries $root $part)[$part] -ne $build.binaries.$part) {
                 $current = $false
                 break
@@ -156,9 +190,13 @@ function Find-Free {
             $roots | Where-Object { $path.StartsWith("$_\bin\", [StringComparison]::OrdinalIgnoreCase) }
         }
         if ($busy) { continue }
-        # A benchmark can load the app DLL into PowerShell outside this folder.
-        foreach ($name in "$windowName.dll", "$engineName.exe") {
-            $file = Join-Path (Get-Folder $roots[0]) $name
+        # A benchmark or test host can load these DLLs from outside this folder.
+        $files = @(
+            Join-Path (Get-Folder $roots[0]) "$windowName.dll"
+            Join-Path (Get-Folder $roots[0]) "$engineName.exe"
+        )
+        if ($extras) { $files += @(Get-Product $roots[0] 'projects') }
+        foreach ($file in $files) {
             if (-not (Test-Path -LiteralPath $file)) { continue }
             try {
                 $probe = [IO.File]::Open($file, 'Open', 'ReadWrite', 'None')
@@ -199,8 +237,8 @@ try {
     # Read after the lock, so a build that finished while this one waited counts.
     $sources = @{}
     foreach ($part in $parts.Keys) { $sources[$part] = Get-Source $parts[$part] }
-    $engineSource = if ($parts.Contains('engine')) { $sources.engine } else { Get-Source $engineInputs }
-    $engines = Find-Engines $engineSource
+    $engineSource = if ($parts.Contains('engine')) { $sources.engine } elseif ($parts.Contains('app')) { Get-Source $engineInputs }
+    $engines = if ($engineSource) { Find-Engines $engineSource } else { @{} }
     $current = Find-Current $sources
     if ($current) {
         Write-Host "Up to date: $(Get-Output $current)"

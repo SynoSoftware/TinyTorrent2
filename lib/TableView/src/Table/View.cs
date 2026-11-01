@@ -7,9 +7,6 @@ namespace Syno.TableView;
 
 public sealed partial class Table
 {
-    /// <summary>Set while a snapshot is being applied to the private view.</summary>
-    private bool _reconcilingView;
-
     /// <summary>
     /// The list has not laid out this turn's view change in a frame yet. A reveal waits for the
     /// frame after that layout; see <see cref="ScrollIntoView(object)"/>.
@@ -25,7 +22,8 @@ public sealed partial class Table
     /// same tick, which would clear it too early.
     /// </remarks>
     private bool _layoutPending;
-    private Dictionary<object, (int Index, int Sibling)>? _positions;
+    private PositionIndex _candidatePositions;
+    private long _publishVersion;
 
     /// <summary>The private view, in current visual row order.</summary>
     internal IReadOnlyList<object> View => _view;
@@ -151,29 +149,7 @@ public sealed partial class Table
 
     private int IndexInView(object? item)
     {
-        if (item is null)
-        {
-            return -1;
-        }
-
-        if (_positions is not null && !_reconcilingView)
-        {
-            int index = _positions.TryGetValue(item, out var position) ? position.Index : -1;
-            if (index < 0)
-                return -1;
-            if (index >= 0 && index < View.Count && _selection.IsSame(View[index], item))
-                return index;
-        }
-
-        for (int i = 0; i < View.Count; i++)
-        {
-            if (_selection.IsSame(View[i], item))
-            {
-                return i;
-            }
-        }
-
-        return -1;
+        return _view.IndexOfIdentity(item);
     }
 
     internal object? ResolveItem(object item)
@@ -199,124 +175,158 @@ public sealed partial class Table
     /// selection is re-applied from the table's own model, and at most one event is raised.
     /// </summary>
     private void RebuildView(
-        IReadOnlyList<object>? snapshot = null,
+        Body.Source.Capture? capture = null,
         IReadOnlyList<object>? preparedOrder = null
     )
     {
-        bool capture = snapshot is not null;
-        snapshot ??= _source.Snapshot;
-        if (!_schemaCaptured)
+        _publishVersion++;
+        bool completed = false;
+        SelectionChange? selectionChange = null;
+        try
         {
-            _source.Accept(snapshot);
-            return;
-        }
-        IReadOnlyList<object> order;
-        IReadOnlySet<object> pinned;
-        if (preparedOrder is null)
-        {
-            if (_hierarchy is null)
+            capture ??= _source.Current;
+            IReadOnlyList<object> snapshot = capture.Rows;
+            if (!_schemaCaptured)
             {
-                ValidateRows(snapshot);
-                (order, pinned) = ViewOrder(snapshot);
+                _source.Accept(capture, validated: false);
+                return;
+            }
+            IdentityMap<object>? membership = _hierarchy is null
+                ? _source.Prepare(capture, ValidateRows) : null;
+            IReadOnlyList<object> order;
+            IdentitySet pinned;
+            if (preparedOrder is null)
+            {
+                if (_hierarchy is null)
+                {
+                    (order, pinned) = ViewOrder(snapshot, membership!);
+                }
+                else
+                {
+                    DateTimeOffset settled = _orderSettledAt;
+                    try
+                    {
+                        IReadOnlyList<object> projected = PrepareHierarchy(capture);
+                        (order, pinned) = ViewOrder(projected, _hierarchy.ProjectedMembership);
+                    }
+                    catch
+                    {
+                        _orderSettledAt = settled;
+                        _preparedHierarchy = null;
+                        throw;
+                    }
+                }
             }
             else
             {
-                DateTimeOffset settled = _orderSettledAt;
-                try
+                // A sort the person or host asked for moves every row, so nothing is held through it.
+                order = preparedOrder;
+                var (_, held, released) = Hold(snapshot, membership ?? _source.Membership, sortChanged: true);
+                AcceptHold(held, released);
+                pinned = held;
+                _orderSettledAt = DateTimeOffset.UtcNow;
+            }
+            bool changed = !_view.IsAlready(order);
+            if (changed)
+            {
+                IIdentityKeys keys = membership is not null ? membership
+                    : (_preparedHierarchy ?? _hierarchy!.Captured)!.Nodes;
+                _candidatePositions.Build(order, keys, _view.Positions);
+            }
+            _source.Accept(capture, validated: true, membership);
+            AcceptHierarchy(order, changed);
+            if (_detached)
+            {
+                if (changed)
                 {
-                    (order, pinned) = ViewOrder(PrepareHierarchy(snapshot, capture));
+                    ReconcileRows(order, Array.Empty<int>(), pinned);
                 }
-                catch
+                selectionChange = ReconcileSelection(FocusState.Unfocused);
+                completed = true;
+                return;
+            }
+            if (!changed)
+            {
+                ReconcileDrag();
+                UpdatePlaceholder();
+                selectionChange = ReconcileSelection(FocusState.Unfocused);
+                completed = true;
+                return;
+            }
+
+            // Capture how the rows hold focus, not merely that they do, and capture it before the view
+            // changes. Once the focused row's container is gone the framework has already rescued
+            // focus, carrying that container's state to whatever it landed on, which is not the row's.
+            FocusState rowFocus = RowSurfaceFocusState();
+            object? focusedItem =
+                rowFocus != FocusState.Unfocused
+                && FocusManager.GetFocusedElement(XamlRoot) is ListViewItem focusedRow
+                    ? _surface?.ItemFromContainer(focusedRow)
+                    : null;
+            var collapsing = CollapsingFocus(_candidatePositions);
+            if (collapsing.Item is not null)
+            {
+                focusedItem = collapsing.Item;
+                rowFocus = collapsing.State;
+            }
+            // Remove keyboard focus before containers leave so native focus rescue cannot
+            // carry a row's keyboard cue onto an unrelated control.
+            if (rowFocus != FocusState.Unfocused)
+            {
+                _surface?.Focus(FocusState.Pointer);
+            }
+
+            bool viewMoved = ReconcileRows(order, RealizedIndices(), pinned);
+
+            ReconcileDrag();
+            QueueRealized();
+
+            if (viewMoved)
+            {
+                // The panel has to be told to look again. Rows placed without a notification are
+                // invisible to it, so a reorder gives it no reason to re-examine which rows it should
+                // be holding, and it goes on holding the ones it had: the owner watched a sort leave
+                // the foot of the viewport blank until something else happened to poke it seconds
+                // later. This is the one thing the list must be told when it has been told nothing
+                // else, and it says only "look", not what changed.
+                _surface?.ItemsPanelRoot?.InvalidateMeasure();
+                if (!_layoutPending)
                 {
-                    _orderSettledAt = settled;
-                    _preparedHierarchy = null;
-                    throw;
+                    _layoutPending = true;
+                    CompositionTarget.Rendering += OnLaidOut;
                 }
             }
-        }
-        else
-        {
-            // A sort the person or host asked for moves every row, so nothing is held through it.
-            order = preparedOrder;
-            var (_, held, released) = Hold(snapshot, sortChanged: true);
-            AcceptHold(held, released);
-            pinned = held;
-            _orderSettledAt = DateTimeOffset.UtcNow;
-        }
-        _source.Accept(snapshot);
-        AcceptOrder(order);
-        if (_detached)
-        {
-            _view.Reconcile(order, Array.Empty<int>(), pinned);
-            ReconcileSelection(FocusState.Unfocused);
-            return;
-        }
-        if (order.SequenceEqual(View, ReferenceEqualityComparer.Instance))
-        {
-            ReconcileDrag();
+
             UpdatePlaceholder();
-            ReconcileSelection(FocusState.Unfocused);
-            return;
-        }
-
-        // Capture how the rows hold focus, not merely that they do, and capture it before the view
-        // changes. Once the focused row's container is gone the framework has already rescued
-        // focus, carrying that container's state to whatever it landed on, which is not the row's.
-        FocusState rowFocus = RowSurfaceFocusState();
-        object? focusedItem =
-            rowFocus != FocusState.Unfocused
-            && FocusManager.GetFocusedElement(XamlRoot) is ListViewItem focusedRow
-                ? _surface?.ItemFromContainer(focusedRow)
-                : null;
-        var collapsing = CollapsingFocus();
-        if (collapsing.Item is not null)
-        {
-            focusedItem = collapsing.Item;
-            rowFocus = collapsing.State;
-        }
-        // Remove keyboard focus before containers leave so native focus rescue cannot
-        // carry a row's keyboard cue onto an unrelated control.
-        if (rowFocus != FocusState.Unfocused)
-            _surface?.Focus(FocusState.Pointer);
-
-        bool viewMoved;
-        _reconcilingView = true;
-        try
-        {
-            viewMoved = _view.Reconcile(order, RealizedIndices(), pinned);
+            object? retained = focusedItem is null
+                ? null
+                : ResolveItem(focusedItem) ?? CollapsedAncestor(focusedItem);
+            if (collapsing.Item is not null && rowFocus != FocusState.Unfocused)
+            {
+                ScrollIntoView(collapsing.Item);
+            }
+            selectionChange = ReconcileSelection(rowFocus, retained);
+            completed = true;
         }
         finally
         {
-            _reconcilingView = false;
-        }
-
-        ReconcileDrag();
-        QueueRealized();
-
-        if (viewMoved)
-        {
-            // The panel has to be told to look again. Rows placed without a notification are
-            // invisible to it, so a reorder gives it no reason to re-examine which rows it should
-            // be holding, and it goes on holding the ones it had: the owner watched a sort leave
-            // the foot of the viewport blank until something else happened to poke it seconds
-            // later. This is the one thing the list must be told when it has been told nothing
-            // else, and it says only "look", not what changed.
-            _surface?.ItemsPanelRoot?.InvalidateMeasure();
-            if (!_layoutPending)
+            if (completed && !_detached)
             {
-                _layoutPending = true;
-                CompositionTarget.Rendering += OnLaidOut;
+                RowVisualsChanged?.Invoke(this, EventArgs.Empty);
+            }
+            if (completed)
+            {
+                PublishSelection(selectionChange);
             }
         }
+    }
 
-        UpdatePlaceholder();
-        object? retained = focusedItem is null
-            ? null
-            : View.FirstOrDefault(item => _selection.IsSame(item, focusedItem))
-                ?? CollapsedAncestor(focusedItem);
-        if (collapsing.Item is not null && rowFocus != FocusState.Unfocused)
-            ScrollIntoView(collapsing.Item);
-        ReconcileSelection(rowFocus, retained);
+    private bool ReconcileRows(IReadOnlyList<object> order, IReadOnlyList<int> realized, IdentitySet pinned)
+    {
+        PositionIndex previous = _view.Positions;
+        bool changed = _view.Reconcile(order, _candidatePositions, realized, pinned);
+        _candidatePositions = previous;
+        return changed;
     }
 
     private void OnLaidOut(object? sender, object e)
@@ -332,17 +342,15 @@ public sealed partial class Table
         });
     }
 
-    private void ValidateRows(IReadOnlyList<object> snapshot)
+    private void ValidateRows(object item)
     {
-        HashSet<object> seen = new(_identity);
-        foreach (object item in snapshot)
+        if (item is null)
         {
-            if (_rowType is not null && !_rowType.IsInstanceOfType(item))
-                throw ConfigurationError($"The source contains a row outside {_rowType}.");
-            if (ItemKey is not null && ItemKey(item) is null)
-                throw ConfigurationError("The schema key selector returned null.");
-            if (!seen.Add(item))
-                throw ConfigurationError("The source contains duplicate row identities.");
+            throw ConfigurationError(_hierarchy is null ? "ItemsSource contains a null row." : "The hierarchy contains a null row.");
+        }
+        if (_rowType is not null && !_rowType.IsInstanceOfType(item))
+        {
+            throw ConfigurationError($"The source contains a row outside {_rowType}.");
         }
     }
 }

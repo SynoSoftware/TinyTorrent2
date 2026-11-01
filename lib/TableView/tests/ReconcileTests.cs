@@ -72,6 +72,25 @@ public class ReconcileTests
     // ------------------------------------------------------------------ membership
 
     [TestMethod]
+    public void IdentityLookupTracksEveryIntermediateVectorChange()
+    {
+        object[] rows = Rows(30);
+        object view = NewView(rows);
+        MethodInfo lookup = view.GetType().GetMethod("IndexOfIdentity", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        ((IObservableVector<object>)view).VectorChanged += (_, _) =>
+        {
+            object[] current = Rows(view);
+            foreach (object row in rows)
+            {
+                Assert.AreEqual(Array.IndexOf(current, row), (int)lookup.Invoke(view, new[] { row })!);
+            }
+        };
+
+        object[] snapshot = rows.Where((_, index) => index % 3 != 0).Reverse().ToArray();
+        Reconcile(view, snapshot, new[] { 0, 1, 2, 15, 16, 17 });
+    }
+
+    [TestMethod]
     public void RowsJoiningAndLeavingAreAnnouncedWhereverTheyAre()
     {
         object[] rows = Rows(50);
@@ -187,31 +206,20 @@ public class ReconcileTests
 
     private static object NewView(IEnumerable<object> rows)
     {
-        Type identity = Control.GetType("Syno.TableView.ItemIdentity")!;
+        object identity = ReferenceIdentity();
         Type view = Control.GetType("Syno.TableView.Body.View")!;
-
-        object comparer = Activator.CreateInstance(
-            identity,
-            BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public,
-            null,
-            null,
-            null
-        )!;
 
         // No list and no table here, so no row is ever selected.
         object created = Activator.CreateInstance(
             view,
             BindingFlags.Instance | BindingFlags.NonPublic,
             null,
-            new object[] { comparer, new Func<object, bool>(_ => false) },
+            new object[] { identity, new Func<object, bool>(_ => false),
+                new Func<IReadOnlyCollection<int>>(() => Array.Empty<int>()) },
             null
         )!;
 
-        IList list = (IList)created;
-        foreach (object row in rows)
-        {
-            list.Add(row);
-        }
+        Reconcile(created, rows.ToArray(), Array.Empty<int>());
 
         return created;
     }
@@ -221,10 +229,35 @@ public class ReconcileTests
         IReadOnlyList<object> snapshot,
         IReadOnlyList<int> realized,
         IReadOnlySet<object>? pinned = null
-    ) =>
+    )
+    {
+        object identity = ReferenceIdentity();
+        object keys = identity.GetType().GetMethod("CreateMap")!
+            .MakeGenericMethod(typeof(object)).Invoke(identity, new object[] { true })!;
+        MethodInfo add = keys.GetType().GetMethod("TryAdd", BindingFlags.Instance | BindingFlags.NonPublic,
+            null, new[] { typeof(object), typeof(object) }, null)!;
+        foreach (object row in snapshot)
+            add.Invoke(keys, new[] { row, row });
+        object positions = Activator.CreateInstance(Control.GetType("Syno.TableView.PositionIndex")!,
+            BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null, new[] { identity }, null)!;
+        object previous = view.GetType().GetProperty("Positions", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(view)!;
+        positions.GetType().GetMethod("Build", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(positions, new object[] { snapshot, keys, previous });
+        object pins = Activator.CreateInstance(Control.GetType("Syno.TableView.IdentitySet")!,
+            BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null, new object[] { identity, true }, null)!;
+        MethodInfo pin = pins.GetType().GetMethod("Add", BindingFlags.Instance | BindingFlags.NonPublic,
+            null, new[] { typeof(object) }, null)!;
+        foreach (object row in pinned ?? new HashSet<object>())
+            pin.Invoke(pins, new[] { row });
         view.GetType()
             .GetMethod("Reconcile", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .Invoke(view, new object[] { snapshot, realized, pinned ?? new HashSet<object>() });
+            .Invoke(view, new object[] { snapshot, positions, realized, pins });
+    }
+
+    private static object ReferenceIdentity() => Control.GetType("Syno.TableView.Identity`2")!
+        .MakeGenericType(typeof(object), typeof(object))
+        .GetMethod("Reference", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, null)!;
 
     /// <summary>
     /// A list's-eye view: it is told nothing except the notifications, and it applies them the way

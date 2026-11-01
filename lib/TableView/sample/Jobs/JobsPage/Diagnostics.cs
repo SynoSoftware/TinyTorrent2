@@ -1,4 +1,3 @@
-using System.Collections.Specialized;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text;
@@ -12,6 +11,7 @@ using Syno.TableView.Header;
 using Windows.Foundation;
 using Windows.Graphics.Imaging;
 using Windows.Storage.Streams;
+using Windows.Foundation.Collections;
 
 namespace Syno.TableViewSample.Jobs;
 
@@ -38,9 +38,8 @@ public sealed partial class JobsPage
     private ListView? _counted;
 
     /// <summary>
-    /// Gen 0 and gen 2 collections that happened inside the last <see cref="Time"/>. A reconcile
-    /// allocates a dictionary and three integer arrays the length of the view, so a collection
-    /// landing inside a timed sort is a real candidate for why one sort costs three times another.
+    /// Gen 0 and gen 2 collections inside the last <see cref="Time"/>, to distinguish
+    /// collection pauses from the sort's own work when comparing outliers.
     /// </summary>
     private string _collections = "0/0";
 
@@ -120,6 +119,31 @@ public sealed partial class JobsPage
         {
             Section("K. What the settling interval buys (specification 9)");
             await MeasureSettlingAsync();
+        }
+
+        if (!Skip("P"))
+        {
+            await MeasurePublishesAsync();
+        }
+        if (!Skip("S"))
+        {
+            await MeasureSelectionAsync();
+        }
+        if (_only?.Contains("M") == true)
+        {
+            await MeasurePublishesAsync(measureTimings: false);
+        }
+        if (_only?.Contains("Q") == true)
+        {
+            await MeasureSelectionAsync(measureTimings: false);
+        }
+        if (!Skip("N"))
+        {
+            await MeasureNativeEventsAsync();
+        }
+        if (!Skip("V"))
+        {
+            await CaptureBaselineAsync();
         }
 
         DetachCounters();
@@ -679,7 +703,7 @@ public sealed partial class JobsPage
     private async Task MeasureSettlingAsync()
     {
         ListView? list = FindDescendant<ListView>(Table);
-        if (list?.ItemsSource is not INotifyCollectionChanged feed)
+        if (list?.ItemsSource is not IObservableVector<object> feed)
         {
             W("  the list's source raises no notifications to count");
             return;
@@ -732,12 +756,12 @@ public sealed partial class JobsPage
             int reorders = 0;
             int sinceLast = 0;
             List<int> perReorder = new();
-            NotifyCollectionChangedEventHandler burst = (_, _) => sinceLast++;
+            VectorChangedEventHandler<object> burst = (_, _) => sinceLast++;
 
             _notifications = 0;
             int publishedBefore = Publishes;
             int seenPublishes = publishedBefore;
-            feed.CollectionChanged += burst;
+            feed.VectorChanged += burst;
             _feed!.Start();
             Stopwatch window = Stopwatch.StartNew();
 
@@ -761,7 +785,7 @@ public sealed partial class JobsPage
 
             double seconds = window.Elapsed.TotalSeconds;
             _feed.Stop();
-            feed.CollectionChanged -= burst;
+            feed.VectorChanged -= burst;
 
             int published = Publishes - publishedBefore;
             W(
@@ -830,17 +854,17 @@ public sealed partial class JobsPage
     private void AttachCounters()
     {
         _counted = FindDescendant<ListView>(Table);
-        if (_counted?.ItemsSource is INotifyCollectionChanged feed)
+        if (_counted?.ItemsSource is IObservableVector<object> feed)
         {
-            feed.CollectionChanged += OnCountedNotification;
+            feed.VectorChanged += OnCountedNotification;
         }
     }
 
     private void DetachCounters()
     {
-        if (_counted?.ItemsSource is INotifyCollectionChanged feed)
+        if (_counted?.ItemsSource is IObservableVector<object> feed)
         {
-            feed.CollectionChanged -= OnCountedNotification;
+            feed.VectorChanged -= OnCountedNotification;
         }
 
         _counted = null;
@@ -866,7 +890,7 @@ public sealed partial class JobsPage
         return (_realizations, mutation + layout);
     }
 
-    private void OnCountedNotification(object? sender, NotifyCollectionChangedEventArgs e) =>
+    private void OnCountedNotification(IObservableVector<object> sender, IVectorChangedEventArgs e) =>
         _notifications++;
 
     private void OnCountedRealization(ListViewBase sender, ContainerContentChangingEventArgs args)
@@ -1104,12 +1128,12 @@ public sealed partial class JobsPage
         }
     }
 
-    private async Task SavePngAsync(string path)
+    private async Task SavePngAsync(string path, UIElement? element = null)
     {
         try
         {
             RenderTargetBitmap rtb = new();
-            await rtb.RenderAsync(Table);
+            await rtb.RenderAsync(element ?? Table);
             IBuffer buffer = await rtb.GetPixelsAsync();
             byte[] px = new byte[buffer.Length];
             DataReader.FromBuffer(buffer).ReadBytes(px);

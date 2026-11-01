@@ -22,6 +22,62 @@ public class HierarchyTests
     }
 
     [TestMethod]
+    public Task SettlingUsesVisibleMembershipWhenExpansionExchangesEqualCounts() =>
+        TestHost.RunAsync(async () =>
+        {
+            Node first = new("a", new Node("c"));
+            Node second = new("b", new Node("d")) { IsExpanded = false };
+            bool reverse = false;
+            Column name = TestData.Column("name");
+            Table table = TestData.Table(name);
+            table.Schema<Node>().Key(row => row.Name)
+                .Hierarchy(name, row => row.Children, row => row.IsExpanded, (row, value) => row.IsExpanded = value)
+                .SortKey(name, row => reverse ? -(int)row.Name[0] : row.Name[0]);
+            table.SortInterval = TimeSpan.FromHours(1);
+            table.ItemsSource = new[] { first, second };
+            await TableHarness.LoadAsync(table);
+            table.Sort = new(name);
+            CollectionAssert.AreEqual(new[] { "a", "c", "b" }, Names(table));
+
+            first.IsExpanded = false;
+            second.IsExpanded = true;
+            table.RefreshView();
+            CollectionAssert.AreEqual(new[] { "a", "b", "d" }, Names(table));
+
+            reverse = true;
+            table.RefreshView();
+            CollectionAssert.AreEqual(new[] { "a", "b", "d" }, Names(table));
+        });
+
+    [TestMethod]
+    public Task RejectedRootsDoNotRecaptureAcceptedOneShotChildren() =>
+        TestHost.RunAsync(async () =>
+        {
+            Node child = new("child"), root = new("root");
+            int reads = 0;
+            IEnumerable<Node> Children()
+            {
+                if (++reads > 1)
+                    throw new InvalidOperationException("Children were enumerated again");
+                yield return child;
+            }
+            IEnumerable<Node> children = Children();
+            Column name = TestData.Column("name");
+            Table table = TestData.Table(name);
+            table.Schema<Node>().Key(row => row.Name)
+                .Hierarchy(name, row => ReferenceEquals(row, root) ? children : row.Children,
+                    row => row.IsExpanded, (row, value) => row.IsExpanded = value);
+            table.ItemsSource = new[] { root };
+            await TableHarness.LoadAsync(table);
+
+            Expect.Throws<InvalidOperationException>(() => table.ItemsSource = new[] { new Node("invalid"), new Node("invalid") });
+            table.RefreshView();
+
+            CollectionAssert.AreEqual(new[] { "root", "child" }, Names(table));
+            Assert.AreEqual(1, reads);
+        });
+
+    [TestMethod]
     public Task SiblingSortingAndCollapseKeepCommandsOnVisibleRows() =>
         TestHost.RunAsync(async () =>
         {

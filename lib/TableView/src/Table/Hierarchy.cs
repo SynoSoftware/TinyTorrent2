@@ -18,62 +18,42 @@ public sealed partial class Table
         if (_hierarchy is not null)
             throw ConfigurationError("A table has one hierarchy.");
         _hierarchy = hierarchy;
-        _source.Hierarchy = hierarchy;
         hierarchy.Changed += (_, _) =>
         {
             if (!DispatcherQueue.HasThreadAccess)
                 throw ConfigurationError("Hierarchy updates must use the table's UI thread.");
-            RebuildView(_source.Snapshot);
+            RebuildView();
         };
     }
 
-    private IReadOnlyList<object> PrepareHierarchy(IReadOnlyList<object> roots, bool capture)
+    private IReadOnlyList<object> PrepareHierarchy(Body.Source.Capture capture)
     {
         var hierarchy = _hierarchy!;
         _preparedHierarchy =
-            capture || hierarchy.Captured is null
-                ? hierarchy.Capture(roots, _identity, _rowType)
-                : hierarchy.Captured;
+            !capture.Validated || hierarchy.NeedsCapture(capture.AssignmentVersion)
+                ? hierarchy.Capture(capture.Rows, _identity, ValidateRows, capture.AssignmentVersion)
+                : hierarchy.Captured!;
         if (!ReferenceEquals(_preparedHierarchy, hierarchy.Captured))
         {
             if (
                 hierarchy.Captured is null
-                || !_preparedHierarchy.MatchesStructure(hierarchy.Captured, _identity)
+                || !_preparedHierarchy.MatchesStructure(hierarchy.Captured)
             )
                 _orderSettledAt = DateTimeOffset.MinValue;
         }
         return hierarchy.Project(_preparedHierarchy, null, default);
     }
 
-    private void AcceptOrder(IReadOnlyList<object> order)
+    private void AcceptHierarchy(IReadOnlyList<object> order, bool moved)
     {
-        _positions = new(_identity);
         if (_hierarchy is null)
-        {
-            for (int i = 0; i < order.Count; i++)
-                _positions.Add(order[i], (i, 0));
             return;
-        }
         var snapshot = _preparedHierarchy ?? _hierarchy.Captured;
         if (snapshot is null)
             return;
         if (!ReferenceEquals(_hierarchy.Captured, snapshot))
             _hierarchy.Accept(snapshot);
-        Dictionary<object, int> counts = new(_identity);
-        int roots = 0;
-        bool expandable = false;
-        for (int i = 0; i < order.Count; i++)
-        {
-            object item = order[i];
-            var node = snapshot.Nodes[item];
-            expandable = expandable || _hierarchy.IsExpandable(node);
-            object? parent = node.Parent;
-            int position = parent is null ? ++roots : counts.GetValueOrDefault(parent) + 1;
-            if (parent is not null)
-                counts[parent] = position;
-            _positions.Add(item, (i, position));
-        }
-        _hierarchy.HasChildren = expandable;
+        _hierarchy.UpdatePresentation(order, moved);
         _preparedHierarchy = null;
     }
 
@@ -94,15 +74,16 @@ public sealed partial class Table
         RefreshView();
     }
 
-    private object? CollapsedAncestor(object? item)
+    private object? CollapsedAncestor(object? item, PositionIndex? positions = null)
     {
-        if (item is null || _hierarchy is null || _positions is null)
+        if (item is null || _hierarchy is null)
             return null;
-        if (_positions.ContainsKey(item) || _hierarchy.Find(item) is not { } node)
+        positions ??= _view.Positions;
+        if (positions.IndexOf(item) >= 0 || _hierarchy.Find(item) is not { } node)
             return null;
         while (node.Parent is { } parent && _hierarchy.Find(parent) is { } ancestor)
         {
-            if (_positions.ContainsKey(parent) && IsInteractive(parent))
+            if (positions.IndexOf(parent) >= 0 && IsInteractive(parent))
                 return ancestor.Item;
             node = ancestor;
         }
@@ -131,12 +112,13 @@ public sealed partial class Table
             int firstIndex = int.MaxValue;
             foreach (object child in node.Children)
             {
-                if (_positions is null || !_positions.TryGetValue(child, out var position))
+                int index = IndexInView(child);
+                if (index < 0)
                     continue;
-                if (!IsInteractive(child) || position.Index >= firstIndex)
+                if (!IsInteractive(child) || index >= firstIndex)
                     continue;
                 target = child;
-                firstIndex = position.Index;
+                firstIndex = index;
             }
         }
         else
@@ -156,7 +138,7 @@ public sealed partial class Table
         return true;
     }
 
-    internal int HierarchyPosition(object item) => _positions?.GetValueOrDefault(item).Sibling ?? 0;
+    internal int HierarchyPosition(object item) => _hierarchy?.Find(item)?.Position ?? 0;
 
     internal int HierarchyCount(object item)
     {
@@ -167,7 +149,7 @@ public sealed partial class Table
         return _hierarchy.Captured!.Roots.Count;
     }
 
-    private (object? Item, FocusState State) CollapsingFocus()
+    private (object? Item, FocusState State) CollapsingFocus(PositionIndex positions)
     {
         if (_hierarchy is null || XamlRoot is null)
             return default;
@@ -182,7 +164,7 @@ public sealed partial class Table
                 && IsInsideRows(row)
                 && _surface?.ItemFromContainer(row) is { } item
             )
-                return CollapsedAncestor(item) is { } ancestor ? (ancestor, state) : default;
+                return CollapsedAncestor(item, positions) is { } ancestor ? (ancestor, state) : default;
         }
         return default;
     }

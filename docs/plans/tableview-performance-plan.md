@@ -172,16 +172,18 @@ Four rules apply to every row:
 | Row identity: key read, equality, hash, null-key check; the map and set types every row-keyed collection uses | The identity part. A reference-identity instance exists from `Table`'s construction; schema capture installs the keyed one that `Schema<TRow>.Key<TKey>` creates, as `RehashIdentity` does today | `ItemIdentity` and `Schema.KeyEquality`, which it replaces | 1a | every owner below | Hold any rows; nothing else hashes or compares rows |
 | A position index over an ordered sequence: row to index, with a stale window sized from the sequence's own counts of inserts and removals, rebuilt after about √n changes and after any publish that moves rows without an event | One type, with one instance per sequence, owned by that sequence's owner: `Body.View` for the view, the sorted order for the kept order | `_positions`, `Body.View.Reconcile`'s `place`, `Hold`'s `shown`, `SelectionState`'s `indexOf` delegate | 1a, 5 | `Hold`, `Release`, `Pin`, `SelectionState`, `GetSelectedRanges`, the sorted order | Get written twice |
 | The new order of one publish and its index | `Table.RebuildView` builds it and hands it to `Body.View.Reconcile`; after the reconcile the view adopts it as its position index | — | 1a | `Body.View.Reconcile` | Get rebuilt by the view |
-| The source's rows by identity: membership and the current instance, no positions | `Body.Source` | `Hold`'s and `KeptOrder`'s `live` | 1a, 5 | `Hold`, `KeptOrder`, `Pin`, the duplicate check | Hold positions |
+| The source's rows by identity: membership, current instances and captured typed keys, no positions | `Body.Source`, with accepted and candidate maps; view and selection maps copy captured keys through the identity part's typed map seam | `Hold`'s and `KeptOrder`'s `live` | 1a, 5 | `Hold`, `KeptOrder`, `Pin`, the duplicate check | Hold positions; put row storage in the identity part |
 | Any other map or set keyed by row | Its own owner, built from the identity part's map and set types | `HashSet<object>(identity)` and `Dictionary<object, …>(identity)` built in place | 1a, 8 | — | Use a comparer of its own |
 | Rows entering the table: null row, row type, null key | `Table.ValidateRows`, a check per row, run on rows that entered: an assignment, a notification's added rows, a hierarchy capture | — | 1a, 5, 6 | — | Exist as a copy in any path |
 | Unique identity of rows entering the table | The failed `Add` into the source's identity map for a flat table, or into the node index for a hierarchy, made before the snapshot or the hold is accepted | `ValidateRows`' own `HashSet` | 1a, 5, 6 | — | Get a set built only to check it, or a check of its own in `Hierarchy` |
 | Whether the stored snapshot passed validation | `Body.Source`, recorded when the snapshot passed | — | 1a | `RebuildView` | Get assumed from how `RebuildView` was called |
+| Which source assignment a capture belongs to | `Body.Source`, carried by each capture, including the accepted capture | A hierarchy invalidation call from the source | 1a, 6 | `Hierarchy`, to recognize a new root assignment | Hold extension state; make a failed candidate change the accepted capture's assignment version |
 | Held, released, pointed and menu rows | `Table/Holding.cs` | — | 1a, 5 | `KeptOrder`, `Pin`, the row element | — |
 | One entry into the pipeline | `Table.RebuildView`, which takes the change: a whole source, one notification's action, indices and items, or rows whose values changed | — | 1a, 5, 10 | — | Get an `ApplyChange` or other second pipeline beside it |
 | Column sort definition: key selector and comparer | `Column`, set by `Schema.SortKey` | `Column.Sort`, which it replaces | 2 | the sorted order | Hold sort state |
 | Sorting: the one stable sort routine (flat rows, and each sibling group of a hierarchy); for a flat table also the kept order before `Pin`, its kept keys and collation keys in arrays, its position index, whether the kept-key check is allowed, and the one placement routine | The sorted order of the active column, in `Table/Sorting.cs` | — | 2, 3, 5, 10 | `KeptOrder`, `SortedSnapshot`, `Hierarchy.Project` | Hold the shown order after `Pin`; place rows of a hierarchy by binary search; get a second sort or placement routine |
-| A header sort waiting for the frame, and a worker sort's result | One queued-sort field in `Table/Sorting.cs` | `_pendingSort`, which holds a `Sort` assigned before the schema is captured: a different concept, kept as it is | 2 | the header | Get cancelled by other writers: it checks, when it runs, that the table is loaded, the committed sort it was made against is unchanged and its column is still shown |
+| Count of key comparisons actually performed by the selected sort algorithm | The sorted-order owner, at its one key-comparison primitive | A sample wrapper comparer, which changes eligibility for the optimized path | 2 | The sample's measurement of the actual algorithm | Add a public diagnostic API or a second sorter; count selector calls that the sample can observe in its own selector |
+| A header sort waiting for the frame, and a worker sort's result | One queued-sort field in `Table/Sorting.cs`; that owner publishes a revision for actual committed-sort changes, and `Table` publishes a lifetime revision for actual detachments | `_pendingSort`, which holds a `Sort` assigned before the schema is captured: a different concept, kept as it is | 2 | the header | Get cancelled by other writers: it checks the captured revisions, that the table is loaded and its column is still shown |
 | The criterion the header shows | `Table/Sorting.cs`: the queued sort while it is still valid, otherwise the committed sort | — | 2 | `Header` | Get computed by the header |
 | Waiting for the next frame | `Table.OnLaidOut`'s `CompositionTarget.Rendering` step | — | 2 | the queued sort, the reveal | Get a second implementation |
 | The view's rows and the notifications it raises; the view version and its counts of inserts and removals | `Body.View` and its gap-buffer list | — | 4, 5, 9 | `SelectionState`, the list | Raise `Move` or a reset; depend on `SelectionState` |
@@ -197,6 +199,7 @@ Four rules apply to every row:
 | The drag distance | One internal value read from the Windows setting, read by `Table` and `Header.Strip` | the two `DragThresholdDips` constants | defect Q10 | row and header gestures | — |
 | Drag capture and drag membership | `Table/Reordering.cs`: `Order.Capture`'s entries in an identity-part map, compared by reference, so a replaced instance cancels the drag as today; the packet in an identity-part set | — | 8 | `IsDragCurrent`, `IsDragging` | — |
 | Hierarchy membership: the node index, child collections, sibling positions | `Hierarchy`. It adopts a new capture whenever the capture is new, whatever the visible order; it computes sibling positions from the order when the order changed; from stage 6 it applies each child notification to the kept node index at every depth | `_positions`' sibling field | 1a, 6 | `HierarchyPosition`, `SortedSnapshot` | Live in the core position indexes |
+| Membership and current instances of the hierarchy's visible projection | `Hierarchy.Project`, with a reusable identity-part map whose keys come from the node index | Flat `Body.Source` membership, which cannot describe child rows; the all-node index, which includes collapsed descendants | 1a, 6 | `KeptOrder` | Hold positions; create a second identity rule; serve as accepted source state |
 
 ## Stages
 
@@ -493,9 +496,18 @@ never sees the keys or the comparer.
    sibling group. The table keeps each row's key from the last sort. On a publish where the rows and their base order
    did not change, it reads each key and compares it with the kept one using
    `EqualityComparer<TKey>.Default`, an ordinal check much cheaper than the
-   sort comparer. This check is used only when `TKey` is a value type or
-   `string` and the comparer is the default one or a well-known
-   `StringComparer`. Then the key is immutable and the comparer is a fixed
+   sort comparer. This check is used only for known immutable built-in key
+   types and `string`, including their nullable forms, when the comparer is
+   the default one for a non-string key or a well-known `StringComparer`.
+   `Comparer<string>.Default` uses the current culture through `String.CompareTo`,
+   so it uses the actual-comparer fallback: changing the UI thread's culture
+   can change ordering without changing a key. This keeps the existing comparer
+   contract without another culture-invalidation mechanism. See
+   [default comparer](https://learn.microsoft.com/en-us/dotnet/api/system.collections.generic.comparer-1.default?view=net-10.0)
+   and [String.CompareTo](https://learn.microsoft.com/en-us/dotnet/api/system.string.compareto?view=net-10.0).
+   An arbitrary struct
+   can define equality that disagrees with its ordering, so it uses the
+   actual-comparer fallback below. For the known types the key is immutable and the comparer is a fixed
    function of it, so a key equal to the kept one keeps its place. Any other
    case may break that: the selector can return the same mutable object with
    a changed value (`SortKey(column, row => row, byRank)`), equality can
@@ -529,9 +541,10 @@ never sees the keys or the comparer.
    stages 3, 5 and 10 call it and write no placement of their own. Inserting each row into the array instead would move
    k·n/2 references: at 10,000 changed rows of 100,000, 0.25–0.5 s, slower
    than the full sort (review). A membership change keeps the kept keys:
-   stage 3 drops the leaving rows' keys and places the arrivals. Only a
-   changed base order of the same rows sorts everything, because the base
-   order breaks ties.
+   stage 3 drops the leaving rows' keys and places the arrivals. A changed
+   relative base order of surviving rows sorts everything, including when
+   rows also arrive or leave, because the base order breaks ties. Membership
+   alone does not change the relative base order of survivors.
    The kept order is
    the sorted order before `Pin`: `Pin` puts held rows and the pointed row
    back at their old indices, so the shown order is not sorted while a row is
@@ -557,12 +570,17 @@ never sees the keys or the comparer.
    synchronous, as section 5.3 requires; only the gesture waits for the frame.
 
    One field in `Table/Sorting.cs` holds the queued sort, with the committed
-   sort it was made against. It is a different concept from the existing
+   sort and the committed-sort and lifetime revisions it was made against.
+   It is a different concept from the existing
    `_pendingSort`, which holds a `Sort` assigned before the schema is
    captured; the two keep separate names. A second header click replaces the
    queued sort. No other code cancels it: when it runs, it applies only if
-   the table is loaded (`_detached` is false), the committed sort is still
-   the one it was made against, and its column is still shown. So a `Sort`
+   the table is loaded (`_detached` is false), both revisions still match,
+   the committed sort is still the one it was made against, and its column
+   is still shown. An actual sort commit advances the sorting owner's
+   revision; an actual detachment advances the table's lifetime revision.
+   Returning to an earlier criterion or reloading cannot revive an old click.
+   So a `Sort`
    assignment, a layout restore or `ResetLayout` that changes the sort,
    hiding the column, or unloading makes it drop itself. One case is
    accepted: a host request for the sort already in force, in the frame
@@ -589,11 +607,14 @@ never sees the keys or the comparer.
    the snapshot: `Body.Source` reads an indexable source in place, so a
    recorded snapshot already shows the host's new contents. `RebuildView`
    does not check that a prepared order has the snapshot's rows, so when the
-   publish version has moved, the commit compares the job's sorted rows with
-   the current snapshot through the identity part's maps, drops the rows
-   that left, and
-   places the rows that arrived with the placement routine, as stage 3 does;
-   no second reconciliation is written. **Decided: build it
+   publish version has moved, the sorted-order owner reconciles the job
+   against the current snapshot: remap surviving identities to current
+   instances, reread surviving keys, drop leavers and place arrivals and
+   changed keys with its one placement routine. It also uses the current
+   base order for stable ties; when a changed base order requires a full
+   sort, the same sort routine handles it. Membership equality alone does
+   not establish freshness: a value or a keyed instance can change during
+   the worker job. No second reconciliation is written. **Decided: build it
    when stage 2's measurement, extended to 100,000 rows, puts one sort's
    uninterrupted UI-thread work above 100 ms.** A host comparer that is not a
    culture `StringComparer` still sorts on the UI thread, because it is a
@@ -1156,6 +1177,136 @@ it saves at 10,000–100,000 rows:
   explicit fit commands and column changes.
 - **Stopping marquee auto-scroll at the end of the list (S7).** Under 1 ms
   per 50 ms tick, only while the pointer rests in the edge band.
+
+## Execution status
+
+Execution started 2026-11-01. The lead is `/root`; `coder` is the one
+continued implementer for groups A–E. The user's model substitution is settled:
+use Sol 6.1 with high effort wherever this plan names Opus or Fable.
+The lead alone edits this plan and `Build.ps1`; the coder owns `lib/TableView`.
+The coder alone builds after the lead releases each reviewed group; the lead
+runs the interactive and visual checks. No push is authorized.
+
+- Independent plain plan review and its corrective delta are complete:
+  **Sound**, no remaining material findings. Record:
+  `V:\temp\TableViewPerformance\plan-review.md`.
+- Group A's complete owner list is approved; implementation and source review
+  are complete. Initial deep review and focused deltas are clean; latest
+  record: `V:\temp\TableViewPerformance\group-a-review-r5.md`.
+  The corrected Release project-only build passed with no warnings or errors.
+  All 124 tests in the prescribed eight classes passed and the runner exited.
+  The lead's nine `RealPointerTests` passed and exited; report:
+  `V:\temp\TableViewPerformance\group-a-pointer.trx`.
+  P's no-move allocations are constant at both sizes (1,880–2,360 bytes),
+  with exactly n key reads on assignment and none on stored refresh. S's
+  model-only Ctrl and continued Shift work is constant, with no container
+  selection mismatches. The corrected Q check established a focused container
+  outside the cache at both sizes, with zero mismatches through Ctrl, Shift,
+  scattered/far replacement, marquee, plain selection and source pruning.
+  Raw process-heap and map-probe heap deltas are unisolated. Actual retained
+  map/list backing is 387,496 and 810,536 bytes: approximately 38.75–40.53 MB
+  at 100,000 rows by linear projection, excluding host rows, object overhead,
+  visual/native state and caches; future dictionary capacities vary. Three
+  populated maps contribute 162,360 and 340,272 bytes of captured-reference
+  dictionary backing, rather than one map's cost for the whole table.
+  M/Q report: `V:\temp\TableViewPerformance\group-a-mq.txt`.
+  The lead inspected all five corrected V baseline scenes and confirmed held
+  and drag setup; report and images: `V:\temp\TableViewPerformance\group-a-v.txt`
+  and `group-a-{rows,selection,held,drag,hierarchy}.png`. All processes exited.
+  Group A is accepted; its local commit precedes group B implementation.
+  Native event-only N measured 5.964 and 9.118 microseconds per event: stage 9
+  is enabled for group C, subject to its shipped-runtime no-flash acceptance.
+  Initial P/S/N report: `V:\temp\TableViewPerformance\group-a-psn-first.txt`.
+  The sample-only correction adds Q for the missing pinned evidence and M for
+  actual map/list backing capacities, without repeating accepted timings.
+  The retained-memory report counts every populated owner map; the per-map
+  captured-key cost is not the whole control's overhead. This plan sets no
+  retained-byte ceiling, so the measured retention is a reported tradeoff,
+  not a reason to add a shared-key lifetime mechanism outside these owners.
+  V uses a backed, themed synthetic table and a small direct hierarchy;
+  the earlier `PlanPage` resource failure is a fixture failure, not evidence
+  against the hierarchy implementation. Only reviewed, inspected final images
+  count as the baseline.
+  Typed key extraction and null-key validation live in the identity part;
+  source/node maps capture keys once during their shared per-row validation
+  pass, and view/selection maps copy them. Identity holds no rows. Ordinary
+  candidate `TryAdd` captures and inserts once, with no separate capture state;
+  identity sets reuse the map core. Reference identity needs no captured-key
+  dictionary. Extra retained keyed-map memory is measured with group A.
+  The other owners follow the table above: view-owned index, pipeline-owned
+  candidate index and publish version, selection-owned indices and range state,
+  hierarchy-owned sibling positions and capture/expansion revisions,
+  publication-owned packet, drag-owned selected-numbered fact, row-owned shown
+  visual states, and sample-owned measurements. The coder's list names each
+  map, field and helper under these owners; no core extension state is added.
+- Group B's complete owner/test/measurement list is approved, with implementation
+  released after group A's local commit. Column holds a stateless typed sort
+  definition; one active sorted-order owner holds accepted/candidate keys,
+  order and positions, with shared full-sort and placement routines. Its one
+  monotonic comparison counter measures the actual algorithm; sample-owned
+  selectors count key reads. The sorting owner holds the queued criterion,
+  committed-sort revision and settle decision; Table owns the detachment
+  revision and the one shared frame step. A frame snapshots its queued request,
+  so a newer request waits for its own frame. Held/pinned shown work keeps
+  settling pending independently of the already-settled sorted workspace.
+- Stage 7 uses its permitted fallback: keep `Body.Row` as the one row-state
+  owner and make its existing presenter the template root, removing the
+  single-child Grid. `CellsPanel` is a Panel shared with headers, while the
+  existing row states are Control-template visual states. Moving those states
+  into the panel would require a new theme/state mechanism to remove one more
+  wrapper. The fallback removes an element while preserving the established
+  WinUI state, theme and cursor behavior; lazy hierarchy expanders still apply.
+- Group A review confirmed that passing flat source membership to a hierarchy
+  makes `KeptOrder` reject every kept update and sort inside the interval.
+  `Table/Sorting.cs` needs membership of the visible projection, not all nodes:
+  a simultaneous collapse and expansion can preserve the count while changing
+  that membership. The added `Hierarchy.Project` owner row supplies this map
+  from already-captured node keys, with no repeated validation or selector read.
+  It is reusable projection workspace, not another accepted source snapshot.
+- Group A's paths/flow review confirmed a native replacement callback that
+  resolves an index during reconciliation. `Body.View` must verify a stored
+  position against its current intermediate rows; only while reconciling it
+  may resolve captured old/new instances and scan by reference when the stored
+  position is stale. Ordinary lookups remain indexed. Stage 5 replaces this
+  temporary linear bound where its counted position window applies.
+- A publish rechecks host interactivity, so it ends selection range continuity
+  even when row order/version stays unchanged; otherwise a newly interactive
+  interior row is missed by a later edge-only range update.
+- A notifying source can mutate a snapshot that is read in place before an
+  update is rejected. `Body.Source` invalidates that capture's validation record
+  before processing a new candidate, while keeping the accepted membership map
+  and held-row releases intact; a later refresh then validates the live rows.
+- Core/extension integration belongs to `Table`: source lifecycle and assignment
+  no longer call `Hierarchy`. The hierarchy observes the assignment version of
+  the capture being processed, not a newer rejected assignment. `Table` resumes
+  the hierarchy before source resume can publish, preserving child recapture.
+- Selection's existing owner separates packet/container commit from UIA/host
+  delivery. `RebuildView` finishes hierarchy and its row event before delivering
+  the committed notification, because a throwing host handler must not skip
+  mechanics. Gesture commits use those same two implementations. No deferred
+  notification field or second selection pipeline is introduced.
+- Lead source review also confirmed that `ReconcileDrag` cancels through
+  `CancelGesture`, whose own row event would duplicate the pipeline's final
+  event. Cancellation keeps one implementation and lets this pipeline call
+  defer that delivery to the final publish event.
+- Project-only reuse fingerprints the evaluated primary target of every named
+  project; a missing or changed output cannot count as current. Output-lane
+  selection also probes these targets for benchmark/test-host locks. This is
+  implemented at the existing `Build.ps1` output/hash owners and joins A's delta.
+- Group A's memory harness drains the removed probe's queued realization work
+  before the next retained-memory baseline, so collection of that old probe
+  cannot be mistaken for savings by the next fixture.
+- Confirmed preimplementation corrections for group B: custom structs need
+  the actual-comparer fallback (`Schema.SortKey` is unconstrained); queued
+  sorts need actual-commit/detach revisions to reject A→B→A and unload/reload;
+  worker completion needs current instances, keys and stable base ties,
+  because `RebuildView`'s prepared order bypasses the normal sorting path.
+  The affected owner row and stage 2 text incorporate these corrections.
+- The lead's project-only build switch is `-ProjectsOnly`; it and its usage
+  in `docs/agents/compilation.md` join group A's review and commit. Use one `-Project` argument with both project paths as
+  an array, because PowerShell does not accept a repeated named parameter.
+- Groups A–E remain open. The estimate remains 10–15 hours, four builds and
+  five group reviews; optional stages follow their measurement gates.
 
 ## How to execute
 

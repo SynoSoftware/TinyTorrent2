@@ -54,11 +54,29 @@ vertical axis, and nothing scrolls sideways. Wrapping that list in another
 vertical scroller or calculating column positions in a second place breaks those
 responsibilities.
 
+The identity module creates typed maps and sets, so value-type keys remain
+unboxed. Source membership and the view's position index retain captured keys;
+maps transfer those keys directly rather than calling the host selector again.
+The source prepares a candidate membership map and accepts it with the validated
+snapshot only after ordering succeeds. The pipeline compares the final instances
+and order before building a new position index, which the view adopts after
+reconciliation. Sibling positions belong to the hierarchy's nodes.
+While native vector callbacks observe an intermediate view, its lookup verifies
+the indexed reference and scans only when neither prepared position is current.
+The hierarchy owns visible membership for sorting; source capture versions decide
+when child snapshots need replacing, without a dependency from source to hierarchy.
+
 The selection model reconciles identity across changing source instances.
 Containers reflect that model rather than supplying a second domain selection.
 Table publishes one immutable selection after the complete update. Comparing it
 with the previous publication decides whether to notify, including replacement
-instances and changes in visual order.
+instances and changes in visual order. The model keeps selected view indices in
+ascending order, recording the view version they describe. Toggle and continued
+range gestures update their changed edges; reconciliation resolves selected and
+tracked identities through the view index. An unchanged packet is retained, and
+a current-only change reuses its immutable items.
+The table commits selection and refreshes hierarchy and row presentation before
+delivering automation and host selection events.
 Pointer, keyboard, menu, and automation paths must reach the same operations.
 Marquee and drag visuals do not decide which gesture is active.
 

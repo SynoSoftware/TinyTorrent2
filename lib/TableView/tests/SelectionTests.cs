@@ -77,6 +77,73 @@ public class SelectionTests
             CollectionAssert.AreEqual(new[] { "k0", "k3", "k4", "k5" }, h.SelectedKeys());
         });
 
+    [TestMethod]
+    public Task ShiftRangeAfterCtrlClickReplacesTheEarlierSelection() =>
+        TestHost.RunAsync(async () =>
+        {
+            SelectionHarness h = await SelectionHarness.LoadAsync(6);
+            h.Click(h[0]);
+            h.Click(h[3], ctrl: true);
+            h.Click(h[2], shift: true);
+            CollectionAssert.AreEqual(new[] { "k2", "k3" }, h.SelectedKeys());
+            CollectionAssert.AreEqual(new[] { "k2", "k3" }, h.ContainerSelectedKeys());
+        });
+
+    [TestMethod]
+    public Task ShrinkingAnAdditiveRangeKeepsRowsFromEarlierGestures() =>
+        TestHost.RunAsync(async () =>
+        {
+            SelectionHarness h = await SelectionHarness.LoadAsync(6);
+            h.Click(h[0]);
+            h.Click(h[4], ctrl: true);
+            h.Click(h[2], ctrl: true);
+            h.Click(h[5], ctrl: true, shift: true);
+            h.Click(h[3], ctrl: true, shift: true);
+            CollectionAssert.AreEqual(new[] { "k0", "k2", "k3", "k4" }, h.SelectedKeys());
+            CollectionAssert.AreEqual(new[] { "k0", "k2", "k3", "k4" }, h.ContainerSelectedKeys());
+        });
+
+    [TestMethod]
+    public Task RefreshRestartsTheRangeWhenAnInteriorRowBecomesInteractive() =>
+        TestHost.RunAsync(async () =>
+        {
+            SelectionHarness h = await SelectionHarness.LoadAsync(4,
+                table => table.Schema<Row>().CanInteract(row => row.Interactive));
+            h[1].Interactive = false;
+            h.Click(h[0]);
+            h.Click(h[2], shift: true);
+            CollectionAssert.AreEqual(new[] { "k0", "k2" }, h.SelectedKeys());
+
+            h[1].Interactive = true;
+            h.Table.RefreshView();
+            h.MoveBy(1, extend: true);
+
+            CollectionAssert.AreEqual(new[] { "k0", "k1", "k2", "k3" }, h.SelectedKeys());
+            CollectionAssert.AreEqual(h.SelectedKeys(), h.ContainerSelectedKeys());
+        });
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public Task ThrowingSelectionHandlerRunsAfterHeldRowVisualsRefresh(bool dragging) =>
+        TestHost.RunAsync(async () =>
+        {
+            SelectionHarness h = await SelectionHarness.LoadAsync(3, table => table.CanReorder = true, ordered: true);
+            h.Click(h[0]);
+            Proof.Call(h.Table, "PointAt", h[1]);
+            if (dragging)
+                Proof.Call(h.Table, "BeginDrag", h[0]);
+            int refreshes = 0;
+            typeof(Table).GetEvent("RowVisualsChanged", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+                .GetAddMethod(nonPublic: true)!.Invoke(h.Table, new object[] { new EventHandler((_, _) => refreshes++) });
+            h.Table.SelectionChanged += (_, _) => throw new InvalidOperationException("Host handler failed");
+
+            Expect.Throws<InvalidOperationException>(() => h.Rows.RemoveAt(0));
+
+            Assert.AreEqual(1, refreshes);
+            Assert.AreEqual(0, h.Table.Selection.Items.Count);
+        });
+
     // ------------------------------------------------------------------ the four mode limits
 
     [TestMethod]

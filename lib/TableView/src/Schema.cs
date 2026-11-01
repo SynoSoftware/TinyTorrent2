@@ -70,8 +70,7 @@ public sealed class Schema<TRow>
     {
         ArgumentNullException.ThrowIfNull(key);
         _table.RequireSetup();
-        _table.ItemKey = item => key((TRow)item);
-        _table.KeyComparer = new KeyEquality<TKey>();
+        _table.SetIdentity(new Identity<TRow, TKey>(key));
         return this;
     }
 
@@ -128,13 +127,4 @@ public sealed class Schema<TRow>
         return this;
     }
 
-    private sealed class KeyEquality<TKey> : IEqualityComparer<object>
-        where TKey : notnull
-    {
-        public new bool Equals(object? x, object? y) =>
-            EqualityComparer<TKey>.Default.Equals((TKey)x!, (TKey)y!);
-
-        public int GetHashCode(object value) =>
-            EqualityComparer<TKey>.Default.GetHashCode((TKey)value);
-    }
 }

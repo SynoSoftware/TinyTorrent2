@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Collections.ObjectModel;
 using Microsoft.UI.Xaml.Data;
 using Windows.Foundation.Collections;
@@ -14,13 +15,70 @@ namespace Syno.TableView.Body;
 /// </summary>
 internal sealed class View : Collection<object>, IObservableVector<object>, ISelectionInfo
 {
-    private readonly ItemIdentity _identity;
     private readonly Func<object, bool> _isSelected;
+    private readonly Func<IReadOnlyCollection<int>> _selectedIndices;
+    private PositionIndex? _reconcilingOrder;
 
-    internal View(ItemIdentity identity, Func<object, bool> isSelected)
+    internal View(IIdentity identity, Func<object, bool> isSelected, Func<IReadOnlyCollection<int>> selectedIndices)
     {
-        _identity = identity;
         _isSelected = isSelected;
+        _selectedIndices = selectedIndices;
+        Positions = new(identity);
+    }
+
+    internal PositionIndex Positions { get; private set; }
+    internal long Version { get; private set; }
+
+    internal IIdentityKeys? KeysFor(object item) =>
+        _reconcilingOrder?.ContainsReference(item) == true ? _reconcilingOrder
+            : Positions.ContainsReference(item) ? Positions : null;
+
+    internal int IndexOfIdentity(object? item)
+    {
+        if (item is null)
+        {
+            return -1;
+        }
+        if (_reconcilingOrder is not { } next)
+        {
+            return Positions.IndexOf(item);
+        }
+
+        IIdentityKeys? keys = KeysFor(item);
+        object? before = keys is null ? Positions.Map.Resolve(item) : Positions.Map.Resolve(item, keys);
+        keys ??= before is not null ? Positions : null;
+        object? after = keys is null ? next.Map.Resolve(item) : next.Map.Resolve(item, keys);
+        if (before is null && after is null)
+        {
+            return -1;
+        }
+        int index = before is null ? -1 : Positions.IndexOf(before, Positions);
+        if (Matches(index))
+        {
+            return index;
+        }
+        index = after is null ? -1 : next.IndexOf(after, next);
+        if (Matches(index))
+        {
+            return index;
+        }
+        // Native container preparation can query identity between individual vector changes.
+        for (index = 0; index < Count; index++)
+        {
+            if (Matches(index))
+            {
+                return index;
+            }
+        }
+        return -1;
+
+        bool Matches(int at) => at >= 0 && at < Count
+            && (ReferenceEquals(this[at], before) || ReferenceEquals(this[at], after));
+    }
+
+    internal void SetIdentity(IIdentity identity)
+    {
+        Positions = new(identity);
     }
 
     // Native vector events avoid marshaling a .NET collection event and its item lists per row.
@@ -80,19 +138,20 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
     {
         List<ItemIndexRange> ranges = new();
         int start = -1;
-        for (int index = 0; index <= Count; index++)
+        int last = -1;
+        foreach (int index in _selectedIndices())
         {
-            bool selected = index < Count && _isSelected(this[index]);
-            if (selected && start < 0)
+            if (start < 0)
+                start = index;
+            else if (index != last + 1)
             {
+                ranges.Add(new ItemIndexRange(start, (uint)(last - start + 1)));
                 start = index;
             }
-            else if (!selected && start >= 0)
-            {
-                ranges.Add(new ItemIndexRange(start, (uint)(index - start)));
-                start = -1;
-            }
+            last = index;
         }
+        if (start >= 0)
+            ranges.Add(new ItemIndexRange(start, (uint)(last - start + 1)));
         return ranges;
     }
 
@@ -133,32 +192,34 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
     /// </param>
     internal bool Reconcile(
         IReadOnlyList<object> snapshot,
+        PositionIndex place,
         IReadOnlyList<int> realized,
-        IReadOnlySet<object> pinned
+        IdentitySet pinned
     )
     {
-        if (IsAlready(snapshot))
+        _reconcilingOrder = place;
+        try
         {
-            return false;
-        }
+            List<int> held = new(realized);
+            held.Sort();
 
-        Dictionary<object, int> place = new(snapshot.Count, _identity);
-        for (int i = 0; i < snapshot.Count; i++)
+            Membership(snapshot, place, held);
+
+            List<(int Start, int End)> runs = Runs(held);
+            List<int> removed = RemoveFromRuns(place, runs, pinned);
+            PlaceQuietly(snapshot, runs, removed);
+            InsertIntoRuns(snapshot, place, runs);
+
+            place.Bind(this);
+            Positions = place;
+            Version++;
+
+            return true;
+        }
+        finally
         {
-            place[snapshot[i]] = i;
+            _reconcilingOrder = null;
         }
-
-        List<int> held = new(realized);
-        held.Sort();
-
-        Membership(snapshot, place, held);
-
-        List<(int Start, int End)> runs = Runs(held);
-        List<int> removed = RemoveFromRuns(place, runs, pinned);
-        PlaceQuietly(snapshot, runs, removed);
-        InsertIntoRuns(snapshot, runs);
-
-        return true;
     }
 
     /// <summary>
@@ -168,39 +229,47 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
     /// </summary>
     private void Membership(
         IReadOnlyList<object> snapshot,
-        Dictionary<object, int> place,
+        PositionIndex place,
         List<int> held
     )
     {
         for (int i = Count - 1; i >= 0; i--)
         {
-            if (!place.ContainsKey(this[i]))
+            if (place.IndexOfKnown(this[i], Positions) < 0)
             {
                 RemoveAt(i);
                 Shift(held, i, -1);
             }
         }
 
-        bool[] present = new bool[snapshot.Count];
-        for (int i = 0; i < Count; i++)
+        bool[] present = ArrayPool<bool>.Shared.Rent(snapshot.Count);
+        Array.Clear(present, 0, snapshot.Count);
+        try
         {
-            present[place[this[i]]] = true;
-        }
-
-        for (int i = 0; i < snapshot.Count; i++)
-        {
-            if (present[i])
+            for (int i = 0; i < Count; i++)
             {
-                continue;
+                present[place.IndexOfKnown(this[i], Positions)] = true;
             }
 
-            // The snapshot's index, clamped: the view is still in its old order here, so this is
-            // where the row belongs at the end rather than where it belongs now. The passes below
-            // put every row in its place; this one only has to get the membership and the count
-            // right, and to leave the index it inserted at valid.
-            int at = Math.Min(i, Count);
-            Insert(at, snapshot[i]);
-            Shift(held, at, 1);
+            for (int i = 0; i < snapshot.Count; i++)
+            {
+                if (present[i])
+                {
+                    continue;
+                }
+
+                // The snapshot's index, clamped: the view is still in its old order here, so this is
+                // where the row belongs at the end rather than where it belongs now. The passes below
+                // put every row in its place; this one only has to get the membership and the count
+                // right, and to leave the index it inserted at valid.
+                int at = Math.Min(i, Count);
+                Insert(at, snapshot[i]);
+                Shift(held, at, 1);
+            }
+        }
+        finally
+        {
+            ArrayPool<bool>.Shared.Return(present);
         }
     }
 
@@ -274,9 +343,9 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
     /// overwritten, and a focused row pinned far from the viewport makes a second run ordinary.
     /// </remarks>
     private List<int> RemoveFromRuns(
-        Dictionary<object, int> place,
+        PositionIndex place,
         List<(int Start, int End)> runs,
-        IReadOnlySet<object> pinned
+        IdentitySet pinned
     )
     {
         List<int> removed = new();
@@ -343,7 +412,7 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
     /// filled is already final by the time it is reached, so the row standing there can be read
     /// directly.
     /// </summary>
-    private void InsertIntoRuns(IReadOnlyList<object> snapshot, List<(int Start, int End)> runs)
+    private void InsertIntoRuns(IReadOnlyList<object> snapshot, PositionIndex place, List<(int Start, int End)> runs)
     {
         foreach ((int start, int end) in runs)
         {
@@ -351,7 +420,7 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
             {
                 object next = snapshot[i];
 
-                if (i < Count && _identity.Equals(this[i], next))
+                if (i < Count && place.IndexOfKnown(this[i], Positions) == i)
                 {
                     // Same row, new instance: the host abandoned the object this container is bound
                     // to, so nothing would update that container again.
@@ -369,7 +438,7 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
     }
 
     /// <summary>The snapshot is the view as it stands: the same instances in the same order.</summary>
-    private bool IsAlready(IReadOnlyList<object> snapshot)
+    internal bool IsAlready(IReadOnlyList<object> snapshot)
     {
         if (snapshot.Count != Count)
         {
@@ -407,17 +476,17 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
     /// </para>
     /// </remarks>
     private bool[] RunSurvivors(
-        Dictionary<object, int> place,
+        PositionIndex place,
         int start,
         int end,
-        IReadOnlySet<object> pinned
+        IdentitySet pinned
     )
     {
         int count = end - start;
         int[] target = new int[count];
         for (int row = 0; row < count; row++)
         {
-            int to = place[this[start + row]];
+            int to = place.IndexOfKnown(this[start + row], Positions);
             target[row] = to >= start && to < end ? to : -1;
         }
 
@@ -431,7 +500,7 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
                     continue;
                 }
 
-                if (pinned.Contains(this[start + row]))
+                if (pinned.Contains(this[start + row], place.ContainsReference(this[start + row]) ? place : Positions))
                 {
                     above = target[row];
                 }
@@ -449,7 +518,7 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
                     continue;
                 }
 
-                if (pinned.Contains(this[start + row]))
+                if (pinned.Contains(this[start + row], place.ContainsReference(this[start + row]) ? place : Positions))
                 {
                     below = target[row];
                 }

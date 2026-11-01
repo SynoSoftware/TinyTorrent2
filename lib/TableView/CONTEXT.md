@@ -37,6 +37,15 @@ hierarchical table, the visible roots and descendants in that order.
 
 **Private view**: the table's display projection over the base sequence.
 
+**Publish**: one application of the source, sort and interaction policy to the
+private view and selection.
+
+**Identity map**: items addressed by their identity, retaining the current item
+for each identity.
+
+**Position index**: the relation between an item's identity and its index in an
+ordered sequence. It does not describe the host's numbered order.
+
 **Natural order**: the host's order before header sorting, applied within each
 sibling group in a hierarchical table.
 

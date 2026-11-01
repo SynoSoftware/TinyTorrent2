@@ -15,6 +15,9 @@ public sealed partial class Table
     private Selection? _pendingSelection;
     private ListViewSelectionMode _selectionMode = ListViewSelectionMode.Extended;
     private Action? _cancelPreparation;
+    private long _selectionItemsVersion = -1;
+
+    private sealed record SelectionChange(Selection Packet, object[] Added, object[] Removed);
 
     /// <summary>
     /// Runs selection-dependent preparation on a worker thread. A newer selection,
@@ -120,18 +123,13 @@ public sealed partial class Table
     /// becomes the selection. Both make the row current, focused, and the next range anchor, so a
     /// context request on an already-selected row still reports the moved current item.
     /// </summary>
-    private void SelectForContext(object item) =>
-        _selection.SetSelection(
-            _selection.IsSelected(item) ? SelectedItems : new[] { item },
-            item,
-            View
-        );
+    private void SelectForContext(object item) => _selection.Context(item);
 
     /// <summary>
     /// Bring the table-owned state to the view a snapshot left, and put row focus back where it
     /// was: the framework moves it when the focused container leaves.
     /// </summary>
-    private void ReconcileSelection(FocusState rowFocus, object? focusedItem = null)
+    private SelectionChange? ReconcileSelection(FocusState rowFocus, object? focusedItem = null)
     {
         SyncSelectionPolicy();
 
@@ -156,9 +154,10 @@ public sealed partial class Table
 
         if (!_detached)
             RestoreRowFocus(rowFocus, focusedItem);
-        CommitSelection();
+        SelectionChange? change = CommitPacket();
         if (_hierarchy is not null && _surface is { } surface)
             surface.RefreshHierarchy();
+        return change;
     }
 
     // ------------------------------------------------------------------ commit
@@ -178,33 +177,53 @@ public sealed partial class Table
     /// </summary>
     private Selection CommitSelection()
     {
+        SelectionChange? change = CommitPacket();
+        Selection packet = _publishedSelection;
+        if (change is not null && !_detached)
+        {
+            RowVisualsChanged?.Invoke(this, EventArgs.Empty);
+        }
+        PublishSelection(change);
+        return packet;
+    }
+
+    private SelectionChange? CommitPacket()
+    {
         Selection previous = _publishedSelection;
-        Selection next = new(BuildSelectedPacket(), _selection.Current);
+        Selection next = _selectionItemsVersion != _selection.ItemsVersion
+            ? new(_selection.BuildPacket(), _selection.Current)
+            : ReferenceEquals(previous.Current, _selection.Current)
+                ? previous : new(previous, _selection.Current);
+        _selectionItemsVersion = _selection.ItemsVersion;
         bool changed = !SameSelection(previous, next);
+        if (!changed)
+        {
+            next = previous;
+        }
         _publishedSelection = next;
+        object[] added = changed && Body.Surface.SelectionListens ? _selection.Added : Array.Empty<object>();
+        object[] removed = changed && Body.Surface.SelectionListens ? _selection.Removed : Array.Empty<object>();
+        _selection.AcceptChanges();
         if (changed)
             CancelPreparation();
         if (!_detached)
         {
-            RefreshContainers(previous);
-            RowVisualsChanged?.Invoke(this, EventArgs.Empty);
-            if (changed && _surface is not null && Body.Surface.SelectionListens)
-                _surface.RaiseSelectionEvents(
-                    Except(next, previous),
-                    Except(previous, next),
-                    next.Items.Count
-                );
+            RefreshContainers();
         }
-        if (changed)
-            SelectionChanged?.Invoke(this, next);
-        return next;
+        return changed ? new(next, added, removed) : null;
     }
 
-    /// <summary>The rows of <paramref name="selection"/> that <paramref name="other"/> lacks.</summary>
-    private object[] Except(Selection selection, Selection other)
+    private void PublishSelection(SelectionChange? change)
     {
-        HashSet<object> others = new(other.Items, _identity);
-        return selection.Items.Where(item => !others.Contains(item)).ToArray();
+        if (change is null)
+        {
+            return;
+        }
+        if (!_detached && _surface is not null && Body.Surface.SelectionListens)
+        {
+            _surface.RaiseSelectionEvents(change.Added, change.Removed, change.Packet.Items.Count);
+        }
+        SelectionChanged?.Invoke(this, change.Packet);
     }
 
     private static bool SameSelection(Selection left, Selection right)
@@ -223,48 +242,26 @@ public sealed partial class Table
         return true;
     }
 
-    private IReadOnlyList<object> BuildSelectedPacket()
-    {
-        return _selection.Items.OrderBy(IndexInView).ToArray();
-    }
-
     /// <summary>
-    /// Tell the list which rows changed selected state since the last commit, one range call per
-    /// run of rows, so it re-reads their containers from the view. A row the view no longer shows
-    /// needs nothing: its container is gone, and a container the list builds reads the view as it
-    /// is. The list's own gestures also end in a range call, and the view answers those with the
-    /// state the table has already settled, so the list corrects itself.
+    /// One range call makes the list refresh every cached and pinned container from ISelectionInfo.
+    /// Its range does not limit that refresh, and the view does not change selection for the call.
     /// </summary>
-    private void RefreshContainers(Selection previous)
+    private void RefreshContainers()
     {
         if (_detached || _surface is null || View.Count == 0)
         {
             return;
         }
 
-        var wanted = _selection.Items.Select(IndexInView).Where(index => index >= 0).ToHashSet();
-        var changed = previous.Items.Select(IndexInView).Where(index => index >= 0).ToHashSet();
-        changed.SymmetricExceptWith(wanted);
-        int start = -1;
-        int last = -1;
-        bool selecting = false;
-        foreach (int index in changed.Order())
+        foreach (int index in RealizedIndices())
         {
-            bool select = wanted.Contains(index);
-            if (start >= 0 && (index != last + 1 || select != selecting))
+            if (_surface.ContainerFromIndex(index) is ListViewItem container
+                && index < View.Count && container.IsSelected != _selection.IsSelected(View[index]))
             {
-                ApplyRange(start, last - start + 1, selecting);
-                start = -1;
+                ApplyRange(index, 1, _selection.IsSelected(View[index]));
+                return;
             }
-            if (start < 0)
-            {
-                start = index;
-                selecting = select;
-            }
-            last = index;
         }
-        if (start >= 0)
-            ApplyRange(start, last - start + 1, selecting);
     }
 
     private void ApplyRange(int first, int length, bool select)

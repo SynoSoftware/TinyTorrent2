@@ -1,155 +1,192 @@
-using System.Runtime.CompilerServices;
 using Microsoft.UI.Xaml.Controls;
 
 namespace Syno.TableView;
 
-/// <summary>
-/// Section 5's identity rule. Without a key selector identity is object reference; with one it is
-/// the configured key using its default equality comparer. The selector is captured once, so the
-/// instance is created empty and filled at schema capture.
-/// </summary>
-internal sealed class ItemIdentity : IEqualityComparer<object>
-{
-    internal Func<object, object>? KeySelector { get; set; }
-
-    internal IEqualityComparer<object> KeyComparer { get; set; } = EqualityComparer<object>.Default;
-
-    public new bool Equals(object? x, object? y)
-    {
-        if (ReferenceEquals(x, y))
-        {
-            return true;
-        }
-
-        if (x is null || y is null)
-        {
-            return false;
-        }
-
-        return KeySelector is not null && KeyComparer.Equals(KeySelector(x), KeySelector(y));
-    }
-
-    public int GetHashCode(object obj) =>
-        KeySelector is null
-            ? RuntimeHelpers.GetHashCode(obj)
-            : KeyComparer.GetHashCode(KeySelector(obj));
-}
-
-/// <summary>
-/// The table's authoritative selection state as pure logic: no input, no visual, no XAML tree.
-/// Visual order belongs to the view, so the model stores an unordered identity set and every
-/// operation that needs order takes the current ordered view as an argument.
-/// </summary>
-/// <remarks>
-/// Table owns the ordered published snapshot and change notifications.
-/// </remarks>
+/// <summary>The authoritative selection, current item, range anchor and logical focus.</summary>
 internal sealed class SelectionState
 {
-    private readonly ItemIdentity _identity;
-    private readonly Func<object, int> _indexOf;
-    private HashSet<object> _selected;
+    private IIdentity _identity;
+    private readonly Body.View _view;
+    private IdentitySet _selected;
+    private IdentityMap<byte> _tracked;
+    private IdentitySet _added;
+    private IdentitySet _removed;
+    private readonly SortedSet<int> _indices = new();
+    private long _indicesVersion = -1;
+    private RangeGesture? _range;
 
-    internal SelectionState(ItemIdentity identity, Func<object, int> indexOf)
+    internal SelectionState(IIdentity identity, Body.View view)
     {
         _identity = identity;
-        _indexOf = indexOf;
-        _selected = new HashSet<object>(identity);
+        _view = view;
+        _selected = new(identity, keepsKeys: true);
+        _tracked = identity.CreateMap<byte>(keepsKeys: true);
+        _added = new(identity, keepsKeys: true);
+        _removed = new(identity, keepsKeys: true);
     }
 
     internal ListViewSelectionMode Mode { get; set; } = ListViewSelectionMode.Extended;
-
-    /// <summary>Section 5's interaction predicate. Null means every item is interactive.</summary>
     internal Func<object, bool>? CanInteract { get; set; }
-
     internal object? Current { get; private set; }
-
-    /// <summary>The row a range selection extends from.</summary>
     internal object? Anchor { get; private set; }
-
-    /// <summary>Logical row focus. Not the same thing as physical keyboard focus.</summary>
     internal object? Focus { get; private set; }
+    internal long ItemsVersion { get; private set; }
+    internal int Count => _selected.Count;
+    internal IEnumerable<object> Items => _selected;
+    internal IReadOnlyCollection<int> SelectedIndices
+    {
+        get
+        {
+            EnsureIndices();
+            return _indices;
+        }
+    }
 
     internal sealed record Checkpoint(
-        object[] Items,
+        IReadOnlyList<object> Items,
         object? Current,
         object? Anchor,
         object? Focus
     );
 
-    internal Checkpoint Capture() => new(_selected.ToArray(), Current, Anchor, Focus);
+    private sealed record RangeGesture(
+        object Anchor,
+        int End,
+        bool Add,
+        long ViewVersion,
+        IdentitySet? Baseline
+    );
+
+    internal Checkpoint Capture(Selection packet) => new(packet.Items, Current, Anchor, Focus);
 
     internal void Restore(Checkpoint checkpoint, IReadOnlyList<object> view)
     {
-        Apply(
-            new List<object>(checkpoint.Items),
-            checkpoint.Current,
-            checkpoint.Anchor,
-            checkpoint.Focus
-        );
-        Reconcile(view);
+        SetSelection(checkpoint.Items, checkpoint.Current, view);
+        Locate(Resolve(checkpoint.Current), Resolve(checkpoint.Anchor), Resolve(checkpoint.Focus));
     }
 
-    internal bool AllowsMultiple =>
-        Mode is ListViewSelectionMode.Multiple or ListViewSelectionMode.Extended;
+    internal void SetIdentity(IIdentity identity)
+    {
+        _identity = identity;
+        _selected = new(identity, keepsKeys: true);
+        _tracked = identity.CreateMap<byte>(keepsKeys: true);
+        _added = new(identity, keepsKeys: true);
+        _removed = new(identity, keepsKeys: true);
+        _indices.Clear();
+        _indicesVersion = -1;
+        _range = null;
+    }
 
-    internal bool IsSelected(object item) => _selected.Contains(item);
+    internal bool AllowsMultiple => Mode is ListViewSelectionMode.Multiple or ListViewSelectionMode.Extended;
+    internal bool IsSelected(object item) => _view.KeysFor(item) is { } keys
+        ? _selected.Contains(item, keys) : _selected.Contains(item);
+    internal bool IsInteractive(object item) => CanInteract?.Invoke(item) != false;
+    internal bool IsSame(object? left, object? right) => _identity.IsSame(left, right);
 
-    internal IEnumerable<object> Items => _selected;
+    private void EnsureIndices()
+    {
+        if (_indicesVersion == _view.Version)
+        {
+            return;
+        }
+        _indices.Clear();
+        foreach (object item in _selected)
+        {
+            int index = _view.Positions.IndexOf(item, _selected);
+            if (index >= 0)
+            {
+                _indices.Add(index);
+            }
+        }
+        _indicesVersion = _view.Version;
+    }
 
-    internal bool IsInteractive(object item) => CanInteract is null || CanInteract(item);
+    private bool Add(object item)
+    {
+        EnsureIndices();
+        if (!_selected.Add(item, _view.Positions.Map))
+        {
+            return false;
+        }
+        _indices.Add(_view.Positions.IndexOf(item));
+        if (!_removed.Remove(item, _view.Positions))
+        {
+            _added.Add(item, _view.Positions.Map);
+        }
+        ItemsVersion++;
+        return true;
+    }
 
-    internal bool IsSame(object? a, object? b) =>
-        a is null || b is null ? a is null && b is null : _identity.Equals(a, b);
+    private bool Remove(object item)
+    {
+        EnsureIndices();
+        if (!_selected.Contains(item))
+        {
+            return false;
+        }
+        if (!_added.Remove(item, _selected))
+        {
+            _removed.Add(item, _selected.Map);
+        }
+        int index = _view.Positions.IndexOf(item, _selected);
+        _selected.Remove(item);
+        _indices.Remove(index);
+        ItemsVersion++;
+        return true;
+    }
 
-    /// <summary>
-    /// Re-bucket the selected set after schema capture supplies the key selector. Reference hashes
-    /// taken before capture are stale once identity becomes key-based.
-    /// </summary>
-    internal void RehashIdentity() => _selected = new HashSet<object>(_selected, _identity);
+    private void Locate(object? current, object? anchor, object? focus)
+    {
+        Current = current;
+        Anchor = anchor;
+        Focus = focus;
+        _tracked.Clear();
+        if (current is not null)
+        {
+            _tracked.TryAdd(current, 0, _view.Positions.Map);
+        }
+        if (anchor is not null)
+        {
+            _tracked.TryAdd(anchor, 0, _view.Positions.Map);
+        }
+        if (focus is not null)
+        {
+            _tracked.TryAdd(focus, 0, _view.Positions.Map);
+        }
+    }
 
-    // ------------------------------------------------------------------ pointer and keyboard
-
-    /// <summary>
-    /// Section 13's click, tap and Space rules. The mode's semantics live here so every input
-    /// path reports the same selection action.
-    /// </summary>
     internal void Select(object item, bool ctrl, bool shift, IReadOnlyList<object> view)
     {
         if (!IsInteractive(item))
         {
             return;
         }
-
         if (Mode == ListViewSelectionMode.None)
         {
-            Apply(new List<object>(), item, item, item);
-            return;
+            ClearItems();
+            Locate(item, item, item);
         }
-
-        if (shift)
+        else if (shift)
         {
-            Range(item, add: ctrl, view);
-            return;
+            Range(item, ctrl, view);
         }
-
-        if (ctrl || Mode == ListViewSelectionMode.Multiple)
+        else if (ctrl || Mode == ListViewSelectionMode.Multiple)
         {
             Toggle(item);
-            return;
         }
-
-        Replace(item);
+        else
+        {
+            Replace(item);
+        }
     }
 
-    /// <summary>Plain replace: one row selected, and it becomes current, anchor, and focus.</summary>
     internal void Replace(object item)
     {
         if (!IsInteractive(item))
         {
             return;
         }
-
-        Apply(Limit(new List<object> { item }), item, item, item);
+        Apply(Mode == ListViewSelectionMode.None ? new() : new() { item }, item, item, item);
     }
 
     internal void Toggle(object item)
@@ -158,18 +195,20 @@ internal sealed class SelectionState
         {
             return;
         }
-
-        List<object> next = Mode == ListViewSelectionMode.Single ? new() : new(_selected);
-        if (_selected.Contains(item))
+        _range = null;
+        if (IsSelected(item))
         {
-            next.RemoveAll(candidate => _identity.Equals(candidate, item));
+            Remove(item);
         }
-        else
+        else if (Mode != ListViewSelectionMode.None)
         {
-            next.Add(item);
+            if (Mode == ListViewSelectionMode.Single)
+            {
+                ClearItems();
+            }
+            Add(item);
         }
-
-        Apply(Limit(next), item, item, item);
+        Locate(item, item, item);
     }
 
     internal void Navigate(object item, bool ctrl, bool shift, IReadOnlyList<object> view)
@@ -178,228 +217,295 @@ internal sealed class SelectionState
         {
             return;
         }
-
         if (shift && AllowsMultiple)
         {
-            Range(item, add: ctrl, view);
-            return;
+            Range(item, ctrl, view);
         }
-
-        if (ctrl || Mode == ListViewSelectionMode.Multiple)
+        else if (ctrl || Mode == ListViewSelectionMode.Multiple)
         {
-            Apply(new List<object>(_selected), item, Anchor, item);
-            return;
+            _range = null;
+            Locate(item, Anchor, item);
         }
-
-        Replace(item);
+        else
+        {
+            Replace(item);
+        }
     }
 
-    /// <summary>
-    /// The inclusive range from the anchor to <paramref name="item"/>. The anchor does not move,
-    /// so a second Shift click re-projects the range instead of growing it.
-    /// </summary>
     internal void Range(object item, bool add, IReadOnlyList<object> view)
     {
         if (!IsInteractive(item))
         {
             return;
         }
-
         if (!AllowsMultiple)
         {
-            if (Mode == ListViewSelectionMode.None)
-            {
-                Apply(new List<object>(), item, item, item);
-            }
-            else
-            {
-                Replace(item);
-            }
+            Replace(item);
             return;
         }
-
-        int to = _indexOf(item);
+        int to = _view.Positions.IndexOf(item);
         if (to < 0)
         {
             return;
         }
-
         object anchor = Anchor ?? item;
-        int from = _indexOf(anchor);
+        int from = _view.Positions.IndexOf(anchor);
         if (from < 0)
         {
-            from = to;
             anchor = item;
+            from = to;
         }
-
-        (int low, int high) = from <= to ? (from, to) : (to, from);
-
-        List<object> next = add ? new List<object>(_selected) : new List<object>();
-        HashSet<object> seen = new(next, _identity);
-        for (int i = low; i <= high; i++)
+        int low = Math.Min(from, to);
+        int high = Math.Max(from, to);
+        RangeGesture? previous = _range;
+        if (previous is not null && ReferenceEquals(previous.Anchor, anchor)
+            && previous.Add == add && previous.ViewVersion == _view.Version)
         {
-            if (IsInteractive(view[i]) && seen.Add(view[i]))
-            {
-                next.Add(view[i]);
-            }
+            int oldLow = Math.Min(from, previous.End);
+            int oldHigh = Math.Max(from, previous.End);
+            RemoveSpan(oldLow, Math.Min(oldHigh, low - 1), previous.Baseline);
+            RemoveSpan(Math.Max(oldLow, high + 1), oldHigh, previous.Baseline);
+            AddSpan(low, Math.Min(high, oldLow - 1));
+            AddSpan(Math.Max(low, oldHigh + 1), high);
+            _range = previous with { End = to };
         }
-
-        Apply(next, item, anchor, item);
+        else
+        {
+            IdentitySet? baseline = null;
+            if (add)
+            {
+                baseline = new(_identity);
+                foreach (object selected in _selected)
+                {
+                    baseline.Add(selected, _selected.Map);
+                }
+            }
+            else
+            {
+                ClearItems();
+            }
+            AddSpan(low, high);
+            _range = new(anchor, to, add, _view.Version, baseline);
+        }
+        Locate(item, anchor, item);
     }
 
-    /// <summary>Ctrl+A. Only multiple selection can express it, and it leaves the anchor alone.</summary>
+    private void AddSpan(int low, int high)
+    {
+        for (int index = low; index <= high; index++)
+        {
+            if (IsInteractive(_view[index]))
+            {
+                Add(_view[index]);
+            }
+        }
+    }
+
+    private void RemoveSpan(int low, int high, IdentitySet? baseline)
+    {
+        for (int index = low; index <= high; index++)
+        {
+            object item = _view[index];
+            if (baseline?.Contains(item) != true)
+            {
+                Remove(item);
+            }
+        }
+    }
+
     internal void SelectAll(IReadOnlyList<object> view)
     {
         if (!AllowsMultiple)
         {
             return;
         }
-
-        List<object> next = new();
+        _range = null;
         foreach (object item in view)
         {
             if (IsInteractive(item))
             {
-                next.Add(item);
+                Add(item);
             }
         }
-
-        object? current = Current ?? (next.Count > 0 ? next[0] : null);
-        Apply(next, current, Anchor ?? current, Focus ?? current);
+        object? current = Current ?? (_indices.Count > 0 ? _view[_indices.Min] : null);
+        Locate(current, Anchor ?? current, Focus ?? current);
     }
 
-    internal void Clear() => Apply(new List<object>(), null, null, null);
-
-    /// <summary>
-    /// Section 14. The marquee's result replaces the selected packet and moves nothing else. The
-    /// anchor especially must not move: a Shift marquee re-projects its range from that anchor on
-    /// every pointer move, and an anchor that followed the result would walk with it.
-    /// </summary>
-    internal void SetMarqueeSelection(List<object> items, IReadOnlyList<object> view) =>
-        Apply(ResolveSelection(items, null, view, out _), Current, Anchor, Focus);
-
-    // ------------------------------------------------------------------ programmatic and source
-
-    /// <summary>
-    /// Resolve requested identities against the view, excluding duplicate,
-    /// unavailable and non-interactive items, then apply the mode limit in one step.
-    /// </summary>
-    internal void SetSelection(
-        IEnumerable<object> items,
-        object? currentItem,
-        IReadOnlyList<object> view
-    )
+    private void ClearItems()
     {
-        List<object> resolved = ResolveSelection(items, currentItem, view, out object? current);
-        current ??= resolved.Count > 0 ? resolved[0] : null;
+        foreach (object item in _selected)
+        {
+            if (!_added.Remove(item, _selected))
+            {
+                _removed.Add(item, _selected.Map);
+            }
+        }
+        if (_selected.Count > 0)
+        {
+            ItemsVersion++;
+        }
+        _selected.Clear();
+        _indices.Clear();
+        _indicesVersion = _view.Version;
+    }
+
+    internal void Clear()
+    {
+        _range = null;
+        ClearItems();
+        Locate(null, null, null);
+    }
+
+    internal void Context(object item)
+    {
+        if (!IsSelected(item))
+        {
+            Replace(item);
+        }
+        else
+        {
+            _range = null;
+            Locate(item, item, item);
+        }
+    }
+
+    internal void SetMarqueeSelection(List<object> items, IReadOnlyList<object> view) =>
+        Apply(ResolveSelection(items), Current, Anchor, Focus);
+
+    internal void SetSelection(IEnumerable<object> items, object? currentItem, IReadOnlyList<object> view)
+    {
+        List<object> resolved = ResolveSelection(items);
+        object? current = Resolve(currentItem) ?? (resolved.Count > 0 ? resolved[0] : null);
         Apply(resolved, current, current, current);
     }
 
-    private List<object> ResolveSelection(
-        IEnumerable<object> items,
-        object? currentItem,
-        IReadOnlyList<object> view,
-        out object? current
-    )
+    private object? Resolve(object? item) =>
+        item is not null && _view.Positions.Resolve(item) is { } current && IsInteractive(current)
+            ? current : null;
+
+    private List<object> ResolveSelection(IEnumerable<object> items)
     {
-        HashSet<int> positions = new();
+        SortedSet<int> positions = new();
         foreach (object item in items)
         {
-            if (item is not null)
+            int index = item is null ? -1 : _view.Positions.IndexOf(item);
+            if (index >= 0 && IsInteractive(_view[index]))
             {
-                int index = _indexOf(item);
-                if (index >= 0 && IsInteractive(view[index]))
-                    positions.Add(index);
+                positions.Add(index);
             }
         }
-
-        List<object> resolved = positions.Order().Select(index => view[index]).ToList();
-        int currentIndex = currentItem is null ? -1 : _indexOf(currentItem);
-        current =
-            currentIndex >= 0 && IsInteractive(view[currentIndex]) ? view[currentIndex] : null;
-        return Limit(resolved);
+        List<object> resolved = new();
+        foreach (int index in positions)
+        {
+            if (Mode == ListViewSelectionMode.None)
+            {
+                break;
+            }
+            resolved.Add(_view[index]);
+            if (Mode == ListViewSelectionMode.Single)
+            {
+                break;
+            }
+        }
+        return resolved;
     }
 
-    /// <summary>
-    /// Section 5.3's reconciliation. One pass over the new view rehydrates every tracked identity
-    /// onto the new instances, prunes what left or became non-interactive, and repairs current.
-    /// </summary>
-    internal void Reconcile(
-        IReadOnlyList<object> view,
-        object? currentFallback = null,
-        object? focusFallback = null
-    )
+    internal void Reconcile(IReadOnlyList<object> view, object? currentFallback = null, object? focusFallback = null)
     {
-        List<object> kept = new();
-        object? current = null;
-        object? anchor = null;
-        object? focus = null;
-
-        foreach (object item in view)
+        _range = null;
+        bool moved = _indicesVersion != _view.Version;
+        List<object>? replace = null;
+        List<object>? remove = null;
+        foreach (object item in _selected)
         {
-            if (!IsInteractive(item))
+            int index = _view.Positions.IndexOf(item, _selected);
+            if (index < 0 || !IsInteractive(_view[index]))
             {
-                continue;
+                (remove ??= new()).Add(item);
             }
-
-            if (_selected.Contains(item))
+            else if (!ReferenceEquals(item, _view[index]))
             {
-                kept.Add(item);
-            }
-
-            if (Current is not null && _identity.Equals(item, Current))
-            {
-                current = item;
-            }
-
-            if (Anchor is not null && _identity.Equals(item, Anchor))
-            {
-                anchor = item;
-            }
-
-            if (Focus is not null && _identity.Equals(item, Focus))
-            {
-                focus = item;
+                (replace ??= new()).Add(_view[index]);
             }
         }
-
-        kept = Limit(kept);
-
-        current ??= currentFallback;
-        focus ??= focusFallback;
-
-        // A lost current falls back to the first retained selected item in current visual order.
-        if (Current is not null && current is null && kept.Count > 0)
+        if (remove is not null)
         {
-            current = kept[0];
+            foreach (object item in remove)
+            {
+                Remove(item);
+            }
         }
+        if (replace is not null)
+        {
+            foreach (object item in replace)
+            {
+                _selected.Map.Set(item, 0, _view.Positions.Map);
+            }
+            ItemsVersion++;
+        }
+        object? current = Retain(Current) ?? currentFallback;
+        object? anchor = Retain(Anchor);
+        object? focus = Retain(Focus) ?? focusFallback;
+        EnsureIndices();
+        if (Current is not null && current is null && _indices.Count > 0)
+        {
+            current = _view[_indices.Min];
+        }
+        if (moved)
+        {
+            ItemsVersion++;
+        }
+        Locate(current, anchor, focus);
 
-        Apply(kept, current, anchor, focus);
+        object? Retain(object? item)
+        {
+            int index = item is null ? -1 : _view.Positions.IndexOf(item, _tracked);
+            return index >= 0 && IsInteractive(_view[index]) ? _view[index] : null;
+        }
     }
 
-    // ------------------------------------------------------------------ internals
-
-    private List<object> Limit(List<object> items) =>
-        Mode switch
-        {
-            ListViewSelectionMode.None => new List<object>(),
-            ListViewSelectionMode.Single when items.Count > 1 => new List<object> { items[0] },
-            _ => items,
-        };
-
-    /// <summary>
-    /// Always adopt the resolved instances, even when their identities are unchanged.
-    /// </summary>
-    private void Apply(List<object> selected, object? current, object? anchor, object? focus)
+    private void Apply(List<object> items, object? current, object? anchor, object? focus)
     {
-        _selected.Clear();
-        foreach (object item in selected)
+        _range = null;
+        ClearItems();
+        foreach (object item in items)
         {
-            _selected.Add(item);
+            Add(item);
         }
+        Locate(current, anchor, focus);
+    }
 
-        Current = current;
-        Anchor = anchor;
-        Focus = focus;
+    internal object[] BuildPacket()
+    {
+        EnsureIndices();
+        object[] packet = new object[_selected.Count];
+        int next = 0;
+        if (_selected.Count > _view.Count / 2)
+        {
+            foreach (object item in _view)
+            {
+                if (_selected.Contains(item, _view.Positions.Map))
+                {
+                    packet[next++] = item;
+                }
+            }
+        }
+        else
+        {
+            foreach (int index in _indices)
+            {
+                packet[next++] = _view[index];
+            }
+        }
+        return packet;
+    }
+
+    internal object[] Added => _added.ToArray();
+    internal object[] Removed => _removed.ToArray();
+
+    internal void AcceptChanges()
+    {
+        _added.Clear();
+        _removed.Clear();
     }
 }

@@ -20,13 +20,18 @@ namespace Syno.TableView;
 public sealed partial class Table
 {
     /// <summary>Rows the view keeps showing although the source no longer has them.</summary>
-    private readonly HashSet<object> _held;
+    private IdentitySet _held;
+    private IdentitySet _candidateHeld;
+    private IdentitySet _pinned;
+    private readonly List<object> _shownRows = new();
+    private readonly List<object> _releasedRows = new();
+    private readonly List<object> _pinOrder = new();
 
     /// <summary>
     /// Rows named by <see cref="Release"/>, each with whether the source has it once the change the
     /// person caused arrives.
     /// </summary>
-    private readonly Dictionary<object, bool> _released;
+    private IdentityMap<bool> _released;
 
     private bool _pointerOver;
 
@@ -40,7 +45,8 @@ public sealed partial class Table
     private bool IsPointed => _pointerOver || _menuRow is not null;
 
     /// <summary>A row shown although it left the source. It is dimmed and refuses every action.</summary>
-    internal bool IsHeld(object? item) => item is not null && _held.Contains(item);
+    internal bool IsHeld(object? item) => item is not null && (_view.KeysFor(item) is { } keys
+        ? _held.Contains(item, keys) : _held.Contains(item));
 
     /// <summary>
     /// Section 5's interaction predicate as the table applies it: the host's answer, and never a
@@ -67,19 +73,18 @@ public sealed partial class Table
             return;
         }
 
-        HashSet<object> shown = new(_view, _identity);
-        HashSet<object> live = new(_source.Snapshot, _identity);
         bool heldBack = false;
         foreach (object item in items)
         {
-            bool present = live.Contains(item);
-            if (present == shown.Contains(item))
+            _released.TryAdd(item, false);
+            bool present = _source.Membership.ContainsKey(item, _released);
+            if (present == (_view.Positions.IndexOf(item, _released) >= 0))
             {
-                _released[item] = !present;
+                _released.Set(item, !present);
                 continue;
             }
 
-            _released[item] = present;
+            _released.Set(item, present);
             heldBack = true;
         }
 
@@ -212,45 +217,53 @@ public sealed partial class Table
     /// </remarks>
     private (
         IReadOnlyList<object> Shown,
-        HashSet<object> Held,
+        IdentitySet Held,
         IReadOnlyList<object> Released
-    ) Hold(IReadOnlyList<object> snapshot, bool sortChanged = false)
+    ) Hold(IReadOnlyList<object> snapshot, IdentityMap<object> live, bool sortChanged = false)
     {
-        HashSet<object> held = new(_identity);
+        IdentitySet held = _candidateHeld;
+        held.Clear();
         bool holds = !sortChanged && _hierarchy is null && IsPointed && _view.Count > 0;
         if (!holds && _released.Count == 0)
         {
             return (snapshot, held, Array.Empty<object>());
         }
 
-        HashSet<object> live = new(snapshot, _identity);
-        List<object> released = _released
-            .Where(entry => live.Contains(entry.Key) == entry.Value)
-            .Select(entry => entry.Key)
-            .ToList();
+        List<object> released = _releasedRows;
+        released.Clear();
+        foreach (var entry in _released)
+        {
+            if (live.ContainsKey(entry.Key, _released) == entry.Value)
+                released.Add(entry.Key);
+        }
         if (released.Count > 0 || !holds)
         {
             return (snapshot, held, released);
         }
 
-        HashSet<object> shown = new(_view, _identity);
-        List<object> staying = snapshot.Where(shown.Contains).ToList();
+        List<object> staying = _shownRows;
+        staying.Clear();
+        foreach (object item in snapshot)
+        {
+            if (_view.Positions.IndexOf(item, live) >= 0)
+                staying.Add(item);
+        }
 
         foreach (object row in _view)
         {
-            if (!live.Contains(row))
+            if (!live.ContainsKey(row, _view.Positions.Map))
             {
-                held.Add(row);
+                held.Add(row, _view.Positions.Map);
             }
         }
 
         return (staying, held, released);
     }
 
-    private void AcceptHold(IReadOnlySet<object> held, IReadOnlyList<object> released)
+    private void AcceptHold(IdentitySet held, IReadOnlyList<object> released)
     {
-        _held.Clear();
-        _held.UnionWith(held);
+        if (!ReferenceEquals(_held, held))
+            (_held, _candidateHeld) = (held, _held);
         foreach (object row in released)
             _released.Remove(row);
     }
@@ -264,9 +277,10 @@ public sealed partial class Table
     /// While the rows are pointed at, the hold keeps membership unchanged, so the result has exactly
     /// the view's count and every pinned index is a place in it.
     /// </remarks>
-    private (IReadOnlyList<object> Order, IReadOnlySet<object> Pinned) Pin(
+    private (IReadOnlyList<object> Order, IdentitySet Pinned) Pin(
         IReadOnlyList<object> order,
-        IReadOnlySet<object> held
+        IdentitySet held,
+        IdentityMap<object> live
     )
     {
         bool reorders = _hierarchy is null && SortsLocally && !SortsOrder;
@@ -277,50 +291,57 @@ public sealed partial class Table
             return (order, held);
         }
 
-        HashSet<object> pinned = new(_identity);
-        object?[] slots = new object?[order.Count + held.Count];
-        for (int i = 0; i < _view.Count && i < slots.Length; i++)
+        IdentitySet pinned = _pinned;
+        pinned.Clear();
+        List<object> result = _pinOrder;
+        result.Clear();
+        for (int index = 0; index < order.Count + held.Count; index++)
+            result.Add(null!);
+        foreach (object row in held)
         {
-            object row = _view[i];
-            if (held.Contains(row))
-            {
-                slots[i] = row;
-                pinned.Add(row);
-            }
-            else if (
-                (_identity.Equals(row, menu) || _identity.Equals(row, pointed))
-                && order.FirstOrDefault(candidate => _identity.Equals(candidate, row))
-                    is { } current
-            )
-            {
-                slots[i] = current;
-                pinned.Add(row);
-            }
+            int index = _view.Positions.IndexOf(row, held);
+            if (index >= 0 && index < result.Count)
+                Keep(index, row, held.Map);
         }
+        KeepPointed(menu);
+        KeepPointed(pointed);
 
         if (pinned.Count == 0)
         {
             return (order, pinned);
         }
 
-        List<object> result = new(slots.Length);
         int next = 0;
-        foreach (object? slot in slots)
+        for (int index = 0; index < result.Count; index++)
         {
-            if (slot is not null)
-            {
-                result.Add(slot);
+            if (result[index] is not null)
                 continue;
-            }
 
-            while (pinned.Contains(order[next]))
+            while (pinned.Contains(order[next], live))
             {
                 next++;
             }
 
-            result.Add(order[next++]);
+            result[index] = order[next++];
         }
 
         return (result, pinned);
+
+        void Keep(int index, object row, IIdentityKeys keys)
+        {
+            result[index] = row;
+            pinned.Add(row, keys);
+        }
+
+        void KeepPointed(object? row)
+        {
+            if (row is null)
+                return;
+            int index = _view.Positions.IndexOf(row);
+            if (index < 0 || index >= result.Count)
+                return;
+            if (live.TryGetValue(row, _view.Positions.Map, out object current))
+                Keep(index, current, live);
+        }
     }
 }

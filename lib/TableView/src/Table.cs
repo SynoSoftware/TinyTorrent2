@@ -21,7 +21,8 @@ public sealed partial class Table : Control
     private const string PlaceholderPartName = "PART_Placeholder";
     private const string MarqueeOverlayPartName = "PART_MarqueeOverlay";
 
-    private readonly ItemIdentity _identity = new();
+    private IIdentity _identity = Identity<object, object>.Reference();
+    private IIdentity? _schemaIdentity;
 
     private readonly Body.Source _source;
     private readonly Body.View _view;
@@ -40,11 +41,14 @@ public sealed partial class Table : Control
     public Table()
     {
         DefaultStyleKey = typeof(Table);
-        _selection = new SelectionState(_identity, IndexInView) { CanInteract = IsInteractive };
-        _view = new Body.View(_identity, _selection.IsSelected);
-        _held = new HashSet<object>(_identity);
-        _released = new Dictionary<object, bool>(_identity);
-        _source = new Body.Source(DispatcherQueue);
+        _view = new Body.View(_identity, IsRowSelected, () => _selection!.SelectedIndices);
+        _selection = new SelectionState(_identity, _view) { CanInteract = IsInteractive };
+        _held = new(_identity, keepsKeys: true);
+        _released = _identity.CreateMap<bool>(keepsKeys: true);
+        _candidateHeld = new(_identity, keepsKeys: true);
+        _pinned = new(_identity, keepsKeys: true);
+        _candidatePositions = new(_identity);
+        _source = new Body.Source(DispatcherQueue, _identity);
         _source.SnapshotChanged += OnSnapshotChanged;
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
@@ -244,6 +248,7 @@ public sealed partial class Table : Control
         _pointedRow = null;
         _menuRow = null;
         _source.Suspend();
+        _hierarchy?.Suspend();
         if (_surface is not null)
             _surface.ItemsSource = null;
         foreach (Column column in Columns)
@@ -259,6 +264,7 @@ public sealed partial class Table : Control
     {
         WatchVisibility();
         QueueFill();
+        _hierarchy?.Resume();
         _source.Resume();
         _detached = false;
         if (_surface is not null)
@@ -313,9 +319,7 @@ public sealed partial class Table : Control
     /// A stable key per item, from <see cref="Schema{TRow}"/>. Without one identity is
     /// object reference.
     /// </summary>
-    internal Func<object, object>? ItemKey { get; set; }
-
-    internal IEqualityComparer<object> KeyComparer { get; set; } = EqualityComparer<object>.Default;
+    internal void SetIdentity(IIdentity identity) => _schemaIdentity = identity;
 
     /// <summary>
     /// Which items the user may act on, from <see cref="Schema{TRow}"/>. Null means all of them.
@@ -344,9 +348,15 @@ public sealed partial class Table : Control
         Columns.CollectionChanged += OnColumnsMutatedAfterCapture;
 
         // Install identity before resolving the pending initial selection.
-        _identity.KeySelector = ItemKey;
-        _identity.KeyComparer = KeyComparer;
-        _selection.RehashIdentity();
+        _identity = _schemaIdentity ?? _identity;
+        _view.SetIdentity(_identity);
+        _selection.SetIdentity(_identity);
+        _source.SetIdentity(_identity);
+        _held = new(_identity, keepsKeys: true);
+        _released = _identity.CreateMap<bool>(keepsKeys: true);
+        _candidateHeld = new(_identity, keepsKeys: true);
+        _pinned = new(_identity, keepsKeys: true);
+        _candidatePositions = new(_identity);
 
         EffectiveLayout.SetOrder(_baselineOrder);
         if (_hierarchy is not null)
@@ -590,7 +600,7 @@ public sealed partial class Table : Control
 
     private void SetItemsSource(IEnumerable? source) => _source.Set(source);
 
-    private void OnSnapshotChanged(object? sender, IReadOnlyList<object> snapshot) =>
+    private void OnSnapshotChanged(object? sender, Body.Source.Capture snapshot) =>
         RebuildView(snapshot);
 
     // -------------------------------------------------------- scroll offset

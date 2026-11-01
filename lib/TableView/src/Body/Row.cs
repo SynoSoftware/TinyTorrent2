@@ -25,6 +25,9 @@ public sealed partial class Row : ContentControl
     );
 
     private Table? _owner;
+    private bool? _dragging;
+    private bool? _held;
+    private bool? _draggable;
 
     public Row()
     {
@@ -37,6 +40,9 @@ public sealed partial class Row : ContentControl
     protected override void OnApplyTemplate()
     {
         base.OnApplyTemplate();
+        _dragging = null;
+        _held = null;
+        _draggable = null;
 
         // The cells panel is this control's content, so it already exists when the template is
         // applied, during the first measure. Given its owner here it realizes its cells in this
@@ -103,9 +109,21 @@ public sealed partial class Row : ContentControl
         bool draggable = _owner is not null && item is not null && _owner.CanStartDrag(item);
         bool held = _owner is not null && _owner.IsHeld(item);
 
-        VisualStateManager.GoToState(this, dragging ? "Dragging" : "NotDragging", useTransitions);
-        VisualStateManager.GoToState(this, held ? "Held" : "NotHeld", useTransitions);
-        ProtectedCursor = draggable ? MoveCursor : null;
+        if (_dragging != dragging)
+        {
+            VisualStateManager.GoToState(this, dragging ? "Dragging" : "NotDragging", useTransitions);
+            _dragging = dragging;
+        }
+        if (_held != held)
+        {
+            VisualStateManager.GoToState(this, held ? "Held" : "NotHeld", useTransitions);
+            _held = held;
+        }
+        if (_draggable != draggable)
+        {
+            ProtectedCursor = draggable ? MoveCursor : null;
+            _draggable = draggable;
+        }
     }
 
     internal static Table? FindOwner(DependencyObject node)

@@ -35,6 +35,28 @@ internal sealed class SortRow
 public class SortingTests
 {
     [TestMethod]
+    public Task RefreshRetriesMembershipAfterANotifyingPublishFailsComparison() =>
+        TestHost.RunAsync(async () =>
+        {
+            bool fails = false;
+            SortHarness h = await SortHarness.LoadAsync(new[] { 1, 2 }, configure: table =>
+            {
+                table.Schema<SortRow>().SortKey(table.Columns[0], row =>
+                    fails ? throw new InvalidOperationException("Unavailable sort key") : row.Rank);
+                table.SortInterval = TimeSpan.Zero;
+                table.Sort = new(table.Columns[0]);
+            });
+            fails = true;
+            Expect.Throws<InvalidOperationException>(() => h.Rows.Add(new("arrival", 3)));
+            CollectionAssert.AreEqual(new[] { "k0", "k1" }, h.ViewKeys());
+
+            fails = false;
+            h.Table.RefreshView();
+
+            CollectionAssert.AreEqual(new[] { "k0", "k1", "arrival" }, h.ViewKeys());
+        });
+
+    [TestMethod]
     public Task FailedLayoutComparisonPreservesAcceptedState() =>
         TestHost.RunAsync(async () =>
         {
