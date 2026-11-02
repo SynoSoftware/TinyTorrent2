@@ -42,6 +42,40 @@ public class HierarchyTests
             CollectionAssert.AreEqual(new[] { "root", "first", "added" }, Names(table));
         });
 
+    /// <summary>
+    /// A publish while the table is unloaded captures child lists that the table
+    /// does not observe. After reload the table reads them again and observes
+    /// them, so a change made while unloaded shows and a later child change
+    /// applies to the list the host holds.
+    /// </summary>
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public Task ChildChangesStayObservedAfterAPublishWhileUnloaded(bool notifyingRoot) =>
+        TestHost.RunAsync(async () =>
+        {
+            Node root = new("root", new Node("first"));
+            Column name = TestData.Column("name");
+            Table table = TestData.Table(name);
+            table.Schema<Node>().Key(row => row.Name)
+                .Hierarchy(name, row => row.Children, row => row.IsExpanded, (row, expanded) => row.IsExpanded = expanded);
+            IEnumerable<Node> Roots() => notifyingRoot ? new ObservableCollection<Node> { root } : new[] { root };
+            table.ItemsSource = Roots();
+            await TableHarness.LoadAsync(table);
+
+            TestHost.RootPanel.Children.Remove(table);
+            await TableHarness.WaitUntilAsync(() => Proof.Field<bool>(table, "_detached"), "the unload");
+            table.ItemsSource = Roots();
+            root.Children.Add(new Node("second"));
+            await TableHarness.LoadAsync(table);
+            CollectionAssert.AreEqual(new[] { "root", "first", "second" }, Names(table));
+
+            root.Children.Add(new Node("third"));
+            CollectionAssert.AreEqual(new[] { "root", "first", "second", "third" }, Names(table));
+            root.Children.RemoveAt(0);
+            CollectionAssert.AreEqual(new[] { "root", "second", "third" }, Names(table));
+        });
+
     [TestMethod]
     public Task RejectedChildChangesKeepTheAcceptedTreeAndRecoverBeforeAnotherDelta() =>
         TestHost.RunAsync(async () =>

@@ -42,6 +42,7 @@ internal sealed class Hierarchy(
     internal sealed record CollectionChange(ChildSource Source,
         NotifyCollectionChangedEventArgs Notification, bool HasPredecessor);
 
+    // Notifying lists with a notification that no accepted capture has applied yet.
     private readonly HashSet<ChildSource> _stale = new();
     private bool _suspended;
     private int _expandableRows;
@@ -71,7 +72,20 @@ internal sealed class Hierarchy(
         node.Children.Count > 0 || hasUnrealizedChildren?.Invoke(node.Item) == true;
 
     internal bool NeedsCapture(long assignmentVersion) =>
-        Captured is null || Captured.AssignmentVersion != assignmentVersion || _stale.Count > 0;
+        Captured is not { } snapshot || snapshot.AssignmentVersion != assignmentVersion
+            || snapshot.Sources.Values.Any(source => !Trusts(source, assignmentVersion));
+
+    /// <summary>
+    /// Whether a captured child list's items still match the host's list, so a
+    /// capture may reuse them. A plain list raises no changes, so it matches only
+    /// within the root assignment it was read in. A notifying list matches only
+    /// while its handler has been attached since it was read and every
+    /// notification since has been applied; an unloaded table observes no list.
+    /// </summary>
+    private bool Trusts(ChildSource source, long assignmentVersion) =>
+        source.Source is INotifyCollectionChanged
+            ? source.Handler is not null && !_stale.Contains(source)
+            : Captured!.AssignmentVersion == assignmentVersion;
 
     internal Preparation Capture(IReadOnlyList<object> roots, IIdentity identity, Action<object> validate, long assignmentVersion)
     {
@@ -95,8 +109,7 @@ internal sealed class Hierarchy(
             {
                 IReadOnlyList<object> items;
                 if (Captured is { } before && before.Sources.TryGetValue(enumerable, out ChildSource? cached)
-                    && !_stale.Contains(cached)
-                    && (before.AssignmentVersion == assignmentVersion || enumerable is INotifyCollectionChanged))
+                    && Trusts(cached, assignmentVersion))
                 {
                     items = cached.Items;
                 }
@@ -550,10 +563,6 @@ internal sealed class Hierarchy(
             foreach (ChildSource source in snapshot.Sources.Values)
             {
                 Detach(source);
-                if (source.Source is INotifyCollectionChanged)
-                {
-                    _stale.Add(source);
-                }
             }
         }
     }
