@@ -37,6 +37,7 @@ public static class TestHost
 
     /// <summary>A live panel in the window. Adding a control here makes <c>Loaded</c> fire.</summary>
     public static Grid RootPanel => _window!.RootPanel;
+    internal static Window Window => _window!;
 
     [AssemblyInitialize]
     public static void Start(TestContext context)

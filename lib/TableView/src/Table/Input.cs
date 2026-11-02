@@ -633,10 +633,6 @@ public sealed partial class Table
 
     // ------------------------------------------------------------------ marquee
 
-    /// <summary>
-    /// Section 14's three compositions. The gesture's modifiers are the ones read at press, so a
-    /// key pressed or released mid-drag does not change the rule the user started under.
-    /// </summary>
     private void ApplyMarqueeCoverage(Body.Marquee.Coverage coverage)
     {
         _selection.UpdateMarquee(coverage.Added, coverage.Removed, coverage.Bounds);
@@ -787,6 +783,8 @@ public sealed partial class Table
                 return HitTarget.Suppressed;
             }
 
+            // Section 7: a button, editor, selector or toggle in a cell owns its own input, even
+            // when its template turns its tab stop off. Any other tab stop is treated the same.
             if (node is ButtonBase or TextBox or PasswordBox or RichEditBox or Selector
                 or Slider or ToggleSwitch or NumberBox or AutoSuggestBox or CalendarDatePicker
                 or DatePicker or TimePicker or RatingControl

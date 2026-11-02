@@ -9,18 +9,18 @@ internal sealed class Order(
     internal Column Column { get; } = column;
 
     private long _publishVersion = -1;
-    private bool _canReorder;
+    private bool _hasMovableRows;
     private IdentitySet? _seen;
     private readonly HashSet<int> _positions = new();
 
-    internal bool AllowsReorder(long publishVersion)
+    internal bool HasMovableRows(long publishVersion)
     {
         if (_publishVersion != publishVersion)
         {
-            _canReorder = items().Where(Contains).Skip(1).Any();
+            _hasMovableRows = items().Where(Contains).Skip(1).Any();
             _publishVersion = publishVersion;
         }
-        return _canReorder;
+        return _hasMovableRows;
     }
 
     internal bool Contains(object item) => position(item).HasValue;

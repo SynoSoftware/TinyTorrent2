@@ -61,9 +61,10 @@ public sealed partial class MainWindow
         var peers = new[] { PeersOf(targets[0], 18), PeersOf(targets[1], 19) };
 
         // Each click finds its torrent's peers in the cache, as a return to a
-        // recently shown torrent does; the fixture's paused torrents have none
-        // of their own. Looking the synthetic addresses up would drop their
-        // places, so lookups stay off.
+        // recently shown torrent does. The engine's read then replaces them
+        // with the paused fixture's empty list, so each click also clears the
+        // table. Looking the synthetic addresses up would drop their places,
+        // so lookups stay off.
         void Seed()
         {
             cache.RemoveAll(entry => targets.Any(target => target.TorrentId == entry.TorrentId));
@@ -92,7 +93,7 @@ public sealed partial class MainWindow
                 ((InspectorPane)InspectorContent.Content).Layout =
                     ((InspectorPane)InspectorContent.Content).Layout with { View = PeerView.Default };
                 Seed();
-                await CaptureReady(inspector, () => !inspector.IsLoading && inspector.Peers is { Count: > 0 });
+                await CaptureReady(inspector, () => !inspector.IsLoading && inspector.Peers is not null);
                 await CaptureLayout();
                 open.AddRange(await Measure(10, true));
             }

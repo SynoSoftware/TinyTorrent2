@@ -27,9 +27,12 @@ internal sealed class SelectionState
     }
 
     internal ListViewSelectionMode Mode { get; set; } = ListViewSelectionMode.Extended;
+    /// <summary>Section 5's interaction predicate. Null means every item is interactive.</summary>
     internal Func<object, bool>? CanInteract { get; set; }
     internal object? Current { get; private set; }
+    /// <summary>The row a range selection extends from.</summary>
     internal object? Anchor { get; private set; }
+    /// <summary>Logical row focus. Not the same thing as physical keyboard focus.</summary>
     internal object? Focus { get; private set; }
     internal long ItemsVersion { get; private set; }
     internal int Count => _selected.Count;
@@ -40,6 +43,16 @@ internal sealed class SelectionState
         {
             EnsureIndices();
             return _indices;
+        }
+    }
+
+    /// <summary>The view index of the first selected row, or -1 when nothing is selected.</summary>
+    internal int FirstSelectedIndex
+    {
+        get
+        {
+            EnsureIndices();
+            return _indices.Count > 0 ? _indices.Min : -1;
         }
     }
 
@@ -167,6 +180,10 @@ internal sealed class SelectionState
         }
     }
 
+    /// <summary>
+    /// Section 13's click, tap and Space rules. The mode's semantics live here so every input
+    /// path reports the same selection action.
+    /// </summary>
     internal void Select(object item, bool ctrl, bool shift, IReadOnlyList<object> view)
     {
         if (!IsInteractive(item))
@@ -244,6 +261,15 @@ internal sealed class SelectionState
         }
     }
 
+    /// <summary>
+    /// The inclusive range from the anchor to <paramref name="item"/>. The anchor does not move,
+    /// so a second Shift click re-projects the range instead of growing it.
+    /// </summary>
+    /// <remarks>
+    /// While the anchor, the add mode and the view stay the same, the next step changes only the
+    /// rows between the old and new ends. Any other selection action, or a view change, starts
+    /// the next range from scratch.
+    /// </remarks>
     internal void Range(object item, bool add, IReadOnlyList<object> view)
     {
         if (!IsInteractive(item))
@@ -329,6 +355,7 @@ internal sealed class SelectionState
         }
     }
 
+    /// <summary>Ctrl+A. Only multiple selection can express it, and it leaves the anchor alone.</summary>
     internal void SelectAll(IReadOnlyList<object> view)
     {
         if (!AllowsMultiple)
@@ -385,6 +412,15 @@ internal sealed class SelectionState
         }
     }
 
+    /// <summary>
+    /// Section 14's three compositions. The gesture's modifiers are the ones read at press, so a
+    /// key pressed or released mid-drag does not change the rule the user started under.
+    /// </summary>
+    /// <remarks>
+    /// The marquee's result replaces the selected packet and moves nothing else. The anchor
+    /// especially must not move: a Shift marquee re-projects its range from that anchor on every
+    /// pointer move, and an anchor that followed the result would walk with it.
+    /// </remarks>
     internal void BeginMarquee(Checkpoint checkpoint, bool ctrl, bool shift)
     {
         _range = null;
@@ -522,6 +558,11 @@ internal sealed class SelectionState
         return resolved;
     }
 
+    /// <summary>
+    /// Section 5.3's reconciliation. Rehydrates tracked identities onto the new instances, prunes
+    /// what left or became non-interactive, and repairs current. An incremental preparation limits
+    /// the pass to the rows it added and removed.
+    /// </summary>
     internal void Reconcile(IReadOnlyList<object> view, object? currentFallback = null, object? focusFallback = null,
         Body.Source.Preparation? preparation = null)
     {
@@ -568,6 +609,7 @@ internal sealed class SelectionState
         object? anchor = Retain(Anchor);
         object? focus = Retain(Focus) ?? focusFallback;
         EnsureIndices();
+        // A lost current falls back to the first retained selected item in current visual order.
         if (Current is not null && current is null && _indices.Count > 0)
         {
             current = _view[_indices.Min];

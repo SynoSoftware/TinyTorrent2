@@ -33,7 +33,7 @@ public class SelectionCostTests
     private static double Mega(ulong from, ulong to) => (to - from) / 1e6;
 
     /// <summary>
-    /// A click in a 200-row table, the peer table's size: the model operation a press applies and
+    /// A click in a 200-row table: the model operation a press applies and
     /// the next three frames, then <c>RefreshContainers</c> alone with nothing to change, which is
     /// its own share of the click.
     /// </summary>

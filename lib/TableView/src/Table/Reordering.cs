@@ -47,7 +47,7 @@ public sealed partial class Table
         var participates = _selection.IsSelected(item)
             ? SelectionHasNumberedRow()
             : order.Contains(item);
-        return participates && order.AllowsReorder(_publishVersion);
+        return participates && order.HasMovableRows(_publishVersion);
     }
 
     private bool SelectionHasNumberedRow()

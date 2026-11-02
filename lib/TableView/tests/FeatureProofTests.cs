@@ -970,7 +970,7 @@ public class FeatureProofTests
     }
 
     /// <summary>Sets the arbiter's press state exactly as <c>OnRowsPointerPressed</c> sets it.</summary>
-    private static class Gesture
+    internal static class Gesture
     {
         internal static void Press(
             SelectionHarness h,

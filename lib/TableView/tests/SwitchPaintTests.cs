@@ -13,7 +13,7 @@ using Windows.Graphics.Imaging;
 
 namespace Syno.TableView.Tests;
 
-/// <summary>A peer row whose first cell is one solid color: its role in the change.</summary>
+/// <summary>A row whose first cell is one solid color: its role in the change.</summary>
 public sealed class PaintRow
 {
     internal PaintRow(int id) => Id = id;
@@ -23,7 +23,7 @@ public sealed class PaintRow
 }
 
 /// <summary>
-/// Records how a 200-row table paints a peer switch, frame by frame as the compositor presents
+/// Records how a 200-row table paints a source change, frame by frame as the compositor presents
 /// the window, so the list's composition animations are included. It asserts no result; it
 /// reports blank frames, the frames before the rows settle, and any whole-list Reset.
 /// </summary>
@@ -40,21 +40,19 @@ public class SwitchPaintTests
 
     private static readonly Scenario[] Scenarios =
     {
-        // A poll: every fourth peer leaves, the selected one among them, and the rest slide up.
+        // A refresh: every fourth row leaves, the selected one among them, and the rest slide up.
         new("churn-selected-leaves", id => id < 200, id => id < 200 && id % 4 != 3, Selected: 3),
-        // Another torrent's peers: no row stays.
+        // A different source: no row stays.
         new("switch", id => id < 200, id => id >= 1000 && id < 1200),
         new("switch-selected-leaves", id => id < 200, id => id >= 1000 && id < 1200, Selected: 3),
     };
 
     [TestMethod]
     [TestCategory("Measurement")]
-    public Task PeerSwitchPaint() =>
+    public Task SourceSwitchPaint() =>
         TestHost.RunAsync(async () =>
         {
-            Window window = (Window)typeof(TestHost)
-                .GetField("_window", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
-                .GetValue(null)!;
+            Window window = TestHost.Window;
             double scale = TestHost.RootPanel.XamlRoot.RasterizationScale;
             window.AppWindow.ResizeClient(new Windows.Graphics.SizeInt32((int)(820 * scale), (int)(620 * scale)));
             await Task.Delay(500);

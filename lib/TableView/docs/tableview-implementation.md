@@ -175,10 +175,16 @@ map entries and counted shifts are committed.
 The private view also implements `ISelectionInfo`, answering from the table's
 selection model. The list reads a row's selected state from it when it builds
 the row's container and after every range call, and keeps no selection of its
-own, so a reconcile leaves nothing to re-apply and the list never scrolls to a
-selected row on the table's behalf. A container's visual state follows a stored
-value that changes only at those reads, so a commit that adds or removes
-selected rows makes one range call.
+own, so a reconcile leaves nothing to re-apply. A container re-reads its selected
+state only when its visual state re-runs: when its stored selected value changes,
+on pointer and focus changes, and when it loads. Container preparation, range
+calls and the list's own gestures write that stored value, so a commit that adds
+or removes selected rows refreshes the containers once. A range call also moves
+the list's `SelectedIndex` to the first selected row, and a move from -1 makes the
+list focus and scroll to that row while the rows hold keyboard focus. The refresh therefore sets `SelectedIndex`
+itself when it differs, which refreshes the containers without that move, and
+makes a range call otherwise, so the list never scrolls to a selected row on the
+table's behalf.
 
 The current arbiter has `None`, `Pressed`, `Marquee`, and `RowDrag` phases. Earlier
 notes describing a `Committed` phase and calling the marquee during a row drag

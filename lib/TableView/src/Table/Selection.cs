@@ -250,12 +250,27 @@ public sealed partial class Table
     }
 
     /// <summary>
-    /// One range call makes the list refresh every cached and pinned container from ISelectionInfo.
-    /// Its range does not limit that refresh, and the view does not change selection for the call.
-    /// Without the call a container keeps painting its old selected state until the list's own
-    /// gesture handling refreshes it, and its <c>IsSelected</c> getter cannot reveal that: with
-    /// ISelectionInfo the getter answers from the view, not from the value the visual state follows.
+    /// Make every cached and pinned container repaint its selected state in this frame.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A container computes its selected look from its <c>IsSelected</c> getter, which answers from
+    /// the view, but only when its visual state is re-run: on a change of its stored IsSelected
+    /// value, pointer enter, exit, press and release, a focus change, and Loaded. Container
+    /// preparation, a range call and the list's own gestures write the stored value. Without a
+    /// refresh, a row that none of these touches keeps painting its old state, and the getter cannot
+    /// show that.
+    /// </para>
+    /// <para>
+    /// A range call refreshes every cached and pinned container from ISelectionInfo; its range does
+    /// not limit the refresh, and the view does not change selection for it. It also moves the
+    /// list's SelectedIndex to the first selected row and reports the move, and a move from -1
+    /// makes the list focus that row and scroll it into view while the rows hold keyboard focus.
+    /// So when SelectedIndex differs from the first selected row, setting it does the refresh
+    /// instead: the list runs the same refresh with the index already in place, sees no move, and
+    /// neither focuses nor scrolls.
+    /// </para>
+    /// </remarks>
     private void RefreshContainers()
     {
         if (_detached || _surface is null || View.Count == 0)
@@ -263,6 +278,12 @@ public sealed partial class Table
             return;
         }
 
+        int first = _selection.FirstSelectedIndex;
+        if (_surface.SelectedIndex != first)
+        {
+            _surface.SelectedIndex = first;
+            return;
+        }
         ApplyRange(0, 1, _selection.IsSelected(View[0]));
     }
 

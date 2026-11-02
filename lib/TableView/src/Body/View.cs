@@ -16,7 +16,7 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
 {
     private readonly Func<object, bool> _isSelected;
     private readonly Func<IReadOnlyCollection<int>> _selectedIndices;
-    private PositionIndex? _reconcilingOrder;
+    private PositionIndex? _reconcilingPositions;
     private long _inserts;
     private long _removals;
     private IIdentityKeys? _changingKeys;
@@ -34,7 +34,7 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
     internal long Version { get; private set; }
 
     internal IIdentityKeys? KeysFor(object item) =>
-        _reconcilingOrder?.ContainsReference(item) == true ? _reconcilingOrder
+        _reconcilingPositions?.ContainsReference(item) == true ? _reconcilingPositions
             : _changingKeys?.ContainsReference(item) == true ? _changingKeys
             : Positions.ContainsReference(item) ? Positions : null;
 
@@ -44,7 +44,7 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
         {
             return -1;
         }
-        if (_reconcilingOrder is not { } next)
+        if (_reconcilingPositions is not { } next)
         {
             if (_changingKeys is Source.Preparation source)
             {
@@ -205,11 +205,6 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
     /// for a disjoint visible-window replacement, whose native delete/add delay would otherwise
     /// leave the panel empty.
     /// <para>
-    /// A snapshot that is already the view, the same instances in the same order, costs one
-    /// comparison per row and nothing else. The host re-projects after ticks that changed nothing
-    /// visible, and this is what keeps that free.
-    /// </para>
-    /// <para>
     /// Rows leaving realized runs go first, highest index first. Then every position
     /// outside those runs, set without a notification. Last, what each run is missing, ascending.
     /// Removing before placing and placing before inserting is what keeps a row from being in the
@@ -239,7 +234,7 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
         IdentitySet pinned
     )
     {
-        _reconcilingOrder = place;
+        _reconcilingPositions = place;
         Positions.Bind(this);
         try
         {
@@ -262,7 +257,7 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
         }
         finally
         {
-            _reconcilingOrder = null;
+            _reconcilingPositions = null;
         }
     }
 
@@ -563,7 +558,12 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
     }
 
     /// <summary>The snapshot is the view as it stands: the same instances in the same order.</summary>
-    internal bool IsAlready(IReadOnlyList<object> snapshot)
+    /// <remarks>
+    /// A whole rebuild asks this before reconciling, so an order that is already the view skips
+    /// the reconcile and its notifications. The host re-projects after ticks that changed nothing
+    /// visible, and this is what keeps those ticks from touching the list.
+    /// </remarks>
+    internal bool Shows(IReadOnlyList<object> snapshot)
     {
         if (snapshot.Count != Count)
         {

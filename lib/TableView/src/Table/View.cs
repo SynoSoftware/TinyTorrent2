@@ -262,7 +262,7 @@ public sealed partial class Table
             }
             IIdentityKeys keys = source is not null ? source : membership is not null ? membership
                 : _preparedHierarchy is { } preparedHierarchy ? preparedHierarchy : _hierarchy!.Captured!.Nodes;
-            bool changed = edits is not null ? edits.Count > 0 : !_view.IsAlready(order);
+            bool changed = edits is not null ? edits.Count > 0 : !_view.Shows(order);
             if (changed)
             {
                 CancelPage();

@@ -208,7 +208,7 @@ One publish of n rows, flat table, local sort:
 | Freeze the pointed row | `Table.Pin` | An array and a list of n, and a linear search for the pointed row |
 | Sort, when the interval ended or a row arrived or left | `Table.SortedSnapshot`, `Schema.SortKey` | LINQ `OrderBy` over all rows, then `.ToList()` |
 | Record each row's index | `Table.AcceptOrder` | One `Dictionary` of n (`_positions`), built before the check below |
-| Skip the reconcile when nothing changed | `RebuildView`'s `order.SequenceEqual(View)`; `Body.View.IsAlready` checks again only after that fails | n reference comparisons; the selection steps below still run on the skip path (A4) |
+| Skip the reconcile when nothing changed | `RebuildView`'s `order.SequenceEqual(View)`; `Body.View.Shows` checks again only after that fails | n reference comparisons; the selection steps below still run on the skip path (A4) |
 | Index the new order | `Body.View.Reconcile` | One `Dictionary` of n (`place`), the same content as `_positions` |
 | Apply arrivals and removals | `Body.View.Membership` | Each `Insert` or `RemoveAt` shifts every later row |
 | Carry the selection to the new instances | `SelectionState.Reconcile` | All n rows; up to nine key-selector calls per row (C2) |
@@ -291,7 +291,7 @@ Four rules apply to every row:
 | The published selection packet | `Table.CommitSelection` | — | 1b | the host, the drag | Know about the host's positions |
 | The selected state a realized row shows | The row's container, `ListViewItem.IsSelected`, which the list sets | — | — | `RefreshContainers`, which compares it with the selection model | Get a second record |
 | The publish version | `Table.RebuildView`, incremented on every run | — | 1b | `Order`, the drag | — |
-| Whether the order allows a reorder | `Order`, recomputed on read when the publish version it recorded differs | `Order.CanReorder`'s walk of the host's order on every read | 1b | `Table.CanStartDrag` | Get refreshed by the pipeline |
+| Whether the order allows a reorder | `Order`, recomputed on read when the publish version it recorded differs | `Order.HasMovableRows`'s walk of the host's order on every read | 1b | `Table.CanStartDrag` | Get refreshed by the pipeline |
 | Whether the selection holds a numbered row | The drag owner, `Table/Reordering.cs`, recomputed on read when the packet or the publish version changed | the scan of the selection in `CanStartDrag` | 1b | `Table.CanStartDrag` | Get computed by the selection commit |
 | Whether a row can start a drag | `Table.CanStartDrag`, from the two facts above | — | 1b | the press, the row element | Get decided again by a row element |
 | The `RowVisualsChanged` event | `RebuildView` raises it once per publish, because a publish can change any row's selection, drag cue, interactivity or expander. Outside a publish, a fact's owner raises it when its fact changes: a selection commit from a gesture, the drag gesture, expansion, and `Hierarchy` when a child change alters a shown row's expander | today's raise on every commit | 1b | the row element, `Body.HierarchyCell` | Get raised by one owner for another owner's fact |
@@ -512,7 +512,7 @@ item.
   so on every row a scroll recycles. Section 20 forbids work that scales with
   all rows during scrolling, and this breaks it: after Ctrl+A in a seeding
   list, every bound row scans the whole selection, an **estimated** 1–3.5 ms
-  per row at 100,000 selected. Beside that scan, `Order.CanReorder` walks the
+  per row at 100,000 selected. Beside that scan, `Order.HasMovableRows` walks the
   host's whole order until it finds two numbered rows: O(n) when fewer than
   two torrents are queued, which is usual for a seeding list. `RebuildView`
   keeps a publish version, which it increments on every run, so on every

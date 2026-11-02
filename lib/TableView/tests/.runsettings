@@ -20,8 +20,9 @@
       Run them after touching input handling, a template part name, or an event subscription —
       the three ways that path breaks silently.
 
-      Measurement tests assert no limit and only report cycles, so they are asked for the same
-      way, with TestCategory=Measurement.
+      Measurement tests assert no limit and only report what they measure, so they are asked for
+      the same way, with TestCategory=Measurement. Set TABLEVIEW_TESTS_OFFSCREEN=1 to run them
+      in a window that renders off-screen and never takes focus.
     -->
     <TestCaseFilter>TestCategory!=Interactive&amp;TestCategory!=Measurement</TestCaseFilter>
     <!-- Relative to this file: the repository's artifacts folder, outside every project. -->
