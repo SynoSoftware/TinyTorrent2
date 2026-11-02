@@ -73,7 +73,19 @@ public static class TestHost
     internal static void OnAppLaunched()
     {
         _window = new UnitTestAppWindow();
-        _window.Activate();
+        if (Environment.GetEnvironmentVariable("TABLEVIEW_TESTS_OFFSCREEN") == "1")
+        {
+            // Renders beyond every monitor, outside the taskbar, and never takes focus, so a
+            // run does not interrupt the person at the machine. Real-input tests need the
+            // foreground and cannot run this way.
+            _window.AppWindow.IsShownInSwitchers = false;
+            _window.AppWindow.Move(new Windows.Graphics.PointInt32(-32000, -32000));
+            _window.AppWindow.Show(false);
+        }
+        else
+        {
+            _window.Activate();
+        }
         Dispatcher = _window.DispatcherQueue;
         Ready.TrySetResult(true);
     }

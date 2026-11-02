@@ -176,7 +176,9 @@ The private view also implements `ISelectionInfo`, answering from the table's
 selection model. The list reads a row's selected state from it when it builds
 the row's container and after every range call, and keeps no selection of its
 own, so a reconcile leaves nothing to re-apply and the list never scrolls to a
-selected row on the table's behalf.
+selected row on the table's behalf. A container's visual state follows a stored
+value that changes only at those reads, so a commit that adds or removes
+selected rows makes one range call.
 
 The current arbiter has `None`, `Pressed`, `Marquee`, and `RowDrag` phases. Earlier
 notes describing a `Committed` phase and calling the marquee during a row drag

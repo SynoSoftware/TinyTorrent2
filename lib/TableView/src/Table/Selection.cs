@@ -209,10 +209,11 @@ public sealed partial class Table
         _publishedSelection = next;
         object[] added = changed && Body.Surface.SelectionListens ? _selection.Added : Array.Empty<object>();
         object[] removed = changed && Body.Surface.SelectionListens ? _selection.Removed : Array.Empty<object>();
+        bool membershipChanged = _selection.MembershipChanged;
         _selection.AcceptChanges();
         if (changed)
             CancelPreparation();
-        if (!_detached)
+        if (membershipChanged && !_detached)
         {
             RefreshContainers();
         }
@@ -251,6 +252,9 @@ public sealed partial class Table
     /// <summary>
     /// One range call makes the list refresh every cached and pinned container from ISelectionInfo.
     /// Its range does not limit that refresh, and the view does not change selection for the call.
+    /// Without the call a container keeps painting its old selected state until the list's own
+    /// gesture handling refreshes it, and its <c>IsSelected</c> getter cannot reveal that: with
+    /// ISelectionInfo the getter answers from the view, not from the value the visual state follows.
     /// </summary>
     private void RefreshContainers()
     {
@@ -259,15 +263,7 @@ public sealed partial class Table
             return;
         }
 
-        foreach (int index in RealizedIndices())
-        {
-            if (_surface.ContainerFromIndex(index) is ListViewItem container
-                && index < View.Count && container.IsSelected != _selection.IsSelected(View[index]))
-            {
-                ApplyRange(index, 1, _selection.IsSelected(View[index]));
-                return;
-            }
-        }
+        ApplyRange(0, 1, _selection.IsSelected(View[0]));
     }
 
     private void ApplyRange(int first, int length, bool select)

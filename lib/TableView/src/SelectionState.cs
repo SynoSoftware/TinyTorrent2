@@ -624,6 +624,7 @@ internal sealed class SelectionState
 
     internal object[] Added => _added.ToArray();
     internal object[] Removed => _removed.ToArray();
+    internal bool MembershipChanged => _added.Count > 0 || _removed.Count > 0;
 
     internal void AcceptChanges()
     {
