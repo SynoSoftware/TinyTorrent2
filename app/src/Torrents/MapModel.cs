@@ -22,14 +22,53 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
     internal PeerPlace? Place => owner.Place;
     public event PropertyChangedEventHandler? PropertyChanged;
 
+    // The model outlives the map's unload and reload, so the peak lasts the
+    // engine session.
+    private double _peak;
+    private double? _capacity;
+
+    // A country's regions depend only on its bundled places, the meridian and
+    // the fitted scale, so they last until one of those changes instead of
+    // being merged again at every rate update.
+    private readonly Dictionary<string, Geography.Area[]> _regions = [];
+    private (float Meridian, float Scale) _regionsFor;
+
+    /// <summary>
+    /// The rate in bytes per second that the moving dots measure traffic
+    /// against: the saved connection capacity of both directions, or else the
+    /// highest total seen in this engine session but at least 1 MiB/s, so a
+    /// trickle on a fresh session does not look like a full connection. A total
+    /// above a stale capacity replaces it.
+    /// </summary>
+    internal double Ceiling => Math.Max(_capacity ?? 1024 * 1024, _peak);
+
+    /// <summary>Records the total rate the map's dots show, in bytes per second.</summary>
+    internal void RaisePeak(double total) => _peak = Math.Max(_peak, total);
+
+    /// <summary>Forgets the peak, as when the engine session changes.</summary>
+    internal void ResetPeak() => _peak = 0;
+
     internal void RefreshPlace() =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Place)));
 
-    internal void Update(IReadOnlyList<Peer>? peers, Location? origin, Strings text, bool cities = true)
+    /// <param name="capacity">The connection capacity, download plus upload, in bytes per second, or null when unknown.</param>
+    internal void Update(
+        IReadOnlyList<Peer>? peers,
+        Location? origin,
+        Strings text,
+        bool cities = true,
+        double? capacity = null
+    )
     {
         peers ??= [];
         // Compare mutable peer facts with the last snapshot before allocating another.
-        if (IsShowing(peers) && Origin == origin && _language == text.Language && Cities == cities)
+        if (
+            IsShowing(peers)
+            && Origin == origin
+            && _language == text.Language
+            && Cities == cities
+            && _capacity == capacity
+        )
             return;
         _observations = peers.Select(peer =>
             new Observation(peer, peer.DownloadRate, peer.UploadRate, peer.Location)).ToArray();
@@ -37,6 +76,7 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
         Text = text;
         _language = text.Language;
         Cities = cities;
+        _capacity = capacity;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(null));
     }
 
@@ -50,6 +90,11 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
     {
         Destinations.Clear();
         OriginPoint = Locate(Origin, world);
+        if (_regionsFor != (Meridian, scale))
+        {
+            _regions.Clear();
+            _regionsFor = (Meridian, scale);
+        }
         Countries.Clear();
         Dictionary<PeerPlace, Group> locations = [];
         foreach (var observation in _observations)
@@ -96,7 +141,12 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
                 Destinations.Add(new Destination(group, group.Point, 1, null));
                 continue;
             }
-            group.Regions = Regions(country.Areas, Meridian, scale);
+            if (!_regions.TryGetValue(group.Code, out var regions))
+            {
+                regions = Regions(country.Areas, Meridian, scale);
+                _regions[group.Code] = regions;
+            }
+            group.Regions = regions;
             var rank = 0;
             // Idle peers are placed like one connection, at the most likely region.
             foreach (var (region, share) in Distribute(group.Regions, Math.Max(group.Active, 1)))
@@ -275,9 +325,13 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
         internal int Seeds { get; private set; }
         internal int Leechers { get; private set; }
         internal int Unknown => Count - Seeds - Leechers;
+        internal int Connections { get; private set; }
         internal int Active { get; private set; }
         internal double Down { get; private set; }
         internal double Up { get; private set; }
+
+        /// <summary>Whether it downloads at least as much as it uploads, which sets its arc and glow colour.</summary>
+        internal bool Downloads => Down >= Up;
 
         /// <summary>
         /// The regions its estimated distribution places peers in, most populous
@@ -293,6 +347,8 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
             else if (observation.Role == PeerRole.Leecher)
                 Leechers++;
             Estimated |= observation.Location?.Point is null;
+            if (observation.State != PeerState.Known)
+                Connections++;
             if (observation.Down + observation.Up > 0)
                 Active++;
             Down += observation.Down;
@@ -326,6 +382,7 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
     internal sealed record Observation(Peer Peer, double Down, double Up, Location? Location)
     {
         internal PeerRole Role { get; } = Peer.Role;
+        internal PeerState State { get; } = Peer.State;
 
         /// <summary>Whether the peer still has the values this observation recorded.</summary>
         internal bool Matches(Peer peer) =>
@@ -333,6 +390,7 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
             && Down == peer.DownloadRate
             && Up == peer.UploadRate
             && Equals(Location, peer.Location)
-            && Role == peer.Role;
+            && Role == peer.Role
+            && State == peer.State;
     }
 }

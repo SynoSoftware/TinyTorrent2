@@ -66,6 +66,17 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
         };
     public bool IsPaused => State is TorrentState.Paused or TorrentState.AllPaused;
 
+    // Whether it opens or holds peer connections, so its rates show as
+    // numbers: zero means connections are open but nothing moves, and a dash
+    // that none are, as for a stopped, queued or failed torrent.
+    public bool OpensConnections =>
+        _connected
+        && State
+            is TorrentState.Downloading
+                or TorrentState.Seeding
+                or TorrentState.Completed
+                or TorrentState.Metadata;
+
     // The row names its problem in ErrorCode. The engine names one whenever it
     // classifies the torrent as Error, and also for some problems while the
     // torrent keeps another state, such as a hash failure while it downloads.
@@ -197,9 +208,9 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
     public string RemainingText => strings.Bytes(Remaining);
     public string ProgressText => Progress.ToString("P1", CultureInfo.CurrentCulture);
     public string DownloadText =>
-        _connected ? strings.Rate(DownloadRate) : "—";
+        OpensConnections ? strings.Rate(DownloadRate) : "—";
     public string UploadText =>
-        _connected ? strings.Rate(UploadRate) : "—";
+        OpensConnections ? strings.Rate(UploadRate) : "—";
     public string DownloadName =>
         strings.Format("units", "detail", strings.Get("columns", "down"), DownloadText);
     public string UploadName =>

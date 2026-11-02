@@ -210,7 +210,9 @@ inactive. Inactive inspectors do no selection-driven loading or rendering.
 The shared `Pane` control owns the Filters and Inspector surfaces: its template
 uses the platform's `LayerOnMicaBaseAltFillColorDefaultBrush` background,
 a one-pixel `SurfaceStrokeColorDefaultBrush` outline that stays visible in Light
-and Dark, and `OverlayCornerRadius` corners. Both end four pixels
+and Dark, and `OverlayCornerRadius` corners. The torrents table and the peer
+map use the same fill, so every table and the map show one background over the
+acrylic. Both panes end four pixels
 above the workspace's bottom edge. Filters
 retains its four-pixel side insets; the Inspector has a four-pixel right inset
 to match the table header's right edge. When Filters is compact or hidden,

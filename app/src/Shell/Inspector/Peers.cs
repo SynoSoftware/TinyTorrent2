@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Net;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -26,7 +27,14 @@ public sealed partial class Inspector
         // A chosen place belongs to one map detail.
         if (Map.Cities != cities)
             Place = null;
-        Map.Update(IsAvailable ? Peers : null, Origin, Text, cities);
+        // Decimal Mbit/s: 125,000 bytes per second each.
+        Map.Update(
+            IsAvailable ? Peers : null,
+            Origin,
+            Text,
+            cities,
+            _owner.Settings.Capacity is (var download, var upload) ? (download + upload) * 125_000 : null
+        );
     }
 
     /// <summary>
@@ -41,10 +49,18 @@ public sealed partial class Inspector
             if (_place == value)
                 return;
             _place = value;
-            Filter();
             Map.RefreshPlace();
-            Refresh();
+            if (Filter())
+                NotifyShownPeers();
         }
+    }
+
+    // Only the table reads the rows, so a change of rows alone does not
+    // refresh the whole inspector and its bindings.
+    private void NotifyShownPeers()
+    {
+        if (!_owner.IsClosed && IsVisible)
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShownPeers)));
     }
 
     /// <summary>The table's rows: <see cref="Peers"/>, or those at <see cref="Place"/>.</summary>
@@ -81,12 +97,12 @@ public sealed partial class Inspector
         : _owner.Selected;
 
     public string DownloadText =>
-        IsAvailable ? Text.Rate(Scope.Sum(torrent => torrent.DownloadRate))
-        : "—";
+        OpensConnections ? Text.Rate(Scope.Sum(torrent => torrent.DownloadRate)) : "—";
 
     public string UploadText =>
-        IsAvailable ? Text.Rate(Scope.Sum(torrent => torrent.UploadRate))
-        : "—";
+        OpensConnections ? Text.Rate(Scope.Sum(torrent => torrent.UploadRate)) : "—";
+
+    private bool OpensConnections => IsAvailable && Scope.Any(torrent => torrent.OpensConnections);
 
     public bool IsGlobal
     {
@@ -217,7 +233,7 @@ public sealed partial class Inspector
                     RowsUpdated?.Invoke(this, InspectorSection.Peers);
                     // A peer located just now can belong to the chosen place.
                     if (Filter())
-                        Refresh();
+                        NotifyShownPeers();
                 }
             }
         }

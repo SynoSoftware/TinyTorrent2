@@ -54,13 +54,9 @@ internal sealed class MapViewport
     internal static float Wrap(float longitude, float centre) =>
         longitude + 360 * MathF.Round((centre - longitude) / 360);
 
-    // A location shows once, in the turn of longitude around the view centre.
-    internal Vector2 Screen(GeoPoint point)
-    {
-        var mapped = Coordinates(point);
-        mapped.X = Wrap(mapped.X, Center.X);
-        return Vector2.Transform(mapped, Transform);
-    }
+    internal Vector2 Screen(GeoPoint point) => View.Screen(point);
+
+    internal MapView View => new(Size, Meridian, Center, AxisScale, Transform);
 
     internal Vector2 ToMap(Vector2 point) => (point - Offset) / AxisScale + Center;
 
@@ -125,5 +121,22 @@ internal sealed class MapViewport
         // Holding the destination keeps it visible when latitude changes the ratio.
         if (visible != point)
             Hold(Zoom, ToMap(point), visible);
+    }
+}
+
+/// <summary>
+/// A copy of the view, which the moving dots read on their own thread while
+/// the person pans and zooms.
+/// </summary>
+internal readonly record struct MapView(Size Size, float Meridian, Vector2 Center, Vector2 AxisScale, Matrix3x2 Transform)
+{
+    internal Vector2 Coordinates(GeoPoint point) => MapViewport.Coordinates(point, Meridian);
+
+    // A location shows once, in the turn of longitude around the view centre.
+    internal Vector2 Screen(GeoPoint point)
+    {
+        var mapped = Coordinates(point);
+        mapped.X = MapViewport.Wrap(mapped.X, Center.X);
+        return Vector2.Transform(mapped, Transform);
     }
 }

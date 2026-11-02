@@ -89,10 +89,13 @@ do not define this product.
 ## Working rules
 
 - **Owner ruling: filename discovery.** Use only
-  `C:\Program Files\gozler\gozler.exe`, with the narrowest known `-path`, a
-  specific name/pattern and `-n 20`, so broad results do not flood agent
-  context. If it exits 10 because `-n` cut the list off, refine the query
-  rather than treating the list as complete. Never run `es.exe` or `goz.exe`.
+  `C:\Program Files\gozler\gozler.exe`, with the narrowest known `-path` and a
+  specific name/pattern. A search that includes `artifacts` adds
+  `"!*\artifacts\*"`, because `-path` follows the `artifacts` link to V:, and
+  copies of source there are returned as if they were the code. gozler shows at most 20 results unless `-n` says
+  otherwise, so broad results do not flood agent context. If it exits 10
+  because the limit cut the list off, refine the query rather than treating
+  the list as complete. Never run `es.exe` or `goz.exe`.
   If gozler cannot answer after a refined query, report that. For a sandbox pipe denial, retry
   the same read-only command outside the sandbox before treating the tool as
   unavailable. Use `rg` for file contents.

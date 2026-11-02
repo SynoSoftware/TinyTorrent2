@@ -174,8 +174,7 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
         : string.Empty;
     public string PresetName => SavedPreset is { } preset ? Name(preset) : "—";
     public string SavedCapacity =>
-        _settings.CapacityDownload.ConfirmedNumber is double download and > 0
-        && _settings.CapacityUpload.ConfirmedNumber is double upload and > 0
+        _settings.Capacity is (var download, var upload)
             ? Text.Format("settings", "caps_summary", LinkSpeed(download), LinkSpeed(upload))
             : "—";
     public string StandardSummary => _settings.StandardSummary;

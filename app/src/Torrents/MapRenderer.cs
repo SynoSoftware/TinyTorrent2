@@ -4,7 +4,6 @@ using Microsoft.Graphics.Canvas;
 using Microsoft.Graphics.Canvas.Brushes;
 using Microsoft.Graphics.Canvas.Effects;
 using Microsoft.Graphics.Canvas.Geometry;
-using Microsoft.Graphics.Canvas.UI.Xaml;
 using Microsoft.UI.Dispatching;
 using Syno.TinyTorrent.Shared;
 using Windows.Foundation;
@@ -16,18 +15,30 @@ namespace Syno.TinyTorrent.Torrents;
 
 internal sealed class MapRenderer : IDisposable
 {
-    private readonly CanvasControl _canvas;
+    private readonly Action _invalidate;
+    private CanvasDevice _device;
+    private float _dpi;
     private readonly MapModel _model;
     private readonly MapViewport _viewport;
     private Dictionary<string, Geography.Country> _world;
-    private readonly UISettings _settings = new();
-    private readonly AccessibilitySettings _accessibility = new();
+    private static readonly UISettings SystemSettings = new();
+    private static readonly AccessibilitySettings SystemAccessibility = new();
     private readonly Dictionary<string, Outline> _land = [];
     private readonly Dictionary<string, float> _countryStarts = [];
+    private readonly Dictionary<string, float> _countryTargets = [];
     private readonly List<Route> _routes = [];
     private readonly Dictionary<DestinationKey, float> _displayed = [];
+    private readonly MapMotion _motion;
+    private MapMotion.Traffic? _traffic;
+    private (Color Download, Color Upload) _dotColours;
     private readonly DispatcherQueueTimer _animation;
+    private bool _disposed;
+    private bool _interpolating;
+    private int _steps = 1;
+    private double _shownProgress = 1;
+    private Arranged[] _arranged = [];
     private GeoPoint? _arcOrigin;
+    private double _originOpacity = 1;
     private CanvasRadialGradientBrush? _originMask;
     private CanvasCachedGeometry? _ring;
     private CanvasCachedGeometry? _wideRing;
@@ -55,20 +66,83 @@ internal sealed class MapRenderer : IDisposable
     private long _started;
     private bool _prepared;
 
-    internal MapRenderer(CanvasControl canvas, MapModel model, MapViewport viewport, Dictionary<string, Geography.Country> world)
+    /// <param name="invalidate">Asks for the map to be drawn again.</param>
+    internal MapRenderer(
+        CanvasDevice device,
+        float dpi,
+        Action invalidate,
+        DispatcherQueue dispatcher,
+        MapMotion motion,
+        MapModel model,
+        MapViewport viewport,
+        Dictionary<string, Geography.Country> world
+    )
     {
-        _canvas = canvas;
+        _device = device;
+        _dpi = dpi;
+        _invalidate = invalidate;
+        _motion = motion;
         _model = model;
         _viewport = viewport;
         _world = world;
-        _animation = canvas.DispatcherQueue.CreateTimer();
-        _animation.Interval = TimeSpan.FromMilliseconds(33);
-        _animation.Tick += (_, _) =>
+        _animation = dispatcher.CreateTimer();
+        _animation.Tick += (_, _) => Animate();
+    }
+
+    private static readonly TimeSpan Frame = TimeSpan.FromMilliseconds(33);
+
+    /// <summary>Whether Windows lets the map animate: animations on and High Contrast off.</summary>
+    internal static bool SystemAnimates => SystemSettings.AnimationsEnabled && !SystemAccessibility.HighContrast;
+
+    internal MapAnimation Animation { get; set; } = MapAnimation.Normal;
+
+    internal MapDotTotal DotTotal { get; set; } = MapDotTotal.Normal;
+
+    /// <summary>
+    /// Whether the map animates: activity fades and dots move. Without it the
+    /// arcs and the Speed numbers still show speed.
+    /// </summary>
+    private bool Animated => SystemAnimates && Animation != MapAnimation.Off;
+
+    // The timer wakes only for the next activity step; MapMotion moves the dots.
+    private void Animate()
+    {
+        // The dispatcher can still deliver a tick that was queued before Dispose.
+        if (_disposed)
+            return;
+        if (!Animated)
         {
-            canvas.Invalidate();
-            if (AnimationProgress >= 1 || !_settings.AnimationsEnabled || _accessibility.HighContrast)
-                _animation.Stop();
-        };
+            _animation.Stop();
+            _traffic = null;
+            ShowDots();
+            _invalidate();
+            return;
+        }
+        var progress = Progress;
+        if (progress != _shownProgress)
+            _invalidate();
+        _shownProgress = progress;
+        _interpolating = progress < 1;
+        Schedule();
+    }
+
+    private void Schedule()
+    {
+        _animation.Stop();
+        if (NextStep() is not { } wait)
+            return;
+        _animation.Interval = wait < Frame ? Frame : wait;
+        _animation.Start();
+    }
+
+    /// <summary>The time until activity takes its next step, or null when it does not interpolate.</summary>
+    private TimeSpan? NextStep()
+    {
+        if (!_interpolating)
+            return null;
+        var elapsed = Stopwatch.GetElapsedTime(_started).TotalSeconds;
+        var step = Math.Floor(elapsed / Fade * _steps) + 1;
+        return TimeSpan.FromSeconds(Math.Max(0, step / _steps * Fade - elapsed));
     }
 
     internal readonly record struct Palette
@@ -92,6 +166,7 @@ internal sealed class MapRenderer : IDisposable
 
     public void Dispose()
     {
+        _disposed = true;
         _animation.Stop();
         ReleaseGeometry();
         _displayed.Clear();
@@ -107,6 +182,7 @@ internal sealed class MapRenderer : IDisposable
         foreach (var destination in _routes)
             destination.Release();
         _routes.Clear();
+        _traffic = null;
         _originMask?.Dispose();
         _originMask = null;
         _ring?.Dispose();
@@ -125,22 +201,38 @@ internal sealed class MapRenderer : IDisposable
         _arcOrigin = null;
     }
 
-    internal void Prepare()
+    /// <summary>
+    /// Draws from now on with <paramref name="device"/> at <paramref name="dpi"/>,
+    /// releasing what was made for the previous ones.
+    /// </summary>
+    internal void UseDevice(CanvasDevice device, float dpi)
     {
-        var canvas = _canvas;
+        ReleaseGeometry();
+        _device = device;
+        _dpi = dpi;
+    }
+
+    /// <returns>Whether the map changed, so it must be drawn again.</returns>
+    internal bool Prepare()
+    {
         var origin = _model.OriginPoint;
+        var prepared = _prepared;
+        var arrangement = _arrangement;
         if (_model.Meridian != _viewport.Meridian)
         {
             ReleaseGeometry();
             _viewport.Meridian = _model.Meridian;
         }
-        _arrangement++;
         var previous = _routes.ToDictionary(route => route.Destination.Key);
         _routes.Clear();
         _countryStarts.Clear();
+        _countryTargets.Clear();
         foreach (var group in _model.Countries.Values)
+        {
+            _countryTargets[group.Code] = Strength(group.Down + group.Up);
             _countryStarts[group.Code] = _displayed.GetValueOrDefault(
-                new DestinationKey(group.Code, null, true), Strength(group.Down + group.Up));
+                new DestinationKey(group.Code, null, true), _countryTargets[group.Code]);
+        }
         foreach (var destination in _model.Destinations)
         {
             if (!previous.Remove(destination.Key, out var route))
@@ -149,31 +241,129 @@ internal sealed class MapRenderer : IDisposable
             if (origin != _arcOrigin || destination.Group.Active == 0)
                 route.Release();
             if (route.Arc is null && origin is { } source && destination.Group.Active > 0)
-                route.Arc = Arc(canvas, source, destination.Point);
+            {
+                route.Path = new GreatCircle(source, destination.Point);
+                route.Arc = Arc(route.Path, out var degrees);
+                route.Degrees = degrees;
+            }
             route.Strength = Strength((destination.Group.Down + destination.Group.Up) * destination.Share);
             route.Start = _displayed.GetValueOrDefault(destination.Key, route.Strength);
             _routes.Add(route);
         }
         foreach (var route in previous.Values)
             route.Release();
+        // A rate change alone keeps the glow until its strengths change.
+        var arranged = _routes
+            .Select(route => Arranged.Of(route.Destination.Key, route.Destination.Group, route.Arc is not null))
+            .Concat(_model.Countries.Values
+                .Where(group => group.Estimated)
+                .Select(group => Arranged.Of(new DestinationKey(group.Code, null, true), group, false)))
+            .ToArray();
+        if (origin != _arcOrigin || !arranged.SequenceEqual(_arranged))
+            _arrangement++;
+        _arranged = arranged;
         _arcOrigin = origin;
+        _originOpacity = OriginOpacity(_routes.Count(route => route.Arc is not null));
         var keys = _model.Destinations.Select(destination => destination.Key)
             .Concat(_model.Countries.Keys.Select(code => new DestinationKey(code, null, true))).ToHashSet();
         foreach (var key in _displayed.Keys.Where(key => !keys.Contains(key)).ToArray())
             _displayed.Remove(key);
         _started = Stopwatch.GetTimestamp();
-        var animates = _routes.Any(route =>
-            route.Start != route.Strength
-            && (route.Arc is not null || route.Destination.Group.Estimated && route.Destination.Group.Active > 0))
-            || _model.Countries.Values.Any(group =>
-                group.Estimated && group.Active > 0
-                && _countryStarts[group.Code] != Strength(group.Down + group.Up));
-        if (animates && _settings.AnimationsEnabled && !_accessibility.HighContrast)
-            _animation.Start();
+        var change = _routes
+            .Where(route =>
+                route.Arc is not null || route.Destination.Group.Estimated && route.Destination.Group.Active > 0)
+            .Select(route => Math.Abs(route.Strength - route.Start))
+            .Concat(_model.Countries.Values
+                .Where(group => group.Estimated && group.Active > 0)
+                .Select(group => Math.Abs(_countryTargets[group.Code] - _countryStarts[group.Code])))
+            .DefaultIfEmpty()
+            .Max();
+        // Strength sets colours with at most 255 levels. Below one level the
+        // drawn strengths stay, so small changes add up until one shows.
+        if (change < 1f / 255)
+        {
+            foreach (var route in _routes)
+                route.Strength = route.Start;
+            foreach (var code in _countryStarts.Keys)
+                _countryTargets[code] = _countryStarts[code];
+            change = 0;
+        }
+        _interpolating = change > 0 && Animated;
+        // One step per level of the largest change looks the same as a step at
+        // every frame. Each step redraws the whole map and its glow, so a
+        // large change takes at most 16 steps, ten a second, of a few levels.
+        _steps = Math.Clamp((int)MathF.Ceiling(change * 255), 1, 16);
+        // The glow's inputs hold no strengths.
+        if (change > 0)
+            _glowInputs = null;
+        _shownProgress = Progress;
+        if (Animated)
+        {
+            _traffic = new MapMotion.Traffic(
+                _routes
+                    .Where(route => route.Arc is not null)
+                    .Select(route => new MapMotion.Route(
+                        route.Destination.Key,
+                        route.Path,
+                        route.Destination.Point,
+                        route.Destination.Group.Down * route.Destination.Share,
+                        route.Destination.Group.Up * route.Destination.Share,
+                        route.Degrees * _viewport.Scale))
+                    .ToArray(),
+                _viewport.Size.Width * _viewport.Size.Height,
+                _model.Ceiling,
+                Animation switch
+                {
+                    MapAnimation.Slow => .5,
+                    MapAnimation.Fast => 2,
+                    _ => 1,
+                },
+                DotTotal switch
+                {
+                    MapDotTotal.Low => .5,
+                    MapDotTotal.High => 2,
+                    _ => 1,
+                });
+            Schedule();
+        }
         else
+        {
             _animation.Stop();
+            _traffic = null;
+        }
         _prepared = true;
+        // A fade redraws at its own steps, starting from the drawn strengths.
+        var changed = !prepared || _arrangement != arrangement || (change > 0 && !_interpolating);
+        // A redraw hands the dots their scene; without one they take the new
+        // rates here.
+        if (!changed)
+            ShowDots();
+        return changed;
     }
+
+    /// <summary>The origin mask's strength at its centre, lower when many arcs meet there.</summary>
+    private static double OriginOpacity(int arcs)
+    {
+        var target = Math.Clamp(.8 * Math.Sqrt(5.0 / arcs), .1, .8);
+        var amount = Math.Clamp((arcs - 8) / 12.0, 0, 1);
+        return 1 - (1 - target) * amount * amount * (3 - 2 * amount);
+    }
+
+    /// <summary>
+    /// The origin mask's strength at a fraction of its radius from the user's
+    /// location, for both the arcs and the dots.
+    /// </summary>
+    internal static double OriginFade(double fraction, double opacity)
+    {
+        var amount = Math.Clamp(fraction, 0, 1);
+        return opacity + (1 - opacity) * amount * amount * (3 - 2 * amount);
+    }
+
+    /// <summary>The origin mask's radius in DIPs.</summary>
+    internal const float OriginRadius = 40;
+
+    /// <summary>An arc's strength at a screen distance in DIPs from its destination, for both the arcs and the dots.</summary>
+    internal static double Landing(double distance) => .3 + .7 * Math.Min(1, distance / 30);
 
     private void UpdateDetail()
     {
@@ -328,35 +518,20 @@ internal sealed class MapRenderer : IDisposable
         }
     }
 
-    private CanvasGeometry Arc(CanvasControl canvas, GeoPoint origin, GeoPoint end)
+    /// <summary>The arc of a great circle on the map, and its length in map degrees.</summary>
+    private CanvasGeometry Arc(GreatCircle circle, out float degrees)
     {
-        using var path = new CanvasPathBuilder(canvas);
-        var from = Sphere(origin);
-        var to = Sphere(end);
-        var angle = Math.Acos(Math.Clamp(Vector3.Dot(from, to), -1, 1));
-        var tangent = to - from * (float)Math.Cos(angle);
-        if (tangent.LengthSquared() < .00000001f)
-            tangent = Vector3.Cross(from, Math.Abs(from.Z) < .9f ? Vector3.UnitZ : Vector3.UnitY);
-        tangent = Vector3.Normalize(tangent);
-        var count = Math.Max(8, (int)Math.Ceiling(angle * 48));
-        var previous = _viewport.Coordinates(origin);
+        using var path = new CanvasPathBuilder(_device);
+        var count = Math.Max(8, (int)Math.Ceiling(circle.Angle * 48));
+        var previous = _viewport.Coordinates(circle.At(0));
+        degrees = 0;
         path.BeginFigure(previous);
         for (var index = 1; index <= count; index++)
         {
-            var travelled = angle * index / count;
-            var direction =
-                from * (float)Math.Cos(travelled) + tangent * (float)Math.Sin(travelled);
-            var point = _viewport.Coordinates(
-                new GeoPoint(
-                    Math.Atan2(direction.Y, direction.X) * 180 / Math.PI,
-                    Math.Atan2(
-                        direction.Z,
-                        Math.Sqrt(direction.X * direction.X + direction.Y * direction.Y)
-                    )
-                        * 180
-                        / Math.PI
-                )
-            );
+            var point = _viewport.Coordinates(circle.At((double)index / count));
+            var step = point - previous;
+            step.X = MapViewport.Wrap(step.X, 0);
+            degrees += step.Length();
             // Split at the map's edge instead of drawing a chord across the map.
             if (Math.Abs(point.X - previous.X) > 180)
             {
@@ -379,19 +554,63 @@ internal sealed class MapRenderer : IDisposable
         return CanvasGeometry.CreatePath(path);
     }
 
-    private static Vector3 Sphere(GeoPoint point)
+    /// <summary>The shortest way over the globe from an origin to an end.</summary>
+    internal readonly struct GreatCircle
     {
-        var longitude = point.Longitude * Math.PI / 180;
-        var latitude = point.Latitude * Math.PI / 180;
-        return new(
-            (float)(Math.Cos(latitude) * Math.Cos(longitude)),
-            (float)(Math.Cos(latitude) * Math.Sin(longitude)),
-            (float)Math.Sin(latitude)
-        );
+        private readonly Vector3 _from;
+        private readonly Vector3 _tangent;
+
+        internal GreatCircle(GeoPoint origin, GeoPoint end)
+        {
+            _from = Sphere(origin);
+            var to = Sphere(end);
+            Angle = Math.Acos(Math.Clamp(Vector3.Dot(_from, to), -1, 1));
+            var tangent = to - _from * (float)Math.Cos(Angle);
+            if (tangent.LengthSquared() < .00000001f)
+                tangent = Vector3.Cross(_from, Math.Abs(_from.Z) < .9f ? Vector3.UnitZ : Vector3.UnitY);
+            _tangent = Vector3.Normalize(tangent);
+        }
+
+        /// <summary>The angle between the ends, in radians.</summary>
+        internal double Angle { get; }
+
+        /// <summary>The point a fraction of the way from the origin to the end.</summary>
+        internal GeoPoint At(double fraction)
+        {
+            var travelled = Angle * fraction;
+            var direction = _from * (float)Math.Cos(travelled) + _tangent * (float)Math.Sin(travelled);
+            return new GeoPoint(
+                Math.Atan2(direction.Y, direction.X) * 180 / Math.PI,
+                Math.Atan2(direction.Z, Math.Sqrt(direction.X * direction.X + direction.Y * direction.Y))
+                    * 180
+                    / Math.PI
+            );
+        }
+
+        private static Vector3 Sphere(GeoPoint point)
+        {
+            var longitude = point.Longitude * Math.PI / 180;
+            var latitude = point.Latitude * Math.PI / 180;
+            return new(
+                (float)(Math.Cos(latitude) * Math.Cos(longitude)),
+                (float)(Math.Cos(latitude) * Math.Sin(longitude)),
+                (float)Math.Sin(latitude)
+            );
+        }
     }
 
-    private double AnimationProgress =>
-        Math.Min(1, Stopwatch.GetElapsedTime(_started).TotalSeconds / 1.6);
+    /// <summary>
+    /// How far activity has moved from its start to its strength, in steps
+    /// of at most one colour level, so the map redraws once per step instead
+    /// of at every frame.
+    /// </summary>
+    private double Progress =>
+        _interpolating && Animated
+            ? Math.Floor(Math.Min(1, Stopwatch.GetElapsedTime(_started).TotalSeconds / Fade) * _steps) / _steps
+            : 1;
+
+    /// <summary>The seconds activity takes to move from its start to its strength.</summary>
+    private const double Fade = 1.6;
 
     private static float Strength(double rate)
     {
@@ -399,7 +618,7 @@ internal sealed class MapRenderer : IDisposable
         return (float)Math.Clamp(Math.Log(1 + rate / 1024) / Math.Log(1 + ceiling / 1024), 0, 1);
     }
 
-    private static Color Alpha(Color colour, double opacity) =>
+    internal static Color Alpha(Color colour, double opacity) =>
         Color.FromArgb((byte)Math.Clamp(colour.A * opacity, 0, 255), colour.R, colour.G, colour.B);
 
     private static Color Blend(Color from, Color to, double amount) =>
@@ -410,9 +629,9 @@ internal sealed class MapRenderer : IDisposable
             (byte)(from.B + (to.B - from.B) * amount)
         );
 
-    private static CanvasRadialGradientBrush CreateLanding(CanvasControl canvas, Color colour) =>
+    private static CanvasRadialGradientBrush CreateLanding(CanvasDevice device, Color colour) =>
         new(
-            canvas,
+            device,
             [
                 new CanvasGradientStop { Position = 0, Color = Alpha(colour, .3) },
                 new CanvasGradientStop { Position = 1, Color = colour },
@@ -423,19 +642,37 @@ internal sealed class MapRenderer : IDisposable
             RadiusY = 30,
         };
 
-    internal void Draw(CanvasDrawingSession draw, Palette palette, Highlight highlight)
+    /// <returns>Whether it drew the map, which it does once prepared and sized.</returns>
+    internal bool Draw(CanvasDrawingSession draw, Palette palette, Highlight highlight)
     {
         if (!_prepared || _viewport.ViewScale <= 0)
-            return;
-        var canvas = _canvas;
+            return false;
+        DrawScene(draw, palette, highlight);
+        _dotColours = (palette.Download, palette.Upload);
+        ShowDots();
+        return true;
+    }
+
+    // A change of colours redraws the map, so the dots take their scene from
+    // the same frame; Prepare hands them new traffic when the map itself does
+    // not change.
+    private void ShowDots() =>
+        _motion.Show(
+            _traffic is { } traffic && _model.OriginPoint is { } origin
+                ? new MapMotion.Scene(traffic, origin, _originOpacity, _dotColours.Download, _dotColours.Upload)
+                : null
+        );
+
+    private void DrawScene(CanvasDrawingSession draw, Palette palette, Highlight highlight)
+    {
         UpdateDetail();
         var ink = palette.Ink;
         var land = palette.Land;
         var edge = palette.Edge;
         var down = palette.Download;
         var up = palette.Upload;
-        var contrast = _accessibility.HighContrast;
-        var progress = _settings.AnimationsEnabled && !contrast ? AnimationProgress : 1;
+        var contrast = SystemAccessibility.HighContrast;
+        var progress = Progress;
         _rebuildUntil = Stopwatch.GetTimestamp() + Stopwatch.Frequency * 6 / 1000;
         _rebuildPending = false;
         // The view shows one turn of longitude around its centre. A shape near
@@ -460,7 +697,7 @@ internal sealed class MapRenderer : IDisposable
                     || !(Reaches(selected, -1) || Reaches(selected, 0) || Reaches(selected, 1))
                 )
                     continue;
-                var paint = PaintOf(canvas, selected, source);
+                var paint = PaintOf(selected, source);
                 paint.Line(2);
                 paint.Core(ink);
             }
@@ -499,21 +736,21 @@ internal sealed class MapRenderer : IDisposable
                     var outline =
                         traced.Detail == _detail || !MayRebuild()
                             ? traced
-                            : Retrace(canvas, code, traced, visible.Moved(-360 * turn));
+                            : Retrace(code, traced, visible.Moved(-360 * turn));
                     var fill = land;
                     if (_model.Countries.TryGetValue(code, out var group) && group.Estimated)
                     {
                         var strength =
                             _countryStarts[code]
-                            + (Strength(group.Down + group.Up) - _countryStarts[code]) * (float)progress;
+                            + (_countryTargets[code] - _countryStarts[code]) * (float)progress;
                         _displayed[new DestinationKey(code, null, true)] = strength;
                         fill = Blend(land, down, group.Active > 0 ? .1 + .35 * strength : .08);
                     }
-                    if (Filled(canvas, code, outline, turn, visible) is { } cached)
+                    if (Filled(code, outline, turn, visible) is { } cached)
                         draw.DrawCachedGeometry(cached, fill);
                 }
             }
-            var borderWidth = BorderWidth(canvas);
+            var borderWidth = BorderWidth;
             var border = contrast ? ink : Alpha(edge, .5 / borderWidth);
             List<Piece> stale = [];
             for (var turn = -1; turn <= 1; turn++)
@@ -528,7 +765,7 @@ internal sealed class MapRenderer : IDisposable
                     {
                         if (!piece.Extent.Moved(360 * turn).Overlaps(visible))
                             continue;
-                        if (Stroked(canvas, piece) is { } stroke)
+                        if (Stroked(piece) is { } stroke)
                         {
                             if (!IsCurrent(stroke.Scale, BorderTolerance))
                                 stale.Add(piece);
@@ -545,7 +782,7 @@ internal sealed class MapRenderer : IDisposable
                         else
                         {
                             ApplyStroke(draw, null, transform, ref applied);
-                            draw.DrawGeometry(piece.Line(canvas), border, borderWidth, FixedStroke);
+                            draw.DrawGeometry(piece.Line(_device), border, borderWidth, FixedStroke);
                         }
                     }
                 }
@@ -560,7 +797,7 @@ internal sealed class MapRenderer : IDisposable
                     continue;
                 if (!MayRebuild())
                     break;
-                Restroke(canvas, piece);
+                Restroke(piece);
                 _rebuildPending = true;
             }
             draw.Transform = Matrix3x2.Identity;
@@ -577,39 +814,25 @@ internal sealed class MapRenderer : IDisposable
             if (arcs.Length > 0 && _model.OriginPoint is { } home)
             {
                 var origin = _viewport.Screen(home);
-                var target = Math.Clamp(.8 * Math.Sqrt(5.0 / arcs.Length), .1, .8);
-                var amount = Math.Clamp((arcs.Length - 8) / 12.0, 0, 1);
-                var opacity = contrast ? 1 : 1 - (1 - target) * amount * amount * (3 - 2 * amount);
+                var opacity = contrast ? 1 : _originOpacity;
                 if (_originMask is null || _originStrength != opacity)
                 {
                     // Masks use only alpha; theme text colours can be translucent.
                     var opaque = Microsoft.UI.Colors.White;
                     _originMask?.Dispose();
                     _originMask = new CanvasRadialGradientBrush(
-                        canvas,
+                        _device,
                         [
-                            new CanvasGradientStop { Position = 0, Color = Alpha(opaque, opacity) },
-                            new CanvasGradientStop
+                            .. new[] { 0, .25f, .5f, .75f, 1 }.Select(position => new CanvasGradientStop
                             {
-                                Position = .25f,
-                                Color = Alpha(opaque, opacity + (1 - opacity) * .15625),
-                            },
-                            new CanvasGradientStop
-                            {
-                                Position = .5f,
-                                Color = Alpha(opaque, (1 + opacity) / 2),
-                            },
-                            new CanvasGradientStop
-                            {
-                                Position = .75f,
-                                Color = Alpha(opaque, opacity + (1 - opacity) * .84375),
-                            },
-                            new CanvasGradientStop { Position = 1, Color = opaque },
+                                Position = position,
+                                Color = Alpha(opaque, OriginFade(position, opacity)),
+                            }),
                         ]
                     )
                     {
-                        RadiusX = 40,
-                        RadiusY = 40,
+                        RadiusX = OriginRadius,
+                        RadiusY = OriginRadius,
                     };
                     _originStrength = opacity;
                 }
@@ -618,14 +841,17 @@ internal sealed class MapRenderer : IDisposable
                 using (draw.CreateLayer(_originMask))
                 {
                     // The blurred glow is kept while its inputs stay the same.
-                    // Animation changes it at every frame, and a frame that
-                    // leaves a rebuild pending forgets it, because the next
-                    // frame draws better strokes.
+                    // Animation changes it at every step, and a glow that kept
+                    // a stroke from another scale is forgotten, because the
+                    // next frame draws better strokes. Border work left over
+                    // from a zoom does not rebuild it.
                     var inputs = new GlowInputs(view, _viewport.Size, down, up, _arrangement);
                     if (!contrast && (progress < 1 || _glowInputs != inputs || _glowBlur is null))
                     {
+                        var pending = _rebuildPending;
+                        _rebuildPending = false;
                         ReleaseGlow();
-                        _glowLines = new CanvasCommandList(canvas);
+                        _glowLines = new CanvasCommandList(_device);
                         using (var halo = _glowLines.CreateDrawingSession())
                         {
                             foreach (var turn in turns)
@@ -637,9 +863,8 @@ internal sealed class MapRenderer : IDisposable
                                     if (!Reaches(route, turn))
                                         continue;
                                     var strength = _displayed[route.Destination.Key];
-                                    var colour =
-                                        route.Destination.Group.Down >= route.Destination.Group.Up ? down : up;
-                                    var paint = PaintOf(canvas, route, home);
+                                    var colour = route.Destination.Group.Downloads ? down : up;
+                                    var paint = PaintOf(route, home);
                                     var glowStroke = paint.Glow(Step(2 + 3 * strength, 2));
                                     var brush = paint.Halo(colour);
                                     brush.Center = _viewport.Coordinates(route.Destination.Point);
@@ -667,14 +892,15 @@ internal sealed class MapRenderer : IDisposable
                                 SourceRectangle = new Rect(
                                     -6,
                                     -6,
-                                    canvas.Size.Width + 12,
-                                    canvas.Size.Height + 12
+                                    _viewport.Size.Width + 12,
+                                    _viewport.Size.Height + 12
                                 ),
                             },
                             BlurAmount = 1.5f,
                             CacheOutput = true,
                         };
-                        _glowInputs = progress < 1 ? null : inputs;
+                        _glowInputs = progress < 1 || _rebuildPending ? null : inputs;
+                        _rebuildPending |= pending;
                     }
                     if (!contrast && _glowBlur is not null)
                         draw.DrawImage(_glowBlur);
@@ -687,7 +913,7 @@ internal sealed class MapRenderer : IDisposable
                             if (!Reaches(route, turn))
                                 continue;
                             var strength = _displayed[route.Destination.Key];
-                            var paint = PaintOf(canvas, route, home);
+                            var paint = PaintOf(route, home);
                             var marked = highlight.IsMarked(route.Destination);
                             var line = paint.Line(marked ? 2 : Step(1 + strength, 4));
                             var width = marked ? 2 : 1 + strength;
@@ -701,7 +927,7 @@ internal sealed class MapRenderer : IDisposable
                                 continue;
                             }
                             var brush = paint.Core(
-                                marked ? ink : route.Destination.Group.Down >= route.Destination.Group.Up ? down : up
+                                marked ? ink : route.Destination.Group.Downloads ? down : up
                             );
                             brush.Opacity = .18f + .82f * strength;
                             ApplyStroke(draw, line, transform, ref applied);
@@ -750,8 +976,8 @@ internal sealed class MapRenderer : IDisposable
                         return;
                     var radius = group.Active > 0 ? 2.4f : 2;
                     var dot = group.Active > 0
-                        ? Dot(canvas, ref _activeDot, radius)
-                        : Dot(canvas, ref _dot, radius);
+                        ? Dot(ref _activeDot, radius)
+                        : Dot(ref _dot, radius);
                     var tint = contrast ? ink : colour;
                     batch.Draw(
                         dot,
@@ -764,15 +990,12 @@ internal sealed class MapRenderer : IDisposable
         }
         foreach (var (point, wide) in rings)
             draw.DrawCachedGeometry(
-                wide ? Ring(canvas, ref _wideRing, 8) : Ring(canvas, ref _ring, 5),
+                wide ? Ring(ref _wideRing, 8) : Ring(ref _ring, 5),
                 point,
                 ink
             );
         if (_rebuildPending)
-        {
-            _glowInputs = null;
-            canvas.Invalidate();
-        }
+            _invalidate();
 
         bool Shows(float from, float to, int turn) =>
             from + 360 * turn < east && to + 360 * turn > west;
@@ -812,14 +1035,14 @@ internal sealed class MapRenderer : IDisposable
     // also makes the paths its visible pieces draw, so a detail change never
     // makes them all in one unbudgeted frame. View is in the outline's own
     // coordinates.
-    private Outline Retrace(CanvasControl canvas, string code, Outline outline, Extent view)
+    private Outline Retrace(string code, Outline outline, Extent view)
     {
         outline.Dispose();
         var traced = Trace(_world[code]);
         foreach (var piece in traced.Pieces)
         {
             if (piece.Extent.Overlaps(view))
-                piece.Line(canvas);
+                piece.Line(_device);
         }
         // Replacing a value keeps Draw's enumeration of _land valid.
         _land[code] = traced;
@@ -833,7 +1056,6 @@ internal sealed class MapRenderer : IDisposable
     // would show its cut edge, as after a fast drag, so it is replaced even
     // past the budget.
     private CanvasCachedGeometry? Filled(
-        CanvasControl canvas,
         string code,
         Outline outline,
         int turn,
@@ -860,7 +1082,7 @@ internal sealed class MapRenderer : IDisposable
             || (covers && !MayRebuild())
         )
             return found ? fill.Geometry : null;
-        using var path = new CanvasPathBuilder(canvas);
+        using var path = new CanvasPathBuilder(_device);
         path.SetFilledRegionDetermination(CanvasFilledRegionDetermination.Alternate);
         var figures = 0;
         foreach (var ring in outline.Rings)
@@ -880,7 +1102,7 @@ internal sealed class MapRenderer : IDisposable
             // curve-flattening error, so only a detail or window change replaces one.
             geometry = CanvasCachedGeometry.CreateFill(
                 shape,
-                CanvasGeometry.ComputeFlatteningTolerance(canvas.Dpi, _viewport.ViewScale)
+                CanvasGeometry.ComputeFlatteningTolerance(_dpi, _viewport.ViewScale)
             );
         }
         _fills[code] = new Fill(geometry, outline.Detail, clip);
@@ -890,17 +1112,17 @@ internal sealed class MapRenderer : IDisposable
     // A piece with no stroke draws plainly, which Direct2D tessellates on the
     // CPU at every frame, so it gets one first. A piece keeps drawing its last
     // stroke, made at another scale, until Draw replaces it.
-    private Stroke? Stroked(CanvasControl canvas, Piece piece)
+    private Stroke? Stroked(Piece piece)
     {
         if (piece.Stroke is null && MayRebuild())
-            Restroke(canvas, piece);
+            Restroke(piece);
         return piece.Stroke;
     }
 
-    private void Restroke(CanvasControl canvas, Piece piece)
+    private void Restroke(Piece piece)
     {
         piece.Stroke?.Geometry.Dispose();
-        piece.Stroke = CreateStroke(canvas, piece.Line(canvas), BorderWidth(canvas));
+        piece.Stroke = CreateStroke(piece.Line(_device), BorderWidth);
     }
 
     // Direct2D rasterizes a plain geometry on the CPU at every draw, at a cost
@@ -916,7 +1138,7 @@ internal sealed class MapRenderer : IDisposable
     // A border carries half a DIP of ink. Below one physical pixel its
     // antialiasing breaks into uneven steps, so it widens to a pixel and Draw
     // fades its colour to keep the same ink.
-    private static float BorderWidth(CanvasControl canvas) => Math.Max(.5f, 96 / canvas.Dpi);
+    private float BorderWidth => Math.Max(.5f, 96 / _dpi);
 
     // A border's ink follows its width error, so it keeps its weight over a
     // larger change than a route, and a pan toward a pole rebuilds it half as
@@ -939,6 +1161,34 @@ internal sealed class MapRenderer : IDisposable
         _glowInputs = null;
     }
 
+    /// <summary>
+    /// What the map draws of a destination or an estimated country
+    /// apart from its strength: whether it has an arc, its role kinds, whether
+    /// it is active, and whether it downloads more than it uploads, which sets
+    /// its arc and glow colour.
+    /// </summary>
+    private readonly record struct Arranged(
+        DestinationKey Key,
+        bool Arc,
+        bool Seeds,
+        bool Leechers,
+        bool Unknown,
+        bool Active,
+        bool Downloads
+    )
+    {
+        internal static Arranged Of(DestinationKey key, Group group, bool arc) =>
+            new(
+                key,
+                arc,
+                group.Seeds > 0,
+                group.Leechers > 0,
+                group.Unknown > 0,
+                group.Active > 0,
+                group.Downloads
+            );
+    }
+
     /// <summary>What the route glow depends on besides the routes' animation.</summary>
     private readonly record struct GlowInputs(
         Matrix3x2 View,
@@ -958,7 +1208,7 @@ internal sealed class MapRenderer : IDisposable
 
     private readonly record struct Stroke(CanvasCachedGeometry Geometry, Vector2 Scale);
 
-    private Stroke CreateStroke(CanvasControl canvas, CanvasGeometry source, float width)
+    private Stroke CreateStroke(CanvasGeometry source, float width)
     {
         // Widen after applying both axis scales, so the cached pen stays round.
         var scale = _viewport.AxisScale;
@@ -968,7 +1218,7 @@ internal sealed class MapRenderer : IDisposable
                 geometry,
                 width,
                 Rounded,
-                CanvasGeometry.ComputeFlatteningTolerance(canvas.Dpi, 1)
+                CanvasGeometry.ComputeFlatteningTolerance(_dpi, 1)
             ),
             scale
         );
@@ -990,12 +1240,12 @@ internal sealed class MapRenderer : IDisposable
 
     // A mark is this white dot, with a DIP of margin, multiplied by its theme
     // colour in a sprite batch.
-    private static CanvasRenderTarget Dot(CanvasControl canvas, ref CanvasRenderTarget? dot, float radius)
+    private CanvasRenderTarget Dot(ref CanvasRenderTarget? dot, float radius)
     {
         if (dot is null)
         {
             var size = 2 * (radius + 1);
-            dot = new CanvasRenderTarget(canvas, size, size, canvas.Dpi);
+            dot = new CanvasRenderTarget(_device, size, size, _dpi);
             using var session = dot.CreateDrawingSession();
             session.Clear(Microsoft.UI.Colors.Transparent);
             session.FillCircle(radius + 1, radius + 1, radius, Microsoft.UI.Colors.White);
@@ -1007,20 +1257,19 @@ internal sealed class MapRenderer : IDisposable
     // ring has the same shape at every place, so one realization per radius
     // draws them all.
 
-    private static CanvasCachedGeometry Ring(
-        CanvasControl canvas,
+    private CanvasCachedGeometry Ring(
         ref CanvasCachedGeometry? ring,
         float radius
     )
     {
         if (ring is null)
         {
-            using var circle = CanvasGeometry.CreateCircle(canvas, Vector2.Zero, radius);
+            using var circle = CanvasGeometry.CreateCircle(_device, Vector2.Zero, radius);
             ring = CanvasCachedGeometry.CreateStroke(
                 circle,
                 1.2f,
                 Rounded,
-                CanvasGeometry.ComputeFlatteningTolerance(canvas.Dpi, 1)
+                CanvasGeometry.ComputeFlatteningTolerance(_dpi, 1)
             );
         }
         return ring;
@@ -1052,9 +1301,12 @@ internal sealed class MapRenderer : IDisposable
             {
                 var scale = _viewport.AxisScale;
                 var transform = Matrix3x2.CreateScale(scale);
+                // A stroke test makes a native geometry, so only arcs whose
+                // bounds reach the pointer are tested.
+                var reach = new Vector2(8) / scale;
                 foreach (var route in _routes)
                 {
-                    if (route.Arc is not { } arc)
+                    if (route.Arc is not { } arc || !route.Reach.Grown(reach).Contains(mapped))
                         continue;
                     using var geometry = arc.Transform(transform);
                     if (!geometry.StrokeContainsPoint(mapped * scale, 8))
@@ -1158,6 +1410,9 @@ internal sealed class MapRenderer : IDisposable
             && High.Y >= other.Low.Y
             && Low.Y <= other.High.Y;
 
+        internal bool Contains(Vector2 point) =>
+            point.X >= Low.X && point.X <= High.X && point.Y >= Low.Y && point.Y <= High.Y;
+
         internal bool Contains(Extent other) =>
             other.Low.X >= Low.X
             && other.High.X <= High.X
@@ -1185,6 +1440,15 @@ internal sealed class MapRenderer : IDisposable
         /// <summary>The bounds of <see cref="Arc"/> in map coordinates.</summary>
         internal Extent Reach { get; private set; }
 
+        /// <summary>The way <see cref="Arc"/> traces, which its dots follow.</summary>
+        internal GreatCircle Path { get; set; }
+
+        /// <summary>
+        /// The length of <see cref="Arc"/> in map degrees. Arcs are not rebuilt
+        /// on resize, so the fitted scale turns it into DIPs when needed.
+        /// </summary>
+        internal float Degrees { get; set; }
+
         /// <summary>The brushes for <see cref="Arc"/>; it shares the arc's lifetime.</summary>
         internal Paint? Paint { get; set; }
 
@@ -1198,8 +1462,8 @@ internal sealed class MapRenderer : IDisposable
     }
 
 
-    private Paint PaintOf(CanvasControl canvas, Route route, GeoPoint origin) =>
-        route.Paint ??= new Paint(this, canvas, route, origin);
+    private Paint PaintOf(Route route, GeoPoint origin) =>
+        route.Paint ??= new Paint(this, route, origin);
 
     // Gradient brushes and realizations are expensive to create, and each one
     // adds native memory pressure that can force a full garbage collection.
@@ -1208,7 +1472,6 @@ internal sealed class MapRenderer : IDisposable
     // stays owned by its route; its endpoints are geographic coordinates.
     private sealed class Paint(
         MapRenderer map,
-        CanvasControl canvas,
         Route route,
         GeoPoint origin
     ) : IDisposable
@@ -1246,7 +1509,7 @@ internal sealed class MapRenderer : IDisposable
             )
                 return stroke;
             stroke?.Geometry.Dispose();
-            stroke = map.CreateStroke(canvas, _arc, width);
+            stroke = map.CreateStroke(_arc, width);
             made = width;
             return stroke;
         }
@@ -1256,7 +1519,7 @@ internal sealed class MapRenderer : IDisposable
             if (_halo is null || _haloColour != colour)
             {
                 _halo?.Dispose();
-                _halo = CreateLanding(canvas, colour);
+                _halo = CreateLanding(map._device, colour);
                 _haloColour = colour;
                 _haloTransform = Matrix3x2.Identity;
             }
@@ -1307,7 +1570,7 @@ internal sealed class MapRenderer : IDisposable
                         ),
                     })
                     .ToArray();
-                _core = new CanvasRadialGradientBrush(canvas, stops)
+                _core = new CanvasRadialGradientBrush(map._device, stops)
                 {
                     Center = _end,
                     RadiusX = length / scale.X,
@@ -1331,9 +1594,6 @@ internal sealed class MapRenderer : IDisposable
             along < .35 ? .55 + .45 * along / .35
             : along < .8 ? 1 - .1 * (along - .35) / .45
             : .9 - .25 * (along - .8) / .2;
-
-        /// <summary>Strength at a screen distance in DIPs from the destination.</summary>
-        private static double Landing(double distance) => .3 + .7 * Math.Min(1, distance / 30);
 
         public void Dispose()
         {

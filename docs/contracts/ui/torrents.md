@@ -528,7 +528,13 @@ Seeding uses Sprout. Numeric transfer cells use the shared inline field styles:
 download and downloaded values have the download arrow and accent colour;
 upload and uploaded values have the upload arrow and upload colour. The same
 glyph resources identify rates in the title bar, status bar and Inspector.
-Zero rates display a dash through the shared rate formatter. Counts retain
+**Owner ruling.** A rate shows a number, zero included, while connections are
+open or opening, and a dash while none are, so 0 B/s always means "connected
+but nothing moves". A downloading, seeding, completed or metadata torrent and
+a connecting, handshaking or connected peer show a number; a stopped, queued
+or failed torrent, one that checks or moves its files, and a known peer show
+a dash. Totals show a number while any torrent in their scope opens
+connections. Counts retain
 numeric zero; inline seed and peer counts dim each standalone zero, including
 its parentheses when present, with the theme's secondary text brush.
 Seeds have Sprout, peers and tracker leechers have UsersRoundCollaboration, and cities have
@@ -574,12 +580,23 @@ shared Splitter adjusts their proportions without switching arrangement during
 the gesture. Each orientation retains its proportion in the saved layout.
 The map and table share live peer observations and keep individual connections
 in the table. Connection and active counts join the existing status-bar context;
-map hover details describe the location, rates and precision.
+the line under the Speed totals gives the pointed or chosen place, its
+connections and rates, and the map's accessible description adds roles and
+precision.
 The map area shows total download and upload rates for the inspector's selection
-as a Speed statistic, the same shared statistic as the General section, with no background so it blends into the map. These totals come from
+as a Speed readout: the Speed section's icon and the totals, with no caption,
+because the icon and the arrows already say what the numbers are, and with
+no background or border, so it blends into the map. These totals come from
 torrent summaries, including transfers with no mapped location, and use the
-existing rate formatting and download/upload theme brushes. The shared peer-view
-menu offers Speed position: Top-left, Bottom-left or Bottom-right, saved with
+existing rate formatting and download/upload theme brushes. One line under the totals
+shows the [described place](../peer-location.md#map), and otherwise the
+[dot size](../peer-location.md#moving-dots), so the legend moves with the
+totals. Both lines align to the edge of Speed's corner, so a longer second
+line never moves the totals, and the second line keeps its height while
+empty. A place name too long for the map trims with an ellipsis, so its
+connections and rates always show. The shared peer-view
+menu offers the map's [Animation and Total dots](../peer-location.md#moving-dots)
+submenus, then Speed position: Top-left, Bottom-left or Bottom-right, saved with
 the peer layout and starting at Bottom-right. Top-right stays reserved for the
 map's close button. The zoom and Fit controls sit at the bottom centre, so
 moving Speed never moves them.

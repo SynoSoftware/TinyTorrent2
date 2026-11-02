@@ -525,6 +525,13 @@ public sealed partial class MainWindow
         }
         try
         {
+            // The switch measures the table's default columns.
+            if (ReviewMode == CaptureMode.PeerSwitch)
+            {
+                RestorePeers();
+                await CapturePeerSwitch(inspector, pane, peers, outcomes);
+                return;
+            }
             var connections = (Syno.TableView.Table)pane.FindName("Peers");
             connections.Layout = connections.Layout with
             {
@@ -765,7 +772,11 @@ public sealed partial class MainWindow
             );
             try
             {
-                View(2f, Vector2.Zero);
+                // Only a zoom shows the Fit button.
+                typeof(PeerMap).GetMethod("ZoomAt", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .Invoke(centred, [2f, viewport.Offset]);
+                if (navigation.Visibility != Microsoft.UI.Xaml.Visibility.Visible)
+                    throw new InvalidOperationException("A zoom did not show the map's Fit button.");
                 await CaptureUi("peers-navigation-visible");
                 await hidden.Task.WaitAsync(TimeSpan.FromSeconds(5));
                 await CaptureUi("peers-navigation-idle");
@@ -864,6 +875,9 @@ public sealed partial class MainWindow
                 using var before = Process.GetCurrentProcess();
                 var fittedBytes = before.PrivateMemorySize64;
                 List<object> steps = [];
+                var zoomFrames = 0;
+                var cyclesBefore = CaptureCycles.Current();
+                var motionBefore = centred.MotionCycles;
                 for (var zoom = 1.25f; zoom <= maxZoom; zoom *= 1.25f)
                 {
                     List<double> frames = [];
@@ -873,6 +887,7 @@ public sealed partial class MainWindow
                     await Task.Delay(500);
                     centred.FrameMeasured = null;
                     var current = (float)detail.GetValue(renderer)!;
+                    zoomFrames += frames.Count;
                     steps.Add(new
                     {
                         zoom,
@@ -890,6 +905,9 @@ public sealed partial class MainWindow
                     area,
                     fittedBytes,
                     zoomedBytes = after.PrivateMemorySize64,
+                    frames = zoomFrames,
+                    uiMegacycles = (CaptureCycles.Current() - cyclesBefore) / 1e6,
+                    layerMegacycles = (centred.MotionCycles - motionBefore) / 1e6,
                     steps,
                     scope = "Map only at 1280 by 900, synthetic peers, draw and preparation CPU time; excludes GPU execution.",
                 });
@@ -917,14 +935,21 @@ public sealed partial class MainWindow
                     frames.Add(ms);
                     starts.Add(watch.Elapsed.TotalMilliseconds);
                 };
+                var picturesBefore = centred.MotionPictures;
+                var dragCycles = CaptureCycles.Current();
+                var dragMotion = centred.MotionCycles;
                 const int Steps = 120;
                 for (var step = 1; step <= Steps; step++)
                 {
                     viewport.Hold(zoom, focus, offset + direction * speed * step);
                     await Task.Delay(16);
                 }
+                var dragMs = watch.Elapsed.TotalMilliseconds;
+                var shown = centred.MotionPictures - picturesBefore;
                 await Task.Delay(500);
                 centred.FrameMeasured = null;
+                var uiCycles = CaptureCycles.Current() - dragCycles;
+                var layerCycles = centred.MotionCycles - dragMotion;
                 // The time between frames also counts what Direct2D does after
                 // Draw returns, such as tessellating plain lines.
                 var intervals = starts.Zip(starts.Skip(1), (from, to) => to - from).Order().ToList();
@@ -936,6 +961,11 @@ public sealed partial class MainWindow
                     zoom,
                     speed,
                     steps = Steps,
+                    uiMegacycles = uiCycles / 1e6,
+                    uiMegacyclesPerFrame = frames.Count == 0 ? 0 : uiCycles / 1e6 / frames.Count,
+                    layerMegacycles = layerCycles / 1e6,
+                    shown,
+                    shownFps = shown / (dragMs / 1000),
                     elapsedMs = watch.Elapsed.TotalMilliseconds,
                     frames = frames.Count,
                     medianMs = frames.Count == 0 ? 0 : frames[frames.Count / 2],
@@ -1073,8 +1103,8 @@ public sealed partial class MainWindow
             outcomes.Add(new { journey = "table multi-selection marks estimated destinations", rows = several.Length, ranks });
             // Selecting every row marks every route. The frames that follow
             // rebuild what changed; the redraws show the cost of a marked map.
-            var mapCanvas = typeof(PeerMap).GetField(
-                "_canvas",
+            var invalidateMap = typeof(PeerMap).GetMethod(
+                "Invalidate",
                 BindingFlags.Instance | BindingFlags.NonPublic
             )!;
             foreach (var (scope, rows) in new[] { ("none", Array.Empty<Peer>()), ("all", peers) })
@@ -1086,7 +1116,7 @@ public sealed partial class MainWindow
                 var settled = frames.Count;
                 for (var sample = 0; sample < 20; sample++)
                 {
-                    ((Microsoft.Graphics.Canvas.UI.Xaml.CanvasControl)mapCanvas.GetValue(chooser)!).Invalidate();
+                    invalidateMap.Invoke(chooser, null);
                     await Task.Delay(50);
                 }
                 chooser.FrameMeasured = null;
@@ -1105,7 +1135,7 @@ public sealed partial class MainWindow
             var native = typeof(PeerMap).GetField("_renderer", BindingFlags.Instance | BindingFlags.NonPublic)!;
             var activeRenderer = (MapRenderer)native.GetValue(chooser)!;
             var routes = typeof(MapRenderer).GetField("_routes", BindingFlags.Instance | BindingFlags.NonPublic)!;
-            var pending = typeof(PeerMap).GetField("_queued", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var pending = typeof(PeerMap).GetField("_preparationQueued", BindingFlags.Instance | BindingFlags.NonPublic)!;
             object[] Arcs() => ((System.Collections.IEnumerable)routes.GetValue(activeRenderer)!)
                 .Cast<object>().Select(route => route.GetType()
                     .GetProperty("Arc", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(route))
@@ -1121,7 +1151,7 @@ public sealed partial class MainWindow
                 };
                 try
                 {
-                    ((Microsoft.Graphics.Canvas.UI.Xaml.CanvasControl)mapCanvas.GetValue(chooser)!).Invalidate();
+                    invalidateMap.Invoke(chooser, null);
                     await drawn.Task.WaitAsync(TimeSpan.FromSeconds(20));
                 }
                 finally
@@ -1196,10 +1226,10 @@ public sealed partial class MainWindow
                 var apply = typeof(Inspector).GetMethod("ApplyPeers", BindingFlags.Instance | BindingFlags.NonPublic)!;
                 var groups = new Dictionary<string, Peer[]>();
                 typeof(Inspector).GetProperty(nameof(Inspector.Peers))!.SetValue(inspector, null);
+                var context = typeof(Inspector).GetField("_context", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .GetValue(inspector)!;
                 var started = Stopwatch.GetTimestamp();
-                await (Task<bool>)apply.Invoke(inspector, [target.TorrentId, rows, groups,
-                    typeof(Inspector).GetField("_context", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(inspector)!
-                ])!;
+                await (Task<bool>)apply.Invoke(inspector, [target.TorrentId, rows, groups, context])!;
                 var create = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
                 var known = inspector.Peers!;
                 var lookup = await Task.Run(() =>
@@ -1223,14 +1253,24 @@ public sealed partial class MainWindow
                 List<double> preparations = [];
                 drawing.PreparationMeasured = preparations.Add;
                 inspector.Refresh();
+                // The inspector refreshes the pane after the next frame, and the
+                // pane then queues its own map update, so both run before the
+                // measured map replaces that update.
+                var refreshed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                using (new FrameCallback(DispatcherQueue, () => refreshed.TrySetResult()))
+                    await refreshed.Task.WaitAsync(TimeSpan.FromSeconds(20));
                 await CaptureLayout();
                 List<double> frames = [];
                 drawing.FrameMeasured = frames.Add;
                 inspector.Map.Update(known, null, Model.Text);
                 await CaptureUi($"peers-known-{count}");
                 var rendered = inspector.Map.Destinations.Count;
-                if (!ReferenceEquals(inspector.Peers, known) || rendered != count)
-                    throw new InvalidOperationException("The measured map lost its peer fixture.");
+                if (!ReferenceEquals(inspector.Peers, known))
+                    throw new InvalidOperationException("The measured map lost its peer fixture: the inspector replaced its peers.");
+                if (rendered != count)
+                    throw new InvalidOperationException(
+                        $"The measured map lost its peer fixture: it shows {rendered} of {count} destinations"
+                        + $" in {(inspector.Map.Cities ? "Cities" : "Countries")} detail.");
                 var managed = GC.GetTotalMemory(true);
                 using var process = Process.GetCurrentProcess();
                 var privateBytes = process.PrivateMemorySize64;
@@ -1239,7 +1279,7 @@ public sealed partial class MainWindow
                 for (var sample = 0; sample < 30; sample++)
                 {
                     started = Stopwatch.GetTimestamp();
-                    apply.Invoke(inspector, [target.TorrentId, rows, groups]);
+                    await (Task<bool>)apply.Invoke(inspector, [target.TorrentId, rows, groups, context])!;
                     inspector.Map.Update(known, null, Model.Text);
                     unchanged.Add(Stopwatch.GetElapsedTime(started).TotalMilliseconds);
                 }
@@ -1262,6 +1302,175 @@ public sealed partial class MainWindow
                     scope = "Native WinUI/Win2D, synthetic located peers, no active arcs; draw and preparation CPU time excludes GPU execution.",
                 });
                 completed.Add($"peers-known-{count}");
+                // Choosing a place blocks the UI thread three times: the click
+                // filters the rows, the table takes them, and the next layout
+                // realizes them. Clearing the choice does the same with every
+                // row. Each is timed alone; the first round includes JIT.
+                // Rates on some peers make dots fly, so each round also counts
+                // the frames the dots' layer draws while the UI thread is busy.
+                var downloadRate = typeof(Peer).GetProperty(nameof(Peer.DownloadRate))!;
+                var uploadRate = typeof(Peer).GetProperty(nameof(Peer.UploadRate))!;
+                // Equal rates would launch every route's dots at the same moment,
+                // leaving long gaps with no dot; varied rates keep dots flying.
+                foreach (var (peer, index) in known.Take(64).Select((peer, index) => (peer, index)))
+                {
+                    downloadRate.SetValue(peer, 64.0 * 1024 * (1 + index % 13));
+                    uploadRate.SetValue(peer, 8.0 * 1024 * (1 + index % 7));
+                }
+                // Arcs and dots need the user's location, which the map timing
+                // above leaves out.
+                inspector.Map.Update(known, (Location?)originField.GetValue(inspector), Model.Text);
+                var firstDot = Stopwatch.GetTimestamp();
+                var idleFrames = drawing.MotionFrames;
+                while (drawing.MotionFrames == idleFrames && Stopwatch.GetElapsedTime(firstDot) < TimeSpan.FromSeconds(15))
+                    await Task.Delay(50);
+                var firstDotMs = Stopwatch.GetElapsedTime(firstDot).TotalMilliseconds;
+                var warmupStart = drawing.MotionFrames;
+                await Task.Delay(TimeSpan.FromSeconds(1));
+                var warmupFrames = drawing.MotionFrames - warmupStart;
+                var motionState = drawing.MotionState;
+                var activeArcs = inspector.Map.Destinations.Count(destination => destination.Group.Active > 0);
+                var place = inspector.Map.Destinations.MaxBy(destination => destination.Group.Count)!;
+                List<object> rounds = [];
+                var paneRefresh = typeof(InspectorPane).GetMethod(
+                    "Refresh", BindingFlags.Instance | BindingFlags.NonPublic, [typeof(bool)])!;
+                for (var round = 0; round < 3; round++)
+                {
+                    foreach (var choice in new[] { place, null })
+                    {
+                        var framesBefore = drawing.MotionFrames;
+                        var pausedBefore = drawing.MotionPaused;
+                        var clicked = Stopwatch.GetTimestamp();
+                        choose.Invoke(drawing, [choice]);
+                        var clickMs = Stopwatch.GetElapsedTime(clicked).TotalMilliseconds;
+                        var assigned = Stopwatch.GetTimestamp();
+                        table.ItemsSource = inspector.ShownPeers;
+                        var assignMs = Stopwatch.GetElapsedTime(assigned).TotalMilliseconds;
+                        var laid = Stopwatch.GetTimestamp();
+                        Root.UpdateLayout();
+                        var layoutMs = Stopwatch.GetElapsedTime(laid).TotalMilliseconds;
+                        // A click used to refresh the whole pane as well.
+                        var paneStarted = Stopwatch.GetTimestamp();
+                        paneRefresh.Invoke(pane, [false]);
+                        Root.UpdateLayout();
+                        var paneRefreshMs = Stopwatch.GetElapsedTime(paneStarted).TotalMilliseconds;
+                        var busyMs = Stopwatch.GetElapsedTime(clicked).TotalMilliseconds;
+                        var layerFrames = drawing.MotionFrames - framesBefore;
+                        rounds.Add(new
+                        {
+                            chosen = choice is not null,
+                            rows = inspector.ShownPeers!.Count,
+                            clickMs,
+                            assignMs,
+                            layoutMs,
+                            paneRefreshMs,
+                            busyMs,
+                            pausedBefore,
+                            layerFrames,
+                            layerFps = layerFrames / (busyMs / 1000),
+                        });
+                        await CaptureLayout();
+                    }
+                }
+                outcomes.Add(new
+                {
+                    journey = "place choice timing",
+                    peers = count,
+                    sorted = table.Sort is not null,
+                    activeArcs,
+                    firstDotMs,
+                    warmupFrames,
+                    motionState,
+                    rounds,
+                    scope = "UI-thread CPU time of each step, synthetic located peers; layer frames are the dots'"
+                        + " game loop frames while the UI thread is busy with the round.",
+                });
+                // A click chooses the place under the pointer as PeerMap's
+                // OnReleased does, and a click on an empty spot clears it. Each
+                // is measured in UI-thread cycles until the end of the frame
+                // that shows its result: the map drawn with the choice and the
+                // table holding the place's rows. The dots keep flying.
+                var nonPublic = BindingFlags.Instance | BindingFlags.NonPublic;
+                var mapRenderer = (MapRenderer)typeof(PeerMap).GetField("_renderer", nonPublic)!.GetValue(drawing)!;
+                var mapViewport = (MapViewport)typeof(PeerMap).GetField("_viewport", nonPublic)!.GetValue(drawing)!;
+                var selectPeers = typeof(PeerMap).GetMethod("SelectPeers", nonPublic)!;
+                var describe = typeof(PeerMap).GetMethod("Describe", nonPublic)!;
+                var redraw = typeof(PeerMap).GetMethod("Invalidate", nonPublic)!;
+                List<ulong> stamps = [];
+                EventHandler<object> stamp = (_, _) => stamps.Add(CaptureCycles.Current());
+                List<object> clicks = [];
+                Microsoft.UI.Xaml.Media.CompositionTarget.Rendering += stamp;
+                try
+                {
+                    for (var round = 0; round < 3; round++)
+                    {
+                        foreach (var point in new[] { mapViewport.Screen(place.Point), new Vector2(2, 2) })
+                        {
+                            await CaptureLayout();
+                            var mapFrames = 0;
+                            drawing.FrameMeasured = _ => mapFrames++;
+                            var layerBefore = drawing.MotionFrames;
+                            stamps.Clear();
+                            var clickedAt = Stopwatch.GetTimestamp();
+                            var clickStart = CaptureCycles.Current();
+                            var hit = mapRenderer.HitTest(point);
+                            selectPeers.Invoke(drawing, [Array.Empty<Peer>()]);
+                            choose.Invoke(drawing, [hit]);
+                            describe.Invoke(drawing, null);
+                            redraw.Invoke(drawing, null);
+                            var clickCycles = CaptureCycles.Current() - clickStart;
+                            while (
+                                (mapFrames == 0 || !ReferenceEquals(table.ItemsSource, inspector.ShownPeers))
+                                && Stopwatch.GetElapsedTime(clickedAt) < TimeSpan.FromSeconds(3)
+                            )
+                                await NextFrame();
+                            var tableShown = ReferenceEquals(table.ItemsSource, inspector.ShownPeers);
+                            await NextFrame();
+                            var clickEnd = CaptureCycles.Current();
+                            drawing.FrameMeasured = null;
+                            var ticks = stamps.ToArray();
+                            // Each frame's share runs from one frame's start to
+                            // the next; the first from the click, the last to
+                            // the end of the frame that shows the result.
+                            var shares = ticks.Prepend(clickStart).Append(clickEnd).ToArray();
+                            var busiest = shares.Zip(shares.Skip(1), (from, to) => to - from).Max();
+                            clicks.Add(new
+                            {
+                                chosen = hit is not null,
+                                rows = inspector.ShownPeers!.Count,
+                                tableShown,
+                                frames = ticks.Length,
+                                mapFrames,
+                                clickMegacycles = clickCycles / 1e6,
+                                uiMegacycles = (clickEnd - clickStart) / 1e6,
+                                busiestFrameMegacycles = busiest / 1e6,
+                                ms = Stopwatch.GetElapsedTime(clickedAt).TotalMilliseconds,
+                                layerFrames = drawing.MotionFrames - layerBefore,
+                            });
+                        }
+                    }
+                }
+                finally
+                {
+                    Microsoft.UI.Xaml.Media.CompositionTarget.Rendering -= stamp;
+                    drawing.FrameMeasured = null;
+                }
+                outcomes.Add(new
+                {
+                    journey = "map click timing",
+                    peers = count,
+                    activeArcs,
+                    rounds = clicks,
+                    scope = "UI-thread cycles from a map click to the end of the frame that shows the map and table"
+                        + " result, with dots flying; the first round includes JIT.",
+                });
+
+                async Task NextFrame()
+                {
+                    var next = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    using (new FrameCallback(DispatcherQueue, () => next.TrySetResult()))
+                        await next.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                }
             }
         }
         finally

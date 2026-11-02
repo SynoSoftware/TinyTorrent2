@@ -418,6 +418,24 @@ public enum MapCorner
     BottomRight,
 }
 
+// How the peer map animates: Off draws it still; the others set how fast
+// its moving dots travel.
+public enum MapAnimation
+{
+    Off,
+    Slow,
+    Normal,
+    Fast,
+}
+
+// How many moving dots the peer map aims to show at once.
+public enum MapDotTotal
+{
+    Low,
+    Normal,
+    High,
+}
+
 public enum PieceKind
 {
     Unavailable,
@@ -865,8 +883,10 @@ internal enum CaptureMode
     Library,
     Traffic,
     Peers,
+    PeerSwitch,
     LibraryFiles,
     Selection,
+    SelectionFrame,
     Connections,
     Edits,
     AddLayout,

@@ -197,7 +197,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     }
     public ICommand SwitchToolbar { get; }
 
-    private string Rate(double rate) => IsRunning ? Text.Rate(rate) : "—";
+    private string Rate(double rate) =>
+        IsRunning && Torrents.Any(torrent => torrent.OpensConnections) ? Text.Rate(rate) : "—";
 
 #if CAPTURE
     private Status? _presentedStatus;

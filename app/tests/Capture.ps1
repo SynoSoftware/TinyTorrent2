@@ -1,6 +1,6 @@
 param(
     [ValidateSet('1', 'smoke', 'shell', 'menus', 'update-check', 'location-warning', 'schedule', 'desktop', 'dialogs', 'recovery', 'details', 'details-files', 'file-controls', 'files', 'files-layout',
-        'search', 'library', 'library-files', 'traffic', 'peers', 'selection', 'connections', 'edits', 'add-layout', 'settings-layout', 'settings-prototype', 'subtitle-tasks', 'memory', 'footer', 'workspace')]
+        'search', 'library', 'library-files', 'traffic', 'peers', 'peer-switch', 'selection', 'selection-frame', 'connections', 'edits', 'add-layout', 'settings-layout', 'settings-prototype', 'subtitle-tasks', 'memory', 'footer', 'workspace')]
     [string] $Review = '1',
     [ValidateSet('en', 'es')]
     [string] $Language,
@@ -133,7 +133,7 @@ function Test-Idle($torrents) {
     return -not ($torrents | Where-Object { -not $_.paused -or $_.peer_count -or $_.download_rate -or $_.upload_rate })
 }
 
-if ($Review -in 'files', 'files-layout', 'library', 'library-files', 'traffic', 'workspace', 'selection', 'dialogs', 'recovery') {
+if ($Review -in 'files', 'files-layout', 'library', 'library-files', 'traffic', 'workspace', 'selection', 'selection-frame', 'dialogs', 'recovery') {
     $document = @{ format = 1; torrents = @(); settings = @{ language = 'en'; theme = 'light'; port_mapping = $false;
         check_for_updates = $false; show_splash = $false; notifications_enabled = $false; prevent_sleep = $false } }
 } else {
@@ -150,7 +150,7 @@ if ($Review -eq 'recovery') {
     $document.settings.unfinished_tasks = 'continue'
 }
 $document.settings.all_paused = $Review -notin 'add-layout', 'traffic', 'library-files', 'selection'
-if ($Review -in 'workspace', 'selection', 'dialogs', 'recovery') {
+if ($Review -in 'workspace', 'selection', 'selection-frame', 'dialogs', 'recovery') {
     $document.settings.dht = $false
     $document.settings.pex = $false
     $document.settings.lsd = $false
@@ -207,7 +207,7 @@ try {
                 $null = Add-Torrent (New-Torrent $name @(@{ path = $name; bytes = $bytes })) $payload
             }
         }
-        { $_ -in 'workspace', 'selection' } {
+        { $_ -in 'workspace', 'selection', 'selection-frame' } {
             $members = foreach ($name in 'Open field atlas', 'Open ocean notes') {
                 $paths = if ($name -eq 'Open field atlas') { 'Chapter 01.txt', 'Maps/Coastline.dat' }
                     else { 'Chapter 01.txt', 'Chapter 02.txt' }

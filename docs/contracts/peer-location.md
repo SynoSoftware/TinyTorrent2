@@ -155,7 +155,19 @@ use the download colour, leecher markers use the upload colour, and unclassified
 addresses use neutral ink. The snapshot identifies retained confirmed seeds;
 other disconnected addresses remain unclassified. Live connections identify
 leechers after the handshake. A shared location shows one small marker per role,
-and its tooltip gives the counts, so colour is not the only explanation.
+and its accessible description gives the counts, so colour is not the only
+explanation.
+The map opens no tooltip, because one over the map hides the routes around
+the pointer. The line under the
+[Speed readout](ui/torrents.md#peers-and-connections-map)'s totals describes
+the place under the pointer, or the one inspected with the arrow keys, and
+otherwise the chosen place: a map pin, the place, its connections (peers not
+merely known), then its download and upload rates in the totals' colours.
+Connections and each rate show only when above zero, because "0 connections"
+or a dash tells the person nothing. It describes no place while the map is
+dragged. An estimated
+destination shows the totals of the peers that choosing it shows, not its
+estimated share.
 Land and boundaries use the platform's secondary control surface and strong
 control stroke. Transfer marks use the same accent text and upload brushes as
 the table and speed graph, without mixing in a separate map colour. Markers
@@ -176,6 +188,9 @@ or the country's records without coordinates for an estimated destination.
 Any other table filter applies only while nothing is chosen. Clicking empty
 map, pressing Escape, changing the map detail or choosing Table only shows
 every peer again. Selecting rows in the limited table keeps the choice.
+A choice changes only the table's rows, so the inspector announces only them
+and the table takes them in a later dispatcher turn, never inside the click
+and without refreshing the rest of the inspector.
 Active country arcs keep visible endpoints; idle countries keep their markers.
 The composited arc layer uses the [dimming treatment](#arc-dimming);
 selected routes use the same transparency and fades, with highlight ink and a
@@ -189,6 +204,93 @@ The Peers table refreshes changed rows while visible and reconciles deferred
 sorting when shown again, avoiding repeated work for identical samples or a
 hidden table.
 No simulation controls ship in the product.
+
+### Moving dots
+
+Dots travel along each active arc: download dots from the peer's location
+to the origin in the download colour, upload dots from the origin outward in
+the upload colour. The arcs show absolute speed; the dots show that data
+moves, in which direction, and how much each route carries compared with the
+others.
+
+- **Meaning.** One dot stands for the same number of bytes on every route.
+  Dots leave evenly at each route's measured rate, with no random gaps,
+  because the rates are averages. A route shows no dot before its bytes are
+  complete; bytes short of a dot carry over. A dot whose trip would already be
+  over is not shown late.
+- **Motion.** A route's trip takes its length on the fitted overview ÷ 160
+  DIPs per second, within 0.5–3 seconds, so zoom changes how fast dots cross
+  the screen but never how many are in flight. The Slow animation halves this
+  speed and Fast doubles it. A route shorter than 20 DIPs on
+  the overview carries no dots, because a dot would never leave the fades at
+  its ends; its arc and marker still show it is active.
+- **Number.** The map holds at most one dot per 10,000 DIP² of canvas, and at
+  least one; Total dots Low halves this maximum and High doubles it. The total rate of the routes that carry dots sets the target:
+  that maximum × the cube root of total ÷ the ceiling, at least one dot.
+  The cube root spreads the count evenly from a trickle to the ceiling.
+  The dots of one direction on one route stay at least 15 DIPs apart.
+- **Size.** The smallest value in the series 1, 1.5, 2, 3, 4, 6 … KiB that
+  keeps the mean dots in flight at 80% of the target and every route within
+  its spacing. It rises at once and falls only after ten seconds of lower
+  traffic, so the legend does not flicker; a resize or a new animation
+  choice applies at once. Dots
+  launched before a change keep their size until they land.
+- **Ceiling.** The connection capacity that Connection setup saved, when
+  both directions are above zero; otherwise the highest total of this engine
+  session, at least 1 MiB/s. A total above a stale saved capacity replaces it.
+  Speed limits do not lower it, because they switch with the schedule and can
+  be one-sided. The arcs keep their own fixed scale.
+- **Mark.** A 4.5-DIP round head with a soft glow out to 7 DIPs across, and
+  a tail that tapers and fades out 8 DIPs behind it, turned along the motion
+  and tinted with the transfer colour. A longer tail would join the dots of
+  a busy route, which sit 15 DIPs apart, into one line. A dot is hidden under the markers at its own two ends, fading in
+  from 3.5 to 10 DIPs, and it takes the arcs' destination fade and origin
+  mask, so converging dots cannot form a bright knot. It does not take the
+  arc layer's 80% cap.
+
+The map's [Speed readout](ui/torrents.md#peers-and-connections-map) shows
+the dot size on the line under its totals, such as "•• 48.0 KiB per dot",
+with a tooltip that explains the colours and directions. A described place
+takes that line in its place, so the Speed readout keeps one height. This legend
+shows also while no data moves and before the map has loaded, with the
+smallest size before the first and the last size after traffic stops, so the
+Speed readout never changes size on its own.
+
+The peer-view menu's Animation submenu offers Off, Slow, Normal and Fast, and
+its Total dots submenu offers Low, Normal and High. Both are saved with the
+peer layout and start at Normal. Off draws the map still, without dots,
+legend or arc fades, and disables Total dots. Windows animations off or High
+Contrast on has the same effect and disables both submenus, because no choice
+in them would change the map.
+
+The dots keep moving at the display's frame rate while the app works, such as
+while the Peers table fills. The map shows in a transparent Win2D
+`CanvasAnimatedControl`, whose own thread draws the latest picture of the map
+and the dots over it, because the map and every table share the UI thread and
+any long work there would freeze dots drawn on it. The map itself cannot lie
+under that control: a WinUI 3 swap chain shows only the window's backdrop
+through its transparent pixels, so the backdrop's acrylic stays but anything
+drawn under it does not show. Each picture therefore starts with the colour
+of every background between the backdrop and the map, composed as XAML draws
+them, so the map matches the peers table beside it in every theme.
+
+The UI thread draws each picture of the map into an offscreen bitmap on the
+control's device, and hands it over with the view it shows;
+the dots are placed in that view, so they stay on their arcs while the view
+pans or zooms. A new picture shows at the control's next frame. The UI thread
+also hands over an unchangeable copy of the routes, rates and colours when
+the rates change; only the control's thread reads the dots in flight. While no
+dot flies and the latest picture shows, the control's thread pauses until the
+next dot leaves or the next picture, so slow traffic wakes it once per dot.
+The UI thread wakes it, so the first dot after a pause can wait for a busy UI
+thread; dots already in flight never wait. All dots are one sprite batch. A
+control with a new device stays hidden until it has shown its first frame,
+because until then it can show black.
+
+The map's picture is drawn again only when the view, appearance, inspection, a pending
+rebuild or what it draws of the places changes: their arcs, role kinds,
+activity, colour and strengths. A strength change below one colour level is
+kept for later, so a steady transfer redraws nothing.
 
 ### Arc dimming
 
@@ -247,10 +349,11 @@ arcs can otherwise form an opaque knot.
 
 Zoom must not enlarge the 30-DIP destination fade, 40-DIP origin fade, halo,
 line widths or markers. Activity changes retain the existing 1.6-second smoothing
-when animations are enabled; navigation remains direct and there are no moving
-particles. Dark and Light themes retain the same activity hierarchy. High
+when animations are enabled; navigation remains direct, and the only moving
+marks are the [moving dots](#moving-dots). Dark and Light themes retain the same activity hierarchy. High
 Contrast keeps the existing solid, visible lines without glow or dimming;
-reduced-motion settings bypass activity interpolation.
+reduced-motion settings and the map's Animation Off bypass activity
+interpolation.
 
 ### Zoom and pan
 
@@ -271,9 +374,13 @@ wheel deltas. A drag does not select a location. Show the SizeAll cursor only
 after the drag threshold is crossed, restoring the normal cursor when the drag
 ends or is cancelled. Input moves the view directly, without added easing,
 inertia or a zoom animation. A compact control at the bottom centre
-shows the zoom factor, such as 2×, and a Segoe Fit button when the view is zoomed
-or panned. It hides after three seconds of inactivity and returns on pointer
-interaction, focus or navigation. The Fit button stays visible while focused.
+shows a Segoe Fit button after each zoom, while the view is not fitted. It
+hides after three seconds, but not while the pointer is over it, it has
+focus or the map has keyboard focus, so Tab reaches it. It does not return
+when the pointer moves or the view pans, because the owner wants it only
+after a zoom. Beside it, the zoom
+factor, such as 2×, shows for two seconds after each zoom, because it answers
+how far that zoom went and says nothing at other times.
 Fit shows the whole world with the origin in the centre and returns
 focus to the map when its button disappears. The menu exposes Zoom in, Zoom out
 and Fit, including shortcut text. No permanent toolbar or on-map hint is added.

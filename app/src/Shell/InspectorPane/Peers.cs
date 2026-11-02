@@ -12,6 +12,7 @@ public sealed partial class InspectorPane
 {
     private PeerMap? _peerMap;
     private bool _mapQueued;
+    private bool _peerRowsQueued;
     private bool _arrangingPeers;
     private bool _peersStacked;
     private readonly Button _peerMore;
@@ -74,7 +75,38 @@ public sealed partial class InspectorPane
                     Model.DownloadCities
                 )
             );
-        menu.Add(new MenuSeparator());
+        // Without Windows animations the map never animates, so its choices
+        // would change nothing.
+        var animates = MapRenderer.SystemAnimates;
+        menu.AddRange(
+        [
+            new MenuSeparator(),
+            new MenuSubmenu(
+                text.Get("peer_map", "animation"),
+                Segoe.Play,
+                [
+                    Animation("animation_off", MapAnimation.Off),
+                    Animation("animation_slow", MapAnimation.Slow),
+                    Animation("animation_normal", MapAnimation.Normal),
+                    Animation("animation_fast", MapAnimation.Fast),
+                ]
+            )
+            {
+                IsEnabled = animates,
+            },
+            new MenuSubmenu(
+                text.Get("peer_map", "total_dots"),
+                Segoe.Grid3x3,
+                [
+                    DotTotal("dots_low", MapDotTotal.Low),
+                    DotTotal("dots_normal", MapDotTotal.Normal),
+                    DotTotal("dots_high", MapDotTotal.High),
+                ]
+            )
+            {
+                IsEnabled = animates && view.Animation != MapAnimation.Off,
+            },
+        ]);
         menu.Add(
             new MenuSubmenu(
                 text.Get("peer_map", "speed_position"),
@@ -103,6 +135,12 @@ public sealed partial class InspectorPane
         );
         return menu;
 
+        MenuChoice Animation(string key, MapAnimation animation) =>
+            Choice(key, view.Animation == animation, view with { Animation = animation });
+
+        MenuChoice DotTotal(string key, MapDotTotal total) =>
+            Choice(key, view.DotTotal == total, view with { DotTotal = total });
+
         MenuChoice Choice(string key, bool selected, PeerView choice, bool enabled = true) =>
             new(
                 text.Get("peer_map", key),
@@ -115,6 +153,8 @@ public sealed partial class InspectorPane
                 {
                     "map" or "table" or "both" => "PeerLayout",
                     "countries" or "cities" => "PeerGeography",
+                    _ when key.StartsWith("animation_") => "PeerAnimation",
+                    _ when key.StartsWith("dots_") => "PeerDotTotal",
                     _ => "PeerSpeedCorner",
                 },
             };
@@ -197,6 +237,8 @@ public sealed partial class InspectorPane
             PeerSurface.Visibility = showsMap ? Visibility.Visible : Visibility.Collapsed;
             PeerRates.HorizontalAlignment = view.SpeedCorner == MapCorner.BottomRight
                 ? HorizontalAlignment.Right : HorizontalAlignment.Left;
+            PeerTotals.HorizontalAlignment = PeerRates.HorizontalAlignment;
+            PeerDetail.HorizontalAlignment = PeerRates.HorizontalAlignment;
             PeerRates.VerticalAlignment = view.SpeedCorner == MapCorner.TopLeft
                 ? VerticalAlignment.Top : VerticalAlignment.Bottom;
             PeerSplit.Visibility = combined ? Visibility.Visible : Visibility.Collapsed;
@@ -233,7 +275,10 @@ public sealed partial class InspectorPane
                     _peerMap = new PeerMap(Model.Map) { ContextFlyout = _peerMore.Flyout };
                     _peerMap.Select(Peers.Selection.Items.OfType<Peer>().ToArray());
                     _peerMap.PlaceChanged += (_, place) => Model.Place = place;
+                    _peerMap.DotBytesChanged += (_, _) => ShowSpeedLine();
+                    _peerMap.DescribedChanged += (_, _) => ShowSpeedLine();
                 }
+                _peerMap.SetAnimation(view.Animation, view.DotTotal);
                 if (!ReferenceEquals(PeerDrawing.Content, _peerMap))
                     PeerDrawing.Content = _peerMap;
             }
@@ -288,7 +333,58 @@ public sealed partial class InspectorPane
                 Model.DownloadText,
                 Model.UploadText
             );
+            ShowSpeedLine();
             Model.UpdateMap(_layout.View.Cities && Model.HasCities);
         });
+    }
+
+    // Rows that change alone, as when a place is chosen, reach the table after
+    // the input that changed them, without refreshing the rest of the pane.
+    private void QueuePeerRows()
+    {
+        if (_peerRowsQueued)
+            return;
+        _peerRowsQueued = DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+        {
+            _peerRowsQueued = false;
+            if (
+                !IsLoaded
+                || Peers is null
+                || _library is not null
+                || Model.Section != InspectorSection.Peers
+                || !Model.IsVisible
+                || Model.IsReplacing
+            )
+                return;
+            Peers.ItemsSource = Model.ShownPeers;
+        });
+    }
+
+    // The line under the speed totals shows the place the map describes, and
+    // otherwise the dot legend.
+    private void ShowSpeedLine()
+    {
+        var text = Model.Text;
+        var place = _peerMap?.Described?.Group;
+        PlaceSpeed.Visibility = place is null ? Visibility.Collapsed : Visibility.Visible;
+        if (place is not null)
+        {
+            PlaceName.Text = place.Name;
+            PlaceConnectionCount.Text = text.FormatCount("peer_map", "connections", place.Connections);
+            PlaceConnections.Visibility = place.Connections > 0 ? Visibility.Visible : Visibility.Collapsed;
+            PlaceDownloadRate.Text = TransferPair.Amount(text, "download", text.Rate(place.Down));
+            PlaceDownload.Visibility = place.Down > 0 ? Visibility.Visible : Visibility.Collapsed;
+            PlaceUploadRate.Text = TransferPair.Amount(text, "upload", text.Rate(place.Up));
+            PlaceUpload.Visibility = place.Up > 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+        var dot = place is null ? _peerMap?.DotBytes : null;
+        DotScale.Visibility = dot is null ? Visibility.Collapsed : Visibility.Visible;
+        if (dot is not { } bytes)
+            return;
+        var amount = text.Bytes(bytes);
+        DotAmount.Text = text.Format("peer_map", "dot", amount);
+        var hint = text.Format("peer_map", "dot_hint", amount);
+        ToolTipService.SetToolTip(DotScale, hint);
+        AutomationProperties.SetName(DotScale, hint);
     }
 }

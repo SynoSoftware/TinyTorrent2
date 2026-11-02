@@ -210,6 +210,23 @@ different selected file. Library's origins-only menu preparation remains availab
 while its inspector is closed. These checks distinguish inspector detail from
 independent menu preparation and visible-row enrichment.
 
+`Capture.ps1 -Review peer-switch -Configuration Release` measures what a torrent
+click costs the inspector's peer table. Through the real inspector, it replaces
+200 located peers with another torrent's 200, polls one torrent with five peers
+changed, and repeats the switch with the table alone and sorted by Down. For
+each step it records the UI thread's CPU cycles over 1.2 s, and the busiest
+frame, which holds back input and painting. It asserts no limit,
+because the cycles depend on the machine; compare runs on one machine.
+
+`Capture.ps1 -Review selection-frame -Configuration Release` checks that the
+inspector's work stays out of the frame that shows a new selection. It clicks
+between two torrents through the table's own click selection, with the
+inspector closed and then open on Peers with 200 cached, located peers per
+torrent. For each click it records the UI thread's CPU cycles up to the end of
+the first rendered frame, and over the following 1.2 s. The first count is the
+same with the inspector open or closed when the inspector's work waits for
+later frames.
+
 `app/tests/AddSourceChecks.ps1 -BinaryDirectory <built-app-folder>` checks that
 a reconnect preserves file choices, including one whose send failed, and that a
 dialog's opt-out turns off the settings passed to it in one save. It reads the

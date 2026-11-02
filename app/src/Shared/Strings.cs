@@ -278,7 +278,9 @@ public sealed class Strings
                 : Format("units", "mib", bytes / (1024 * 1024))
         );
 
-    public string Rate(double value) => value == 0 ? "—" : Format("units", "rate", Bytes(value));
+    // A zero rate is a fact about a running transfer; callers show a dash
+    // instead while no transfer is expected, such as for a stopped torrent.
+    public string Rate(double value) => Format("units", "rate", Bytes(value));
 
     public string Bytes(double value)
     {

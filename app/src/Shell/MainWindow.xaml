@@ -513,7 +513,7 @@
             <Grid x:Name="TorrentContent">
               <table:Table
                 x:Name="Torrents"
-                Background="Transparent"
+                Background="{ThemeResource LayerOnMicaBaseAltFillColorDefaultBrush}"
                 ItemsSource="{x:Bind Model.VisibleTorrents, Mode=OneWay}"
                 CanReorder="{x:Bind Model.CanReorder, Mode=OneWay}"
               >

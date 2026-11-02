@@ -44,6 +44,8 @@ public sealed partial class InspectorPane : UserControl
                 Side = Fraction(view.Side, PeerView.Default.Side),
                 Stacked = Fraction(view.Stacked, PeerView.Default.Stacked),
                 SpeedCorner = Enum.IsDefined(view.SpeedCorner) ? view.SpeedCorner : PeerView.Default.SpeedCorner,
+                Animation = Enum.IsDefined(view.Animation) ? view.Animation : PeerView.Default.Animation,
+                DotTotal = Enum.IsDefined(view.DotTotal) ? view.DotTotal : PeerView.Default.DotTotal,
             };
             var peers = value.Peers;
             if (
@@ -300,6 +302,11 @@ public sealed partial class InspectorPane : UserControl
 
     private void OnModel(object? sender, PropertyChangedEventArgs args)
     {
+        if (args.PropertyName == nameof(Inspector.ShownPeers))
+        {
+            QueuePeerRows();
+            return;
+        }
         if (args.PropertyName == nameof(Inspector.IsActive) && Model.IsActive)
             ShowLibrary(Model.Library);
         if (_library is null || args.PropertyName is nameof(Inspector.IsActive) or nameof(Inspector.IsReplacing))
@@ -549,5 +556,7 @@ public sealed record PeerView(PeerLayout Layout, double Side, double Stacked)
 {
     public bool Cities { get; init; }
     public MapCorner SpeedCorner { get; init; } = MapCorner.BottomRight;
+    public MapAnimation Animation { get; init; } = MapAnimation.Normal;
+    public MapDotTotal DotTotal { get; init; } = MapDotTotal.Normal;
     internal static PeerView Default { get; } = new(PeerLayout.Both, .55, .5);
 }

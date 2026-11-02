@@ -18,6 +18,7 @@ public sealed partial class PeerMap
     private const VirtualKey Plus = (VirtualKey)0xBB;
     private const VirtualKey Minus = (VirtualKey)0xBD;
     private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _navigationTimer;
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _zoomTimer;
     private Drag? _drag;
 
     private void ZoomAt(float factor, Vector2 anchor)
@@ -25,6 +26,23 @@ public sealed partial class PeerMap
         EndDrag(false);
         _viewport.ZoomAt(factor, anchor);
         ShowNavigation();
+        ShowZoom();
+    }
+
+    // The zoom level answers "how far did that zoom go", so it shows for a
+    // moment after each zoom, and the Fit button a little longer.
+    private void ShowZoom()
+    {
+        if (_zoomTimer is null)
+        {
+            _zoomTimer = DispatcherQueue.CreateTimer();
+            _zoomTimer.Interval = TimeSpan.FromSeconds(2);
+            _zoomTimer.IsRepeating = false;
+            _zoomTimer.Tick += (_, _) => ZoomLabel.Visibility = Visibility.Collapsed;
+        }
+        _zoomTimer.Stop();
+        ZoomLabel.Visibility = Visibility.Visible;
+        _zoomTimer.Start();
     }
 
     private void Fit()
@@ -50,9 +68,12 @@ public sealed partial class PeerMap
     {
         if (_model.Text is not { } text)
             return;
-        if (_viewport.IsFitted && FitButton.FocusState != FocusState.Unfocused)
-            Focus(FocusState.Programmatic);
-        ShowNavigation();
+        if (_viewport.IsFitted)
+        {
+            if (FitButton.FocusState != FocusState.Unfocused)
+                Focus(FocusState.Programmatic);
+            Navigation.Visibility = Visibility.Collapsed;
+        }
         ZoomLabel.Text = text.Format("peer_map", "zoom", _viewport.Zoom);
         var fit = text.Get("peer_map", "fit");
         var shortcut = text.Get("shortcuts", "control") + "+" + text.Get("shortcuts", "number_0");
@@ -62,15 +83,27 @@ public sealed partial class PeerMap
 
     private void ShowNavigation()
     {
-        _navigationTimer.Stop();
         Navigation.Visibility = IsLoaded && !_viewport.IsFitted ? Visibility.Visible : Visibility.Collapsed;
-        if (Navigation.Visibility == Visibility.Visible && FitButton.FocusState == FocusState.Unfocused)
+        HoldNavigation();
+    }
+
+    // The Fit button stays while it has focus or the map has keyboard focus,
+    // so Tab reaches it, and the pointer's leaving restarts its timer, so it
+    // never disappears under the pointer.
+    private void HoldNavigation()
+    {
+        _navigationTimer.Stop();
+        if (
+            Navigation.Visibility == Visibility.Visible
+            && FitButton.FocusState == FocusState.Unfocused
+            && FocusState != FocusState.Keyboard
+        )
             _navigationTimer.Start();
     }
 
     private void OnWheel(object sender, PointerRoutedEventArgs args)
     {
-        var point = args.GetCurrentPoint(_canvas);
+        var point = args.GetCurrentPoint(Drawing);
         if (point.Properties.IsHorizontalMouseWheel)
             return;
         ZoomAt(
@@ -83,18 +116,17 @@ public sealed partial class PeerMap
 
     private void OnDoubleTapped(object sender, DoubleTappedRoutedEventArgs args)
     {
-        var point = args.GetPosition(_canvas);
+        var point = args.GetPosition(Drawing);
         ZoomAt(1.25f, new Vector2((float)point.X, (float)point.Y));
         args.Handled = true;
     }
 
     private void OnPressed(object sender, PointerRoutedEventArgs args)
     {
-        var point = args.GetCurrentPoint(_canvas);
+        var point = args.GetCurrentPoint(Drawing);
         if (!point.Properties.IsLeftButtonPressed || _drag is not null)
             return;
         Focus(FocusState.Pointer);
-        ShowNavigation();
         var start = new Vector2((float)point.Position.X, (float)point.Position.Y);
         _drag = new Drag(args.Pointer.PointerId, start, _viewport.ToMap(start), _viewport.Center, _viewport.Ratio);
         args.Handled = true;
@@ -102,9 +134,9 @@ public sealed partial class PeerMap
 
     private bool MoveDrag(PointerRoutedEventArgs args)
     {
-        if (_drag is not { } drag || drag.PointerId != args.Pointer.PointerId || _canvas is null)
+        if (_drag is not { } drag || drag.PointerId != args.Pointer.PointerId)
             return false;
-        var point = args.GetCurrentPoint(_canvas);
+        var point = args.GetCurrentPoint(Drawing);
         if (!point.Properties.IsLeftButtonPressed)
         {
             EndDrag(true);
@@ -113,7 +145,7 @@ public sealed partial class PeerMap
         var delta = new Vector2((float)point.Position.X, (float)point.Position.Y) - drag.Start;
         if (!drag.IsActive && delta.LengthSquared() >= 16)
         {
-            if (!_canvas.CapturePointer(args.Pointer))
+            if (!Drawing.CapturePointer(args.Pointer))
             {
                 EndDrag(true);
                 return true;
@@ -135,7 +167,7 @@ public sealed partial class PeerMap
         var moved = drag.IsActive;
         if (moved && _viewport.Scale > 0)
         {
-            var point = args.GetCurrentPoint(_canvas).Position;
+            var point = args.GetCurrentPoint(Drawing).Position;
             _viewport.Hold(_viewport.Zoom, drag.Grip, new Vector2((float)point.X, (float)point.Y));
         }
         EndDrag(false);
@@ -145,7 +177,7 @@ public sealed partial class PeerMap
             SelectPeers([]);
             Choose(_pointed);
             Describe();
-            _canvas?.Invalidate();
+            Invalidate();
         }
         args.Handled = true;
     }
@@ -156,7 +188,7 @@ public sealed partial class PeerMap
             return;
         _drag = null;
         ProtectedCursor = null;
-        _canvas?.ReleasePointerCaptures();
+        Drawing.ReleasePointerCaptures();
         if (cancel && drag.IsActive)
             _viewport.SetView(_viewport.Zoom, drag.Center, drag.Ratio);
         Describe();
@@ -169,7 +201,7 @@ public sealed partial class PeerMap
                 !ReferenceEquals(args.OriginalSource, this)
                 && !ReferenceEquals(args.OriginalSource, FitButton)
             )
-            || _canvas is null
+            || _renderer is null
             || InputKeyboardSource
                 .GetKeyStateForCurrentThread(VirtualKey.Menu)
                 .HasFlag(CoreVirtualKeyStates.Down)
@@ -219,7 +251,7 @@ public sealed partial class PeerMap
             Choose(_pointed);
             _viewport.Reveal(_pointed.Point);
             Describe();
-            _canvas.Invalidate();
+            Invalidate();
         }
         else if (args.Key == VirtualKey.Escape)
         {
@@ -227,7 +259,7 @@ public sealed partial class PeerMap
             Choose(null);
             _pointed = null;
             Describe();
-            _canvas.Invalidate();
+            Invalidate();
         }
         else
             return;

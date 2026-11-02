@@ -35,6 +35,17 @@ public sealed partial class Editor : INotifyPropertyChanged
     public Setting HistoryInterval { get; }
     public Setting CapacityDownload { get; }
     public Setting CapacityUpload { get; }
+
+    /// <summary>
+    /// The line's saved download and upload speeds in decimal Mbit/s, or null
+    /// until Connection setup has saved both above zero.
+    /// </summary>
+    internal (double Download, double Upload)? Capacity =>
+        CapacityDownload.ConfirmedNumber is double download and > 0
+        && CapacityUpload.ConfirmedNumber is double upload and > 0
+            ? (download, upload)
+            : null;
+
     public ConnectionSetup Connection { get; }
     public Setting DiskBuffer { get; }
     public Setting CheckingMemory { get; }

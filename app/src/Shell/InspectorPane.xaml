@@ -611,7 +611,7 @@
           x:Name="PeerContent"
           x:Load="False"
           Visibility="Collapsed"
-          Background="{ThemeResource SolidBackgroundFillColorQuarternaryBrush}"
+          Background="Transparent"
           SizeChanged="OnPeerSize"
         >
           <Grid.RowDefinitions>
@@ -630,23 +630,78 @@
               HorizontalContentAlignment="Stretch"
               VerticalContentAlignment="Stretch"
             />
-            <controls:Field
+            <!-- The map's speed: the totals, then the place the map describes
+                 or else the dot legend. Both lines align to the edge of the
+                 speed's corner, so a longer second line never moves the
+                 totals, and the second line keeps its height while empty. -->
+            <StackPanel
               x:Name="PeerRates"
-              Style="{StaticResource TinyTorrentStatisticStyle}"
               Margin="16"
               HorizontalAlignment="Left"
               VerticalAlignment="Bottom"
               FlowDirection="LeftToRight"
-              Glyph="{x:Bind icons:Segoe.Activity}"
-              Label="{x:Bind Model.Text.Get('peer_map', 'speed')}"
+              Background="Transparent"
+              Spacing="2"
             >
-              <controls:TransferPair x:Name="PeerTransfer" />
-            </controls:Field>
+              <StackPanel x:Name="PeerTotals" Orientation="Horizontal" Spacing="8">
+                <FontIcon
+                  FontFamily="{ThemeResource SegoeFont}"
+                  Glyph="{x:Bind icons:Segoe.Activity}"
+                  Style="{StaticResource InspectorIconStyle}"
+                  VerticalAlignment="Center"
+                />
+                <controls:TransferPair x:Name="PeerTransfer" VerticalAlignment="Center" />
+              </StackPanel>
+              <Grid x:Name="PeerDetail" MinHeight="16">
+                <TextBlock
+                  x:Name="DotScale"
+                  Style="{StaticResource CaptionTextBlockStyle}"
+                  Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                  TextWrapping="NoWrap"
+                  Visibility="Collapsed"
+                ><Run Text="•" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" /><Run Text="•" Foreground="{ThemeResource TinyTorrentUploadBrush}" /><Run Text=" " /><Run x:Name="DotAmount" /></TextBlock>
+                <!-- A long place name trims, so its connections and speeds
+                     always show within the map. Each of those shows only
+                     when it is above zero. -->
+                <Grid x:Name="PlaceSpeed" Visibility="Collapsed">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <TextBlock
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    TextWrapping="NoWrap"
+                    TextTrimming="CharacterEllipsis"
+                  ><Run FontFamily="{x:Bind icons:Segoe.Font}" Text="{x:Bind icons:Segoe.MapPin}" /><Run Text=" " /><Run x:Name="PlaceName" /></TextBlock>
+                  <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <TextBlock
+                      x:Name="PlaceConnections"
+                      Style="{StaticResource CaptionTextBlockStyle}"
+                      Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                      TextWrapping="NoWrap"
+                    ><Run Text=" · " /><Run x:Name="PlaceConnectionCount" /></TextBlock>
+                    <TextBlock
+                      x:Name="PlaceDownload"
+                      Style="{StaticResource CaptionTextBlockStyle}"
+                      Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                      TextWrapping="NoWrap"
+                    ><Run Text=" · " /><Run x:Name="PlaceDownloadRate" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" /></TextBlock>
+                    <TextBlock
+                      x:Name="PlaceUpload"
+                      Style="{StaticResource CaptionTextBlockStyle}"
+                      Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                      TextWrapping="NoWrap"
+                    ><Run Text=" · " /><Run x:Name="PlaceUploadRate" Foreground="{ThemeResource TinyTorrentUploadBrush}" /></TextBlock>
+                  </StackPanel>
+                </Grid>
+              </Grid>
+            </StackPanel>
             <Border
               Margin="0,8,0,0"
               HorizontalAlignment="Right"
               VerticalAlignment="Top"
-              Background="{ThemeResource SolidBackgroundFillColorQuarternaryBrush}"
+              Background="{ThemeResource LayerFillColorDefaultBrush}"
               CornerRadius="0,0,0,4"
             >
               <Button
@@ -930,7 +985,7 @@
             Margin="0,8,0,0"
             HorizontalAlignment="Right"
             VerticalAlignment="Top"
-            Background="{ThemeResource SolidBackgroundFillColorQuarternaryBrush}"
+            Background="{ThemeResource LayerFillColorDefaultBrush}"
             CornerRadius="0,0,0,4"
           >
             <Button

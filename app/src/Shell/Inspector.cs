@@ -401,6 +401,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
             _session = session;
             _peerCache.Clear();
             Peers = null;
+            Map.ResetPeak();
             Trackers = null;
             Pieces = null;
             _pieceFiles = null;

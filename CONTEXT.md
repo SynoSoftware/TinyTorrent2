@@ -85,6 +85,14 @@ It is distinct from the individual peers selected in that table.
 examining. An estimated destination does not establish the actual location of
 any individual peer.
 
+**Moving dot**: a mark that travels along a map arc and stands for a fixed
+amount of data downloaded from or uploaded to that destination's peers.
+_Avoid_: pulse, particle.
+
+**Dot size**: the amount of data one moving dot stands for, the same on every
+arc at one time.
+_Avoid_: dot scale.
+
 **City data**: DB-IP's address-to-city data, downloaded when the person asks
 and kept on this computer as a replaceable copy, like IMDb data. The country
 data that resolves flags is installed with the app.
@@ -424,6 +432,11 @@ _Avoid_: preferences.
 **Network adapter**: the Windows network connection that torrent traffic is bound
 to.
 _Avoid_: interface.
+
+**Connection capacity**: the download and upload speeds of the person's
+internet connection, which Connection setup measures or the person enters.
+It is unknown until both are saved.
+_Avoid_: line speed, bandwidth.
 
 **Page**: a whole view of the product window, such as Torrents, Library, Settings,
 or About.
