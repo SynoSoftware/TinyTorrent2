@@ -18,7 +18,6 @@ public sealed partial class PeerMap
     private const VirtualKey Plus = (VirtualKey)0xBB;
     private const VirtualKey Minus = (VirtualKey)0xBD;
     private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _navigationTimer;
-    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _zoomTimer;
     private Drag? _drag;
 
     private void ZoomAt(float factor, Vector2 anchor)
@@ -26,23 +25,6 @@ public sealed partial class PeerMap
         EndDrag(false);
         _viewport.ZoomAt(factor, anchor);
         ShowNavigation();
-        ShowZoom();
-    }
-
-    // The zoom level answers "how far did that zoom go", so it shows for a
-    // moment after each zoom, and the Fit button a little longer.
-    private void ShowZoom()
-    {
-        if (_zoomTimer is null)
-        {
-            _zoomTimer = DispatcherQueue.CreateTimer();
-            _zoomTimer.Interval = TimeSpan.FromSeconds(2);
-            _zoomTimer.IsRepeating = false;
-            _zoomTimer.Tick += (_, _) => ZoomLabel.Visibility = Visibility.Collapsed;
-        }
-        _zoomTimer.Stop();
-        ZoomLabel.Visibility = Visibility.Visible;
-        _zoomTimer.Start();
     }
 
     private void Fit()
@@ -87,9 +69,9 @@ public sealed partial class PeerMap
         HoldNavigation();
     }
 
-    // The Fit button stays while it has focus or the map has keyboard focus,
-    // so Tab reaches it, and the pointer's leaving restarts its timer, so it
-    // never disappears under the pointer.
+    // The zoom level and the Fit button stay while the button has focus or the
+    // map has keyboard focus, so Tab reaches it, and the pointer's leaving
+    // restarts their timer, so they never disappear under the pointer.
     private void HoldNavigation()
     {
         _navigationTimer.Stop();

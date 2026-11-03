@@ -58,6 +58,15 @@ input, focus, automation, sizing, and states. Compose them before creating or
 retemplating a control. A custom control must solve a concrete need and preserve
 equivalent keyboard, theme, focus, and accessibility behavior.
 
+**Owner ruling: choices keep a context menu open.** In every context menu and its
+submenus, a radio item or a check box changes its setting and leaves the menu
+open, with the same submenu open, because a person often sets several choices in
+turn. A command closes the menu, and a click outside closes it.
+[MenuItems](ui/workspace.md#native-controls-and-visual-authority) applies this to
+every menu it builds. A menu bar menu closes after a choice, because WinUI does not
+let the app refuse its close. A button that picks one value, such as the language
+or the workspace, closes after the choice, as a ComboBox does.
+
 The WinUI resource system is the visual authority. Reuse platform controls,
 styles, type roles, brushes, and corner resources, then existing project styles.
 A new semantic resource needs demonstrated reuse. A one-place spacing default

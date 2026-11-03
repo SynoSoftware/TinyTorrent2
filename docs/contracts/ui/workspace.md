@@ -34,6 +34,11 @@ has no content icon, as in Torrent, all choices use Segoe checked, empty or mixe
 squares in the existing icon column. A native toggle there would reserve an
 otherwise empty checkmark column beside every command. The described state
 remains authoritative when navigation is refused by an unfinished draft.
+MenuItems applies the [choices ruling](../ui.md#native-controls-and-visual-authority):
+after a choice, or a command that asks for it, it refuses the close that the
+click raises, describes the menu again and opens the submenu that held the
+click again, because WinUI closes submenus before that close.
+`MenuItems.Picker` builds the language and workspace menus, whose choice closes them.
 
 The custom title bar contains one row: workspace dropdown, File/Torrent/View/Help
 MenuBar, bounded Search, the language switch, the light/dark switch, and native caption
@@ -309,7 +314,8 @@ Show the selected count at the top of Torrent; the row context menu names
 the torrent for a single selection. Clicking
 outside dismisses it; Escape dismisses it and returns focus to its invoker. Use
 native MenuFlyout behavior, because command menus should respond as Windows users
-expect.
+expect, except that its choices keep it open under the
+[choices ruling](../ui.md#native-controls-and-visual-authority).
 
 Settings and About retain the same title-bar layout, with the Back arrow added
 before the app icon. Back returns to the page they were opened from,

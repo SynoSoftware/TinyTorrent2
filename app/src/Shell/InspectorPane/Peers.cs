@@ -1,6 +1,8 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Input;
 using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Torrents;
@@ -17,10 +19,21 @@ public sealed partial class InspectorPane
     private bool _peersStacked;
     private readonly Button _peerMore;
 
+    // The entries the open peer menu shows. Its choices keep it open, and it keeps
+    // these entries until it closes, because WinUI places a menu that grows or
+    // shrinks again, which moves it away from the pointer.
+    private (bool Map, bool Download)? _peerMenuShape;
+
     private void SetupPeers()
     {
         _peerMore.Flyout = MenuItems.Flyout(PeerMenu, () => Model.Text);
-        PeerRates.ContextFlyout = _peerMore.Flyout;
+        _peerMore.Flyout.Closed += (_, _) => _peerMenuShape = null;
+        PeerContent.ContextRequested += OnPeerContext;
+        Peers.ItemContextRequested += (_, args) =>
+            ShowPeerMenu(
+                args.Target.TransformToVisual(PeerContent)
+                    .TransformPoint(args.Position ?? new Point(0, args.Target.ActualHeight))
+            );
         Peers.SelectionChanged += (_, selection) =>
             _peerMap?.Select(selection.Items.OfType<Peer>().ToArray());
         PeerSplit.ValueChanged += (_, value) =>
@@ -44,11 +57,31 @@ public sealed partial class InspectorPane
         RefreshMap();
     }
 
+    // Right-click anywhere in Peers that does not open a menu of its own, such as the
+    // table's column headers, opens the peer-view menu.
+    private void OnPeerContext(UIElement sender, ContextRequestedEventArgs args)
+    {
+        args.Handled = true;
+        ShowPeerMenu(
+            args.TryGetPosition(PeerContent, out var point)
+                ? point
+                : args.OriginalSource is UIElement focused
+                    ? focused.TransformToVisual(PeerContent).TransformPoint(default)
+                    : default
+        );
+    }
+
+    // Shown from PeerContent, which every layout keeps: a menu shown from the map would
+    // close when Table only removes the map, although its choices keep it open.
+    private void ShowPeerMenu(Point point) =>
+        _peerMore.Flyout.ShowAt(PeerContent, new FlyoutShowOptions { Position = point });
+
     private List<MenuEntry> PeerMenu()
     {
         var text = Model.Text;
         var view = _layout.View;
         var installed = Model.HasCities;
+        var shape = _peerMenuShape ??= (view.Layout != PeerLayout.Table, !installed);
         List<MenuEntry> menu =
         [
             new MenuHeading(text.Get("peer_map", "view"), Segoe.Columns2),
@@ -62,18 +95,27 @@ public sealed partial class InspectorPane
                 }
             ),
             Choice("both", view.Layout == PeerLayout.Both, view with { Layout = PeerLayout.Both }),
+        ];
+        // The other choices change only the map.
+        if (!shape.Map)
+            return menu;
+        menu.AddRange(
+        [
             new MenuSeparator(),
             new MenuHeading(text.Get("peer_map", "geography"), Segoe.Globe2),
             Choice("countries", !view.Cities || !installed, view with { Cities = false }),
             Choice("cities", view.Cities && installed, view with { Cities = true }, installed),
-        ];
-        if (!installed)
+        ]);
+        if (shape.Download)
             menu.Add(
                 new MenuCommand(
                     text.Get("peer_map", "download"),
                     Segoe.Download,
                     Model.DownloadCities
                 )
+                {
+                    KeepsMenuOpen = true,
+                }
             );
         // Without Windows animations the map never animates, so its choices
         // would change nothing.
@@ -129,9 +171,6 @@ public sealed partial class InspectorPane
                     ),
                 ]
             )
-            {
-                IsEnabled = view.Layout != PeerLayout.Table,
-            }
         );
         return menu;
 
@@ -272,7 +311,7 @@ public sealed partial class InspectorPane
             {
                 if (_peerMap is null)
                 {
-                    _peerMap = new PeerMap(Model.Map) { ContextFlyout = _peerMore.Flyout };
+                    _peerMap = new PeerMap(Model.Map);
                     _peerMap.Select(Peers.Selection.Items.OfType<Peer>().ToArray());
                     _peerMap.PlaceChanged += (_, place) => ChoosePlace(place);
                     _peerMap.DotBytesChanged += (_, _) => ShowSpeedLine();

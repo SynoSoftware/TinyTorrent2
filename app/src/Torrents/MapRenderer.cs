@@ -319,14 +319,14 @@ internal sealed class MapRenderer : IDisposable
                 _model.Ceiling,
                 Animation switch
                 {
-                    MapAnimation.Slow => .5,
-                    MapAnimation.Fast => 2,
-                    _ => 1,
+                    MapAnimation.Slow => .25,
+                    MapAnimation.Fast => 1,
+                    _ => .5,
                 },
                 DotTotal switch
                 {
                     MapDotTotal.Low => .5,
-                    MapDotTotal.High => 2,
+                    MapDotTotal.High => 4,
                     _ => 1,
                 });
             Schedule();

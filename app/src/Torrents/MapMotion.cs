@@ -498,7 +498,7 @@ internal sealed class MapMotion : IDisposable
     /// </summary>
     /// <param name="Area">The map's area in DIP².</param>
     /// <param name="Ceiling">The connection capacity in bytes per second.</param>
-    /// <param name="Speed">How fast dots travel, as a multiple of the normal speed.</param>
+    /// <param name="Speed">How fast dots travel, as a multiple of the full speed, which Fast uses.</param>
     /// <param name="Total">How many dots fly at most, as a multiple of the normal maximum.</param>
     internal sealed record Traffic(IReadOnlyList<Route> Routes, double Area, double Ceiling, double Speed, double Total);
 

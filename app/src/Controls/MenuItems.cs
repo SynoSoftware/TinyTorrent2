@@ -1,6 +1,9 @@
+using System.Runtime.CompilerServices;
 using System.Windows.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Automation.Peers;
+using Microsoft.UI.Xaml.Automation.Provider;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Syno.TinyTorrent.Shared;
@@ -29,6 +32,15 @@ internal sealed record MenuCommand(string Text, string Glyph, ICommand Command) 
     internal string? Name { get; init; }
 
     internal string? ToolTip { get; init; }
+
+    /// <summary>The state the glyph shows, spoken after the name.</summary>
+    internal string? Status { get; init; }
+
+    /// <summary>
+    /// Whether a click leaves a <see cref="MenuItems.Flyout"/> menu open, as a choice does. A
+    /// MenuBar menu closes, because WinUI gives no access to its close.
+    /// </summary>
+    internal bool KeepsMenuOpen { get; init; }
 }
 
 /// <summary>
@@ -57,16 +69,83 @@ internal static class MenuItems
 {
     private static readonly MenuSeparator Separator = new();
 
+    private static readonly ConditionalWeakTable<MenuFlyout, Action> Refills = new();
+
     /// <summary>
     /// A menu described again each time it opens, so it shows the current state. Closing it
-    /// releases its commands.
+    /// releases its commands. A choice, in the menu or one of its submenus, leaves it open and
+    /// describes it again, as does a command that keeps it open; a click outside closes it.
     /// </summary>
-    internal static MenuFlyout Flyout(Func<IReadOnlyList<MenuEntry>> describe, Func<Strings> text)
+    internal static MenuFlyout Flyout(Func<IReadOnlyList<MenuEntry>> describe, Func<Strings> text) =>
+        Menu(describe, text, choicesKeepOpen: true);
+
+    /// <summary>
+    /// A button's menu that chooses one value, such as the language. A choice closes it, as it
+    /// closes a ComboBox.
+    /// </summary>
+    internal static MenuFlyout Picker(Func<IReadOnlyList<MenuEntry>> describe, Func<Strings> text) =>
+        Menu(describe, text, choicesKeepOpen: false);
+
+    private static MenuFlyout Menu(
+        Func<IReadOnlyList<MenuEntry>> describe,
+        Func<Strings> text,
+        bool choicesKeepOpen
+    )
     {
         var menu = new MenuFlyout();
-        menu.Opening += (_, _) => Fill(menu.Items, describe(), text());
-        menu.Closed += (_, _) => Clear(menu.Items);
+        // WinUI has no stay-open switch, but the close that a click raises can be refused.
+        // The hold ends on the next dispatcher turn, after that close was refused.
+        var holding = false;
+        // Until a click keeps the menu open, it stays as it opened, so no entry moves
+        // under the pointer.
+        var kept = false;
+        void Hold(MenuEntry entry, IReadOnlyList<MenuFlyoutSubItem> submenus)
+        {
+            var keepsOpen = entry switch
+            {
+                MenuChoice => choicesKeepOpen,
+                MenuCommand command => command.KeepsMenuOpen,
+                _ => false,
+            };
+            if (!keepsOpen)
+                return;
+            holding = true;
+            kept = true;
+            menu.DispatcherQueue.TryEnqueue(() =>
+            {
+                holding = false;
+                Refill();
+                // WinUI closes the submenus before the close that can be refused, so the
+                // submenus that held the click open again.
+                foreach (var submenu in submenus)
+                    if (menu.IsOpen && submenu.IsLoaded && submenu.IsEnabled)
+                        Expand(submenu);
+            });
+        }
+        void Refill()
+        {
+            if (kept && menu.IsOpen)
+                Fill(menu.Items, describe(), text(), Hold);
+        }
+        menu.Opening += (_, _) =>
+        {
+            kept = false;
+            Fill(menu.Items, describe(), text(), Hold);
+        };
+        menu.Closing += (_, closing) => closing.Cancel = holding;
+        menu.Closed += (_, _) => Truncate(menu.Items, 0);
+        Refills.Add(menu, Refill);
         return menu;
+    }
+
+    /// <summary>
+    /// Describes an open <see cref="Flyout"/> menu again after a click kept it open, for state
+    /// that changes after that click.
+    /// </summary>
+    internal static void Refresh(MenuFlyout menu)
+    {
+        if (Refills.TryGetValue(menu, out var refill))
+            refill();
     }
 
     /// <summary>
@@ -78,6 +157,18 @@ internal static class MenuItems
         IList<MenuFlyoutItemBase> items,
         IReadOnlyList<MenuEntry> entries,
         Strings text
+    ) => Fill(items, entries, text, clicked: null);
+
+    /// <summary>
+    /// Told about a click on an entry, with the submenus that hold it, outermost first.
+    /// </summary>
+    private delegate void Clicked(MenuEntry entry, IReadOnlyList<MenuFlyoutSubItem> submenus);
+
+    private static void Fill(
+        IList<MenuFlyoutItemBase> items,
+        IReadOnlyList<MenuEntry> entries,
+        Strings text,
+        Clicked? clicked
     )
     {
         var lines = entries
@@ -87,17 +178,20 @@ internal static class MenuItems
         // when choices have content icons to show beside their state.
         var checks = lines.OfType<MenuChoice>().All(choice =>
             choice.Glyph is not null || choice.FlagRegion is not null);
-        if (
-            items.Count != lines.Length
-            || !items.Zip(lines).All(pair => Matches(pair.First, pair.Second, checks))
+        // The items before the first change stay, so the item that a click kept
+        // open stays under the pointer and keeps keyboard focus.
+        var unchanged = 0;
+        while (
+            unchanged < items.Count
+            && unchanged < lines.Length
+            && Matches(items[unchanged], lines[unchanged], checks)
         )
-        {
-            Clear(items);
-            foreach (var line in lines)
-                items.Add(Create(line, items, checks));
-        }
+            unchanged++;
+        Truncate(items, unchanged);
+        for (var index = unchanged; index < lines.Length; index++)
+            items.Add(Create(lines[index], items, checks, clicked));
         for (var index = 0; index < lines.Length; index++)
-            Update(items[index], lines[index], text);
+            Update(items[index], lines[index], text, clicked);
     }
 
     private static bool Matches(MenuFlyoutItemBase item, MenuEntry line, bool checks) =>
@@ -110,7 +204,12 @@ internal static class MenuItems
             _ => true,
         });
 
-    private static MenuFlyoutItemBase Create(MenuEntry line, IList<MenuFlyoutItemBase> siblings, bool checks)
+    private static MenuFlyoutItemBase Create(
+        MenuEntry line,
+        IList<MenuFlyoutItemBase> siblings,
+        bool checks,
+        Clicked? clicked
+    )
     {
         MenuFlyoutItemBase item = line switch
         {
@@ -141,12 +240,14 @@ internal static class MenuItems
                     if (peer.GroupName == radio.GroupName && peer.DataContext is MenuChoice choice)
                         peer.IsChecked = choice.State == true;
             };
+        if (clicked is not null && item is MenuFlyoutItem invoked)
+            invoked.Click += (_, _) => clicked((MenuEntry)invoked.DataContext, []);
         // A Type in Tag crosses WinRT as a type name, so the kind is kept as a string.
         item.Tag = line.GetType().Name;
         return item;
     }
 
-    private static void Update(MenuFlyoutItemBase item, MenuEntry line, Strings text)
+    private static void Update(MenuFlyoutItemBase item, MenuEntry line, Strings text, Clicked? clicked)
     {
         if ((line is MenuCommand or MenuHeading or MenuSeparator) && Equals(item.DataContext, line))
             return;
@@ -160,6 +261,7 @@ internal static class MenuItems
                 Show(shown, command.Text, Segoe.Font, command.Glyph, command.Command, command.AccessKey);
                 shown.KeyboardAcceleratorTextOverride = command.Shortcut;
                 AutomationProperties.SetName(shown, command.Name ?? string.Empty);
+                AutomationProperties.SetItemStatus(shown, command.Status ?? string.Empty);
                 ToolTipService.SetToolTip(shown, command.ToolTip);
                 break;
             case (MenuChoice choice, MenuFlyoutItem shown):
@@ -202,10 +304,20 @@ internal static class MenuItems
                     shown.Icon = icon;
                 shown.AccessKey = submenu.AccessKey;
                 shown.IsEnabled = submenu.IsEnabled;
-                Fill(shown.Items, submenu.Entries, text);
+                Fill(
+                    shown.Items,
+                    submenu.Entries,
+                    text,
+                    clicked is null ? null : (entry, submenus) => clicked(entry, [shown, .. submenus])
+                );
                 break;
         }
     }
+
+    private static void Expand(MenuFlyoutSubItem submenu) =>
+        ((IExpandCollapseProvider)FrameworkElementAutomationPeer
+            .CreatePeerForElement(submenu)
+            .GetPattern(PatternInterface.ExpandCollapse)).Expand();
 
     private static void Show(
         MenuFlyoutItem item,
@@ -239,12 +351,12 @@ internal static class MenuItems
         return new FontIcon { FontFamily = font, Glyph = glyph };
     }
 
-    // Removes items one at a time: a MenuBarItem mirrors each removal into its flyout but
-    // ignores Clear, which left old entries behind after a language change. Dropping each
-    // command ends the item's subscription to it.
-    private static void Clear(IList<MenuFlyoutItemBase> items)
+    // Removes the items after the first count one at a time: a MenuBarItem mirrors each
+    // removal into its flyout but ignores Clear, which left old entries behind after a
+    // language change. Dropping each command ends the item's subscription to it.
+    private static void Truncate(IList<MenuFlyoutItemBase> items, int count)
     {
-        while (items.Count > 0)
+        while (items.Count > count)
         {
             switch (items[^1])
             {
@@ -252,7 +364,7 @@ internal static class MenuItems
                     item.Command = null;
                     break;
                 case MenuFlyoutSubItem submenu:
-                    Clear(submenu.Items);
+                    Truncate(submenu.Items, 0);
                     break;
             }
             items.RemoveAt(items.Count - 1);

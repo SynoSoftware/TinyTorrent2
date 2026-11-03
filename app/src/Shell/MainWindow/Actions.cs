@@ -254,16 +254,46 @@ public sealed partial class MainWindow
             cancellation.ThrowIfCancellationRequested();
             if (command is MenuCommand action && action.Command == Model.Retry && !retry)
                 continue;
-            entries.Add(command is MenuChoice choice
-                ? choice with { State = choice.Command == Model.SwitchSequential ? sequential
-                    : choice.Command == Model.SwitchFirstLast ? firstLast : limited }
-                : command);
+            entries.Add(command switch
+            {
+                MenuChoice choice => choice with
+                {
+                    State = choice.Command == Model.SwitchSequential ? sequential : firstLast,
+                },
+                MenuCommand speed when speed.Command == Model.LimitSpeed =>
+                    SpeedLimit(speed, limited, text),
+                _ => command,
+            });
         }
         return entries;
     }
 
+    // The gauge's needle shows whether the selected torrents have their own limit:
+    // low when all of them do, halfway when some do, and high when none does.
+    private static MenuCommand SpeedLimit(MenuCommand command, bool? limited, Strings text) =>
+        command with
+        {
+            Glyph = limited switch
+            {
+                true => Syno.Segoe.Limited,
+                false => Syno.Segoe.Gauge,
+                null => Syno.Segoe.PartlyLimited,
+            },
+            Status = text.Get(
+                "menus",
+                limited switch
+                {
+                    true => "on",
+                    false => "off",
+                    null => "mixed",
+                }
+            ),
+        };
+
     private void FillMenus(IReadOnlyList<MenuEntry> torrent)
     {
+        if (_selectionMenu is not null)
+            MenuItems.Refresh(_selectionMenu);
         var library = Model.Page == WindowPage.Library;
         MenuItems.Fill(
             FileMenu.Items,
@@ -407,7 +437,11 @@ public sealed partial class MainWindow
         yield return new MenuSeparator();
         yield return Choice("sequential", Model.SwitchSequential, Model.Sequential);
         yield return Choice("first_last", Model.SwitchFirstLast, Model.FirstLast);
-        yield return Choice("speed_limit", Model.LimitSpeed, Model.Limited);
+        yield return SpeedLimit(
+            Command("speed_limit", Model.LimitSpeed, Syno.Segoe.Gauge),
+            Model.Limited,
+            Model.Text
+        );
         yield return new MenuSeparator();
         yield return Command("remove", Model.Remove, Syno.Segoe.Trash2);
     }

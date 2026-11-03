@@ -71,9 +71,11 @@ public sealed class Peer : INotifyPropertyChanged
             PeerState.Known => Syno.Segoe.Unplug,
             PeerState.Connecting => Syno.Segoe.PlugZap,
             PeerState.Handshake => Syno.Segoe.Handshake,
-            PeerState.Connected => Syno.Segoe.Cable,
+            PeerState.Connected => Syno.Segoe.Connected,
             _ => Syno.Segoe.CircleQuestionMark,
         };
+    public string StateBadge =>
+        State == PeerState.Connected ? Syno.Segoe.ConnectedCheck : string.Empty;
     public string StateHint => _text.Format("peers", "state_hint", StateExplanation, SourcesText);
     public string ClientHint =>
         string.IsNullOrEmpty(Client)
@@ -259,6 +261,7 @@ public sealed class Peer : INotifyPropertyChanged
             nameof(State),
             nameof(StateText),
             nameof(StateGlyph),
+            nameof(StateBadge),
             nameof(StateHint),
             nameof(ProgressText),
             nameof(DownloadText),

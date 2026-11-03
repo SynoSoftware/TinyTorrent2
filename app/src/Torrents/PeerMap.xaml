@@ -18,7 +18,6 @@
     >
       <TextBlock
         x:Name="ZoomLabel"
-        Visibility="Collapsed"
         VerticalAlignment="Center"
         Style="{StaticResource CaptionTextBlockStyle}"
         IsHitTestVisible="False"

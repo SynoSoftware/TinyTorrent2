@@ -374,7 +374,6 @@ public sealed partial class PeerMap : UserControl
         EndDrag(true);
         _navigationTimer.Stop();
         Navigation.Visibility = Visibility.Collapsed;
-        ContextFlyout?.Hide();
         _renderer?.Dispose();
         _renderer = null;
         _motion?.Dispose();

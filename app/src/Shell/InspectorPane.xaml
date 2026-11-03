@@ -821,12 +821,20 @@
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                       </Grid.ColumnDefinitions>
-                      <FontIcon
-                        FontFamily="{StaticResource SegoeFont}"
-                        Glyph="{x:Bind StateGlyph, Mode=OneWay}"
-                        Style="{StaticResource TinyTorrentStatusIconStyle}"
-                        AutomationProperties.AccessibilityView="Raw"
-                      />
+                      <Grid>
+                        <FontIcon
+                          FontFamily="{StaticResource SegoeFont}"
+                          Glyph="{x:Bind StateGlyph, Mode=OneWay}"
+                          Style="{StaticResource TinyTorrentStatusIconStyle}"
+                          AutomationProperties.AccessibilityView="Raw"
+                        />
+                        <FontIcon
+                          FontFamily="{StaticResource SegoeFont}"
+                          Glyph="{x:Bind StateBadge, Mode=OneWay}"
+                          Style="{StaticResource TinyTorrentStatusIconStyle}"
+                          AutomationProperties.AccessibilityView="Raw"
+                        />
+                      </Grid>
                       <TextBlock
                         Grid.Column="1"
                         Text="{x:Bind StateText, Mode=OneWay}"

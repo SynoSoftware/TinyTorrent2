@@ -90,6 +90,14 @@ not regroup peers or publish model changes. Unload disposes the renderer and
 releases the geography, while Inspector retains plain map state.
 
 The Peers inspector's ellipsis menu selects Map only, Table only or Map and table.
+Right-click anywhere in Peers opens the same menu, on the map, its Speed readout,
+the table's rows and its empty space; the table's column headers keep their own
+menu. When it opens with Table only, it shows only these three choices, because
+every other choice changes only the map. Its choices keep it open under the
+[choices ruling](ui.md#native-controls-and-visual-authority), and so does Get
+city data, so no entry closes it; a click outside closes it. It keeps the
+entries it opened with until it closes, so choosing another layout in it does
+not move it.
 Its Map detail group selects Countries or Cities. Countries aggregates every
 peer by country using estimated distribution; Cities uses supplied coordinates
 and falls back to estimated distribution for records without coordinates.
@@ -220,12 +228,13 @@ others.
   over is not shown late.
 - **Motion.** A route's trip takes its length on the fitted overview ÷ 160
   DIPs per second, within 0.5–3 seconds, so zoom changes how fast dots cross
-  the screen but never how many are in flight. The Slow animation halves this
-  speed and Fast doubles it. A route shorter than 20 DIPs on
+  the screen but never how many are in flight. Fast moves at this speed,
+  Normal at half of it and Slow at a quarter. A route shorter than 20 DIPs on
   the overview carries no dots, because a dot would never leave the fades at
   its ends; its arc and marker still show it is active.
 - **Number.** The map holds at most one dot per 10,000 DIP² of canvas, and at
-  least one; Total dots Low halves this maximum and High doubles it. The total rate of the routes that carry dots sets the target:
+  least one; Total dots Low halves this maximum and High multiplies it by four,
+  because twice as many dots on a sparse map do not look like more. The total rate of the routes that carry dots sets the target:
   that maximum × the cube root of total ÷ the ceiling, at least one dot.
   The cube root spreads the count evenly from a trickle to the ceiling.
   The dots of one direction on one route stay at least 15 DIPs apart.
@@ -370,8 +379,10 @@ interpolation.
 | Inspect locations | Click or hover as before | Plain arrows continue location inspection and reveal an off-screen destination |
 | Cancel drag | — | Escape restores the view from before the drag; outside a drag, existing selection clearing remains available |
 
-The map uses the inspector's existing flyout instance, so right-click and the
+Right-click shows the inspector's existing flyout instance, so right-click and the
 ellipsis share commands, live state and the same icon-led native menu headings.
+It shows the menu from the Peers area, not from the map, because choosing Table
+only removes the map, and the menu stays open.
 
 Zoom ranges from 1× to 128×, with 1.25× per wheel notch and proportional small
 wheel deltas. A drag does not select a location. Show the SizeAll cursor only
@@ -383,8 +394,8 @@ hides after three seconds, but not while the pointer is over it, it has
 focus or the map has keyboard focus, so Tab reaches it. It does not return
 when the pointer moves or the view pans, because the owner wants it only
 after a zoom. Beside it, the zoom
-factor, such as 2×, shows for two seconds after each zoom, because it answers
-how far that zoom went and says nothing at other times.
+factor, such as 2×, answers how far that zoom went. It shows and hides with the
+Fit button by the same rule, because the two read as one control.
 Fit shows the whole world with the origin in the centre and returns
 focus to the map when its button disappears. The menu exposes Zoom in, Zoom out
 and Fit, including shortcut text. No permanent toolbar or on-map hint is added.

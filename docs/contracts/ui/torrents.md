@@ -56,7 +56,9 @@ sequential order and Download first and last pieces first are menu choices
 beside them. An item is checked when every selected torrent
 has that choice and mixed when only some do. Choosing a checked item turns the
 choice off for all of them, and otherwise turns it on for all of them, so one
-click makes a mixed selection consistent. The inspector does not repeat them:
+click makes a mixed selection consistent. Choosing one leaves the row context
+menu open, under the [choices ruling](../ui.md#native-controls-and-visual-authority).
+The inspector does not repeat them:
 the item already shows the choice where it is changed. Open hands the file
 of a single-file torrent, or the folder of a multi-file torrent, to Windows as
 Explorer does, only on the person's request. Double-click and Enter on a row
@@ -93,8 +95,10 @@ limit and the current global limit applies, so the schedule, alternative limits
 and Pause all keep working through the global limits, and no torrent needs its
 own alternative limits or schedule. A limit above the global limit is accepted,
 and the limit fields' tooltip shows the current global limit so the person sees
-which one applies. The menu item is checked when every selected torrent has a limit and
-mixed when only some do, as the piece-order choices are. The inspector's General
+which one applies. The menu item is a command, not a check box, because it opens
+the dialog instead of switching a limit. Its gauge shows the state: the needle
+is low when every selected torrent has a limit, halfway when only some do, and
+high when none does. Screen readers hear On, Off or Mixed. The inspector's General
 view states the torrent's limits, because a person who wonders why one torrent
 is slow opens its properties. An optional Speed limit column, hidden by default
 because most torrents never have a limit, lets the person find every limited

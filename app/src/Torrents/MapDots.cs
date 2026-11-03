@@ -57,7 +57,7 @@ internal sealed class MapDots<TRoute>(long smallest)
     /// </summary>
     /// <param name="area">The canvas area in DIP².</param>
     /// <param name="ceiling">The connection capacity in bytes per second; above zero.</param>
-    /// <param name="speed">How fast dots travel, as a multiple of the normal speed.</param>
+    /// <param name="speed">How fast dots travel, as a multiple of <see cref="Speed"/>.</param>
     /// <param name="total">How many dots fly at most, as a multiple of the normal maximum.</param>
     internal void Update(
         IEnumerable<Traffic> routes,

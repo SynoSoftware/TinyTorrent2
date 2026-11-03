@@ -40,7 +40,6 @@ public static class Segoe
     public static readonly string BookOpenCheck = Windows11 ? "\uF28B" : "\uE9D5";
     public const string Building2 = "\uEC06";
     public const string BuildingComplex = "\uEC07";
-    public const string Cable = "\uF385";
     public const string Calculator = "\uE8EF";
     public const string Calendar = "\uE787";
     public const string CalendarClock = "\uEC92";
@@ -67,6 +66,15 @@ public static class Segoe
     public const string CodeXml = "\uE943";
     public const string Cog = "\uE713";
     public const string Columns2 = "\uE89A";
+
+    /// <summary>
+    /// A globe with its lower-right corner left open; draw <see cref="ConnectedCheck"/> over it to
+    /// fill that corner.
+    /// </summary>
+    public const string Connected = "\uF385";
+
+    /// <summary>The check that completes <see cref="Connected"/>, at the same position.</summary>
+    public const string ConnectedCheck = "\uF386";
     public const string Copy = "\uE8C8";
     public static readonly string Cpu = Windows11 ? "\uEEA1" : "\uE950";
     public const string Database = "\uE8F1";
@@ -112,6 +120,7 @@ public static class Segoe
     public const string Languages = "\uF2B7";
     public const string Lightbulb = "\uE706";
     public const string LightbulbOff = "\uE708";
+    public const string Limited = "\uEC48";
     public const string Link = "\uE71B";
     public const string List = "\uEA37";
     public const string ListChecks = "\uE9D5";
@@ -140,6 +149,7 @@ public static class Segoe
     public const string PanelLeftClose = "\uE89F";
     public const string PanelLeftOpen = "\uE8A0";
     public const string PanelTop = "\uE737";
+    public const string PartlyLimited = "\uEC49";
     public const string Pause = "\uE769";
     public const string Pencil = "\uE70F";
     public const string Pin = "\uE718";

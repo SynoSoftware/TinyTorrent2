@@ -47,9 +47,9 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
         Svg.Fit(TorrentsFace);
         Svg.Fit(LibraryFace);
-        WorkspacePicker.Flyout = MenuItems.Flyout(() => WorkspaceMenu("WorkspacePicker"), () => Model.Text);
+        WorkspacePicker.Flyout = MenuItems.Picker(() => WorkspaceMenu("WorkspacePicker"), () => Model.Text);
         WorkspacePicker.Flyout.Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.BottomEdgeAlignedLeft;
-        LanguageButton.Flyout = MenuItems.Flyout(LanguageMenu, () => Model.Text);
+        LanguageButton.Flyout = MenuItems.Picker(LanguageMenu, () => Model.Text);
         ConfigureWork();
         Model.Navigation.PropertyChanged += (_, _) => UpdateBack();
         ConfigureLibrary();
