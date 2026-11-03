@@ -14,8 +14,9 @@ namespace Syno.TableView;
 /// </summary>
 /// <remarks>
 /// Each affected cell or row is put back where it was rendered, as a composition translation, and
-/// animated to zero. Nothing about the effective layout is involved: the cells are already arranged where the
-/// new layout says they belong, so an interrupted or overtaken animation ends in the correct place.
+/// animated to zero. Nothing about the effective layout is involved: the cells are already
+/// arranged where the new layout says they belong, so an interrupted or overtaken animation ends
+/// in the correct place.
 /// Section 19 also requires no substitute motion when the system disables animations, which is why
 /// this does nothing at all in that case.
 /// </remarks>
@@ -28,7 +29,10 @@ internal static class Motion
 
     private static readonly UISettings SystemSettings = new();
 
-    /// <summary>The easing curve's two control points, shared by the animation and <see cref="Remaining"/>.</summary>
+    /// <summary>
+    /// The easing curve's two control points, shared by the animation and <see
+    /// cref="Remaining"/>.
+    /// </summary>
     private static readonly Vector2 EaseFrom = new(0.1f, 0.9f), EaseTo = new(0.2f, 1);
 
     internal static bool IsEnabled => SystemSettings.AnimationsEnabled;
@@ -109,7 +113,10 @@ internal static class Motion
         return slide;
     }
 
-    /// <summary>Show <paramref name="element"/> displaced by <paramref name="distance"/> and run <paramref name="slide"/> from there.</summary>
+    /// <summary>
+    /// Show <paramref name="element"/> displaced by <paramref name="distance"/> and run
+    /// <paramref name="slide"/> from there.
+    /// </summary>
     internal static void Slide(UIElement element, Vector3 distance, Vector3KeyFrameAnimation slide)
     {
         ElementCompositionPreview.SetIsTranslationEnabled(element, true);

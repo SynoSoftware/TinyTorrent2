@@ -558,9 +558,13 @@ seen. Rows are compared by identity, so every other publish keeps its offset:
 a sort that moves every row, a filter that keeps at least one row, and a
 refresh whose rows keep their identity. Without a key selector a new instance
 is a new row, so a refresh that supplies new instances of every row is a
-different list. A host that calls `ScrollTo` after assigning the source, to
-restore a saved position, gets its own offset, also when the pointer holds the
-old rows and the new list appears only when it leaves.
+different list. The previous view is the rows the person last saw laid out: a
+source emptied and filled again before the next frame is compared with the
+rows it showed before it was emptied, and a view the person saw empty is no
+list to differ from. A host that calls `ScrollTo` after assigning the source,
+to restore a saved position, gets its own offset, also when the pointer holds
+the old rows, the new list changes meanwhile, and it appears only when the
+pointer leaves.
 The private view never raises
 `Move` and never resets the list (`Clear` or `Reset`), because the list
 answers both by dropping and rebuilding its containers, and the whole table

@@ -258,8 +258,8 @@ public sealed partial class Table
     /// the view, but only when its visual state is re-run: on a change of its stored IsSelected
     /// value, pointer enter, exit, press and release, a focus change, and Loaded. Container
     /// preparation, a range call and the list's own gestures write the stored value. Without a
-    /// refresh, a row that none of these touches keeps painting its old state, and the getter cannot
-    /// show that.
+    /// refresh, a row that none of these touches keeps painting its old state, and the getter
+    /// cannot show that.
     /// </para>
     /// <para>
     /// A range call refreshes every cached and pinned container from ISelectionInfo; its range does

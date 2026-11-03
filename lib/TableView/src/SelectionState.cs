@@ -25,7 +25,6 @@ internal sealed class SelectionState
     /// <summary>Section 5's interaction predicate. Null means every item is interactive.</summary>
     internal Func<object, bool>? CanInteract { get; set; }
     internal object? Current { get; private set; }
-    /// <summary>The row a range selection extends from.</summary>
     internal object? Anchor { get; private set; }
     /// <summary>Logical row focus. Not the same thing as physical keyboard focus.</summary>
     internal object? Focus { get; private set; }
@@ -335,7 +334,6 @@ internal sealed class SelectionState
         }
     }
 
-    /// <summary>Ctrl+A. Only multiple selection can express it, and it leaves the anchor alone.</summary>
     internal void SelectAll(IReadOnlyList<object> view)
     {
         if (!AllowsMultiple)

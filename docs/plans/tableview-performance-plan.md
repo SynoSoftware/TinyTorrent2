@@ -74,6 +74,15 @@ and waits for review.
 > row and from WinUI recycling containers inside the publish. The owner decides
 > whether to accept it.
 >
+> **Final review status:** the final review
+> (V:/temp/TableViewPerformance/final-review) found medium defects in the reset
+> (a notification during a hold dropped the host's `ScrollTo`; an emptied and
+> refilled list reset to the top), a slide after a switch in the same frame,
+> and two costs: a pointed row under a sort made each publish O(n), and a child
+> notification under a collapsed parent ran a whole publish. All are fixed in
+> source with the review's low findings; the build, the focused tests and one
+> five-pair measurement follow.
+>
 > Review records: V:/temp/TableViewPerformance/review-db12cfd (spec,
 > paths-flow, architecture, audit-flat, audit-hierarchy, and the approved plan
 > text `plan-db12cfd.md`). Each

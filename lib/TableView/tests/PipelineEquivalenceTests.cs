@@ -1,6 +1,4 @@
 using System.Collections;
-using System.Collections.ObjectModel;
-using System.Collections.Specialized;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Syno.TableView.Tests;
@@ -9,44 +7,51 @@ namespace Syno.TableView.Tests;
 /// Section 5.3: "The implementation may update a private view incrementally or rebuild it, but the
 /// observable result MUST be the same." Two tables start in the same state. One receives a source
 /// change as a collection notification, the other receives the same change through a whole
-/// publish: a plain list assigned again, or <c>RefreshView()</c> for changed values. The two must then show the same rows, as the same instances, with the
-/// same held rows, selection and pending settle, and must still agree once the settle has run.
+/// publish: a plain list assigned again, or <c>RefreshView()</c> for changed values. The two must
+/// then show the same rows, as the same instances, with the same held rows, selection and pending
+/// settle, and must still agree once the settle has run. A person would see the same list
+/// differ by how the host published: a row in another place, a selection lost, or a row that
+/// stays under the pointer vanishing.
 /// </summary>
+/// <remarks>
+/// Each mode is its own test, so a defect that ends the test process hides no other mode.
+/// Modes: unsorted; sorted inside the settle interval; sorted with moves allowed; a pointed row
+/// pinned off its sorted place, then the pointer gone; a row held under the pointer, sorted and
+/// unsorted; a key change withheld inside the interval under a string sort; a sorted hierarchy
+/// inside the interval and with moves allowed; equal keys, where source order alone orders the
+/// rows.
+/// </remarks>
 [TestClass]
 public class PipelineEquivalenceTests
 {
     private static int _serial;
 
-    public sealed class EqRow(string key, int rank)
+    internal sealed class EqRow(string key, int rank)
     {
         public int Serial { get; } = Interlocked.Increment(ref _serial);
         public string Key { get; } = key;
         public int Rank { get; set; } = rank;
         public string Name { get; set; } = ((char)('a' + rank / 10)).ToString();
         public bool IsExpanded { get; set; } = true;
-        public ResetList Live { get; } = new();
+        public QuietList<EqRow> Live { get; } = new();
         public List<EqRow> Plain { get; } = new();
         public override string ToString() => Key;
     }
 
-    /// <summary>A notifying list that can also change without a notification, then raise Reset.</summary>
-    public sealed class ResetList : ObservableCollection<EqRow>
+    internal enum Kind
     {
-        internal void InsertQuietly(int index, EqRow row) => Items.Insert(index, row);
-
-        internal void RaiseReset() => OnCollectionChanged(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
+        Add,
+        Remove,
+        ReplaceSame,
+        ReplaceNew,
+        ReplaceThenAdd,
+        Move,
+        Reset,
+        Values,
+        Return,
+        ReturnThenPublish,
     }
 
-    public enum Kind { Add, Remove, ReplaceSame, ReplaceNew, ReplaceThenAdd, Move, Reset, Values, Return, ReturnThenPublish }
-
-    /// <summary>
-    /// Each mode is its own test, so a defect that ends the test process hides no other mode.
-    /// Modes: unsorted; sorted inside the settle interval; sorted with moves allowed; a pointed row
-    /// pinned off its sorted place, then the pointer gone; a row held under the pointer, sorted and
-    /// unsorted; a key change
-    /// withheld inside the interval under a string sort; a sorted hierarchy inside the interval and
-    /// with moves allowed; equal keys, where source order alone orders the rows.
-    /// </summary>
     [TestMethod]
     public Task Unsorted() => RunAsync("unsorted");
 
@@ -105,8 +110,8 @@ public class PipelineEquivalenceTests
                     failures.Add($"{pair.Kind}: {error.GetType().Name}: {error.Message}");
                 }
             }
-            // Past the two-second interval, so any pending settle has run.
-            await Task.Delay(2600);
+            await TableHarness.WaitUntilAsync(
+                () => settling.All(pair => pair.SettleHasRun), "every pending settle to run");
             foreach (Pair pair in settling)
             {
                 try
@@ -145,11 +150,11 @@ public class PipelineEquivalenceTests
     {
         private readonly string _mode;
         private readonly EqRow[] _rows;
-        private readonly ResetList _live;
+        private readonly QuietList<EqRow> _live;
         private readonly List<EqRow> _plain;
         private readonly EqRow[] _roots;
 
-        private Pair(string mode, Kind kind, Table incremental, Table whole, EqRow[] rows, ResetList live,
+        private Pair(string mode, Kind kind, Table incremental, Table whole, EqRow[] rows, QuietList<EqRow> live,
             List<EqRow> plain, EqRow[] roots)
         {
             _mode = mode;
@@ -178,7 +183,7 @@ public class PipelineEquivalenceTests
             int[] ranks = mode == "ties" ? Enumerable.Repeat(10, 8).ToArray() : new[] { 50, 10, 70, 30, 0, 60, 20, 40 };
             EqRow[] rows = ranks.Select((rank, index) => new EqRow("k" + index, rank)).ToArray();
             EqRow[] roots = Array.Empty<EqRow>();
-            ResetList live;
+            QuietList<EqRow> live;
             List<EqRow> plain;
             if (IsHierarchyMode(mode))
             {
@@ -236,6 +241,21 @@ public class PipelineEquivalenceTests
         }
 
         private IEnumerable<Table> Tables => new[] { Incremental, Whole };
+
+        /// <summary>Each table's interval start as <see cref="Apply"/> left it.</summary>
+        private DateTimeOffset[] _settledAtApply = [];
+
+        /// <summary>
+        /// Whether the settle that <see cref="Apply"/> left pending has run in both tables: none is
+        /// pending, or the rebuild it caused started a new interval. A held row can keep a settle
+        /// pending after it ran, so "not pending" alone is not the end of the wait.
+        /// </summary>
+        internal bool SettleHasRun => Tables.Select((table, index) =>
+            !Proof.Field<bool>(table, "_settlePending") || SettledAt(table) != _settledAtApply[index])
+            .All(ran => ran);
+
+        private static DateTimeOffset SettledAt(Table table) =>
+            Proof.Field<DateTimeOffset>(table, "_orderSettledAt");
 
         /// <summary>Bring both tables into the mode by the same steps.</summary>
         internal void Setup()
@@ -362,6 +382,7 @@ public class PipelineEquivalenceTests
                     }
                     break;
             }
+            _settledAtApply = Tables.Select(SettledAt).ToArray();
         }
 
         /// <summary>

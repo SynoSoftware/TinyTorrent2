@@ -9,7 +9,6 @@ namespace Syno.TableView;
 public sealed partial class Table
 {
     private Hierarchy? _hierarchy;
-    private Hierarchy.Preparation? _preparedHierarchy;
 
     internal Hierarchy? Hierarchy => _hierarchy;
 
@@ -27,16 +26,6 @@ public sealed partial class Table
             }
             RebuildView(change);
         };
-    }
-
-    private void AcceptHierarchy(IReadOnlyList<object> order, bool moved)
-    {
-        if (_hierarchy is null)
-        {
-            return;
-        }
-        _preparedHierarchy?.Accept();
-        _hierarchy.UpdatePresentation(order, moved);
     }
 
     internal bool IsHierarchyColumn(Column column) => ReferenceEquals(_hierarchy?.Column, column);
@@ -61,7 +50,7 @@ public sealed partial class Table
     {
         if (item is null || _hierarchy is null)
             return null;
-        shown ??= row => _view.Positions.IndexOf(row) >= 0;
+        shown ??= IsInView;
         if (shown(item) || _hierarchy.Find(item) is not { } node)
             return null;
         while (node.Parent is { } parent && _hierarchy.Find(parent) is { } ancestor)

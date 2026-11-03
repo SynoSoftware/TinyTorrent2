@@ -107,3 +107,54 @@ internal enum PageStage
     ReadyToScroll,
     Ready,
 }
+
+/// <summary>How the rows an order shares with the view change their places.</summary>
+internal enum RowMoves : byte
+{
+    /// <summary>Every shared row keeps its place relative to the others.</summary>
+    None,
+
+    /// <summary>
+    /// Each shared row that moves is named: it leaves its view index and arrives at its order
+    /// index.
+    /// </summary>
+    Named,
+
+    /// <summary>Shared rows change their relative order, and the difference names no row.</summary>
+    Unnamed,
+}
+
+/// <summary>What a sorted publish does to one kept row.</summary>
+internal enum SortFate : byte
+{
+    Stays,
+
+    /// <summary>It stays, with a new entry or instance.</summary>
+    Changes,
+
+    /// <summary>It stays only if its new key keeps it in order with its neighbours.</summary>
+    Rekeyed,
+
+    Leaves,
+
+    /// <summary>It leaves its place and is placed again.</summary>
+    Moves,
+}
+
+/// <summary>
+/// Which sibling groups a hierarchy publish sorts again. Every other group keeps the order it
+/// was last shown in.
+/// </summary>
+internal enum SiblingSort : byte
+{
+    /// <summary>The groups whose list changed which rows it holds, or their order.</summary>
+    Changed,
+
+    /// <summary>
+    /// Those, and the groups that hold a row the change named or replaced, because rows may move.
+    /// </summary>
+    Named,
+
+    /// <summary>Every group.</summary>
+    All,
+}

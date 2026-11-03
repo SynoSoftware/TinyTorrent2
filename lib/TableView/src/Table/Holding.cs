@@ -52,8 +52,15 @@ public sealed partial class Table
     private bool KeepsMembership => _hierarchy is null && IsPointed && _view.Count > 0;
     private bool PinsOrder => _hierarchy is null && SortsLocally && !SortsOrder;
 
+    /// <summary>
+    /// Whether the view shows the source's rows: no row is held or returned, and none waits,
+    /// because without a held or returned row a shorter view means rows wait.
+    /// </summary>
+    private bool ShowsSource => _hierarchy is not null
+        || _held.Count == 0 && _returned.Count == 0 && _view.Count == _source.Snapshot.Count;
+
     /// <summary>What the hold makes of one source change.</summary>
-    /// <param name="Shown">How the shown rows changed: the rows the order is made from.</param>
+    /// <param name="Rows">How the shown rows changed: the rows the order is made from.</param>
     /// <param name="Held">The held rows after the change.</param>
     /// <param name="Released">The <see cref="Release"/> rows the change carries.</param>
     /// <param name="Holds">Whether the rows are held back while pointed at.</param>
@@ -62,7 +69,7 @@ public sealed partial class Table
     /// ones that came back in an earlier change. Each keeps its held row's index until the rows
     /// are released, so nothing moves under the pointer.
     /// </param>
-    private readonly record struct HoldStep(SortChange Shown, IdentitySet Held,
+    private readonly record struct HoldStep(SortChange Rows, IdentitySet Held,
         IReadOnlyList<object> Released, bool Holds, IReadOnlyList<object> Returning);
 
     /// <summary>A row shown although it left the source. It is dimmed and refuses every action.</summary>
@@ -214,14 +221,7 @@ public sealed partial class Table
     /// <summary>Apply what the hold kept back, once nothing points at the rows.</summary>
     private void ReleaseHold()
     {
-        if (IsPointed || _detached || !_schemaCaptured || _hierarchy is not null)
-        {
-            return;
-        }
-
-        // Without a held or returned row the view is the source's rows in their places, so a shorter
-        // view means rows wait.
-        if (_held.Count == 0 && _returned.Count == 0 && _view.Count == _source.Snapshot.Count)
+        if (IsPointed || _detached || !_schemaCaptured || _hierarchy is not null || ShowsSource)
         {
             return;
         }
@@ -346,10 +346,14 @@ public sealed partial class Table
             _candidateHeld.Clear();
         }
         foreach (object row in hold.Released)
+        {
             _released.Remove(row);
+        }
         _returned.Clear();
         foreach (object row in hold.Returning)
+        {
             _returned.Add(row);
+        }
     }
 
     /// <summary>
@@ -360,7 +364,9 @@ public sealed partial class Table
     /// </summary>
     /// <remarks>
     /// While the rows are pointed at, the hold keeps membership unchanged, so the result has exactly
-    /// the view's count and every pinned index is a place in it.
+    /// the view's count and every pinned index is a place in it. When only the pointed rows are
+    /// pinned and each already stands at its index, the result is <paramref name="order"/> itself,
+    /// so a publish inside the settle interval costs only its own rows.
     /// </remarks>
     private (IReadOnlyList<object> Order, IdentitySet Pinned) Pin(
         IReadOnlyList<object> order,
@@ -372,13 +378,13 @@ public sealed partial class Table
         bool reorders = PinsOrder;
         object? menu = reorders ? _menuRow : null;
         object? pointed = reorders ? _pointedRow : null;
-        if (held.Count == 0 && hold.Returning.Count == 0 && menu is null && pointed is null)
+        IdentitySet pinned = _pinned;
+        pinned.Clear();
+        if (held.Count == 0 && hold.Returning.Count == 0 && StandsInPlace(menu) && StandsInPlace(pointed))
         {
-            _pinned.Clear();
-            return (order, held);
+            return (order, pinned);
         }
 
-        IdentitySet pinned = _pinned;
         pinned.Clear();
         List<object> result = _pinOrder;
         result.Clear();
@@ -445,6 +451,27 @@ public sealed partial class Table
             {
                 Keep(index, current);
             }
+        }
+
+        // Whether a pointed row needs no place kept: it is not shown or not in the source, or the
+        // order already has it at its view index, where it is pinned.
+        bool StandsInPlace(object? row)
+        {
+            if (row is null)
+            {
+                return true;
+            }
+            int index = _view.Positions.IndexOf(row);
+            if (index < 0 || source.Resolve(row) is not { } current)
+            {
+                return true;
+            }
+            if (index >= order.Count || !ReferenceEquals(order[index], current))
+            {
+                return false;
+            }
+            pinned.Add(current);
+            return true;
         }
     }
 }

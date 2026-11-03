@@ -28,14 +28,15 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
     /// <summary>
     /// How the view differs from an order: view indices that leave, ascending; order indices
     /// that arrive, ascending; and (view index, order index) of rows that stay with a new
-    /// instance. A difference that reorders shared rows names no rows and is left to the run
-    /// script.
+    /// instance. A row named as moved is both a leaving and an arriving row; an unnamed reorder
+    /// names no rows and is left to the run script.
     /// </summary>
     internal sealed record Difference(IReadOnlyList<int> Leaving, IReadOnlyList<int> Arriving,
-        IReadOnlyList<(int Before, int After)> Replacing, bool Reorders = false)
+        IReadOnlyList<(int Before, int After)> Replacing, RowMoves Moves = RowMoves.None)
     {
         internal static readonly Difference None = new([], [], []);
-        internal bool IsEmpty => !Reorders && Leaving.Count + Arriving.Count + Replacing.Count == 0;
+        internal bool IsEmpty =>
+            Moves == RowMoves.None && Leaving.Count + Arriving.Count + Replacing.Count == 0;
     }
 
     /// <summary>
@@ -46,15 +47,26 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
     /// Names this order. Null when the order is not the producer's own, as when pinned rows stand
     /// in it, so no later difference can start from it.
     /// </param>
-    /// <param name="Predecessor">
-    /// The version <paramref name="Difference"/> starts from, or the view itself when the
-    /// producer made the order from the view as it stands.
-    /// </param>
+    /// <param name="Predecessor">The version <paramref name="Difference"/> starts from.</param>
     /// <param name="Difference">
     /// How this order differs from its predecessor, or null when the producer does not know.
     /// </param>
     internal readonly record struct Origin(object? Version, object? Predecessor = null,
-        Difference? Difference = null);
+        Difference? Difference = null)
+    {
+        /// <summary>
+        /// Whether <see cref="Difference"/> starts from the view as it stands rather than from
+        /// <see cref="Predecessor"/>.
+        /// </summary>
+        internal bool StartsFromView { get; private init; }
+
+        /// <summary>
+        /// An order the producer made from the view as it stands, which differs from it by
+        /// <paramref name="difference"/>. It names no version.
+        /// </summary>
+        internal static Origin FromView(Difference difference) =>
+            new(null, null, difference) { StartsFromView = true };
+    }
 
     /// <summary>
     /// The view positions where the last <see cref="Reconcile"/> put a new instance of a row
@@ -210,10 +222,10 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
     /// </remarks>
     internal Difference Compare(IReadOnlyList<object> order, Origin origin)
     {
-        if (origin.Difference is { } stated && origin.Predecessor is not null
-            && (ReferenceEquals(origin.Predecessor, _shown) || ReferenceEquals(origin.Predecessor, this)))
+        if (origin.Difference is { } stated && (origin.StartsFromView
+            || origin.Predecessor is not null && ReferenceEquals(origin.Predecessor, _shown)))
         {
-            return Settled(stated);
+            return stated;
         }
         List<int> leaving = new();
         List<int> arriving = new();
@@ -234,7 +246,7 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
             }
             else if (index < at)
             {
-                return Settled(new([], [], [], Reorders: true));
+                return new([], [], [], RowMoves.Unnamed);
             }
             else
             {
@@ -253,32 +265,36 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
         {
             leaving.Add(at);
         }
-        return Settled(new(leaving, arriving, replacing));
-
-        // A view that already shows the order shows its version; any other view names no version
-        // until the reconcile succeeds.
-        Difference Settled(Difference difference)
-        {
-            _shown = difference.IsEmpty ? origin.Version : null;
-            return difference;
-        }
+        return new(leaving, arriving, replacing);
     }
 
-    /// <summary>Bring the view to <paramref name="order"/>, which differs from it by <paramref name="difference"/>.</summary>
+    /// <summary>
+    /// Record that the view shows the producer's <paramref name="version"/>, because
+    /// <see cref="Compare"/> found no difference from it.
+    /// </summary>
+    internal void RecordShown(object? version) => _shown = version;
+
+    /// <summary>
+    /// Bring the view to <paramref name="order"/>, which differs from it by
+    /// <paramref name="difference"/>.
+    /// </summary>
     /// <remarks>
     /// Per-row notifications preserve the list's native transitions and unchanged containers;
-    /// a reset drops every container. When only membership changed, by no more rows than
-    /// <paramref name="realized"/> holds, the leaving rows are removed
-    /// highest index first and the arriving rows inserted lowest first, so every staying row
-    /// keeps its container. Otherwise the run script below runs.
+    /// a reset drops every container. When the difference names every row it changes, by no
+    /// more rows than <paramref name="realized"/> holds, the leaving rows are removed highest
+    /// index first and the arriving rows inserted lowest first. Every row that keeps its place
+    /// keeps its container, and a row the difference names as moved is removed and inserted
+    /// again. Otherwise the run script below runs.
     /// <para>
     /// A new instance of a row that stays takes its place without a notification, in both
     /// paths, because the list answers a replaced item by generating a new container, which
     /// fades in as if the row had arrived. The positions whose container showed the old
     /// instance are listed in <see cref="Rebound"/> for the table to rebind.
-    /// </para> Table's frame owner suppresses transitions for a disjoint
-    /// visible-window replacement, whose native delete/add delay would otherwise leave the panel
-    /// empty.
+    /// </para>
+    /// <para>
+    /// The table suppresses the list's transitions for a disjoint visible-window replacement,
+    /// whose native delete and add delay would otherwise leave the panel empty.
+    /// </para>
     /// <para>
     /// The run script: rows leaving realized runs go first, highest index first. Then every
     /// position outside those runs, set without a notification. Last, what each run is missing,
@@ -317,7 +333,8 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
         _shown = null;
         try
         {
-            if (difference.Reorders || difference.Leaving.Count + difference.Arriving.Count > realized.Count)
+            if (difference.Moves == RowMoves.Unnamed
+                || difference.Leaving.Count + difference.Arriving.Count > realized.Count)
             {
                 RunScript(order, realized, pinned);
             }
@@ -459,13 +476,13 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
     /// row if it ever scrolls there.
     /// </summary>
     private void PlaceQuietly(
-        IReadOnlyList<object> snapshot,
+        IReadOnlyList<object> order,
         List<(int Start, int End)> runs,
         List<int> removed
     )
     {
-        int missing = removed.Count(index => index < snapshot.Count);
-        int count = snapshot.Count - missing;
+        int missing = removed.Count(index => index < order.Count);
+        int count = order.Count - missing;
         while (Count > count)
         {
             RemoveAt(Count - 1);
@@ -474,7 +491,7 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
         int next = 0;
         int run = 0;
 
-        for (int j = 0; j < snapshot.Count; j++)
+        for (int j = 0; j < order.Count; j++)
         {
             while (next < removed.Count && removed[next] < j)
             {
@@ -496,11 +513,11 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
             int at = j - gone;
             if (at < Count)
             {
-                Items[at] = snapshot[j];
+                Items[at] = order[j];
             }
             else
             {
-                Insert(at, snapshot[j]);
+                Insert(at, order[j]);
             }
         }
     }
@@ -510,13 +527,14 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
     /// filled is already final by the time it is reached, so the row standing there can be read
     /// directly.
     /// </summary>
-    private void InsertIntoRuns(IReadOnlyList<object> snapshot, Func<object, int> target, List<(int Start, int End)> runs)
+    private void InsertIntoRuns(IReadOnlyList<object> order, Func<object, int> target,
+        List<(int Start, int End)> runs)
     {
         foreach ((int start, int end) in runs)
         {
             for (int i = start; i < end; i++)
             {
-                object next = snapshot[i];
+                object next = order[i];
 
                 if (i < Count && target(this[i]) == i)
                 {
@@ -536,8 +554,8 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
 
     /// <summary>
     /// Which rows of the run at [<paramref name="start"/>, <paramref name="end"/>) already stand in
-    /// the snapshot's order and can stay where they are: a longest run of rows whose places in the
-    /// snapshot increase. A row whose place in the snapshot is outside this run cannot stay in it at
+    /// the order's sequence and can stay where they are: a longest run of rows whose places in the
+    /// order increase. A row whose place in the order is outside this run cannot stay in it at
     /// all, and every other row that is not in that longest run has to move.
     /// </summary>
     /// <remarks>
@@ -617,7 +635,7 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
         {
             if (target[row] < 0)
             {
-                // Its place in the snapshot is outside this run, so it leaves whatever else happens.
+                // Its place in the order is outside this run, so it leaves whatever else happens.
                 before[row] = -1;
                 continue;
             }

@@ -90,11 +90,22 @@ public class AutomationTests
                 ScrollViewer viewer = SelectionHarness.Descendant<ScrollViewer>(list)!;
                 for (int step = 1; step <= 20 && replacement is null; step++)
                 {
-                    viewer.ChangeView(null, step * 300, null, disableAnimation: true);
+                    double target = step * 300;
+                    viewer.ChangeView(null, target, null, disableAnimation: true);
                     list.UpdateLayout();
-                    await Task.Delay(30);
+                    await TableHarness.WaitUntilAsync(
+                        () => Math.Abs(viewer.VerticalOffset - target) < 1
+                            || viewer.VerticalOffset >= viewer.ScrollableHeight - 1,
+                        "the scroll");
                 }
-                await Task.Delay(500);
+                if (replacement is not null)
+                {
+                    // The list fills the placeholder in a later pass.
+                    await TableHarness.WaitUntilAsync(
+                        () => contents.IndexOf(prepared) is int at and >= 0
+                            && contents.Skip(at).Contains(replacement),
+                        "the container to show the current instance");
+                }
             }
             finally
             {

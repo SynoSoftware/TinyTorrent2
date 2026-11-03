@@ -77,15 +77,30 @@ public class SelectionPaintTests
         });
 
     /// <summary>
+    /// The painted and the modelled keys once they agree, or as they stand after ten seconds. The
+    /// selection fill changes through a brush transition, so a read inside it still shows the old
+    /// state; reading again until the rows agree waits for exactly that transition and no longer.
+    /// </summary>
+    private static async Task<(string Painted, string Model)> PaintedAsync(SelectionHarness h)
+    {
+        DateTime deadline = DateTime.UtcNow.AddSeconds(10);
+        (string Painted, string Model) read = await ReadPaintedAsync(h);
+        while (read.Painted != read.Model && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(16);
+            read = await ReadPaintedAsync(h);
+        }
+        return read;
+    }
+
+    /// <summary>
     /// The keys of the fully visible rows whose fill shows selected, and of those the model
     /// selects, both in view order. A row is painted selected when its pixel differs from the list
     /// background beside the rows, because an unselected row is transparent. All four bytes count:
     /// the Light theme's selected fill is nearly transparent black, which only its alpha shows.
     /// </summary>
-    private static async Task<(string Painted, string Model)> PaintedAsync(SelectionHarness h)
+    private static async Task<(string Painted, string Model)> ReadPaintedAsync(SelectionHarness h)
     {
-        // Past the selection fill's brush transition.
-        await Task.Delay(300);
         ListView list = h.Surface();
         RenderTargetBitmap bitmap = new();
         await bitmap.RenderAsync(list);

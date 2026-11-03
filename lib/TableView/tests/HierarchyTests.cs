@@ -396,6 +396,41 @@ public class HierarchyTests
             );
         });
 
+    /// <summary>
+    /// A child list under a collapsed row changes no shown row, so the view stays as it is, but
+    /// the row's expander follows whether it has children: a person could not open it otherwise.
+    /// </summary>
+    [TestMethod]
+    public Task AChildChangeUnderACollapsedRowUpdatesOnlyItsExpander() =>
+        TestHost.RunAsync(async () =>
+        {
+            Node folder = new("folder") { IsExpanded = false }, leaf = new("leaf");
+            Column name = TestData.Column("name");
+            Table table = TestData.Table(name);
+            table.Schema<Node>().Key(row => row.Name)
+                .Hierarchy(name, row => row.Children, row => row.IsExpanded, (row, value) => row.IsExpanded = value);
+            table.ItemsSource = new[] { folder, leaf };
+            await TableHarness.LoadAsync(table);
+            object hierarchy = Proof.Field<object>(table, "_hierarchy");
+            bool HasChildren() => (bool)hierarchy.GetType()
+                .GetProperty("HasChildren", System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.NonPublic)!.GetValue(hierarchy)!;
+            Assert.IsFalse(HasChildren());
+
+            folder.Children.Add(new("child"));
+            CollectionAssert.AreEqual(new[] { "folder", "leaf" }, Names(table));
+            Assert.IsTrue(HasChildren(), "the collapsed row shows an expander");
+
+            folder.Children.RemoveAt(0);
+            CollectionAssert.AreEqual(new[] { "folder", "leaf" }, Names(table));
+            Assert.IsFalse(HasChildren(), "the row without children shows none");
+
+            folder.Children.Add(new("again"));
+            folder.IsExpanded = true;
+            table.RefreshView();
+            CollectionAssert.AreEqual(new[] { "folder", "again", "leaf" }, Names(table));
+        });
+
     [TestMethod]
     public Task HierarchyRejectsRowReorderingEvenWhenEnabled() =>
         TestHost.RunAsync(async () =>

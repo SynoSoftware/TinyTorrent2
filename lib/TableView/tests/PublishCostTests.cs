@@ -1,22 +1,22 @@
 using System.Collections.ObjectModel;
-using System.Collections.Specialized;
 using System.Diagnostics;
 using System.Linq.Expressions;
 using System.Reflection;
-using System.Runtime.InteropServices;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using static Syno.TableView.Tests.Measurement;
 
 namespace Syno.TableView.Tests;
 
 /// <summary>
 /// Measures what one publish costs the UI thread, in CPU cycles so that other load on the machine
-/// does not count, through the public API only, so the same test measures any implementation. A
-/// flat source changes by one row through each route a host can take: a notification of each kind,
-/// or a plain list changed in place and assigned again as a new <c>ItemsSource</c>. A hierarchy
-/// publishes a new root array, refreshes, or changes one child list. The product's path changes
-/// sort values in place under a live sort and refreshes. It asserts no limit; compare runs on one
-/// machine.
+/// does not count. Most cases use the public API. <c>HeldCycles</c>, <c>PointedValueCycles</c>,
+/// <c>FirstSortCycles</c> and <c>WalkCycles</c> reach the table's pointer, sort and view by
+/// reflection, so a rename there fails them. A flat source changes by one row through each route a host can take: a
+/// notification of each kind, or a plain list changed in place and assigned again as a new
+/// <c>ItemsSource</c>. A hierarchy publishes a new root array, refreshes, or changes one child
+/// list. The product's path changes sort values in place under a live sort and refreshes. It
+/// asserts no limit; compare runs on one machine.
 /// </summary>
 [TestClass]
 public class PublishCostTests
@@ -26,34 +26,12 @@ public class PublishCostTests
 
     public TestContext TestContext { get; set; } = null!;
 
-    [DllImport("kernel32.dll")]
-    private static extern bool QueryThreadCycleTime(IntPtr thread, out ulong cycles);
-
-    [DllImport("kernel32.dll")]
-    private static extern IntPtr GetCurrentThread();
-
-    private static ulong Cycles()
-    {
-        QueryThreadCycleTime(GetCurrentThread(), out ulong cycles);
-        return cycles;
-    }
-
     private sealed class CostRow(int key, int rank)
     {
         public int Key { get; } = key;
         public string Name { get; } = "row " + key;
         public int Rank { get; set; } = rank;
         public override string ToString() => Name;
-    }
-
-    /// <summary>A notifying source that can also change without a notification, then raise Reset.</summary>
-    private sealed class CostSource(IEnumerable<CostRow> rows) : ObservableCollection<CostRow>(rows)
-    {
-        internal void InsertQuietly(int index, CostRow row) => Items.Insert(index, row);
-
-        internal void RemoveQuietly(int index) => Items.RemoveAt(index);
-
-        internal void RaiseReset() => OnCollectionChanged(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
     }
 
     private sealed class CostNode(int key, int rank)
@@ -65,8 +43,11 @@ public class PublishCostTests
         public override string ToString() => "n" + Key;
     }
 
-    /// <summary>One measured operation and the operation that undoes it, applied in turn.</summary>
-    private sealed record Step(string Name, Action Apply);
+    /// <summary>
+    /// One measured operation, and what to do before it outside the measurement. Steps come in
+    /// pairs, each undoing the other.
+    /// </summary>
+    private sealed record Step(string Name, Action Apply, Func<Task>? Before = null);
 
     // Each test stays inside TestHost's 30-second limit for one UI-thread body.
     [TestMethod]
@@ -84,7 +65,7 @@ public class PublishCostTests
             }
         });
 
-    /// <summary>Notifications at 100,000 rows, the scale the plan states their cost bound for.</summary>
+    /// <summary>Notifications at 100,000 rows, where a cost that grows with the row count shows.</summary>
     [TestMethod]
     [TestCategory("Measurement")]
     [DataRow(false)]
@@ -105,7 +86,7 @@ public class PublishCostTests
     public Task HeldCycles(int size) =>
         TestHost.RunAsync(async () =>
         {
-            CostSource source = new(Enumerable.Range(0, size).Select(key => new CostRow(key, Rank(key))));
+            QuietList<CostRow> source = new(Enumerable.Range(0, size).Select(key => new CostRow(key, Rank(key))));
             Table table = await LoadAsync(source, sorted: false);
             Proof.Call(table, "PointAt", new object?[] { null });
             int middle = size / 2;
@@ -271,7 +252,7 @@ public class PublishCostTests
     public Task WalkCycles(int size) =>
         TestHost.RunAsync(async () =>
         {
-            CostSource source = new(Enumerable.Range(0, size).Select(key => new CostRow(key, Rank(key))));
+            QuietList<CostRow> source = new(Enumerable.Range(0, size).Select(key => new CostRow(key, Rank(key))));
             Table table = await LoadAsync(source, sorted: false);
             object view = Proof.Field<object>(table, "_view");
             // view.Compare(order, default).IsEmpty, without a version, so the view walks.
@@ -301,6 +282,91 @@ public class PublishCostTests
         });
 
     /// <summary>
+    /// A switch to a different list while the rows are scrolled, so the publish also sets the
+    /// offset to the top (section 5.3).
+    /// </summary>
+    [TestMethod]
+    [TestCategory("Measurement")]
+    [DataRow(2000)]
+    public Task ScrolledSwitchCycles(int size) =>
+        TestHost.RunAsync(async () =>
+        {
+            CostRow[] own = Enumerable.Range(0, size).Select(key => new CostRow(key, Rank(key))).ToArray();
+            CostRow[] other = Enumerable.Range(size + 1, size).Select(key => new CostRow(key, Rank(key))).ToArray();
+            Table table = await LoadAsync(own, sorted: false);
+            ScrollViewer viewer = Proof.Descendant<ScrollViewer>(Proof.Descendant<ListView>(table)!)!;
+            async Task ScrollAsync()
+            {
+                viewer.ChangeView(null, 1000, null, disableAnimation: true);
+                await TableHarness.WaitUntilAsync(() => viewer.VerticalOffset > 999, "the scroll");
+            }
+            await MeasureAsync(table, $"scrolled switch {Label(size, sorted: false)}",
+                new Step("to another list", () => table.ItemsSource = other, ScrollAsync),
+                new Step("back", () => table.ItemsSource = own, ScrollAsync));
+            Unload(table);
+        });
+
+    /// <summary>
+    /// Values inside the product's three-second settle interval while the pointer rests on the
+    /// rows: on a row, which a sort that reorders keeps in its place, and on no row. Each table is
+    /// measured inside its first interval, where the pointed row stands at its sorted place.
+    /// </summary>
+    [TestMethod]
+    [TestCategory("Measurement")]
+    [DataRow(2000)]
+    public Task PointedValueCycles(int size) =>
+        TestHost.RunAsync(async () =>
+        {
+            foreach (bool onRow in new[] { true, false })
+            {
+                List<CostRow> source = Enumerable.Range(0, size).Select(key => new CostRow(key, Rank(key))).ToList();
+                Table table = await LoadAsync(source, sorted: true, interval: TimeSpan.FromSeconds(3));
+                CostRow[] changing = source.Where(row => row.Key % 20 == 0).ToArray();
+                object? pointed = onRow ? ((IList<object>)Proof.Field<object>(table, "_view"))[size / 2] : null;
+                Proof.Call(table, "PointAt", pointed);
+                void Shift(int by)
+                {
+                    foreach (CostRow row in changing)
+                    {
+                        row.Rank += by;
+                    }
+                }
+                await MeasureAsync(table, $"values {size} interval 3s pointer on {(onRow ? "a row" : "no row")}",
+                    new Step("RefreshView(changed)", () =>
+                    {
+                        Shift(5000);
+                        table.RefreshView(changing);
+                    }),
+                    new Step("RefreshView(changed) back", () =>
+                    {
+                        Shift(-5000);
+                        table.RefreshView(changing);
+                    }));
+                Proof.Call(table, "StopPointing");
+                Unload(table);
+            }
+        });
+
+    /// <summary>A child list that changes under a collapsed root, so no shown row changes.</summary>
+    [TestMethod]
+    [TestCategory("Measurement")]
+    [DataRow(2000)]
+    public Task CollapsedChildCycles(int size) =>
+        TestHost.RunAsync(async () =>
+        {
+            (Table table, CostNode[] roots, int next) = await LoadHierarchyAsync(size, sorted: false);
+            CostNode collapsed = roots[roots.Length / 2];
+            collapsed.IsExpanded = false;
+            table.RefreshView();
+            await NextFrameAsync();
+            CostNode extra = new(next, Rank(next));
+            await MeasureAsync(table, $"hierarchy {Label(size, sorted: false)} collapsed parent",
+                new Step("child Add", () => collapsed.Children.Insert(4, extra)),
+                new Step("child Remove", () => collapsed.Children.RemoveAt(4)));
+            Unload(table);
+        });
+
+    /// <summary>
     /// Scrolling from the first row to the last, one page a frame, with no publish: the cost of
     /// realizing and filling the containers on the way.
     /// </summary>
@@ -311,7 +377,7 @@ public class PublishCostTests
     public Task ScrollCycles(int size) =>
         TestHost.RunAsync(async () =>
         {
-            CostSource source = new(Enumerable.Range(0, size).Select(key => new CostRow(key, Rank(key))));
+            QuietList<CostRow> source = new(Enumerable.Range(0, size).Select(key => new CostRow(key, Rank(key))));
             Table table = await LoadAsync(source, sorted: false);
             ScrollViewer viewer = Proof.Descendant<ScrollViewer>(Proof.Descendant<ListView>(table)!)!;
             int pages = (int)Math.Ceiling(viewer.ScrollableHeight / viewer.ViewportHeight);
@@ -342,7 +408,7 @@ public class PublishCostTests
 
     private async Task MeasureNotificationsAsync(int size, bool sorted, TimeSpan? interval = null)
     {
-        CostSource source = new(Enumerable.Range(0, size).Select(key => new CostRow(key, Rank(key))));
+        QuietList<CostRow> source = new(Enumerable.Range(0, size).Select(key => new CostRow(key, Rank(key))));
         Table table = await LoadAsync(source, sorted, interval: interval);
         int middle = size / 2;
         CostRow extra = new(size, Rank(size));
@@ -446,34 +512,7 @@ public class PublishCostTests
 
     private async Task MeasureHierarchyAsync(int size, bool sorted)
     {
-        // A tenth of the rows are expanded roots, each with nine children.
-        CostNode[] roots = Enumerable.Range(0, size / 10).Select(key => new CostNode(key, Rank(key))).ToArray();
-        int next = roots.Length;
-        foreach (CostNode root in roots)
-        {
-            for (int child = 0; child < 9; child++)
-            {
-                root.Children.Add(new CostNode(next, Rank(next)));
-                next++;
-            }
-        }
-        Column name = TestData.Column("name", 200);
-        Table table = TestData.Table(name, TestData.Column("b", 200), TestData.Column("c", 200));
-        Schema<CostNode> schema = table.Schema<CostNode>().Key(row => row.Key)
-            .Hierarchy(name, row => row.Children, row => row.IsExpanded, (row, value) => row.IsExpanded = value);
-        if (sorted)
-        {
-            schema.SortKey(name, row => row.Rank);
-        }
-        table.Width = 700;
-        table.Height = 600;
-        table.ItemsSource = roots;
-        await TableHarness.LoadAsync(table);
-        if (sorted)
-        {
-            table.SortInterval = TimeSpan.Zero;
-            table.Sort = new(name);
-        }
+        (Table table, CostNode[] roots, int next) = await LoadHierarchyAsync(size, sorted);
         CostNode visible = roots[roots.Length / 2];
         CostNode extra = new(next, Rank(next));
         await MeasureAsync(table, $"hierarchy {Label(size, sorted)}",
@@ -534,6 +573,42 @@ public class PublishCostTests
     }
 
     private static int Rank(int key) => key * 7919 % 10007;
+
+    /// <summary>
+    /// A tenth of the rows as expanded roots, each with nine children. Also returns the next
+    /// free key.
+    /// </summary>
+    private static async Task<(Table Table, CostNode[] Roots, int Next)> LoadHierarchyAsync(int size, bool sorted)
+    {
+        CostNode[] roots = Enumerable.Range(0, size / 10).Select(key => new CostNode(key, Rank(key))).ToArray();
+        int next = roots.Length;
+        foreach (CostNode root in roots)
+        {
+            for (int child = 0; child < 9; child++)
+            {
+                root.Children.Add(new CostNode(next, Rank(next)));
+                next++;
+            }
+        }
+        Column name = TestData.Column("name", 200);
+        Table table = TestData.Table(name, TestData.Column("b", 200), TestData.Column("c", 200));
+        Schema<CostNode> schema = table.Schema<CostNode>().Key(row => row.Key)
+            .Hierarchy(name, row => row.Children, row => row.IsExpanded, (row, value) => row.IsExpanded = value);
+        if (sorted)
+        {
+            schema.SortKey(name, row => row.Rank);
+        }
+        table.Width = 700;
+        table.Height = 600;
+        table.ItemsSource = roots;
+        await TableHarness.LoadAsync(table);
+        if (sorted)
+        {
+            table.SortInterval = TimeSpan.Zero;
+            table.Sort = new(name);
+        }
+        return (table, roots, next);
+    }
 
     private static string Label(int size, bool sorted) => $"{size} {(sorted ? "sorted" : "unsorted")}";
 
@@ -605,6 +680,10 @@ public class PublishCostTests
         {
             foreach (Step step in new[] { first, second })
             {
+                if (step.Before is { } before)
+                {
+                    await before();
+                }
                 ulong start = Cycles();
                 step.Apply();
                 ulong published = Cycles();
@@ -626,26 +705,4 @@ public class PublishCostTests
         }
     }
 
-    /// <summary>Completes after the next frame's work, layout and the list's deferred work included.</summary>
-    private static Task NextFrameAsync()
-    {
-        TaskCompletionSource done = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        EventHandler<object>? rendering = null;
-        rendering = (_, _) =>
-        {
-            Microsoft.UI.Xaml.Media.CompositionTarget.Rendering -= rendering;
-            done.SetResult();
-        };
-        Microsoft.UI.Xaml.Media.CompositionTarget.Rendering += rendering;
-        return done.Task;
-    }
-
-    private static string Spread(List<double> values)
-    {
-        List<double> sorted = values.Order().ToList();
-        double median = sorted.Count % 2 == 1
-            ? sorted[sorted.Count / 2]
-            : (sorted[sorted.Count / 2 - 1] + sorted[sorted.Count / 2]) / 2;
-        return $"median {median:0.000} (range {sorted[0]:0.000}-{sorted[^1]:0.000})";
-    }
 }

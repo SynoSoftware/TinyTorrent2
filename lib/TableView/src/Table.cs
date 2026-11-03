@@ -39,11 +39,12 @@ public sealed partial class Table : Control
     private double? _pendingScroll;
 
     /// <summary>
-    /// The source the host's last <see cref="ScrollTo"/> followed, until a publish shows another.
-    /// A different list shown for that source keeps the host's offset instead of starting at the
-    /// top, also when a hold delays it until the pointer leaves (specification 5.3).
+    /// The source assignment the host's last <see cref="ScrollTo"/> followed, until a publish
+    /// shows that assignment's rows. A different list shown for it keeps the host's offset
+    /// instead of starting at the top, also when a hold delays it until the pointer leaves and
+    /// the list changes meanwhile (specification 5.3).
     /// </summary>
-    private Body.Source.Capture? _scrolledSource;
+    private long? _scrolledAssignment;
 
     public Table()
     {
@@ -365,6 +366,7 @@ public sealed partial class Table : Control
         _candidateHeld = new(identity);
         _returned = new(identity);
         _pinned = new(identity);
+        _hierarchy?.SetIdentity(identity);
     }
 
     /// <summary>
@@ -590,7 +592,7 @@ public sealed partial class Table : Control
             !ReferenceEquals(sortColumn, _sortColumn)
             || (sortColumn is not null && direction != _sortDirection);
         // Initial capture resolves any later pending Sort before evaluating host comparisons.
-        var prepared = moved ? CommitSort(sortColumn, direction, prepare: rebuild) : null;
+        PreparedSort? prepared = moved ? CommitSort(sortColumn, direction, prepare: rebuild) : null;
 
         foreach (EffectiveColumn column in ordered)
         {
@@ -599,9 +601,9 @@ public sealed partial class Table : Control
 
         // SetOrder republishes the layout, which re-applies each header cell's sort indicator.
         EffectiveLayout.SetOrder(ordered);
-        if (prepared is { } sorted)
+        if (prepared is not null)
         {
-            RebuildView(sorted: sorted.Order, prepared: sorted.Source);
+            RebuildView(sort: prepared);
         }
     }
 
@@ -653,7 +655,7 @@ public sealed partial class Table : Control
         }
 
         _pendingScroll = verticalOffset;
-        _scrolledSource = _source.Current;
+        _scrolledAssignment = _source.Current.AssignmentVersion;
         ApplyPendingScroll();
     }
 

@@ -65,7 +65,9 @@ public class SortingTests
     /// <summary>
     /// Section 5.3's owner ruling: a different list starts at the top. A sort that moves every row
     /// keeps the offset, although its difference names every row as leaving and arriving, and a
-    /// host's <c>ScrollTo</c> after the assignment wins, also when a hold shows the list later.
+    /// host's <c>ScrollTo</c> after the assignment wins, also when a hold shows the list later and
+    /// the list changes meanwhile. A list emptied and filled again before a frame is compared with
+    /// the rows shown before it was emptied, so its own rows keep the offset and other rows do not.
     /// </summary>
     [TestMethod]
     public Task ADifferentListStartsAtTheTopUnlessTheHostScrolls() =>
@@ -98,10 +100,37 @@ public class SortingTests
 
             await ScrolledAsync();
             Proof.Call(table, "PointAt", shown[25]);
-            table.ItemsSource = List("c");
+            shown = List("c");
+            table.ItemsSource = shown;
             table.ScrollTo(600);
             Proof.Call(table, "StopPointing");
             Assert.AreEqual(600, await OffsetAsync(), 1, "the host's ScrollTo wins when the hold ends");
+
+            await ScrolledAsync();
+            Proof.Call(table, "PointAt", shown[25]);
+            ObservableCollection<SortRow> live = new(List("d"));
+            table.ItemsSource = live;
+            table.ScrollTo(600);
+            live.Add(new SortRow("d-late", 200));
+            Proof.Call(table, "StopPointing");
+            Assert.AreEqual(600, await OffsetAsync(), 1,
+                "the host's ScrollTo wins when the held list changed before the hold ended");
+
+            await ScrolledAsync();
+            SortRow[] own = live.ToArray();
+            live.Clear();
+            foreach (SortRow row in own)
+            {
+                live.Add(row);
+            }
+            Assert.AreEqual(1000, await OffsetAsync(), 1, "a list emptied and refilled with its own rows keeps the offset");
+
+            live.Clear();
+            foreach (SortRow row in List("e"))
+            {
+                live.Add(row);
+            }
+            Assert.AreEqual(0, await OffsetAsync(), 1, "a list emptied and refilled with other rows starts at the top");
 
             static SortRow[] List(string prefix) =>
                 Enumerable.Range(0, 200).Select(i => new SortRow(prefix + i, i)).ToArray();
@@ -118,6 +147,54 @@ public class SortingTests
                 table.UpdateLayout();
                 await TableHarness.WaitUntilAsync(() => !Proof.Field<bool>(table, "_layoutPending"), "the publish's frame");
                 return viewer.VerticalOffset;
+            }
+        });
+
+    /// <summary>
+    /// Contract 5.3: a switch to a different list swaps the rows at once, and other changes in the
+    /// same layout episode share that. A reorder of the new list in the same turn must not slide
+    /// its rows from places the person never saw them in.
+    /// </summary>
+    [TestMethod]
+    public Task AReorderAfterASwitchInOneTurnSlidesNothing() =>
+        TestHost.RunAsync(async () =>
+        {
+            if (!new Windows.UI.ViewManagement.UISettings().AnimationsEnabled)
+            {
+                Assert.Inconclusive("Windows animations are off, so no reorder slides here.");
+            }
+            SortHarness h = await SortHarness.LoadAsync(Enumerable.Range(0, 200).ToArray(), configure: table =>
+            {
+                table.Sort = new(table.Columns[0]);
+                table.SortInterval = TimeSpan.Zero;
+            });
+            Table table = h.Table;
+            await FrameAsync();
+
+            ReverseRanks(h.Rows);
+            table.RefreshView();
+            Assert.IsNotNull(Proof.Field<object?>(table, "_slideFrom"), "a reorder on its own slides");
+            await FrameAsync();
+
+            SortRow[] other = Enumerable.Range(0, 200).Select(i => new SortRow("x" + i, i)).ToArray();
+            table.ItemsSource = other;
+            ReverseRanks(other);
+            table.RefreshView();
+            Assert.IsNull(Proof.Field<object?>(table, "_slideFrom"), "no row of the new list slides");
+
+            static void ReverseRanks(IEnumerable<SortRow> rows)
+            {
+                foreach (SortRow row in rows)
+                {
+                    row.Rank = -row.Rank;
+                }
+            }
+
+            // The layout episode ends in the frame, before the layout note clears.
+            async Task FrameAsync()
+            {
+                table.UpdateLayout();
+                await TableHarness.WaitUntilAsync(() => !Proof.Field<bool>(table, "_layoutPending"), "the frame");
             }
         });
 

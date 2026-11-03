@@ -27,7 +27,21 @@ public sealed partial class Table
     private long _publishVersion;
     private SuppressedTransitions? _suppressedTransitions;
 
+    /// <summary>
+    /// The rows a scrolled view showed when a publish emptied it, until the next frame lays the
+    /// empty view out. Until then they are the rows the person last saw, so a publish that fills
+    /// the view again compares its rows with them.
+    /// </summary>
+    private object[]? _emptiedRows;
+
     private sealed record SuppressedTransitions(Body.Surface Surface, object LocalValue);
+
+    /// <summary>
+    /// The whole order a new sort gives, with the change it was prepared from: the source's for
+    /// a flat table, the hierarchy's for a hierarchical one.
+    /// </summary>
+    private sealed record PreparedSort(IReadOnlyList<object> Order, Body.Source.Preparation? Source,
+        Hierarchy.Preparation? Hierarchy);
 
     /// <summary>The private view, in current visual row order.</summary>
     internal IReadOnlyList<object> View => _view;
@@ -89,14 +103,20 @@ public sealed partial class Table
         }
     }
 
-    /// <summary>The current instance of the row <paramref name="container"/> shows; see <see cref="RebindRows"/>.</summary>
+    /// <summary>
+    /// The current instance of the row <paramref name="container"/> shows; see <see
+    /// cref="RebindRows"/>.
+    /// </summary>
     private object? RowItem(DependencyObject container)
     {
         int index = _surface?.IndexFromContainer(container) ?? -1;
         return index >= 0 && index < _view.Count ? _view[index] : null;
     }
 
-    /// <summary>The realized container of <paramref name="item"/>'s row, found by identity; see <see cref="RebindRows"/>.</summary>
+    /// <summary>
+    /// The realized container of <paramref name="item"/>'s row, found by identity; see <see
+    /// cref="RebindRows"/>.
+    /// </summary>
     private DependencyObject? RowContainer(object item)
     {
         int index = IndexInView(item);
@@ -234,6 +254,8 @@ public sealed partial class Table
         return _view.IndexOfIdentity(item);
     }
 
+    private bool IsInView(object row) => _view.Positions.IndexOf(row) >= 0;
+
     internal object? ResolveItem(object item)
     {
         var index = IndexInView(item);
@@ -274,13 +296,14 @@ public sealed partial class Table
     /// it knows; the view takes that difference when it shows the previous order, and otherwise
     /// compares itself with the order.
     /// </remarks>
-    /// <param name="sorted">The order a new sort gave, prepared with <paramref name="prepared"/>.</param>
-    private void RebuildView(Change? change = null, IReadOnlyList<object>? sorted = null,
-        Body.Source.Preparation? prepared = null)
+    /// <param name="sort">The whole order a new sort gave, and what it was prepared from.</param>
+    private void RebuildView(Change? change = null, PreparedSort? sort = null)
     {
         _publishVersion++;
         bool completed = false;
+        bool rowVisualsChanged = true;
         SelectionChange? selectionChange = null;
+        Hierarchy.Preparation? hierarchy = null;
         try
         {
             change ??= new Change.Whole(_source.Current);
@@ -290,30 +313,32 @@ public sealed partial class Table
                 Change.Collection collection => collection.Capture,
                 _ => _source.Current,
             };
-            if (!ReferenceEquals(capture, _scrolledSource))
-            {
-                _scrolledSource = null;
-            }
             if (!_schemaCaptured)
             {
                 _source.Store(capture, validated: false);
                 return;
             }
+            bool hostScrolled = _scrolledAssignment == capture.AssignmentVersion;
             IReadOnlyList<object> order;
             IdentitySet pinned;
             Body.Source.Preparation? affected = null;
             Body.View.Origin origin;
+            bool keepsView = false;
             if (_hierarchy is null)
             {
-                Body.Source.Preparation source = prepared ?? _source.Prepare(change, ValidateRows);
-                (order, pinned, affected, origin) = sorted is null ? ViewOrder(source) : SortedView(source, sorted);
+                Body.Source.Preparation source = sort?.Source ?? _source.Prepare(change, ValidateRows);
+                (order, pinned, affected, origin) = sort is null ? ViewOrder(source) : SortedView(source, sort.Order);
                 _source.Accept(source);
             }
             else
             {
-                _preparedHierarchy ??= _hierarchy.Prepare(change, capture, _identity, ValidateRows);
-                (order, pinned, affected, origin) = sorted is null ? ViewOrder(_preparedHierarchy)
-                    : SortedView(null, sorted);
+                hierarchy = sort?.Hierarchy ?? _hierarchy.Prepare(change, capture, ValidateRows);
+                // A list under a collapsed or hidden parent changes no shown row.
+                keepsView = sort is null && hierarchy.LeavesShownRows(IsInView);
+                (order, pinned, affected, origin) =
+                    keepsView ? (_view, _held, null, Body.View.Origin.FromView(Body.View.Difference.None))
+                    : sort is null ? ViewOrder(hierarchy)
+                    : SortedView(null, sort.Order);
                 _source.Store(capture, validated: true);
             }
             Body.View.Difference difference = _view.Compare(order, origin);
@@ -322,7 +347,15 @@ public sealed partial class Table
             {
                 CancelPage();
             }
-            AcceptHierarchy(order, changed);
+            if (keepsView)
+            {
+                rowVisualsChanged = hierarchy!.AcceptHidden(IsInView);
+            }
+            else if (hierarchy is not null)
+            {
+                hierarchy.Accept();
+                _hierarchy!.UpdatePresentation(order, changed);
+            }
             if (_detached || !changed)
             {
                 if (changed)
@@ -331,6 +364,7 @@ public sealed partial class Table
                 }
                 else
                 {
+                    _view.RecordShown(origin.Version);
                     ReconcileDrag();
                     UpdatePlaceholder();
                 }
@@ -362,16 +396,21 @@ public sealed partial class Table
             }
 
             IReadOnlyList<int> realized = RealizedIndices();
-            // A different list starts at its first row (specification 5.3), in the frame that
-            // first shows it, unless the host scrolled after assigning it.
-            bool startsAtTop = _scrolledSource is null && InnerScrollViewer()?.VerticalOffset > 0
-                && IsDifferentList(order, difference);
-            PrepareTransitions(order, CaptureSlides(order, difference, realized));
+            int shownCount = _view.Count;
+            if (order.Count == 0 && _emptiedRows is null && IsLoaded
+                && InnerScrollViewer()?.VerticalOffset > 0)
+            {
+                _emptiedRows = _view.ToArray();
+            }
+            PrepareTransitions(order, TryCaptureSlides(order, difference, realized));
             _view.Reconcile(order, difference, origin.Version, realized, pinned);
             RebindRows();
-            if (startsAtTop)
+            // A different list starts at its first row (specification 5.3), in the frame that
+            // first shows it, unless the host scrolled after assigning it.
+            if (!hostScrolled && IsDifferentList(difference, shownCount)
+                && InnerScrollViewer() is { VerticalOffset: > 0 } scroller)
             {
-                InnerScrollViewer()?.ChangeView(null, 0, null, disableAnimation: true);
+                scroller.ChangeView(null, 0, null, disableAnimation: true);
             }
 
             ReconcileDrag();
@@ -400,11 +439,15 @@ public sealed partial class Table
         }
         finally
         {
-            _preparedHierarchy?.Complete();
-            _preparedHierarchy = null;
+            hierarchy?.Complete();
             _source.Complete();
             _sortedOrder?.Complete();
-            if (completed && !_detached)
+            if (completed && ShowsSource)
+            {
+                // The publish showed the list the host scrolled for, so its ScrollTo is spent.
+                _scrolledAssignment = null;
+            }
+            if (completed && !_detached && rowVisualsChanged)
             {
                 RowVisualsChanged?.Invoke(this, EventArgs.Empty);
             }
@@ -416,18 +459,29 @@ public sealed partial class Table
     }
 
     /// <summary>
-    /// Whether <paramref name="order"/> is a different list: it has rows, and none of them is in
-    /// the view by identity. A sorted difference states each moved row as leaving and arriving,
-    /// so the difference's counts can only rule a different list out.
+    /// Whether the reconciled view shows a different list: it has rows, and none of them was
+    /// among the rows the person last saw. Those are the view before this publish, or the rows
+    /// it showed before a publish emptied it since the last layout. A view the person saw empty
+    /// shows no list to differ from.
     /// </summary>
-    private bool IsDifferentList(IReadOnlyList<object> order, Body.View.Difference difference)
+    /// <param name="shownCount">The view's count before this publish.</param>
+    private bool IsDifferentList(Body.View.Difference difference, int shownCount)
     {
-        if (order.Count == 0 || difference.Arriving.Count != order.Count
-            || difference.Leaving.Count != _view.Count)
+        if (_view.Count == 0)
         {
             return false;
         }
-        foreach (object row in order)
+        if (shownCount > 0)
+        {
+            // Every row left and every row arrived, and the difference names no row as moved.
+            return difference.Moves == RowMoves.None && difference.Leaving.Count == shownCount
+                && difference.Arriving.Count == _view.Count;
+        }
+        if (_emptiedRows is not { } seen)
+        {
+            return false;
+        }
+        foreach (object row in seen)
         {
             if (_view.Positions.IndexOf(row) >= 0)
             {
@@ -437,7 +491,9 @@ public sealed partial class Table
         return true;
     }
 
-    /// <param name="sliding">The table slides the reordered rows itself; see <see cref="CaptureSlides"/>.</param>
+    /// <param name="sliding">
+    /// The table slides the reordered rows itself; see <see cref="TryCaptureSlides"/>.
+    /// </param>
     private void PrepareTransitions(IReadOnlyList<object> order, bool sliding)
     {
         if (_suppressedTransitions is not null || !IsLoaded || order.Count == 0
@@ -500,6 +556,7 @@ public sealed partial class Table
     {
         CompositionTarget.Rendering -= OnLaidOut;
         _frameRequested = false;
+        _emptiedRows = null;
         EndSuppression();
         QueuedSort? queued = _queuedSort;
         PageNavigation? page = _pendingPage is { Stage: not PageStage.Scrolling } ready
@@ -571,33 +628,30 @@ public sealed partial class Table
     }
 
     /// <summary>The whole order a new sort gives, prepared but not accepted.</summary>
-    private IReadOnlyList<object> PrepareSort(SortedOrder? workspace, SortDirection direction,
-        out Body.Source.Preparation? source, SortWork? work = null)
+    private PreparedSort PrepareSort(SortedOrder? workspace, SortDirection direction, SortWork? work = null)
     {
         Body.Source.Capture capture = _source.Current;
-        source = null;
         if (_hierarchy is null)
         {
-            source = _source.Prepare(new Change.Whole(capture), ValidateRows);
-            if (work is not null)
-            {
-                return work.Sorting.Prepare(capture.Rows, work.PublishVersion != _publishVersion);
-            }
-            return workspace is null ? capture.Rows
+            Body.Source.Preparation source = _source.Prepare(new Change.Whole(capture), ValidateRows);
+            IReadOnlyList<object> order = work is not null
+                ? work.Sorting.Prepare(capture.Rows, work.PublishVersion != _publishVersion)
+                : workspace is null ? capture.Rows
                 : workspace.Prepare(SortChange.Whole(capture.Rows, capture.Rows), direction, allowMoves: true);
+            return new(order, source, null);
         }
 
+        Hierarchy.Preparation prepared = _hierarchy.Prepare(new Change.Whole(capture), capture, ValidateRows);
         try
         {
-            _preparedHierarchy = _hierarchy.Prepare(new Change.Whole(capture), capture, _identity, ValidateRows);
-            return work?.Hierarchy is { } groups
-                ? _hierarchy.Project(_preparedHierarchy, groups, work.Sorting, work.PublishVersion != _publishVersion)
-                : _hierarchy.Project(_preparedHierarchy, workspace, direction, sortAll: true, allowMoves: true, out _);
+            IReadOnlyList<object> order = work?.Hierarchy is { } groups
+                ? _hierarchy.Project(prepared, groups, work.Sorting, work.PublishVersion != _publishVersion)
+                : _hierarchy.Project(prepared, workspace, direction, SiblingSort.All).Order;
+            return new(order, null, prepared);
         }
         catch
         {
-            _preparedHierarchy?.Complete();
-            _preparedHierarchy = null;
+            prepared.Complete();
             throw;
         }
     }
@@ -618,7 +672,7 @@ public sealed partial class Table
                 _source.Complete();
             }
         }
-        Hierarchy.Preparation prepared = _hierarchy.Prepare(new Change.Whole(capture), capture, _identity, ValidateRows);
+        Hierarchy.Preparation prepared = _hierarchy.Prepare(new Change.Whole(capture), capture, ValidateRows);
         try
         {
             var groups = _hierarchy.Groups(prepared, out Hierarchy.Work hierarchy);

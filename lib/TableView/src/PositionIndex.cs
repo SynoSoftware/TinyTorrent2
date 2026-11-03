@@ -5,9 +5,8 @@ namespace Syno.TableView;
 /// found by a scan of the window those changes can have moved it through, and the whole index is
 /// rebuilt after about √n changes.
 /// </summary>
-/// <param name="counts">The sequence's running counts of inserts and removals, or null when the
-/// owner builds the index again after every change.</param>
-internal sealed class PositionIndex(IIdentity identity, Func<PositionIndex.Counts>? counts = null)
+/// <param name="counts">The sequence's running counts of inserts and removals.</param>
+internal sealed class PositionIndex(IIdentity identity, Func<PositionIndex.Counts> counts)
 {
     internal readonly record struct Counts(long Inserts, long Removals);
     private readonly IdentityMap<int> _map = identity.CreateMap<int>();
@@ -32,7 +31,7 @@ internal sealed class PositionIndex(IIdentity identity, Func<PositionIndex.Count
     internal void Bind(IReadOnlyList<object> rows)
     {
         Rows = rows;
-        _built = counts?.Invoke() ?? default;
+        _built = counts();
     }
 
     /// <summary>
@@ -48,7 +47,7 @@ internal sealed class PositionIndex(IIdentity identity, Func<PositionIndex.Count
             return -1;
         }
         object current = _map.Resolve(item)!;
-        if (counts is null || stored < Rows.Count && ReferenceEquals(Rows[stored], current))
+        if (stored < Rows.Count && ReferenceEquals(Rows[stored], current))
         {
             return stored;
         }
@@ -76,7 +75,9 @@ internal sealed class PositionIndex(IIdentity identity, Func<PositionIndex.Count
         return -1;
     }
 
-    /// <summary>The instance standing in the sequence with <paramref name="item"/>'s identity.</summary>
+    /// <summary>
+    /// The instance standing in the sequence with <paramref name="item"/>'s identity.
+    /// </summary>
     internal object? Resolve(object item)
     {
         int index = IndexOf(item);

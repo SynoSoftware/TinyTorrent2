@@ -95,18 +95,21 @@ clamp. The reconciliation script and notifications are unchanged.
 When no row of a nonempty order is in the view by identity, `RebuildView` sets a
 scrolled list's offset to 0 with `ChangeView` after the reconcile, in the same
 publish, so the layout that shows the new rows lays them out from the first.
-The difference's counts only rule a different list out, because a sorted
-difference states each moved row as leaving and arriving; the identity lookups
-in `_view.Positions` decide. `ScrollTo` records the source capture it followed.
-A publish of that same capture, such as the release of a hold, keeps the host's
-offset, and a publish of any other capture forgets it.
+The difference decides from its counts: every view row leaves, every order row
+arrives, and it names no moved row. A publish that empties a scrolled view keeps
+the rows it showed until the next frame, and a publish that fills the view
+before then looks those rows up in the reconciled view instead. `ScrollTo`
+records the source assignment it followed. Publishes of that assignment keep
+the host's offset, including notifications while a hold delays the list, until
+the first publish that shows the source's rows.
 
-`Table/Sliding.cs` slides the rows a reorder moves. When `Body.View.Compare`
-reports a reorder and animations are on, it records, before the reconcile, the
+`Table/Sliding.cs` slides the rows a reorder moves. When the difference moves
+rows, named or not, and animations are on, it records, before the reconcile, the
 shown y of each realized row and an edge for each row the cache range will
 bring on screen, keyed by instance. A later publish before that frame keeps
-these positions and maps any new instance to its row's entry. The publish
-suppresses transitions as above. The Rendering callback lays the frame out,
+these positions and maps any new instance to its row's entry. A layout episode
+that a disjoint replacement started records nothing, so a reorder later in it
+slides no row of the new list. The publish suppresses transitions as above. The Rendering callback lays the frame out,
 then puts each realized container that is on screen before or after back at
 its recorded y as a composition translation and animates it to zero with
 `Motion`'s duration and curve. The compositor reports no animated value, so a
@@ -134,7 +137,9 @@ take their subtrees, rows that arrive bring theirs, and a new instance of a row
 replaces its node in place; a same-identity instance changes no sibling group.
 The result stays in the preparation until `Accept`, so a failed publish leaves
 the accepted hierarchy as it was, with nothing to undo. Every child
-notification enters the one pipeline as a change, collapsed or not. The
+notification enters the one pipeline as a change, collapsed or not. A change
+whose lists all belong to collapsed or hidden parents keeps the view, states no
+difference, and updates only the expanders of those parents that are shown. The
 projection keeps each expanded parent's sibling order from the previous
 publish, as stored derived state, and sorts again only a group that is newly
 shown or whose list changed which rows it holds; every group when moves are
@@ -204,18 +209,23 @@ The view stores rows in a gap buffer. The order's producer names each version
 of its own order and, when it knows, states how it differs from the version
 before: the natural order from the notification's indices, the kept sorted
 order from its removed, placed and replaced rows, so a row that moved leaves
-its old place and arrives at its new one. A `RefreshView` of the accepted
-capture states no difference. While rows are held without a local sort,
-membership waits, so the natural order is the view itself with its new
+its old place and arrives at its new one. A difference says whether it names
+moved rows this way, so no reader looks them up again. A `RefreshView` of the
+accepted capture states no difference. While rows are held without a local
+sort, membership waits, so the natural order is the view itself with its new
 instances, stated against the view. The view takes a stated difference only
 when it shows the version the difference starts from, or when the difference
-starts from the view itself; otherwise, and for an order with pinned rows or
-held rows under a sort, a resort that placed every row again, a hierarchy or a
-new sort, it compares itself with the order in one walk of references, looking
-up a view index only where the two differ. When
-only membership changed, by no more rows than the list has realized containers,
-it removes the leaving rows highest first and inserts the arriving rows lowest
-first, updating its position index with each. Any other change runs the
+starts from the view itself. A pointed row that already stands at its place
+under a sort keeps the stated difference, unless the difference names moves.
+Otherwise, and for an order whose pinned rows had to be put in place, held rows
+under a sort, a resort that placed every row again, a hierarchy or a new sort,
+it compares itself with the order in one walk of references, looking up a view
+index only where the two differ. When the difference names every changed row,
+by no more rows than the list has realized containers, it removes the leaving
+rows highest first and inserts the arriving rows lowest first, updating its
+position index with each; a named moved row is removed and inserted again. A
+walk that finds shared rows in another order names no row, and that change, or
+any larger one, runs the
 realized-run remove/quiet-place/insert script, with count events after the last
 surviving run. In both, a new instance of a row that stays replaces the old one
 without an event, and the table sets the realized container's content to it,

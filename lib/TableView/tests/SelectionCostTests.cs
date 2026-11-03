@@ -1,8 +1,8 @@
 using System.Reflection;
-using System.Runtime.InteropServices;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using static Syno.TableView.Tests.Measurement;
 
 namespace Syno.TableView.Tests;
 
@@ -17,18 +17,6 @@ public class SelectionCostTests
     private const int Reps = 40;
 
     public TestContext TestContext { get; set; } = null!;
-
-    [DllImport("kernel32.dll")]
-    private static extern bool QueryThreadCycleTime(IntPtr thread, out ulong cycles);
-
-    [DllImport("kernel32.dll")]
-    private static extern IntPtr GetCurrentThread();
-
-    private static ulong Cycles()
-    {
-        QueryThreadCycleTime(GetCurrentThread(), out ulong cycles);
-        return cycles;
-    }
 
     private static double Mega(ulong from, ulong to) => (to - from) / 1e6;
 
@@ -50,12 +38,24 @@ public class SelectionCostTests
                     table.Columns.Add(TestData.Column(id, 100));
                 }
             }, height: 600);
-            await Task.Delay(1500);
 
             MethodInfo refresh =
                 typeof(Table).GetMethod("RefreshContainers", BindingFlags.Instance | BindingFlags.NonPublic)
                 ?? throw new MissingMethodException("Table", "RefreshContainers");
             ItemsStackPanel panel = (ItemsStackPanel)h.Surface().ItemsPanelRoot;
+
+            // The list grows its cache of containers over the first frames; measure once it has
+            // stopped, so the first click does not pay for that growth.
+            (int First, int Last) cache = (-1, -1);
+            int unchanged = 0;
+            await TableHarness.WaitUntilAsync(() =>
+            {
+                (int First, int Last) now = (panel.FirstCacheIndex, panel.LastCacheIndex);
+                unchanged = now == cache ? unchanged + 1 : 0;
+                cache = now;
+                return unchanged >= 20;
+            }, "the list's cache of containers to stop growing");
+
             List<double> clicks = new(), frames = new(), refreshes = new();
 
             for (int rep = 0; rep < Reps; rep++)
@@ -77,14 +77,20 @@ public class SelectionCostTests
                 h.Click(h[2 + rep % 10 * 2]);
                 ulong clickEnd = Cycles();
                 CompositionTarget.Rendering += OnRendering;
-                await Task.Delay(200);
-                CompositionTarget.Rendering -= OnRendering;
-                Assert.AreEqual(3, ticks.Count(tick => tick.Done > 0), "three frames rendered after the click");
+                try
+                {
+                    await TableHarness.WaitUntilAsync(
+                        () => ticks.Count(tick => tick.Done > 0) == 3, "three frames to render after the click");
+                }
+                finally
+                {
+                    CompositionTarget.Rendering -= OnRendering;
+                }
 
                 ulong refreshStart = Cycles();
                 refresh.Invoke(h.Table, null);
                 ulong refreshEnd = Cycles();
-                await Task.Delay(100);
+                await NextFrameAsync();
 
                 clicks.Add(Mega(clickStart, clickEnd));
                 frames.Add(ticks.Sum(tick => Mega(tick.Render, tick.Done)));
@@ -99,15 +105,4 @@ public class SelectionCostTests
             TestContext.WriteLine("per click Mc (click, frames, refresh): "
                 + string.Join("; ", clicks.Select((c, i) => $"{c:0.00},{frames[i]:0.00},{refreshes[i]:0.000}")));
         });
-
-    private static string Spread(List<double> values) =>
-        $"median {Median(values):0.000} (range {values.Min():0.000}-{values.Max():0.000})";
-
-    private static double Median(List<double> values)
-    {
-        List<double> sorted = values.Order().ToList();
-        return sorted.Count % 2 == 1
-            ? sorted[sorted.Count / 2]
-            : (sorted[sorted.Count / 2 - 1] + sorted[sorted.Count / 2]) / 2;
-    }
 }

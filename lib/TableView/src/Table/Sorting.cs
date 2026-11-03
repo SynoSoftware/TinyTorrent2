@@ -23,7 +23,6 @@ public sealed partial class Table
     private bool _hasPendingSort;
     private TimeSpan _sortInterval = DefaultSortInterval;
     private SortMode _sortMode;
-    private readonly List<object> _naturalRows = new();
     private SortedOrder? _sortedOrder;
     private QueuedSort? _queuedSort;
     private long _sortRevision;
@@ -166,16 +165,18 @@ public sealed partial class Table
     /// <summary>
     /// Commit a sort the host or the person asked for, show it, and report it.
     /// </summary>
-    /// <param name="work">A queued first sort's detached work, which already ordered the keys.</param>
+    /// <param name="work">
+    /// A queued first sort's detached work, which already ordered the keys.
+    /// </param>
     private void SetSort(EffectiveColumn? column, SortDirection direction, SortWork? work = null)
     {
-        var prepared = CommitSort(column, direction, prepare: true, work);
+        PreparedSort? prepared = CommitSort(column, direction, prepare: true, work);
 
         // Complete presentation before selection handlers can run or throw.
         _headerStrip?.Panel?.RefreshHeader();
-        if (prepared is { } sorted)
+        if (prepared is not null)
         {
-            RebuildView(sorted: sorted.Order, prepared: sorted.Source);
+            RebuildView(sort: prepared);
         }
 
         RaiseLayoutChanged(LayoutChange.Sort);
@@ -191,16 +192,16 @@ public sealed partial class Table
     /// prepares the whole order the criterion gives; comparison can invoke host code, so it
     /// finishes before anything is committed, and a failure leaves the committed sort in force.
     /// </summary>
-    /// <returns>The prepared order and source change for the caller to publish, or null when
-    /// nothing was prepared.</returns>
-    private (IReadOnlyList<object> Order, Body.Source.Preparation? Source)? CommitSort(
-        EffectiveColumn? column, SortDirection direction, bool prepare, SortWork? work = null)
+    /// <returns>
+    /// The prepared order for the caller to publish, or null when nothing was prepared.
+    /// </returns>
+    private PreparedSort? CommitSort(EffectiveColumn? column, SortDirection direction, bool prepare,
+        SortWork? work = null)
     {
         SortedOrder? workspace = work?.Workspace ?? CreateSort(column);
-        Body.Source.Preparation? source = null;
-        IReadOnlyList<object>? order = prepare && _sortMode == SortMode.Local
-            ? PrepareSort(workspace, direction, out source, work) : null;
-        if (order is not null && _hierarchy is null)
+        PreparedSort? prepared = prepare && _sortMode == SortMode.Local
+            ? PrepareSort(workspace, direction, work) : null;
+        if (prepared is not null && _hierarchy is null)
         {
             workspace?.Accept();
         }
@@ -216,7 +217,7 @@ public sealed partial class Table
         _settleDue?.Stop();
         // The kept sibling groups are ordered by the sort they were kept under.
         _hierarchy?.ForgetOrder();
-        return order is null ? null : (order, source);
+        return prepared;
     }
 
     private Sort? PendingSort()
@@ -431,7 +432,7 @@ public sealed partial class Table
         IReadOnlyList<object> order;
         IdentitySet pinned;
         Body.View.Origin origin;
-        if (_sortedOrder is null && hold.Holds && hold.Shown.Shown is null)
+        if (_sortedOrder is null && hold.Holds && hold.Rows.Shown is null)
         {
             (order, pinned, origin) = HeldOrder(hold, source);
             shown = order;
@@ -439,17 +440,23 @@ public sealed partial class Table
         else
         {
             shown = _sortedOrder is null ? NaturalOrder(hold, source)
-                : _sortedOrder.Prepare(hold.Shown, _sortDirection, allowMoves);
+                : _sortedOrder.Prepare(hold.Rows, _sortDirection, allowMoves);
             (order, pinned) = Pin(shown, hold, source);
             origin = !ReferenceEquals(order, shown) ? default
                 : _sortedOrder?.Origin ?? NaturalOrigin(order, source);
+            if (pinned.Count > 0 && origin.Difference is { Moves: RowMoves.Named })
+            {
+                // The run script keeps a pinned row's container; a named move would remove it and
+                // insert it again, also when it ends where it stood.
+                origin = default;
+            }
         }
         _sortedOrder?.Accept();
         AcceptHold(hold);
         Settle(now, allowMoves || _sortedOrder?.Resorted == true, _sortedOrder?.NeedsSettle == true || hold.Held.Count > 0
             || shown.Count != source.Capture.Rows.Count
             || !ReferenceEquals(order, shown) && !order.SequenceEqual(shown, ReferenceEqualityComparer.Instance));
-        return (order, pinned, hold.Shown.Shown is null ? source : null, origin);
+        return (order, pinned, hold.Rows.Shown is null ? source : null, origin);
     }
 
     /// <summary>
@@ -462,8 +469,11 @@ public sealed partial class Table
     {
         DateTimeOffset now = DateTimeOffset.UtcNow;
         bool allowMoves = MayMove(now);
-        IReadOnlyList<object> order = _hierarchy!.Project(hierarchy, SortsLocally ? _sortedOrder : null,
-            _sortDirection, allowMoves && (hierarchy.IsWhole || _settlePending), allowMoves, out bool kept);
+        SiblingSort siblings = !allowMoves ? SiblingSort.Changed
+            : hierarchy.IsWhole || _settlePending ? SiblingSort.All
+            : SiblingSort.Named;
+        (IReadOnlyList<object> order, bool kept) = _hierarchy!.Project(hierarchy,
+            SortsLocally ? _sortedOrder : null, _sortDirection, siblings);
         Settle(now, allowMoves, kept && !allowMoves);
         return (order, _held, null, default);
     }
@@ -487,7 +497,9 @@ public sealed partial class Table
         return (sorted, held, null, default);
     }
 
-    /// <summary>Whether rows may take their sorted places now, rather than at the next settle.</summary>
+    /// <summary>
+    /// Whether rows may take their sorted places now, rather than at the next settle.
+    /// </summary>
     private bool MayMove(DateTimeOffset now) => !SortsLocally || SortsOrder || _view.Count == 0
         || _sortInterval == TimeSpan.Zero || now - _orderSettledAt >= _sortInterval;
 
@@ -518,7 +530,7 @@ public sealed partial class Table
     /// see <see cref="HeldOrder"/>.
     /// </summary>
     private static IReadOnlyList<object> NaturalOrder(HoldStep hold, Body.Source.Preparation source) =>
-        hold.Shown.Shown ?? source.Capture.Rows;
+        hold.Rows.Shown ?? source.Capture.Rows;
 
     /// <summary>
     /// The natural order while the rows are pointed at and the change names its rows. Membership
@@ -537,17 +549,13 @@ public sealed partial class Table
             int index = _view.Positions.IndexOf(row);
             if (index >= 0 && !ReferenceEquals(_view[index], row))
             {
-                if (order is null)
-                {
-                    order = _naturalRows;
-                    order.Clear();
-                    order.AddRange(_view);
-                }
+                order ??= new List<object>(_view);
                 order[index] = row;
                 replacing.Add((index, index));
             }
         }
-        return (order ?? (IReadOnlyList<object>)_view, hold.Held, new(null, _view, new([], [], replacing)));
+        return (order ?? (IReadOnlyList<object>)_view, hold.Held,
+            Body.View.Origin.FromView(new([], [], replacing)));
     }
 
     /// <summary>
@@ -598,7 +606,8 @@ public sealed partial class Table
                 }
             }
         }
-        return new(source.Capture, previous, new(leaving, arriving, replacing));
+        return new(source.Capture, previous,
+            new(leaving, arriving, replacing, source.MovesRows ? RowMoves.Named : RowMoves.None));
     }
 
     /// <summary>
@@ -673,7 +682,10 @@ internal readonly record struct SortChange(
     Body.Source.Shift Shift)
 {
     /// <param name="shown">The rows to order, in source order.</param>
-    /// <param name="source">The source rows <paramref name="shown"/> is taken from, which give each its source index.</param>
+    /// <param name="source">
+    /// The source rows <paramref name="shown"/> is taken from, which give each its source
+    /// index.
+    /// </param>
     internal static SortChange Whole(IReadOnlyList<object> shown, IReadOnlyList<object> source) =>
         new(shown, source, Array.Empty<object>(), Array.Empty<Body.Source.Arrival>(), Array.Empty<object>(), default);
 }
@@ -718,19 +730,6 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
 {
     private readonly record struct Entry(TKey Key, int BaseIndex, int Revision, byte[]? Collation);
 
-    /// <summary>What a publish does to one kept row.</summary>
-    private enum Fate : byte
-    {
-        Stays,
-        /// <summary>It stays, with a new entry or instance.</summary>
-        Changes,
-        /// <summary>It stays only if its new key keeps it in order with its neighbours.</summary>
-        Rekeyed,
-        Leaves,
-        /// <summary>It leaves its place and is placed again.</summary>
-        Moves,
-    }
-
     private readonly Func<TRow, TKey> _key;
     private readonly IIdentity _identity;
     private readonly IComparer<TKey> _comparer;
@@ -766,7 +765,7 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
     private readonly List<object> _removedRows = new();
 
     // Working state, indexed by kept index except where noted.
-    private Fate[] _fates = Array.Empty<Fate>();
+    private SortFate[] _fates = Array.Empty<SortFate>();
     private Entry[] _next = Array.Empty<Entry>();
     private object?[] _nextRows = Array.Empty<object?>();
     private readonly List<int> _touched = new();
@@ -964,7 +963,7 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
         {
             if (whole)
             {
-                Array.Fill(_fates, Fate.Leaves, 0, count);
+                Array.Fill(_fates, SortFate.Leaves, 0, count);
                 IReadOnlyList<object> shown = change.Shown!;
                 int ordinal = -1;
                 int previousBase = -1;
@@ -992,7 +991,7 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
                     Entry before = ResolveBase(_entries[kept]);
                     resort |= before.BaseIndex <= previousBase;
                     previousBase = before.BaseIndex;
-                    _fates[kept] = Fate.Changes;
+                    _fates[kept] = SortFate.Changes;
                     _nextRows[kept] = row;
                     _next[kept] = before with { BaseIndex = ordinal, Revision = 0 };
                     differs |= ReadAgain(kept, row, allowMoves);
@@ -1005,15 +1004,15 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
                     int kept = _positions.IndexOf(row);
                     if (kept >= 0)
                     {
-                        Touch(kept, Fate.Leaves);
+                        Touch(kept, SortFate.Leaves);
                     }
                 }
                 foreach (object row in change.Reread)
                 {
                     int kept = _positions.IndexOf(row);
-                    if (kept >= 0 && _fates[kept] == Fate.Stays)
+                    if (kept >= 0 && _fates[kept] == SortFate.Stays)
                     {
-                        Touch(kept, Fate.Changes);
+                        Touch(kept, SortFate.Changes);
                         _nextRows[kept] = row;
                         _next[kept] = Shifted(kept, change.Shift, nextRevision);
                     }
@@ -1022,9 +1021,9 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
                 {
                     for (int kept = 0; kept < count; kept++)
                     {
-                        if (_fates[kept] == Fate.Stays)
+                        if (_fates[kept] == SortFate.Stays)
                         {
-                            Touch(kept, Fate.Changes);
+                            Touch(kept, SortFate.Changes);
                             _nextRows[kept] = _rows[kept];
                             _next[kept] = Shifted(kept, change.Shift, nextRevision);
                         }
@@ -1032,7 +1031,7 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
                 }
                 foreach (int kept in _touched)
                 {
-                    if (_fates[kept] == Fate.Changes)
+                    if (_fates[kept] == SortFate.Changes)
                     {
                         differs |= ReadAgain(kept, _nextRows[kept]!, allowMoves);
                     }
@@ -1051,13 +1050,13 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
             {
                 for (int kept = 0; kept < count; kept++)
                 {
-                    if (_fates[kept] == Fate.Stays)
+                    if (_fates[kept] == SortFate.Stays)
                     {
-                        Touch(kept, Fate.Changes);
+                        Touch(kept, SortFate.Changes);
                         _nextRows[kept] = _rows[kept];
                         _next[kept] = Shifted(kept, change.Shift, nextRevision);
                     }
-                    if (_fates[kept] == Fate.Changes)
+                    if (_fates[kept] == SortFate.Changes)
                     {
                         _next[kept] = Read(_nextRows[kept]!, _next[kept].BaseIndex, _next[kept].Revision);
                     }
@@ -1071,7 +1070,7 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
                 // longer holds: every kept row is placed again.
                 for (int kept = 0; kept < count; kept++)
                 {
-                    if (_fates[kept] is Fate.Changes or Fate.Rekeyed)
+                    if (_fates[kept] is SortFate.Changes or SortFate.Rekeyed)
                     {
                         Move(kept, ref placed);
                     }
@@ -1102,7 +1101,7 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
             {
                 foreach (int kept in _touched)
                 {
-                    _fates[kept] = Fate.Stays;
+                    _fates[kept] = SortFate.Stays;
                     _nextRows[kept] = null;
                 }
             }
@@ -1113,9 +1112,9 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
 
     private static bool Shifts(Body.Source.Shift shift) => shift.Removed + shift.Added > 0;
 
-    private void Touch(int kept, Fate fate)
+    private void Touch(int kept, SortFate fate)
     {
-        if (_fates[kept] == Fate.Stays)
+        if (_fates[kept] == SortFate.Stays)
         {
             _touched.Add(kept);
         }
@@ -1142,7 +1141,7 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
         if (differs && allowMoves)
         {
             _next[kept] = before with { Key = key, Collation = Collation(key) };
-            _fates[kept] = Fate.Rekeyed;
+            _fates[kept] = SortFate.Rekeyed;
         }
         return differs;
     }
@@ -1163,7 +1162,7 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
 
     private void Move(int kept, ref int placed)
     {
-        _fates[kept] = Fate.Moves;
+        _fates[kept] = SortFate.Moves;
         Place(_nextRows[kept]!, _next[kept], ref placed);
     }
 
@@ -1176,7 +1175,7 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
         bool outOfOrder = false;
         foreach (int kept in Changed(count))
         {
-            if (_fates[kept] != Fate.Rekeyed)
+            if (_fates[kept] != SortFate.Rekeyed)
             {
                 continue;
             }
@@ -1207,16 +1206,18 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
         }
         foreach (int kept in Changed(count))
         {
-            if (_fates[kept] == Fate.Rekeyed)
+            if (_fates[kept] == SortFate.Rekeyed)
             {
                 Move(kept, ref placed);
             }
         }
     }
 
-    private bool Stays(int kept) => _fates[kept] is Fate.Stays or Fate.Changes or Fate.Rekeyed;
+    private bool Stays(int kept) => _fates[kept] is SortFate.Stays or SortFate.Changes or SortFate.Rekeyed;
 
-    /// <summary>Whether the kept rows that stay are in order by the keys they have after this change.</summary>
+    /// <summary>
+    /// Whether the kept rows that stay are in order by the keys they have after this change.
+    /// </summary>
     private bool KeptOrderHolds(int count, Body.Source.Shift shift)
     {
         int previous = -1;
@@ -1241,7 +1242,7 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
         }
         return true;
 
-        Entry KeyOf(int kept) => _fates[kept] is Fate.Changes or Fate.Rekeyed ? _next[kept] : _entries[kept];
+        Entry KeyOf(int kept) => _fates[kept] is SortFate.Changes or SortFate.Rekeyed ? _next[kept] : _entries[kept];
     }
 
     /// <summary>The kept rows that stay with a new entry or instance.</summary>
@@ -1251,7 +1252,7 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
         {
             for (int kept = 0; kept < count; kept++)
             {
-                if (_fates[kept] is Fate.Changes or Fate.Rekeyed)
+                if (_fates[kept] is SortFate.Changes or SortFate.Rekeyed)
                 {
                     yield return kept;
                 }
@@ -1260,7 +1261,7 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
         }
         for (int index = 0; index < _touched.Count; index++)
         {
-            if (_fates[_touched[index]] is Fate.Changes or Fate.Rekeyed)
+            if (_fates[_touched[index]] is SortFate.Changes or SortFate.Rekeyed)
             {
                 yield return _touched[index];
             }
@@ -1269,24 +1270,26 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
 
     /// <summary>Kept row <paramref name="kept"/>'s entry after this change.</summary>
     private Entry EntryOf(int kept, Body.Source.Shift shift) =>
-        _fates[kept] is Fate.Changes or Fate.Rekeyed ? _next[kept] : Shifted(kept, shift, _shifts.Count);
+        _fates[kept] is SortFate.Changes or SortFate.Rekeyed ? _next[kept] : Shifted(kept, shift, _shifts.Count);
 
     /// <summary>
     /// Build the candidate: the rows that stay, copied in blocks, with the placed rows sorted and
     /// put in among them at the places binary search finds. Unless <paramref name="resort"/>
     /// placed every row again, also record how the candidate differs from the kept order: a row
-    /// that moved leaves its old place and arrives at its new one.
+    /// that moved leaves its old place and arrives at its new one, as a named move.
     /// </summary>
     private void Build(int count, int placed, bool resort, bool whole, Body.Source.Shift shift)
     {
         int removed = 0;
+        bool moves = false;
         if (whole || _candidateRebuilt)
         {
             for (int kept = 0; kept < count; kept++)
             {
-                if (_fates[kept] is Fate.Leaves or Fate.Moves)
+                if (_fates[kept] is SortFate.Leaves or SortFate.Moves)
                 {
                     _removed[removed++] = kept;
+                    moves |= _fates[kept] == SortFate.Moves;
                 }
             }
         }
@@ -1294,9 +1297,10 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
         {
             foreach (int kept in _touched)
             {
-                if (_fates[kept] is Fate.Leaves or Fate.Moves)
+                if (_fates[kept] is SortFate.Leaves or SortFate.Moves)
                 {
                     _removed[removed++] = kept;
+                    moves |= _fates[kept] == SortFate.Moves;
                 }
             }
             Array.Sort(_removed, 0, removed);
@@ -1360,7 +1364,8 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
         {
             _removedRows.Add(_rows[_removed[index]]);
         }
-        _difference = resort ? null : new(_removed[..removed], arriving!, replacing!);
+        _difference = resort ? null
+            : new(_removed[..removed], arriving!, replacing!, moves ? RowMoves.Named : RowMoves.None);
         if (_candidateRebuilt)
         {
             _candidatePositions.Build(_candidateRows);

@@ -1,7 +1,10 @@
 using System.Collections.ObjectModel;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Data;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Windows.Foundation.Collections;
 
 namespace Syno.TableView.Tests;
 
@@ -611,22 +614,33 @@ public class SelectionTests
 
     /// <summary>
     /// A value refresh while the pointer rests on the rows of an unsorted table changes no row, so
-    /// the view stays as it is: no reconcile takes focus off a row or cancels a page move.
+    /// the list receives no change and the focused row keeps keyboard focus.
     /// </summary>
     [TestMethod]
     public Task AValueRefreshUnderThePointerLeavesTheViewAlone() =>
         TestHost.RunAsync(async () =>
         {
             SelectionHarness h = await SelectionHarness.LoadAsync(6);
+            ListView list = h.Surface();
+            Control focused = (Control)list.ContainerFromItem(h[1]);
+            Assert.IsTrue(focused.Focus(FocusState.Keyboard), "a row took keyboard focus");
             Proof.Call(h.Table, "PointAt", h[1]);
-            object view = Proof.Field<object>(h.Table, "_view");
-            System.Reflection.PropertyInfo version = view.GetType().GetProperty("Version",
-                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
-            object before = version.GetValue(view)!;
+            IObservableVector<object> items = (IObservableVector<object>)list.ItemsSource;
+            int changes = 0;
+            VectorChangedEventHandler<object> count = (_, _) => changes++;
 
-            h.Table.RefreshView(new object[] { h[1], h[2] });
+            items.VectorChanged += count;
+            try
+            {
+                h.Table.RefreshView(new object[] { h[1], h[2] });
+            }
+            finally
+            {
+                items.VectorChanged -= count;
+            }
 
-            Assert.AreEqual(before, version.GetValue(view));
+            Assert.AreEqual(0, changes, "the refresh added, removed or replaced no row");
+            Assert.AreSame(focused, FocusManager.GetFocusedElement(h.Table.XamlRoot), "the row kept focus");
         });
 
     private static string[] ViewKeys(SelectionHarness h) =>

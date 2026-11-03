@@ -26,43 +26,29 @@ public sealed partial class Table
     /// </summary>
     private Dictionary<object, double>? _slideFrom;
 
-    /// <summary>The slides started, by container: the distance each started from, and when.</summary>
+    /// <summary>
+    /// The slides started, by container: the distance each started from, and when.
+    /// </summary>
     private readonly Dictionary<UIElement, (double Distance, long Started)> _slides = new();
 
     /// <summary>
-    /// Whether the publish moves a row the view shows: a reorder, or a row the difference takes
-    /// out and puts back elsewhere, as a sorted order states a settle.
-    /// </summary>
-    private bool Moves(IReadOnlyList<object> order, Body.View.Difference difference)
-    {
-        if (difference.Reorders)
-        {
-            return true;
-        }
-        foreach (int index in difference.Arriving)
-        {
-            if (_view.Positions.IndexOf(order[index]) >= 0)
-            {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /// <summary>
     /// Before a reorder reconciles, record where each row that will be realized after it is shown
-    /// now. Returns false when the rows are not to slide: the publish moves no row, animations are
+    /// now. Returns false when the rows are not to slide: the publish moves no row the view
+    /// shows, a different list was swapped in earlier in the same layout episode, animations are
     /// off, the list is not laid out, or every position the list holds keeps its row.
     /// </summary>
     /// <remarks>
     /// Any publish before the frame keeps the positions the first reorder recorded, since the
     /// containers it inserted have not been laid out yet, and maps the new instances it brings.
+    /// An episode that a different list started has recorded nothing: the person never saw
+    /// those rows anywhere, so they appear at once.
     /// </remarks>
-    private bool CaptureSlides(IReadOnlyList<object> order, Body.View.Difference difference,
+    private bool TryCaptureSlides(IReadOnlyList<object> order, Body.View.Difference difference,
         IReadOnlyList<int> realized)
     {
-        if (_slideFrom is null && !Moves(order, difference) || !Motion.IsEnabled || !IsLoaded
-            || _surface?.ItemsPanelRoot is not ItemsStackPanel panel || InnerScrollViewer() is not { } scroller)
+        if (_slideFrom is null && (difference.Moves == RowMoves.None || _suppressedTransitions is not null)
+            || !Motion.IsEnabled || !IsLoaded || _surface?.ItemsPanelRoot is not ItemsStackPanel panel
+            || InnerScrollViewer() is not { } scroller)
         {
             return false;
         }
@@ -86,7 +72,7 @@ public sealed partial class Table
             {
                 if (_surface.ContainerFromIndex(index) is UIElement container)
                 {
-                    from[_view[index]] = container.ActualOffset.Y - offset + Shown(container);
+                    from[_view[index]] = container.ActualOffset.Y - offset + SlideOffset(container);
                     rowHeight = container.ActualSize.Y;
                 }
             }
@@ -154,7 +140,10 @@ public sealed partial class Table
         }
     }
 
-    /// <summary>Put a container whose slide no longer applies, because it shows another row, in its place.</summary>
+    /// <summary>
+    /// Put a container whose slide no longer applies, because it shows another row, in its
+    /// place.
+    /// </summary>
     private void StopSlide(UIElement container)
     {
         if (_slides.Remove(container))
@@ -163,18 +152,12 @@ public sealed partial class Table
         }
     }
 
-    /// <summary>How far from its layout place a sliding container is shown now.</summary>
-    private double Shown(UIElement container)
-    {
-        if (!_slides.TryGetValue(container, out var slide))
-        {
-            return 0;
-        }
-        double remaining = Motion.Remaining(slide.Distance, Stopwatch.GetElapsedTime(slide.Started));
-        if (remaining == 0)
-        {
-            _slides.Remove(container);
-        }
-        return remaining;
-    }
+    /// <summary>
+    /// How far from its layout place a sliding container is shown now; 0 once its slide has
+    /// ended.
+    /// </summary>
+    private double SlideOffset(UIElement container) =>
+        _slides.TryGetValue(container, out var slide)
+            ? Motion.Remaining(slide.Distance, Stopwatch.GetElapsedTime(slide.Started))
+            : 0;
 }
