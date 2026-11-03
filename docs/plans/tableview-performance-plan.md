@@ -79,9 +79,12 @@ and waits for review.
 > (a notification during a hold dropped the host's `ScrollTo`; an emptied and
 > refilled list reset to the top), a slide after a switch in the same frame,
 > and two costs: a pointed row under a sort made each publish O(n), and a child
-> notification under a collapsed parent ran a whole publish. All are fixed in
-> source with the review's low findings; the build, the focused tests and one
-> five-pair measurement follow.
+> notification under a collapsed parent ran a whole publish. The fixes were
+> committed as 673c022. Its delta review (`final-review/delta-1.md`) found four
+> paths the fixes left open: a pointed row displaced by a settle, a `ScrollTo`
+> on a shown list, a row-by-row refill, and a sorted Replace that crosses rows.
+> They are fixed in source: the frame now decides the reset once. One
+> measurement round at the end of the plan follows.
 >
 > Review records: V:/temp/TableViewPerformance/review-db12cfd (spec,
 > paths-flow, architecture, audit-flat, audit-hierarchy, and the approved plan

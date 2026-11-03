@@ -92,16 +92,20 @@ with or without this exception. A shrinking source clips
 the old interval conservatively; this does not predict a later native viewport
 clamp. The reconciliation script and notifications are unchanged.
 
-When no row of a nonempty order is in the view by identity, `RebuildView` sets a
-scrolled list's offset to 0 with `ChangeView` after the reconcile, in the same
-publish, so the layout that shows the new rows lays them out from the first.
-The difference decides from its counts: every view row leaves, every order row
-arrives, and it names no moved row. A publish that empties a scrolled view keeps
-the rows it showed until the next frame, and a publish that fills the view
-before then looks those rows up in the reconciled view instead. `ScrollTo`
-records the source assignment it followed. Publishes of that assignment keep
-the host's offset, including notifications while a hold delays the list, until
-the first publish that shows the source's rows.
+The frame decides once whether the view shows a different list, because a turn
+can show one list in several publishes, as a Clear and then one Add per row
+does. The first publish after a frame records how many rows that frame laid
+out, when the list is scrolled. Each publish then records the rows its
+difference names as leaving and arriving, so the work follows the changes and
+no copy of the view is kept; a reorder that names no rows has its rows compared
+with the view, which its reconcile walks anyway. The Rendering callback sets the
+offset to 0 with `ChangeView`, and lays the rows out again, when the view has
+rows and none of the rows that frame laid out. A view laid out empty is no list
+to differ from. `ScrollTo` makes its offset the host's for the view as it
+stands, so that frame keeps it. While the view does not show the source yet,
+as when a hold delays it, `ScrollTo` also records the source assignment.
+Publishes of that assignment keep the host's offset, including notifications
+during the hold, until the first publish that shows the source's rows.
 
 `Table/Sliding.cs` slides the rows a reorder moves. When the difference moves
 rows, named or not, and animations are on, it records, before the reconcile, the
@@ -209,7 +213,9 @@ The view stores rows in a gap buffer. The order's producer names each version
 of its own order and, when it knows, states how it differs from the version
 before: the natural order from the notification's indices, the kept sorted
 order from its removed, placed and replaced rows, so a row that moved leaves
-its old place and arrives at its new one. A difference says whether it names
+its old place and arrives at its new one. The source marks a change in which a
+row that leaves arrives again, as a Replace that crosses rows does, and both
+orders name that row as moved. A difference says whether it names
 moved rows this way, so no reader looks them up again. A `RefreshView` of the
 accepted capture states no difference. While rows are held without a local
 sort, membership waits, so the natural order is the view itself with its new
@@ -217,6 +223,9 @@ instances, stated against the view. The view takes a stated difference only
 when it shows the version the difference starts from, or when the difference
 starts from the view itself. A pointed row that already stands at its place
 under a sort keeps the stated difference, unless the difference names moves.
+When the same rows are pinned as at the last publish and the sorted difference
+names no leaving, arriving or moved row, the order is the view with the
+difference's new instances, stated against the view.
 Otherwise, and for an order whose pinned rows had to be put in place, held rows
 under a sort, a resort that placed every row again, a hierarchy or a new sort,
 it compares itself with the order in one walk of references, looking up a view

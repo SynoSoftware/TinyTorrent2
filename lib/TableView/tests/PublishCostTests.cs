@@ -12,11 +12,11 @@ namespace Syno.TableView.Tests;
 /// Measures what one publish costs the UI thread, in CPU cycles so that other load on the machine
 /// does not count. Most cases use the public API. <c>HeldCycles</c>, <c>PointedValueCycles</c>,
 /// <c>FirstSortCycles</c> and <c>WalkCycles</c> reach the table's pointer, sort and view by
-/// reflection, so a rename there fails them. A flat source changes by one row through each route a host can take: a
-/// notification of each kind, or a plain list changed in place and assigned again as a new
-/// <c>ItemsSource</c>. A hierarchy publishes a new root array, refreshes, or changes one child
-/// list. The product's path changes sort values in place under a live sort and refreshes. It
-/// asserts no limit; compare runs on one machine.
+/// reflection, so a rename there fails them. A flat source changes by one row through each
+/// route a host can take: a notification of each kind, or a plain list changed in place and
+/// assigned again as a new <c>ItemsSource</c>. A hierarchy publishes a new root array,
+/// refreshes, or changes one child list. The product's path changes sort values in place under
+/// a live sort and refreshes. It asserts no limit; compare runs on one machine.
 /// </summary>
 [TestClass]
 public class PublishCostTests

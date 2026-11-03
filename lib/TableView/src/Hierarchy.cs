@@ -218,12 +218,11 @@ internal sealed class Hierarchy(
                 : ChangedGroups.Contains(parent) || siblings == SiblingSort.Named && NamedGroups.Contains(parent));
 
         /// <summary>
-        /// Whether the change leaves the shown rows as they are: the roots did not change, and
-        /// every list it changed or named a row of belongs to a parent that is collapsed or not
-        /// shown.
+        /// Whether the change changes no shown row: the roots did not change, and every list it
+        /// changed or named a row of belongs to a parent that is collapsed or not shown.
         /// </summary>
         /// <param name="shown">Whether the view shows a row.</param>
-        internal bool LeavesShownRows(Func<object, bool> shown)
+        internal bool ChangesNoShownRow(Func<object, bool> shown)
         {
             return !IsWhole && !RootsChanged && !NamedRoots && !ShowsChildren(ChangedGroups)
                 && !ShowsChildren(NamedGroups);
@@ -583,9 +582,9 @@ internal sealed class Hierarchy(
         }
 
         /// <summary>
-        /// Accept a change that <see cref="LeavesShownRows"/>, with no projection: every kept
-        /// sibling order stays, and only the expanders of shown parents whose children changed
-        /// can change.
+        /// Accept a change that changes no shown row (<see cref="ChangesNoShownRow"/>), with no
+        /// projection: every kept sibling order stays, and only the expanders of shown parents
+        /// whose children changed can change.
         /// </summary>
         /// <param name="shown">Whether the view shows a row.</param>
         /// <returns>Whether an expander changed.</returns>

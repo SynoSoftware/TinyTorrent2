@@ -29,6 +29,9 @@ public sealed partial class Table
     /// </summary>
     private IdentitySet _returned = null!;
     private IdentitySet _pinned = null!;
+    // The rows the last call to Pin before the current one pinned.
+    private IdentitySet _lastPinned = null!;
+    private readonly List<(int Index, object Row)> _pins = new();
     private readonly List<object> _shownRows = new();
     private readonly List<object> _releasedRows = new();
     private readonly List<object> _pinOrder = new();
@@ -261,7 +264,8 @@ public sealed partial class Table
             bool showedSource = _held.Count == 0
                 && _view.Count == snapshot.Count - source.Arrivals.Count + source.Leavers.Count;
             return new(source.IsWhole || released.Count > 0 || !showedSource
-                ? SortChange.Whole(snapshot, snapshot) : Named(source.Arrivals), held, released, false,
+                ? SortChange.Whole(snapshot, snapshot) : Named(source.Arrivals, source.MovesRows), held,
+                released, false,
                 Array.Empty<object>());
         }
         if (!source.IsWhole)
@@ -291,7 +295,7 @@ public sealed partial class Table
             {
                 // Unchanged held membership keeps the accepted set, because copying it costs
                 // every held row on every notification.
-                return new(Named(returning), _held, released, true, returned);
+                return new(Named(returning, false), _held, released, true, returned);
             }
             foreach (object row in _held)
             {
@@ -309,7 +313,7 @@ public sealed partial class Table
                 held.Remove(arrival.Item);
                 returned.Add(arrival.Item);
             }
-            return new(Named(returning), held, released, true, returned);
+            return new(Named(returning, false), held, released, true, returned);
         }
         List<object> staying = _shownRows;
         staying.Clear();
@@ -334,8 +338,10 @@ public sealed partial class Table
         }
         return new(SortChange.Whole(staying, snapshot), held, released, true, back);
 
-        SortChange Named(IReadOnlyList<Body.Source.Arrival> arrivals) =>
-            new(null, snapshot, source.Leavers, arrivals, source.Reread, source.Shift);
+        // While the rows are held, a shown row that leaves and arrives again returns in its
+        // place, so only a change the hold passes on can move a row.
+        SortChange Named(IReadOnlyList<Body.Source.Arrival> arrivals, bool movesRows) =>
+            new(null, snapshot, source.Leavers, arrivals, source.Reread, source.Shift, movesRows);
     }
 
     private void AcceptHold(HoldStep hold)
@@ -365,10 +371,16 @@ public sealed partial class Table
     /// <remarks>
     /// While the rows are pointed at, the hold keeps membership unchanged, so the result has exactly
     /// the view's count and every pinned index is a place in it. When only the pointed rows are
-    /// pinned and each already stands at its index, the result is <paramref name="order"/> itself,
-    /// so a publish inside the settle interval costs only its own rows.
+    /// pinned and each already stands at its index, the result is <paramref name="order"/> itself.
+    /// When the last publish pinned the same rows and <paramref name="order"/> differs from the
+    /// order it pinned only by new instances, the result is the view with those instances, stated
+    /// against the view. Either way a publish inside the settle interval costs only its own rows.
     /// </remarks>
-    private (IReadOnlyList<object> Order, IdentitySet Pinned) Pin(
+    /// <returns>
+    /// The order, the pinned rows, and the order's origin when the result is made from the view;
+    /// otherwise null.
+    /// </returns>
+    private (IReadOnlyList<object> Order, IdentitySet Pinned, Body.View.Origin? FromView) Pin(
         IReadOnlyList<object> order,
         HoldStep hold,
         Body.Source.Preparation source
@@ -378,44 +390,51 @@ public sealed partial class Table
         bool reorders = PinsOrder;
         object? menu = reorders ? _menuRow : null;
         object? pointed = reorders ? _pointedRow : null;
+        (_pinned, _lastPinned) = (_lastPinned, _pinned);
         IdentitySet pinned = _pinned;
         pinned.Clear();
         if (held.Count == 0 && hold.Returning.Count == 0 && StandsInPlace(menu) && StandsInPlace(pointed))
         {
-            return (order, pinned);
+            return (order, pinned, null);
         }
 
         pinned.Clear();
-        List<object> result = _pinOrder;
-        result.Clear();
-        for (int index = 0; index < order.Count + held.Count; index++)
-        {
-            result.Add(null!);
-        }
+        int count = order.Count + held.Count;
+        List<(int Index, object Row)> pins = _pins;
+        pins.Clear();
         foreach (object row in held)
         {
-            int index = _view.Positions.IndexOf(row);
-            if (index >= 0 && index < result.Count)
-            {
-                Keep(index, row);
-            }
+            Keep(_view.Positions.IndexOf(row), row);
         }
         foreach (object row in hold.Returning)
         {
-            int index = _view.Positions.IndexOf(row);
-            if (index >= 0 && index < result.Count && result[index] is null)
-            {
-                Keep(index, row);
-            }
+            Keep(_view.Positions.IndexOf(row), row);
         }
         KeepPointed(menu);
         KeepPointed(pointed);
 
         if (pinned.Count == 0)
         {
-            return (order, pinned);
+            return (order, pinned, null);
+        }
+        if (SamePins() && _sortedOrder?.Origin.Difference is
+            { Leaving.Count: 0, Arriving.Count: 0, Moves: RowMoves.None } stated)
+        {
+            // The view is the last order pinned the same way, and this order moves no row of it.
+            var (kept, origin) = ViewWith(stated.Replacing.Select(replaced => order[replaced.After]));
+            return (kept, pinned, origin);
         }
 
+        List<object> result = _pinOrder;
+        result.Clear();
+        for (int index = 0; index < count; index++)
+        {
+            result.Add(null!);
+        }
+        foreach (var (index, row) in pins)
+        {
+            result[index] = row;
+        }
         int next = 0;
         for (int index = 0; index < result.Count; index++)
         {
@@ -432,25 +451,39 @@ public sealed partial class Table
             result[index] = order[next++];
         }
 
-        return (result, pinned);
+        return (result, pinned, null);
 
+        // A row's index is its identity's view index, so each identity keeps one place.
         void Keep(int index, object row)
         {
-            result[index] = row;
-            pinned.Add(row);
+            if (index >= 0 && index < count && pinned.Add(row))
+            {
+                pins.Add((index, row));
+            }
         }
 
         void KeepPointed(object? row)
         {
-            if (row is null)
+            if (row is not null && source.Resolve(row) is { } current)
             {
-                return;
+                Keep(_view.Positions.IndexOf(row), current);
             }
-            int index = _view.Positions.IndexOf(row);
-            if (index >= 0 && index < result.Count && source.Resolve(row) is { } current)
+        }
+
+        bool SamePins()
+        {
+            if (pinned.Count != _lastPinned.Count)
             {
-                Keep(index, current);
+                return false;
             }
+            foreach (var (_, row) in pins)
+            {
+                if (!_lastPinned.Contains(row))
+                {
+                    return false;
+                }
+            }
+            return true;
         }
 
         // Whether a pointed row needs no place kept: it is not shown or not in the source, or the

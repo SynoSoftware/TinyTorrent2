@@ -66,8 +66,10 @@ public class SortingTests
     /// Section 5.3's owner ruling: a different list starts at the top. A sort that moves every row
     /// keeps the offset, although its difference names every row as leaving and arriving, and a
     /// host's <c>ScrollTo</c> after the assignment wins, also when a hold shows the list later and
-    /// the list changes meanwhile. A list emptied and filled again before a frame is compared with
-    /// the rows shown before it was emptied, so its own rows keep the offset and other rows do not.
+    /// the list changes meanwhile, but not for a later change that replaces every row. A list
+    /// emptied and filled again before a frame is compared with the rows shown before it was
+    /// emptied, whatever row comes back first, so its own rows keep the offset and other rows do
+    /// not.
     /// </summary>
     [TestMethod]
     public Task ADifferentListStartsAtTheTopUnlessTheHostScrolls() =>
@@ -126,11 +128,36 @@ public class SortingTests
             Assert.AreEqual(1000, await OffsetAsync(), 1, "a list emptied and refilled with its own rows keeps the offset");
 
             live.Clear();
+            live.Add(new SortRow("d-new", -1));
+            foreach (SortRow row in own)
+            {
+                live.Add(row);
+            }
+            Assert.AreEqual(1000, await OffsetAsync(), 1,
+                "a list refilled with a new row first and then its own rows keeps the offset");
+
+            live.Clear();
             foreach (SortRow row in List("e"))
             {
                 live.Add(row);
             }
             Assert.AreEqual(0, await OffsetAsync(), 1, "a list emptied and refilled with other rows starts at the top");
+
+            QuietList<SortRow> quiet = new(List("f"));
+            table.ItemsSource = quiet;
+            table.ScrollTo(600);
+            Assert.AreEqual(600, await OffsetAsync(), 1, "the host's ScrollTo after the assignment wins");
+            for (int index = 0; index < 200; index++)
+            {
+                quiet.RemoveQuietly(0);
+            }
+            foreach (SortRow row in List("g"))
+            {
+                quiet.InsertQuietly(quiet.Count, row);
+            }
+            quiet.RaiseReset();
+            Assert.AreEqual(0, await OffsetAsync(), 1,
+                "a different list in the list the host scrolled starts at the top");
 
             static SortRow[] List(string prefix) =>
                 Enumerable.Range(0, 200).Select(i => new SortRow(prefix + i, i)).ToArray();
@@ -196,6 +223,35 @@ public class SortingTests
                 table.UpdateLayout();
                 await TableHarness.WaitUntilAsync(() => !Proof.Field<bool>(table, "_layoutPending"), "the frame");
             }
+        });
+
+    /// <summary>
+    /// Requirement 3: a row that stays on screen is never deleted and added again. One Replace
+    /// that gives two sorted rows each other's place is a move of both, so they slide.
+    /// </summary>
+    [TestMethod]
+    public Task ASortedReplaceThatCrossesTwoRowsSlidesThem() =>
+        TestHost.RunAsync(async () =>
+        {
+            if (!new Windows.UI.ViewManagement.UISettings().AnimationsEnabled)
+            {
+                Assert.Inconclusive("Windows animations are off, so no reorder slides here.");
+            }
+            SortHarness h = await SortHarness.LoadAsync(Enumerable.Range(0, 200).ToArray(), configure: table =>
+            {
+                table.Sort = new(table.Columns[0]);
+                table.SortInterval = TimeSpan.Zero;
+            });
+            Table table = h.Table;
+            NullSenderRows rows = new();
+            rows.AddRange(h.Rows);
+            table.ItemsSource = rows;
+            table.UpdateLayout();
+            await TableHarness.WaitUntilAsync(() => !Proof.Field<bool>(table, "_layoutPending"), "the frame");
+
+            rows.ReplaceNotified(0, 2, new SortRow("k1", 0), new SortRow("k0", 1));
+            CollectionAssert.AreEqual(new[] { "k1", "k0", "k2" }, h.ViewKeys()[..3]);
+            Assert.IsNotNull(Proof.Field<object?>(table, "_slideFrom"), "the two rows slide");
         });
 
     [TestMethod]

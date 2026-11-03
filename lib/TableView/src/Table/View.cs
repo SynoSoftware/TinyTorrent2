@@ -28,13 +28,52 @@ public sealed partial class Table
     private SuppressedTransitions? _suppressedTransitions;
 
     /// <summary>
-    /// The rows a scrolled view showed when a publish emptied it, until the next frame lays the
-    /// empty view out. Until then they are the rows the person last saw, so a publish that fills
-    /// the view again compares its rows with them.
+    /// What the publishes since the last frame did to the rows that frame laid out, until the
+    /// next frame decides from it whether the view shows a different list. Null while no publish
+    /// has changed the view since that frame, and after the host scrolled the view.
     /// </summary>
-    private object[]? _emptiedRows;
+    private LaidOutRows? _laidOut;
 
     private sealed record SuppressedTransitions(Body.Surface Surface, object LocalValue);
+
+    /// <summary>
+    /// The rows a frame laid out, followed through each later publish by the rows its difference
+    /// names, so the next frame can tell whether the view still has any of them without a copy
+    /// of the view.
+    /// </summary>
+    /// <param name="count">
+    /// How many rows the frame laid out, or 0 when the list was not scrolled, so no offset can
+    /// go back to the top.
+    /// </param>
+    private sealed class LaidOutRows(int count, IIdentity identity)
+    {
+        // Rows the frame laid out that the view no longer has.
+        private readonly IdentitySet _gone = new(identity);
+        // Rows the view has that the frame did not lay out.
+        private readonly IdentitySet _added = new(identity);
+
+        internal int Count => count;
+
+        /// <summary>Whether the frame laid out rows and the view has none of them now.</summary>
+        internal bool NoneRemain => count > 0 && _gone.Count == count;
+
+        /// <summary>Record a row that leaves the view. Call it before the row arrives again.</summary>
+        internal void Leave(object row)
+        {
+            if (!_added.Remove(row))
+            {
+                _gone.Add(row);
+            }
+        }
+
+        internal void Arrive(object row)
+        {
+            if (!_gone.Remove(row))
+            {
+                _added.Add(row);
+            }
+        }
+    }
 
     /// <summary>
     /// The whole order a new sort gives, with the change it was prepared from: the source's for
@@ -334,7 +373,7 @@ public sealed partial class Table
             {
                 hierarchy = sort?.Hierarchy ?? _hierarchy.Prepare(change, capture, ValidateRows);
                 // A list under a collapsed or hidden parent changes no shown row.
-                keepsView = sort is null && hierarchy.LeavesShownRows(IsInView);
+                keepsView = sort is null && hierarchy.ChangesNoShownRow(IsInView);
                 (order, pinned, affected, origin) =
                     keepsView ? (_view, _held, null, Body.View.Origin.FromView(Body.View.Difference.None))
                     : sort is null ? ViewOrder(hierarchy)
@@ -396,21 +435,19 @@ public sealed partial class Table
             }
 
             IReadOnlyList<int> realized = RealizedIndices();
-            int shownCount = _view.Count;
-            if (order.Count == 0 && _emptiedRows is null && IsLoaded
-                && InnerScrollViewer()?.VerticalOffset > 0)
-            {
-                _emptiedRows = _view.ToArray();
-            }
+            object[]? reordered = FollowLaidOutRows(order, difference, hostScrolled);
             PrepareTransitions(order, TryCaptureSlides(order, difference, realized));
             _view.Reconcile(order, difference, origin.Version, realized, pinned);
             RebindRows();
-            // A different list starts at its first row (specification 5.3), in the frame that
-            // first shows it, unless the host scrolled after assigning it.
-            if (!hostScrolled && IsDifferentList(difference, shownCount)
-                && InnerScrollViewer() is { VerticalOffset: > 0 } scroller)
+            if (reordered is not null)
             {
-                scroller.ChangeView(null, 0, null, disableAnimation: true);
+                foreach (object row in reordered)
+                {
+                    if (!IsInView(row))
+                    {
+                        _laidOut!.Leave(row);
+                    }
+                }
             }
 
             ReconcileDrag();
@@ -459,36 +496,70 @@ public sealed partial class Table
     }
 
     /// <summary>
-    /// Whether the reconciled view shows a different list: it has rows, and none of them was
-    /// among the rows the person last saw. Those are the view before this publish, or the rows
-    /// it showed before a publish emptied it since the last layout. A view the person saw empty
-    /// shows no list to differ from.
+    /// Follow the rows the last frame laid out through this publish, before it reconciles: the
+    /// first publish since that frame takes the view as the frame laid it out. Nothing is
+    /// followed when there is no offset to take back: the frame laid out no rows or the list at
+    /// the top, or this publish shows the list the host scrolled for.
     /// </summary>
-    /// <param name="shownCount">The view's count before this publish.</param>
-    private bool IsDifferentList(Body.View.Difference difference, int shownCount)
+    /// <returns>
+    /// For a reorder that names no rows, the view's rows before it, which leave unless the
+    /// reconciled view still has them; otherwise null.
+    /// </returns>
+    private object[]? FollowLaidOutRows(IReadOnlyList<object> order, Body.View.Difference difference,
+        bool hostScrolled)
     {
-        if (_view.Count == 0)
+        if (hostScrolled || !IsLoaded)
         {
-            return false;
+            _laidOut = null;
+            return null;
         }
-        if (shownCount > 0)
+        LaidOutRows laidOut = _laidOut ??= new(
+            _view.Count > 0 && InnerScrollViewer()?.VerticalOffset > 0 ? _view.Count : 0, _identity);
+        if (laidOut.Count == 0)
         {
-            // Every row left and every row arrived, and the difference names no row as moved.
-            return difference.Moves == RowMoves.None && difference.Leaving.Count == shownCount
-                && difference.Arriving.Count == _view.Count;
+            return null;
         }
-        if (_emptiedRows is not { } seen)
+        if (difference.Moves == RowMoves.Unnamed)
         {
-            return false;
-        }
-        foreach (object row in seen)
-        {
-            if (_view.Positions.IndexOf(row) >= 0)
+            // The reconcile walks every row anyway.
+            foreach (object row in order)
             {
-                return false;
+                if (!IsInView(row))
+                {
+                    laidOut.Arrive(row);
+                }
             }
+            return _view.ToArray();
         }
-        return true;
+        foreach (int at in difference.Leaving)
+        {
+            laidOut.Leave(_view[at]);
+        }
+        foreach (int at in difference.Arriving)
+        {
+            laidOut.Arrive(order[at]);
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// A different list starts at its first row (specification 5.3): when the view has rows and
+    /// none of the rows the last frame laid out, a scrolled list goes to the top. The frame
+    /// decides once for every publish since the last one, because a turn can show one list in
+    /// several publishes, as a Clear and then one Add per row does.
+    /// </summary>
+    private void StartDifferentList()
+    {
+        LaidOutRows? laidOut = _laidOut;
+        _laidOut = null;
+        if (laidOut is { NoneRemain: true } && _view.Count > 0
+            && InnerScrollViewer() is { VerticalOffset: > 0 } scroller)
+        {
+            scroller.ChangeView(null, 0, null, disableAnimation: true);
+            // This callback can run after the frame's layout (see _layoutPending), so the rows
+            // are laid out again here, from the top, before the frame renders.
+            UpdateLayout();
+        }
     }
 
     /// <param name="sliding">
@@ -556,7 +627,7 @@ public sealed partial class Table
     {
         CompositionTarget.Rendering -= OnLaidOut;
         _frameRequested = false;
-        _emptiedRows = null;
+        StartDifferentList();
         EndSuppression();
         QueuedSort? queued = _queuedSort;
         PageNavigation? page = _pendingPage is { Stage: not PageStage.Scrolling } ready

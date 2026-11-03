@@ -551,8 +551,8 @@ share that suppression; ordinary native motion resumes afterward. An empty
 final source remains an ordinary removal, not a disjoint replacement.
 **Owner ruling: a different list starts at the top.** When a publish leaves no
 row of the previous view and the new source is not empty, the table swaps the
-rows in place and, in the same publish, sets the scroll offset to 0 without
-animation. The first frame shows the new list's first row, because new rows at
+rows in place and, before the frame that shows them, sets the scroll offset to
+0 without animation. The first frame shows the new list's first row, because new rows at
 the old offset show the person an arbitrary middle of a list they have not
 seen. Rows are compared by identity, so every other publish keeps its offset:
 a sort that moves every row, a filter that keeps at least one row, and a

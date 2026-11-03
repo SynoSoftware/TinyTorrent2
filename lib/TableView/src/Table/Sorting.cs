@@ -432,18 +432,22 @@ public sealed partial class Table
         IReadOnlyList<object> order;
         IdentitySet pinned;
         Body.View.Origin origin;
+        Body.View.Origin? fromView = null;
         if (_sortedOrder is null && hold.Holds && hold.Rows.Shown is null)
         {
-            (order, pinned, origin) = HeldOrder(hold, source);
+            // Membership waits, so the order is the view with each row the source replaced, and
+            // each returning row in its held row's place, as new instances.
+            (order, origin) = ViewWith(source.Reread.Concat(hold.Returning));
+            pinned = hold.Held;
             shown = order;
         }
         else
         {
             shown = _sortedOrder is null ? NaturalOrder(hold, source)
                 : _sortedOrder.Prepare(hold.Rows, _sortDirection, allowMoves);
-            (order, pinned) = Pin(shown, hold, source);
-            origin = !ReferenceEquals(order, shown) ? default
-                : _sortedOrder?.Origin ?? NaturalOrigin(order, source);
+            (order, pinned, fromView) = Pin(shown, hold, source);
+            origin = fromView ?? (!ReferenceEquals(order, shown) ? default
+                : _sortedOrder?.Origin ?? NaturalOrigin(order, source));
             if (pinned.Count > 0 && origin.Difference is { Moves: RowMoves.Named })
             {
                 // The run script keeps a pinned row's container; a named move would remove it and
@@ -453,9 +457,12 @@ public sealed partial class Table
         }
         _sortedOrder?.Accept();
         AcceptHold(hold);
+        // An order made from the view leaves rows off their sorted places exactly as the last
+        // publish did, so its settle stays as it was.
         Settle(now, allowMoves || _sortedOrder?.Resorted == true, _sortedOrder?.NeedsSettle == true || hold.Held.Count > 0
             || shown.Count != source.Capture.Rows.Count
-            || !ReferenceEquals(order, shown) && !order.SequenceEqual(shown, ReferenceEqualityComparer.Instance));
+            || (fromView is not null ? _settlePending
+                : !ReferenceEquals(order, shown) && !order.SequenceEqual(shown, ReferenceEqualityComparer.Instance)));
         return (order, pinned, hold.Rows.Shown is null ? source : null, origin);
     }
 
@@ -526,25 +533,22 @@ public sealed partial class Table
     }
 
     /// <summary>
-    /// The shown rows in source order, for a table without a local sort, unless rows are held:
-    /// see <see cref="HeldOrder"/>.
+    /// The shown rows in source order, for a table without a local sort, unless rows are held
+    /// and the change names its rows, when the order is the view with its new instances.
     /// </summary>
     private static IReadOnlyList<object> NaturalOrder(HoldStep hold, Body.Source.Preparation source) =>
         hold.Rows.Shown ?? source.Capture.Rows;
 
     /// <summary>
-    /// The natural order while the rows are pointed at and the change names its rows. Membership
-    /// waits, so the order is the view as it stands with each row the source replaced, and each
-    /// returning row in its held row's place, as new instances. It states those instances
-    /// against the view itself, so the view does not walk, and copies the view only when an
-    /// instance changes.
+    /// The view as it stands with each of <paramref name="rows"/> it shows in its row's place.
+    /// It states those instances against the view itself, so the view does not walk, and copies
+    /// the view only when an instance changes.
     /// </summary>
-    private (IReadOnlyList<object> Order, IdentitySet Pinned, Body.View.Origin Origin) HeldOrder(
-        HoldStep hold, Body.Source.Preparation source)
+    private (IReadOnlyList<object> Order, Body.View.Origin Origin) ViewWith(IEnumerable<object> rows)
     {
         List<object>? order = null;
-        List<(int, int)> replacing = new(source.Reread.Count + hold.Returning.Count);
-        foreach (object row in source.Reread.Concat(hold.Returning))
+        List<(int, int)> replacing = new();
+        foreach (object row in rows)
         {
             int index = _view.Positions.IndexOf(row);
             if (index >= 0 && !ReferenceEquals(_view[index], row))
@@ -554,8 +558,7 @@ public sealed partial class Table
                 replacing.Add((index, index));
             }
         }
-        return (order ?? (IReadOnlyList<object>)_view, hold.Held,
-            Body.View.Origin.FromView(new([], [], replacing)));
+        return (order ?? (IReadOnlyList<object>)_view, Body.View.Origin.FromView(new([], [], replacing)));
     }
 
     /// <summary>
@@ -673,13 +676,18 @@ internal sealed class SortDefinition<TRow, TKey>(Func<TRow, TKey> key, IComparer
 /// What the shown rows did since the kept order was accepted. A whole change lists every shown
 /// row in source order; any other change names the rows that left, arrived or are read again.
 /// </summary>
+/// <param name="MovesRows">
+/// Whether one of <paramref name="Leavers"/> is among <paramref name="Arrivals"/>; see
+/// <see cref="Body.Source.Preparation.MovesRows"/>.
+/// </param>
 internal readonly record struct SortChange(
     IReadOnlyList<object>? Shown,
     IReadOnlyList<object> Source,
     IReadOnlyList<object> Leavers,
     IReadOnlyList<Body.Source.Arrival> Arrivals,
     IReadOnlyList<object> Reread,
-    Body.Source.Shift Shift)
+    Body.Source.Shift Shift,
+    bool MovesRows = false)
 {
     /// <param name="shown">The rows to order, in source order.</param>
     /// <param name="source">
@@ -1081,7 +1089,7 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
                 MoveOutOfOrder(count, change.Shift, ref placed);
             }
             _candidateNeedsSettle = !_candidateResorted && !allowMoves && (differs || !everyKey && _needsSettle);
-            Build(count, placed, resort, whole, change.Shift);
+            Build(count, placed, resort, change);
             _candidateVersion = _difference is { IsEmpty: true } ? _version : new();
             if (!whole && !_candidateRebuilt && Shifts(change.Shift)
                 && _shifts.Count + 1 >= Math.Max(1, Math.Sqrt(change.Source.Count)))
@@ -1276,12 +1284,15 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
     /// Build the candidate: the rows that stay, copied in blocks, with the placed rows sorted and
     /// put in among them at the places binary search finds. Unless <paramref name="resort"/>
     /// placed every row again, also record how the candidate differs from the kept order: a row
-    /// that moved leaves its old place and arrives at its new one, as a named move.
+    /// that moved, or that left and arrived again in the change, leaves its old place and
+    /// arrives at its new one, as a named move.
     /// </summary>
-    private void Build(int count, int placed, bool resort, bool whole, Body.Source.Shift shift)
+    private void Build(int count, int placed, bool resort, SortChange change)
     {
+        bool whole = change.Shown is not null;
+        Body.Source.Shift shift = change.Shift;
         int removed = 0;
-        bool moves = false;
+        bool moves = change.MovesRows;
         if (whole || _candidateRebuilt)
         {
             for (int kept = 0; kept < count; kept++)

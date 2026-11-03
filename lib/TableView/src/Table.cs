@@ -39,10 +39,10 @@ public sealed partial class Table : Control
     private double? _pendingScroll;
 
     /// <summary>
-    /// The source assignment the host's last <see cref="ScrollTo"/> followed, until a publish
-    /// shows that assignment's rows. A different list shown for it keeps the host's offset
-    /// instead of starting at the top, also when a hold delays it until the pointer leaves and
-    /// the list changes meanwhile (specification 5.3).
+    /// The source assignment the host's last <see cref="ScrollTo"/> followed while the view did
+    /// not show it yet, until a publish shows that assignment's rows. A different list shown for
+    /// it keeps the host's offset instead of starting at the top, also when a hold delays it
+    /// until the pointer leaves and the list changes meanwhile (specification 5.3).
     /// </summary>
     private long? _scrolledAssignment;
 
@@ -253,6 +253,7 @@ public sealed partial class Table : Control
         _detached = true;
         Microsoft.UI.Xaml.Media.CompositionTarget.Rendering -= OnLaidOut;
         _frameRequested = false;
+        _laidOut = null;
         _slides.Clear();
         QueueRealized();
         LayoutUpdated -= OnFillLayout;
@@ -366,6 +367,7 @@ public sealed partial class Table : Control
         _candidateHeld = new(identity);
         _returned = new(identity);
         _pinned = new(identity);
+        _lastPinned = new(identity);
         _hierarchy?.SetIdentity(identity);
     }
 
@@ -655,7 +657,9 @@ public sealed partial class Table : Control
         }
 
         _pendingScroll = verticalOffset;
-        _scrolledAssignment = _source.Current.AssignmentVersion;
+        // The offset is the host's for the view as it stands, so the next frame keeps it.
+        _laidOut = null;
+        _scrolledAssignment = ShowsSource ? null : _source.Current.AssignmentVersion;
         ApplyPendingScroll();
     }
 
