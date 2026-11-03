@@ -65,9 +65,10 @@ internal sealed class Source
 
     /// <summary>
     /// One change to the source, classified once for every step of the publish. A whole change
-    /// affects every row: an assignment, a <c>RefreshView()</c>, a Reset or a Move, or any change
-    /// without a validated predecessor. Any other change names its rows: those that leave, those
-    /// that arrive, and those to read again, which a same-identity Replace and a row named by
+    /// affects every row: an assignment, a <c>RefreshView()</c>, a Reset or a Move, a Replace that
+    /// puts a row's identity at another of its places, or any change without a validated
+    /// predecessor. Any other change names its rows: those that leave, those that arrive, and
+    /// those to read again, which a same-identity Replace and a row named by
     /// <c>RefreshView(changed)</c> are.
     /// </summary>
     internal sealed class Preparation(
@@ -135,9 +136,10 @@ internal sealed class Source
             && notification.Action is NotifyCollectionChangedAction.Add or NotifyCollectionChangedAction.Remove
                 or NotifyCollectionChangedAction.Replace
             && (notification.NewItems is not { Count: > 0 } || notification.NewStartingIndex >= 0)
-            && (notification.OldItems is not { Count: > 0 } || notification.OldStartingIndex >= 0))
+            && (notification.OldItems is not { Count: > 0 } || notification.OldStartingIndex >= 0)
+            && PrepareRows(capture, notification, validate) is { } rows)
         {
-            return PrepareRows(capture, notification, validate);
+            return rows;
         }
         if (!accepted)
         {
@@ -154,7 +156,7 @@ internal sealed class Source
         return new(capture, accepted ? _membership : _candidate, _entering, _leaving);
     }
 
-    private Preparation PrepareRows(Capture capture, NotifyCollectionChangedEventArgs notification,
+    private Preparation? PrepareRows(Capture capture, NotifyCollectionChangedEventArgs notification,
         Action<object> validate)
     {
         List<object> removed = new();
@@ -182,6 +184,14 @@ internal sealed class Source
             {
                 _leaving.Remove(item);
                 reread.Add(item);
+            }
+            else if (_leaving.ContainsKey(item))
+            {
+                // At another place it stays too, so naming it as leaving and arriving would
+                // remove and insert a row that may not move; the whole change matches it instead.
+                _entering.Clear();
+                _leaving.Clear();
+                return null;
             }
             else
             {

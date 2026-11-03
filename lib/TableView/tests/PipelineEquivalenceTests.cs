@@ -243,7 +243,7 @@ public class PipelineEquivalenceTests
         private IEnumerable<Table> Tables => new[] { Incremental, Whole };
 
         /// <summary>Each table's interval start as <see cref="Apply"/> left it.</summary>
-        private DateTimeOffset[] _settledAtApply = [];
+        private long?[] _settledAtApply = [];
 
         /// <summary>
         /// Whether the settle that <see cref="Apply"/> left pending has run in both tables: none is
@@ -254,8 +254,8 @@ public class PipelineEquivalenceTests
             !Proof.Field<bool>(table, "_settlePending") || SettledAt(table) != _settledAtApply[index])
             .All(ran => ran);
 
-        private static DateTimeOffset SettledAt(Table table) =>
-            Proof.Field<DateTimeOffset>(table, "_orderSettledAt");
+        private static long? SettledAt(Table table) =>
+            Proof.Field<long?>(table, "_orderSettledAt");
 
         /// <summary>Bring both tables into the mode by the same steps.</summary>
         internal void Setup()

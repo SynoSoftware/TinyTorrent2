@@ -361,7 +361,7 @@ public sealed partial class Table
                 _source.Store(capture, validated: false);
                 return;
             }
-            bool hostScrolled = _scrolledAssignment == capture.AssignmentVersion;
+            bool hostScrolled = _scrolledAssignment?.Assignment == capture.AssignmentVersion;
             IReadOnlyList<object> order;
             IdentitySet pinned;
             Body.Source.Preparation? affected = null;
@@ -435,7 +435,14 @@ public sealed partial class Table
             // carry a row's keyboard cue onto an unrelated control.
             if (rowFocus != FocusState.Unfocused)
             {
+                long publish = _publishVersion;
                 _surface?.Focus(FocusState.Pointer);
+                if (_publishVersion != publish)
+                {
+                    // A focus handler changed the source, and its publish already showed this
+                    // change with its own, so this order and difference are stale.
+                    return;
+                }
             }
 
             IReadOnlyList<int> realized = RealizedIndices();
@@ -487,6 +494,12 @@ public sealed partial class Table
             if (completed && ShowsSource)
             {
                 // The publish showed the list the host scrolled for, so its ScrollTo is spent.
+                if (_scrolledAssignment is { Offset: double offset } scrolled
+                    && scrolled.Assignment == _source.Current.AssignmentVersion)
+                {
+                    _pendingScroll = offset;
+                    ApplyPendingScroll();
+                }
                 _scrolledAssignment = null;
             }
             if (completed && !_detached && rowVisualsChanged)

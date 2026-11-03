@@ -80,7 +80,9 @@ internal sealed class SelectionState
     internal void Restore(Checkpoint checkpoint, IReadOnlyList<object> view)
     {
         SetSelection(checkpoint.Items, checkpoint.Current, view);
-        Locate(Resolve(checkpoint.Current), Resolve(checkpoint.Anchor), Resolve(checkpoint.Focus));
+        // A saved row that is gone keeps the first selected row that SetSelection chose.
+        Locate(Resolve(checkpoint.Current) ?? Current, Resolve(checkpoint.Anchor) ?? Current,
+            Resolve(checkpoint.Focus) ?? Current);
     }
 
     internal void SetIdentity(IIdentity identity)

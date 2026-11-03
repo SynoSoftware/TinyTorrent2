@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
 
@@ -36,8 +37,16 @@ public sealed partial class Table
     private sealed record SortWork(SortedOrder Workspace, SortedOrder.Work Sorting,
         Hierarchy.Work? Hierarchy, long PublishVersion);
 
-    /// <summary>When a frame last showed a settle that changed the rows.</summary>
-    private DateTimeOffset _orderSettledAt = DateTimeOffset.MinValue;
+    /// <summary>
+    /// The <see cref="Stopwatch"/> timestamp of the frame that last showed a settle that changed
+    /// the rows, or null before that frame and after a sort change, so the next publish settles.
+    /// The clock is monotonic, so a change of the system clock neither ends nor stretches the
+    /// interval.
+    /// </summary>
+    private long? _orderSettledAt;
+
+    private TimeSpan SinceSettle =>
+        _orderSettledAt is long settled ? Stopwatch.GetElapsedTime(settled) : TimeSpan.MaxValue;
 
     /// <summary>
     /// The view version before the first settle that no frame has shown yet, or null when every
@@ -90,8 +99,9 @@ public sealed partial class Table
     /// whole screen because a single row completed cannot be clicked on, which is why this
     /// exists, rather than the cost.
     /// <para>
-    /// Live. Shortening it takes effect on the next update; the sorted order is taken immediately
-    /// when it is set to <see cref="TimeSpan.Zero"/>. Negative values are treated as zero.
+    /// Live. A pending settle comes at the end of the new interval, and the sorted order is taken
+    /// immediately when it is set to <see cref="TimeSpan.Zero"/>. Negative values are treated as
+    /// zero.
     /// </para>
     /// </remarks>
     public TimeSpan SortInterval
@@ -108,10 +118,11 @@ public sealed partial class Table
             _sortInterval = value;
 
             // Turning settling off is a request to see the sorted order, not a request to see it
-            // whenever the source next moves.
-            if (value == TimeSpan.Zero && _schemaCaptured && SortsLocally)
+            // whenever the source next moves. A pending settle's running timer keeps the old
+            // interval's end, so the rebuild schedules it again.
+            if (_schemaCaptured && SortsLocally && (value == TimeSpan.Zero || _settlePending))
             {
-                _orderSettledAt = DateTimeOffset.MinValue;
+                _settleDue?.Stop();
                 RebuildView();
             }
         }
@@ -219,7 +230,7 @@ public sealed partial class Table
         _sortColumn = column;
         _sortDirection = direction;
         _sortedOrder = workspace;
-        _orderSettledAt = DateTimeOffset.MinValue;
+        _orderSettledAt = null;
         _settlePending = false;
         _settleDue?.Stop();
         // The kept sibling groups are ordered by the sort they were kept under.
@@ -378,7 +389,8 @@ public sealed partial class Table
             : presented?.Direction == SortDirection.Ascending
                 ? new Sort(column.Column, SortDirection.Descending)
             : null;
-        _queuedSort = new(requested, Sort, _sortRevision, _lifetimeRevision);
+        // A choice of the committed sort leaves nothing to sort and nothing to report.
+        _queuedSort = requested == Sort ? null : new(requested, Sort, _sortRevision, _lifetimeRevision);
         _headerStrip?.Panel?.RefreshHeader();
         RequestFrame();
     }
@@ -434,8 +446,7 @@ public sealed partial class Table
         Body.View.Origin Origin) ViewOrder(
         Body.Source.Preparation source)
     {
-        DateTimeOffset now = DateTimeOffset.UtcNow;
-        bool allowMoves = MayMove(now);
+        bool allowMoves = MayMove();
         HoldStep hold = Hold(source, waits: !allowMoves);
         IReadOnlyList<object> shown;
         IReadOnlyList<object> order;
@@ -466,9 +477,11 @@ public sealed partial class Table
         }
         _sortedOrder?.Accept();
         AcceptHold(hold);
-        // An order made from the view leaves rows off their sorted places exactly as the last
-        // publish did, so its settle stays as it was.
-        Settle(now, allowMoves || _sortedOrder?.Resorted == true, _sortedOrder?.NeedsSettle == true || hold.Held.Count > 0
+        // A change the hold applies at once, as one named by Release, starts the interval as a
+        // settle does, though it moves no row. An order made from the view leaves rows off their
+        // sorted places exactly as the last publish did, so its settle stays as it was.
+        Settle(allowMoves || !hold.Holds || _sortedOrder?.Resorted == true,
+            _sortedOrder?.NeedsSettle == true || hold.Held.Count > 0
             || shown.Count != source.Capture.Rows.Count
             || (fromView is not null ? _settlePending
                 : !ReferenceEquals(order, shown) && !order.SequenceEqual(shown, ReferenceEqualityComparer.Instance)));
@@ -483,14 +496,13 @@ public sealed partial class Table
         Body.View.Origin Origin) ViewOrder(
         Hierarchy.Preparation hierarchy)
     {
-        DateTimeOffset now = DateTimeOffset.UtcNow;
-        bool allowMoves = MayMove(now);
+        bool allowMoves = MayMove();
         SiblingSort siblings = !allowMoves ? SiblingSort.Changed
             : hierarchy.IsWhole || _settlePending ? SiblingSort.All
             : SiblingSort.Named;
         (IReadOnlyList<object> order, bool kept) = _hierarchy!.Project(hierarchy,
             SortsLocally ? _sortedOrder : null, _sortDirection, siblings);
-        Settle(now, allowMoves, kept && !allowMoves);
+        Settle(allowMoves, kept && !allowMoves);
         return (order, _held, null, default);
     }
 
@@ -509,7 +521,7 @@ public sealed partial class Table
             AcceptHold(hold);
             held = hold.Held;
         }
-        Settle(DateTimeOffset.UtcNow, allowMoves: true, pending: false);
+        Settle(applies: true, pending: false);
         return (sorted, held, null, default);
     }
 
@@ -518,24 +530,25 @@ public sealed partial class Table
     /// table's changes apply, rather than at the next settle. Until a frame shows a settle that
     /// changed the rows, every publish is one, so the changes of one turn land in one update.
     /// </summary>
-    private bool MayMove(DateTimeOffset now) => !SortsLocally || SortsOrder || _view.Count == 0
-        || _sortInterval == TimeSpan.Zero || _unshownSettle is not null || now - _orderSettledAt >= _sortInterval;
+    private bool MayMove() => !SortsLocally || SortsOrder || _view.Count == 0
+        || _sortInterval == TimeSpan.Zero || _unshownSettle is not null || SinceSettle >= _sortInterval;
 
     /// <summary>
-    /// The one settle decision. A settle that changes the rows starts the interval when a frame
-    /// shows it; a publish that left rows off their sorted places, by a withheld key, a held or
+    /// The one settle decision. A publish that <paramref name="applies"/> changes, a settle or a
+    /// change the hold lets through, starts the interval when a frame shows that it changed the
+    /// rows; a publish that left rows off their sorted places, by a withheld key, a held or
     /// waiting row or a pinned row, schedules the settle at the end of the interval.
     /// </summary>
-    private void Settle(DateTimeOffset now, bool allowMoves, bool pending)
+    private void Settle(bool applies, bool pending)
     {
-        if (allowMoves)
+        if (applies)
         {
             _unshownSettle ??= _view.Version;
         }
         _settlePending = SortsLocally && !SortsOrder && pending;
         if (_settlePending)
         {
-            ScheduleSettle(allowMoves ? _sortInterval : _sortInterval - (now - _orderSettledAt));
+            ScheduleSettle(applies ? _sortInterval : _sortInterval - SinceSettle);
         }
         else
         {
@@ -553,7 +566,7 @@ public sealed partial class Table
     {
         if (_unshownSettle is long version && version != _view.Version)
         {
-            _orderSettledAt = DateTimeOffset.UtcNow;
+            _orderSettledAt = Stopwatch.GetTimestamp();
             if (_settlePending)
             {
                 _settleDue?.Stop();
@@ -651,7 +664,9 @@ public sealed partial class Table
     /// </summary>
     private void ScheduleSettle(TimeSpan due)
     {
-        if (_detached)
+        // A zero interval settles on every publish. A settle the pointer kept from its rows comes
+        // when the pointer leaves (ReleaseHold), so a timer would only repeat the same publish.
+        if (_detached || _sortInterval == TimeSpan.Zero)
             return;
         if (_settleDue is null)
         {
@@ -707,13 +722,18 @@ internal sealed class SortDefinition<TRow, TKey>(Func<TRow, TKey> key, IComparer
 /// What the shown rows did since the kept order was accepted. A whole change lists every shown
 /// row in source order; any other change names the rows that left, arrived or are read again.
 /// </summary>
+/// <param name="Held">
+/// Whether the hold keeps the change back, so the only rows it places are held rows coming back,
+/// which keep their held places until the settle.
+/// </param>
 internal readonly record struct SortChange(
     IReadOnlyList<object>? Shown,
     IReadOnlyList<object> Source,
     IReadOnlyList<object> Leavers,
     IReadOnlyList<Body.Source.Arrival> Arrivals,
     IReadOnlyList<object> Reread,
-    Body.Source.Shift Shift)
+    Body.Source.Shift Shift,
+    bool Held = false)
 {
     /// <param name="shown">The rows to order, in source order.</param>
     /// <param name="source">
@@ -1078,7 +1098,10 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
 
             // Without key equality nothing shows which kept keys still hold their order, so binary
             // placement first proves the order with the actual comparer (specification section 9).
-            _candidateResorted = !resort && !_usesKeyEquality && (placed > 0 || allowMoves && differs)
+            // A held row coming back keeps its held place, so inside the interval it is placed
+            // without the proof, which could re-sort every row for a background change.
+            _candidateResorted = !resort && !_usesKeyEquality
+                && (placed > 0 && (allowMoves || !change.Held) || allowMoves && differs)
                 && !KeptOrderHolds(count, change.Shift);
             if (_candidateResorted)
             {
@@ -1114,7 +1137,10 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
             {
                 MoveOutOfOrder(count, change.Shift, ref placed);
             }
-            _candidateNeedsSettle = !_candidateResorted && !allowMoves && (differs || !everyKey && _needsSettle);
+            // Rows placed inside the interval without key equality may stand off their sorted
+            // places, which only the settle's proof can tell.
+            _candidateNeedsSettle = !_candidateResorted && !allowMoves
+                && (differs || placed > 0 && !_usesKeyEquality || !everyKey && _needsSettle);
             Build(count, placed, resort, change);
             _candidateVersion = _difference is { IsEmpty: true } ? _version : new();
             if (!whole && !_candidateRebuilt && Shifts(change.Shift)

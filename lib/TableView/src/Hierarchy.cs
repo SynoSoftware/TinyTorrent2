@@ -49,9 +49,14 @@ internal sealed class Hierarchy(
     private readonly Dictionary<IEnumerable, ChildSource> _sources = new(ReferenceEqualityComparer.Instance);
     private IReadOnlyList<object> _roots = Array.Empty<object>();
     private long _assignmentVersion = -1;
-    // Notifying lists with a notification that no accepted publish has applied yet.
+    // Notifying lists whose accepted items may differ from the host's: a notification no accepted
+    // publish has applied, or a time the table did not observe them. Every change reads them.
     private readonly HashSet<ChildSource> _stale = new();
     private bool _suspended;
+    // A node arrived or left since sibling positions were computed: a row that changes parent
+    // can leave the shown order as it was. A node that only takes a new instance keeps its
+    // position.
+    private bool _nodesChanged;
     private int _expandableRows;
     private IdentityMap<int> _counts = null!;
     private Preparation _prepared = null!;
@@ -126,12 +131,11 @@ internal sealed class Hierarchy(
     /// <summary>
     /// Whether a child list's accepted items still match the host's list. A plain list raises no
     /// changes, so it matches only within the root assignment it was read in. A notifying list
-    /// matches only while its handler has been attached since it was read and every
-    /// notification since has been applied; an unloaded table observes no list.
+    /// matches unless it is stale.
     /// </summary>
     private bool Trusts(ChildSource source, long assignmentVersion) =>
         source.Source is INotifyCollectionChanged
-            ? source.Handler is not null && !_stale.Contains(source)
+            ? !_stale.Contains(source)
             : _assignmentVersion == assignmentVersion;
 
     /// <summary>
@@ -247,6 +251,11 @@ internal sealed class Hierarchy(
             Roots = _owner._roots;
             _assignmentVersion = capture.AssignmentVersion;
             IsWhole = change is not (Change.Children or Change.Values);
+            if (change is Change.Children notified)
+            {
+                // The list stays stale unless this change is accepted.
+                _owner._stale.Add(notified.Source);
+            }
             try
             {
                 if (!capture.Validated || capture.AssignmentVersion != _owner._assignmentVersion)
@@ -301,13 +310,20 @@ internal sealed class Hierarchy(
             Push(roots);
             while (pending.TryPop(out object? item))
             {
+                // An accepted row reached twice is repeated, or its own ancestor.
+                if (!_seen.Add(item))
+                {
+                    throw Duplicate();
+                }
                 Node node = _owner._nodes[item];
                 ChildSource source = node.Source;
                 IEnumerable enumerable = _owner.Children(item);
                 IReadOnlyList<object> items;
                 if (!ReferenceEquals(enumerable, source.Source))
                 {
-                    items = SourceFor(enumerable).Items;
+                    Node relinked = node with { Source = SourceFor(enumerable) };
+                    _added.Set(item, relinked);
+                    items = ItemsOf(relinked);
                     RecordList(item, node.Depth + 1, source.Items, items, null);
                 }
                 else if (_owner.Trusts(source, _assignmentVersion))
@@ -323,6 +339,7 @@ internal sealed class Hierarchy(
                 }
                 Push(items);
             }
+            _seen.Clear();
 
             void Push(IReadOnlyList<object> items)
             {
@@ -342,12 +359,9 @@ internal sealed class Hierarchy(
         /// </summary>
         private void ReadUntrusted(Change.Children? notified)
         {
-            foreach (ChildSource source in _owner._sources.Values)
+            // Within one root assignment only a stale list can differ from what the table holds.
+            foreach (ChildSource source in _owner._stale)
             {
-                if (_owner.Trusts(source, _assignmentVersion) && !ReferenceEquals(source, notified?.Source))
-                {
-                    continue;
-                }
                 NotifyCollectionChangedEventArgs? args = notified?.Notification;
                 IReadOnlyList<object> items = ReferenceEquals(source, notified?.Source) && notified!.HasPredecessor
                     && args!.Action != NotifyCollectionChangedAction.Reset
@@ -406,21 +420,33 @@ internal sealed class Hierarchy(
 
         /// <summary>
         /// Apply the recorded list changes to the candidate: first every row that leaves, with its
-        /// subtree, so a row that moves between lists arrives as a new row; then every row that
-        /// arrives and every new instance.
+        /// subtree, and every new instance, whose own child list can let rows leave, so a row that
+        /// moves between lists arrives as a new row; then every row that arrives.
         /// </summary>
         private void Apply(Action<object> validate)
         {
-            foreach (ListChange change in _changes)
+            // Replace can append a change, which leaves its rows in this loop too.
+            for (int index = 0; index < _changes.Count; index++)
             {
+                ListChange change = _changes[index];
                 Leave(change);
+                foreach (object item in change.After)
+                {
+                    if (item is not null && _owner.Find(item) is { } existing && !_removed.ContainsKey(item)
+                        && !ReferenceEquals(existing.Item, item))
+                    {
+                        Replace(existing, item, change.Parent, change.Depth);
+                    }
+                }
             }
             for (int index = 0; index < _changes.Count; index++)
             {
                 ListChange change = _changes[index];
-                // A parent that left took its subtree; one that also arrived brought its own.
+                // A parent that left took its subtree; one that also arrived brought its own, so
+                // the order its children were last shown in no longer holds.
                 if (change.Parent is { } parent && _removed.ContainsKey(parent))
                 {
+                    ChangedGroups.Add(parent);
                     continue;
                 }
                 bool structural = change.Before.Count != change.After.Count;
@@ -437,10 +463,6 @@ internal sealed class Hierarchy(
                     else if (!SameParent(existing.Parent, change.Parent) || !_seen.Add(item))
                     {
                         throw Duplicate();
-                    }
-                    else if (!ReferenceEquals(existing.Item, item))
-                    {
-                        Replace(existing, item, change.Parent, change.Depth);
                     }
                 }
                 if (!structural)
@@ -487,6 +509,8 @@ internal sealed class Hierarchy(
                 {
                     continue;
                 }
+                // A row that leaves arrives again as a new node, if it arrives.
+                _added.Remove(next.Item);
                 foreach (object child in next.Source.Items)
                 {
                     if (_owner.Find(child) is { } descendant)
@@ -525,7 +549,8 @@ internal sealed class Hierarchy(
         {
             IEnumerable enumerable = _owner.Children(item);
             ChildSource source = ReferenceEquals(enumerable, existing.Source.Source) ? existing.Source : SourceFor(enumerable);
-            _added.Set(item, existing with { Item = item, Parent = parent, Depth = depth, Source = source });
+            Node replacement = existing with { Item = item, Parent = parent, Depth = depth, Source = source };
+            _added.Set(item, replacement);
             // The new instance may carry a new sort key, so its group is read again as a row
             // RefreshView(changed) names, as a flat table reads a same-identity Replace.
             if (parent is null)
@@ -538,9 +563,7 @@ internal sealed class Hierarchy(
             }
             if (!ReferenceEquals(source, existing.Source) && !_readAll)
             {
-                ListChange change = new(item, depth + 1, existing.Source.Items, source.Items, null);
-                Leave(change);
-                _changes.Add(change);
+                _changes.Add(new(item, depth + 1, existing.Source.Items, ItemsOf(replacement), null));
             }
         }
 
@@ -619,6 +642,13 @@ internal sealed class Hierarchy(
             {
                 owner.Link(entry.Value);
             }
+            // Before the removals, which stop observing a list that loses every parent.
+            foreach (var (source, items) in _lists)
+            {
+                source.Items = items;
+                owner._stale.Remove(source);
+                owner.Attach(source);
+            }
             foreach (var entry in _removed)
             {
                 owner.Unlink(entry.Value);
@@ -632,12 +662,7 @@ internal sealed class Hierarchy(
             {
                 owner._nodes.Set(entry.Key, entry.Value);
             }
-            foreach (var (source, items) in _lists)
-            {
-                source.Items = items;
-                owner._stale.Remove(source);
-                owner.Attach(source);
-            }
+            owner._nodesChanged |= _added.Count > replaced.Count || _removed.Count > 0;
             owner._roots = Roots;
             owner._assignmentVersion = _assignmentVersion;
         }
@@ -758,6 +783,8 @@ internal sealed class Hierarchy(
 
     internal void UpdatePresentation(IReadOnlyList<object> order, bool moved)
     {
+        moved |= _nodesChanged;
+        _nodesChanged = false;
         if (moved)
         {
             _counts.Clear();
@@ -810,20 +837,26 @@ internal sealed class Hierarchy(
         _suspended = false;
     }
 
-    private static void Detach(ChildSource source)
+    private void Detach(ChildSource source)
     {
         NotifyCollectionChangedEventHandler? handler = source.Handler;
         source.Handler = null;
         if (handler is not null && source.Source is INotifyCollectionChanged notifier)
         {
             notifier.CollectionChanged -= handler;
+            _stale.Add(source);
         }
     }
 
     private void Attach(ChildSource source)
     {
-        if (_suspended || source.Handler is not null || source.Source is not INotifyCollectionChanged notifier)
+        if (source.Handler is not null || source.Source is not INotifyCollectionChanged notifier)
         {
+            return;
+        }
+        if (_suspended)
+        {
+            _stale.Add(source);
             return;
         }
         NotifyCollectionChangedEventHandler? handler = null;
@@ -833,8 +866,8 @@ internal sealed class Hierarchy(
             {
                 return;
             }
-            bool predecessor = _stale.Add(source);
-            CollectionChanged?.Invoke(this, new(source, args, predecessor));
+            // Read only: the table checks the thread, and the publish marks the list stale.
+            CollectionChanged?.Invoke(this, new(source, args, !_stale.Contains(source)));
         };
         source.Handler = handler;
         notifier.CollectionChanged += handler;

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
@@ -25,8 +26,8 @@ public sealed partial class Table
     private IdentitySet _candidateHeld = null!;
 
     /// <summary>
-    /// Held rows that came back to the source while the rows are still pointed at. Each keeps the
-    /// held row's index until the hold ends.
+    /// Held rows that came back to the source while the hold lasts, under the pointer or until the
+    /// settle. Each keeps the held row's index until the hold ends.
     /// </summary>
     private IdentitySet _returned = null!;
     private IdentitySet _pinned = null!;
@@ -39,9 +40,9 @@ public sealed partial class Table
 
     /// <summary>
     /// Rows named by <see cref="Release"/>, each with whether the source has it once the change the
-    /// person caused arrives, and when it was named.
+    /// person caused arrives, and the <see cref="Stopwatch"/> timestamp when it was named.
     /// </summary>
-    private IdentityMap<(bool Present, DateTimeOffset Named)> _released = null!;
+    private IdentityMap<(bool Present, long Named)> _released = null!;
 
     /// <summary>
     /// How long a <see cref="Release"/> entry waits for its change: one settling interval, and
@@ -75,24 +76,28 @@ public sealed partial class Table
     /// <param name="Released">The <see cref="Release"/> rows the change carries.</param>
     /// <param name="Holds">Whether the rows are held back, while pointed at or until the settle.</param>
     /// <param name="Returning">
-    /// Held rows back in the source while pointed at, as their current instances, including the
-    /// ones that came back in an earlier change. Each keeps its held row's index until the rows
-    /// are released, so nothing moves under the pointer.
+    /// Held rows back in the source while the hold lasts, as their current instances, including
+    /// the ones that came back in an earlier change. Each keeps its held row's index until the
+    /// rows are released, so nothing moves under the pointer.
     /// </param>
     private readonly record struct HoldStep(SortChange Rows, IdentitySet Held,
         IReadOnlyList<object> Released, bool Holds, IReadOnlyList<object> Returning);
 
-    /// <summary>A row shown although it left the source. It refuses every action.</summary>
+    /// <summary>A row shown although it left the source.</summary>
     internal bool IsHeld(object? item) => item is not null && _held.Count > 0 && _held.Contains(item);
 
-    /// <summary>A held row shows the held look only while the pointer holds the rows.</summary>
+    /// <summary>
+    /// A held row shows the held look, and refuses every action, only while the pointer holds the
+    /// rows. A row that waits for the settle with the pointer away acts as any row does, because
+    /// nothing on screen would tell the person why it refused.
+    /// </summary>
     internal bool ShowsHeld(object? item) => KeepsMembership && IsHeld(item);
 
     /// <summary>
     /// Section 5's interaction predicate as the table applies it: the host's answer, and never a
-    /// held row, which the host no longer has to act on.
+    /// row that shows the held look.
     /// </summary>
-    internal bool IsInteractive(object item) => !IsHeld(item) && CanInteract?.Invoke(item) != false;
+    internal bool IsInteractive(object item) => !ShowsHeld(item) && CanInteract?.Invoke(item) != false;
 
     /// <summary>
     /// Apply at once the change the person caused to whether the source has
@@ -114,7 +119,7 @@ public sealed partial class Table
         }
 
         bool heldBack = false;
-        DateTimeOffset now = DateTimeOffset.UtcNow;
+        long now = Stopwatch.GetTimestamp();
         foreach (object item in items)
         {
             _released.TryAdd(item, default);
@@ -248,10 +253,14 @@ public sealed partial class Table
             : VisualTreeHelper.GetOpenPopupsForXamlRoot(XamlRoot);
 
 
-    /// <summary>Apply what the hold kept back, once nothing points at the rows.</summary>
+    /// <summary>
+    /// Apply what the hold kept back, and the settle the pointed row stood in the way of, once
+    /// nothing points at the rows.
+    /// </summary>
     private void ReleaseHold()
     {
-        if (IsPointed || _detached || !_schemaCaptured || _hierarchy is not null || ShowsSource)
+        if (IsPointed || _detached || !_schemaCaptured || _hierarchy is not null
+            || ShowsSource && !_settlePending)
         {
             return;
         }
@@ -286,11 +295,10 @@ public sealed partial class Table
         released.Clear();
         // An entry whose change did not come within its lifetime ends here, so it cannot let a
         // later background change through the hold.
-        DateTimeOffset expired = DateTimeOffset.UtcNow - ReleaseLifetime;
         List<object>? ended = null;
         foreach (var entry in _released)
         {
-            if (entry.Value.Named < expired)
+            if (Stopwatch.GetElapsedTime(entry.Value.Named) > ReleaseLifetime)
             {
                 (ended ??= new()).Add(entry.Key);
             }
@@ -334,7 +342,7 @@ public sealed partial class Table
             {
                 // Unchanged held membership keeps the accepted set, because copying it costs
                 // every held row on every notification.
-                return new(Named(returning), _held, released, true, returned);
+                return new(Named(returning) with { Held = true }, _held, released, true, returned);
             }
             foreach (object row in _held)
             {
@@ -352,7 +360,7 @@ public sealed partial class Table
                 held.Remove(arrival.Item);
                 returned.Add(arrival.Item);
             }
-            return new(Named(returning), held, released, true, returned);
+            return new(Named(returning) with { Held = true }, held, released, true, returned);
         }
         List<object> staying = _shownRows;
         staying.Clear();
@@ -379,7 +387,7 @@ public sealed partial class Table
                 held.Add(row);
             }
         }
-        return new(SortChange.Whole(staying, snapshot), held, released, true, back);
+        return new(SortChange.Whole(staying, snapshot) with { Held = true }, held, released, true, back);
 
         HoldStep Applies()
         {

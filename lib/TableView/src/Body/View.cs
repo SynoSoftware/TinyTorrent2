@@ -299,8 +299,9 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
     /// The run script: rows leaving realized runs go first, highest index first. Then every
     /// position outside those runs, set without a notification. Last, what each run is missing,
     /// ascending. Removing before placing and placing before inserting is what keeps a row from
-    /// being in the view twice at any moment, which the list is never asked to make sense of. Net
-    /// count changes follow the last surviving run, so they cannot shift its containers.
+    /// being in the view twice at any moment, which the list is never asked to make sense of. A
+    /// growth is inserted after the last run, so it cannot shift a run's containers. A shrink
+    /// trims the tail, so a run row that stays past the new count is removed and inserted again.
     /// </para>
     /// <para>
     /// The list realizes only the rows on screen, a small cache around them, and whatever it has

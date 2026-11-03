@@ -40,11 +40,13 @@ public sealed partial class Table : Control
 
     /// <summary>
     /// The source assignment the host's last <see cref="ScrollTo"/> followed while the view did
-    /// not show it yet, until a publish shows that assignment's rows. A different list shown for
-    /// it keeps the host's offset instead of starting at the top, also when a hold delays it
-    /// until the pointer leaves and the list changes meanwhile (specification 5.3).
+    /// not show it yet, and that offset, until a publish shows that assignment's rows. A different
+    /// list shown for it keeps the host's offset instead of starting at the top, also when a hold
+    /// delays it until the pointer leaves and the list changes meanwhile (specification 5.3). The
+    /// offset is kept only when the rows shown then clamped it, so the publish applies it again
+    /// without undoing a scroll the person made since.
     /// </summary>
-    private long? _scrolledAssignment;
+    private (long Assignment, double? Offset)? _scrolledAssignment;
 
     public Table()
     {
@@ -207,6 +209,12 @@ public sealed partial class Table : Control
         AttachInput();
 
         UpdatePlaceholder();
+
+        // DetachTemplateParts stopped the timer of a pending settle; the rebuild schedules it again.
+        if (_schemaCaptured && !_detached && _settlePending)
+        {
+            RebuildView();
+        }
     }
 
     private void DetachTemplateParts()
@@ -362,7 +370,7 @@ public sealed partial class Table : Control
         _selection.SetIdentity(identity);
         _source.SetIdentity(identity);
         _held = new(identity);
-        _released = identity.CreateMap<(bool Present, DateTimeOffset Named)>();
+        _released = identity.CreateMap<(bool Present, long Named)>();
         _candidateHeld = new(identity);
         _returned = new(identity);
         _pinned = new(identity);
@@ -658,8 +666,11 @@ public sealed partial class Table : Control
         _pendingScroll = verticalOffset;
         // The offset is the host's for the view as it stands, so the next frame keeps it.
         _laidOut = null;
-        _scrolledAssignment = ShowsSource ? null : _source.Current.AssignmentVersion;
         ApplyPendingScroll();
+        double? clamped = InnerScrollViewer() is { } scroller && verticalOffset <= scroller.ScrollableHeight
+            ? null
+            : verticalOffset;
+        _scrolledAssignment = ShowsSource ? null : (_source.Current.AssignmentVersion, clamped);
     }
 
     private void ApplyPendingScroll()

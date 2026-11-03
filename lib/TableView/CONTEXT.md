@@ -61,9 +61,10 @@ refresh entering the table's publish workflow.
 
 **Row surface**: the scrollable area of the table that presents its rows.
 
-**Held row**: a row the private view keeps showing, dimmed and non-interactive,
-after it left the source, while the pointer is over the rows or a row's context
-menu is open. A change the person caused is never held.
+**Held row**: a row the private view keeps showing after it left the source:
+while the pointer is over the rows or a row's context menu is open, when it is
+dimmed and non-interactive, and under a sort until the settle. A change the
+host names with `Release` applies at once instead.
 
 ### Hierarchy
 

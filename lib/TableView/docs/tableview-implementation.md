@@ -56,7 +56,9 @@ only in a pass that read every kept key. A key without equality (a mutable key
 object or a comparer that follows the current culture) always counts as
 changed, and before such a change places rows, the kept rows that stay must
 prove their order with the actual comparer; if they cannot, every row is
-placed again by its current key, which counts as a settle. Entry revisions defer source-index
+placed again by its current key, which counts as a settle. A held row that comes
+back while the hold keeps the change back is placed without that proof, and the
+order records that a settle is needed. Entry revisions defer source-index
 shifts for stable ties. When that list reaches roughly the square root of the
 source length, preparation rebases every entry through the candidate position
 index and one source-order walk. The shown order after pointer pinning stays
@@ -68,7 +70,13 @@ under the pointer, so the change waits for the settle. A held row shows the held
 look while the pointer holds the rows. The interval starts when
 the frame callback finds that a settle since the last frame changed the view
 version; until then every publish is a settle, so the changes of one turn land in
-one update. Header choices carry committed-sort and
+one update. A change the hold applies at once inside the interval, such as one
+named by `Release`, counts as a settle for this, though it moves no row. The
+interval and the `Release` lifetime are measured with `Stopwatch` timestamps, so
+a change of the system clock does not move them. A zero interval runs no settle
+timer: every publish settles, and a pending settle that the pointer kept runs
+when the pointer leaves the rows. Changing the interval while a settle is
+pending schedules that settle again. Header choices carry committed-sort and
 detach revisions and run after the shared rendering frame wait. The `Sort`
 setter, a queued header sort and layout restoration commit through one routine,
 `CommitSort`, the same synchronous commit boundary.
@@ -108,9 +116,11 @@ lays the rows out between those publishes, so the frame lays the list out once,
 at the offset the last publish left. A view laid out empty is no list to differ
 from. `ScrollTo` makes its offset the host's for the view as it stands, so no
 later publish before the frame moves it. While the view does not show the source yet,
-as when a hold delays it, `ScrollTo` also records the source assignment.
-Publishes of that assignment keep the host's offset, including notifications
-during the hold, until the first publish that shows the source's rows.
+as when a hold delays it, `ScrollTo` also records the source assignment and the
+offset. Publishes of that assignment keep the host's offset, including
+notifications during the hold, until the first publish that shows the source's
+rows. That publish sets the offset again only when the held rows had clamped it
+to their own extent, so a scroll the person made meanwhile stays.
 
 The [hierarchy extension](hierarchy.md) keeps host expansion state outside the
 control. Captured child membership feeds the same private view, sorting cadence
@@ -151,9 +161,9 @@ unboxed. Every lookup reads the row's key through the schema's selector, which
 the contract keeps pure, stable and inexpensive; no map keeps keys of its own.
 `Table.InstallIdentity` is the one place an identity is installed.
 The source classifies each change once. A whole change is an assignment,
-`RefreshView()`, a Reset or Move, or any change without a validated
-predecessor. Any other change names its rows: those that leave, those that
-arrive with their source index, and those to read again, which a same-identity
+`RefreshView()`, a Reset or Move, a Replace that puts a row's identity at
+another of its places, or any change without a validated predecessor. Any other
+change names its rows: those that leave, those that arrive with their source index, and those to read again, which a same-identity
 Replace and `RefreshView(changed)` are. It accepts the change only after
 ordering succeeds. Its subscription identity rejects stale callbacks even when
 their nullable sender carries no usable identity. Each later step applies one

@@ -609,7 +609,7 @@ moving while they work.
   held row's place until the rows are released.
 - Inside a sort's settling interval the same hold keeps membership, with the
   pointer anywhere, until the settle; section 9 states when. A held row shows
-  the held look only while the pointer holds the rows.
+  the held look and refuses actions only while the pointer holds the rows.
 - A table that shows no rows takes its arrivals at once: nothing on screen can
   move.
 - A sort change moves every row anyway, so it takes the source whole.
@@ -1066,7 +1066,9 @@ Sorting requirements:
   any active view-affecting value;
 - while a sort is applied, the view converges on the sorted order within a
   bounded interval, the settling interval. `SortInterval` sets it, and
-  `TimeSpan.Zero` restores immediate re-sorting. A sort by the column
+  `TimeSpan.Zero` restores immediate re-sorting; a row the pointer kept in
+  place then takes its sorted place at the first update after the pointer
+  moves off it, or when the pointer leaves the rows. A sort by the column
   registered with `Schema.Order` never settles: that order changes only when
   the host reorders, usually on the person's own command, so holding it would
   delay that command.
@@ -1077,14 +1079,17 @@ when no change applied within the last interval applies at once. Otherwise it
 waits, and every change until the settle at the end of the interval waits with
 it: arrivals, leavers and the rows' new places land together in one update.
 Changes in the same UI turn as an applied change land with it. A row that
-leaves while it waits is held: it refuses every action, as a held row does, but
-keeps its normal look, and the list's own transition fades it out with the
-update. A dimmed look that appears without animation tells the person nothing
-the fade does not. These apply at once: changes the person caused, which the
+leaves while it waits stays in its place with its normal look and acts as any
+row does, and the list's own transition fades it out with the update. A dimmed
+look that appears without animation tells the person nothing the fade does not,
+and a row that looks normal but refuses an action leaves the person nothing to
+see why. While the pointer holds the rows it takes the held look and refuses
+every action, as section 5.3's held rows do. These apply at once: changes the person caused, which the
 host names with `Release` as in section 5.3, with the pointer anywhere; a
 switch to a list that shares no row with the view; a change that empties the
 list, so a different list made by a Clear and Adds also applies at once; and
-the first rows of an empty table. The list
+the first rows of an empty table. Each of these is an applied change: changes
+in its UI turn land with it, and the interval starts again from it. The list
 animates no change that comes within one second of its previous change
 (`fastmutationThreshold` in WinUI's `ModernCollectionBasePanel`), so arrivals
 applied apart from the settle's reorder often appeared without their
@@ -1120,7 +1125,10 @@ of surviving items takes the full stable sort, because base order breaks ties.
 For mutable keys or a host comparer whose ordering can change without key
 equality changing, arrival placement first proves that the kept order is still
 sorted using the actual comparer. If it is not, the same full sort restores
-the order before placement. The control does not clone host key objects.
+the order before placement. A held row that comes back inside the interval
+keeps its held place, so it is placed without that proof and the next settle
+sorts it; a background change moves no row. The control does not clone host
+key objects.
 
 Measured on the original host's 2,002-row list, per host publish, because with settling off
 every publish reorders and the two units are then the same one: sorted by
@@ -1950,9 +1958,11 @@ throughput target.
   keys: rows that arrive or move are placed among the rows that stay by binary
   search, and the staying rows are copied between those places in native
   blocks, rather than sorting every row again. A notification that follows the
-  validated accepted source reads and validates only its own rows; rejected
-  updates recover through full validation. Position indexes update the changed
-  entries and amortize rebuilds over counted insertions and removals. When the
+  validated accepted source reads and validates only its own rows, except a
+  Replace that puts a row's identity at another of its places, which is read
+  whole; rejected updates recover through full validation. Position indexes
+  update the changed entries and amortize rebuilds over counted insertions and
+  removals. When the
   view shows the order a notification starts from, it applies the rows the
   notification names; otherwise it compares itself with the new order at one
   reference comparison per row. A

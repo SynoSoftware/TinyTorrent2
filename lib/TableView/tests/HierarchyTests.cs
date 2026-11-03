@@ -43,6 +43,53 @@ public class HierarchyTests
         });
 
     /// <summary>
+    /// A row the host gives a new child list, published with a new root array, shows that list.
+    /// The accepted node once kept the old list, so the publish threw while it showed the old
+    /// child, which had left.
+    /// </summary>
+    [TestMethod]
+    public Task ANewRootArrayPublishesAReplacedChildList() =>
+        TestHost.RunAsync(async () =>
+        {
+            Node root = new("root");
+            IEnumerable<Node> children = new[] { new Node("old") };
+            Column name = TestData.Column("name");
+            Table table = TestData.Table(name);
+            table.Schema<Node>().Key(row => row.Name)
+                .Hierarchy(name, row => ReferenceEquals(row, root) ? children : row.Children,
+                    row => row.IsExpanded, (row, expanded) => row.IsExpanded = expanded);
+            table.ItemsSource = new[] { root };
+            await TableHarness.LoadAsync(table);
+
+            children = new[] { new Node("loaded") };
+            table.ItemsSource = new[] { root };
+            CollectionAssert.AreEqual(new[] { "root", "loaded" }, Names(table));
+        });
+
+    /// <summary>
+    /// A rejected child change can leave a cycle among accepted rows in the host's lists. The
+    /// next root assignment rejects it; it once walked the cycle without end on the UI thread.
+    /// </summary>
+    [TestMethod]
+    public Task ACycleAmongAcceptedRowsIsRejected() =>
+        TestHost.RunAsync(async () =>
+        {
+            Node b = new("b"), a = new("a", b), root = new("root", a);
+            int reads = 0;
+            Column name = TestData.Column("name");
+            Table table = TestData.Table(name);
+            table.Schema<Node>().Key(row => row.Name)
+                .Hierarchy(name, row => ++reads > 100 ? throw new TimeoutException("The walk did not end.") : row.Children,
+                    row => row.IsExpanded, (row, expanded) => row.IsExpanded = expanded);
+            table.ItemsSource = new[] { root };
+            await TableHarness.LoadAsync(table);
+
+            Expect.Throws<InvalidOperationException>(() => b.Children.Add(a));
+            Expect.Throws<InvalidOperationException>(() => table.ItemsSource = new[] { root });
+            CollectionAssert.AreEqual(new[] { "root", "a", "b" }, Names(table));
+        });
+
+    /// <summary>
     /// A publish while the table is unloaded captures child lists that the table
     /// does not observe. After reload the table reads them again and observes
     /// them, so a change made while unloaded shows and a later child change
@@ -476,7 +523,7 @@ public class HierarchyTests
     /// <summary>Start the settle interval now, as a frame that shows a settle does.</summary>
     private static void StartInterval(Table table)
     {
-        Proof.SetField(table, "_orderSettledAt", DateTimeOffset.UtcNow);
+        Proof.SetField(table, "_orderSettledAt", System.Diagnostics.Stopwatch.GetTimestamp());
         Proof.SetField(table, "_unshownSettle", null);
     }
 }

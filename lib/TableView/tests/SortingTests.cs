@@ -322,14 +322,14 @@ public class SortingTests
                 }
             }
             h.Table.SortInterval = TimeSpan.FromHours(1);
-            Proof.SetField(h.Table, "_orderSettledAt", DateTimeOffset.UtcNow);
+            Proof.SetField(h.Table, "_orderSettledAt", Ago(TimeSpan.Zero));
             Proof.SetField(h.Table, "_unshownSettle", null);
             h.Rows[0].Rank = -100;
             keys = 0;
             h.Table.RefreshView(new object[] { h.Rows[0] });
             Assert.AreEqual(1, keys, "an eligible named update retains its key bound inside the interval");
             Assert.AreNotSame(h.Rows[0], h.Surface().Items[0], "the interval keeps the previous place");
-            Proof.SetField(h.Table, "_orderSettledAt", DateTimeOffset.UtcNow.AddHours(-2));
+            Proof.SetField(h.Table, "_orderSettledAt", Ago(TimeSpan.FromHours(2)));
             keys = 0;
             h.Table.RefreshView(new object[] { h.Rows[1] });
             Assert.AreEqual(h.Rows.Count, keys, "due global settling uses whole preparation");
@@ -537,7 +537,7 @@ public class SortingTests
             });
             if (arrival)
             {
-                Proof.SetField(h.Table, "_orderSettledAt", DateTimeOffset.UtcNow.AddMinutes(-30));
+                Proof.SetField(h.Table, "_orderSettledAt", Ago(TimeSpan.FromMinutes(30)));
             }
             h.Rows[0].Rank = 4;
             if (arrival)
@@ -609,14 +609,16 @@ public class SortingTests
             h.Rows.Remove(leaver);
             h.Rows.Add(new("arrival", 0));
             CollectionAssert.AreEqual(new[] { "k0", "k1", "k2", "k3" }, h.ViewKeys(), "the change waits");
-            Assert.IsTrue((bool)Proof.Call(table, "IsHeld", leaver)!, "the waiting leaver refuses every action");
+            Assert.IsTrue((bool)Proof.Call(table, "IsHeld", leaver)!, "the waiting leaver stays");
             Assert.IsFalse((bool)Proof.Call(table, "ShowsHeld", leaver)!, "the waiting leaver keeps its look");
+            Assert.IsTrue((bool)Proof.Call(table, "IsInteractive", leaver)!, "the waiting leaver acts as any row");
             Body.Row element = Proof.Descendants<Body.Row>(h.Surface().ContainerFromItem(leaver)).Single();
             Proof.Call(table, "PointAt", h.Rows[0]);
             Assert.AreEqual(true, Proof.Field<bool?>(element, "_held"), "the held look shows when the pointer enters");
+            Assert.IsFalse((bool)Proof.Call(table, "IsInteractive", leaver)!, "a row in the held look refuses actions");
             Proof.Call(table, "StopPointing");
 
-            Proof.SetField(table, "_orderSettledAt", DateTimeOffset.MinValue);
+            Proof.SetField(table, "_orderSettledAt", null);
             table.RefreshView();
             h.Rows.Add(new("late", 5));
             CollectionAssert.AreEqual(new[] { "arrival", "k0", "k2", "k3", "late" }, h.ViewKeys(),
@@ -641,7 +643,7 @@ public class SortingTests
             h.Rows.Add(kept);
             await FrameAsync();
             table.Release(new[] { kept });
-            Proof.Call(Proof.Field<object>(table, "_released"), "Set", kept, (false, DateTimeOffset.UtcNow.AddHours(-2)));
+            Proof.Call(Proof.Field<object>(table, "_released"), "Set", kept, (false, Ago(TimeSpan.FromHours(2))));
             h.Rows.Remove(kept);
             CollectionAssert.AreEqual(new[] { "first", "kept" }, h.ViewKeys(), "the expired release lets nothing through");
 
@@ -652,6 +654,96 @@ public class SortingTests
                 await TableHarness.WaitUntilAsync(() => !Proof.Field<bool>(table, "_layoutPending"), "the frame");
             }
         });
+
+    /// <summary>
+    /// Section 9: a change applied at once inside the interval, as one the person named with
+    /// <see cref="Table.Release"/>, is an applied change. A change in its turn lands with it, and
+    /// a frame that shows it starts the interval, so the settle after it waits a whole interval.
+    /// </summary>
+    [TestMethod]
+    public Task AChangeAppliedAtOnceStartsTheInterval() =>
+        TestHost.RunAsync(async () =>
+        {
+            SortHarness h = await SortHarness.LoadAsync(new[] { 1, 2, 3 }, configure: table =>
+            {
+                table.Sort = new(table.Columns[0]);
+                table.SortInterval = TimeSpan.FromHours(1);
+            });
+            await ShowFrameAsync(h.Table);
+            Proof.SetField(h.Table, "_orderSettledAt", Ago(TimeSpan.FromMinutes(59)));
+
+            SortRow removed = h.Rows[0];
+            h.Table.Release(new[] { removed });
+            h.Rows.Remove(removed);
+            h.Rows.Add(new("same-turn", 0));
+            CollectionAssert.AreEqual(new[] { "same-turn", "k1", "k2" }, h.ViewKeys(),
+                "a change in the turn of an applied change lands with it");
+            await ShowFrameAsync(h.Table);
+            Assert.IsTrue(System.Diagnostics.Stopwatch.GetElapsedTime(
+                Proof.Field<long?>(h.Table, "_orderSettledAt")!.Value) < TimeSpan.FromMinutes(1),
+                "the frame that shows the applied change starts the interval");
+        });
+
+    /// <summary>
+    /// A zero interval settles on every publish, so a row the pointer keeps in place starts no
+    /// timer, which would repeat the same publish every millisecond; the settle comes when the
+    /// pointer leaves.
+    /// </summary>
+    [TestMethod]
+    public Task AZeroIntervalSettlesWhenThePointerLeavesWithoutATimer() =>
+        TestHost.RunAsync(async () =>
+        {
+            SortHarness h = await SortHarness.LoadAsync(new[] { 1, 2, 3 }, configure: table =>
+            {
+                table.Sort = new(table.Columns[0]);
+                table.SortInterval = TimeSpan.Zero;
+            });
+            Proof.Call(h.Table, "PointAt", h.Rows[0]);
+            h.Rows[0].Rank = 4;
+            h.Table.RefreshView();
+            CollectionAssert.AreEqual(new[] { "k0", "k1", "k2" }, h.ViewKeys(), "the pointed row keeps its place");
+            Assert.IsFalse(Proof.Field<Microsoft.UI.Dispatching.DispatcherQueueTimer?>(h.Table, "_settleDue")
+                ?.IsRunning == true, "a zero interval runs no settle timer");
+            Proof.Call(h.Table, "StopPointing");
+            CollectionAssert.AreEqual(new[] { "k1", "k2", "k0" }, h.ViewKeys(), "the settle comes when the pointer leaves");
+        });
+
+    /// <summary>
+    /// Section 9: inside the interval a background change moves no row. A held row that comes
+    /// back keeps its held place, so with a comparer that has no key equality its placement
+    /// skips the proof that would sort every row again, and the settle still sorts it.
+    /// </summary>
+    [TestMethod]
+    public Task AHeldRowComingBackInsideTheIntervalMovesNoRow() =>
+        TestHost.RunAsync(async () =>
+        {
+            SortHarness h = await SortHarness.LoadAsync(new[] { 1, 2, 3 }, configure: table =>
+            {
+                table.Schema<SortRow>().SortKey(table.Columns[0], row => row,
+                    Comparer<SortRow>.Create((left, right) => left.Rank.CompareTo(right.Rank)));
+                table.Sort = new(table.Columns[0]);
+                table.SortInterval = TimeSpan.FromHours(1);
+            });
+            await ShowFrameAsync(h.Table);
+
+            SortRow leaver = h.Rows[0];
+            h.Rows.Remove(leaver);
+            h.Rows[0].Rank = 10;
+            h.Rows.Add(leaver);
+            CollectionAssert.AreEqual(new[] { "k0", "k1", "k2" }, h.ViewKeys(), "no row moves inside the interval");
+            Assert.IsTrue(Proof.Field<bool>(h.Table, "_settlePending"), "the settle still sorts the rows");
+        });
+
+    /// <summary>Let a frame show the view, which starts the settling interval.</summary>
+    private static async Task ShowFrameAsync(Table table)
+    {
+        table.UpdateLayout();
+        await TableHarness.WaitUntilAsync(() => !Proof.Field<bool>(table, "_layoutPending"), "the frame");
+    }
+
+    /// <summary>The <see cref="System.Diagnostics.Stopwatch"/> timestamp <paramref name="time"/> ago.</summary>
+    private static long Ago(TimeSpan time) => System.Diagnostics.Stopwatch.GetTimestamp()
+        - (long)(time.TotalSeconds * System.Diagnostics.Stopwatch.Frequency);
 
     [TestMethod]
     public Task DefaultStringOrderingRechecksTheCurrentCulture() =>
