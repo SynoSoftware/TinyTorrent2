@@ -362,7 +362,7 @@ public sealed partial class Table : Control
         _selection.SetIdentity(identity);
         _source.SetIdentity(identity);
         _held = new(identity);
-        _released = identity.CreateMap<bool>();
+        _released = identity.CreateMap<(bool Present, DateTimeOffset Named)>();
         _candidateHeld = new(identity);
         _returned = new(identity);
         _pinned = new(identity);

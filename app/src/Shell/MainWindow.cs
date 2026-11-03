@@ -128,6 +128,8 @@ public sealed partial class MainWindow : Window
                 await interaction.Completion.Task;
             if (!await ShowTorrents())
                 return;
+            // An added or found torrent is the person's, so it is shown now, not at the settle.
+            Torrents.Release(torrents);
             Torrents.ScrollIntoView(torrents[^1], torrents);
             await SelectTorrent(new Syno.TableView.Selection(torrents, torrents[^1]));
         };

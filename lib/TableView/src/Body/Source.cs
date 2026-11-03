@@ -78,8 +78,7 @@ internal sealed class Source
         IReadOnlyList<object>? leavers = null,
         IReadOnlyList<Arrival>? arrivals = null,
         IReadOnlyList<object>? reread = null,
-        Shift shift = default,
-        bool movesRows = false)
+        Shift shift = default)
     {
         internal Capture Capture { get; } = capture;
         internal IdentityMap<object> Membership { get; } = membership;
@@ -90,8 +89,6 @@ internal sealed class Source
         /// <summary>The current instances of the rows that stay and are read again.</summary>
         internal IReadOnlyList<object> Reread { get; } = reread ?? Array.Empty<object>();
         internal Shift Shift { get; } = shift;
-        /// <summary>Whether a row the change removed arrives again at another index.</summary>
-        internal bool MovesRows { get; } = movesRows;
 
         /// <summary>
         /// The source's instance with <paramref name="item"/>'s identity after the change, or
@@ -170,7 +167,6 @@ internal sealed class Source
         }
         List<Arrival> arrivals = new();
         List<object> reread = new();
-        bool movesRows = false;
         IList added = notification.NewItems ?? Array.Empty<object>();
         for (int offset = 0; offset < added.Count; offset++)
         {
@@ -189,7 +185,6 @@ internal sealed class Source
             }
             else
             {
-                movesRows |= _leaving.Count > 0 && _leaving.ContainsKey(item);
                 arrivals.Add(new(item, notification.NewStartingIndex + offset));
             }
         }
@@ -202,8 +197,7 @@ internal sealed class Source
             }
         }
         return new(capture, _membership, _entering, _leaving, leavers, arrivals, reread,
-            new(notification.OldStartingIndex, removed.Count, notification.NewStartingIndex, added.Count),
-            movesRows);
+            new(notification.OldStartingIndex, removed.Count, notification.NewStartingIndex, added.Count));
     }
 
     internal void Accept(Preparation preparation)

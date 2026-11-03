@@ -1126,6 +1126,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         if (!CanEdit)
             return;
         var torrentIds = torrents.Select(row => row.TorrentId).ToArray();
+        // Under a filter the command can take these torrents out of the list or bring them in,
+        // and that change is the person's, so it does not wait for the table's settle.
+        ReleaseRequested?.Invoke(this, torrents);
         try
         {
             await _client.Send(command, new { torrent_ids = torrentIds }, Requester.Person);

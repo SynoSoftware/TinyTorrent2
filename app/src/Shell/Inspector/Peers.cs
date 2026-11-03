@@ -24,9 +24,6 @@ public sealed partial class Inspector
 
     internal void UpdateMap(bool cities)
     {
-        // A chosen place belongs to one map detail.
-        if (Map.Cities != cities)
-            Place = null;
         // Decimal Mbit/s: 125,000 bytes per second each.
         Map.Update(
             IsAvailable ? Peers : null,

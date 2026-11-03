@@ -274,7 +274,7 @@ public sealed partial class InspectorPane
                 {
                     _peerMap = new PeerMap(Model.Map) { ContextFlyout = _peerMore.Flyout };
                     _peerMap.Select(Peers.Selection.Items.OfType<Peer>().ToArray());
-                    _peerMap.PlaceChanged += (_, place) => Model.Place = place;
+                    _peerMap.PlaceChanged += (_, place) => ChoosePlace(place);
                     _peerMap.DotBytesChanged += (_, _) => ShowSpeedLine();
                     _peerMap.DescribedChanged += (_, _) => ShowSpeedLine();
                 }
@@ -289,7 +289,7 @@ public sealed partial class InspectorPane
                 {
                     // Without the map nothing shows or clears its chosen place.
                     _peerMap = null;
-                    Model.Place = null;
+                    ChoosePlace(null);
                 }
             }
         }
@@ -334,8 +334,22 @@ public sealed partial class InspectorPane
                 Model.UploadText
             );
             ShowSpeedLine();
-            Model.UpdateMap(_layout.View.Cities && Model.HasCities);
+            var cities = _layout.View.Cities && Model.HasCities;
+            // A chosen place belongs to one map detail.
+            if (Model.Map.Cities != cities)
+                ChoosePlace(null);
+            Model.UpdateMap(cities);
         });
+    }
+
+    // The person's place choice changes which peers show, and that does not
+    // wait for the table's settle.
+    private void ChoosePlace(PeerPlace? place)
+    {
+        var shown = Model.ShownPeers ?? [];
+        Model.Place = place;
+        var next = Model.ShownPeers ?? [];
+        Peers.Release([.. shown.Except(next), .. next.Except(shown)]);
     }
 
     // Rows that change alone, as when a place is chosen, reach the table after

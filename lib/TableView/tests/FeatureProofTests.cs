@@ -724,6 +724,11 @@ public class FeatureProofTests
             ListView list = h.Surface();
             ScrollViewer scroller = (ScrollViewer)Proof.Call(h.Table, "InnerScrollViewer")!;
 
+            // k6 is past the viewport, so the list gives it a container over the frames after load.
+            await TableHarness.WaitUntilAsync(
+                () => list.ContainerFromItem(h[6]) is not null,
+                "the selected rows to be given containers"
+            );
             h.Table.Selection = new(new object[] { h[2], h[3], h[4], h[5], h[6] }, h[2]);
             CollectionAssert.AreEqual(
                 new[] { "k2", "k3", "k4", "k5", "k6" },

@@ -34,6 +34,7 @@ public sealed partial class Browser
     private Task? _ratings;
     private readonly Dictionary<long, (Entry Source, Entry Rated)> _imdb = new();
     private int _revision;
+    private int _rowsRevision;
     private bool _refresh;
     private bool _stored;
     private bool _pacing;
@@ -57,6 +58,9 @@ public sealed partial class Browser
 
     public Strings Text { get; }
     public IReadOnlyList<LibraryRow> Rows { get; private set; } = [];
+
+    /// <summary>Whether <see cref="Rows"/> answer the person's search, filter or library choice.</summary>
+    internal bool RowsSearched { get; private set; }
     internal event EventHandler? SelectionChanged;
     internal event EventHandler? DetailChanged;
 
@@ -946,7 +950,12 @@ public sealed partial class Browser
                         !matches.Counts.TryGetValue(pair.Key, out var count) || count != pair.Value
                     );
                 if (rowsChanged)
+                {
+                    // Every person's change raises the revision; a background refresh keeps it.
+                    RowsSearched = revision != _rowsRevision;
                     Rows = rows;
+                }
+                _rowsRevision = revision;
                 _rowsQuery = query;
                 if (query.IncludesFacets)
                     Facets = matches.Facets;

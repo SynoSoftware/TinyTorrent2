@@ -100,7 +100,12 @@ public sealed partial class LibraryTable : UserControl
         if (ReferenceEquals(table.ItemsSource, _model.Rows))
             table.RefreshView();
         else
+        {
+            // The person's search applies at once; a background refresh waits for the settle.
+            if (_model.RowsSearched && table.ItemsSource is IReadOnlyList<LibraryRow> shown)
+                table.Release([.. shown.Except(_model.Rows), .. _model.Rows.Except(shown)]);
             table.ItemsSource = _model.Rows;
+        }
         table.Selection = selection;
         if (created)
         {

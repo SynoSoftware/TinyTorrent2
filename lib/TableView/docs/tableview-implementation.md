@@ -201,10 +201,10 @@ The view stores rows in a gap buffer. The order's producer names each version
 of its own order and, when it knows, states how it differs from the version
 before: the natural order from the notification's indices, the kept sorted
 order from its removed, placed and replaced rows, so a row that moved leaves
-its old place and arrives at its new one. The source marks a change in which a
-row that leaves arrives again, as a Replace that crosses rows does, and both
-orders name that row as moved. A difference says whether it names
-moved rows this way, so no reader looks them up again. A `RefreshView` of the
+its old place and arrives at its new one. A sorted difference says whether it
+names rows the settle moved, because a pinned row that stands at its place
+must keep its container, so the view then compares itself with the order
+instead. A `RefreshView` of the
 accepted capture states no difference. While rows are held without a local
 sort, membership waits, so the natural order is the view itself with its new
 instances, stated against the view. The view takes a stated difference only

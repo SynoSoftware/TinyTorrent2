@@ -433,6 +433,10 @@ public sealed partial class InspectorPane : UserControl
         }
         if (TrackerTable is not null && Model.Section == InspectorSection.Trackers)
         {
+            // Trackers come and go by the person's edits, and otherwise only once, when a
+            // magnet's metadata arrives, so their arrivals and removals do not wait.
+            if (TrackerTable.ItemsSource is IReadOnlyList<Tracker> shown && Model.Trackers is { } next)
+                TrackerTable.Release([.. shown.Except(next), .. next.Except(shown)]);
             TrackerTable.ItemsSource = Model.Trackers;
             TrackerTable.Placeholder =
                 Model.Trackers is null && loading

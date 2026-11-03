@@ -545,14 +545,20 @@ public sealed partial class Table
 
     /// <summary>
     /// The frame shows the publishes since the last frame. When a settle among them changed the
-    /// rows, the interval starts now; a settle that changed nothing starts none, so the next
-    /// change still applies at once.
+    /// rows, the interval starts now, and so does a pending settle's timer, so its tick is the
+    /// settle; a settle that changed nothing starts none, so the next change still applies at
+    /// once.
     /// </summary>
     private void ShowSettle()
     {
         if (_unshownSettle is long version && version != _view.Version)
         {
             _orderSettledAt = DateTimeOffset.UtcNow;
+            if (_settlePending)
+            {
+                _settleDue?.Stop();
+                ScheduleSettle(_sortInterval);
+            }
         }
         _unshownSettle = null;
     }
@@ -635,7 +641,7 @@ public sealed partial class Table
             }
         }
         return new(source.Capture, previous,
-            new(leaving, arriving, replacing, source.MovesRows ? RowMoves.Named : RowMoves.None));
+            new(leaving, arriving, replacing));
     }
 
     /// <summary>
@@ -701,18 +707,13 @@ internal sealed class SortDefinition<TRow, TKey>(Func<TRow, TKey> key, IComparer
 /// What the shown rows did since the kept order was accepted. A whole change lists every shown
 /// row in source order; any other change names the rows that left, arrived or are read again.
 /// </summary>
-/// <param name="MovesRows">
-/// Whether one of <paramref name="Leavers"/> is among <paramref name="Arrivals"/>; see
-/// <see cref="Body.Source.Preparation.MovesRows"/>.
-/// </param>
 internal readonly record struct SortChange(
     IReadOnlyList<object>? Shown,
     IReadOnlyList<object> Source,
     IReadOnlyList<object> Leavers,
     IReadOnlyList<Body.Source.Arrival> Arrivals,
     IReadOnlyList<object> Reread,
-    Body.Source.Shift Shift,
-    bool MovesRows = false)
+    Body.Source.Shift Shift)
 {
     /// <param name="shown">The rows to order, in source order.</param>
     /// <param name="source">
@@ -1309,15 +1310,14 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
     /// Build the candidate: the rows that stay, copied in blocks, with the placed rows sorted and
     /// put in among them at the places binary search finds. Unless <paramref name="resort"/>
     /// placed every row again, also record how the candidate differs from the kept order: a row
-    /// that moved, or that left and arrived again in the change, leaves its old place and
-    /// arrives at its new one, as a named move.
+    /// that moved leaves its old place and arrives at its new one, as a named move.
     /// </summary>
     private void Build(int count, int placed, bool resort, SortChange change)
     {
         bool whole = change.Shown is not null;
         Body.Source.Shift shift = change.Shift;
         int removed = 0;
-        bool moves = change.MovesRows;
+        bool moves = false;
         if (whole || _candidateRebuilt)
         {
             for (int kept = 0; kept < count; kept++)

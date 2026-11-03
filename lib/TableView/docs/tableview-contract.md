@@ -601,8 +601,10 @@ moving while they work.
   presence the person's command changes with `Release(items)`, before the
   change reaches the source or while the table holds it. The update that
   carries the change applies whole, held rows and waiting rows included. Every
-  other update stays held. A named change that never comes, such as a refused
-  removal, leaves its rows named until their presence next changes.
+  other update stays held. A named row whose change has not come one settling
+  interval after the call, and at least three seconds, is no longer named, so a
+  refused removal or a command that changes no row's presence leaves nothing
+  that would let a later background change through.
 - A held row that comes back into the source stops being held. It keeps the
   held row's place until the rows are released.
 - Inside a sort's settling interval the same hold keeps membership, with the
@@ -1078,9 +1080,11 @@ Changes in the same UI turn as an applied change land with it. A row that
 leaves while it waits is held: it refuses every action, as a held row does, but
 keeps its normal look, and the list's own transition fades it out with the
 update. A dimmed look that appears without animation tells the person nothing
-the fade does not. Changes
-the person caused (`Release`), a switch to a nonempty list that shares no row
-with the view, and the first rows of an empty table apply at once. The list
+the fade does not. These apply at once: changes the person caused, which the
+host names with `Release` as in section 5.3, with the pointer anywhere; a
+switch to a list that shares no row with the view; a change that empties the
+list, so a different list made by a Clear and Adds also applies at once; and
+the first rows of an empty table. The list
 animates no change that comes within one second of its previous change
 (`fastmutationThreshold` in WinUI's `ModernCollectionBasePanel`), so arrivals
 applied apart from the settle's reorder often appeared without their

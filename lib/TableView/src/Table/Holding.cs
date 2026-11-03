@@ -39,9 +39,15 @@ public sealed partial class Table
 
     /// <summary>
     /// Rows named by <see cref="Release"/>, each with whether the source has it once the change the
-    /// person caused arrives.
+    /// person caused arrives, and when it was named.
     /// </summary>
-    private IdentityMap<bool> _released = null!;
+    private IdentityMap<(bool Present, DateTimeOffset Named)> _released = null!;
+
+    /// <summary>
+    /// How long a <see cref="Release"/> entry waits for its change: one settling interval, and
+    /// never less than the default one, because the hold under the pointer waits for it too.
+    /// </summary>
+    private TimeSpan ReleaseLifetime => _sortInterval > DefaultSortInterval ? _sortInterval : DefaultSortInterval;
 
     private bool _pointerOver;
 
@@ -95,9 +101,9 @@ public sealed partial class Table
     /// </summary>
     /// <remarks>
     /// Call it before the change reaches the source, or after it while the table still holds it
-    /// back. A named row that the view already shows as the source has it is expected to change
-    /// next, so a call made after the view applied the change would release a later background
-    /// change instead. A hierarchical table holds nothing and ignores the call.
+    /// back. A row whose change has not arrived one settling interval after the call, and at
+    /// least the default interval, is no longer named, so a command that changes no row's
+    /// presence leaves nothing behind. A hierarchical table holds nothing and ignores the call.
     /// </remarks>
     public void Release(IEnumerable<object> items)
     {
@@ -108,17 +114,18 @@ public sealed partial class Table
         }
 
         bool heldBack = false;
+        DateTimeOffset now = DateTimeOffset.UtcNow;
         foreach (object item in items)
         {
-            _released.TryAdd(item, false);
+            _released.TryAdd(item, default);
             bool present = _source.Membership.ContainsKey(item);
             if (present == (_view.Positions.IndexOf(item) >= 0))
             {
-                _released.Set(item, !present);
+                _released.Set(item, (!present, now));
                 continue;
             }
 
-            _released.Set(item, present);
+            _released.Set(item, (present, now));
             heldBack = true;
         }
 
@@ -131,8 +138,22 @@ public sealed partial class Table
     /// <summary>The pointer is over the row surface, above <paramref name="row"/> or no row.</summary>
     private void PointAt(object? row)
     {
+        bool pointed = IsPointed;
         _pointerOver = true;
         _pointedRow = row;
+        ShowHeldLook(pointed);
+    }
+
+    /// <summary>
+    /// Held rows take the held look (<see cref="ShowsHeld"/>) as soon as the pointer holds the
+    /// rows, not at the next publish.
+    /// </summary>
+    private void ShowHeldLook(bool wasPointed)
+    {
+        if (!wasPointed && _held.Count > 0)
+        {
+            RowVisualsChanged?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     /// <summary>
@@ -201,7 +222,9 @@ public sealed partial class Table
             return;
         }
 
+        bool pointed = IsPointed;
         _menuRow = row;
+        ShowHeldLook(pointed);
         menu.Closed += OnMenuClosed;
 
         void OnMenuClosed(object? sender, object e)
@@ -239,8 +262,9 @@ public sealed partial class Table
     /// <summary>
     /// The snapshot rows to show. While the rows are pointed at, or while the change
     /// <paramref name="waits"/> for the settle, that is only the rows already shown, and every
-    /// shown row the snapshot no longer has becomes a held row. A whole change to a nonempty
-    /// source that shares no row with the view is a different list, which does not wait.
+    /// shown row the snapshot no longer has becomes a held row. A change that empties the source,
+    /// and a whole change to a source that shares no row with the view, which is a different
+    /// list, do not wait.
     /// </summary>
     /// <remarks>
     /// One rule per affected row: a shown row that leaves is held, a row that arrives waits, and
@@ -255,15 +279,29 @@ public sealed partial class Table
         IReadOnlyList<object> snapshot = source.Capture.Rows;
         IdentitySet held = _candidateHeld;
         held.Clear();
-        bool holds = !sortChanged && (KeepsMembership || waits);
+        // A Clear that starts a different list cannot wait, so a change that empties the source
+        // applies at once; the Adds that follow find an empty view, which takes rows at once.
+        bool holds = !sortChanged && (KeepsMembership || waits && snapshot.Count > 0);
         List<object> released = _releasedRows;
         released.Clear();
+        // An entry whose change did not come within its lifetime ends here, so it cannot let a
+        // later background change through the hold.
+        DateTimeOffset expired = DateTimeOffset.UtcNow - ReleaseLifetime;
+        List<object>? ended = null;
         foreach (var entry in _released)
         {
-            if ((source.Resolve(entry.Key) is not null) == entry.Value)
+            if (entry.Value.Named < expired)
+            {
+                (ended ??= new()).Add(entry.Key);
+            }
+            else if ((source.Resolve(entry.Key) is not null) == entry.Value.Present)
             {
                 released.Add(entry.Key);
             }
+        }
+        foreach (object row in ended ?? [])
+        {
+            _released.Remove(row);
         }
         if (!holds || released.Count > 0)
         {
@@ -296,7 +334,7 @@ public sealed partial class Table
             {
                 // Unchanged held membership keeps the accepted set, because copying it costs
                 // every held row on every notification.
-                return new(Named(returning, false), _held, released, true, returned);
+                return new(Named(returning), _held, released, true, returned);
             }
             foreach (object row in _held)
             {
@@ -314,7 +352,7 @@ public sealed partial class Table
                 held.Remove(arrival.Item);
                 returned.Add(arrival.Item);
             }
-            return new(Named(returning, false), held, released, true, returned);
+            return new(Named(returning), held, released, true, returned);
         }
         List<object> staying = _shownRows;
         staying.Clear();
@@ -330,7 +368,7 @@ public sealed partial class Table
                 }
             }
         }
-        if (staying.Count == 0 && snapshot.Count > 0 && !KeepsMembership)
+        if (staying.Count == 0 && !KeepsMembership)
         {
             return Applies();
         }
@@ -348,15 +386,15 @@ public sealed partial class Table
             bool showedSource = _held.Count == 0
                 && _view.Count == snapshot.Count - source.Arrivals.Count + source.Leavers.Count;
             return new(source.IsWhole || released.Count > 0 || !showedSource
-                ? SortChange.Whole(snapshot, snapshot) : Named(source.Arrivals, source.MovesRows), held,
+                ? SortChange.Whole(snapshot, snapshot) : Named(source.Arrivals), held,
                 released, false,
                 Array.Empty<object>());
         }
 
         // While the rows are held, a shown row that leaves and arrives again returns in its
         // place, so only a change the hold passes on can move a row.
-        SortChange Named(IReadOnlyList<Body.Source.Arrival> arrivals, bool movesRows) =>
-            new(null, snapshot, source.Leavers, arrivals, source.Reread, source.Shift, movesRows);
+        SortChange Named(IReadOnlyList<Body.Source.Arrival> arrivals) =>
+            new(null, snapshot, source.Leavers, arrivals, source.Reread, source.Shift);
     }
 
     private void AcceptHold(HoldStep hold)

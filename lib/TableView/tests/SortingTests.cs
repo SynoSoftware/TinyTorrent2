@@ -611,6 +611,10 @@ public class SortingTests
             CollectionAssert.AreEqual(new[] { "k0", "k1", "k2", "k3" }, h.ViewKeys(), "the change waits");
             Assert.IsTrue((bool)Proof.Call(table, "IsHeld", leaver)!, "the waiting leaver refuses every action");
             Assert.IsFalse((bool)Proof.Call(table, "ShowsHeld", leaver)!, "the waiting leaver keeps its look");
+            Body.Row element = Proof.Descendants<Body.Row>(h.Surface().ContainerFromItem(leaver)).Single();
+            Proof.Call(table, "PointAt", h.Rows[0]);
+            Assert.AreEqual(true, Proof.Field<bool?>(element, "_held"), "the held look shows when the pointer enters");
+            Proof.Call(table, "StopPointing");
 
             Proof.SetField(table, "_orderSettledAt", DateTimeOffset.MinValue);
             table.RefreshView();
@@ -619,8 +623,27 @@ public class SortingTests
                 "the settle applies the change, and a change in its turn lands with it");
             await FrameAsync();
 
+            h.Rows.Clear();
+            h.Rows.Add(new("next", 1));
+            CollectionAssert.AreEqual(new[] { "next" }, h.ViewKeys(), "a different list made by Clear and Add swaps at once");
+            await FrameAsync();
+
             table.ItemsSource = new[] { new SortRow("other", 1) };
             CollectionAssert.AreEqual(new[] { "other" }, h.ViewKeys(), "a different list swaps at once");
+
+            // A released row whose change never came stops being released after the interval, so
+            // a later background change still waits.
+            await FrameAsync();
+            SortRow kept = new("kept", 2);
+            table.ItemsSource = h.Rows;
+            h.Rows.Clear();
+            h.Rows.Add(new("first", 1));
+            h.Rows.Add(kept);
+            await FrameAsync();
+            table.Release(new[] { kept });
+            Proof.Call(Proof.Field<object>(table, "_released"), "Set", kept, (false, DateTimeOffset.UtcNow.AddHours(-2)));
+            h.Rows.Remove(kept);
+            CollectionAssert.AreEqual(new[] { "first", "kept" }, h.ViewKeys(), "the expired release lets nothing through");
 
             // The interval starts when a frame shows the settle.
             async Task FrameAsync()
