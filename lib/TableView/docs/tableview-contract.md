@@ -605,6 +605,8 @@ moving while they work.
   removal, leaves its rows named until their presence next changes.
 - A held row that comes back into the source stops being held. It keeps the
   held row's place until the rows are released.
+- Inside a sort's settling interval the same hold keeps membership, with the
+  pointer anywhere, until the settle; section 9 states when.
 - A table that shows no rows takes its arrivals at once: nothing on screen can
   move.
 - A sort change moves every row anyway, so it takes the source whole.
@@ -1060,13 +1062,27 @@ Sorting requirements:
 - the host calls `RefreshView()` or `RefreshView(changed)` after a batch changes
   any active view-affecting value;
 - while a sort is applied, the view converges on the sorted order within a
-  bounded interval. Membership is deferred only by section 5.3's hold while
-  the rows are pointed at; otherwise a row that arrives appears at once and a
-  row that leaves goes at once, while existing rows trade places on the
-  settling interval. `SortInterval` sets that interval, and `TimeSpan.Zero`
-  restores immediate re-sorting. A sort by the column registered with `Schema.Order`
-  never settles: that order changes only when the host reorders, usually on
-  the person's own command, so holding it would delay that command.
+  bounded interval, the settling interval. `SortInterval` sets it, and
+  `TimeSpan.Zero` restores immediate re-sorting. A sort by the column
+  registered with `Schema.Order` never settles: that order changes only when
+  the host reorders, usually on the person's own command, so holding it would
+  delay that command.
+
+**A sort applies changes at most once per interval.** While a
+flat table is sorted with a nonzero `SortInterval`, a source change that comes
+when no change applied within the last interval applies at once. Otherwise it
+waits, and every change until the settle at the end of the interval waits with
+it: arrivals, leavers and the rows' new places land together in one update.
+Changes in the same UI turn as an applied change land with it. A row that
+leaves while it waits shows the held-row look of section 5.3 at once and
+refuses every action, as a held row does; it fades out with the update. Changes
+the person caused (`Release`), a switch to a nonempty list that shares no row
+with the view, and the first rows of an empty table apply at once. The list
+animates no change that comes within one second of its previous change
+(`fastmutationThreshold` in WinUI's `ModernCollectionBasePanel`), so arrivals
+applied apart from the settle's reorder often appeared without their
+transition. A hierarchical table applies its changes at once, because a waiting
+row could be separated from its parent.
 
 **Owner ruling: a live sort freezes only the row under the pointer.** Whenever
 the rows take their sorted order, the row under the pointer keeps its
@@ -1084,16 +1100,15 @@ table freezes nothing, because a frozen row could be separated from its parent.
 Avoiding automatic re-sorts on every property notification is important for
 rapidly changing data such as speed and progress.
 
-The settling interval exists because a host has only one lever and the table has
-two. Publishing a snapshot carries membership and position together, so a host
-that throttles its updates to stop a reshuffle also delays the completion that
-made the update necessary. The table holds both the previous order and the new
-one, so it is the only layer that can take the membership immediately and let
-the position wait. Removing a row leaves the surviving rows in their established
-order. An arrival is placed among the keys kept from the last proven sorted
-order, before pointer pinning; existing rows keep their relative order until
-the next settle. If their current values drifted, the arrival's position can
-differ from its eventual position at that settle. A changed relative base order
+The settling interval lives in the table rather than in the host because the
+table knows which changes it may hold: the person's own changes, a different
+list, and the row under the pointer, which keeps its place at the settle.
+Removing a row leaves the surviving rows in their established order. An arrival
+that applies inside the interval, with a change the person caused, is placed
+among the keys kept from the last proven sorted order, before pointer pinning;
+existing rows keep their relative order until the next settle. If their current
+values drifted, the arrival's position can differ from its eventual position at
+that settle. A changed relative base order
 of surviving items takes the full stable sort, because base order breaks ties.
 For mutable keys or a host comparer whose ordering can change without key
 equality changing, arrival placement first proves that the kept order is still

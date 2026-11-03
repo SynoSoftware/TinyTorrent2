@@ -625,6 +625,7 @@ public sealed partial class Table
         _frameRequested = false;
         // The rows this frame lays out are the ones the next publish compares with.
         _laidOut = null;
+        ShowSettle();
         QueuedSort? queued = _queuedSort;
         PageNavigation? page = _pendingPage is { Stage: not PageStage.Scrolling } ready
             ? ready : null;

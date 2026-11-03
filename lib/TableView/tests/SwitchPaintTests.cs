@@ -150,8 +150,8 @@ public class SwitchPaintTests
             c.Source.Move(2, 8);
             return Task.CompletedTask;
         }),
-        // Under a live sort, inside the settle interval: one row leaves and one arrives at once,
-        // and two rows whose values swapped keep their places until the settle, then trade them.
+        // Under a live sort, inside the settle interval: one row leaves, one arrives, and two rows
+        // swap values. All of it waits for the settle and lands there in one update.
         new("sorted-interval-then-settle", Ids(0, 200), Ids(0, 200, id => id != 5).Append(1000).ToArray(), c =>
         {
             c.Source.RemoveAt(c.IndexOf(5));

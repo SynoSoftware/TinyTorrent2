@@ -36,8 +36,14 @@ public sealed partial class Table
     private sealed record SortWork(SortedOrder Workspace, SortedOrder.Work Sorting,
         Hierarchy.Work? Hierarchy, long PublishVersion);
 
-    /// <summary>When the rows were last allowed to take their sorted places.</summary>
+    /// <summary>When a frame last showed a settle that changed the rows.</summary>
     private DateTimeOffset _orderSettledAt = DateTimeOffset.MinValue;
+
+    /// <summary>
+    /// The view version before the first settle that no frame has shown yet, or null when every
+    /// settle has been shown.
+    /// </summary>
+    private long? _unshownSettle;
 
     private Microsoft.UI.Dispatching.DispatcherQueueTimer? _settleDue;
 
@@ -62,26 +68,27 @@ public sealed partial class Table
     }
 
     /// <summary>
-    /// How long rows already on screen keep their places while a sort is applied over values the
-    /// source keeps changing. <see cref="TimeSpan.Zero"/> re-sorts on every update. A sort by the
-    /// column registered with Schema.Order never waits.
+    /// How often a sort over values the source keeps changing applies the source's changes to the
+    /// rows on screen. <see cref="TimeSpan.Zero"/> applies and re-sorts on every update. A sort by
+    /// the column registered with Schema.Order never waits.
     /// </summary>
     /// <remarks>
-    /// Only relative position waits for the interval. Membership does not: a row that arrives
-    /// appears at once, at the place the sort gives it, and a row that leaves goes at once, unless
-    /// the rows are pointed at, when section 5.3's hold keeps both back. The distinction is the
-    /// reason this lives in the table rather than in the host — a host publishes one snapshot
-    /// carrying membership and position together, so throttling it would delay the arrival that
-    /// made it necessary, while the table holds both the old order and the new one and can take one
-    /// without the other. Measured on the original host's 2,002-row list, per host publish, because with
-    /// settling off every publish reorders and the two units are then the same one: sorted by a
-    /// value the updates never touch, no reorder at all across sixteen real publishes; sorted by
-    /// speed, which they always touch, every publish reordered the whole view, for news that
-    /// amounted to one row finishing. That count came from the original host's own publish
-    /// stream, and the harness that produced it has been deleted, so specification 9 records the
-    /// figure and nothing here reproduces it; what survives is the claim, one reorder per interval
-    /// rather than one per publish. A table that reshuffles a whole screen because a single
-    /// row completed cannot be clicked on, which is why this exists, rather than the cost.
+    /// A change applies at once when no change applied within the last interval. Otherwise it
+    /// waits, with every later one, for the settle at the end of the interval, where arrivals,
+    /// leavers and moves land in one update. Changes the person caused, a switch to a different
+    /// list and an empty table apply at once. The list animates no change that comes within one
+    /// second of its previous change (<c>fastmutationThreshold</c> in WinUI's
+    /// <c>ModernCollectionBasePanel</c>), so changes applied one by one would show rows that
+    /// arrive without their transition. Measured on the original host's 2,002-row list, per host
+    /// publish, because with settling off every publish reorders and the two units are then the
+    /// same one: sorted by a value the updates never touch, no reorder at all across sixteen real
+    /// publishes; sorted by speed, which they always touch, every publish reordered the whole
+    /// view, for news that amounted to one row finishing. That count came from the original
+    /// host's own publish stream, and the harness that produced it has been deleted, so
+    /// specification 9 records the figure and nothing here reproduces it; what survives is the
+    /// claim, one reorder per interval rather than one per publish. A table that reshuffles a
+    /// whole screen because a single row completed cannot be clicked on, which is why this
+    /// exists, rather than the cost.
     /// <para>
     /// Live. Shortening it takes effect on the next update; the sorted order is taken immediately
     /// when it is set to <see cref="TimeSpan.Zero"/>. Negative values are treated as zero.
@@ -410,10 +417,12 @@ public sealed partial class Table
     /// row being reached for moves out from under the pointer. The owner chose a cadence for that
     /// reason, not for the milliseconds.
     /// <para>
-    /// Membership waits only while the rows are pointed at, by the hold of section 5.3. Otherwise a
-    /// row that arrives appears at once, at the place the sort gives it among the rows already
-    /// shown, and a row that leaves goes at once. When the rows do take their sorted places, the
-    /// pointed row keeps its own (section 9).
+    /// Membership waits with position: inside the interval the hold of section 5.3 keeps a row
+    /// that leaves and holds back a row that arrives, as it does while the rows are pointed at, so
+    /// the settle applies them with the moves. A row that arrives with a change the hold passes
+    /// on, as one the person caused, takes the place the sort gives it among the rows already
+    /// shown. When the rows do take their sorted places, the pointed row keeps its own
+    /// (section 9).
     /// </para>
     /// </remarks>
     /// <returns>
@@ -427,7 +436,7 @@ public sealed partial class Table
     {
         DateTimeOffset now = DateTimeOffset.UtcNow;
         bool allowMoves = MayMove(now);
-        HoldStep hold = Hold(source);
+        HoldStep hold = Hold(source, waits: !allowMoves);
         IReadOnlyList<object> shown;
         IReadOnlyList<object> order;
         IdentitySet pinned;
@@ -505,31 +514,47 @@ public sealed partial class Table
     }
 
     /// <summary>
-    /// Whether rows may take their sorted places now, rather than at the next settle.
+    /// Whether this publish is a settle: rows may take their sorted places now, and a flat
+    /// table's changes apply, rather than at the next settle. Until a frame shows a settle that
+    /// changed the rows, every publish is one, so the changes of one turn land in one update.
     /// </summary>
     private bool MayMove(DateTimeOffset now) => !SortsLocally || SortsOrder || _view.Count == 0
-        || _sortInterval == TimeSpan.Zero || now - _orderSettledAt >= _sortInterval;
+        || _sortInterval == TimeSpan.Zero || _unshownSettle is not null || now - _orderSettledAt >= _sortInterval;
 
     /// <summary>
-    /// The one settle decision. A publish that allowed moves starts the interval again; a publish
-    /// that left rows off their sorted places, by a withheld key, a held or waiting row or a
-    /// pinned row, schedules the settle at the end of the interval.
+    /// The one settle decision. A settle that changes the rows starts the interval when a frame
+    /// shows it; a publish that left rows off their sorted places, by a withheld key, a held or
+    /// waiting row or a pinned row, schedules the settle at the end of the interval.
     /// </summary>
     private void Settle(DateTimeOffset now, bool allowMoves, bool pending)
     {
         if (allowMoves)
         {
-            _orderSettledAt = now;
+            _unshownSettle ??= _view.Version;
         }
         _settlePending = SortsLocally && !SortsOrder && pending;
         if (_settlePending)
         {
-            ScheduleSettle(_sortInterval - (now - _orderSettledAt));
+            ScheduleSettle(allowMoves ? _sortInterval : _sortInterval - (now - _orderSettledAt));
         }
         else
         {
             _settleDue?.Stop();
         }
+    }
+
+    /// <summary>
+    /// The frame shows the publishes since the last frame. When a settle among them changed the
+    /// rows, the interval starts now; a settle that changed nothing starts none, so the next
+    /// change still applies at once.
+    /// </summary>
+    private void ShowSettle()
+    {
+        if (_unshownSettle is long version && version != _view.Version)
+        {
+            _orderSettledAt = DateTimeOffset.UtcNow;
+        }
+        _unshownSettle = null;
     }
 
     /// <summary>

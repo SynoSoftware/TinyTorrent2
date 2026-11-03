@@ -62,7 +62,12 @@ source length, preparation rebases every entry through the candidate position
 index and one source-order walk. The shown order after pointer pinning stays
 outside this workspace. The sorting owner makes the one settle decision, for
 flat tables and hierarchies, and is the only code that records when rows last
-took their sorted places. Header choices carry committed-sort and
+took their sorted places. A publish that may not move rows is not a settle, and
+for a flat table it passes `waits` to the hold, which keeps membership as it does
+under the pointer, so the change waits for the settle. The interval starts when
+the frame callback finds that a settle since the last frame changed the view
+version; until then every publish is a settle, so the changes of one turn land in
+one update. Header choices carry committed-sort and
 detach revisions and run after the shared rendering frame wait. The `Sort`
 setter, a queued header sort and layout restoration commit through one routine,
 `CommitSort`, the same synchronous commit boundary.

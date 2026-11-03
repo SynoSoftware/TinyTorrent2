@@ -143,6 +143,7 @@ public class HierarchyTests
             await TableHarness.LoadAsync(table);
             table.Sort = new(name);
             CollectionAssert.AreEqual(new[] { "a", "c", "b" }, Names(table));
+            StartInterval(table);
 
             first.IsExpanded = false;
             second.IsExpanded = true;
@@ -175,6 +176,7 @@ public class HierarchyTests
             await TableHarness.LoadAsync(table);
             table.Sort = new(name);
             CollectionAssert.AreEqual(new[] { "p", "a", "b", "c" }, Names(table));
+            StartInterval(table);
 
             ranks["a"] = 9;
             table.RefreshView();
@@ -470,4 +472,11 @@ public class HierarchyTests
             .Cast<Node>()
             .Select(row => row.Name)
             .ToArray();
+
+    /// <summary>Start the settle interval now, as a frame that shows a settle does.</summary>
+    private static void StartInterval(Table table)
+    {
+        Proof.SetField(table, "_orderSettledAt", DateTimeOffset.UtcNow);
+        Proof.SetField(table, "_unshownSettle", null);
+    }
 }

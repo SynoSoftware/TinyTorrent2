@@ -264,6 +264,7 @@ public class SortingTests
                     keys++;
                     return row.Rank;
                 });
+                table.SortInterval = TimeSpan.Zero;
                 table.Sort = new(table.Columns[0]);
             });
             keys = 0;
@@ -322,6 +323,7 @@ public class SortingTests
             }
             h.Table.SortInterval = TimeSpan.FromHours(1);
             Proof.SetField(h.Table, "_orderSettledAt", DateTimeOffset.UtcNow);
+            Proof.SetField(h.Table, "_unshownSettle", null);
             h.Rows[0].Rank = -100;
             keys = 0;
             h.Table.RefreshView(new object[] { h.Rows[0] });
@@ -537,11 +539,13 @@ public class SortingTests
             {
                 Proof.SetField(h.Table, "_orderSettledAt", DateTimeOffset.UtcNow.AddMinutes(-30));
             }
-            DateTimeOffset published = DateTimeOffset.UtcNow;
             h.Rows[0].Rank = 4;
             if (arrival)
             {
-                h.Rows.Add(new("arrival", 0));
+                // A row the person adds applies inside the interval, among the kept keys.
+                SortRow entrant = new("arrival", 0);
+                h.Table.Release(new[] { entrant });
+                h.Rows.Add(entrant);
             }
             else
             {
@@ -551,8 +555,8 @@ public class SortingTests
                 : new[] { "k1", "k2", "k0" }, h.ViewKeys());
             if (arrival)
             {
-                Assert.IsTrue(Proof.Field<DateTimeOffset>(h.Table, "_orderSettledAt") >= published,
-                    "the fallback full sort starts a fresh settle interval");
+                Assert.IsNotNull(Proof.Field<long?>(h.Table, "_unshownSettle"),
+                    "the fallback full sort is a settle, which starts a fresh interval when a frame shows it");
                 h.Rows.Add(new("second", 5));
                 Assert.IsFalse(Proof.Field<bool>(h.Table, "_settlePending"),
                     "a successful current-key order proof and placement consumes the work");
@@ -571,13 +575,58 @@ public class SortingTests
             h.Rows[0].Rank = 100;
             h.Rows[1].Rank = -1;
             h.Rows[2].Rank = -1;
-            h.Rows.Add(new("arrival", 0));
+            // A row the person adds applies inside the interval, among the kept keys.
+            SortRow entrant = new("arrival", 0);
+            h.Table.Release(new[] { entrant });
+            h.Rows.Add(entrant);
             CollectionAssert.AreEqual(new[] { "arrival", "k0", "k1", "k2" }, h.ViewKeys());
             h.Table.SortInterval = TimeSpan.Zero;
             CollectionAssert.AreEqual(new[] { "k1", "k2", "arrival", "k0" }, h.ViewKeys());
 
             h.Table.ItemsSource = new[] { h.Rows[2], h.Rows[1], new SortRow("next", -1), h.Rows[0] };
             CollectionAssert.AreEqual(new[] { "k2", "k1", "next", "k0" }, h.ViewKeys());
+        });
+
+    /// <summary>
+    /// Section 9: the list animates no change within one second of the one before, so inside the
+    /// interval a background change applies nothing. A leaver stays as a held row and an arrival
+    /// waits until the settle applies both; a change in the settle's turn lands with it, and a
+    /// different list swaps at once.
+    /// </summary>
+    [TestMethod]
+    public Task ChangesInsideTheIntervalWaitForTheSettle() =>
+        TestHost.RunAsync(async () =>
+        {
+            SortHarness h = await SortHarness.LoadAsync(new[] { 1, 2, 3, 4 }, configure: table =>
+            {
+                table.Sort = new(table.Columns[0]);
+                table.SortInterval = TimeSpan.FromHours(1);
+            });
+            Table table = h.Table;
+            await FrameAsync();
+
+            SortRow leaver = h.Rows[1];
+            h.Rows.Remove(leaver);
+            h.Rows.Add(new("arrival", 0));
+            CollectionAssert.AreEqual(new[] { "k0", "k1", "k2", "k3" }, h.ViewKeys(), "the change waits");
+            Assert.IsTrue((bool)Proof.Call(table, "IsHeld", leaver)!, "the waiting leaver shows as held");
+
+            Proof.SetField(table, "_orderSettledAt", DateTimeOffset.MinValue);
+            table.RefreshView();
+            h.Rows.Add(new("late", 5));
+            CollectionAssert.AreEqual(new[] { "arrival", "k0", "k2", "k3", "late" }, h.ViewKeys(),
+                "the settle applies the change, and a change in its turn lands with it");
+            await FrameAsync();
+
+            table.ItemsSource = new[] { new SortRow("other", 1) };
+            CollectionAssert.AreEqual(new[] { "other" }, h.ViewKeys(), "a different list swaps at once");
+
+            // The interval starts when a frame shows the settle.
+            async Task FrameAsync()
+            {
+                table.UpdateLayout();
+                await TableHarness.WaitUntilAsync(() => !Proof.Field<bool>(table, "_layoutPending"), "the frame");
+            }
         });
 
     [TestMethod]

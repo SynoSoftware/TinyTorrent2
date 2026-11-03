@@ -63,8 +63,14 @@ public sealed partial class ComparePage : Page
         Unloaded += (_, _) => StopAuto();
     }
 
-    /// <summary>The list on screen, always in speed order, which is the ListView's order.</summary>
+    /// <summary>
+    /// The list on screen, in Id order, which is the table's source order. A header click that
+    /// returns the table to source order therefore changes what it shows.
+    /// </summary>
     private List<CompareRow> Rows => _lists[_active];
+
+    /// <summary>The rows fastest first, which is the ListView's order.</summary>
+    private List<CompareRow> BySpeed() => Rows.OrderByDescending(row => row.Speed).ToList();
 
     private List<CompareRow>[] MakeLists() => new[] { MakeList("a"), MakeList("b") };
 
@@ -73,10 +79,9 @@ public sealed partial class ComparePage : Page
         List<CompareRow> rows = new();
         for (int index = 1; index <= _rowsPerList; index++)
         {
-            rows.Add(new CompareRow($"{prefix}{index:00}", NewName(), NewSpeed()));
+            rows.Add(new CompareRow($"{prefix}{index:0000}", NewName(), NewSpeed()));
         }
 
-        SortBySpeed(rows);
         return rows;
     }
 
@@ -96,14 +101,18 @@ public sealed partial class ComparePage : Page
         return speed;
     }
 
-    private static void SortBySpeed(List<CompareRow> rows) =>
-        rows.Sort((left, right) => right.Speed.CompareTo(left.Speed));
+    /// <summary>Ids have four digits, so their ordinal order is their numeric order.</summary>
+    private void AddInIdOrder(CompareRow row)
+    {
+        int index = Rows.FindIndex(other => string.CompareOrdinal(other.Id, row.Id) > 0);
+        Rows.Insert(index < 0 ? Rows.Count : index, row);
+    }
 
     /// <summary>Gives the table a new list and the ListView a new collection.</summary>
     private void Show()
     {
         Table.ItemsSource = new List<CompareRow>(Rows);
-        _items = new ObservableCollection<CompareRow>(Rows);
+        _items = new ObservableCollection<CompareRow>(BySpeed());
         Plain.ItemsSource = _items;
     }
 
@@ -128,12 +137,12 @@ public sealed partial class ComparePage : Page
         if (_removed is null)
         {
             _removed = removed;
-            Rows.Add(new CompareRow($"n{_nextNewId++:00}", NewName(), NewSpeed()));
+            AddInIdOrder(new CompareRow($"n{_nextNewId++:0000}", NewName(), NewSpeed()));
         }
         else
         {
             _usedSpeeds.Remove(removed.Speed);
-            Rows.Add(_removed);
+            AddInIdOrder(_removed);
             _removed = null;
         }
     }
@@ -149,15 +158,15 @@ public sealed partial class ComparePage : Page
     }
 
     /// <summary>
-    /// Sorts the model, then gives the table a new list and brings the collection to the same
-    /// order with Remove, Insert and Move.
+    /// Gives the table a new list, and brings the collection to speed order with Remove, Insert
+    /// and Move.
     /// </summary>
     private void Publish()
     {
-        SortBySpeed(Rows);
         Table.ItemsSource = new List<CompareRow>(Rows);
 
-        HashSet<CompareRow> kept = new(Rows);
+        List<CompareRow> sorted = BySpeed();
+        HashSet<CompareRow> kept = new(sorted);
         for (int index = _items.Count - 1; index >= 0; index--)
         {
             if (!kept.Contains(_items[index]))
@@ -166,17 +175,17 @@ public sealed partial class ComparePage : Page
             }
         }
 
-        for (int index = 0; index < Rows.Count; index++)
+        for (int index = 0; index < sorted.Count; index++)
         {
-            if (index < _items.Count && _items[index] == Rows[index])
+            if (index < _items.Count && _items[index] == sorted[index])
             {
                 continue;
             }
 
-            int from = _items.IndexOf(Rows[index]);
+            int from = _items.IndexOf(sorted[index]);
             if (from < 0)
             {
-                _items.Insert(index, Rows[index]);
+                _items.Insert(index, sorted[index]);
             }
             else
             {
@@ -220,7 +229,7 @@ public sealed partial class ComparePage : Page
             CompareRow old = Rows[index];
             CompareRow fresh = new(old.Id, old.Name, old.Speed);
             Rows[index] = fresh;
-            _items[index] = fresh;
+            _items[_items.IndexOf(old)] = fresh;
         }
 
         Table.ItemsSource = new List<CompareRow>(Rows);

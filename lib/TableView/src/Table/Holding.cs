@@ -10,7 +10,8 @@ namespace Syno.TableView;
 /// <summary>
 /// The owner rulings of sections 5.3 and 9: nothing moves under the pointer that the person did
 /// not move. While the rows are pointed at, a row that leaves the source is held in place and rows
-/// that arrive wait; under a reordering sort, the pointed row keeps its place.
+/// that arrive wait; under a reordering sort, the pointed row keeps its place. Inside a sort's
+/// settle interval the hold keeps membership the same way until the settle.
 /// </summary>
 /// <remarks>
 /// A hierarchical table holds nothing. Expansion and collapse are the person's own commands and
@@ -66,7 +67,7 @@ public sealed partial class Table
     /// <param name="Rows">How the shown rows changed: the rows the order is made from.</param>
     /// <param name="Held">The held rows after the change.</param>
     /// <param name="Released">The <see cref="Release"/> rows the change carries.</param>
-    /// <param name="Holds">Whether the rows are held back while pointed at.</param>
+    /// <param name="Holds">Whether the rows are held back, while pointed at or until the settle.</param>
     /// <param name="Returning">
     /// Held rows back in the source while pointed at, as their current instances, including the
     /// ones that came back in an earlier change. Each keeps its held row's index until the rows
@@ -233,8 +234,10 @@ public sealed partial class Table
     }
 
     /// <summary>
-    /// The snapshot rows to show. While the rows are pointed at, that is only the rows already
-    /// shown, and every shown row the snapshot no longer has becomes a held row.
+    /// The snapshot rows to show. While the rows are pointed at, or while the change
+    /// <paramref name="waits"/> for the settle, that is only the rows already shown, and every
+    /// shown row the snapshot no longer has becomes a held row. A whole change to a nonempty
+    /// source that shares no row with the view is a different list, which does not wait.
     /// </summary>
     /// <remarks>
     /// One rule per affected row: a shown row that leaves is held, a row that arrives waits, and
@@ -244,12 +247,12 @@ public sealed partial class Table
     /// whole source before. An empty view takes its rows at once: nothing is on screen to be moved.
     /// A returned row keeps the held row's index on every change until the hold ends.
     /// </remarks>
-    private HoldStep Hold(Body.Source.Preparation source, bool sortChanged = false)
+    private HoldStep Hold(Body.Source.Preparation source, bool sortChanged = false, bool waits = false)
     {
         IReadOnlyList<object> snapshot = source.Capture.Rows;
         IdentitySet held = _candidateHeld;
         held.Clear();
-        bool holds = !sortChanged && KeepsMembership;
+        bool holds = !sortChanged && (KeepsMembership || waits);
         List<object> released = _releasedRows;
         released.Clear();
         foreach (var entry in _released)
@@ -261,12 +264,7 @@ public sealed partial class Table
         }
         if (!holds || released.Count > 0)
         {
-            bool showedSource = _held.Count == 0
-                && _view.Count == snapshot.Count - source.Arrivals.Count + source.Leavers.Count;
-            return new(source.IsWhole || released.Count > 0 || !showedSource
-                ? SortChange.Whole(snapshot, snapshot) : Named(source.Arrivals, source.MovesRows), held,
-                released, false,
-                Array.Empty<object>());
+            return Applies();
         }
         if (!source.IsWhole)
         {
@@ -329,6 +327,10 @@ public sealed partial class Table
                 }
             }
         }
+        if (staying.Count == 0 && snapshot.Count > 0 && !KeepsMembership)
+        {
+            return Applies();
+        }
         foreach (object row in _view)
         {
             if (source.Resolve(row) is null)
@@ -337,6 +339,16 @@ public sealed partial class Table
             }
         }
         return new(SortChange.Whole(staying, snapshot), held, released, true, back);
+
+        HoldStep Applies()
+        {
+            bool showedSource = _held.Count == 0
+                && _view.Count == snapshot.Count - source.Arrivals.Count + source.Leavers.Count;
+            return new(source.IsWhole || released.Count > 0 || !showedSource
+                ? SortChange.Whole(snapshot, snapshot) : Named(source.Arrivals, source.MovesRows), held,
+                released, false,
+                Array.Empty<object>());
+        }
 
         // While the rows are held, a shown row that leaves and arrives again returns in its
         // place, so only a change the hold passes on can move a row.
