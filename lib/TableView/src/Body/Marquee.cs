@@ -8,7 +8,7 @@ namespace Syno.TableView.Body;
 /// <summary>
 /// Section 14's rectangle: the overlay it drives, the rows it covers, and the auto-scroll at
 /// the viewport edges. It decides coverage only; what coverage means for the selection is the
-/// selection model's, which owns modifiers and selection mode.
+/// table's, because only the table knows the modifier and the mode.
 /// </summary>
 /// <remarks>
 /// Coverage is reported as view indices, not items. Containers come and go under a gesture that
@@ -31,9 +31,7 @@ internal sealed class Marquee
     /// <summary>Moves the rectangle without a layout pass; its size is the layout part.</summary>
     private readonly TranslateTransform _overlayOffset = new();
 
-    private Action<Coverage>? _coverageChanged;
-    private readonly List<int> _added = new();
-    private readonly List<int> _removed = new();
+    private Action? _coverageChanged;
     private ListView? _rows;
     private ScrollViewer? _scroller;
     private FrameworkElement? _overlay;
@@ -58,10 +56,9 @@ internal sealed class Marquee
     /// <summary>The covered rows' view indices, ascending, so they are already in visual order.</summary>
     internal IReadOnlyCollection<int> CoveredIndices => _covered;
 
-    internal (int Low, int High)? Bounds => _covered.Count > 0 ? (_covered.Min, _covered.Max) : null;
+    internal int LowestCovered => _covered.Min;
 
-    internal readonly record struct Coverage(IReadOnlyList<int> Added, IReadOnlyList<int> Removed,
-        (int Low, int High)? Bounds);
+    internal int HighestCovered => _covered.Max;
 
     /// <param name="origin">The press position, relative to <paramref name="rows"/>.</param>
     internal void Begin(
@@ -69,7 +66,7 @@ internal sealed class Marquee
         ScrollViewer? scroller,
         FrameworkElement? overlay,
         Point origin,
-        Action<Coverage> coverageChanged
+        Action coverageChanged
     )
     {
         _rows = rows;
@@ -120,8 +117,6 @@ internal sealed class Marquee
         }
 
         _coverageChanged = null;
-        _added.Clear();
-        _removed.Clear();
         _overlay = null;
         _rows = null;
         _scroller = null;
@@ -147,7 +142,7 @@ internal sealed class Marquee
 
         if (UpdateCoverage(rect) || alwaysReport)
         {
-            _coverageChanged?.Invoke(new(_added, _removed, Bounds));
+            _coverageChanged?.Invoke();
         }
     }
 
@@ -169,8 +164,6 @@ internal sealed class Marquee
     /// </summary>
     private bool UpdateCoverage(Rect rect)
     {
-        _added.Clear();
-        _removed.Clear();
         // The panel's cache range, not its Children. A container left over from before a scroll
         // stays in Children, stays Visible, and still round-trips through IndexFromContainer and
         // ContainerFromIndex for the row it last showed — at bounds from where that row used to be.
@@ -196,19 +189,9 @@ internal sealed class Marquee
                 continue;
             }
 
-            if (Intersects(rect, BoundsInRows(container)))
-            {
-                if (_covered.Add(index))
-                {
-                    _added.Add(index);
-                    changed = true;
-                }
-            }
-            else if (_covered.Remove(index))
-            {
-                _removed.Add(index);
-                changed = true;
-            }
+            changed |= Intersects(rect, BoundsInRows(container))
+                ? _covered.Add(index)
+                : _covered.Remove(index);
         }
 
         return changed;

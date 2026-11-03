@@ -72,66 +72,6 @@ public class ReconcileTests
     // ------------------------------------------------------------------ membership
 
     [TestMethod]
-    [DataRow(false)]
-    [DataRow(true)]
-    public void AHalfRemovalKeepsTrueCountsAndTheSurvivingRealizedRun(bool distributed)
-    {
-        object[] rows = Rows(1000);
-        object view = NewView(rows);
-        Watcher watch = new(view);
-        ((IObservableVector<object>)view).VectorChanged += (_, _) =>
-            Assert.AreEqual(Rows(view).Length, watch.Count);
-        object[] snapshot = rows.Where((_, index) => distributed ? index % 2 == 1 : index >= 500).ToArray();
-        Reconcile(view, snapshot, Enumerable.Range(0, 12).Append(950).ToArray());
-        CollectionAssert.AreEqual(snapshot, Rows(view));
-        watch.AssertListAgreesAt(Enumerable.Range(0, 12).ToArray(), view);
-    }
-
-    [TestMethod]
-    public void GapMovementPreservesRowsAcrossAlternatingInsertAndRemoveDirections()
-    {
-        IList<object> rows = (IList<object>)Activator.CreateInstance(Control.GetType("Syno.TableView.Body.GapBuffer")!, true)!;
-        List<object> expected = new();
-        Random random = new(716);
-        for (int step = 0; step < 600; step++)
-        {
-            if (expected.Count == 0 || step % 3 != 0)
-            {
-                int at = random.Next(expected.Count + 1);
-                object item = new();
-                rows.Insert(at, item);
-                expected.Insert(at, item);
-            }
-            else
-            {
-                int at = random.Next(expected.Count);
-                rows.RemoveAt(at);
-                expected.RemoveAt(at);
-            }
-            CollectionAssert.AreEqual(expected.ToArray(), rows.Cast<object>().ToArray());
-        }
-    }
-
-    [TestMethod]
-    public void IdentityLookupTracksEveryIntermediateVectorChange()
-    {
-        object[] rows = Rows(30);
-        object view = NewView(rows);
-        MethodInfo lookup = view.GetType().GetMethod("IndexOfIdentity", BindingFlags.Instance | BindingFlags.NonPublic)!;
-        ((IObservableVector<object>)view).VectorChanged += (_, _) =>
-        {
-            object[] current = Rows(view);
-            foreach (object row in rows)
-            {
-                Assert.AreEqual(Array.IndexOf(current, row), (int)lookup.Invoke(view, new[] { row })!);
-            }
-        };
-
-        object[] snapshot = rows.Where((_, index) => index % 3 != 0).Reverse().ToArray();
-        Reconcile(view, snapshot, new[] { 0, 1, 2, 15, 16, 17 });
-    }
-
-    [TestMethod]
     public void RowsJoiningAndLeavingAreAnnouncedWhereverTheyAre()
     {
         object[] rows = Rows(50);
@@ -247,22 +187,31 @@ public class ReconcileTests
 
     private static object NewView(IEnumerable<object> rows)
     {
-        object identity = ReferenceIdentity();
+        Type identity = Control.GetType("Syno.TableView.ItemIdentity")!;
         Type view = Control.GetType("Syno.TableView.Body.View")!;
+
+        object comparer = Activator.CreateInstance(
+            identity,
+            BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public,
+            null,
+            null,
+            null
+        )!;
 
         // No list and no table here, so no row is ever selected.
         object created = Activator.CreateInstance(
             view,
             BindingFlags.Instance | BindingFlags.NonPublic,
             null,
-            new object[] { new Func<object, bool>(_ => false),
-                new Func<IReadOnlyCollection<int>>(() => Array.Empty<int>()) },
+            new object[] { comparer, new Func<object, bool>(_ => false) },
             null
         )!;
-        view.GetMethod("SetIdentity", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .Invoke(created, new[] { identity });
 
-        Reconcile(created, rows.ToArray(), Array.Empty<int>());
+        IList list = (IList)created;
+        foreach (object row in rows)
+        {
+            list.Add(row);
+        }
 
         return created;
     }
@@ -272,34 +221,10 @@ public class ReconcileTests
         IReadOnlyList<object> snapshot,
         IReadOnlyList<int> realized,
         IReadOnlySet<object>? pinned = null
-    )
-    {
-        object identity = ReferenceIdentity();
-        object pins = Activator.CreateInstance(Control.GetType("Syno.TableView.IdentitySet")!,
-            BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null, new object[] { identity }, null)!;
-        MethodInfo pin = pins.GetType().GetMethod("Add", BindingFlags.Instance | BindingFlags.NonPublic,
-            null, new[] { typeof(object) }, null)!;
-        foreach (object row in pinned ?? new HashSet<object>())
-        {
-            pin.Invoke(pins, new[] { row });
-        }
-        object origin = Activator.CreateInstance(view.GetType().GetNestedType("Origin", BindingFlags.NonPublic)!)!;
-        object difference = view.GetType()
-            .GetMethod("Compare", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .Invoke(view, new[] { snapshot, origin })!;
-        bool changed = !(bool)difference.GetType()
-            .GetProperty("IsEmpty", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(difference)!;
-        if (changed)
-        {
-            view.GetType()
-                .GetMethod("Reconcile", BindingFlags.Instance | BindingFlags.NonPublic)!
-                .Invoke(view, new[] { snapshot, difference, null, realized, pins });
-        }
-    }
-
-    private static object ReferenceIdentity() => Control.GetType("Syno.TableView.Identity`2")!
-        .MakeGenericType(typeof(object), typeof(object))
-        .GetMethod("Reference", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, null)!;
+    ) =>
+        view.GetType()
+            .GetMethod("Reconcile", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(view, new object[] { snapshot, realized, pinned ?? new HashSet<object>() });
 
     /// <summary>
     /// A list's-eye view: it is told nothing except the notifications, and it applies them the way

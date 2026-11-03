@@ -25,18 +25,6 @@ public sealed class Selection
         Current = current;
     }
 
-    internal Selection(object[] items, object? current)
-    {
-        Items = Array.AsReadOnly(items);
-        Current = current;
-    }
-
-    internal Selection(Selection selection, object? current)
-    {
-        Items = selection.Items;
-        Current = current;
-    }
-
     /// <summary>The selected packet, in current visual row order when the table produced it.</summary>
     public IReadOnlyList<object> Items { get; }
 

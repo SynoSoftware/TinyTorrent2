@@ -1,7 +1,6 @@
 using System.Collections;
 using System.Collections.ObjectModel;
 using System.Reflection;
-using System.Runtime.InteropServices;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -78,7 +77,8 @@ public class RealSortTests
             Control cell = HeaderCell(h.Strip, 0);
             Assert.IsTrue(cell.Focus(FocusState.Keyboard), "the header took keyboard focus");
 
-            await CompleteSortAsync(h, () => h.KeyAsync(VirtualKey.Enter));
+            await h.KeyAsync(VirtualKey.Enter);
+            h.Table.UpdateLayout();
 
             CollectionAssert.AreEqual(
                 new[] { "k1", "k3", "k2", "k0" },
@@ -86,7 +86,8 @@ public class RealSortTests
                 "Enter sorted"
             );
 
-            await CompleteSortAsync(h, () => h.KeyAsync(VirtualKey.Space));
+            await h.KeyAsync(VirtualKey.Space);
+            h.Table.UpdateLayout();
 
             CollectionAssert.AreEqual(
                 new[] { "k0", "k2", "k1", "k3" },
@@ -94,7 +95,8 @@ public class RealSortTests
                 "Space continued the cycle"
             );
 
-            await CompleteSortAsync(h, () => h.KeyAsync(VirtualKey.Space));
+            await h.KeyAsync(VirtualKey.Space);
+            h.Table.UpdateLayout();
 
             CollectionAssert.AreEqual(new[] { "k0", "k1", "k2", "k3" }, ViewKeys(h.Table));
         });
@@ -122,29 +124,8 @@ public class RealSortTests
 
     private static async Task ClickAsync(DragHarness h, double x)
     {
-        // These are distinct primary clicks, outside Windows' configured double-click gesture.
-        await Task.Delay((int)GetDoubleClickTime() + 1);
         await h.PressAsync(x);
-        await CompleteSortAsync(h, () => h.ReleaseAsync(x));
-    }
-
-    private static async Task CompleteSortAsync(DragHarness h, Func<Task> activate)
-    {
-        bool completed = false;
-        void Changed(object? sender, LayoutChange kind)
-        {
-            completed |= kind == LayoutChange.Sort;
-        }
-        h.Table.LayoutChanged += Changed;
-        try
-        {
-            await activate();
-            await TableHarness.WaitUntilAsync(() => completed, "the real header sort to commit");
-        }
-        finally
-        {
-            h.Table.LayoutChanged -= Changed;
-        }
+        await h.ReleaseAsync(x);
         h.Table.UpdateLayout();
     }
 
@@ -162,7 +143,4 @@ public class RealSortTests
                 .GetValue(strip)!;
         return (Control)panel.Children[visibleIndex];
     }
-
-    [DllImport("user32.dll")]
-    private static extern uint GetDoubleClickTime();
 }

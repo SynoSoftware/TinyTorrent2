@@ -150,8 +150,7 @@ internal sealed class SelectionHarness
     internal bool RowSurfaceHasFocus() =>
         (FocusState)Invoke("RowSurfaceFocusState")! != FocusState.Unfocused;
 
-    internal bool Page(int direction, bool extend = false, bool ctrl = false) =>
-        (bool)Invoke("MovePage", direction, extend, ctrl)!;
+    internal int RowsPerPage() => (int)Invoke("RowsPerPage")!;
 
     /// <summary>Runs the table's real hit test over a real element in a realized row.</summary>
     internal string HitTest(DependencyObject source)

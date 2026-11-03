@@ -50,14 +50,11 @@ public sealed partial class Surface : ListView
         private const int BulkChildrenLimit = 20;
 
         private List<WeakReference<ItemPeer>>? _itemPeers;
-        private long _hierarchyVersion = -1;
         internal Table? Table => Row.FindOwner(owner);
 
         protected override ItemAutomationPeer OnCreateItemAutomationPeer(object item)
         {
-            // The peer finds its container through the instance the list generated it for (see
-            // PeerFor); it reads the row's current instance by identity (Current).
-            ItemPeer peer = new(Table?.ContainerItem(item) ?? item, this);
+            ItemPeer peer = new(item, this);
             if (Table?.Hierarchy is not null)
             {
                 (_itemPeers ??= []).Add(new(peer));
@@ -68,20 +65,15 @@ public sealed partial class Surface : ListView
 
         internal void RefreshHierarchy()
         {
-            if (_itemPeers is null || Table?.Hierarchy is not { } hierarchy
-                || _hierarchyVersion == hierarchy.Version)
+            if (_itemPeers is null)
                 return;
-            _hierarchyVersion = hierarchy.Version;
-            int kept = 0;
-            for (int i = 0; i < _itemPeers.Count; i++)
+            for (int i = _itemPeers.Count - 1; i >= 0; i--)
             {
                 if (_itemPeers[i].TryGetTarget(out var peer))
-                {
-                    _itemPeers[kept++] = _itemPeers[i];
                     peer.RefreshHierarchy();
-                }
+                else
+                    _itemPeers.RemoveAt(i);
             }
-            _itemPeers.RemoveRange(kept, _itemPeers.Count - kept);
         }
 
         /// <summary>
@@ -117,13 +109,7 @@ public sealed partial class Surface : ListView
         }
 
         private void Raise(object item, AutomationEvents automationEvent) =>
-            PeerFor(item)?.RaiseAutomationEvent(automationEvent);
-
-        /// <summary>
-        /// The item peer for a row, asked for by the instance the list generated its container
-        /// for, which is the instance the list caches the peer under.
-        /// </summary>
-        private ItemAutomationPeer PeerFor(object item) => CreateItemAutomationPeer(Table?.ContainerItem(item) ?? item);
+            CreateItemAutomationPeer(item)?.RaiseAutomationEvent(automationEvent);
 
         protected override object? GetPatternCore(PatternInterface pattern) =>
             pattern == PatternInterface.Selection
@@ -143,7 +129,7 @@ public sealed partial class Surface : ListView
         IRawElementProviderSimple[] ISelectionProvider.GetSelection() =>
             Table is { } table
                 ? table
-                    .SelectedItems.Select(item => ProviderFromPeer(PeerFor(item)))
+                    .SelectedItems.Select(item => ProviderFromPeer(CreateItemAutomationPeer(item)))
                     .ToArray()
                 : [];
     }

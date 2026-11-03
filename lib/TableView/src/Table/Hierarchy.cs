@@ -9,6 +9,7 @@ namespace Syno.TableView;
 public sealed partial class Table
 {
     private Hierarchy? _hierarchy;
+    private Hierarchy.Snapshot? _preparedHierarchy;
 
     internal Hierarchy? Hierarchy => _hierarchy;
 
@@ -17,15 +18,63 @@ public sealed partial class Table
         if (_hierarchy is not null)
             throw ConfigurationError("A table has one hierarchy.");
         _hierarchy = hierarchy;
-        // A child list's notification is a change like any other: it enters the one pipeline.
-        hierarchy.CollectionChanged += (_, change) =>
+        _source.Hierarchy = hierarchy;
+        hierarchy.Changed += (_, _) =>
         {
             if (!DispatcherQueue.HasThreadAccess)
-            {
                 throw ConfigurationError("Hierarchy updates must use the table's UI thread.");
-            }
-            RebuildView(change);
+            RebuildView(_source.Snapshot);
         };
+    }
+
+    private IReadOnlyList<object> PrepareHierarchy(IReadOnlyList<object> roots, bool capture)
+    {
+        var hierarchy = _hierarchy!;
+        _preparedHierarchy =
+            capture || hierarchy.Captured is null
+                ? hierarchy.Capture(roots, _identity, _rowType)
+                : hierarchy.Captured;
+        if (!ReferenceEquals(_preparedHierarchy, hierarchy.Captured))
+        {
+            if (
+                hierarchy.Captured is null
+                || !_preparedHierarchy.MatchesStructure(hierarchy.Captured, _identity)
+            )
+                _orderSettledAt = DateTimeOffset.MinValue;
+        }
+        return hierarchy.Project(_preparedHierarchy, null, default);
+    }
+
+    private void AcceptOrder(IReadOnlyList<object> order)
+    {
+        _positions = new(_identity);
+        if (_hierarchy is null)
+        {
+            for (int i = 0; i < order.Count; i++)
+                _positions.Add(order[i], (i, 0));
+            return;
+        }
+        var snapshot = _preparedHierarchy ?? _hierarchy.Captured;
+        if (snapshot is null)
+            return;
+        if (!ReferenceEquals(_hierarchy.Captured, snapshot))
+            _hierarchy.Accept(snapshot);
+        Dictionary<object, int> counts = new(_identity);
+        int roots = 0;
+        bool expandable = false;
+        for (int i = 0; i < order.Count; i++)
+        {
+            object item = order[i];
+            var node = snapshot.Nodes[item];
+            expandable = expandable || _hierarchy.IsExpandable(node);
+            object? parent = node.Parent;
+            int position = parent is null ? ++roots : counts.GetValueOrDefault(parent) + 1;
+            if (parent is not null)
+                counts[parent] = position;
+            _positions.Add(item, (i, position));
+        }
+        _hierarchy.HasChildren = expandable;
+        _preparedHierarchy = null;
     }
 
     internal bool IsHierarchyColumn(Column column) => ReferenceEquals(_hierarchy?.Column, column);
@@ -45,17 +94,15 @@ public sealed partial class Table
         RefreshView();
     }
 
-    /// <param name="shown">Whether a row is shown; the view's rows when null.</param>
-    private object? CollapsedAncestor(object? item, Func<object, bool>? shown = null)
+    private object? CollapsedAncestor(object? item)
     {
-        if (item is null || _hierarchy is null)
+        if (item is null || _hierarchy is null || _positions is null)
             return null;
-        shown ??= IsInView;
-        if (shown(item) || _hierarchy.Find(item) is not { } node)
+        if (_positions.ContainsKey(item) || _hierarchy.Find(item) is not { } node)
             return null;
         while (node.Parent is { } parent && _hierarchy.Find(parent) is { } ancestor)
         {
-            if (shown(parent) && IsInteractive(parent))
+            if (_positions.ContainsKey(parent) && IsInteractive(parent))
                 return ancestor.Item;
             node = ancestor;
         }
@@ -84,13 +131,12 @@ public sealed partial class Table
             int firstIndex = int.MaxValue;
             foreach (object child in node.Children)
             {
-                int index = IndexInView(child);
-                if (index < 0)
+                if (_positions is null || !_positions.TryGetValue(child, out var position))
                     continue;
-                if (!IsInteractive(child) || index >= firstIndex)
+                if (!IsInteractive(child) || position.Index >= firstIndex)
                     continue;
                 target = child;
-                firstIndex = index;
+                firstIndex = position.Index;
             }
         }
         else
@@ -110,7 +156,7 @@ public sealed partial class Table
         return true;
     }
 
-    internal int HierarchyPosition(object item) => _hierarchy?.Find(item)?.Position ?? 0;
+    internal int HierarchyPosition(object item) => _positions?.GetValueOrDefault(item).Sibling ?? 0;
 
     internal int HierarchyCount(object item)
     {
@@ -118,13 +164,9 @@ public sealed partial class Table
             return 0;
         if (node.Parent is { } parent)
             return _hierarchy.Find(parent)!.Children.Count;
-        return _hierarchy.RootCount;
+        return _hierarchy.Captured!.Roots.Count;
     }
 
-    /// <summary>
-    /// The row that keeps focus when the focused row is hidden by a collapse: its nearest shown,
-    /// interactive ancestor in the accepted hierarchy, which the view does not show yet.
-    /// </summary>
     private (object? Item, FocusState State) CollapsingFocus()
     {
         if (_hierarchy is null || XamlRoot is null)
@@ -138,9 +180,9 @@ public sealed partial class Table
             if (
                 node is ListViewItem row
                 && IsInsideRows(row)
-                && RowItem(row) is { } item
+                && _surface?.ItemFromContainer(row) is { } item
             )
-                return CollapsedAncestor(item, _hierarchy.IsShown) is { } ancestor ? (ancestor, state) : default;
+                return CollapsedAncestor(item) is { } ancestor ? (ancestor, state) : default;
         }
         return default;
     }

@@ -1,3 +1,4 @@
+using System.Collections.Specialized;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text;
@@ -11,7 +12,6 @@ using Syno.TableView.Header;
 using Windows.Foundation;
 using Windows.Graphics.Imaging;
 using Windows.Storage.Streams;
-using Windows.Foundation.Collections;
 
 namespace Syno.TableViewSample.Jobs;
 
@@ -38,8 +38,9 @@ public sealed partial class JobsPage
     private ListView? _counted;
 
     /// <summary>
-    /// Gen 0 and gen 2 collections inside the last <see cref="Time"/>, to distinguish
-    /// collection pauses from the sort's own work when comparing outliers.
+    /// Gen 0 and gen 2 collections that happened inside the last <see cref="Time"/>. A reconcile
+    /// allocates a dictionary and three integer arrays the length of the view, so a collection
+    /// landing inside a timed sort is a real candidate for why one sort costs three times another.
     /// </summary>
     private string _collections = "0/0";
 
@@ -678,7 +679,7 @@ public sealed partial class JobsPage
     private async Task MeasureSettlingAsync()
     {
         ListView? list = FindDescendant<ListView>(Table);
-        if (list?.ItemsSource is not IObservableVector<object> feed)
+        if (list?.ItemsSource is not INotifyCollectionChanged feed)
         {
             W("  the list's source raises no notifications to count");
             return;
@@ -731,12 +732,12 @@ public sealed partial class JobsPage
             int reorders = 0;
             int sinceLast = 0;
             List<int> perReorder = new();
-            VectorChangedEventHandler<object> burst = (_, _) => sinceLast++;
+            NotifyCollectionChangedEventHandler burst = (_, _) => sinceLast++;
 
             _notifications = 0;
             int publishedBefore = Publishes;
             int seenPublishes = publishedBefore;
-            feed.VectorChanged += burst;
+            feed.CollectionChanged += burst;
             _feed!.Start();
             Stopwatch window = Stopwatch.StartNew();
 
@@ -760,7 +761,7 @@ public sealed partial class JobsPage
 
             double seconds = window.Elapsed.TotalSeconds;
             _feed.Stop();
-            feed.VectorChanged -= burst;
+            feed.CollectionChanged -= burst;
 
             int published = Publishes - publishedBefore;
             W(
@@ -829,17 +830,17 @@ public sealed partial class JobsPage
     private void AttachCounters()
     {
         _counted = FindDescendant<ListView>(Table);
-        if (_counted?.ItemsSource is IObservableVector<object> feed)
+        if (_counted?.ItemsSource is INotifyCollectionChanged feed)
         {
-            feed.VectorChanged += OnCountedNotification;
+            feed.CollectionChanged += OnCountedNotification;
         }
     }
 
     private void DetachCounters()
     {
-        if (_counted?.ItemsSource is IObservableVector<object> feed)
+        if (_counted?.ItemsSource is INotifyCollectionChanged feed)
         {
-            feed.VectorChanged -= OnCountedNotification;
+            feed.CollectionChanged -= OnCountedNotification;
         }
 
         _counted = null;
@@ -865,7 +866,7 @@ public sealed partial class JobsPage
         return (_realizations, mutation + layout);
     }
 
-    private void OnCountedNotification(IObservableVector<object> sender, IVectorChangedEventArgs e) =>
+    private void OnCountedNotification(object? sender, NotifyCollectionChangedEventArgs e) =>
         _notifications++;
 
     private void OnCountedRealization(ListViewBase sender, ContainerContentChangingEventArgs args)
@@ -1103,12 +1104,12 @@ public sealed partial class JobsPage
         }
     }
 
-    private async Task SavePngAsync(string path, UIElement? element = null)
+    private async Task SavePngAsync(string path)
     {
         try
         {
             RenderTargetBitmap rtb = new();
-            await rtb.RenderAsync(element ?? Table);
+            await rtb.RenderAsync(Table);
             IBuffer buffer = await rtb.GetPixelsAsync();
             byte[] px = new byte[buffer.Length];
             DataReader.FromBuffer(buffer).ReadBytes(px);

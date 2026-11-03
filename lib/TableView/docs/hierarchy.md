@@ -173,11 +173,9 @@ not consume an unrelated one-shot enumerable again. On reload, recapture the
 notifying collections at every depth and retain non-notifying snapshots.
 For a plain collection, or replacement of a child collection without a
 collection notification, the host publishes a replacement root enumerable
-through `ItemsSource`, which makes the table read every child list again and
-compare it with what it holds. Assigning the same
+through `ItemsSource`, causing a fresh hierarchy capture. Assigning the same
 dependency-property value is not a refresh mechanism. Prefer stable notifying
-collections for a live hierarchy. The Files model uses plain child lists and
-publishes new root arrays when their membership changes.
+collections for a live hierarchy, as the Files model already supplies.
 `RefreshView()` reuses captured membership and re-evaluates expansion,
 interactivity and sort values. These two update paths retain the existing
 distinction between a source snapshot and its private view.
@@ -309,9 +307,7 @@ The same active sort applies when a folder is opened. Header sort changes take
 effect through the existing sort operation. Value-only refreshes retain the
 existing `SortInterval` policy; expansion, collapse and structural changes take
 effect immediately because delaying membership would make an arrow lie about
-what it displays. A group that opens, or whose children change, sorts at once;
-the other groups keep their order until the interval ends. Settling can move
-sibling subtrees, never separate a parent
+what it displays. Settling can move sibling subtrees, never separate a parent
 from its descendants. A changed parent relationship is structural even when
 the complete set of identities is unchanged.
 

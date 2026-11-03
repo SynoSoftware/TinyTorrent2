@@ -40,6 +40,9 @@ public sealed partial class Strip : Control
     /// <summary>Half of the separator hit width, so the grab zone is centred on the boundary.</summary>
     private const double SeparatorReachDips = 4;
 
+    /// <summary>Horizontal movement below this is a click on the header, not a column drag.</summary>
+    private const double DragThresholdDips = 4;
+
     private static readonly InputCursor ResizeCursor = InputSystemCursor.Create(
         InputSystemCursorShape.SizeWestEast
     );
@@ -292,7 +295,7 @@ public sealed partial class Strip : Control
                 TrackResize(x);
                 break;
 
-            case HeaderGesture.Pressed when Math.Abs(x - _originX) >= DragDistance.Horizontal:
+            case HeaderGesture.Pressed when Math.Abs(x - _originX) >= DragThresholdDips:
                 if (!BeginColumnDrag(e.Pointer))
                 {
                     return;

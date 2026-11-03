@@ -52,12 +52,14 @@
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="body:Row">
-          <ContentPresenter
-            x:Name="Root"
-            Content="{TemplateBinding Content}"
-            ContentTemplate="{TemplateBinding ContentTemplate}"
-            HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-            VerticalAlignment="{TemplateBinding VerticalContentAlignment}">
+          <Grid x:Name="Root">
+            <ContentPresenter
+              Content="{TemplateBinding Content}"
+              ContentTemplate="{TemplateBinding ContentTemplate}"
+              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+            />
+
             <VisualStateManager.VisualStateGroups>
               <!-- Section 16: the moving packet stays identifiable, in the same
                                  treatment the platform gives a dragged list item and section 11
@@ -89,7 +91,7 @@
                 </VisualState>
               </VisualStateGroup>
             </VisualStateManager.VisualStateGroups>
-          </ContentPresenter>
+          </Grid>
         </ControlTemplate>
       </Setter.Value>
     </Setter>
@@ -360,9 +362,9 @@
 
                 <!--
                                     No ItemContainerTransitions here on purpose: the platform's
-                                    default set is what the rows animate with. Table/View temporarily
-                                    suppresses a disjoint visible-window replacement through layout,
-                                    because the mixed delete/add delay can otherwise leave it empty.
+                                    default set is what the rows animate with. Entrance, content,
+                                    add/delete and reorder are all wanted, and the view never
+                                    resets, so none of them replays over rows that did not change.
                                 -->
                 <ListView.ItemsPanel>
                   <ItemsPanelTemplate>

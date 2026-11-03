@@ -1,10 +1,7 @@
 using System.Collections.ObjectModel;
-using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Data;
-using Microsoft.UI.Xaml.Input;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using Windows.Foundation.Collections;
 
 namespace Syno.TableView.Tests;
 
@@ -15,36 +12,6 @@ namespace Syno.TableView.Tests;
 [TestClass]
 public class SelectionTests
 {
-    [TestMethod]
-    public Task NamedPolicyRefreshPrunesOnlyTheAffectedSelectionAndRetainsCurrentInstances() =>
-        TestHost.RunAsync(async () =>
-        {
-            List<string> inspected = new();
-            SelectionHarness h = await SelectionHarness.LoadAsync(40, table =>
-                table.Schema<Row>().CanInteract(row =>
-                {
-                    inspected.Add(row.Key);
-                    return row.Interactive;
-                }));
-            h.Table.Selection = new(h.Rows.Cast<object>(), h[7]);
-            h.Events = 0;
-            h[7].Interactive = false;
-            inspected.Clear();
-            h.Table.RefreshView(new object[] { new Row("k7"), h[7] });
-            Assert.IsTrue(inspected.Count > 0);
-            Assert.IsTrue(inspected.All(key => key == "k7"), "this unordered fixture needs no unrelated policy call");
-            Assert.AreEqual(39, h.Table.Selection.Items.Count);
-            Assert.AreEqual("k0", h.CurrentKey());
-            Assert.AreEqual(1, h.Events);
-
-            Row replacement = new("k10");
-            h.Rows[10] = replacement;
-            Assert.IsTrue(h.Table.Selection.Items.Any(item => ReferenceEquals(item, replacement)));
-            h.Rows.RemoveAt(0);
-            Assert.AreEqual("k1", h.CurrentKey());
-            CollectionAssert.AreEqual(h.Rows.Where(row => row.Interactive).Select(row => row.Key).ToArray(), h.SelectedKeys());
-        });
-
     [TestMethod]
     public Task PlainClickReplacesAndSetsTheAnchor() =>
         TestHost.RunAsync(async () =>
@@ -108,96 +75,6 @@ public class SelectionTests
             h.Click(h[3], ctrl: true);
             h.Click(h[5], ctrl: true, shift: true);
             CollectionAssert.AreEqual(new[] { "k0", "k3", "k4", "k5" }, h.SelectedKeys());
-        });
-
-    [TestMethod]
-    public Task ShiftRangeAfterCtrlClickReplacesTheEarlierSelection() =>
-        TestHost.RunAsync(async () =>
-        {
-            SelectionHarness h = await SelectionHarness.LoadAsync(6);
-            h.Click(h[0]);
-            h.Click(h[3], ctrl: true);
-            h.Click(h[2], shift: true);
-            CollectionAssert.AreEqual(new[] { "k2", "k3" }, h.SelectedKeys());
-            CollectionAssert.AreEqual(new[] { "k2", "k3" }, h.ContainerSelectedKeys());
-        });
-
-    [TestMethod]
-    public Task ShrinkingAnAdditiveRangeKeepsRowsFromEarlierGestures() =>
-        TestHost.RunAsync(async () =>
-        {
-            SelectionHarness h = await SelectionHarness.LoadAsync(6);
-            h.Click(h[0]);
-            h.Click(h[4], ctrl: true);
-            h.Click(h[2], ctrl: true);
-            h.Click(h[5], ctrl: true, shift: true);
-            h.Click(h[3], ctrl: true, shift: true);
-            CollectionAssert.AreEqual(new[] { "k0", "k2", "k3", "k4" }, h.SelectedKeys());
-            CollectionAssert.AreEqual(new[] { "k0", "k2", "k3", "k4" }, h.ContainerSelectedKeys());
-        });
-
-    [TestMethod]
-    public Task RefreshRestartsTheRangeWhenAnInteriorRowBecomesInteractive() =>
-        TestHost.RunAsync(async () =>
-        {
-            SelectionHarness h = await SelectionHarness.LoadAsync(4,
-                table => table.Schema<Row>().CanInteract(row => row.Interactive));
-            h[1].Interactive = false;
-            h.Click(h[0]);
-            h.Click(h[2], shift: true);
-            CollectionAssert.AreEqual(new[] { "k0", "k2" }, h.SelectedKeys());
-
-            h[1].Interactive = true;
-            h.Table.RefreshView();
-            h.MoveBy(1, extend: true);
-
-            CollectionAssert.AreEqual(new[] { "k0", "k1", "k2", "k3" }, h.SelectedKeys());
-            CollectionAssert.AreEqual(h.SelectedKeys(), h.ContainerSelectedKeys());
-        });
-
-    [TestMethod]
-    public Task ACompleteOrderAliasStopsDraggingWhenItsShownRowBecomesHeld() =>
-        TestHost.RunAsync(async () =>
-        {
-            Row[] order = { new("k0") { Interactive = false }, new("k1"), new("k2") };
-            SelectionHarness h = await SelectionHarness.LoadAsync(3, table =>
-                table.Schema<Row>().CanInteract(row => row.Interactive)
-                    .Order(table.Columns[0], row => row.Position, () => order));
-            h.Table.CanReorder = true;
-            Row shown = h[0];
-            h.Click(shown);
-            Proof.Call(h.Table, "PointAt", h[1]);
-            Proof.Call(h.Table, "BeginDrag", shown);
-            Assert.AreSame(order[0], Proof.Field<IReadOnlyList<object>>(h.Table, "_dragPacket")[0]);
-
-            h.Rows.RemoveAt(0);
-
-            Assert.IsTrue(IsHeld(h, shown));
-            Assert.IsNull(Proof.Field<Body.Wheel?>(h.Table, "_wheel"), "a held identity cannot keep its drag");
-        });
-
-    [TestMethod]
-    [DataRow(false)]
-    [DataRow(true)]
-    public Task ThrowingSelectionHandlerRunsAfterHeldRowVisualsRefresh(bool dragging) =>
-        TestHost.RunAsync(async () =>
-        {
-            SelectionHarness h = await SelectionHarness.LoadAsync(3, table => table.CanReorder = true, ordered: true);
-            h.Click(h[0]);
-            Proof.Call(h.Table, "PointAt", h[1]);
-            if (dragging)
-            {
-                Proof.Call(h.Table, "BeginDrag", h[0]);
-            }
-            int refreshes = 0;
-            typeof(Table).GetEvent("RowVisualsChanged", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
-                .GetAddMethod(nonPublic: true)!.Invoke(h.Table, new object[] { new EventHandler((_, _) => refreshes++) });
-            h.Table.SelectionChanged += (_, _) => throw new InvalidOperationException("Host handler failed");
-
-            Expect.Throws<InvalidOperationException>(() => h.Rows.RemoveAt(0));
-
-            Assert.AreEqual(1, refreshes);
-            Assert.AreEqual(0, h.Table.Selection.Items.Count);
         });
 
     // ------------------------------------------------------------------ the four mode limits
@@ -506,7 +383,6 @@ public class SelectionTests
                 "no row moved, and the arrival waits"
             );
             Assert.IsTrue(IsHeld(h, leaving));
-            Assert.IsTrue((bool)Proof.Call(h.Table, "ShowsHeld", leaving)!, "a row held under the pointer is dimmed");
             CollectionAssert.AreEqual(
                 new[] { "k1" },
                 h.SelectedKeys(),
@@ -613,37 +489,6 @@ public class SelectionTests
             );
         });
 
-    /// <summary>
-    /// A value refresh while the pointer rests on the rows of an unsorted table changes no row, so
-    /// the list receives no change and the focused row keeps keyboard focus.
-    /// </summary>
-    [TestMethod]
-    public Task AValueRefreshUnderThePointerLeavesTheViewAlone() =>
-        TestHost.RunAsync(async () =>
-        {
-            SelectionHarness h = await SelectionHarness.LoadAsync(6);
-            ListView list = h.Surface();
-            Control focused = (Control)list.ContainerFromItem(h[1]);
-            Assert.IsTrue(focused.Focus(FocusState.Keyboard), "a row took keyboard focus");
-            Proof.Call(h.Table, "PointAt", h[1]);
-            IObservableVector<object> items = (IObservableVector<object>)list.ItemsSource;
-            int changes = 0;
-            VectorChangedEventHandler<object> count = (_, _) => changes++;
-
-            items.VectorChanged += count;
-            try
-            {
-                h.Table.RefreshView(new object[] { h[1], h[2] });
-            }
-            finally
-            {
-                items.VectorChanged -= count;
-            }
-
-            Assert.AreEqual(0, changes, "the refresh added, removed or replaced no row");
-            Assert.AreSame(focused, FocusManager.GetFocusedElement(h.Table.XamlRoot), "the row kept focus");
-        });
-
     private static string[] ViewKeys(SelectionHarness h) =>
         h.Surface().Items.Cast<Row>().Select(row => row.Key).ToArray();
 
@@ -657,9 +502,6 @@ public class SelectionTests
         TestHost.RunAsync(async () =>
         {
             SelectionHarness h = await SelectionHarness.LoadAsync(6);
-            // Row 5 is below the viewport; its container exists once the list's cache has grown.
-            await TableHarness.WaitUntilAsync(() => h.Surface().ContainerFromItem(h[5]) is not null,
-                "row 5's container");
 
             h.Table.Selection = new(new object[] { h[1], h[3] });
             CollectionAssert.AreEqual(new[] { "k1", "k3" }, h.ContainerSelectedKeys());

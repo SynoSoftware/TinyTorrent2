@@ -13,8 +13,7 @@ public sealed partial class Table
 {
     private Order? _order;
     private Body.Wheel? _wheel;
-    private Order.Snapshot? _dragOrder;
-    private IdentitySet? _dragItems;
+    private Order.Entry[] _dragOrder = [];
     private Order.Entry[] _remaining = [];
     private IReadOnlyList<object> _dragPacket = Array.Empty<object>();
     private int? _gap;
@@ -22,9 +21,6 @@ public sealed partial class Table
     private XamlRoot? _dragRoot;
     private ScrollViewer? _dragScroller;
     private ScrollMode _scrollMode;
-    private Selection? _numberedSelection;
-    private long _numberedPublish = -1;
-    private bool _selectionNumbered;
 
     /// <summary>
     /// Requests a host-owned reorder after the gesture completes. TableView does not mutate
@@ -45,20 +41,9 @@ public sealed partial class Table
         if (_hierarchy is not null || order is null || !CanReorder || !IsInteractive(item))
             return false;
         var participates = _selection.IsSelected(item)
-            ? SelectionHasNumberedRow()
+            ? SelectedItems.Any(selected => IsInteractive(selected) && order.Contains(selected))
             : order.Contains(item);
-        return participates && order.HasMovableRows(_publishVersion);
-    }
-
-    private bool SelectionHasNumberedRow()
-    {
-        if (!ReferenceEquals(_numberedSelection, _publishedSelection) || _numberedPublish != _publishVersion)
-        {
-            _selectionNumbered = SelectedItems.Any(selected => IsInteractive(selected) && _order!.Contains(selected));
-            _numberedSelection = _publishedSelection;
-            _numberedPublish = _publishVersion;
-        }
-        return _selectionNumbered;
+        return participates && order.CanReorder;
     }
 
     private Point ToRoot(Point point) => _surface!.TransformToVisual(null).TransformPoint(point);
@@ -66,19 +51,18 @@ public sealed partial class Table
     private void BeginDrag(object item)
     {
         _dragOrder = _order!.Capture(_identity);
-        _dragItems ??= new(_identity);
-        _dragItems.Clear();
-        var selected = new IdentitySet(_identity);
-        selected.UnionWith(_selection.IsSelected(item) ? SelectedItems : new[] { item });
+        var selected = new HashSet<object>(
+            _selection.IsSelected(item) ? SelectedItems : new[] { item },
+            _identity
+        );
         var packet = new List<object>();
         var remaining = new List<Order.Entry>();
         double total = 0;
-        foreach (var entry in _dragOrder.Entries)
+        foreach (var entry in _dragOrder)
         {
-            if (selected.Contains(entry.Item) && ResolveItem(entry.Item) is { } current && IsInteractive(current))
+            if (selected.Contains(entry.Item) && IsInteractive(entry.Item))
             {
                 packet.Add(entry.Item);
-                _dragItems.Add(entry.Item);
                 total += entry.Position;
             }
             else
@@ -157,9 +141,7 @@ public sealed partial class Table
             _dragRoot.Changed -= OnRootChanged;
             _dragRoot = null;
         }
-        _dragOrder?.Map.Clear();
-        _dragOrder = null;
-        _dragItems?.Clear();
+        _dragOrder = [];
         _remaining = [];
         _dragPacket = Array.Empty<object>();
         _gap = null;
@@ -168,16 +150,26 @@ public sealed partial class Table
 
     private bool IsDragCurrent()
     {
-        if (!CanReorder || _order is null || _dragPacket.Any(item =>
-            ResolveItem(item) is not { } row || !IsInteractive(row)))
+        if (!CanReorder || _order is null || _dragPacket.Any(item => !IsInteractive(item)))
             return false;
-        return _order.Matches(_dragOrder!);
+        var current = _order.Capture(_identity);
+        if (current.Length != _dragOrder.Length)
+            return false;
+        for (int index = 0; index < current.Length; index++)
+        {
+            if (
+                !ReferenceEquals(current[index].Item, _dragOrder[index].Item)
+                || current[index].Position != _dragOrder[index].Position
+            )
+                return false;
+        }
+        return true;
     }
 
     private void ReconcileDrag()
     {
         if (_gesture == RowGesture.RowDrag && !IsDragCurrent())
-            ClearGesture();
+            CancelGesture();
     }
 
     private void CompleteDrag(Point point)
@@ -195,23 +187,21 @@ public sealed partial class Table
 
     private bool KeepsOrder(IReadOnlyList<object> packet, object? before)
     {
-        Order.Entry[] entries = _dragOrder!.Entries;
-        int start = Array.FindIndex(entries, entry => _identity.IsSame(entry.Item, packet[0]));
+        int start = Array.FindIndex(_dragOrder, entry => _identity.Equals(entry.Item, packet[0]));
         for (int index = 0; index < packet.Count; index++)
         {
             if (
-                start + index >= entries.Length
-                || !_identity.IsSame(entries[start + index].Item, packet[index])
+                start + index >= _dragOrder.Length
+                || !_identity.Equals(_dragOrder[start + index].Item, packet[index])
             )
                 return false;
         }
         int next = start + packet.Count;
-        return _identity.IsSame(next < entries.Length ? entries[next].Item : null, before);
+        return _identity.Equals(next < _dragOrder.Length ? _dragOrder[next].Item : null, before);
     }
 
     internal bool IsDragging(object? item) =>
-        _gesture == RowGesture.RowDrag && item is not null
-        && _dragItems!.Contains(item);
+        _gesture == RowGesture.RowDrag && item is not null && _dragPacket.Contains(item, _identity);
 
     private void SetDestination(int? gap)
     {

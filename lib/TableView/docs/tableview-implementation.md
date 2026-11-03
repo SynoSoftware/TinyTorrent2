@@ -18,16 +18,13 @@ for this documentation review.
 | Effective layout | [EffectiveLayout](../src/EffectiveLayout.cs). |
 | Realized items reported to the host | `RealizedItems` in [Table/View](../src/Table/View.cs), read from the row panel's cache range; the panel's `CacheLength` in [Generic.xaml](../src/Themes/Generic.xaml) sets the margin. |
 | Shared header and row arrangement | [CellsPanel](../src/CellsPanel.cs). |
-| Row drag/held visuals and cursor | [Body.Row](../src/Body/Row.cs) keeps its state owner and uses a presenter as its template root. |
-| Hierarchy cell indentation and disclosure | [Body.HierarchyCell](../src/Body/HierarchyCell.cs) creates its expander on the first expandable row and retains leaf indentation and slot geometry. |
+| Hierarchy cell indentation and disclosure | [Body.HierarchyCell](../src/Body/HierarchyCell.cs), created only for the hierarchy column, with a `SubtleButton` as its expander. |
 | Selection, current item, anchor, and logical focus | [SelectionState](../src/SelectionState.cs). |
 | Row pointer arbitration | [Table input](../src/Table/Input.cs). |
 | Held rows and the pointed row's frozen place | [Table holding](../src/Table/Holding.cs), applied by the view order in [Table sorting](../src/Table/Sorting.cs). |
 | Marquee geometry | [Body.Marquee](../src/Body/Marquee.cs), driven by the arbiter. |
 | Numbered order and drag wheel | [Order](../src/Order.cs) captures host positions; [Table/Reordering](../src/Table/Reordering.cs) owns the gesture snapshot and request; [Body.Wheel](../src/Body/Wheel.xaml.cs) owns popup rendering and gap geometry. |
 | Header gestures and generated menu | [Header.Strip](../src/Header/Strip.cs) and [Header.Menu](../src/Header/Menu.cs). |
-| Configured row/header drag distances | [DragDistance](../src/DragDistance.cs) reads the Windows axis metrics at 96 DPI for shared DIP distances. |
-| Column-move motion | [Motion](../src/Motion.cs) reuses one compositor/easing and one animation per distance within each move. |
 | Generic control text | [Strings](../src/Strings.cs), reading the embedded [en.json](../src/Resources/en.json). |
 
 The source capture and displayed sequence serve different roles: one receives
@@ -41,87 +38,6 @@ the existing `Sort`, `Layout` and `LayoutChanged` interfaces. The same owner
 bypasses settling and local pointer-order pinning for external sorts. Hierarchy
 projection, membership holds and selection reconciliation remain shared.
 
-`Column` holds the typed sort definition installed by `Schema.SortKey`.
-`SortedOrder` in the sorting owner keeps the active flat order: each shown row
-with the key it took its place by, its collation key and its source index, and
-a position index over the order. A candidate is accepted only after comparisons
-succeed. Its stable index sort also sorts hierarchy siblings. One placement
-routine serves every change: each kept row stays, changes in place, leaves or
-moves; the rows that move and the rows that arrive are sorted and binary-placed
-among the rows that stay, which are copied between those places in native
-blocks. A whole change reads every key; a change that names its rows reads only
-theirs, unless a withheld key is due. While moves are not allowed a row keeps
-its kept key, and the order records that a settle is needed; that record clears
-only in a pass that read every kept key. A key without equality (a mutable key
-object or a comparer that follows the current culture) always counts as
-changed, and before such a change places rows, the kept rows that stay must
-prove their order with the actual comparer; if they cannot, every row is
-placed again by its current key, which counts as a settle. A held row that comes
-back while the hold keeps the change back is placed without that proof, and the
-order records that a settle is needed. Entry revisions defer source-index
-shifts for stable ties. When that list reaches roughly the square root of the
-source length, preparation rebases every entry through the candidate position
-index and one source-order walk. The shown order after pointer pinning stays
-outside this workspace. The sorting owner makes the one settle decision, for
-flat tables and hierarchies, and is the only code that records when rows last
-took their sorted places. A publish that may not move rows is not a settle, and
-for a flat table it passes `waits` to the hold, which keeps membership as it does
-under the pointer, so the change waits for the settle. A held row shows the held
-look while the pointer holds the rows. The interval starts when
-the frame callback finds that a settle since the last frame changed the view
-version; until then every publish is a settle, so the changes of one turn land in
-one update. A change the hold applies at once inside the interval, such as one
-named by `Release`, counts as a settle for this, though it moves no row. The
-interval and the `Release` lifetime are measured with `Stopwatch` timestamps, so
-a change of the system clock does not move them. A zero interval runs no settle
-timer: every publish settles, and a pending settle that the pointer kept runs
-when the pointer leaves the rows. Changing the interval while a settle is
-pending schedules that settle again. Header choices carry committed-sort and
-detach revisions and run after the shared rendering frame wait. The `Sort`
-setter, a queued header sort and layout restoration commit through one routine,
-`CommitSort`, the same synchronous commit boundary.
-Eligible header sorts capture detached immutable key groups on UI; a worker
-takes the text keys' collation keys, orders them with the same stable routine,
-and returns through that one frame owner. The queued request holds the generic
-job and an optional hierarchy-owned captured parent/group association. Completion checks the exact
-request and current revisions, then rebases current instances, keys and base
-ties before the ordinary publish accepts it. Capture and commit remain UI work;
-no host callback or identity map enters the worker payload. The captured
-dispatcher posts completion; refusal releases only that exact queued request.
-The pipeline prepares the current source capture before an explicit sort and
-passes that preparation into the same publish for acceptance. Failed
-comparisons leave the source, criterion and active workspace unaccepted.
-
-`Table/View.cs` also owns the disjoint visible-window transition exception.
-It compares final rows in the current panel's visible index interval with old
-positions through the view's position index. With no overlap and a nonempty final source,
-it saves the surface's local transition value once and assigns a separate empty
-collection through that layout episode. The shared post-Rendering callback
-restores its original value source only when the view version is current;
-detach and retemplate restore the captured surface. A shrinking source clips
-the old interval conservatively; this does not predict a later native viewport
-clamp. The reconciliation script and notifications are unchanged.
-
-A view differs from the rows the last frame laid out, not from the view before
-each publish, because a turn can show one list in several publishes, as a Clear
-and then one Add per row does. The first publish after a frame records how many
-rows that frame laid out and at which offset, when the list is scrolled. Each
-publish then records the rows its difference names as leaving and arriving, so
-the work follows the changes and no copy of the view is kept; a reorder that
-names no rows has its rows compared with the view, which its reconcile walks
-anyway. After its reconcile, a publish that leaves rows and none of the laid-out
-ones sets the offset to 0 with `ChangeView`, and a later publish in the same
-turn that brings a laid-out row back sets the recorded offset again. Nothing
-lays the rows out between those publishes, so the frame lays the list out once,
-at the offset the last publish left. A view laid out empty is no list to differ
-from. `ScrollTo` makes its offset the host's for the view as it stands, so no
-later publish before the frame moves it. While the view does not show the source yet,
-as when a hold delays it, `ScrollTo` also records the source assignment and the
-offset. Publishes of that assignment keep the host's offset, including
-notifications during the hold, until the first publish that shows the source's
-rows. That publish sets the offset again only when the held rows had clamped it
-to their own extent, so a scroll the person made meanwhile stays.
-
 The [hierarchy extension](hierarchy.md) keeps host expansion state outside the
 control. Captured child membership feeds the same private view, sorting cadence
 and selection reconciliation as flat rows. `Table/Hierarchy.cs` integrates
@@ -129,24 +45,6 @@ navigation and collapse focus; `Body.Surface` adds hierarchy automation to its
 existing item peers. Flat schemas do not allocate this source state or cell
 chrome. The sample's Project plan page supplies a non-torrent hierarchy with a
 large collapsed branch.
-
-`Hierarchy.ChildSource` keeps each child enumerable's items, referring parents
-and subscription identity. `Hierarchy.Prepare` reads again only the lists a
-change can have altered: every list for a new root assignment, the roots for a
-root change, the notified list for a child notification, and any list it cannot
-trust. It compares each with its accepted items by identity. Rows that leave
-take their subtrees, rows that arrive bring theirs, and a new instance of a row
-replaces its node in place; a same-identity instance changes no sibling group.
-The result stays in the preparation until `Accept`, so a failed publish leaves
-the accepted hierarchy as it was, with nothing to undo. Every child
-notification enters the one pipeline as a change, collapsed or not. A change
-whose lists all belong to collapsed or hidden parents keeps the view, states no
-difference, and updates only the expanders of those parents that are shown. The
-projection keeps each expanded parent's sibling order from the previous
-publish, as stored derived state, and sorts again only a group that is newly
-shown or whose list changed which rows it holds; every group when moves are
-allowed for a whole change or a pending settle; and the named rows' groups when
-moves are allowed. The same groups supply worker capture.
 
 ## Rendering and interaction
 
@@ -156,129 +54,36 @@ vertical axis, and nothing scrolls sideways. Wrapping that list in another
 vertical scroller or calculating column positions in a second place breaks those
 responsibilities.
 
-The identity module creates typed maps and sets, so value-type keys remain
-unboxed. Every lookup reads the row's key through the schema's selector, which
-the contract keeps pure, stable and inexpensive; no map keeps keys of its own.
-`Table.InstallIdentity` is the one place an identity is installed.
-The source classifies each change once. A whole change is an assignment,
-`RefreshView()`, a Reset or Move, a Replace that puts a row's identity at
-another of its places, or any change without a validated predecessor. Any other
-change names its rows: those that leave, those that arrive with their source index, and those to read again, which a same-identity
-Replace and `RefreshView(changed)` are. It accepts the change only after
-ordering succeeds. Its subscription identity rejects stale callbacks even when
-their nullable sender carries no usable identity. Each later step applies one
-rule to the rows a change affects and adds work only for its own state: the
-hold reads every row for a whole change, rows named by `Release`, or a view that
-did not show the whole source; a held row that returns while the rows are
-pointed at keeps the held row's index until they are released; the sorted
-order reads every key when a withheld change is due. The only list of edits
-one step hands another is the order's stated difference, below.
-Shared PositionIndex bounds stale positions by each sequence's insertion/removal
-counts, rebuilding after about the square root of its length; an index that
-still names its row's exact place answers at once. Sibling positions belong to
-the hierarchy's nodes.
-While the run script's native vector callbacks observe an intermediate view,
-its lookup checks the old and new positions and scans by identity only when
-neither is current.
-The hierarchy owns visible membership for sorting; source capture versions decide
-when child snapshots need replacing, without a dependency from source to hierarchy.
-
 The selection model reconciles identity across changing source instances.
 Containers reflect that model rather than supplying a second domain selection.
 Table publishes one immutable selection after the complete update. Comparing it
 with the previous publication decides whether to notify, including replacement
-instances and changes in visual order. The model keeps selected view indices in
-ascending order, recording the view version they describe. Toggle and continued
-range gestures update their changed edges; reconciliation resolves selected and
-tracked identities through the view index. An unchanged packet is retained, and
-a current-only change reuses its immutable items.
-The table commits selection and refreshes hierarchy and row presentation before
-delivering automation and host selection events.
+instances and changes in visual order.
 Pointer, keyboard, menu, and automation paths must reach the same operations.
 Marquee and drag visuals do not decide which gesture is active.
-The marquee reports coverage additions/removals and bounds; the selection model
-captures its Ctrl baseline once and updates changed coverage or Shift-range
-edges. A source publish rebases coverage against the new view.
-Order captures provider entries and their identity map once per row drag. Its
-one validation pass checks subsequent provider entries without sorting another
-snapshot; packet membership uses the gesture's captured identity set. Provider
-references remain in the packet while current rows supply interaction policy.
 
 The private view sends native observable-vector insert, remove and replacement
 events. It avoids projecting .NET collection-event arguments and their item
 lists for every membership change, a measured cost on large Library searches.
-The view stores rows in a gap buffer. The order's producer names each version
-of its own order and, when it knows, states how it differs from the version
-before: the natural order from the notification's indices, the kept sorted
-order from its removed, placed and replaced rows, so a row that moved leaves
-its old place and arrives at its new one. A sorted difference says whether it
-names rows the settle moved, because a pinned row that stands at its place
-must keep its container, so the view then compares itself with the order
-instead. A `RefreshView` of the
-accepted capture states no difference. While rows are held without a local
-sort, membership waits, so the natural order is the view itself with its new
-instances, stated against the view. The view takes a stated difference only
-when it shows the version the difference starts from, or when the difference
-starts from the view itself. A pointed row that already stands at its place
-under a sort keeps the stated difference, unless the difference names moves.
-When the same rows are pinned as at the last publish and the sorted difference
-names no leaving, arriving or moved row, the order is the view with the
-difference's new instances, stated against the view.
-Otherwise, and for an order whose pinned rows had to be put in place, held rows
-under a sort, a resort that placed every row again, a hierarchy or a new sort,
-it compares itself with the order in one walk of references, looking up a view
-index only where the two differ. When the difference names every changed row,
-by no more rows than the list has realized containers, it removes the leaving
-rows highest first and inserts the arriving rows lowest first, updating its
-position index with each; a named moved row is removed and inserted again. A
-walk that finds shared rows in another order names no row, and that change, or
-any larger one, runs the
-realized-run remove/quiet-place/insert script, with count events after the last
-surviving run. In both, a new instance of a row that stays replaces the old one
-without an event, and the table sets the realized container's content to it,
-so the row element rebinds in place. The list fills a container it prepared
-from the instance it recorded then, after the preparation event or, for a
-scrolling placeholder, in a later pass; each container's update callback puts
-a newer instance back after that fill. The list's own container record keeps
-the instance it generated the container for, so the table finds a container's
-row, and a row's container, by view position (`RowItem`, `RowContainer`), and
-an item automation peer names the generated instance (`ContainerItem`) so the
-list finds its container; the peer reads the current row by identity. Native callbacks see true
-intermediate rows and counts. A failure part-way indexes the view again as it
-stands, so the next publish compares with the view as it really is.
+The reconciliation algorithm and the positions it announces remain unchanged.
 
 The private view also implements `ISelectionInfo`, answering from the table's
 selection model. The list reads a row's selected state from it when it builds
 the row's container and after every range call, and keeps no selection of its
-own, so a reconcile leaves nothing to re-apply. A container re-reads its selected
-state only when its visual state re-runs: when its stored selected value changes,
-on pointer and focus changes, and when it loads. Container preparation, range
-calls and the list's own gestures write that stored value, so a commit that adds
-or removes selected rows refreshes the containers once. A range call also moves
-the list's `SelectedIndex` to the first selected row, and a move from -1 makes the
-list focus and scroll to that row while the rows hold keyboard focus. The refresh therefore sets `SelectedIndex`
-itself when it differs, which refreshes the containers without that move, and
-makes a range call otherwise, so the list never scrolls to a selected row on the
-table's behalf.
+own, so a reconcile leaves nothing to re-apply and the list never scrolls to a
+selected row on the table's behalf.
 
 The current arbiter has `None`, `Pressed`, `Marquee`, and `RowDrag` phases. Earlier
 notes describing a `Committed` phase and calling the marquee during a row drag
 are stale; inspect the current transitions before proposing a fix. Deferred click
 decisions preserve the press/release contract, not an accidental processing delay.
-Page navigation uses realized row bounds. A deferred request listens for the
-scroller's final ViewChanged and runs after the next Rendering boundary, guarded
-by both request identity and stage. Public ScrollIntoView can produce no scroll
-event: its native panel command invalidates measure, so a reveal also arms that
-same frame once and continues only if its row then intersects the viewport.
-Otherwise it ends. Changed view/current, new input, unload and retemplate detach
-the request's handler.
 
 Keep reconciliation bounded by the containers the list actually holds. The
-implementation uses remove/insert notifications rather than `Move`, and never
-clears the displayed collection, because both make the whole list flash; the
-contract's owner ruling in section 5.3 says what a change to this mechanism
-must prove. Collection count and container identity must remain coherent
-through intermediate updates.
+implementation uses remove/insert notifications rather than `Move`, and avoids
+clearing the displayed collection. Earlier work observed whole-list flashing on
+`ObservableCollection.Move`; preserve this constraint. If new evidence differs,
+report it before changing the mechanism. Collection count and container identity
+must remain coherent through intermediate updates.
 
 ## Defaults and platform behavior
 
@@ -338,10 +143,8 @@ subscribe while open. The standalone default remains English. The product's
 captures switch language live with the table present, but they check retained
 input and focus, not that headers and menus show the new text.
 
-`Body.Source` suspends collection subscriptions on unload, reads notifying
-sources again on reload, and reads an indexable source in place instead of
-copying it. A hierarchy keeps its own copy of the roots, because each capture
-compares its structure with the previous one. Explicit detached setters reconcile
+`Body.Source` suspends collection subscriptions on unload, recaptures notifying
+sources on reload and retains plain snapshots. Explicit detached setters reconcile
 logical selection and ordering without touching containers. A snapshot is
 validated before it is accepted; the table does not undo an assignment when
 validation or a host handler throws. Source lifetime still needs a focused runtime check.

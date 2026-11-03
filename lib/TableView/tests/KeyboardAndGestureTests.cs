@@ -1,9 +1,7 @@
-using System.Reflection;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Markup;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using Windows.System;
 
 namespace Syno.TableView.Tests;
 
@@ -20,8 +18,7 @@ public class KeyboardAndGestureTests
                       xmlns:s="using:Syno.TableView">
             <StackPanel Orientation="Horizontal">
                 <TextBlock Text="passive" />
-                <Button Content="go" IsTabStop="False" />
-                <ProgressBar Width="20" Value="50" />
+                <Button Content="go" />
                 <TextBox Width="40" />
                 <Border s:Table.IsRowGestureEnabled="False" Width="20" Height="10">
                     <Rectangle Width="10" Height="10" />
@@ -175,73 +172,28 @@ public class KeyboardAndGestureTests
         });
 
     [TestMethod]
-    public Task PageDownUsesTheFullyVisibleBoundaryWithUnequalRowHeights() =>
+    public Task PageDownMovesByAViewportOfRows() =>
         TestHost.RunAsync(async () =>
         {
             SelectionHarness h = await SelectionHarness.LoadAsync(60);
 
-            ListView surface = h.Surface();
-            ((ListViewItem)surface.ContainerFromIndex(0)).Height = 96;
-            h.Table.UpdateLayout();
-            ScrollViewer scroller = SelectionHarness.Descendant<ScrollViewer>(surface)!;
-            int boundary = -1;
-            for (int index = 0; index < h.Rows.Count; index++)
-            {
-                if (surface.ContainerFromIndex(index) is not FrameworkElement row)
-                {
-                    continue;
-                }
-                Windows.Foundation.Rect bounds = row.TransformToVisual(surface)
-                    .TransformBounds(new(0, 0, row.ActualWidth, row.ActualHeight));
-                if (bounds.Top >= 0 && bounds.Bottom <= scroller.ViewportHeight)
-                {
-                    boundary = index;
-                }
-            }
-            Assert.IsTrue(boundary > 0, "the fixture needs multiple fully visible rows");
+            // The PageDown arm of the key handler is MoveCurrentBy(RowsPerPage()), the same step as here.
             h.MoveBy(1, extend: false);
-            Assert.IsTrue(h.Page(1));
-            Assert.AreSame(h[boundary], h.Table.Selection.Current);
+            Assert.IsTrue(h.MoveBy(h.RowsPerPage(), extend: false));
+            h.Table.UpdateLayout();
 
-            Assert.IsTrue(h.Page(1, extend: true));
-            await TableHarness.WaitUntilAsync(
-                () => h.Table.Selection.Current is Row current && current.Rank > boundary,
-                "Page Down to finish scrolling and select its next boundary");
-            Assert.IsTrue(h.Table.Selection.Items.Contains(h[boundary]));
-            Assert.IsTrue(h.Table.Selection.Items.Contains(h.Table.Selection.Current!));
-        });
+            int current = h.Rows.IndexOf(
+                h.Table.Selection.Current as Row
+                    ?? throw new AssertFailedException("Nothing is current.")
+            );
+            ItemsStackPanel rows = (ItemsStackPanel)h.Surface().ItemsPanelRoot;
 
-    [TestMethod]
-    public Task ScrollReadinessAfterRenderingWaitsForItsOwnFrame() =>
-        TestHost.RunAsync(async () =>
-        {
-            SelectionHarness h = await SelectionHarness.LoadAsync(60);
-            h.Click(h[0]);
-            Type type = typeof(Table).GetNestedType("PageNavigation", BindingFlags.NonPublic)!;
-            PropertyInfo stage = type.GetProperty("Stage", BindingFlags.Instance | BindingFlags.NonPublic)!;
-            object view = Proof.Field<object>(h.Table, "_view");
-            object version = view.GetType().GetProperty("Version", BindingFlags.Instance | BindingFlags.NonPublic)!
-                .GetValue(view)!;
-            object request = Activator.CreateInstance(type,
-                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null,
-                new object[] { h[0], 1, VirtualKeyModifiers.None, version,
-                    SelectionHarness.Descendant<ScrollViewer>(h.Surface())! }, null)!;
-            Proof.SetField(h.Table, "_pendingPage", request);
-            stage.SetValue(request, Enum.Parse(stage.PropertyType, "ReadyToScroll"));
-            Proof.Call(h.Table, "OnLaidOut", null, new object());
-            stage.SetValue(request, Enum.Parse(stage.PropertyType, "Ready"));
-
-            TaskCompletionSource drained = new(TaskCreationOptions.RunContinuationsAsynchronously);
-            Assert.IsTrue(TestHost.Dispatcher.TryEnqueue(() => drained.TrySetResult()));
-            await drained.Task.WaitAsync(TimeSpan.FromSeconds(5));
-            Assert.AreSame(h[0], h.Table.Selection.Current,
-                "the old frame cannot consume readiness that arrived after Rendering");
-            Assert.AreSame(request, Proof.Field<object>(h.Table, "_pendingPage"));
-
-            Proof.Call(h.Table, "OnLaidOut", null, new object());
-            await TableHarness.WaitUntilAsync(() => !ReferenceEquals(h[0], h.Table.Selection.Current),
-                "the ready request's own frame to navigate");
-            Assert.IsNull(Proof.Field<object?>(h.Table, "_pendingPage"));
+            Assert.IsTrue(current > 1, $"One page step left the current row at k{current}.");
+            Assert.IsTrue(
+                current >= rows.FirstVisibleIndex && current <= rows.LastVisibleIndex,
+                $"The current row k{current} is outside the visible rows "
+                    + $"{rows.FirstVisibleIndex}..{rows.LastVisibleIndex}."
+            );
         });
 
     [TestMethod]
@@ -351,8 +303,6 @@ public class KeyboardAndGestureTests
 
             TextBlock passive = SelectionHarness.Descendant<TextBlock>(container)!;
             Assert.AreEqual("Row", h.HitTest(passive));
-            ProgressBar progress = SelectionHarness.Descendant<ProgressBar>(container)!;
-            Assert.AreEqual("Row", h.HitTest(progress));
 
             Button button = SelectionHarness.Descendant<Button>(container)!;
             Assert.AreEqual("Suppressed", h.HitTest(button));

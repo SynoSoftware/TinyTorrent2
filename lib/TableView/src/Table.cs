@@ -21,8 +21,7 @@ public sealed partial class Table : Control
     private const string PlaceholderPartName = "PART_Placeholder";
     private const string MarqueeOverlayPartName = "PART_MarqueeOverlay";
 
-    private IIdentity _identity = Identity<object, object>.Reference();
-    private IIdentity? _schemaIdentity;
+    private readonly ItemIdentity _identity = new();
 
     private readonly Body.Source _source;
     private readonly Body.View _view;
@@ -38,23 +37,14 @@ public sealed partial class Table : Control
     private ColumnLayout? _pendingLayout;
     private double? _pendingScroll;
 
-    /// <summary>
-    /// The source assignment the host's last <see cref="ScrollTo"/> followed while the view did
-    /// not show it yet, and that offset, until a publish shows that assignment's rows. A different
-    /// list shown for it keeps the host's offset instead of starting at the top, also when a hold
-    /// delays it until the pointer leaves and the list changes meanwhile (specification 5.3). The
-    /// offset is kept only when the rows shown then clamped it, so the publish applies it again
-    /// without undoing a scroll the person made since.
-    /// </summary>
-    private (long Assignment, double? Offset)? _scrolledAssignment;
-
     public Table()
     {
         DefaultStyleKey = typeof(Table);
-        _view = new Body.View(IsRowSelected, () => _selection!.SelectedIndices);
-        _selection = new SelectionState(_view) { CanInteract = IsInteractive };
+        _selection = new SelectionState(_identity, IndexInView) { CanInteract = IsInteractive };
+        _view = new Body.View(_identity, _selection.IsSelected);
+        _held = new HashSet<object>(_identity);
+        _released = new Dictionary<object, bool>(_identity);
         _source = new Body.Source(DispatcherQueue);
-        InstallIdentity(_identity);
         _source.SnapshotChanged += OnSnapshotChanged;
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
@@ -67,7 +57,6 @@ public sealed partial class Table : Control
     /// stopping it does not recall a tick the dispatcher has already picked up.
     /// </summary>
     private bool _detached;
-    private long _lifetimeRevision;
 
     /// <summary>
     /// Raised once after each completed effective sort, column move, resize, fit, visibility, or
@@ -209,18 +198,10 @@ public sealed partial class Table : Control
         AttachInput();
 
         UpdatePlaceholder();
-
-        // DetachTemplateParts stopped the timer of a pending settle; the rebuild schedules it again.
-        if (_schemaCaptured && !_detached && _settlePending)
-        {
-            RebuildView();
-        }
     }
 
     private void DetachTemplateParts()
     {
-        CancelPage();
-        RestoreTransitions();
         DetachInput();
 
         LayoutUpdated -= OnFillLayout;
@@ -251,17 +232,8 @@ public sealed partial class Table : Control
             return;
         }
 
-        RestoreTransitions();
         CancelPreparation();
-        CancelPage();
-        if (!_detached)
-        {
-            _lifetimeRevision++;
-        }
         _detached = true;
-        Microsoft.UI.Xaml.Media.CompositionTarget.Rendering -= OnLaidOut;
-        _frameRequested = false;
-        _laidOut = null;
         QueueRealized();
         LayoutUpdated -= OnFillLayout;
         StopWatchingVisibility();
@@ -272,7 +244,6 @@ public sealed partial class Table : Control
         _pointedRow = null;
         _menuRow = null;
         _source.Suspend();
-        _hierarchy?.Suspend();
         if (_surface is not null)
             _surface.ItemsSource = null;
         foreach (Column column in Columns)
@@ -288,13 +259,8 @@ public sealed partial class Table : Control
     {
         WatchVisibility();
         QueueFill();
-        _hierarchy?.Resume();
         _source.Resume();
         _detached = false;
-        if (_queuedSort is not null || _layoutPending)
-        {
-            RequestFrame();
-        }
         if (_surface is not null)
             _surface.ItemsSource = _view;
         foreach (Column column in Columns)
@@ -347,7 +313,9 @@ public sealed partial class Table : Control
     /// A stable key per item, from <see cref="Schema{TRow}"/>. Without one identity is
     /// object reference.
     /// </summary>
-    internal void SetIdentity(IIdentity identity) => _schemaIdentity = identity;
+    internal Func<object, object>? ItemKey { get; set; }
+
+    internal IEqualityComparer<object> KeyComparer { get; set; } = EqualityComparer<object>.Default;
 
     /// <summary>
     /// Which items the user may act on, from <see cref="Schema{TRow}"/>. Null means all of them.
@@ -357,26 +325,6 @@ public sealed partial class Table : Control
     /// interactivity and the cursor that shows it there.
     /// </summary>
     internal Func<object, bool>? CanInteract { get; set; }
-
-    /// <summary>
-    /// The one place a row identity is installed, so every map keyed by row uses the same one:
-    /// object reference from construction, and the schema's key once the schema is captured. A
-    /// selection or <see cref="Release"/> made before then is held by reference until then.
-    /// </summary>
-    private void InstallIdentity(IIdentity identity)
-    {
-        _identity = identity;
-        _view.SetIdentity(identity);
-        _selection.SetIdentity(identity);
-        _source.SetIdentity(identity);
-        _held = new(identity);
-        _released = identity.CreateMap<(bool Present, long Named)>();
-        _candidateHeld = new(identity);
-        _returned = new(identity);
-        _pinned = new(identity);
-        _lastPinned = new(identity);
-        _hierarchy?.SetIdentity(identity);
-    }
 
     /// <summary>
     /// Capture the setup-only schema exactly once, validate it, and resolve the first effective
@@ -396,7 +344,9 @@ public sealed partial class Table : Control
         Columns.CollectionChanged += OnColumnsMutatedAfterCapture;
 
         // Install identity before resolving the pending initial selection.
-        InstallIdentity(_schemaIdentity ?? _identity);
+        _identity.KeySelector = ItemKey;
+        _identity.KeyComparer = KeyComparer;
+        _selection.RehashIdentity();
 
         EffectiveLayout.SetOrder(_baselineOrder);
         if (_hierarchy is not null)
@@ -416,8 +366,8 @@ public sealed partial class Table : Control
         {
             if (_pendingSort is Sort requested && !Enum.IsDefined(requested.Direction))
                 throw ConfigurationError("The initial sort direction is invalid.");
-            EffectiveColumn? column = _pendingSort is Sort sort ? RequireSortable(sort.Column) : null;
-            CommitSort(column, _pendingSort?.Direction ?? SortDirection.Ascending, prepare: false);
+            _sortColumn = _pendingSort is Sort sort ? RequireSortable(sort.Column) : null;
+            _sortDirection = _pendingSort?.Direction ?? SortDirection.Ascending;
             _pendingSort = null;
             _hasPendingSort = false;
         }
@@ -601,19 +551,20 @@ public sealed partial class Table : Control
             !ReferenceEquals(sortColumn, _sortColumn)
             || (sortColumn is not null && direction != _sortDirection);
         // Initial capture resolves any later pending Sort before evaluating host comparisons.
-        PreparedSort? prepared = moved ? CommitSort(sortColumn, direction, prepare: rebuild) : null;
+        IReadOnlyList<object>? order =
+            rebuild && moved ? SortedSnapshot(_source.Snapshot, sortColumn, direction) : null;
 
         foreach (EffectiveColumn column in ordered)
         {
             column.VisibilityOverride = visibility[column];
         }
+        _sortColumn = sortColumn;
+        _sortDirection = direction;
 
         // SetOrder republishes the layout, which re-applies each header cell's sort indicator.
         EffectiveLayout.SetOrder(ordered);
-        if (prepared is not null)
-        {
-            RebuildView(sort: prepared);
-        }
+        if (order is not null)
+            RebuildView(preparedOrder: order);
     }
 
     // ---------------------------------------------------------------- source
@@ -639,8 +590,8 @@ public sealed partial class Table : Control
 
     private void SetItemsSource(IEnumerable? source) => _source.Set(source);
 
-    private void OnSnapshotChanged(object? sender, Change change) =>
-        RebuildView(change: change);
+    private void OnSnapshotChanged(object? sender, IReadOnlyList<object> snapshot) =>
+        RebuildView(snapshot);
 
     // -------------------------------------------------------- scroll offset
 
@@ -664,13 +615,7 @@ public sealed partial class Table : Control
         }
 
         _pendingScroll = verticalOffset;
-        // The offset is the host's for the view as it stands, so the next frame keeps it.
-        _laidOut = null;
         ApplyPendingScroll();
-        double? clamped = InnerScrollViewer() is { } scroller && verticalOffset <= scroller.ScrollableHeight
-            ? null
-            : verticalOffset;
-        _scrolledAssignment = ShowsSource ? null : (_source.Current.AssignmentVersion, clamped);
     }
 
     private void ApplyPendingScroll()

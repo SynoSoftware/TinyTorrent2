@@ -37,34 +37,14 @@ hierarchical table, the visible roots and descendants in that order.
 
 **Private view**: the table's display projection over the base sequence.
 
-**Publish**: one application of the source, sort and interaction policy to the
-private view and selection.
-
-**Identity map**: items addressed by their identity, retaining the current item
-for each identity.
-
-**Position index**: the relation between an item's identity and its index in an
-ordered sequence. It does not describe the host's numbered order.
-
 **Natural order**: the host's order before header sorting, applied within each
 sibling group in a hierarchical table.
 
-**Sorted order**: the active column's stable order and the keys that last proved
-it sorted, before held and pointed rows keep their displayed positions.
-
-**Queued sort**: a header choice whose glyph is shown before its sorting work
-runs after a frame, including any detached ordering work until its UI commit.
-It is distinct from the committed sort.
-
-**Change**: one whole-source update, collection notification, or named-values
-refresh entering the table's publish workflow.
-
 **Row surface**: the scrollable area of the table that presents its rows.
 
-**Held row**: a row the private view keeps showing after it left the source:
-while the pointer is over the rows or a row's context menu is open, when it is
-dimmed and non-interactive, and under a sort until the settle. A change the
-host names with `Release` applies at once instead.
+**Held row**: a row the private view keeps showing, dimmed and non-interactive,
+after it left the source, while the pointer is over the rows or a row's context
+menu is open. A change the person caused is never held.
 
 ### Hierarchy
 

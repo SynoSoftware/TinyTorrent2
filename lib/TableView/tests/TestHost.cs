@@ -37,7 +37,6 @@ public static class TestHost
 
     /// <summary>A live panel in the window. Adding a control here makes <c>Loaded</c> fire.</summary>
     public static Grid RootPanel => _window!.RootPanel;
-    internal static Window Window => _window!;
 
     [AssemblyInitialize]
     public static void Start(TestContext context)
@@ -74,19 +73,7 @@ public static class TestHost
     internal static void OnAppLaunched()
     {
         _window = new UnitTestAppWindow();
-        if (Environment.GetEnvironmentVariable("TABLEVIEW_TESTS_OFFSCREEN") == "1")
-        {
-            // Renders beyond every monitor, outside the taskbar, and never takes focus, so a
-            // run does not interrupt the person at the machine. Real-input tests need the
-            // foreground and cannot run this way.
-            _window.AppWindow.IsShownInSwitchers = false;
-            _window.AppWindow.Move(new Windows.Graphics.PointInt32(-32000, -32000));
-            _window.AppWindow.Show(false);
-        }
-        else
-        {
-            _window.Activate();
-        }
+        _window.Activate();
         Dispatcher = _window.DispatcherQueue;
         Ready.TrySetResult(true);
     }
