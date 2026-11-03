@@ -66,7 +66,7 @@ public class SwitchPaintTests
     /// screen takes keyboard focus first.
     /// </summary>
     private sealed record Scenario(string Name, int[] Before, int[] After, Func<Context, Task> Change,
-        int Selected = -1, bool Sorted = false, int RecordMs = 1000, int ScrollTo = 0, int IntervalMs = 3000);
+        int Selected = -1, bool Sorted = false, int RecordMs = 1000, int ScrollTo = 0);
 
     private sealed class Context(Table table, ObservableCollection<PaintRow> source, Dictionary<int, PaintRow> rows)
     {
@@ -75,16 +75,6 @@ public class SwitchPaintTests
         internal Dictionary<int, PaintRow> Rows => rows;
 
         internal int IndexOf(int id) => source.Select(row => row.Id).ToList().IndexOf(id);
-
-        /// <summary>When <see cref="Click"/> ran, on the recording's clock, and the row it clicked.</summary>
-        internal (double At, int Id)? Clicked { get; private set; }
-
-        /// <summary>A plain click on <paramref name="id"/>'s row, as the table handles one.</summary>
-        internal void Click(int id)
-        {
-            Clicked = (Now(), id);
-            Proof.Call(table, "SelectItem", rows[id], false, false);
-        }
 
         /// <summary>Remove what <paramref name="after"/> lacks, highest first, then insert what it adds, lowest first.</summary>
         internal void Notify(int[] after)
@@ -151,7 +141,7 @@ public class SwitchPaintTests
         }, Selected: 103, ScrollTo: 100),
     };
 
-    /// <summary>Changes that reorder rows on screen, which slide; see <see cref="ReorderPaint"/>.</summary>
+    /// <summary>Changes that reorder rows on screen; see <see cref="ReorderPaint"/>.</summary>
     private static readonly Scenario[] Reorders =
     {
         // A host Move of an on-screen row.
@@ -159,25 +149,6 @@ public class SwitchPaintTests
         {
             c.Source.Move(2, 8);
             return Task.CompletedTask;
-        }),
-        // A second reorder 100 ms into the first one's slides.
-        new("notify-move-twice", Ids(0, 200), MoveIds(MoveIds(Ids(0, 200), 2, 8), 10, 3), async c =>
-        {
-            c.Source.Move(2, 8);
-            await Task.Delay(100);
-            c.Source.Move(10, 3);
-        }),
-        // A click on a staying row while the rows slide, and the same click with nothing moving.
-        new("click", Ids(0, 200), Ids(0, 200), c =>
-        {
-            c.Click(12);
-            return Task.CompletedTask;
-        }),
-        new("notify-move-click", Ids(0, 200), MoveIds(Ids(0, 200), 2, 8), async c =>
-        {
-            c.Source.Move(2, 8);
-            await Task.Delay(60);
-            c.Click(12);
         }),
         // Under a live sort, inside the settle interval: one row leaves and one arrives at once,
         // and two rows whose values swapped keep their places until the settle, then trade them.
@@ -189,55 +160,6 @@ public class SwitchPaintTests
             c.Table.RefreshView();
             return Task.CompletedTask;
         }, Sorted: true, RecordMs: 4500),
-        // Under a live sort without an interval, one publish where a row leaves, one arrives, and
-        // two rows trade places.
-        new("sorted-reorder-mixed", Ids(0, 200), Ids(0, 200, id => id != 5).Append(1000).ToArray(), c =>
-        {
-            (c.Rows[2].Rank, c.Rows[9].Rank) = (c.Rows[9].Rank, c.Rows[2].Rank);
-            return Assign(c, Ids(0, 200, id => id != 5).Append(1000).ToArray());
-        }, Sorted: true, IntervalMs: 0),
-    };
-
-    /// <summary>Publishes that overlap a reorder or the list's own transition; see <see cref="OverlapPaint"/>.</summary>
-    private static readonly Scenario[] Overlaps =
-    {
-        // In the same frame as a reorder, a new instance of the moved row.
-        new("notify-move-new-instance", Ids(0, 200), MoveIds(Ids(0, 200), 2, 8), c =>
-        {
-            c.Source.Move(2, 8);
-            PaintRow old = c.Rows[2];
-            c.Source[8] = new PaintRow(2) { Rank = old.Rank, Brush = old.Brush, Top = old.Top, Bottom = old.Bottom };
-            return Task.CompletedTask;
-        }),
-        // A row arrives at the top 40 ms into a reorder's slides, after the reorder's frame.
-        new("notify-move-then-add", Ids(0, 200), new[] { 1000 }.Concat(MoveIds(Ids(0, 200), 2, 8)).ToArray(), async c =>
-        {
-            c.Source.Move(2, 8);
-            await Task.Delay(40);
-            c.Source.Insert(0, c.Rows[1000]);
-        }),
-        // The same add after the list's one-second window for fast changes, when its own
-        // transitions run again.
-        new("notify-move-then-add-late", Ids(0, 200), new[] { 1000 }.Concat(MoveIds(Ids(0, 200), 2, 8)).ToArray(), async c =>
-        {
-            c.Source.Move(2, 8);
-            await Task.Delay(1200);
-            c.Source.Insert(0, c.Rows[1000]);
-        }, RecordMs: 2200),
-        // A reorder of the rows the list's own transition is moving, 100 ms after a row arrived above them.
-        new("notify-add-then-move", Ids(0, 200), MoveIds(new[] { 1000 }.Concat(Ids(0, 200)).ToArray(), 3, 9), async c =>
-        {
-            c.Source.Insert(0, c.Rows[1000]);
-            await Task.Delay(100);
-            c.Source.Move(3, 9);
-        }),
-        // A second reorder 40 ms into the first one's slides, where the slide's curve is steep.
-        new("notify-move-twice-early", Ids(0, 200), MoveIds(MoveIds(Ids(0, 200), 2, 8), 10, 3), async c =>
-        {
-            c.Source.Move(2, 8);
-            await Task.Delay(40);
-            c.Source.Move(10, 3);
-        }),
     };
 
     private static int[] MoveIds(int[] ids, int from, int to)
@@ -274,11 +196,6 @@ public class SwitchPaintTests
     [TestMethod]
     [TestCategory("Measurement")]
     public Task ReorderPaint() => RecordAsync(Reorders);
-
-    /// <summary>The scenarios in <see cref="Overlaps"/>; a test of its own to stay inside the host's time limit.</summary>
-    [TestMethod]
-    [TestCategory("Measurement")]
-    public Task OverlapPaint() => RecordAsync(Overlaps);
 
     private Task RecordAsync(Scenario[] scenarios) =>
         TestHost.RunAsync(async () =>
@@ -347,7 +264,7 @@ public class SwitchPaintTests
         await loaded.Task.WaitAsync(TimeSpan.FromSeconds(10));
         if (scenario.Sorted)
         {
-            table.SortInterval = TimeSpan.FromMilliseconds(scenario.IntervalMs);
+            table.SortInterval = TimeSpan.FromSeconds(3);
             table.Sort = new(role);
         }
         // Past the entrance animation and the list's one-second fast-mutation window.
@@ -365,8 +282,7 @@ public class SwitchPaintTests
             .First(border => border.DataContext is PaintRow row && ReferenceEquals(border.Background, row.Brush));
         Rect cellBounds = cell.TransformToVisual(null).TransformBounds(new Rect(0, 0, cell.ActualWidth, cell.ActualHeight));
         // Down the middle of every row's role cell, from the first row to the foot of the list.
-        recorder.SetColumn(cellBounds.X + cellBounds.Width / 2, cellBounds.Right + 5, cellBounds.Y,
-            bounds.Bottom - cellBounds.Y, scale);
+        recorder.SetColumn(cellBounds.X + cellBounds.Width / 2, cellBounds.Y, bounds.Bottom - cellBounds.Y, scale);
         int rowPixels = (int)Math.Round(first.ActualHeight * scale);
         ScrollViewer scroller = Descendants(surface).OfType<ScrollViewer>().First();
         if (scenario.ScrollTo > 0)
@@ -422,7 +338,6 @@ public class SwitchPaintTests
 
         return $"{scenario.Name}: {Describe(pre, shots, rowPixels)}; "
             + $"{DescribeRows(before, after, removed, pre, shots)}; {DescribeMoves(pre, shots)}; "
-            + (context.Clicked is { } clicked ? DescribeClick(clicked.At - start, clicked.Id, shots) + "; " : "")
             + $"{state}; notices "
             + (notices.Count == 0 ? "none" : string.Join(", ", notices.Select(n => $"{n.Key} {n.Value}")));
     }
@@ -546,17 +461,6 @@ public class SwitchPaintTests
         return moves.Count == 0 ? "moved rows 0" : $"moved rows {moves.Count}: {string.Join("; ", moves)}";
     }
 
-    /// <summary>
-    /// How long after the click the first frame that paints the clicked row selected arrived. The
-    /// recorder keeps only frames that change, so a count of frames would not count vsyncs.
-    /// </summary>
-    private static string DescribeClick(double at, int id, List<Shot> shots)
-    {
-        Shot? painted = shots.FirstOrDefault(shot => shot.At >= at && shot.Selected(id));
-        return painted is null ? $"click at +{at:0}ms, row {id} never painted selected"
-            : $"click at +{at:0}ms, row {id} painted selected {painted.At - at:0}ms after the click";
-    }
-
     private static double Now() => System.Diagnostics.Stopwatch.GetTimestamp() * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
 
     private static IEnumerable<DependencyObject> Descendants(DependencyObject node)
@@ -656,12 +560,7 @@ public class SwitchPaintTests
             && Rows.All(row => Math.Abs(row.Value - other.Rows.GetValueOrDefault(row.Key)) <= 2)
             && ArrivingOrder.Take(3).SequenceEqual(other.ArrivingOrder.Take(3));
 
-        /// <summary>Pixels of each top row whose fill beside the role cell is not the background: selected.</summary>
-        public Dictionary<int, int> Filled = new();
-
-        public bool Selected(int id) => Rows.TryGetValue(id, out int count) && Filled.GetValueOrDefault(id) * 2 > count;
-
-        public static Shot Classify(byte[] column, byte[] beside, double at)
+        public static Shot Classify(byte[] column, double at)
         {
             Shot shot = new() { At = at };
             for (int i = 0; i + 3 < column.Length; i += 4)
@@ -686,10 +585,6 @@ public class SwitchPaintTests
                     if (bottom)
                     {
                         shot.Bottoms[shade] = (y, shot.Bottoms.GetValueOrDefault(shade).Count + 1);
-                    }
-                    if (beside[i] < 250 || beside[i + 1] < 250 || beside[i + 2] < 250)
-                    {
-                        shot.Filled[shade] = shot.Filled.GetValueOrDefault(shade) + 1;
                     }
                 }
                 else if (Near(LeavingColor))
@@ -755,9 +650,6 @@ public class SwitchPaintTests
         private readonly object _gate = new();
         private Windows.Graphics.SizeInt32 _size;
         private (int X, int Y, int Height)? _column;
-
-        /// <summary>The column's x beside the role cell, where only the row's own fill shows.</summary>
-        private int _besideX;
         private (byte[] Pixels, int Width, int Height)? _latest;
         private Shot? _pre;
         private List<Shot>? _shots;
@@ -790,11 +682,8 @@ public class SwitchPaintTests
             _session.StartCapture();
         }
 
-        /// <summary>
-        /// A column at window DIP <paramref name="x"/>, from <paramref name="top"/> down
-        /// <paramref name="height"/>, and the same column at <paramref name="beside"/>.
-        /// </summary>
-        public void SetColumn(double x, double beside, double top, double height, double scale)
+        /// <summary>A column at window DIP <paramref name="x"/>, from <paramref name="top"/> down <paramref name="height"/>.</summary>
+        public void SetColumn(double x, double top, double height, double scale)
         {
             // Capture frames include the window's border; the client area starts at this offset.
             POINT client = default;
@@ -804,7 +693,6 @@ public class SwitchPaintTests
             {
                 _column = (client.X - frame.Left + (int)Math.Round(x * scale),
                     client.Y - frame.Top + (int)Math.Round(top * scale), (int)Math.Round(height * scale));
-                _besideX = client.X - frame.Left + (int)Math.Round(beside * scale);
             }
         }
 
@@ -817,7 +705,7 @@ public class SwitchPaintTests
             lock (_gate)
             {
                 _pre = _latest is { } latest && _column is { } column
-                    ? Classify(latest.Pixels, latest.Width, latest.Height, column, 0) : null;
+                    ? Shot.Classify(Strip(latest.Pixels, latest.Width, latest.Height, column), 0) : null;
                 _shots = new();
             }
         }
@@ -865,7 +753,7 @@ public class SwitchPaintTests
                     _latest = (pixels, width, height);
                     if (_shots is not null && _column is { } column)
                     {
-                        _shots.Add(Classify(pixels, width, height, column, at));
+                        _shots.Add(Shot.Classify(Strip(pixels, width, height, column), at));
                     }
                 }
             }
@@ -874,9 +762,6 @@ public class SwitchPaintTests
                 Error ??= error.Message;
             }
         }
-
-        private Shot Classify(byte[] pixels, int width, int height, (int X, int Y, int Height) column, double at) =>
-            Shot.Classify(Strip(pixels, width, height, column), Strip(pixels, width, height, column with { X = _besideX }), at);
 
         private static byte[] Strip(byte[] pixels, int width, int height, (int X, int Y, int Height) column)
         {

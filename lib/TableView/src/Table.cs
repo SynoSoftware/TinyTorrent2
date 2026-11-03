@@ -254,7 +254,6 @@ public sealed partial class Table : Control
         Microsoft.UI.Xaml.Media.CompositionTarget.Rendering -= OnLaidOut;
         _frameRequested = false;
         _laidOut = null;
-        _slides.Clear();
         QueueRealized();
         LayoutUpdated -= OnFillLayout;
         StopWatchingVisibility();

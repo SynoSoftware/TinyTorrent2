@@ -195,7 +195,6 @@ public sealed partial class Table
     private void OnRowsRealizing(ListViewBase sender, ContainerContentChangingEventArgs args)
     {
         QueueRealized();
-        StopSlide(args.ItemContainer);
         if (!args.InRecycleQueue)
         {
             // One delegate for every container, so each registration reuses one native wrapper.
@@ -441,7 +440,7 @@ public sealed partial class Table
 
             IReadOnlyList<int> realized = RealizedIndices();
             object[]? reordered = FollowLaidOutRows(order, difference, hostScrolled);
-            PrepareTransitions(order, TryCaptureSlides(order, difference, realized));
+            PrepareTransitions(order);
             _view.Reconcile(order, difference, origin.Version, realized, pinned);
             RebindRows();
             if (reordered is not null)
@@ -574,19 +573,11 @@ public sealed partial class Table
         }
     }
 
-    /// <param name="sliding">
-    /// The table slides the reordered rows itself; see <see cref="TryCaptureSlides"/>.
-    /// </param>
-    private void PrepareTransitions(IReadOnlyList<object> order, bool sliding)
+    private void PrepareTransitions(IReadOnlyList<object> order)
     {
         if (_suppressedTransitions is not null || !IsLoaded || order.Count == 0
             || _surface?.ItemsPanelRoot is not ItemsStackPanel panel)
         {
-            return;
-        }
-        if (sliding)
-        {
-            SuppressTransitions(_surface);
             return;
         }
         int first = Math.Max(0, panel.FirstVisibleIndex);
@@ -606,20 +597,13 @@ public sealed partial class Table
 
         // Mixed native transitions remove the old rows before their 600 ms arrival delay.
         // Keep a disjoint visible replacement immediate until its layout tick has ended.
-        SuppressTransitions(_surface);
-    }
-
-    private void SuppressTransitions(Body.Surface surface)
-    {
-        _suppressedTransitions = new(surface, surface.ReadLocalValue(ItemsControl.ItemContainerTransitionsProperty));
-        surface.ItemContainerTransitions = new TransitionCollection();
+        _suppressedTransitions = new(_surface, _surface.ReadLocalValue(ItemsControl.ItemContainerTransitionsProperty));
+        _surface.ItemContainerTransitions = new TransitionCollection();
         RequestFrame();
     }
 
     private void RestoreTransitions()
     {
-        // The rows a capture recorded slide only inside the episode that captured them.
-        _slideFrom = null;
         if (_suppressedTransitions is not { } saved)
         {
             return;
@@ -641,7 +625,6 @@ public sealed partial class Table
         _frameRequested = false;
         // The rows this frame lays out are the ones the next publish compares with.
         _laidOut = null;
-        EndSuppression();
         QueuedSort? queued = _queuedSort;
         PageNavigation? page = _pendingPage is { Stage: not PageStage.Scrolling } ready
             ? ready : null;
@@ -662,6 +645,7 @@ public sealed partial class Table
                 if (version == _view.Version)
                 {
                     _layoutPending = false;
+                    RestoreTransitions();
                     Reveal();
                     if (page is not null && ReferenceEquals(_pendingPage, page) && page.Stage == stage)
                     {
@@ -686,29 +670,8 @@ public sealed partial class Table
         }))
         {
             CancelPage();
+            RestoreTransitions();
         }
-    }
-
-    /// <summary>
-    /// End the layout episode whose transitions <see cref="SuppressTransitions"/> turned off: lay
-    /// out what it changed, slide the rows it reordered, and give the list its transitions back,
-    /// so a later publish animates as the list does.
-    /// </summary>
-    /// <remarks>
-    /// The list decides a fade-out when it is told of a removal and a fade-in or move when it
-    /// arranges, so the episode runs from the first notification to the end of this layout.
-    /// </remarks>
-    private void EndSuppression()
-    {
-        if (_suppressedTransitions is null)
-        {
-            return;
-        }
-        // The frame has normally laid the episode out already; a view change made inside the
-        // frame is laid out here, so the containers stand where they are going.
-        UpdateLayout();
-        StartSlides();
-        RestoreTransitions();
     }
 
     /// <summary>The whole order a new sort gives, prepared but not accepted.</summary>

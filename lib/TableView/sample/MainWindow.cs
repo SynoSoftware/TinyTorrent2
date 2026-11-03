@@ -1,6 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Syno.TableViewSample.Board;
+using Syno.TableViewSample.Compare;
 using Syno.TableViewSample.Jobs;
 using Syno.TableViewSample.Planning;
 
@@ -36,6 +37,7 @@ public sealed partial class MainWindow : Window
             {
                 1 => typeof(DeparturesPage),
                 2 => typeof(PlanPage),
+                3 => typeof(ComparePage),
                 _ => typeof(JobsPage),
             }
         );

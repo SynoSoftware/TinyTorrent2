@@ -30,6 +30,7 @@
       <SelectorBarItem Text="Render queue" IsSelected="True" />
       <SelectorBarItem Text="Departures" />
       <SelectorBarItem Text="Project plan" />
+      <SelectorBarItem Text="Compare" />
     </SelectorBar>
 
     <Frame x:Name="RootFrame" Grid.Row="2" />

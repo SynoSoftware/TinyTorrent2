@@ -14,12 +14,7 @@
 > The work is done in three batches, in this order:
 > 1. Stages 5 and 6 as one pipeline. This batch also fixes the defects above and
 >    the review findings in the same code (A1, A3, A4, A7, A8, A9, A10, A11, F4).
->    Then the table slides reordered rows itself. WinUI 2.6.4 has no move
->    for an `ItemsSource`: only the list's own drag-reorder plays its reorder
->    transition (`ListViewBase::ReorderItemsTo`). So a row that a sort settle
->    or a host `Move` reorders is removed and inserted, and it fades out and in.
->    The table turns off that fade for a reinserted row and moves the row from
->    its old place to its new one, as `Motion.SlideFrom` does for columns.
+>    A reorder uses the list's own WinUI transitions.
 > 2. Sorting follow-ups:
 >    - A5: remove the measurement-only state from production sorting.
 >    - A6: make the sort commit sequence one routine.
@@ -39,9 +34,8 @@
 > - Nothing is added to the public API. Each batch leaves fewer internal seams
 >   between the pipeline types than it found.
 > - Each batch shows, in thread cycles before and after, that it is faster.
-> - A row that is on screen before and after a change moves to its new place.
->   This includes a row that a sort or a host `Move` reorders. It never fades
->   out and in, and it never flashes.
+> - A row that is on screen before and after a change never flashes. A reorder
+>   uses the list's own transitions.
 >
 > F3 is settled by the owner's goal: when there is nothing to animate, the rows
 > swap at once. F5 stays as it is.
@@ -58,28 +52,18 @@
 > sets the offset to 0 in the same publish. This is implemented (contract 5.3)
 and waits for review.
 >
-> **Step 1b status:** implemented and reviewed in two rounds
-> (`step-1b-review-r1.md`, `r2.md`). Reordered on-screen rows slide (Sliding.cs).
-> No staying row fades in any paint scenario. Each staying row's largest
-> single-frame step is its slide's own first step. Two jumps remain:
-> - An Add or Remove within 1 s of a reorder jumps. WinUI's fast-mutation rule
->   causes this, and the old code jumps the same way.
-> - A reorder during the list's own Add or Remove transition (M3) starts from
->   the layout slot. In the test it jumps about 4–8 px; the size depends on the
->   timing. The owner decides between keeping it and the options in
->   `step-1b-review-r2.md`.
->
-> A reorder publish costs more in frame cycles: +12% to +56% in five pairs
-> against 51ece76. That cost comes from the composition calls for each sliding
-> row and from WinUI recycling containers inside the publish. The owner decides
-> whether to accept it.
+> **Step 1b status:** removed by the owner. The table slid reordered rows
+> itself, and turned the list's own transitions off for each reorder. In the
+> sample, sorted by Throughput with the live feed, those rows switched in place,
+> while the list's own transitions move rows to their places and fade new rows
+> in. A reorder uses the list's own transitions again, as at 51ece76.
 >
 > **Final review status:** the final review
 > (V:/temp/TableViewPerformance/final-review) found medium defects in the reset
 > (a notification during a hold dropped the host's `ScrollTo`; an emptied and
-> refilled list reset to the top), a slide after a switch in the same frame,
-> and two costs: a pointed row under a sort made each publish O(n), and a child
-> notification under a collapsed parent ran a whole publish. The fixes were
+> refilled list reset to the top) and two costs: a pointed row under a sort made
+> each publish O(n), and a child notification under a collapsed parent ran a
+> whole publish. The fixes were
 > committed as 673c022. Its delta review (`final-review/delta-1.md`) found four
 > paths the fixes left open: a pointed row displaced by a settle, a `ScrollTo`
 > on a shown list, a row-by-row refill, and a sorted Replace that crosses rows.
