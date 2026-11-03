@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.Diagnostics;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -171,6 +172,91 @@ public class PublishCostTests
                     await MeasureValuesAsync(size, stringKey, interval);
                 }
             }
+        });
+
+    /// <summary>
+    /// A first sort from the header: by names in the culture's order or by numbers, which a worker
+    /// may order, or by numbers whose comparer the host wrote, which the UI thread runs. It spans
+    /// frames, so this records the UI thread's cycles from the click until the sorted rows are laid
+    /// out, and the most it spent between two frames.
+    /// </summary>
+    [TestMethod]
+    [TestCategory("Measurement")]
+    [DataRow(1000, "names")]
+    [DataRow(1000, "numbers")]
+    [DataRow(1000, "comparer")]
+    [DataRow(2000, "names")]
+    [DataRow(2000, "numbers")]
+    [DataRow(2000, "comparer")]
+    [DataRow(100000, "names")]
+    [DataRow(100000, "numbers")]
+    [DataRow(100000, "comparer")]
+    public Task FirstSortCycles(int size, string key) =>
+        TestHost.RunAsync(async () =>
+        {
+            Table table = await LoadSortableAsync(size);
+            Column column = table.Columns[key switch { "names" => 0, "numbers" => 1, _ => 2 }];
+            Action<Column> activate = typeof(Table).GetMethod("ActivateSort",
+                    BindingFlags.Instance | BindingFlags.NonPublic, null, new[] { typeof(Column) }, null)!
+                .CreateDelegate<Action<Column>>(table);
+            // Within TestHost's 30-second limit at the largest size.
+            int reps = size > 10000 ? 4 : 12;
+            List<double> totals = new();
+            List<double> largest = new();
+            List<double> longest = new();
+            bool worker = false;
+            for (int rep = -1; rep < reps; rep++)
+            {
+                table.Sort = null;
+                await NextFrameAsync();
+                await NextFrameAsync();
+                List<(ulong Cycles, long Ticks)> marks = new() { (Cycles(), Stopwatch.GetTimestamp()) };
+                EventHandler<object> mark = (_, _) => marks.Add((Cycles(), Stopwatch.GetTimestamp()));
+                Microsoft.UI.Xaml.Media.CompositionTarget.Rendering += mark;
+                activate(column);
+                await NextFrameAsync();
+                worker = Proof.Field<object?>(table, "_queuedSort") is { } queued
+                    && Proof.Field<object?>(queued, "<Work>k__BackingField") is not null;
+                while (table.Sort is null)
+                {
+                    await NextFrameAsync();
+                }
+                await NextFrameAsync();
+                Microsoft.UI.Xaml.Media.CompositionTarget.Rendering -= mark;
+                marks.Add((Cycles(), Stopwatch.GetTimestamp()));
+                if (rep >= 0)
+                {
+                    totals.Add((marks[^1].Cycles - marks[0].Cycles) / 1e6);
+                    largest.Add(marks.Zip(marks.Skip(1), (a, b) => (b.Cycles - a.Cycles) / 1e6).Max());
+                    longest.Add(marks.Zip(marks.Skip(1), (a, b) => Stopwatch.GetElapsedTime(a.Ticks, b.Ticks).TotalMilliseconds).Max());
+                }
+            }
+            TestContext.WriteLine($"first sort {size} {key} ({(worker ? "worker" : "UI thread")}): "
+                + $"total Mc {Spread(totals)}; largest frame Mc {Spread(largest)}; longest frame ms {Spread(longest)}");
+            Unload(table);
+        });
+
+    /// <summary>A sort assigned in code, and a layout restore that carries a sort.</summary>
+    [TestMethod]
+    [TestCategory("Measurement")]
+    [DataRow(1000)]
+    [DataRow(2000)]
+    public Task SortAssignmentCycles(int size) =>
+        TestHost.RunAsync(async () =>
+        {
+            Table table = await LoadSortableAsync(size);
+            Column names = table.Columns[0];
+            await MeasureAsync(table, $"sort {size} names",
+                new Step("Sort", () => table.Sort = new(names)),
+                new Step("Sort none", () => table.Sort = null));
+            table.Sort = new(names);
+            ColumnLayout sorted = table.Layout;
+            table.Sort = null;
+            ColumnLayout natural = table.Layout;
+            await MeasureAsync(table, $"layout {size} names",
+                new Step("with sort", () => table.Layout = sorted),
+                new Step("without sort", () => table.Layout = natural));
+            Unload(table);
         });
 
     /// <summary>
@@ -472,6 +558,29 @@ public class PublishCostTests
             table.SortInterval = interval ?? TimeSpan.Zero;
             table.Sort = new(a);
         }
+        await Task.Delay(500);
+        return table;
+    }
+
+    /// <summary>
+    /// Rows in source order, with a column of names in the culture's order, one of numbers, and
+    /// one of numbers by the host's own comparer.
+    /// </summary>
+    private static async Task<Table> LoadSortableAsync(int size)
+    {
+        Column names = TestData.Column("names", 200);
+        Column numbers = TestData.Column("numbers", 200);
+        Column comparer = TestData.Column("comparer", 200);
+        Table table = TestData.Table(names, numbers, comparer);
+        table.Schema<CostRow>().Key(row => row.Key)
+            .SortKey(names, row => row.Name, StringComparer.CurrentCulture)
+            .SortKey(numbers, row => row.Rank)
+            .SortKey(comparer, row => row.Rank, Comparer<int>.Create((left, right) => left.CompareTo(right)));
+        table.Width = 700;
+        table.Height = 600;
+        table.SortInterval = TimeSpan.Zero;
+        table.ItemsSource = Enumerable.Range(0, size).Select(key => new CostRow(key, Rank(key))).ToList();
+        await TableHarness.LoadAsync(table);
         await Task.Delay(500);
         return table;
     }

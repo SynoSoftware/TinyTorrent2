@@ -24,8 +24,16 @@
 >    - A5: remove the measurement-only state from production sorting.
 >    - A6: make the sort commit sequence one routine.
 >    - F6: move the first-sort UI work off the UI thread.
->    - F7: measure and reduce the memory that each row keeps.
-> 3. One measurement home (A2) and Build.ps1 (A12).
+>    - F7: measure the memory that each row keeps. Measured with
+>      `RetainedMemoryTests.BytesPerRow`: the table's own fields keep 583 bytes
+>      per row sorted by names and 545 by numbers, about 1.2 MB at 2,000 rows.
+>      The owner's lead keeps this trade: most of it is buffers a publish needs,
+>      kept between publishes, and releasing the placement buffers cost 15–17%
+>      more cycles on a sorted Move at 100,000 rows.
+> 3. One measurement home (A2) and Build.ps1 (A12). Both are done: the sample's
+>    `Performance.cs` and its sections are deleted, so `PublishCostTests`,
+>    `SelectionCostTests` and `RetainedMemoryTests` are the measurement home.
+>    The history below names those sections as they were.
 >
 > Rules for every batch:
 > - Nothing is added to the public API. Each batch leaves fewer internal seams
@@ -45,8 +53,10 @@
 > code except four small ones (+0–4%: a switch to a different list at 20 and
 > 200 rows, an unchanged refresh at 20 rows, and Replace at 1,000 rows), which
 > are being traced. A flip to a new ListView source for a list with no row in
-> common was built and removed, because WinUI drew one empty frame. How such a
-> switch shows its first row waits for the owner.
+> common was built and removed, because WinUI drew one empty frame. The owner
+> decided that such a switch resets to the top: the table swaps in place and
+> sets the offset to 0 in the same publish. This is implemented (contract 5.3)
+and waits for review.
 >
 > **Step 1b status:** implemented and reviewed in two rounds
 > (`step-1b-review-r1.md`, `r2.md`). Reordered on-screen rows slide (Sliding.cs).
@@ -114,8 +124,11 @@ follows; the implementation map owns the details.
 **Open.** This plan keeps TableView responsive with medium and large sources:
 10,000 to 100,000 rows that the host updates often, usually under a sort.
 Scrolling, selection, sorting, filtering, updates and every other interaction
-stay responsive as the row count grows, and memory and processing cost follow
-the work actually required, not the size of the source. The
+stay responsive as the row count grows, and processing cost follows the work
+actually required, not the size of the source. Memory is a stated trade: the
+table keeps the buffers a publish needs between publishes, at the size of the
+largest publish, because allocating them again costs cycles on every large
+publish (F7). The
 [TableView contract](../../lib/TableView/docs/tableview-contract.md) owns the
 behavior. Each stage below says which contract text it changes. When a stage
 ships, its rules move into the contract and the stage leaves this plan.
@@ -209,8 +222,11 @@ at `2.6.4` and records any changed conclusion (current files under
 
 Scrolling, column resize, column moves, fit, the marquee, pointer movement and
 `RealizedItems` cost work in proportion to the realized rows (40–80), not to
-the row count. The rows the table keeps cost little memory: about 40 bytes
-per row, for the view list and one position dictionary. The problem is the
+the row count. Memory does not follow the work: a sorted table with a key keeps
+583 bytes per row in its own fields (545 sorted by numbers). About 210 to 245
+are needed at rest: source membership, the view's positions and rows, and the
+sorted order's positions and keys. The rest is publish buffers, kept by the
+trade F7 states. The problem is the
 work done again on every update, and a few gestures that walk every row or
 every selected row.
 
@@ -305,9 +321,8 @@ Four rules apply to every row:
 | Whether one source notification can be applied incrementally, and its prepared membership/entrant/leaver facts | `Body.Source.Preparation`, from the validated accepted predecessor and matching assignment; only `Source.Accept` adopts it | Inference from the notification action or an aliased current list | 5 | The existing pipeline's hold, order, view and selection steps | Clone the full accepted map for one delta; accept a candidate before all throwing preparation succeeds |
 | Column sort definition: key selector and comparer | `Column`, set by `Schema.SortKey` | `Column.Sort`, which it replaces | 2 | the sorted order | Hold sort state |
 | Sorting: the one stable sort routine (flat rows, and each sibling group of a hierarchy); for a flat table also the kept order before `Pin`, its kept keys and collation keys in arrays, its position index, whether the kept-key check is allowed, and the one placement routine | The sorted order of the active column, in `Table/Sorting.cs` | — | 2, 3, 5, 10 | `KeptOrder`, `SortedSnapshot`, `Hierarchy.Project` | Hold the shown order after `Pin`; place rows of a hierarchy by binary search; get a second sort or placement routine |
-| Count of key comparisons actually performed by the selected sort algorithm | The sorted-order owner, at its one key-comparison primitive | A sample wrapper comparer, which changes eligibility for the optimized path | 2 | The sample's measurement of the actual algorithm | Add a public diagnostic API or a second sorter; count selector calls that the sample can observe in its own selector |
 | The prepared order and whether preparing it performed a full sort | The sorted-order owner returns this operation's facts; the pipeline consumes them | Permission to move rows, which does not say whether a fallback actually sorted them | 2 | `ViewOrder`, to advance the settle clock after an actual full sort | Store another pending flag or derive the completed operation from the caller's permission |
-| Detached worker input, private sorting indices and UI-only associations used to accept or rebase the result | The sorted-order owner; the worker receives only immutable supported keys/collation, base ordinals and sibling ranges | Active/candidate workspace buffers and live source/identity maps | 2.6 | The queued-sort owner, whose existing validity check gates completion | Run identity/host callbacks or touch row/UI objects on a worker; add a second sort algorithm or commit workflow |
+| Detached worker input, private sorting indices and UI-only associations used to accept or rebase the result | The sorted-order owner; the worker receives only immutable supported keys, base ordinals and sibling ranges, and takes text keys' collation keys itself | Active/candidate workspace buffers and live source/identity maps | 2.6 | The queued-sort owner, whose existing validity check gates completion | Run identity/host callbacks or touch row/UI objects on a worker; add a second sort algorithm or commit workflow |
 | Matching a queued hierarchy sort's sibling groups to a newer capture | An operation-local hierarchy-owned capture, with a parent-to-group map from captured node keys and a separate root group | A persistent per-parent key history or hierarchy state in generic sorted-order work | 2.6 | Hierarchy's existing projection/rebase owner | Enter the detached worker payload or add another pending table field |
 | A header sort waiting for the frame, and a worker sort's result | One queued-sort field in `Table/Sorting.cs`; that owner publishes a revision for actual committed-sort changes, and `Table` publishes a lifetime revision for actual detachments | `_pendingSort`, which holds a `Sort` assigned before the schema is captured: a different concept, kept as it is | 2 | the header | Get cancelled by other writers: it checks the captured revisions, that the table is loaded and its column is still shown |
 | The criterion the header shows | `Table/Sorting.cs`: the queued sort while it is still valid, otherwise the committed sort | — | 2 | `Header` | Get computed by the header |

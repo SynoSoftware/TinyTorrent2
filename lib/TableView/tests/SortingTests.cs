@@ -62,6 +62,65 @@ public class SortingTests
             CollectionAssert.AreEqual(new[] { "k1", "k2", "k0", "waiting-b", "waiting-a" }, h.ViewKeys());
         });
 
+    /// <summary>
+    /// Section 5.3's owner ruling: a different list starts at the top. A sort that moves every row
+    /// keeps the offset, although its difference names every row as leaving and arriving, and a
+    /// host's <c>ScrollTo</c> after the assignment wins, also when a hold shows the list later.
+    /// </summary>
+    [TestMethod]
+    public Task ADifferentListStartsAtTheTopUnlessTheHostScrolls() =>
+        TestHost.RunAsync(async () =>
+        {
+            SortHarness h = await SortHarness.LoadAsync(Enumerable.Range(0, 200).ToArray(), configure: table =>
+            {
+                table.Sort = new(table.Columns[0]);
+                table.SortInterval = TimeSpan.Zero;
+            });
+            Table table = h.Table;
+            ScrollViewer viewer = SelectionHarness.Descendant<ScrollViewer>(h.Surface())!;
+
+            await ScrolledAsync();
+            foreach (SortRow row in h.Rows)
+            {
+                row.Rank = -row.Rank;
+            }
+            table.RefreshView();
+            Assert.AreEqual(1000, await OffsetAsync(), 1, "a sort that moves every row keeps the offset");
+
+            table.ItemsSource = List("a");
+            Assert.AreEqual(0, await OffsetAsync(), 1, "a different list starts at the top");
+
+            await ScrolledAsync();
+            SortRow[] shown = List("b");
+            table.ItemsSource = shown;
+            table.ScrollTo(600);
+            Assert.AreEqual(600, await OffsetAsync(), 1, "the host's ScrollTo after the assignment wins");
+
+            await ScrolledAsync();
+            Proof.Call(table, "PointAt", shown[25]);
+            table.ItemsSource = List("c");
+            table.ScrollTo(600);
+            Proof.Call(table, "StopPointing");
+            Assert.AreEqual(600, await OffsetAsync(), 1, "the host's ScrollTo wins when the hold ends");
+
+            static SortRow[] List(string prefix) =>
+                Enumerable.Range(0, 200).Select(i => new SortRow(prefix + i, i)).ToArray();
+
+            // As a person scrolls: not through ScrollTo, which names the source it follows.
+            async Task ScrolledAsync()
+            {
+                viewer.ChangeView(null, 1000, null, disableAnimation: true);
+                await TableHarness.WaitUntilAsync(() => Math.Abs(viewer.VerticalOffset - 1000) < 1, "the scroll");
+            }
+
+            async Task<double> OffsetAsync()
+            {
+                table.UpdateLayout();
+                await TableHarness.WaitUntilAsync(() => !Proof.Field<bool>(table, "_layoutPending"), "the publish's frame");
+                return viewer.VerticalOffset;
+            }
+        });
+
     [TestMethod]
     [DataRow(SortDirection.Ascending)]
     [DataRow(SortDirection.Descending)]

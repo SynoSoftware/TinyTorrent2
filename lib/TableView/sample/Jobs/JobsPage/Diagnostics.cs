@@ -121,55 +121,6 @@ public sealed partial class JobsPage
             await MeasureSettlingAsync();
         }
 
-        if (!Skip("P"))
-        {
-            await MeasurePublishesAsync();
-        }
-        if (!Skip("S"))
-        {
-            await MeasureSelectionAsync();
-        }
-        if (_only?.Contains("T") == true)
-        {
-            await MeasureSortingAsync();
-        }
-        if (_only?.Contains("U") == true)
-        {
-            await MeasureChangesAsync();
-        }
-        if (_only?.Contains("W") == true)
-        {
-            await MeasureWorkersAsync();
-        }
-        if (_only?.Contains("X") == true)
-        {
-            await MeasureNamedValuesAsync();
-        }
-        if (_only?.Contains("Y") == true)
-        {
-            await MeasureNotificationsAsync();
-        }
-        if (_only?.Contains("L") == true)
-        {
-            await ObserveLiveChangesAsync();
-        }
-        if (_only?.Contains("M") == true)
-        {
-            await MeasurePublishesAsync(measureTimings: false);
-        }
-        if (_only?.Contains("Q") == true)
-        {
-            await MeasureSelectionAsync(measureTimings: false);
-        }
-        if (!Skip("N"))
-        {
-            await MeasureNativeEventsAsync();
-        }
-        if (!Skip("V"))
-        {
-            await CaptureBaselineAsync();
-        }
-
         DetachCounters();
     }
 

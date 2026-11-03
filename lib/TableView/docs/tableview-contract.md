@@ -549,6 +549,18 @@ The table suppresses transitions for that layout episode and restores their
 previous value source after layout. Other changes in the same layout episode
 share that suppression; ordinary native motion resumes afterward. An empty
 final source remains an ordinary removal, not a disjoint replacement.
+**Owner ruling: a different list starts at the top.** When a publish leaves no
+row of the previous view and the new source is not empty, the table swaps the
+rows in place and, in the same publish, sets the scroll offset to 0 without
+animation. The first frame shows the new list's first row, because new rows at
+the old offset show the person an arbitrary middle of a list they have not
+seen. Rows are compared by identity, so every other publish keeps its offset:
+a sort that moves every row, a filter that keeps at least one row, and a
+refresh whose rows keep their identity. Without a key selector a new instance
+is a new row, so a refresh that supplies new instances of every row is a
+different list. A host that calls `ScrollTo` after assigning the source, to
+restore a saved position, gets its own offset, also when the pointer holds the
+old rows and the new list appears only when it leaves.
 The private view never raises
 `Move` and never resets the list (`Clear` or `Reset`), because the list
 answers both by dropping and rebuilding its containers, and the whole table
@@ -1026,8 +1038,9 @@ Eligible queued first sorts order detached keys on a worker. Known immutable
 built-in default comparisons and well-known ordinal/culture `StringComparer`
 cases use that path for flat rows and hierarchy sibling groups. Custom or
 mutable keys/comparers and the culture-dependent default string comparer stay
-on UI. Host selectors, identity operations, collation capture, current-instance
-and base-order reconciliation, and the final publish remain on UI. A result
+on UI. Host selectors, identity operations, current-instance and base-order
+reconciliation, and the final publish remain on UI. The worker takes the culture
+collation keys of the captured text keys, which runs no host code. A result
 commits only while its exact request is current and loaded; source changes are
 rebased through current validated membership, keys and base ties. Synchronous
 `Sort` and `Layout` assignments retain their synchronous failure boundary.

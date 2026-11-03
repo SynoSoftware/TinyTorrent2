@@ -38,6 +38,13 @@ public sealed partial class Table : Control
     private ColumnLayout? _pendingLayout;
     private double? _pendingScroll;
 
+    /// <summary>
+    /// The source the host's last <see cref="ScrollTo"/> followed, until a publish shows another.
+    /// A different list shown for that source keeps the host's offset instead of starting at the
+    /// top, also when a hold delays it until the pointer leaves (specification 5.3).
+    /// </summary>
+    private Body.Source.Capture? _scrolledSource;
+
     public Table()
     {
         DefaultStyleKey = typeof(Table);
@@ -399,7 +406,7 @@ public sealed partial class Table : Control
             if (_pendingSort is Sort requested && !Enum.IsDefined(requested.Direction))
                 throw ConfigurationError("The initial sort direction is invalid.");
             EffectiveColumn? column = _pendingSort is Sort sort ? RequireSortable(sort.Column) : null;
-            CommitSort(column, _pendingSort?.Direction ?? SortDirection.Ascending, CreateSort(column));
+            CommitSort(column, _pendingSort?.Direction ?? SortDirection.Ascending, prepare: false);
             _pendingSort = null;
             _hasPendingSort = false;
         }
@@ -583,29 +590,19 @@ public sealed partial class Table : Control
             !ReferenceEquals(sortColumn, _sortColumn)
             || (sortColumn is not null && direction != _sortDirection);
         // Initial capture resolves any later pending Sort before evaluating host comparisons.
-        SortedOrder? workspace = CreateSort(sortColumn);
-        Body.Source.Preparation? source = null;
-        IReadOnlyList<object>? order =
-            rebuild && moved && _sortMode == SortMode.Local
-                ? PrepareSort(workspace, direction, out source) : null;
-        if (order is not null && _hierarchy is null)
-        {
-            workspace?.Accept();
-        }
+        var prepared = moved ? CommitSort(sortColumn, direction, prepare: rebuild) : null;
 
         foreach (EffectiveColumn column in ordered)
         {
             column.VisibilityOverride = visibility[column];
         }
-        if (moved)
-        {
-            CommitSort(sortColumn, direction, workspace);
-        }
 
         // SetOrder republishes the layout, which re-applies each header cell's sort indicator.
         EffectiveLayout.SetOrder(ordered);
-        if (order is not null)
-            RebuildView(sorted: order, prepared: source);
+        if (prepared is { } sorted)
+        {
+            RebuildView(sorted: sorted.Order, prepared: sorted.Source);
+        }
     }
 
     // ---------------------------------------------------------------- source
@@ -656,6 +653,7 @@ public sealed partial class Table : Control
         }
 
         _pendingScroll = verticalOffset;
+        _scrolledSource = _source.Current;
         ApplyPendingScroll();
     }
 

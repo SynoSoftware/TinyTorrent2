@@ -63,12 +63,13 @@ index and one source-order walk. The shown order after pointer pinning stays
 outside this workspace. The sorting owner makes the one settle decision, for
 flat tables and hierarchies, and is the only code that records when rows last
 took their sorted places. Header choices carry committed-sort and
-detach revisions and run after the shared rendering frame wait; setters and
-layout restoration use the same synchronous commit boundary.
-Eligible header sorts capture detached immutable key/collation groups on UI,
-order them with the same stable routine on a worker, and return through that
-one frame owner. The queued request holds the generic job and an optional
-hierarchy-owned captured parent/group association. Completion checks the exact
+detach revisions and run after the shared rendering frame wait. The `Sort`
+setter, a queued header sort and layout restoration commit through one routine,
+`CommitSort`, the same synchronous commit boundary.
+Eligible header sorts capture detached immutable key groups on UI; a worker
+takes the text keys' collation keys, orders them with the same stable routine,
+and returns through that one frame owner. The queued request holds the generic
+job and an optional hierarchy-owned captured parent/group association. Completion checks the exact
 request and current revisions, then rebases current instances, keys and base
 ties before the ordinary publish accepts it. Capture and commit remain UI work;
 no host callback or identity map enters the worker payload. The captured
@@ -90,6 +91,15 @@ second of its previous change (`fastmutationThreshold` in WinUI's
 with or without this exception. A shrinking source clips
 the old interval conservatively; this does not predict a later native viewport
 clamp. The reconciliation script and notifications are unchanged.
+
+When no row of a nonempty order is in the view by identity, `RebuildView` sets a
+scrolled list's offset to 0 with `ChangeView` after the reconcile, in the same
+publish, so the layout that shows the new rows lays them out from the first.
+The difference's counts only rule a different list out, because a sorted
+difference states each moved row as leaving and arriving; the identity lookups
+in `_view.Positions` decide. `ScrollTo` records the source capture it followed.
+A publish of that same capture, such as the release of a hold, keeps the host's
+offset, and a publish of any other capture forgets it.
 
 `Table/Sliding.cs` slides the rows a reorder moves. When `Body.View.Compare`
 reports a reorder and animations are on, it records, before the reconcile, the

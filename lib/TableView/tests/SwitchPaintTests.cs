@@ -41,7 +41,9 @@ public sealed class PaintRow
 public class SwitchPaintTests
 {
     private static readonly Windows.UI.Color LeavingColor = new() { A = 255, R = 220, G = 40, B = 30 };
-    private static readonly Windows.UI.Color ArrivingColor = new() { A = 255, R = 30, G = 170, B = 40 };
+
+    /// <summary>Arriving rows share green and blue, and red tells them apart like staying rows.</summary>
+    private const int ArrivingGreen = 170, ArrivingBlue = 40;
 
     /// <summary>Staying rows share green and blue, and red tells them apart, for the 40 top rows.</summary>
     private const int StayingGreen = 60, StayingBlue = 220, Shades = 40;
@@ -51,6 +53,9 @@ public class SwitchPaintTests
 
     private static Windows.UI.Color StayingColor(int id) =>
         new() { A = 255, R = (byte)(10 + 5 * (id % Shades)), G = StayingGreen, B = StayingBlue };
+
+    private static Windows.UI.Color ArrivingColor(int id) =>
+        new() { A = 255, R = (byte)(10 + 5 * (id % Shades)), G = ArrivingGreen, B = ArrivingBlue };
 
     public TestContext TestContext { get; set; } = null!;
 
@@ -112,12 +117,6 @@ public class SwitchPaintTests
         // A different source: no row stays.
         new("switch", Ids(0, 200), Ids(1000, 1200), c => Assign(c, Ids(1000, 1200))),
         new("switch-selected-leaves", Ids(0, 200), Ids(1000, 1200), c => Assign(c, Ids(1000, 1200)), Selected: 3),
-        // Both again, scrolled halfway down, with a focused row: the list lays a different source
-        // out from its start, and keeps its place in a list that shares rows with the one before.
-        new("switch-scrolled", Ids(0, 200), Ids(1000, 1200), c => Assign(c, Ids(1000, 1200)), Selected: 103,
-            ScrollTo: 100),
-        new("churn-scrolled", Ids(0, 200), Ids(0, 200, id => id % 4 != 3),
-            c => Assign(c, Ids(0, 200, id => id % 4 != 3)), Selected: 101, ScrollTo: 100),
         // The same changes as notifications: three on-screen rows leave, then three arrive.
         new("notify-leave", Ids(0, 200), Ids(0, 200, id => id is not (3 or 7 or 11)),
             c => Notify(c, Ids(0, 200, id => id is not (3 or 7 or 11)))),
@@ -130,6 +129,26 @@ public class SwitchPaintTests
             c.Source[c.IndexOf(5)] = new PaintRow(5) { Rank = old.Rank, Brush = old.Brush, Top = old.Top, Bottom = old.Bottom };
             return Task.CompletedTask;
         }),
+    };
+
+    /// <summary>
+    /// Source changes scrolled halfway down, with a focused row; see <see cref="ScrolledSwitchPaint"/>.
+    /// A different source starts at its first row, and a list that shares rows with the one before
+    /// keeps its place.
+    /// </summary>
+    private static readonly Scenario[] Scrolled =
+    {
+        new("switch-scrolled", Ids(0, 200), Ids(1000, 1200), c => Assign(c, Ids(1000, 1200)), Selected: 103,
+            ScrollTo: 100),
+        new("churn-scrolled", Ids(0, 200), Ids(0, 200, id => id % 4 != 3),
+            c => Assign(c, Ids(0, 200, id => id % 4 != 3)), Selected: 101, ScrollTo: 100),
+        // A host that restores a saved position after assigning a different source, as Library does.
+        new("switch-scrolled-restore", Ids(0, 200), Ids(1000, 1200), c =>
+        {
+            Task assigned = Assign(c, Ids(1000, 1200));
+            c.Table.ScrollTo(1500);
+            return assigned;
+        }, Selected: 103, ScrollTo: 100),
     };
 
     /// <summary>Changes that reorder rows on screen, which slide; see <see cref="ReorderPaint"/>.</summary>
@@ -246,6 +265,11 @@ public class SwitchPaintTests
     [TestCategory("Measurement")]
     public Task SourceSwitchPaint() => RecordAsync(Scenarios);
 
+    /// <summary>The scenarios in <see cref="Scrolled"/>; a test of its own to stay inside the host's time limit.</summary>
+    [TestMethod]
+    [TestCategory("Measurement")]
+    public Task ScrolledSwitchPaint() => RecordAsync(Scrolled);
+
     /// <summary>The scenarios in <see cref="Reorders"/>; a test of its own to stay inside the host's time limit.</summary>
     [TestMethod]
     [TestCategory("Measurement")]
@@ -287,7 +311,7 @@ public class SwitchPaintTests
         foreach (PaintRow row in rows.Values)
         {
             bool was = scenario.Before.Contains(row.Id), stays = scenario.After.Contains(row.Id);
-            row.Brush = new SolidColorBrush(was && stays ? StayingColor(row.Id) : was ? LeavingColor : ArrivingColor);
+            row.Brush = new SolidColorBrush(was && stays ? StayingColor(row.Id) : was ? LeavingColor : ArrivingColor(row.Id));
             row.Top = was && stays ? new SolidColorBrush(StayingColor(row.Id) with { G = TopGreen }) : row.Brush;
             row.Bottom = was && stays ? new SolidColorBrush(StayingColor(row.Id) with { B = BottomBlue }) : row.Brush;
         }
@@ -569,7 +593,8 @@ public class SwitchPaintTests
         List<Shot> path = shots.Take(Math.Min(shots.Count, settled + 2))
             .Where((shot, index) => index == 0 || !shot.SameAs(shots[index - 1])).ToList();
         string steps = string.Join(" | ", path
-            .Select(shot => $"+{shot.At:0}ms s{shot.Staying} l{shot.Leaving} a{shot.Arriving} bg{shot.Background} o{shot.Other}"));
+            .Select(shot => $"+{shot.At:0}ms s{shot.Staying} l{shot.Leaving} a{shot.Arriving} bg{shot.Background} o{shot.Other}"
+                + (shot.ArrivingOrder.Count == 0 ? "" : $" a-top {string.Join(",", shot.ArrivingOrder.Take(3))}")));
         string colours = pre.Staying + pre.Leaving + pre.Arriving > 0 ? ""
             : $"no role colour in the column, which shows {pre.Commonest}; ";
         return colours + $"before s{pre.Staying} l{pre.Leaving} a{pre.Arriving} bg{pre.Background}; "
@@ -599,6 +624,9 @@ public class SwitchPaintTests
         public int Staying, Leaving, Arriving, Background, Other;
         public Dictionary<int, int> Rows = new();
 
+        /// <summary>The arriving rows' shades (id modulo <see cref="Shades"/>), top first.</summary>
+        public List<int> ArrivingOrder = new();
+
         /// <summary>The sum of each top row's pixel positions down the column, for <see cref="Centre"/>.</summary>
         public Dictionary<int, long> Positions = new();
         public string Commonest = "";
@@ -625,7 +653,8 @@ public class SwitchPaintTests
         public bool SameAs(Shot other) =>
             Math.Abs(Staying - other.Staying) + Math.Abs(Leaving - other.Leaving)
             + Math.Abs(Arriving - other.Arriving) + Math.Abs(Background - other.Background) <= 4
-            && Rows.All(row => Math.Abs(row.Value - other.Rows.GetValueOrDefault(row.Key)) <= 2);
+            && Rows.All(row => Math.Abs(row.Value - other.Rows.GetValueOrDefault(row.Key)) <= 2)
+            && ArrivingOrder.Take(3).SequenceEqual(other.ArrivingOrder.Take(3));
 
         /// <summary>Pixels of each top row whose fill beside the role cell is not the background: selected.</summary>
         public Dictionary<int, int> Filled = new();
@@ -667,9 +696,14 @@ public class SwitchPaintTests
                 {
                     shot.Leaving++;
                 }
-                else if (Near(ArrivingColor))
+                else if (Math.Abs(g - ArrivingGreen) + Math.Abs(b - ArrivingBlue) < 30)
                 {
                     shot.Arriving++;
+                    if ((r - 10 + 2) / 5 is int arriving && arriving >= 0 && arriving < Shades
+                        && Math.Abs(r - 10 - 5 * arriving) <= 2 && !shot.ArrivingOrder.Contains(arriving))
+                    {
+                        shot.ArrivingOrder.Add(arriving);
+                    }
                 }
                 else if (r > 235 && g > 235 && b > 235)
                 {

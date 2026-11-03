@@ -290,6 +290,10 @@ public sealed partial class Table
                 Change.Collection collection => collection.Capture,
                 _ => _source.Current,
             };
+            if (!ReferenceEquals(capture, _scrolledSource))
+            {
+                _scrolledSource = null;
+            }
             if (!_schemaCaptured)
             {
                 _source.Store(capture, validated: false);
@@ -358,9 +362,17 @@ public sealed partial class Table
             }
 
             IReadOnlyList<int> realized = RealizedIndices();
+            // A different list starts at its first row (specification 5.3), in the frame that
+            // first shows it, unless the host scrolled after assigning it.
+            bool startsAtTop = _scrolledSource is null && InnerScrollViewer()?.VerticalOffset > 0
+                && IsDifferentList(order, difference);
             PrepareTransitions(order, CaptureSlides(order, difference, realized));
             _view.Reconcile(order, difference, origin.Version, realized, pinned);
             RebindRows();
+            if (startsAtTop)
+            {
+                InnerScrollViewer()?.ChangeView(null, 0, null, disableAnimation: true);
+            }
 
             ReconcileDrag();
             QueueRealized();
@@ -401,6 +413,28 @@ public sealed partial class Table
                 PublishSelection(selectionChange);
             }
         }
+    }
+
+    /// <summary>
+    /// Whether <paramref name="order"/> is a different list: it has rows, and none of them is in
+    /// the view by identity. A sorted difference states each moved row as leaving and arriving,
+    /// so the difference's counts can only rule a different list out.
+    /// </summary>
+    private bool IsDifferentList(IReadOnlyList<object> order, Body.View.Difference difference)
+    {
+        if (order.Count == 0 || difference.Arriving.Count != order.Count
+            || difference.Leaving.Count != _view.Count)
+        {
+            return false;
+        }
+        foreach (object row in order)
+        {
+            if (_view.Positions.IndexOf(row) >= 0)
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     /// <param name="sliding">The table slides the reordered rows itself; see <see cref="CaptureSlides"/>.</param>

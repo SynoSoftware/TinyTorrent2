@@ -17,6 +17,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$requested = [DateTime]::UtcNow
 if ($ProjectsOnly -and ($Engine -or $App -or -not $Project.Count)) {
     throw '-ProjectsOnly requires -Project and cannot be combined with -Engine or -App.'
 }
@@ -44,6 +45,18 @@ if ($extras) { $parts.projects = @() }
 
 function Get-Folder([string] $Root) { Join-Path $Root "bin/TinyTorrent/$flavour" }
 
+# The MSBuild properties that put a build in this flavour and output root.
+function Get-Lane([string] $Root, [switch] $Managed) {
+    $lane = @("/p:Configuration=$configuration", '/p:Platform=x64')
+    if ($Root -ne $artifacts) { $lane += "/p:ArtifactsPath=$Root" }
+    if ($Managed -and $Capture) { $lane += '/p:EnableCapture=true' }
+    return $lane
+}
+
+# Each extra project's TargetPath per output root. An evaluation costs about
+# a second per project, and one run asks for the same root more than once.
+$targetPaths = @{}
+
 # Product checks use the engine or app output; project-only checks resolve
 # their project outputs under the printed artifacts root.
 function Get-Output([string] $Root) {
@@ -59,15 +72,18 @@ function Get-Product([string] $Root, [string] $Part) {
         'app' { Join-Path (Get-Folder $Root) "$windowName.dll" }
         'projects' {
             # Evaluated paths preserve project-specific outputs and the chosen lane.
-            $arguments = @("/p:Configuration=$configuration", '/p:Platform=x64', "/p:ArtifactsPath=$Root")
-            if ($Capture) { $arguments += '/p:EnableCapture=true' }
-            foreach ($project in $extras) {
-                $query = @(& $msbuild (Join-Path $repository $project) @arguments /nologo /nr:false /v:q /getProperty:TargetPath)
-                if ($LASTEXITCODE -ne 0) { return }
-                $path = $query | Where-Object { $_ } | Select-Object -Last 1
-                if (-not $path) { return }
-                $path
+            if (-not $targetPaths.ContainsKey($Root)) {
+                $arguments = Get-Lane $Root -Managed
+                $targetPaths[$Root] = @(
+                    foreach ($project in $extras) {
+                        $query = @(& $msbuild (Join-Path $repository $project) @arguments /nologo /nr:false /v:q /getProperty:TargetPath)
+                        $path = $query | Where-Object { $_ } | Select-Object -Last 1
+                        if ($LASTEXITCODE -ne 0 -or -not $path) { break }
+                        $path
+                    }
+                )
             }
+            $targetPaths[$Root]
         }
     }
 }
@@ -267,10 +283,8 @@ try {
         else { $parts.Insert(0, 'engine', $engineInputs) }
         $sources.engine = $engineSource
     }
-    $common = @("/p:Configuration=$configuration", '/p:Platform=x64')
-    if ($root -ne $artifacts) { $common += "/p:ArtifactsPath=$root" }
-    $managed = @('/restore') + $common
-    if ($Capture) { $managed += '/p:EnableCapture=true' }
+    $common = Get-Lane $root
+    $managed = @('/restore') + (Get-Lane $root -Managed)
     $started = [DateTime]::UtcNow
     $stamp = $started.ToString('yyyyMMdd-HHmmss')
     $steps = @()
@@ -286,7 +300,7 @@ try {
         if (-not $succeeded) { break }
     }
     $build = [ordered]@{
-        started = $started.ToString('o'); ended = [DateTime]::UtcNow.ToString('o')
+        requested = $requested.ToString('o'); started = $started.ToString('o'); ended = [DateTime]::UtcNow.ToString('o')
         result = if ($succeeded) { 'succeeded' } else { 'failed' }
         flavour = $flavour; projects = $extras; root = $root; checkout = $repository; sources = $sources
         commit = (git -C $repository rev-parse --short HEAD); changed = @(git -C $repository status --porcelain).Count

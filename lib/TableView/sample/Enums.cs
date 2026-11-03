@@ -1,12 +1,5 @@
 namespace Syno.TableViewSample;
 
-internal enum ProbeSort
-{
-    Ordinal,
-    Culture,
-    Number,
-}
-
 /// <summary>
 /// What a render job is doing. Nine members and no qualifying flag: the three waiting kinds differ
 /// only in what they are waiting for, and a boolean beside a smaller enum would leave that

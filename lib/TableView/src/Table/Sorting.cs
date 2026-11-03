@@ -32,8 +32,6 @@ public sealed partial class Table
     private sealed record QueuedSort(Sort? Requested, Sort? Committed, long SortRevision, long LifetimeRevision)
     {
         internal SortWork? Work { get; set; }
-        internal TimeSpan CaptureTime { get; set; }
-        internal TimeSpan CommitTime { get; set; }
     }
 
     private sealed record SortWork(SortedOrder Workspace, SortedOrder.Work Sorting,
@@ -161,24 +159,26 @@ public sealed partial class Table
                 return;
             }
 
-            // Comparison can invoke host code; finish it before committing the new sort.
-            SortedOrder? workspace = CreateSort(column);
-            Body.Source.Preparation? source = null;
-            IReadOnlyList<object>? order = _sortMode == SortMode.Local
-                ? PrepareSort(workspace, direction, out source) : null;
-            if (_hierarchy is null)
-            {
-                workspace?.Accept();
-            }
-            CommitSort(column, direction, workspace);
-
-            // Complete presentation before selection handlers can run or throw.
-            _headerStrip?.Panel?.RefreshHeader();
-            if (order is not null)
-                RebuildView(sorted: order, prepared: source);
-
-            RaiseLayoutChanged(LayoutChange.Sort);
+            SetSort(column, direction);
         }
+    }
+
+    /// <summary>
+    /// Commit a sort the host or the person asked for, show it, and report it.
+    /// </summary>
+    /// <param name="work">A queued first sort's detached work, which already ordered the keys.</param>
+    private void SetSort(EffectiveColumn? column, SortDirection direction, SortWork? work = null)
+    {
+        var prepared = CommitSort(column, direction, prepare: true, work);
+
+        // Complete presentation before selection handlers can run or throw.
+        _headerStrip?.Panel?.RefreshHeader();
+        if (prepared is { } sorted)
+        {
+            RebuildView(sorted: sorted.Order, prepared: sorted.Source);
+        }
+
+        RaiseLayoutChanged(LayoutChange.Sort);
     }
 
     private SortedOrder? CreateSort(EffectiveColumn? column) =>
@@ -186,8 +186,24 @@ public sealed partial class Table
             : ReferenceEquals(column, _sortColumn) && _sortedOrder is not null ? _sortedOrder
             : column.Column.Sort!.Create(_identity);
 
-    private void CommitSort(EffectiveColumn? column, SortDirection direction, SortedOrder? workspace)
+    /// <summary>
+    /// The one commit of a sort criterion. With <paramref name="prepare"/>, a local sort first
+    /// prepares the whole order the criterion gives; comparison can invoke host code, so it
+    /// finishes before anything is committed, and a failure leaves the committed sort in force.
+    /// </summary>
+    /// <returns>The prepared order and source change for the caller to publish, or null when
+    /// nothing was prepared.</returns>
+    private (IReadOnlyList<object> Order, Body.Source.Preparation? Source)? CommitSort(
+        EffectiveColumn? column, SortDirection direction, bool prepare, SortWork? work = null)
     {
+        SortedOrder? workspace = work?.Workspace ?? CreateSort(column);
+        Body.Source.Preparation? source = null;
+        IReadOnlyList<object>? order = prepare && _sortMode == SortMode.Local
+            ? PrepareSort(workspace, direction, out source, work) : null;
+        if (order is not null && _hierarchy is null)
+        {
+            workspace?.Accept();
+        }
         if (!ReferenceEquals(column, _sortColumn) || (column is not null && direction != _sortDirection))
         {
             _sortRevision++;
@@ -200,6 +216,7 @@ public sealed partial class Table
         _settleDue?.Stop();
         // The kept sibling groups are ordered by the sort they were kept under.
         _hierarchy?.ForgetOrder();
+        return order is null ? null : (order, source);
     }
 
     private Sort? PendingSort()
@@ -267,21 +284,14 @@ public sealed partial class Table
                 return;
             }
             _queuedSort = null;
-            long start = System.Diagnostics.Stopwatch.GetTimestamp();
-            try
+            if (queued.Work is { } work)
             {
-                if (queued.Work is { } work)
-                {
-                    CommitWork(queued, work);
-                }
-                else
-                {
-                    Sort = queued.Requested;
-                }
+                Sort requested = queued.Requested!.Value;
+                SetSort(RequireSortable(requested.Column), requested.Direction, work);
             }
-            finally
+            else
             {
-                queued.CommitTime = System.Diagnostics.Stopwatch.GetElapsedTime(start);
+                Sort = queued.Requested;
             }
         }
         catch
@@ -304,31 +314,23 @@ public sealed partial class Table
         {
             return false;
         }
-        long start = System.Diagnostics.Stopwatch.GetTimestamp();
         EffectiveColumn column = RequireSortable(requested.Column);
         SortedOrder workspace = column.Column.Sort!.Create(_identity);
         if (!workspace.CanWork)
         {
             return false;
         }
-        try
+        queued.Work = CaptureSort(workspace, requested.Direction);
+        Microsoft.UI.Dispatching.DispatcherQueue dispatcher = DispatcherQueue;
+        _ = queued.Work.Sorting.Completion.ContinueWith(completed =>
         {
-            queued.Work = CaptureSort(workspace, requested.Direction);
-            Microsoft.UI.Dispatching.DispatcherQueue dispatcher = DispatcherQueue;
-            _ = queued.Work.Sorting.Completion.ContinueWith(completed =>
+            _ = completed.Exception;
+            if (!dispatcher.TryEnqueue(() => ResumeSort(queued)))
             {
-                _ = completed.Exception;
-                if (!dispatcher.TryEnqueue(() => ResumeSort(queued)))
-                {
-                    Interlocked.CompareExchange(ref _queuedSort, null, queued);
-                }
-            }, TaskScheduler.Default);
-            return true;
-        }
-        finally
-        {
-            queued.CaptureTime = System.Diagnostics.Stopwatch.GetElapsedTime(start);
-        }
+                Interlocked.CompareExchange(ref _queuedSort, null, queued);
+            }
+        }, TaskScheduler.Default);
+        return true;
     }
 
     private void ResumeSort(QueuedSort queued)
@@ -347,22 +349,6 @@ public sealed partial class Table
             return;
         }
         RequestFrame();
-    }
-
-    private void CommitWork(QueuedSort queued, SortWork work)
-    {
-        Sort requested = queued.Requested!.Value;
-        work.Sorting.CountComparisons();
-        IReadOnlyList<object> order = PrepareSort(work.Workspace, requested.Direction,
-            out Body.Source.Preparation? source, work);
-        if (_hierarchy is null)
-        {
-            work.Workspace.Accept();
-        }
-        CommitSort(RequireSortable(requested.Column), requested.Direction, work.Workspace);
-        _headerStrip?.Panel?.RefreshHeader();
-        RebuildView(sorted: order, prepared: source);
-        RaiseLayoutChanged(LayoutChange.Sort);
     }
 
     /// <summary>
@@ -401,7 +387,7 @@ public sealed partial class Table
             return false;
         }
 
-        CommitSort(null, SortDirection.Ascending, null);
+        CommitSort(null, SortDirection.Ascending, prepare: false);
         return true;
     }
 
@@ -700,7 +686,6 @@ internal readonly record struct SortChange(
 /// </summary>
 internal abstract class SortedOrder
 {
-    internal long Comparisons { get; private protected set; }
     internal abstract bool NeedsSettle { get; }
     /// <summary>
     /// Whether the last accepted change placed every row again by its current key, because the kept
@@ -724,9 +709,7 @@ internal abstract class SortedOrder
     internal abstract class Work
     {
         internal abstract Task Completion { get; }
-        internal abstract TimeSpan Duration { get; }
         internal abstract IReadOnlyList<object> Prepare(IReadOnlyList<object> rows, bool refresh);
-        internal abstract void CountComparisons();
         internal abstract IReadOnlyList<object> Project(int group, IReadOnlyList<object> siblings, bool refresh);
     }
 }
@@ -828,27 +811,34 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
     internal override Body.View.Origin Origin => new(_candidateVersion, _version, _difference);
     internal override bool CanWork => _usesKeyEquality;
 
-    private readonly record struct WorkResult(long Comparisons, TimeSpan Duration);
-
-    private sealed class Payload(Entry[][] entries, SortDirection direction, bool collation,
-        bool ordinal, bool ignoreCase)
+    /// <summary>
+    /// A queued first sort's keys, detached from their rows. The worker takes each text key's
+    /// collation key and orders the entries; neither runs host code.
+    /// </summary>
+    private sealed class Payload(Entry[][] entries, SortDirection direction, CompareInfo? culture,
+        CompareOptions options, bool ordinal, bool ignoreCase)
     {
         internal Entry[][] Entries { get; } = entries;
-        internal int[][] Indices { get; } = entries.Select(group => Enumerable.Range(0, group.Length).ToArray()).ToArray();
+        internal int[][] Indices { get; } = new int[entries.Length][];
 
-        internal WorkResult Run()
+        internal void Run()
         {
-            long start = System.Diagnostics.Stopwatch.GetTimestamp();
             IComparer<TKey> comparer = ordinal
                 ? (IComparer<TKey>)(object)(ignoreCase ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal)
                 : Comparer<TKey>.Default;
-            long comparisons = 0;
             for (int group = 0; group < Entries.Length; group++)
             {
-                comparisons += SortIndices(Entries[group], Indices[group], Indices[group].Length,
-                    direction, comparer, collation);
+                Entry[] keys = Entries[group];
+                if (culture is not null)
+                {
+                    for (int index = 0; index < keys.Length; index++)
+                    {
+                        keys[index] = keys[index] with { Collation = Collation(keys[index].Key, culture, options) };
+                    }
+                }
+                Indices[group] = Enumerable.Range(0, keys.Length).ToArray();
+                SortIndices(keys, Indices[group], keys.Length, direction, comparer, culture is not null);
             }
-            return new(comparisons, System.Diagnostics.Stopwatch.GetElapsedTime(start));
         }
     }
 
@@ -858,7 +848,7 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
         private readonly object[][] _groups;
         private readonly Payload _payload;
         private readonly SortDirection _direction;
-        private readonly Task<WorkResult> _task;
+        private readonly Task _task;
 
         internal CapturedWork(SortedOrder<TRow, TKey> owner, object[][] groups,
             Payload payload, SortDirection direction)
@@ -871,8 +861,6 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
         }
 
         internal override Task Completion => _task;
-        internal override TimeSpan Duration => _task.GetAwaiter().GetResult().Duration;
-        internal override void CountComparisons() => _owner.Comparisons += _task.GetAwaiter().GetResult().Comparisons;
 
         internal override IReadOnlyList<object> Prepare(IReadOnlyList<object> rows, bool refresh)
         {
@@ -920,9 +908,7 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
                 return order._candidateRows;
             }
             order.Accept();
-            IReadOnlyList<object> prepared = order.Prepare(SortChange.Whole(siblings, siblings), _direction, allowMoves: true);
-            _owner.Comparisons += order.Comparisons;
-            return prepared;
+            return order.Prepare(SortChange.Whole(siblings, siblings), _direction, allowMoves: true);
         }
     }
 
@@ -940,12 +926,11 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
             entries[group] = new Entry[rows[group].Length];
             for (int index = 0; index < rows[group].Length; index++)
             {
-                TKey value = _key((TRow)rows[group][index]);
-                entries[group][index] = new(value, index, 0, Collation(value));
+                entries[group][index] = new(_key((TRow)rows[group][index]), index, 0, null);
             }
         }
         return new CapturedWork(this, rows,
-            new(entries, direction, _culture is not null, _ordinal, _ignoreCase), direction);
+            new(entries, direction, _culture, _options, _ordinal, _ignoreCase), direction);
     }
 
     /// <remarks>
@@ -1245,7 +1230,6 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
             {
                 // The keys decide; source indices, which can cost a walk of the pending shifts,
                 // only break ties.
-                Comparisons++;
                 int order = CompareKeys(KeyOf(previous), KeyOf(kept), _candidateDirection, _comparer, _culture is not null);
                 if (order > 0 || order == 0
                     && EntryOf(previous, shift).BaseIndex > EntryOf(kept, shift).BaseIndex)
@@ -1318,7 +1302,7 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
             Array.Sort(_removed, 0, removed);
         }
         int surviving = count - removed;
-        Comparisons += SortIndices(_placed, _order, placed, _candidateDirection, _comparer, _culture is not null);
+        SortIndices(_placed, _order, placed, _candidateDirection, _comparer, _culture is not null);
         for (int index = 0; index < placed; index++)
         {
             _places[index] = FindPlace(_placed[_order[index]], surviving, rank => EntryOf(Survivor(rank), shift));
@@ -1550,7 +1534,7 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
                 _placed[index] = Read(rows[index], index, 0);
                 _order[index] = index;
             }
-            Comparisons += SortIndices(_placed, _order, rows.Count, direction, _comparer, _culture is not null);
+            SortIndices(_placed, _order, rows.Count, direction, _comparer, _culture is not null);
             object[] result = new object[rows.Count];
             for (int index = 0; index < rows.Count; index++)
             {
@@ -1564,23 +1548,13 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
         }
     }
 
-    private static long SortIndices(Entry[] entries, int[] indices, int count, SortDirection direction,
-        IComparer<TKey> comparer, bool collation)
-    {
-        long comparisons = 0;
+    private static void SortIndices(Entry[] entries, int[] indices, int count, SortDirection direction,
+        IComparer<TKey> comparer, bool collation) =>
         Array.Sort(indices, 0, count, Comparer<int>.Create((left, right) =>
-        {
-            comparisons++;
-            return Compare(entries[left], entries[right], direction, comparer, collation);
-        }));
-        return comparisons;
-    }
+            Compare(entries[left], entries[right], direction, comparer, collation)));
 
-    private int Compare(Entry left, Entry right, SortDirection direction)
-    {
-        Comparisons++;
-        return Compare(left, right, direction, _comparer, _culture is not null);
-    }
+    private int Compare(Entry left, Entry right, SortDirection direction) =>
+        Compare(left, right, direction, _comparer, _culture is not null);
 
     private static int Compare(Entry left, Entry right, SortDirection direction,
         IComparer<TKey> comparer, bool collation)
@@ -1598,8 +1572,10 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
         return direction == SortDirection.Ascending || order == 0 ? order : order > 0 ? -1 : 1;
     }
 
-    private byte[]? Collation(TKey key) => _culture is not null && key is string text
-        ? _culture.GetSortKey(text, _options).KeyData : null;
+    private byte[]? Collation(TKey key) => Collation(key, _culture, _options);
+
+    private static byte[]? Collation(TKey key, CompareInfo? culture, CompareOptions options) =>
+        culture is not null && key is string text ? culture.GetSortKey(text, options).KeyData : null;
 
     private void EnsureCapacity(int kept, int placed)
     {
