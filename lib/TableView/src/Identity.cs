@@ -89,7 +89,12 @@ internal sealed class Identity<TRow, TKey>(
 
         internal override bool Remove(object item) => _entries.Remove(identity.ReadKey(item));
 
-        public override IEnumerator<KeyValuePair<object, T>> GetEnumerator()
+        // Every publish walks maps that are usually empty; an empty array's enumerator is shared,
+        // where the iterator below is allocated for each walk.
+        public override IEnumerator<KeyValuePair<object, T>> GetEnumerator() =>
+            _entries.Count == 0 ? Enumerable.Empty<KeyValuePair<object, T>>().GetEnumerator() : Walk();
+
+        private IEnumerator<KeyValuePair<object, T>> Walk()
         {
             foreach (Entry entry in _entries.Values)
             {

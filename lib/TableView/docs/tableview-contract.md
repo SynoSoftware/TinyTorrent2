@@ -533,8 +533,16 @@ host's diagnostics section R checks exactly that.
 
 **Owner ruling: the table never flashes and never breaks the list's
 animation.** A row that
-arrives, leaves or changes place on screen normally animates with the list's own
-transitions, wherever the list animates it. A completely disjoint visible-window
+arrives or leaves on screen normally animates with the list's own transitions,
+wherever the list animates it. The list has no move for a row, only a removal
+and an insertion, which it shows as a fade. So a publish that reorders rows
+turns the list's transitions off for its layout episode, and each row that was
+on screen slides from where it was shown to its new place. A row that comes on
+screen from elsewhere in the view slides in from the edge on its old side. In
+that publish a row new to the source appears at once, and a row that leaves
+the screen goes at once. A reorder during a slide continues each row from
+where it is shown. When the system disables UI animations, the rows take
+their new places at once. A completely disjoint visible-window
 replacement updates immediately: the native mixed delete/add transition can
 remove every visible row before its delayed arrivals, leaving an empty panel.
 The table suppresses transitions for that layout episode and restores their
@@ -1847,9 +1855,9 @@ itself MUST:
   scaling without a table-specific font-size override.
 
 Motion is functional feedback, not decoration. Direct resize and drag feedback
-tracks the input immediately. Column moves and the host-published outcome of a
-row reorder use the standard WinUI list/reposition/drag transitions when they
-are available; cancellation returns to the unchanged layout without a second
+tracks the input immediately. A column move and a published row reorder slide
+the moved cells or rows from where they were shown, as section 5.3 states for
+rows; drag feedback uses the standard WinUI list transitions; cancellation returns to the unchanged layout without a second
 animation system. The transitions clarify movement and destination but never
 delay input, create a fake successful reorder, or require a host to coordinate
 internal animation state. When the system disables UI animations, the same

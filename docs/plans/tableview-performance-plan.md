@@ -48,6 +48,22 @@
 > common was built and removed, because WinUI drew one empty frame. How such a
 > switch shows its first row waits for the owner.
 >
+> **Step 1b status:** implemented and reviewed in two rounds
+> (`step-1b-review-r1.md`, `r2.md`). Reordered on-screen rows slide (Sliding.cs).
+> No staying row fades in any paint scenario. Each staying row's largest
+> single-frame step is its slide's own first step. Two jumps remain:
+> - An Add or Remove within 1 s of a reorder jumps. WinUI's fast-mutation rule
+>   causes this, and the old code jumps the same way.
+> - A reorder during the list's own Add or Remove transition (M3) starts from
+>   the layout slot. In the test it jumps about 4–8 px; the size depends on the
+>   timing. The owner decides between keeping it and the options in
+>   `step-1b-review-r2.md`.
+>
+> A reorder publish costs more in frame cycles: +12% to +56% in five pairs
+> against 51ece76. That cost comes from the composition calls for each sliding
+> row and from WinUI recycling containers inside the publish. The owner decides
+> whether to accept it.
+>
 > Review records: V:/temp/TableViewPerformance/review-db12cfd (spec,
 > paths-flow, architecture, audit-flat, audit-hierarchy, and the approved plan
 > text `plan-db12cfd.md`). Each

@@ -81,11 +81,31 @@ comparisons leave the source, criterion and active workspace unaccepted.
 It compares final rows in the current panel's visible index interval with old
 positions through the view's position index. With no overlap and a nonempty final source,
 it saves the surface's local transition value once and assigns a separate empty
-collection through that layout episode. The shared post-Rendering callback
-restores its original value source only when the view version is current;
-detach and retemplate restore the captured surface. A shrinking source clips
+collection through that layout episode. The shared Rendering callback
+completes that layout and restores the original value source, so a later
+publish gets the list's own transitions; detach and retemplate restore the
+captured surface. The list itself animates no change that comes within one
+second of its previous change (`fastmutationThreshold` in WinUI's
+`ModernCollectionBasePanel`), so rows shifted by such a change move at once
+with or without this exception. A shrinking source clips
 the old interval conservatively; this does not predict a later native viewport
 clamp. The reconciliation script and notifications are unchanged.
+
+`Table/Sliding.cs` slides the rows a reorder moves. When `Body.View.Compare`
+reports a reorder and animations are on, it records, before the reconcile, the
+shown y of each realized row and an edge for each row the cache range will
+bring on screen, keyed by instance. A later publish before that frame keeps
+these positions and maps any new instance to its row's entry. The publish
+suppresses transitions as above. The Rendering callback lays the frame out,
+then puts each realized container that is on screen before or after back at
+its recorded y as a composition translation and animates it to zero with
+`Motion`'s duration and curve. The compositor reports no animated value, so a
+container's current offset comes from `Motion.Remaining` with the slide's
+start time. That value runs one frame ahead of the frame on screen, which is
+where the next slide takes over. A container the list prepares for another row
+stops its slide. A row that the list's own transition is moving when a reorder
+comes starts from its layout slot, because no API reports where the list's
+transition shows it.
 
 The [hierarchy extension](hierarchy.md) keeps host expansion state outside the
 control. Captured child membership feeds the same private view, sorting cadence
