@@ -609,6 +609,26 @@ public class SelectionTests
             );
         });
 
+    /// <summary>
+    /// A value refresh while the pointer rests on the rows of an unsorted table changes no row, so
+    /// the view stays as it is: no reconcile takes focus off a row or cancels a page move.
+    /// </summary>
+    [TestMethod]
+    public Task AValueRefreshUnderThePointerLeavesTheViewAlone() =>
+        TestHost.RunAsync(async () =>
+        {
+            SelectionHarness h = await SelectionHarness.LoadAsync(6);
+            Proof.Call(h.Table, "PointAt", h[1]);
+            object view = Proof.Field<object>(h.Table, "_view");
+            System.Reflection.PropertyInfo version = view.GetType().GetProperty("Version",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+            object before = version.GetValue(view)!;
+
+            h.Table.RefreshView(new object[] { h[1], h[2] });
+
+            Assert.AreEqual(before, version.GetValue(view));
+        });
+
     private static string[] ViewKeys(SelectionHarness h) =>
         h.Surface().Items.Cast<Row>().Select(row => row.Key).ToArray();
 
@@ -622,6 +642,9 @@ public class SelectionTests
         TestHost.RunAsync(async () =>
         {
             SelectionHarness h = await SelectionHarness.LoadAsync(6);
+            // Row 5 is below the viewport; its container exists once the list's cache has grown.
+            await TableHarness.WaitUntilAsync(() => h.Surface().ContainerFromItem(h[5]) is not null,
+                "row 5's container");
 
             h.Table.Selection = new(new object[] { h[1], h[3] });
             CollectionAssert.AreEqual(new[] { "k1", "k3" }, h.ContainerSelectedKeys());

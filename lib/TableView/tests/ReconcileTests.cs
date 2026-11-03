@@ -255,10 +255,12 @@ public class ReconcileTests
             view,
             BindingFlags.Instance | BindingFlags.NonPublic,
             null,
-            new object[] { identity, new Func<object, bool>(_ => false),
+            new object[] { new Func<object, bool>(_ => false),
                 new Func<IReadOnlyCollection<int>>(() => Array.Empty<int>()) },
             null
         )!;
+        view.GetMethod("SetIdentity", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(created, new[] { identity });
 
         Reconcile(created, rows.ToArray(), Array.Empty<int>());
 
@@ -273,32 +275,26 @@ public class ReconcileTests
     )
     {
         object identity = ReferenceIdentity();
-        object keys = identity.GetType().GetMethod("CreateMap")!
-            .MakeGenericMethod(typeof(object)).Invoke(identity, new object[] { true })!;
-        MethodInfo add = keys.GetType().GetMethod("TryAdd", BindingFlags.Instance | BindingFlags.NonPublic,
-            null, new[] { typeof(object), typeof(object) }, null)!;
-        foreach (object row in snapshot)
-        {
-            add.Invoke(keys, new[] { row, row });
-        }
-        object positions = Activator.CreateInstance(Control.GetType("Syno.TableView.PositionIndex")!,
-            BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null, new[] { identity }, null)!;
-        object previous = view.GetType().GetProperty("Positions", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .GetValue(view)!;
-        positions.GetType().GetMethod("Build", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .Invoke(positions, new object[] { snapshot, keys, previous });
         object pins = Activator.CreateInstance(Control.GetType("Syno.TableView.IdentitySet")!,
-            BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null, new object[] { identity, true }, null)!;
+            BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null, new object[] { identity }, null)!;
         MethodInfo pin = pins.GetType().GetMethod("Add", BindingFlags.Instance | BindingFlags.NonPublic,
             null, new[] { typeof(object) }, null)!;
         foreach (object row in pinned ?? new HashSet<object>())
         {
             pin.Invoke(pins, new[] { row });
         }
-        view.GetType()
-            .GetMethod("Reconcile", BindingFlags.Instance | BindingFlags.NonPublic, null,
-                new[] { typeof(IReadOnlyList<object>), positions.GetType(), typeof(IReadOnlyList<int>), pins.GetType() }, null)!
-            .Invoke(view, new object[] { snapshot, positions, realized, pins });
+        object origin = Activator.CreateInstance(view.GetType().GetNestedType("Origin", BindingFlags.NonPublic)!)!;
+        object difference = view.GetType()
+            .GetMethod("Compare", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(view, new[] { snapshot, origin })!;
+        bool changed = !(bool)difference.GetType()
+            .GetProperty("IsEmpty", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(difference)!;
+        if (changed)
+        {
+            view.GetType()
+                .GetMethod("Reconcile", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .Invoke(view, new[] { snapshot, difference, null, realized, pins });
+        }
     }
 
     private static object ReferenceIdentity() => Control.GetType("Syno.TableView.Identity`2")!

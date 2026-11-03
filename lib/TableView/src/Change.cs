@@ -8,5 +8,7 @@ internal abstract record Change
     internal sealed record Collection(Body.Source.Capture Capture,
         NotifyCollectionChangedEventArgs Notification, bool HasPredecessor) : Change;
     internal sealed record Values(IEnumerable<object> Rows) : Change;
-    internal readonly record struct Edit(object? Before, object? After, int Index);
+    /// <summary>A notification from a hierarchy's child list.</summary>
+    internal sealed record Children(Hierarchy.ChildSource Source,
+        NotifyCollectionChangedEventArgs Notification, bool HasPredecessor) : Change;
 }

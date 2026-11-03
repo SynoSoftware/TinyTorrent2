@@ -28,8 +28,8 @@ internal sealed class Order(
     internal Snapshot Capture(IIdentity identity)
     {
         var entries = new List<Entry>();
-        IdentityMap<Entry> captured = identity.CreateMap<Entry>(keepsKeys: true);
-        _seen = new(identity, keepsKeys: true);
+        IdentityMap<Entry> captured = identity.CreateMap<Entry>();
+        _seen = new(identity);
         _positions.Clear();
         try
         {
@@ -70,12 +70,11 @@ internal sealed class Order(
                 {
                     continue;
                 }
-                bool added = captured.ContainsReference(item) ? seen.Add(item, captured) : seen.Add(item);
-                if (!added || !_positions.Add(value))
+                if (!seen.Add(item) || !_positions.Add(value))
                 {
                     throw InvalidOrder();
                 }
-                matches &= captured.TryGetValue(item, seen, out Entry before)
+                matches &= captured.TryGetValue(item, out Entry before)
                     && ReferenceEquals(before.Item, item) && before.Position == value;
             }
             return matches && seen.Count == captured.Count;

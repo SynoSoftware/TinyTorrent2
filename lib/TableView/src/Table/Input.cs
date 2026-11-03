@@ -709,7 +709,7 @@ public sealed partial class Table
             item = _selection.Current;
         }
 
-        if (item is null || _surface.ContainerFromItem(item) is not FrameworkElement row)
+        if (item is null || RowContainer(item) is not FrameworkElement row)
         {
             return;
         }
@@ -743,7 +743,7 @@ public sealed partial class Table
             || !SameSelection(packet, Selection)
             || !ReferenceEquals(ResolveItem(item), item)
             || _surface is null
-            || !ReferenceEquals(_surface.ItemFromContainer(placementTarget), item)
+            || !ReferenceEquals(RowItem(placementTarget), item)
         )
             return true;
 
@@ -774,7 +774,7 @@ public sealed partial class Table
         {
             if (node is ListViewItem container)
             {
-                item = _surface.ItemFromContainer(container);
+                item = RowItem(container);
                 return item is null ? HitTarget.Suppressed : HitTarget.Row;
             }
 
@@ -981,7 +981,7 @@ public sealed partial class Table
         }
 
         object? item = FocusManager.GetFocusedElement(XamlRoot) is ListViewItem row
-            ? _surface.ItemFromContainer(row)
+            ? RowItem(row)
             : _selection.Current;
         SyncSelectionPolicy();
         if (item is null || !_selection.IsInteractive(item))
@@ -1290,7 +1290,7 @@ public sealed partial class Table
             return;
         }
 
-        if (_surface.ContainerFromItem(item) is Control container)
+        if (RowContainer(item) is Control container)
         {
             container.Focus(state);
             return;
@@ -1309,7 +1309,7 @@ public sealed partial class Table
                             : ReferenceEquals(FocusManager.GetFocusedElement(XamlRoot), handoff)
                                 && ReferenceEquals(_selection.Focus, focus)
                                 && View.Contains(item)
-                    ) && _surface?.ContainerFromItem(item) is Control realized
+                    ) && RowContainer(item) is Control realized
                 )
                 {
                     realized.Focus(state);
@@ -1327,11 +1327,11 @@ public sealed partial class Table
 
         // A realized row takes focus as it is. The forced layout pass is only for a row that
         // ScrollIntoView has just asked for and the list has not built yet.
-        Control? container = _surface.ContainerFromItem(item) as Control;
+        Control? container = RowContainer(item) as Control;
         if (container is null)
         {
             _surface.UpdateLayout();
-            container = _surface.ContainerFromItem(item) as Control;
+            container = RowContainer(item) as Control;
         }
 
         if (container is null && ReferenceEquals(_pendingReveal?.Item, item))

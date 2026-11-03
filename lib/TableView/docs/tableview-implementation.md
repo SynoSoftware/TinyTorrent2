@@ -42,27 +42,27 @@ bypasses settling and local pointer-order pinning for external sorts. Hierarchy
 projection, membership holds and selection reconciliation remain shared.
 
 `Column` holds the typed sort definition installed by `Schema.SortKey`.
-`SortedOrder` in the sorting owner keeps the active flat order, captured keys,
-collation keys and position index; candidate buffers are accepted only after
-comparisons succeed. Its stable index sort also sorts hierarchy siblings. Its
-one placement routine handles changed flat keys and arrivals among surviving
-kept keys. The shown order after pointer pinning stays outside this workspace.
-Eligible collection deltas binary-place entrants and copy retained row/key runs
-with native block copies, without a managed pass over every retained entry.
-Entry revisions defer source-ordinal shifts for stable ties. When that journal
-reaches roughly the square root of the source length, preparation compacts it
-through the existing candidate position index and one source-order walk. This
-keeps source reads and candidate normalization before acceptance, including
-failure from a custom source indexer; no second source-position map is retained.
-Zero-edit preparations reuse the current pinned presentation when the live pin
-targets still match; retargeting uses the ordinary pin projection. The empty
-edit facts remain available to skip whole-view comparison and reconciliation.
-Unchanged held membership reuses its accepted set; a candidate copy is made only
-before changing a held member, and acceptance releases the old candidate's items.
-Each preparation reports whether it performed a full sort, so the pipeline
-advances the settle clock for actual work rather than permission to move rows.
-The sorting owner combines remaining key work and pinned/held presentation
-work before scheduling a settle. Header choices carry committed-sort and
+`SortedOrder` in the sorting owner keeps the active flat order: each shown row
+with the key it took its place by, its collation key and its source index, and
+a position index over the order. A candidate is accepted only after comparisons
+succeed. Its stable index sort also sorts hierarchy siblings. One placement
+routine serves every change: each kept row stays, changes in place, leaves or
+moves; the rows that move and the rows that arrive are sorted and binary-placed
+among the rows that stay, which are copied between those places in native
+blocks. A whole change reads every key; a change that names its rows reads only
+theirs, unless a withheld key is due. While moves are not allowed a row keeps
+its kept key, and the order records that a settle is needed; that record clears
+only in a pass that read every kept key. A key without equality (a mutable key
+object or a comparer that follows the current culture) always counts as
+changed, and before such a change places rows, the kept rows that stay must
+prove their order with the actual comparer; if they cannot, every row is
+placed again by its current key, which counts as a settle. Entry revisions defer source-index
+shifts for stable ties. When that list reaches roughly the square root of the
+source length, preparation rebases every entry through the candidate position
+index and one source-order walk. The shown order after pointer pinning stays
+outside this workspace. The sorting owner makes the one settle decision, for
+flat tables and hierarchies, and is the only code that records when rows last
+took their sorted places. Header choices carry committed-sort and
 detach revisions and run after the shared rendering frame wait; setters and
 layout restoration use the same synchronous commit boundary.
 Eligible header sorts capture detached immutable key/collation groups on UI,
@@ -74,12 +74,12 @@ ties before the ordinary publish accepts it. Capture and commit remain UI work;
 no host callback or identity map enters the worker payload. The captured
 dispatcher posts completion; refusal releases only that exact queued request.
 The pipeline prepares the current source capture before an explicit sort and
-passes its captured-key map into the same publish for acceptance. Failed
+passes that preparation into the same publish for acceptance. Failed
 comparisons leave the source, criterion and active workspace unaccepted.
 
 `Table/View.cs` also owns the disjoint visible-window transition exception.
 It compares final rows in the current panel's visible index interval with old
-positions using captured keys. With no overlap and a nonempty final source,
+positions through the view's position index. With no overlap and a nonempty final source,
 it saves the surface's local transition value once and assigns a separate empty
 collection through that layout episode. The shared post-Rendering callback
 restores its original value source only when the view version is current;
@@ -95,19 +95,21 @@ existing item peers. Flat schemas do not allocate this source state or cell
 chrome. The sample's Project plan page supplies a non-torrent hierarchy with a
 large collapsed branch.
 
-`Hierarchy.ChildSource` keeps each child enumerable's captured items, referring
-parents and subscription identity. An accepted child notification updates only
-that collection and added/removed descendants in the kept node index.
-`Hierarchy.Preparation` journals touched relations and captured keys until
-acceptance or rollback; its keys survive native reconciliation and are released
-before notifications reach host code. Rejected or unobserved changes require
-recapture before another delta. New root captures validate the whole tree,
-reuse current notifying snapshots and compare plain indexed child lists.
-Collapsed changes update disclosure/automation facts without a view publish.
-Expanded changes enter the existing pipeline, where one visible-tree group
-capture feeds kept-order selection or shared sibling sorting and one flatten.
-The same operation-local groups supply worker capture; no per-parent sort-key
-cache or second projection is kept.
+`Hierarchy.ChildSource` keeps each child enumerable's items, referring parents
+and subscription identity. `Hierarchy.Prepare` reads again only the lists a
+change can have altered: every list for a new root assignment, the roots for a
+root change, the notified list for a child notification, and any list it cannot
+trust. It compares each with its accepted items by identity. Rows that leave
+take their subtrees, rows that arrive bring theirs, and a new instance of a row
+replaces its node in place; a same-identity instance changes no sibling group.
+The result stays in the preparation until `Accept`, so a failed publish leaves
+the accepted hierarchy as it was, with nothing to undo. Every child
+notification enters the one pipeline as a change, collapsed or not. The
+projection keeps each expanded parent's sibling order from the previous
+publish, as stored derived state, and sorts again only a group that is newly
+shown or whose list changed which rows it holds; every group when moves are
+allowed for a whole change or a pending settle; and the named rows' groups when
+moves are allowed. The same groups supply worker capture.
 
 ## Rendering and interaction
 
@@ -118,25 +120,29 @@ vertical scroller or calculating column positions in a second place breaks those
 responsibilities.
 
 The identity module creates typed maps and sets, so value-type keys remain
-unboxed. Source membership and the view's position index retain captured keys;
-maps transfer those keys directly rather than calling the host selector again.
-The source prepares whole membership or an accepted-predecessor delta and
-accepts it only after ordering succeeds. Its subscription identity rejects
-stale callbacks even when their nullable sender carries no usable identity.
-Delta preparation retains entrant/leaver captured keys through hold, order,
-view and selection, then clears those transient references before host events.
-The one pipeline receives whole/collection/named-values changes. Named values
-use incremental flat keys; hierarchy values use full sibling projection.
-Due whole-order settling, held/released membership recovery, stale-source
-validation and required actual-comparer/global fallbacks retain whole preparation;
-ordinary eligible named updates do not read unaffected sort keys.
-Whole reorders build a candidate position index, adopted after reconciliation.
-Incremental changes update only edited entries; shared PositionIndex bounds
-stale positions by each sequence's insertion/removal counts, rebuilding after
-about the square root of its length. Quiet logical moves count too. Sibling
-positions belong to the hierarchy's nodes.
-While native vector callbacks observe an intermediate view, its lookup verifies
-the indexed reference and scans only when neither prepared position is current.
+unboxed. Every lookup reads the row's key through the schema's selector, which
+the contract keeps pure, stable and inexpensive; no map keeps keys of its own.
+`Table.InstallIdentity` is the one place an identity is installed.
+The source classifies each change once. A whole change is an assignment,
+`RefreshView()`, a Reset or Move, or any change without a validated
+predecessor. Any other change names its rows: those that leave, those that
+arrive with their source index, and those to read again, which a same-identity
+Replace and `RefreshView(changed)` are. It accepts the change only after
+ordering succeeds. Its subscription identity rejects stale callbacks even when
+their nullable sender carries no usable identity. Each later step applies one
+rule to the rows a change affects and adds work only for its own state: the
+hold reads every row for a whole change, rows named by `Release`, or a view that
+did not show the whole source; a held row that returns while the rows are
+pointed at keeps the held row's index until they are released; the sorted
+order reads every key when a withheld change is due. The only list of edits
+one step hands another is the order's stated difference, below.
+Shared PositionIndex bounds stale positions by each sequence's insertion/removal
+counts, rebuilding after about the square root of its length; an index that
+still names its row's exact place answers at once. Sibling positions belong to
+the hierarchy's nodes.
+While the run script's native vector callbacks observe an intermediate view,
+its lookup checks the old and new positions and scans by identity only when
+neither is current.
 The hierarchy owns visible membership for sorting; source capture versions decide
 when child snapshots need replacing, without a dependency from source to hierarchy.
 
@@ -164,13 +170,35 @@ references remain in the packet while current rows supply interaction policy.
 The private view sends native observable-vector insert, remove and replacement
 events. It avoids projecting .NET collection-event arguments and their item
 lists for every membership change, a measured cost on large Library searches.
-The view stores rows in a gap buffer. Whole and incremental preparations share
-one realized-run remove/quiet-place/insert script, with count events after the
-last surviving run; a single arrival/removal retains its direct mutation.
-Incremental positional facts derive targets for realized rows without building
-another full map. Native callbacks see true intermediate rows and counts;
-selected-range lookup uses the view's transient reference check until edited
-map entries and counted shifts are committed.
+The view stores rows in a gap buffer. The order's producer names each version
+of its own order and, when it knows, states how it differs from the version
+before: the natural order from the notification's indices, the kept sorted
+order from its removed, placed and replaced rows, so a row that moved leaves
+its old place and arrives at its new one. A `RefreshView` of the accepted
+capture states no difference. While rows are held without a local sort,
+membership waits, so the natural order is the view itself with its new
+instances, stated against the view. The view takes a stated difference only
+when it shows the version the difference starts from, or when the difference
+starts from the view itself; otherwise, and for an order with pinned rows or
+held rows under a sort, a resort that placed every row again, a hierarchy or a
+new sort, it compares itself with the order in one walk of references, looking
+up a view index only where the two differ. When
+only membership changed, by no more rows than the list has realized containers,
+it removes the leaving rows highest first and inserts the arriving rows lowest
+first, updating its position index with each. Any other change runs the
+realized-run remove/quiet-place/insert script, with count events after the last
+surviving run. In both, a new instance of a row that stays replaces the old one
+without an event, and the table sets the realized container's content to it,
+so the row element rebinds in place. The list fills a container it prepared
+from the instance it recorded then, after the preparation event or, for a
+scrolling placeholder, in a later pass; each container's update callback puts
+a newer instance back after that fill. The list's own container record keeps
+the instance it generated the container for, so the table finds a container's
+row, and a row's container, by view position (`RowItem`, `RowContainer`), and
+an item automation peer names the generated instance (`ContainerItem`) so the
+list finds its container; the peer reads the current row by identity. Native callbacks see true
+intermediate rows and counts. A failure part-way indexes the view again as it
+stands, so the next publish compares with the view as it really is.
 
 The private view also implements `ISelectionInfo`, answering from the table's
 selection model. The list reads a row's selected state from it when it builds

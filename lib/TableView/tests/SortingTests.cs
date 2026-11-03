@@ -141,32 +141,24 @@ public class SortingTests
     public Task NotificationsCaptureOnlyEntrantsAndRecoverAfterARejectedDelta() =>
         TestHost.RunAsync(async () =>
         {
-            int identities = 0;
             int keys = 0;
             SortHarness h = await SortHarness.LoadAsync(new[] { 1, 3, 5 }, configure: table =>
             {
-                table.Schema<SortRow>().Key(row =>
-                {
-                    identities++;
-                    return row.Key;
-                }).SortKey(table.Columns[0], row =>
+                table.Schema<SortRow>().Key(row => row.Key).SortKey(table.Columns[0], row =>
                 {
                     keys++;
                     return row.Rank;
                 });
                 table.Sort = new(table.Columns[0]);
             });
-            identities = keys = 0;
+            keys = 0;
             h.Rows.Add(new("arrival", 2));
-            Assert.AreEqual(1, identities);
             Assert.AreEqual(1, keys);
             CollectionAssert.AreEqual(new[] { "k0", "arrival", "k1", "k2" }, h.ViewKeys());
             h.Rows[1] = new("k1", 4);
-            Assert.AreEqual(2, identities);
             Assert.AreEqual(2, keys);
             Assert.AreSame(h.Rows[1], h.Surface().Items[2]);
             h.Rows.RemoveAt(0);
-            Assert.AreEqual(2, identities, "a removal transfers its accepted key");
             Assert.AreEqual(2, keys, "a removal retains every survivor's sort key");
             Expect.Throws<InvalidOperationException>(() => h.Rows.Add(new("arrival", 9)));
             CollectionAssert.AreEqual(new[] { "arrival", "k1", "k2" }, h.ViewKeys());

@@ -1,61 +1,74 @@
 namespace Syno.TableView;
 
-internal sealed class PositionIndex(IIdentity identity) : IIdentityKeys
+/// <summary>
+/// Row to index over one ordered sequence. An index stored before later inserts and removals is
+/// found by a scan of the window those changes can have moved it through, and the whole index is
+/// rebuilt after about √n changes.
+/// </summary>
+/// <param name="counts">The sequence's running counts of inserts and removals, or null when the
+/// owner builds the index again after every change.</param>
+internal sealed class PositionIndex(IIdentity identity, Func<PositionIndex.Counts>? counts = null)
 {
     internal readonly record struct Counts(long Inserts, long Removals);
-    private Func<Counts>? _counts;
+    private readonly IdentityMap<int> _map = identity.CreateMap<int>();
     private Counts _built;
-    internal IdentityMap<int> Map { get; } = identity.CreateMap<int>(keepsKeys: true);
-    public IIdentityKeys CapturedFor(object item) => Map;
     internal IReadOnlyList<object> Rows { get; private set; } = Array.Empty<object>();
-    public bool ContainsReference(object item) => Map.ContainsReference(item);
 
-    internal void Build(IReadOnlyList<object> rows, IIdentityKeys keys, IIdentityKeys? held = null)
+    /// <summary>Index <paramref name="rows"/> as they stand.</summary>
+    internal void Build(IReadOnlyList<object> rows)
     {
-        Map.Clear();
+        _map.Clear();
         for (int index = 0; index < rows.Count; index++)
         {
-            object item = rows[index];
-            IIdentityKeys captured = keys;
-            if (!keys.ContainsReference(item) && held is PositionIndex previous)
-            {
-                captured = previous.Map;
-            }
-            Map.TryAdd(item, index, captured);
+            _map.TryAdd(rows[index], index);
         }
-        Rows = rows;
-        _built = _counts?.Invoke() ?? default;
+        Bind(rows);
     }
 
-    internal int IndexOf(object? item) => item is not null && Map.TryGetValue(item, out int index)
-        ? Locate(Map.Resolve(item)!, index) : -1;
-
-    internal int IndexOf(object item, IIdentityKeys keys) =>
-        Map.TryGetValue(item, keys, out int index) ? Locate(Map.Resolve(item, keys)!, index) : -1;
-
-    private int Locate(object item, int stored)
+    /// <summary>
+    /// <paramref name="rows"/> now stand at the stored indices exactly, so the window starts
+    /// again from the current counts.
+    /// </summary>
+    internal void Bind(IReadOnlyList<object> rows)
     {
-        if (_counts is null)
+        Rows = rows;
+        _built = counts?.Invoke() ?? default;
+    }
+
+    /// <summary>
+    /// <paramref name="rows"/> replace the sequence; every change since the window started was
+    /// counted and recorded with <see cref="Insert"/> and <see cref="Remove"/>.
+    /// </summary>
+    internal void Follow(IReadOnlyList<object> rows) => Rows = rows;
+
+    internal int IndexOf(object? item)
+    {
+        if (item is null || !_map.TryGetValue(item, out int stored))
+        {
+            return -1;
+        }
+        object current = _map.Resolve(item)!;
+        if (counts is null || stored < Rows.Count && ReferenceEquals(Rows[stored], current))
         {
             return stored;
         }
-        Counts now = _counts();
+        Counts now = counts();
         long inserts = now.Inserts - _built.Inserts;
         long removals = now.Removals - _built.Removals;
         if (inserts + removals >= Math.Max(1, Math.Sqrt(Rows.Count)))
         {
             for (int index = 0; index < Rows.Count; index++)
             {
-                Map.Set(Rows[index], index, Map);
+                _map.Set(Rows[index], index);
             }
             _built = now;
-            return Map.TryGetValue(item, Map, out int current) ? current : -1;
+            return _map.TryGetValue(current, out int rebuilt) ? rebuilt : -1;
         }
         int first = (int)Math.Max(0, stored - removals);
         int last = (int)Math.Min(Rows.Count - 1, stored + inserts);
         for (int index = first; index <= last; index++)
         {
-            if (ReferenceEquals(Rows[index], item))
+            if (ReferenceEquals(Rows[index], current))
             {
                 return index;
             }
@@ -63,24 +76,13 @@ internal sealed class PositionIndex(IIdentity identity) : IIdentityKeys
         return -1;
     }
 
-    internal void Insert(object item, int index, IIdentityKeys keys) => Map.Set(item, index, keys);
-    internal void Remove(object item, IIdentityKeys keys) => Map.Remove(item, keys);
-
-    internal int IndexOfKnown(object item, PositionIndex previous) =>
-        IndexOf(item, Map.ContainsReference(item) ? Map : previous.Map);
-
-    internal void Bind(IReadOnlyList<object> rows, Func<Counts>? counts = null)
-    {
-        Rows = rows;
-        _counts = counts;
-        _built = counts?.Invoke() ?? default;
-    }
-
-    internal void MoveTo(IReadOnlyList<object> rows) => Rows = rows;
-
+    /// <summary>The instance standing in the sequence with <paramref name="item"/>'s identity.</summary>
     internal object? Resolve(object item)
     {
         int index = IndexOf(item);
         return index < 0 ? null : Rows[index];
     }
+
+    internal void Insert(object item, int index) => _map.Set(item, index);
+    internal void Remove(object item) => _map.Remove(item);
 }

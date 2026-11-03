@@ -154,6 +154,39 @@ public class HierarchyTests
             CollectionAssert.AreEqual(new[] { "a", "b", "d" }, Names(table));
         });
 
+    /// <summary>
+    /// Inside the interval a sibling group keeps the order it was last shown in. That kept order
+    /// is no longer valid once the group stops being shown, so a parent collapsed and expanded
+    /// again shows its children sorted by their current values.
+    /// </summary>
+    [TestMethod]
+    public Task ExpandingAgainSortsTheChildrenByTheirCurrentValues() =>
+        TestHost.RunAsync(async () =>
+        {
+            Node parent = new("p", new Node("a"), new Node("b"), new Node("c"));
+            Dictionary<string, int> ranks = new() { ["p"] = 0, ["a"] = 1, ["b"] = 2, ["c"] = 3 };
+            Column name = TestData.Column("name");
+            Table table = TestData.Table(name);
+            table.Schema<Node>().Key(row => row.Name)
+                .Hierarchy(name, row => row.Children, row => row.IsExpanded, (row, value) => row.IsExpanded = value)
+                .SortKey(name, row => ranks[row.Name]);
+            table.SortInterval = TimeSpan.FromHours(1);
+            table.ItemsSource = new[] { parent };
+            await TableHarness.LoadAsync(table);
+            table.Sort = new(name);
+            CollectionAssert.AreEqual(new[] { "p", "a", "b", "c" }, Names(table));
+
+            ranks["a"] = 9;
+            table.RefreshView();
+            CollectionAssert.AreEqual(new[] { "p", "a", "b", "c" }, Names(table), "the shown group keeps its order");
+
+            parent.IsExpanded = false;
+            table.RefreshView();
+            parent.IsExpanded = true;
+            table.RefreshView();
+            CollectionAssert.AreEqual(new[] { "p", "b", "c", "a" }, Names(table));
+        });
+
     [TestMethod]
     public Task RejectedRootsDoNotRecaptureAcceptedOneShotChildren() =>
         TestHost.RunAsync(async () =>

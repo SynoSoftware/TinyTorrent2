@@ -51,7 +51,7 @@ public class ColumnResetTests
         TestHost.RunAsync(async () =>
         {
             SortHarness h = await SortHarness.LoadAsync(new[] { 3, 1, 2 });
-            h.Activate(0);
+            await h.ActivateAsync(0);
             CollectionAssert.AreEqual(new[] { "k1", "k2", "k0" }, h.ViewKeys());
 
             h.Table.ResetLayout();

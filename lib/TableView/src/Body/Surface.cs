@@ -55,7 +55,9 @@ public sealed partial class Surface : ListView
 
         protected override ItemAutomationPeer OnCreateItemAutomationPeer(object item)
         {
-            ItemPeer peer = new(item, this);
+            // The peer finds its container through the instance the list generated it for (see
+            // PeerFor); it reads the row's current instance by identity (Current).
+            ItemPeer peer = new(Table?.ContainerItem(item) ?? item, this);
             if (Table?.Hierarchy is not null)
             {
                 (_itemPeers ??= []).Add(new(peer));
@@ -115,7 +117,13 @@ public sealed partial class Surface : ListView
         }
 
         private void Raise(object item, AutomationEvents automationEvent) =>
-            CreateItemAutomationPeer(item)?.RaiseAutomationEvent(automationEvent);
+            PeerFor(item)?.RaiseAutomationEvent(automationEvent);
+
+        /// <summary>
+        /// The item peer for a row, asked for by the instance the list generated its container
+        /// for, which is the instance the list caches the peer under.
+        /// </summary>
+        private ItemAutomationPeer PeerFor(object item) => CreateItemAutomationPeer(Table?.ContainerItem(item) ?? item);
 
         protected override object? GetPatternCore(PatternInterface pattern) =>
             pattern == PatternInterface.Selection
@@ -135,7 +143,7 @@ public sealed partial class Surface : ListView
         IRawElementProviderSimple[] ISelectionProvider.GetSelection() =>
             Table is { } table
                 ? table
-                    .SelectedItems.Select(item => ProviderFromPeer(CreateItemAutomationPeer(item)))
+                    .SelectedItems.Select(item => ProviderFromPeer(PeerFor(item)))
                     .ToArray()
                 : [];
     }

@@ -66,7 +66,7 @@ public sealed partial class Table
     private void BeginDrag(object item)
     {
         _dragOrder = _order!.Capture(_identity);
-        _dragItems ??= new(_identity, keepsKeys: true);
+        _dragItems ??= new(_identity);
         _dragItems.Clear();
         var selected = new IdentitySet(_identity);
         selected.UnionWith(_selection.IsSelected(item) ? SelectedItems : new[] { item });
@@ -78,7 +78,7 @@ public sealed partial class Table
             if (selected.Contains(entry.Item) && ResolveItem(entry.Item) is { } current && IsInteractive(current))
             {
                 packet.Add(entry.Item);
-                _dragItems.Add(entry.Item, _dragOrder.Map);
+                _dragItems.Add(entry.Item);
                 total += entry.Position;
             }
             else
@@ -211,7 +211,7 @@ public sealed partial class Table
 
     internal bool IsDragging(object? item) =>
         _gesture == RowGesture.RowDrag && item is not null
-        && (_view.KeysFor(item) is { } keys ? _dragItems!.Contains(item, keys) : _dragItems!.ContainsReference(item));
+        && _dragItems!.Contains(item);
 
     private void SetDestination(int? gap)
     {

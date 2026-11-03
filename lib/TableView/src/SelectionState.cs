@@ -5,25 +5,20 @@ namespace Syno.TableView;
 /// <summary>The authoritative selection, current item, range anchor and logical focus.</summary>
 internal sealed class SelectionState
 {
-    private IIdentity _identity;
+    private IIdentity _identity = null!;
     private readonly Body.View _view;
-    private IdentitySet _selected;
-    private IdentityMap<byte> _tracked;
-    private IdentitySet _added;
-    private IdentitySet _removed;
+    private IdentitySet _selected = null!;
+    private IdentitySet _added = null!;
+    private IdentitySet _removed = null!;
     private readonly SortedSet<int> _indices = new();
     private long _indicesVersion = -1;
     private RangeGesture? _range;
     private MarqueeGesture? _marquee;
 
-    internal SelectionState(IIdentity identity, Body.View view)
+    /// <remarks>The table installs the identity before first use (<c>SetIdentity</c>).</remarks>
+    internal SelectionState(Body.View view)
     {
-        _identity = identity;
         _view = view;
-        _selected = new(identity, keepsKeys: true);
-        _tracked = identity.CreateMap<byte>(keepsKeys: true);
-        _added = new(identity, keepsKeys: true);
-        _removed = new(identity, keepsKeys: true);
     }
 
     internal ListViewSelectionMode Mode { get; set; } = ListViewSelectionMode.Extended;
@@ -92,10 +87,9 @@ internal sealed class SelectionState
     internal void SetIdentity(IIdentity identity)
     {
         _identity = identity;
-        _selected = new(identity, keepsKeys: true);
-        _tracked = identity.CreateMap<byte>(keepsKeys: true);
-        _added = new(identity, keepsKeys: true);
-        _removed = new(identity, keepsKeys: true);
+        _selected = new(identity);
+        _added = new(identity);
+        _removed = new(identity);
         _indices.Clear();
         _indicesVersion = -1;
         _range = null;
@@ -103,8 +97,7 @@ internal sealed class SelectionState
     }
 
     internal bool AllowsMultiple => Mode is ListViewSelectionMode.Multiple or ListViewSelectionMode.Extended;
-    internal bool IsSelected(object item) => _view.KeysFor(item) is { } keys
-        ? _selected.Contains(item, keys) : _selected.Contains(item);
+    internal bool IsSelected(object item) => _selected.Contains(item);
     internal bool IsInteractive(object item) => CanInteract?.Invoke(item) != false;
     internal bool IsSame(object? left, object? right) => _identity.IsSame(left, right);
 
@@ -129,14 +122,14 @@ internal sealed class SelectionState
     private bool Add(object item)
     {
         EnsureIndices();
-        if (!_selected.Add(item, _view.Positions.Map))
+        if (!_selected.Add(item))
         {
             return false;
         }
         _indices.Add(_view.Positions.IndexOf(item));
-        if (!_removed.Remove(item, _view.Positions))
+        if (!_removed.Remove(item))
         {
-            _added.Add(item, _view.Positions.Map);
+            _added.Add(item);
         }
         ItemsVersion++;
         return true;
@@ -149,11 +142,11 @@ internal sealed class SelectionState
         {
             return false;
         }
-        if (!_added.Remove(item, _selected))
+        if (!_added.Remove(item))
         {
-            _removed.Add(item, _selected.Map);
+            _removed.Add(item);
         }
-        int index = _view.Positions.IndexOf(item, _selected);
+        int index = _view.Positions.IndexOf(item);
         _selected.Remove(item);
         _indices.Remove(index);
         ItemsVersion++;
@@ -165,19 +158,6 @@ internal sealed class SelectionState
         Current = current;
         Anchor = anchor;
         Focus = focus;
-        _tracked.Clear();
-        if (current is not null)
-        {
-            _tracked.TryAdd(current, 0, _view.Positions.Map);
-        }
-        if (anchor is not null)
-        {
-            _tracked.TryAdd(anchor, 0, _view.Positions.Map);
-        }
-        if (focus is not null)
-        {
-            _tracked.TryAdd(focus, 0, _view.Positions.Map);
-        }
     }
 
     /// <summary>
@@ -311,7 +291,7 @@ internal sealed class SelectionState
                 baseline = new(_identity);
                 foreach (object selected in _selected)
                 {
-                    baseline.Add(selected, _selected.Map);
+                    baseline.Add(selected);
                 }
             }
             else
@@ -378,9 +358,9 @@ internal sealed class SelectionState
     {
         foreach (object item in _selected)
         {
-            if (!_added.Remove(item, _selected))
+            if (!_added.Remove(item))
             {
-                _removed.Add(item, _selected.Map);
+                _removed.Add(item);
             }
         }
         if (_selected.Count > 0)
@@ -424,12 +404,12 @@ internal sealed class SelectionState
     internal void BeginMarquee(Checkpoint checkpoint, bool ctrl, bool shift)
     {
         _range = null;
-        IdentitySet baseline = new(_identity, keepsKeys: true);
+        IdentitySet baseline = new(_identity);
         foreach (object item in checkpoint.Items)
         {
             if (Resolve(item) is { } current)
             {
-                baseline.Add(current, _view.Positions);
+                baseline.Add(current);
             }
         }
         _marquee = new(baseline, ctrl, shift);
@@ -451,7 +431,7 @@ internal sealed class SelectionState
         {
             foreach (object item in gesture.Baseline)
             {
-                int index = _view.Positions.IndexOf(item, gesture.Baseline);
+                int index = _view.Positions.IndexOf(item);
                 if (index >= 0 && IsInteractive(_view[index]))
                 {
                     Add(_view[index]);
@@ -497,7 +477,7 @@ internal sealed class SelectionState
         foreach (int index in removed)
         {
             object item = _view[index];
-            if (gesture.Ctrl && gesture.Baseline.Contains(item, _view.Positions) && IsInteractive(item))
+            if (gesture.Ctrl && gesture.Baseline.Contains(item) && IsInteractive(item))
             {
                 Add(item);
             }
@@ -509,7 +489,7 @@ internal sealed class SelectionState
         foreach (int index in added)
         {
             object item = _view[index];
-            if (IsInteractive(item) && (!gesture.Ctrl || !gesture.Baseline.Contains(item, _view.Positions)))
+            if (IsInteractive(item) && (!gesture.Ctrl || !gesture.Baseline.Contains(item)))
             {
                 Add(item);
             }
@@ -560,8 +540,8 @@ internal sealed class SelectionState
 
     /// <summary>
     /// Section 5.3's reconciliation. Rehydrates tracked identities onto the new instances, prunes
-    /// what left or became non-interactive, and repairs current. An incremental preparation limits
-    /// the pass to the rows it added and removed.
+    /// what left or became non-interactive, and repairs current. A change that names its rows
+    /// limits the pass to them.
     /// </summary>
     internal void Reconcile(IReadOnlyList<object> view, object? currentFallback = null, object? focusFallback = null,
         Body.Source.Preparation? preparation = null)
@@ -570,17 +550,15 @@ internal sealed class SelectionState
         bool moved = _indicesVersion != _view.Version;
         List<object>? replace = null;
         List<object>? remove = null;
-        IEnumerable<object> affected = preparation?.IsIncremental == true
-            ? preparation.Removed.Concat(preparation.Added) : _selected;
+        IEnumerable<object> affected = preparation is null ? _selected : Affected(preparation);
         foreach (object named in affected)
         {
-            IIdentityKeys keys = preparation?.IsIncremental == true ? preparation : _selected;
-            object? item = _selected.Map.Resolve(named, keys);
+            object? item = _selected.Map.Resolve(named);
             if (item is null)
             {
                 continue;
             }
-            int index = _view.Positions.IndexOf(item, _selected);
+            int index = _view.Positions.IndexOf(item);
             if (index < 0 || !IsInteractive(_view[index]))
             {
                 (remove ??= new()).Add(item);
@@ -601,7 +579,7 @@ internal sealed class SelectionState
         {
             foreach (object item in replace)
             {
-                _selected.Map.Set(item, 0, _view.Positions.Map);
+                _selected.Map.Set(item, 0);
             }
             ItemsVersion++;
         }
@@ -622,11 +600,15 @@ internal sealed class SelectionState
 
         object? Retain(object? item)
         {
-            int index = item is null ? -1 : _view.Positions.IndexOf(item, _tracked);
-            bool inspect = item is not null && (preparation?.IsIncremental != true || preparation.Affects(item, _tracked));
+            int index = item is null ? -1 : _view.Positions.IndexOf(item);
+            bool inspect = item is not null
+                && (preparation is null || Affected(preparation).Any(row => IsSame(row, item)));
             return index >= 0 && (!inspect || IsInteractive(_view[index])) ? _view[index] : null;
         }
     }
+
+    private static IEnumerable<object> Affected(Body.Source.Preparation preparation) =>
+        preparation.Leavers.Concat(preparation.Arrivals.Select(arrival => arrival.Item)).Concat(preparation.Reread);
 
     private void Apply(List<object> items, object? current, object? anchor, object? focus)
     {
@@ -648,7 +630,7 @@ internal sealed class SelectionState
         {
             foreach (object item in _view)
             {
-                if (_selected.Contains(item, _view.Positions.Map))
+                if (_selected.Contains(item))
                 {
                     packet[next++] = item;
                 }

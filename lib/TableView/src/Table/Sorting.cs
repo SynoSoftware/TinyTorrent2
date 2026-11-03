@@ -23,7 +23,7 @@ public sealed partial class Table
     private bool _hasPendingSort;
     private TimeSpan _sortInterval = DefaultSortInterval;
     private SortMode _sortMode;
-    private readonly List<object> _keptRows = new();
+    private readonly List<object> _naturalRows = new();
     private SortedOrder? _sortedOrder;
     private QueuedSort? _queuedSort;
     private long _sortRevision;
@@ -163,20 +163,19 @@ public sealed partial class Table
 
             // Comparison can invoke host code; finish it before committing the new sort.
             SortedOrder? workspace = CreateSort(column);
-            Body.Source.Capture capture = _source.Current;
-            IdentityMap<object>? membership = null;
+            Body.Source.Preparation? source = null;
             IReadOnlyList<object>? order = _sortMode == SortMode.Local
-                ? PrepareSort(capture, workspace, direction, out membership) : null;
+                ? PrepareSort(workspace, direction, out source) : null;
             if (_hierarchy is null)
             {
-                workspace?.Accept(order!);
+                workspace?.Accept();
             }
             CommitSort(column, direction, workspace);
 
             // Complete presentation before selection handlers can run or throw.
             _headerStrip?.Panel?.RefreshHeader();
             if (order is not null)
-                RebuildView(capture, order, membership);
+                RebuildView(sorted: order, prepared: source);
 
             RaiseLayoutChanged(LayoutChange.Sort);
         }
@@ -199,6 +198,8 @@ public sealed partial class Table
         _orderSettledAt = DateTimeOffset.MinValue;
         _settlePending = false;
         _settleDue?.Stop();
+        // The kept sibling groups are ordered by the sort they were kept under.
+        _hierarchy?.ForgetOrder();
     }
 
     private Sort? PendingSort()
@@ -352,16 +353,15 @@ public sealed partial class Table
     {
         Sort requested = queued.Requested!.Value;
         work.Sorting.CountComparisons();
-        Body.Source.Capture capture = _source.Current;
-        IReadOnlyList<object> order = PrepareSort(capture, work.Workspace, requested.Direction,
-            out IdentityMap<object>? membership, work);
+        IReadOnlyList<object> order = PrepareSort(work.Workspace, requested.Direction,
+            out Body.Source.Preparation? source, work);
         if (_hierarchy is null)
         {
-            work.Workspace.Accept(order);
+            work.Workspace.Accept();
         }
         CommitSort(RequireSortable(requested.Column), requested.Direction, work.Workspace);
         _headerStrip?.Panel?.RefreshHeader();
-        RebuildView(capture, order, membership);
+        RebuildView(sorted: order, prepared: source);
         RaiseLayoutChanged(LayoutChange.Sort);
     }
 
@@ -429,46 +429,94 @@ public sealed partial class Table
     /// pointed row keeps its own (section 9).
     /// </para>
     /// </remarks>
-    /// <returns>The order, and the rows that keep their index, whose containers the reconcile keeps.</returns>
-    private (IReadOnlyList<object> Order, IdentitySet Pinned, IReadOnlyList<Change.Edit>? Changes) ViewOrder(
-        IReadOnlyList<object> snapshot,
-        IdentityMap<object> live,
-        Body.Source.Preparation? source = null
-    )
+    /// <returns>
+    /// The order; the rows that keep their index, whose containers the reconcile keeps; and the
+    /// source change when the hold passed it on by its rows, otherwise null. Selection then
+    /// reconciles only those rows: a held leaver is still shown and is pruned as not interactive.
+    /// </returns>
+    private (IReadOnlyList<object> Order, IdentitySet Pinned, Body.Source.Preparation? Affected,
+        Body.View.Origin Origin) ViewOrder(
+        Body.Source.Preparation source)
     {
         DateTimeOffset now = DateTimeOffset.UtcNow;
-        bool allowMoves = !SortsLocally || SortsOrder || _view.Count == 0
-            || _sortInterval == TimeSpan.Zero || now - _orderSettledAt >= _sortInterval;
-        HoldChange? delta = source is null ? null : PrepareHold(source);
-        if (delta?.Holds == true && allowMoves && _sortedOrder?.NeedsSettle == true)
+        bool allowMoves = MayMove(now);
+        HoldStep hold = Hold(source);
+        IReadOnlyList<object> shown;
+        IReadOnlyList<object> order;
+        IdentitySet pinned;
+        Body.View.Origin origin;
+        if (_sortedOrder is null && hold.Holds && hold.Shown.Shown is null)
         {
-            delta = null;
+            (order, pinned, origin) = HeldOrder(hold, source);
+            shown = order;
         }
-        var (shown, held, released) = delta is null ? Hold(snapshot, live, preparation: source)
-            : (snapshot, delta.Held, (IReadOnlyList<object>)Array.Empty<object>());
-        bool incremental = delta is not null;
-        SortedOrder.Preparation prepared = _sortedOrder is null
-            ? new(shown, false, incremental ? NaturalChanges(source!, delta!) : null)
-            : incremental ? _sortedOrder.Prepare(source!, _sortDirection, allowMoves, delta!.Arrivals)
-            : _sortedOrder.Prepare(shown, source is null ? live : source, _sortDirection, allowMoves);
-        if (_sortedOrder is null && delta?.Holds == true)
+        else
         {
-            AcceptHold(held, released);
-            return (_view, held, prepared.Changes);
+            shown = _sortedOrder is null ? NaturalOrder(hold, source)
+                : _sortedOrder.Prepare(hold.Shown, _sortDirection, allowMoves);
+            (order, pinned) = Pin(shown, hold, source);
+            origin = !ReferenceEquals(order, shown) ? default
+                : _sortedOrder?.Origin ?? NaturalOrigin(order, source);
         }
-        IReadOnlyList<object> sorted = prepared.Rows;
-        bool reuse = prepared.Changes is { Count: 0 } && SamePins(held, live, source!);
-        var result = reuse ? (Order: View, Pinned: _pinned) : Pin(sorted, held, live, source);
-        _sortedOrder?.Accept(prepared.Rows);
-        AcceptHold(held, released);
-        if (allowMoves || prepared.UsedFullSort)
+        _sortedOrder?.Accept();
+        AcceptHold(hold);
+        Settle(now, allowMoves || _sortedOrder?.Resorted == true, _sortedOrder?.NeedsSettle == true || hold.Held.Count > 0
+            || shown.Count != source.Capture.Rows.Count
+            || !ReferenceEquals(order, shown) && !order.SequenceEqual(shown, ReferenceEqualityComparer.Instance));
+        return (order, pinned, hold.Shown.Shown is null ? source : null, origin);
+    }
+
+    /// <summary>
+    /// A hierarchy's order: each expanded parent's children sorted as one group. Inside the
+    /// interval a group keeps the order it was shown in unless its own list changed.
+    /// </summary>
+    private (IReadOnlyList<object> Order, IdentitySet Pinned, Body.Source.Preparation? Affected,
+        Body.View.Origin Origin) ViewOrder(
+        Hierarchy.Preparation hierarchy)
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        bool allowMoves = MayMove(now);
+        IReadOnlyList<object> order = _hierarchy!.Project(hierarchy, SortsLocally ? _sortedOrder : null,
+            _sortDirection, allowMoves && (hierarchy.IsWhole || _settlePending), allowMoves, out bool kept);
+        Settle(now, allowMoves, kept && !allowMoves);
+        return (order, _held, null, default);
+    }
+
+    /// <summary>
+    /// The order a sort the person or host asked for gives. It moves every row, so nothing is held
+    /// through it.
+    /// </summary>
+    private (IReadOnlyList<object> Order, IdentitySet Pinned, Body.Source.Preparation? Affected,
+        Body.View.Origin Origin) SortedView(
+        Body.Source.Preparation? source, IReadOnlyList<object> sorted)
+    {
+        IdentitySet held = _held;
+        if (source is not null)
+        {
+            HoldStep hold = Hold(source, sortChanged: true);
+            AcceptHold(hold);
+            held = hold.Held;
+        }
+        Settle(DateTimeOffset.UtcNow, allowMoves: true, pending: false);
+        return (sorted, held, null, default);
+    }
+
+    /// <summary>Whether rows may take their sorted places now, rather than at the next settle.</summary>
+    private bool MayMove(DateTimeOffset now) => !SortsLocally || SortsOrder || _view.Count == 0
+        || _sortInterval == TimeSpan.Zero || now - _orderSettledAt >= _sortInterval;
+
+    /// <summary>
+    /// The one settle decision. A publish that allowed moves starts the interval again; a publish
+    /// that left rows off their sorted places, by a withheld key, a held or waiting row or a
+    /// pinned row, schedules the settle at the end of the interval.
+    /// </summary>
+    private void Settle(DateTimeOffset now, bool allowMoves, bool pending)
+    {
+        if (allowMoves)
         {
             _orderSettledAt = now;
         }
-        _settlePending = SortsLocally && !SortsOrder
-            && (_sortedOrder!.NeedsSettle || held.Count > 0 || shown.Count != snapshot.Count
-                || (reuse ? _settlePending : !ReferenceEquals(result.Order, sorted)
-                    && !result.Order.SequenceEqual(sorted, ReferenceEqualityComparer.Instance)));
+        _settlePending = SortsLocally && !SortsOrder && pending;
         if (_settlePending)
         {
             ScheduleSettle(_sortInterval - (now - _orderSettledAt));
@@ -477,66 +525,94 @@ public sealed partial class Table
         {
             _settleDue?.Stop();
         }
-        return (result.Order, result.Pinned, reuse || ReferenceEquals(result.Order, sorted) ? prepared.Changes : null);
     }
 
-    private (IReadOnlyList<object> Order, IdentitySet Pinned, IReadOnlyList<Change.Edit>? Changes)
-        ViewOrder(Hierarchy.Projection projection)
-    {
-        if (!SortsLocally)
-        {
-            return (projection.Order(null, _sortDirection), _held, null);
-        }
-        DateTimeOffset now = DateTimeOffset.UtcNow;
-        bool settled = SortsOrder || _view.Count == 0 || _sortInterval == TimeSpan.Zero
-            || now - _orderSettledAt >= _sortInterval;
-        IReadOnlyList<object> order;
-        if (!settled && KeptOrder(projection.Membership) is { } kept)
-        {
-            order = kept;
-        }
-        else
-        {
-            order = projection.Order(_sortedOrder, _sortDirection);
-            settled = true;
-        }
-        if (settled)
-        {
-            _orderSettledAt = now;
-            _settlePending = false;
-            _settleDue?.Stop();
-        }
-        else
-        {
-            _settlePending = true;
-            ScheduleSettle(_sortInterval - (now - _orderSettledAt));
-        }
-        return (order, _held, null);
-    }
+    /// <summary>
+    /// The shown rows in source order, for a table without a local sort, unless rows are held:
+    /// see <see cref="HeldOrder"/>.
+    /// </summary>
+    private static IReadOnlyList<object> NaturalOrder(HoldStep hold, Body.Source.Preparation source) =>
+        hold.Shown.Shown ?? source.Capture.Rows;
 
-    private IReadOnlyList<Change.Edit> NaturalChanges(Body.Source.Preparation source, HoldChange hold)
+    /// <summary>
+    /// The natural order while the rows are pointed at and the change names its rows. Membership
+    /// waits, so the order is the view as it stands with each row the source replaced, and each
+    /// returning row in its held row's place, as new instances. It states those instances
+    /// against the view itself, so the view does not walk, and copies the view only when an
+    /// instance changes.
+    /// </summary>
+    private (IReadOnlyList<object> Order, IdentitySet Pinned, Body.View.Origin Origin) HeldOrder(
+        HoldStep hold, Body.Source.Preparation source)
     {
-        List<Change.Edit> changes = new();
-        if (source.Change is Change.Values)
+        List<object>? order = null;
+        List<(int, int)> replacing = new(source.Reread.Count + hold.Returning.Count);
+        foreach (object row in source.Reread.Concat(hold.Returning))
         {
-            return changes;
-        }
-        foreach (object item in source.Removed)
-        {
-            if (!hold.Holds && !source.Additions.ContainsKey(item, source.Leavers))
+            int index = _view.Positions.IndexOf(row);
+            if (index >= 0 && !ReferenceEquals(_view[index], row))
             {
-                changes.Add(new(item, null, -1));
+                if (order is null)
+                {
+                    order = _naturalRows;
+                    order.Clear();
+                    order.AddRange(_view);
+                }
+                order[index] = row;
+                replacing.Add((index, index));
             }
         }
-        int start = ((Change.Collection)source.Change).Notification.NewStartingIndex;
-        foreach (int index in hold.Arrivals)
+        return (order ?? (IReadOnlyList<object>)_view, hold.Held, new(null, _view, new([], [], replacing)));
+    }
+
+    /// <summary>
+    /// The natural order's origin. Its version is the source capture it shows, so a change that
+    /// names its rows gives the difference from the capture before, as the notification placed
+    /// them: rows it removed at their old indices, rows it added at their new ones, and a row it
+    /// replaced with a new instance of itself in place.
+    /// </summary>
+    private Body.View.Origin NaturalOrigin(IReadOnlyList<object> order, Body.Source.Preparation source)
+    {
+        Body.Source.Capture previous = _source.Current;
+        if (!ReferenceEquals(order, source.Capture.Rows))
         {
-            object item = source.Added[index];
-            object? before = hold.Holds ? _view.Positions.Map.Resolve(item, source.Additions)
-                : source.Leavers.Resolve(item, source.Additions);
-            changes.Add(new(before, item, hold.Holds ? _view.Positions.IndexOf(item, source.Additions) : start + index));
+            return default;
         }
-        return changes;
+        if (ReferenceEquals(source.Capture, previous))
+        {
+            // A notification since the capture was accepted leaves it unvalidated, and an indexable
+            // source is read in place, so only a validated capture still holds the rows shown.
+            return previous.Validated ? new(previous, previous, Body.View.Difference.None) : new(previous);
+        }
+        if (source.IsWhole)
+        {
+            return new(source.Capture);
+        }
+        Body.Source.Shift shift = source.Shift;
+        List<int> leaving = new();
+        List<int> arriving = new(source.Arrivals.Count);
+        List<(int, int)> replacing = new(source.Reread.Count);
+        int arrival = 0;
+        for (int offset = 0; offset < Math.Max(shift.Removed, shift.Added); offset++)
+        {
+            bool arrives = arrival < source.Arrivals.Count && source.Arrivals[arrival].Index == shift.To + offset;
+            if (arrives)
+            {
+                arriving.Add(shift.To + offset);
+                arrival++;
+            }
+            if (offset < shift.Removed)
+            {
+                if (offset < shift.Added && !arrives)
+                {
+                    replacing.Add((shift.From + offset, shift.To + offset));
+                }
+                else
+                {
+                    leaving.Add(shift.From + offset);
+                }
+            }
+        }
+        return new(source.Capture, previous, new(leaving, arriving, replacing));
     }
 
     /// <summary>
@@ -585,35 +661,6 @@ public sealed partial class Table
         _settleDue.Start();
     }
 
-    /// <summary>
-    /// The current hierarchy instances in their displayed order, or null when visible
-    /// membership changed and the sibling groups need a fresh projection.
-    /// </summary>
-    private List<object>? KeptOrder(IdentityMap<object> live)
-    {
-        if (live.Count != _view.Count)
-        {
-            return null;
-        }
-
-        // Always the snapshot's instances, never the view's: the host may have replaced a row with
-        // an equal-identity instance, and keeping the old one would leave its container bound to an
-        // object nothing updates any more.
-        List<object> order = _keptRows;
-        order.Clear();
-        foreach (object row in _view)
-        {
-            if (!live.TryGetValue(row, _view.Positions.Map, out object? current))
-            {
-                return null;
-            }
-
-            order.Add(current);
-        }
-
-        return order;
-    }
-
 }
 
 internal abstract class SortDefinition
@@ -627,31 +674,60 @@ internal sealed class SortDefinition<TRow, TKey>(Func<TRow, TKey> key, IComparer
     internal override SortedOrder Create(IIdentity identity) => new SortedOrder<TRow, TKey>(identity, key, comparer);
 }
 
+/// <summary>
+/// What the shown rows did since the kept order was accepted. A whole change lists every shown
+/// row in source order; any other change names the rows that left, arrived or are read again.
+/// </summary>
+internal readonly record struct SortChange(
+    IReadOnlyList<object>? Shown,
+    IReadOnlyList<object> Source,
+    IReadOnlyList<object> Leavers,
+    IReadOnlyList<Body.Source.Arrival> Arrivals,
+    IReadOnlyList<object> Reread,
+    Body.Source.Shift Shift)
+{
+    /// <param name="shown">The rows to order, in source order.</param>
+    /// <param name="source">The source rows <paramref name="shown"/> is taken from, which give each its source index.</param>
+    internal static SortChange Whole(IReadOnlyList<object> shown, IReadOnlyList<object> source) =>
+        new(shown, source, Array.Empty<object>(), Array.Empty<Body.Source.Arrival>(), Array.Empty<object>(), default);
+}
+
+/// <summary>
+/// Specification section 9's local sort as a kept order: the shown rows sorted by the keys they
+/// had when they took their places. Rows keep those places, and the keys that put them there,
+/// until moves are allowed; a row read again inside the interval keeps its kept key, and
+/// <see cref="NeedsSettle"/> remembers that it differs.
+/// </summary>
 internal abstract class SortedOrder
 {
-    internal readonly record struct Preparation(IReadOnlyList<object> Rows, bool UsedFullSort,
-        IReadOnlyList<Change.Edit>? Changes = null);
     internal long Comparisons { get; private protected set; }
     internal abstract bool NeedsSettle { get; }
-    internal abstract Preparation Prepare(IReadOnlyList<object> rows, IIdentityKeys keys,
-        SortDirection direction, bool allowMoves);
-    internal abstract Preparation Prepare(Body.Source.Preparation source, SortDirection direction, bool allowMoves,
-        IReadOnlyList<int>? arrivals = null);
-    internal abstract void Accept(IReadOnlyList<object> rows);
+    /// <summary>
+    /// Whether the last accepted change placed every row again by its current key, because the kept
+    /// order no longer held. That is a settle, wherever the interval stands.
+    /// </summary>
+    internal abstract bool Resorted { get; }
+    /// <summary>
+    /// The prepared order's origin: its version, the accepted order's version, and how the two
+    /// differ unless every row was placed again.
+    /// </summary>
+    internal abstract Body.View.Origin Origin { get; }
+
+    /// <summary>The kept order after <paramref name="change"/>, without accepting it.</summary>
+    internal abstract IReadOnlyList<object> Prepare(SortChange change, SortDirection direction, bool allowMoves);
+    internal abstract void Accept();
     internal abstract void Complete();
     internal abstract IReadOnlyList<object> SortSiblings(IReadOnlyList<object> rows, SortDirection direction);
     internal abstract bool CanWork { get; }
-    internal abstract Work CaptureWork(IReadOnlyList<IReadOnlyList<object>> groups, IIdentityKeys keys,
-        SortDirection direction);
+    internal abstract Work CaptureWork(IReadOnlyList<IReadOnlyList<object>> groups, SortDirection direction);
 
     internal abstract class Work
     {
         internal abstract Task Completion { get; }
         internal abstract TimeSpan Duration { get; }
-        internal abstract IReadOnlyList<object> Prepare(IReadOnlyList<object> rows, IIdentityKeys keys, bool refresh);
+        internal abstract IReadOnlyList<object> Prepare(IReadOnlyList<object> rows, bool refresh);
         internal abstract void CountComparisons();
-        internal abstract IReadOnlyList<object> Project(int group, IReadOnlyList<object> siblings,
-            IIdentityKeys keys, bool refresh);
+        internal abstract IReadOnlyList<object> Project(int group, IReadOnlyList<object> siblings, bool refresh);
     }
 }
 
@@ -659,26 +735,17 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
 {
     private readonly record struct Entry(TKey Key, int BaseIndex, int Revision, byte[]? Collation);
 
-    private readonly record struct OrdinalEdit(int From, int Removed, int To, int Added)
+    /// <summary>What a publish does to one kept row.</summary>
+    private enum Fate : byte
     {
-        internal OrdinalEdit(Change.Collection change) : this(
-            change.Notification.OldStartingIndex, change.Notification.OldItems?.Count ?? 0,
-            change.Notification.NewStartingIndex, change.Notification.NewItems?.Count ?? 0)
-        {
-        }
-
-        internal int Apply(int index)
-        {
-            if (Removed > 0 && index >= From + Removed)
-            {
-                index -= Removed;
-            }
-            if (Added > 0 && index >= To)
-            {
-                index += Added;
-            }
-            return index;
-        }
+        Stays,
+        /// <summary>It stays, with a new entry or instance.</summary>
+        Changes,
+        /// <summary>It stays only if its new key keeps it in order with its neighbours.</summary>
+        Rekeyed,
+        Leaves,
+        /// <summary>It leaves its place and is placed again.</summary>
+        Moves,
     }
 
     private readonly Func<TRow, TKey> _key;
@@ -695,31 +762,45 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
     private Entry[] _candidateEntries = Array.Empty<Entry>();
     private PositionIndex _positions;
     private PositionIndex _candidatePositions;
-    private Entry[] _captured = Array.Empty<Entry>();
-    private int[] _indices = Array.Empty<int>();
-    private int[] _survivors = Array.Empty<int>();
-    private int[] _places = Array.Empty<int>();
-    private int[] _targets = Array.Empty<int>();
-    private readonly List<Change.Edit> _edits = new();
-    private readonly List<(int Index, Entry Value)> _keyUpdates = new();
-    // Defer source-ordinal shifts so notifications do not visit every retained key.
-    private readonly List<OrdinalEdit> _ordinalEdits = new();
-    private Body.Source.Preparation? _ordinalSource;
-    private IIdentityKeys? _candidateKeys;
+    // Source-index shifts not yet applied to the entries; see ResolveBase.
+    private readonly List<Body.Source.Shift> _shifts = new();
     private long _inserts;
     private long _removals;
     private SortDirection? _direction;
-    private SortDirection _candidateDirection;
     private bool _needsSettle;
+    private bool _resorted;
+    private object _version = new();
+
+    // The prepared candidate.
+    private object _candidateVersion = new();
+    private Body.View.Difference? _difference;
+    private SortDirection _candidateDirection;
     private bool _candidateNeedsSettle;
+    private bool _candidateResorted;
+    private bool _candidateRebuilt;
+    private Body.Source.Shift _candidateShift;
+    private readonly List<(object Row, int Index)> _placedRows = new();
+    private readonly List<object> _removedRows = new();
+
+    // Working state, indexed by kept index except where noted.
+    private Fate[] _fates = Array.Empty<Fate>();
+    private Entry[] _next = Array.Empty<Entry>();
+    private object?[] _nextRows = Array.Empty<object?>();
+    private readonly List<int> _touched = new();
+    private int[] _removed = Array.Empty<int>();
+    // Indexed by placed row.
+    private Entry[] _placed = Array.Empty<Entry>();
+    private object[] _placedItems = Array.Empty<object>();
+    private int[] _order = Array.Empty<int>();
+    private int[] _places = Array.Empty<int>();
 
     internal SortedOrder(IIdentity identity, Func<TRow, TKey> key, IComparer<TKey> comparer)
     {
         _key = key;
         _identity = identity;
         _comparer = comparer;
-        _positions = new(identity);
-        _candidatePositions = new(identity);
+        _positions = new(identity, () => new(_inserts, _removals));
+        _candidatePositions = new(identity, () => new(_inserts, _removals));
         if (comparer is StringComparer strings)
         {
             _ordinal = StringComparer.IsWellKnownOrdinalComparer(strings, out bool ignoreCase);
@@ -743,9 +824,10 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
     }
 
     internal override bool NeedsSettle => _needsSettle;
+    internal override bool Resorted => _resorted;
+    internal override Body.View.Origin Origin => new(_candidateVersion, _version, _difference);
     internal override bool CanWork => _usesKeyEquality;
 
-    private sealed record Association(object[] Rows, IdentityMap<int> Keys);
     private readonly record struct WorkResult(long Comparisons, TimeSpan Duration);
 
     private sealed class Payload(Entry[][] entries, SortDirection direction, bool collation,
@@ -773,12 +855,12 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
     private sealed class CapturedWork : Work
     {
         private readonly SortedOrder<TRow, TKey> _owner;
-        private readonly Association[] _groups;
+        private readonly object[][] _groups;
         private readonly Payload _payload;
         private readonly SortDirection _direction;
         private readonly Task<WorkResult> _task;
 
-        internal CapturedWork(SortedOrder<TRow, TKey> owner, Association[] groups,
+        internal CapturedWork(SortedOrder<TRow, TKey> owner, object[][] groups,
             Payload payload, SortDirection direction)
         {
             _owner = owner;
@@ -791,7 +873,8 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
         internal override Task Completion => _task;
         internal override TimeSpan Duration => _task.GetAwaiter().GetResult().Duration;
         internal override void CountComparisons() => _owner.Comparisons += _task.GetAwaiter().GetResult().Comparisons;
-        internal override IReadOnlyList<object> Prepare(IReadOnlyList<object> rows, IIdentityKeys keys, bool refresh)
+
+        internal override IReadOnlyList<object> Prepare(IReadOnlyList<object> rows, bool refresh)
         {
             _task.GetAwaiter().GetResult();
             Seed(_owner, 0);
@@ -799,30 +882,31 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
             {
                 return _owner._candidateRows;
             }
-            _owner.Accept(_owner._candidateRows);
-            return _owner.Prepare(rows, keys, _direction, allowMoves: true).Rows;
+            _owner.Accept();
+            return _owner.Prepare(SortChange.Whole(rows, rows), _direction, allowMoves: true);
         }
 
         private void Seed(SortedOrder<TRow, TKey> owner, int group)
         {
-            Association captured = _groups[group];
+            object[] rows = _groups[group];
             int[] indices = _payload.Indices[group];
             owner._candidateRows.Clear();
             owner._candidateEntries = new Entry[indices.Length];
             for (int index = 0; index < indices.Length; index++)
             {
-                owner._candidateRows.Add(captured.Rows[indices[index]]);
+                owner._candidateRows.Add(rows[indices[index]]);
                 owner._candidateEntries[index] = _payload.Entries[group][indices[index]];
             }
-            owner._candidatePositions.Build(owner._candidateRows, captured.Keys);
+            owner._candidatePositions.Build(owner._candidateRows);
             owner._candidateDirection = _direction;
             owner._candidateNeedsSettle = false;
-            owner._candidateKeys = null;
-            owner._ordinalSource = null;
+            owner._candidateResorted = false;
+            owner._candidateRebuilt = true;
+            owner._candidateVersion = new();
+            owner._difference = null;
         }
 
-        internal override IReadOnlyList<object> Project(int group, IReadOnlyList<object> siblings,
-            IIdentityKeys keys, bool refresh)
+        internal override IReadOnlyList<object> Project(int group, IReadOnlyList<object> siblings, bool refresh)
         {
             _task.GetAwaiter().GetResult();
             if (group < 0)
@@ -835,348 +919,467 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
             {
                 return order._candidateRows;
             }
-            order.Accept(order._candidateRows);
-            Preparation prepared = order.Prepare(siblings, keys, _direction, allowMoves: true);
+            order.Accept();
+            IReadOnlyList<object> prepared = order.Prepare(SortChange.Whole(siblings, siblings), _direction, allowMoves: true);
             _owner.Comparisons += order.Comparisons;
-            return prepared.Rows;
+            return prepared;
         }
     }
 
-    internal override Work CaptureWork(IReadOnlyList<IReadOnlyList<object>> groups, IIdentityKeys keys,
-        SortDirection direction)
+    internal override Work CaptureWork(IReadOnlyList<IReadOnlyList<object>> groups, SortDirection direction)
     {
         if (!CanWork)
         {
             throw new InvalidOperationException("This comparer requires the UI thread.");
         }
-        Association[] associations = new Association[groups.Count];
+        object[][] rows = new object[groups.Count][];
         Entry[][] entries = new Entry[groups.Count][];
         for (int group = 0; group < groups.Count; group++)
         {
-            object[] rows = groups[group].ToArray();
-            IdentityMap<int> captured = _identity.CreateMap<int>(keepsKeys: true);
-            entries[group] = new Entry[rows.Length];
-            for (int index = 0; index < rows.Length; index++)
+            rows[group] = groups[group].ToArray();
+            entries[group] = new Entry[rows[group].Length];
+            for (int index = 0; index < rows[group].Length; index++)
             {
-                TKey value = _key((TRow)rows[index]);
+                TKey value = _key((TRow)rows[group][index]);
                 entries[group][index] = new(value, index, 0, Collation(value));
-                captured.TryAdd(rows[index], index, keys);
             }
-            associations[group] = new(rows, captured);
         }
-        return new CapturedWork(this, associations,
+        return new CapturedWork(this, rows,
             new(entries, direction, _culture is not null, _ordinal, _ignoreCase), direction);
     }
 
-    internal override Preparation Prepare(IReadOnlyList<object> rows, IIdentityKeys keys,
-        SortDirection direction, bool allowMoves)
+    /// <remarks>
+    /// One placement for every change. Each kept row stays, changes in place, leaves, or moves;
+    /// the rows that move and the rows that arrive are sorted and placed among the rows that stay
+    /// by binary search, and the rows that stay are copied between those places in blocks.
+    /// <para>
+    /// A row is read again when the change names it, and every kept row is read again when the
+    /// change is whole, the direction changed, or a withheld key is due. While moves are allowed,
+    /// a row read again takes its new key and moves only when that puts it out of order with its
+    /// neighbours. While they are not, it keeps its kept key; a whole change whose rows changed
+    /// source order still sorts again, because the kept keys no longer order ties.
+    /// </para>
+    /// </remarks>
+    internal override IReadOnlyList<object> Prepare(SortChange change, SortDirection direction, bool allowMoves)
     {
-        _candidateKeys = null;
-        _ordinalSource = null;
-        _keyUpdates.Clear();
-        EnsureCapacity(Math.Max(rows.Count, _rows.Count));
-        try
-        {
-            return PrepareRows(rows, keys, direction, allowMoves);
-        }
-        finally
-        {
-            Array.Clear(_captured, 0, rows.Count);
-        }
-    }
-
-    private sealed class DeltaRows(IReadOnlyList<object> kept, IReadOnlyList<object> added) : IReadOnlyList<object>
-    {
-        public int Count => kept.Count + added.Count;
-        public object this[int index] => index < kept.Count ? kept[index] : added[index - kept.Count];
-        public IEnumerator<object> GetEnumerator()
-        {
-            for (int index = 0; index < Count; index++)
-            {
-                yield return this[index];
-            }
-        }
-        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
-    }
-
-    internal override Preparation Prepare(Body.Source.Preparation source, SortDirection direction, bool allowMoves,
-        IReadOnlyList<int>? arrivals = null)
-    {
-        if (!source.IsIncremental || _direction != direction || allowMoves && _needsSettle
-            || source.Change is Change.Collection { Notification.Action: System.Collections.Specialized.NotifyCollectionChangedAction.Move })
-        {
-            return Prepare(source.Capture.Rows, source, direction, allowMoves);
-        }
-        arrivals = source.Change is Change.Values ? Array.Empty<int>()
-            : arrivals ?? Enumerable.Range(0, source.Added.Count).ToArray();
-        DeltaRows rows = new(_rows, source.Change is Change.Values ? Array.Empty<object>() : source.Added);
-        EnsureCapacity(rows.Count);
-        _keyUpdates.Clear();
-        _ordinalSource = source;
-        if (_usesKeyEquality && source.Change is Change.Collection)
-        {
-            return PrepareCollection(source, arrivals, direction, allowMoves);
-        }
-        if (source.Change is Change.Values && PrepareValues(source, direction, allowMoves) is { } unchanged)
-        {
-            return unchanged;
-        }
-        if (_candidateEntries.Length < rows.Count)
-        {
-            Array.Resize(ref _candidateEntries, _captured.Length);
-        }
-        _candidateKeys = source;
-        int previousCount = _candidateRows.Count;
-        _candidateRows.Clear();
+        int count = _rows.Count;
+        bool whole = change.Shown is not null;
+        bool everyKey = whole || _direction != direction || allowMoves && _needsSettle;
+        bool resort = _direction != direction;
+        EnsureCapacity(count, (change.Shown?.Count ?? 0) + change.Arrivals.Count);
         _candidateDirection = direction;
-        _candidateNeedsSettle = !allowMoves && _needsSettle;
-        _edits.Clear();
-        for (int index = 0; index < _rows.Count; index++)
-        {
-            _captured[index] = CurrentEntry(index);
-        }
-        Array.Clear(_places, 0, rows.Count);
+        _candidateShift = whole ? default : change.Shift;
+        _candidateRebuilt = whole || resort;
+        _placedRows.Clear();
+        _removedRows.Clear();
+        int nextRevision = _shifts.Count + (Shifts(change.Shift) ? 1 : 0);
+        int placed = 0;
+        bool differs = false;
         try
         {
-            if (source.Change is Change.Collection collection)
+            if (whole)
             {
-                int from = collection.Notification.OldStartingIndex;
-                int to = collection.Notification.NewStartingIndex;
-                for (int index = 0; index < _rows.Count; index++)
+                Array.Fill(_fates, Fate.Leaves, 0, count);
+                IReadOnlyList<object> shown = change.Shown!;
+                int ordinal = -1;
+                int previousBase = -1;
+                for (int index = 0; index < shown.Count; index++)
                 {
-                    int baseIndex = _captured[index].BaseIndex;
-                    if (source.Removed.Count > 0 && baseIndex >= from + source.Removed.Count)
+                    object row = shown[index];
+                    if (ReferenceEquals(shown, change.Source))
                     {
-                        baseIndex -= source.Removed.Count;
+                        ordinal = index;
                     }
-                    if (source.Added.Count > 0 && baseIndex >= to)
+                    else
                     {
-                        baseIndex += source.Added.Count;
-                    }
-                    _captured[index] = _captured[index] with { BaseIndex = baseIndex, Revision = _ordinalEdits.Count + 1 };
-                }
-                foreach (object item in source.Removed)
-                {
-                    int index = _positions.IndexOf(item, source.Leavers);
-                    if (index >= 0)
-                    {
-                        _places[index] = -1;
-                        if (!source.Additions.ContainsKey(item, source.Leavers))
+                        do
                         {
-                            _edits.Add(new(item, null, -1));
+                            ordinal++;
                         }
+                        while (!ReferenceEquals(change.Source[ordinal], row));
                     }
-                }
-                foreach (int index in arrivals)
-                {
-                    TKey current = _key((TRow)source.Added[index]);
-                    _captured[_rows.Count + index] = new(current, to + index, _ordinalEdits.Count + 1, Collation(current));
-                }
-            }
-            int changed = 0;
-            if (source.Change is Change.Values)
-            {
-                foreach (var update in _keyUpdates)
-                {
-                    _captured[update.Index] = update.Value;
-                    _indices[changed++] = update.Index;
-                    _places[update.Index] = 1;
-                }
-            }
-            int surviving = 0;
-            int previous = -1;
-            bool values = source.Change is Change.Values;
-            bool outOfOrder = values;
-            for (int index = 0; index < _rows.Count; index++)
-            {
-                if (_places[index] < 0)
-                {
-                    continue;
-                }
-                if (!values && previous >= 0 && (allowMoves || arrivals.Count > 0)
-                    && (!_usesKeyEquality || _places[index] == 1 || _places[previous] == 1))
-                {
-                    outOfOrder |= Compare(_captured[previous], _captured[index], direction) > 0;
-                }
-                previous = index;
-                _survivors[surviving++] = index;
-            }
-            bool full = !_usesKeyEquality && outOfOrder;
-            if (full)
-            {
-                Array.Copy(_survivors, _indices, surviving);
-                for (int index = 0; index < arrivals.Count; index++)
-                {
-                    _indices[surviving + index] = _rows.Count + arrivals[index];
-                }
-                SortIndices(surviving + arrivals.Count, direction);
-                for (int index = 0; index < surviving + arrivals.Count; index++)
-                {
-                    Append(_indices[index], rows);
-                }
-                _candidateNeedsSettle = false;
-            }
-            else if (outOfOrder || arrivals.Count > 0)
-            {
-                if (outOfOrder)
-                {
-                    int keep = 0;
-                    for (int index = 0; index < surviving; index++)
+                    int kept = _positions.IndexOf(row);
+                    if (kept < 0)
                     {
-                        if (_places[_survivors[index]] != 1)
-                        {
-                            _survivors[keep++] = _survivors[index];
-                        }
+                        Place(row, Read(row, ordinal, 0), ref placed);
+                        continue;
                     }
-                    surviving = keep;
+                    Entry before = ResolveBase(_entries[kept]);
+                    resort |= before.BaseIndex <= previousBase;
+                    previousBase = before.BaseIndex;
+                    _fates[kept] = Fate.Changes;
+                    _nextRows[kept] = row;
+                    _next[kept] = before with { BaseIndex = ordinal, Revision = 0 };
+                    differs |= ReadAgain(kept, row, allowMoves);
                 }
-                else
-                {
-                    changed = 0;
-                }
-                for (int index = 0; index < arrivals.Count; index++)
-                {
-                    _indices[changed++] = _rows.Count + arrivals[index];
-                }
-                Place(rows, surviving, changed, direction);
             }
             else
             {
-                for (int index = 0; index < surviving; index++)
+                foreach (object row in change.Leavers)
                 {
-                    Append(_survivors[index], rows);
+                    int kept = _positions.IndexOf(row);
+                    if (kept >= 0)
+                    {
+                        Touch(kept, Fate.Leaves);
+                    }
+                }
+                foreach (object row in change.Reread)
+                {
+                    int kept = _positions.IndexOf(row);
+                    if (kept >= 0 && _fates[kept] == Fate.Stays)
+                    {
+                        Touch(kept, Fate.Changes);
+                        _nextRows[kept] = row;
+                        _next[kept] = Shifted(kept, change.Shift, nextRevision);
+                    }
+                }
+                if (everyKey)
+                {
+                    for (int kept = 0; kept < count; kept++)
+                    {
+                        if (_fates[kept] == Fate.Stays)
+                        {
+                            Touch(kept, Fate.Changes);
+                            _nextRows[kept] = _rows[kept];
+                            _next[kept] = Shifted(kept, change.Shift, nextRevision);
+                        }
+                    }
+                }
+                foreach (int kept in _touched)
+                {
+                    if (_fates[kept] == Fate.Changes)
+                    {
+                        differs |= ReadAgain(kept, _nextRows[kept]!, allowMoves);
+                    }
+                }
+                foreach (Body.Source.Arrival arrival in change.Arrivals)
+                {
+                    Place(arrival.Item, Read(arrival.Item, arrival.Index, nextRevision), ref placed);
                 }
             }
-            if (!_usesKeyEquality && (allowMoves || arrivals.Count > 0))
+
+            // Without key equality nothing shows which kept keys still hold their order, so binary
+            // placement first proves the order with the actual comparer (specification section 9).
+            _candidateResorted = !resort && !_usesKeyEquality && (placed > 0 || allowMoves && differs)
+                && !KeptOrderHolds(count, change.Shift);
+            if (_candidateResorted)
             {
-                _candidateNeedsSettle = false;
-            }
-            int affected = source.Change is Change.Values ? source.Added.Count : arrivals.Count;
-            for (int added = 0; added < affected; added++)
-            {
-                int ordinal = source.Change is Change.Values ? added : arrivals[added];
-                object item = source.Added[ordinal];
-                int index = source.Change is Change.Values
-                    ? _positions.IndexOf(item, source.Additions)
-                    : _rows.Count + ordinal;
-                if (index >= 0)
+                for (int kept = 0; kept < count; kept++)
                 {
-                    object? before = source.Change is Change.Values ? _rows[index]
-                        : source.Leavers.Resolve(item, source.Additions);
-                    if (!ReferenceEquals(before, item) || index != _targets[index])
+                    if (_fates[kept] == Fate.Stays)
                     {
-                        _edits.Add(new(before, item, _targets[index]));
+                        Touch(kept, Fate.Changes);
+                        _nextRows[kept] = _rows[kept];
+                        _next[kept] = Shifted(kept, change.Shift, nextRevision);
+                    }
+                    if (_fates[kept] == Fate.Changes)
+                    {
+                        _next[kept] = Read(_nextRows[kept]!, _next[kept].BaseIndex, _next[kept].Revision);
+                    }
+                }
+                resort = true;
+                _candidateRebuilt = true;
+            }
+            if (resort)
+            {
+                // A changed direction, ties the kept keys no longer order, or a kept order that no
+                // longer holds: every kept row is placed again.
+                for (int kept = 0; kept < count; kept++)
+                {
+                    if (_fates[kept] is Fate.Changes or Fate.Rekeyed)
+                    {
+                        Move(kept, ref placed);
                     }
                 }
             }
-            if (full)
+            else if (allowMoves && _usesKeyEquality)
             {
-                _candidateKeys = null;
-                _candidatePositions.Build(_candidateRows, source);
+                MoveOutOfOrder(count, change.Shift, ref placed);
             }
-            if (source.Change is Change.Collection && ShouldCompact(source))
+            _candidateNeedsSettle = !_candidateResorted && !allowMoves && (differs || !everyKey && _needsSettle);
+            Build(count, placed, resort, whole, change.Shift);
+            _candidateVersion = _difference is { IsEmpty: true } ? _version : new();
+            if (!whole && !_candidateRebuilt && Shifts(change.Shift)
+                && _shifts.Count + 1 >= Math.Max(1, Math.Sqrt(change.Source.Count)))
             {
-                PrepareOrdinals(source);
+                Rebase(change.Source);
             }
-            return new(_candidateRows, full, full ? null : _edits);
+            return _candidateRows;
         }
         finally
         {
-            if (_candidateRows.Count < previousCount)
+            if (whole || resort || _touched.Count > count / 4)
             {
-                Array.Clear(_candidateEntries, _candidateRows.Count, previousCount - _candidateRows.Count);
+                Array.Clear(_fates, 0, count);
+                Array.Clear(_nextRows, 0, count);
             }
-            Array.Clear(_captured, 0, rows.Count);
+            else
+            {
+                foreach (int kept in _touched)
+                {
+                    _fates[kept] = Fate.Stays;
+                    _nextRows[kept] = null;
+                }
+            }
+            _touched.Clear();
+            Array.Clear(_placedItems, 0, placed);
         }
     }
 
-    private Preparation PrepareCollection(Body.Source.Preparation source, IReadOnlyList<int> arrivals,
-        SortDirection direction, bool allowMoves)
+    private static bool Shifts(Body.Source.Shift shift) => shift.Removed + shift.Added > 0;
+
+    private void Touch(int kept, Fate fate)
     {
-        _candidateKeys = source;
-        _candidateDirection = direction;
-        _candidateNeedsSettle = !allowMoves && _needsSettle;
-        _edits.Clear();
-        OrdinalEdit ordinal = new((Change.Collection)source.Change);
-        int removed = 0;
-        foreach (object item in source.Removed)
+        if (_fates[kept] == Fate.Stays)
         {
-            int index = _positions.IndexOf(item, source.Leavers);
-            if (index >= 0)
+            _touched.Add(kept);
+        }
+        _fates[kept] = fate;
+    }
+
+    private Entry Read(object row, int baseIndex, int revision)
+    {
+        TKey key = _key((TRow)row);
+        return new(key, baseIndex, revision, Collation(key));
+    }
+
+    /// <summary>
+    /// Read kept row <paramref name="kept"/>'s key again into its next entry. Returns whether the
+    /// key differs from its kept key; while moves are not allowed the kept key stays. Without key
+    /// equality a key always counts as different, because a mutable key compares equal to itself
+    /// after its value changed.
+    /// </summary>
+    private bool ReadAgain(int kept, object row, bool allowMoves)
+    {
+        TKey key = _key((TRow)row);
+        Entry before = _next[kept];
+        bool differs = !_usesKeyEquality || !EqualityComparer<TKey>.Default.Equals(key, before.Key);
+        if (differs && allowMoves)
+        {
+            _next[kept] = before with { Key = key, Collation = Collation(key) };
+            _fates[kept] = Fate.Rekeyed;
+        }
+        return differs;
+    }
+
+    private Entry Shifted(int kept, Body.Source.Shift shift, int revision)
+    {
+        Entry entry = ResolveBase(_entries[kept]);
+        return entry with { BaseIndex = shift.Apply(entry.BaseIndex), Revision = revision };
+    }
+
+    private void Place(object row, Entry entry, ref int placed)
+    {
+        _placedItems[placed] = row;
+        _placed[placed] = entry;
+        _order[placed] = placed;
+        placed++;
+    }
+
+    private void Move(int kept, ref int placed)
+    {
+        _fates[kept] = Fate.Moves;
+        Place(_nextRows[kept]!, _next[kept], ref placed);
+    }
+
+    /// <summary>
+    /// The kept rows whose key changed stay where they are when each is still in order with its
+    /// neighbours. Otherwise every one of them moves.
+    /// </summary>
+    private void MoveOutOfOrder(int count, Body.Source.Shift shift, ref int placed)
+    {
+        bool outOfOrder = false;
+        foreach (int kept in Changed(count))
+        {
+            if (_fates[kept] != Fate.Rekeyed)
             {
-                _survivors[removed++] = index;
-                if (!source.Additions.ContainsKey(item, source.Leavers))
+                continue;
+            }
+            for (int other = kept - 1; other >= 0; other--)
+            {
+                if (Stays(other))
                 {
-                    _edits.Add(new(item, null, -1));
+                    outOfOrder |= Compare(EntryOf(other, shift), _next[kept], _candidateDirection) > 0;
+                    break;
+                }
+            }
+            for (int other = kept + 1; other < count && !outOfOrder; other++)
+            {
+                if (Stays(other))
+                {
+                    outOfOrder |= Compare(_next[kept], EntryOf(other, shift), _candidateDirection) > 0;
+                    break;
+                }
+            }
+            if (outOfOrder)
+            {
+                break;
+            }
+        }
+        if (!outOfOrder)
+        {
+            return;
+        }
+        foreach (int kept in Changed(count))
+        {
+            if (_fates[kept] == Fate.Rekeyed)
+            {
+                Move(kept, ref placed);
+            }
+        }
+    }
+
+    private bool Stays(int kept) => _fates[kept] is Fate.Stays or Fate.Changes or Fate.Rekeyed;
+
+    /// <summary>Whether the kept rows that stay are in order by the keys they have after this change.</summary>
+    private bool KeptOrderHolds(int count, Body.Source.Shift shift)
+    {
+        int previous = -1;
+        for (int kept = 0; kept < count; kept++)
+        {
+            if (!Stays(kept))
+            {
+                continue;
+            }
+            if (previous >= 0)
+            {
+                // The keys decide; source indices, which can cost a walk of the pending shifts,
+                // only break ties.
+                Comparisons++;
+                int order = CompareKeys(KeyOf(previous), KeyOf(kept), _candidateDirection, _comparer, _culture is not null);
+                if (order > 0 || order == 0
+                    && EntryOf(previous, shift).BaseIndex > EntryOf(kept, shift).BaseIndex)
+                {
+                    return false;
+                }
+            }
+            previous = kept;
+        }
+        return true;
+
+        Entry KeyOf(int kept) => _fates[kept] is Fate.Changes or Fate.Rekeyed ? _next[kept] : _entries[kept];
+    }
+
+    /// <summary>The kept rows that stay with a new entry or instance.</summary>
+    private IEnumerable<int> Changed(int count)
+    {
+        if (_candidateRebuilt)
+        {
+            for (int kept = 0; kept < count; kept++)
+            {
+                if (_fates[kept] is Fate.Changes or Fate.Rekeyed)
+                {
+                    yield return kept;
+                }
+            }
+            yield break;
+        }
+        for (int index = 0; index < _touched.Count; index++)
+        {
+            if (_fates[_touched[index]] is Fate.Changes or Fate.Rekeyed)
+            {
+                yield return _touched[index];
+            }
+        }
+    }
+
+    /// <summary>Kept row <paramref name="kept"/>'s entry after this change.</summary>
+    private Entry EntryOf(int kept, Body.Source.Shift shift) =>
+        _fates[kept] is Fate.Changes or Fate.Rekeyed ? _next[kept] : Shifted(kept, shift, _shifts.Count);
+
+    /// <summary>
+    /// Build the candidate: the rows that stay, copied in blocks, with the placed rows sorted and
+    /// put in among them at the places binary search finds. Unless <paramref name="resort"/>
+    /// placed every row again, also record how the candidate differs from the kept order: a row
+    /// that moved leaves its old place and arrives at its new one.
+    /// </summary>
+    private void Build(int count, int placed, bool resort, bool whole, Body.Source.Shift shift)
+    {
+        int removed = 0;
+        if (whole || _candidateRebuilt)
+        {
+            for (int kept = 0; kept < count; kept++)
+            {
+                if (_fates[kept] is Fate.Leaves or Fate.Moves)
+                {
+                    _removed[removed++] = kept;
                 }
             }
         }
-        Array.Sort(_survivors, 0, removed);
-        bool compact = ShouldCompact(source);
-        if (removed == 0 && arrivals.Count == 0 && !compact)
+        else
         {
-            return new(_rows, false, _edits);
+            foreach (int kept in _touched)
+            {
+                if (_fates[kept] is Fate.Leaves or Fate.Moves)
+                {
+                    _removed[removed++] = kept;
+                }
+            }
+            Array.Sort(_removed, 0, removed);
+        }
+        int surviving = count - removed;
+        Comparisons += SortIndices(_placed, _order, placed, _candidateDirection, _comparer, _culture is not null);
+        for (int index = 0; index < placed; index++)
+        {
+            _places[index] = FindPlace(_placed[_order[index]], surviving, rank => EntryOf(Survivor(rank), shift));
         }
 
-        try
+        int total = surviving + placed;
+        if (_candidateEntries.Length < total)
         {
-            for (int index = 0; index < arrivals.Count; index++)
-            {
-                int added = arrivals[index];
-                TKey key = _key((TRow)source.Added[added]);
-                _captured[index] = new(key, ordinal.To + added, _ordinalEdits.Count + 1, Collation(key));
-                _indices[index] = index;
-            }
-            SortIndices(arrivals.Count, direction);
-            int surviving = _rows.Count - removed;
-            Func<int, Entry> entryAt = rank =>
-            {
-                Entry entry = CurrentEntry(Survivor(rank));
-                return entry with { BaseIndex = ordinal.Apply(entry.BaseIndex) };
-            };
-            for (int index = 0; index < arrivals.Count; index++)
-            {
-                int added = _indices[index];
-                int place = FindPlace(_captured[added], surviving, entryAt, direction);
-                _places[index] = place;
-                object item = source.Added[arrivals[added]];
-                object? before = source.Leavers.Resolve(item, source.Additions);
-                _edits.Add(new(before, item, place + index));
-            }
-
-            int total = surviving + arrivals.Count;
-            if (_candidateEntries.Length < total)
-            {
-                Array.Resize(ref _candidateEntries, _captured.Length);
-            }
-            if (_candidateRows.Count > total)
-            {
-                CollectionsMarshal.AsSpan(_candidateRows)[total..].Clear();
-                Array.Clear(_candidateEntries, total, _candidateRows.Count - total);
-            }
-            CollectionsMarshal.SetCount(_candidateRows, total);
-            int next = 0;
-            int target = 0;
-            for (int index = 0; index < arrivals.Count; index++)
-            {
-                int count = _places[index] - next;
-                CopySurvivors(next, count, target);
-                next += count;
-                target += count;
-                int added = _indices[index];
-                _candidateRows[target] = source.Added[arrivals[added]];
-                _candidateEntries[target++] = _captured[added];
-            }
-            CopySurvivors(next, surviving - next, target);
-            if (compact)
-            {
-                PrepareOrdinals(source);
-            }
-            return new(_candidateRows, false, _edits);
+            Array.Resize(ref _candidateEntries, Math.Max(total, _candidateEntries.Length * 2));
         }
-        finally
+        if (_candidateRows.Count > total)
         {
-            Array.Clear(_captured, 0, arrivals.Count);
+            CollectionsMarshal.AsSpan(_candidateRows)[total..].Clear();
+        }
+        Array.Clear(_candidateEntries, total, Math.Max(0, _candidateRows.Count - total));
+        CollectionsMarshal.SetCount(_candidateRows, total);
+        List<int>? arriving = resort ? null : new(placed);
+        List<(int, int)>? replacing = resort ? null : new();
+        int next = 0;
+        int target = 0;
+        for (int index = 0; index < placed; index++)
+        {
+            int length = _places[index] - next;
+            CopySurvivors(next, length, target);
+            next += length;
+            target += length;
+            int item = _order[index];
+            _candidateRows[target] = _placedItems[item];
+            // Accepting a rebuilt order clears the shift list, and each placed entry's source index
+            // already includes this change's shift.
+            _candidateEntries[target] = _candidateRebuilt ? _placed[item] with { Revision = 0 } : _placed[item];
+            _placedRows.Add((_placedItems[item], target));
+            arriving?.Add(target);
+            target++;
+        }
+        CopySurvivors(next, surviving - next, target);
+
+        // Rows that stay with a new entry or instance; the copy took the old ones.
+        foreach (int kept in Changed(count))
+        {
+            int rank = kept - LowerBound(_removed, removed, kept);
+            int at = rank + UpperBound(_places, placed, rank);
+            _candidateRows[at] = _nextRows[kept]!;
+            _candidateEntries[at] = _next[kept];
+            if (!ReferenceEquals(_nextRows[kept], _rows[kept]))
+            {
+                replacing?.Add((kept, at));
+                if (!_candidateRebuilt)
+                {
+                    _placedRows.Add((_nextRows[kept]!, at));
+                }
+            }
+        }
+        for (int index = 0; index < removed; index++)
+        {
+            _removedRows.Add(_rows[_removed[index]]);
+        }
+        _difference = resort ? null : new(_removed[..removed], arriving!, replacing!);
+        if (_candidateRebuilt)
+        {
+            _candidatePositions.Build(_candidateRows);
         }
 
         int Survivor(int rank)
@@ -1186,7 +1389,7 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
             while (low < high)
             {
                 int middle = low + (high - low) / 2;
-                if (_survivors[middle] - middle <= rank)
+                if (_removed[middle] - middle <= rank)
                 {
                     low = middle + 1;
                 }
@@ -1198,267 +1401,38 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
             return rank + low;
         }
 
-        void CopySurvivors(int from, int count, int target)
+        void CopySurvivors(int from, int length, int at)
         {
-            while (count > 0)
+            while (length > 0)
             {
                 int old = Survivor(from);
-                int removal = ~Array.BinarySearch(_survivors, 0, removed, old);
-                int end = removal < removed ? _survivors[removal] : _rows.Count;
-                int length = Math.Min(count, end - old);
-                CollectionsMarshal.AsSpan(_rows).Slice(old, length)
-                    .CopyTo(CollectionsMarshal.AsSpan(_candidateRows).Slice(target, length));
-                Array.Copy(_entries, old, _candidateEntries, target, length);
-                from += length;
-                target += length;
-                count -= length;
+                int removal = ~Array.BinarySearch(_removed, 0, removed, old);
+                int end = removal < removed ? _removed[removal] : count;
+                int run = Math.Min(length, end - old);
+                CollectionsMarshal.AsSpan(_rows).Slice(old, run)
+                    .CopyTo(CollectionsMarshal.AsSpan(_candidateRows).Slice(at, run));
+                Array.Copy(_entries, old, _candidateEntries, at, run);
+                from += run;
+                at += run;
+                length -= run;
             }
         }
     }
 
-    private Preparation? PrepareValues(Body.Source.Preparation source, SortDirection direction, bool allowMoves)
+    private static int LowerBound(int[] sorted, int count, int value)
     {
-        _candidateKeys = null;
-        _candidateNeedsSettle = !allowMoves && _needsSettle;
-        try
-        {
-            foreach (object item in source.Added)
-            {
-                int index = _positions.IndexOf(item, source.Additions);
-                if (index < 0)
-                {
-                    continue;
-                }
-                TKey value = _key((TRow)item);
-                Entry kept = CurrentEntry(index);
-                bool changed = !_usesKeyEquality || !EqualityComparer<TKey>.Default.Equals(value, kept.Key);
-                _captured[index] = kept;
-                if (changed && allowMoves)
-                {
-                    Entry current = new(value, kept.BaseIndex, kept.Revision, Collation(value));
-                    _captured[index] = current;
-                    _keyUpdates.Add((index, current));
-                }
-                else
-                {
-                    _candidateNeedsSettle |= changed;
-                }
-            }
-            bool outOfOrder = false;
-            if (_usesKeyEquality)
-            {
-                foreach (var update in _keyUpdates)
-                {
-                    int index = update.Index;
-                    outOfOrder |= index > 0 && Compare(Current(index - 1), update.Value, direction) > 0;
-                    outOfOrder |= index + 1 < _rows.Count && Compare(update.Value, Current(index + 1), direction) > 0;
-                }
-            }
-            else if (allowMoves && _keyUpdates.Count > 0)
-            {
-                for (int index = 1; index < _rows.Count; index++)
-                {
-                    outOfOrder |= Compare(Current(index - 1), Current(index), direction) > 0;
-                }
-            }
-            return outOfOrder ? null : new Preparation(_rows, false, Array.Empty<Change.Edit>());
-        }
-        finally
-        {
-            foreach (object item in source.Added)
-            {
-                int index = _positions.IndexOf(item, source.Additions);
-                if (index >= 0)
-                {
-                    _captured[index] = default;
-                }
-            }
-        }
-
-        Entry Current(int index) => source.Additions.ContainsKey(_rows[index], _positions)
-            ? _captured[index] : CurrentEntry(index);
+        int index = Array.BinarySearch(sorted, 0, count, value);
+        return index >= 0 ? index : ~index;
     }
 
-    private Preparation PrepareRows(IReadOnlyList<object> rows, IIdentityKeys keys,
-        SortDirection direction, bool allowMoves)
-    {
-        if (_candidateEntries.Length < rows.Count)
-        {
-            Array.Resize(ref _candidateEntries, _captured.Length);
-        }
-        if (_candidateRows.Count > rows.Count)
-        {
-            Array.Clear(_candidateEntries, rows.Count, _candidateRows.Count - rows.Count);
-        }
-        _candidateRows.Clear();
-        _candidateDirection = direction;
-        _candidateNeedsSettle = false;
-        Array.Fill(_places, -1, 0, _rows.Count);
-        int previousBase = -1;
-        IReadOnlyList<object> baseline = keys is Body.Source.Preparation source ? source.Capture.Rows : rows;
-        int sourceIndex = 0;
-        bool full = _direction != direction;
-        int arrivals = 0;
-        for (int index = 0; index < rows.Count; index++)
-        {
-            int old = _positions.IndexOf(rows[index], keys);
-            TKey current = _key((TRow)rows[index]);
-            byte[]? collation = null;
-            if (old >= 0)
-            {
-                Entry kept = CurrentEntry(old);
-                full |= kept.BaseIndex <= previousBase;
-                previousBase = kept.BaseIndex;
-                _places[old] = index;
-                if (_usesKeyEquality && EqualityComparer<TKey>.Default.Equals(current, kept.Key))
-                {
-                    collation = kept.Collation;
-                }
-            }
-            else
-            {
-                arrivals++;
-            }
-            int ordinal = index;
-            if (!ReferenceEquals(rows, baseline))
-            {
-                while (!ReferenceEquals(baseline[sourceIndex], rows[index]))
-                {
-                    sourceIndex++;
-                }
-                ordinal = sourceIndex++;
-            }
-            _captured[index] = new(current, ordinal, 0, old >= 0 ? collation : Collation(current));
-        }
-
-        int surviving = 0;
-        int changed = 0;
-        bool outOfOrder = false;
-        bool previousChanged = false;
-        int previous = -1;
-        for (int old = 0; old < _rows.Count; old++)
-        {
-            int current = _places[old];
-            if (current < 0)
-            {
-                continue;
-            }
-            bool differs = !_usesKeyEquality
-                || !EqualityComparer<TKey>.Default.Equals(_captured[current].Key, _entries[old].Key);
-            if (!full && !allowMoves)
-            {
-                _candidateNeedsSettle |= differs;
-                if (_usesKeyEquality)
-                {
-                    _captured[current] = _entries[old] with { BaseIndex = _captured[current].BaseIndex, Revision = 0 };
-                }
-            }
-            if (_culture is not null && _captured[current].Key is not null && _captured[current].Collation is null)
-            {
-                _captured[current] = _captured[current] with { Collation = Collation(_captured[current].Key) };
-            }
-            if (!full && previous >= 0 && (!_usesKeyEquality || differs || previousChanged)
-                && (allowMoves || arrivals > 0))
-            {
-                outOfOrder |= Compare(_captured[previous], _captured[current], direction) > 0;
-            }
-            previous = current;
-            previousChanged = differs;
-            _survivors[surviving++] = current;
-            if (differs && allowMoves && _usesKeyEquality)
-            {
-                _indices[changed++] = current;
-            }
-        }
-        bool usedFullSort = full || (!_usesKeyEquality && outOfOrder);
-        if (usedFullSort)
-        {
-            for (int index = 0; index < rows.Count; index++)
-            {
-                _indices[index] = index;
-            }
-            SortIndices(rows.Count, direction);
-            for (int index = 0; index < rows.Count; index++)
-            {
-                Append(_indices[index], rows);
-            }
-            _candidateNeedsSettle = false;
-        }
-        else if (arrivals > 0 || outOfOrder)
-        {
-            if (outOfOrder)
-            {
-                int kept = 0;
-                for (int index = 0; index < surviving; index++)
-                {
-                    int current = _survivors[index];
-                    int old = _positions.IndexOf(rows[current], keys);
-                    if (EqualityComparer<TKey>.Default.Equals(_captured[current].Key, _entries[old].Key))
-                    {
-                        _survivors[kept++] = current;
-                    }
-                }
-                surviving = kept;
-            }
-            else
-            {
-                changed = 0;
-            }
-            for (int index = 0; index < rows.Count; index++)
-            {
-                if (_positions.IndexOf(rows[index], keys) < 0)
-                {
-                    _indices[changed++] = index;
-                }
-            }
-            Place(rows, surviving, changed, direction);
-        }
-        else
-        {
-            for (int index = 0; index < surviving; index++)
-            {
-                Append(_survivors[index], rows);
-            }
-        }
-        if (!_usesKeyEquality && (allowMoves || arrivals > 0))
-        {
-            _candidateNeedsSettle = false;
-        }
-        _candidatePositions.Build(_candidateRows, keys);
-        return new(_candidateRows, usedFullSort);
-    }
-
-    private void Place(IReadOnlyList<object> rows, int surviving, int changed, SortDirection direction)
-    {
-        SortIndices(changed, direction);
-        Func<int, Entry> entryAt = index => _captured[_survivors[index]];
-        for (int index = 0; index < changed; index++)
-        {
-            _places[index] = FindPlace(_captured[_indices[index]], surviving, entryAt, direction);
-        }
-        int next = 0;
-        for (int index = 0; index < changed; index++)
-        {
-            while (next < _places[index])
-            {
-                Append(_survivors[next++], rows);
-            }
-            Append(_indices[index], rows);
-        }
-        while (next < surviving)
-        {
-            Append(_survivors[next++], rows);
-        }
-    }
-
-    private int FindPlace(Entry entry, int count, Func<int, Entry> entryAt, SortDirection direction)
+    private static int UpperBound(int[] sorted, int count, int value)
     {
         int low = 0;
         int high = count;
         while (low < high)
         {
             int middle = low + (high - low) / 2;
-            if (Compare(entryAt(middle), entry, direction) < 0)
+            if (sorted[middle] <= value)
             {
                 low = middle + 1;
             }
@@ -1470,153 +1444,125 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
         return low;
     }
 
-    private void Append(int index, IReadOnlyList<object> rows)
+    /// <summary>
+    /// Give every candidate entry its source index again, so the shifts recorded since the last
+    /// rebase are dropped. Run once every √n shifts, which keeps both the shift list and its cost
+    /// per notification at O(√n).
+    /// </summary>
+    private void Rebase(IReadOnlyList<object> source)
     {
-        _targets[index] = _candidateRows.Count;
-        _candidateEntries[_candidateRows.Count] = _captured[index];
-        _candidateRows.Add(rows[index]);
-    }
-
-    internal override void Accept(IReadOnlyList<object> rows)
-    {
-        if (ReferenceEquals(rows, _rows))
+        _candidatePositions.Build(_candidateRows);
+        for (int index = 0; index < source.Count; index++)
         {
-            foreach (var update in _keyUpdates)
-            {
-                _entries[update.Index] = update.Value;
-            }
-            _needsSettle = _candidateNeedsSettle;
-            _keyUpdates.Clear();
-            AcceptOrdinals();
-            return;
-        }
-        if (_candidateKeys is { } keys)
-        {
-            long removed = 0;
-            long inserted = 0;
-            foreach (Change.Edit edit in _edits)
-            {
-                int previous = edit.Before is null ? -1 : _positions.IndexOf(edit.Before, _positions);
-                if (edit.Before is not null)
-                {
-                    _positions.Remove(edit.Before, _positions);
-                }
-                if (edit.After is not null)
-                {
-                    _positions.Insert(edit.After, edit.Index, keys);
-                }
-                if (previous != edit.Index)
-                {
-                    removed += previous >= 0 ? 1 : 0;
-                    inserted += edit.After is not null ? 1 : 0;
-                }
-            }
-            _removals += removed;
-            _inserts += inserted;
-        }
-        (_rows, _candidateRows) = (_candidateRows, _rows);
-        (_entries, _candidateEntries) = (_candidateEntries, _entries);
-        if (_candidateKeys is null)
-        {
-            (_positions, _candidatePositions) = (_candidatePositions, _positions);
-            _positions.Bind(_rows, () => new(_inserts, _removals));
-        }
-        else
-        {
-            _positions.MoveTo(_rows);
-            _candidateKeys = null;
-        }
-        _direction = _candidateDirection;
-        _needsSettle = _candidateNeedsSettle;
-        AcceptOrdinals();
-    }
-
-    private Entry CurrentEntry(int index) => ResolveOrdinal(_entries[index]);
-
-    private Entry ResolveOrdinal(Entry entry)
-    {
-        int index = entry.BaseIndex;
-        for (int revision = entry.Revision; revision < _ordinalEdits.Count; revision++)
-        {
-            index = _ordinalEdits[revision].Apply(index);
-        }
-        return entry with { BaseIndex = index, Revision = _ordinalEdits.Count };
-    }
-
-    private void AcceptOrdinals()
-    {
-        if (_ordinalSource is null)
-        {
-            _ordinalEdits.Clear();
-            return;
-        }
-        if (_ordinalSource.Change is not Change.Collection collection)
-        {
-            return;
-        }
-        _ordinalEdits.Add(new(collection));
-        if (_rows.Count == 0)
-        {
-            _ordinalEdits.Clear();
-        }
-    }
-
-    private bool ShouldCompact(Body.Source.Preparation source) =>
-        _ordinalEdits.Count + 1 >= Math.Max(1, Math.Sqrt(source.Capture.Rows.Count));
-
-    private void PrepareOrdinals(Body.Source.Preparation source)
-    {
-        if (_candidateKeys is not null)
-        {
-            _candidatePositions.Build(_candidateRows, source);
-        }
-        IReadOnlyList<object> rows = source.Capture.Rows;
-        for (int index = 0; index < rows.Count; index++)
-        {
-            if (_candidatePositions.Map.TryGetValue(rows[index], source, out int sorted))
+            int sorted = _candidatePositions.IndexOf(source[index]);
+            if (sorted >= 0)
             {
                 _candidateEntries[sorted] = _candidateEntries[sorted] with { BaseIndex = index, Revision = 0 };
             }
         }
-        _candidateKeys = null;
-        _ordinalSource = null;
+        _candidateRebuilt = true;
+        _candidateShift = default;
+    }
+
+    private int FindPlace(Entry entry, int count, Func<int, Entry> entryAt)
+    {
+        int low = 0;
+        int high = count;
+        while (low < high)
+        {
+            int middle = low + (high - low) / 2;
+            if (Compare(entryAt(middle), entry, _candidateDirection) < 0)
+            {
+                low = middle + 1;
+            }
+            else
+            {
+                high = middle;
+            }
+        }
+        return low;
+    }
+
+    internal override void Accept()
+    {
+        if (_candidateRebuilt)
+        {
+            (_positions, _candidatePositions) = (_candidatePositions, _positions);
+            _shifts.Clear();
+        }
+        else
+        {
+            foreach (object row in _removedRows)
+            {
+                _positions.Remove(row);
+            }
+            foreach (var (row, index) in _placedRows)
+            {
+                _positions.Insert(row, index);
+            }
+            if (Shifts(_candidateShift))
+            {
+                _shifts.Add(_candidateShift);
+            }
+        }
+        _removals += _removedRows.Count;
+        _inserts += _placedRows.Count;
+        (_rows, _candidateRows) = (_candidateRows, _rows);
+        (_entries, _candidateEntries) = (_candidateEntries, _entries);
+        if (_candidateRebuilt)
+        {
+            _positions.Bind(_rows);
+        }
+        else
+        {
+            _positions.Follow(_rows);
+        }
+        _direction = _candidateDirection;
+        _needsSettle = _candidateNeedsSettle;
+        _resorted = _candidateResorted;
+        _version = _candidateVersion;
+        Complete();
+    }
+
+    private Entry ResolveBase(Entry entry)
+    {
+        int index = entry.BaseIndex;
+        for (int revision = entry.Revision; revision < _shifts.Count; revision++)
+        {
+            index = _shifts[revision].Apply(index);
+        }
+        return entry with { BaseIndex = index, Revision = _shifts.Count };
     }
 
     internal override void Complete()
     {
-        _candidateKeys = null;
-        _ordinalSource = null;
-        _edits.Clear();
-        _keyUpdates.Clear();
+        _placedRows.Clear();
+        _removedRows.Clear();
     }
 
     internal override IReadOnlyList<object> SortSiblings(IReadOnlyList<object> rows, SortDirection direction)
     {
-        EnsureCapacity(rows.Count);
+        EnsureCapacity(0, rows.Count);
         try
         {
             for (int index = 0; index < rows.Count; index++)
             {
-                TKey key = _key((TRow)rows[index]);
-                _captured[index] = new(key, index, 0, Collation(key));
-                _indices[index] = index;
+                _placed[index] = Read(rows[index], index, 0);
+                _order[index] = index;
             }
-            SortIndices(rows.Count, direction);
+            Comparisons += SortIndices(_placed, _order, rows.Count, direction, _comparer, _culture is not null);
             object[] result = new object[rows.Count];
             for (int index = 0; index < rows.Count; index++)
             {
-                result[index] = rows[_indices[index]];
+                result[index] = rows[_order[index]];
             }
             return result;
         }
         finally
         {
-            Array.Clear(_captured, 0, rows.Count);
+            Array.Clear(_placed, 0, rows.Count);
         }
     }
-
-    private void SortIndices(int count, SortDirection direction) =>
-        Comparisons += SortIndices(_captured, _indices, count, direction, _comparer, _culture is not null);
 
     private static long SortIndices(Entry[] entries, int[] indices, int count, SortDirection direction,
         IComparer<TKey> comparer, bool collation)
@@ -1639,30 +1585,40 @@ internal sealed class SortedOrder<TRow, TKey> : SortedOrder where TRow : class
     private static int Compare(Entry left, Entry right, SortDirection direction,
         IComparer<TKey> comparer, bool collation)
     {
+        int order = CompareKeys(left, right, direction, comparer, collation);
+        return order != 0 ? order : left.BaseIndex.CompareTo(right.BaseIndex);
+    }
+
+    private static int CompareKeys(Entry left, Entry right, SortDirection direction,
+        IComparer<TKey> comparer, bool collation)
+    {
         int order = !collation ? comparer.Compare(left.Key, right.Key)
             : left.Collation is null ? right.Collation is null ? 0 : -1
             : right.Collation is null ? 1 : left.Collation.AsSpan().SequenceCompareTo(right.Collation);
-        if (order != 0)
-        {
-            return direction == SortDirection.Ascending ? order : order > 0 ? -1 : 1;
-        }
-        return left.BaseIndex.CompareTo(right.BaseIndex);
+        return direction == SortDirection.Ascending || order == 0 ? order : order > 0 ? -1 : 1;
     }
 
     private byte[]? Collation(TKey key) => _culture is not null && key is string text
         ? _culture.GetSortKey(text, _options).KeyData : null;
 
-    private void EnsureCapacity(int count)
+    private void EnsureCapacity(int kept, int placed)
     {
-        if (_captured.Length >= count)
+        placed += kept;
+        if (_fates.Length < kept)
         {
-            return;
+            int capacity = Math.Max(kept, Math.Max(4, _fates.Length * 2));
+            Array.Resize(ref _fates, capacity);
+            Array.Resize(ref _next, capacity);
+            Array.Resize(ref _nextRows, capacity);
+            Array.Resize(ref _removed, capacity);
         }
-        int capacity = Math.Max(count, Math.Max(4, _captured.Length * 2));
-        Array.Resize(ref _captured, capacity);
-        Array.Resize(ref _indices, capacity);
-        Array.Resize(ref _survivors, capacity);
-        Array.Resize(ref _places, capacity);
-        Array.Resize(ref _targets, capacity);
+        if (_placed.Length < placed)
+        {
+            int capacity = Math.Max(placed, Math.Max(4, _placed.Length * 2));
+            Array.Resize(ref _placed, capacity);
+            Array.Resize(ref _placedItems, capacity);
+            Array.Resize(ref _order, capacity);
+            Array.Resize(ref _places, capacity);
+        }
     }
 }

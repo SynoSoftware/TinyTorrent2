@@ -24,7 +24,6 @@ public sealed partial class Table
     /// </remarks>
     private bool _layoutPending;
     private bool _frameRequested;
-    private PositionIndex _candidatePositions;
     private long _publishVersion;
     private SuppressedTransitions? _suppressedTransitions;
 
@@ -68,6 +67,51 @@ public sealed partial class Table
         return indices;
     }
 
+    /// <summary>
+    /// Show each new instance <see cref="Body.View.Rebound"/> lists in the container that showed
+    /// the old one. The container keeps its place and look, and its row element rebinds through
+    /// its <c>DataContext</c>.
+    /// </summary>
+    /// <remarks>
+    /// The list still records the old instance for that container, and its
+    /// <c>ItemFromContainer</c> and <c>ContainerFromItem</c> answer from that record, so the
+    /// table finds rows and containers by view position instead: see <see cref="RowItem"/> and
+    /// <see cref="RowContainer"/>.
+    /// </remarks>
+    private void RebindRows()
+    {
+        foreach (int index in _view.Rebound)
+        {
+            if (_surface?.ContainerFromIndex(index) is ContentControl container)
+            {
+                container.Content = _view[index];
+            }
+        }
+    }
+
+    /// <summary>The current instance of the row <paramref name="container"/> shows; see <see cref="RebindRows"/>.</summary>
+    private object? RowItem(DependencyObject container)
+    {
+        int index = _surface?.IndexFromContainer(container) ?? -1;
+        return index >= 0 && index < _view.Count ? _view[index] : null;
+    }
+
+    /// <summary>The realized container of <paramref name="item"/>'s row, found by identity; see <see cref="RebindRows"/>.</summary>
+    private DependencyObject? RowContainer(object item)
+    {
+        int index = IndexInView(item);
+        return index < 0 ? null : _surface?.ContainerFromIndex(index);
+    }
+
+    /// <summary>
+    /// The instance the list generated <paramref name="item"/>'s realized container for, which an
+    /// automation peer must name for the list to find that container; see <see cref="RebindRows"/>.
+    /// </summary>
+    internal object ContainerItem(object item) =>
+        RowContainer(item) is { } container && _surface!.ItemFromContainer(container) is { } generated
+            ? generated
+            : item;
+
     /// <summary>Set while a refresh of <see cref="RealizedItems"/> waits on the queue.</summary>
     private bool _realizing;
 
@@ -84,8 +128,40 @@ public sealed partial class Table
     /// </summary>
     public event EventHandler<IReadOnlyList<object>>? RealizedItemsChanged;
 
-    private void OnRowsRealizing(ListViewBase sender, ContainerContentChangingEventArgs args) =>
+    private void OnRowsRealizing(ListViewBase sender, ContainerContentChangingEventArgs args)
+    {
         QueueRealized();
+        if (!args.InRecycleQueue)
+        {
+            // One delegate for every container, so each registration reuses one native wrapper.
+            args.RegisterUpdateCallback(_showCurrent ??= ShowCurrent);
+        }
+    }
+
+    private Windows.Foundation.TypedEventHandler<ListViewBase, ContainerContentChangingEventArgs>? _showCurrent;
+
+    /// <summary>
+    /// Put the view's instance into a container the list filled with an older instance of the
+    /// same row. The list fills a container from the instance it recorded when it prepared it:
+    /// after the preparation event, or, for a placeholder shown while scrolling, in a later pass.
+    /// A publish in between gave the row a new instance (<see cref="RebindRows"/>), which the
+    /// fill then replaces.
+    /// </summary>
+    /// <remarks>
+    /// The list calls this after it has filled and measured the container, and measures it again
+    /// afterwards, so the row element takes the new instance as its data context in the same
+    /// pass. Setting the content from the row element's own <c>DataContextChanged</c> does not
+    /// work: the list raises that while it applies the data context, and drops a change made
+    /// there.
+    /// </remarks>
+    private void ShowCurrent(ListViewBase sender, ContainerContentChangingEventArgs args)
+    {
+        if (args.ItemContainer is ContentControl { Content: { } shown } container
+            && ResolveItem(shown) is { } current && !ReferenceEquals(current, shown))
+        {
+            container.Content = current;
+        }
+    }
 
     private void OnRowsResized(object sender, SizeChangedEventArgs args) => QueueRealized();
 
@@ -173,9 +249,8 @@ public sealed partial class Table
     /// <summary>
     /// Re-evaluate the named items after their sort or interaction values changed. Include every
     /// changed item; omitted items can retain their previous order or interaction state.
-    /// Unavailable identities are ignored. A valid flat delta reads only named keys and policy;
-    /// due global settling, held/released membership recovery, stale source validation or a
-    /// required comparer/global fallback prepares the whole order. Hierarchies project siblings.
+    /// Unavailable identities are ignored. Only the named rows' keys are read, unless a withheld
+    /// change is due, in which case every key is.
     /// </summary>
     public void RefreshView(IEnumerable<object> changed)
     {
@@ -186,115 +261,75 @@ public sealed partial class Table
     // ------------------------------------------------------------------ view reconciliation
 
     /// <summary>
-    /// Apply the current snapshot, under the current sort, to the private view and then to the
+    /// Apply a source change, under the current sort, to the private view and then to the
     /// table-owned selection. Specification 5.3 leaves the mechanism open — "the implementation may
     /// update a private view incrementally or rebuild it, but the observable result MUST be the
     /// same" — and the observable result is settled below, not by the collection notifications:
     /// selection is re-applied from the table's own model, and at most one event is raised.
     /// </summary>
-    private void RebuildView(
-        Body.Source.Capture? capture = null,
-        IReadOnlyList<object>? preparedOrder = null,
-        IdentityMap<object>? preparedMembership = null,
-        Change? change = null
-    )
+    /// <remarks>
+    /// Every step takes the change as the source classified it and applies one rule to the rows
+    /// it affects. The order's producer states how its order differs from its previous one when
+    /// it knows; the view takes that difference when it shows the previous order, and otherwise
+    /// compares itself with the order.
+    /// </remarks>
+    /// <param name="sorted">The order a new sort gave, prepared with <paramref name="prepared"/>.</param>
+    private void RebuildView(Change? change = null, IReadOnlyList<object>? sorted = null,
+        Body.Source.Preparation? prepared = null)
     {
         _publishVersion++;
         bool completed = false;
         SelectionChange? selectionChange = null;
         try
         {
-            capture ??= change switch
+            change ??= new Change.Whole(_source.Current);
+            Body.Source.Capture capture = change switch
             {
                 Change.Whole whole => whole.Capture,
                 Change.Collection collection => collection.Capture,
                 _ => _source.Current,
             };
-            IReadOnlyList<object> snapshot = capture.Rows;
             if (!_schemaCaptured)
             {
-                _source.Accept(capture, validated: false);
+                _source.Store(capture, validated: false);
                 return;
             }
-            Body.Source.Preparation? source = _hierarchy is null && preparedMembership is null
-                ? _source.Prepare(change ?? new Change.Whole(capture), ValidateRows) : null;
-            IdentityMap<object>? membership = _hierarchy is null
-                ? preparedMembership ?? source!.Membership : null;
             IReadOnlyList<object> order;
             IdentitySet pinned;
-            IReadOnlyList<Change.Edit>? edits = null;
-            if (preparedOrder is null)
+            Body.Source.Preparation? affected = null;
+            Body.View.Origin origin;
+            if (_hierarchy is null)
             {
-                if (_hierarchy is null)
-                {
-                    (order, pinned, edits) = ViewOrder(snapshot, membership!, source);
-                }
-                else
-                {
-                    DateTimeOffset settled = _orderSettledAt;
-                    try
-                    {
-                        Hierarchy.Projection projected = PrepareHierarchy(capture);
-                        if (change is Change.Values values)
-                        {
-                            foreach (object item in values.Rows)
-                            {
-                                _ = _preparedHierarchy!.Nodes.Resolve(item);
-                            }
-                        }
-                        (order, pinned, edits) = ViewOrder(projected);
-                    }
-                    catch
-                    {
-                        _orderSettledAt = settled;
-                        throw;
-                    }
-                }
+                Body.Source.Preparation source = prepared ?? _source.Prepare(change, ValidateRows);
+                (order, pinned, affected, origin) = sorted is null ? ViewOrder(source) : SortedView(source, sorted);
+                _source.Accept(source);
             }
             else
             {
-                // A sort the person or host asked for moves every row, so nothing is held through it.
-                order = preparedOrder;
-                var (_, held, released) = Hold(snapshot, membership ?? _source.Membership, sortChanged: true);
-                AcceptHold(held, released);
-                pinned = held;
-                _orderSettledAt = DateTimeOffset.UtcNow;
+                _preparedHierarchy ??= _hierarchy.Prepare(change, capture, _identity, ValidateRows);
+                (order, pinned, affected, origin) = sorted is null ? ViewOrder(_preparedHierarchy)
+                    : SortedView(null, sorted);
+                _source.Store(capture, validated: true);
             }
-            IIdentityKeys keys = source is not null ? source : membership is not null ? membership
-                : _preparedHierarchy is { } preparedHierarchy ? preparedHierarchy : _hierarchy!.Captured!.Nodes;
-            bool changed = edits is not null ? edits.Count > 0 : !_view.Shows(order);
+            Body.View.Difference difference = _view.Compare(order, origin);
+            bool changed = !difference.IsEmpty;
             if (changed)
             {
                 CancelPage();
             }
-            if (changed && edits is null)
-            {
-                _candidatePositions.Build(order, keys, _view.Positions);
-            }
-            if (source is null)
-            {
-                _source.Accept(capture, validated: true, membership);
-            }
-            else
-            {
-                _source.Accept(source);
-            }
             AcceptHierarchy(order, changed);
-            if (_detached)
+            if (_detached || !changed)
             {
                 if (changed)
                 {
-                    ReconcileRows(order, Array.Empty<int>(), pinned, edits, source);
+                    _view.Reconcile(order, difference, origin.Version, Array.Empty<int>(), pinned);
                 }
-                selectionChange = ReconcileSelection(FocusState.Unfocused, preparation: source);
-                completed = true;
-                return;
-            }
-            if (!changed)
-            {
-                ReconcileDrag();
-                UpdatePlaceholder();
-                selectionChange = ReconcileSelection(FocusState.Unfocused, preparation: source);
+                else
+                {
+                    ReconcileDrag();
+                    UpdatePlaceholder();
+                }
+                selectionChange = ReconcileSelection(FocusState.Unfocused, preparation: affected);
                 completed = true;
                 return;
             }
@@ -306,9 +341,9 @@ public sealed partial class Table
             object? focusedItem =
                 rowFocus != FocusState.Unfocused
                 && FocusManager.GetFocusedElement(XamlRoot) is ListViewItem focusedRow
-                    ? _surface?.ItemFromContainer(focusedRow)
+                    ? RowItem(focusedRow)
                     : null;
-            var collapsing = CollapsingFocus(_candidatePositions);
+            var collapsing = CollapsingFocus();
             if (collapsing.Item is not null)
             {
                 focusedItem = collapsing.Item;
@@ -321,24 +356,22 @@ public sealed partial class Table
                 _surface?.Focus(FocusState.Pointer);
             }
 
-            PrepareTransitions(order, keys);
-            bool viewMoved = ReconcileRows(order, RealizedIndices(), pinned, edits, source);
+            PrepareTransitions(order);
+            _view.Reconcile(order, difference, origin.Version, RealizedIndices(), pinned);
+            RebindRows();
 
             ReconcileDrag();
             QueueRealized();
 
-            if (viewMoved)
-            {
-                // The panel has to be told to look again. Rows placed without a notification are
-                // invisible to it, so a reorder gives it no reason to re-examine which rows it should
-                // be holding, and it goes on holding the ones it had: the owner watched a sort leave
-                // the foot of the viewport blank until something else happened to poke it seconds
-                // later. This is the one thing the list must be told when it has been told nothing
-                // else, and it says only "look", not what changed.
-                _surface?.ItemsPanelRoot?.InvalidateMeasure();
-                _layoutPending = true;
-                RequestFrame();
-            }
+            // The panel has to be told to look again. Rows placed without a notification are
+            // invisible to it, so a reorder gives it no reason to re-examine which rows it should
+            // be holding, and it goes on holding the ones it had: the owner watched a sort leave
+            // the foot of the viewport blank until something else happened to poke it seconds
+            // later. This is the one thing the list must be told when it has been told nothing
+            // else, and it says only "look", not what changed.
+            _surface?.ItemsPanelRoot?.InvalidateMeasure();
+            _layoutPending = true;
+            RequestFrame();
 
             UpdatePlaceholder();
             object? retained = focusedItem is null
@@ -348,7 +381,7 @@ public sealed partial class Table
             {
                 ScrollIntoView(collapsing.Item);
             }
-            selectionChange = ReconcileSelection(rowFocus, retained, source);
+            selectionChange = ReconcileSelection(rowFocus, retained, affected);
             completed = true;
         }
         finally
@@ -368,20 +401,7 @@ public sealed partial class Table
         }
     }
 
-    private bool ReconcileRows(IReadOnlyList<object> order, IReadOnlyList<int> realized, IdentitySet pinned,
-        IReadOnlyList<Change.Edit>? edits = null, Body.Source.Preparation? source = null)
-    {
-        if (edits is not null)
-        {
-            return _view.Reconcile(order, edits, source!, realized, pinned);
-        }
-        PositionIndex previous = _view.Positions;
-        bool changed = _view.Reconcile(order, _candidatePositions, realized, pinned);
-        _candidatePositions = previous;
-        return changed;
-    }
-
-    private void PrepareTransitions(IReadOnlyList<object> order, IIdentityKeys keys)
+    private void PrepareTransitions(IReadOnlyList<object> order)
     {
         if (_suppressedTransitions is not null || !IsLoaded || order.Count == 0
             || _surface?.ItemsPanelRoot is not ItemsStackPanel panel)
@@ -396,9 +416,7 @@ public sealed partial class Table
         }
         for (int index = first; index <= Math.Min(last, order.Count - 1); index++)
         {
-            object item = order[index];
-            IIdentityKeys captured = keys.ContainsReference(item) ? keys : _view.Positions;
-            int previous = _view.Positions.IndexOf(item, captured);
+            int previous = _view.Positions.IndexOf(order[index]);
             if (previous >= first && previous <= last)
             {
                 return;
@@ -482,32 +500,32 @@ public sealed partial class Table
         }
     }
 
-    private IReadOnlyList<object> PrepareSort(Body.Source.Capture capture, SortedOrder? workspace,
-        SortDirection direction, out IdentityMap<object>? membership, SortWork? work = null)
+    /// <summary>The whole order a new sort gives, prepared but not accepted.</summary>
+    private IReadOnlyList<object> PrepareSort(SortedOrder? workspace, SortDirection direction,
+        out Body.Source.Preparation? source, SortWork? work = null)
     {
-        membership = null;
+        Body.Source.Capture capture = _source.Current;
+        source = null;
         if (_hierarchy is null)
         {
-            membership = _source.Prepare(capture, ValidateRows);
+            source = _source.Prepare(new Change.Whole(capture), ValidateRows);
             if (work is not null)
             {
-                return work.Sorting.Prepare(capture.Rows, membership, work.PublishVersion != _publishVersion);
+                return work.Sorting.Prepare(capture.Rows, work.PublishVersion != _publishVersion);
             }
             return workspace is null ? capture.Rows
-                : workspace.Prepare(capture.Rows, membership, direction, allowMoves: true).Rows;
+                : workspace.Prepare(SortChange.Whole(capture.Rows, capture.Rows), direction, allowMoves: true);
         }
 
-        DateTimeOffset settled = _orderSettledAt;
         try
         {
-            Hierarchy.Projection projection = PrepareHierarchy(capture);
+            _preparedHierarchy = _hierarchy.Prepare(new Change.Whole(capture), capture, _identity, ValidateRows);
             return work?.Hierarchy is { } groups
-                ? projection.Order(groups, work.Sorting, work.PublishVersion != _publishVersion)
-                : projection.Order(workspace, direction);
+                ? _hierarchy.Project(_preparedHierarchy, groups, work.Sorting, work.PublishVersion != _publishVersion)
+                : _hierarchy.Project(_preparedHierarchy, workspace, direction, sortAll: true, allowMoves: true, out _);
         }
         catch
         {
-            _orderSettledAt = settled;
             _preparedHierarchy?.Complete();
             _preparedHierarchy = null;
             throw;
@@ -519,22 +537,26 @@ public sealed partial class Table
         Body.Source.Capture capture = _source.Current;
         if (_hierarchy is null)
         {
-            IdentityMap<object> membership = _source.Prepare(capture, ValidateRows);
-            return new(workspace, workspace.CaptureWork(new[] { capture.Rows }, membership, direction), null,
-                _publishVersion);
+            try
+            {
+                _source.Prepare(new Change.Whole(capture), ValidateRows);
+                return new(workspace, workspace.CaptureWork(new[] { capture.Rows }, direction), null,
+                    _publishVersion);
+            }
+            finally
+            {
+                _source.Complete();
+            }
         }
-        DateTimeOffset settled = _orderSettledAt;
+        Hierarchy.Preparation prepared = _hierarchy.Prepare(new Change.Whole(capture), capture, _identity, ValidateRows);
         try
         {
-            Hierarchy.Projection projection = PrepareHierarchy(capture);
-            SortedOrder.Work sorting = projection.CaptureWork(workspace, direction, out Hierarchy.Work hierarchy);
-            return new(workspace, sorting, hierarchy, _publishVersion);
+            var groups = _hierarchy.Groups(prepared, out Hierarchy.Work hierarchy);
+            return new(workspace, workspace.CaptureWork(groups, direction), hierarchy, _publishVersion);
         }
         finally
         {
-            _preparedHierarchy?.Complete();
-            _preparedHierarchy = null;
-            _orderSettledAt = settled;
+            prepared.Complete();
         }
     }
 

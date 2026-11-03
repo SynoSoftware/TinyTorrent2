@@ -1,18 +1,59 @@
 # TableView performance plan
 
-> Current status: implementation and integrated review corrections are complete.
-> All findings from the completed expert review are resolved. Stages A-E below
-> retain their execution history; this status supersedes earlier acceptance and
-> reopening statements. The final sorted-notification correction passed an
-> independent five-pass review, the focused 83-test run, and a direct A/B
-> benchmark at 1,000 and 2,000 displayed rows.
+> **Current status: open.** Commit 171674a recorded this plan as complete. A
+> review against the plan as approved at db12cfd found that the plan is not
+> complete. Stages 5 and 6 were built as a second pipeline beside the whole
+> rebuild, where the plan says "no second pipeline is written beside it". That
+> second pipeline has defects:
+> - a duplicate row and a `KeyNotFoundException`;
+> - a lost settle for string keys;
+> - edits applied to a pinned view;
+> - a same-identity Replace that moves inside the settle interval;
+> - a hierarchy `StructureChanged` that is always true.
 >
-> Final evidence: V:/temp/TableViewPerformance/sorted-notification-evidence.md.
-> Rules and implementation details are recorded in the TableView contract and
-> implementation map. This recovered execution record is retained at the owner's
-> requested path rather than deleted again. It is not an open work queue.
-> No 100,000-row timing result is established; historical estimates below remain
-> estimates. The correction does not change the accepted animation policy.
+> The work is done in three batches, in this order:
+> 1. Stages 5 and 6 as one pipeline. This batch also fixes the defects above and
+>    the review findings in the same code (A1, A3, A4, A7, A8, A9, A10, A11, F4).
+>    Then the table slides reordered rows itself. WinUI 2.6.4 has no move
+>    for an `ItemsSource`: only the list's own drag-reorder plays its reorder
+>    transition (`ListViewBase::ReorderItemsTo`). So a row that a sort settle
+>    or a host `Move` reorders is removed and inserted, and it fades out and in.
+>    The table turns off that fade for a reinserted row and moves the row from
+>    its old place to its new one, as `Motion.SlideFrom` does for columns.
+> 2. Sorting follow-ups:
+>    - A5: remove the measurement-only state from production sorting.
+>    - A6: make the sort commit sequence one routine.
+>    - F6: move the first-sort UI work off the UI thread.
+>    - F7: measure and reduce the memory that each row keeps.
+> 3. One measurement home (A2) and Build.ps1 (A12).
+>
+> Rules for every batch:
+> - Nothing is added to the public API. Each batch leaves fewer internal seams
+>   between the pipeline types than it found.
+> - Each batch shows, in thread cycles before and after, that it is faster.
+> - A row that is on screen before and after a change moves to its new place.
+>   This includes a row that a sort or a host `Move` reorders. It never fades
+>   out and in, and it never flashes.
+>
+> F3 is settled by the owner's goal: when there is nothing to animate, the rows
+> swap at once. F5 stays as it is.
+>
+> **Batch 1 status:** implemented, and reviewed in four rounds until no high or
+> medium finding remained (`batch-a-review-r1.md` to `r4.md`). Every audit
+> defect is gone, and the equivalence test passes in every mode. Five
+> alternating run pairs against 6726d9f show every case at or below the old
+> code except four small ones (+0–4%: a switch to a different list at 20 and
+> 200 rows, an unchanged refresh at 20 rows, and Replace at 1,000 rows), which
+> are being traced. A flip to a new ListView source for a list with no row in
+> common was built and removed, because WinUI drew one empty frame. How such a
+> switch shows its first row waits for the owner.
+>
+> Review records: V:/temp/TableViewPerformance/review-db12cfd (spec,
+> paths-flow, architecture, audit-flat, audit-hierarchy, and the approved plan
+> text `plan-db12cfd.md`). Each
+> completed batch gets one independent adversarial review. After the last
+> batch, a deep review with six specialists checks the integrated result.
+> Earlier evidence: V:/temp/TableViewPerformance/sorted-notification-evidence.md.
 
 ### Final correction results
 
@@ -36,52 +77,23 @@
 
 ### Reopened stage 5: settled correction
 
-- `SortedOrder` keeps its candidate/accept boundary. For an accepted collection
-  delta with retained immutable keys, removed sorted indices define survivor
-  runs. The existing comparison sort orders entrants; one shared binary placement
-  helper places them. Native span/array copies fill retained candidate row/key
-  runs once, rather than visiting every surviving row in managed code.
-- Stable source-order ties use a bounded journal of accepted ordinal edits.
-  Entries record the journal revision of their ordinal. Pending edits are read
-  during preparation and committed only on acceptance; a fresh full capture
-  resets the journal only when accepted. Rebase at approximately sqrt(n) edits
-  amortizes its whole-order work: build the existing candidate position index
-  and walk current source ordinals once, before acceptance. Replaying every
-  journal record for every entry during compaction would retain amortized O(n)
-  work and is excluded. Tied binary searches may replay up to sqrt(n)
-  ordinal edits, so the bound promises logarithmic comparer calls, not constant
-  ordinal arithmetic per call. There is no new source-position map.
-- Existing custom-comparer proofs, global settling, recovery and hierarchy
-  preparation retain their documented full scope. Animation and view notification
-  policy do not change. Held arrivals still commit source ordinal edits even
-  when accepted row buffers do not change.
-- Root traced the publish/hold/Pin/accept consumers. The independent read-only
-  design investigation is `V:/temp/TableViewPerformance/sorted-notification-design.md`.
-  Tests target stable ties across journal compaction and failed preparation;
-  benchmarks target repeated sorted notifications at 1,000 and 2,000 rows.
-  No final performance or correctness result is claimed before validation.
-- The pre-correction built sample is preserved in
-  `V:/temp/TableViewPerformance/sorted-before`; its TableView.dll SHA256 is
-  `3F5984E5F8C185B8B46732ACB2BBE784345DC43FD86EC275374DEE795B1C7134`.
-  After the single final build, both libraries use the identical final sample
-  measurement assembly for mode Y. No temporary production source is compiled.
-- Correction review round 1 is complete in
-  `V:/temp/TableViewPerformance/sorted-notification-review-r1.md`. Journal,
-  copies, compaction and failure paths passed. It found that unchanged withheld
-  notifications still rebuilt pinned presentation. The correction reuses the
-  view only for empty edit facts and matching current pin targets, retains the
-  presentation's pending-settle decision, and preserves empty edit facts at the
-  caller. Pin target resolution has one owner; pointer retargeting still runs
-  the normal projection. A regression covers retargeting, withheld ordinal
-  shifts and replacement ties. Mode Y now covers distinct, tied and withheld
-  notifications; no result is claimed before its final review/run.
-- The same review also confirmed that unchanged held membership was cloned
-  on each withheld arrival. PrepareHold now reuses accepted held membership
-  and copies only before an actual held-member mutation. AcceptHold clears
-  the old candidate only on a swap, releasing its obsolete references. Mode Y's
-  held case now retains half the displayed rows as actual leavers, so it covers
-  both the pin-projection and held-membership hot paths. Existing hold/return/
-  release regressions are included in the focused validation scope.
+*Superseded by batch (a).* What this correction settled now stands as
+follows; the implementation map owns the details.
+- Still in force: `SortedOrder`'s candidate/accept boundary; rows that arrive
+  or move are placed by binary search among the rows that stay, which are
+  copied in native blocks; source-index shifts are deferred and rebased at
+  about √n; a custom comparer without key equality first proves the kept
+  order before placement (contract section 9); unchanged held membership
+  keeps the accepted set, copied only when a held row changes.
+- Replaced: the reuse of the pinned presentation for a preparation without
+  edits. The order's producer states how its order differs from its previous
+  version when it knows, and the view applies that difference only when it
+  shows that version; otherwise it compares itself with the new order by one
+  reference walk (stage 5's bound gives the costs).
+- The files under `V:/temp/TableViewPerformance/` from this correction
+  (design, review rounds, the preserved `sorted-before` sample) describe the
+  replaced implementation. Batch (a)'s baseline and final measurements are in
+  `V:/temp/TableViewPerformance/batch-a/`.
 
 **Open.** This plan keeps TableView responsive with medium and large sources:
 10,000 to 100,000 rows that the host updates often, usually under a sort.
@@ -390,10 +402,17 @@ the existing tests.
 - **No boxing of value-type keys (R4, O4, K3).** The identity part hashes and
   compares `TKey` directly and does the null-key check. The Library's `long`
   key boxes on every hash and comparison today: an **estimated** 7–35 MB of
-  short-lived garbage per publish at 100,000 rows. A key selector that builds
-  its key, such as a string joined from two fields, allocates on every call;
-  reading the key once per publish removes most of those calls. Without a key,
-  identity stays the object reference.
+  short-lived garbage per publish at 100,000 rows. Without a key, identity
+  stays the object reference. *Superseded in batch (a):* the line that kept
+  each row's key once per publish is dropped. Identity maps read the key
+  through the selector on every lookup, which the contract keeps pure, stable
+  and inexpensive, and no map keeps captured keys. The kept keys had to travel
+  with every map, set and position index as an extra parameter, and the
+  measurement showed no cost from reading again. With int and string keys at
+  1,000 and 2,000 rows, every whole publish and every notification kind was
+  cheaper or within the run-to-run spread of two runs. An unchanged
+  `RefreshView()` states no difference, so it does not walk the view either.
+  Raw output is in `V:/temp/TableViewPerformance/batch-a/`.
 - **Pooled working arrays (R1).** `present`, `slots` and similar per-call
   arrays come from `ArrayPool`. `Pin` builds its output once instead of a
   slots array plus a result list (K2).
@@ -951,16 +970,43 @@ would make every `View[i]` read, the list's included, cost O(log n).
 
 **The bound this stage gives.** One notification no longer runs the whole
 pipeline. Its cost is the change's own comparisons (log n per arrival under a
-sort), its one native event, and at most one move of the view's gap to the
-change's position: a block copy of at most n references, about 40–80 µs at
-100,000 rows (**estimate**). The order map's rebuild every √n changes adds
-O(√n) per change when spread over them. So 1,000 single `Add` calls at
-100,000 rows cost tens of milliseconds, where today each one runs the whole
-pipeline.
+sort), its one native event, at most one move of the view's gap to the
+change's position. The view learns what changed from the order's producer:
+the natural order states the notification's own indices, and the kept sorted
+order states its removed, placed and replaced rows, a moved row as one of
+each. The view applies a stated difference only when it shows the version of
+the order the difference starts from, which it checks by reference, so a
+notification that adds, removes or replaces rows never walks the view. The
+gap move is a block copy of at most n
+references, about 40–80 µs at 100,000 rows (**estimate**). Under a sort, the
+kept order copies the rows that stay into its candidate in native blocks,
+about n × 32 bytes, 0.2–0.4 ms at 100,000 rows (**estimate**). That copy is
+this bound's one block copy for a sorted notification: it lets a failed
+publish leave the accepted order as it was, as before batch (a). The order
+map's rebuild
+every √n changes adds O(√n) per change when spread over them. Measured on the
+release build at 100,000 rows, two runs: an unsorted Add, Remove or Replace
+costs 0.6–1.0 million cycles per publish; under a sort, 1.7–2.5 million, a
+Replace that moves its row included. An Add or Remove half the list away from
+the previous change, so that the gap moves, costs 1.1–1.2 million unsorted and
+3.1 million under a sort.
+
+While rows are held without a sort, the natural order is the view with its
+new instances, copied only when an instance changes, and states them against
+the view.
+
+Where no difference is stated (pinned rows, held rows under a sort, a resort
+that places every row again, a Move or Reset notification, a hierarchy, a new
+sort or assignment, each already O(n)), the view walks itself
+against the new order: one reference per row, looking up a view index only
+where the two differ. Measured on the release build: a median 0.027 million
+cycles at 1,000 rows and 0.053–0.079 at 2,000 (two runs), about 27–40 cycles
+per row.
 
 **Contract.** Section 5.3 already allows an incremental update. Section 20
 gains this bound: a source notification costs its own comparisons and event
-plus at most one block copy of the view, never a rebuild of the view. The
+and at most one block copy of the view, never a rebuild of the view; under a
+sort, the kept order's block copy of the rows that stay is added. The
 implementation map changes.
 
 ### 6. Hierarchy capture reuses what did not change
@@ -999,7 +1045,14 @@ invalidation is pending. So every publish copies every child list, although
   extension's claim that "the Files model already supplies" stable notifying
   collections is wrong today and is corrected with this stage.
 - Project the visible tree once, with the sort, and answer membership from
-  that list.
+  that list. The projection keeps each expanded parent's sibling order from
+  the previous publish as stored derived state. A group sorts again when that
+  order may be out of date: a change of sort column or direction forgets every
+  kept group; a group sorts again when it is newly shown (its parent expanded),
+  when its list changed which rows it holds or their order, when moves are allowed for a whole
+  change or a pending settle (every group), and when moves are allowed for
+  rows `RefreshView(changed)` names (their groups). A group that is not shown
+  loses its kept order. `HierarchyTests` checks the expansion case.
 - Compare children with an indexed loop.
 - Keep the node index and the child-source relations between captures. A
   child notification updates that collection and the descendants it adds or
@@ -1007,9 +1060,12 @@ invalidation is pending. So every publish copies every child list, although
   the tree is a failed `Add` into the kept node index, as "Owners" says;
   `Hierarchy` writes no check of its own. The first capture and a new root
   source still validate everything.
-  Cache reuse also requires an accepted predecessor: a rejected child change
-  or suspended observation forces recapture before another delta, so later
-  changes cannot apply indices to an older accepted child list.
+  `Hierarchy.Prepare` keeps the changed relations in the preparation until
+  `Accept`, so a rejected change leaves the accepted hierarchy as it was,
+  with nothing to undo. A list that missed a notification, because its change
+  was rejected or the table was not observing it, is read again in full at
+  the next change, so later changes cannot apply indices to an older accepted
+  child list.
 - **Apply child notifications, not a full capture (N8, Q11).** Every
   child-collection notification runs a full capture of the supplied tree and
   a full rebuild today, so a host that fills a child `ObservableCollection`
@@ -1022,15 +1078,14 @@ invalidation is pending. So every publish copies every child list, although
   a collapsed folder that gains its first child shows an expander, one that
   loses its last child loses it, and a duplicate identity added under a
   collapsed folder is rejected before publishing, as the hierarchy
-  extension requires. Expansion decides only whether view rows change: when
-  the parent is expanded, the change enters `RebuildView` as stage 5's
-  notification change, at the positions of the rows under that parent, not
-  as a new kind of entry. When no view row changes, no publish runs, so
-  `Hierarchy` raises `RowVisualsChanged` itself when the change alters a
-  shown row's expander, and refreshes the automation peers whose
-  `Expansion` it changes; the structure is its own fact. The kept node index
-  is then the one record of child membership, and `_invalid` no longer marks
-  notified collections for a later recapture.
+  extension requires. Every child notification, collapsed or expanded,
+  enters `RebuildView` as one change (`Change.Children`), so validation,
+  acceptance and the expander and automation updates have one path. When no
+  view row changes, the view's comparison finds the order unchanged and the
+  reconcile does nothing. The kept node index is then the one record of child
+  membership. The one set of lists, `_stale`, holds only lists that missed a
+  notification no accepted change applied, so the next change reads them
+  again in full.
 
 **Contract.** None. The [hierarchy extension](../../lib/TableView/docs/hierarchy.md)
 keeps its rules: a repeated identity anywhere in the supplied tree, collapsed

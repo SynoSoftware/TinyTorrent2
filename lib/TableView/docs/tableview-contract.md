@@ -515,9 +515,13 @@ The private view is handed to the native row surface in full. The surface
 keeps containers for realized rows, including pinned and not-yet-recycled
 containers; elsewhere it keeps only the count. Reconciliation therefore
 announces changes inside those realized runs and the net count change after
-the last surviving run. Other positions take their new rows quietly. An
-ordinary single arrival or removal may use its one true-position event,
-preserving the native containers' shifted indices and scroll anchoring. Each
+the last surviving run. Other positions take their new rows quietly. A change
+of membership alone, by no more rows than the surface has realized containers,
+instead uses one true-position event per row, preserving the native
+containers' shifted indices and scroll anchoring. A new instance of a row that
+stays raises no event: the surface answers a replaced item with a new
+container, which fades in as if the row had arrived, so the table shows the new
+instance in the row's existing container instead. Each
 event follows its own backing mutation, with the true intermediate count and
 current row content, including synchronous replacement preparation. The
 observable result is the one this section already requires: the count is
@@ -583,7 +587,8 @@ moving while they work.
   carries the change applies whole, held rows and waiting rows included. Every
   other update stays held. A named change that never comes, such as a refused
   removal, leaves its rows named until their presence next changes.
-- A held row that comes back into the source stops being held.
+- A held row that comes back into the source stops being held. It keeps the
+  held row's place until the rows are released.
 - A table that shows no rows takes its arrivals at once: nothing on screen can
   move.
 - A sort change moves every row anyway, so it takes the source whole.
@@ -603,12 +608,10 @@ Display-only updates need no call.
 identities to current source instances. Duplicate names are coalesced, valid
 unavailable identities are ignored, and a null enumerable throws. Invalid
 items and keys keep the identity contract's failures. This overload adds no
-membership. An eligible accepted flat delta rereads only named sort keys and
-interaction policy, with the normal bounded realized-row visual refresh and
-selection packet work. A due global settle, held/released membership recovery,
-stale-source recovery or a required actual-comparer/global fallback prepares
-the whole order. Ordinary eligible named updates do not scan all source keys.
-A hierarchy uses its full sibling projection. The host must name
+membership. It rereads only the named rows' sort keys and interaction policy,
+with the normal bounded realized-row visual refresh and selection packet work;
+a withheld key change that is due reads every key. In a hierarchy, the named
+rows' sibling groups sort again when rows may move. The host must name
 every item whose sort or interaction value changed; omitted items can retain
 their old place or interaction state until a full refresh. Settling and pointer
 holds apply to both overloads. An invalidated source is fully validated before
@@ -1904,19 +1907,20 @@ throughput target.
   content or change widths. Showing a table or changing its available width
   schedules one bounded fill after layout, without realizing rows for measurement.
 - Full sorting is `O(n log n)` and occurs only on source, sort, or explicit
-  refresh changes. Flat arrivals and named changed keys share stable placement
-  among retained keys rather than sorting every row again. A notification
-  validates only entrants when it follows the validated accepted source;
-  rejected updates recover through full validation. Position indexes update
-  edited entries and amortize rebuilds over counted insertions/removals.
-  With retained immutable sort keys, collection deltas copy surviving row/key
-  runs in native blocks and compare only entrants for placement. Stable source
-  ties and position indexes amortize their full maintenance; they do not run
-  whole-order managed preparation for every notification. Required custom-
-  comparer proofs and due global settling retain their full preparation.
-  View backing moves in linear passes with a gap buffer, so a half-removal
-  does not repeatedly shift the whole tail. Bounded realized-row refresh and
-  selection-packet publication remain additional costs.
+  refresh changes. Every change shares one stable placement among the kept
+  keys: rows that arrive or move are placed among the rows that stay by binary
+  search, and the staying rows are copied between those places in native
+  blocks, rather than sorting every row again. A notification that follows the
+  validated accepted source reads and validates only its own rows; rejected
+  updates recover through full validation. Position indexes update the changed
+  entries and amortize rebuilds over counted insertions and removals. When the
+  view shows the order a notification starts from, it applies the rows the
+  notification names; otherwise it compares itself with the new order at one
+  reference comparison per row. A
+  hierarchy child notification compares only its own list and sorts again only
+  that sibling group. View backing moves in linear passes with a gap buffer, so
+  a half-removal does not repeatedly shift the whole tail. Bounded realized-row
+  refresh and selection-packet publication remain additional costs.
 - Explicit fit commands measure only the header, visible rows, and one
   already-realized row above and below the viewport;
   they never create a second measurement surface or force off-screen

@@ -3,6 +3,10 @@ using System.Collections.Specialized;
 
 namespace Syno.TableView;
 
+/// <summary>
+/// A table's hierarchy: a node for every row at every depth, the child lists they were read
+/// from, and the order each expanded parent's children were last shown in.
+/// </summary>
 internal sealed class Hierarchy(
     Column column,
     Func<object, IEnumerable> children,
@@ -24,13 +28,6 @@ internal sealed class Hierarchy(
         internal bool Expanded { get; set; }
     }
 
-    internal sealed record Snapshot(
-        IReadOnlyList<object> Roots,
-        IdentityMap<Node> Nodes,
-        Dictionary<IEnumerable, ChildSource> Sources,
-        long AssignmentVersion
-    );
-
     internal sealed class ChildSource(IEnumerable source, IReadOnlyList<object> items)
     {
         internal IEnumerable Source { get; } = source;
@@ -39,27 +36,50 @@ internal sealed class Hierarchy(
         internal NotifyCollectionChangedEventHandler? Handler { get; set; }
     }
 
-    internal sealed record CollectionChange(ChildSource Source,
-        NotifyCollectionChangedEventArgs Notification, bool HasPredecessor);
+    /// <summary>A child list, or the roots, whose items a publish reads again.</summary>
+    /// <param name="Parent">The parent row, or null for the roots.</param>
+    /// <param name="Source">The child list whose items become <paramref name="After"/>, if it stays.</param>
+    private sealed record ListChange(object? Parent, int Depth, IReadOnlyList<object> Before,
+        IReadOnlyList<object> After, ChildSource? Source);
 
-    // Notifying lists with a notification that no accepted capture has applied yet.
+    private IIdentity? _identity;
+    private IdentityMap<Node> _nodes = null!;
+    private readonly Dictionary<IEnumerable, ChildSource> _sources = new(ReferenceEqualityComparer.Instance);
+    private IReadOnlyList<object> _roots = Array.Empty<object>();
+    private long _assignmentVersion = -1;
+    // Notifying lists with a notification that no accepted publish has applied yet.
     private readonly HashSet<ChildSource> _stale = new();
     private bool _suspended;
     private int _expandableRows;
-    private IdentityMap<int>? _counts;
-    private IdentityMap<object>? _projected;
+    private IdentityMap<int> _counts = null!;
+    private Preparation? _prepared;
+
+    /// <summary>
+    /// The order each expanded parent's children were shown in by the last publish, keyed by the
+    /// parent, and the roots' order. Stored derived state, so a group sorts again when it may be
+    /// out of date: after a change of sort column or direction (<see cref="ForgetOrder"/>), when
+    /// its parent was not expanded and shown at the last publish (no entry), when its list
+    /// changed which rows it holds or their order, when moves are allowed and it holds a row
+    /// <c>RefreshView(changed)</c> names or a new instance of a row, and whenever moves are
+    /// allowed for a whole change or a pending settle.
+    /// </summary>
+    private IdentityMap<object[]> _kept = null!;
+    private IdentityMap<object[]> _candidateKept = null!;
+    private object[]? _keptRoots;
+    private object[]? _candidateKeptRoots;
+
     internal long Version { get; private set; }
 
     internal Column Column => column;
-    internal Snapshot? Captured { get; private set; }
-    internal event EventHandler? Changed;
-    internal event EventHandler<CollectionChange>? CollectionChanged;
+    internal event EventHandler<Change.Children>? CollectionChanged;
 
     internal bool IsExpanded(object item) => isExpanded(item);
 
     internal void SetExpanded(object item, bool value) => setExpanded(item, value);
 
-    internal Node? Find(object item) => Captured?.Nodes.GetValueOrDefault(item);
+    internal Node? Find(object item) => _nodes is not null && _nodes.TryGetValue(item, out Node node) ? node : null;
+
+    internal int RootCount => _roots.Count;
 
     /// <summary>Whether any shown row is expandable, so the expander slot is reserved.</summary>
     internal bool HasChildren => _expandableRows > 0;
@@ -71,106 +91,509 @@ internal sealed class Hierarchy(
     internal bool IsExpandable(Node node) =>
         node.Children.Count > 0 || hasUnrealizedChildren?.Invoke(node.Item) == true;
 
-    internal bool NeedsCapture(long assignmentVersion) =>
-        Captured is not { } snapshot || snapshot.AssignmentVersion != assignmentVersion
-            || snapshot.Sources.Values.Any(source => !Trusts(source, assignmentVersion));
+    /// <summary>Whether the accepted hierarchy shows <paramref name="item"/>: every ancestor is expanded.</summary>
+    internal bool IsShown(object item)
+    {
+        if (Find(item) is not { } node)
+        {
+            return false;
+        }
+        while (node.Parent is { } parent)
+        {
+            if (Find(parent) is not { } ancestor || ancestor.Children.Count == 0 || !isExpanded(parent))
+            {
+                return false;
+            }
+            node = ancestor;
+        }
+        return true;
+    }
+
+    /// <summary>The kept sibling orders were made under another sort.</summary>
+    internal void ForgetOrder()
+    {
+        _kept?.Clear();
+        _keptRoots = null;
+    }
 
     /// <summary>
-    /// Whether a captured child list's items still match the host's list, so a
-    /// capture may reuse them. A plain list raises no changes, so it matches only
-    /// within the root assignment it was read in. A notifying list matches only
-    /// while its handler has been attached since it was read and every
+    /// Whether a child list's accepted items still match the host's list. A plain list raises no
+    /// changes, so it matches only within the root assignment it was read in. A notifying list
+    /// matches only while its handler has been attached since it was read and every
     /// notification since has been applied; an unloaded table observes no list.
     /// </summary>
     private bool Trusts(ChildSource source, long assignmentVersion) =>
         source.Source is INotifyCollectionChanged
             ? source.Handler is not null && !_stale.Contains(source)
-            : Captured!.AssignmentVersion == assignmentVersion;
+            : _assignmentVersion == assignmentVersion;
 
-    internal Preparation Capture(IReadOnlyList<object> roots, IIdentity identity, Action<object> validate, long assignmentVersion)
+    /// <summary>
+    /// The hierarchy after <paramref name="change"/>, kept apart from the accepted one until
+    /// <see cref="Preparation.Accept"/>. Only the lists the change can have altered are read
+    /// again: every list for a new root assignment, the roots for a root change, the notified
+    /// list for a child notification, and any list the hierarchy cannot trust. Each changed
+    /// list is compared with its accepted items by identity: rows that leave take their
+    /// subtrees with them, rows that arrive bring theirs, and a new instance of a row replaces
+    /// the old one in place.
+    /// </summary>
+    internal Preparation Prepare(Change change, Body.Source.Capture capture, IIdentity identity,
+        Action<object> validate)
     {
-        IdentityMap<Node> nodes = identity.CreateMap<Node>(keepsKeys: true);
-        _counts ??= identity.CreateMap<int>();
-        _projected ??= identity.CreateMap<object>(keepsKeys: true);
-        Dictionary<IEnumerable, ChildSource> sources = new(ReferenceEqualityComparer.Instance);
-        bool changed = Captured is null || roots.Count != Captured.Roots.Count;
-        List<(IReadOnlyList<object> Next, IReadOnlyList<object> Before)> comparisons = new();
-        Stack<(object Item, object? Parent, int Depth)> pending = new();
-        for (int i = roots.Count - 1; i >= 0; i--)
+        if (!ReferenceEquals(identity, _identity))
         {
-            pending.Push((roots[i], null, 0));
+            _identity = identity;
+            _nodes = identity.CreateMap<Node>();
+            _counts = identity.CreateMap<int>();
+            _kept = identity.CreateMap<object[]>();
+            _candidateKept = identity.CreateMap<object[]>();
+            _prepared = new(this, identity);
+            _roots = Array.Empty<object>();
+            _assignmentVersion = -1;
         }
-        while (pending.TryPop(out var next))
+        _prepared!.Prepare(change, capture, validate);
+        return _prepared;
+    }
+
+    internal sealed class Preparation
+    {
+        private readonly Hierarchy _owner;
+        private readonly List<ListChange> _changes = new();
+        private readonly IdentityMap<Node> _removed;
+        private readonly IdentityMap<Node> _added;
+        private readonly IdentitySet _after;
+        private readonly IdentitySet _seen;
+        private bool _readAll;
+        private readonly Dictionary<ChildSource, IReadOnlyList<object>> _lists = new(ReferenceEqualityComparer.Instance);
+        private readonly Dictionary<IEnumerable, ChildSource> _created = new(ReferenceEqualityComparer.Instance);
+        private long _assignmentVersion;
+
+        internal Preparation(Hierarchy owner, IIdentity identity)
         {
-            validate(next.Item);
-            IEnumerable enumerable = children(next.Item)
-                ?? throw new InvalidOperationException("The children selector returned null.");
-            if (!sources.TryGetValue(enumerable, out ChildSource? source))
+            _owner = owner;
+            _removed = identity.CreateMap<Node>();
+            _added = identity.CreateMap<Node>();
+            _after = new(identity);
+            _seen = new(identity);
+            ChangedGroups = new(identity);
+            NamedGroups = new(identity);
+        }
+
+        internal IReadOnlyList<object> Roots { get; private set; } = Array.Empty<object>();
+        /// <summary>Every group may be read again: the change was not a child notification or named rows.</summary>
+        internal bool IsWhole { get; private set; }
+        private bool RootsChanged { get; set; }
+        private bool NamedRoots { get; set; }
+        /// <summary>Parents whose children changed which rows they hold, or their order.</summary>
+        private IdentitySet ChangedGroups { get; }
+        /// <summary>Parents of rows named by <c>RefreshView(changed)</c> or replaced by a new instance.</summary>
+        private IdentitySet NamedGroups { get; }
+        /// <summary>Whether any row has a new node: it arrived, or a new instance replaced it.</summary>
+        internal bool HasNewNodes => _added.Count > 0;
+
+        /// <summary>
+        /// Whether <paramref name="parent"/>'s children, or the roots for null, sort again rather
+        /// than keep their last order: their list changed which rows it holds or their order, or
+        /// moves are allowed and the change named one of them or brought a new instance of one.
+        /// </summary>
+        internal bool SortsAgain(object? parent, bool allowMoves) => parent is null
+            ? RootsChanged || allowMoves && NamedRoots
+            : ChangedGroups.Contains(parent) || allowMoves && NamedGroups.Contains(parent);
+
+        /// <summary>See <see cref="Hierarchy.Prepare"/>.</summary>
+        internal void Prepare(Change change, Body.Source.Capture capture, Action<object> validate)
+        {
+            Roots = _owner._roots;
+            _assignmentVersion = capture.AssignmentVersion;
+            IsWhole = change is not (Change.Children or Change.Values);
+            try
             {
-                IReadOnlyList<object> items;
-                if (Captured is { } before && before.Sources.TryGetValue(enumerable, out ChildSource? cached)
-                    && Trusts(cached, assignmentVersion))
+                if (!capture.Validated || capture.AssignmentVersion != _owner._assignmentVersion)
                 {
-                    items = cached.Items;
+                    ReadAll(capture.Rows);
                 }
                 else
                 {
-                    if (Captured is { } previous && previous.Sources.TryGetValue(enumerable, out cached)
-                        && enumerable is IList indexed && SameReferences(indexed, cached.Items))
+                    if (change is Change.Whole or Change.Collection)
                     {
-                        items = cached.Items;
+                        Compare(null, 0, _owner._roots, capture.Rows, null);
+                    }
+                    ReadUntrusted(change as Change.Children);
+                    if (change is Change.Values values)
+                    {
+                        Name(values.Rows);
+                    }
+                }
+                Apply(validate);
+            }
+            catch
+            {
+                Complete();
+                throw;
+            }
+        }
+
+        internal Node? Find(object item)
+        {
+            if (_added.Count > 0 && _added.TryGetValue(item, out Node added))
+            {
+                return added;
+            }
+            if (_removed.Count > 0 && _removed.ContainsKey(item))
+            {
+                return null;
+            }
+            return _owner.Find(item);
+        }
+
+        internal IReadOnlyList<object> ItemsOf(Node node) =>
+            _lists.Count > 0 && _lists.TryGetValue(node.Source, out IReadOnlyList<object>? items) ? items : node.Source.Items;
+
+        /// <summary>A new root assignment: every list may have changed, so each is read again.</summary>
+        private void ReadAll(IReadOnlyList<object> roots)
+        {
+            _readAll = true;
+            Compare(null, 0, _owner._roots, roots, null);
+            Stack<object> pending = new();
+            Push(roots);
+            while (pending.TryPop(out object? item))
+            {
+                Node node = _owner._nodes[item];
+                ChildSource source = node.Source;
+                IEnumerable enumerable = _owner.Children(item);
+                IReadOnlyList<object> items;
+                if (!ReferenceEquals(enumerable, source.Source))
+                {
+                    items = SourceFor(enumerable).Items;
+                    Compare(item, node.Depth + 1, source.Items, items, null);
+                }
+                else if (_owner.Trusts(source, _assignmentVersion))
+                {
+                    items = source.Items;
+                }
+                else
+                {
+                    items = enumerable is IList list && SameReferences(list, source.Items) ? source.Items : Read(enumerable);
+                    Compare(item, node.Depth + 1, source.Items, items, source);
+                }
+                Push(items);
+            }
+
+            void Push(IReadOnlyList<object> items)
+            {
+                for (int index = items.Count - 1; index >= 0; index--)
+                {
+                    if (items[index] is { } item && _owner._nodes.ContainsKey(item))
+                    {
+                        pending.Push(item);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// The lists the hierarchy cannot trust, read again; the notified list takes its
+        /// notification when the list was trusted before it and the notification gives indices.
+        /// </summary>
+        private void ReadUntrusted(Change.Children? notified)
+        {
+            foreach (ChildSource source in _owner._sources.Values)
+            {
+                if (_owner.Trusts(source, _assignmentVersion) && !ReferenceEquals(source, notified?.Source))
+                {
+                    continue;
+                }
+                NotifyCollectionChangedEventArgs? args = notified?.Notification;
+                IReadOnlyList<object> items = ReferenceEquals(source, notified?.Source) && notified!.HasPredecessor
+                    && args!.Action != NotifyCollectionChangedAction.Reset
+                    && (args.OldItems is not { Count: > 0 } || args.OldStartingIndex >= 0)
+                    && (args.NewItems is not { Count: > 0 } || args.NewStartingIndex >= 0)
+                        ? ApplyNotification(source.Items, args)
+                        : Read(source.Source);
+                foreach (Node parent in source.Parents)
+                {
+                    Compare(parent.Item, parent.Depth + 1, source.Items, items, source);
+                }
+            }
+        }
+
+        private void Name(IEnumerable<object> rows)
+        {
+            foreach (object row in rows)
+            {
+                if (row is not null && _owner.Find(row) is { } node)
+                {
+                    if (node.Parent is { } parent)
+                    {
+                        NamedGroups.Add(parent);
                     }
                     else
                     {
-                        items = Read(enumerable);
+                        NamedRoots = true;
                     }
                 }
-                source = new(enumerable, items);
-                sources.Add(enumerable, source);
             }
-            Node node = new(next.Item, next.Parent, next.Depth, source);
-            if (!nodes.TryAdd(next.Item, node))
+        }
+
+        /// <summary>Record that a list's items become <paramref name="after"/>.</summary>
+        private void Compare(object? parent, int depth, IReadOnlyList<object> before, IReadOnlyList<object> after,
+            ChildSource? source)
+        {
+            if (source is not null)
             {
-                throw new InvalidOperationException(
-                    "The hierarchy contains duplicate row identities or a cycle."
-                );
+                _lists[source] = after;
             }
-            source.Parents.Add(node);
-            if (Captured is { } accepted && accepted.Nodes.TryGetValue(next.Item, nodes, out Node old))
+            else if (parent is null)
             {
-                node.Position = old.Position;
-                node.Expandable = old.Expandable;
-                node.Expanded = old.Expanded;
-                if ((old.Parent is null) != (next.Parent is null)
-                    || old.Parent is not null && !ReferenceEquals(nodes.Resolve(old.Parent, accepted.Nodes), next.Parent)
-                )
+                // A copy: a notifying root list changes in place, and the next publish compares with this.
+                Roots = after.ToArray();
+            }
+            if (!ReferenceEquals(before, after) && !SameReferences(before, after))
+            {
+                _changes.Add(new(parent, depth, before, after, source));
+            }
+        }
+
+        /// <summary>
+        /// Apply the recorded list changes to the candidate: first every row that leaves, with its
+        /// subtree, so a row that moves between lists arrives as a new row; then every row that
+        /// arrives and every new instance.
+        /// </summary>
+        private void Apply(Action<object> validate)
+        {
+            foreach (ListChange change in _changes)
+            {
+                Leave(change);
+            }
+            for (int index = 0; index < _changes.Count; index++)
+            {
+                ListChange change = _changes[index];
+                // A parent that left took its subtree; one that also arrived brought its own.
+                if (change.Parent is { } parent && _removed.ContainsKey(parent))
                 {
-                    changed = true;
+                    continue;
                 }
-                if (!ReferenceEquals(source.Items, old.Children))
+                bool structural = change.Before.Count != change.After.Count;
+                for (int at = 0; at < change.After.Count; at++)
                 {
-                    comparisons.Add((source.Items, old.Children));
+                    object item = change.After[at];
+                    validate(item);
+                    structural |= !structural && !_owner._identity!.IsSame(change.Before[at], item);
+                    Node? existing = _owner.Find(item) is { } accepted && !_removed.ContainsKey(item) ? accepted : null;
+                    if (existing is null)
+                    {
+                        Arrive(item, change.Parent, change.Depth, validate);
+                    }
+                    else if (!SameParent(existing.Parent, change.Parent) || !_seen.Add(item))
+                    {
+                        throw Duplicate();
+                    }
+                    else if (!ReferenceEquals(existing.Item, item))
+                    {
+                        Replace(existing, item, change.Parent, change.Depth);
+                    }
                 }
+                if (!structural)
+                {
+                    continue;
+                }
+                if (change.Parent is { } changed)
+                {
+                    ChangedGroups.Add(changed);
+                }
+                else
+                {
+                    RootsChanged = true;
+                }
+            }
+        }
+
+        private void Leave(ListChange change)
+        {
+            _after.Clear();
+            foreach (object item in change.After)
+            {
+                if (item is not null)
+                {
+                    _after.Add(item);
+                }
+            }
+            foreach (object item in change.Before)
+            {
+                if (!_after.Contains(item) && _owner.Find(item) is { } node)
+                {
+                    LeaveSubtree(node);
+                }
+            }
+        }
+
+        private void LeaveSubtree(Node node)
+        {
+            Stack<Node> pending = new();
+            pending.Push(node);
+            while (pending.TryPop(out Node? next))
+            {
+                if (!_removed.TryAdd(next.Item, next))
+                {
+                    continue;
+                }
+                foreach (object child in next.Source.Items)
+                {
+                    if (_owner.Find(child) is { } descendant)
+                    {
+                        pending.Push(descendant);
+                    }
+                }
+            }
+        }
+
+        private void Arrive(object item, object? parent, int depth, Action<object> validate)
+        {
+            Stack<(object Item, object? Parent, int Depth)> pending = new();
+            pending.Push((item, parent, depth));
+            while (pending.TryPop(out var next))
+            {
+                validate(next.Item);
+                if (_owner.Find(next.Item) is not null && !_removed.ContainsKey(next.Item)
+                    || !_added.TryAdd(next.Item, new(next.Item, next.Parent, next.Depth, SourceFor(_owner.Children(next.Item)))))
+                {
+                    throw Duplicate();
+                }
+                IReadOnlyList<object> items = ItemsOf(_added[next.Item]);
+                for (int index = items.Count - 1; index >= 0; index--)
+                {
+                    pending.Push((items[index], next.Item, next.Depth + 1));
+                }
+            }
+        }
+
+        /// <summary>
+        /// A new instance of a row: the same node, with the instance's own child list. A new root
+        /// assignment has compared that list already.
+        /// </summary>
+        private void Replace(Node existing, object item, object? parent, int depth)
+        {
+            IEnumerable enumerable = _owner.Children(item);
+            ChildSource source = ReferenceEquals(enumerable, existing.Source.Source) ? existing.Source : SourceFor(enumerable);
+            _added.Set(item, existing with { Item = item, Parent = parent, Depth = depth, Source = source });
+            // The new instance may carry a new sort key, so its group is read again as a row
+            // RefreshView(changed) names, as a flat table reads a same-identity Replace.
+            if (parent is null)
+            {
+                NamedRoots = true;
             }
             else
             {
-                changed = true;
+                NamedGroups.Add(parent);
             }
-            for (int i = source.Items.Count - 1; i >= 0; i--)
+            if (!ReferenceEquals(source, existing.Source) && !_readAll)
             {
-                pending.Push((source.Items[i], next.Item, next.Depth + 1));
+                ListChange change = new(item, depth + 1, existing.Source.Items, source.Items, null);
+                Leave(change);
+                _changes.Add(change);
             }
         }
-        if (Captured is { } previousSnapshot)
+
+        /// <summary>The child list for <paramref name="enumerable"/>: the one already read, or a new one.</summary>
+        private ChildSource SourceFor(IEnumerable enumerable)
         {
-            changed |= nodes.Count != previousSnapshot.Nodes.Count
-                || !SameIdentities(roots, previousSnapshot.Roots, nodes, previousSnapshot.Nodes);
-            foreach (var pair in comparisons)
+            if (_owner._sources.TryGetValue(enumerable, out ChildSource? source)
+                || _created.TryGetValue(enumerable, out source))
             {
-                changed |= !SameIdentities(pair.Next, pair.Before, nodes, previousSnapshot.Nodes);
+                if (!_lists.ContainsKey(source) && !_owner.Trusts(source, _assignmentVersion))
+                {
+                    _lists[source] = Read(enumerable);
+                }
+                return source;
             }
+            source = new(enumerable, Read(enumerable));
+            _created.Add(enumerable, source);
+            return source;
         }
-        return new(this, new(roots.ToArray(), nodes, sources, assignmentVersion), changed);
+
+        private bool SameParent(object? left, object? right) =>
+            left is null ? right is null : right is not null && _owner._identity!.IsSame(left, right);
+
+        private static InvalidOperationException Duplicate() =>
+            new("The hierarchy contains duplicate row identities or a cycle.");
+
+        internal void Accept()
+        {
+            Hierarchy owner = _owner;
+            List<Node> replaced = new();
+            foreach (var entry in _added)
+            {
+                if (owner._nodes.TryGetValue(entry.Key, out Node old) && !_removed.ContainsKey(entry.Key))
+                {
+                    replaced.Add(old);
+                }
+            }
+            foreach (var entry in _added)
+            {
+                owner.Link(entry.Value);
+            }
+            foreach (var entry in _removed)
+            {
+                owner.Unlink(entry.Value);
+                owner._nodes.Remove(entry.Key);
+            }
+            foreach (Node old in replaced)
+            {
+                owner.Unlink(old);
+            }
+            foreach (var entry in _added)
+            {
+                owner._nodes.Set(entry.Key, entry.Value);
+            }
+            foreach (var (source, items) in _lists)
+            {
+                source.Items = items;
+                owner._stale.Remove(source);
+                owner.Attach(source);
+            }
+            owner._roots = Roots;
+            owner._assignmentVersion = _assignmentVersion;
+            (owner._kept, owner._candidateKept) = (owner._candidateKept, owner._kept);
+            owner._keptRoots = owner._candidateKeptRoots;
+            owner.Version++;
+            Complete();
+        }
+
+        internal void Complete()
+        {
+            _changes.Clear();
+            _readAll = false;
+            _seen.Clear();
+            _removed.Clear();
+            _added.Clear();
+            _after.Clear();
+            _lists.Clear();
+            _created.Clear();
+            ChangedGroups.Clear();
+            NamedGroups.Clear();
+            RootsChanged = false;
+            NamedRoots = false;
+            _owner._candidateKept.Clear();
+            _owner._candidateKeptRoots = null;
+        }
+    }
+
+    private void Link(Node node)
+    {
+        _sources.TryAdd(node.Source.Source, node.Source);
+        node.Source.Parents.Add(node);
+        Attach(node.Source);
+    }
+
+    private void Unlink(Node node)
+    {
+        ChildSource source = node.Source;
+        source.Parents.Remove(node);
+        if (source.Parents.Count == 0)
+        {
+            Detach(source);
+            _sources.Remove(source.Source);
+            _stale.Remove(source);
+        }
     }
 
     private static bool SameReferences(IList next, IReadOnlyList<object> before)
@@ -189,8 +612,7 @@ internal sealed class Hierarchy(
         return true;
     }
 
-    private static bool SameIdentities(IReadOnlyList<object> next, IReadOnlyList<object> before,
-        IdentityMap<Node> nodes, IIdentityKeys keys)
+    private static bool SameReferences(IReadOnlyList<object> next, IReadOnlyList<object> before)
     {
         if (next.Count != before.Count)
         {
@@ -198,7 +620,7 @@ internal sealed class Hierarchy(
         }
         for (int index = 0; index < next.Count; index++)
         {
-            if (!ReferenceEquals(nodes.Resolve(before[index], keys), next[index]))
+            if (!ReferenceEquals(next[index], before[index]))
             {
                 return false;
             }
@@ -226,223 +648,6 @@ internal sealed class Hierarchy(
         return items;
     }
 
-    internal sealed class Preparation : IIdentityKeys
-    {
-        private readonly Hierarchy _owner;
-        private readonly Snapshot? _previous;
-        private readonly IdentityMap<Node>? _added;
-        private readonly IdentityMap<Node>? _removed;
-        private readonly HashSet<ChildSource> _touched = new();
-        private readonly List<(ChildSource Source, Node Parent, bool Added)> _relations = new();
-        private readonly List<ChildSource> _created = new();
-        private (ChildSource Source, IReadOnlyList<object> Items)? _changed;
-        private bool _accepted;
-        internal Snapshot Snapshot { get; }
-        internal IdentityMap<Node> Nodes => Snapshot.Nodes;
-        internal bool StructureChanged { get; }
-        internal bool RequiresProjection { get; set; }
-        internal IReadOnlyList<Node> Parents { get; set; } = Array.Empty<Node>();
-
-        internal Preparation(Hierarchy owner, Snapshot snapshot, bool changed)
-        {
-            _owner = owner;
-            _previous = owner.Captured;
-            Snapshot = snapshot;
-            StructureChanged = changed;
-        }
-
-        private Preparation(Hierarchy owner, IIdentity identity)
-            : this(owner, owner.Captured!, true)
-        {
-            _added = identity.CreateMap<Node>(keepsKeys: true);
-            _removed = identity.CreateMap<Node>(keepsKeys: true);
-        }
-
-        public bool ContainsReference(object item) => _added?.ContainsReference(item) == true
-            || _removed?.ContainsReference(item) == true || Nodes.ContainsReference(item)
-            || _previous?.Nodes.ContainsReference(item) == true;
-
-        public IIdentityKeys CapturedFor(object item) => _added?.ContainsReference(item) == true ? _added
-            : _removed?.ContainsReference(item) == true ? _removed
-            : Nodes.ContainsReference(item) ? Nodes : _previous!.Nodes;
-
-        internal static Preparation Apply(Hierarchy owner, CollectionChange change,
-            IIdentity identity, Action<object> validate, IIdentityKeys visible)
-        {
-            Preparation prepared = new(owner, identity);
-            try
-            {
-                ChildSource source = change.Source;
-                prepared.Parents = source.Parents.ToArray();
-                prepared.RequiresProjection = prepared.Parents.Any(node => visible.ContainsReference(node.Item)
-                    && owner.IsExpanded(node.Item));
-                prepared._touched.Add(source);
-                prepared._changed = (source, source.Items);
-                IReadOnlyList<object> before = source.Items;
-                IReadOnlyList<object> next = ApplyNotification(before, change.Notification);
-                if (change.Notification.Action != NotifyCollectionChangedAction.Move)
-                {
-                    foreach (Node parent in prepared.Parents)
-                    {
-                        foreach (object item in change.Notification.OldItems ?? Array.Empty<object>())
-                        {
-                            prepared.Remove(item);
-                        }
-                    }
-                }
-                source.Items = next;
-                if (change.Notification.Action != NotifyCollectionChangedAction.Move)
-                {
-                    foreach (Node parent in prepared.Parents)
-                    {
-                        foreach (object item in change.Notification.NewItems ?? Array.Empty<object>())
-                        {
-                            prepared.Add(item, parent.Item, parent.Depth + 1, validate);
-                        }
-                    }
-                }
-                return prepared;
-            }
-            catch
-            {
-                prepared.Complete();
-                throw;
-            }
-        }
-
-        private void Remove(object item)
-        {
-            Stack<Node> pending = new();
-            pending.Push(Nodes[item]);
-            while (pending.TryPop(out var node))
-            {
-                foreach (object child in node.Children)
-                {
-                    pending.Push(Nodes[child]);
-                }
-                _touched.Add(node.Source);
-                node.Source.Parents.Remove(node);
-                _relations.Add((node.Source, node, false));
-                _removed!.TryAdd(node.Item, node, Nodes);
-                Nodes.Remove(node.Item, _removed);
-            }
-        }
-
-        private void Add(object item, object parent, int depth, Action<object> validate)
-        {
-            Stack<(object Item, object Parent, int Depth)> pending = new();
-            pending.Push((item, parent, depth));
-            while (pending.TryPop(out var next))
-            {
-                validate(next.Item);
-                IEnumerable enumerable = _owner.Children(next.Item);
-                if (!Snapshot.Sources.TryGetValue(enumerable, out ChildSource? source))
-                {
-                    source = new(enumerable, Read(enumerable));
-                    Snapshot.Sources.Add(enumerable, source);
-                    _created.Add(source);
-                }
-                Node node = new(next.Item, next.Parent, next.Depth, source);
-                if (!Nodes.TryAdd(next.Item, node))
-                {
-                    throw new InvalidOperationException("The hierarchy contains duplicate row identities or a cycle.");
-                }
-                _added!.TryAdd(next.Item, node, Nodes);
-                _touched.Add(source);
-                source.Parents.Add(node);
-                _relations.Add((source, node, true));
-                for (int index = source.Items.Count - 1; index >= 0; index--)
-                {
-                    pending.Push((source.Items[index], next.Item, next.Depth + 1));
-                }
-            }
-        }
-
-        internal void Accept()
-        {
-            _accepted = true;
-            if (_added is null && ReferenceEquals(Snapshot, _previous))
-            {
-                return;
-            }
-            if (_added is null)
-            {
-                if (_owner.Captured is { } old)
-                {
-                    foreach (ChildSource source in old.Sources.Values)
-                    {
-                        Detach(source);
-                    }
-                }
-                _owner.Captured = Snapshot;
-                _owner._stale.Clear();
-                foreach (ChildSource source in Snapshot.Sources.Values)
-                {
-                    _owner.Attach(source);
-                }
-            }
-            else
-            {
-                foreach (ChildSource source in _touched)
-                {
-                    if (source.Parents.Count == 0)
-                    {
-                        Detach(source);
-                        Snapshot.Sources.Remove(source.Source);
-                        _owner._stale.Remove(source);
-                    }
-                    else
-                    {
-                        _owner._stale.Remove(source);
-                        _owner.Attach(source);
-                    }
-                }
-            }
-            _owner.Version++;
-        }
-
-        internal void Complete()
-        {
-            if (!_accepted && _added is not null)
-            {
-                foreach (var entry in _added)
-                {
-                    Nodes.Remove(entry.Key, _added);
-                }
-                foreach (var entry in _removed!)
-                {
-                    Nodes.TryAdd(entry.Key, entry.Value, _removed);
-                }
-                for (int index = _relations.Count - 1; index >= 0; index--)
-                {
-                    var relation = _relations[index];
-                    if (relation.Added)
-                    {
-                        relation.Source.Parents.Remove(relation.Parent);
-                    }
-                    else
-                    {
-                        relation.Source.Parents.Add(relation.Parent);
-                    }
-                }
-                if (_changed is { } before)
-                {
-                    before.Source.Items = before.Items;
-                }
-                foreach (ChildSource source in _created)
-                {
-                    Snapshot.Sources.Remove(source.Source);
-                }
-            }
-            _added?.Clear();
-            _removed?.Clear();
-            _touched.Clear();
-            _relations.Clear();
-            _created.Clear();
-            _changed = null;
-        }
-    }
-
     private static IReadOnlyList<object> ApplyNotification(IReadOnlyList<object> before,
         NotifyCollectionChangedEventArgs args)
     {
@@ -458,74 +663,17 @@ internal sealed class Hierarchy(
         return next;
     }
 
-    internal Preparation Prepare(CollectionChange change, IIdentity identity, Action<object> validate,
-        IIdentityKeys visible)
-    {
-        Invalidate(change.Source);
-        if (!change.HasPredecessor || _stale.Count > 1
-            || change.Notification.Action == NotifyCollectionChangedAction.Reset
-            || change.Notification.OldItems is { Count: > 0 } && change.Notification.OldStartingIndex < 0
-            || change.Notification.NewItems is { Count: > 0 } && change.Notification.NewStartingIndex < 0)
-        {
-            Node[] parents = _stale.SelectMany(source => source.Parents)
-                .Distinct<Node>(ReferenceEqualityComparer.Instance).ToArray();
-            Preparation prepared = Capture(Captured!.Roots, identity, validate, Captured.AssignmentVersion);
-            prepared.Parents = parents;
-            prepared.RequiresProjection = parents.Any(node => visible.ContainsReference(node.Item)
-                && IsExpanded(node.Item));
-            return prepared;
-        }
-        return Preparation.Apply(this, change, identity, validate, visible);
-    }
-
-    internal Preparation Reuse() => new(this, Captured!, false);
-
-    internal void Invalidate(ChildSource source) => _stale.Add(source);
-
-    internal bool UpdateChanged(Preparation prepared, IIdentityKeys visible)
-    {
-        bool changed = false;
-        foreach (Node old in prepared.Parents)
-        {
-            if (!visible.ContainsReference(old.Item) || Captured!.Nodes.Resolve(old.Item, prepared) is not { } item)
-            {
-                continue;
-            }
-            Node node = Captured.Nodes[item];
-            bool expandable = IsExpandable(node);
-            bool expanded = IsExpanded(item);
-            if (node.Expandable != expandable || node.Expanded != expanded)
-            {
-                _expandableRows += (expandable ? 1 : 0) - (node.Expandable ? 1 : 0);
-                node.Expandable = expandable;
-                node.Expanded = expanded;
-                changed = true;
-            }
-        }
-        if (changed)
-        {
-            Version++;
-        }
-        return changed;
-    }
-
-    internal void PublishChanged() => Changed?.Invoke(this, EventArgs.Empty);
-
     internal void UpdatePresentation(IReadOnlyList<object> order, bool moved)
     {
-        if (Captured is not { } snapshot)
-        {
-            return;
-        }
         if (moved)
         {
-            _counts!.Clear();
+            _counts.Clear();
         }
         int roots = 0;
         _expandableRows = 0;
         foreach (object item in order)
         {
-            Node node = snapshot.Nodes[item];
+            Node node = _nodes[item];
             bool hasChildren = IsExpandable(node);
             bool expanded = IsExpanded(item);
             if (node.Expandable != hasChildren || node.Expanded != expanded)
@@ -545,9 +693,9 @@ internal sealed class Hierarchy(
             }
             else
             {
-                _counts!.TryGetValue(parent, snapshot.Nodes, out int count);
+                _counts.TryGetValue(parent, out int count);
                 node.Position = count + 1;
-                _counts.Set(parent, node.Position, snapshot.Nodes);
+                _counts.Set(parent, node.Position);
             }
         }
     }
@@ -558,12 +706,9 @@ internal sealed class Hierarchy(
     internal void Suspend()
     {
         _suspended = true;
-        if (Captured is { } snapshot)
+        foreach (ChildSource source in _sources.Values)
         {
-            foreach (ChildSource source in snapshot.Sources.Values)
-            {
-                Detach(source);
-            }
+            Detach(source);
         }
     }
 
@@ -595,7 +740,8 @@ internal sealed class Hierarchy(
             {
                 return;
             }
-            CollectionChanged?.Invoke(this, new(source, args, !_stale.Contains(source)));
+            bool predecessor = _stale.Add(source);
+            CollectionChanged?.Invoke(this, new(source, args, predecessor));
         };
         source.Handler = handler;
         notifier.CollectionChanged += handler;
@@ -603,86 +749,123 @@ internal sealed class Hierarchy(
 
     internal sealed class Work(IdentityMap<int> parents)
     {
-        private readonly IdentityMap<int> _parents = parents;
-        internal int GroupFor(object? parent, IIdentityKeys keys) => parent is null ? 0
-            : _parents.TryGetValue(parent, keys, out int group) ? group : -1;
+        internal int GroupFor(object? parent) => parent is null ? 0
+            : parents.TryGetValue(parent, out int group) ? group : -1;
     }
 
-    internal sealed class Projection(Snapshot snapshot, IdentityMap<int> parents,
-        IReadOnlyList<(object? Parent, IReadOnlyList<object> Rows)> groups,
-        IdentityMap<object> membership)
+    /// <summary>
+    /// The prepared hierarchy as rows in view order: each shown row followed by its children when
+    /// it is expanded, each sibling group in the order <paramref name="sort"/> gives. A group keeps
+    /// the order it was last shown in unless <paramref name="sortAll"/> is set, its list changed
+    /// which rows it holds, or moves are allowed and one of its rows was named.
+    /// </summary>
+    /// <param name="kept">Whether any group kept its last order.</param>
+    internal IReadOnlyList<object> Project(Preparation prepared, SortedOrder? sort, SortDirection direction,
+        bool sortAll, bool allowMoves, out bool kept)
     {
-        internal IdentityMap<object> Membership => membership;
-
-        internal IReadOnlyList<object> Order(SortedOrder? sort, SortDirection direction) =>
-            Flatten((_, rows) => sort is null ? rows : sort.SortSiblings(rows, direction));
-
-        internal IReadOnlyList<object> Order(Work hierarchy, SortedOrder.Work sorting, bool refresh) =>
-            Flatten((parent, rows) => sorting.Project(hierarchy.GroupFor(parent, snapshot.Nodes),
-                rows, snapshot.Nodes, refresh));
-
-        internal SortedOrder.Work CaptureWork(SortedOrder sort, SortDirection direction, out Work hierarchy)
+        bool keptAny = false;
+        IReadOnlyList<object> order = Flatten(prepared, (parent, items) =>
         {
-            hierarchy = new(parents);
-            return sort.CaptureWork(groups.Select(group => group.Rows).ToArray(), snapshot.Nodes, direction);
-        }
-
-        private IReadOnlyList<object> Flatten(Func<object?, IReadOnlyList<object>, IReadOnlyList<object>> order)
-        {
-            IReadOnlyList<object>[] ordered = new IReadOnlyList<object>[groups.Count];
-            for (int index = 0; index < groups.Count; index++)
+            if (sort is null)
             {
-                ordered[index] = order(groups[index].Parent, groups[index].Rows);
+                return items;
             }
-            List<object> visible = new(membership.Count);
-            Stack<IEnumerator<object>> levels = new();
-            levels.Push(ordered[0].GetEnumerator());
-            try
+            object[]? previous = parent is null ? _keptRoots : _kept.TryGetValue(parent, out object[]? group) ? group : null;
+            object[] result;
+            if (sortAll || prepared.SortsAgain(parent, allowMoves) || previous is null
+                || previous.Length != items.Count)
             {
-                while (levels.TryPeek(out var level))
+                result = (object[])sort.SortSiblings(items, direction);
+            }
+            else
+            {
+                result = prepared.HasNewNodes ? Current(previous) : previous;
+                keptAny = true;
+            }
+            Keep(parent, result);
+            return result;
+        });
+        kept = keptAny;
+        return order;
+
+        object[] Current(object[] previous)
+        {
+            object[]? current = null;
+            for (int index = 0; index < previous.Length; index++)
+            {
+                object item = prepared.Find(previous[index])!.Item;
+                if (!ReferenceEquals(item, previous[index]))
                 {
-                    if (!level.MoveNext())
-                    {
-                        levels.Pop().Dispose();
-                        continue;
-                    }
-                    object item = level.Current;
-                    visible.Add(item);
-                    if (parents.TryGetValue(item, snapshot.Nodes, out int group))
-                    {
-                        levels.Push(ordered[group].GetEnumerator());
-                    }
+                    current ??= (object[])previous.Clone();
+                    current[index] = item;
                 }
             }
-            finally
-            {
-                foreach (var level in levels)
-                {
-                    level.Dispose();
-                }
-            }
-            return visible;
+            return current ?? previous;
         }
     }
 
-    internal Projection Project(Snapshot snapshot, IIdentity identity)
+    /// <summary>Every shown sibling group, in natural order, for a sort run off the UI thread.</summary>
+    internal IReadOnlyList<IReadOnlyList<object>> Groups(Preparation prepared, out Work work)
     {
-        _projected!.Clear();
-        IdentityMap<int> parents = identity.CreateMap<int>(keepsKeys: true);
-        List<(object? Parent, IReadOnlyList<object> Rows)> groups = new() { (null, snapshot.Roots) };
-        for (int group = 0; group < groups.Count; group++)
+        List<IReadOnlyList<object>> groups = new();
+        IdentityMap<int> parents = _identity!.CreateMap<int>();
+        Flatten(prepared, (parent, items) =>
         {
-            foreach (object item in groups[group].Rows)
+            if (parent is not null)
             {
-                _projected.TryAdd(item, item, snapshot.Nodes);
-                Node node = snapshot.Nodes[item];
-                if (node.Children.Count > 0 && isExpanded(item))
-                {
-                    parents.TryAdd(item, groups.Count, snapshot.Nodes);
-                    groups.Add((item, node.Children));
-                }
+                parents.TryAdd(parent, groups.Count);
+            }
+            groups.Add(items);
+            return items;
+        });
+        work = new(parents);
+        return groups;
+    }
+
+    /// <summary>The prepared hierarchy in view order, each sibling group as sorted off the UI thread.</summary>
+    internal IReadOnlyList<object> Project(Preparation prepared, Work hierarchy, SortedOrder.Work sorting, bool refresh) =>
+        Flatten(prepared, (parent, items) =>
+        {
+            object[] result = sorting.Project(hierarchy.GroupFor(parent), items, refresh).ToArray();
+            Keep(parent, result);
+            return result;
+        });
+
+    private void Keep(object? parent, object[] order)
+    {
+        if (parent is null)
+        {
+            _candidateKeptRoots = order;
+        }
+        else
+        {
+            _candidateKept.Set(parent, order);
+        }
+    }
+
+    private List<object> Flatten(Preparation prepared,
+        Func<object?, IReadOnlyList<object>, IReadOnlyList<object>> order)
+    {
+        _candidateKept.Clear();
+        _candidateKeptRoots = null;
+        List<object> visible = new();
+        Stack<(IReadOnlyList<object> Items, int Next)> levels = new();
+        levels.Push((order(null, prepared.Roots), 0));
+        while (levels.TryPop(out var level))
+        {
+            if (level.Next >= level.Items.Count)
+            {
+                continue;
+            }
+            object item = level.Items[level.Next];
+            levels.Push((level.Items, level.Next + 1));
+            visible.Add(item);
+            IReadOnlyList<object> items = prepared.ItemsOf(prepared.Find(item)!);
+            if (items.Count > 0 && isExpanded(item))
+            {
+                levels.Push((order(item, items), 0));
             }
         }
-        return new(snapshot, parents, groups, _projected);
+        return visible;
     }
 }

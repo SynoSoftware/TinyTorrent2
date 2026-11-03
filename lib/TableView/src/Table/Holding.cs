@@ -20,9 +20,15 @@ namespace Syno.TableView;
 public sealed partial class Table
 {
     /// <summary>Rows the view keeps showing although the source no longer has them.</summary>
-    private IdentitySet _held;
-    private IdentitySet _candidateHeld;
-    private IdentitySet _pinned;
+    private IdentitySet _held = null!;
+    private IdentitySet _candidateHeld = null!;
+
+    /// <summary>
+    /// Held rows that came back to the source while the rows are still pointed at. Each keeps the
+    /// held row's index until the hold ends.
+    /// </summary>
+    private IdentitySet _returned = null!;
+    private IdentitySet _pinned = null!;
     private readonly List<object> _shownRows = new();
     private readonly List<object> _releasedRows = new();
     private readonly List<object> _pinOrder = new();
@@ -31,7 +37,7 @@ public sealed partial class Table
     /// Rows named by <see cref="Release"/>, each with whether the source has it once the change the
     /// person caused arrives.
     /// </summary>
-    private IdentityMap<bool> _released;
+    private IdentityMap<bool> _released = null!;
 
     private bool _pointerOver;
 
@@ -46,64 +52,21 @@ public sealed partial class Table
     private bool KeepsMembership => _hierarchy is null && IsPointed && _view.Count > 0;
     private bool PinsOrder => _hierarchy is null && SortsLocally && !SortsOrder;
 
-    private sealed record HoldChange(IdentitySet Held, IReadOnlyList<int> Arrivals, bool Holds);
-
-    private HoldChange? PrepareHold(Body.Source.Preparation source)
-    {
-        if (!source.IsIncremental || _released.Count > 0
-            || source.Change is Change.Collection { Notification.Action: System.Collections.Specialized.NotifyCollectionChangedAction.Move }
-            || !KeepsMembership && (_held.Count > 0 || _view.Count != source.Membership.Count))
-        {
-            return null;
-        }
-        if (!KeepsMembership)
-        {
-            _candidateHeld.Clear();
-            return new(_candidateHeld, Enumerable.Range(0, source.Added.Count).ToArray(), false);
-        }
-        IdentitySet held = _held;
-        foreach (object item in source.Removed)
-        {
-            if (_view.Positions.IndexOf(item, source.Leavers) >= 0 && !held.Contains(item, source.Leavers))
-            {
-                CopyHeld();
-                held.Add(item, source.Leavers);
-            }
-        }
-        List<int> arrivals = new();
-        for (int index = 0; index < source.Added.Count; index++)
-        {
-            object item = source.Added[index];
-            if (_view.Positions.IndexOf(item, source.Additions) >= 0)
-            {
-                if (held.Contains(item, source.Additions))
-                {
-                    CopyHeld();
-                    held.Remove(item, source.Additions);
-                }
-                arrivals.Add(index);
-            }
-        }
-        return new(held, arrivals, true);
-
-        void CopyHeld()
-        {
-            if (!ReferenceEquals(held, _held))
-            {
-                return;
-            }
-            held = _candidateHeld;
-            held.Clear();
-            foreach (object item in _held)
-            {
-                held.Add(item, _held);
-            }
-        }
-    }
+    /// <summary>What the hold makes of one source change.</summary>
+    /// <param name="Shown">How the shown rows changed: the rows the order is made from.</param>
+    /// <param name="Held">The held rows after the change.</param>
+    /// <param name="Released">The <see cref="Release"/> rows the change carries.</param>
+    /// <param name="Holds">Whether the rows are held back while pointed at.</param>
+    /// <param name="Returning">
+    /// Held rows back in the source while pointed at, as their current instances, including the
+    /// ones that came back in an earlier change. Each keeps its held row's index until the rows
+    /// are released, so nothing moves under the pointer.
+    /// </param>
+    private readonly record struct HoldStep(SortChange Shown, IdentitySet Held,
+        IReadOnlyList<object> Released, bool Holds, IReadOnlyList<object> Returning);
 
     /// <summary>A row shown although it left the source. It is dimmed and refuses every action.</summary>
-    internal bool IsHeld(object? item) => item is not null && _held.Count > 0 && (_view.KeysFor(item) is { } keys
-        ? _held.Contains(item, keys) : _held.ContainsReference(item));
+    internal bool IsHeld(object? item) => item is not null && _held.Count > 0 && _held.Contains(item);
 
     /// <summary>
     /// Section 5's interaction predicate as the table applies it: the host's answer, and never a
@@ -134,8 +97,8 @@ public sealed partial class Table
         foreach (object item in items)
         {
             _released.TryAdd(item, false);
-            bool present = _source.Membership.ContainsKey(item, _released);
-            if (present == (_view.Positions.IndexOf(item, _released) >= 0))
+            bool present = _source.Membership.ContainsKey(item);
+            if (present == (_view.Positions.IndexOf(item) >= 0))
             {
                 _released.Set(item, !present);
                 continue;
@@ -201,7 +164,7 @@ public sealed partial class Table
         {
             if (node is ListViewItem container)
             {
-                return _surface?.ItemFromContainer(container);
+                return RowItem(container);
             }
         }
 
@@ -247,6 +210,7 @@ public sealed partial class Table
             ? Array.Empty<Popup>()
             : VisualTreeHelper.GetOpenPopupsForXamlRoot(XamlRoot);
 
+
     /// <summary>Apply what the hold kept back, once nothing points at the rows.</summary>
     private void ReleaseHold()
     {
@@ -255,8 +219,9 @@ public sealed partial class Table
             return;
         }
 
-        // Without a held row the view is a subset of the source, so a shorter view means rows wait.
-        if (_held.Count == 0 && _view.Count == _source.Snapshot.Count)
+        // Without a held or returned row the view is the source's rows in their places, so a shorter
+        // view means rows wait.
+        if (_held.Count == 0 && _returned.Count == 0 && _view.Count == _source.Snapshot.Count)
         {
             return;
         }
@@ -269,75 +234,127 @@ public sealed partial class Table
     /// shown, and every shown row the snapshot no longer has becomes a held row.
     /// </summary>
     /// <remarks>
-    /// An empty view takes its rows at once: nothing is on screen to be moved. So does a snapshot
-    /// that carries a change named by <see cref="Release"/>.
+    /// One rule per affected row: a shown row that leaves is held, a row that arrives waits, and
+    /// a row that arrives with an identity the view shows returns in place of the held row. A
+    /// change that names its rows passes them on. Every row is read only for a whole change, a
+    /// change that carries rows named by <see cref="Release"/>, and a view that did not show the
+    /// whole source before. An empty view takes its rows at once: nothing is on screen to be moved.
+    /// A returned row keeps the held row's index on every change until the hold ends.
     /// </remarks>
-    private (
-        IReadOnlyList<object> Shown,
-        IdentitySet Held,
-        IReadOnlyList<object> Released
-    ) Hold(IReadOnlyList<object> snapshot, IdentityMap<object> live, bool sortChanged = false,
-        Body.Source.Preparation? preparation = null)
+    private HoldStep Hold(Body.Source.Preparation source, bool sortChanged = false)
     {
+        IReadOnlyList<object> snapshot = source.Capture.Rows;
         IdentitySet held = _candidateHeld;
         held.Clear();
         bool holds = !sortChanged && KeepsMembership;
-        if (!holds && _released.Count == 0)
-        {
-            return (snapshot, held, Array.Empty<object>());
-        }
-
         List<object> released = _releasedRows;
         released.Clear();
         foreach (var entry in _released)
         {
-            if ((Resolve(entry.Key, _released) is not null) == entry.Value)
+            if ((source.Resolve(entry.Key) is not null) == entry.Value)
             {
                 released.Add(entry.Key);
             }
         }
-        if (released.Count > 0 || !holds)
+        if (!holds || released.Count > 0)
         {
-            return (snapshot, held, released);
+            bool showedSource = _held.Count == 0
+                && _view.Count == snapshot.Count - source.Arrivals.Count + source.Leavers.Count;
+            return new(source.IsWhole || released.Count > 0 || !showedSource
+                ? SortChange.Whole(snapshot, snapshot) : Named(source.Arrivals), held, released, false,
+                Array.Empty<object>());
         }
-
+        if (!source.IsWhole)
+        {
+            List<Body.Source.Arrival> returning = new();
+            foreach (Body.Source.Arrival arrival in source.Arrivals)
+            {
+                if (_view.Positions.IndexOf(arrival.Item) >= 0)
+                {
+                    returning.Add(arrival);
+                }
+            }
+            List<object> returned = new(_returned.Count + returning.Count);
+            foreach (object row in _returned)
+            {
+                if (source.Resolve(row) is { } current)
+                {
+                    returned.Add(current);
+                }
+            }
+            bool leaves = false;
+            foreach (object row in source.Leavers)
+            {
+                leaves |= _view.Positions.IndexOf(row) >= 0;
+            }
+            if (!leaves && returning.Count == 0)
+            {
+                // Unchanged held membership keeps the accepted set, because copying it costs
+                // every held row on every notification.
+                return new(Named(returning), _held, released, true, returned);
+            }
+            foreach (object row in _held)
+            {
+                held.Add(row);
+            }
+            foreach (object row in source.Leavers)
+            {
+                if (_view.Positions.IndexOf(row) >= 0)
+                {
+                    held.Add(row);
+                }
+            }
+            foreach (Body.Source.Arrival arrival in returning)
+            {
+                held.Remove(arrival.Item);
+                returned.Add(arrival.Item);
+            }
+            return new(Named(returning), held, released, true, returned);
+        }
         List<object> staying = _shownRows;
         staying.Clear();
+        List<object> back = new();
         foreach (object item in snapshot)
         {
-            if (_view.Positions.IndexOf(item, preparation is null ? live : preparation) >= 0)
+            if (_view.Positions.IndexOf(item) >= 0)
             {
                 staying.Add(item);
+                if (_held.Count > 0 && _held.Contains(item) || _returned.Count > 0 && _returned.Contains(item))
+                {
+                    back.Add(item);
+                }
             }
         }
-
         foreach (object row in _view)
         {
-            if (Resolve(row, _view.Positions.Map) is null)
+            if (source.Resolve(row) is null)
             {
-                held.Add(row, _view.Positions.Map);
+                held.Add(row);
             }
         }
+        return new(SortChange.Whole(staying, snapshot), held, released, true, back);
 
-        return (staying, held, released);
-
-        object? Resolve(object item, IIdentityKeys keys) => preparation is null
-            ? live.Resolve(item, keys) : preparation.Resolve(item, keys);
+        SortChange Named(IReadOnlyList<Body.Source.Arrival> arrivals) =>
+            new(null, snapshot, source.Leavers, arrivals, source.Reread, source.Shift);
     }
 
-    private void AcceptHold(IdentitySet held, IReadOnlyList<object> released)
+    private void AcceptHold(HoldStep hold)
     {
-        if (!ReferenceEquals(_held, held))
+        if (!ReferenceEquals(_held, hold.Held))
         {
-            (_held, _candidateHeld) = (held, _held);
+            (_held, _candidateHeld) = (hold.Held, _held);
             _candidateHeld.Clear();
         }
-        foreach (object row in released)
+        foreach (object row in hold.Released)
             _released.Remove(row);
+        _returned.Clear();
+        foreach (object row in hold.Returning)
+            _returned.Add(row);
     }
 
     /// <summary>
-    /// Put every held row back at the index it has, and, under a sort that reorders, the pointed row
+    /// Put every held row back at the index it has, every returning row at its held row's index,
+    /// and, under a sort that reorders, the pointed row
     /// and the row whose menu is open at theirs; every other row takes the next free place in
     /// <paramref name="order"/>. Also reports those rows, so the reconcile keeps their containers.
     /// </summary>
@@ -347,15 +364,15 @@ public sealed partial class Table
     /// </remarks>
     private (IReadOnlyList<object> Order, IdentitySet Pinned) Pin(
         IReadOnlyList<object> order,
-        IdentitySet held,
-        IdentityMap<object> live,
-        Body.Source.Preparation? preparation = null
+        HoldStep hold,
+        Body.Source.Preparation source
     )
     {
+        IdentitySet held = hold.Held;
         bool reorders = PinsOrder;
         object? menu = reorders ? _menuRow : null;
         object? pointed = reorders ? _pointedRow : null;
-        if (held.Count == 0 && menu is null && pointed is null)
+        if (held.Count == 0 && hold.Returning.Count == 0 && menu is null && pointed is null)
         {
             _pinned.Clear();
             return (order, held);
@@ -371,10 +388,18 @@ public sealed partial class Table
         }
         foreach (object row in held)
         {
-            int index = _view.Positions.IndexOf(row, held);
+            int index = _view.Positions.IndexOf(row);
             if (index >= 0 && index < result.Count)
             {
-                Keep(index, row, held.Map);
+                Keep(index, row);
+            }
+        }
+        foreach (object row in hold.Returning)
+        {
+            int index = _view.Positions.IndexOf(row);
+            if (index >= 0 && index < result.Count && result[index] is null)
+            {
+                Keep(index, row);
             }
         }
         KeepPointed(menu);
@@ -393,7 +418,7 @@ public sealed partial class Table
                 continue;
             }
 
-            while (pinned.Contains(order[next], preparation is null ? live : preparation))
+            while (pinned.Contains(order[next]))
             {
                 next++;
             }
@@ -403,62 +428,23 @@ public sealed partial class Table
 
         return (result, pinned);
 
-        void Keep(int index, object row, IIdentityKeys keys)
+        void Keep(int index, object row)
         {
             result[index] = row;
-            pinned.Add(row, keys);
+            pinned.Add(row);
         }
 
         void KeepPointed(object? row)
         {
-            var pin = ResolvePin(row, result.Count, live, preparation);
-            if (pin.Item is not null)
+            if (row is null)
             {
-                Keep(pin.Index, pin.Item, preparation is null ? live : preparation);
+                return;
+            }
+            int index = _view.Positions.IndexOf(row);
+            if (index >= 0 && index < result.Count && source.Resolve(row) is { } current)
+            {
+                Keep(index, current);
             }
         }
-    }
-
-    // Zero-edit preparation keeps held membership; only live pin targets can change.
-    private bool SamePins(IdentitySet held, IdentityMap<object> live, Body.Source.Preparation preparation)
-    {
-        bool reorders = PinsOrder;
-        object? menu = reorders ? ResolvePin(_menuRow, View.Count, live, preparation).Item : null;
-        object? pointed = reorders ? ResolvePin(_pointedRow, View.Count, live, preparation).Item : null;
-        int count = held.Count;
-        if (menu is not null && !held.Contains(menu, preparation))
-        {
-            if (!_pinned.Contains(menu, preparation))
-            {
-                return false;
-            }
-            count++;
-        }
-        if (pointed is not null && !ReferenceEquals(pointed, menu) && !held.Contains(pointed, preparation))
-        {
-            if (!_pinned.Contains(pointed, preparation))
-            {
-                return false;
-            }
-            count++;
-        }
-        return count == _pinned.Count;
-    }
-
-    private (int Index, object? Item) ResolvePin(object? row, int count, IdentityMap<object> live,
-        Body.Source.Preparation? preparation)
-    {
-        if (row is null)
-        {
-            return (-1, null);
-        }
-        int index = _view.Positions.IndexOf(row);
-        if (index < 0 || index >= count)
-        {
-            return (-1, null);
-        }
-        object? current = preparation is null ? live.Resolve(row, _view.Positions.Map)
-            : preparation.Resolve(row, _view.Positions.Map);
-        return (index, current);
     }
 }

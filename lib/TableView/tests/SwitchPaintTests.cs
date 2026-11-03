@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.WindowsRuntime;
 using Microsoft.UI.Xaml;
@@ -13,39 +14,141 @@ using Windows.Graphics.Imaging;
 
 namespace Syno.TableView.Tests;
 
-/// <summary>A row whose first cell is one solid color: its role in the change.</summary>
+/// <summary>A row whose first cell is one solid color: its role in the change, and for a staying row its own.</summary>
 public sealed class PaintRow
 {
     internal PaintRow(int id) => Id = id;
 
     public int Id { get; }
+    public int Rank { get; internal set; }
     public SolidColorBrush Brush { get; internal set; } = new(Microsoft.UI.Colors.Gray);
 }
 
 /// <summary>
 /// Records how a 200-row table paints a source change, frame by frame as the compositor presents
-/// the window, so the list's composition animations are included. It asserts no result; it
-/// reports blank frames, the frames before the rows settle, and any whole-list Reset.
+/// the window, so the list's composition animations are included. It asserts no result. For the
+/// whole column it reports blank frames, the frames before the rows settle, and any whole-list
+/// Reset. For each row on screen both before and after the change it reports whether the row kept
+/// its container, whether the list was told to remove it, and whether it dimmed in any frame: a row
+/// that slides keeps every pixel of its color, and one removed and inserted again fades.
 /// </summary>
 [TestClass]
 public class SwitchPaintTests
 {
     private static readonly Windows.UI.Color LeavingColor = new() { A = 255, R = 220, G = 40, B = 30 };
-    private static readonly Windows.UI.Color StayingColor = new() { A = 255, R = 30, G = 60, B = 220 };
     private static readonly Windows.UI.Color ArrivingColor = new() { A = 255, R = 30, G = 170, B = 40 };
+
+    /// <summary>Staying rows share green and blue, and red tells them apart, for the 40 top rows.</summary>
+    private const int StayingGreen = 60, StayingBlue = 220, Shades = 40;
+
+    private static Windows.UI.Color StayingColor(int id) =>
+        new() { A = 255, R = (byte)(10 + 5 * (id % Shades)), G = StayingGreen, B = StayingBlue };
 
     public TestContext TestContext { get; set; } = null!;
 
-    private sealed record Scenario(string Name, Func<int, bool> Before, Func<int, bool> After, int Selected = -1);
+    /// <summary>
+    /// <paramref name="Before"/> and <paramref name="After"/> list row ids in source order;
+    /// <paramref name="Change"/> takes the source from one to the other. With
+    /// <paramref name="ScrollTo"/>, the list is scrolled to put that row at its top and a row on
+    /// screen takes keyboard focus first.
+    /// </summary>
+    private sealed record Scenario(string Name, int[] Before, int[] After, Func<Context, Task> Change,
+        int Selected = -1, bool Sorted = false, int RecordMs = 1000, int ScrollTo = 0);
+
+    private sealed class Context(Table table, ObservableCollection<PaintRow> source, Dictionary<int, PaintRow> rows)
+    {
+        internal Table Table => table;
+        internal ObservableCollection<PaintRow> Source => source;
+        internal Dictionary<int, PaintRow> Rows => rows;
+
+        internal int IndexOf(int id) => source.Select(row => row.Id).ToList().IndexOf(id);
+
+        /// <summary>Remove what <paramref name="after"/> lacks, highest first, then insert what it adds, lowest first.</summary>
+        internal void Notify(int[] after)
+        {
+            for (int index = source.Count - 1; index >= 0; index--)
+            {
+                if (!after.Contains(source[index].Id))
+                {
+                    source.RemoveAt(index);
+                }
+            }
+            for (int index = 0; index < after.Length; index++)
+            {
+                if (index >= source.Count || source[index].Id != after[index])
+                {
+                    source.Insert(index, rows[after[index]]);
+                }
+            }
+        }
+    }
+
+    private static int[] Ids(int from, int to, Func<int, bool>? keep = null) =>
+        Enumerable.Range(from, to - from).Where(id => keep?.Invoke(id) != false).ToArray();
 
     private static readonly Scenario[] Scenarios =
     {
         // A refresh: every fourth row leaves, the selected one among them, and the rest slide up.
-        new("churn-selected-leaves", id => id < 200, id => id < 200 && id % 4 != 3, Selected: 3),
+        new("churn-selected-leaves", Ids(0, 200), Ids(0, 200, id => id % 4 != 3),
+            c => Assign(c, Ids(0, 200, id => id % 4 != 3)), Selected: 3),
         // A different source: no row stays.
-        new("switch", id => id < 200, id => id >= 1000 && id < 1200),
-        new("switch-selected-leaves", id => id < 200, id => id >= 1000 && id < 1200, Selected: 3),
+        new("switch", Ids(0, 200), Ids(1000, 1200), c => Assign(c, Ids(1000, 1200))),
+        new("switch-selected-leaves", Ids(0, 200), Ids(1000, 1200), c => Assign(c, Ids(1000, 1200)), Selected: 3),
+        // Both again, scrolled halfway down, with a focused row: the list lays a different source
+        // out from its start, and keeps its place in a list that shares rows with the one before.
+        new("switch-scrolled", Ids(0, 200), Ids(1000, 1200), c => Assign(c, Ids(1000, 1200)), Selected: 103,
+            ScrollTo: 100),
+        new("churn-scrolled", Ids(0, 200), Ids(0, 200, id => id % 4 != 3),
+            c => Assign(c, Ids(0, 200, id => id % 4 != 3)), Selected: 101, ScrollTo: 100),
+        // The same changes as notifications: three on-screen rows leave, then three arrive.
+        new("notify-leave", Ids(0, 200), Ids(0, 200, id => id is not (3 or 7 or 11)),
+            c => Notify(c, Ids(0, 200, id => id is not (3 or 7 or 11)))),
+        new("notify-arrive", Ids(0, 200, id => id is not (3 or 7 or 11)), Ids(0, 200),
+            c => Notify(c, Ids(0, 200))),
+        // A host Move of an on-screen row, and a same-identity Replace of one.
+        new("notify-move", Ids(0, 200), MoveIds(Ids(0, 200), 2, 8), c =>
+        {
+            c.Source.Move(2, 8);
+            return Task.CompletedTask;
+        }),
+        new("notify-replace", Ids(0, 200), Ids(0, 200), c =>
+        {
+            PaintRow old = c.Rows[5];
+            c.Source[c.IndexOf(5)] = new PaintRow(5) { Rank = old.Rank, Brush = old.Brush };
+            return Task.CompletedTask;
+        }),
+        // Under a live sort, inside the settle interval: one row leaves and one arrives at once,
+        // and two rows whose values swapped keep their places until the settle, then trade them.
+        new("sorted-interval-then-settle", Ids(0, 200), Ids(0, 200, id => id != 5).Append(1000).ToArray(), c =>
+        {
+            c.Source.RemoveAt(c.IndexOf(5));
+            c.Source.Add(c.Rows[1000]);
+            (c.Rows[2].Rank, c.Rows[9].Rank) = (c.Rows[9].Rank, c.Rows[2].Rank);
+            c.Table.RefreshView();
+            return Task.CompletedTask;
+        }, Sorted: true, RecordMs: 4500),
     };
+
+    private static int[] MoveIds(int[] ids, int from, int to)
+    {
+        List<int> moved = ids.ToList();
+        int id = moved[from];
+        moved.RemoveAt(from);
+        moved.Insert(to, id);
+        return moved.ToArray();
+    }
+
+    private static Task Assign(Context context, int[] after)
+    {
+        context.Table.ItemsSource = after.Select(id => context.Rows[id]).ToList();
+        return Task.CompletedTask;
+    }
+
+    private static Task Notify(Context context, int[] after)
+    {
+        context.Notify(after);
+        return Task.CompletedTask;
+    }
 
     [TestMethod]
     [TestCategory("Measurement")]
@@ -70,32 +173,50 @@ public class SwitchPaintTests
 
     private static async Task<string> RunAsync(Scenario scenario, Recorder recorder, double scale)
     {
-        PaintRow[] rows = Enumerable.Range(0, 1200).Select(id => new PaintRow(id)).ToArray();
-        List<PaintRow> before = rows.Where(row => scenario.Before(row.Id)).ToList();
-        List<PaintRow> after = rows.Where(row => scenario.After(row.Id)).ToList();
-        foreach (PaintRow row in rows)
+        Dictionary<int, PaintRow> rows = scenario.Before.Concat(scenario.After).Distinct()
+            .ToDictionary(id => id, id => new PaintRow(id) { Rank = id * 10 });
+        if (rows.ContainsKey(1000) && scenario.Sorted)
         {
-            bool was = scenario.Before(row.Id), stays = scenario.After(row.Id);
-            row.Brush = new SolidColorBrush(was && stays ? StayingColor : was ? LeavingColor : ArrivingColor);
+            // The arriving row sorts between rows 7 and 8.
+            rows[1000].Rank = 75;
+        }
+        foreach (PaintRow row in rows.Values)
+        {
+            bool was = scenario.Before.Contains(row.Id), stays = scenario.After.Contains(row.Id);
+            row.Brush = new SolidColorBrush(was && stays ? StayingColor(row.Id) : was ? LeavingColor : ArrivingColor);
         }
 
         Table table = new() { Width = 800, Height = 560 };
-        table.Columns.Add(new Column { Id = "role", DisplayName = "Role", Width = 120,
+        Column role = new()
+        {
+            Id = "role", DisplayName = "Role", Width = 120,
             CellTemplate = (DataTemplate)Microsoft.UI.Xaml.Markup.XamlReader.Load(
                 "<DataTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'>"
-                + "<Border Background='{Binding Brush}' Width='100' Height='30'/></DataTemplate>") });
+                + "<Border Background='{Binding Brush}' Width='100' Height='30'/></DataTemplate>"),
+        };
+        table.Columns.Add(role);
         foreach (string id in new[] { "b", "c", "d", "e", "f" })
         {
             table.Columns.Add(TestData.Column(id, 120));
         }
-        table.Schema<PaintRow>().Key(row => row.Id);
-        table.ItemsSource = before;
+        Schema<PaintRow> schema = table.Schema<PaintRow>().Key(row => row.Id);
+        if (scenario.Sorted)
+        {
+            schema.SortKey(role, row => row.Rank);
+        }
+        ObservableCollection<PaintRow> source = new(scenario.Before.Select(id => rows[id]));
+        table.ItemsSource = source;
         Grid host = new() { Background = new SolidColorBrush(Microsoft.UI.Colors.White), RequestedTheme = ElementTheme.Light };
         host.Children.Add(table);
         TaskCompletionSource loaded = new();
         table.Loaded += (_, _) => loaded.TrySetResult();
         TestHost.RootPanel.Children.Add(host);
         await loaded.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        if (scenario.Sorted)
+        {
+            table.SortInterval = TimeSpan.FromSeconds(3);
+            table.Sort = new(role);
+        }
         // Past the entrance animation and the list's one-second fast-mutation window.
         await Task.Delay(1500);
         if (scenario.Selected >= 0)
@@ -113,28 +234,119 @@ public class SwitchPaintTests
         // Down the middle of every row's role cell, from the first row to the foot of the list.
         recorder.SetColumn(cellBounds.X + cellBounds.Width / 2, cellBounds.Y, bounds.Bottom - cellBounds.Y, scale);
         int rowPixels = (int)Math.Round(first.ActualHeight * scale);
+        ScrollViewer scroller = Descendants(surface).OfType<ScrollViewer>().First();
+        if (scenario.ScrollTo > 0)
+        {
+            scroller.ChangeView(null, scenario.ScrollTo * first.ActualHeight, null, disableAnimation: true);
+            await Task.Delay(500);
+            ((Control)surface.ContainerFromIndex(scenario.ScrollTo + 2)).Focus(FocusState.Keyboard);
+            await Task.Delay(200);
+        }
+        double offset = scroller.VerticalOffset;
+        Dictionary<int, ListViewItem> before = OnScreen(surface);
 
         Dictionary<string, int> notices = new();
         IObservableVector<object> view = (IObservableVector<object>)surface.ItemsSource;
+        // The view as the list was told it: the row each removal took.
+        List<int> told = view.Cast<PaintRow>().Select(row => row.Id).ToList();
+        HashSet<int> removed = new();
         void OnVector(IObservableVector<object> sender, IVectorChangedEventArgs e)
         {
             string kind = e.CollectionChange.ToString();
             notices[kind] = notices.GetValueOrDefault(kind) + 1;
+            int index = (int)e.Index;
+            switch (e.CollectionChange)
+            {
+                case CollectionChange.ItemInserted:
+                    told.Insert(index, ((PaintRow)sender[index]).Id);
+                    break;
+                case CollectionChange.ItemRemoved:
+                    removed.Add(told[index]);
+                    told.RemoveAt(index);
+                    break;
+                case CollectionChange.ItemChanged:
+                    told[index] = ((PaintRow)sender[index]).Id;
+                    break;
+            }
         }
         view.VectorChanged += OnVector;
 
         recorder.Start();
         await Task.Delay(150);
         double start = Now();
-        table.ItemsSource = after;
-        await Task.Delay(1000);
+        Context context = new(table, source, rows);
+        await scenario.Change(context);
+        await Task.Delay(scenario.RecordMs);
         (Shot? pre, List<Shot> shots) = recorder.Stop(start);
         view.VectorChanged -= OnVector;
+        Dictionary<int, ListViewItem> after = OnScreen(surface);
+        string state = $"offset {offset:0} -> {scroller.VerticalOffset:0}, selected "
+            + $"[{string.Join(",", table.Selection.Items.Cast<PaintRow>().Select(row => row.Id))}], focus "
+            + DescribeFocus(table, surface) + ", " + DescribeAutomation(surface);
         TestHost.RootPanel.Children.Remove(host);
         await Task.Delay(200);
 
-        return $"{scenario.Name}: {Describe(pre, shots, rowPixels)}; notices "
+        return $"{scenario.Name}: {Describe(pre, shots, rowPixels)}; "
+            + $"{DescribeRows(before, after, removed, pre, shots)}; {state}; notices "
             + (notices.Count == 0 ? "none" : string.Join(", ", notices.Select(n => $"{n.Key} {n.Value}")));
+    }
+
+    /// <summary>The focused row, or the focused element's type when no row has focus.</summary>
+    private static string DescribeFocus(Table table, ListView surface) =>
+        Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement(table.XamlRoot) switch
+        {
+            ListViewItem container when surface.ItemFromContainer(container) is PaintRow row => $"row {row.Id}",
+            null => "none",
+            object element => element.GetType().Name,
+        };
+
+    /// <summary>How many item peers the list's automation peer has, and the rows of the first three.</summary>
+    private static string DescribeAutomation(ListView surface)
+    {
+        var peer = Microsoft.UI.Xaml.Automation.Peers.FrameworkElementAutomationPeer.CreatePeerForElement(surface);
+        IList<Microsoft.UI.Xaml.Automation.Peers.AutomationPeer> children = peer.GetChildren();
+        IEnumerable<string> first = children.Take(3).Select(child =>
+            child is Microsoft.UI.Xaml.Automation.Peers.ItemAutomationPeer { Item: PaintRow row } ? row.Id.ToString() : "?");
+        return $"automation children {children.Count} [{string.Join(",", first)}]";
+    }
+
+    /// <summary>The container of each row whose container lies wholly inside the list's viewport.</summary>
+    private static Dictionary<int, ListViewItem> OnScreen(ListView surface)
+    {
+        Dictionary<int, ListViewItem> shown = new();
+        foreach (UIElement child in surface.ItemsPanelRoot.Children)
+        {
+            if (child is not ListViewItem container || surface.ItemFromContainer(container) is not PaintRow row)
+            {
+                continue;
+            }
+            Rect at = container.TransformToVisual(surface)
+                .TransformBounds(new Rect(0, 0, container.ActualWidth, container.ActualHeight));
+            if (at.Top >= 0 && at.Bottom <= surface.ActualHeight)
+            {
+                shown[row.Id] = container;
+            }
+        }
+        return shown;
+    }
+
+    /// <summary>
+    /// Every row on screen both before and after: the ones that kept their container, the ones the
+    /// list was told to remove, and the ones whose own color fell below half in some frame.
+    /// </summary>
+    private static string DescribeRows(Dictionary<int, ListViewItem> before, Dictionary<int, ListViewItem> after,
+        HashSet<int> removed, Shot? pre, List<Shot> shots)
+    {
+        List<int> staying = before.Keys.Where(after.ContainsKey).Order().ToList();
+        List<int> replaced = staying.Where(id => !ReferenceEquals(before[id], after[id])).ToList();
+        List<int> reinserted = staying.Where(removed.Contains).ToList();
+        List<int> dimmed = pre is null ? new() : staying.Where(id => id < Shades
+            && pre.Rows.GetValueOrDefault(id) > 0
+            && shots.Any(shot => shot.Rows.GetValueOrDefault(id) * 2 < pre.Rows[id])).ToList();
+        return $"rows on screen before and after {staying.Count}, new container {List(replaced)}, "
+            + $"removed and inserted {List(reinserted)}, dimmed in a frame {List(dimmed)}";
+
+        static string List(List<int> ids) => ids.Count == 0 ? "0" : $"{ids.Count} [{string.Join(",", ids)}]";
     }
 
     private static double Now() => System.Diagnostics.Stopwatch.GetTimestamp() * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
@@ -168,25 +380,30 @@ public class SwitchPaintTests
         int blank = shots.Count(shot => shot.Background > baseline + rowPixels);
         int settled = shots.FindIndex(shot => shot.SameAs(last));
         List<Shot> changing = shots.Take(settled + 1).Where(shot => !shot.SameAs(pre)).ToList();
-        string path = string.Join(" | ", shots.Take(Math.Min(shots.Count, settled + 2))
+        // Long recordings keep only the frames that differ from the one before.
+        List<Shot> path = shots.Take(Math.Min(shots.Count, settled + 2))
+            .Where((shot, index) => index == 0 || !shot.SameAs(shots[index - 1])).ToList();
+        string steps = string.Join(" | ", path
             .Select(shot => $"+{shot.At:0}ms s{shot.Staying} l{shot.Leaving} a{shot.Arriving} bg{shot.Background} o{shot.Other}"));
         string colours = pre.Staying + pre.Leaving + pre.Arriving > 0 ? ""
             : $"no role colour in the column, which shows {pre.Commonest}; ";
         return colours + $"before s{pre.Staying} l{pre.Leaving} a{pre.Arriving} bg{pre.Background}; "
             + $"frames {shots.Count}, changing frames until settled {changing.Count}, blank frames {blank}, "
             + $"most background {(shots.Max(shot => shot.Background) - baseline) / (double)rowPixels:0.0} rows over baseline; "
-            + $"row {rowPixels}px; path {path}";
+            + $"row {rowPixels}px; path {steps}";
     }
 
     private sealed class Shot
     {
         public double At;
         public int Staying, Leaving, Arriving, Background, Other;
+        public Dictionary<int, int> Rows = new();
         public string Commonest = "";
 
         public bool SameAs(Shot other) =>
             Math.Abs(Staying - other.Staying) + Math.Abs(Leaving - other.Leaving)
-            + Math.Abs(Arriving - other.Arriving) + Math.Abs(Background - other.Background) <= 4;
+            + Math.Abs(Arriving - other.Arriving) + Math.Abs(Background - other.Background) <= 4
+            && Rows.All(row => Math.Abs(row.Value - other.Rows.GetValueOrDefault(row.Key)) <= 2);
 
         public static Shot Classify(byte[] column, double at)
         {
@@ -194,9 +411,11 @@ public class SwitchPaintTests
             for (int i = 0; i + 3 < column.Length; i += 4)
             {
                 int b = column[i], g = column[i + 1], r = column[i + 2];
-                if (Near(StayingColor))
+                if (Math.Abs(g - StayingGreen) <= 3 && Math.Abs(b - StayingBlue) <= 3
+                    && (r - 10 + 2) / 5 is int shade && shade >= 0 && shade < Shades && Math.Abs(r - 10 - 5 * shade) <= 2)
                 {
                     shot.Staying++;
+                    shot.Rows[shade] = shot.Rows.GetValueOrDefault(shade) + 1;
                 }
                 else if (Near(LeavingColor))
                 {

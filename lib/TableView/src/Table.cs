@@ -41,14 +41,10 @@ public sealed partial class Table : Control
     public Table()
     {
         DefaultStyleKey = typeof(Table);
-        _view = new Body.View(_identity, IsRowSelected, () => _selection!.SelectedIndices);
-        _selection = new SelectionState(_identity, _view) { CanInteract = IsInteractive };
-        _held = new(_identity, keepsKeys: true);
-        _released = _identity.CreateMap<bool>(keepsKeys: true);
-        _candidateHeld = new(_identity, keepsKeys: true);
-        _pinned = new(_identity, keepsKeys: true);
-        _candidatePositions = new(_identity);
-        _source = new Body.Source(DispatcherQueue, _identity);
+        _view = new Body.View(IsRowSelected, () => _selection!.SelectedIndices);
+        _selection = new SelectionState(_view) { CanInteract = IsInteractive };
+        _source = new Body.Source(DispatcherQueue);
+        InstallIdentity(_identity);
         _source.SnapshotChanged += OnSnapshotChanged;
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
@@ -346,6 +342,24 @@ public sealed partial class Table : Control
     internal Func<object, bool>? CanInteract { get; set; }
 
     /// <summary>
+    /// The one place a row identity is installed, so every map keyed by row uses the same one:
+    /// object reference from construction, and the schema's key once the schema is captured. A
+    /// selection or <see cref="Release"/> made before then is held by reference until then.
+    /// </summary>
+    private void InstallIdentity(IIdentity identity)
+    {
+        _identity = identity;
+        _view.SetIdentity(identity);
+        _selection.SetIdentity(identity);
+        _source.SetIdentity(identity);
+        _held = new(identity);
+        _released = identity.CreateMap<bool>();
+        _candidateHeld = new(identity);
+        _returned = new(identity);
+        _pinned = new(identity);
+    }
+
+    /// <summary>
     /// Capture the setup-only schema exactly once, validate it, and resolve the first effective
     /// layout — including a layout state the host applied before load.
     /// </summary>
@@ -363,15 +377,7 @@ public sealed partial class Table : Control
         Columns.CollectionChanged += OnColumnsMutatedAfterCapture;
 
         // Install identity before resolving the pending initial selection.
-        _identity = _schemaIdentity ?? _identity;
-        _view.SetIdentity(_identity);
-        _selection.SetIdentity(_identity);
-        _source.SetIdentity(_identity);
-        _held = new(_identity, keepsKeys: true);
-        _released = _identity.CreateMap<bool>(keepsKeys: true);
-        _candidateHeld = new(_identity, keepsKeys: true);
-        _pinned = new(_identity, keepsKeys: true);
-        _candidatePositions = new(_identity);
+        InstallIdentity(_schemaIdentity ?? _identity);
 
         EffectiveLayout.SetOrder(_baselineOrder);
         if (_hierarchy is not null)
@@ -577,14 +583,13 @@ public sealed partial class Table : Control
             || (sortColumn is not null && direction != _sortDirection);
         // Initial capture resolves any later pending Sort before evaluating host comparisons.
         SortedOrder? workspace = CreateSort(sortColumn);
-        Body.Source.Capture capture = _source.Current;
-        IdentityMap<object>? membership = null;
+        Body.Source.Preparation? source = null;
         IReadOnlyList<object>? order =
             rebuild && moved && _sortMode == SortMode.Local
-                ? PrepareSort(capture, workspace, direction, out membership) : null;
+                ? PrepareSort(workspace, direction, out source) : null;
         if (order is not null && _hierarchy is null)
         {
-            workspace?.Accept(order!);
+            workspace?.Accept();
         }
 
         foreach (EffectiveColumn column in ordered)
@@ -599,7 +604,7 @@ public sealed partial class Table : Control
         // SetOrder republishes the layout, which re-applies each header cell's sort indicator.
         EffectiveLayout.SetOrder(ordered);
         if (order is not null)
-            RebuildView(capture, order, membership);
+            RebuildView(sorted: order, prepared: source);
     }
 
     // ---------------------------------------------------------------- source
