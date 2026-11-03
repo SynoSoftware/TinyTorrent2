@@ -291,8 +291,19 @@ public sealed partial class PeerMap : UserControl
             _drawQueued = false;
             Draw();
         }
-        // A drawing that left work for the next frame queued it again.
-        if (_preparationQueued || _drawQueued)
+        else if (_renderer is { HasStaleBorders: true } renderer)
+        {
+#if CAPTURE
+            var started = Stopwatch.GetTimestamp();
+#endif
+            renderer.StrokeBorders();
+#if CAPTURE
+            FrameMeasured?.Invoke(Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+#endif
+        }
+        // A drawing that left work for the next frame queued it again, or
+        // left border strokes to replace.
+        if (_preparationQueued || _drawQueued || _renderer?.HasStaleBorders == true)
             return;
         CompositionTarget.Rendering -= OnRendering;
         _frameQueued = false;

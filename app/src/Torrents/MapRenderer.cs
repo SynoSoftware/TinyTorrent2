@@ -47,6 +47,8 @@ internal sealed class MapRenderer : IDisposable
     private CanvasCommandList? _glowLines;
     private GaussianBlurEffect? _glowBlur;
     private GlowInputs? _glowInputs;
+    // Whether the glow's latest rebuild made every stroke it needed.
+    private bool _glowComplete;
     private int _arrangement;
     private double _originStrength;
     // Miter joins spike past the line at sharp outline corners.
@@ -61,6 +63,8 @@ internal sealed class MapRenderer : IDisposable
     private float _windowDetail;
     private long _rebuildUntil;
     private bool _rebuildPending;
+    // Border pieces the latest picture drew plainly or from another scale.
+    private readonly Queue<Piece> _staleBorders = new();
 
     private float _detail;
     private long _started;
@@ -179,6 +183,7 @@ internal sealed class MapRenderer : IDisposable
         foreach (var shape in _land.Values)
             shape.Dispose();
         _land.Clear();
+        _staleBorders.Clear();
         foreach (var destination in _routes)
             destination.Release();
         _routes.Clear();
@@ -673,8 +678,9 @@ internal sealed class MapRenderer : IDisposable
         var up = palette.Upload;
         var contrast = SystemAccessibility.HighContrast;
         var progress = Progress;
-        _rebuildUntil = Stopwatch.GetTimestamp() + Stopwatch.Frequency * 6 / 1000;
+        _rebuildUntil = Stopwatch.GetTimestamp() + RebuildBudget;
         _rebuildPending = false;
+        _staleBorders.Clear();
         // The view shows one turn of longitude around its centre. A shape near
         // a map edge also draws a turn away, so it continues on the other side.
         var view = _viewport.Transform;
@@ -752,7 +758,6 @@ internal sealed class MapRenderer : IDisposable
             }
             var borderWidth = BorderWidth;
             var border = contrast ? ink : Alpha(edge, .5 / borderWidth);
-            List<Piece> stale = [];
             for (var turn = -1; turn <= 1; turn++)
             {
                 var transform = Turned(turn);
@@ -768,7 +773,7 @@ internal sealed class MapRenderer : IDisposable
                         if (Stroked(piece) is { } stroke)
                         {
                             if (!IsCurrent(stroke.Scale, BorderTolerance))
-                                stale.Add(piece);
+                                _staleBorders.Enqueue(piece);
                             ApplyStroke(draw, stroke, transform, ref applied);
                             // A stroke from another scale draws that much wider
                             // or narrower; its ink changes inversely, so the
@@ -781,24 +786,12 @@ internal sealed class MapRenderer : IDisposable
                         }
                         else
                         {
+                            _staleBorders.Enqueue(piece);
                             ApplyStroke(draw, null, transform, ref applied);
                             draw.DrawGeometry(piece.Line(_device), border, borderWidth, FixedStroke);
                         }
                     }
                 }
-            }
-            // A stale stroke still draws in place, so pieces with none take the
-            // budget first and stale ones are replaced from what is left. This
-            // frame already drew the old strokes, so the next one shows the
-            // replacements.
-            foreach (var piece in stale)
-            {
-                if (piece.Stroke is { } made && IsCurrent(made.Scale, BorderTolerance))
-                    continue;
-                if (!MayRebuild())
-                    break;
-                Restroke(piece);
-                _rebuildPending = true;
             }
             draw.Transform = Matrix3x2.Identity;
             var arcs = _routes.Where(route => route.Arc is not null).ToArray();
@@ -841,12 +834,21 @@ internal sealed class MapRenderer : IDisposable
                 using (draw.CreateLayer(_originMask))
                 {
                     // The blurred glow is kept while its inputs stay the same.
-                    // Animation changes it at every step, and a glow that kept
-                    // a stroke from another scale is forgotten, because the
-                    // next frame draws better strokes. Border work left over
-                    // from a zoom does not rebuild it.
+                    // Animation changes it at every step. A glow that kept a
+                    // stroke from another scale is rebuilt only while budget
+                    // is left, because without budget it would record the
+                    // same strokes again. Border work left over from a zoom
+                    // does not rebuild it.
                     var inputs = new GlowInputs(view, _viewport.Size, down, up, _arrangement);
-                    if (!contrast && (progress < 1 || _glowInputs != inputs || _glowBlur is null))
+                    if (
+                        !contrast
+                        && (
+                            progress < 1
+                            || _glowInputs != inputs
+                            || _glowBlur is null
+                            || (!_glowComplete && MayRebuild())
+                        )
+                    )
                     {
                         var pending = _rebuildPending;
                         _rebuildPending = false;
@@ -899,7 +901,8 @@ internal sealed class MapRenderer : IDisposable
                             BlurAmount = 1.5f,
                             CacheOutput = true,
                         };
-                        _glowInputs = progress < 1 || _rebuildPending ? null : inputs;
+                        _glowInputs = progress < 1 ? null : inputs;
+                        _glowComplete = !_rebuildPending;
                         _rebuildPending |= pending;
                     }
                     if (!contrast && _glowBlur is not null)
@@ -994,6 +997,8 @@ internal sealed class MapRenderer : IDisposable
                 point,
                 ink
             );
+        // Borders take what the arcs leave of the budget.
+        StrokeStaleBorders();
         if (_rebuildPending)
             _invalidate();
 
@@ -1110,13 +1115,57 @@ internal sealed class MapRenderer : IDisposable
     }
 
     // A piece with no stroke draws plainly, which Direct2D tessellates on the
-    // CPU at every frame, so it gets one first. A piece keeps drawing its last
-    // stroke, made at another scale, until Draw replaces it.
+    // CPU at every draw, so it gets one first. A piece keeps drawing its last
+    // stroke, made at another scale, until StrokeStaleBorders replaces it.
     private Stroke? Stroked(Piece piece)
     {
-        if (piece.Stroke is null && MayRebuild())
+        if (piece.Stroke is null && InBudget)
             Restroke(piece);
         return piece.Stroke;
+    }
+
+    /// <summary>Whether border strokes wait for <see cref="StrokeBorders()"/>.</summary>
+    internal bool HasStaleBorders => _staleBorders.Count > 0;
+
+    /// <summary>
+    /// Replaces stale border strokes within a fresh rebuild budget. Call on
+    /// frames that draw no picture.
+    /// </summary>
+    internal void StrokeBorders()
+    {
+        _rebuildUntil = Stopwatch.GetTimestamp() + RebuildBudget;
+        try
+        {
+            StrokeStaleBorders();
+        }
+        catch (Exception error) when (_device.IsDeviceLost(error.HResult))
+        {
+            // Drawing the next picture finds the device lost, and the map's
+            // layer makes a new one.
+            _staleBorders.Clear();
+            _invalidate();
+        }
+    }
+
+    // A plain piece looks the same as a stroked one, and a stale stroke
+    // keeps the border's weight, so new strokes need no picture until all are
+    // made. A zoom then draws the map once for its borders rather than once
+    // per budget.
+    private void StrokeStaleBorders()
+    {
+        if (_staleBorders.Count == 0)
+            return;
+        while (_staleBorders.TryPeek(out var piece))
+        {
+            if (piece.Stroke is not { } made || !IsCurrent(made.Scale, BorderTolerance))
+            {
+                if (!InBudget)
+                    return;
+                Restroke(piece);
+            }
+            _staleBorders.Dequeue();
+        }
+        _invalidate();
     }
 
     private void Restroke(Piece piece)
@@ -1198,9 +1247,14 @@ internal sealed class MapRenderer : IDisposable
         int Arrangement
     );
 
+    private static readonly long RebuildBudget = Stopwatch.Frequency * 6 / 1000;
+
+    private bool InBudget => Stopwatch.GetTimestamp() < _rebuildUntil;
+
+    // Work this refuses draws the map again; border strokes test InBudget.
     private bool MayRebuild()
     {
-        if (Stopwatch.GetTimestamp() < _rebuildUntil)
+        if (InBudget)
             return true;
         _rebuildPending = true;
         return false;

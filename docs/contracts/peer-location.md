@@ -290,7 +290,11 @@ because until then it can show black.
 The map's picture is drawn again only when the view, appearance, inspection, a pending
 rebuild or what it draws of the places changes: their arcs, role kinds,
 activity, colour and strengths. A strength change below one colour level is
-kept for later, so a steady transfer redraws nothing.
+kept for later, so a steady transfer redraws nothing. Border strokes that a
+picture drew plainly or from another scale are replaced in frames that draw
+nothing, and one picture then shows them all, because those borders already
+keep their look and weight; other pending rebuilds draw again at the next
+frame. The glow is recorded again only when what it shows can change.
 
 ### Arc dimming
 
