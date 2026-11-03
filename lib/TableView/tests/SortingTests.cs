@@ -404,6 +404,99 @@ public class SortingTests
             CollectionAssert.AreEqual(new[] { "k3", "k1", "k2", "k0" }, h.ViewKeys());
         });
 
+    /// <summary>
+    /// Section 9: inside the interval arrivals and leavers wait, and the settle applies them with
+    /// the moves in one update. A waiting leaver looks and acts as any row until the pointer
+    /// holds the rows.
+    /// </summary>
+    [TestMethod]
+    public Task ChangesInsideTheIntervalWaitForTheSettle() =>
+        TestHost.RunAsync(async () =>
+        {
+            SortHarness h = await SortHarness.LoadAsync(new[] { 1, 2, 3, 4 }, configure: Hourly);
+            Table table = h.Table;
+            await ShowSettleAsync(table);
+
+            SortRow leaver = h.Rows[1];
+            h.Rows.Remove(leaver);
+            h.Rows.Add(new("arrival", 0));
+            CollectionAssert.AreEqual(new[] { "k0", "k1", "k2", "k3" }, h.ViewKeys(), "the change waits");
+            Assert.IsFalse((bool)Proof.Call(table, "ShowsHeld", leaver)!, "the waiting leaver keeps its look");
+            Assert.IsTrue((bool)Proof.Call(table, "IsInteractive", leaver)!, "the waiting leaver acts as any row");
+            Proof.Call(table, "PointAt", h.Rows[0]);
+            Assert.IsTrue((bool)Proof.Call(table, "ShowsHeld", leaver)!, "the pointer gives it the held look");
+            Assert.IsFalse((bool)Proof.Call(table, "IsInteractive", leaver)!, "a row in the held look refuses actions");
+            Proof.Call(table, "StopPointing");
+            CollectionAssert.AreEqual(new[] { "k0", "k1", "k2", "k3" }, h.ViewKeys(), "it still waits for the settle");
+
+            Proof.SetField(table, "_orderSettledAt", null);
+            table.RefreshView();
+            h.Rows.Add(new("late", 5));
+            CollectionAssert.AreEqual(new[] { "arrival", "k0", "k2", "k3", "late" }, h.ViewKeys(),
+                "the settle applies the change, and a change in its turn lands with it");
+            await ShowSettleAsync(table);
+
+            table.ItemsSource = new[] { new SortRow("other", 1) };
+            CollectionAssert.AreEqual(new[] { "other" }, h.ViewKeys(), "a different list applies at once");
+        });
+
+    /// <summary>
+    /// Section 5.3: a change the person named applies inside the interval, and a name whose change
+    /// never came ends after its lifetime, so it lets no later background change through.
+    /// </summary>
+    [TestMethod]
+    public Task AReleasedChangeAppliesAtOnceUntilItsNameEnds() =>
+        TestHost.RunAsync(async () =>
+        {
+            SortHarness h = await SortHarness.LoadAsync(new[] { 1, 2, 3 }, configure: Hourly);
+            Table table = h.Table;
+            await ShowSettleAsync(table);
+
+            SortRow removed = h.Rows[0];
+            table.Release(new[] { removed });
+            h.Rows.Remove(removed);
+            CollectionAssert.AreEqual(new[] { "k1", "k2" }, h.ViewKeys(), "the person's change applies at once");
+            await ShowSettleAsync(table);
+
+            SortRow kept = h.Rows[0];
+            table.Release(new[] { kept });
+            var released = (System.Collections.IDictionary)Proof.Field<object>(table, "_released");
+            released[kept] = (false, System.Diagnostics.Stopwatch.GetTimestamp()
+                - 2 * 3600 * System.Diagnostics.Stopwatch.Frequency);
+            h.Rows.Remove(kept);
+            CollectionAssert.AreEqual(new[] { "k1", "k2" }, h.ViewKeys(), "the ended name lets nothing through");
+        });
+
+    /// <summary>
+    /// Section 5.3: a new instance of a row that stays keeps the row's container, so the row does
+    /// not fade in again as if it had arrived.
+    /// </summary>
+    [TestMethod]
+    public Task AReplacedRowKeepsItsContainer() =>
+        TestHost.RunAsync(async () =>
+        {
+            SortHarness h = await SortHarness.LoadAsync(new[] { 1, 2, 3 });
+            ListView surface = h.Surface();
+            DependencyObject before = surface.ContainerFromIndex(1);
+            Assert.IsNotNull(before, "the fixture needs the row realized");
+
+            SortRow replacement = new("k1", 2);
+            h.Rows[1] = replacement;
+
+            Assert.AreSame(before, surface.ContainerFromIndex(1), "the row keeps its container");
+            Assert.AreSame(replacement, ((ContentControl)before).Content, "the container shows the new instance");
+        });
+
+    private static void Hourly(Table table)
+    {
+        table.Sort = new(table.Columns[0]);
+        table.SortInterval = TimeSpan.FromHours(1);
+    }
+
+    /// <summary>Wait for the frame that shows the last settle, which starts the interval.</summary>
+    private static Task ShowSettleAsync(Table table) =>
+        TableHarness.WaitUntilAsync(() => !Proof.Field<bool>(table, "_settleShowing"), "the frame");
+
     // ------------------------------------------------------------------ selection
 
     [TestMethod]

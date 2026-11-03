@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
@@ -10,7 +11,8 @@ namespace Syno.TableView;
 /// <summary>
 /// The owner rulings of sections 5.3 and 9: nothing moves under the pointer that the person did
 /// not move. While the rows are pointed at, a row that leaves the source is held in place and rows
-/// that arrive wait; under a reordering sort, the pointed row keeps its place.
+/// that arrive wait; under a reordering sort, the pointed row keeps its place. Inside a sort's
+/// settling interval the hold keeps membership the same way until the settle.
 /// </summary>
 /// <remarks>
 /// A hierarchical table holds nothing. Expansion and collapse are the person's own commands and
@@ -24,9 +26,16 @@ public sealed partial class Table
 
     /// <summary>
     /// Rows named by <see cref="Release"/>, each with whether the source has it once the change the
-    /// person caused arrives.
+    /// person caused arrives, and the <see cref="Stopwatch"/> timestamp of when it was named.
     /// </summary>
-    private readonly Dictionary<object, bool> _released;
+    private readonly Dictionary<object, (bool Present, long Named)> _released;
+
+    /// <summary>
+    /// How long a <see cref="Release"/> entry waits for its change: one settling interval, and
+    /// never less than the default one, because the hold under the pointer waits for it too.
+    /// </summary>
+    private TimeSpan ReleaseLifetime =>
+        _sortInterval > DefaultSortInterval ? _sortInterval : DefaultSortInterval;
 
     private bool _pointerOver;
 
@@ -39,14 +48,22 @@ public sealed partial class Table
     /// <summary>The pointer is over the rows, or a row's context menu is open.</summary>
     private bool IsPointed => _pointerOver || _menuRow is not null;
 
-    /// <summary>A row shown although it left the source. It is dimmed and refuses every action.</summary>
-    internal bool IsHeld(object? item) => item is not null && _held.Contains(item);
+    /// <summary>A row shown although it left the source.</summary>
+    private bool IsHeld(object? item) => item is not null && _held.Contains(item);
+
+    /// <summary>
+    /// A held row shows the held look and refuses every action only while the pointer holds the
+    /// rows. A row that waits for the settle with the pointer away looks and acts as any row does,
+    /// because nothing on screen would tell the person why it refused.
+    /// </summary>
+    internal bool ShowsHeld(object? item) => IsPointed && IsHeld(item);
 
     /// <summary>
     /// Section 5's interaction predicate as the table applies it: the host's answer, and never a
-    /// held row, which the host no longer has to act on.
+    /// row that shows the held look.
     /// </summary>
-    internal bool IsInteractive(object item) => !IsHeld(item) && CanInteract?.Invoke(item) != false;
+    internal bool IsInteractive(object item) =>
+        !ShowsHeld(item) && CanInteract?.Invoke(item) != false;
 
     /// <summary>
     /// Apply at once the change the person caused to whether the source has
@@ -55,9 +72,9 @@ public sealed partial class Table
     /// </summary>
     /// <remarks>
     /// Call it before the change reaches the source, or after it while the table still holds it
-    /// back. A named row that the view already shows as the source has it is expected to change
-    /// next, so a call made after the view applied the change would release a later background
-    /// change instead. A hierarchical table holds nothing and ignores the call.
+    /// back. A row whose change has not arrived one settling interval after the call, and at
+    /// least the default interval, is no longer named, so a command that changes no row's
+    /// presence leaves nothing behind. A hierarchical table holds nothing and ignores the call.
     /// </remarks>
     public void Release(IEnumerable<object> items)
     {
@@ -70,16 +87,17 @@ public sealed partial class Table
         HashSet<object> shown = new(_view, _identity);
         HashSet<object> live = new(_source.Snapshot, _identity);
         bool heldBack = false;
+        long now = Stopwatch.GetTimestamp();
         foreach (object item in items)
         {
             bool present = live.Contains(item);
             if (present == shown.Contains(item))
             {
-                _released[item] = !present;
+                _released[item] = (!present, now);
                 continue;
             }
 
-            _released[item] = present;
+            _released[item] = (present, now);
             heldBack = true;
         }
 
@@ -92,8 +110,22 @@ public sealed partial class Table
     /// <summary>The pointer is over the row surface, above <paramref name="row"/> or no row.</summary>
     private void PointAt(object? row)
     {
+        bool pointed = IsPointed;
         _pointerOver = true;
         _pointedRow = row;
+        ShowHeldLook(pointed);
+    }
+
+    /// <summary>
+    /// Rows that wait for the settle take the held look (<see cref="ShowsHeld"/>) as soon as the
+    /// pointer holds the rows, not at the next publish.
+    /// </summary>
+    private void ShowHeldLook(bool wasPointed)
+    {
+        if (!wasPointed && _held.Count > 0)
+        {
+            RowVisualsChanged?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     /// <summary>
@@ -139,7 +171,7 @@ public sealed partial class Table
         {
             if (node is ListViewItem container)
             {
-                return _surface?.ItemFromContainer(container);
+                return RowItem(container);
             }
         }
 
@@ -162,7 +194,9 @@ public sealed partial class Table
             return;
         }
 
+        bool pointed = IsPointed;
         _menuRow = row;
+        ShowHeldLook(pointed);
         menu.Closed += OnMenuClosed;
 
         void OnMenuClosed(object? sender, object e)
@@ -203,21 +237,33 @@ public sealed partial class Table
     }
 
     /// <summary>
-    /// The snapshot rows to show. While the rows are pointed at, that is only the rows already
-    /// shown, and every shown row the snapshot no longer has becomes a held row.
+    /// The snapshot rows to show. While the rows are pointed at, or while the change
+    /// <paramref name="waits"/> for the settle, that is only the rows already shown, and every
+    /// shown row the snapshot no longer has becomes a held row.
     /// </summary>
     /// <remarks>
     /// An empty view takes its rows at once: nothing is on screen to be moved. So does a snapshot
-    /// that carries a change named by <see cref="Release"/>.
+    /// that carries a change named by <see cref="Release"/>, and, with the pointer away, a snapshot
+    /// that shares no row with the view: a different list, or an emptied one, does not wait.
     /// </remarks>
     private (
         IReadOnlyList<object> Shown,
         HashSet<object> Held,
         IReadOnlyList<object> Released
-    ) Hold(IReadOnlyList<object> snapshot, bool sortChanged = false)
+    ) Hold(IReadOnlyList<object> snapshot, bool sortChanged = false, bool waits = false)
     {
         HashSet<object> held = new(_identity);
-        bool holds = !sortChanged && _hierarchy is null && IsPointed && _view.Count > 0;
+        bool holds = !sortChanged && _hierarchy is null && _view.Count > 0 && (IsPointed || waits);
+
+        // An entry whose change did not come within its lifetime ends here, so it cannot let a
+        // later background change through the hold.
+        foreach (object row in _released
+            .Where(entry => Stopwatch.GetElapsedTime(entry.Value.Named) > ReleaseLifetime)
+            .Select(entry => entry.Key).ToList())
+        {
+            _released.Remove(row);
+        }
+
         if (!holds && _released.Count == 0)
         {
             return (snapshot, held, Array.Empty<object>());
@@ -225,7 +271,7 @@ public sealed partial class Table
 
         HashSet<object> live = new(snapshot, _identity);
         List<object> released = _released
-            .Where(entry => live.Contains(entry.Key) == entry.Value)
+            .Where(entry => live.Contains(entry.Key) == entry.Value.Present)
             .Select(entry => entry.Key)
             .ToList();
         if (released.Count > 0 || !holds)
@@ -235,6 +281,10 @@ public sealed partial class Table
 
         HashSet<object> shown = new(_view, _identity);
         List<object> staying = snapshot.Where(shown.Contains).ToList();
+        if (staying.Count == 0 && !IsPointed)
+        {
+            return (snapshot, held, released);
+        }
 
         foreach (object row in _view)
         {

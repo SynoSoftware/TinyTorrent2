@@ -152,6 +152,12 @@ do not define this product.
   unchanged behavior cannot change the outcome.
   [Testing](docs/agents/testing.md#verification-must-answer-a-question) owns
   the details.
+- **Owner ruling: tests are tripwires, not coverage.** Write a test only to
+  catch a regression: it fails when behavior someone relies on breaks. Do not
+  write tests to cover every path, branch or case, because each test is code to
+  build, run and change with the product on the owner's shared laptop, and a
+  test that guards no likely regression only slows every run.
+  [Testing](docs/agents/testing.md) decides whether a test is worth writing.
 - **Owner ruling: a test run ends when its tests end.** A test suite whose
   process stays after its tests pass or fail, until a timeout ends it, has
   failed, whatever its tests reported. Fix the cause immediately, before other

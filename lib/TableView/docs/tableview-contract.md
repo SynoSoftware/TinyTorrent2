@@ -519,6 +519,12 @@ always right, a row that leaves or arrives at a held position animates, and a
 container never shows a row other than the view's row at its index. A
 membership-only update, such as a host filter over an already-ordered source,
 raises exactly the notifications it raised before this rule and no others.
+An update that shares no row with the view, a different list, is the one
+exception: the rows at held positions animate out and the new rows at those
+positions animate in, every other position takes its new row without a
+notification, and the change in count is raised at the end. Raising each of
+5,000 removals and arrivals at its true position costs about 90 ms of native
+work for rows that are not on screen.
 What falsifies the rule is a container whose content differs from the view's
 row at its index after a sort, a scroll, or `ScrollIntoView`; the reference
 host's diagnostics section R checks exactly that.
@@ -546,19 +552,25 @@ moving while they work.
 - The hold is a presentation of the source. The host's collection is never
   modified, and the latest snapshot is still the base sequence the next
   update and `RefreshView()` start from.
-- A held row cannot be selected, invoked, context-clicked, or dragged, and
-  keyboard navigation skips it, as for a non-interactive item. Selection
-  pruning follows the rule below, so the selected packet never names a held
-  row. Reorder destinations come from the separately supplied complete order.
+- While the pointer holds the rows, a held row cannot be selected, invoked,
+  context-clicked, or dragged, and keyboard navigation skips it, as for a
+  non-interactive item. Selection pruning follows the rule below, so the
+  selected packet then names no held row. Reorder destinations come from the
+  separately supplied complete order.
 - A change the person caused applies at once, even with the pointer over the
   rows, because the rule is that nothing moves unless the person caused it. The
   table cannot tell who caused an update, so the host names the rows whose
   presence the person's command changes with `Release(items)`, before the
   change reaches the source or while the table holds it. The update that
   carries the change applies whole, held rows and waiting rows included. Every
-  other update stays held. A named change that never comes, such as a refused
-  removal, leaves its rows named until their presence next changes.
+  other update stays held. A row stays named for one settling interval, and at
+  least the default one, so a named change that never comes, such as a refused
+  removal, cannot let a later background change through.
 - A held row that comes back into the source stops being held.
+- Inside a sort's settling interval the same hold keeps membership, with the
+  pointer anywhere, until the settle; section 9 states when. With the pointer
+  away, a held row keeps its normal look and acts as any row, because nothing
+  on screen would tell the person why it refused.
 - A table that shows no rows takes its arrivals at once: nothing on screen can
   move.
 - A sort change moves every row anyway, so it takes the source whole.
@@ -596,7 +608,10 @@ restores the source, because the row count decides the scrollable range.
 When the schema supplies a key selector, every new source snapshot—including
 assignment, `Add`, `Remove`, `Move`, `Replace`, and `Reset`—reconciles selected
 items, current item, selection anchor, and focus to the current row instances
-by key. `Selection.Items` then exposes those new instances.
+by key. `Selection.Items` then exposes those new instances. A new instance of a
+row that stays keeps the row's container and look: the native list answers a
+replaced item with a new container that fades in as if the row had arrived, so
+the table shows the new instance in the existing container instead.
 `SelectionChanged` reports a changed exposed packet: identities, item order,
 current item, or replacement row instances. Ordinary property changes on the same reference do not
 raise this event. An
@@ -983,13 +998,27 @@ Sorting requirements:
 - the host calls `RefreshView()` after a batch changes any active
   view-affecting value;
 - while a sort is applied, the view converges on the sorted order within a
-  bounded interval. Membership is deferred only by section 5.3's hold while
-  the rows are pointed at; otherwise a row that arrives appears at once and a
-  row that leaves goes at once, while existing rows trade places on the
-  settling interval. `SortInterval` sets that interval, and `TimeSpan.Zero`
-  restores immediate re-sorting. A sort by the column registered with `Schema.Order`
-  never settles: that order changes only when the host reorders, usually on
-  the person's own command, so holding it would delay that command.
+  bounded interval, the settling interval. `SortInterval` sets it, and
+  `TimeSpan.Zero` restores immediate re-sorting. A sort by the column
+  registered with `Schema.Order` never settles: that order changes only when
+  the host reorders, usually on the person's own command, so holding it would
+  delay that command.
+
+**A sort applies changes at most once per interval.** While a flat table is
+sorted with a nonzero `SortInterval`, a source change that comes when no change
+applied within the last interval applies at once. Otherwise it waits, and every
+change until the settle at the end of the interval waits with it: arrivals,
+leavers and the rows' new places land together in one update. The interval
+starts when the frame that shows an applied change renders, so changes in the
+same UI turn land with it. A row that leaves while it waits keeps its normal
+look and acts as any row while the pointer is away, and fades out with the
+update. Changes the person caused (`Release`), a switch to a list that shares no
+row with the view, and the first rows of an empty table apply at once. The list
+animates no change that comes within one second of its previous change
+(`fastmutationThreshold` in WinUI's `ModernCollectionBasePanel`), so arrivals
+and leavers applied apart from the settle's reorder appeared and vanished
+without their transition. A hierarchical table applies its changes at once,
+because a waiting row could be separated from its parent.
 
 **Owner ruling: a live sort freezes only the row under the pointer.** Whenever
 the rows take their sorted order, the row under the pointer keeps its
@@ -1007,26 +1036,20 @@ table freezes nothing, because a frozen row could be separated from its parent.
 Avoiding automatic re-sorts on every property notification is important for
 rapidly changing data such as speed and progress.
 
-The settling interval exists because a host has only one lever and the table has
-two. Publishing a snapshot carries membership and position together, so a host
-that throttles its updates to stop a reshuffle also delays the completion that
-made the update necessary. The table holds both the previous order and the new
-one, so it is the only layer that can take the membership immediately and let
-the position wait. It does so by never merging the two. A snapshot that adds or
-removes a row is not a settling case at all: the table takes the sorted order
-for it whole, which is also where an arriving row belongs, and only a snapshot
-of exactly the same rows can hold its position. The rule is therefore structural
-rather than a promise — the settling path cannot defer a membership change,
-rather than choosing not to. Only section 5.3's hold defers one, for its own
-reason, and while it does the rows are the same rows, so settling sees no
-membership change either.
+The settling interval lives in the table rather than in the host because the
+table knows which changes may wait: the person's own changes, a different list,
+and the row under the pointer, which keeps its place at the settle. Membership
+waits through section 5.3's hold, never through a merge: while the hold keeps
+membership, the rows are the same rows, so a kept order is a copy of the view's.
+A snapshot that adds or removes a row, such as one the person caused, is not a
+settling case: the table takes the sorted order for it whole, which is also
+where an arriving row belongs.
 
 Measured on the original host's 2,002-row list, per host publish, because with settling off
 every publish reorders and the two units are then the same one: sorted by
 download speed, every publish reordered the whole view. What the host had
 published was a single row finishing. The reshuffle is the reason the
-interval exists, and the reason it is a table concern rather than a host one is
-that no host can separate the two halves of its own snapshot.
+interval exists.
 
 Two notification counts stood in this section and have been removed: an average
 of 2,158 per publish, and 2,660 for a settled reorder against that 2,158. They
@@ -1227,7 +1250,8 @@ next show or available-width change.
 
 Mouse/pen dragging of a header reorders visible columns.
 
-- movement begins only after the normal drag threshold;
+- movement begins only after the Windows drag distance (`SM_CXDRAG`), which
+  the person can raise for steadier clicks; rows use the same distance;
 - the dragged header remains identifiable;
 - a theme-aware insertion marker shows each legal destination, including before
   the first and after the last visible column;
@@ -1904,6 +1928,7 @@ host integration, with validation scope set by [testing](../../../docs/agents/te
     cancel incompatible marquee or row-drag gestures, and retain live cell
     bindings. While the pointer is over the rows, a leaving row stays dimmed in
     place, arrivals wait, and a re-sort leaves the pointed row where it is.
+    Inside a sort's settling interval, changes wait for the settle.
 14. Policy callbacks are pure; `SelectionChanged` and the other four
     events carry their documented immutable post-mechanics state without
     invoking domain work. The component contains no domain types, commands, or

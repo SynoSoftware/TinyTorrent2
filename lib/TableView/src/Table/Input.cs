@@ -20,9 +20,6 @@ namespace Syno.TableView;
 /// </remarks>
 public sealed partial class Table
 {
-    /// <summary>Movement below this is a click, not a drag or a marquee.</summary>
-    private const double DragThresholdDips = 4;
-
     private readonly Body.Marquee _marquee = new();
 
     private RowGesture _gesture;
@@ -316,8 +313,8 @@ public sealed partial class Table
         }
 
         if (
-            Math.Abs(now.X - _gestureOrigin.X) < DragThresholdDips
-            && Math.Abs(now.Y - _gestureOrigin.Y) < DragThresholdDips
+            Math.Abs(now.X - _gestureOrigin.X) < DragDistance.Horizontal
+            && Math.Abs(now.Y - _gestureOrigin.Y) < DragDistance.Vertical
         )
         {
             return;
@@ -764,7 +761,7 @@ public sealed partial class Table
             item = _selection.Current;
         }
 
-        if (item is null || _surface.ContainerFromItem(item) is not FrameworkElement row)
+        if (item is null || RowContainer(item) is not FrameworkElement row)
         {
             return;
         }
@@ -798,7 +795,7 @@ public sealed partial class Table
             || !SameSelection(packet, Selection)
             || !View.Any(row => ReferenceEquals(row, item))
             || _surface is null
-            || !ReferenceEquals(_surface.ItemFromContainer(placementTarget), item)
+            || !ReferenceEquals(RowItem(placementTarget), item)
         )
             return true;
 
@@ -829,7 +826,7 @@ public sealed partial class Table
         {
             if (node is ListViewItem container)
             {
-                item = _surface.ItemFromContainer(container);
+                item = RowItem(container);
                 return item is null ? HitTarget.Suppressed : HitTarget.Row;
             }
 
@@ -838,8 +835,7 @@ public sealed partial class Table
                 return HitTarget.Suppressed;
             }
 
-            // A tab stop inside a cell is an editor, button, or selector and owns its own input.
-            if (node is Control { IsTabStop: true })
+            if (OwnsInput(node))
             {
                 return HitTarget.Suppressed;
             }
@@ -849,6 +845,17 @@ public sealed partial class Table
 
         return node is null ? HitTarget.Suppressed : HitTarget.EmptySurface;
     }
+
+    /// <summary>
+    /// Section 7: a button, editor, selector or toggle in a cell or a header owns its own input,
+    /// even when its template turns its tab stop off. Any other tab stop is treated the same.
+    /// Passive controls such as <c>ProgressBar</c> stay part of the surface around them.
+    /// </summary>
+    internal static bool OwnsInput(DependencyObject node) =>
+        node is ButtonBase or TextBox or PasswordBox or RichEditBox or Selector or Slider
+            or ToggleSwitch or NumberBox or AutoSuggestBox or CalendarDatePicker or DatePicker
+            or TimePicker or RatingControl
+        || node is Control { IsTabStop: true };
 
     // ------------------------------------------------------------------ keyboard
 
@@ -884,8 +891,8 @@ public sealed partial class Table
             VirtualKey.Left or VirtualKey.Right => NavigateHierarchy(e.Key, shift, ctrl),
             VirtualKey.Up => MoveCurrentBy(-1, shift, ctrl),
             VirtualKey.Down => MoveCurrentBy(1, shift, ctrl),
-            VirtualKey.PageUp => MoveCurrentBy(-RowsPerPage(), shift, ctrl),
-            VirtualKey.PageDown => MoveCurrentBy(RowsPerPage(), shift, ctrl),
+            VirtualKey.PageUp => MoveCurrentByPage(-1, shift, ctrl),
+            VirtualKey.PageDown => MoveCurrentByPage(1, shift, ctrl),
             VirtualKey.Home => MoveCurrentToEdge(first: true, shift, ctrl),
             VirtualKey.End => MoveCurrentToEdge(first: false, shift, ctrl),
             VirtualKey.A when ctrl => SelectAllFromKeyboard(),
@@ -1030,7 +1037,7 @@ public sealed partial class Table
         }
 
         object? item = FocusManager.GetFocusedElement(XamlRoot) is ListViewItem row
-            ? _surface.ItemFromContainer(row)
+            ? RowItem(row)
             : _selection.Current;
         SyncSelectionPolicy();
         if (item is null || !_selection.IsInteractive(item))
@@ -1067,24 +1074,94 @@ public sealed partial class Table
         return true;
     }
 
-    private int RowsPerPage()
+    /// <summary>
+    /// Page Down moves to the last fully visible row, and from that row to the last row that fits
+    /// in a viewport below its top; Page Up does the same upwards. The nearest interactive row at
+    /// or before that boundary becomes current.
+    /// </summary>
+    private bool MoveCurrentByPage(int direction, bool extend, bool ctrl)
     {
-        double viewport = InnerScrollViewer()?.ViewportHeight ?? 0;
-        double rowHeight = FirstVisibleRowHeight();
-        return viewport > 0 && rowHeight > 0 ? Math.Max(1, (int)(viewport / rowHeight)) : 1;
-    }
-
-    /// <summary>The height of the first row in the viewport, or 0 while no row is realized.</summary>
-    private double FirstVisibleRowHeight()
-    {
-        if (_surface?.ItemsPanelRoot is not ItemsStackPanel rows || rows.FirstVisibleIndex < 0)
+        SyncSelectionPolicy();
+        int index = IndexInView(_selection.Current);
+        if (index < 0)
         {
-            return 0;
+            return MoveCurrentToEdge(direction > 0, extend, ctrl);
         }
 
-        return _surface.ContainerFromIndex(rows.FirstVisibleIndex) is FrameworkElement container
-            ? container.ActualHeight
-            : 0;
+        for (int target = PageBoundary(index, direction); target != index; target -= direction)
+        {
+            if (_selection.IsInteractive(View[target]))
+            {
+                return MoveCurrentTo(View[target], extend, ctrl);
+            }
+        }
+
+        return MoveCurrentBy(direction, extend, ctrl);
+    }
+
+    /// <summary>
+    /// The view index a page key moves to from <paramref name="index"/>, read from the realized
+    /// rows' positions, because rows can differ in height. Without a realized current row it is
+    /// the next row, which the move then scrolls into view.
+    /// </summary>
+    private int PageBoundary(int index, int direction)
+    {
+        int next = Math.Clamp(index + direction, 0, View.Count - 1);
+        if (InnerScrollViewer() is not ScrollViewer scroller || scroller.ViewportHeight <= 0)
+        {
+            return next;
+        }
+
+        if (RowBounds(index, scroller) is not Rect current)
+        {
+            return next;
+        }
+
+        // Layout rounding can leave a fully shown row a fraction of a pixel past the edge.
+        const double Slack = 0.5;
+        double viewport = scroller.ViewportHeight;
+        int visible = index;
+        int page = index;
+        foreach (int row in RealizedIndices())
+        {
+            if ((row - index) * direction <= 0 || RowBounds(row, scroller) is not Rect bounds)
+            {
+                continue;
+            }
+
+            bool shown = bounds.Top >= -Slack && bounds.Bottom <= viewport + Slack;
+            bool fits = direction > 0
+                ? bounds.Bottom <= current.Top + viewport + Slack
+                : bounds.Top >= current.Bottom - viewport - Slack;
+            if (shown && (row - visible) * direction > 0)
+            {
+                visible = row;
+            }
+
+            if (fits && (row - page) * direction > 0)
+            {
+                page = row;
+            }
+        }
+
+        if (visible != index)
+        {
+            return visible;
+        }
+
+        return page != index ? page : next;
+    }
+
+    /// <summary>A realized row's bounds in the viewport's coordinates, or null when it has no container.</summary>
+    private Rect? RowBounds(int index, ScrollViewer scroller)
+    {
+        if (_surface?.ContainerFromIndex(index) is not FrameworkElement row)
+        {
+            return null;
+        }
+
+        Rect local = new(0, 0, row.ActualWidth, row.ActualHeight);
+        return row.TransformToVisual(scroller).TransformBounds(local);
     }
 
     /// <summary>
@@ -1166,7 +1243,7 @@ public sealed partial class Table
             return;
         }
 
-        if (_surface.ContainerFromItem(item) is Control container)
+        if (RowContainer(item) is Control container)
         {
             container.Focus(state);
             return;
@@ -1185,7 +1262,7 @@ public sealed partial class Table
                             : ReferenceEquals(FocusManager.GetFocusedElement(XamlRoot), handoff)
                                 && ReferenceEquals(_selection.Focus, focus)
                                 && View.Contains(item)
-                    ) && _surface?.ContainerFromItem(item) is Control realized
+                    ) && RowContainer(item) is Control realized
                 )
                 {
                     realized.Focus(state);
@@ -1203,11 +1280,11 @@ public sealed partial class Table
 
         // A realized row takes focus as it is. The forced layout pass is only for a row that
         // ScrollIntoView has just asked for and the list has not built yet.
-        Control? container = _surface.ContainerFromItem(item) as Control;
+        Control? container = RowContainer(item) as Control;
         if (container is null)
         {
             _surface.UpdateLayout();
-            container = _surface.ContainerFromItem(item) as Control;
+            container = RowContainer(item) as Control;
         }
 
         if (container is null && ReferenceEquals(_pendingReveal?.Item, item))

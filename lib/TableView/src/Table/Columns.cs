@@ -185,11 +185,18 @@ public sealed partial class Table
 
         while (scaled.Count > 0)
         {
-            double factor = Math.Max(room, 0) / scaled.Sum(column => column.Width);
+            double share = Math.Max(room, 0);
+            double total = scaled.Sum(column => column.Width);
+            int count = scaled.Count;
+
+            // Columns whose fitted widths are all zero have no proportions to keep, so they share
+            // the room equally; one factor over their zero sum would give every one NaN.
+            double Scaled(EffectiveColumn column) =>
+                total > 0 ? column.Width * share / total : share / count;
+
             EffectiveColumn[] held = scaled
                 .Where(column =>
-                    column.Width * factor < FillMinimum(column)
-                    || column.Width * factor > FillMaximum(column)
+                    Scaled(column) < FillMinimum(column) || Scaled(column) > FillMaximum(column)
                 )
                 .ToArray();
 
@@ -197,7 +204,7 @@ public sealed partial class Table
             {
                 foreach (EffectiveColumn column in scaled)
                 {
-                    changed |= SetColumnWidth(column, column.Width * factor, publish: false);
+                    changed |= SetColumnWidth(column, Scaled(column), publish: false);
                 }
 
                 break;
@@ -206,7 +213,7 @@ public sealed partial class Table
             foreach (EffectiveColumn column in held)
             {
                 double bound = Math.Clamp(
-                    column.Width * factor,
+                    Scaled(column),
                     FillMinimum(column),
                     FillMaximum(column)
                 );

@@ -93,6 +93,26 @@ public class ReconcileTests
         );
     }
 
+    [TestMethod]
+    public void ADifferentListIsAnnouncedOnlyWhereTheListHoldsAContainer()
+    {
+        object view = NewView(Rows(60));
+        object[] snapshot = Rows(40);
+        int[] realized = Enumerable.Range(10, 16).ToArray();
+
+        Watcher watch = new(view);
+        Reconcile(view, snapshot, realized);
+
+        CollectionAssert.AreEqual(snapshot, Rows(view), "the view is the snapshot");
+        watch.AssertListAgreesAt(realized, view);
+        Assert.AreEqual(snapshot.Length, watch.Count, "the count the notifications describe");
+        Assert.AreEqual(
+            2 * realized.Length + 20,
+            watch.Notifications,
+            "each container's row leaves and arrives, and only the change in count is added"
+        );
+    }
+
     // ------------------------------------------------------------------ a pinned row
 
     /// <summary>

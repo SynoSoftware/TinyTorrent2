@@ -16,6 +16,7 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
 {
     private readonly ItemIdentity _identity;
     private readonly Func<object, bool> _isSelected;
+    private readonly List<int> _rebound = new();
 
     internal View(ItemIdentity identity, Func<object, bool> isSelected)
     {
@@ -25,6 +26,13 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
 
     // Native vector events avoid marshaling a .NET collection event and its item lists per row.
     public event VectorChangedEventHandler<object>? VectorChanged;
+
+    /// <summary>
+    /// The positions where the last <see cref="Reconcile"/> put a new instance of a staying row
+    /// into a run of realized positions without a notification. The table shows each one in the
+    /// container that showed the old instance.
+    /// </summary>
+    internal IReadOnlyList<int> Rebound => _rebound;
 
     protected override void InsertItem(int index, object item)
     {
@@ -105,7 +113,8 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
     /// <para>
     /// A snapshot that is already the view, the same instances in the same order, costs one
     /// comparison per row and nothing else. The host re-projects after ticks that changed nothing
-    /// visible, and this is what keeps that free.
+    /// visible, and this is what keeps that free. A snapshot that shares no row with the view is a
+    /// different list, and <see cref="Flip"/> replaces it in one step.
     /// </para>
     /// <para>
     /// Otherwise four passes, and the order of them is the point. Membership first, raised where it
@@ -137,6 +146,7 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
         IReadOnlySet<object> pinned
     )
     {
+        _rebound.Clear();
         if (IsAlready(snapshot))
         {
             return false;
@@ -151,6 +161,12 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
         List<int> held = new(realized);
         held.Sort();
 
+        if (Count > 0 && snapshot.Count > 0 && !this.Any(place.ContainsKey))
+        {
+            Flip(snapshot, held);
+            return true;
+        }
+
         Membership(snapshot, place, held);
 
         List<(int Start, int End)> runs = Runs(held);
@@ -159,6 +175,63 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
         InsertIntoRuns(snapshot, runs);
 
         return true;
+    }
+
+    /// <summary>
+    /// A snapshot that shares no row with the view: a different list. The rows on screen animate
+    /// out and the new rows at their positions animate in, and every other position takes its new
+    /// row without a notification, so the list is told only about its containers and the change
+    /// in count. Raising every row's removal and arrival instead costs 6 to 9 microseconds of
+    /// native work per row however far off screen it is, about 90 ms for 5,000 rows each way.
+    /// </summary>
+    /// <param name="realized">The positions the list holds a container for, ascending.</param>
+    private void Flip(IReadOnlyList<object> snapshot, List<int> realized)
+    {
+        for (int r = realized.Count - 1; r >= 0; r--)
+        {
+            RemoveAt(realized[r]);
+        }
+
+        // Every new row except the ones inserted at a realized position below is placed quietly,
+        // so the count before those inserts is the new count less their number.
+        int shown = realized.Count(index => index < snapshot.Count);
+        int quiet = snapshot.Count - shown;
+        while (Count > quiet)
+        {
+            RemoveAt(Count - 1);
+        }
+
+        int at = 0;
+        int next = 0;
+        for (int i = 0; i < snapshot.Count; i++)
+        {
+            if (next < realized.Count && realized[next] == i)
+            {
+                next++;
+                continue;
+            }
+
+            if (at < Count)
+            {
+                Items[at] = snapshot[i];
+            }
+            else
+            {
+                Insert(at, snapshot[i]);
+            }
+
+            at++;
+        }
+
+        foreach (int i in realized)
+        {
+            if (i >= snapshot.Count)
+            {
+                break;
+            }
+
+            Insert(i, snapshot[i]);
+        }
     }
 
     /// <summary>
@@ -353,11 +426,13 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
 
                 if (i < Count && _identity.Equals(this[i], next))
                 {
-                    // Same row, new instance: the host abandoned the object this container is bound
-                    // to, so nothing would update that container again.
+                    // Same row, new instance. A notification would make the list build a new
+                    // container and fade it in, so the row would blink although it stays; the
+                    // table rebinds the existing container instead (Rebound).
                     if (!ReferenceEquals(this[i], next))
                     {
-                        this[i] = next;
+                        Items[i] = next;
+                        _rebound.Add(i);
                     }
                 }
                 else

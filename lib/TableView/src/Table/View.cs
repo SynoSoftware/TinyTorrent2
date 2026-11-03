@@ -81,8 +81,85 @@ public sealed partial class Table
     /// </summary>
     public event EventHandler<IReadOnlyList<object>>? RealizedItemsChanged;
 
-    private void OnRowsRealizing(ListViewBase sender, ContainerContentChangingEventArgs args) =>
+    /// <summary>
+    /// Show each new instance <see cref="Body.View.Rebound"/> lists in the container that showed
+    /// the old one. The container keeps its place and look, and its row element rebinds through
+    /// its <c>DataContext</c>.
+    /// </summary>
+    /// <remarks>
+    /// The list still records the old instance for that container, and its
+    /// <c>ItemFromContainer</c> and <c>ContainerFromItem</c> answer from that record, so the
+    /// table finds rows and containers by view position instead: see <see cref="RowItem"/> and
+    /// <see cref="RowContainer"/>.
+    /// </remarks>
+    private void RebindRows()
+    {
+        foreach (int index in _view.Rebound)
+        {
+            if (_surface?.ContainerFromIndex(index) is ContentControl container)
+            {
+                container.Content = _view[index];
+            }
+        }
+    }
+
+    /// <summary>The current instance of the row <paramref name="container"/> shows; see <see cref="RebindRows"/>.</summary>
+    private object? RowItem(DependencyObject container)
+    {
+        int index = _surface?.IndexFromContainer(container) ?? -1;
+        return index >= 0 && index < _view.Count ? _view[index] : null;
+    }
+
+    /// <summary>The realized container of <paramref name="item"/>'s row, found by identity; see <see cref="RebindRows"/>.</summary>
+    private DependencyObject? RowContainer(object item)
+    {
+        int index = IndexInView(item);
+        return index < 0 ? null : _surface?.ContainerFromIndex(index);
+    }
+
+    /// <summary>
+    /// The instance the list generated <paramref name="item"/>'s realized container for, which an
+    /// automation peer must name for the list to find that container; see <see cref="RebindRows"/>.
+    /// </summary>
+    internal object ContainerItem(object item) =>
+        RowContainer(item) is { } container && _surface!.ItemFromContainer(container) is { } generated
+            ? generated
+            : item;
+
+    private void OnRowsRealizing(ListViewBase sender, ContainerContentChangingEventArgs args)
+    {
         QueueRealized();
+        if (!args.InRecycleQueue)
+        {
+            // One delegate for every container, so each registration reuses one native wrapper.
+            args.RegisterUpdateCallback(_showCurrent ??= ShowCurrent);
+        }
+    }
+
+    private Windows.Foundation.TypedEventHandler<ListViewBase, ContainerContentChangingEventArgs>? _showCurrent;
+
+    /// <summary>
+    /// Put the view's instance into a container the list filled with an older instance of the
+    /// same row. The list fills a container from the instance it recorded when it prepared it:
+    /// after the preparation event, or, for a placeholder shown while scrolling, in a later pass.
+    /// A publish in between gave the row a new instance (<see cref="RebindRows"/>), which the
+    /// fill then replaces.
+    /// </summary>
+    /// <remarks>
+    /// The list calls this after it has filled and measured the container, and measures it again
+    /// afterwards, so the row element takes the new instance as its data context in the same
+    /// pass. Setting the content from the row element's own <c>DataContextChanged</c> does not
+    /// work: the list raises that while it applies the data context, and drops a change made
+    /// there.
+    /// </remarks>
+    private void ShowCurrent(ListViewBase sender, ContainerContentChangingEventArgs args)
+    {
+        if (args.ItemContainer is ContentControl { Content: { } shown } container
+            && ResolveItem(shown) is { } current && !ReferenceEquals(current, shown))
+        {
+            container.Content = current;
+        }
+    }
 
     private void OnRowsResized(object sender, SizeChangedEventArgs args) => QueueRealized();
 
@@ -212,19 +289,20 @@ public sealed partial class Table
         }
         IReadOnlyList<object> order;
         IReadOnlySet<object> pinned;
+        bool settles;
         if (preparedOrder is null)
         {
             if (_hierarchy is null)
             {
                 ValidateRows(snapshot);
-                (order, pinned) = ViewOrder(snapshot);
+                (order, pinned, settles) = ViewOrder(snapshot);
             }
             else
             {
-                DateTimeOffset settled = _orderSettledAt;
+                long? settled = _orderSettledAt;
                 try
                 {
-                    (order, pinned) = ViewOrder(PrepareHierarchy(snapshot, capture));
+                    (order, pinned, settles) = ViewOrder(PrepareHierarchy(snapshot, capture));
                 }
                 catch
                 {
@@ -241,7 +319,7 @@ public sealed partial class Table
             var (_, held, released) = Hold(snapshot, sortChanged: true);
             AcceptHold(held, released);
             pinned = held;
-            _orderSettledAt = DateTimeOffset.UtcNow;
+            settles = true;
         }
         _source.Accept(snapshot);
         AcceptOrder(order);
@@ -266,7 +344,7 @@ public sealed partial class Table
         object? focusedItem =
             rowFocus != FocusState.Unfocused
             && FocusManager.GetFocusedElement(XamlRoot) is ListViewItem focusedRow
-                ? _surface?.ItemFromContainer(focusedRow)
+                ? RowItem(focusedRow)
                 : null;
         var collapsing = CollapsingFocus();
         if (collapsing.Item is not null)
@@ -289,9 +367,12 @@ public sealed partial class Table
         {
             _reconcilingView = false;
         }
+        RebindRows();
 
         ReconcileDrag();
         QueueRealized();
+        if (settles)
+            ShowSettle();
 
         if (viewMoved)
         {

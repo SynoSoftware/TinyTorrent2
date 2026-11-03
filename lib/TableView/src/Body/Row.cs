@@ -101,7 +101,7 @@ public sealed partial class Row : ContentControl
         object? item = DataContext;
         bool dragging = _owner is not null && _owner.IsDragging(item);
         bool draggable = _owner is not null && item is not null && _owner.CanStartDrag(item);
-        bool held = _owner is not null && _owner.IsHeld(item);
+        bool held = _owner is not null && _owner.ShowsHeld(item);
 
         VisualStateManager.GoToState(this, dragging ? "Dragging" : "NotDragging", useTransitions);
         VisualStateManager.GoToState(this, held ? "Held" : "NotHeld", useTransitions);

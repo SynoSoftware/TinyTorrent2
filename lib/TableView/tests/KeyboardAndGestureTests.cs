@@ -18,7 +18,8 @@ public class KeyboardAndGestureTests
                       xmlns:s="using:Syno.TableView">
             <StackPanel Orientation="Horizontal">
                 <TextBlock Text="passive" />
-                <Button Content="go" />
+                <Button Content="go" IsTabStop="False" />
+                <ProgressBar Width="20" Value="50" />
                 <TextBox Width="40" />
                 <Border s:Table.IsRowGestureEnabled="False" Width="20" Height="10">
                     <Rectangle Width="10" Height="10" />
@@ -172,28 +173,37 @@ public class KeyboardAndGestureTests
         });
 
     [TestMethod]
-    public Task PageDownMovesByAViewportOfRows() =>
+    public Task PageDownUsesTheFullyVisibleBoundaryWithUnequalRowHeights() =>
         TestHost.RunAsync(async () =>
         {
             SelectionHarness h = await SelectionHarness.LoadAsync(60);
 
-            // The PageDown arm of the key handler is MoveCurrentBy(RowsPerPage()), the same step as here.
-            h.MoveBy(1, extend: false);
-            Assert.IsTrue(h.MoveBy(h.RowsPerPage(), extend: false));
+            ListView surface = h.Surface();
+            ((ListViewItem)surface.ContainerFromIndex(0)).Height = 96;
             h.Table.UpdateLayout();
+            ScrollViewer scroller = SelectionHarness.Descendant<ScrollViewer>(surface)!;
+            int boundary = -1;
+            for (int index = 0; index < h.Rows.Count; index++)
+            {
+                if (surface.ContainerFromIndex(index) is not FrameworkElement row)
+                {
+                    continue;
+                }
+                Windows.Foundation.Rect bounds = row.TransformToVisual(surface)
+                    .TransformBounds(new(0, 0, row.ActualWidth, row.ActualHeight));
+                if (bounds.Top >= 0 && bounds.Bottom <= scroller.ViewportHeight)
+                {
+                    boundary = index;
+                }
+            }
+            Assert.IsTrue(boundary > 0, "the fixture needs multiple fully visible rows");
+            h.MoveBy(1, extend: false);
+            Assert.IsTrue(h.Page(1));
+            Assert.AreSame(h[boundary], h.Table.Selection.Current);
 
-            int current = h.Rows.IndexOf(
-                h.Table.Selection.Current as Row
-                    ?? throw new AssertFailedException("Nothing is current.")
-            );
-            ItemsStackPanel rows = (ItemsStackPanel)h.Surface().ItemsPanelRoot;
-
-            Assert.IsTrue(current > 1, $"One page step left the current row at k{current}.");
-            Assert.IsTrue(
-                current >= rows.FirstVisibleIndex && current <= rows.LastVisibleIndex,
-                $"The current row k{current} is outside the visible rows "
-                    + $"{rows.FirstVisibleIndex}..{rows.LastVisibleIndex}."
-            );
+            Assert.IsTrue(h.Page(1, extend: true));
+            Assert.IsTrue(h.Table.Selection.Current is Row current && current.Rank > boundary);
+            Assert.IsTrue(h.Table.Selection.Items.Contains(h[boundary]));
         });
 
     [TestMethod]
@@ -303,6 +313,8 @@ public class KeyboardAndGestureTests
 
             TextBlock passive = SelectionHarness.Descendant<TextBlock>(container)!;
             Assert.AreEqual("Row", h.HitTest(passive));
+            ProgressBar progress = SelectionHarness.Descendant<ProgressBar>(container)!;
+            Assert.AreEqual("Row", h.HitTest(progress));
 
             Button button = SelectionHarness.Descendant<Button>(container)!;
             Assert.AreEqual("Suppressed", h.HitTest(button));

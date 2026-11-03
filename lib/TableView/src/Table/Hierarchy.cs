@@ -40,7 +40,7 @@ public sealed partial class Table
                 hierarchy.Captured is null
                 || !_preparedHierarchy.MatchesStructure(hierarchy.Captured, _identity)
             )
-                _orderSettledAt = DateTimeOffset.MinValue;
+                _orderSettledAt = null;
         }
         return hierarchy.Project(_preparedHierarchy, null, default);
     }
@@ -180,7 +180,7 @@ public sealed partial class Table
             if (
                 node is ListViewItem row
                 && IsInsideRows(row)
-                && _surface?.ItemFromContainer(row) is { } item
+                && RowItem(row) is { } item
             )
                 return CollapsedAncestor(item) is { } ancestor ? (ancestor, state) : default;
         }
