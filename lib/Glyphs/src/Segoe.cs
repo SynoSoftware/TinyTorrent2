@@ -160,6 +160,8 @@ public static class Segoe
     public const string Power = "\uE7E8";
     public const string Puzzle = "\uEA86";
     public const string Radar = "\uEB44";
+    public const string RadioButton = "\uECCA";
+    public const string RadioButtonOn = "\uECCB";
     public const string RadioTower = "\uEC05";
     public const string RefreshCw = "\uE72C";
     public const string RotateCcw = "\uE777";

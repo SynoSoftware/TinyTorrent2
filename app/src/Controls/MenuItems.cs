@@ -270,11 +270,13 @@ internal static class MenuItems
                     Show(shown, choice.Text, Flags.Font, Flags.Glyph(region), choice.Command, choice.AccessKey);
                 else
                     Show(shown, choice.Text, Segoe.Font,
-                        checks ? choice.Glyph : choice.State switch
+                        checks ? choice.Glyph : (choice.Group, choice.State) switch
                         {
-                            true => Segoe.SquareCheck,
-                            false => Segoe.Square,
-                            null => Segoe.SquareMinus,
+                            (not null, true) => Segoe.RadioButtonOn,
+                            (not null, _) => Segoe.RadioButton,
+                            (_, true) => Segoe.SquareCheck,
+                            (_, false) => Segoe.Square,
+                            (_, null) => Segoe.SquareMinus,
                         },
                         choice.Command, choice.AccessKey);
                 if (shown is ToggleMenuFlyoutItem toggle)

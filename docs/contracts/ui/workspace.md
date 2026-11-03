@@ -30,8 +30,9 @@ entries, so a refresh does not rewrite every closed menu's controls.
 When every choice has a content icon, as in View, choices retain those icons
 beside native state indicators. Mutually exclusive choices use native radio
 items in named groups; independent options use native toggle items. If a choice
-has no content icon, as in Torrent, all choices use Segoe checked, empty or mixed
-squares in the existing icon column. A native toggle there would reserve an
+has no content icon, as in Torrent, all choices draw their state in the existing
+icon column: independent options use Segoe checked, empty or mixed squares, and
+grouped choices use filled or empty radio circles. A native toggle there would reserve an
 otherwise empty checkmark column beside every command. The described state
 remains authoritative when navigation is refused by an unfinished draft.
 MenuItems applies the [choices ruling](../ui.md#native-controls-and-visual-authority):
