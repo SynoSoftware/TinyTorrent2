@@ -56,9 +56,38 @@ public class SelectionCostTests
                 return unchanged >= 20;
             }, "the list's cache of containers to stop growing");
 
-            List<double> clicks = new(), frames = new(), refreshes = new();
+            List<double> clicks = new(), frames = new(), refreshes = new(), refreshFrames = new();
 
             for (int rep = 0; rep < Reps; rep++)
+            {
+                ulong clickStart = Cycles();
+                h.Click(h[2 + rep % 10 * 2]);
+                ulong clickEnd = Cycles();
+                frames.Add(await ThreeFramesAsync("the click"));
+
+                ulong refreshStart = Cycles();
+                refresh.Invoke(h.Table, null);
+                ulong refreshEnd = Cycles();
+                refreshFrames.Add(await ThreeFramesAsync("the refresh"));
+
+                clicks.Add(Mega(clickStart, clickEnd));
+                refreshes.Add(Mega(refreshStart, refreshEnd));
+            }
+
+            List<double> totals = clicks.Select((c, i) => c + frames[i]).ToList();
+            double total = Median(totals), alone = Median(refreshes);
+            TestContext.WriteLine($"rows 200, cached containers {panel.LastCacheIndex - panel.FirstCacheIndex + 1}, clicks {Reps}");
+            TestContext.WriteLine($"click Mc: {Spread(clicks)}; next 3 frames Mc: {Spread(frames)}; total Mc: {Spread(totals)}");
+            TestContext.WriteLine($"RefreshContainers alone Mc: {Spread(refreshes)}; median {alone / total:P1} of the median total");
+            // A refresh that changes no row's state shows what the refresh itself leaves the
+            // frames, apart from the rows a click repaints.
+            TestContext.WriteLine($"next 3 frames after RefreshContainers alone Mc: {Spread(refreshFrames)}");
+            TestContext.WriteLine("per click Mc (click, frames, refresh): "
+                + string.Join("; ", clicks.Select((c, i) => $"{c:0.00},{frames[i]:0.00},{refreshes[i]:0.000}")));
+
+            // The UI thread's cycles in each of the next three frames, from the frame's Rendering
+            // event until its layout and render walk have finished.
+            static async Task<double> ThreeFramesAsync(string after)
             {
                 List<(ulong Render, ulong Done)> ticks = new();
                 void OnRendering(object? sender, object args)
@@ -69,40 +98,20 @@ public class SelectionCostTests
                     }
                     int index = ticks.Count;
                     ticks.Add((Cycles(), 0));
-                    // Runs once this frame's layout and render walk have finished.
                     TestHost.Dispatcher.TryEnqueue(() => ticks[index] = ticks[index] with { Done = Cycles() });
                 }
 
-                ulong clickStart = Cycles();
-                h.Click(h[2 + rep % 10 * 2]);
-                ulong clickEnd = Cycles();
                 CompositionTarget.Rendering += OnRendering;
                 try
                 {
                     await TableHarness.WaitUntilAsync(
-                        () => ticks.Count(tick => tick.Done > 0) == 3, "three frames to render after the click");
+                        () => ticks.Count(tick => tick.Done > 0) == 3, $"three frames to render after {after}");
                 }
                 finally
                 {
                     CompositionTarget.Rendering -= OnRendering;
                 }
-
-                ulong refreshStart = Cycles();
-                refresh.Invoke(h.Table, null);
-                ulong refreshEnd = Cycles();
-                await NextFrameAsync();
-
-                clicks.Add(Mega(clickStart, clickEnd));
-                frames.Add(ticks.Sum(tick => Mega(tick.Render, tick.Done)));
-                refreshes.Add(Mega(refreshStart, refreshEnd));
+                return ticks.Sum(tick => Mega(tick.Render, tick.Done));
             }
-
-            List<double> totals = clicks.Select((c, i) => c + frames[i]).ToList();
-            double total = Median(totals), alone = Median(refreshes);
-            TestContext.WriteLine($"rows 200, cached containers {panel.LastCacheIndex - panel.FirstCacheIndex + 1}, clicks {Reps}");
-            TestContext.WriteLine($"click Mc: {Spread(clicks)}; next 3 frames Mc: {Spread(frames)}; total Mc: {Spread(totals)}");
-            TestContext.WriteLine($"RefreshContainers alone Mc: {Spread(refreshes)}; median {alone / total:P1} of the median total");
-            TestContext.WriteLine("per click Mc (click, frames, refresh): "
-                + string.Join("; ", clicks.Select((c, i) => $"{c:0.00},{frames[i]:0.00},{refreshes[i]:0.000}")));
         });
 }

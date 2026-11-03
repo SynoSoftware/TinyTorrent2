@@ -92,17 +92,20 @@ with or without this exception. A shrinking source clips
 the old interval conservatively; this does not predict a later native viewport
 clamp. The reconciliation script and notifications are unchanged.
 
-The frame decides once whether the view shows a different list, because a turn
-can show one list in several publishes, as a Clear and then one Add per row
-does. The first publish after a frame records how many rows that frame laid
-out, when the list is scrolled. Each publish then records the rows its
-difference names as leaving and arriving, so the work follows the changes and
-no copy of the view is kept; a reorder that names no rows has its rows compared
-with the view, which its reconcile walks anyway. The Rendering callback sets the
-offset to 0 with `ChangeView`, and lays the rows out again, when the view has
-rows and none of the rows that frame laid out. A view laid out empty is no list
-to differ from. `ScrollTo` makes its offset the host's for the view as it
-stands, so that frame keeps it. While the view does not show the source yet,
+A view differs from the rows the last frame laid out, not from the view before
+each publish, because a turn can show one list in several publishes, as a Clear
+and then one Add per row does. The first publish after a frame records how many
+rows that frame laid out and at which offset, when the list is scrolled. Each
+publish then records the rows its difference names as leaving and arriving, so
+the work follows the changes and no copy of the view is kept; a reorder that
+names no rows has its rows compared with the view, which its reconcile walks
+anyway. After its reconcile, a publish that leaves rows and none of the laid-out
+ones sets the offset to 0 with `ChangeView`, and a later publish in the same
+turn that brings a laid-out row back sets the recorded offset again. Nothing
+lays the rows out between those publishes, so the frame lays the list out once,
+at the offset the last publish left. A view laid out empty is no list to differ
+from. `ScrollTo` makes its offset the host's for the view as it stands, so no
+later publish before the frame moves it. While the view does not show the source yet,
 as when a hold delays it, `ScrollTo` also records the source assignment.
 Publishes of that assignment keep the host's offset, including notifications
 during the hold, until the first publish that shows the source's rows.

@@ -29,8 +29,8 @@ public sealed partial class Table
 
     /// <summary>
     /// What the publishes since the last frame did to the rows that frame laid out, until the
-    /// next frame decides from it whether the view shows a different list. Null while no publish
-    /// has changed the view since that frame, and after the host scrolled the view.
+    /// next frame lays the view out. Null while no publish has changed the view since that frame,
+    /// and after the host scrolled the view.
     /// </summary>
     private LaidOutRows? _laidOut;
 
@@ -38,14 +38,15 @@ public sealed partial class Table
 
     /// <summary>
     /// The rows a frame laid out, followed through each later publish by the rows its difference
-    /// names, so the next frame can tell whether the view still has any of them without a copy
-    /// of the view.
+    /// names, so each publish can tell whether the view still has any of them without a copy of
+    /// the view.
     /// </summary>
     /// <param name="count">
     /// How many rows the frame laid out, or 0 when the list was not scrolled, so no offset can
     /// go back to the top.
     /// </param>
-    private sealed class LaidOutRows(int count, IIdentity identity)
+    /// <param name="offset">The offset the frame laid the rows out at.</param>
+    private sealed class LaidOutRows(int count, double offset, IIdentity identity)
     {
         // Rows the frame laid out that the view no longer has.
         private readonly IdentitySet _gone = new(identity);
@@ -53,6 +54,10 @@ public sealed partial class Table
         private readonly IdentitySet _added = new(identity);
 
         internal int Count => count;
+        internal double Offset => offset;
+
+        /// <summary>Whether a publish since the frame set the offset to 0 for a different list.</summary>
+        internal bool AtTop { get; set; }
 
         /// <summary>Whether the frame laid out rows and the view has none of them now.</summary>
         internal bool NoneRemain => count > 0 && _gone.Count == count;
@@ -449,6 +454,7 @@ public sealed partial class Table
                     }
                 }
             }
+            StartDifferentList();
 
             ReconcileDrag();
             QueueRealized();
@@ -513,8 +519,12 @@ public sealed partial class Table
             _laidOut = null;
             return null;
         }
-        LaidOutRows laidOut = _laidOut ??= new(
-            _view.Count > 0 && InnerScrollViewer()?.VerticalOffset > 0 ? _view.Count : 0, _identity);
+        if (_laidOut is null)
+        {
+            double offset = InnerScrollViewer()?.VerticalOffset ?? 0;
+            _laidOut = new(offset > 0 ? _view.Count : 0, offset, _identity);
+        }
+        LaidOutRows laidOut = _laidOut;
         if (laidOut.Count == 0)
         {
             return null;
@@ -544,21 +554,23 @@ public sealed partial class Table
 
     /// <summary>
     /// A different list starts at its first row (specification 5.3): when the view has rows and
-    /// none of the rows the last frame laid out, a scrolled list goes to the top. The frame
-    /// decides once for every publish since the last one, because a turn can show one list in
-    /// several publishes, as a Clear and then one Add per row does.
+    /// none of the rows the last frame laid out, a scrolled list goes to the top. Each publish
+    /// sets the offset for the view it leaves, so the frame lays the list out once, from the
+    /// right place. A turn can show one list in several publishes, as a Clear and then one Add
+    /// per row does, so a later publish that brings a laid-out row back returns the offset the
+    /// frame laid out; the frame lays out only what the last of them left.
     /// </summary>
     private void StartDifferentList()
     {
-        LaidOutRows? laidOut = _laidOut;
-        _laidOut = null;
-        if (laidOut is { NoneRemain: true } && _view.Count > 0
-            && InnerScrollViewer() is { VerticalOffset: > 0 } scroller)
+        if (_laidOut is not { } laidOut)
         {
-            scroller.ChangeView(null, 0, null, disableAnimation: true);
-            // This callback can run after the frame's layout (see _layoutPending), so the rows
-            // are laid out again here, from the top, before the frame renders.
-            UpdateLayout();
+            return;
+        }
+        bool different = laidOut.NoneRemain && _view.Count > 0;
+        if (different != laidOut.AtTop && InnerScrollViewer() is { } scroller)
+        {
+            scroller.ChangeView(null, different ? 0 : laidOut.Offset, null, disableAnimation: true);
+            laidOut.AtTop = different;
         }
     }
 
@@ -627,7 +639,8 @@ public sealed partial class Table
     {
         CompositionTarget.Rendering -= OnLaidOut;
         _frameRequested = false;
-        StartDifferentList();
+        // The rows this frame lays out are the ones the next publish compares with.
+        _laidOut = null;
         EndSuppression();
         QueuedSort? queued = _queuedSort;
         PageNavigation? page = _pendingPage is { Stage: not PageStage.Scrolling } ready
