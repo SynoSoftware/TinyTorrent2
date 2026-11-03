@@ -506,6 +506,7 @@ public class SelectionTests
                 "no row moved, and the arrival waits"
             );
             Assert.IsTrue(IsHeld(h, leaving));
+            Assert.IsTrue((bool)Proof.Call(h.Table, "ShowsHeld", leaving)!, "a row held under the pointer is dimmed");
             CollectionAssert.AreEqual(
                 new[] { "k1" },
                 h.SelectedKeys(),

@@ -589,9 +589,9 @@ public class SortingTests
 
     /// <summary>
     /// Section 9: the list animates no change within one second of the one before, so inside the
-    /// interval a background change applies nothing. A leaver stays as a held row and an arrival
-    /// waits until the settle applies both; a change in the settle's turn lands with it, and a
-    /// different list swaps at once.
+    /// interval a background change applies nothing. A leaver stays as a held row, without the
+    /// held look, and an arrival waits until the settle applies both; a change in the settle's
+    /// turn lands with it, and a different list swaps at once.
     /// </summary>
     [TestMethod]
     public Task ChangesInsideTheIntervalWaitForTheSettle() =>
@@ -609,7 +609,8 @@ public class SortingTests
             h.Rows.Remove(leaver);
             h.Rows.Add(new("arrival", 0));
             CollectionAssert.AreEqual(new[] { "k0", "k1", "k2", "k3" }, h.ViewKeys(), "the change waits");
-            Assert.IsTrue((bool)Proof.Call(table, "IsHeld", leaver)!, "the waiting leaver shows as held");
+            Assert.IsTrue((bool)Proof.Call(table, "IsHeld", leaver)!, "the waiting leaver refuses every action");
+            Assert.IsFalse((bool)Proof.Call(table, "ShowsHeld", leaver)!, "the waiting leaver keeps its look");
 
             Proof.SetField(table, "_orderSettledAt", DateTimeOffset.MinValue);
             table.RefreshView();

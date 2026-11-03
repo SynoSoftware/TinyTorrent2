@@ -76,8 +76,11 @@ public sealed partial class Table
     private readonly record struct HoldStep(SortChange Rows, IdentitySet Held,
         IReadOnlyList<object> Released, bool Holds, IReadOnlyList<object> Returning);
 
-    /// <summary>A row shown although it left the source. It is dimmed and refuses every action.</summary>
+    /// <summary>A row shown although it left the source. It refuses every action.</summary>
     internal bool IsHeld(object? item) => item is not null && _held.Count > 0 && _held.Contains(item);
+
+    /// <summary>A held row shows the held look only while the pointer holds the rows.</summary>
+    internal bool ShowsHeld(object? item) => KeepsMembership && IsHeld(item);
 
     /// <summary>
     /// Section 5's interaction predicate as the table applies it: the host's answer, and never a

@@ -606,7 +606,8 @@ moving while they work.
 - A held row that comes back into the source stops being held. It keeps the
   held row's place until the rows are released.
 - Inside a sort's settling interval the same hold keeps membership, with the
-  pointer anywhere, until the settle; section 9 states when.
+  pointer anywhere, until the settle; section 9 states when. A held row shows
+  the held look only while the pointer holds the rows.
 - A table that shows no rows takes its arrivals at once: nothing on screen can
   move.
 - A sort change moves every row anyway, so it takes the source whole.
@@ -1074,8 +1075,10 @@ when no change applied within the last interval applies at once. Otherwise it
 waits, and every change until the settle at the end of the interval waits with
 it: arrivals, leavers and the rows' new places land together in one update.
 Changes in the same UI turn as an applied change land with it. A row that
-leaves while it waits shows the held-row look of section 5.3 at once and
-refuses every action, as a held row does; it fades out with the update. Changes
+leaves while it waits is held: it refuses every action, as a held row does, but
+keeps its normal look, and the list's own transition fades it out with the
+update. A dimmed look that appears without animation tells the person nothing
+the fade does not. Changes
 the person caused (`Release`), a switch to a nonempty list that shares no row
 with the view, and the first rows of an empty table apply at once. The list
 animates no change that comes within one second of its previous change
