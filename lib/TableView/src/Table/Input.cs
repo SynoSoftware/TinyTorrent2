@@ -1101,8 +1101,10 @@ public sealed partial class Table
 
     /// <summary>
     /// The view index a page key moves to from <paramref name="index"/>, read from the realized
-    /// rows' positions, because rows can differ in height. Without a realized current row it is
-    /// the next row, which the move then scrolls into view.
+    /// rows' positions, because rows can differ in height. The list realizes only a small cache
+    /// past the viewport, so a page that reaches beyond the last realized row continues at that
+    /// row's height. Without a realized current row it is the next row, which the move then
+    /// scrolls into view.
     /// </summary>
     private int PageBoundary(int index, int direction)
     {
@@ -1122,6 +1124,8 @@ public sealed partial class Table
         double viewport = scroller.ViewportHeight;
         int visible = index;
         int page = index;
+        Rect last = current;
+        bool pageEnds = false;
         foreach (int row in RealizedIndices())
         {
             if ((row - index) * direction <= 0 || RowBounds(row, scroller) is not Rect bounds)
@@ -1138,15 +1142,32 @@ public sealed partial class Table
                 visible = row;
             }
 
-            if (fits && (row - page) * direction > 0)
+            if (!fits)
+            {
+                pageEnds = true;
+            }
+            else if ((row - page) * direction > 0)
             {
                 page = row;
+                last = bounds;
             }
         }
 
         if (visible != index)
         {
             return visible;
+        }
+
+        if (!pageEnds && last.Height > 0)
+        {
+            double room = direction > 0
+                ? current.Top + viewport - last.Bottom
+                : last.Top - (current.Bottom - viewport);
+            page = Math.Clamp(
+                page + (int)Math.Floor((room + Slack) / last.Height) * direction,
+                0,
+                View.Count - 1
+            );
         }
 
         return page != index ? page : next;

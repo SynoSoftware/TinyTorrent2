@@ -217,7 +217,7 @@ public sealed partial class Table : Control
 
         // A settle waiting to fire would rebuild a view whose template parts have just been taken
         // away, and would hold this table alive to do it.
-        _settleDue?.Stop();
+        StopSettling();
     }
 
     /// <summary>Suspend external notifications and visual work while retaining logical state.</summary>
@@ -248,7 +248,7 @@ public sealed partial class Table : Control
             _surface.ItemsSource = null;
         foreach (Column column in Columns)
             column.TextChanged -= OnColumnTextChanged;
-        _settleDue?.Stop();
+        StopSettling();
         if (!CancelCommittedGesture())
         {
             CancelGesture();

@@ -354,6 +354,20 @@ public sealed partial class Table
     }
 
     /// <summary>
+    /// Stop the waiting settle and the wait for the frame that shows one, so neither rebuilds a
+    /// view that is gone nor holds this table alive through the static rendering event.
+    /// </summary>
+    private void StopSettling()
+    {
+        _settleDue?.Stop();
+        if (_settleShowing)
+        {
+            Microsoft.UI.Xaml.Media.CompositionTarget.Rendering -= OnSettleShown;
+            _settleShowing = false;
+        }
+    }
+
+    /// <summary>
     /// Take the sorted order at the end of the current interval, whether or not the source moves
     /// again in the meantime. Without this a table whose source went quiet would hold the order it
     /// was last left in.

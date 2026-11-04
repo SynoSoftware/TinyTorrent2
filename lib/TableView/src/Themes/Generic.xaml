@@ -52,14 +52,12 @@
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="body:Row">
-          <Grid x:Name="Root">
-            <ContentPresenter
-              Content="{TemplateBinding Content}"
-              ContentTemplate="{TemplateBinding ContentTemplate}"
-              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
-            />
-
+          <ContentPresenter
+            x:Name="Root"
+            Content="{TemplateBinding Content}"
+            ContentTemplate="{TemplateBinding ContentTemplate}"
+            HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+            VerticalAlignment="{TemplateBinding VerticalContentAlignment}">
             <VisualStateManager.VisualStateGroups>
               <!-- Section 16: the moving packet stays identifiable, in the same
                                  treatment the platform gives a dragged list item and section 11
@@ -91,7 +89,7 @@
                 </VisualState>
               </VisualStateGroup>
             </VisualStateManager.VisualStateGroups>
-          </Grid>
+          </ContentPresenter>
         </ControlTemplate>
       </Setter.Value>
     </Setter>

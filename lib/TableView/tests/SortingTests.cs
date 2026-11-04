@@ -352,7 +352,7 @@ public class SortingTests
     /// <summary>
     /// Section 9's owner ruling. When the rows take their sorted order, the row under the pointer
     /// keeps its place and the others sort around it. Pointing at another row moves nothing; the
-    /// next refresh freezes that row instead.
+    /// next refresh freezes that row instead, and leaving the rows sorts it.
     /// </summary>
     [TestMethod]
     public Task Section9_ALiveSortLeavesTheRowUnderThePointerWhereItIs() =>
@@ -390,6 +390,14 @@ public class SortingTests
                 h.ViewKeys(),
                 "the next refresh freezes the newly pointed row instead"
             );
+
+            Proof.Call(h.Table, "StopPointing");
+
+            CollectionAssert.AreEqual(
+                new[] { "k3", "k0", "k2", "k4", "k1" },
+                h.ViewKeys(),
+                "leaving the rows puts the frozen row in its sorted place"
+            );
         });
 
     [TestMethod]
@@ -406,8 +414,8 @@ public class SortingTests
 
     /// <summary>
     /// Section 9: inside the interval arrivals and leavers wait, and the settle applies them with
-    /// the moves in one update. A waiting leaver looks and acts as any row until the pointer
-    /// holds the rows.
+    /// the moves in one update. A waiting leaver refuses actions at once, and looks as any row
+    /// until the pointer holds the rows.
     /// </summary>
     [TestMethod]
     public Task ChangesInsideTheIntervalWaitForTheSettle() =>
@@ -422,10 +430,10 @@ public class SortingTests
             h.Rows.Add(new("arrival", 0));
             CollectionAssert.AreEqual(new[] { "k0", "k1", "k2", "k3" }, h.ViewKeys(), "the change waits");
             Assert.IsFalse((bool)Proof.Call(table, "ShowsHeld", leaver)!, "the waiting leaver keeps its look");
-            Assert.IsTrue((bool)Proof.Call(table, "IsInteractive", leaver)!, "the waiting leaver acts as any row");
+            Assert.IsFalse((bool)Proof.Call(table, "IsInteractive", leaver)!, "the source no longer has the waiting leaver");
             Proof.Call(table, "PointAt", h.Rows[0]);
             Assert.IsTrue((bool)Proof.Call(table, "ShowsHeld", leaver)!, "the pointer gives it the held look");
-            Assert.IsFalse((bool)Proof.Call(table, "IsInteractive", leaver)!, "a row in the held look refuses actions");
+            Assert.IsFalse((bool)Proof.Call(table, "IsInteractive", leaver)!, "it still refuses actions");
             Proof.Call(table, "StopPointing");
             CollectionAssert.AreEqual(new[] { "k0", "k1", "k2", "k3" }, h.ViewKeys(), "it still waits for the settle");
 

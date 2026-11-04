@@ -371,8 +371,12 @@ public sealed partial class Table
 
         ReconcileDrag();
         QueueRealized();
-        if (settles)
+        // A publish that only swapped row instances changed nothing on screen, so it starts no
+        // interval.
+        if (settles && viewMoved)
+        {
             ShowSettle();
+        }
 
         if (viewMoved)
         {

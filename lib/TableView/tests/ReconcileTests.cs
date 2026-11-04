@@ -113,6 +113,23 @@ public class ReconcileTests
         );
     }
 
+    /// <summary>
+    /// A list scrolled past the end of a shorter different list: the list clamps its offset to the
+    /// new end, so it must be told about the rows there, or they appear without arriving.
+    /// </summary>
+    [TestMethod]
+    public void AShorterDifferentListAnnouncesTheRowsAtItsEnd()
+    {
+        object view = NewView(Rows(60));
+        object[] snapshot = Rows(8);
+
+        Watcher watch = new(view);
+        Reconcile(view, snapshot, Enumerable.Range(30, 16).ToArray());
+
+        CollectionAssert.AreEqual(snapshot, Rows(view), "the view is the snapshot");
+        watch.AssertListAgreesAt(Enumerable.Range(0, 8).ToArray(), view);
+    }
+
     // ------------------------------------------------------------------ a pinned row
 
     /// <summary>

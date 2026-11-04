@@ -201,8 +201,15 @@ public class KeyboardAndGestureTests
             Assert.IsTrue(h.Page(1));
             Assert.AreSame(h[boundary], h.Table.Selection.Current);
 
+            // From the boundary, a page is every row whose bottom fits one viewport below the
+            // boundary's top; rows after the first share one height.
+            double rowHeight = ((FrameworkElement)surface.ContainerFromIndex(1)).ActualHeight;
+            int page = Math.Min(
+                boundary + (int)Math.Floor((scroller.ViewportHeight + 0.5) / rowHeight) - 1,
+                h.Rows.Count - 1
+            );
             Assert.IsTrue(h.Page(1, extend: true));
-            Assert.IsTrue(h.Table.Selection.Current is Row current && current.Rank > boundary);
+            Assert.AreSame(h[page], h.Table.Selection.Current, "the second page moves a full page");
             Assert.IsTrue(h.Table.Selection.Items.Contains(h[boundary]));
         });
 

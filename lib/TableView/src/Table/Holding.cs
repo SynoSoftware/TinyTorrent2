@@ -52,18 +52,17 @@ public sealed partial class Table
     private bool IsHeld(object? item) => item is not null && _held.Contains(item);
 
     /// <summary>
-    /// A held row shows the held look and refuses every action only while the pointer holds the
-    /// rows. A row that waits for the settle with the pointer away looks and acts as any row does,
-    /// because nothing on screen would tell the person why it refused.
+    /// A held row shows the held look only while the pointer holds the rows. A row that waits for
+    /// the settle with the pointer away looks as any row does until it leaves.
     /// </summary>
     internal bool ShowsHeld(object? item) => IsPointed && IsHeld(item);
 
     /// <summary>
     /// Section 5's interaction predicate as the table applies it: the host's answer, and never a
-    /// row that shows the held look.
+    /// held row, because the source no longer has it, however long its removal waits.
     /// </summary>
     internal bool IsInteractive(object item) =>
-        !ShowsHeld(item) && CanInteract?.Invoke(item) != false;
+        !IsHeld(item) && CanInteract?.Invoke(item) != false;
 
     /// <summary>
     /// Apply at once the change the person caused to whether the source has
@@ -228,7 +227,10 @@ public sealed partial class Table
         }
 
         // Without a held row the view is a subset of the source, so a shorter view means rows wait.
-        if (_held.Count == 0 && _view.Count == _source.Snapshot.Count)
+        // Under a sort that reorders, the pointed row kept its index, so it takes its sorted place
+        // now rather than at the next update, which a quiet source may never send.
+        bool reorders = SortsLocally && !SortsOrder;
+        if (_held.Count == 0 && _view.Count == _source.Snapshot.Count && !reorders)
         {
             return;
         }

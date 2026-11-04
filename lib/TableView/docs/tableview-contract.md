@@ -521,7 +521,8 @@ membership-only update, such as a host filter over an already-ordered source,
 raises exactly the notifications it raised before this rule and no others.
 An update that shares no row with the view, a different list, is the one
 exception: the rows at held positions animate out and the new rows at those
-positions animate in, every other position takes its new row without a
+positions animate in, counted back from the new end where a held position is
+past it, every other position takes its new row without a
 notification, and the change in count is raised at the end. Raising each of
 5,000 removals and arrivals at its true position costs about 90 ms of native
 work for rows that are not on screen.
@@ -552,9 +553,9 @@ moving while they work.
 - The hold is a presentation of the source. The host's collection is never
   modified, and the latest snapshot is still the base sequence the next
   update and `RefreshView()` start from.
-- While the pointer holds the rows, a held row cannot be selected, invoked,
-  context-clicked, or dragged, and keyboard navigation skips it, as for a
-  non-interactive item. Selection pruning follows the rule below, so the
+- A held row cannot be selected, invoked, context-clicked, or dragged, and
+  keyboard navigation skips it, as for a non-interactive item, because the
+  source no longer has it. Selection pruning follows the rule below, so the
   selected packet then names no held row. Reorder destinations come from the
   separately supplied complete order.
 - A change the person caused applies at once, even with the pointer over the
@@ -569,8 +570,7 @@ moving while they work.
 - A held row that comes back into the source stops being held.
 - Inside a sort's settling interval the same hold keeps membership, with the
   pointer anywhere, until the settle; section 9 states when. With the pointer
-  away, a held row keeps its normal look and acts as any row, because nothing
-  on screen would tell the person why it refused.
+  away, a held row keeps its normal look and still refuses every action.
 - A table that shows no rows takes its arrivals at once: nothing on screen can
   move.
 - A sort change moves every row anyway, so it takes the source whole.
@@ -1011,7 +1011,7 @@ change until the settle at the end of the interval waits with it: arrivals,
 leavers and the rows' new places land together in one update. The interval
 starts when the frame that shows an applied change renders, so changes in the
 same UI turn land with it. A row that leaves while it waits keeps its normal
-look and acts as any row while the pointer is away, and fades out with the
+look while the pointer is away, refuses every action, and fades out with the
 update. Changes the person caused (`Release`), a switch to a list that shares no
 row with the view, and the first rows of an empty table apply at once. The list
 animates no change that comes within one second of its previous change
@@ -1027,6 +1027,8 @@ for the row whose context menu is open, and during a pointer gesture over the
 rows the frozen row stays the one the gesture began on. When the pointer moves
 to another row, that row is
 the frozen one from then on; nothing re-sorts merely because the pointer moved.
+When the pointer leaves the rows, the frozen row takes its sorted place at
+once, because a quiet source may send no later update to move it.
 Rows section 5.3 holds keep their positions the same way. The owner chose this
 over freezing the whole table, so the table stays useful while the pointed
 target stays still. It applies under a sort that reorders: natural order and

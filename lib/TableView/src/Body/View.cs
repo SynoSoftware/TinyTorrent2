@@ -111,10 +111,11 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
     /// notifications give the list that; a reset drops every container and shows the new rows in
     /// one step. So every change comes through here as removals and insertions, a sort included.
     /// <para>
-    /// A snapshot that is already the view, the same instances in the same order, costs one
-    /// comparison per row and nothing else. The host re-projects after ticks that changed nothing
-    /// visible, and this is what keeps that free. A snapshot that shares no row with the view is a
-    /// different list, and <see cref="Flip"/> replaces it in one step.
+    /// A snapshot that is already the view, the same rows in the same order, costs one comparison
+    /// per row and raises nothing; a new instance of a row takes its place quietly. The host
+    /// re-projects after ticks that changed nothing visible, and this is what keeps that free. A
+    /// snapshot that shares no row with the view is a different list, and <see cref="Flip"/>
+    /// replaces it in one step.
     /// </para>
     /// <para>
     /// Otherwise four passes, and the order of them is the point. Membership first, raised where it
@@ -192,10 +193,10 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
             RemoveAt(realized[r]);
         }
 
-        // Every new row except the ones inserted at a realized position below is placed quietly,
-        // so the count before those inserts is the new count less their number.
-        int shown = realized.Count(index => index < snapshot.Count);
-        int quiet = snapshot.Count - shown;
+        // Every new row except the ones inserted with a notification below is placed quietly, so
+        // the count before those inserts is the new count less their number.
+        List<int> shown = ShownAfterFlip(realized, snapshot.Count);
+        int quiet = snapshot.Count - shown.Count;
         while (Count > quiet)
         {
             RemoveAt(Count - 1);
@@ -205,7 +206,7 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
         int next = 0;
         for (int i = 0; i < snapshot.Count; i++)
         {
-            if (next < realized.Count && realized[next] == i)
+            if (next < shown.Count && shown[next] == i)
             {
                 next++;
                 continue;
@@ -223,15 +224,34 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
             at++;
         }
 
-        foreach (int i in realized)
+        foreach (int i in shown)
         {
-            if (i >= snapshot.Count)
-            {
-                break;
-            }
-
             Insert(i, snapshot[i]);
         }
+    }
+
+    /// <summary>
+    /// The positions whose new rows <see cref="Flip"/> inserts with a notification, ascending:
+    /// every realized position the new list still has, and for each realized position past its
+    /// end, one counted back from the end, where the list's offset lands once it clamps to the
+    /// shorter list. Without those, a list scrolled past the new end would show the new rows with
+    /// no arrival.
+    /// </summary>
+    private static List<int> ShownAfterFlip(List<int> realized, int count)
+    {
+        HashSet<int> shown = new(realized.Where(index => index < count));
+        int beyond = realized.Count - shown.Count;
+        for (int i = count - 1; beyond > 0 && i >= 0; i--)
+        {
+            if (shown.Add(i))
+            {
+                beyond--;
+            }
+        }
+
+        List<int> ascending = new(shown);
+        ascending.Sort();
+        return ascending;
     }
 
     /// <summary>
@@ -453,10 +473,21 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
 
         for (int i = 0; i < Count; i++)
         {
-            if (!ReferenceEquals(this[i], snapshot[i]))
+            if (!_identity.Equals(this[i], snapshot[i]))
             {
+                _rebound.Clear();
                 return false;
             }
+
+            if (!ReferenceEquals(this[i], snapshot[i]))
+            {
+                _rebound.Add(i);
+            }
+        }
+
+        foreach (int i in _rebound)
+        {
+            Items[i] = snapshot[i];
         }
 
         return true;
