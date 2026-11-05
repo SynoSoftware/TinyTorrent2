@@ -203,8 +203,10 @@ public sealed partial class PeerMap : UserControl
 
     private void RefreshPlace()
     {
-        if (_selected?.Group.Place != _model.Place)
-            _selected = _model.Destinations.FirstOrDefault(destination => destination.Group.Place == _model.Place);
+        var key = _selected?.Key;
+        _selected = _model.Destinations.FirstOrDefault(destination =>
+            destination.Key == key && destination.Group.Place == _model.Place)
+            ?? _model.Destinations.FirstOrDefault(destination => destination.Group.Place == _model.Place);
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs args)
@@ -233,11 +235,19 @@ public sealed partial class PeerMap : UserControl
                 if (_renderer is { } renderer)
                     renderer.UseDevice(device, dpi);
                 else
+                {
                     _renderer = new MapRenderer(device, dpi, Invalidate, DispatcherQueue, motion, _model, _viewport, world)
                     {
                         Animation = _animation,
                         DotTotal = _dotTotal,
                     };
+                    _renderer.AnimationChanged += (_, _) =>
+                    {
+                        QueuePreparation();
+                        Invalidate();
+                        DotBytesChanged?.Invoke(this, EventArgs.Empty);
+                    };
+                }
                 QueuePreparation();
             };
             // A transparent background takes the pointer; the map's layer

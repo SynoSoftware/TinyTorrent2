@@ -55,6 +55,7 @@ public sealed partial class MainWindow
         "traffic" => CaptureMode.Traffic,
         "peers" => CaptureMode.Peers,
         "peer-switch" => CaptureMode.PeerSwitch,
+        "map" => CaptureMode.Map,
         "selection" => CaptureMode.Selection,
         "selection-frame" => CaptureMode.SelectionFrame,
         "connections" => CaptureMode.Connections,
@@ -2355,6 +2356,11 @@ public sealed partial class MainWindow
             if (ReviewMode == CaptureMode.Memory)
             {
                 await CaptureMemory(outcomes);
+                return;
+            }
+            if (ReviewMode == CaptureMode.Map)
+            {
+                await CaptureMap(outcomes);
                 return;
             }
             if (ReviewMode is CaptureMode.SettingsPrototype or CaptureMode.SubtitleTasks)

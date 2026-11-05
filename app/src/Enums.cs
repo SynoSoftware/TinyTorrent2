@@ -884,6 +884,7 @@ internal enum CaptureMode
     Traffic,
     Peers,
     PeerSwitch,
+    Map,
     LibraryFiles,
     Selection,
     SelectionFrame,

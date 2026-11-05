@@ -370,6 +370,13 @@ font binding previously failed when table cells were created. Its review report
 records the map's draw times for 100, 1,000 and 10,000 known peers, for each
 wheel step of a zoom from 1× to 128×, and for drags across the land at 8×,
 32× and 128×.
+Use `Capture.ps1 -Review map` for map state and lifetime changes. This focused
+journey checks suspended byte accounting, the chosen destination's current
+group, an offscreen country's settled fade, and a settings-change notification
+with unchanged observations. It removes running and paused maps and verifies
+that their owned bitmaps are closed. It uses synthetic peers and sends a
+notification only to its own window, without changing Windows preferences or
+capturing screenshots.
 Use `TINYTORRENT_CAPTURE_REVIEW=add-layout` for the workspace headers and empty/long-link
 magnet Add dialog in English and Spanish, Light and Dark, at the three review sizes.
 It also captures the engine-stopped message bar with its Restart action and records

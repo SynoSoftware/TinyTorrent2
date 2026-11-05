@@ -96,8 +96,15 @@ internal sealed class MapDots<TRoute>(long smallest)
         Settle(now, reshaped);
     }
 
-    /// <summary>Removes every dot in flight, as when animations turn off.</summary>
-    internal void Clear() => _flying.Clear();
+    /// <summary>Ends traffic accounting while keeping the last dot size for the legend.</summary>
+    internal void Clear()
+    {
+        _flying.Clear();
+        _lanes.Clear();
+        _target = null;
+        _lowerSince = null;
+        Total = 0;
+    }
 
     /// <summary>
     /// Lands the dots whose trip is over and launches a dot for every

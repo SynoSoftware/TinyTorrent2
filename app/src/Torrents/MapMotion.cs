@@ -104,6 +104,7 @@ internal sealed class MapMotion : IDisposable
         };
         Control.Update += OnUpdate;
         Control.Draw += OnDraw;
+        Control.GameLoopStopped += OnStopped;
     }
 
     /// <summary>The control that shows the map, to place where the map goes.</summary>
@@ -131,7 +132,7 @@ internal sealed class MapMotion : IDisposable
     /// </summary>
     internal void Draw(MapView view, Func<CanvasDrawingSession, bool> draw)
     {
-        if (_device is not { } device)
+        if (_disposed || _device is not { } device)
             return;
         Picture? picture = null;
         try
@@ -183,6 +184,8 @@ internal sealed class MapMotion : IDisposable
     /// </summary>
     internal void Show(Scene? scene)
     {
+        if (_disposed)
+            return;
         var previous = _scene;
         Volatile.Write(ref _scene, scene);
         // A new colour moves no dot, so a sleeping loop sleeps on.
@@ -195,7 +198,22 @@ internal sealed class MapMotion : IDisposable
         _disposed = true;
         _wake.Stop();
         Volatile.Write(ref _scene, null);
+        Control.Update -= OnUpdate;
+        Control.Draw -= OnDraw;
         Control.RemoveFromVisualTree();
+    }
+
+    private void OnStopped(ICanvasAnimatedControl sender, object args)
+    {
+        // Win2D stops the game loop before raising Unloaded, so no draw can
+        // still be using a picture or the mark while they are released here.
+        _shown?.Bitmap.Dispose();
+        _shown = null;
+        _mark?.Dispose();
+        _mark = null;
+        Interlocked.Exchange(ref _pending, null)?.Bitmap.Dispose();
+        while (_free.TryDequeue(out var picture))
+            picture.Bitmap.Dispose();
     }
 
     // Until the game loop presents its first frame, a new surface can show

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using Microsoft.Graphics.Canvas;
 using Microsoft.Graphics.Canvas.Brushes;
 using Microsoft.Graphics.Canvas.Effects;
@@ -16,6 +17,9 @@ namespace Syno.TinyTorrent.Torrents;
 internal sealed class MapRenderer : IDisposable
 {
     private readonly Action _invalidate;
+    private readonly DispatcherQueue _dispatcher;
+    private readonly nint _windowHandle;
+    private readonly SubclassProc _procedure;
     private CanvasDevice _device;
     private float _dpi;
     private readonly MapModel _model;
@@ -85,18 +89,51 @@ internal sealed class MapRenderer : IDisposable
         _device = device;
         _dpi = dpi;
         _invalidate = invalidate;
+        _dispatcher = dispatcher;
         _motion = motion;
         _model = model;
         _viewport = viewport;
         _world = world;
         _animation = dispatcher.CreateTimer();
         _animation.Tick += (_, _) => Animate();
+        _windowHandle = Microsoft.UI.Win32Interop.GetWindowFromWindowId(motion.Control.XamlRoot.ContentIslandEnvironment.AppWindowId);
+        _procedure = OnMessage;
+        if (!SetWindowSubclass(_windowHandle, _procedure, 0, 0))
+            throw new InvalidOperationException();
     }
 
     private static readonly TimeSpan Frame = TimeSpan.FromMilliseconds(33);
 
     /// <summary>Whether Windows lets the map animate: animations on and High Contrast off.</summary>
     internal static bool SystemAnimates => SystemSettings.AnimationsEnabled && !SystemAccessibility.HighContrast;
+
+    internal event EventHandler? AnimationChanged;
+
+    private nint OnMessage(nint window, uint message, nuint wParam, nint lParam, nuint subclassId, nuint reference)
+    {
+        // WM_SETTINGCHANGE covers animation and contrast preferences on the
+        // app's Windows 10 1809 minimum, before AnimationsEnabledChanged exists.
+        if (message == 0x001A)
+            _dispatcher.TryEnqueue(() =>
+            {
+                if (!_disposed)
+                    AnimationChanged?.Invoke(this, EventArgs.Empty);
+            });
+        return DefSubclassProc(window, message, wParam, lParam);
+    }
+
+    private delegate nint SubclassProc(nint window, uint message, nuint wParam, nint lParam, nuint subclassId, nuint reference);
+
+    [DllImport("comctl32.dll", ExactSpelling = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetWindowSubclass(nint window, SubclassProc procedure, nuint subclassId, nuint reference);
+
+    [DllImport("comctl32.dll", ExactSpelling = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool RemoveWindowSubclass(nint window, SubclassProc procedure, nuint subclassId);
+
+    [DllImport("comctl32.dll", ExactSpelling = true)]
+    private static extern nint DefSubclassProc(nint window, uint message, nuint wParam, nint lParam);
 
     internal MapAnimation Animation { get; set; } = MapAnimation.Normal;
 
@@ -171,6 +208,7 @@ internal sealed class MapRenderer : IDisposable
     public void Dispose()
     {
         _disposed = true;
+        RemoveWindowSubclass(_windowHandle, _procedure, 0);
         _animation.Stop();
         ReleaseGeometry();
         _displayed.Clear();
@@ -721,6 +759,10 @@ internal sealed class MapRenderer : IDisposable
         foreach (var route in _routes)
             _displayed[route.Destination.Key] =
                 route.Start + (route.Strength - route.Start) * (float)progress;
+        foreach (var group in _model.Countries.Values.Where(group => group.Estimated))
+            _displayed[new DestinationKey(group.Code, null, true)] =
+                _countryStarts[group.Code]
+                + (_countryTargets[group.Code] - _countryStarts[group.Code]) * (float)progress;
         var bounds = new Rect(
             _viewport.Offset.X + (west - _viewport.Center.X) * scale.X,
             0,
@@ -746,10 +788,7 @@ internal sealed class MapRenderer : IDisposable
                     var fill = land;
                     if (_model.Countries.TryGetValue(code, out var group) && group.Estimated)
                     {
-                        var strength =
-                            _countryStarts[code]
-                            + (_countryTargets[code] - _countryStarts[code]) * (float)progress;
-                        _displayed[new DestinationKey(code, null, true)] = strength;
+                        var strength = _displayed[new DestinationKey(code, null, true)];
                         fill = Blend(land, down, group.Active > 0 ? .1 + .35 * strength : .08);
                     }
                     if (Filled(code, outline, turn, visible) is { } cached)

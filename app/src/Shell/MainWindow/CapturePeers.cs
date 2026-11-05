@@ -4,6 +4,7 @@ using System.Net;
 using System.Numerics;
 using System.Reflection;
 using System.Text.Json;
+using Microsoft.Graphics.Canvas;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Automation.Provider;
@@ -19,6 +20,148 @@ namespace Syno.TinyTorrent.Shell;
 
 public sealed partial class MainWindow
 {
+    private async Task CaptureMap(List<object> outcomes)
+    {
+        var route = new object();
+        var dots = new MapDots<object>(1024);
+        dots.Update([new(route, 65536, 0, 320)], 400000, 1048576, .5, 1, 0);
+        dots.Advance(Stopwatch.Frequency / 2);
+        if (dots.Flying.Count == 0)
+            throw new InvalidOperationException("The suspension fixture did not start download dots.");
+        var bytes = dots.Bytes;
+        dots.Clear();
+        dots.Update([new(route, 0, 65536, 320)], 400000, 1048576, .5, 1, 20 * Stopwatch.Frequency);
+        if (dots.Flying.Count != 0 || dots.Bytes != bytes)
+            throw new InvalidOperationException("Resuming counted disabled traffic or lost the last dot size.");
+        dots.Advance(21 * Stopwatch.Frequency);
+        if (dots.Flying.Count == 0 || dots.Flying.Any(dot => !dot.Upload))
+            throw new InvalidOperationException("Resumed traffic did not use only the current upload rate.");
+        outcomes.Add(new { journey = "map suspension accounting", disabledSeconds = 20, staleDots = 0 });
+
+        if (!MapRenderer.SystemAnimates)
+            throw new InvalidOperationException("The map lifecycle check needs Windows animations on and High Contrast off.");
+        const BindingFlags Flags = BindingFlags.Instance | BindingFlags.NonPublic;
+        static T Read<T>(object owner, string name) => (T)owner.GetType().GetField(name, Flags)!.GetValue(owner)!;
+        static async Task Until(Func<bool> ready, string failure)
+        {
+            var clock = Stopwatch.StartNew();
+            while (!ready())
+            {
+                if (clock.Elapsed > TimeSpan.FromSeconds(10))
+                    throw new TimeoutException(failure);
+                await Task.Delay(16);
+            }
+        }
+        var owner = Model.Inspector;
+        var originalPlace = owner.Place;
+        var location = new Location("US", new Place("US", null), null, null);
+        var origin = new Location("GB", new Place("GB", null), null, new GeoPoint(0, 51.5));
+        Peer MakePeer(double down) => new(Model.Text, "map-check", "192.0.2.1:51413", location,
+            JsonSerializer.SerializeToElement(new
+            {
+                state = "connected", role = "seed", client = "Map check", transport = "tcp",
+                encryption = "plain", sources = new[] { "tracker" }, incoming = false,
+                interested = true, choked = false, remote_interested = false, remote_choked = false,
+                read_wait = Array.Empty<string>(), write_wait = Array.Empty<string>(),
+                progress = 1, download_rate = down, upload_rate = 0, downloaded = 0, uploaded = 0,
+            }));
+        try
+        {
+            foreach (var paused in new[] { false, true })
+            {
+                owner.Place = null;
+                var model = new MapModel(owner);
+                var peer = MakePeer(65536);
+                model.Update([peer], origin, Model.Text, cities: false);
+                var map = new PeerMap(model) { Width = 640, Height = 400 };
+                Grid.SetRow(map, 1);
+                Root.Children.Add(map);
+                try
+                {
+                    await Until(() => Read<MapRenderer?>(map, "_renderer") is not null && map.MotionFrames > 0,
+                        "The map did not load and draw moving dots.");
+                    var renderer = Read<MapRenderer>(map, "_renderer");
+                    var motion = Read<MapMotion>(map, "_motion");
+                    if (!paused)
+                    {
+                        var chosen = model.Destinations[0];
+                        map.PlaceChanged += (_, place) => owner.Place = place;
+                        typeof(PeerMap).GetMethod("Choose", Flags)!.Invoke(map, [chosen]);
+                        var viewport = Read<MapViewport>(map, "_viewport");
+                        viewport.SetView(8, new Vector2(10, -50), 1);
+                        peer.Update(MakePeer(2097152));
+                        model.Update([peer], origin, Model.Text, cities: false);
+                        await Until(() => !Read<bool>(map, "_frameQueued") && !Read<bool>(renderer, "_interpolating"),
+                            "The map's first offscreen activity fade did not settle.");
+                        if (map.Described is not { } described || described.Key != chosen.Key
+                            || described.Group.Down != 2097152 || ReferenceEquals(described.Group, chosen.Group))
+                            throw new InvalidOperationException("The chosen destination retained its previous group or speed.");
+                        peer.Update(MakePeer(2097153));
+                        model.Update([peer], origin, Model.Text, cities: false);
+                        await Until(() => !Read<bool>(map, "_frameQueued"), "The unchanged map preparation did not finish.");
+                        if (Read<bool>(renderer, "_interpolating"))
+                            throw new InvalidOperationException("An offscreen country's old strength restarted an activity fade.");
+                        outcomes.Add(new { journey = "map live selection and offscreen fade", selectedDown = 2097152, repeatedFade = false });
+
+                        var notified = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                        map.DotBytesChanged += (_, _) =>
+                        {
+                            if (!DispatcherQueue.HasThreadAccess)
+                                notified.TrySetException(new InvalidOperationException("Map preferences were delivered off the UI thread."));
+                            else
+                                notified.TrySetResult();
+                        };
+                        SendMessageW(WinRT.Interop.WindowNative.GetWindowHandle(this), 0x001A, 0, 0);
+                        await notified.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                        await Until(() => !Read<bool>(map, "_frameQueued"), "The preference notification did not finish preparing the map.");
+                        outcomes.Add(new { journey = "map preference notification", uiThread = true, scope = "Notification dispatch with unchanged observations; Windows preferences unchanged." });
+                    }
+                    if (paused)
+                    {
+                        map.SetAnimation(MapAnimation.Off, MapDotTotal.Normal);
+                        await Until(() => motion.Control.Paused && !Read<bool>(map, "_frameQueued"),
+                            "Animation Off did not pause the motion control.");
+                    }
+                    List<CanvasRenderTarget> resources = [];
+                    await motion.Control.RunOnGameLoopThreadAsync(() =>
+                    {
+                        foreach (var name in new[] { "_shown", "_pending" })
+                            if (Read<object?>(motion, name) is { } picture)
+                                resources.Add((CanvasRenderTarget)picture.GetType().GetProperty("Bitmap", Flags)!.GetValue(picture)!);
+                        foreach (var picture in Read<System.Collections.IEnumerable>(motion, "_free"))
+                            resources.Add((CanvasRenderTarget)picture.GetType().GetProperty("Bitmap", Flags)!.GetValue(picture)!);
+                        resources.Add(Read<CanvasRenderTarget>(motion, "_mark"));
+                    });
+                    var stopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    motion.Control.GameLoopStopped += (_, _) => stopped.TrySetResult();
+                    Root.Children.Remove(map);
+                    await stopped.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                    foreach (var resource in resources.Distinct())
+                    {
+                        try
+                        {
+                            using var drawing = resource.CreateDrawingSession();
+                        }
+                        catch (Exception error) when (error is ObjectDisposedException || error.HResult == unchecked((int)0x80000013))
+                        {
+                            continue;
+                        }
+                        throw new InvalidOperationException("An unloaded map left an owned bitmap open.");
+                    }
+                    outcomes.Add(new { journey = "map resource disposal", paused, closedResources = resources.Distinct().Count() });
+                }
+                finally
+                {
+                    Root.Children.Remove(map);
+                }
+            }
+        }
+        finally
+        {
+            owner.Place = originalPlace;
+        }
+    }
+
     private async Task CaptureSelection(List<object> outcomes)
     {
         await ShowTorrents();

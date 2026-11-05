@@ -87,7 +87,8 @@ provides one transform for drawing, hit testing and navigation, and
 `MapRenderer` retains route resources by destination identity. Changed peer
 inputs and resize prepare the retained presentation; drawing and pan alone do
 not regroup peers or publish model changes. Unload disposes the renderer and
-releases the geography, while Inspector retains plain map state.
+releases the geography; the motion layer releases its pictures and dot mark
+after its game loop stops. Inspector retains plain map state.
 
 The Peers inspector's ellipsis menu selects Map only, Table only or Map and table.
 Right-click anywhere in Peers opens the same menu, on the map, its Speed readout,
@@ -271,6 +272,9 @@ peer layout and start at Normal. Off draws the map still, without dots,
 legend or arc fades, and disables Total dots. Windows animations off or High
 Contrast on has the same effect and disables both submenus, because no choice
 in them would change the map.
+Windows preference changes apply while the map is open even when peer data
+is unchanged. Returning to animation uses current rates; time spent with
+animation off contributes no dots.
 
 The dots keep moving at the display's frame rate while the app works, such as
 while the Peers table fills. The map shows in a transparent Win2D
