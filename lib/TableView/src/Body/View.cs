@@ -16,7 +16,6 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
 {
     private readonly ItemIdentity _identity;
     private readonly Func<object, bool> _isSelected;
-    private readonly List<int> _rebound = new();
 
     internal View(ItemIdentity identity, Func<object, bool> isSelected)
     {
@@ -26,13 +25,6 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
 
     // Native vector events avoid marshaling a .NET collection event and its item lists per row.
     public event VectorChangedEventHandler<object>? VectorChanged;
-
-    /// <summary>
-    /// The positions where the last <see cref="Reconcile"/> put a new instance of a staying row
-    /// into a run of realized positions without a notification. The table shows each one in the
-    /// container that showed the old instance.
-    /// </summary>
-    internal IReadOnlyList<int> Rebound => _rebound;
 
     protected override void InsertItem(int index, object item)
     {
@@ -147,7 +139,6 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
         IReadOnlySet<object> pinned
     )
     {
-        _rebound.Clear();
         if (IsAlready(snapshot))
         {
             return false;
@@ -448,12 +439,8 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
                 {
                     // Same row, new instance. A notification would make the list build a new
                     // container and fade it in, so the row would blink although it stays; the
-                    // table rebinds the existing container instead (Rebound).
-                    if (!ReferenceEquals(this[i], next))
-                    {
-                        Items[i] = next;
-                        _rebound.Add(i);
-                    }
+                    // table rebinds the existing container instead.
+                    Items[i] = next;
                 }
                 else
                 {
@@ -463,7 +450,11 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
         }
     }
 
-    /// <summary>The snapshot is the view as it stands: the same instances in the same order.</summary>
+    /// <summary>
+    /// The snapshot is the view as it stands: the same rows in the same order. A new instance of
+    /// a row takes its place without a notification, also when a later row differs, because the
+    /// passes after this one compare rows by identity and carry the new instance where they move.
+    /// </summary>
     private bool IsAlready(IReadOnlyList<object> snapshot)
     {
         if (snapshot.Count != Count)
@@ -475,18 +466,9 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
         {
             if (!_identity.Equals(this[i], snapshot[i]))
             {
-                _rebound.Clear();
                 return false;
             }
 
-            if (!ReferenceEquals(this[i], snapshot[i]))
-            {
-                _rebound.Add(i);
-            }
-        }
-
-        foreach (int i in _rebound)
-        {
             Items[i] = snapshot[i];
         }
 

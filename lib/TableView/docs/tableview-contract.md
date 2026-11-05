@@ -1028,7 +1028,8 @@ rows the frozen row stays the one the gesture began on. When the pointer moves
 to another row, that row is
 the frozen one from then on; nothing re-sorts merely because the pointer moved.
 When the pointer leaves the rows, the frozen row takes its sorted place at
-once, because a quiet source may send no later update to move it.
+once, or at the settle inside the settling interval, because a quiet source
+may send no later update to move it.
 Rows section 5.3 holds keep their positions the same way. The owner chose this
 over freezing the whole table, so the table stays useful while the pointed
 target stays still. It applies under a sort that reorders: natural order and

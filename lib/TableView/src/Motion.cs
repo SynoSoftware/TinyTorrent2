@@ -62,14 +62,16 @@ internal static class Motion
 
         IReadOnlyList<VisibleColumn> visible = owner.EffectiveLayout.VisibleColumns;
 
-        // Cells that move the same distance share one animation, so a move creates one per
-        // distinct distance instead of one per realized cell.
+        // Every cell shares one animation: each starts from the translation Slide gives it, so the
+        // animation holds only the destination, the easing and the duration.
         Compositor compositor = ElementCompositionPreview.GetElementVisual(owner).Compositor;
-        CubicBezierEasingFunction easing = compositor.CreateCubicBezierEasingFunction(
-            new Vector2(0.1f, 0.9f),
-            new Vector2(0.2f, 1)
+        Vector3KeyFrameAnimation slide = compositor.CreateVector3KeyFrameAnimation();
+        slide.InsertKeyFrame(
+            1,
+            Vector3.Zero,
+            compositor.CreateCubicBezierEasingFunction(new Vector2(0.1f, 0.9f), new Vector2(0.2f, 1))
         );
-        Dictionary<double, Vector3KeyFrameAnimation> slides = new();
+        slide.Duration = Duration;
 
         foreach (CellsPanel panel in owner.RealizedPanels())
         {
@@ -90,14 +92,6 @@ internal static class Motion
                 double distance = was - visible[i].Offset;
                 if (Math.Abs(distance) >= MinimumMoveDips)
                 {
-                    if (!slides.TryGetValue(distance, out Vector3KeyFrameAnimation? slide))
-                    {
-                        slide = compositor.CreateVector3KeyFrameAnimation();
-                        slide.InsertKeyFrame(1, Vector3.Zero, easing);
-                        slide.Duration = Duration;
-                        slides.Add(distance, slide);
-                    }
-
                     Slide(panel.Children[i], distance, slide);
                 }
             }

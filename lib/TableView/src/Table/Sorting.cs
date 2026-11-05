@@ -66,8 +66,7 @@ public sealed partial class Table
     /// <remarks>
     /// A change applies at once when no change applied within the last interval. Otherwise it
     /// waits, with every later one, for the settle at the end of the interval, where arrivals,
-    /// leavers and moves land in one update. Changes the person caused (<see cref="Release"/>), a
-    /// different list and an empty table apply at once. This lives in the table rather than in the
+    /// leavers and moves land in one update. This lives in the table rather than in the
     /// host because the table knows which changes may wait: the person's own, a different list,
     /// and the row under the pointer, which keeps its place at the settle. Measured on the original
     /// host's 2,002-row list, per host publish, because with settling off every publish reorders
@@ -268,9 +267,8 @@ public sealed partial class Table
     /// would appear and vanish without their transition. Inside the interval the hold of
     /// section 5.3 therefore keeps a row that leaves and holds back a row that arrives, as it does
     /// while the rows are pointed at, and the settle applies them with the moves in one update.
-    /// Changes the person caused (<see cref="Release"/>), a different list, and the first rows of
-    /// an empty view apply at once. When the rows do take their sorted places, the pointed row
-    /// keeps its own (section 9).
+    /// <see cref="Hold"/> names the changes that apply at once. When the rows do take their sorted
+    /// places, the pointed row keeps its own (section 9).
     /// </para>
     /// </remarks>
     /// <returns>
@@ -418,18 +416,18 @@ public sealed partial class Table
     /// null when <paramref name="shown"/> is not that same set of rows.
     /// </summary>
     /// <remarks>
-    /// Settling keeps position and never membership, so a snapshot that adds or removes a row is
-    /// not a settling case at all: the caller takes the sorted order for it, which puts the arrival
-    /// where it belongs straight away. Only a snapshot of exactly the same rows can be kept, and
-    /// keeping it is then a copy rather than a merge. While the rows are pointed at, the hold has
-    /// already removed every membership change, so the rows are always the same.
+    /// A kept order never merges membership: a snapshot that adds or removes a row is not kept, and
+    /// the caller takes the sorted order for it, which puts the arrival where it belongs straight
+    /// away. Only a snapshot of exactly the same rows can be kept, and keeping it is then a copy
+    /// rather than a merge. While the rows are pointed at, and inside the settling interval, the
+    /// hold has already deferred every membership change, so the rows are always the same.
     /// <para>
     /// This is also what keeps the cost bounded. An earlier version placed each arrival into the
     /// held order by scanning it, which is fine for a row or two and is not fine for a filter
     /// change: widening the original host's filter to every row brings about 900 rows back at
     /// once, and scanning for each of them is roughly 1.4 million comparer calls on an order that
-    /// is not sorted anyway, so their positions would have been close to arbitrary. Deferring
-    /// nothing about membership removes the merge, the cost and the arbitrary placement together.
+    /// is not sorted anyway, so their positions would have been close to arbitrary. Leaving
+    /// membership to the hold removes the merge, the cost and the arbitrary placement together.
     /// </para>
     /// </remarks>
     private List<object>? KeptOrder(IReadOnlyList<object> shown, IReadOnlySet<object> held)

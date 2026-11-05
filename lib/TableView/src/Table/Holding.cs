@@ -128,7 +128,8 @@ public sealed partial class Table
     }
 
     /// <summary>
-    /// The pointer has left the rows; what the hold kept back applies unless a menu still holds it.
+    /// The pointer has left the rows; what the hold kept back applies unless a menu still holds it,
+    /// and inside a sort's settling interval it applies at the settle.
     /// </summary>
     private void StopPointing()
     {
@@ -228,7 +229,8 @@ public sealed partial class Table
 
         // Without a held row the view is a subset of the source, so a shorter view means rows wait.
         // Under a sort that reorders, the pointed row kept its index, so it takes its sorted place
-        // now rather than at the next update, which a quiet source may never send.
+        // now, or at the settle inside the interval, rather than at the next update, which a quiet
+        // source may never send.
         bool reorders = SortsLocally && !SortsOrder;
         if (_held.Count == 0 && _view.Count == _source.Snapshot.Count && !reorders)
         {

@@ -1103,8 +1103,8 @@ public sealed partial class Table
     /// The view index a page key moves to from <paramref name="index"/>, read from the realized
     /// rows' positions, because rows can differ in height. The list realizes only a small cache
     /// past the viewport, so a page that reaches beyond the last realized row continues at that
-    /// row's height. Without a realized current row it is the next row, which the move then
-    /// scrolls into view.
+    /// row's height. A current row scrolled out of view moves by a viewport of rows at a
+    /// realized row's height, and the move then scrolls the target into view.
     /// </summary>
     private int PageBoundary(int index, int direction)
     {
@@ -1114,14 +1114,18 @@ public sealed partial class Table
             return next;
         }
 
+        double viewport = scroller.ViewportHeight;
         if (RowBounds(index, scroller) is not Rect current)
         {
-            return next;
+            double height = RealizedIndices()
+                .Select(row => RowBounds(row, scroller)?.Height ?? 0)
+                .FirstOrDefault(rowHeight => rowHeight > 0);
+            int rows = height > 0 ? Math.Max(1, (int)(viewport / height)) : 1;
+            return Math.Clamp(index + rows * direction, 0, View.Count - 1);
         }
 
         // Layout rounding can leave a fully shown row a fraction of a pixel past the edge.
         const double Slack = 0.5;
-        double viewport = scroller.ViewportHeight;
         int visible = index;
         int page = index;
         Rect last = current;

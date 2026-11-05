@@ -82,9 +82,9 @@ public sealed partial class Table
     public event EventHandler<IReadOnlyList<object>>? RealizedItemsChanged;
 
     /// <summary>
-    /// Show each new instance <see cref="Body.View.Rebound"/> lists in the container that showed
-    /// the old one. The container keeps its place and look, and its row element rebinds through
-    /// its <c>DataContext</c>.
+    /// Show in each realized container the instance the view now holds at its position, where the
+    /// reconcile put a new instance of the same row without a notification. The container keeps
+    /// its place and look, and its row element rebinds through its <c>DataContext</c>.
     /// </summary>
     /// <remarks>
     /// The list still records the old instance for that container, and its
@@ -94,9 +94,12 @@ public sealed partial class Table
     /// </remarks>
     private void RebindRows()
     {
-        foreach (int index in _view.Rebound)
+        foreach (int index in RealizedIndices())
         {
-            if (_surface?.ContainerFromIndex(index) is ContentControl container)
+            if (
+                _surface?.ContainerFromIndex(index) is ContentControl container
+                && !ReferenceEquals(container.Content, _view[index])
+            )
             {
                 container.Content = _view[index];
             }
