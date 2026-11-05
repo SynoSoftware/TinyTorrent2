@@ -28,17 +28,19 @@ TableView's cancellable preparation API. A new click cancels old preparation;
 only the current result reaches the UI dispatcher. MenuItems skips unchanged
 entries, so a refresh does not rewrite every closed menu's controls.
 When every choice has a content icon, as in View, choices retain those icons
-beside native state indicators. Mutually exclusive choices use native radio
-items in named groups; independent options use native toggle items. If a choice
+beside native state indicators. Mutually exclusive choices use named groups
+and radio indicators; independent options use checkmarks. Retained choices use
+the native toggle template and automation peer, with a radio glyph for grouped
+choices; menus that dismiss use native radio and toggle items. If a choice
 has no content icon, as in Torrent, all choices draw their state in the existing
 icon column: independent options use Segoe checked, empty or mixed squares, and
 grouped choices use filled or empty radio circles. A native toggle there would reserve an
 otherwise empty checkmark column beside every command. The described state
 remains authoritative when navigation is refused by an unfinished draft.
 MenuItems applies the [choices ruling](../ui.md#native-controls-and-visual-authority):
-after a choice, or a command that asks for it, it refuses the close that the
-click raises, describes the menu again and opens the submenu that held the
-click again, because WinUI closes submenus before that close.
+choices and commands that ask to stay open consume activation before WinUI's
+default invocation can dismiss the submenu. They execute their command and
+describe the menu again in place, so the open submenu and keyboard focus remain.
 `MenuItems.Picker` builds the language and workspace menus, whose choice closes them.
 
 The custom title bar contains one row: workspace dropdown, File/Torrent/View/Help

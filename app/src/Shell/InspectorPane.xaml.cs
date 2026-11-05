@@ -24,6 +24,7 @@ public sealed partial class InspectorPane : UserControl
     private (Torrent Target, int Index)? _fileReveal;
     public Inspector Model { get; }
     internal event EventHandler? LayoutChanged;
+    internal event EventHandler? ViewChanged;
     internal InspectorLayout Layout
     {
         get =>
@@ -57,6 +58,12 @@ public sealed partial class InspectorPane : UserControl
             {
                 var columns = order.ToList();
                 columns.Insert(columns.IndexOf("location") + 1, "city");
+                peers = peers with { Order = columns };
+            }
+            if (peers is { Order: { } saved } && saved.Contains("endpoint") && !saved.Contains("port"))
+            {
+                var columns = saved.ToList();
+                columns.Insert(columns.IndexOf("endpoint") + 1, "port");
                 peers = peers with { Order = columns };
             }
             _layout = value with { Peers = peers, View = view };
@@ -183,7 +190,8 @@ public sealed partial class InspectorPane : UserControl
                 Peers
                     .Schema<Peer>()
                     .Key(peer => peer.Key)
-                    .SortKey(EndpointColumn, peer => peer.Endpoint)
+                    .SortKey(AddressColumn, peer => peer.Address)
+                    .SortKey(PortColumn, peer => peer.Port)
                     .SortKey(ClientColumn, peer => peer.Client)
                     .SortKey(CountryColumn, peer => peer.CountryText)
                     .SortKey(CityColumn, peer => peer.CityText)
@@ -501,7 +509,8 @@ public sealed partial class InspectorPane : UserControl
         if (Peers is not null)
         {
             Peers.Strings = text.Table;
-            EndpointColumn.DisplayName = text.Get("peers", "endpoint");
+            AddressColumn.DisplayName = text.Get("peers", "endpoint");
+            PortColumn.DisplayName = text.Get("peers", "port");
             ClientColumn.DisplayName = text.Get("peers", "client");
             CountryColumn.DisplayName = text.Get("peers", "country");
             CityColumn.DisplayName = text.Get("peers", "city");

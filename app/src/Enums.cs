@@ -868,6 +868,8 @@ internal enum CaptureMode
     Smoke,
     Shell,
     Menus,
+    MenuChoices,
+    PeerPreferences,
     UpdateCheck,
     LocationWarning,
     Schedule,

@@ -897,6 +897,7 @@
     "summary": "{0} known peers · {1} connections · {2} active",
     "all_torrents": "All torrents",
     "endpoint": "Address",
+    "port": "Port",
     "client": "Client",
     "connection_label": "Connection",
     "uploaded": "Uploaded",

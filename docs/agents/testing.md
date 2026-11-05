@@ -424,6 +424,15 @@ icon, menu and command centers, and unused caption space. This catches controls
 classified as draggable or an icon without system-menu semantics. It sends no
 input and establishes only top-level hit classification, not physical pointer
 delivery, child input routing or native caption-button actions.
+`Capture.ps1 -Review menu-choices` checks repeated radio and checkbox activation
+in nested context menus without closing or unloading their items, retained
+keyboard focus, and ordinary command and picker dismissal. It uses disposable
+menu state and saves no screenshots. This guards the close-and-reopen flicker;
+the menu layout review does not invoke its choices.
+`Capture.ps1 -Review peer-preferences` changes the peer view twice in quick
+succession, verifies all map preferences in the disposable window layout before
+closing, and restores them through the production layout reader. It saves no
+screenshots and does not need a city database to retain the Cities preference.
 `Capture.ps1 -Review menus` checks the rendered text inset in Torrent and its
 context menu against File's icon-only column, with off, on and mixed choices.
 The owner explicitly requested this layout assertion to catch the return of an

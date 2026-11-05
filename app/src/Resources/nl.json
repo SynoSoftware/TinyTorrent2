@@ -897,6 +897,7 @@
     "summary": "{0} bekende peers · {1} verbindingen · {2} actief",
     "all_torrents": "Alle torrents",
     "endpoint": "Adres",
+    "port": "Poort",
     "client": "Client",
     "connection_label": "Verbinding",
     "uploaded": "Geüpload",

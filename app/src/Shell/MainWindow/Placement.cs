@@ -12,6 +12,7 @@ public sealed partial class MainWindow
 {
     private string? _placementPath;
     private Task? _placementRead;
+    private Task _placementSave = Task.CompletedTask;
     private Placement? _placement;
     private RectInt32 _normalBounds;
     private double _normalScale = 1;
@@ -266,8 +267,12 @@ public sealed partial class MainWindow
         return Enum.IsDefined(placement.Map) ? placement.Map : MapScope.None;
     }
 
-    private async Task SavePlacement()
+    private Task SavePlacement() => _placementSave = WritePlacement(_placementSave);
+
+    private async Task WritePlacement(Task previous)
     {
+        // Rapid choices share the temporary file, so each write follows the last.
+        await previous;
         if (_placementRead is { } reading)
             await reading;
         if (_placementPath is null || !_viewRestored)
@@ -326,6 +331,7 @@ public sealed partial class MainWindow
 
     private async Task ForgetPlacement()
     {
+        await _placementSave;
         if (_placementRead is { } reading)
             await reading;
         if (_placementPath is null)

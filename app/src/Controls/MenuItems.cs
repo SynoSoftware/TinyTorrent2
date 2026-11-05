@@ -2,8 +2,6 @@ using System.Runtime.CompilerServices;
 using System.Windows.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
-using Microsoft.UI.Xaml.Automation.Peers;
-using Microsoft.UI.Xaml.Automation.Provider;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Syno.TinyTorrent.Shared;
@@ -65,7 +63,7 @@ internal sealed record MenuSubmenu(string Text, string Glyph, IReadOnlyList<Menu
     internal bool IsEnabled { get; init; } = true;
 }
 
-internal static class MenuItems
+internal static partial class MenuItems
 {
     private static readonly MenuSeparator Separator = new();
 
@@ -93,46 +91,30 @@ internal static class MenuItems
     )
     {
         var menu = new MenuFlyout();
-        // WinUI has no stay-open switch, but the close that a click raises can be refused.
-        // The hold ends on the next dispatcher turn, after that close was refused.
-        var holding = false;
         // Until a click keeps the menu open, it stays as it opened, so no entry moves
         // under the pointer.
         var kept = false;
-        void Hold(MenuEntry entry, IReadOnlyList<MenuFlyoutSubItem> submenus)
+        Action? Retain(MenuEntry entry) => entry switch
         {
-            var keepsOpen = entry switch
-            {
-                MenuChoice => choicesKeepOpen,
-                MenuCommand command => command.KeepsMenuOpen,
-                _ => false,
-            };
-            if (!keepsOpen)
-                return;
-            holding = true;
+            MenuChoice when choicesKeepOpen => Changed,
+            MenuCommand { KeepsMenuOpen: true } => Changed,
+            _ => null,
+        };
+        void Changed()
+        {
             kept = true;
-            menu.DispatcherQueue.TryEnqueue(() =>
-            {
-                holding = false;
-                Refill();
-                // WinUI closes the submenus before the close that can be refused, so the
-                // submenus that held the click open again.
-                foreach (var submenu in submenus)
-                    if (menu.IsOpen && submenu.IsLoaded && submenu.IsEnabled)
-                        Expand(submenu);
-            });
+            Refill();
         }
         void Refill()
         {
             if (kept && menu.IsOpen)
-                Fill(menu.Items, describe(), text(), Hold);
+                Fill(menu.Items, describe(), text(), Retain);
         }
         menu.Opening += (_, _) =>
         {
             kept = false;
-            Fill(menu.Items, describe(), text(), Hold);
+            Fill(menu.Items, describe(), text(), Retain);
         };
-        menu.Closing += (_, closing) => closing.Cancel = holding;
         menu.Closed += (_, _) => Truncate(menu.Items, 0);
         Refills.Add(menu, Refill);
         return menu;
@@ -157,18 +139,13 @@ internal static class MenuItems
         IList<MenuFlyoutItemBase> items,
         IReadOnlyList<MenuEntry> entries,
         Strings text
-    ) => Fill(items, entries, text, clicked: null);
-
-    /// <summary>
-    /// Told about a click on an entry, with the submenus that hold it, outermost first.
-    /// </summary>
-    private delegate void Clicked(MenuEntry entry, IReadOnlyList<MenuFlyoutSubItem> submenus);
+    ) => Fill(items, entries, text, retain: null);
 
     private static void Fill(
         IList<MenuFlyoutItemBase> items,
         IReadOnlyList<MenuEntry> entries,
         Strings text,
-        Clicked? clicked
+        Func<MenuEntry, Action?>? retain
     )
     {
         var lines = entries
@@ -184,23 +161,25 @@ internal static class MenuItems
         while (
             unchanged < items.Count
             && unchanged < lines.Length
-            && Matches(items[unchanged], lines[unchanged], checks)
+            && Matches(items[unchanged], lines[unchanged], checks,
+                retain?.Invoke(lines[unchanged]) is not null)
         )
             unchanged++;
         Truncate(items, unchanged);
         for (var index = unchanged; index < lines.Length; index++)
-            items.Add(Create(lines[index], items, checks, clicked));
+            items.Add(Create(lines[index], items, checks, retain?.Invoke(lines[index])));
         for (var index = 0; index < lines.Length; index++)
-            Update(items[index], lines[index], text, clicked);
+            Update(items[index], lines[index], text, retain);
     }
 
-    private static bool Matches(MenuFlyoutItemBase item, MenuEntry line, bool checks) =>
+    private static bool Matches(MenuFlyoutItemBase item, MenuEntry line, bool checks, bool retained) =>
         Equals(item.Tag, line.GetType().Name)
+        && retained == (item is Item or Toggle)
         && (line switch
         {
             MenuChoice choice when !checks || choice.State is null => item is MenuFlyoutItem and not ToggleMenuFlyoutItem and not RadioMenuFlyoutItem,
-            MenuChoice { Group: not null } => item is RadioMenuFlyoutItem,
-            MenuChoice => item is ToggleMenuFlyoutItem,
+            MenuChoice { Group: not null } => item is RadioMenuFlyoutItem or Toggle { IsRadio: true },
+            MenuChoice => item is ToggleMenuFlyoutItem and not Toggle { IsRadio: true },
             _ => true,
         });
 
@@ -208,23 +187,25 @@ internal static class MenuItems
         MenuEntry line,
         IList<MenuFlyoutItemBase> siblings,
         bool checks,
-        Clicked? clicked
+        Action? changed
     )
     {
         MenuFlyoutItemBase item = line switch
         {
             MenuSeparator => new MenuFlyoutSeparator(),
             MenuSubmenu => new MenuFlyoutSubItem(),
-            MenuChoice choice when !checks || choice.State is null => new MenuFlyoutItem(),
-            MenuChoice { Group: not null } => new RadioMenuFlyoutItem(),
-            MenuChoice => new ToggleMenuFlyoutItem(),
+            MenuChoice choice when !checks || choice.State is null =>
+                changed is null ? new MenuFlyoutItem() : new Item(changed),
+            MenuChoice { Group: not null } =>
+                changed is null ? new RadioMenuFlyoutItem() : new Toggle(changed, radio: true),
+            MenuChoice => changed is null ? new ToggleMenuFlyoutItem() : new Toggle(changed),
             MenuHeading => new MenuFlyoutItem
             {
                 IsEnabled = false,
                 HorizontalContentAlignment = HorizontalAlignment.Left,
                 MaxWidth = 320,
             },
-            _ => new MenuFlyoutItem(),
+            _ => changed is null ? new MenuFlyoutItem() : new Item(changed),
         };
         // A heading can name a long torrent.
         if (line is MenuHeading)
@@ -240,14 +221,13 @@ internal static class MenuItems
                     if (peer.GroupName == radio.GroupName && peer.DataContext is MenuChoice choice)
                         peer.IsChecked = choice.State == true;
             };
-        if (clicked is not null && item is MenuFlyoutItem invoked)
-            invoked.Click += (_, _) => clicked((MenuEntry)invoked.DataContext, []);
         // A Type in Tag crosses WinRT as a type name, so the kind is kept as a string.
         item.Tag = line.GetType().Name;
         return item;
     }
 
-    private static void Update(MenuFlyoutItemBase item, MenuEntry line, Strings text, Clicked? clicked)
+    private static void Update(MenuFlyoutItemBase item, MenuEntry line, Strings text,
+        Func<MenuEntry, Action?>? retain)
     {
         if ((line is MenuCommand or MenuHeading or MenuSeparator) && Equals(item.DataContext, line))
             return;
@@ -310,16 +290,11 @@ internal static class MenuItems
                     shown.Items,
                     submenu.Entries,
                     text,
-                    clicked is null ? null : (entry, submenus) => clicked(entry, [shown, .. submenus])
+                    retain
                 );
                 break;
         }
     }
-
-    private static void Expand(MenuFlyoutSubItem submenu) =>
-        ((IExpandCollapseProvider)FrameworkElementAutomationPeer
-            .CreatePeerForElement(submenu)
-            .GetPattern(PatternInterface.ExpandCollapse)).Expand();
 
     private static void Show(
         MenuFlyoutItem item,

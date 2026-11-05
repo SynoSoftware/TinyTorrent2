@@ -563,6 +563,7 @@ public sealed partial class MainWindow
     {
         var pane = new InspectorPane(Model.Inspector, Model.DownloadSubtitles);
         pane.LayoutChanged += (_, _) => KeepMap();
+        pane.ViewChanged += async (_, _) => await SavePlacement();
         if (_placement?.Inspector is { } layout)
             pane.Layout = layout;
         InspectorContent.Content = pane;

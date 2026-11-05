@@ -733,7 +733,7 @@
             </table:Table.EmptyContent>
             <table:Table.Columns>
               <table:Column
-                x:Name="EndpointColumn"
+                x:Name="AddressColumn"
                 Id="endpoint"
                 Width="220"
                 CanShrink="False"
@@ -742,7 +742,24 @@
                 <table:Column.CellTemplate>
                   <DataTemplate x:DataType="torrents:Peer">
                     <TextBlock
-                      Text="{x:Bind Endpoint}"
+                      Text="{x:Bind Address}"
+                      VerticalAlignment="Center"
+                      FlowDirection="LeftToRight"
+                    />
+                  </DataTemplate>
+                </table:Column.CellTemplate>
+              </table:Column>
+              <table:Column
+                x:Name="PortColumn"
+                Id="port"
+                Width="72"
+                CanShrink="False"
+                CellAlignment="Right"
+              >
+                <table:Column.CellTemplate>
+                  <DataTemplate x:DataType="torrents:Peer">
+                    <TextBlock
+                      Text="{x:Bind PortText}"
                       VerticalAlignment="Center"
                       FlowDirection="LeftToRight"
                     />

@@ -900,6 +900,7 @@
     "summary": "{0} pairs connus · {1} connexions · {2} actives",
     "all_torrents": "Tous les torrents",
     "endpoint": "Adresse",
+    "port": "Port",
     "client": "Client",
     "connection_label": "Connexion",
     "uploaded": "Envoyé",

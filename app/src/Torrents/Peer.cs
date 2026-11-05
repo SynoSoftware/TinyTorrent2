@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Globalization;
+using System.Net;
 using System.Text.Json;
 using Syno.TinyTorrent.Shared;
 
@@ -19,6 +20,9 @@ public sealed class Peer : INotifyPropertyChanged
     private TransferWait _writeWait;
 
     public string Endpoint { get; }
+    public string Address => ParsedEndpoint?.Address.ToString() ?? Endpoint;
+    public int? Port => ParsedEndpoint?.Port;
+    public string PortText => Port?.ToString(CultureInfo.InvariantCulture) ?? "—";
     internal string TorrentId { get; }
     internal string Key => TorrentId + "/" + Endpoint;
     public string Client { get; private set; } = string.Empty;
@@ -338,6 +342,9 @@ public sealed class Peer : INotifyPropertyChanged
 
     internal void RefreshText() =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+
+    private IPEndPoint? ParsedEndpoint =>
+        IPEndPoint.TryParse(Endpoint, out var endpoint) ? endpoint : null;
 
     private string TransportText =>
         _transport == PeerTransport.Unknown

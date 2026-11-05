@@ -900,6 +900,7 @@
     "summary": "{0} 个已知对等节点 · {1} 个连接 · {2} 个活跃",
     "all_torrents": "所有种子",
     "endpoint": "地址",
+    "port": "端口",
     "client": "客户端",
     "connection_label": "连接",
     "uploaded": "已上传",

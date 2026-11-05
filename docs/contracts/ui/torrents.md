@@ -546,6 +546,9 @@ BuildingComplex before their values. Column headers retain plain text.
 State uses Unplug for a known address without a current connection, PlugZap
 while connecting, Handshake during negotiation, Cable when connected, and
 CircleQuestionMark only when the state is unavailable or unrecognized.
+Address shows the IP address without its port, followed by a separate,
+numerically sortable Port column. I2P destinations retain their full address
+and show a dash for Port. Existing peer row identities retain the full endpoint.
 Country and City are separate sortable columns after Client.
 Country shows the country's flag at the cell's text size followed by its name;
 City shows the city name when the installed data provides one. The flag is
@@ -604,6 +607,9 @@ submenus, then Speed position: Top-left, Bottom-left or Bottom-right, saved with
 the peer layout and starting at Bottom-right. Top-right stays reserved for the
 map's close button. The zoom and Fit controls sit at the bottom centre, so
 moving Speed never moves them.
+Peer-view choices save to the window layout when changed, and splitter
+proportions when the drag finishes, so the person's map preferences do not
+depend on a normal window close.
 [Peer location](../peer-location.md#map) owns aggregation, precision and rendering.
 With no torrent selected, Peers shows all torrents and Speed shows session
 history. With multiple torrents selected, both sections combine only that

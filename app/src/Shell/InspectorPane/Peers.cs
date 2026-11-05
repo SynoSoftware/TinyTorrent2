@@ -52,6 +52,7 @@ public sealed partial class InspectorPane
             _layout = _layout with { View = view };
             ArrangePeers();
         };
+        PeerSplit.ValueCommitted += (_, _) => ViewChanged?.Invoke(this, EventArgs.Empty);
         RefreshPeerActions();
         ArrangePeers(fit: true);
         RefreshMap();
@@ -217,6 +218,7 @@ public sealed partial class InspectorPane
         _layout = _layout with { View = view };
         ArrangePeers(fit: true);
         RefreshMap();
+        ViewChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void RefreshPeerActions()
