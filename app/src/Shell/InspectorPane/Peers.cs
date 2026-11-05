@@ -398,11 +398,10 @@ public sealed partial class InspectorPane
     // wait for the table's settle.
     private void ChoosePlace(PeerPlace? place)
     {
-        var shown = Model.ShownPeers ?? [];
         Model.Place = place;
-        var next = Model.ShownPeers ?? [];
-        Peers.Release([.. shown.Except(next), .. next.Except(shown)]);
     }
+
+    private void OnPeersReleased(object? sender, IReadOnlyList<Peer> peers) => Peers.Release(peers);
 
     // Rows that change alone, as when a place is chosen, reach the table after
     // the input that changed them, without refreshing the rest of the pane.

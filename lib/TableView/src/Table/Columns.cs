@@ -325,9 +325,16 @@ public sealed partial class Table
 
     private void OnFillLayout(object? sender, object args) => FillViewport();
 
+    private bool _fillPending;
+
     private void FillViewport()
     {
         LayoutUpdated -= OnFillLayout;
+        if (_preparingView)
+        {
+            _fillPending = true;
+            return;
+        }
         if (
             !_schemaCaptured
             || !IsLoaded

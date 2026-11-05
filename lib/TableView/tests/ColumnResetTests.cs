@@ -51,10 +51,11 @@ public class ColumnResetTests
         TestHost.RunAsync(async () =>
         {
             SortHarness h = await SortHarness.LoadAsync(new[] { 3, 1, 2 });
-            h.Activate(0);
+            await h.Activate(0);
             CollectionAssert.AreEqual(new[] { "k1", "k2", "k0" }, h.ViewKeys());
 
             h.Table.ResetLayout();
+            await h.Table.ViewReady;
             h.Table.UpdateLayout();
 
             CollectionAssert.AreEqual(
@@ -98,7 +99,7 @@ public class ColumnResetTests
             SetColumnWidth(h.Table, "a", 320);
             SetColumnVisibility(h.Table, "b", false);
             MoveColumnTo(h.Table, "c", 0);
-            h.Activate(0);
+            await h.Activate(0);
 
             int events = 0;
             LayoutChange reported = LayoutChange.Sort;
@@ -163,6 +164,7 @@ public class ColumnResetTests
             foreach ((string name, Action run) in operations)
             {
                 run();
+                await h.Table.ViewReady;
                 h.Table.UpdateLayout();
 
                 CollectionAssert.AreEqual(

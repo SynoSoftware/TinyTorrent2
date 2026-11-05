@@ -224,23 +224,14 @@ public class ReconcileTests
 
     private static object NewView(IEnumerable<object> rows)
     {
-        Type identity = Control.GetType("Syno.TableView.ItemIdentity")!;
         Type view = Control.GetType("Syno.TableView.Body.View")!;
-
-        object comparer = Activator.CreateInstance(
-            identity,
-            BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public,
-            null,
-            null,
-            null
-        )!;
 
         // No list and no table here, so no row is ever selected.
         object created = Activator.CreateInstance(
             view,
             BindingFlags.Instance | BindingFlags.NonPublic,
             null,
-            new object[] { comparer, new Func<object, bool>(_ => false) },
+            new object[] { new Func<object, bool>(_ => false) },
             null
         )!;
 
@@ -258,10 +249,22 @@ public class ReconcileTests
         IReadOnlyList<object> snapshot,
         IReadOnlyList<int> realized,
         IReadOnlySet<object>? pinned = null
-    ) =>
-        view.GetType()
-            .GetMethod("Reconcile", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .Invoke(view, new object[] { snapshot, realized, pinned ?? new HashSet<object>() });
+    )
+    {
+        var rows = Rows(view);
+        var changes = Task.Run(() =>
+        {
+            var type = Control.GetType("Syno.TableView.Body.Changes")!;
+            var identity = Activator.CreateInstance(Control.GetType("Syno.TableView.ItemIdentity")!, true)!;
+            var prepared = Activator.CreateInstance(type, BindingFlags.Instance | BindingFlags.NonPublic,
+                null, new object[] { rows, identity }, null)!;
+            type.GetMethod("Prepare", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .Invoke(prepared, new object[] { snapshot, realized, pinned ?? new HashSet<object>() });
+            return prepared;
+        }).GetAwaiter().GetResult();
+        view.GetType().GetMethod("Apply", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(view, new[] { changes });
+    }
 
     /// <summary>
     /// A list's-eye view: it is told nothing except the notifications, and it applies them the way

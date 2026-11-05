@@ -232,7 +232,7 @@ internal sealed class MapMotion : IDisposable
         SurfaceChanged?.Invoke(_device, _dpi);
     }
 
-    private void Wake()
+    internal void Wake()
     {
         Interlocked.Increment(ref _revision);
         _wake.Stop();

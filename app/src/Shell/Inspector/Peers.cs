@@ -1,7 +1,5 @@
 using System.ComponentModel;
 using System.Net;
-using System.Diagnostics;
-using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Shared.Engine;
@@ -11,14 +9,23 @@ namespace Syno.TinyTorrent.Shell;
 
 public sealed partial class Inspector
 {
+#if CAPTURE
+    internal Action? PreparingPeers { get; set; }
+#endif
     private int _locationVersion;
-    private readonly HashSet<Peer> _located = [];
+    private HashSet<Peer> _located = [];
     private bool _locating;
     private readonly List<(string TorrentId, IReadOnlyList<Peer> Peers)> _peerCache = [];
     private (string Address, int Version)? _originKey;
     private Location? _origin;
     private IReadOnlyList<Peer>? _peers;
     private PeerPlace? _place;
+    private int _filterVersion;
+    private TaskCompletionSource? _peersReady;
+    private IReadOnlyList<Peer>? _releaseBaseline;
+    private (int Connected, int Active) _peerCounts;
+
+    internal event EventHandler<IReadOnlyList<Peer>>? PeersReleased;
 
     internal MapModel Map => field ??= new MapModel(this);
 
@@ -46,9 +53,9 @@ public sealed partial class Inspector
             if (_place == value)
                 return;
             _place = value;
+            _releaseBaseline ??= ShownPeers ?? [];
             Map.RefreshPlace();
-            if (Filter())
-                NotifyShownPeers();
+            Filter();
         }
     }
 
@@ -62,22 +69,58 @@ public sealed partial class Inspector
 
     /// <summary>The table's rows: <see cref="Peers"/>, or those at <see cref="Place"/>.</summary>
     public IReadOnlyList<Peer>? ShownPeers { get; private set; }
+    internal Task PeersReady => _peersReady?.Task ?? Task.CompletedTask;
 
-    // Rows that did not change keep their list, so the table keeps its scroll
-    // position and selection. Returns whether the rows changed.
-    private bool Filter()
+    private sealed record PeerRows(IReadOnlyList<Peer>? Shown, IReadOnlyList<Peer> Released, int Connected, int Active);
+
+    private async void Filter()
     {
-        if (_place is not { } place || _peers is null)
+        var version = ++_filterVersion;
+        if (_peersReady?.Task.IsCompleted != false)
+            _peersReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        var peers = _peers;
+        var place = _place;
+        var previous = ShownPeers;
+        if (peers is null)
+            _releaseBaseline ??= previous ?? [];
+        var release = _releaseBaseline;
+        if (place is null || peers is null)
         {
-            var changed = !ReferenceEquals(ShownPeers, _peers);
-            ShownPeers = _peers;
-            return changed;
+            ShownPeers = peers;
+            if (!ReferenceEquals(previous, peers))
+                NotifyShownPeers();
         }
-        var shown = _peers.Where(peer => place.Contains(peer.Location)).ToArray();
-        if (ShownPeers is not null && shown.SequenceEqual(ShownPeers))
-            return false;
-        ShownPeers = shown;
-        return true;
+        var captured = (peers ?? []).Select(peer => (Peer: peer, peer.Location, Record: peer.Capture())).ToArray();
+        var prepared = await Task.Run(() =>
+        {
+            IReadOnlyList<Peer>? shown = place is null || peers is null ? peers
+                : captured.Where(row => place.Value.Contains(row.Location)).Select(row => row.Peer).ToArray();
+            if (place is not null && previous is not null && shown is not null && previous.SequenceEqual(shown))
+                shown = previous;
+            var released = release is not null
+                ? release.Except(shown ?? []).Concat((shown ?? []).Except(release)).ToArray() : [];
+            return new PeerRows(shown, released,
+                captured.Count(row => row.Record.State != PeerState.Known),
+                captured.Count(row => row.Record.State == PeerState.Connected && row.Record.DownloadRate + row.Record.UploadRate > 0));
+        });
+        if (version != _filterVersion)
+            return;
+        _releaseBaseline = null;
+        if (prepared.Released.Count > 0)
+            PeersReleased?.Invoke(this, prepared.Released);
+        if (!ReferenceEquals(ShownPeers, prepared.Shown))
+        {
+            ShownPeers = prepared.Shown;
+            NotifyShownPeers();
+        }
+        var counts = (prepared.Connected, prepared.Active);
+        if (_peerCounts != counts)
+        {
+            _peerCounts = counts;
+            if (!_owner.IsClosed && IsVisible)
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PeerSummary)));
+        }
+        _peersReady!.TrySetResult();
     }
 
     internal bool HasCities => _owner.Geolocation.Installed is not null;
@@ -123,10 +166,8 @@ public sealed partial class Inspector
                 "peers",
                 "summary",
                 peers.Count,
-                peers.Count(peer => peer.State != PeerState.Known),
-                peers.Count(peer =>
-                    peer.State == PeerState.Connected && peer.DownloadRate + peer.UploadRate > 0
-                )
+                _peerCounts.Connected,
+                _peerCounts.Active
             )
             : string.Empty;
 
@@ -148,103 +189,113 @@ public sealed partial class Inspector
             ? _owner.Geolocation.Find(endpoint.Address)
             : null;
 
+    private sealed record PeerLocations(IReadOnlyList<(Peer Peer, Location? Location)> Locations,
+        HashSet<Peer> Located, Location? Origin, bool Missing = false);
+
+    private bool CanLocate => IsVisible && _section == InspectorSection.Peers && IsAvailable && !_owner.IsClosing;
+
     private async Task LocatePeers()
     {
         if (_locating)
             return;
         _locating = true;
+        var restart = false;
         try
         {
-            while (
-                IsVisible && _section == InspectorSection.Peers && IsAvailable && !_owner.IsClosing
-            )
+            while (CanLocate)
             {
                 var key = (_owner.PublicAddress, _owner.Geolocation.Version);
                 if (_locationVersion != key.Version)
                 {
                     _locationVersion = key.Version;
-                    _located.Clear();
+                    _located = [];
                     _originKey = null;
                 }
-                _located.IntersectWith(Peers ?? []);
-                var peers = (Peers ?? []).Where(peer => !_located.Contains(peer)).ToArray();
+                var source = Peers;
+                var located = _located;
                 var cancellation = _reading.Token;
                 var origin = _origin;
                 var needsOrigin = _originKey != key;
-                if (peers.Length == 0 && !needsOrigin)
-                    return;
-                var locations = await Task.Run(() =>
-                    (
-                        Peers: peers
-                            .Select(peer =>
-                            {
-                                cancellation.ThrowIfCancellationRequested();
-                                return (Peer: peer, Location: Locate(peer.Endpoint));
-                            })
-                            .ToArray(),
-                        Origin: needsOrigin ? Locate(key.PublicAddress) : origin
-                    ), cancellation);
-                cancellation.ThrowIfCancellationRequested();
-                if (_owner.Geolocation.Version != key.Version)
-                    continue;
-                if (
-                    !IsVisible
-                    || _section != InspectorSection.Peers
-                    || !IsAvailable
-                    || _owner.IsClosing
-                )
-                    return;
-                var current = (Peers ?? []).ToHashSet();
-                var changed = false;
-                var started = Stopwatch.GetTimestamp();
-                for (var index = 0; index < locations.Peers.Length; index++)
+                var preparation = Task.Run(() =>
                 {
-                    if (Stopwatch.GetElapsedTime(started) >= UpdateBudget)
+                    var members = (source ?? []).ToHashSet();
+                    var retained = located.Where(members.Contains).ToHashSet();
+                    List<(Peer, Location?)> locations = [];
+                    foreach (var peer in source ?? [])
                     {
-                        await Yield();
-                        started = Stopwatch.GetTimestamp();
+                        if (retained.Contains(peer))
+                            continue;
                         cancellation.ThrowIfCancellationRequested();
-                        if (!IsVisible || _section != InspectorSection.Peers || !IsAvailable || _owner.IsClosing)
-                            return;
-                        if (_owner.Geolocation.Version != key.Version)
-                            break;
-                        current = (Peers ?? []).ToHashSet();
+                        locations.Add((peer, Locate(peer.Endpoint)));
+                        retained.Add(peer);
                     }
-                    var location = locations.Peers[index];
-                    if (!current.Contains(location.Peer))
-                        continue;
-                    location.Peer.Location = location.Location;
-                    _located.Add(location.Peer);
-                    changed = true;
+                    return new PeerLocations(locations, retained, needsOrigin ? Locate(key.PublicAddress) : origin);
+                }, cancellation);
+                await ((Task)preparation).ConfigureAwait(
+                    ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
+                if (preparation.IsCanceled || cancellation.IsCancellationRequested)
+                {
+                    restart = true;
+                    return;
                 }
+                var prepared = await preparation;
+                while (!ReferenceEquals(source, Peers) && CanLocate && _owner.Geolocation.Version == key.Version)
+                {
+                    source = Peers;
+                    var previous = prepared;
+                    preparation = Task.Run(() =>
+                    {
+                        var members = (source ?? []).ToHashSet();
+                        var retained = previous.Located.Where(members.Contains).ToHashSet();
+                        return previous with
+                        {
+                            Locations = previous.Locations.Where(location => members.Contains(location.Peer)).ToArray(),
+                            Located = retained,
+                            Missing = retained.Count < members.Count,
+                        };
+                    }, cancellation);
+                    await ((Task)preparation).ConfigureAwait(
+                        ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
+                    if (preparation.IsCanceled || cancellation.IsCancellationRequested)
+                    {
+                        restart = true;
+                        return;
+                    }
+                    prepared = await preparation;
+                }
+                if (!CanLocate)
+                    return;
                 if (_owner.Geolocation.Version != key.Version)
                     continue;
+                _located = prepared.Located;
+                foreach (var location in prepared.Locations)
+                    location.Peer.Location = location.Location;
+                var changed = prepared.Locations.Count > 0;
                 if (needsOrigin && _owner.PublicAddress == key.PublicAddress)
                 {
                     _originKey = key;
-                    _origin = locations.Origin;
+                    _origin = prepared.Origin;
                     changed = true;
                 }
                 if (changed)
                 {
                     RowsUpdated?.Invoke(this, InspectorSection.Peers);
-                    // A peer located just now can belong to the chosen place.
-                    if (Filter())
-                        NotifyShownPeers();
+                    Filter();
                 }
+                if (!prepared.Missing && ReferenceEquals(source, Peers)
+                    && _originKey == (_owner.PublicAddress, _owner.Geolocation.Version))
+                    return;
             }
-        }
-        catch (OperationCanceledException)
-        {
         }
         finally
         {
             _locating = false;
-            if (IsVisible && _section == InspectorSection.Peers && IsAvailable
-                && !_owner.IsClosing && (Peers ?? []).Any(peer => !_located.Contains(peer)))
+            if (restart && CanLocate)
                 _ = LocatePeers();
         }
     }
+
+    private sealed record PeerScope(IReadOnlyList<Peer>? Rows, IReadOnlySet<string> Present, bool Cached);
 
     private async Task<bool> ReadPeers(int context)
     {
@@ -252,29 +303,36 @@ public sealed partial class Inspector
         Torrent[] targets = aggregate
             ? Scope.Where(torrent => torrent.PeerCount > 0 || torrent.KnownPeerCount > 0).ToArray()
             : [_target!];
-        var ids = targets.Select(torrent => torrent.TorrentId).ToHashSet();
-        var present = _owner.Torrents.Select(torrent => torrent.TorrentId).ToHashSet();
-        _peerCache.RemoveAll(entry => !present.Contains(entry.TorrentId));
-        if (Peers is null && _peerCache.Any(entry => ids.Contains(entry.TorrentId)))
+        var cancellation = _reading.Token;
+        var current = Peers;
+        var cache = _peerCache.ToArray();
+        var present = _owner.Torrents.Select(torrent => torrent.TorrentId).ToArray();
+        var preparation = Task.Run(() =>
         {
-            Peers = targets
-                .SelectMany(torrent =>
-                    _peerCache.Find(entry => entry.TorrentId == torrent.TorrentId).Peers ?? []
-                )
-                .ToArray();
-            IsReplacing = false;
-            Refresh();
-        }
-        if (Peers is { } previous && previous.Any(peer => !ids.Contains(peer.TorrentId)))
+            var ids = targets.Select(torrent => torrent.TorrentId).ToHashSet();
+            var alive = present.ToHashSet();
+            var cached = current is null && cache.Any(entry => ids.Contains(entry.TorrentId));
+            var shown = cached ? targets.SelectMany(torrent =>
+                cache.FirstOrDefault(entry => entry.TorrentId == torrent.TorrentId).Peers ?? []).ToArray() : current;
+            if (shown is not null && shown.Any(peer => !ids.Contains(peer.TorrentId)))
+                shown = shown.Where(peer => ids.Contains(peer.TorrentId)).ToArray();
+            return new PeerScope(shown, alive, cached);
+        }, cancellation);
+        await ((Task)preparation).ConfigureAwait(
+            ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
+        if (!IsCurrent(context) || preparation.IsCanceled)
+            return false;
+        var prepared = await preparation;
+        _peerCache.RemoveAll(entry => !prepared.Present.Contains(entry.TorrentId));
+        if (!ReferenceEquals(current, prepared.Rows))
         {
-            Peers = previous.Where(peer => ids.Contains(peer.TorrentId)).ToArray();
+            Peers = prepared.Rows;
+            if (prepared.Cached)
+                IsReplacing = false;
             Refresh();
         }
         // Returning to Peers resumes lookups abandoned while it was hidden.
         _ = LocatePeers();
-        var groups = (Peers ?? [])
-            .GroupBy(peer => peer.TorrentId)
-            .ToDictionary(group => group.Key, group => group.ToArray());
         // One torrent at a time, so Inspector demands never overlap.
         foreach (var torrent in targets)
         {
@@ -299,7 +357,6 @@ public sealed partial class Inspector
                         var changed = await ApplyPeers(
                             torrent.TorrentId,
                             detail.GetProperty("peers"),
-                            groups,
                             context
                         );
                         if (!IsCurrent(context))
@@ -320,9 +377,19 @@ public sealed partial class Inspector
         {
             return false;
         }
+        current = Peers;
+        present = _owner.Torrents.Select(torrent => torrent.TorrentId).ToArray();
+        var pruning = Task.Run(() =>
+        {
+            var alive = present.ToHashSet();
+            return (current ?? []).Where(peer => alive.Contains(peer.TorrentId)).ToArray();
+        }, cancellation);
+        await ((Task)pruning).ConfigureAwait(
+            ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
+        if (!IsCurrent(context) || pruning.IsCanceled)
+            return false;
+        var remaining = await pruning;
         var changed = _readFailure is not null || Peers is null || IsReplacing;
-        present = _owner.Torrents.Select(torrent => torrent.TorrentId).ToHashSet();
-        var remaining = (Peers ?? []).Where(peer => present.Contains(peer.TorrentId)).ToArray();
         changed |= Peers is not null && remaining.Length != Peers.Count;
         if (changed)
             Peers = remaining;
@@ -331,106 +398,75 @@ public sealed partial class Inspector
         return changed;
     }
 
-    private async Task<bool> ApplyPeers(string torrentId, JsonElement rows, Dictionary<string, Peer[]> groups, int context)
+    private sealed record PeerUpdate(Peer[] Received, IReadOnlyList<Peer> Rows,
+        IReadOnlyList<(Peer Peer, Peer.Change Change)> Changes);
+
+    private async Task<bool> ApplyPeers(string torrentId, JsonElement rows, int context)
     {
         var cancellation = _reading.Token;
-        var group = groups.GetValueOrDefault(torrentId) ?? [];
-        var previous = group.ToDictionary(peer => peer.Endpoint);
-        var received = new List<Peer>();
-        var next = (Peers ?? []).ToList();
-        var published = false;
-        await foreach (var batch in PreparePeers(torrentId, rows, cancellation))
+        var text = Text;
+        var current = Peers ?? [];
+        var captured = current.Select(peer => (Peer: peer, Record: peer.Capture())).ToArray();
+        var preparation = Task.Run(() =>
         {
-            await Yield();
-            if (!IsCurrent(context))
-                return false;
-            var started = Stopwatch.GetTimestamp();
-            var added = false;
-            var changed = false;
-            foreach (var parsed in batch)
+#if CAPTURE
+            PreparingPeers?.Invoke();
+#endif
+            var previous = captured.Where(row => row.Peer.TorrentId == torrentId)
+                .ToDictionary(row => row.Peer.Endpoint);
+            HashSet<string> endpoints = [];
+            List<Peer> received = [];
+            List<(Peer, Peer.Change)> changes = [];
+            foreach (var data in rows.EnumerateArray())
             {
-                if (Stopwatch.GetElapsedTime(started) >= UpdateBudget)
+                cancellation.ThrowIfCancellationRequested();
+                var endpoint = data.GetProperty("endpoint").GetString()!;
+                if (!endpoints.Add(endpoint))
+                    continue;
+                var parsed = Peer.Record.Parse(data);
+                if (previous.TryGetValue(endpoint, out var before))
                 {
-                    await Yield();
-                    if (!IsCurrent(context))
-                        return false;
-                    started = Stopwatch.GetTimestamp();
-                }
-                if (previous.TryGetValue(parsed.Endpoint, out var peer))
-                {
-                    changed |= peer.Update(parsed);
-                    received.Add(peer);
+                    if (Peer.Prepare(before.Record, parsed) is { } change)
+                        changes.Add((before.Peer, change));
+                    received.Add(before.Peer);
                 }
                 else
-                {
-                    received.Add(parsed);
-                    next.Add(parsed);
-                    added = true;
-                }
+                    received.Add(new Peer(text, torrentId, endpoint, null, parsed));
             }
-            if (added)
+            var complete = received.ToArray();
+            IReadOnlyList<Peer> next = current;
+            if (!captured.Where(row => row.Peer.TorrentId == torrentId).Select(row => row.Peer).SequenceEqual(complete))
             {
-                Peers = next.ToArray();
-                IsReplacing = false;
-                published = true;
-                Refresh();
-                _ = LocatePeers();
+                var merged = current.ToList();
+                var insertion = merged.FindIndex(peer => peer.TorrentId == torrentId);
+                merged.RemoveAll(peer => peer.TorrentId == torrentId);
+                merged.InsertRange(insertion < 0 ? merged.Count : insertion, complete);
+                next = merged.ToArray();
             }
-            else if (changed)
-                RowsUpdated?.Invoke(this, InspectorSection.Peers);
-        }
-        if (!IsCurrent(context))
+            return new PeerUpdate(complete, next, changes);
+        }, cancellation);
+        await ((Task)preparation).ConfigureAwait(
+            ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
+        if (!IsCurrent(context) || preparation.IsCanceled)
             return false;
-        var complete = received.ToArray();
-        groups[torrentId] = complete;
+        var prepared = await preparation;
+        foreach (var (peer, change) in prepared.Changes)
+            peer.Apply(change);
         _peerCache.RemoveAll(entry => entry.TorrentId == torrentId);
-        _peerCache.Insert(0, (torrentId, complete));
+        _peerCache.Insert(0, (torrentId, prepared.Received));
         // Keep recent selections instant without retaining every torrent's peers.
         if (_peerCache.Count > 8)
             _peerCache.RemoveAt(_peerCache.Count - 1);
-        if (Peers is not null && group.SequenceEqual(complete))
-            return published;
-        var insertion = next.FindIndex(peer => peer.TorrentId == torrentId);
-        next.RemoveAll(peer => peer.TorrentId == torrentId);
-        next.InsertRange(insertion < 0 ? next.Count : insertion, complete);
-        if (Peers is not null && Peers.SequenceEqual(next))
-            return published;
-        Peers = next;
+        var changed = !ReferenceEquals(current, prepared.Rows) || Peers is null;
+        if (changed)
+            Peers = prepared.Rows;
+        else if (prepared.Changes.Count > 0)
+        {
+            Filter();
+            RowsUpdated?.Invoke(this, InspectorSection.Peers);
+        }
         IsReplacing = false;
         _ = LocatePeers();
-        return true;
-    }
-
-    private async IAsyncEnumerable<Peer[]> PreparePeers(
-        string torrentId, JsonElement rows, [EnumeratorCancellation] CancellationToken cancellation)
-    {
-        var text = Text;
-        var endpoints = new HashSet<string>();
-        var source = rows.EnumerateArray();
-        var complete = false;
-        while (!complete)
-        {
-            var batch = await Task.Run(() =>
-            {
-                var peers = new List<Peer>();
-                var started = Stopwatch.GetTimestamp();
-                do
-                {
-                    cancellation.ThrowIfCancellationRequested();
-                    if (!source.MoveNext())
-                    {
-                        complete = true;
-                        break;
-                    }
-                    var data = source.Current;
-                    var endpoint = data.GetProperty("endpoint").GetString()!;
-                    if (endpoints.Add(endpoint))
-                        peers.Add(new Peer(text, torrentId, endpoint, null, data));
-                } while (Stopwatch.GetElapsedTime(started) < UpdateBudget);
-                return peers.ToArray();
-            }, cancellation).ConfigureAwait(false);
-            if (batch.Length > 0)
-                yield return batch;
-        }
+        return changed;
     }
 }

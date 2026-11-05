@@ -21,6 +21,27 @@ namespace Syno.TinyTorrent.Shell;
 
 public sealed partial class MainWindow
 {
+    private static void CaptureRates(Peer peer, double download, double? upload = null)
+    {
+        var before = peer.Capture();
+        peer.Apply(Peer.Prepare(before, before with { DownloadRate = download, UploadRate = upload ?? before.UploadRate }));
+    }
+
+    private static MapRenderer? CaptureRenderer(PeerMap map)
+    {
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+        var work = typeof(PeerMap).GetField("_work", flags)!.GetValue(map);
+        return work is null ? null : (MapRenderer?)typeof(MapWork).GetField("_renderer", flags)!.GetValue(work);
+    }
+
+    private static bool CaptureMapIdle(PeerMap map)
+    {
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+        return typeof(PeerMap).GetField("_working", flags)!.GetValue(map) is null
+            && new[] { "_frameQueued", "_preparationQueued", "_drawQueued" }
+                .All(name => !(bool)typeof(PeerMap).GetField(name, flags)!.GetValue(map)!);
+    }
+
     private async Task CaptureMapPerformance(List<object> outcomes)
     {
         const BindingFlags Flags = BindingFlags.Instance | BindingFlags.NonPublic;
@@ -85,11 +106,15 @@ public sealed partial class MainWindow
         Root.Children.Add(map);
         try
         {
-            await Until(() => Read<MapRenderer?>(map, "_renderer") is not null && map.MotionFrames > 0);
-            var renderer = Read<MapRenderer>(map, "_renderer");
+            await Until(() => CaptureRenderer(map) is not null && map.MotionFrames > 0);
+            var renderer = CaptureRenderer(map)!;
             var viewport = Read<MapViewport>(map, "_viewport");
-            var world = Read<Dictionary<string, Geography.Country>>(map, "_world");
-            var draw = typeof(PeerMap).GetMethod("Draw", Flags)!;
+            var world = Read<Dictionary<string, Geography.Country>>(renderer, "_world");
+            async Task Draw()
+            {
+                typeof(PeerMap).GetMethod("Invalidate", Flags)!.Invoke(map, null);
+                await map.Ready.WaitAsync(TimeSpan.FromSeconds(15));
+            }
             var work = new Dictionary<string, List<double>>();
             void Record(string phase, double ms)
             {
@@ -98,10 +123,9 @@ public sealed partial class MainWindow
                 samples.Add(ms);
             }
             map.WorkMeasured = Record;
-            renderer.WorkMeasured = Record;
             async Task Settle()
             {
-                await Until(() => !Read<bool>(map, "_frameQueued") && !Read<bool>(renderer, "_interpolating"));
+                await Until(() => CaptureMapIdle(map) && !Read<bool>(renderer, "_interpolating"));
             }
             if (ReviewMode == CaptureMode.MapArcs)
             {
@@ -140,7 +164,7 @@ public sealed partial class MainWindow
                     viewport.SetView(MapViewport.MaxZoom, viewport.Coordinates(crest),
                         viewport.CalculateRatio(MapViewport.MaxZoom, (float)-crest.Latitude));
                     var started = Stopwatch.GetTimestamp();
-                    draw.Invoke(map, null);
+                    await Draw();
                     var pictureMs = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
                     await Settle();
                     var arc = Property<CanvasGeometry>("Arc");
@@ -154,13 +178,13 @@ public sealed partial class MainWindow
                     await Snapshot("map-polar-" + longitude.ToString("0.##", CultureInfo.InvariantCulture));
                     viewport.SetView(MapViewport.MaxZoom, new Vector2(-179.8f, -10),
                         viewport.CalculateRatio(MapViewport.MaxZoom, -10));
-                    draw.Invoke(map, null);
+                    await Draw();
                     await Settle();
                     if (!ReferenceEquals(arc, Property<CanvasGeometry>("Arc")))
                         throw new InvalidOperationException("Panning unnecessarily replaced a refined guide.");
                     await Snapshot("map-wrapped-" + longitude.ToString("0.##", CultureInfo.InvariantCulture));
                     viewport.Fit();
-                    draw.Invoke(map, null);
+                    await Draw();
                     if (!ReferenceEquals(arc, Property<CanvasGeometry>("Arc")))
                         throw new InvalidOperationException("Zooming out unnecessarily replaced a refined guide.");
                     outcomes.Add(new { journey = "map polar guide alignment", longitude, samples = 8191,
@@ -181,13 +205,13 @@ public sealed partial class MainWindow
                 List<double> coldFrames = [];
                 map.FrameMeasured = coldFrames.Add;
                 var cold = Stopwatch.GetTimestamp();
-                draw.Invoke(map, null);
+                await Draw();
                 var coldMs = Stopwatch.GetElapsedTime(cold).TotalMilliseconds;
                 if (interrupted)
                     for (var step = 0; step < 6; step++)
                     {
                         viewport.SetView(viewport.Zoom, viewport.Center + new Vector2(.25f, 0), ratio);
-                        draw.Invoke(map, null);
+                        await Draw();
                         await Task.Delay(16);
                     }
                 await Settle();
@@ -202,7 +226,7 @@ public sealed partial class MainWindow
                     if (scenario != "fixed")
                         viewport.SetView(viewport.Zoom, viewport.Center + new Vector2(scenario == "canada-fast" ? .25f : .025f, 0), ratio);
                     var started = Stopwatch.GetTimestamp();
-                    draw.Invoke(map, null);
+                    await Draw();
                     frames.Add(Stopwatch.GetElapsedTime(started).TotalMilliseconds);
                     await Task.Delay(16);
                 }
@@ -213,7 +237,7 @@ public sealed partial class MainWindow
                     await Snapshot("map-" + scenario);
             }
             viewport.Fit();
-            draw.Invoke(map, null);
+            await Draw();
             GeoPoint[] places = [new(-118, 34), new(151, -33), new(139, 35), new(13, 52),
                 new(77, 28), new(-43, -22), new(-74, 40), new(28, -26), new(37, 56), new(-79, 9)];
             model.Update(places.Select((point, index) => MakePeer(index, index % 2 == 0 ? 131072 : 16384,
@@ -252,11 +276,11 @@ public sealed partial class MainWindow
             outcomes.Add(new { journey = "map fastest arc cap", peers = 300, limited = 25,
                 markers = model.Destinations.Count, changedLimit = Shown().Length });
             viewport.Fit();
-            draw.Invoke(map, null);
+            await Draw();
             await Settle();
             await Snapshot("map-fastest-arcs");
             viewport.SetView(1, Vector2.Zero, 1);
-            draw.Invoke(map, null);
+            await Draw();
             await Settle();
             foreach (var count in new[] { 1000, 10000 })
             {
@@ -269,7 +293,7 @@ public sealed partial class MainWindow
                     for (var index = 0; index < population.Length; index++)
                         population[index].Update(MakePeer(index, 65536 + sample * 1024));
                     model.Update(population, null, Model.Text, cities: true);
-                    typeof(PeerMap).GetMethod("Prepare", Flags)!.Invoke(map, null);
+                    await Settle();
                 }
                 outcomes.Add(new { journey = "map rate preparation", count,
                     phases = work.ToDictionary(pair => pair.Key, pair => Summary(pair.Value)) });
@@ -281,7 +305,7 @@ public sealed partial class MainWindow
             foreach (var hidden in new[] { false, true, false })
             {
                 viewport.SetView(hidden ? 128 : 1, hidden ? new Vector2(120, 60) : Vector2.Zero, 1);
-                draw.Invoke(map, null);
+                await Draw();
                 await Settle();
                 if (!hidden)
                 {
@@ -305,6 +329,7 @@ public sealed partial class MainWindow
 
     private async Task CaptureMap(List<object> outcomes)
     {
+        await CapturePeerPreparation(outcomes);
         var view = new MapView(new Windows.Foundation.Size(100, 100), 0, Vector2.Zero,
             Vector2.One, Matrix3x2.CreateTranslation(50, 50));
         if (!view.Shows(new Windows.Foundation.Rect(-100, -1, 200, 2), 13)
@@ -363,7 +388,7 @@ public sealed partial class MainWindow
         var originalPlace = owner.Place;
         var location = new Location("US", new Place("US", null), null, null);
         var origin = new Location("GB", new Place("GB", null), null, new GeoPoint(0, 51.5));
-        Peer MakePeer(double down, string role = "seed", double up = 0) => new(Model.Text, "map-check", "192.0.2.1:51413", location,
+        Peer MakePeer(double down, string role = "seed", double up = 0, string torrent = "map-check") => new(Model.Text, torrent, "192.0.2.1:51413", location,
             JsonSerializer.SerializeToElement(new
             {
                 state = "connected", role, client = "Map check", transport = "tcp",
@@ -385,10 +410,20 @@ public sealed partial class MainWindow
                 Root.Children.Add(map);
                 try
                 {
-                    await Until(() => Read<MapRenderer?>(map, "_renderer") is not null && map.MotionFrames > 0,
+                    await Until(() => CaptureRenderer(map) is not null && map.MotionFrames > 0,
                         "The map did not load and draw moving dots.");
-                    var renderer = Read<MapRenderer>(map, "_renderer");
+                    var renderer = CaptureRenderer(map)!;
                     var motion = Read<MapMotion>(map, "_motion");
+                    await Until(() => CaptureMapIdle(map) && Read<object?>(motion, "_pending") is null
+                        && !Read<bool>(renderer, "_interpolating"), "The initial map did not settle.");
+                    var pictures = map.MotionPictures;
+                    model.Update([MakePeer(65536, torrent: "map-replacement")], origin, Model.Text, cities: false);
+                    await Until(() => CaptureMapIdle(map), "An equivalent torrent switch did not prepare.");
+                    if (map.MotionPictures != pictures || Read<object?>(motion, "_pending") is not null)
+                        throw new InvalidOperationException("Equivalent peer facts redrew the same map.");
+                    model.Update([peer], origin, Model.Text, cities: false);
+                    await Until(() => CaptureMapIdle(map), "The original observations did not prepare.");
+                    outcomes.Add(new { journey = "map equivalent torrent switch", redrawn = false });
                     if (!paused)
                     {
                         var chosen = model.Destinations[0];
@@ -398,20 +433,22 @@ public sealed partial class MainWindow
                         viewport.SetView(8, new Vector2(10, -50), 1);
                         peer.Update(MakePeer(2097152));
                         model.Update([peer], origin, Model.Text, cities: false);
-                        await Until(() => !Read<bool>(map, "_frameQueued") && !Read<bool>(renderer, "_interpolating"),
+                        await Until(() => CaptureMapIdle(map) && !Read<bool>(renderer, "_interpolating"),
                             "The map's first offscreen activity fade did not settle.");
                         if (map.Described is not { } described || described.Key != chosen.Key
                             || described.Group.Down != 2097152 || !model.Destinations.Contains(described))
                             throw new InvalidOperationException("The chosen destination retained its previous group or speed.");
+                        if (chosen.Group.Down != 65536)
+                            throw new InvalidOperationException("Worker aggregation mutated a published inspection snapshot.");
                         peer.Update(MakePeer(2097153));
                         model.Update([peer], origin, Model.Text, cities: false);
-                        await Until(() => !Read<bool>(map, "_frameQueued"), "The unchanged map preparation did not finish.");
+                        await Until(() => CaptureMapIdle(map), "The unchanged map preparation did not finish.");
                         if (Read<bool>(renderer, "_interpolating"))
                             throw new InvalidOperationException("An offscreen country's old strength restarted an activity fade.");
                         outcomes.Add(new { journey = "map live selection and offscreen fade", selectedDown = 2097152, repeatedFade = false });
 
                         viewport.SetView(128, new Vector2(120, 60), 1);
-                        await Until(() => motion.Control.Paused && !Read<bool>(map, "_frameQueued"),
+                        await Until(() => motion.Control.Paused && CaptureMapIdle(map),
                             "The all-routes-hidden view did not pause.");
                         var revision = Read<long>(motion, "_revision");
                         var hiddenFrames = map.MotionFrames;
@@ -419,7 +456,8 @@ public sealed partial class MainWindow
                         if (map.MotionFrames != hiddenFrames)
                             throw new InvalidOperationException("The hidden view continued presenting dots.");
                         viewport.Fit();
-                        typeof(PeerMap).GetMethod("Draw", Flags)!.Invoke(map, null);
+                        typeof(PeerMap).GetMethod("Invalidate", Flags)!.Invoke(map, null);
+                        await map.Ready.WaitAsync(TimeSpan.FromSeconds(10));
                         typeof(MapMotion).GetMethod("Sleep", Flags)!.Invoke(motion,
                             [revision, null, Stopwatch.GetTimestamp()]);
                         if (motion.Control.Paused)
@@ -427,18 +465,18 @@ public sealed partial class MainWindow
                         await Until(() => map.MotionFrames > hiddenFrames, "Pan-back did not resume moving dots.");
                         outcomes.Add(new { journey = "map hidden sleep and pan-back", staleSleepRejected = true });
 
-                        var retained = model.Destinations[0];
+                        var retained = Read<MapModel.Arrangement>(renderer, "_model").Destinations[0];
                         var arrangement = Read<int>(renderer, "_arrangement");
                         peer.Update(MakePeer(0, "leecher", 65536));
                         model.Update([peer], origin, Model.Text, cities: false);
-                        await Until(() => !Read<bool>(map, "_preparationQueued"), "The role and direction update did not prepare.");
-                        if (!ReferenceEquals(retained, model.Destinations[0]) || retained.Group.Seeds != 0
+                        await Until(() => CaptureMapIdle(map), "The role and direction update did not prepare.");
+                        if (!ReferenceEquals(retained, Read<MapModel.Arrangement>(renderer, "_model").Destinations[0]) || retained.Group.Seeds != 0
                             || retained.Group.Leechers != 1 || retained.Group.Down != 0 || retained.Group.Up != 65536
                             || Read<int>(renderer, "_arrangement") == arrangement)
                             throw new InvalidOperationException("Retained membership lost a role, rate or direction change.");
                         peer.Update(MakePeer(65536));
                         model.Update([peer], origin, Model.Text, cities: false);
-                        await Until(() => !Read<bool>(map, "_frameQueued") && !Read<bool>(renderer, "_interpolating"),
+                        await Until(() => CaptureMapIdle(map) && !Read<bool>(renderer, "_interpolating"),
                             "The fade fixture did not settle.");
                         var strengths = Read<Dictionary<MapModel.DestinationKey, float>>(renderer, "_displayed");
                         var before = strengths[retained.Key];
@@ -462,13 +500,13 @@ public sealed partial class MainWindow
                         };
                         SendMessageW(WinRT.Interop.WindowNative.GetWindowHandle(this), 0x001A, 0, 0);
                         await notified.Task.WaitAsync(TimeSpan.FromSeconds(10));
-                        await Until(() => !Read<bool>(map, "_frameQueued"), "The preference notification did not finish preparing the map.");
+                        await Until(() => CaptureMapIdle(map), "The preference notification did not finish preparing the map.");
                         outcomes.Add(new { journey = "map preference notification", uiThread = true, scope = "Notification dispatch with unchanged observations; Windows preferences unchanged." });
                     }
                     if (paused)
                     {
                         map.SetAnimation(MapAnimation.Off, MapDotTotal.Normal);
-                        await Until(() => motion.Control.Paused && !Read<bool>(map, "_frameQueued"),
+                        await Until(() => motion.Control.Paused && CaptureMapIdle(map),
                             "Animation Off did not pause the motion control.");
                     }
                     List<CanvasRenderTarget> resources = [];
@@ -483,8 +521,30 @@ public sealed partial class MainWindow
                     });
                     var stopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                     motion.Control.GameLoopStopped += (_, _) => stopped.TrySetResult();
-                    Root.Children.Remove(map);
+                    var retiring = Read<MapWork>(map, "_work");
+                    var preparing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    using var release = new ManualResetEventSlim();
+                    retiring.Started = () =>
+                    {
+                        if (DispatcherQueue.HasThreadAccess)
+                            throw new InvalidOperationException("Map preparation ran on the UI thread.");
+                        preparing.TrySetResult();
+                        if (!release.Wait(TimeSpan.FromSeconds(5)))
+                            throw new TimeoutException("The map fixture did not release its worker.");
+                    };
+                    try
+                    {
+                        model.Update([MakePeer(1048576)], origin, Model.Text, cities: false);
+                        await preparing.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                        Root.Children.Remove(map);
+                    }
+                    finally
+                    {
+                        release.Set();
+                        retiring.Started = null;
+                    }
                     await stopped.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                    await retiring.Released.WaitAsync(TimeSpan.FromSeconds(10));
                     foreach (var resource in resources.Distinct())
                     {
                         try
@@ -508,6 +568,104 @@ public sealed partial class MainWindow
         finally
         {
             owner.Place = originalPlace;
+        }
+    }
+
+    private async Task CapturePeerPreparation(List<object> outcomes)
+    {
+        const BindingFlags Flags = BindingFlags.Instance | BindingFlags.NonPublic;
+        var inspector = Model.Inspector;
+        Model.OpenInspector();
+        inspector.Show(null, InspectorSection.Peers, allPeers: true);
+        Model.SetInspector(open: true, compact: false);
+        await CaptureLayout();
+        var pane = (InspectorPane)InspectorContent.Content;
+        pane.Layout = pane.Layout with { View = PeerView.Default with { Layout = PeerLayout.Table } };
+        var invalidate = typeof(Inspector).GetMethod("Invalidate", Flags)!;
+        var fetching = typeof(Inspector).GetField("_fetching", Flags)!;
+        var context = typeof(Inspector).GetField("_context", Flags)!;
+        var apply = typeof(Inspector).GetMethod("ApplyPeers", Flags)!;
+        void StopReading()
+        {
+            invalidate.Invoke(inspector, null);
+            fetching.SetValue(inspector, true);
+        }
+        Task<bool> Apply(JsonElement rows) => (Task<bool>)apply.Invoke(inspector,
+            ["peer-check", rows, context.GetValue(inspector)!])!;
+        StopReading();
+        try
+        {
+            var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            using var release = new ManualResetEventSlim();
+            inspector.PreparingPeers = () =>
+            {
+                if (DispatcherQueue.HasThreadAccess)
+                    throw new InvalidOperationException("Peer preparation ran on the UI thread.");
+                started.TrySetResult();
+                if (!release.Wait(TimeSpan.FromSeconds(5)))
+                    throw new TimeoutException("The peer fixture did not release its worker.");
+            };
+            Task<bool> stale;
+            try
+            {
+                stale = Apply(PeerRows(3));
+                await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                StopReading();
+                if (stale.IsCompleted)
+                    throw new InvalidOperationException("Peer preparation did not remain on its blocked worker.");
+            }
+            finally
+            {
+                release.Set();
+                inspector.PreparingPeers = null;
+            }
+            if (await stale || inspector.Peers is { Count: > 0 })
+                throw new InvalidOperationException("Cancelled peer preparation published stale rows.");
+            await Apply(PeerRows(3));
+            var peers = inspector.Peers!;
+            var before = peers[0].Capture();
+            peers[0].Update(new Peer(Model.Text, "peer-check", peers[0].Endpoint, null,
+                JsonSerializer.SerializeToElement(new { state = "known", sources = new[] { "dht" } })));
+            var captured = peers[0].Capture();
+            var notified = false;
+            peers[0].PropertyChanged += (_, _) =>
+            {
+                if (!DispatcherQueue.HasThreadAccess)
+                    throw new InvalidOperationException("Peer notifications ran off the UI thread.");
+                notified = true;
+            };
+            await Apply(PeerRows(3));
+            if (!ReferenceEquals(inspector.Peers, peers) || !ReferenceEquals(inspector.Peers[0], peers[0])
+                || captured.State != PeerState.Known || peers[0].State != before.State || !notified)
+                throw new InvalidOperationException("Prepared peer changes lost row identity or mutated a captured record.");
+            var locating = typeof(Inspector).GetField("_locating", Flags)!;
+            var lookup = Stopwatch.StartNew();
+            while ((bool)locating.GetValue(inspector)!)
+            {
+                if (lookup.Elapsed > TimeSpan.FromSeconds(5))
+                    throw new TimeoutException("The peer fixture's location lookup did not finish.");
+                await Task.Delay(16);
+            }
+            peers[0].Location = new Location("US", new Place("US", null), null, null);
+            peers[1].Location = new Location("JP", new Place("JP", null), null, null);
+            inspector.Place = PeerPlace.Of(peers[0].Location!, false);
+            inspector.Place = PeerPlace.Of(peers[1].Location!, false);
+            await inspector.PeersReady.WaitAsync(TimeSpan.FromSeconds(5));
+            if (inspector.ShownPeers is not { Count: 1 } shown || !ReferenceEquals(shown[0], peers[1]))
+                throw new InvalidOperationException("A superseded place filter published its rows.");
+            inspector.Place = null;
+            await inspector.PeersReady.WaitAsync(TimeSpan.FromSeconds(5));
+            if (!ReferenceEquals(inspector.ShownPeers, peers))
+                throw new InvalidOperationException("Clearing the place did not restore the current peer source.");
+            outcomes.Add(new { journey = "peer worker cancellation and latest filter", rowIdentity = true,
+                immutableRecords = true, notificationsOnUi = true, staleRowsDiscarded = true });
+        }
+        finally
+        {
+            inspector.PreparingPeers = null;
+            inspector.Place = null;
+            fetching.SetValue(inspector, false);
+            Model.CloseInspector();
         }
     }
 
@@ -601,7 +759,6 @@ public sealed partial class MainWindow
         var apply = typeof(Inspector).GetMethod("ApplyPeers", flags)!;
         invalidate.Invoke(inspector, null);
         fetching.SetValue(inspector, true);
-        var groups = new Dictionary<string, Peer[]>();
         var rows = PeerRows(10000);
         try
         {
@@ -609,22 +766,18 @@ public sealed partial class MainWindow
             var pane = (InspectorPane)InspectorContent.Content;
             var table = (Syno.TableView.Table)pane.FindName("Peers");
             var firstBatch = 0;
-            var visible = true;
             Task<bool>? preparing = null;
             System.ComponentModel.PropertyChangedEventHandler published = (_, _) =>
             {
                 if (firstBatch != 0 || inspector.Peers is not { Count: > 0 } ready)
                     return;
                 firstBatch = ready.Count;
-                if (firstBatch < 10000 && (preparing is not { IsCompleted: false }
-                    || !ReferenceEquals(table.ItemsSource, inspector.ShownPeers)))
-                    visible = false;
             };
             inspector.PropertyChanged += published;
             try
             {
                 preparing = (Task<bool>)apply.Invoke(inspector,
-                    [targets[0].TorrentId, rows, groups, context.GetValue(inspector)!])!;
+                    [targets[0].TorrentId, rows, context.GetValue(inspector)!])!;
                 await preparing;
                 cold.Stop();
                 inspector.Refresh();
@@ -636,15 +789,13 @@ public sealed partial class MainWindow
                 inspector.PropertyChanged -= published;
             }
             var coldMilliseconds = cold.Elapsed.TotalMilliseconds;
-            if (!visible)
-                throw new InvalidOperationException("Prepared peers did not reach the table before completion.");
-            if (firstBatch == 0 || inspector.Peers is not { Count: 10000 } peers)
+            if (firstBatch != 10000 || inspector.Peers is not { Count: 10000 } peers)
                 throw new InvalidOperationException("Background peer preparation lost rows.");
             var first = peers[0];
             first.Update(new Peer(Model.Text, targets[0].TorrentId, first.Endpoint, null,
                 JsonSerializer.SerializeToElement(new { state = "known", role = "leecher", sources = new[] { "dht" } })));
             await (Task<bool>)apply.Invoke(inspector,
-                [targets[0].TorrentId, rows, groups, context.GetValue(inspector)!])!;
+                [targets[0].TorrentId, rows, context.GetValue(inspector)!])!;
             if (!ReferenceEquals(inspector.Peers![0], first) || first.Role != PeerRole.Seed)
                 throw new InvalidOperationException("Background refresh replaced a live peer or lost its update.");
             inspector.Refresh();
@@ -655,41 +806,43 @@ public sealed partial class MainWindow
 
             first.Update(new Peer(Model.Text, targets[0].TorrentId, first.Endpoint, null,
                 JsonSerializer.SerializeToElement(new { state = "known", role = "leecher", sources = new[] { "dht" } })));
-            var interrupted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            using var release = new ManualResetEventSlim();
             var cancellation = ((CancellationTokenSource)typeof(Inspector).GetField("_reading", flags)!
                 .GetValue(inspector)!).Token;
-            Task<bool>? applying = null;
-            System.ComponentModel.PropertyChangedEventHandler select = (_, _) =>
+            inspector.PreparingPeers = () =>
             {
-                // A slow row binding forces a time slice even on fast machines.
-                Thread.Sleep(20);
-                DispatcherQueue.TryEnqueue(() =>
-                {
-                    var pending = applying is { IsCompleted: false };
-                    Torrents.Selection = new Syno.TableView.Selection([targets[1]], targets[1]);
-                    _ = new FrameCallback(DispatcherQueue, () =>
-                    {
-                        invalidate.Invoke(inspector, null);
-                        fetching.SetValue(inspector, true);
-                        interrupted.TrySetResult(pending);
-                    });
-                });
+                if (DispatcherQueue.HasThreadAccess)
+                    throw new InvalidOperationException("Peer preparation ran on the UI thread.");
+                started.TrySetResult();
+                if (!release.Wait(TimeSpan.FromSeconds(5)))
+                    throw new TimeoutException("The peer preparation fixture did not release its worker.");
             };
-            first.PropertyChanged += select;
+            Task<bool> applying;
             try
             {
                 applying = (Task<bool>)apply.Invoke(inspector,
-                    [targets[0].TorrentId, rows, groups, context.GetValue(inspector)!])!;
-                if (!await interrupted.Task.WaitAsync(TimeSpan.FromSeconds(20))
-                    || Model.Current != targets[1] || inspector.Target != targets[1]
+                    [targets[0].TorrentId, rows, context.GetValue(inspector)!])!;
+                await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                Torrents.Selection = new Syno.TableView.Selection([targets[1]], targets[1]);
+                var changed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                _ = new FrameCallback(DispatcherQueue, () =>
+                {
+                    invalidate.Invoke(inspector, null);
+                    fetching.SetValue(inspector, true);
+                    changed.TrySetResult();
+                });
+                await changed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                if (applying.IsCompleted || Model.Current != targets[1] || inspector.Target != targets[1]
                     || !cancellation.IsCancellationRequested)
-                    throw new InvalidOperationException("Selection waited for the whole peer update.");
-                await applying;
+                    throw new InvalidOperationException("Selection waited for background peer preparation.");
             }
             finally
             {
-                first.PropertyChanged -= select;
+                release.Set();
+                inspector.PreparingPeers = null;
             }
+            await applying;
             if (inspector.Peers is { } stale && stale.Any(peer => peer.TorrentId == targets[0].TorrentId))
                 throw new InvalidOperationException("A stale background reply replaced the new selection.");
             await CaptureLayout();
@@ -698,7 +851,7 @@ public sealed partial class MainWindow
                 throw new InvalidOperationException("Pending inspector work cleared the displayed detail.");
             await CaptureUi("selection-peers-waiting");
             await (Task<bool>)apply.Invoke(inspector,
-                [targets[1].TorrentId, PeerRows(128), new Dictionary<string, Peer[]>(), context.GetValue(inspector)!])!;
+                [targets[1].TorrentId, PeerRows(128), context.GetValue(inspector)!])!;
             inspector.Refresh();
             await CaptureReady(inspector, () => ReferenceEquals(table.ItemsSource, inspector.ShownPeers));
             await CaptureLayout();
@@ -1333,9 +1486,7 @@ public sealed partial class MainWindow
             }
             // Zooming in to Europe at 600% traces finer outlines for every
             // country that has one.
-            var renderer = typeof(PeerMap)
-                .GetField("_renderer", BindingFlags.Instance | BindingFlags.NonPublic)!
-                .GetValue(centred)!;
+            var renderer = CaptureRenderer(centred)!;
             var land = (System.Collections.IDictionary)typeof(MapRenderer)
                 .GetField("_land", BindingFlags.Instance | BindingFlags.NonPublic)!
                 .GetValue(renderer)!;
@@ -1477,7 +1628,6 @@ public sealed partial class MainWindow
                 List<double> frames = [];
                 List<double> submissions = [];
                 var rates = peers.Select(peer => peer.DownloadRate).ToArray();
-                var rate = typeof(Peer).GetProperty(nameof(Peer.DownloadRate))!;
                 var allocated = GC.GetTotalAllocatedBytes(false);
                 centred.FrameMeasured = frames.Add;
                 for (var step = 0; step < 120; step++)
@@ -1486,7 +1636,7 @@ public sealed partial class MainWindow
                     if (updates && step % 6 == 0)
                     {
                         for (var index = 0; index < peers.Length; index++)
-                            rate.SetValue(peers[index], rates[index] * (step % 12 == 0 ? 1.1 : 1));
+                            CaptureRates(peers[index], rates[index] * (step % 12 == 0 ? 1.1 : 1));
                         inspector.Map.Update(peers, homes[0].Origin, Model.Text);
                     }
                     viewport.Hold(8f, focus, offset + new Vector2(step * 4, step));
@@ -1505,7 +1655,7 @@ public sealed partial class MainWindow
                     scope = "Same 100 peers and 8x view; drawMs includes preparation. Submission overlaps preparation and must not be added to drawMs; excludes GPU execution.",
                 });
                 for (var index = 0; index < peers.Length; index++)
-                    rate.SetValue(peers[index], rates[index]);
+                    CaptureRates(peers[index], rates[index]);
                 inspector.Map.Update(peers, homes[0].Origin, Model.Text);
             }
             View(1f, Vector2.Zero);
@@ -1559,6 +1709,7 @@ public sealed partial class MainWindow
                 var place = inspector.Place;
                 choose.Invoke(chooser, [sameCountry[1]]);
                 var second = selectedField.GetValue(chooser);
+                await inspector.PeersReady;
                 var row = inspector.ShownPeers!.First();
                 table.Selection = new Syno.TableView.Selection([row], row);
                 await CaptureLayout();
@@ -1624,8 +1775,7 @@ public sealed partial class MainWindow
             // A rate refresh must keep native routes, and redraws must not
             // publish peer changes or redistribute the destinations.
             var owner = inspector.Map;
-            var native = typeof(PeerMap).GetField("_renderer", BindingFlags.Instance | BindingFlags.NonPublic)!;
-            var activeRenderer = (MapRenderer)native.GetValue(chooser)!;
+            var activeRenderer = CaptureRenderer(chooser)!;
             var routes = typeof(MapRenderer).GetField("_routes", BindingFlags.Instance | BindingFlags.NonPublic)!;
             var pending = typeof(PeerMap).GetField("_preparationQueued", BindingFlags.Instance | BindingFlags.NonPublic)!;
             object[] Arcs() => ((System.Collections.IEnumerable)routes.GetValue(activeRenderer)!)
@@ -1645,6 +1795,7 @@ public sealed partial class MainWindow
                 {
                     invalidateMap.Invoke(chooser, null);
                     await drawn.Task.WaitAsync(TimeSpan.FromSeconds(20));
+                    await inspector.PeersReady;
                 }
                 finally
                 {
@@ -1657,12 +1808,12 @@ public sealed partial class MainWindow
             var arcs = Arcs();
             var active = peers.First(peer => peer.DownloadRate > 0);
             var download = active.DownloadRate;
-            typeof(Peer).GetProperty(nameof(Peer.DownloadRate))!.SetValue(active, download * 1.1);
+            CaptureRates(active, download * 1.1);
             inspector.UpdateMap(false);
             await DrawMap(() => true);
             if (arcs.Length == 0 || !arcs.SequenceEqual(Arcs()))
                 throw new InvalidOperationException("A rate-only update replaced route geometry.");
-            typeof(Peer).GetProperty(nameof(Peer.DownloadRate))!.SetValue(active, download);
+            CaptureRates(active, download);
             inspector.UpdateMap(false);
             await DrawMap(() => true);
             var notifications = 0;
@@ -1685,22 +1836,23 @@ public sealed partial class MainWindow
             typeof(Inspector).GetProperty(nameof(Inspector.Peers))!.SetValue(inspector, peers);
             inspector.Refresh();
             await DrawMap(() => owner.Destinations.Any(destination => destination.Key.Code == "JP"));
-            if (!Equals(retainedChoice, selectedField.GetValue(chooser)))
+            if (((MapModel.Destination?)retainedChoice)?.Key != ((MapModel.Destination?)selectedField.GetValue(chooser))?.Key)
                 throw new InvalidOperationException("Returning peers changed the exact chosen destination.");
-            activeRenderer.ReleaseGeometry();
-            typeof(PeerMap).GetMethod("Prepare", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(chooser, null);
-            await DrawMap(() => true);
-            if (Arcs().Length != arcs.Length || inspector.Place != retainedPlace)
-                throw new InvalidOperationException("Resource recreation changed the place or lost routes.");
             // Detach the real control without restarting engine acquisition
             // over the synthetic peer fixture.
             var host = (ContentControl)pane.FindName("PeerDrawing");
+            var retiring = (MapWork)typeof(PeerMap).GetField("_work", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(chooser)!;
             host.Content = null;
             await CaptureLayout();
-            if (native.GetValue(chooser) is not null || ((System.Collections.ICollection)routes.GetValue(activeRenderer)!).Count != 0)
+            await retiring.Released.WaitAsync(TimeSpan.FromSeconds(10));
+            if (CaptureRenderer(chooser) is not null || ((System.Collections.ICollection)routes.GetValue(activeRenderer)!).Count != 0)
                 throw new InvalidOperationException("Hiding the map retained native resources.");
             host.Content = chooser;
             await CaptureLayout();
+            await chooser.Ready.WaitAsync(TimeSpan.FromSeconds(10));
+            activeRenderer = CaptureRenderer(chooser)!;
+            if (Arcs().Length != arcs.Length || inspector.Place != retainedPlace)
+                throw new InvalidOperationException("Resource recreation changed the place or lost routes.");
             if (!ReferenceEquals(owner, inspector.Map) || inspector.Place != retainedPlace)
                 throw new InvalidOperationException("Showing the map replaced its model or chosen place.");
             outcomes.Add(new { journey = "map ownership and resources", retainedRoutes = arcs.Length, redrawNotifications = notifications, placePreserved = true });
@@ -1716,12 +1868,11 @@ public sealed partial class MainWindow
             {
                 var rows = PeerRows(count);
                 var apply = typeof(Inspector).GetMethod("ApplyPeers", BindingFlags.Instance | BindingFlags.NonPublic)!;
-                var groups = new Dictionary<string, Peer[]>();
                 typeof(Inspector).GetProperty(nameof(Inspector.Peers))!.SetValue(inspector, null);
                 var context = typeof(Inspector).GetField("_context", BindingFlags.Instance | BindingFlags.NonPublic)!
                     .GetValue(inspector)!;
                 var started = Stopwatch.GetTimestamp();
-                await (Task<bool>)apply.Invoke(inspector, [target.TorrentId, rows, groups, context])!;
+                await (Task<bool>)apply.Invoke(inspector, [target.TorrentId, rows, context])!;
                 var create = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
                 var known = inspector.Peers!;
                 var lookup = await Task.Run(() =>
@@ -1771,7 +1922,7 @@ public sealed partial class MainWindow
                 for (var sample = 0; sample < 30; sample++)
                 {
                     started = Stopwatch.GetTimestamp();
-                    await (Task<bool>)apply.Invoke(inspector, [target.TorrentId, rows, groups, context])!;
+                    await (Task<bool>)apply.Invoke(inspector, [target.TorrentId, rows, context])!;
                     inspector.Map.Update(known, null, Model.Text);
                     unchanged.Add(Stopwatch.GetElapsedTime(started).TotalMilliseconds);
                 }
@@ -1800,14 +1951,11 @@ public sealed partial class MainWindow
                 // row. Each is timed alone; the first round includes JIT.
                 // Rates on some peers make dots fly, so each round also counts
                 // the frames the dots' layer draws while the UI thread is busy.
-                var downloadRate = typeof(Peer).GetProperty(nameof(Peer.DownloadRate))!;
-                var uploadRate = typeof(Peer).GetProperty(nameof(Peer.UploadRate))!;
                 // Equal rates would launch every route's dots at the same moment,
                 // leaving long gaps with no dot; varied rates keep dots flying.
                 foreach (var (peer, index) in known.Take(64).Select((peer, index) => (peer, index)))
                 {
-                    downloadRate.SetValue(peer, 64.0 * 1024 * (1 + index % 13));
-                    uploadRate.SetValue(peer, 8.0 * 1024 * (1 + index % 7));
+                    CaptureRates(peer, 64.0 * 1024 * (1 + index % 13), 8.0 * 1024 * (1 + index % 7));
                 }
                 // Arcs and dots need the user's location, which the map timing
                 // above leaves out.
@@ -1835,9 +1983,13 @@ public sealed partial class MainWindow
                         var clicked = Stopwatch.GetTimestamp();
                         choose.Invoke(drawing, [choice]);
                         var clickMs = Stopwatch.GetElapsedTime(clicked).TotalMilliseconds;
+                        await inspector.PeersReady;
                         var assigned = Stopwatch.GetTimestamp();
                         table.ItemsSource = inspector.ShownPeers;
                         var assignMs = Stopwatch.GetElapsedTime(assigned).TotalMilliseconds;
+                        var preparing = Stopwatch.GetTimestamp();
+                        await table.ViewReady;
+                        var projectionMs = Stopwatch.GetElapsedTime(preparing).TotalMilliseconds;
                         var laid = Stopwatch.GetTimestamp();
                         Root.UpdateLayout();
                         var layoutMs = Stopwatch.GetElapsedTime(laid).TotalMilliseconds;
@@ -1854,6 +2006,7 @@ public sealed partial class MainWindow
                             rows = inspector.ShownPeers!.Count,
                             clickMs,
                             assignMs,
+                            projectionMs,
                             layoutMs,
                             paneRefreshMs,
                             busyMs,
@@ -1883,7 +2036,6 @@ public sealed partial class MainWindow
                 // that shows its result: the map drawn with the choice and the
                 // table holding the place's rows. The dots keep flying.
                 var nonPublic = BindingFlags.Instance | BindingFlags.NonPublic;
-                var mapRenderer = (MapRenderer)typeof(PeerMap).GetField("_renderer", nonPublic)!.GetValue(drawing)!;
                 var mapViewport = (MapViewport)typeof(PeerMap).GetField("_viewport", nonPublic)!.GetValue(drawing)!;
                 var selectPeers = typeof(PeerMap).GetMethod("SelectPeers", nonPublic)!;
                 var describe = typeof(PeerMap).GetMethod("Describe", nonPublic)!;
@@ -1905,7 +2057,7 @@ public sealed partial class MainWindow
                             stamps.Clear();
                             var clickedAt = Stopwatch.GetTimestamp();
                             var clickStart = CaptureCycles.Current();
-                            var hit = mapRenderer.HitTest(point);
+                            var hit = ((MapRenderer.Inspection)typeof(PeerMap).GetField("_inspection", nonPublic)!.GetValue(drawing)!).HitTest(point);
                             selectPeers.Invoke(drawing, [Array.Empty<Peer>()]);
                             choose.Invoke(drawing, [hit]);
                             describe.Invoke(drawing, null);

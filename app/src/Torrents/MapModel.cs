@@ -8,13 +8,8 @@ namespace Syno.TinyTorrent.Torrents;
 internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
 {
     private Observation[] _observations = [];
-    private (Group? Country, Group? Place)[]? _membership;
-    // Cache identity must not keep an unloaded map's outline data alive.
-    private WeakReference<IReadOnlyDictionary<string, Geography.Country>>? _world;
-    private readonly Dictionary<PeerPlace, Group> _places = [];
-    private string _language = string.Empty;
-    internal Dictionary<string, Group> Countries { get; } = [];
-    internal List<Destination> Destinations { get; } = [];
+    internal Dictionary<string, Group> Countries { get; private set; } = [];
+    internal List<Destination> Destinations { get; private set; } = [];
     internal Location? Origin { get; private set; }
     internal GeoPoint? OriginPoint { get; private set; }
 
@@ -30,12 +25,6 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
     // engine session.
     private double _peak;
     private double? _capacity;
-
-    // A country's regions depend only on its bundled places, the meridian and
-    // the fitted scale, so they last until one of those changes instead of
-    // being merged again at every rate update.
-    private readonly Dictionary<string, Geography.Area[]> _regions = [];
-    private (float Meridian, float Scale) _regionsFor;
 
     /// <summary>
     /// The rate in bytes per second that the moving dots measure traffic
@@ -65,201 +54,256 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
     )
     {
         peers ??= [];
-        // Compare mutable peer facts with the last snapshot before allocating another.
-        if (
-            IsShowing(peers)
-            && Origin == origin
-            && _language == text.Language
-            && Cities == cities
-            && _capacity == capacity
-        )
-            return;
-        if (Cities != cities || _language != text.Language || peers.Count != _observations.Length
-            || peers.Where((peer, index) => !ReferenceEquals(peer, _observations[index].Peer)
-                || !Equals(peer.Location, _observations[index].Location)).Any())
-            _membership = null;
         _observations = peers.Select(peer =>
             new Observation(peer, peer.DownloadRate, peer.UploadRate, peer.Location)).ToArray();
         Origin = origin;
         Text = text;
-        _language = text.Language;
         Cities = cities;
         _capacity = capacity;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(null));
     }
 
-    internal IEnumerable<Peer> Peers => _observations.Select(observation => observation.Peer);
-
-    /// <summary>
-    /// Groups the observed peers and places their destinations on the map
-    /// fitted at <paramref name="scale"/> DIPs per degree.
-    /// </summary>
-    internal void Arrange(IReadOnlyDictionary<string, Geography.Country> world, float scale)
+    internal sealed record Snapshot(Observation[] Observations, Location? Origin, Strings Text, bool Cities, double Ceiling)
     {
-        OriginPoint = Locate(Origin, world);
-        if (_world is null || !_world.TryGetTarget(out var previousWorld) || !ReferenceEquals(previousWorld, world))
+        internal bool Matches(Snapshot other) => Origin == other.Origin && Text.Language == other.Text.Language
+            && Cities == other.Cities && Ceiling == other.Ceiling
+            && (ReferenceEquals(Observations, other.Observations) || Observations.Length == other.Observations.Length
+                && !Observations.Where((observation, index) => !observation.Matches(other.Observations[index])).Any());
+    }
+
+    internal sealed record Presentation(Dictionary<string, Group> Countries, List<Destination> Destinations, GeoPoint? Origin);
+
+    internal Snapshot Capture() => new(_observations, Origin, Text!, Cities, Ceiling);
+
+    internal void Apply(Presentation presentation)
+    {
+        Countries = presentation.Countries;
+        Destinations = presentation.Destinations;
+        OriginPoint = presentation.Origin;
+    }
+
+    internal sealed class Arrangement
+    {
+        private Observation[] _observations = [];
+        private (Group? Country, Group? Place)[]? _membership;
+        private IReadOnlyDictionary<string, Geography.Country>? _world;
+        private readonly Dictionary<PeerPlace, Group> _places = [];
+        private readonly Dictionary<string, Geography.Area[]> _regions = [];
+        private (float Meridian, float Scale) _regionsFor;
+        internal Dictionary<string, Group> Countries { get; } = [];
+        internal List<Destination> Destinations { get; } = [];
+        internal Location? Origin { get; private set; }
+        internal GeoPoint? OriginPoint { get; private set; }
+        internal float Meridian => (float)(OriginPoint?.Longitude ?? 0);
+        internal Strings? Text { get; private set; }
+        internal bool Cities { get; private set; }
+        internal double Ceiling { get; private set; }
+
+        internal void Update(Snapshot snapshot)
         {
-            _world = new(world);
+            if (Cities != snapshot.Cities || Text?.Language != snapshot.Text.Language
+                || _observations.Length != snapshot.Observations.Length
+                || _observations.Where((observation, index) => observation.Location != snapshot.Observations[index].Location).Any())
+                _membership = null;
+            _observations = snapshot.Observations;
+            Origin = snapshot.Origin;
+            Text = snapshot.Text;
+            Cities = snapshot.Cities;
+            Ceiling = snapshot.Ceiling;
+        }
+
+        internal Presentation Present()
+        {
+            var copies = Countries.Values.Concat(_places.Values).Distinct().ToDictionary(group => group, group => group.Copy());
+            return new(Countries.ToDictionary(entry => entry.Key, entry => copies[entry.Value]),
+                Destinations.Select(destination => destination with { Group = copies[destination.Group] }).ToList(), OriginPoint);
+        }
+
+        internal void Clear()
+        {
+            _observations = [];
             _membership = null;
-            _regions.Clear();
-        }
-        if (_regionsFor != (Meridian, scale))
-        {
-            _regions.Clear();
-            _regionsFor = (Meridian, scale);
-        }
-        if (_membership is null)
-        {
+            _world = null;
             Countries.Clear();
+            Destinations.Clear();
             _places.Clear();
-            _membership = new (Group?, Group?)[_observations.Length];
+            _regions.Clear();
+        }
+
+        /// <summary>
+        /// Groups the observed peers and places their destinations on the map
+        /// fitted at <paramref name="scale"/> DIPs per degree.
+        /// </summary>
+        internal void Arrange(IReadOnlyDictionary<string, Geography.Country> world, float scale)
+        {
+            OriginPoint = Locate(Origin, world);
+            if (!ReferenceEquals(_world, world))
+            {
+                _world = world;
+                _membership = null;
+                _regions.Clear();
+            }
+            if (_regionsFor != (Meridian, scale))
+            {
+                _regions.Clear();
+                _regionsFor = (Meridian, scale);
+            }
+            if (_membership is null)
+            {
+                Countries.Clear();
+                _places.Clear();
+                _membership = new (Group?, Group?)[_observations.Length];
+                for (var index = 0; index < _observations.Length; index++)
+                {
+                    var observation = _observations[index];
+                    if (observation.Location is not { } location || Locate(location, world) is not { } point)
+                        continue;
+                    var code = location.Code;
+                    var country = world.GetValueOrDefault(code);
+                    if (!Countries.TryGetValue(code, out var group))
+                    {
+                        var language = Text!.Language;
+                        group = new Group(
+                            PeerPlace.Of(location, false),
+                            () => location.CountryName(language),
+                            country?.Anchor ?? point,
+                            estimated: !Cities
+                        );
+                        Countries.Add(code, group);
+                    }
+                    Group? destination = null;
+                    if (Cities)
+                    {
+                        var place = PeerPlace.Of(location, true);
+                        if (!_places.TryGetValue(place, out destination))
+                        {
+                            var text = Text!;
+                            destination = new Group(place, () => location.City?.Name(text.Language) is { } city
+                                ? text.Format("peers", "location_city", city, location.CountryName(text.Language))
+                                : location.CountryName(text.Language), point);
+                            _places.Add(place, destination);
+                        }
+                    }
+                    _membership[index] = (group, destination);
+                }
+            }
+            foreach (var group in Countries.Values.Concat(_places.Values))
+                group.Reset();
             for (var index = 0; index < _observations.Length; index++)
             {
-                var observation = _observations[index];
-                if (observation.Location is not { } location || Locate(location, world) is not { } point)
+                var membership = _membership[index];
+                membership.Country?.Add(_observations[index]);
+                membership.Place?.Add(_observations[index]);
+            }
+            var placed = 0;
+            var rank = 0;
+            IEnumerable<Group> destinations = Cities ? _places.Values : Countries.Values;
+            foreach (var group in destinations)
+            {
+                rank = 0;
+                if (
+                    !group.Estimated
+                    || !world.TryGetValue(group.Code, out var country)
+                    || country.Areas.Length == 0
+                )
+                {
+                    Place(group, group.Point, 1, null);
                     continue;
-                var code = location.Code;
-                var country = world.GetValueOrDefault(code);
-                if (!Countries.TryGetValue(code, out var group))
-                {
-                    var language = Text!.Language;
-                    group = new Group(
-                        PeerPlace.Of(location, false),
-                        () => location.CountryName(language),
-                        country?.Anchor ?? point,
-                        estimated: !Cities
-                    );
-                    Countries.Add(code, group);
                 }
-                Group? destination = null;
-                if (Cities)
+                if (!_regions.TryGetValue(group.Code, out var regions))
                 {
-                    var place = PeerPlace.Of(location, true);
-                    if (!_places.TryGetValue(place, out destination))
-                    {
-                        var peer = observation.Peer;
-                        destination = new Group(place, () => peer.LocationText, point);
-                        _places.Add(place, destination);
-                    }
+                    regions = Regions(country.Areas, Meridian, scale);
+                    _regions[group.Code] = regions;
                 }
-                _membership[index] = (group, destination);
+                group.Regions = regions;
+                // Idle peers are placed like one connection, at the most likely region.
+                foreach (var (region, share) in Distribute(group.Regions, Math.Max(group.Active, 1)))
+                    Place(group, region.Point, share, region.Name);
             }
-        }
-        foreach (var group in Countries.Values.Concat(_places.Values))
-            group.Reset();
-        for (var index = 0; index < _observations.Length; index++)
-        {
-            var membership = _membership[index];
-            membership.Country?.Add(_observations[index]);
-            membership.Place?.Add(_observations[index]);
-        }
-        var placed = 0;
-        var rank = 0;
-        IEnumerable<Group> destinations = Cities ? _places.Values : Countries.Values;
-        foreach (var group in destinations)
-        {
-            rank = 0;
-            if (
-                !group.Estimated
-                || !world.TryGetValue(group.Code, out var country)
-                || country.Areas.Length == 0
-            )
-            {
-                Place(group, group.Point, 1, null);
-                continue;
-            }
-            if (!_regions.TryGetValue(group.Code, out var regions))
-            {
-                regions = Regions(country.Areas, Meridian, scale);
-                _regions[group.Code] = regions;
-            }
-            group.Regions = regions;
-            // Idle peers are placed like one connection, at the most likely region.
-            foreach (var (region, share) in Distribute(group.Regions, Math.Max(group.Active, 1)))
-                Place(group, region.Point, share, region.Name);
-        }
-        if (placed < Destinations.Count)
-            Destinations.RemoveRange(placed, Destinations.Count - placed);
+            if (placed < Destinations.Count)
+                Destinations.RemoveRange(placed, Destinations.Count - placed);
 
-        void Place(Group group, GeoPoint point, double share, string? area)
-        {
-            var previous = placed < Destinations.Count ? Destinations[placed] : null;
-            if (previous is null || !ReferenceEquals(previous.Group, group) || previous.Point != point
-                || previous.Share != share || previous.Area != area || previous.Rank != rank)
+            void Place(Group group, GeoPoint point, double share, string? area)
             {
-                var destination = new Destination(group, point, share, area) { Rank = rank };
-                if (placed < Destinations.Count)
-                    Destinations[placed] = destination;
+                var previous = placed < Destinations.Count ? Destinations[placed] : null;
+                if (previous is null || !ReferenceEquals(previous.Group, group) || previous.Point != point
+                    || previous.Share != share || previous.Area != area || previous.Rank != rank)
+                {
+                    var destination = new Destination(group, point, share, area) { Rank = rank };
+                    if (placed < Destinations.Count)
+                        Destinations[placed] = destination;
+                    else
+                        Destinations.Add(destination);
+                }
+                placed++;
+                rank++;
+            }
+        }
+
+        private static GeoPoint? Locate(Location? location, IReadOnlyDictionary<string, Geography.Country> world) =>
+            location?.Point ?? (location is null ? null : world.GetValueOrDefault(location.Code)?.Anchor);
+
+        /// <summary>
+        /// How many destinations of each place the <paramref name="selected"/>
+        /// peers mark.
+        /// </summary>
+        internal Dictionary<PeerPlace, int> Marks(IReadOnlyList<Location?> selected)
+        {
+            if (selected.Count == 0)
+                return [];
+            Dictionary<PeerPlace, int> counts = [];
+            foreach (var location in selected)
+            {
+                if (location is not null)
+                {
+                    var place = PeerPlace.Of(location, Cities);
+                    counts[place] = counts.GetValueOrDefault(place) + 1;
+                }
+            }
+            Dictionary<PeerPlace, int> marks = [];
+            foreach (var destination in Destinations)
+            {
+                var group = destination.Group;
+                if (!marks.ContainsKey(group.Place) && counts.TryGetValue(group.Place, out var count))
+                    marks[group.Place] = group.Regions.Length == 0 ? 1 : Reach(group.Regions, count);
+            }
+            return marks;
+        }
+
+        // Bundled places closer than this, in DIPs on the fitted map, form one region.
+        private const float Spacing = 25;
+
+        /// <summary>
+        /// A country's populated places, with places that would overlap on the
+        /// fitted map merged into regions, most populous first.
+        /// </summary>
+        private static Geography.Area[] Regions(Geography.Area[] areas, float meridian, float scale)
+        {
+            List<Geography.Area> regions = [];
+            List<Vector2> positions = [];
+            foreach (var area in areas)
+            {
+                var position = MapViewport.Project(area.Point, meridian, scale);
+                var nearby = -1;
+                for (var index = 0; index < positions.Count && nearby < 0; index++)
+                {
+                    if (Vector2.Distance(positions[index], position) < Spacing)
+                        nearby = index;
+                }
+                if (nearby < 0)
+                {
+                    regions.Add(area);
+                    positions.Add(position);
+                }
                 else
-                    Destinations.Add(destination);
+                    regions[nearby] = regions[nearby] with
+                    {
+                        Population = regions[nearby].Population + area.Population,
+                    };
             }
-            placed++;
-            rank++;
+            return [.. regions.OrderByDescending(region => region.Population)];
         }
-    }
 
-    private static GeoPoint? Locate(Location? location, IReadOnlyDictionary<string, Geography.Country> world) =>
-        location?.Point ?? (location is null ? null : world.GetValueOrDefault(location.Code)?.Anchor);
-
-    /// <summary>
-    /// How many destinations of each place the <paramref name="selected"/>
-    /// peers mark.
-    /// </summary>
-    internal Dictionary<PeerPlace, int> Marks(IReadOnlyList<Peer> selected)
-    {
-        if (selected.Count == 0)
-            return [];
-        Dictionary<PeerPlace, int> counts = [];
-        foreach (var peer in selected)
-        {
-            if (peer.Location is { } location)
-            {
-                var place = PeerPlace.Of(location, Cities);
-                counts[place] = counts.GetValueOrDefault(place) + 1;
-            }
-        }
-        Dictionary<PeerPlace, int> marks = [];
-        foreach (var destination in Destinations)
-        {
-            var group = destination.Group;
-            if (!marks.ContainsKey(group.Place) && counts.TryGetValue(group.Place, out var count))
-                marks[group.Place] = group.Regions.Length == 0 ? 1 : Reach(group.Regions, count);
-        }
-        return marks;
-    }
-
-    // Bundled places closer than this, in DIPs on the fitted map, form one region.
-    private const float Spacing = 25;
-
-    /// <summary>
-    /// A country's populated places, with places that would overlap on the
-    /// fitted map merged into regions, most populous first.
-    /// </summary>
-    private static Geography.Area[] Regions(Geography.Area[] areas, float meridian, float scale)
-    {
-        List<Geography.Area> regions = [];
-        List<Vector2> positions = [];
-        foreach (var area in areas)
-        {
-            var position = MapViewport.Project(area.Point, meridian, scale);
-            var nearby = -1;
-            for (var index = 0; index < positions.Count && nearby < 0; index++)
-            {
-                if (Vector2.Distance(positions[index], position) < Spacing)
-                    nearby = index;
-            }
-            if (nearby < 0)
-            {
-                regions.Add(area);
-                positions.Add(position);
-            }
-            else
-                regions[nearby] = regions[nearby] with
-                {
-                    Population = regions[nearby].Population + area.Population,
-                };
-        }
-        return [.. regions.OrderByDescending(region => region.Population)];
     }
 
     internal string Describe(Destination? destination)
@@ -360,6 +404,7 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
         bool estimated = false
     )
     {
+        internal Group Copy() => (Group)MemberwiseClone();
         internal PeerPlace Place { get; } = place;
         internal string Code => Place.Code;
         internal string Name => field ??= name();
@@ -420,30 +465,12 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
         internal int Rank { get; init; }
     }
 
-    private bool IsShowing(IReadOnlyList<Peer> peers)
-    {
-        if (peers.Count != _observations.Length)
-            return false;
-        for (var index = 0; index < peers.Count; index++)
-        {
-            if (!_observations[index].Matches(peers[index]))
-                return false;
-        }
-        return true;
-    }
-
     internal sealed record Observation(Peer Peer, double Down, double Up, Location? Location)
     {
         internal PeerRole Role { get; } = Peer.Role;
         internal PeerState State { get; } = Peer.State;
 
-        /// <summary>Whether the peer still has the values this observation recorded.</summary>
-        internal bool Matches(Peer peer) =>
-            ReferenceEquals(Peer, peer)
-            && Down == peer.DownloadRate
-            && Up == peer.UploadRate
-            && Equals(Location, peer.Location)
-            && Role == peer.Role
-            && State == peer.State;
+        internal bool Matches(Observation other) => Down == other.Down && Up == other.Up
+            && Location == other.Location && Role == other.Role && State == other.State;
     }
 }

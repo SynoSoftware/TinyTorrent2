@@ -35,6 +35,47 @@ internal sealed class SortRow
 public class SortingTests
 {
     [TestMethod]
+    public Task ABlockedProjectionLeavesSelectionResponsiveAndCannotPublishOverANewerSource() =>
+        TestHost.RunAsync(async () =>
+        {
+            var ui = Environment.CurrentManagedThreadId;
+            var comparing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            using var release = new ManualResetEventSlim();
+            var comparer = Comparer<int>.Create((left, right) =>
+            {
+                if (Environment.CurrentManagedThreadId == ui)
+                    throw new AssertFailedException("Sorting ran on the UI thread.");
+                comparing.TrySetResult();
+                if (!release.Wait(TimeSpan.FromSeconds(5)))
+                    throw new TimeoutException("The test did not release the comparison.");
+                return left.CompareTo(right);
+            });
+            SortHarness h = await SortHarness.LoadAsync(new[] { 3, 1, 2 }, configure: table =>
+                table.Schema<SortRow>().SortKey(table.Columns[0], row =>
+                {
+                    Assert.AreEqual(ui, Environment.CurrentManagedThreadId, "Host values must be captured on their owning thread.");
+                    return row.Rank;
+                }, comparer));
+            try
+            {
+                h.Table.Sort = new(h.Table.Columns[0]);
+                await comparing.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                h.Table.Selection = new(new object[] { h.Rows[1] }, h.Rows[1]);
+                Proof.Call(h.Table, "SelectItem", h.Rows[2], false, false);
+                Assert.AreSame(h.Rows[2], h.Table.Selection.Current, "A blocked projection must not hold selection input.");
+                h.Table.ItemsSource = new[] { new SortRow("latest", 7) };
+                h.Table.Sort = null;
+            }
+            finally
+            {
+                release.Set();
+            }
+            await h.Table.ViewReady.WaitAsync(TimeSpan.FromSeconds(5));
+            CollectionAssert.AreEqual(new[] { "latest" }, h.ViewKeys());
+            Assert.AreEqual(0, h.Table.Selection.Items.Count);
+        });
+
+    [TestMethod]
     public Task FailedLayoutComparisonPreservesAcceptedState() =>
         TestHost.RunAsync(async () =>
         {
@@ -103,6 +144,7 @@ public class SortingTests
             SortRow removed = h.Rows[0];
             Proof.Call(h.Table, "PointAt", h.Rows[1]);
             h.Rows.Remove(removed);
+            await h.Table.ViewReady;
             fails = true;
 
             Expect.Throws<InvalidOperationException>(() =>
@@ -115,10 +157,12 @@ public class SortingTests
                 h.Table.Layout = TestData.Layout(sortColumnId: "b");
             else
                 h.Table.Sort = new(h.Table.Columns[1]);
+            await h.Table.ViewReady;
             CollectionAssert.AreEqual(new[] { "k1", "k2" }, h.ViewKeys());
             Assert.IsFalse((bool)Proof.Call(h.Table, "IsHeld", removed)!);
 
             h.Rows.Add(new SortRow("arrival", 4));
+            await h.Table.ViewReady;
             CollectionAssert.AreEqual(new[] { "k1", "k2" }, h.ViewKeys());
         });
 
@@ -166,13 +210,13 @@ public class SortingTests
         {
             SortHarness h = await SortHarness.LoadAsync(new[] { 3, 1, 2, 1, 3, 2 });
 
-            h.Activate(0);
+            await h.Activate(0);
             CollectionAssert.AreEqual(new[] { "k1", "k3", "k2", "k5", "k0", "k4" }, h.ViewKeys());
 
-            h.Activate(0);
+            await h.Activate(0);
             CollectionAssert.AreEqual(new[] { "k0", "k4", "k2", "k5", "k1", "k3" }, h.ViewKeys());
 
-            h.Activate(0);
+            await h.Activate(0);
             CollectionAssert.AreEqual(
                 new[] { "k0", "k1", "k2", "k3", "k4", "k5" },
                 h.ViewKeys(),
@@ -186,11 +230,11 @@ public class SortingTests
         {
             SortHarness h = await SortHarness.LoadAsync(new[] { 3, 1, 2 }, sortableColumns: 2);
 
-            h.Activate(0);
-            h.Activate(0);
+            await h.Activate(0);
+            await h.Activate(0);
             Assert.AreEqual(SortDirection.Descending, h.Table.Layout.SortDirection);
 
-            h.Activate(1);
+            await h.Activate(1);
 
             ColumnLayout state = h.Table.Layout;
             Assert.AreEqual("b", state.SortColumnId);
@@ -206,7 +250,7 @@ public class SortingTests
             h.Table.LayoutChanged += (_, _) => events++;
 
             // Column "b" declares no sort.
-            h.Activate(1);
+            await h.Activate(1);
 
             CollectionAssert.AreEqual(new[] { "k0", "k1", "k2" }, h.ViewKeys());
             Assert.IsNull(h.Table.Layout.SortColumnId);
@@ -219,7 +263,7 @@ public class SortingTests
         {
             SortHarness h = await SortHarness.LoadAsync(new[] { 3, 1, 2 });
 
-            h.Activate(0);
+            await h.Activate(0);
 
             CollectionAssert.AreEqual(new[] { "k1", "k2", "k0" }, h.ViewKeys());
             CollectionAssert.AreEqual(
@@ -237,15 +281,15 @@ public class SortingTests
             List<LayoutChange> raised = new();
             h.Table.LayoutChanged += (_, kind) => raised.Add(kind);
 
-            h.Activate(0);
+            await h.Activate(0);
 
             Assert.AreEqual(1, raised.Count);
             Assert.AreEqual(LayoutChange.Sort, raised[0]);
             Assert.AreEqual("a", h.Table.Layout.SortColumnId);
             Assert.AreEqual(SortDirection.Ascending, h.Table.Layout.SortDirection);
 
-            h.Activate(0);
-            h.Activate(0);
+            await h.Activate(0);
+            await h.Activate(0);
 
             Assert.AreEqual(3, raised.Count);
             Assert.IsNull(h.Table.Layout.SortColumnId, "the cycle ended in natural order");
@@ -266,6 +310,7 @@ public class SortingTests
                 sortColumnId: "a",
                 direction: SortDirection.Descending
             );
+            await h.Table.ViewReady;
 
             CollectionAssert.AreEqual(new[] { "k0", "k2", "k1" }, h.ViewKeys());
             Assert.AreEqual(0, events, "restoration is silent");
@@ -277,9 +322,10 @@ public class SortingTests
         TestHost.RunAsync(async () =>
         {
             SortHarness h = await SortHarness.LoadAsync(new[] { 3, 1, 2 });
-            h.Activate(0);
+            await h.Activate(0);
 
             h.Table.Layout = TestData.Layout(order: new[] { "a" }, sortColumnId: "gone");
+            await h.Table.ViewReady;
 
             CollectionAssert.AreEqual(new[] { "k0", "k1", "k2" }, h.ViewKeys());
             Assert.IsNull(h.Table.Layout.SortColumnId);
@@ -290,10 +336,11 @@ public class SortingTests
         TestHost.RunAsync(async () =>
         {
             SortHarness h = await SortHarness.LoadAsync(new[] { 3, 1, 2 });
-            h.Activate(0);
+            await h.Activate(0);
 
             // "b" declares no sort, so the saved sort cannot be honoured.
             h.Table.Layout = TestData.Layout(order: new[] { "a" }, sortColumnId: "b");
+            await h.Table.ViewReady;
 
             CollectionAssert.AreEqual(new[] { "k0", "k1", "k2" }, h.ViewKeys());
             Assert.IsNull(h.Table.Layout.SortColumnId);
@@ -310,6 +357,7 @@ public class SortingTests
                 sortColumnId: "a",
                 direction: (SortDirection)7
             );
+            await h.Table.ViewReady;
 
             CollectionAssert.AreEqual(new[] { "k0", "k1", "k2" }, h.ViewKeys());
             Assert.IsNull(h.Table.Layout.SortColumnId);
@@ -333,7 +381,7 @@ public class SortingTests
                 new[] { 3, 1, 2 },
                 configure: table => table.SortInterval = TimeSpan.Zero
             );
-            h.Activate(0);
+            await h.Activate(0);
             CollectionAssert.AreEqual(new[] { "k1", "k2", "k0" }, h.ViewKeys());
 
             // A batch changes the sorted value without any collection notification.
@@ -345,6 +393,7 @@ public class SortingTests
             );
 
             h.Table.RefreshView();
+            await h.Table.ViewReady;
 
             CollectionAssert.AreEqual(new[] { "k0", "k1", "k2" }, h.ViewKeys());
         });
@@ -362,12 +411,13 @@ public class SortingTests
                 new[] { 1, 2, 3, 4, 5 },
                 configure: table => table.SortInterval = TimeSpan.Zero
             );
-            h.Activate(0);
+            await h.Activate(0);
             Proof.Call(h.Table, "PointAt", h.Rows[1]);
 
             h.Rows[1].Rank = 10;
             h.Rows[3].Rank = 0;
             h.Table.RefreshView();
+            await h.Table.ViewReady;
 
             CollectionAssert.AreEqual(
                 new[] { "k3", "k1", "k0", "k2", "k4" },
@@ -384,6 +434,7 @@ public class SortingTests
             );
 
             h.Table.RefreshView();
+            await h.Table.ViewReady;
 
             CollectionAssert.AreEqual(
                 new[] { "k3", "k0", "k4", "k2", "k1" },
@@ -392,6 +443,7 @@ public class SortingTests
             );
 
             Proof.Call(h.Table, "StopPointing");
+            await h.Table.ViewReady;
 
             CollectionAssert.AreEqual(
                 new[] { "k3", "k0", "k2", "k4", "k1" },
@@ -405,9 +457,10 @@ public class SortingTests
         TestHost.RunAsync(async () =>
         {
             SortHarness h = await SortHarness.LoadAsync(new[] { 3, 1, 2 });
-            h.Activate(0);
+            await h.Activate(0);
 
             h.Rows.Add(new SortRow("k3", 0));
+            await h.Table.ViewReady;
 
             CollectionAssert.AreEqual(new[] { "k3", "k1", "k2", "k0" }, h.ViewKeys());
         });
@@ -427,7 +480,9 @@ public class SortingTests
 
             SortRow leaver = h.Rows[1];
             h.Rows.Remove(leaver);
+            await h.Table.ViewReady;
             h.Rows.Add(new("arrival", 0));
+            await h.Table.ViewReady;
             CollectionAssert.AreEqual(new[] { "k0", "k1", "k2", "k3" }, h.ViewKeys(), "the change waits");
             Assert.IsFalse((bool)Proof.Call(table, "ShowsHeld", leaver)!, "the waiting leaver keeps its look");
             Assert.IsFalse((bool)Proof.Call(table, "IsInteractive", leaver)!, "the source no longer has the waiting leaver");
@@ -440,11 +495,13 @@ public class SortingTests
             Proof.SetField(table, "_orderSettledAt", null);
             table.RefreshView();
             h.Rows.Add(new("late", 5));
+            await h.Table.ViewReady;
             CollectionAssert.AreEqual(new[] { "arrival", "k0", "k2", "k3", "late" }, h.ViewKeys(),
                 "the settle applies the change, and a change in its turn lands with it");
             await ShowSettleAsync(table);
 
             table.ItemsSource = new[] { new SortRow("other", 1) };
+            await table.ViewReady;
             CollectionAssert.AreEqual(new[] { "other" }, h.ViewKeys(), "a different list applies at once");
         });
 
@@ -462,16 +519,20 @@ public class SortingTests
 
             SortRow removed = h.Rows[0];
             table.Release(new[] { removed });
+            await table.ViewReady;
             h.Rows.Remove(removed);
+            await h.Table.ViewReady;
             CollectionAssert.AreEqual(new[] { "k1", "k2" }, h.ViewKeys(), "the person's change applies at once");
             await ShowSettleAsync(table);
 
             SortRow kept = h.Rows[0];
             table.Release(new[] { kept });
+            await table.ViewReady;
             var released = (System.Collections.IDictionary)Proof.Field<object>(table, "_released");
             released[kept] = (false, System.Diagnostics.Stopwatch.GetTimestamp()
                 - 2 * 3600 * System.Diagnostics.Stopwatch.Frequency);
             h.Rows.Remove(kept);
+            await h.Table.ViewReady;
             CollectionAssert.AreEqual(new[] { "k1", "k2" }, h.ViewKeys(), "the ended name lets nothing through");
         });
 
@@ -490,6 +551,7 @@ public class SortingTests
 
             SortRow replacement = new("k1", 2);
             h.Rows[1] = replacement;
+            await h.Table.ViewReady;
 
             Assert.AreSame(before, surface.ContainerFromIndex(1), "the row keeps its container");
             Assert.AreSame(replacement, ((ContentControl)before).Content, "the container shows the new instance");
@@ -502,8 +564,11 @@ public class SortingTests
     }
 
     /// <summary>Wait for the frame that shows the last settle, which starts the interval.</summary>
-    private static Task ShowSettleAsync(Table table) =>
-        TableHarness.WaitUntilAsync(() => !Proof.Field<bool>(table, "_settleShowing"), "the frame");
+    private static async Task ShowSettleAsync(Table table)
+    {
+        await table.ViewReady;
+        await TableHarness.WaitUntilAsync(() => !Proof.Field<bool>(table, "_settleShowing"), "the frame");
+    }
 
     // ------------------------------------------------------------------ selection
 
@@ -518,7 +583,7 @@ public class SortingTests
             h.Table.Selection = new(new object[] { h.Rows[0], h.Rows[4] }, h.Rows[4]);
             selectionEvents = 0;
 
-            h.Activate(0);
+            await h.Activate(0);
 
             CollectionAssert.AreEqual(
                 new[] { "k0", "k4" },
@@ -551,7 +616,7 @@ public class SortingTests
             Assert.AreEqual(Visibility.Collapsed, h.Glyph(0).Visibility, "unsorted shows nothing");
             Assert.AreEqual(string.Empty, AutomationProperties.GetItemStatus(h.Cell(0)));
 
-            h.Activate(0);
+            await h.Activate(0);
             h.Table.UpdateLayout();
 
             Assert.AreEqual(Visibility.Visible, h.Glyph(0).Visibility);
@@ -561,7 +626,7 @@ public class SortingTests
             Assert.AreEqual(Visibility.Collapsed, h.Glyph(1).Visibility, "only one column sorts");
             Assert.AreEqual(string.Empty, AutomationProperties.GetItemStatus(h.Cell(1)));
 
-            h.Activate(0);
+            await h.Activate(0);
             h.Table.UpdateLayout();
 
             Assert.AreEqual(Visibility.Visible, h.Glyph(0).Visibility);
@@ -578,7 +643,7 @@ public class SortingTests
                 "the status tells the directions apart"
             );
 
-            h.Activate(0);
+            await h.Activate(0);
             h.Table.UpdateLayout();
 
             Assert.AreEqual(Visibility.Collapsed, h.Glyph(0).Visibility);
@@ -590,9 +655,10 @@ public class SortingTests
         TestHost.RunAsync(async () =>
         {
             SortHarness h = await SortHarness.LoadAsync(new[] { 3, 1, 2 });
-            h.Activate(0);
+            await h.Activate(0);
 
             h.Table.Layout = TestData.Layout(order: new[] { "b", "c", "a" }, sortColumnId: "a");
+            await h.Table.ViewReady;
             h.Table.UpdateLayout();
 
             Assert.AreEqual(
@@ -637,7 +703,7 @@ public class SortingTests
                 }
             );
 
-            h.Activate(0);
+            await h.Activate(0);
             h.Table.UpdateLayout();
 
             FontIcon glyph = h.Glyph(0);
@@ -697,6 +763,7 @@ public class SortingTests
                 visibility: new Dictionary<string, bool> { ["b"] = false },
                 sortColumnId: "a"
             );
+            await h.Table.ViewReady;
             h.Table.Selection = new(new object[] { h.Rows[1] });
             Sort? before = h.Table.Sort;
             int events = 0;
@@ -712,6 +779,7 @@ public class SortingTests
             Assert.AreEqual(0, events);
 
             h.Table.Layout = h.Table.Layout;
+            await h.Table.ViewReady;
 
             Assert.AreEqual(before, h.Table.Sort);
             CollectionAssert.AreEqual(new[] { "k1", "k2", "k0" }, h.ViewKeys());
@@ -868,13 +936,14 @@ internal sealed class SortHarness
     }
 
     /// <summary>Run the header's sort cycle for the header at this visible index.</summary>
-    internal void Activate(int visibleIndex)
+    internal async Task Activate(int visibleIndex)
     {
         MethodInfo method = typeof(Header.Strip).GetMethod(
             "ActivateSortFrom",
             BindingFlags.Instance | BindingFlags.NonPublic
         )!;
         method.Invoke(Strip, new object?[] { Cell(visibleIndex) });
+        await Table.ViewReady;
         Table.UpdateLayout();
     }
 

@@ -22,28 +22,46 @@ public sealed partial class Table
     /// Call on the UI thread; marshal presentation back to it and check the token
     /// before applying results. The returned task reports completion or failure.
     /// </summary>
-    public async Task PrepareSelection(
+    public Task PrepareSelection(
         Func<Selection, CancellationToken, Task> prepare,
         CancellationToken cancellation = default)
     {
         ArgumentNullException.ThrowIfNull(prepare);
         CancelPreparation();
-        using var source = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        var source = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
         var token = source.Token;
         Task? cancelling = null;
         Action cancel = () => cancelling ??= source.CancelAsync();
         _cancelPreparation = cancel;
         var selection = Selection;
-        try
+        var preparation = Task.Run(() => prepare(selection, token), token).WaitAsync(token);
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _ = Complete();
+        return completion.Task;
+
+        async Task Complete()
         {
-            await Task.Run(() => prepare(selection, token), token).WaitAsync(token);
-        }
-        finally
-        {
+            await preparation.ConfigureAwait(
+                ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
             if (_cancelPreparation == cancel)
                 _cancelPreparation = null;
             cancel();
-            await cancelling!;
+            try
+            {
+                using (source)
+                    await cancelling!.ConfigureAwait(false);
+                // Preserve cancellation without throwing it through the UI dispatcher.
+                if (preparation.IsCanceled)
+                    completion.TrySetCanceled(token);
+                else if (preparation.Exception is { } error)
+                    completion.TrySetException(error.InnerExceptions);
+                else
+                    completion.TrySetResult();
+            }
+            catch (Exception error)
+            {
+                completion.TrySetException(error);
+            }
         }
     }
 
@@ -93,7 +111,7 @@ public sealed partial class Table
         {
             ArgumentNullException.ThrowIfNull(value);
 
-            if (!_schemaCaptured)
+            if (!_schemaCaptured || _preparingView)
             {
                 _pendingSelection = value;
                 return;
@@ -178,6 +196,7 @@ public sealed partial class Table
     /// </summary>
     private Selection CommitSelection()
     {
+        _pendingSelection = null;
         Selection previous = _publishedSelection;
         Selection next = new(BuildSelectedPacket(), _selection.Current);
         bool changed = !SameSelection(previous, next);

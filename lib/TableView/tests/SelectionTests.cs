@@ -13,6 +13,48 @@ namespace Syno.TableView.Tests;
 public class SelectionTests
 {
     [TestMethod]
+    public Task CancelledPreparationDoesNotThrowOnTheUiThread() =>
+        TestHost.RunAsync(async () =>
+        {
+            SelectionHarness h = await SelectionHarness.LoadAsync(2);
+            var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var ui = Environment.CurrentManagedThreadId;
+            var cancellations = 0;
+            EventHandler<System.Runtime.ExceptionServices.FirstChanceExceptionEventArgs> thrown = (_, args) =>
+            {
+                if (Environment.CurrentManagedThreadId == ui && args.Exception is OperationCanceledException)
+                    cancellations++;
+            };
+            AppDomain.CurrentDomain.FirstChanceException += thrown;
+            Task preparation;
+            try
+            {
+                preparation = h.Table.PrepareSelection(async (_, token) =>
+                {
+                    started.TrySetResult();
+                    await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                });
+                await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                h.Click(h[1]);
+                await preparation.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(
+                    ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
+            }
+            finally
+            {
+                AppDomain.CurrentDomain.FirstChanceException -= thrown;
+            }
+            Assert.IsTrue(preparation.IsCanceled, "A changed selection must cancel obsolete preparation.");
+            Assert.AreEqual(0, cancellations, "Expected cancellation must not throw through the UI dispatcher.");
+            var replacement = false;
+            await h.Table.PrepareSelection((_, token) =>
+            {
+                replacement = !token.IsCancellationRequested;
+                return Task.CompletedTask;
+            });
+            Assert.IsTrue(replacement, "The next selection must have a fresh preparation lifetime.");
+        });
+
+    [TestMethod]
     public Task PlainClickReplacesAndSetsTheAnchor() =>
         TestHost.RunAsync(async () =>
         {
@@ -225,6 +267,7 @@ public class SelectionTests
 
             ObservableCollection<Row> replacement = new(h.Rows.Select(r => new Row(r.Key)));
             h.Table.ItemsSource = replacement;
+            await h.Table.ViewReady;
 
             Assert.AreEqual(1, h.Events, "Observers must receive replacement instances.");
             Assert.AreSame(replacement[3], h.LastCurrent);
@@ -246,6 +289,7 @@ public class SelectionTests
             h.Events = 0;
 
             h.Rows.Move(0, 5);
+            await h.Table.ViewReady;
 
             Assert.AreEqual(0, h.Events);
             CollectionAssert.AreEqual(new[] { "k1", "k3" }, h.SelectedKeys());
@@ -260,6 +304,7 @@ public class SelectionTests
             h.Table.Selection = new(new object[] { h[1], h[3] });
             h.Events = 0;
             h.Rows.Move(3, 0);
+            await h.Table.ViewReady;
             Assert.AreEqual(1, h.Events, "The exposed packet changed order.");
 
             CollectionAssert.AreEqual(
@@ -279,6 +324,7 @@ public class SelectionTests
             h.Events = 0;
 
             h.Rows.Remove(h[2]);
+            await h.Table.ViewReady;
 
             Assert.AreEqual(1, h.Events);
             CollectionAssert.AreEqual(new[] { "k1", "k3" }, h.SelectedKeys());
@@ -299,6 +345,7 @@ public class SelectionTests
             h.Events = 0;
 
             h.Rows.Remove(h[1]);
+            await h.Table.ViewReady;
 
             Assert.AreEqual(1, h.Events);
             Assert.AreEqual(0, h.SelectedKeys().Length);
@@ -319,6 +366,7 @@ public class SelectionTests
 
             h[1].Interactive = false;
             h.Table.RefreshView();
+            await h.Table.ViewReady;
 
             Assert.AreEqual(1, h.Events);
             CollectionAssert.AreEqual(new[] { "k2" }, h.SelectedKeys());
@@ -349,9 +397,11 @@ public class SelectionTests
             SelectionHarness h = await SelectionHarness.LoadAsync(3);
 
             h.Table.Selection = new(new object[] { h[1] });
-            Expect.Throws<InvalidOperationException>(() =>
-                h.Table.ItemsSource = new ObservableCollection<Row> { new("dup"), new("dup") }
-            );
+            var failure = TestHost.TrapAsync();
+            h.Table.ItemsSource = new ObservableCollection<Row> { new("dup"), new("dup") };
+            Assert.IsInstanceOfType<InvalidOperationException>(await failure.WaitAsync(TimeSpan.FromSeconds(5)));
+            await h.Table.ViewReady.ConfigureAwait(
+                ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
 
             Assert.AreSame(h[1], h.Table.Selection.Current);
         });
@@ -375,7 +425,9 @@ public class SelectionTests
             Proof.Call(h.Table, "PointAt", h[1]);
 
             h.Rows.Remove(leaving);
+            await h.Table.ViewReady;
             h.Rows.Insert(0, new Row("k9"));
+            await h.Table.ViewReady;
 
             CollectionAssert.AreEqual(
                 new[] { "k0", "k1", "k2", "k3", "k4", "k5" },
@@ -400,10 +452,12 @@ public class SelectionTests
             );
 
             h.Rows.Insert(3, leaving);
+            await h.Table.ViewReady;
 
             Assert.IsFalse(IsHeld(h, leaving), "a row that comes back is no longer held");
 
             Proof.Call(h.Table, "StopPointing");
+            await h.Table.ViewReady;
 
             CollectionAssert.AreEqual(
                 new[] { "k9", "k0", "k1", "k2", "k3", "k4", "k5" },
@@ -427,8 +481,11 @@ public class SelectionTests
             Row held = h[3];
             Proof.Call(h.Table, "PointAt", h[1]);
             h.Rows.Remove(h[2]);
+            await h.Table.ViewReady;
             h.Table.Release(new object[] { removed });
+            await h.Table.ViewReady;
             h.Rows.Insert(0, new Row("k9"));
+            await h.Table.ViewReady;
 
             CollectionAssert.AreEqual(
                 new[] { "k0", "k1", "k2", "k3", "k4", "k5" },
@@ -437,6 +494,7 @@ public class SelectionTests
             );
 
             h.Rows.Remove(removed);
+            await h.Table.ViewReady;
 
             CollectionAssert.AreEqual(
                 new[] { "k9", "k0", "k1", "k3", "k5" },
@@ -445,8 +503,10 @@ public class SelectionTests
             );
 
             h.Rows.Remove(held);
+            await h.Table.ViewReady;
             Assert.IsTrue(IsHeld(h, held));
             h.Table.Release(new object[] { held });
+            await h.Table.ViewReady;
 
             CollectionAssert.AreEqual(
                 new[] { "k9", "k0", "k1", "k5" },
@@ -464,8 +524,10 @@ public class SelectionTests
             Proof.Call(h.Table, "PointAt", h[1]);
             Row arrival = new("k9");
             h.Rows.Add(arrival);
+            await h.Table.ViewReady;
 
             h.Table.ScrollIntoView(new Row("absent"));
+            await h.Table.ViewReady;
             CollectionAssert.AreEqual(
                 new[] { "k0", "k1", "k2", "k3", "k4", "k5" },
                 ViewKeys(h),
@@ -473,6 +535,7 @@ public class SelectionTests
             );
 
             h.Table.ScrollIntoView(arrival);
+            await h.Table.ViewReady;
             CollectionAssert.AreEqual(
                 new[] { "k0", "k1", "k2", "k3", "k4", "k5", "k9" },
                 ViewKeys(h)
@@ -482,7 +545,9 @@ public class SelectionTests
             CollectionAssert.AreEqual(new[] { "k9" }, h.SelectedKeys());
 
             h.Table.ScrollIntoView(arrival);
+            await h.Table.ViewReady;
             h.Rows.Remove(arrival);
+            await h.Table.ViewReady;
             Assert.IsTrue(
                 IsHeld(h, arrival),
                 "revealing a visible row does not release a later removal"

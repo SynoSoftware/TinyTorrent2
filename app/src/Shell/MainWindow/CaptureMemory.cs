@@ -111,7 +111,7 @@ public sealed partial class MainWindow
         {
             property.SetValue(inspector, null);
             await (Task<bool>)apply.Invoke(inspector, [
-                original[0].TorrentId, PeerRows(count), new Dictionary<string, Peer[]>(),
+                original[0].TorrentId, PeerRows(count),
                 typeof(Inspector).GetField("_context", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(inspector)!
             ])!;
             for (var index = 0; index < count; index++)

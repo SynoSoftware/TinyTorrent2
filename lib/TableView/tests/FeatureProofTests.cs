@@ -390,6 +390,8 @@ public class FeatureProofTests
             else
                 h.Rows.Remove(pressed);
 
+            await h.Table.ViewReady;
+
             Proof.Call(h.Table, "DispatchClick");
             Assert.AreSame(
                 replacement,
@@ -474,6 +476,7 @@ public class FeatureProofTests
             );
             h[3].Interactive = false;
             h.Table.RefreshView();
+            await h.Table.ViewReady;
 
             int requests = 0;
             h.Table.ItemContextRequested += (_, _) => requests++;
@@ -517,6 +520,7 @@ public class FeatureProofTests
             );
             h[6].Position = null;
             h.Table.Sort = new Sort(h.Table.Columns[1]);
+            await h.Table.ViewReady;
             h.Table.Selection = new([h[1], h[3], h[6]], h[3]);
             var original = h.Rows.ToArray();
             List<ReorderRequestedEventArgs> requests = [];
@@ -532,6 +536,7 @@ public class FeatureProofTests
 
             // A filtered destination remains part of the host's complete order.
             h.Table.ItemsSource = new[] { h[1], h[3], h[6] };
+            await h.Table.ViewReady;
             Proof.Call(h.Table, "CompleteDrag", h.WheelPoint(3));
             var request = requests.Single();
             CollectionAssert.AreEqual(new object[] { h[1], h[3] }, request.Items.ToArray());
@@ -599,10 +604,13 @@ public class FeatureProofTests
             Gesture.Press(h, row: h[2], item: h[2], originY: 100);
             Proof.Call(h.Table, "BeginDrag", h[2]);
             h.Table.RefreshView();
+            await h.Table.ViewReady;
             h.Table.Sort = new Sort(h.Table.Columns[1]);
+            await h.Table.ViewReady;
             Assert.AreEqual("RowDrag", Proof.Field<object>(h.Table, "_gesture").ToString());
             h[5].Position = null;
             h.Table.RefreshView();
+            await h.Table.ViewReady;
             Assert.AreEqual("None", Proof.Field<object>(h.Table, "_gesture").ToString());
         });
 
@@ -670,9 +678,11 @@ public class FeatureProofTests
 
             ColumnLayout unsorted = h.Table.Layout;
             h.Table.Layout = unsorted with { SortColumnId = "b" };
+            await h.Table.ViewReady;
             Assert.AreEqual("k5", ((Row)list.Items[0]).Key, "and the view runs by b");
 
             SetVisibility(h.Table, "b", false);
+            await h.Table.ViewReady;
 
             LayoutChange change = changes.Single();
             Proof.Note(
@@ -695,6 +705,7 @@ public class FeatureProofTests
                 SortColumnId = "b",
                 VisibilityOverrides = new Dictionary<string, bool> { ["b"] = false },
             };
+            await h.Table.ViewReady;
             Assert.IsNull(h.Table.Layout.SortColumnId, "a sort on a hidden column is refused");
             Assert.AreEqual("k0", ((Row)list.Items[0]).Key);
         });

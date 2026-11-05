@@ -44,6 +44,7 @@ public class HierarchyTests
             table.ItemsSource = new[] { folder, leaf };
             await TableHarness.LoadAsync(table);
             table.Sort = new(name, SortDirection.Descending);
+            await table.ViewReady;
             CollectionAssert.AreEqual(new[] { "root", "folder", "z", "a" }, Names(table));
             table.Selection = new(new object[] { first, leaf }, first);
             int changes = 0;
@@ -56,12 +57,14 @@ public class HierarchyTests
             var expansion = (IExpandCollapseProvider)
                 branch.GetPattern(PatternInterface.ExpandCollapse);
             expansion.Collapse();
+            await table.ViewReady;
 
             CollectionAssert.AreEqual(new[] { "root", "folder" }, Names(table));
             CollectionAssert.AreEqual(new object[] { leaf }, table.Selection.Items.ToArray());
             Assert.AreSame(folder, table.Selection.Current);
             Assert.AreEqual(1, changes);
             expansion.Expand();
+            await table.ViewReady;
             CollectionAssert.AreEqual(new[] { "root", "folder", "z", "a" }, Names(table));
             CollectionAssert.AreEqual(new object[] { leaf }, table.Selection.Items.ToArray());
             Assert.AreEqual(1, branch.GetLevel());
@@ -109,16 +112,20 @@ public class HierarchyTests
 
             folder.IsExpanded = true;
             table.RefreshView();
+            await table.ViewReady;
             folder.IsExpanded = false;
             table.RefreshView();
+            await table.ViewReady;
             Assert.AreEqual(0, requests.Count);
 
             branch.Expand();
+            await table.ViewReady;
             CollectionAssert.AreEqual(new[] { true }, requests);
             Assert.AreEqual(ExpandCollapseState.Expanded, branch.ExpandCollapseState);
             CollectionAssert.AreEqual(new[] { "folder", "leaf" }, Names(table));
 
             folder.Children.Add(new("child"));
+            await table.ViewReady;
             folder.HasUnrealizedChildren = false;
             CollectionAssert.AreEqual(new[] { "folder", "child", "leaf" }, Names(table));
         });
@@ -153,15 +160,19 @@ public class HierarchyTests
             int captured = reads;
             root.IsExpanded = true;
             table.RefreshView();
+            await table.ViewReady;
             root.IsExpanded = false;
             table.RefreshView();
+            await table.ViewReady;
             Assert.AreEqual(captured, reads);
 
             Node addition = new("addition");
             root.Children.Add(addition);
+            await table.ViewReady;
             CollectionAssert.AreEqual(new[] { "root" }, Names(table));
             root.IsExpanded = true;
             table.RefreshView();
+            await table.ViewReady;
             CollectionAssert.AreEqual(new[] { "root", "child", "addition" }, Names(table));
 
             Node invalid = new("invalid", new("duplicate"), new("duplicate"))

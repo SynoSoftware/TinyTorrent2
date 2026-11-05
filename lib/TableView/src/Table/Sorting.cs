@@ -95,6 +95,8 @@ public sealed partial class Table
             }
 
             _sortInterval = value;
+            if (_preparingView)
+                _viewVersion++;
 
             // Turning settling off is a request to see the sorted order, not a request to see it
             // whenever the source next moves.
@@ -154,19 +156,24 @@ public sealed partial class Table
                 return;
             }
 
-            // Comparison can invoke host code; finish it before committing the new sort.
-            IReadOnlyList<object>? order = _sortMode == SortMode.Local
-                ? SortedSnapshot(_source.Snapshot, column, direction) : null;
+            var keys = CaptureSort(column);
             _sortColumn = column;
             _sortDirection = direction;
 
             // Complete presentation before selection handlers can run or throw.
             _headerStrip?.Panel?.RefreshHeader();
-            if (order is not null)
-                RebuildView(preparedOrder: order);
+            RebuildView(sortChanged: true, preparedSort: keys);
 
             RaiseLayoutChanged(LayoutChange.Sort);
         }
+    }
+
+    private IComparer<object>? CaptureSort(EffectiveColumn? column)
+    {
+        if (_sortMode == SortMode.External || column is null)
+            return null;
+        var rows = _hierarchy is null ? _source.Snapshot : CaptureHierarchy(_source.Snapshot).Nodes.Keys.ToArray();
+        return column.Column.CaptureSort!(rows);
     }
 
     private Sort? PendingSort()
@@ -243,90 +250,6 @@ public sealed partial class Table
         return true;
     }
 
-    /// <summary>
-    /// The order the rows are actually shown in: the sorted snapshot, except that rows already on
-    /// screen are left where they are between reorders, and that held rows and the pointed row keep
-    /// their index.
-    /// </summary>
-    /// <remarks>
-    /// A sort over a value the source keeps changing would otherwise re-order the whole table every
-    /// time the source publishes. Measured on the original host, per publish, because with settling
-    /// off every publish reorders and the two units are then the same one: sorted by name, which no
-    /// update touches, sixteen real publishes drew no reorder at all; sorted by speed, which every
-    /// update touches, every publish reordered the view, for an update that reported one row
-    /// finishing. The cost is the smaller half of it. That count came from the same deleted
-    /// original-host harness specification 9 records, so the sixteen cannot be reproduced here
-    /// either; what survives is the claim it was taken for.
-    /// A table that reshuffles a whole screen because one row completed cannot be clicked on: the
-    /// row being reached for moves out from under the pointer. The owner chose a cadence for that
-    /// reason, not for the milliseconds.
-    /// <para>
-    /// Membership waits with position. WinUI's list animates no add or remove that comes within one
-    /// second of its previous change (<c>fastmutationThreshold</c> in its
-    /// <c>ModernCollectionBasePanel</c>), so rows that arrived or left one by one between settles
-    /// would appear and vanish without their transition. Inside the interval the hold of
-    /// section 5.3 therefore keeps a row that leaves and holds back a row that arrives, as it does
-    /// while the rows are pointed at, and the settle applies them with the moves in one update.
-    /// <see cref="Hold"/> names the changes that apply at once. When the rows do take their sorted
-    /// places, the pointed row keeps its own (section 9).
-    /// </para>
-    /// </remarks>
-    /// <returns>
-    /// The order; the rows that keep their index, whose containers the reconcile keeps; and
-    /// whether this publish is a settle.
-    /// </returns>
-    private (IReadOnlyList<object> Order, IReadOnlySet<object> Pinned, bool Settles) ViewOrder(
-        IReadOnlyList<object> snapshot
-    )
-    {
-        if (_hierarchy is not null && !SortsLocally)
-            return (snapshot, _held, true);
-        TimeSpan elapsed = _orderSettledAt is long settledAt
-            ? Stopwatch.GetElapsedTime(settledAt)
-            : TimeSpan.MaxValue;
-
-        // Natural order belongs to the host, which reorders when it means to, and the row-order
-        // column shows that same order, so holding it would delay the person's own reorder; an
-        // empty view has no established order to preserve; and a zero interval is the host asking
-        // for none of this. Until a frame shows the last settle, every publish is one, so the
-        // changes of one turn land in one update.
-        bool settles = !UsesInterval || _view.Count == 0 || _settleShowing
-            || elapsed >= _sortInterval;
-        var (shown, held, released) = Hold(snapshot, waits: !settles);
-        if (settles)
-        {
-            return Finish(SortedSnapshot(shown, _sortColumn, _sortDirection), settled: true);
-        }
-
-        // The base sequence, not the sorted one: a kept update keeps the order the view already
-        // has, so all it needs from the snapshot is which rows are in it, and sorting to answer a
-        // question about membership is work thrown away. At the default interval against a host
-        // that publishes about once a second, that is two publishes in three, and a name sort of
-        // 2,002 rows is roughly 22,000 culture-aware string comparisons.
-        //
-        // A membership change the hold let through is never kept back, so it is also never
-        // settled: KeptOrder returns null for one, and the sorted order is what the arriving row
-        // needs anyway.
-        if (KeptOrder(shown, held) is not List<object> kept)
-        {
-            return Finish(SortedSnapshot(shown, _sortColumn, _sortDirection), settled: true);
-        }
-
-        return Finish(kept, settled: false);
-
-        (IReadOnlyList<object> Order, IReadOnlySet<object> Pinned, bool Settles) Finish(
-            IReadOnlyList<object> order,
-            bool settled
-        )
-        {
-            var (pinnedOrder, pinned) = Pin(order, held);
-            // A failed comparison must not consume a release or change held-row interactivity.
-            AcceptHold(held, released);
-            if (!settled)
-                ScheduleSettle(_sortInterval - elapsed);
-            return (pinnedOrder, pinned, settled);
-        }
-    }
 
     /// <summary>
     /// A settle changed the rows. The interval starts when the frame that shows the change
@@ -411,80 +334,4 @@ public sealed partial class Table
         _settleDue.Start();
     }
 
-    /// <summary>
-    /// The rows the view already shows, held rows aside, in the order it already shows them, or
-    /// null when <paramref name="shown"/> is not that same set of rows.
-    /// </summary>
-    /// <remarks>
-    /// A kept order never merges membership: a snapshot that adds or removes a row is not kept, and
-    /// the caller takes the sorted order for it, which puts the arrival where it belongs straight
-    /// away. Only a snapshot of exactly the same rows can be kept, and keeping it is then a copy
-    /// rather than a merge. While the rows are pointed at, and inside the settling interval, the
-    /// hold has already deferred every membership change, so the rows are always the same.
-    /// <para>
-    /// This is also what keeps the cost bounded. An earlier version placed each arrival into the
-    /// held order by scanning it, which is fine for a row or two and is not fine for a filter
-    /// change: widening the original host's filter to every row brings about 900 rows back at
-    /// once, and scanning for each of them is roughly 1.4 million comparer calls on an order that
-    /// is not sorted anyway, so their positions would have been close to arbitrary. Leaving
-    /// membership to the hold removes the merge, the cost and the arbitrary placement together.
-    /// </para>
-    /// </remarks>
-    private List<object>? KeptOrder(IReadOnlyList<object> shown, IReadOnlySet<object> held)
-    {
-        if (shown.Count + held.Count != _view.Count)
-        {
-            return null;
-        }
-
-        // Always the snapshot's instances, never the view's: the host may have replaced a row with
-        // an equal-identity instance, and keeping the old one would leave its container bound to an
-        // object nothing updates any more.
-        Dictionary<object, object> live = new(shown.Count, _identity);
-        foreach (object row in shown)
-        {
-            live[row] = row;
-        }
-
-        List<object> order = new(shown.Count);
-        foreach (object row in _view)
-        {
-            if (held.Contains(row))
-            {
-                continue;
-            }
-
-            if (!live.TryGetValue(row, out object? current))
-            {
-                return null;
-            }
-
-            order.Add(current);
-        }
-
-        return order;
-    }
-
-    /// <summary>
-    /// The current source snapshot in sorted order. Natural order is the snapshot itself. A sort is
-    /// stable, so equal values keep the exact base-sequence order they arrived in — descending
-    /// included, because only the comparison is reversed and never the tie-break.
-    /// </summary>
-    private IReadOnlyList<object> SortedSnapshot(
-        IReadOnlyList<object> snapshot,
-        EffectiveColumn? column,
-        SortDirection direction
-    )
-    {
-        if (_sortMode == SortMode.External)
-            column = null;
-        if (_hierarchy is not null && (_preparedHierarchy ?? _hierarchy.Captured) is { } hierarchy)
-            return _hierarchy.Project(hierarchy, column?.Column.Sort, direction);
-        if (column is null)
-        {
-            return snapshot;
-        }
-
-        return column.Column.Sort!(snapshot, direction).ToList();
-    }
 }

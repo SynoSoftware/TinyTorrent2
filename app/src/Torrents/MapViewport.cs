@@ -58,6 +58,17 @@ internal sealed class MapViewport
 
     internal MapView View => new(Size, Meridian, Center, AxisScale, Transform);
 
+    internal MapViewport Capture() => new()
+    {
+        Size = Size,
+        Scale = Scale,
+        Offset = Offset,
+        Meridian = Meridian,
+        Zoom = Zoom,
+        Ratio = Ratio,
+        Center = Center,
+    };
+
     internal Vector2 ToMap(Vector2 point) => (point - Offset) / AxisScale + Center;
 
     private Vector2 Constrain(float zoom, Vector2 center)
@@ -131,6 +142,8 @@ internal sealed class MapViewport
 internal readonly record struct MapView(Size Size, float Meridian, Vector2 Center, Vector2 AxisScale, Matrix3x2 Transform)
 {
     internal Vector2 Coordinates(GeoPoint point) => MapViewport.Coordinates(point, Meridian);
+
+    internal Vector2 ToMap(Vector2 point) => (point - new Vector2(Transform.M31, Transform.M32)) / AxisScale;
 
     internal bool Shows(Rect bounds, float margin)
     {

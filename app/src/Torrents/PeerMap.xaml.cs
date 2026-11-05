@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Numerics;
+using Microsoft.Graphics.Canvas;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
@@ -17,8 +18,16 @@ public sealed partial class PeerMap : UserControl
 {
     private readonly MapModel _model;
     private readonly MapViewport _viewport = new();
-    private Dictionary<string, Geography.Country>? _world;
-    private MapRenderer? _renderer;
+    private MapWork? _work;
+    private MapWork? _working;
+    private MapRenderer.Inspection? _inspection;
+    private CanvasDevice? _device;
+    private float _dpi;
+    private long _version;
+    private object? _loading;
+    private TaskCompletionSource? _ready;
+    private CancellationTokenSource? _cancelWork;
+    private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _fadeTimer;
     private MapMotion? _motion;
     private bool _frameQueued;
     private bool _preparationQueued;
@@ -38,7 +47,6 @@ public sealed partial class PeerMap : UserControl
     private MapDotTotal _dotTotal = MapDotTotal.Normal;
     private int _arcLimit = MapRenderer.DefaultLimit;
 #if CAPTURE
-    private double _preparation;
     internal Action<double>? FrameMeasured { get; set; }
     internal Action<double>? PreparationMeasured { get; set; }
     internal Action<string, double>? WorkMeasured { get; set; }
@@ -65,6 +73,9 @@ public sealed partial class PeerMap : UserControl
     {
         _model = model;
         InitializeComponent();
+        _fadeTimer = DispatcherQueue.CreateTimer();
+        _fadeTimer.IsRepeating = false;
+        _fadeTimer.Tick += (_, _) => Invalidate();
         _navigationTimer = DispatcherQueue.CreateTimer();
         _navigationTimer.Interval = TimeSpan.FromSeconds(3);
         _navigationTimer.IsRepeating = false;
@@ -157,11 +168,6 @@ public sealed partial class PeerMap : UserControl
         var shown = DotBytes;
         _animation = animation;
         _dotTotal = total;
-        if (_renderer is { } renderer)
-        {
-            renderer.Animation = animation;
-            renderer.DotTotal = total;
-        }
         if (DotBytes != shown)
             DotBytesChanged?.Invoke(this, EventArgs.Empty);
         // The dots take the choice when the map is next prepared; a map that
@@ -175,8 +181,6 @@ public sealed partial class PeerMap : UserControl
         if (_arcLimit == limit)
             return;
         _arcLimit = limit;
-        if (_renderer is { } renderer)
-            renderer.ArcLimit = limit;
         QueuePreparation();
     }
 
@@ -186,7 +190,7 @@ public sealed partial class PeerMap : UserControl
     /// </summary>
     internal void Select(IReadOnlyList<Peer> peers)
     {
-        if (_selectedPeers.SequenceEqual(peers) && _pointed is null)
+        if (ReferenceEquals(_selectedPeers, peers) && _pointed is null)
             return;
         SelectPeers(peers);
         _pointed = null;
@@ -205,38 +209,25 @@ public sealed partial class PeerMap : UserControl
     {
         if (args.PropertyName == nameof(MapModel.Place))
         {
-            RefreshPlace();
-            Describe();
             Invalidate();
             return;
         }
         QueuePreparation();
     }
 
-    private void RefreshPlace()
-    {
-        if (_model.Place is not { } place)
-        {
-            _selected = null;
-            return;
-        }
-        var key = _selected?.Key;
-        _selected = _model.Destinations.FirstOrDefault(destination =>
-            destination.Key == key && destination.Group.Place == place)
-            ?? _model.Destinations.FirstOrDefault(destination => destination.Group.Place == place);
-    }
-
     private async void OnLoaded(object sender, RoutedEventArgs args)
     {
+        var loading = new object();
+        _loading = loading;
         _model.PropertyChanged += OnModelChanged;
+        WatchSettings();
         RefreshNavigation();
-        RefreshPlace();
         try
         {
             var world = await Geography.Load();
-            if (!IsLoaded || _motion is not null)
+            if (!IsLoaded || !ReferenceEquals(_loading, loading) || _motion is not null)
                 return;
-            _world = world;
+            _work = new(world);
             var motion = new MapMotion(DispatcherQueue);
             _motion = motion;
             motion.Measured += (bytes, total) =>
@@ -249,23 +240,8 @@ public sealed partial class PeerMap : UserControl
             };
             motion.SurfaceChanged += (device, dpi) =>
             {
-                if (_renderer is { } renderer)
-                    renderer.UseDevice(device, dpi);
-                else
-                {
-                    _renderer = new MapRenderer(device, dpi, Invalidate, DispatcherQueue, motion, _model, _viewport, world)
-                    {
-                        Animation = _animation,
-                        DotTotal = _dotTotal,
-                        ArcLimit = _arcLimit,
-                    };
-                    _renderer.AnimationChanged += (_, _) =>
-                    {
-                        QueuePreparation();
-                        Invalidate();
-                        DotBytesChanged?.Invoke(this, EventArgs.Empty);
-                    };
-                }
+                _device = device;
+                _dpi = dpi;
                 QueuePreparation();
             };
             // A transparent background takes the pointer; the map's layer
@@ -284,24 +260,31 @@ public sealed partial class PeerMap : UserControl
         }
     }
 
+    internal Task Ready => _ready?.Task ?? Task.CompletedTask;
+
     private void QueuePreparation()
     {
         _preparationQueued = true;
+        _version++;
+        _ = _cancelWork?.CancelAsync();
         QueueFrame();
     }
 
     private void Invalidate()
     {
         _drawQueued = true;
+        _version++;
+        _ = _cancelWork?.CancelAsync();
         QueueFrame();
     }
 
-    // Data, layout and the view can change several times before a frame.
-    // Prepare their final state once, without doing model work in Draw, then
-    // draw it once.
     private void QueueFrame()
     {
-        if (_frameQueued)
+        if (!IsLoaded || _work is null)
+            return;
+        if (_ready?.Task.IsCompleted != false)
+            _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (_frameQueued || _working is not null)
             return;
         _frameQueued = true;
         CompositionTarget.Rendering += OnRendering;
@@ -309,32 +292,172 @@ public sealed partial class PeerMap : UserControl
 
     private void OnRendering(object? sender, object args)
     {
-        if (_preparationQueued)
-        {
-            _preparationQueued = false;
-            Prepare();
-        }
-        if (_drawQueued)
-        {
-            _drawQueued = false;
-            Draw();
-        }
-        else if (_renderer is { HasStaleBorders: true } renderer)
-        {
-#if CAPTURE
-            var started = Stopwatch.GetTimestamp();
-#endif
-            renderer.StrokeBorders();
-#if CAPTURE
-            FrameMeasured?.Invoke(Stopwatch.GetElapsedTime(started).TotalMilliseconds);
-#endif
-        }
-        // A drawing that left work for the next frame queued it again, or
-        // left border strokes to replace.
-        if (_preparationQueued || _drawQueued || _renderer?.HasStaleBorders == true)
-            return;
         CompositionTarget.Rendering -= OnRendering;
         _frameQueued = false;
+        _fadeTimer.Stop();
+        if (_working is null && _work is { } work)
+            Prepare(work);
+    }
+
+    private MapWork.Input? Capture()
+    {
+        var size = new Size(Drawing.ActualWidth, Drawing.ActualHeight);
+        if (_device is null || _model.Text is null || size.Width < 1 || size.Height < 1)
+            return null;
+        if (_viewport.Size != size)
+        {
+            EndDrag(true);
+            _viewport.Resize(size);
+            _preparationQueued = true;
+            _drawQueued = true;
+        }
+        if (_viewport.ViewScale <= 0)
+            return null;
+        return new()
+        {
+            Model = _model.Capture(),
+            Viewport = _viewport.Capture(),
+            Device = _device,
+            Dpi = _dpi,
+            Palette = new()
+            {
+                Ink = Colour(Ink.Foreground),
+                Land = Colour(Land.Background),
+                Edge = Colour(Edge.Background),
+                Download = Colour(Download.Background),
+                Upload = Colour(Upload.Background),
+            },
+            Underlay = _underlay ??= Underlay(),
+            Selection = _selectedPeers.Select(peer => (peer, peer.Location)).ToArray(),
+            Place = _model.Place,
+            Chosen = _selected?.Key,
+            Pointed = _pointed?.Key,
+            PointedCities = _pointed?.Group.Place.Cities,
+            Animation = _animation,
+            DotTotal = _dotTotal,
+            ArcLimit = _arcLimit,
+            Animates = MapRenderer.SystemAnimates,
+            HighContrast = MapRenderer.SystemHighContrast,
+            Arrange = _preparationQueued,
+            Draw = _drawQueued,
+        };
+    }
+
+    private async void Prepare(MapWork work)
+    {
+        _working = work;
+        try
+        {
+            while (ReferenceEquals(_work, work) && IsLoaded)
+            {
+                _cancelWork = null;
+                var input = Capture();
+                if (input is null)
+                    return;
+                using var cancellation = new CancellationTokenSource();
+                _cancelWork = cancellation;
+                input = input with { Cancellation = cancellation.Token };
+                var version = _version;
+                var preparation = Task.Run(() => work.Prepare(input));
+                await ((Task)preparation).ConfigureAwait(
+                    ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
+                if (!ReferenceEquals(_work, work) || !IsLoaded)
+                {
+                    if (preparation.IsCompletedSuccessfully)
+                        preparation.Result.Dispose();
+                    return;
+                }
+                if (version != _version)
+                {
+                    _drawQueued = true;
+                    if (preparation.IsCompletedSuccessfully)
+                    {
+                        using var obsolete = preparation.Result;
+                    }
+                    continue;
+                }
+                if (preparation.IsFaulted)
+                {
+                    var error = preparation.Exception!.GetBaseException();
+                    if (input.Device.IsDeviceLost(error.HResult))
+                    {
+                        _motion?.Wake();
+                        _preparationQueued = true;
+                        return;
+                    }
+                    await preparation;
+                }
+                using var prepared = await preparation;
+                _preparationQueued = false;
+                _drawQueued = false;
+                Apply(prepared);
+                if (version != _version)
+                    continue;
+                _ready?.TrySetResult();
+                if (prepared.Delay is { } delay)
+                {
+                    _fadeTimer.Interval = delay > TimeSpan.Zero ? delay : TimeSpan.FromMilliseconds(1);
+                    _fadeTimer.Start();
+                }
+                return;
+            }
+        }
+        catch (Exception error)
+        {
+            _ready?.TrySetException(error);
+            throw;
+        }
+        finally
+        {
+            _cancelWork = null;
+            _working = null;
+            if (!ReferenceEquals(_work, work))
+                _ = Task.Run(work.Dispose);
+            if (_work is not null && (_preparationQueued || _drawQueued))
+                QueueFrame();
+        }
+    }
+
+    private void Apply(MapWork.Output prepared)
+    {
+#if CAPTURE
+        var started = Stopwatch.GetTimestamp();
+#endif
+        var describe = !ReferenceEquals(_model.Destinations, prepared.Model.Destinations)
+            || !ReferenceEquals(_selected, prepared.Chosen) || !ReferenceEquals(_pointed, prepared.Pointed);
+        _model.Apply(prepared.Model);
+        _viewport.Meridian = prepared.View.Meridian;
+        _selectedPeers = prepared.Selection;
+        _selected = prepared.Chosen;
+        _pointed = prepared.Pointed;
+        _marks = prepared.Marks;
+        _inspection?.Dispose();
+        _inspection = prepared.Inspection;
+        prepared.Inspection = null;
+        if (_model.Text is { } text && _language != text.Language)
+        {
+            _language = text.Language;
+            AutomationProperties.SetName(this, text.Get("peer_map", "name"));
+            RefreshNavigation();
+        }
+        if (describe)
+            Describe();
+        if (_motion is { } motion)
+        {
+            motion.Show(prepared.Scene);
+            if (prepared.Picture is { } picture)
+                motion.Draw(prepared.View, session =>
+                {
+                    session.DrawImage(picture);
+                    return true;
+                });
+        }
+#if CAPTURE
+        foreach (var (phase, ms) in prepared.Work)
+            WorkMeasured?.Invoke(phase, ms);
+        PreparationMeasured?.Invoke(prepared.PreparationMs);
+        FrameMeasured?.Invoke(prepared.PreparationMs + prepared.DrawingMs + Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+#endif
     }
 
     private void Restyle()
@@ -343,128 +466,41 @@ public sealed partial class PeerMap : UserControl
         Invalidate();
     }
 
-    private void Prepare()
-    {
-        var size = new Size(Drawing.ActualWidth, Drawing.ActualHeight);
-        if (_renderer is null || _world is null || _model.Text is not { } text || size.Width < 1 || size.Height < 1)
-            return;
-#if CAPTURE
-        var started = Stopwatch.GetTimestamp();
-#endif
-        var resized = _viewport.Size != size;
-        if (resized)
-        {
-            EndDrag(true);
-            _viewport.Resize(size);
-        }
-        var highlight = Highlight;
-        var pointed = _pointed?.Group.Place.Cities == _model.Cities ? _pointed?.Key : null;
-        _model.Arrange(_world, _viewport.Scale);
-#if CAPTURE
-        var arranged = Stopwatch.GetTimestamp();
-        WorkMeasured?.Invoke("arrange", Stopwatch.GetElapsedTime(started, arranged).TotalMilliseconds);
-        _renderer.WorkMeasured = WorkMeasured;
-#endif
-        RefreshPlace();
-        _pointed = pointed is { } key
-            ? _model.Destinations.FirstOrDefault(destination => destination.Key == key)
-            : null;
-        if (_selectedPeers.Count > 0)
-        {
-            var present = _model.Peers.ToHashSet();
-            _selectedPeers = _selectedPeers.Where(present.Contains).ToArray();
-        }
-        // Highlights compare their marks by instance, so equal marks keep the
-        // old one and a rate update that changes nothing draws nothing.
-        var marks = _model.Marks(_selectedPeers);
-        if (marks.Count != _marks.Count || marks.Any(mark => _marks.GetValueOrDefault(mark.Key) != mark.Value))
-            _marks = marks;
-#if CAPTURE
-        var preparing = Stopwatch.GetTimestamp();
-#endif
-        var changed = _renderer.Prepare();
-#if CAPTURE
-        var prepared = Stopwatch.GetTimestamp();
-        WorkMeasured?.Invoke("prepare", Stopwatch.GetElapsedTime(preparing, prepared).TotalMilliseconds);
-        WorkMeasured?.Invoke("selection and marks", Stopwatch.GetElapsedTime(arranged, preparing).TotalMilliseconds);
-#endif
-        if (_language != text.Language)
-        {
-            _language = text.Language;
-            AutomationProperties.SetName(this, text.Get("peer_map", "name"));
-            RefreshNavigation();
-        }
-        Describe();
-#if CAPTURE
-        WorkMeasured?.Invoke("description", Stopwatch.GetElapsedTime(prepared).TotalMilliseconds);
-#endif
-        // A rate update that changes nothing visible draws nothing; the dots
-        // move over the last picture.
-        if (changed || resized || Highlight != highlight)
-            Invalidate();
-#if CAPTURE
-        var elapsed = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
-        _preparation += elapsed;
-        PreparationMeasured?.Invoke(elapsed);
-#endif
-    }
-
     private void Stop()
     {
         _model.PropertyChanged -= OnModelChanged;
+        StopSettings();
         CompositionTarget.Rendering -= OnRendering;
         _frameQueued = false;
         _preparationQueued = false;
         _drawQueued = false;
+        _version++;
+        _ = _cancelWork?.CancelAsync();
+        _loading = null;
+        _ready?.TrySetCanceled();
         _underlay = null;
         EndDrag(true);
         _navigationTimer.Stop();
+        _fadeTimer.Stop();
         Navigation.Visibility = Visibility.Collapsed;
-        _renderer?.Dispose();
-        _renderer = null;
+        var work = _work;
+        _work = null;
+        if (work is not null && !ReferenceEquals(work, _working))
+            _ = Task.Run(work.Dispose);
+        _inspection?.Dispose();
+        _inspection = null;
         _motion?.Dispose();
         _motion = null;
-        _world = null;
+        _device = null;
         Drawing.Background = null;
         _pointed = null;
         DescribedChanged?.Invoke(this, EventArgs.Empty);
-#if CAPTURE
-        _preparation = 0;
-#endif
     }
 
     private MapRenderer.Highlight Highlight => new(_selected?.Key, _marks, _pointed?.Key);
 
     private bool IsMarked(Destination destination) => Highlight.IsMarked(destination);
 
-    private void Draw()
-    {
-        if (_model.Text is null || _renderer is not { } renderer || _motion is not { } motion || _viewport.ViewScale <= 0)
-            return;
-#if CAPTURE
-        var started = Stopwatch.GetTimestamp();
-#endif
-        var underlay = _underlay ??= Underlay();
-        var palette = new MapRenderer.Palette
-        {
-            Ink = Colour(Ink.Foreground),
-            Land = Colour(Land.Background),
-            Edge = Colour(Edge.Background),
-            Download = Colour(Download.Background),
-            Upload = Colour(Upload.Background),
-        };
-        var highlight = Highlight;
-        motion.Draw(_viewport.View, session =>
-        {
-            session.Clear(underlay);
-            return renderer.Draw(session, palette, highlight);
-        });
-#if CAPTURE
-        // Include preparation moved out of Draw so before/after CPU totals remain comparable.
-        FrameMeasured?.Invoke(_preparation + Stopwatch.GetElapsedTime(started).TotalMilliseconds);
-        _preparation = 0;
-#endif
-    }
 
     private static Color Colour(Brush brush) => ((SolidColorBrush)brush).Color;
 
@@ -510,10 +546,10 @@ public sealed partial class PeerMap : UserControl
 
     private void OnPointer(object sender, PointerRoutedEventArgs args)
     {
-        if (_renderer is null || MoveDrag(args) || _viewport.ViewScale <= 0)
+        if (_inspection is null || MoveDrag(args) || _viewport.ViewScale <= 0)
             return;
         var position = args.GetCurrentPoint(Drawing).Position;
-        var nearest = _renderer.HitTest(new Vector2((float)position.X, (float)position.Y));
+        var nearest = _inspection.HitTest(new Vector2((float)position.X, (float)position.Y));
         if (ReferenceEquals(_pointed, nearest))
             return;
         _pointed = nearest;
@@ -533,7 +569,7 @@ public sealed partial class PeerMap : UserControl
     private void SelectPeers(IReadOnlyList<Peer> peers)
     {
         _selectedPeers = peers;
-        _marks = _model.Marks(peers);
+        Invalidate();
     }
 
 }

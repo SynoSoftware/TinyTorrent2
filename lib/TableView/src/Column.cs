@@ -116,15 +116,11 @@ public sealed partial class Column : DependencyObject
     public HorizontalAlignment CellAlignment { get; set; } = HorizontalAlignment.Left;
 
     /// <summary>
-    /// The order this column sorts by, supplied by <see cref="Table.Schema{TRow}"/>. There is
+    /// Captures the keys this column sorts by, supplied by <see cref="Table.Schema{TRow}"/>. There is
     /// no separate switch: a column given a sort key is sortable and one that was not is not, so
     /// the two cannot disagree.
     /// </summary>
-    internal Func<
-        IEnumerable<object>,
-        SortDirection,
-        IOrderedEnumerable<object>
-    >? Sort { get; set; }
+    internal Func<IReadOnlyList<object>, IComparer<object>>? CaptureSort { get; set; }
 
-    internal bool CanSort => Sort is not null;
+    internal bool CanSort => CaptureSort is not null;
 }

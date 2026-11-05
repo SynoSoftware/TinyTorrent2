@@ -243,6 +243,7 @@ public sealed class Table : Control
     public Sort? Sort { get; set; }
     public TimeSpan SortInterval { get; set; }
     public void RefreshView();
+    public Task ViewReady { get; }
     public void Release(IEnumerable<object> items);
     public void ScrollIntoView(object item);
     public void ScrollIntoView(object item, IEnumerable<object> arrivals);
@@ -355,7 +356,9 @@ state. At first load the table resolves them together against the completed
 schema and current source. A later `Layout` replaces the pending sort; a later
 `Sort` overrides the layout's sort. Initial layout is silent; resolved nonempty
 selection/current raises one `SelectionChanged`. After load, unavailable selection
-items are discarded immediately rather than retained as future requests.
+items are discarded rather than retained as future requests. A selection assigned
+while view preparation is pending resolves against that prepared view; a newer
+selection gesture supersedes it.
 
 Assigning `Selection` atomically replaces the table-owned selection and current
 item after resolving both to interactive instances in the current private view. An
@@ -412,13 +415,15 @@ The control deliberately has two extension mechanisms, with no overlap:
 | `RealizedItemsChanged` | host event | load data only for the rows on screen | treat the list as the visible rows alone |
 
 Policy callbacks are called on the UI thread and MUST be pure, synchronous, and
-cheap. The table never calls them per render frame. A sort key is read
-`O(n log n)` times during an explicit sort and therefore must be especially
-cheap. `Comparer<TKey>.Default` supplies normal .NET ordering, including enums
+cheap. The table never calls them per render frame. Identity and sort keys are
+captured before worker preparation; a sort key is read once per row in a capture.
+Comparisons run on the worker and must not access UI state; captured key values
+must remain stable. `Comparer<TKey>.Default` supplies normal .NET ordering, including enums
 and nullable keys; default nulls come first ascending. An optional comparer
 expresses domain ordering, such as unknown values last or ordinal text. Preserve
 the host's intended ordering when removing sentinel values. Unsupported key types
-fail when comparison is needed; comparisons finish before the new sort is committed.
+fail when comparison is needed, before replacing the displayed view. `Sort`
+exposes the requested header choice while `ViewReady` awaits its projection.
 Equal values retain source order, including descending sorts.
 
 Events are the component's callback API for completed gestures or table-state
@@ -492,11 +497,27 @@ and pointer information.
 ### 5.3 Source, identity, and update contract
 
 The control is UI-thread-affine. `ItemsSource` assignment, source enumeration,
-`INotifyCollectionChanged` notifications, public method calls, and callbacks
+`INotifyCollectionChanged` notifications, public method calls, policy selectors and events
 MUST occur on its XAML `DispatcherQueue`. A host receiving daemon, RPC, or
 background data marshals a completed update to that queue before changing its
 source. The table does not dispatch, serialize, cancel, or order external
 updates.
+
+Source capture and host selectors stay on the UI thread because the host's rows
+and collections may be UI-owned. TableView then prepares validation, sorting,
+membership holds, pinning, hierarchy projection, position indices and collection
+edits on a worker. One preparation runs per table and later requests coalesce to
+the latest source and sort. An obsolete result cannot publish. A change in which
+positions have native containers causes preparation again for those positions,
+so an edit sequence never targets containers different from the ones it captured.
+The UI applies prepared edits and performs native input, focus, control creation,
+measurement and layout; it never waits for preparation to finish.
+
+`ViewReady` completes when the latest requested projection has been applied, not
+when its pixels have rendered. Hosts that act on the replacement view await it.
+Input continues against the displayed view during preparation. Capture failures
+throw at the UI boundary; worker failures fault `ViewReady` and reach that same
+exception boundary without replacing the displayed view or selection.
 
 On `ItemsSource` assignment, and after every observed collection notification,
 the table captures one ordered source snapshot. `Add`, `Remove`, `Move`,
@@ -651,15 +672,17 @@ reorder request.
 
 Policy callbacks MUST NOT mutate the source or call back into the table. Events
 are post-mechanics: a handler may publish an optimistic source update or start
-async domain work. Runtime setters commit synchronously, including inside an
-event handler. Event payloads describe that event; getters expose current state,
-which an earlier subscriber may already have changed. No hidden deferred setter
-queue exists. A compound gesture captures its intended packet, then rechecks
+async domain work. Runtime setters capture requests synchronously, including inside an
+event handler; source and sort projection complete through `ViewReady`. Selection
+gestures remain immediate against the displayed view. Event payloads describe that event; getters expose current state,
+which an earlier subscriber may already have changed. Requests are recorded
+before their setter returns. A compound gesture captures its intended packet, then rechecks
 state and target after selection handlers return. An invalidated context request
 is cancelled; keyboard navigation does not resume focus work for an obsolete row.
 
-Unloading suspends source subscriptions and timers. Explicit setters still
-reconcile logical state while detached. Reload recaptures a notifying source;
+Unloading suspends source subscriptions, timers and view preparation without
+waiting for a worker. Explicit setters retain their captured requests while
+detached; reload prepares their view. Reload recaptures a notifying source;
 a non-notifying one-shot source retains its captured snapshot.
 
 The table guarantees continuity only for its own key-addressable state. It does

@@ -48,6 +48,8 @@ internal static class TableHarness
             table.Loaded -= OnLoaded;
         }
 
+        await table.ViewReady.WaitAsync(TimeSpan.FromSeconds(10));
+
         // The first fill waits for the frame after its layout before the table reveals a row;
         // a test acts after that frame, as a person does.
         await WaitUntilAsync(

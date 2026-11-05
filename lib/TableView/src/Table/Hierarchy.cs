@@ -27,54 +27,11 @@ public sealed partial class Table
         };
     }
 
-    private IReadOnlyList<object> PrepareHierarchy(IReadOnlyList<object> roots, bool capture)
+    private Hierarchy.Snapshot CaptureHierarchy(IReadOnlyList<object> roots)
     {
         var hierarchy = _hierarchy!;
-        _preparedHierarchy =
-            capture || hierarchy.Captured is null
-                ? hierarchy.Capture(roots, _identity, _rowType)
-                : hierarchy.Captured;
-        if (!ReferenceEquals(_preparedHierarchy, hierarchy.Captured))
-        {
-            if (
-                hierarchy.Captured is null
-                || !_preparedHierarchy.MatchesStructure(hierarchy.Captured, _identity)
-            )
-                _orderSettledAt = null;
-        }
-        return hierarchy.Project(_preparedHierarchy, null, default);
-    }
-
-    private void AcceptOrder(IReadOnlyList<object> order)
-    {
-        _positions = new(_identity);
-        if (_hierarchy is null)
-        {
-            for (int i = 0; i < order.Count; i++)
-                _positions.Add(order[i], (i, 0));
-            return;
-        }
-        var snapshot = _preparedHierarchy ?? _hierarchy.Captured;
-        if (snapshot is null)
-            return;
-        if (!ReferenceEquals(_hierarchy.Captured, snapshot))
-            _hierarchy.Accept(snapshot);
-        Dictionary<object, int> counts = new(_identity);
-        int roots = 0;
-        bool expandable = false;
-        for (int i = 0; i < order.Count; i++)
-        {
-            object item = order[i];
-            var node = snapshot.Nodes[item];
-            expandable = expandable || _hierarchy.IsExpandable(node);
-            object? parent = node.Parent;
-            int position = parent is null ? ++roots : counts.GetValueOrDefault(parent) + 1;
-            if (parent is not null)
-                counts[parent] = position;
-            _positions.Add(item, (i, position));
-        }
-        _hierarchy.HasChildren = expandable;
-        _preparedHierarchy = null;
+        _preparedHierarchy = hierarchy.NeedsCapture ? hierarchy.Capture(roots, _identity, _rowType) : hierarchy.Captured!;
+        return _preparedHierarchy;
     }
 
     internal bool IsHierarchyColumn(Column column) => ReferenceEquals(_hierarchy?.Column, column);
@@ -98,11 +55,11 @@ public sealed partial class Table
     {
         if (item is null || _hierarchy is null || _positions is null)
             return null;
-        if (_positions.ContainsKey(item) || _hierarchy.Find(item) is not { } node)
+        if (_positions.ContainsKey(KeyOf(item)) || _hierarchy.Find(item) is not { } node)
             return null;
         while (node.Parent is { } parent && _hierarchy.Find(parent) is { } ancestor)
         {
-            if (_positions.ContainsKey(parent) && IsInteractive(parent))
+            if (_positions.ContainsKey(KeyOf(parent)) && IsInteractive(parent))
                 return ancestor.Item;
             node = ancestor;
         }
@@ -131,7 +88,7 @@ public sealed partial class Table
             int firstIndex = int.MaxValue;
             foreach (object child in node.Children)
             {
-                if (_positions is null || !_positions.TryGetValue(child, out var position))
+                if (_positions is null || !_positions.TryGetValue(KeyOf(child), out var position))
                     continue;
                 if (!IsInteractive(child) || position.Index >= firstIndex)
                     continue;
@@ -156,7 +113,7 @@ public sealed partial class Table
         return true;
     }
 
-    internal int HierarchyPosition(object item) => _positions?.GetValueOrDefault(item).Sibling ?? 0;
+    internal int HierarchyPosition(object item) => _positions?.GetValueOrDefault(KeyOf(item)).Sibling ?? 0;
 
     internal int HierarchyCount(object item)
     {

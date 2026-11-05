@@ -312,6 +312,7 @@ public class ColumnFitTests
             await TableHarness.WaitUntilAsync(() => !timer.IsRunning, "the first resize to settle");
             double before = TableHarness.EffectiveWidth(table, "a");
             table.ItemsSource = Rows(20, 600);
+            await table.ViewReady;
             table.UpdateLayout();
             Assert.AreEqual(before, TableHarness.EffectiveWidth(table, "a"), 0d);
 
@@ -732,6 +733,7 @@ public class ColumnFitTests
 
     private static async Task SettleAsync(Table table)
     {
+        await table.ViewReady;
         table.UpdateLayout();
         await Task.Delay(250);
         table.UpdateLayout();

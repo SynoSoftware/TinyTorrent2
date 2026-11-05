@@ -1205,10 +1205,10 @@ public sealed partial class Table
     /// </summary>
     public void ScrollIntoView(object item)
     {
-        if (IndexInView(item) < 0 && _source.Snapshot.Contains(item, _identity))
-            Release([item]);
+        if (!_preparingView && IndexInView(item) < 0 && _sourceKeys.Contains(KeyOf(item)))
+            QueueRelease([item], waitingOnly: true);
 
-        if (_layoutPending)
+        if (_preparingView || _layoutPending)
         {
             _pendingReveal = (item, FocusState.Unfocused);
             return;
@@ -1220,10 +1220,15 @@ public sealed partial class Table
     /// <summary>Scroll to the waiting reveal, and focus it if keyboard navigation asked.</summary>
     private void Reveal()
     {
-        if (_pendingReveal is not { } reveal)
+        if (_preparingView || _layoutPending || _pendingReveal is not { } reveal)
             return;
         _pendingReveal = null;
         ScrollIntoView(reveal.Item);
+        if (_preparingView || _layoutPending)
+        {
+            _pendingReveal = reveal;
+            return;
+        }
         if (reveal.Focus != FocusState.Unfocused)
             FocusRow(reveal.Item, reveal.Focus);
     }
@@ -1236,13 +1241,7 @@ public sealed partial class Table
     {
         ArgumentNullException.ThrowIfNull(arrivals);
         if (_hierarchy is null)
-        {
-            HashSet<object> waiting = new(arrivals, _identity);
-            waiting.ExceptWith(View);
-            waiting.IntersectWith(_source.Snapshot);
-            if (waiting.Count > 0)
-                Release(waiting);
-        }
+            QueueRelease(arrivals, waitingOnly: true);
         ScrollIntoView(item);
     }
 

@@ -238,7 +238,7 @@ public sealed partial class Table
 
         if (_positions is not null && !_reconcilingView)
         {
-            int index = _positions.TryGetValue(item, out var position) ? position.Index : -1;
+            int index = _positions.TryGetValue(KeyOf(item), out var position) ? position.Index : -1;
             if (index < 0)
                 return -1;
             if (index >= 0 && index < View.Count && _selection.IsSame(View[index], item))
@@ -271,68 +271,181 @@ public sealed partial class Table
 
     // ------------------------------------------------------------------ view reconciliation
 
+    private bool _preparingView;
+    private bool _sortChangedPending;
+    private long _viewVersion;
+    private TaskCompletionSource? _viewReady;
+    private IComparer<object>? _preparedSort;
+    private IReadOnlyList<object> _displayed = [];
+    private HashSet<object> _sourceKeys = [];
+
     /// <summary>
-    /// Apply the current snapshot, under the current sort, to the private view and then to the
-    /// table-owned selection. Specification 5.3 leaves the mechanism open — "the implementation may
-    /// update a private view incrementally or rebuild it, but the observable result MUST be the
-    /// same" — and the observable result is settled below, not by the collection notifications:
-    /// selection is re-applied from the table's own model, and at most one event is raised.
+    /// After the first Loaded, completes when the latest requested source and sort have reached
+    /// the displayed view. Native layout may still be pending.
     /// </summary>
+    public Task ViewReady => _viewReady?.Task ?? Task.CompletedTask;
+
     private void RebuildView(
-        IReadOnlyList<object>? snapshot = null,
-        IReadOnlyList<object>? preparedOrder = null
-    )
+        IReadOnlyList<object>? snapshot = null, bool sortChanged = false, IComparer<object>? preparedSort = null)
     {
-        bool capture = snapshot is not null;
-        snapshot ??= _source.Snapshot;
-        if (!_schemaCaptured)
+        if (snapshot is not null)
         {
             _source.Accept(snapshot);
+            _hierarchy?.Invalidate();
+        }
+        if (!_schemaCaptured)
             return;
-        }
-        IReadOnlyList<object> order;
-        IReadOnlySet<object> pinned;
-        bool settles;
-        if (preparedOrder is null)
+        _viewVersion++;
+        _sortChangedPending |= sortChanged;
+        _preparedSort = preparedSort;
+        var input = _preparingView || _detached ? null : CaptureProjection();
+        if (_viewReady?.Task.IsCompleted != false)
+            _viewReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (input is not null)
+            PrepareView(input);
+    }
+
+    private async void PrepareView(Body.Projection.Input input)
+    {
+        _preparingView = true;
+        try
         {
-            if (_hierarchy is null)
+            while (!_detached)
             {
-                ValidateRows(snapshot);
-                (order, pinned, settles) = ViewOrder(snapshot);
+                var version = _viewVersion;
+                var preparation = Task.Run(() => new Body.Projection(input).Prepare());
+                await ((Task)preparation).ConfigureAwait(
+                    ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
+                if (_detached)
+                    break;
+                if (version != _viewVersion || !input.Realized.SequenceEqual(RealizedIndices()))
+                {
+                    input = CaptureProjection();
+                    continue;
+                }
+                var prepared = await preparation;
+                _sortChangedPending = false;
+                ApplyProjection(prepared, input.Holding.Releases.Count);
+                if (version != _viewVersion)
+                {
+                    input = CaptureProjection();
+                    continue;
+                }
+                _viewReady!.TrySetResult();
+                return;
             }
-            else
+            _viewReady?.TrySetCanceled();
+        }
+        catch (Exception error)
+        {
+            _viewReady?.TrySetException(error);
+            throw;
+        }
+        finally
+        {
+            _preparingView = false;
+            if (_fillPending && !_detached)
             {
-                long? settled = _orderSettledAt;
-                try
-                {
-                    (order, pinned, settles) = ViewOrder(PrepareHierarchy(snapshot, capture));
-                }
-                catch
-                {
-                    _orderSettledAt = settled;
-                    _preparedHierarchy = null;
-                    throw;
-                }
+                _fillPending = false;
+                QueueFill();
+                InvalidateMeasure();
+            }
+            if (!_detached)
+            {
+                ApplyPendingScroll();
+                if (!_layoutPending)
+                    Reveal();
             }
         }
-        else
+    }
+
+    private Body.Projection.Input CaptureProjection()
+    {
+        var source = _source.Snapshot;
+        var displayed = _displayed;
+        var hierarchy = _hierarchy is null ? null : CaptureHierarchy(source);
+        var previous = _hierarchy?.Captured;
+        var rows = hierarchy is null ? source : hierarchy.Nodes.Keys.ToArray();
+        var identity = _identity;
+        if (ItemKey is { } key)
         {
-            // A sort the person or host asked for moves every row, so nothing is held through it.
-            order = preparedOrder;
-            var (_, held, released) = Hold(snapshot, sortChanged: true);
-            AcceptHold(held, released);
-            pinned = held;
-            settles = true;
+            var keys = new Dictionary<object, object>(ReferenceEqualityComparer.Instance);
+            var all = rows.Concat(displayed)
+                .Concat(previous?.Nodes.Keys ?? Enumerable.Empty<object>()).Concat(_released.Keys)
+                .Concat(_releases.SelectMany(release => release.Items.Concat(release.Source).Concat(release.Displayed)));
+            foreach (var item in all)
+            {
+                if (keys.ContainsKey(item))
+                    continue;
+                if (_rowType is not null && !_rowType.IsInstanceOfType(item))
+                    throw ConfigurationError($"The source contains a row outside {_rowType}.");
+                keys[item] = key(item);
+            }
+            identity = new ItemIdentity { KeySelector = item => keys[item], KeyComparer = KeyComparer };
         }
-        _source.Accept(snapshot);
-        AcceptOrder(order);
-        if (_detached)
+        var expanded = hierarchy?.Nodes.Values.Where(node => _hierarchy!.IsExpanded(node.Item))
+            .Select(node => node.Item).ToHashSet(ReferenceEqualityComparer.Instance)
+            ?? new HashSet<object>(ReferenceEqualityComparer.Instance);
+        return new Body.Projection.Input(
+            new Body.Projection.Rows
+            {
+                Source = source,
+                Displayed = displayed,
+                Identity = identity,
+                RowType = _rowType,
+                Hierarchy = hierarchy,
+                PreviousHierarchy = previous,
+                Expanded = expanded,
+                Expandable = hierarchy?.Nodes.Values.Where(node => _hierarchy!.IsExpandable(node))
+                    .Select(node => node.Item).ToHashSet(ReferenceEqualityComparer.Instance)
+                    ?? new HashSet<object>(ReferenceEqualityComparer.Instance),
+            },
+            new Body.Projection.Ordering
+            {
+                Comparer = SortsLocally ? _preparedSort ?? _sortColumn!.Column.CaptureSort!(rows) : null,
+                Direction = _sortDirection,
+                Local = SortsLocally,
+                RowOrder = SortsOrder,
+                Changed = _sortChangedPending,
+                Interval = _sortInterval,
+                SettledAt = _orderSettledAt,
+                Showing = _settleShowing,
+            },
+            new Body.Projection.Holding
+            {
+                Pointed = IsPointed,
+                PointedRow = _pointedRow,
+                MenuRow = _menuRow,
+                Released = _released,
+                Lifetime = ReleaseLifetime,
+                Releases = _releases.ToArray(),
+            },
+            RealizedIndices());
+    }
+
+    private object KeyOf(object item) => ItemKey?.Invoke(item) ?? item;
+
+    private void ApplyProjection(Body.Projection.Prepared prepared, int releases)
+    {
+        var order = prepared.Order;
+        _displayed = order;
+        var settles = prepared.Settles;
+        _positions = prepared.Positions;
+        _held = prepared.Held;
+        _sourceKeys = prepared.SourceKeys;
+        _releases.RemoveRange(0, releases);
+        _released = prepared.Released;
+        if (prepared.StructureChanged)
+            _orderSettledAt = null;
+        if (_hierarchy is not null && _preparedHierarchy is { } hierarchy)
         {
-            _view.Reconcile(order, Array.Empty<int>(), pinned);
-            ReconcileSelection(FocusState.Unfocused);
-            return;
+            _hierarchy.Accept(hierarchy);
+            _hierarchy.HasChildren = prepared.HasChildren;
+            _preparedHierarchy = null;
         }
-        if (order.SequenceEqual(View, ReferenceEqualityComparer.Instance))
+        if (prepared.SettleAfter is { } due)
+            ScheduleSettle(due);
+        if (prepared.Changes.Edits.Count == 0)
         {
             ReconcileDrag();
             UpdatePlaceholder();
@@ -364,7 +477,8 @@ public sealed partial class Table
         _reconcilingView = true;
         try
         {
-            viewMoved = _view.Reconcile(order, RealizedIndices(), pinned);
+            _view.Apply(prepared.Changes);
+            viewMoved = prepared.Changes.Changed;
         }
         finally
         {
@@ -400,7 +514,7 @@ public sealed partial class Table
         UpdatePlaceholder();
         object? retained = focusedItem is null
             ? null
-            : View.FirstOrDefault(item => _selection.IsSame(item, focusedItem))
+            : ResolveItem(focusedItem)
                 ?? CollapsedAncestor(focusedItem);
         if (collapsing.Item is not null && rowFocus != FocusState.Unfocused)
             ScrollIntoView(collapsing.Item);
@@ -420,17 +534,4 @@ public sealed partial class Table
         });
     }
 
-    private void ValidateRows(IReadOnlyList<object> snapshot)
-    {
-        HashSet<object> seen = new(_identity);
-        foreach (object item in snapshot)
-        {
-            if (_rowType is not null && !_rowType.IsInstanceOfType(item))
-                throw ConfigurationError($"The source contains a row outside {_rowType}.");
-            if (ItemKey is not null && ItemKey(item) is null)
-                throw ConfigurationError("The schema key selector returned null.");
-            if (!seen.Add(item))
-                throw ConfigurationError("The source contains duplicate row identities.");
-        }
-    }
 }

@@ -13,15 +13,17 @@ for this documentation review.
 | --- | --- |
 | Public control, template lifetime, composition | [Table](../src/Table.cs) and its parts in [Table/](../src/Table/). |
 | Source subscription and coherent source capture | [Body.Source](../src/Body/Source.cs). |
-| Optional child membership, subscriptions and sibling projection | [Hierarchy](../src/Hierarchy.cs), configured by `Schema<TRow>.Hierarchy`. |
-| Displayed sequence, collection reconciliation and the selected state the list reads | [Body.View](../src/Body/View.cs). |
+| Optional child membership and subscriptions | [Hierarchy](../src/Hierarchy.cs), configured by `Schema<TRow>.Hierarchy`. |
+| Worker ordering, holds, hierarchy projection and position indices | [Body.Projection](../src/Body/Projection.cs), from values captured by [Table/View](../src/Table/View.cs). |
+| Worker collection-edit planning | [Body.Changes](../src/Body/Changes.cs). |
+| Displayed sequence, applying prepared edits and the selected state the list reads | [Body.View](../src/Body/View.cs). |
 | Effective layout | [EffectiveLayout](../src/EffectiveLayout.cs). |
 | Realized items reported to the host | `RealizedItems` in [Table/View](../src/Table/View.cs), read from the row panel's cache range; the panel's `CacheLength` in [Generic.xaml](../src/Themes/Generic.xaml) sets the margin. |
 | Shared header and row arrangement | [CellsPanel](../src/CellsPanel.cs). |
 | Hierarchy cell indentation and disclosure | [Body.HierarchyCell](../src/Body/HierarchyCell.cs), created only for the hierarchy column, with a `SubtleButton` as its expander. |
 | Selection, current item, anchor, and logical focus | [SelectionState](../src/SelectionState.cs). |
 | Row pointer arbitration | [Table input](../src/Table/Input.cs). |
-| Held rows and the pointed row's frozen place | [Table holding](../src/Table/Holding.cs), applied by the view order in [Table sorting](../src/Table/Sorting.cs). |
+| Pointer and release input | [Table holding](../src/Table/Holding.cs); [Body.Projection](../src/Body/Projection.cs) prepares holds and the pointed row's frozen place. |
 | Marquee geometry | [Body.Marquee](../src/Body/Marquee.cs), driven by the arbiter. |
 | Numbered order and drag wheel | [Order](../src/Order.cs) captures host positions; [Table/Reordering](../src/Table/Reordering.cs) owns the gesture snapshot and request; [Body.Wheel](../src/Body/Wheel.xaml.cs) owns popup rendering and gap geometry. |
 | Header gestures and generated menu | [Header.Strip](../src/Header/Strip.cs) and [Header.Menu](../src/Header/Menu.cs). |

@@ -78,16 +78,18 @@ text block uses the font; the name beside it stays in the app's font.
 
 ## Map
 
-`Inspector.Place` is the chosen filter for both views. Its `MapModel` owns
-grouped peer facts, descriptions and estimated distribution; the control keeps
-only the exact inspected destination and table-selection highlights. The
-control gives the model the fitted map scale when it prepares the map, and the
-model merges places into regions at that scale. `MapViewport`
-provides one transform for drawing, hit testing and navigation, and
-`MapRenderer` retains route resources by destination identity. Changed peer
-inputs and resize prepare the retained presentation; drawing and pan alone do
-not regroup peers or publish model changes. Unload disposes the renderer and
-releases the geography; the motion layer releases its pictures and dot mark
+`Inspector.Place` is the chosen filter for both views. `MapModel` captures peer
+facts on the UI thread and publishes immutable inspection snapshots. One
+serialized `MapWork` worker owns grouping, estimated distribution, geometry,
+route resources and picture recording for the control's loaded lifetime. The UI
+captures native size, appearance and selection, then draws the prepared command
+list into the motion layer's bitmap. Workers never read live peers or controls.
+`MapViewport` supplies detached transforms for preparation and inspection.
+Drawing and pan alone do not regroup peers. Equivalent visible facts retain the
+presentation and picture even when the torrent and peer instances change.
+Superseding input invalidates pending work; only the latest result is published.
+Unload cancels without waiting and retires the worker's resources when its
+current preparation ends. The motion layer releases its pictures and dot mark
 after its game loop stops. Inspector retains plain map state.
 
 Rate-only observations retain peer membership, groups and unchanged destinations.
@@ -339,10 +341,10 @@ The map's picture is drawn again only when the view, appearance, inspection, a p
 rebuild or what it draws of the places changes: their arcs, role kinds,
 activity, colour and strengths. A strength change below one colour level is
 kept for later, so a steady transfer redraws nothing. Border strokes that a
-picture drew plainly or from another scale are replaced in frames that draw
-nothing, and one picture then shows them all, because those borders already
-keep their look and weight; other pending rebuilds draw again at the next
-frame. The glow is recorded again only when what it shows can change.
+picture drew plainly or from another scale are replaced on the worker before
+publication. Geometry preparation uses bounded passes with cancellation between
+them; no preparation is spread across UI frames. The glow is recorded again
+only when what it shows can change.
 Rate-strength transitions keep the current smooth fade. A new observation
 preserves the pending visible step's deadline, so frequent updates cannot keep
 postponing all visible progress.
@@ -493,6 +495,16 @@ rows remain visible while their reads continue. The Inspector retains the last
 peer rows for eight recently read torrents, so returning to one displays them
 before the pipe reply. A new engine session or disconnect clears those rows.
 Changing selection abandons the old read without waiting for its completion.
+The Inspector owns that cancellation; token callbacks run asynchronously, so a
+torrent-table gesture never waits for inspector cleanup. Peer parsing, record
+comparison, merged source construction, place filtering, summary counting and
+location membership reconciliation run on workers over captured immutable
+facts. The UI applies prepared property notifications and publishes row sources.
+Retained peers keep their row identity. Coalesced place changes publish only the
+latest filter and release its prepared membership changes through TableView's
+generic hold policy. Native collection notifications, input, focus, cell
+measurement and layout remain UI work; generic projection, sorting and edit
+planning belong to TableView.
 Speed reads the same scope from
 the engine's retained histories and displays its day range before fetching finer recent samples.
 

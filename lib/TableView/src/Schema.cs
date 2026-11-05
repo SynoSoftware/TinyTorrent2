@@ -110,7 +110,8 @@ public sealed class Schema<TRow>
     }
 
     /// <summary>
-    /// Make this column sortable, by the key this returns for a row.
+    /// Make this column sortable. Keys are captured on the UI thread; comparisons run on a
+    /// worker, so keys must remain stable and the comparer must not access UI state.
     /// </summary>
     public Schema<TRow> SortKey<TKey>(
         Column column,
@@ -121,10 +122,14 @@ public sealed class Schema<TRow>
         ArgumentNullException.ThrowIfNull(column);
         ArgumentNullException.ThrowIfNull(key);
         _table.RequireSetup();
-        column.Sort = (items, direction) =>
-            direction == SortDirection.Ascending
-                ? items.OrderBy(item => key((TRow)item), comparer)
-                : items.OrderByDescending(item => key((TRow)item), comparer);
+        column.CaptureSort = items =>
+        {
+            var keys = new Dictionary<object, TKey>(ReferenceEqualityComparer.Instance);
+            foreach (var item in items)
+                keys[item] = key((TRow)item);
+            var comparison = comparer ?? Comparer<TKey>.Default;
+            return Comparer<object>.Create((left, right) => comparison.Compare(keys[left], keys[right]));
+        };
         return this;
     }
 

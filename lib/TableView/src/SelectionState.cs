@@ -321,8 +321,8 @@ internal sealed class SelectionState
     }
 
     /// <summary>
-    /// Section 5.3's reconciliation. One pass over the new view rehydrates every tracked identity
-    /// onto the new instances, prunes what left or became non-interactive, and repairs current.
+    /// Rehydrate tracked identities through the prepared index, prune what left or became
+    /// non-interactive, and repair current without scanning every displayed row.
     /// </summary>
     internal void Reconcile(
         IReadOnlyList<object> view,
@@ -330,40 +330,10 @@ internal sealed class SelectionState
         object? focusFallback = null
     )
     {
-        List<object> kept = new();
-        object? current = null;
-        object? anchor = null;
-        object? focus = null;
-
-        foreach (object item in view)
-        {
-            if (!IsInteractive(item))
-            {
-                continue;
-            }
-
-            if (_selected.Contains(item))
-            {
-                kept.Add(item);
-            }
-
-            if (Current is not null && _identity.Equals(item, Current))
-            {
-                current = item;
-            }
-
-            if (Anchor is not null && _identity.Equals(item, Anchor))
-            {
-                anchor = item;
-            }
-
-            if (Focus is not null && _identity.Equals(item, Focus))
-            {
-                focus = item;
-            }
-        }
-
-        kept = Limit(kept);
+        var kept = Limit(_selected.Select(Resolve).OfType<object>().OrderBy(_indexOf).ToList());
+        var current = Resolve(Current);
+        var anchor = Resolve(Anchor);
+        var focus = Resolve(Focus);
 
         current ??= currentFallback;
         focus ??= focusFallback;
@@ -375,6 +345,12 @@ internal sealed class SelectionState
         }
 
         Apply(kept, current, anchor, focus);
+
+        object? Resolve(object? item)
+        {
+            var index = item is null ? -1 : _indexOf(item);
+            return index >= 0 && index < view.Count && IsInteractive(view[index]) ? view[index] : null;
+        }
     }
 
     // ------------------------------------------------------------------ internals

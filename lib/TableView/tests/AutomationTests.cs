@@ -29,6 +29,7 @@ public class AutomationTests
             Assert.IsTrue(selection.IsSelected);
 
             h.Rows[299] = new Row("k299");
+            await h.Table.ViewReady;
             h.Table.UpdateLayout();
             selection.RemoveFromSelection();
             Assert.AreEqual(0, h.Table.Selection.Items.Count);
@@ -91,6 +92,7 @@ public class AutomationTests
             var selection = (ISelectionItemProvider)peer.GetPattern(PatternInterface.SelectionItem);
             h[0].Interactive = false;
             h.Table.RefreshView();
+            await h.Table.ViewReady;
 
             Assert.IsFalse(peer.IsEnabled());
             Assert.IsNull(peer.GetPattern(PatternInterface.SelectionItem));

@@ -22,25 +22,7 @@ internal sealed class Hierarchy(
         IReadOnlyList<object> Roots,
         Dictionary<object, Node> Nodes,
         Dictionary<IEnumerable, IReadOnlyList<object>> Sources
-    )
-    {
-        internal bool MatchesStructure(Snapshot other, ItemIdentity identity)
-        {
-            if (Nodes.Count != other.Nodes.Count || !Roots.SequenceEqual(other.Roots, identity))
-                return false;
-
-            foreach (var (item, node) in Nodes)
-            {
-                if (!other.Nodes.TryGetValue(item, out var previous))
-                    return false;
-                if (!identity.Equals(node.Parent, previous.Parent))
-                    return false;
-                if (!node.Children.SequenceEqual(previous.Children, identity))
-                    return false;
-            }
-            return true;
-        }
-    }
+    );
 
     private readonly HashSet<IEnumerable> _invalid = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<INotifyCollectionChanged> _subscriptions = new(
@@ -51,6 +33,7 @@ internal sealed class Hierarchy(
 
     internal Column Column => column;
     internal Snapshot? Captured { get; private set; }
+    internal bool NeedsCapture => _recapture || _invalid.Count > 0 || Captured is null;
     internal event EventHandler? Changed;
 
     internal bool IsExpanded(object item) => isExpanded(item);
@@ -176,43 +159,4 @@ internal sealed class Hierarchy(
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
-    internal IReadOnlyList<object> Project(
-        Snapshot snapshot,
-        Func<IEnumerable<object>, SortDirection, IOrderedEnumerable<object>>? sort,
-        SortDirection direction
-    )
-    {
-        List<object> visible = new();
-        Stack<IEnumerator<object>> levels = new();
-        levels.Push(Order(snapshot.Roots).GetEnumerator());
-        try
-        {
-            while (levels.TryPeek(out var level))
-            {
-                if (!level.MoveNext())
-                {
-                    levels.Pop().Dispose();
-                    continue;
-                }
-                object item = level.Current;
-                visible.Add(item);
-                var node = snapshot.Nodes[item];
-                if (node.Children.Count > 0 && isExpanded(item))
-                    levels.Push(Order(node.Children).GetEnumerator());
-            }
-        }
-        finally
-        {
-            foreach (var level in levels)
-                level.Dispose();
-        }
-        return visible;
-
-        IEnumerable<object> Order(IReadOnlyList<object> siblings)
-        {
-            if (sort is null)
-                return siblings;
-            return sort(siblings, direction);
-        }
-    }
 }

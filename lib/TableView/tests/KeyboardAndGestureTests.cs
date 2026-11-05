@@ -225,6 +225,7 @@ public class KeyboardAndGestureTests
             h[1].Interactive = false;
             h[2].Interactive = false;
             h.Table.RefreshView();
+            await h.Table.ViewReady;
 
             h.MoveBy(1, extend: false);
             Assert.AreEqual("k0", h.CurrentKey());
@@ -264,6 +265,7 @@ public class KeyboardAndGestureTests
 
             h[4].Interactive = false;
             h.Table.RefreshView();
+            await h.Table.ViewReady;
 
             Assert.IsTrue(h.SelectAll());
             CollectionAssert.AreEqual(new[] { "k0", "k1", "k2", "k3", "k5" }, h.SelectedKeys());

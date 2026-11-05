@@ -202,7 +202,7 @@ public sealed partial class MainWindow
                     : null;
             try
             {
-                await Torrents.PrepareSelection(async (_, cancellation) =>
+                var preparation = Torrents.PrepareSelection(async (_, cancellation) =>
                 {
                     var origins = entry is null
                         ? null
@@ -229,6 +229,10 @@ public sealed partial class MainWindow
                         completion.TrySetCanceled();
                     await completion.Task.WaitAsync(cancellation);
                 });
+                await preparation.ConfigureAwait(
+                    ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
+                if (!preparation.IsCanceled)
+                    await preparation;
             }
             catch (OperationCanceledException)
             {

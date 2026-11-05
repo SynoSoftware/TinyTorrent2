@@ -1,11 +1,9 @@
 using System.Diagnostics;
 using System.Numerics;
-using System.Runtime.InteropServices;
 using Microsoft.Graphics.Canvas;
 using Microsoft.Graphics.Canvas.Brushes;
 using Microsoft.Graphics.Canvas.Effects;
 using Microsoft.Graphics.Canvas.Geometry;
-using Microsoft.UI.Dispatching;
 using Syno.TinyTorrent.Shared;
 using Windows.Foundation;
 using Windows.UI;
@@ -27,13 +25,10 @@ internal sealed class MapRenderer : IDisposable
     }
 #endif
     private readonly Action _invalidate;
-    private readonly DispatcherQueue _dispatcher;
-    private readonly nint _windowHandle;
-    private readonly SubclassProc _procedure;
     private CanvasDevice _device;
     private float _dpi;
-    private readonly MapModel _model;
-    private readonly MapViewport _viewport;
+    private readonly MapModel.Arrangement _model;
+    private MapViewport _viewport;
     private Dictionary<string, Geography.Country> _world;
     private static readonly UISettings SystemSettings = new();
     private static readonly AccessibilitySettings SystemAccessibility = new();
@@ -43,11 +38,8 @@ internal sealed class MapRenderer : IDisposable
     private readonly Dictionary<string, float> _countryTargets = [];
     private readonly List<Route> _routes = [];
     private readonly Dictionary<DestinationKey, float> _displayed = [];
-    private readonly MapMotion _motion;
     private MapMotion.Traffic? _traffic;
     private (Color Download, Color Upload) _dotColours;
-    private readonly DispatcherQueueTimer _animation;
-    private bool _disposed;
     private bool _interpolating;
     private int _steps = 1;
     private double _shownProgress = 1;
@@ -90,9 +82,7 @@ internal sealed class MapRenderer : IDisposable
         CanvasDevice device,
         float dpi,
         Action invalidate,
-        DispatcherQueue dispatcher,
-        MapMotion motion,
-        MapModel model,
+        MapModel.Arrangement model,
         MapViewport viewport,
         Dictionary<string, Geography.Country> world
     )
@@ -100,17 +90,9 @@ internal sealed class MapRenderer : IDisposable
         _device = device;
         _dpi = dpi;
         _invalidate = invalidate;
-        _dispatcher = dispatcher;
-        _motion = motion;
         _model = model;
         _viewport = viewport;
         _world = world;
-        _animation = dispatcher.CreateTimer();
-        _animation.Tick += (_, _) => Animate();
-        _windowHandle = Microsoft.UI.Win32Interop.GetWindowFromWindowId(motion.Control.XamlRoot.ContentIslandEnvironment.AppWindowId);
-        _procedure = OnMessage;
-        if (!SetWindowSubclass(_windowHandle, _procedure, 0, 0))
-            throw new InvalidOperationException();
     }
 
     private static readonly TimeSpan Frame = TimeSpan.FromMilliseconds(33);
@@ -118,74 +100,38 @@ internal sealed class MapRenderer : IDisposable
     /// <summary>Whether Windows lets the map animate: animations on and High Contrast off.</summary>
     internal static bool SystemAnimates => SystemSettings.AnimationsEnabled && !SystemAccessibility.HighContrast;
 
-    internal event EventHandler? AnimationChanged;
-
-    private nint OnMessage(nint window, uint message, nuint wParam, nint lParam, nuint subclassId, nuint reference)
-    {
-        // WM_SETTINGCHANGE covers animation and contrast preferences on the
-        // app's Windows 10 1809 minimum, before AnimationsEnabledChanged exists.
-        if (message == 0x001A)
-            _dispatcher.TryEnqueue(() =>
-            {
-                if (!_disposed)
-                    AnimationChanged?.Invoke(this, EventArgs.Empty);
-            });
-        return DefSubclassProc(window, message, wParam, lParam);
-    }
-
-    private delegate nint SubclassProc(nint window, uint message, nuint wParam, nint lParam, nuint subclassId, nuint reference);
-
-    [DllImport("comctl32.dll", ExactSpelling = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool SetWindowSubclass(nint window, SubclassProc procedure, nuint subclassId, nuint reference);
-
-    [DllImport("comctl32.dll", ExactSpelling = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool RemoveWindowSubclass(nint window, SubclassProc procedure, nuint subclassId);
-
-    [DllImport("comctl32.dll", ExactSpelling = true)]
-    private static extern nint DefSubclassProc(nint window, uint message, nuint wParam, nint lParam);
+    internal bool Animates { get; set; }
+    internal bool HighContrast { get; set; }
+    internal MapMotion.Scene? Scene { get; private set; }
+    internal TimeSpan? Delay => NextStep() is { } wait ? wait < Frame ? Frame : wait : null;
+    internal static bool SystemHighContrast => SystemAccessibility.HighContrast;
 
     internal MapAnimation Animation { get; set; } = MapAnimation.Normal;
 
     internal MapDotTotal DotTotal { get; set; } = MapDotTotal.Normal;
     internal int ArcLimit { get; set; } = DefaultLimit;
 
+    internal void UseView(MapViewport viewport)
+    {
+        viewport.Meridian = _viewport.Meridian;
+        _viewport = viewport;
+    }
+
     /// <summary>
     /// Whether the map animates: activity fades and dots move. Without it the
     /// arcs and the Speed numbers still show speed.
     /// </summary>
-    private bool Animated => SystemAnimates && Animation != MapAnimation.Off;
+    private bool Animated => Animates && Animation != MapAnimation.Off;
 
-    // The timer wakes only for the next activity step; MapMotion moves the dots.
-    private void Animate()
+    internal bool Advance()
     {
-        // The dispatcher can still deliver a tick that was queued before Dispose.
-        if (_disposed)
-            return;
         if (!Animated)
-        {
-            _animation.Stop();
-            _traffic = null;
-            ShowDots();
-            _invalidate();
-            return;
-        }
+            return false;
         var progress = Progress;
-        if (progress != _shownProgress)
-            _invalidate();
+        var changed = progress != _shownProgress;
         _shownProgress = progress;
         _interpolating = progress < 1;
-        Schedule();
-    }
-
-    private void Schedule()
-    {
-        _animation.Stop();
-        if (NextStep() is not { } wait)
-            return;
-        _animation.Interval = wait < Frame ? Frame : wait;
-        _animation.Start();
+        return changed;
     }
 
     /// <summary>The time until activity takes its next step, or null when it does not interpolate.</summary>
@@ -219,9 +165,6 @@ internal sealed class MapRenderer : IDisposable
 
     public void Dispose()
     {
-        _disposed = true;
-        RemoveWindowSubclass(_windowHandle, _procedure, 0);
-        _animation.Stop();
         ReleaseGeometry();
         _displayed.Clear();
         _world = [];
@@ -408,11 +351,9 @@ internal sealed class MapRenderer : IDisposable
                     MapDotTotal.High => 4,
                     _ => 1,
                 });
-            Schedule();
         }
         else
         {
-            _animation.Stop();
             _traffic = null;
         }
         _prepared = true;
@@ -876,11 +817,10 @@ internal sealed class MapRenderer : IDisposable
     // the same frame; Prepare hands them new traffic when the map itself does
     // not change.
     private void ShowDots() =>
-        _motion.Show(
+        Scene =
             _traffic is { } traffic && _model.OriginPoint is { } origin
                 ? new MapMotion.Scene(traffic, origin, _originOpacity, _dotColours.Download, _dotColours.Upload)
-                : null
-        );
+                : null;
 
     private void DrawScene(CanvasDrawingSession draw, Palette palette, Highlight highlight)
     {
@@ -893,7 +833,7 @@ internal sealed class MapRenderer : IDisposable
         var edge = palette.Edge;
         var down = palette.Download;
         var up = palette.Upload;
-        var contrast = SystemAccessibility.HighContrast;
+        var contrast = HighContrast;
         var progress = Progress;
         _rebuildUntil = Stopwatch.GetTimestamp() + RebuildBudget;
         _rebuildPending = false;
@@ -1377,8 +1317,7 @@ internal sealed class MapRenderer : IDisposable
     internal bool HasStaleBorders => _staleBorders.Count > 0;
 
     /// <summary>
-    /// Replaces stale border strokes within a fresh rebuild budget. Call on
-    /// frames that draw no picture.
+    /// Replaces stale border strokes within a fresh worker budget, before publishing the picture.
     /// </summary>
     internal void StrokeBorders()
     {
@@ -1427,8 +1366,8 @@ internal sealed class MapRenderer : IDisposable
     // that grows with its size on screen, so zoomed arcs took most of a second.
     // A realization is tessellated once for a scale and then drawn by the GPU,
     // but making one is slow, and a scale change makes one for every visible
-    // border piece and arc. Each frame therefore rebuilds only until
-    // _rebuildUntil. Within 5% of its scale a realization looks the same; one
+    // border piece and arc. Each worker pass therefore rebuilds only until
+    // _rebuildUntil, allowing cancellation between passes. Within 5% of its scale a realization looks the same; one
     // further off, or made at another outline detail, still draws, a little too
     // wide, narrow or coarse, until its turn. A country's outline is traced
     // again at the current detail only when it shows, so a zoom spends the same
@@ -1582,44 +1521,70 @@ internal sealed class MapRenderer : IDisposable
     // realization only when it reaches the next step.
     private static float Step(float width, float steps) => MathF.Round(width * steps) / steps;
 
-    internal Destination? HitTest(Vector2 point)
+    internal Inspection Inspect(Presentation presentation)
     {
-        Destination? nearest = null;
-        if (point.X >= 0 && point.Y >= 0 && point.X <= _viewport.Size.Width && point.Y <= _viewport.Size.Height)
+        var destinations = presentation.Destinations.ToDictionary(destination => destination.Key);
+        var scale = _viewport.AxisScale;
+        List<Inspection.Target> targets = [];
+        try
         {
-            var distance = 12f;
             foreach (var route in _routes)
+                targets.Add(new(destinations[route.Destination.Key], route.Reach,
+                    route.Arc?.Transform(Matrix3x2.CreateScale(scale))));
+            return new(_viewport.View, targets.ToArray());
+        }
+        catch
+        {
+            foreach (var target in targets)
+                target.Arc?.Dispose();
+            throw;
+        }
+    }
+
+    internal sealed class Inspection(MapView view, Inspection.Target[] targets) : IDisposable
+    {
+        internal sealed record Target(Destination Destination, Extent Reach, CanvasGeometry? Arc);
+
+        internal Destination? HitTest(Vector2 point)
+        {
+            Destination? nearest = null;
+            if (point.X < 0 || point.Y < 0 || point.X > view.Size.Width || point.Y > view.Size.Height)
+                return null;
+            var distance = 12f;
+            foreach (var target in targets)
             {
-                var current = Vector2.Distance(point, _viewport.Screen(route.Destination.Point));
+                var current = Vector2.Distance(point, view.Screen(target.Destination.Point));
                 if (current < distance)
                 {
-                    nearest = route.Destination;
+                    nearest = target.Destination;
                     distance = current;
                 }
             }
             // Routes are traced once, within 180° of the origin.
-            var mapped = _viewport.ToMap(point);
+            var mapped = view.ToMap(point);
             mapped.X = MapViewport.Wrap(mapped.X, 0);
             if (nearest is null)
             {
-                var scale = _viewport.AxisScale;
-                var transform = Matrix3x2.CreateScale(scale);
-                // A stroke test makes a native geometry, so only arcs whose
-                // bounds reach the pointer are tested.
+                var scale = view.AxisScale;
                 var reach = new Vector2(8) / scale;
-                foreach (var route in _routes)
+                foreach (var target in targets)
                 {
-                    if (route.Arc is not { } arc || !route.Reach.Grown(reach).Contains(mapped))
+                    if (target.Arc is not { } arc || !target.Reach.Grown(reach).Contains(mapped))
                         continue;
-                    using var geometry = arc.Transform(transform);
-                    if (!geometry.StrokeContainsPoint(mapped * scale, 8))
+                    if (!arc.StrokeContainsPoint(mapped * scale, 8))
                         continue;
-                    nearest = route.Destination;
+                    nearest = target.Destination;
                     break;
                 }
             }
+            return nearest;
         }
-        return nearest;
+
+        public void Dispose()
+        {
+            foreach (var target in targets)
+                target.Arc?.Dispose();
+        }
     }
 
     /// <summary>
@@ -1636,7 +1601,7 @@ internal sealed class MapRenderer : IDisposable
         }
     }
 
-    /// <summary>Lines of one country's border, short enough together to stroke within a frame's rebuild budget.</summary>
+    /// <summary>Lines of one country's border, short enough together to stroke within one rebuild budget.</summary>
     private sealed class Piece(Vector2[][] lines) : IDisposable
     {
         // A stroke takes time in proportion to its points to build.
@@ -1677,7 +1642,7 @@ internal sealed class MapRenderer : IDisposable
     private readonly record struct Fill(CanvasCachedGeometry? Geometry, float Detail, Extent? Window);
 
     /// <summary>An axis-aligned box in map coordinates.</summary>
-    private readonly record struct Extent(Vector2 Low, Vector2 High)
+    internal readonly record struct Extent(Vector2 Low, Vector2 High)
     {
         internal static Extent Empty => new(new Vector2(float.MaxValue), new Vector2(float.MinValue));
 

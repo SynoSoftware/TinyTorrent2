@@ -22,13 +22,14 @@ namespace Syno.TableView;
 public sealed partial class Table
 {
     /// <summary>Rows the view keeps showing although the source no longer has them.</summary>
-    private readonly HashSet<object> _held;
+    private HashSet<object> _held;
 
     /// <summary>
     /// Rows named by <see cref="Release"/>, each with whether the source has it once the change the
     /// person caused arrives, and the <see cref="Stopwatch"/> timestamp of when it was named.
     /// </summary>
-    private readonly Dictionary<object, (bool Present, long Named)> _released;
+    private IReadOnlyDictionary<object, (bool Present, long Named)> _released;
+    private readonly List<Body.Projection.Release> _releases = [];
 
     /// <summary>
     /// How long a <see cref="Release"/> entry waits for its change: one settling interval, and
@@ -49,7 +50,7 @@ public sealed partial class Table
     private bool IsPointed => _pointerOver || _menuRow is not null;
 
     /// <summary>A row shown although it left the source.</summary>
-    private bool IsHeld(object? item) => item is not null && _held.Contains(item);
+    private bool IsHeld(object? item) => item is not null && _held.Contains(KeyOf(item));
 
     /// <summary>
     /// A held row shows the held look only while the pointer holds the rows. A row that waits for
@@ -83,32 +84,23 @@ public sealed partial class Table
             return;
         }
 
-        HashSet<object> shown = new(_view, _identity);
-        HashSet<object> live = new(_source.Snapshot, _identity);
-        bool heldBack = false;
-        long now = Stopwatch.GetTimestamp();
-        foreach (object item in items)
-        {
-            bool present = live.Contains(item);
-            if (present == shown.Contains(item))
-            {
-                _released[item] = (!present, now);
-                continue;
-            }
+        QueueRelease(items, waitingOnly: false);
+    }
 
-            _released[item] = (present, now);
-            heldBack = true;
-        }
-
-        if (heldBack)
+    private void QueueRelease(IEnumerable<object> items, bool waitingOnly)
+    {
+        _releases.Add(new(items.ToArray(), _source.Snapshot, _displayed, Stopwatch.GetTimestamp())
         {
-            RebuildView();
-        }
+            WaitingOnly = waitingOnly,
+        });
+        RebuildView();
     }
 
     /// <summary>The pointer is over the row surface, above <paramref name="row"/> or no row.</summary>
     private void PointAt(object? row)
     {
+        if (_preparingView && (!_pointerOver || !ReferenceEquals(_pointedRow, row)))
+            _viewVersion++;
         bool pointed = IsPointed;
         _pointerOver = true;
         _pointedRow = row;
@@ -133,6 +125,8 @@ public sealed partial class Table
     /// </summary>
     private void StopPointing()
     {
+        if (_preparingView && IsPointed)
+            _viewVersion++;
         _pointerOver = false;
         _pointedRow = null;
         ReleaseHold();
@@ -195,6 +189,8 @@ public sealed partial class Table
         }
 
         bool pointed = IsPointed;
+        if (_preparingView)
+            _viewVersion++;
         _menuRow = row;
         ShowHeldLook(pointed);
         menu.Closed += OnMenuClosed;
@@ -209,6 +205,8 @@ public sealed partial class Table
                 return;
             }
 
+            if (_preparingView)
+                _viewVersion++;
             _menuRow = null;
             StopPointing();
         }
@@ -240,141 +238,4 @@ public sealed partial class Table
         RebuildView();
     }
 
-    /// <summary>
-    /// The snapshot rows to show. While the rows are pointed at, or while the change
-    /// <paramref name="waits"/> for the settle, that is only the rows already shown, and every
-    /// shown row the snapshot no longer has becomes a held row.
-    /// </summary>
-    /// <remarks>
-    /// An empty view takes its rows at once: nothing is on screen to be moved. So does a snapshot
-    /// that carries a change named by <see cref="Release"/>, and, with the pointer away, a snapshot
-    /// that shares no row with the view: a different list, or an emptied one, does not wait.
-    /// </remarks>
-    private (
-        IReadOnlyList<object> Shown,
-        HashSet<object> Held,
-        IReadOnlyList<object> Released
-    ) Hold(IReadOnlyList<object> snapshot, bool sortChanged = false, bool waits = false)
-    {
-        HashSet<object> held = new(_identity);
-        bool holds = !sortChanged && _hierarchy is null && _view.Count > 0 && (IsPointed || waits);
-
-        // An entry whose change did not come within its lifetime ends here, so it cannot let a
-        // later background change through the hold.
-        foreach (object row in _released
-            .Where(entry => Stopwatch.GetElapsedTime(entry.Value.Named) > ReleaseLifetime)
-            .Select(entry => entry.Key).ToList())
-        {
-            _released.Remove(row);
-        }
-
-        if (!holds && _released.Count == 0)
-        {
-            return (snapshot, held, Array.Empty<object>());
-        }
-
-        HashSet<object> live = new(snapshot, _identity);
-        List<object> released = _released
-            .Where(entry => live.Contains(entry.Key) == entry.Value.Present)
-            .Select(entry => entry.Key)
-            .ToList();
-        if (released.Count > 0 || !holds)
-        {
-            return (snapshot, held, released);
-        }
-
-        HashSet<object> shown = new(_view, _identity);
-        List<object> staying = snapshot.Where(shown.Contains).ToList();
-        if (staying.Count == 0 && !IsPointed)
-        {
-            return (snapshot, held, released);
-        }
-
-        foreach (object row in _view)
-        {
-            if (!live.Contains(row))
-            {
-                held.Add(row);
-            }
-        }
-
-        return (staying, held, released);
-    }
-
-    private void AcceptHold(IReadOnlySet<object> held, IReadOnlyList<object> released)
-    {
-        _held.Clear();
-        _held.UnionWith(held);
-        foreach (object row in released)
-            _released.Remove(row);
-    }
-
-    /// <summary>
-    /// Put every held row back at the index it has, and, under a sort that reorders, the pointed row
-    /// and the row whose menu is open at theirs; every other row takes the next free place in
-    /// <paramref name="order"/>. Also reports those rows, so the reconcile keeps their containers.
-    /// </summary>
-    /// <remarks>
-    /// While the rows are pointed at, the hold keeps membership unchanged, so the result has exactly
-    /// the view's count and every pinned index is a place in it.
-    /// </remarks>
-    private (IReadOnlyList<object> Order, IReadOnlySet<object> Pinned) Pin(
-        IReadOnlyList<object> order,
-        IReadOnlySet<object> held
-    )
-    {
-        bool reorders = _hierarchy is null && SortsLocally && !SortsOrder;
-        object? menu = reorders ? _menuRow : null;
-        object? pointed = reorders ? _pointedRow : null;
-        if (held.Count == 0 && menu is null && pointed is null)
-        {
-            return (order, held);
-        }
-
-        HashSet<object> pinned = new(_identity);
-        object?[] slots = new object?[order.Count + held.Count];
-        for (int i = 0; i < _view.Count && i < slots.Length; i++)
-        {
-            object row = _view[i];
-            if (held.Contains(row))
-            {
-                slots[i] = row;
-                pinned.Add(row);
-            }
-            else if (
-                (_identity.Equals(row, menu) || _identity.Equals(row, pointed))
-                && order.FirstOrDefault(candidate => _identity.Equals(candidate, row))
-                    is { } current
-            )
-            {
-                slots[i] = current;
-                pinned.Add(row);
-            }
-        }
-
-        if (pinned.Count == 0)
-        {
-            return (order, pinned);
-        }
-
-        List<object> result = new(slots.Length);
-        int next = 0;
-        foreach (object? slot in slots)
-        {
-            if (slot is not null)
-            {
-                result.Add(slot);
-                continue;
-            }
-
-            while (pinned.Contains(order[next]))
-            {
-                next++;
-            }
-
-            result.Add(order[next++]);
-        }
-
-        return (result, pinned);
-    }
 }

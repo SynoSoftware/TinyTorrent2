@@ -41,7 +41,7 @@ public sealed partial class Table : Control
     {
         DefaultStyleKey = typeof(Table);
         _selection = new SelectionState(_identity, IndexInView) { CanInteract = IsInteractive };
-        _view = new Body.View(_identity, _selection.IsSelected);
+        _view = new Body.View(_selection.IsSelected);
         _held = new HashSet<object>(_identity);
         _released = new Dictionary<object, (bool Present, long Named)>(_identity);
         _source = new Body.Source(DispatcherQueue);
@@ -233,6 +233,8 @@ public sealed partial class Table : Control
         }
 
         CancelPreparation();
+        _viewVersion++;
+        _viewReady?.TrySetCanceled();
         _detached = true;
         QueueRealized();
         LayoutUpdated -= OnFillLayout;
@@ -372,7 +374,6 @@ public sealed partial class Table : Control
             _hasPendingSort = false;
         }
         RebuildView();
-        ApplyPendingScroll();
     }
 
     private void ValidateColumns()
@@ -550,10 +551,7 @@ public sealed partial class Table : Control
         bool moved =
             !ReferenceEquals(sortColumn, _sortColumn)
             || (sortColumn is not null && direction != _sortDirection);
-        // Initial capture resolves any later pending Sort before evaluating host comparisons.
-        IReadOnlyList<object>? order =
-            rebuild && moved ? SortedSnapshot(_source.Snapshot, sortColumn, direction) : null;
-
+        var keys = rebuild && moved ? CaptureSort(sortColumn) : null;
         foreach (EffectiveColumn column in ordered)
         {
             column.VisibilityOverride = visibility[column];
@@ -563,8 +561,8 @@ public sealed partial class Table : Control
 
         // SetOrder republishes the layout, which re-applies each header cell's sort indicator.
         EffectiveLayout.SetOrder(ordered);
-        if (order is not null)
-            RebuildView(preparedOrder: order);
+        if (rebuild && moved)
+            RebuildView(sortChanged: true, preparedSort: keys);
     }
 
     // ---------------------------------------------------------------- source
@@ -620,7 +618,7 @@ public sealed partial class Table : Control
 
     private void ApplyPendingScroll()
     {
-        if (_pendingScroll is not double offset || !_schemaCaptured || _surface is null)
+        if (_pendingScroll is not double offset || !_schemaCaptured || _preparingView || _detached || _surface is null)
         {
             return;
         }

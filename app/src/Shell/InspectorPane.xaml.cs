@@ -107,6 +107,7 @@ public sealed partial class InspectorPane : UserControl
             Model.TextChanged += OnText;
             Model.PropertyChanged += OnModel;
             Model.RowsUpdated += OnRows;
+            Model.PeersReleased += OnPeersReleased;
             Model.RecoveryRequested += OnRecovery;
             Model.LibraryChanged += OnLibrary;
             ShowLibrary(Model.Library);
@@ -121,6 +122,7 @@ public sealed partial class InspectorPane : UserControl
             Model.TextChanged -= OnText;
             Model.PropertyChanged -= OnModel;
             Model.RowsUpdated -= OnRows;
+            Model.PeersReleased -= OnPeersReleased;
             Model.RecoveryRequested -= OnRecovery;
             Model.LibraryChanged -= OnLibrary;
             ClearLibraryActions();
@@ -316,6 +318,8 @@ public sealed partial class InspectorPane : UserControl
             QueuePeerRows();
             return;
         }
+        if (args.PropertyName == nameof(Inspector.PeerSummary))
+            return;
         if (args.PropertyName == nameof(Inspector.IsActive) && Model.IsActive)
             ShowLibrary(Model.Library);
         if (_library is null || args.PropertyName is nameof(Inspector.IsActive) or nameof(Inspector.IsReplacing))

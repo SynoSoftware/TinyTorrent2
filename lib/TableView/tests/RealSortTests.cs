@@ -78,6 +78,7 @@ public class RealSortTests
             Assert.IsTrue(cell.Focus(FocusState.Keyboard), "the header took keyboard focus");
 
             await h.KeyAsync(VirtualKey.Enter);
+            await h.Table.ViewReady;
             h.Table.UpdateLayout();
 
             CollectionAssert.AreEqual(
@@ -87,6 +88,7 @@ public class RealSortTests
             );
 
             await h.KeyAsync(VirtualKey.Space);
+            await h.Table.ViewReady;
             h.Table.UpdateLayout();
 
             CollectionAssert.AreEqual(
@@ -96,6 +98,7 @@ public class RealSortTests
             );
 
             await h.KeyAsync(VirtualKey.Space);
+            await h.Table.ViewReady;
             h.Table.UpdateLayout();
 
             CollectionAssert.AreEqual(new[] { "k0", "k1", "k2", "k3" }, ViewKeys(h.Table));
@@ -126,6 +129,7 @@ public class RealSortTests
     {
         await h.PressAsync(x);
         await h.ReleaseAsync(x);
+        await h.Table.ViewReady;
         h.Table.UpdateLayout();
     }
 

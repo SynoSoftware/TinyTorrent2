@@ -601,7 +601,13 @@ public sealed partial class Inspector : INotifyPropertyChanged
             {
                 Queue(reply, false);
             }
-            await completion.Task.WaitAsync(PipeClient.RequestTimeout, cancellation);
+            var ready = completion.Task.WaitAsync(PipeClient.RequestTimeout, cancellation);
+            await ready.ConfigureAwait(
+                ConfigureAwaitOptions.ContinueOnCapturedContext
+                    | ConfigureAwaitOptions.SuppressThrowing
+            );
+            if (!ready.IsCanceled)
+                await ready;
         }
         catch (TimeoutException)
         {
@@ -641,6 +647,10 @@ public sealed partial class Inspector : INotifyPropertyChanged
                     if (latest is null && next.Fresh && next.Data.GetProperty("ready").GetBoolean())
                         completion.TrySetResult();
                 }
+            }
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+            {
+                completion.TrySetCanceled(cancellation);
             }
             catch (Exception error)
             {
@@ -858,12 +868,18 @@ public sealed partial class Inspector : INotifyPropertyChanged
         _refreshFrame?.Dispose();
         _refreshFrame = null;
         _context++;
-        _reading.Cancel();
-        _reading.Dispose();
+        _ = Cancel(_reading);
         _reading = new();
         _fetching = false;
         _awaitedPush?.Completion.TrySetResult();
         _awaitedPush = null;
+    }
+
+    // CancelAsync marks the token immediately; callbacks must not run in a click.
+    private static async Task Cancel(CancellationTokenSource reading)
+    {
+        using (reading)
+            await reading.CancelAsync().ConfigureAwait(false);
     }
 
     // The outcome does not matter, and a later Invalidate often withdraws
@@ -1214,7 +1230,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
         _confirmedFiles = null;
         _fileReply = null;
         Peers = null;
-        _located.Clear();
+        _located = [];
         Trackers = null;
         Pieces = null;
         _pieceFiles = null;

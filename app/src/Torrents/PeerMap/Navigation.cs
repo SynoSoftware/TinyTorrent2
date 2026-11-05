@@ -183,7 +183,7 @@ public sealed partial class PeerMap
                 !ReferenceEquals(args.OriginalSource, this)
                 && !ReferenceEquals(args.OriginalSource, FitButton)
             )
-            || _renderer is null
+            || _inspection is null
             || InputKeyboardSource
                 .GetKeyStateForCurrentThread(VirtualKey.Menu)
                 .HasFlag(CoreVirtualKeyStates.Down)
