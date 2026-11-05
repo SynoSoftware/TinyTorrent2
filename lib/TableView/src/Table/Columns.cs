@@ -88,9 +88,9 @@ public sealed partial class Table
     /// Fit each visible resizable column, then scale those columns so they end at the table's
     /// right edge, and report the whole operation once.
     /// </summary>
-    public void FillWidth() => FillWidth(notify: true);
+    public void FitWidth() => FitWidth(notify: true);
 
-    private void FillWidth(bool notify)
+    private void FitWidth(bool notify)
     {
         // The fit and the scale each move widths, and a second fill moves them away and back, so
         // only the widths the command ends with say whether it changed anything.
@@ -350,7 +350,7 @@ public sealed partial class Table
         }
 
         // Automatic fills do not save layout: widths belong to this instance.
-        FillWidth(notify: false);
+        FitWidth(notify: false);
     }
 
     /// <summary>

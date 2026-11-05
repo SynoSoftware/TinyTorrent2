@@ -421,7 +421,7 @@ public class ColumnFitTests
             table.FitColumns();
             Func<int> events = LayoutChanges(table);
 
-            table.FillWidth();
+            table.FitWidth();
 
             double edge = Descendants<Header.Strip>(table).First().ActualWidth;
             Assert.AreEqual(
@@ -446,7 +446,7 @@ public class ColumnFitTests
             );
             Assert.AreEqual(1, events());
 
-            table.FillWidth();
+            table.FitWidth();
 
             Assert.AreEqual(
                 1,
@@ -470,7 +470,7 @@ public class ColumnFitTests
             Table table = await LoadAsync(Rows(20, 600), a, Column("b", 300), c);
             table.FitColumns();
 
-            table.FillWidth();
+            table.FitWidth();
 
             // Fitted, a is its 1000 header, b and c their 600 cells, each plus the inset. Shrinking c in
             // proportion would take it below 300, so it stays there and a and b share what is left.
@@ -517,7 +517,7 @@ public class ColumnFitTests
             table.ItemsSource = Array.Empty<FitRow>();
             await TableHarness.LoadAsync(table);
 
-            table.FillWidth();
+            table.FitWidth();
 
             double width = Descendants<Header.Strip>(table).First().ActualWidth / 2;
             Assert.IsTrue(width > 0);
@@ -539,7 +539,7 @@ public class ColumnFitTests
             empty.CanShrink = false;
             Table table = await LoadAsync(Rows(20, 100), name, value, empty);
 
-            table.FillWidth();
+            table.FitWidth();
 
             double edge = Descendants<Header.Strip>(table).First().ActualWidth;
             Assert.AreEqual(100 + Inset(table), TableHarness.EffectiveWidth(table, "value"), 0.001);
@@ -567,7 +567,7 @@ public class ColumnFitTests
             empty.CellTemplate = EmptyTemplate;
             Table table = await LoadAsync(Rows(20, 100), Column("a", 300), empty);
 
-            table.FillWidth();
+            table.FitWidth();
 
             double edge = Descendants<Header.Strip>(table).First().ActualWidth;
             Assert.AreEqual(
@@ -591,7 +591,7 @@ public class ColumnFitTests
             value.CanGrow = false;
             Table table = await LoadAsync(Rows(20, 100), Column("a", 300), value);
 
-            table.FillWidth();
+            table.FitWidth();
 
             double edge = Descendants<Header.Strip>(table).First().ActualWidth;
             Assert.AreEqual(
@@ -620,7 +620,7 @@ public class ColumnFitTests
             empty.CellTemplate = EmptyTemplate;
             Table table = await LoadAsync(Rows(20, 400), Column("a", 300), empty);
 
-            table.FillWidth();
+            table.FitWidth();
 
             double edge = Descendants<Header.Strip>(table).First().ActualWidth;
             Assert.AreEqual(400 + Inset(table), TableHarness.EffectiveWidth(table, "a"), 0.001);

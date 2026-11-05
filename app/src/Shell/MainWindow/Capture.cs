@@ -2010,7 +2010,7 @@ public sealed partial class MainWindow
                 {
                     Model.SelectLanguage(previewLanguage);
                     await CaptureReady(Model, () => Model.Text.Language == previewLanguage);
-                    table.FillWidth();
+                    table.FitWidth();
                     await CapturePage(
                         "details-add-file-preview-narrow-" + previewLanguage,
                         dialog.Content as FrameworkElement

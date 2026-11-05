@@ -550,7 +550,7 @@ public sealed partial class MainWindow
                 pane.Layout = pane.Layout with { View = pane.Layout.View with { Layout = PeerLayout.Table } };
                 AppWindow.Resize(new SizeInt32(1040, 680));
                 await CaptureLayout();
-                connections.FillWidth();
+                connections.FitWidth();
                 await CaptureUi($"peers-{theme}-connection-icons");
                 outcomes.Add(new
                 {

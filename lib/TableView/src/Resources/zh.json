@@ -14,7 +14,7 @@
     "show": "显示“{0}”列",
     "fit": "调整“{0}”列以适应内容",
     "fit_columns": "调整列宽以适应内容",
-    "fill_width": "填满宽度",
+    "fit_width": "适应宽度",
     "move_left": "向左移动",
     "move_right": "向右移动",
     "shown": "已显示",

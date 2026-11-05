@@ -799,7 +799,7 @@ public sealed partial class MainWindow
             foreach (var bar in bars.Keys)
                 bar.Value = bar.Maximum;
             await CaptureUi("table-full-progress-preparation");
-            Torrents.FillWidth();
+            Torrents.FitWidth();
             await CaptureUi("table-full-progress-before");
             var before = Widths();
             for (var visit = 0; visit < 3; visit++)

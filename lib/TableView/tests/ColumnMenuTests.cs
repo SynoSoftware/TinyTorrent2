@@ -28,14 +28,14 @@ public class ColumnMenuTests
     private static string FitThis(string name) => $"Fit column “{name}”";
 
     private const string FitVisible = "Fit columns";
-    private const string FillVisible = "Fill width";
+    private const string FitWidth = "Fit width";
     private const string MoveLeft = "Move left";
     private const string MoveRight = "Move right";
 
     // ------------------------------------------------------------------ what the menu contains
 
     /// <summary>
-    /// Each command runs the operation its name promises. Fit columns and Fill width are told apart
+    /// Each command runs the operation its name promises. Fit columns and Fit width are told apart
     /// by where the columns end: a fit leaves them at their content, a fill takes them to the edge of
     /// the strip.
     /// </summary>
@@ -65,7 +65,7 @@ public class ColumnMenuTests
             Assert.IsTrue(TableHarness.TotalWidth(table) < edge - 1, "a fit leaves the edge empty");
             AssertReported(reported, LayoutChange.Fit);
 
-            await InvokeAsync(table, FillVisible);
+            await InvokeAsync(table, FitWidth);
 
             Assert.AreEqual(
                 edge,

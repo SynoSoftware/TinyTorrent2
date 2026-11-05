@@ -60,7 +60,7 @@ public sealed class Strings
 
     internal string FitColumns => Get("column_menu", "fit_columns");
 
-    internal string FillWidth => Get("column_menu", "fill_width");
+    internal string FitWidth => Get("column_menu", "fit_width");
 
     internal string MoveLeft => Get("column_menu", "move_left");
 

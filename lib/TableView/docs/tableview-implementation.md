@@ -95,7 +95,7 @@ still use the platform resources required by the contract.
 
 `Table.QueueFill` coalesces load, width and ancestor-visibility notifications into
 one fill after visible layout, then detaches its layout listener. It uses the
-same fit and scale as `FillWidth`, without raising a persistence notification.
+same fit and scale as `FitWidth`, without raising a persistence notification.
 `Table/Columns.cs` handles successive size changes with a one-shot 150-ms timer.
 The first change discards the fitted widths; following changes reuse them and
 the empty columns that measurement found, restarting the timer each time.

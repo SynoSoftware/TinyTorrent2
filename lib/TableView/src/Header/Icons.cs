@@ -34,7 +34,7 @@ internal static class Icons
     /// <summary>
     /// Fitting the visible columns to the table's width: content pushed out to both edges.
     /// </summary>
-    internal static IconElement FillWidth() => Glyph(Segoe.AlignHorizontalSpaceBetween);
+    internal static IconElement FitWidth() => Glyph(Segoe.AlignHorizontalSpaceBetween);
 
     internal static IconElement HideColumn() => Glyph(Segoe.EyeOff);
 

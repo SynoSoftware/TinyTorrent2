@@ -18,6 +18,8 @@ public sealed partial class JobsPage : Page
     /// is directly comparable with sections 5.3, 9 and 20 rather than nearly comparable.
     /// </summary>
     private const int DefaultRowCount = 2002;
+    private const int SmallRowCount = 500;
+    private const int LargeRowCount = 5000;
 
     /// <summary>Present only while an agent measures the control. A packaged launch inherits no
     /// arguments, so the switch is also a file; this project is unpackaged, so prefer the
@@ -115,9 +117,7 @@ public sealed partial class JobsPage : Page
         Loaded -= OnLoaded;
         _scale = XamlRoot?.RasterizationScale ?? 1.0;
 
-        _feed = new Feed(DispatcherQueue, RequestedRowCount());
-        _feed.Ticked += (_, _) => Publish();
-        _feed.TickFailed += (_, error) => Status.Text = "the feed stopped: " + error.Message;
+        CreateFeed(RequestedRowCount());
 
         // Closing the window does not always unload its content first, so the ticker is stopped
         // from both signals. Whichever arrives first stops it.
@@ -164,6 +164,25 @@ public sealed partial class JobsPage : Page
 
         watchdog.Stop();
         Finish();
+    }
+
+    /// <summary>Replace the feed with one of <paramref name="rows"/> rows; the caller starts it.</summary>
+    private void CreateFeed(int rows)
+    {
+        _feed?.Stop();
+        _feed = new Feed(DispatcherQueue, rows);
+        _feed.Ticked += (_, _) => Publish();
+        _feed.TickFailed += (_, error) => Status.Text = "the feed stopped: " + error.Message;
+        RowCountButton.IsChecked = rows >= LargeRowCount;
+        RowCountButton.Content = $"Rows: {rows:N0}";
+    }
+
+    /// <summary>Switch the feed between the normal and the large row count.</summary>
+    private void OnRowCountClicked(object sender, RoutedEventArgs e)
+    {
+        CreateFeed(RowCountButton.IsChecked == true ? LargeRowCount : SmallRowCount);
+        Publish();
+        _feed!.Start();
     }
 
     /// <summary>

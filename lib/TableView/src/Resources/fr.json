@@ -14,7 +14,7 @@
     "show": "Afficher la colonne « {0} »",
     "fit": "Ajuster la colonne « {0} »",
     "fit_columns": "Ajuster les colonnes",
-    "fill_width": "Remplir la largeur",
+    "fit_width": "Ajuster à la largeur",
     "move_left": "Déplacer à gauche",
     "move_right": "Déplacer à droite",
     "shown": "Affichée",

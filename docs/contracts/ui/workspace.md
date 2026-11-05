@@ -44,7 +44,7 @@ click again, because WinUI closes submenus before that close.
 The custom title bar contains one row: workspace dropdown, File/Torrent/View/Help
 MenuBar, bounded Search, the language switch, the light/dark switch, and native caption
 buttons. Add, the selection commands and Settings are on the toolbar, not the title bar.
-Fit columns and Fill width are only in the table's column-header menu: in the
+Fit columns and Fit width are only in the table's column-header menu: in the
 title bar they read as window commands, and the column header holds no buttons
 because every part of it belongs to a column. A 24-pixel
 icon and 32-pixel Search sit within a 48-pixel row so the content has breathing room.

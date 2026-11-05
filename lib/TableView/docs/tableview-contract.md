@@ -251,7 +251,7 @@ public sealed class Table : Control
     public IReadOnlyList<object> RealizedItems { get; }
     public void Fit(Column column);
     public void FitColumns();
-    public void FillWidth();
+    public void FitWidth();
     public void ResetLayout();
 
     public event EventHandler<Selection> SelectionChanged;
@@ -1110,7 +1110,7 @@ ordinary behavior. No separate sort callback or data-fetch mechanism is added.
 
 `Table` uses device-independent-pixel (DIP) column widths. Columns that cannot
 fit at their minimum widths are cut off (section 8). The explicit command
-`FillWidth()` fits and scales the visible resizable columns to the available
+`FitWidth()` fits and scales the visible resizable columns to the available
 width; automatic fills use the same operation.
 
 Every column has a deterministic baseline width. A declared `Width` is
@@ -1127,7 +1127,7 @@ width changes. This includes opening a previously hidden tab, resizing the
 window, and moving a splitter, so every table uses the space it actually has.
 The table owns these triggers; hosts do not duplicate the calls. It waits for
 a completed visible layout, including visible ancestors, then runs the same
-bounded fit and scale as `FillWidth()`. During a burst of width changes, the first
+bounded fit and scale as `FitWidth()`. During a burst of width changes, the first
 fill measures and later fills reuse those unscaled fitted widths, because the
 available width does not change the content's natural width. Minimum-width
 clamps must not change those proportions. After 150 ms without another size
@@ -1155,12 +1155,12 @@ a competing direct-touch resize recognizer to a dense header.
 - Escape cancels the active drag and restores the starting width;
 - double-clicking the mouse/pen separator fits that column;
 - the header menu includes **Fit this column**, **Fit columns**, and
-  **Fill width** when applicable, and offers no
+  **Fit width** when applicable, and offers no
   per-step width command;
 - the header itself holds no command buttons: every part of it belongs to a
   column, so a button there would either take width from the columns or cover
-  one. A host that wants **Fit columns** and **Fill width** visible calls
-  `FitColumns()` and `FillWidth()` from its own command surface;
+  one. A host that wants **Fit columns** and **Fit width** visible calls
+  `FitColumns()` and `FitWidth()` from its own command surface;
 - the table raises one coalesced `LayoutChanged` notification when a gesture,
   fit, or menu width command changes the effective layout, not one persistence
   write per pointer movement.
@@ -1198,7 +1198,7 @@ the arrow fit within the actual column width. Spare space is considered even at
 `MinWidth`; a minimum is not a reason to hide an arrow that fits. The sort state
 and its accessibility metadata remain independent of whether the arrow fits.
 
-`FillWidth()` runs the same fit as `FitColumns()` and then scales the
+`FitWidth()` runs the same fit as `FitColumns()` and then scales the
 visible resizable columns so the visible columns end at the table's right
 edge: wider when space is left, narrower when they run past it. A column is
 empty when no row the fit measured shows anything in it, so its fit is its
@@ -1301,7 +1301,7 @@ pointer actions and keyboard-accessible alternatives:
 - **Move left** and **Move right** for the active column;
 - a separator, because the items above act on the active column and the items
   below act on every column;
-- **Fit columns** and **Fill width** when at least one visible column is
+- **Fit columns** and **Fit width** when at least one visible column is
   resizable;
 - one item per declared column, hidden ones included, carrying a check when the
   column is visible.

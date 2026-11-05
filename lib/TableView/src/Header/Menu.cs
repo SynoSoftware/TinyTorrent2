@@ -136,10 +136,10 @@ internal static class Menu
         );
         menu.Items.Add(
             Item(
-                () => owner.Strings.FillWidth,
-                Icons.FillWidth,
+                () => owner.Strings.FitWidth,
+                Icons.FitWidth,
                 () => owner.CanFitColumns,
-                owner.FillWidth
+                owner.FitWidth
             )
         );
 

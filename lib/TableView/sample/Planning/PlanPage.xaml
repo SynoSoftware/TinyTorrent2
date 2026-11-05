@@ -12,7 +12,7 @@
     </Grid.RowDefinitions>
     <TextBlock
       Text="Project plan — expand activities, sort siblings, and select across branches."
-      Style="{StaticResource BodyTextStyle}"
+      Style="{StaticResource BodyTextBlockStyle}"
     />
     <t:Table x:Name="Table" Grid.Row="1" AutomationProperties.Name="Project plan">
       <t:Table.Columns>

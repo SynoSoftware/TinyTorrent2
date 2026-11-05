@@ -228,6 +228,11 @@
         VerticalAlignment="Center"
         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
       />
+      <ToggleButton
+        x:Name="RowCountButton"
+        VerticalAlignment="Center"
+        Click="OnRowCountClicked"
+      />
     </StackPanel>
 
     <t:Table
