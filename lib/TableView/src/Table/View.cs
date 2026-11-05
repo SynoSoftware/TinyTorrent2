@@ -325,7 +325,7 @@ public sealed partial class Table
                 }
                 var prepared = await preparation;
                 _sortChangedPending = false;
-                ApplyProjection(prepared, input.Holding.Releases.Count);
+                ApplyProjection(prepared, input);
                 if (version != _viewVersion)
                 {
                     input = CaptureProjection();
@@ -405,9 +405,9 @@ public sealed partial class Table
                 Comparer = SortsLocally ? _preparedSort ?? _sortColumn!.Column.CaptureSort!(rows) : null,
                 Direction = _sortDirection,
                 Local = SortsLocally,
-                RowOrder = SortsOrder,
+                Reorders = Reorders,
                 Changed = _sortChangedPending,
-                Interval = _sortInterval,
+                Interval = UsesInterval ? _sortInterval : TimeSpan.Zero,
                 SettledAt = _orderSettledAt,
                 Showing = _settleShowing,
             },
@@ -425,7 +425,7 @@ public sealed partial class Table
 
     private object KeyOf(object item) => ItemKey?.Invoke(item) ?? item;
 
-    private void ApplyProjection(Body.Projection.Prepared prepared, int releases)
+    private void ApplyProjection(Body.Projection.Prepared prepared, Body.Projection.Input input)
     {
         var order = prepared.Order;
         _displayed = order;
@@ -433,15 +433,14 @@ public sealed partial class Table
         _positions = prepared.Positions;
         _held = prepared.Held;
         _sourceKeys = prepared.SourceKeys;
-        _releases.RemoveRange(0, releases);
+        _releases.RemoveRange(0, input.Holding.Releases.Count);
         _released = prepared.Released;
         if (prepared.StructureChanged)
             _orderSettledAt = null;
-        if (_hierarchy is not null && _preparedHierarchy is { } hierarchy)
+        if (_hierarchy is not null && input.Rows.Hierarchy is { } hierarchy)
         {
             _hierarchy.Accept(hierarchy);
             _hierarchy.HasChildren = prepared.HasChildren;
-            _preparedHierarchy = null;
         }
         if (prepared.SettleAfter is { } due)
             ScheduleSettle(due);

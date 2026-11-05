@@ -229,8 +229,7 @@ public sealed partial class Table
         // Under a sort that reorders, the pointed row kept its index, so it takes its sorted place
         // now, or at the settle inside the interval, rather than at the next update, which a quiet
         // source may never send.
-        bool reorders = SortsLocally && !SortsOrder;
-        if (_held.Count == 0 && _view.Count == _source.Snapshot.Count && !reorders)
+        if (_held.Count == 0 && _view.Count == _source.Snapshot.Count && !Reorders)
         {
             return;
         }

@@ -22,7 +22,7 @@ internal sealed class Projection
         internal IComparer<object>? Comparer { get; init; }
         internal SortDirection Direction { get; init; }
         internal bool Local { get; init; }
-        internal bool RowOrder { get; init; }
+        internal bool Reorders { get; init; }
         internal bool Changed { get; init; }
         internal TimeSpan Interval { get; init; }
         internal long? SettledAt { get; init; }
@@ -84,8 +84,6 @@ internal sealed class Projection
     }
 
     private bool SortsLocally => _input.Ordering.Local;
-    private bool SortsOrder => _input.Ordering.RowOrder;
-    private bool UsesInterval => SortsLocally && !SortsOrder && _sortInterval > TimeSpan.Zero;
     private TimeSpan _sortInterval => _input.Ordering.Interval;
     private bool _settleShowing => _input.Ordering.Showing;
     private bool IsPointed => _input.Holding.Pointed;
@@ -271,7 +269,7 @@ internal sealed class Projection
         // empty view has no established order to preserve; and a zero interval is the host asking
         // for none of this. Until a frame shows the last settle, every publish is one, so the
         // changes of one turn land in one update.
-        bool settles = !UsesInterval || _view.Count == 0 || _settleShowing
+        bool settles = _sortInterval <= TimeSpan.Zero || _view.Count == 0 || _settleShowing
             || elapsed >= _sortInterval;
         var (shown, held, released) = Hold(snapshot, waits: !settles);
         if (settles)
@@ -446,7 +444,7 @@ internal sealed class Projection
         IReadOnlySet<object> held
     )
     {
-        bool reorders = _hierarchy is null && SortsLocally && !SortsOrder;
+        bool reorders = _hierarchy is null && _input.Ordering.Reorders;
         object? menu = reorders ? _menuRow : null;
         object? pointed = reorders ? _pointedRow : null;
         if (held.Count == 0 && menu is null && pointed is null)

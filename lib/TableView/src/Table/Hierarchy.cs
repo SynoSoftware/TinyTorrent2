@@ -9,7 +9,6 @@ namespace Syno.TableView;
 public sealed partial class Table
 {
     private Hierarchy? _hierarchy;
-    private Hierarchy.Snapshot? _preparedHierarchy;
 
     internal Hierarchy? Hierarchy => _hierarchy;
 
@@ -30,8 +29,7 @@ public sealed partial class Table
     private Hierarchy.Snapshot CaptureHierarchy(IReadOnlyList<object> roots)
     {
         var hierarchy = _hierarchy!;
-        _preparedHierarchy = hierarchy.NeedsCapture ? hierarchy.Capture(roots, _identity, _rowType) : hierarchy.Captured!;
-        return _preparedHierarchy;
+        return hierarchy.NeedsCapture ? hierarchy.Capture(roots, _identity, _rowType) : hierarchy.Captured!;
     }
 
     internal bool IsHierarchyColumn(Column column) => ReferenceEquals(_hierarchy?.Column, column);

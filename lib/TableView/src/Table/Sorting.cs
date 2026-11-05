@@ -37,9 +37,10 @@ public sealed partial class Table
 
     private bool SortsOrder => _sortColumn is not null && _sortColumn.Column == _order?.Column;
     private bool SortsLocally => _sortMode == SortMode.Local && _sortColumn is not null;
+    private bool Reorders => SortsLocally && !SortsOrder;
 
     /// <summary>The rows take their sorted places, and their changes apply, once per interval.</summary>
-    private bool UsesInterval => SortsLocally && !SortsOrder && _sortInterval > TimeSpan.Zero;
+    private bool UsesInterval => Reorders && _sortInterval > TimeSpan.Zero;
 
     /// <summary>
     /// Setup-only. External sorting keeps source order and reports header choices through

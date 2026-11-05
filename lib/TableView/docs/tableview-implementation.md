@@ -37,8 +37,11 @@ does not set a quota of classes or files.
 `Table/Sorting.cs` owns setup-only `SortMode`. Its default `Local` projects sort
 keys; `External` retains source order while exposing header criteria through
 the existing `Sort`, `Layout` and `LayoutChanged` interfaces. The same owner
-bypasses settling and local pointer-order pinning for external sorts. Hierarchy
-projection, membership holds and selection reconciliation remain shared.
+bypasses settling and local pointer-order pinning for external sorts. The worker
+receives those decisions and the effective interval rather than deriving them
+again. Hierarchy projection, membership holds and selection reconciliation remain
+shared. A hierarchy snapshot travels with its projection request and is accepted
+only with that request's current result; no separate pending snapshot owns it.
 
 The [hierarchy extension](hierarchy.md) keeps host expansion state outside the
 control. Captured child membership feeds the same private view, sorting cadence
