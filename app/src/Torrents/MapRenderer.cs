@@ -16,6 +16,16 @@ namespace Syno.TinyTorrent.Torrents;
 
 internal sealed class MapRenderer : IDisposable
 {
+    internal const int DefaultLimit = 200;
+#if CAPTURE
+    internal Action<string, double>? WorkMeasured { get; set; }
+
+    private void Measure(string phase, ref long started)
+    {
+        WorkMeasured?.Invoke(phase, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+        started = Stopwatch.GetTimestamp();
+    }
+#endif
     private readonly Action _invalidate;
     private readonly DispatcherQueue _dispatcher;
     private readonly nint _windowHandle;
@@ -28,6 +38,7 @@ internal sealed class MapRenderer : IDisposable
     private static readonly UISettings SystemSettings = new();
     private static readonly AccessibilitySettings SystemAccessibility = new();
     private readonly Dictionary<string, Outline> _land = [];
+    private readonly Dictionary<string, IEnumerator<Outline?>> _traces = [];
     private readonly Dictionary<string, float> _countryStarts = [];
     private readonly Dictionary<string, float> _countryTargets = [];
     private readonly List<Route> _routes = [];
@@ -138,6 +149,7 @@ internal sealed class MapRenderer : IDisposable
     internal MapAnimation Animation { get; set; } = MapAnimation.Normal;
 
     internal MapDotTotal DotTotal { get; set; } = MapDotTotal.Normal;
+    internal int ArcLimit { get; set; } = DefaultLimit;
 
     /// <summary>
     /// Whether the map animates: activity fades and dots move. Without it the
@@ -218,6 +230,9 @@ internal sealed class MapRenderer : IDisposable
     internal void ReleaseGeometry()
     {
         _prepared = false;
+        foreach (var trace in _traces.Values)
+            trace.Dispose();
+        _traces.Clear();
         foreach (var shape in _land.Values)
             shape.Dispose();
         _land.Clear();
@@ -258,6 +273,7 @@ internal sealed class MapRenderer : IDisposable
     /// <returns>Whether the map changed, so it must be drawn again.</returns>
     internal bool Prepare()
     {
+        var next = NextStep();
         var origin = _model.OriginPoint;
         var prepared = _prepared;
         var arrangement = _arrangement;
@@ -266,8 +282,12 @@ internal sealed class MapRenderer : IDisposable
             ReleaseGeometry();
             _viewport.Meridian = _model.Meridian;
         }
-        var previous = _routes.ToDictionary(route => route.Destination.Key);
-        _routes.Clear();
+        var retained = _routes.Count == _model.Destinations.Count;
+        for (var index = 0; retained && index < _routes.Count; index++)
+            retained = ReferenceEquals(_routes[index].Destination, _model.Destinations[index]);
+        var previous = retained ? null : _routes.ToDictionary(route => route.Destination.Key);
+        if (!retained)
+            _routes.Clear();
         _countryStarts.Clear();
         _countryTargets.Clear();
         foreach (var group in _model.Countries.Values)
@@ -276,25 +296,36 @@ internal sealed class MapRenderer : IDisposable
             _countryStarts[group.Code] = _displayed.GetValueOrDefault(
                 new DestinationKey(group.Code, null, true), _countryTargets[group.Code]);
         }
-        foreach (var destination in _model.Destinations)
+        for (var index = 0; index < _model.Destinations.Count; index++)
         {
-            if (!previous.Remove(destination.Key, out var route))
+            var destination = _model.Destinations[index];
+            Route? route = retained ? _routes[index] : null;
+            if (route is null && !previous!.Remove(destination.Key, out route))
                 route = new Route(destination);
             route.Destination = destination;
-            if (origin != _arcOrigin || destination.Group.Active == 0)
+            route.Strength = Strength(destination.Rate);
+            route.Start = _displayed.GetValueOrDefault(destination.Key, route.Strength);
+            if (!retained)
+                _routes.Add(route);
+        }
+        if (previous is not null)
+            foreach (var route in previous.Values)
                 route.Release();
-            if (route.Arc is null && origin is { } source && destination.Group.Active > 0)
+        var shown = _routes.Where(route => origin is not null && route.Destination.Group.Active > 0)
+            .OrderByDescending(route => route.Destination.Rate)
+            .Take(ArcLimit)
+            .ToHashSet();
+        foreach (var route in _routes)
+        {
+            if (origin != _arcOrigin || !shown.Contains(route))
+                route.Release();
+            if (route.Arc is null && origin is { } source && shown.Contains(route))
             {
-                route.Path = new GreatCircle(source, destination.Point);
+                route.Path = new GreatCircle(source, route.Destination.Point);
                 route.Arc = Arc(route.Path, out var degrees);
                 route.Degrees = degrees;
             }
-            route.Strength = Strength((destination.Group.Down + destination.Group.Up) * destination.Share);
-            route.Start = _displayed.GetValueOrDefault(destination.Key, route.Strength);
-            _routes.Add(route);
         }
-        foreach (var route in previous.Values)
-            route.Release();
         // A rate change alone keeps the glow until its strengths change.
         var arranged = _routes
             .Select(route => Arranged.Of(route.Destination.Key, route.Destination.Group, route.Arc is not null))
@@ -307,10 +338,13 @@ internal sealed class MapRenderer : IDisposable
         _arranged = arranged;
         _arcOrigin = origin;
         _originOpacity = OriginOpacity(_routes.Count(route => route.Arc is not null));
-        var keys = _model.Destinations.Select(destination => destination.Key)
-            .Concat(_model.Countries.Keys.Select(code => new DestinationKey(code, null, true))).ToHashSet();
-        foreach (var key in _displayed.Keys.Where(key => !keys.Contains(key)).ToArray())
-            _displayed.Remove(key);
+        if (!retained)
+        {
+            var keys = _model.Destinations.Select(destination => destination.Key)
+                .Concat(_model.Countries.Keys.Select(code => new DestinationKey(code, null, true))).ToHashSet();
+            foreach (var key in _displayed.Keys.Where(key => !keys.Contains(key)).ToArray())
+                _displayed.Remove(key);
+        }
         _started = Stopwatch.GetTimestamp();
         var change = _routes
             .Where(route =>
@@ -336,6 +370,9 @@ internal sealed class MapRenderer : IDisposable
         // every frame. Each step redraws the whole map and its glow, so a
         // large change takes at most 16 steps, ten a second, of a few levels.
         _steps = Math.Clamp((int)MathF.Ceiling(change * 255), 1, 16);
+        // New observations must not keep postponing a pending visible step.
+        if (_interpolating && next is { } wait && wait.TotalSeconds < Fade / _steps)
+            _started -= (long)((Fade / _steps - wait.TotalSeconds) * Stopwatch.Frequency);
         // The glow's inputs hold no strengths.
         if (change > 0)
             _glowInputs = null;
@@ -349,9 +386,12 @@ internal sealed class MapRenderer : IDisposable
                         route.Destination.Key,
                         route.Path,
                         route.Destination.Point,
-                        route.Destination.Group.Down * route.Destination.Share,
-                        route.Destination.Group.Up * route.Destination.Share,
-                        route.Degrees * _viewport.Scale))
+                        route.Destination.Down,
+                        route.Destination.Up,
+                        route.Degrees * _viewport.Scale)
+                    {
+                        Bounds = route.Bounds,
+                    })
                     .ToArray(),
                 _viewport.Size.Width * _viewport.Size.Height,
                 _model.Ceiling,
@@ -376,7 +416,8 @@ internal sealed class MapRenderer : IDisposable
         }
         _prepared = true;
         // A fade redraws at its own steps, starting from the drawn strengths.
-        var changed = !prepared || _arrangement != arrangement || (change > 0 && !_interpolating);
+        var changed = !prepared || _arrangement != arrangement
+            || change > 0 && (!_interpolating || _shownProgress > 0);
         // A redraw hands the dots their scene; without one they take the new
         // rates here.
         if (!changed)
@@ -412,8 +453,15 @@ internal sealed class MapRenderer : IDisposable
     {
         // Half-DIP simplification changes in powers of two; Draw retraces only
         // visible countries, within its rebuild allowance.
-        if (_viewport.ViewScale > 0)
-            _detail = MathF.Pow(2, MathF.Round(MathF.Log2(.5f / _viewport.ViewScale)));
+        if (_viewport.ViewScale <= 0)
+            return;
+        var detail = MathF.Pow(2, MathF.Round(MathF.Log2(.5f / _viewport.ViewScale)));
+        if (detail == _detail)
+            return;
+        foreach (var trace in _traces.Values)
+            trace.Dispose();
+        _traces.Clear();
+        _detail = detail;
     }
 
     // A ring never jumps across 180°, so it moves whole to within a turn of
@@ -421,7 +469,32 @@ internal sealed class MapRenderer : IDisposable
     // country on the other side. Only points at or above _detail are traced;
     // a ring left with fewer than three is too small to see. The border holds
     // only the sections this country draws, so each line is stroked once.
-    private Outline Trace(Geography.Country country)
+    private Outline? Trace(Geography.Country country)
+    {
+#if CAPTURE
+        var started = Stopwatch.GetTimestamp();
+#endif
+        if (!_traces.TryGetValue(country.Code, out var work))
+            _traces[country.Code] = work = TraceOutline(country).GetEnumerator();
+        Outline? completed = null;
+        while (InBudget && work.MoveNext())
+        {
+            if (work.Current is not { } outline)
+                continue;
+            completed = outline;
+            work.Dispose();
+            _traces.Remove(country.Code);
+            break;
+        }
+        if (completed is null)
+            _rebuildPending = true;
+#if CAPTURE
+        Measure("trace slice", ref started);
+#endif
+        return completed;
+    }
+
+    private IEnumerable<Outline?> TraceOutline(Geography.Country country)
     {
         List<Vector2[]> rings = [];
         List<Piece> pieces = [];
@@ -430,47 +503,82 @@ internal sealed class MapRenderer : IDisposable
         var extent = Extent.Empty;
         List<Vector2> ring = [];
         List<Vector2> line = [];
-        foreach (var parts in country.Rings)
+        var scanned = 0;
+        var published = false;
+        try
         {
-            ring.Clear();
-            foreach (var part in parts)
-                Collect(part, ring, false);
-            var low = float.MaxValue;
-            var high = float.MinValue;
-            foreach (var point in ring)
+            foreach (var parts in country.Rings)
             {
-                low = Math.Min(low, point.X);
-                high = Math.Max(high, point.X);
-            }
-            var shift = 360 * MathF.Round(-((low + high) / 2 - _viewport.Meridian) / 360) - _viewport.Meridian;
-            var placed = Place(ring, 0, ring.Count, shift);
-            // A ring too small to draw still counts, so the country shows, and
-            // is traced finer, once zooming makes it large enough.
-            extent = extent.With(Extent.Of(placed));
-            if (placed.Length < 3)
-                continue;
-            rings.Add(placed);
-            foreach (var part in parts)
-            {
-                if (!part.Draws)
-                    continue;
-                line.Clear();
-                Collect(part, line, true);
-                // A piece gathers parts, each a line of its own, so short
-                // parts share one draw; a longer part splits into lines that
-                // share their end point, so it stays whole.
-                for (var start = 0; start < line.Count - 1; start += Piece.Length - 1)
+                yield return null;
+                ring.Clear();
+                foreach (var part in parts)
+                    foreach (var _ in Collect(part, ring, false))
+                        yield return null;
+                var low = float.MaxValue;
+                var high = float.MinValue;
+                for (var index = 0; index < ring.Count; index++)
                 {
-                    var count = Math.Min(Piece.Length, line.Count - start);
-                    if (gathered + count > Piece.Length)
-                        Gather();
-                    lines.Add(Place(line, start, count, shift));
-                    gathered += count;
+                    var point = ring[index];
+                    low = Math.Min(low, point.X);
+                    high = Math.Max(high, point.X);
+                    if (index % Piece.Length == Piece.Length - 1)
+                        yield return null;
+                }
+                var shift = 360 * MathF.Round(-((low + high) / 2 - _viewport.Meridian) / 360) - _viewport.Meridian;
+                var placed = new Vector2[ring.Count];
+                for (var index = 0; index < ring.Count; index++)
+                {
+                    var point = new Vector2(ring[index].X + shift, -ring[index].Y);
+                    placed[index] = point;
+                    extent = extent.With(new Extent(point, point));
+                    if (index % Piece.Length == Piece.Length - 1)
+                        yield return null;
+                }
+                // A ring too small to draw still counts, so the country shows,
+                // and is traced finer, once zooming makes it large enough.
+                if (placed.Length < 3)
+                    continue;
+                rings.Add(placed);
+                foreach (var part in parts)
+                {
+                    if (!part.Draws)
+                        continue;
+                    line.Clear();
+                    foreach (var _ in Collect(part, line, true))
+                        yield return null;
+                    // Short parts share a draw; split parts share endpoints.
+                    for (var start = 0; start < line.Count - 1; start += Piece.Length - 1)
+                    {
+                        var count = Math.Min(Piece.Length, line.Count - start);
+                        if (gathered + count > Piece.Length)
+                            Gather();
+                        lines.Add(Place(line, start, count, shift));
+                        gathered += count;
+                        yield return null;
+                    }
                 }
             }
+            Gather();
+            foreach (var piece in pieces)
+            {
+                for (var turn = -1; turn <= 1; turn++)
+                {
+                    if (!piece.Extent.Moved(360 * turn).Overlaps(_window))
+                        continue;
+                    Restroke(piece);
+                    break;
+                }
+                yield return null;
+            }
+            published = true;
+            yield return new Outline([.. rings], [.. pieces], extent, _detail);
         }
-        Gather();
-        return new Outline([.. rings], [.. pieces], extent, _detail);
+        finally
+        {
+            if (!published)
+                foreach (var piece in pieces)
+                    piece.Dispose();
+        }
 
         void Gather()
         {
@@ -483,7 +591,7 @@ internal sealed class MapRenderer : IDisposable
 
         // A part starts where the previous one ends, so a ring takes each
         // part's start from the part before it.
-        void Collect(Geography.Part part, List<Vector2> points, bool start)
+        IEnumerable<bool> Collect(Geography.Part part, List<Vector2> points, bool start)
         {
             var section = part.Section;
             for (var step = start ? 0 : 1; step < section.Length; step++)
@@ -491,6 +599,11 @@ internal sealed class MapRenderer : IDisposable
                 var vertex = section[part.Reversed ? section.Length - 1 - step : step];
                 if (vertex.Level >= _detail)
                     points.Add(vertex.Position);
+                if (++scanned == Piece.Length)
+                {
+                    scanned = 0;
+                    yield return true;
+                }
             }
         }
 
@@ -617,6 +730,27 @@ internal sealed class MapRenderer : IDisposable
         /// <summary>The angle between the ends, in radians.</summary>
         internal double Angle { get; }
 
+        internal Rect Bounds(Rect sampled)
+        {
+            var low = sampled.Top;
+            var high = sampled.Bottom;
+            var polar = false;
+            var phase = Math.Atan2(_tangent.Z, _from.Z);
+            // Latitude extrema can fall between arc samples. Longitude is
+            // monotonic between seams, except at a pole where it is undefined.
+            for (var turn = -1; turn <= 1; turn++)
+            {
+                var angle = phase + turn * Math.PI;
+                if (angle <= 0 || angle >= Angle)
+                    continue;
+                var latitude = At(angle / Angle).Latitude;
+                low = Math.Min(low, -latitude);
+                high = Math.Max(high, -latitude);
+                polar |= Math.Abs(latitude) > 89.99;
+            }
+            return new Rect(polar ? -180 : sampled.Left, low, polar ? 360 : sampled.Width, high - low);
+        }
+
         /// <summary>The point a fraction of the way from the origin to the end.</summary>
         internal GeoPoint At(double fraction)
         {
@@ -708,6 +842,9 @@ internal sealed class MapRenderer : IDisposable
 
     private void DrawScene(CanvasDrawingSession draw, Palette palette, Highlight highlight)
     {
+#if CAPTURE
+        var measured = Stopwatch.GetTimestamp();
+#endif
         UpdateDetail();
         var ink = palette.Ink;
         var land = palette.Land;
@@ -754,7 +891,8 @@ internal sealed class MapRenderer : IDisposable
                 continue;
             if (!MayRebuild())
                 break;
-            _land[country.Code] = Trace(country);
+            if (Trace(country) is { } traced)
+                _land[country.Code] = traced;
         }
         foreach (var route in _routes)
             _displayed[route.Destination.Key] =
@@ -771,6 +909,9 @@ internal sealed class MapRenderer : IDisposable
         );
         using (draw.CreateLayer(1, bounds))
         {
+#if CAPTURE
+            Measure("setup", ref measured);
+#endif
             // A ring moved to within a turn of the centre can reach past 180°,
             // so each country tests every turn. It traces and realizes, and so
             // spends rebuild budget, only where it shows.
@@ -784,7 +925,7 @@ internal sealed class MapRenderer : IDisposable
                     var outline =
                         traced.Detail == _detail || !MayRebuild()
                             ? traced
-                            : Retrace(code, traced, visible.Moved(-360 * turn));
+                            : Retrace(code, traced);
                     var fill = land;
                     if (_model.Countries.TryGetValue(code, out var group) && group.Estimated)
                     {
@@ -795,6 +936,9 @@ internal sealed class MapRenderer : IDisposable
                         draw.DrawCachedGeometry(cached, fill);
                 }
             }
+#if CAPTURE
+            Measure("fills", ref measured);
+#endif
             var borderWidth = BorderWidth;
             var border = contrast ? ink : Alpha(edge, .5 / borderWidth);
             for (var turn = -1; turn <= 1; turn++)
@@ -833,6 +977,9 @@ internal sealed class MapRenderer : IDisposable
                 }
             }
             draw.Transform = Matrix3x2.Identity;
+#if CAPTURE
+            Measure("borders", ref measured);
+#endif
             var arcs = _routes.Where(route => route.Arc is not null).ToArray();
             // Routes lie within 180° of the origin, which is the map's centre.
             Span<int> turns = stackalloc int[3];
@@ -946,6 +1093,9 @@ internal sealed class MapRenderer : IDisposable
                     }
                     if (!contrast && _glowBlur is not null)
                         draw.DrawImage(_glowBlur);
+#if CAPTURE
+                    Measure("glow", ref measured);
+#endif
                     foreach (var turn in turns)
                     {
                         var transform = Turned(turn);
@@ -984,6 +1134,9 @@ internal sealed class MapRenderer : IDisposable
                 draw.FillCircle(origin, 3, ink);
             }
         }
+#if CAPTURE
+        Measure("arcs", ref measured);
+#endif
         // Every mark is a tinted copy of one white dot, so one sprite batch
         // submits them all; selection rings then draw above every mark.
         List<(Vector2 Point, bool Wide)> rings = [];
@@ -1040,6 +1193,9 @@ internal sealed class MapRenderer : IDisposable
         StrokeStaleBorders();
         if (_rebuildPending)
             _invalidate();
+#if CAPTURE
+        Measure("marks and rebuild", ref measured);
+#endif
 
         bool Shows(float from, float to, int turn) =>
             from + 360 * turn < east && to + 360 * turn > west;
@@ -1051,15 +1207,12 @@ internal sealed class MapRenderer : IDisposable
             route.Reach.Grown(new Vector2(30) / scale).Moved(360 * turn).Overlaps(visible);
     }
 
-    // Fills are clipped to a window three views wide, so a cut edge is always
-    // a view off screen. The window moves once the view comes within half a
-    // view of its edge, or the detail changes, so a drag rebuilds fills once
-    // per half view and the window never outgrows the view. A view that wraps
-    // a turn keeps the window a turn away, so its fills stay current.
+    // A modest overscan keeps cut edges off screen without tessellating a
+    // large coastline far outside the view. Longitude turns share the crop.
     private void MoveWindow(Extent visible)
     {
         var span = visible.High - visible.Low;
-        var needed = visible.Grown(span / 2);
+        var needed = visible.Grown(span / 8);
         if (_windowDetail == _detail)
         {
             for (var turn = -1; turn <= 1; turn++)
@@ -1071,23 +1224,17 @@ internal sealed class MapRenderer : IDisposable
                 }
             }
         }
-        _window = visible.Grown(span);
+        _window = visible.Grown(span / 4);
         _windowDetail = _detail;
     }
 
-    // The old outline draws until this replaces it in one budgeted step, which
-    // also makes the paths its visible pieces draw, so a detail change never
-    // makes them all in one unbudgeted frame. View is in the outline's own
-    // coordinates.
-    private Outline Retrace(string code, Outline outline, Extent view)
+    // The complete old outline stays usable until its replacement is ready;
+    // partial rings never replace a country's fill.
+    private Outline Retrace(string code, Outline outline)
     {
+        if (Trace(_world[code]) is not { } traced)
+            return outline;
         outline.Dispose();
-        var traced = Trace(_world[code]);
-        foreach (var piece in traced.Pieces)
-        {
-            if (piece.Extent.Overlaps(view))
-                piece.Line(_device);
-        }
         // Replacing a value keeps Draw's enumeration of _land valid.
         _land[code] = traced;
         return traced;
@@ -1126,6 +1273,9 @@ internal sealed class MapRenderer : IDisposable
             || (covers && !MayRebuild())
         )
             return found ? fill.Geometry : null;
+#if CAPTURE
+        var started = Stopwatch.GetTimestamp();
+#endif
         using var path = new CanvasPathBuilder(_device);
         path.SetFilledRegionDetermination(CanvasFilledRegionDetermination.Alternate);
         var figures = 0;
@@ -1150,6 +1300,9 @@ internal sealed class MapRenderer : IDisposable
             );
         }
         _fills[code] = new Fill(geometry, outline.Detail, clip);
+#if CAPTURE
+        Measure("fill realization", ref started);
+#endif
         return geometry;
     }
 
@@ -1525,6 +1678,8 @@ internal sealed class MapRenderer : IDisposable
             {
                 _arc = value;
                 Reach = value is null ? default : Extent.Of(value.ComputeBounds());
+                Bounds = value is null ? default : Path.Bounds(new Rect(Reach.Low.X, Reach.Low.Y,
+                    Reach.High.X - Reach.Low.X, Reach.High.Y - Reach.Low.Y));
             }
         }
 
@@ -1532,6 +1687,7 @@ internal sealed class MapRenderer : IDisposable
 
         /// <summary>The bounds of <see cref="Arc"/> in map coordinates.</summary>
         internal Extent Reach { get; private set; }
+        internal Rect Bounds { get; private set; }
 
         /// <summary>The way <see cref="Arc"/> traces, which its dots follow.</summary>
         internal GreatCircle Path { get; set; }

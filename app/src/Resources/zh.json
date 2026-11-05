@@ -877,6 +877,7 @@
     "animation_normal": "正常",
     "animation_fast": "快",
     "total_dots": "圆点数量",
+    "arc_limit": "最大弧线数",
     "dots_low": "少",
     "dots_normal": "正常",
     "dots_high": "多",

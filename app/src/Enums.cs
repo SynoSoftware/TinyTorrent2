@@ -885,6 +885,8 @@ internal enum CaptureMode
     Peers,
     PeerSwitch,
     Map,
+    MapPerformance,
+    MapGeography,
     LibraryFiles,
     Selection,
     SelectionFrame,

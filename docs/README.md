@@ -64,9 +64,8 @@ long operations and their progress and cancellation in the status bar.
 country data installed with the app, the city data the person downloads
 through the same dataset path as IMDb data, and the flags.
 It also owns the native peer map and its estimated country distribution.
-The [peer map dots plan](plans/16-peer-map-dots-plan.md) is in progress. It
-holds the agreed design for dots that show transfer speed on the map, the work
-that keeps the map cheap to draw, and equally good alternatives.
+The contract also owns moving dots, activity fades, the configurable fastest-arc
+limit and retained, budgeted map preparation. GitHub tracks remaining map defects.
 
 [Licences](contracts/licences.md) holds release rights, provider attribution and the
 unresolved distribution questions.

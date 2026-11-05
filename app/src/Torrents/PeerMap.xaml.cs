@@ -36,10 +36,12 @@ public sealed partial class PeerMap : UserControl
     private long _dotBytes = MapMotion.SmallestDot;
     private MapAnimation _animation = MapAnimation.Normal;
     private MapDotTotal _dotTotal = MapDotTotal.Normal;
+    private int _arcLimit = MapRenderer.DefaultLimit;
 #if CAPTURE
     private double _preparation;
     internal Action<double>? FrameMeasured { get; set; }
     internal Action<double>? PreparationMeasured { get; set; }
+    internal Action<string, double>? WorkMeasured { get; set; }
 
     /// <summary>The frames the moving dots' layer has drawn.</summary>
     internal int MotionFrames => _motion?.Frames ?? 0;
@@ -168,6 +170,16 @@ public sealed partial class PeerMap : UserControl
         Invalidate();
     }
 
+    internal void SetArcLimit(int limit)
+    {
+        if (_arcLimit == limit)
+            return;
+        _arcLimit = limit;
+        if (_renderer is { } renderer)
+            renderer.ArcLimit = limit;
+        QueuePreparation();
+    }
+
     /// <summary>
     /// Highlights the locations of the peers selected in the table. The location
     /// chosen on the map stays chosen.
@@ -203,10 +215,15 @@ public sealed partial class PeerMap : UserControl
 
     private void RefreshPlace()
     {
+        if (_model.Place is not { } place)
+        {
+            _selected = null;
+            return;
+        }
         var key = _selected?.Key;
         _selected = _model.Destinations.FirstOrDefault(destination =>
-            destination.Key == key && destination.Group.Place == _model.Place)
-            ?? _model.Destinations.FirstOrDefault(destination => destination.Group.Place == _model.Place);
+            destination.Key == key && destination.Group.Place == place)
+            ?? _model.Destinations.FirstOrDefault(destination => destination.Group.Place == place);
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs args)
@@ -240,6 +257,7 @@ public sealed partial class PeerMap : UserControl
                     {
                         Animation = _animation,
                         DotTotal = _dotTotal,
+                        ArcLimit = _arcLimit,
                     };
                     _renderer.AnimationChanged += (_, _) =>
                     {
@@ -342,9 +360,15 @@ public sealed partial class PeerMap : UserControl
         var highlight = Highlight;
         var pointed = _pointed?.Group.Place.Cities == _model.Cities ? _pointed?.Key : null;
         _model.Arrange(_world, _viewport.Scale);
-        var changed = _renderer.Prepare();
+#if CAPTURE
+        var arranged = Stopwatch.GetTimestamp();
+        WorkMeasured?.Invoke("arrange", Stopwatch.GetElapsedTime(started, arranged).TotalMilliseconds);
+        _renderer.WorkMeasured = WorkMeasured;
+#endif
         RefreshPlace();
-        _pointed = _model.Destinations.FirstOrDefault(destination => destination.Key == pointed);
+        _pointed = pointed is { } key
+            ? _model.Destinations.FirstOrDefault(destination => destination.Key == key)
+            : null;
         if (_selectedPeers.Count > 0)
         {
             var present = _model.Peers.ToHashSet();
@@ -355,6 +379,15 @@ public sealed partial class PeerMap : UserControl
         var marks = _model.Marks(_selectedPeers);
         if (marks.Count != _marks.Count || marks.Any(mark => _marks.GetValueOrDefault(mark.Key) != mark.Value))
             _marks = marks;
+#if CAPTURE
+        var preparing = Stopwatch.GetTimestamp();
+#endif
+        var changed = _renderer.Prepare();
+#if CAPTURE
+        var prepared = Stopwatch.GetTimestamp();
+        WorkMeasured?.Invoke("prepare", Stopwatch.GetElapsedTime(preparing, prepared).TotalMilliseconds);
+        WorkMeasured?.Invoke("selection and marks", Stopwatch.GetElapsedTime(arranged, preparing).TotalMilliseconds);
+#endif
         if (_language != text.Language)
         {
             _language = text.Language;
@@ -362,6 +395,9 @@ public sealed partial class PeerMap : UserControl
             RefreshNavigation();
         }
         Describe();
+#if CAPTURE
+        WorkMeasured?.Invoke("description", Stopwatch.GetElapsedTime(prepared).TotalMilliseconds);
+#endif
         // A rate update that changes nothing visible draws nothing; the dots
         // move over the last picture.
         if (changed || resized || Highlight != highlight)

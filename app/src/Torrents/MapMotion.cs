@@ -39,6 +39,7 @@ internal sealed class MapMotion : IDisposable
     private Scene? _scene;
     private Picture? _pending;
     private volatile bool _idle = true;
+    private long _revision;
     private bool _disposed;
     private int _newSurface;
     // The device and DPI the UI thread draws pictures with, from the latest
@@ -51,6 +52,7 @@ internal sealed class MapMotion : IDisposable
     private readonly Dictionary<DestinationKey, Lane> _lanes = [];
     private Picture? _shown;
     private Traffic? _applied;
+    private (Traffic? Traffic, MapView? View, bool Visible) _visibility;
     private CanvasRenderTarget? _mark;
     private volatile bool _markLost;
     private int _drawn;
@@ -189,7 +191,7 @@ internal sealed class MapMotion : IDisposable
         var previous = _scene;
         Volatile.Write(ref _scene, scene);
         // A new colour moves no dot, so a sleeping loop sleeps on.
-        if (scene is not null && !ReferenceEquals(scene.Traffic, previous?.Traffic))
+        if (!ReferenceEquals(scene?.Traffic, previous?.Traffic))
             Wake();
     }
 
@@ -232,21 +234,21 @@ internal sealed class MapMotion : IDisposable
 
     private void Wake()
     {
+        Interlocked.Increment(ref _revision);
         _wake.Stop();
         if (!_disposed)
             Control.Paused = false;
     }
 
-    // While no dot flies and the picture is on screen the loop pauses until
-    // the next dot leaves, so slow traffic wakes the app once per dot. A newer
-    // traffic or picture woke it already.
-    private void Sleep(Traffic? traffic, TimeSpan? wait, long since)
+    // A newer picture, traffic or surface invalidates the queued decision,
+    // including one made while flying dots were outside the previous view.
+    private void Sleep(long revision, TimeSpan? wait, long since)
     {
         if (
             _disposed
             || !_idle
             || Volatile.Read(ref _pending) is not null
-            || !ReferenceEquals(traffic, _scene?.Traffic)
+            || revision != Volatile.Read(ref _revision)
         )
             return;
         Control.Paused = true;
@@ -260,6 +262,7 @@ internal sealed class MapMotion : IDisposable
 
     private void OnUpdate(ICanvasAnimatedControl sender, CanvasAnimatedUpdateEventArgs args)
     {
+        var revision = Volatile.Read(ref _revision);
 #if CAPTURE
         Volatile.Write(ref _cycles, (long)CaptureCycles.Current());
 #endif
@@ -300,12 +303,17 @@ internal sealed class MapMotion : IDisposable
             _dots.Advance(now);
         }
         Report();
-        _idle = _dots.Flying.Count == 0;
+        var view = _shown?.View;
+        if (!ReferenceEquals(_visibility.Traffic, scene?.Traffic) || _visibility.View != view)
+            _visibility = (scene?.Traffic, view, scene is not null && view is { } current
+                && scene.Traffic.Routes.Any(route => route.Length >= MapDots<Lane>.ShortRoute && current.Shows(route.Bounds, 13)));
+        var visible = _visibility.Visible;
+        _idle = _dots.Flying.Count == 0 || !visible;
         if (!_idle || _drawn < 2)
             return;
-        var wait = scene is null ? null : _dots.Wait();
+        var wait = scene is null ? null : _dots.Wait(visible);
         if (wait is null || wait > 2 * Frame)
-            _dispatcher.TryEnqueue(() => Sleep(scene?.Traffic, wait, now));
+            _dispatcher.TryEnqueue(() => Sleep(revision, wait, now));
     }
 
     private void Apply(Traffic traffic, long now)
@@ -528,7 +536,10 @@ internal sealed class MapMotion : IDisposable
         double Down,
         double Up,
         double Length
-    );
+    )
+    {
+        internal Rect Bounds { get; init; }
+    }
 
     /// <summary>A destination's route as the dots follow it; it keeps its carried bytes while it transfers.</summary>
     private sealed class Lane

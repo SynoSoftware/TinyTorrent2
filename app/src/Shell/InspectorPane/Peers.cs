@@ -124,6 +124,16 @@ public sealed partial class InspectorPane
         [
             new MenuSeparator(),
             new MenuSubmenu(
+                text.Get("peer_map", "arc_limit"),
+                Segoe.Globe2,
+                new[] { 25, 50, 100, MapRenderer.DefaultLimit, 500, 1000 }.Distinct().Order().Select(limit => new MenuChoice(
+                    limit.ToString("N0"), null, view.ArcLimit == limit,
+                    new RelayCommand(() => SetPeerView(view with { ArcLimit = limit }), () => true))
+                {
+                    Group = "PeerArcLimit",
+                }).ToArray()
+            ),
+            new MenuSubmenu(
                 text.Get("peer_map", "animation"),
                 Segoe.Play,
                 [
@@ -318,6 +328,7 @@ public sealed partial class InspectorPane
                     _peerMap.DescribedChanged += (_, _) => ShowSpeedLine();
                 }
                 _peerMap.SetAnimation(view.Animation, view.DotTotal);
+                _peerMap.SetArcLimit(view.ArcLimit);
                 if (!ReferenceEquals(PeerDrawing.Content, _peerMap))
                     PeerDrawing.Content = _peerMap;
             }

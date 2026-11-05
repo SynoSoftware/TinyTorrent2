@@ -877,6 +877,7 @@
     "animation_normal": "Normal",
     "animation_fast": "Rápida",
     "total_dots": "Cantidad de puntos",
+    "arc_limit": "Máximo de arcos",
     "dots_low": "Baja",
     "dots_normal": "Normal",
     "dots_high": "Alta",

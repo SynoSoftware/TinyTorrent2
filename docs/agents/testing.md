@@ -377,6 +377,14 @@ with unchanged observations. It removes running and paused maps and verifies
 that their owned bitmaps are closed. It uses synthetic peers and sends a
 notification only to its own window, without changing Windows preferences or
 capturing screenshots.
+Use `Capture.ps1 -Review map-performance -Configuration Release` for attributable
+map preparation/picture timings and stationary visible/hidden motion intervals.
+It also checks the fastest-arc cap with 300 supplied destinations, live rate
+reranking, a changed limit and matching dot membership. This diagnostic uses
+synthetic observations; it does not claim 10,000 live network connections.
+Use `-Review map-geography -Configuration Release` for the picture/detail/pan
+part alone, including natural latitude correction and a pan before retracing
+settles. It captures the whole window so the swap-chain map is included.
 Use `TINYTORRENT_CAPTURE_REVIEW=add-layout` for the workspace headers and empty/long-link
 magnet Add dialog in English and Spanish, Light and Dark, at the three review sizes.
 It also captures the engine-stopped message bar with its Restart action and records

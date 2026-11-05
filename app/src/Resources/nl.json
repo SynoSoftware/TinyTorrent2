@@ -874,6 +874,7 @@
     "animation_normal": "Normaal",
     "animation_fast": "Snel",
     "total_dots": "Aantal stippen",
+    "arc_limit": "Maximumaantal bogen",
     "dots_low": "Laag",
     "dots_normal": "Normaal",
     "dots_high": "Hoog",

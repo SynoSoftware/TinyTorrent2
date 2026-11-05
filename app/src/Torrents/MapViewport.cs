@@ -132,6 +132,19 @@ internal readonly record struct MapView(Size Size, float Meridian, Vector2 Cente
 {
     internal Vector2 Coordinates(GeoPoint point) => MapViewport.Coordinates(point, Meridian);
 
+    internal bool Shows(Rect bounds, float margin)
+    {
+        for (var turn = -1; turn <= 1; turn++)
+        {
+            var low = Vector2.Transform(new Vector2((float)bounds.Left + 360 * turn, (float)bounds.Top), Transform);
+            var high = Vector2.Transform(new Vector2((float)bounds.Right + 360 * turn, (float)bounds.Bottom), Transform);
+            if (high.X >= -margin && low.X <= Size.Width + margin
+                && high.Y >= -margin && low.Y <= Size.Height + margin)
+                return true;
+        }
+        return false;
+    }
+
     // A location shows once, in the turn of longitude around the view centre.
     internal Vector2 Screen(GeoPoint point)
     {

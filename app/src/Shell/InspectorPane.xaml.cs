@@ -46,6 +46,7 @@ public sealed partial class InspectorPane : UserControl
                 SpeedCorner = Enum.IsDefined(view.SpeedCorner) ? view.SpeedCorner : PeerView.Default.SpeedCorner,
                 Animation = Enum.IsDefined(view.Animation) ? view.Animation : PeerView.Default.Animation,
                 DotTotal = Enum.IsDefined(view.DotTotal) ? view.DotTotal : PeerView.Default.DotTotal,
+                ArcLimit = view.ArcLimit > 0 ? view.ArcLimit : PeerView.Default.ArcLimit,
             };
             var peers = value.Peers;
             if (
@@ -562,5 +563,6 @@ public sealed record PeerView(PeerLayout Layout, double Side, double Stacked)
     public MapCorner SpeedCorner { get; init; } = MapCorner.BottomRight;
     public MapAnimation Animation { get; init; } = MapAnimation.Normal;
     public MapDotTotal DotTotal { get; init; } = MapDotTotal.Normal;
+    public int ArcLimit { get; init; } = MapRenderer.DefaultLimit;
     internal static PeerView Default { get; } = new(PeerLayout.Both, .55, .5);
 }

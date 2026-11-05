@@ -8,6 +8,10 @@ namespace Syno.TinyTorrent.Torrents;
 internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
 {
     private Observation[] _observations = [];
+    private (Group? Country, Group? Place)[]? _membership;
+    // Cache identity must not keep an unloaded map's outline data alive.
+    private WeakReference<IReadOnlyDictionary<string, Geography.Country>>? _world;
+    private readonly Dictionary<PeerPlace, Group> _places = [];
     private string _language = string.Empty;
     internal Dictionary<string, Group> Countries { get; } = [];
     internal List<Destination> Destinations { get; } = [];
@@ -70,6 +74,10 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
             && _capacity == capacity
         )
             return;
+        if (Cities != cities || _language != text.Language || peers.Count != _observations.Length
+            || peers.Where((peer, index) => !ReferenceEquals(peer, _observations[index].Peer)
+                || !Equals(peer.Location, _observations[index].Location)).Any())
+            _membership = null;
         _observations = peers.Select(peer =>
             new Observation(peer, peer.DownloadRate, peer.UploadRate, peer.Location)).ToArray();
         Origin = origin;
@@ -88,57 +96,76 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
     /// </summary>
     internal void Arrange(IReadOnlyDictionary<string, Geography.Country> world, float scale)
     {
-        Destinations.Clear();
         OriginPoint = Locate(Origin, world);
+        if (_world is null || !_world.TryGetTarget(out var previousWorld) || !ReferenceEquals(previousWorld, world))
+        {
+            _world = new(world);
+            _membership = null;
+            _regions.Clear();
+        }
         if (_regionsFor != (Meridian, scale))
         {
             _regions.Clear();
             _regionsFor = (Meridian, scale);
         }
-        Countries.Clear();
-        Dictionary<PeerPlace, Group> locations = [];
-        foreach (var observation in _observations)
+        if (_membership is null)
         {
-            if (
-                observation.Location is not { } location
-                || Locate(location, world) is not { } point
-            )
-                continue;
-            var code = location.Code;
-            var country = world.GetValueOrDefault(code);
-            if (!Countries.TryGetValue(code, out var group))
+            Countries.Clear();
+            _places.Clear();
+            _membership = new (Group?, Group?)[_observations.Length];
+            for (var index = 0; index < _observations.Length; index++)
             {
-                var language = Text!.Language;
-                group = new Group(
-                    PeerPlace.Of(location, false),
-                    () => location.CountryName(language),
-                    country?.Anchor ?? point,
-                    estimated: !Cities
-                );
-                Countries.Add(code, group);
+                var observation = _observations[index];
+                if (observation.Location is not { } location || Locate(location, world) is not { } point)
+                    continue;
+                var code = location.Code;
+                var country = world.GetValueOrDefault(code);
+                if (!Countries.TryGetValue(code, out var group))
+                {
+                    var language = Text!.Language;
+                    group = new Group(
+                        PeerPlace.Of(location, false),
+                        () => location.CountryName(language),
+                        country?.Anchor ?? point,
+                        estimated: !Cities
+                    );
+                    Countries.Add(code, group);
+                }
+                Group? destination = null;
+                if (Cities)
+                {
+                    var place = PeerPlace.Of(location, true);
+                    if (!_places.TryGetValue(place, out destination))
+                    {
+                        var peer = observation.Peer;
+                        destination = new Group(place, () => peer.LocationText, point);
+                        _places.Add(place, destination);
+                    }
+                }
+                _membership[index] = (group, destination);
             }
-            group.Add(observation);
-            if (!Cities)
-                continue;
-            var place = PeerPlace.Of(location, true);
-            if (!locations.TryGetValue(place, out var destination))
-            {
-                var peer = observation.Peer;
-                destination = new Group(place, () => peer.LocationText, point);
-                locations.Add(place, destination);
-            }
-            destination.Add(observation);
         }
-        IEnumerable<Group> destinations = Cities ? locations.Values : Countries.Values;
+        foreach (var group in Countries.Values.Concat(_places.Values))
+            group.Reset();
+        for (var index = 0; index < _observations.Length; index++)
+        {
+            var membership = _membership[index];
+            membership.Country?.Add(_observations[index]);
+            membership.Place?.Add(_observations[index]);
+        }
+        var placed = 0;
+        var rank = 0;
+        IEnumerable<Group> destinations = Cities ? _places.Values : Countries.Values;
         foreach (var group in destinations)
         {
+            rank = 0;
             if (
                 !group.Estimated
                 || !world.TryGetValue(group.Code, out var country)
                 || country.Areas.Length == 0
             )
             {
-                Destinations.Add(new Destination(group, group.Point, 1, null));
+                Place(group, group.Point, 1, null);
                 continue;
             }
             if (!_regions.TryGetValue(group.Code, out var regions))
@@ -147,10 +174,27 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
                 _regions[group.Code] = regions;
             }
             group.Regions = regions;
-            var rank = 0;
             // Idle peers are placed like one connection, at the most likely region.
             foreach (var (region, share) in Distribute(group.Regions, Math.Max(group.Active, 1)))
-                Destinations.Add(new Destination(group, region.Point, share, region.Name) { Rank = rank++ });
+                Place(group, region.Point, share, region.Name);
+        }
+        if (placed < Destinations.Count)
+            Destinations.RemoveRange(placed, Destinations.Count - placed);
+
+        void Place(Group group, GeoPoint point, double share, string? area)
+        {
+            var previous = placed < Destinations.Count ? Destinations[placed] : null;
+            if (previous is null || !ReferenceEquals(previous.Group, group) || previous.Point != point
+                || previous.Share != share || previous.Area != area || previous.Rank != rank)
+            {
+                var destination = new Destination(group, point, share, area) { Rank = rank };
+                if (placed < Destinations.Count)
+                    Destinations[placed] = destination;
+                else
+                    Destinations.Add(destination);
+            }
+            placed++;
+            rank++;
         }
     }
 
@@ -252,8 +296,8 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
                         "peer_map",
                         "estimated",
                         area,
-                        text.Rate(group.Down * destination.Share),
-                        text.Rate(group.Up * destination.Share)
+                        text.Rate(destination.Down),
+                        text.Rate(destination.Up)
                     );
             }
             else
@@ -339,6 +383,12 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
         /// </summary>
         internal Geography.Area[] Regions { get; set; } = [];
 
+        internal void Reset()
+        {
+            Count = Seeds = Leechers = Connections = Active = 0;
+            Down = Up = 0;
+        }
+
         internal void Add(Observation observation)
         {
             Count++;
@@ -362,6 +412,9 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
     internal sealed record Destination(Group Group, GeoPoint Point, double Share, string? Area)
     {
         internal DestinationKey Key => new(Group.Code, Point, Group.Estimated);
+        internal double Down => Group.Down * Share;
+        internal double Up => Group.Up * Share;
+        internal double Rate => Down + Up;
 
         /// <summary>Rank in the place's estimated distribution; zero for supplied coordinates.</summary>
         internal int Rank { get; init; }

@@ -90,6 +90,12 @@ not regroup peers or publish model changes. Unload disposes the renderer and
 releases the geography; the motion layer releases its pictures and dot mark
 after its game loop stops. Inspector retains plain map state.
 
+Rate-only observations retain peer membership, groups and unchanged destinations.
+The model still rebuilds counts and rates through one aggregation rule; changed
+membership, locations, detail, language or geography replaces the grouping, while
+fitted scale and meridian refresh estimated placement. The renderer retains
+ordered routes when the destination instances remain the same.
+
 The Peers inspector's ellipsis menu selects Map only, Table only or Map and table.
 Right-click anywhere in Peers opens the same menu, on the map, its Speed readout,
 the table's rows and its empty space; the table's column headers keep their own
@@ -157,10 +163,26 @@ DIP or more at the current zoom. A border two countries share is stored once
 and drawn once, by one of them, so it is a single line at every zoom; the 180°
 cut in the data is never drawn.
 
+Outline tracing yields at bounded source-point, ring and border-piece
+checkpoints, checking the renderer's rebuild budget before continuing. A complete
+old outline stays visible until its replacement is complete; nearby strokes are
+prepared within the same budget. A native tessellation call runs to completion.
+Superseded work releases its native resources on detail, meridian/device change
+or unload.
+Fills keep their complete Alternate polygons and holes, clipped to a modest
+overscan region so distant coastline does not dominate tessellation. A crop
+that no longer covers the view is replaced before drawing.
+
 Win2D draws bundled Natural Earth geometry and great-circle guides, not measured
 network paths. Active arcs use a fixed logarithmic speed scale and the app's
-transfer colours; idle markers remain visible in both detail modes. Seed markers
-use the download colour, leecher markers use the upload colour, and unclassified
+transfer colours; idle markers remain visible in both detail modes. The map menu's
+Maximum arcs choice limits active destination arcs, starting at 200. When more
+destinations transfer, retain the fastest by combined download and upload rate,
+using each estimated destination's allocated share. Equal speeds keep destination
+order. Only retained arcs carry moving dots. All peers, location markers, table
+rows, country shading and aggregate speed values remain available. This choice
+is saved with the peer view and never changes the engine's network connections.
+Seed markers use the download colour, leecher markers use the upload colour, and unclassified
 addresses use neutral ink. The snapshot identifies retained confirmed seeds;
 other disconnected addresses remain unclassified. Live connections identify
 leechers after the handshake. A shared location shows one small marker per role,
@@ -295,6 +317,13 @@ also hands over an unchangeable copy of the routes, rates and colours when
 the rates change; only the control's thread reads the dots in flight. While no
 dot flies and the latest picture shows, the control's thread pauses until the
 next dot leaves or the next picture, so slow traffic wakes it once per dot.
+When every dot-carrying route lies outside the shown view, it also pauses with
+dots in flight. Conservative analytical bounds include polar crests, wrapped
+copies and the sprite margin. Hidden departures need no wakes; a pending
+ten-second dot-size decrease still wakes for the legend. Traffic and pictures
+wake the loop, and a newer wake invalidates an older queued sleep decision.
+Resuming integrates elapsed traffic without replaying expired dots and respects
+the global dot ceiling. Animation Off ends accounting instead.
 The UI thread wakes it, so the first dot after a pause can wait for a busy UI
 thread; dots already in flight never wait. All dots are one sprite batch. A
 control with a new device stays hidden until it has shown its first frame,
@@ -308,6 +337,9 @@ picture drew plainly or from another scale are replaced in frames that draw
 nothing, and one picture then shows them all, because those borders already
 keep their look and weight; other pending rebuilds draw again at the next
 frame. The glow is recorded again only when what it shows can change.
+Rate-strength transitions keep the current smooth fade. A new observation
+preserves the pending visible step's deadline, so frequent updates cannot keep
+postponing all visible progress.
 
 ### Arc dimming
 

@@ -19,7 +19,7 @@ internal sealed class MapDots<TRoute>(long smallest)
     private const double Speed = 160;
     private const double ShortestTrip = .5;
     private const double LongestTrip = 3;
-    private const double ShortRoute = 20;
+    internal const double ShortRoute = 20;
     private const double AreaPerDot = 10_000;
     private const double Spacing = 15;
 
@@ -112,10 +112,15 @@ internal sealed class MapDots<TRoute>(long smallest)
     /// </summary>
     internal void Advance(long now)
     {
+        if (_lowerSince is { } since)
+        {
+            var deadline = since + 10 * Stopwatch.Frequency;
+            if (_counted < deadline && deadline < now)
+                Advance(deadline);
+        }
         var seconds = (now - _counted) / (double)Stopwatch.Frequency;
         _counted = now;
         _flying.RemoveAll(dot => dot.Progress(now) >= 1);
-        Settle(now, false);
         if (Bytes is not { } size)
             return;
         foreach (var (route, lane) in _lanes)
@@ -123,6 +128,7 @@ internal sealed class MapDots<TRoute>(long smallest)
             lane.Downloaded = Launch(route, lane, false, lane.Down, lane.Downloaded);
             lane.Uploaded = Launch(route, lane, true, lane.Up, lane.Uploaded);
         }
+        Settle(now, false);
 
         double Launch(TRoute route, Lane lane, bool upload, double rate, double carried)
         {
@@ -147,18 +153,23 @@ internal sealed class MapDots<TRoute>(long smallest)
         }
     }
 
-    /// <summary>The time from the last count until the next dot leaves, or null while no route transfers.</summary>
-    internal TimeSpan? Wait()
+    /// <summary>The next departure or size change; hidden routes need only the size deadline.</summary>
+    internal TimeSpan? Wait(bool departures = true)
     {
         if (Bytes is not { } size)
             return null;
-        var seconds = double.PositiveInfinity;
-        foreach (var lane in _lanes.Values)
+        var seconds = _lowerSince is { } since
+            ? Math.Max(0, (since + 10 * Stopwatch.Frequency - _counted) / (double)Stopwatch.Frequency)
+            : double.PositiveInfinity;
+        if (departures)
         {
-            if (lane.Down > 0)
-                seconds = Math.Min(seconds, (size - lane.Downloaded) / lane.Down);
-            if (lane.Up > 0)
-                seconds = Math.Min(seconds, (size - lane.Uploaded) / lane.Up);
+            foreach (var lane in _lanes.Values)
+            {
+                if (lane.Down > 0)
+                    seconds = Math.Min(seconds, (size - lane.Downloaded) / lane.Down);
+                if (lane.Up > 0)
+                    seconds = Math.Min(seconds, (size - lane.Uploaded) / lane.Up);
+            }
         }
         return double.IsFinite(seconds) ? TimeSpan.FromSeconds(Math.Max(0, seconds)) : null;
     }

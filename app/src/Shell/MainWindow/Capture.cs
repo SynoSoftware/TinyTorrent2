@@ -56,6 +56,8 @@ public sealed partial class MainWindow
         "peers" => CaptureMode.Peers,
         "peer-switch" => CaptureMode.PeerSwitch,
         "map" => CaptureMode.Map,
+        "map-performance" => CaptureMode.MapPerformance,
+        "map-geography" => CaptureMode.MapGeography,
         "selection" => CaptureMode.Selection,
         "selection-frame" => CaptureMode.SelectionFrame,
         "connections" => CaptureMode.Connections,
@@ -2361,6 +2363,11 @@ public sealed partial class MainWindow
             if (ReviewMode == CaptureMode.Map)
             {
                 await CaptureMap(outcomes);
+                return;
+            }
+            if (ReviewMode is CaptureMode.MapPerformance or CaptureMode.MapGeography)
+            {
+                await CaptureMapPerformance(outcomes);
                 return;
             }
             if (ReviewMode is CaptureMode.SettingsPrototype or CaptureMode.SubtitleTasks)

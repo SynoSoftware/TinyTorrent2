@@ -78,6 +78,13 @@ _Avoid_: destination, when referring to the peers included by a place filter.
 coordinates or in an estimated populated region. Several estimated destinations
 can represent the same peer place.
 
+**Map arc**: a guide between the user's location and one active map destination.
+It represents aggregate transfer activity, not an individual network connection
+or a measured network path.
+
+**Arc limit**: the maximum number of active destination arcs shown at once.
+_Avoid_: connection limit, which limits network connections.
+
 **Chosen place**: the peer place chosen on the map that limits the table's peers.
 It is distinct from the individual peers selected in that table.
 
