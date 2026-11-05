@@ -5,6 +5,7 @@ using System.Numerics;
 using System.Reflection;
 using System.Text.Json;
 using Microsoft.Graphics.Canvas;
+using Microsoft.Graphics.Canvas.Geometry;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Automation.Provider;
@@ -101,6 +102,73 @@ public sealed partial class MainWindow
             async Task Settle()
             {
                 await Until(() => !Read<bool>(map, "_frameQueued") && !Read<bool>(renderer, "_interpolating"));
+            }
+            if (ReviewMode == CaptureMode.MapArcs)
+            {
+                map.SetAnimation(MapAnimation.Off, MapDotTotal.Normal);
+                viewport.Fit();
+                work.Clear();
+                var source = new GeoPoint(0, 10);
+                origin = origin with { Point = source };
+                model.Update(peers, origin, Model.Text, cities: true);
+                await Settle();
+                outcomes.Add(new { journey = "map overview arc construction", routes = 128,
+                    phases = work.ToDictionary(pair => pair.Key, pair => Summary(pair.Value)) });
+                foreach (var longitude in new[] { 179.5, 179.99 })
+                {
+                    var destination = new GeoPoint(longitude, 10);
+                    var circle = new MapRenderer.GreatCircle(source, destination);
+                    var crest = circle.At(.5);
+                    viewport.Fit();
+                    model.Update([MakePeer(0, 1048576, 0, destination)], origin, Model.Text, cities: true);
+                    await Settle();
+                    var route = Read<System.Collections.IEnumerable>(renderer, "_routes").Cast<object>().Single();
+                    T Property<T>(string name) => (T)route.GetType().GetProperty(name, Flags)!.GetValue(route)!;
+                    var overview = Property<float>("Degrees");
+                    var maximum = viewport.Scale * MapViewport.MaxZoom;
+                    int Misses(CanvasGeometry arc)
+                    {
+                        using var scaled = arc.Transform(Matrix3x2.CreateScale(maximum));
+                        var misses = 0;
+                        for (var sample = 1; sample < 8192; sample++)
+                            if (!scaled.StrokeContainsPoint(viewport.Coordinates(circle.At(sample / 8192.0)) * maximum, 1))
+                                misses++;
+                        return misses;
+                    }
+                    var coarseMisses = Misses(Property<CanvasGeometry>("Arc"));
+                    work.Clear();
+                    viewport.SetView(MapViewport.MaxZoom, viewport.Coordinates(crest),
+                        viewport.CalculateRatio(MapViewport.MaxZoom, (float)-crest.Latitude));
+                    var started = Stopwatch.GetTimestamp();
+                    draw.Invoke(map, null);
+                    var pictureMs = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+                    await Settle();
+                    var arc = Property<CanvasGeometry>("Arc");
+                    var misses = Misses(arc);
+                    if (misses != 0 || Property<float>("Degrees") != overview)
+                        throw new InvalidOperationException("A polar guide missed the analytical dot path or zoom changed trip timing.");
+                    map.SetAnimation(MapAnimation.Fast, MapDotTotal.High);
+                    await Settle();
+                    var frames = map.MotionFrames;
+                    await Until(() => map.MotionFrames > frames + 3);
+                    await Snapshot("map-polar-" + longitude.ToString("0.##", CultureInfo.InvariantCulture));
+                    viewport.SetView(MapViewport.MaxZoom, new Vector2(-179.8f, -10),
+                        viewport.CalculateRatio(MapViewport.MaxZoom, -10));
+                    draw.Invoke(map, null);
+                    await Settle();
+                    if (!ReferenceEquals(arc, Property<CanvasGeometry>("Arc")))
+                        throw new InvalidOperationException("Panning unnecessarily replaced a refined guide.");
+                    await Snapshot("map-wrapped-" + longitude.ToString("0.##", CultureInfo.InvariantCulture));
+                    viewport.Fit();
+                    draw.Invoke(map, null);
+                    if (!ReferenceEquals(arc, Property<CanvasGeometry>("Arc")))
+                        throw new InvalidOperationException("Zooming out unnecessarily replaced a refined guide.");
+                    outcomes.Add(new { journey = "map polar guide alignment", longitude, samples = 8191,
+                        toleranceDips = .5, coarseMisses, misses, pictureMs,
+                        phases = work.ToDictionary(pair => pair.Key, pair => Summary(pair.Value)) });
+                    map.SetAnimation(MapAnimation.Off, MapDotTotal.Normal);
+                }
+                return;
             }
             foreach (var scenario in new[] { "fixed", "canada", "norway", "canada-fast", "canada-natural", "canada-interrupted" })
             {

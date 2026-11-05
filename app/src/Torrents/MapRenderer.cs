@@ -322,7 +322,8 @@ internal sealed class MapRenderer : IDisposable
             if (route.Arc is null && origin is { } source && shown.Contains(route))
             {
                 route.Path = new GreatCircle(source, route.Destination.Point);
-                route.Arc = Arc(route.Path, out var degrees);
+                route.Arc = Arc(route.Path, _viewport.Scale, out var degrees);
+                route.Scale = _viewport.Scale;
                 route.Degrees = degrees;
             }
         }
@@ -675,19 +676,62 @@ internal sealed class MapRenderer : IDisposable
     }
 
     /// <summary>The arc of a great circle on the map, and its length in map degrees.</summary>
-    private CanvasGeometry Arc(GreatCircle circle, out float degrees)
+    private CanvasGeometry Arc(GreatCircle circle, float scale, out float degrees)
     {
+#if CAPTURE
+        var started = Stopwatch.GetTimestamp();
+#endif
         using var path = new CanvasPathBuilder(_device);
         var count = Math.Max(8, (int)Math.Ceiling(circle.Angle * 48));
         var previous = _viewport.Coordinates(circle.At(0));
-        degrees = 0;
+        var length = 0f;
+        var tolerance = .25f / scale;
         path.BeginFigure(previous);
         for (var index = 1; index <= count; index++)
         {
             var point = _viewport.Coordinates(circle.At((double)index / count));
+            Trace((double)(index - 1) / count, previous, (double)index / count, point, 0);
+        }
+        path.EndFigure(CanvasFigureLoop.Open);
+        degrees = length;
+        var geometry = CanvasGeometry.CreatePath(path);
+#if CAPTURE
+        Measure("arc geometry", ref started);
+#endif
+        return geometry;
+
+        void Trace(double start, Vector2 from, double end, Vector2 to, int depth)
+        {
+            var middle = (start + end) / 2;
+            var point = _viewport.Coordinates(circle.At(middle));
+            var last = new Vector2(MapViewport.Wrap(to.X, from.X), to.Y);
+            var chord = last - from;
+            // Quarter points catch inflections; the depth limit bounds work at a pole.
+            if (depth < 16 && (Error(point) > tolerance * tolerance
+                || Error(_viewport.Coordinates(circle.At((start + middle) / 2))) > tolerance * tolerance
+                || Error(_viewport.Coordinates(circle.At((middle + end) / 2))) > tolerance * tolerance))
+            {
+                Trace(start, from, middle, point, depth + 1);
+                Trace(middle, point, end, to, depth + 1);
+                return;
+            }
+            Append(to);
+
+            float Error(Vector2 sample)
+            {
+                sample.X = MapViewport.Wrap(sample.X, (from.X + last.X) / 2);
+                var fraction = chord.LengthSquared() > 0
+                    ? Math.Clamp(Vector2.Dot(sample - from, chord) / chord.LengthSquared(), 0, 1)
+                    : 0;
+                return Vector2.DistanceSquared(sample, from + fraction * chord);
+            }
+        }
+
+        void Append(Vector2 point)
+        {
             var step = point - previous;
             step.X = MapViewport.Wrap(step.X, 0);
-            degrees += step.Length();
+            length += step.Length();
             // Split at the map's edge instead of drawing a chord across the map.
             if (Math.Abs(point.X - previous.X) > 180)
             {
@@ -706,8 +750,6 @@ internal sealed class MapRenderer : IDisposable
                 path.AddLine(point);
             previous = point;
         }
-        path.EndFigure(CanvasFigureLoop.Open);
-        return CanvasGeometry.CreatePath(path);
     }
 
     /// <summary>The shortest way over the globe from an origin to an end.</summary>
@@ -868,6 +910,21 @@ internal sealed class MapRenderer : IDisposable
             new Vector2(east, _viewport.ToMap(new Vector2(0, (float)_viewport.Size.Height)).Y)
         ).Grown(new Vector2(2) / scale);
         MoveWindow(visible);
+        foreach (var route in _routes)
+        {
+            if (route.Arc is null || route.Scale >= _viewport.ViewScale
+                || !(Reaches(route, -1) || Reaches(route, 0) || Reaches(route, 1)))
+                continue;
+            if (!MayRebuild())
+                break;
+            // Retain finer guides when zooming out; only visible routes refine.
+            var detail = MathF.Pow(2, MathF.Ceiling(MathF.Log2(_viewport.ViewScale)));
+            var arc = Arc(route.Path, detail, out _);
+            route.Release();
+            route.Arc = arc;
+            route.Scale = detail;
+            ReleaseGlow();
+        }
         // Prioritise the selected routes before map drawing uses its rebuild budget.
         if (_model.OriginPoint is { } source)
         {
@@ -1677,24 +1734,33 @@ internal sealed class MapRenderer : IDisposable
             set
             {
                 _arc = value;
-                Reach = value is null ? default : Extent.Of(value.ComputeBounds());
-                Bounds = value is null ? default : Path.Bounds(new Rect(Reach.Low.X, Reach.Low.Y,
-                    Reach.High.X - Reach.Low.X, Reach.High.Y - Reach.Low.Y));
+                if (value is null)
+                {
+                    Reach = default;
+                    return;
+                }
+                var sampled = Extent.Of(value.ComputeBounds());
+                var bounds = Path.Bounds(new Rect(sampled.Low.X, sampled.Low.Y,
+                    sampled.High.X - sampled.Low.X, sampled.High.Y - sampled.Low.Y));
+                Reach = new Extent(new Vector2((float)bounds.Left, (float)bounds.Top),
+                    new Vector2((float)bounds.Right, (float)bounds.Bottom));
             }
         }
 
         private CanvasGeometry? _arc;
 
-        /// <summary>The bounds of <see cref="Arc"/> in map coordinates.</summary>
+        /// <summary>Conservative bounds of the analytical path in map coordinates.</summary>
         internal Extent Reach { get; private set; }
-        internal Rect Bounds { get; private set; }
+        internal Rect Bounds => new(Reach.Low.X, Reach.Low.Y,
+            Reach.High.X - Reach.Low.X, Reach.High.Y - Reach.Low.Y);
+        internal float Scale { get; set; }
 
         /// <summary>The way <see cref="Arc"/> traces, which its dots follow.</summary>
         internal GreatCircle Path { get; set; }
 
         /// <summary>
-        /// The length of <see cref="Arc"/> in map degrees. Arcs are not rebuilt
-        /// on resize, so the fitted scale turns it into DIPs when needed.
+        /// The overview length in map degrees, retained across guide refinements
+        /// so zooming never changes a dot's trip time.
         /// </summary>
         internal float Degrees { get; set; }
 

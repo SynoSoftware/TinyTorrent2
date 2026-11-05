@@ -385,6 +385,10 @@ synthetic observations; it does not claim 10,000 live network connections.
 Use `-Review map-geography -Configuration Release` for the picture/detail/pan
 part alone, including natural latitude correction and a pan before retracing
 settles. It captures the whole window so the swap-chain map is included.
+Use `-Review map-arcs -Configuration Release` for the polar guide regression:
+compare native guide geometry with analytical moving-dot positions within half
+a DIP at maximum zoom, retain trip timing/detail across pan and zoom-out, and
+capture polar and wrapped views. It records overview/refinement geometry costs.
 Use `TINYTORRENT_CAPTURE_REVIEW=add-layout` for the workspace headers and empty/long-link
 magnet Add dialog in English and Spanish, Light and Dark, at the three review sizes.
 It also captures the engine-stopped message bar with its Restart action and records

@@ -174,7 +174,13 @@ overscan region so distant coastline does not dominate tessellation. A crop
 that no longer covers the view is replaced before drawing.
 
 Win2D draws bundled Natural Earth geometry and great-circle guides, not measured
-network paths. Active arcs use a fixed logarithmic speed scale and the app's
+network paths. Guides adaptively subdivide curved segments to a quarter-DIP
+tolerance at their retained scale. Zooming in refines only visible guides in
+powers of two within the rebuild budget; panning and zooming out reuse that
+detail. The existing guide stays visible until refinement finishes. Their
+overview length stays fixed for dot timing, and both drawing and
+motion use conservative analytical bounds at polar crests. Active arcs use a
+fixed logarithmic speed scale and the app's
 transfer colours; idle markers remain visible in both detail modes. The map menu's
 Maximum arcs choice limits active destination arcs, starting at 200. When more
 destinations transfer, retain the fastest by combined download and upload rate,
