@@ -729,6 +729,18 @@ or production table hooks, does not time quiet replacements or all of
 `ApplyProjection`, and supplies no new uninstrumented reference.
 Observer source review passed at `V:/temp/plan17-change-observer-review.md`.
 
+The [one instrumented standard-profile run](../../artifacts/evidence/ui-notification-attribution-20261106-deb3e1e/README.md)
+at `deb3e1e` completed normally: all 1,467 commands applied, with only 22
+peer-table notifications in the timed marquee (9,000 → 9,000 rows, about
+3.92 ms first-to-last completed-notification span). The worst sampled geometry
+gap is still 266.69 ms. Large 157,236-insertion and 150,810-removal setup bursts
+remain. The raw samples do not establish that intermediate aggregate scopes
+settled during this gesture. This different execution does not invalidate the
+original gap: independently recomputing that exact 603.6 ms interval gives
+228.7 ms inclusive sampled elapsed under `View.Apply`, alongside later binding
+and layout. The 766.7 ms figure covers the whole original marquee phase.
+Neither value is exclusive CPU, and the counter's omitted work remains open.
+
 One source-confirmed amplification is under investigation: aggregate selection
 changes call `RefreshScope`, whose `Clear` drops `Peers`. `ReadPeers` then seeds
 from the eight-torrent cache before sequential replies reconstruct the scope.
@@ -738,6 +750,15 @@ If the counter confirms that churn, retain overlapping peers at the existing
 Inspector owner while preserving scope filtering, explicit release, readiness,
 cancellation and session invalidation; add no second cache or yielding native
 edit path.
+The smallest correction identified by source review replaces aggregate
+`RefreshScope.Clear` with `History = null`, and seeds `_releaseBaseline` at
+ReadPeers' existing scoped-list publication before assigning `Peers`. Retarget,
+session and stale-read invalidation stay at their current owners. Design review:
+`V:/temp/plan17-scope-retention-review.md`. Before this production change, use the
+focused `peer-scope` variant (14 → 15 → 14 torrents) to establish common Peer
+identity loss and notification churn, then compare the same variant. It retains
+the frozen inventory/map profile but deliberately has no live churn or timed
+click/motion schedule, so it cannot stand in for standard-profile acceptance.
 
 The failed readiness run has all peers parsed and observes arcs, locations and
 moving dots. Its XAML callback stops while the independent map continues drawing,

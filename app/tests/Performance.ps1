@@ -186,6 +186,7 @@ function Report {
         }
     })
     $report = [ordered]@{ display = $ready; displayTrace = -not $InputOnly; replay = [bool]$ready.replay;
+        variant = if ($timing.scopeReview) { 'peer-scope' } else { 'standard' };
         failure = $review.failure; fixture = $timing.fixture;
         frameBudgetMs = $period; phases = $phases; clicks = $clicks;
         source = $source; tableTurnover = $turnover;
@@ -218,7 +219,9 @@ function Report {
             'Navigation updates are changed views sampled after the map draw handler; they distinguish navigation stalls from animated dots.',
             'Map startup phases identify their timestamp endpoint: XAML completion or a UI poll observing the requested drawn map. Neither establishes displayed pixels; an idle XAML surface need not render when the independent map draws.',
             'Selection latency ends at the real selection event; render latency ends at XAML completion, before scanout.',
-            $(if ($ready.replay) {
+            $(if ($timing.scopeReview) {
+                'Peer-scope attribution selects 14, then 15, then 14 torrents programmatically and waits for each inventory and table view. Common Peer identity and notification counts are recorded; no live rate/churn, timed clicks or navigation schedule runs.'
+            } elseif ($ready.replay) {
                 'Offscreen replay schedules application commands independently at 120 Hz. Selection uses the current first seven row slots. Commands bypass native delivery, hit-testing, gesture arbitration and pointer focus. Exact send timestamps correlate selection acknowledgements; queued commands are not skipped.'
             } else {
                 'Clicks target seven physical row slots while sorting continues. Input timestamps are matched against calibrated sender uptime within 50 ms; raw QPC send times measure latency. Already-selected clicks are acknowledgements, excluded from switch-latency summaries.'
@@ -229,7 +232,7 @@ function Report {
             'Marquee movement is sampled at XAML render completion, not pixel capture.',
             'Dot visibility counts sprites submitted after clipping and fading. Progress comparisons follow the same dot across consecutive draws; no visible dots can also mean traffic is outside the zoomed viewport. These are render observations, not displayed-pixel proof.',
             'Memory samples cover the UI process, including its managed and native allocations and resident synthetic fixture. Working set is resident RAM; private bytes are private committed memory. GPU VRAM and engine/driver-process memory are excluded.',
-            'Memory is sampled externally at approximately 100 ms intervals during timed input. Private-byte peaks are sampled; the process working-set peak is also recorded. Growth across passes is evidence to investigate, not proof of a leak.',
+            'Memory is sampled externally at approximately 100 ms intervals during the diagnostic journey. Private-byte peaks are sampled; the process working-set peak is also recorded. Growth across passes is evidence to investigate, not proof of a leak.',
             'Renderer operation durations are elapsed time, including any waits; their journey labels are sampled when the UI dispatcher delivers the measurement.',
             'Missed refreshes are estimated from frame holds at the recorded monitor rate. First and last holds are clipped to the journey.',
             'A frame gap over 1.5 refresh intervals counts as uneven pacing. No average FPS alone earns a smooth verdict.') }
@@ -241,9 +244,12 @@ function Report {
     $lines.Add(('{0} synthetic torrents; {1} peer rows.' -f @($ready.torrents).Count, ($ready.torrents.rows | Measure-Object -Sum).Sum))
     if ($ready.detail) { $lines.Add(('Map detail: {0}.' -f $ready.detail)) }
     if ($ready.arcLimit) { $lines.Add(('{0} fixed locations; arc limit {1}.' -f $ready.locations, $ready.arcLimit)) }
-    if ($ready.connections) { $lines.Add(('{0} connection slots; {1} disconnect/connect swaps per second in the churn phase.' -f $ready.connections, $ready.swapsPerSecond)) }
+    if ($timing.scopeReview) {
+        $lines.Add('Variant: peer-scope attribution. Selects 14 → 15 → 14 torrents and waits for each scope. Records common Peer identity and aggregate notifications; runs no live rate/churn, timed clicks or navigation schedule.')
+        $lines.Add(('{0} fixed connection slots.' -f $ready.connections))
+    } elseif ($ready.connections) { $lines.Add(('{0} connection slots; {1} disconnect/connect swaps per second in the churn phase.' -f $ready.connections, $ready.swapsPerSecond)) }
     if ($InputOnly) { $lines.Add('Render-only run: no display trace was recorded. Draw and XAML completion rates do not establish displayed FPS.') }
-    if ($ready.replay) {
+    if ($ready.replay -and -not $timing.scopeReview) {
         $lines.Add('Offscreen command replay: selection timings start at external command emission. Native input, hit-testing, foreground pacing and physical display latency are unverified. This procedure requires its own matched baseline.')
         $lines.Add(('Command emission → UI application: p95 {0:F1} ms, worst {1:F1} ms.' -f $report.commandDeliveryMs.p95, $report.commandDeliveryMs.worst))
     }

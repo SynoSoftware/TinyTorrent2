@@ -34,6 +34,9 @@ public sealed partial class MainWindow
         Directory.CreateDirectory(directory);
         var window = WinRT.Interop.WindowNative.GetWindowHandle(this);
         var replay = IsPerformanceReplay;
+        var scopeReview = Environment.GetEnvironmentVariable("TINYTORRENT_PERFORMANCE_SCOPES") == "1";
+        if (scopeReview && (!replay || ReviewMode != CaptureMode.PerformanceSelection))
+            throw new InvalidOperationException("Peer-scope attribution requires the offscreen selection replay.");
         using var input = replay ? null : new PerformanceInput(window);
         await ShowTorrents();
         Model.Filter = TorrentFilter.All;
@@ -86,7 +89,7 @@ public sealed partial class MainWindow
         var updates = new List<object>();
         var tables = new List<object>();
         var lastTableSample = 0L;
-        var traceChanges = Environment.GetEnvironmentVariable("TINYTORRENT_PERFORMANCE_CHANGES") == "1";
+        var traceChanges = scopeReview || Environment.GetEnvironmentVariable("TINYTORRENT_PERFORMANCE_CHANGES") == "1";
         var changes = new List<object>();
         var changeObservers = new Dictionary<Syno.TableView.Table, Action>();
 
@@ -281,7 +284,7 @@ public sealed partial class MainWindow
         }
         async Task Connections(string name, long started, int count)
         {
-            var target = Model.Current;
+            var target = inspector.ShowsAllPeers || Model.Selected.Count != 1 ? null : Model.Current;
             var observedAt = 0L;
             phaseStarted = started;
             Volatile.Write(ref phase, name);
@@ -561,6 +564,35 @@ public sealed partial class MainWindow
             peersTable.Layout = peersTable.Layout with { SortColumnId = "down", SortDirection = Syno.TableView.SortDirection.Descending };
             await Screenshot("no-selection-map");
             await Measure("no-selection-animation", PerformanceInput.Idle(window, 3000));
+            if (scopeReview)
+            {
+                foreach (var (count, name) in new[] { (14, "scope-initial"), (15, "scope-grow"), (14, "scope-shrink") })
+                {
+                    var scope = targets.Take(count).ToArray();
+                    var ids = scope.Select(torrent => torrent.TorrentId).ToHashSet();
+                    var previous = inspector.Peers ?? [];
+                    var started = Stopwatch.GetTimestamp();
+                    phaseStarted = started;
+                    Volatile.Write(ref phase, name);
+                    if (!await SelectTorrent(new Syno.TableView.Selection(scope, scope[0])))
+                        throw new InvalidOperationException("The peer-scope selection was not accepted.");
+                    var expected = scope.Sum(torrent => data.Leechers[Array.IndexOf(targets, torrent)] * 3);
+                    await Connections(name, started, expected);
+                    await peersTable.ViewReady;
+                    var current = inspector.Peers ?? [];
+                    var retention = await Task.Run(() =>
+                    {
+                        var shared = previous.Where(peer => ids.Contains(peer.TorrentId)).ToArray();
+                        var rows = current.ToDictionary(peer => peer.Key);
+                        return new { shared = shared.Length,
+                            retained = shared.Count(peer => rows.TryGetValue(peer.Key, out var next) && ReferenceEquals(peer, next)),
+                            missing = shared.Count(peer => !rows.ContainsKey(peer.Key)),
+                            outside = current.Count(peer => !ids.Contains(peer.TorrentId)) };
+                    });
+                    outcomes.Add(new { journey = name, expected, retention });
+                }
+                return;
+            }
             var surface = Read<ListView>(Torrents, "_surface");
             var heavy = targets.Single(torrent => torrent.TorrentId == data.Source.Torrents.MaxBy(torrent => torrent.Connections)!.TorrentId);
             var selectedCount = data.Leechers[Array.IndexOf(targets, heavy)] * 3;
@@ -679,7 +711,7 @@ public sealed partial class MainWindow
             Model.PauseCaptureSnapshots(false);
             await File.WriteAllTextAsync(Path.Combine(directory, "timing.json"), JsonSerializer.Serialize(new {
                 phases, samples, updates, tables, traceChanges, changes, feedFailure = feedFailure?.ToString(), pictures = pictures.ToArray(), mapFrames = mapFrames.ToArray(), work = work.ToArray(),
-                received = received.ToArray(), replay, dispatched,
+                received = received.ToArray(), replay, scopeReview, dispatched,
                 fixture = new { detail = cities ? "cities" : "countries", expected = data.PeerCount, summaries = targets.Sum(torrent => torrent.PeerCount),
                     parsed = inspector.Peers?.Count, observations = inspector.Map.Capture().Observations.Length,
                     inspector.Map.Cities, inspector.IsLoading, inspector.IsReplacing, motion = map?.MotionState },

@@ -37,6 +37,16 @@ requested subject can differ from the retained rows being replaced. Counters
 add per-notification observation overhead, so use them for attribution, not an
 uninstrumented performance comparison. They are disabled by default.
 
+`TINYTORRENT_PERFORMANCE_SCOPES=1` instead selects a focused, offscreen
+`performance-selection -Replay -InputOnly` variant and enables these counters.
+After the unchanged all-peer setup, it selects 14, then 15, then 14 torrents,
+waiting for each scope to finish before the next. It records common Peer
+identity retention, missing/outside rows and notification counts. It uses the
+same 50-torrent inventory and city/arc settings, without starting the timed
+click/navigation/churn schedule or live rate source. The report labels this
+`peer-scope`; it is not a standard-profile response or animation comparison.
+Remove the environment variable after the run.
+
 The native desktop-input procedure described below is retained for its existing
 evidence and safety guards. **Do not run it on the owner's desktop.** `-InputOnly`
 alone still sends global input. PresentMon 2.3.1 records ETW presentation events
