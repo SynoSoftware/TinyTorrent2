@@ -417,14 +417,14 @@ public sealed partial class Inspector
         var cancellation = _reading.Token;
         var text = Text;
         var current = Peers ?? [];
-        var captured = current.Select(peer => (Peer: peer, Record: peer.Capture())).ToArray();
+        var captured = current.Where(peer => peer.TorrentId == torrentId)
+            .Select(peer => (Peer: peer, Record: peer.Capture())).ToArray();
         var preparation = Task.Run(() =>
         {
 #if CAPTURE
             PreparingPeers?.Invoke();
 #endif
-            var previous = captured.Where(row => row.Peer.TorrentId == torrentId)
-                .ToDictionary(row => row.Peer.Endpoint);
+            var previous = captured.ToDictionary(row => row.Peer.Endpoint);
             HashSet<string> endpoints = [];
             List<Peer> received = [];
             List<(Peer, Peer.Change)> changes = [];
@@ -452,7 +452,7 @@ public sealed partial class Inspector
             }
             var complete = received.ToArray();
             IReadOnlyList<Peer> next = current;
-            if (!captured.Where(row => row.Peer.TorrentId == torrentId).Select(row => row.Peer).SequenceEqual(complete))
+            if (!captured.Select(row => row.Peer).SequenceEqual(complete))
             {
                 var merged = current.ToList();
                 var insertion = merged.FindIndex(peer => peer.TorrentId == torrentId);

@@ -3,10 +3,11 @@
 Status: the map handoff is implemented at `e723ae6` and its focused functional
 validation passed. The owner reports much better pan/zoom. Preserve this handoff.
 The original offscreen reference is frozen at `b20b923`; the corrected-observer
-reference is frozen at `ba64259`, with production behavior unchanged. The first
-peer-snapshot correction was rejected after comparison; production reconciliation
-is restored. The capture-only observer is corrected and its six-profile reference
-completed normally. Measured UI publication stalls remain next.
+reference is frozen at `ba64259`, with production behavior unchanged. The narrow
+peer-snapshot correction is reinstated after correcting its retention reasoning:
+it removes unrelated copying; the mixed single-run maxima establish neither a
+causal regression nor a marquee fix. The capture-only observer is corrected and
+its six-profile reference completed normally. Measured UI publication stalls remain next.
 The displayed-state and selection corrections below remain to be implemented;
 controlled performance acceptance remains unverified. Current behavior is owned
 by the contracts linked below.
@@ -170,6 +171,22 @@ Reduced XAML completion time is a diagnostic improvement; it becomes evidence of
 visible response only when correlated with content. Final next-frame acceptance
 is per click, not a p95 threshold. Keep missing acceptance endpoints explicit
 while fixing costs the current measurements can already establish.
+
+Judge a correction against its predicted effect at the operation it changes.
+Verify the executed source/binary, workload and measurement endpoint before
+interpreting a discrepancy. If the predicted reduction is absent, diagnose the
+implementation, workload, measurement or assumption. If the local saving is
+present but interaction still stalls, locate the remaining bottleneck. Preserve
+adverse observations and reject demonstrated regressions; a different single-run
+maximum alone establishes no causal regression. Do not repeat a matrix until it
+looks favorable. Use existing evidence, then the smallest matched check that can
+decide the remaining uncertainty.
+
+Preserve experiments before backing them out. For uncommitted code, stash only
+the candidate's owned paths under a descriptive name; retain its evidence and
+recovery reference. Keep the stash when applying it, and never apply it over
+another experiment or include unrelated shared changes. Committed candidates
+remain recoverable by commit even after a revert.
 
 ## Findings
 
@@ -654,13 +671,44 @@ records a reproduced 603.6 ms marquee gap with table publication and blocking
 collections, and at least 62.8 MiB of unrelated peer-record snapshot copying in
 `Inspector.ApplyPeers` during aggregate readiness. Its narrow per-torrent
 snapshot correction passed focused independent source review at
-`V:/temp/plan17-peer-snapshot-review.md` but failed the comparison gate. The
+`V:/temp/plan17-peer-snapshot-review.md`. The
 [comparison record](../../artifacts/evidence/ui-benchmark-peer-snapshot-20261106-2beb6e7/README.md)
 preserves four completed profiles, the city/200 docked readiness failure and the
 unrun final profile. Some peaks and marquee gaps improved, while docked click
-and navigation observations worsened. The correction is rejected; its source
-operation does not account for the full marquee gap. Trace event loss and sampled
-wall-time limits are preserved in the report.
+and navigation observations worsened. Rejection based on these mixed single-run
+maxima was too strong: the unchanged-product reference below also varies widely,
+and the failed readiness observation was a capture defect. The correction is
+reinstated with its reviewed semantics intact. It still scans the combined list
+once, but captures records and copies tuples only for the replying torrent;
+both worker-side whole-list filters disappear. With the complete 159,810-row
+fixture, a reply for at most 9,000 peers therefore excludes at least 150,810
+unrelated record references from its snapshot. This is a local work/allocation
+reduction, not a measured next-frame or marquee improvement. The original
+prediction wrongly treated unrelated setup allocation as an explanation of the
+marquee stall: only about 0.14 MiB of this snapshot allocation was observed during
+that phase. Native table publication and blocking collections remain separate
+measured costs. Trace event loss and sampled wall-time limits are preserved in
+the report. No new full-matrix run is required to reverse the causal claim.
+The reinstated `Peers.cs` is byte-for-byte the reviewed Git blob
+`bfcf3babdf615cdbc2f575e5ed2933399be72640` from `2beb6e7`; the candidate binary's
+identity records that source commit. Recovery is also preserved in named stash
+`8f6436caa4c64b6c0055f6974b1f9d47effe15aa` (`plan17: reviewed per-torrent peer
+snapshot candidate (2beb6e7)`). Its code can be read with
+`git show 2beb6e7:app/src/Shell/Inspector/Peers.cs`; apply the named stash only
+after checking that its owned file has no other edits. The stash was applied
+without dropping it. No broader source was stashed.
+
+**Interop investigation:** the measured vector callback asks
+`IObservableVectorMethods<object>.IID` for each event, which recomputes the
+generic signature and hash. The stable SDK projection `10.0.26100.87` still
+does this, although its CsWinRT 2.3.1 hash routine allocates less. A no-window
+isolated check of this exact getter made 100,000 calls: the preserved runtime
+took 155.6 ms / 84.0 MB allocated; the newer runtime took 157.1 ms / 40.0 MB.
+Both returned the same IID. This establishes no speed benefit, so no dependency
+changed. Scratch procedure: `V:/temp/plan17-iid-cost.ps1`. Continue into the local
+WinUI notification consumer before choosing a publication correction; neither
+the managed wrapper's sampled wall time nor this isolated allocation result
+establishes the native cause of the stall.
 
 The failed readiness run has all peers parsed and observes arcs, locations and
 moving dots. Its XAML callback stops while the independent map continues drawing,
@@ -681,10 +729,11 @@ Worst navigation draw gaps span 253.0–464.2 ms, docked click completion reache
 1,108.4 ms and marquee gaps span 212.1–271.8 ms. Peak private commitment spans
 928–1,341 MiB; final samples are not settled retained memory. Missing selected-map
 draw/dot intervals remain. These unchanged-product worst-value differences do not
-prove that the rejected filter caused the earlier adverse observations.
+prove that the filter caused the earlier adverse observations.
 The original reference and failed run remain intact. No retry of that failed
 run or timeout extension ran. Next attribute the measured UI publication costs
-and compare one correction against this matched observer.
+and compare the next correction against this matched observer, retaining the
+snapshot correction's distinct local claim.
 
 The new procedure measures command-to-render behavior and is not comparable to
 the old SendInput runs. Displayed/native-input acceptance, exact map-command
