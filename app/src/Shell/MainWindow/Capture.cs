@@ -61,6 +61,7 @@ public sealed partial class MainWindow
         "map-performance" => CaptureMode.MapPerformance,
         "map-geography" => CaptureMode.MapGeography,
         "map-arcs" => CaptureMode.MapArcs,
+        "map-composition" => CaptureMode.MapComposition,
         "selection" => CaptureMode.Selection,
         "selection-frame" => CaptureMode.SelectionFrame,
         "connections" => CaptureMode.Connections,
@@ -2366,6 +2367,11 @@ public sealed partial class MainWindow
             if (ReviewMode == CaptureMode.Map)
             {
                 await CaptureMap(outcomes);
+                return;
+            }
+            if (ReviewMode == CaptureMode.MapComposition)
+            {
+                await CaptureMapComposition(outcomes);
                 return;
             }
             if (ReviewMode is CaptureMode.MapPerformance or CaptureMode.MapGeography or CaptureMode.MapArcs)

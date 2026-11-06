@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Numerics;
 using Microsoft.Graphics.Canvas;
@@ -16,10 +15,9 @@ namespace Syno.TinyTorrent.Torrents;
 /// <summary>
 /// The peer map on screen: the latest <see cref="Picture"/> of the map with
 /// the moving dots over it, drawn on Win2D's game loop thread, so work on the
-/// UI thread, such as the peers table filling, never stops the dots. The UI
-/// thread draws each picture with <see cref="Draw"/> and hands over the dots'
-/// <see cref="Scene"/> with <see cref="Show"/>; only the game loop reads the
-/// dots.
+/// UI thread, such as the peers table filling, never stops navigation or dots.
+/// The UI publishes detached peer facts and appearance; only the game loop
+/// prepares geometry, draws pictures and advances dots.
 /// </summary>
 /// <remarks>
 /// The map draws in this layer rather than on a canvas under it, because a
@@ -35,15 +33,26 @@ internal sealed class MapMotion : IDisposable
 
     private readonly DispatcherQueue _dispatcher;
     private readonly DispatcherQueueTimer _wake;
-    private readonly ConcurrentQueue<Picture> _free = new();
+    private readonly Queue<Picture> _free = new();
+    private readonly Dictionary<string, Geography.Country> _world;
+    private Input? _input;
+    private Input? _appliedInput;
+    private CancellationTokenSource? _cancellation;
+    private Request? _request;
+    private MapView? _appliedView;
+    private MapRenderer? _renderer;
+    private bool _again;
+    private MapRenderer.Highlight _highlight;
+    private Dictionary<PeerPlace, int> _marks = [];
+    private TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private Scene? _scene;
     private Picture? _pending;
+    private MapView? _view;
     private volatile bool _idle = true;
     private long _revision;
-    private bool _disposed;
+    private volatile bool _disposed;
     private int _newSurface;
-    // The device and DPI the UI thread draws pictures with, from the latest
-    // surface it was told of.
+    // Game loop thread only.
     private CanvasDevice? _device;
     private float _dpi;
 
@@ -61,6 +70,10 @@ internal sealed class MapMotion : IDisposable
     private int _frames;
     private int _pictures;
     private long _cycles;
+    private MapView? _drawnView;
+    private int _captureRedraw;
+
+    internal MapView? DrawnView => Volatile.Read(ref _drawnView);
 
     /// <summary>
     /// The CPU cycles the game loop thread had used at its latest update,
@@ -83,9 +96,10 @@ internal sealed class MapMotion : IDisposable
         + $" bytes={_dots.Bytes} total={_dots.Total} flying={_dots.Flying.Count} paused={Control.Paused}";
 #endif
 
-    internal MapMotion(DispatcherQueue dispatcher)
+    internal MapMotion(DispatcherQueue dispatcher, Dictionary<string, Geography.Country> world)
     {
         _dispatcher = dispatcher;
+        _world = world;
         _wake = dispatcher.CreateTimer();
         _wake.IsRepeating = false;
         _wake.Tick += (_, _) => Wake();
@@ -113,9 +127,8 @@ internal sealed class MapMotion : IDisposable
     internal CanvasAnimatedControl Control { get; }
 
     /// <summary>
-    /// Raised on the UI thread with the device and DPI that pictures are drawn
-    /// with from now on: the first, and each new one after a lost device or a
-    /// DPI change. What was made for the previous ones must be made again.
+    /// Raised on the UI thread when the rendering surface becomes available
+    /// or changes device or DPI.
     /// </summary>
     internal event Action<CanvasDevice, float>? SurfaceChanged;
 
@@ -125,28 +138,78 @@ internal sealed class MapMotion : IDisposable
     /// </summary>
     internal event Action<long?, double>? Measured;
 
+    internal event Action<MapRenderer.Inspection>? Inspected;
+
+    internal Task Ready => _ready.Task;
+
+    internal sealed record Input
+    {
+        internal required Presentation Model { get; init; }
+        internal required MapRenderer.Palette Palette { get; init; }
+        internal required (Peer Peer, Location? Location)[] Selection { get; init; }
+        internal DestinationKey? Chosen { get; init; }
+        internal DestinationKey? Pointed { get; init; }
+        internal required Color Background { get; init; }
+        internal MapAnimation Animation { get; init; }
+        internal MapDotTotal DotTotal { get; init; }
+        internal int ArcLimit { get; init; }
+        internal bool Animates { get; init; }
+        internal bool HighContrast { get; init; }
+    }
+
+    private sealed record Request(Input Input, MapView View, CancellationToken Cancellation);
+
+#if CAPTURE
+    internal event Action<double>? FrameMeasured;
+    internal event Action<string, double>? WorkMeasured;
+    internal Action<CancellationToken>? DrawingStarted { get; set; }
+    internal Action<MapView>? PicturePublished { get; set; }
+    internal MapRenderer? Renderer => _renderer;
+
+    internal void CaptureRedraw()
+    {
+        Interlocked.Exchange(ref _captureRedraw, 1);
+        Changed();
+    }
+
+    internal async Task CaptureDraw(MapView view, Color background, Func<CanvasDrawingSession, bool> draw)
+    {
+        Wake();
+        await Control.RunOnGameLoopThreadAsync(() => Draw(view, background, draw));
+        Wake();
+    }
+#endif
+
     /// <summary>
-    /// Draws a new picture of the map in <paramref name="view"/> on the UI
-    /// thread and shows it from the next frame, with the dots placed in that
-    /// view. <paramref name="draw"/> returns whether it drew; a picture it did
-    /// not draw is not shown. Nothing draws before the first
-    /// <see cref="SurfaceChanged"/>.
+    /// Replaces a cached picture on the game loop thread; transparent pixels
+    /// replace the old content instead of accumulating over it.
     /// </summary>
-    internal void Draw(MapView view, Func<CanvasDrawingSession, bool> draw)
+    private void Draw(MapView view, Color background, Func<CanvasDrawingSession, bool> draw, CancellationToken cancellation = default)
     {
         if (_disposed || _device is not { } device)
             return;
         Picture? picture = null;
         try
         {
-            picture = Lease(device, view.Size);
+            picture = Lease(device, view);
             bool drawn;
             using (var session = picture.Bitmap.CreateDrawingSession())
+            {
+                // Targets retain their previous pixels until explicitly cleared.
+                session.Clear(Microsoft.UI.Colors.Transparent);
                 drawn = draw(session);
+            }
+            cancellation.ThrowIfCancellationRequested();
             if (drawn)
-                Present(picture, view);
+                Present(picture, view, background);
             else
                 _free.Enqueue(picture);
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            if (picture is not null)
+                _free.Enqueue(picture);
+            throw;
         }
         catch (Exception error) when (device.IsDeviceLost(error.HResult))
         {
@@ -154,52 +217,87 @@ internal sealed class MapMotion : IDisposable
             // new one, which SurfaceChanged reports.
             if (picture is not null)
                 _free.Enqueue(picture);
-            Wake();
+            _again = true;
         }
     }
 
     // One the game loop has finished with, or a new one.
-    private Picture Lease(CanvasDevice device, Size size)
+    private Picture Lease(CanvasDevice device, MapView view)
     {
         while (_free.TryDequeue(out var picture))
         {
             var bitmap = picture.Bitmap;
-            if (ReferenceEquals(picture.Device, device) && bitmap.Dpi == _dpi && picture.Size == size)
+            if (ReferenceEquals(picture.Device, device) && bitmap.Dpi == _dpi && picture.Size == view.Size)
                 return picture;
             bitmap.Dispose();
         }
-        return new Picture(device, size, new CanvasRenderTarget(device, (float)size.Width, (float)size.Height, _dpi));
+        return new Picture(device, view, new CanvasRenderTarget(device, (float)view.Size.Width, (float)view.Size.Height, _dpi));
     }
 
-    private void Present(Picture picture, MapView view)
+    private void Present(Picture picture, MapView view, Color background)
     {
         picture.View = view;
+        picture.Background = background;
         // A picture the game loop never took is free again at once.
         if (Interlocked.Exchange(ref _pending, picture) is { } skipped)
             _free.Enqueue(skipped);
-        Wake();
+#if CAPTURE
+        PicturePublished?.Invoke(view);
+#endif
+    }
+
+    internal void Navigate(MapView view)
+    {
+        if (_disposed || view == Volatile.Read(ref _view))
+            return;
+        Volatile.Write(ref _view, view);
+        Changed();
     }
 
     /// <summary>
-    /// Hands the game loop the dots' scene, or null for no dots. Call on the UI
-    /// thread whenever the traffic or the colours change.
+    /// Publishes detached facts and appearance without running native drawing
+    /// on the caller's UI thread.
     /// </summary>
-    internal void Show(Scene? scene)
+    internal void Show(Input input)
     {
-        if (_disposed)
+        if (_disposed || input == Volatile.Read(ref _input) && Volatile.Read(ref _request) is not null)
             return;
-        var previous = _scene;
-        Volatile.Write(ref _scene, scene);
-        // A new colour moves no dot, so a sleeping loop sleeps on.
-        if (!ReferenceEquals(scene?.Traffic, previous?.Traffic))
-            Wake();
+        Volatile.Write(ref _input, input);
+        Changed();
+    }
+
+    private void Changed()
+    {
+        CancelDrawing();
+        _cancellation = new();
+        Volatile.Write(ref _request, _input is { } input && _view is { } view
+            ? new(input, view, _cancellation.Token) : null);
+        if (_ready.Task.IsCompleted)
+            Volatile.Write(ref _ready, new(TaskCreationOptions.RunContinuationsAsynchronously));
+        Wake();
+    }
+
+    internal void CancelDrawing()
+    {
+        if (_cancellation is { } cancellation)
+            _ = Cancel(cancellation);
+        _cancellation = null;
+        Volatile.Write(ref _request, null);
+    }
+
+    private static async Task Cancel(CancellationTokenSource cancellation)
+    {
+        await cancellation.CancelAsync();
+        cancellation.Dispose();
     }
 
     public void Dispose()
     {
         _disposed = true;
+        CancelDrawing();
         _wake.Stop();
-        Volatile.Write(ref _scene, null);
+        Volatile.Write(ref _input, null);
+        _ready.TrySetCanceled();
         Control.Update -= OnUpdate;
         Control.Draw -= OnDraw;
         Control.RemoveFromVisualTree();
@@ -216,6 +314,9 @@ internal sealed class MapMotion : IDisposable
         Interlocked.Exchange(ref _pending, null)?.Bitmap.Dispose();
         while (_free.TryDequeue(out var picture))
             picture.Bitmap.Dispose();
+        _renderer?.Dispose();
+        _renderer = null;
+        _scene = null;
     }
 
     // Until the game loop presents its first frame, a new surface can show
@@ -226,10 +327,8 @@ internal sealed class MapMotion : IDisposable
             return;
         Control.Opacity = 0;
         Interlocked.Exchange(ref _newSurface, 1);
-        Wake();
-        _device = Control.Device;
-        _dpi = Control.Dpi;
-        SurfaceChanged?.Invoke(_device, _dpi);
+        Changed();
+        SurfaceChanged?.Invoke(Control.Device, Control.Dpi);
     }
 
     internal void Wake()
@@ -260,6 +359,107 @@ internal sealed class MapMotion : IDisposable
         _wake.Start();
     }
 
+    private void RenderMap(Request request)
+    {
+        var input = request.Input;
+        var view = request.View;
+        var cancellation = request.Cancellation;
+        cancellation.ThrowIfCancellationRequested();
+        if (input.Model.Meridian != view.Meridian
+            || _device is not { } device || MapViewport.FitScale(view.Size) <= 0)
+            return;
+#if CAPTURE
+        var started = Stopwatch.GetTimestamp();
+        List<(string Phase, double Ms)> measurements = [];
+#endif
+        var previous = _appliedInput;
+        var previousView = _appliedView;
+        var first = _renderer is null;
+        var renderer = _renderer ??= new MapRenderer(device, _dpi, () => _again = true,
+            input.Model, MapViewport.From(view), _world);
+        var viewChanged = view != previousView;
+        if (viewChanged)
+        {
+            renderer.UseView(MapViewport.From(view));
+            _appliedView = view;
+        }
+        var modelChanged = !ReferenceEquals(input.Model, previous?.Model);
+        if (modelChanged || !ReferenceEquals(input.Selection, previous?.Selection))
+        {
+            var marks = input.Model.Marks(input.Selection.Select(item => item.Location).ToArray());
+            if (marks.Count != _marks.Count || marks.Any(mark => _marks.GetValueOrDefault(mark.Key) != mark.Value))
+                _marks = marks;
+        }
+        var highlight = new MapRenderer.Highlight(input.Chosen, _marks, input.Pointed);
+        var prepare = first || modelChanged || view.Size != previousView?.Size
+            || input.Animation != previous?.Animation || input.DotTotal != previous?.DotTotal
+            || input.ArcLimit != previous?.ArcLimit || input.Animates != previous?.Animates
+            || input.HighContrast != previous?.HighContrast;
+        renderer.UseModel(input.Model);
+        renderer.Animation = input.Animation;
+        renderer.DotTotal = input.DotTotal;
+        renderer.ArcLimit = input.ArcLimit;
+        renderer.Animates = input.Animates;
+        renderer.HighContrast = input.HighContrast;
+#if CAPTURE
+        renderer.WorkMeasured = (phase, ms) => measurements.Add((phase, ms));
+#endif
+        if (prepare)
+            _appliedInput = null;
+        var changed = prepare ? renderer.Prepare(cancellation) : renderer.Advance();
+        _appliedInput = input;
+#if CAPTURE
+        DrawingStarted?.Invoke(cancellation);
+#endif
+        cancellation.ThrowIfCancellationRequested();
+        var draw = _again || viewChanged || changed || input.Palette != previous?.Palette
+            || highlight != _highlight || input.Background != previous?.Background
+            || input.HighContrast != previous?.HighContrast;
+#if CAPTURE
+        draw |= Interlocked.Exchange(ref _captureRedraw, 0) != 0;
+#endif
+        if (draw)
+        {
+            _again = false;
+            Draw(view, input.Background, session => renderer.Draw(session, input.Palette, highlight, cancellation), cancellation);
+        }
+        else if (renderer.HasStaleBorders)
+            renderer.StrokeBorders(cancellation);
+        cancellation.ThrowIfCancellationRequested();
+        _scene = renderer.Scene;
+        _highlight = highlight;
+        if (draw || first || modelChanged)
+        {
+            var inspection = renderer.Inspect(input.Model);
+            _dispatcher.TryEnqueue(() =>
+            {
+                if (!_disposed && ReferenceEquals(input.Model, _input?.Model) && view == _view && Inspected is { } inspect)
+                    inspect(inspection);
+            });
+        }
+        var ready = Volatile.Read(ref _ready);
+        if (!_again && !renderer.HasStaleBorders && !ready.Task.IsCompleted)
+            _dispatcher.TryEnqueue(() =>
+            {
+                if (!_disposed && ReferenceEquals(input, _input) && view == _view)
+                    ready.TrySetResult();
+            });
+#if CAPTURE
+        if (draw || prepare)
+        {
+            var elapsed = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+            _dispatcher.TryEnqueue(() =>
+            {
+                if (_disposed)
+                    return;
+                foreach (var (phase, ms) in measurements)
+                    WorkMeasured?.Invoke(phase, ms);
+                FrameMeasured?.Invoke(elapsed);
+            });
+        }
+#endif
+    }
+
     private void OnUpdate(ICanvasAnimatedControl sender, CanvasAnimatedUpdateEventArgs args)
     {
         var revision = Volatile.Read(ref _revision);
@@ -279,6 +479,30 @@ internal sealed class MapMotion : IDisposable
                 if (!_disposed)
                     Control.Opacity = 1;
             });
+        }
+        if (!ReferenceEquals(_device, sender.Device) || _dpi != sender.Dpi)
+        {
+            _renderer?.Dispose();
+            _renderer = null;
+            _appliedInput = null;
+            _appliedView = null;
+            _device = sender.Device;
+            _dpi = sender.Dpi;
+        }
+        if (Volatile.Read(ref _request) is { } request)
+        {
+            try
+            {
+                RenderMap(request);
+            }
+            catch (OperationCanceledException) when (request.Cancellation.IsCancellationRequested)
+            {
+                _again = true;
+            }
+            catch (Exception error) when (sender.Device.IsDeviceLost(error.HResult))
+            {
+                _again = true;
+            }
         }
         if (Interlocked.Exchange(ref _pending, null) is { } picture)
         {
@@ -308,10 +532,14 @@ internal sealed class MapMotion : IDisposable
             _visibility = (scene?.Traffic, view, scene is not null && view is { } current
                 && scene.Traffic.Routes.Any(route => route.Length >= MapDots<Lane>.ShortRoute && current.Shows(route.Bounds, 13)));
         var visible = _visibility.Visible;
-        _idle = _dots.Flying.Count == 0 || !visible;
+        var pending = Volatile.Read(ref _request) is not null;
+        _idle = (_dots.Flying.Count == 0 || !visible)
+            && (!pending || !_again && _renderer?.HasStaleBorders != true);
         if (!_idle || _drawn < 2)
             return;
         var wait = scene is null ? null : _dots.Wait(visible);
+        if (pending && _renderer?.Delay is { } fade && (wait is null || fade < wait))
+            wait = fade;
         if (wait is null || wait > 2 * Frame)
             _dispatcher.TryEnqueue(() => Sleep(revision, wait, now));
     }
@@ -361,7 +589,12 @@ internal sealed class MapMotion : IDisposable
         if (_shown is not { } picture || !ReferenceEquals(picture.Device, sender.Device))
             return;
         var draw = args.DrawingSession;
+        var view = picture.View;
+        draw.Clear(picture.Background);
         draw.DrawImage(picture.Bitmap);
+#if CAPTURE
+        Volatile.Write(ref _drawnView, view);
+#endif
         if (Volatile.Read(ref _scene) is not { } scene || _dots.Flying.Count == 0)
             return;
 #if CAPTURE
@@ -374,7 +607,7 @@ internal sealed class MapMotion : IDisposable
         using var batch = draw.CreateSpriteBatch();
         foreach (var dot in _dots.Flying)
         {
-            if (Place(scene, picture.View, dot, now) is not { } placed)
+            if (Place(scene, view, dot, now) is not { } placed)
                 continue;
             var tint = dot.Upload ? scene.Upload : scene.Download;
             batch.Draw(
@@ -492,20 +725,20 @@ internal sealed class MapMotion : IDisposable
     }
 
     /// <summary>
-    /// A picture of the map. The UI thread draws it, then only the game loop
-    /// reads it until it puts it back in the free pictures.
+    /// A cached map picture, owned entirely by the game loop.
     /// </summary>
-    private sealed class Picture(CanvasDevice device, Size size, CanvasRenderTarget bitmap)
+    private sealed class Picture(CanvasDevice device, MapView view, CanvasRenderTarget bitmap)
     {
         internal CanvasDevice Device => device;
 
         /// <summary>The size in DIPs it was made for, which its pixels round.</summary>
-        internal Size Size => size;
+        internal Size Size { get; } = view.Size;
 
         internal CanvasRenderTarget Bitmap => bitmap;
 
         /// <summary>The view the picture shows, which places the dots on it.</summary>
-        internal MapView View { get; set; }
+        internal MapView View { get; set; } = view;
+        internal Color Background { get; set; }
     }
 
     /// <summary>What the dots draw: the traffic, where the user is and the transfer colours.</summary>

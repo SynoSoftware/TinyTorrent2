@@ -30,14 +30,15 @@ public sealed partial class MainWindow
     private static MapRenderer? CaptureRenderer(PeerMap map)
     {
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
-        var work = typeof(PeerMap).GetField("_work", flags)!.GetValue(map);
-        return work is null ? null : (MapRenderer?)typeof(MapWork).GetField("_renderer", flags)!.GetValue(work);
+        var motion = (MapMotion?)typeof(PeerMap).GetField("_motion", flags)!.GetValue(map);
+        return motion?.Renderer;
     }
 
     private static bool CaptureMapIdle(PeerMap map)
     {
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
         return typeof(PeerMap).GetField("_working", flags)!.GetValue(map) is null
+            && ((MapMotion?)typeof(PeerMap).GetField("_motion", flags)!.GetValue(map))?.Ready.IsCompleted != false
             && new[] { "_frameQueued", "_preparationQueued", "_drawQueued" }
                 .All(name => !(bool)typeof(PeerMap).GetField(name, flags)!.GetValue(map)!);
     }
@@ -113,6 +114,7 @@ public sealed partial class MainWindow
             async Task Draw()
             {
                 typeof(PeerMap).GetMethod("Invalidate", Flags)!.Invoke(map, null);
+                Read<MapMotion>(map, "_motion").CaptureRedraw();
                 await map.Ready.WaitAsync(TimeSpan.FromSeconds(15));
             }
             var work = new Dictionary<string, List<double>>();
@@ -465,13 +467,17 @@ public sealed partial class MainWindow
                         await Until(() => map.MotionFrames > hiddenFrames, "Pan-back did not resume moving dots.");
                         outcomes.Add(new { journey = "map hidden sleep and pan-back", staleSleepRejected = true });
 
-                        var retained = Read<MapModel.Arrangement>(renderer, "_model").Destinations[0];
+                        var retained = Read<MapModel.Presentation>(renderer, "_model").Destinations[0];
+                        var retainedRate = retained.Group.Down;
+                        var retainedRoute = Read<System.Collections.IEnumerable>(renderer, "_routes").Cast<object>().Single();
                         var arrangement = Read<int>(renderer, "_arrangement");
                         peer.Update(MakePeer(0, "leecher", 65536));
                         model.Update([peer], origin, Model.Text, cities: false);
                         await Until(() => CaptureMapIdle(map), "The role and direction update did not prepare.");
-                        if (!ReferenceEquals(retained, Read<MapModel.Arrangement>(renderer, "_model").Destinations[0]) || retained.Group.Seeds != 0
-                            || retained.Group.Leechers != 1 || retained.Group.Down != 0 || retained.Group.Up != 65536
+                        var updated = Read<MapModel.Presentation>(renderer, "_model").Destinations[0];
+                        if (updated.Key != retained.Key || retained.Group.Down != retainedRate
+                            || !ReferenceEquals(retainedRoute, Read<System.Collections.IEnumerable>(renderer, "_routes").Cast<object>().Single())
+                            || updated.Group.Seeds != 0 || updated.Group.Leechers != 1 || updated.Group.Down != 0 || updated.Group.Up != 65536
                             || Read<int>(renderer, "_arrangement") == arrangement)
                             throw new InvalidOperationException("Retained membership lost a role, rate or direction change.");
                         peer.Update(MakePeer(65536));
@@ -580,7 +586,10 @@ public sealed partial class MainWindow
         Model.SetInspector(open: true, compact: false);
         await CaptureLayout();
         var pane = (InspectorPane)InspectorContent.Content;
-        pane.Layout = pane.Layout with { View = PeerView.Default with { Layout = PeerLayout.Table } };
+        // Table only deliberately clears the map's place during pane refresh.
+        pane.Layout = pane.Layout with { View = PeerView.Default with { Layout = PeerLayout.Both, Cities = false } };
+        await CaptureReady(inspector, () => inspector.IsActive && inspector.IsVisible
+            && inspector.IsAvailable && !inspector.IsLoading);
         var invalidate = typeof(Inspector).GetMethod("Invalidate", Flags)!;
         var fetching = typeof(Inspector).GetField("_fetching", Flags)!;
         var context = typeof(Inspector).GetField("_context", Flags)!;
@@ -593,6 +602,7 @@ public sealed partial class MainWindow
         Task<bool> Apply(JsonElement rows) => (Task<bool>)apply.Invoke(inspector,
             ["peer-check", rows, context.GetValue(inspector)!])!;
         StopReading();
+        typeof(Inspector).GetProperty(nameof(Inspector.Peers))!.SetValue(inspector, null);
         try
         {
             var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -622,7 +632,9 @@ public sealed partial class MainWindow
             if (await stale || inspector.Peers is { Count: > 0 })
                 throw new InvalidOperationException("Cancelled peer preparation published stale rows.");
             await Apply(PeerRows(3));
-            var peers = inspector.Peers!;
+            var peers = inspector.Peers;
+            if (peers is not { Count: 3 })
+                throw new InvalidOperationException("The current peer fixture was replaced before its rows were applied.");
             var before = peers[0].Capture();
             peers[0].Update(new Peer(Model.Text, "peer-check", peers[0].Endpoint, null,
                 JsonSerializer.SerializeToElement(new { state = "known", sources = new[] { "dht" } })));
@@ -1760,6 +1772,8 @@ public sealed partial class MainWindow
                 for (var sample = 0; sample < 20; sample++)
                 {
                     invalidateMap.Invoke(chooser, null);
+                    ((MapMotion)typeof(PeerMap).GetField("_motion", BindingFlags.Instance | BindingFlags.NonPublic)!
+                        .GetValue(chooser)!).CaptureRedraw();
                     await Task.Delay(50);
                 }
                 chooser.FrameMeasured = null;
@@ -1842,9 +1856,13 @@ public sealed partial class MainWindow
             // over the synthetic peer fixture.
             var host = (ContentControl)pane.FindName("PeerDrawing");
             var retiring = (MapWork)typeof(PeerMap).GetField("_work", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(chooser)!;
+            var retiringMotion = (MapMotion)typeof(PeerMap).GetField("_motion", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(chooser)!;
+            var stopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            retiringMotion.Control.GameLoopStopped += (_, _) => stopped.TrySetResult();
             host.Content = null;
             await CaptureLayout();
             await retiring.Released.WaitAsync(TimeSpan.FromSeconds(10));
+            await stopped.Task.WaitAsync(TimeSpan.FromSeconds(10));
             if (CaptureRenderer(chooser) is not null || ((System.Collections.ICollection)routes.GetValue(activeRenderer)!).Count != 0)
                 throw new InvalidOperationException("Hiding the map retained native resources.");
             host.Content = chooser;

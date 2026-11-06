@@ -80,23 +80,29 @@ text block uses the font; the name beside it stays in the app's font.
 
 `Inspector.Place` is the chosen filter for both views. `MapModel` captures peer
 facts on the UI thread and publishes immutable inspection snapshots. One
-serialized `MapWork` worker owns grouping, estimated distribution, geometry,
-route resources and picture recording for the control's loaded lifetime. The UI
-captures native size, appearance and selection, then draws the prepared command
-list into the motion layer's bitmap. Workers never read live peers or controls.
+serialized `MapWork` worker owns grouping and estimated distribution. It
+publishes detached group copies that nobody subsequently mutates. The UI
+captures size, appearance and selection; `MapMotion` owns native geometry,
+route resources, cached pictures and dots on its Win2D game loop. Aggregation
+and native rendering never run on the UI thread. Neither reads live peers.
+Table selection publishes captured peer locations independently of aggregation,
+so the next map frame can highlight them while peer preparation is pending.
+Hit testing reads detached line segments from the same sampled arcs that draw;
+it neither creates nor releases native geometry on the UI thread.
 `MapViewport` supplies detached transforms for preparation and inspection.
 Drawing and pan alone do not regroup peers. Equivalent visible facts retain the
 presentation and picture even when the torrent and peer instances change.
-Superseding input invalidates pending work; only the latest result is published.
-Unload cancels without waiting and retires the worker's resources when its
-current preparation ends. The motion layer releases its pictures and dot mark
+Superseding peer facts or selection invalidate pending aggregation; navigation
+updates the rendering thread independently and never cancels aggregation.
+Unload cancels without waiting and retires the worker when its current
+preparation ends. The motion layer releases geometry, pictures and its dot mark
 after its game loop stops. Inspector retains plain map state.
 
 Rate-only observations retain peer membership, groups and unchanged destinations.
 The model still rebuilds counts and rates through one aggregation rule; changed
 membership, locations, detail, language or geography replaces the grouping, while
 fitted scale and meridian refresh estimated placement. The renderer retains
-ordered routes when the destination instances remain the same.
+ordered routes when the destination keys remain the same.
 
 The Peers inspector's ellipsis menu selects Map only, Table only or Map and table.
 Right-click anywhere in Peers opens the same menu, on the map, its Speed readout,
@@ -313,18 +319,24 @@ and the dots over it, because the map and every table share the UI thread and
 any long work there would freeze dots drawn on it. The map itself cannot lie
 under that control: a WinUI 3 swap chain shows only the window's backdrop
 through its transparent pixels, so the backdrop's acrylic stays but anything
-drawn under it does not show. Each picture therefore starts with the colour
+drawn under it does not show. Each frame therefore starts with the colour
 of every background between the backdrop and the map, composed as XAML draws
 them, so the map matches the peers table beside it in every theme.
 
-The UI thread draws each picture of the map into an offscreen bitmap on the
-control's device, and hands it over with the view it shows;
-the dots are placed in that view, so they stay on their arcs while the view
-pans or zooms. A new picture shows at the control's next frame. The UI thread
-also hands over an unchangeable copy of the routes, rates and colours when
-the rates change; only the control's thread reads the dots in flight. While no
-dot flies and the latest picture shows, the control's thread pauses until the
-next dot leaves or the next picture, so slow traffic wakes it once per dot.
+The game loop clears each leased offscreen bitmap to transparent before
+drawing the current map, so old coastlines and opacity never
+accumulate. The presentation frame applies the composed background tint once,
+separately from the map image, preserving the acrylic through transparent areas.
+Navigation publishes an immutable view immediately. The game loop draws that
+view from vector geometry, including newly exposed geography, independently of
+pending peer aggregation. View-only input does not prepare routes again or
+restart activity fades. Pictures, dots and detached inspection targets use the
+same view. The loop spends one bounded pass per frame on geography and native
+geometry, retaining complete older outlines while finer detail is prepared.
+Stale border strokes are replaced on frames that need no new picture. While
+no dot flies, no geometry work remains and the latest picture shows, the
+control's thread pauses until the next dot, activity-fade step or input, so slow
+traffic wakes it once per dot.
 When every dot-carrying route lies outside the shown view, it also pauses with
 dots in flight. Conservative analytical bounds include polar crests, wrapped
 copies and the sprite margin. Hidden departures need no wakes; a pending
@@ -341,10 +353,21 @@ The map's picture is drawn again only when the view, appearance, inspection, a p
 rebuild or what it draws of the places changes: their arcs, role kinds,
 activity, colour and strengths. A strength change below one colour level is
 kept for later, so a steady transfer redraws nothing. Border strokes that a
-picture drew plainly or from another scale are replaced on the worker before
-publication. Geometry preparation uses bounded passes with cancellation between
+picture drew from another scale are replaced on the game loop.
+Geometry preparation uses bounded passes, reading the latest inputs between
 them; no preparation is spread across UI frames. The glow is recorded again
 only when what it shows can change.
+Each published view or appearance carries a cancellation token. A newer UI
+request cancels the previous token without waiting; the game loop checks it
+between routes, countries and border pieces and before publishing a picture.
+An entered native call finishes, but obsolete pictures are discarded.
+Country tracing prepares every bounded border stroke before publishing the
+complete outline, so panning exposes cached geometry. Arcs create their first
+cached stroke before drawing. Retained strokes remain visible while the rebuild
+allowance replaces them for the current width and scale. Arc refinement keeps
+its brushes and complete cached strokes until replacements are ready.
+Raw geometry fallback would move repeated CPU tessellation into
+drawing-session completion and stall frames.
 Rate-strength transitions keep the current smooth fade. A new observation
 preserves the pending visible step's deadline, so frequent updates cannot keep
 postponing all visible progress.
@@ -466,8 +489,8 @@ restores the overview.
 Estimated-place spacing and inspector arrangement use the same fixed overview
 ratio, so navigation does not redistribute peers or rearrange the inspector.
 
-Geometry remains vector-based. Land fills are clipped to a window three views
-wide and stay cached until the view nears its edge or outline detail changes.
+Geometry remains vector-based. Land fills are clipped to an overscan window
+and stay cached until the view nears its edge or outline detail changes.
 Strokes are prepared after both axis scales and retain that scale with
 their GPU geometry, so the existing rebuild budget can replace them as the view
 changes. Country borders, arc widths, marker and hit-target

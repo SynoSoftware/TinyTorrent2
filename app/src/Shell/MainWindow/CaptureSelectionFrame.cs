@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Diagnostics;
 using System.Reflection;
 using Microsoft.UI.Xaml.Media;
 using Syno.TinyTorrent.Shared;
@@ -73,7 +74,13 @@ public sealed partial class MainWindow
         }
 
         var frames = new List<ulong>();
-        EventHandler<object> rendering = (_, _) => frames.Add(CaptureCycles.Current());
+        var intervals = new List<long>();
+        var timings = new List<object>();
+        EventHandler<object> rendering = (_, _) =>
+        {
+            frames.Add(CaptureCycles.Current());
+            intervals.Add(Stopwatch.GetTimestamp());
+        };
         CompositionTarget.Rendering += rendering;
         locating.SetValue(inspector, true);
         var closed = new List<(double Frame, double Total, double Worst)>();
@@ -109,6 +116,7 @@ public sealed partial class MainWindow
             peers = Count,
             closed = Summary(closed),
             peersOpen = Summary(open),
+            timings,
         });
 
         // Two unmeasured clicks first realize the rows and warm the code.
@@ -121,13 +129,24 @@ public sealed partial class MainWindow
                 var target = Model.Current == targets[0] ? targets[1] : targets[0];
                 Seed();
                 ulong? painted = null;
-                EventHandler<RenderedEventArgs> rendered = (_, _) => painted ??= CaptureCycles.Current();
+                long? paintedAt = null;
+                EventHandler<RenderedEventArgs> rendered = (_, _) =>
+                {
+                    painted ??= CaptureCycles.Current();
+                    paintedAt ??= Stopwatch.GetTimestamp();
+                };
                 frames.Clear();
+                intervals.Clear();
                 var start = CaptureCycles.Current();
+                var startedAt = Stopwatch.GetTimestamp();
+                double handlerMs;
                 CompositionTarget.Rendered += rendered;
                 try
                 {
                     click.Invoke(Torrents, [target, false, false]);
+                    handlerMs = Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds;
+                    if (Model.Current != target)
+                        throw new InvalidOperationException("A torrent click did not change the current selection immediately.");
                     await Task.Delay(1200);
                 }
                 finally
@@ -141,6 +160,10 @@ public sealed partial class MainWindow
                     throw new InvalidOperationException("No frame rendered after a measured click.");
                 if (step < 0)
                     continue;
+                var ticks = intervals.Prepend(startedAt).Append(Stopwatch.GetTimestamp()).ToArray();
+                timings.Add(new { inspecting, handlerMs,
+                    firstFrameMs = Stopwatch.GetElapsedTime(startedAt, paintedAt!.Value).TotalMilliseconds,
+                    longestFrameMs = ticks.Zip(ticks.Skip(1), (from, to) => Stopwatch.GetElapsedTime(from, to).TotalMilliseconds).Max() });
                 var marks = frames.Prepend(start).Append(end).ToArray();
                 measured.Add((
                     (frame - start) / 1e6,

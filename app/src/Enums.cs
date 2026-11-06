@@ -890,6 +890,7 @@ internal enum CaptureMode
     MapPerformance,
     MapGeography,
     MapArcs,
+    MapComposition,
     LibraryFiles,
     Selection,
     SelectionFrame,

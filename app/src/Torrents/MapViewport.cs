@@ -58,16 +58,20 @@ internal sealed class MapViewport
 
     internal MapView View => new(Size, Meridian, Center, AxisScale, Transform);
 
-    internal MapViewport Capture() => new()
+    internal static MapViewport From(MapView view)
     {
-        Size = Size,
-        Scale = Scale,
-        Offset = Offset,
-        Meridian = Meridian,
-        Zoom = Zoom,
-        Ratio = Ratio,
-        Center = Center,
-    };
+        var scale = FitScale(view.Size);
+        return new()
+        {
+            Size = view.Size,
+            Scale = scale,
+            Offset = Vector2.Transform(view.Center, view.Transform),
+            Meridian = view.Meridian,
+            Zoom = view.AxisScale.Y / scale,
+            Ratio = view.AxisScale.X / view.AxisScale.Y,
+            Center = view.Center,
+        };
+    }
 
     internal Vector2 ToMap(Vector2 point) => (point - Offset) / AxisScale + Center;
 
@@ -139,8 +143,18 @@ internal sealed class MapViewport
 /// A copy of the view, which the moving dots read on their own thread while
 /// the person pans and zooms.
 /// </summary>
-internal readonly record struct MapView(Size Size, float Meridian, Vector2 Center, Vector2 AxisScale, Matrix3x2 Transform)
+internal sealed record MapView(Size Size, float Meridian, Vector2 Center, Vector2 AxisScale, Matrix3x2 Transform)
 {
+    internal Rect Bounds
+    {
+        get
+        {
+            var left = Math.Max(0, Vector2.Transform(new Vector2(Center.X - 180, 0), Transform).X);
+            var right = Math.Min(Size.Width, Vector2.Transform(new Vector2(Center.X + 180, 0), Transform).X);
+            return new Rect(left, 0, Math.Max(0, right - left), Size.Height);
+        }
+    }
+
     internal Vector2 Coordinates(GeoPoint point) => MapViewport.Coordinates(point, Meridian);
 
     internal Vector2 ToMap(Vector2 point) => (point - new Vector2(Transform.M31, Transform.M32)) / AxisScale;

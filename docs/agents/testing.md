@@ -389,6 +389,21 @@ Use `-Review map-arcs -Configuration Release` for the polar guide regression:
 compare native guide geometry with analytical moving-dot positions within half
 a DIP at maximum zoom, retain trip timing/detail across pan and zoom-out, and
 capture polar and wrapped views. It records overview/refinement geometry costs.
+Use `-Review map-composition -Configuration Release` for reused-picture
+replacement, background alpha and live pan/zoom. It checks that a marker from
+a prior picture disappears and translucent pixels match a fresh target.
+Navigation must draw new geometry while peer aggregation is deliberately
+blocked; table selection must also highlight its destination during that wait.
+It also supersedes native drawing after preparation and during initial route
+creation, checking cancellation, restored view/origin state and rejection of
+obsolete pictures.
+It measures rapid zoom changes and panning separately from saving full-content
+frames, so synchronous window capture does not distort navigation timings.
+Intervals between native picture publications expose pauses even when
+intermediate requested views were superseded.
+It records those views
+with 200 active peers for visual inspection of missing geography, ghosting and
+the acrylic backdrop.
 Use `TINYTORRENT_CAPTURE_REVIEW=add-layout` for the workspace headers and empty/long-link
 magnet Add dialog in English and Spanish, Light and Dark, at the three review sizes.
 It also captures the engine-stopped message bar with its Restart action and records

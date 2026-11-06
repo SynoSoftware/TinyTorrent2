@@ -20,14 +20,13 @@ public sealed partial class PeerMap : UserControl
     private readonly MapViewport _viewport = new();
     private MapWork? _work;
     private MapWork? _working;
+    private Presentation? _presentation;
     private MapRenderer.Inspection? _inspection;
     private CanvasDevice? _device;
-    private float _dpi;
     private long _version;
     private object? _loading;
     private TaskCompletionSource? _ready;
     private CancellationTokenSource? _cancelWork;
-    private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _fadeTimer;
     private MapMotion? _motion;
     private bool _frameQueued;
     private bool _preparationQueued;
@@ -38,6 +37,7 @@ public sealed partial class PeerMap : UserControl
     private string _language = string.Empty;
     private Destination? _selected;
     private IReadOnlyList<Peer> _selectedPeers = [];
+    private (Peer Peer, Location? Location)[] _selection = [];
     // Drawing reads the marks every frame, so they change only with the
     // selection, the destinations or the map detail.
     private Dictionary<PeerPlace, int> _marks = [];
@@ -73,9 +73,6 @@ public sealed partial class PeerMap : UserControl
     {
         _model = model;
         InitializeComponent();
-        _fadeTimer = DispatcherQueue.CreateTimer();
-        _fadeTimer.IsRepeating = false;
-        _fadeTimer.Tick += (_, _) => Invalidate();
         _navigationTimer = DispatcherQueue.CreateTimer();
         _navigationTimer.Interval = TimeSpan.FromSeconds(3);
         _navigationTimer.IsRepeating = false;
@@ -118,14 +115,15 @@ public sealed partial class PeerMap : UserControl
         Drawing.DoubleTapped += OnDoubleTapped;
         _viewport.Changed += (_, navigation) =>
         {
+            _motion?.Navigate(_viewport.View);
             if (_pointed is not null)
             {
                 _pointed = null;
                 Describe();
+                Invalidate();
             }
             if (navigation)
                 RefreshNavigation();
-            Invalidate();
         };
         KeyDown += OnKey;
         ContextRequested += (_, _) => EndDrag(true);
@@ -228,7 +226,7 @@ public sealed partial class PeerMap : UserControl
             if (!IsLoaded || !ReferenceEquals(_loading, loading) || _motion is not null)
                 return;
             _work = new(world);
-            var motion = new MapMotion(DispatcherQueue);
+            var motion = new MapMotion(DispatcherQueue, world);
             _motion = motion;
             motion.Measured += (bytes, total) =>
             {
@@ -241,9 +239,16 @@ public sealed partial class PeerMap : UserControl
             motion.SurfaceChanged += (device, dpi) =>
             {
                 _device = device;
-                _dpi = dpi;
                 QueuePreparation();
             };
+            motion.Inspected += inspection =>
+            {
+                _inspection = inspection;
+            };
+#if CAPTURE
+            motion.FrameMeasured += milliseconds => FrameMeasured?.Invoke(milliseconds);
+            motion.WorkMeasured += (phase, milliseconds) => WorkMeasured?.Invoke(phase, milliseconds);
+#endif
             // A transparent background takes the pointer; the map's layer
             // ignores it.
             Drawing.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
@@ -260,10 +265,18 @@ public sealed partial class PeerMap : UserControl
         }
     }
 
-    internal Task Ready => _ready?.Task ?? Task.CompletedTask;
+    internal Task Ready => WaitForReady();
+
+    private async Task WaitForReady()
+    {
+        await (_ready?.Task ?? Task.CompletedTask);
+        if (_motion is { } motion)
+            await motion.Ready;
+    }
 
     private void QueuePreparation()
     {
+        _motion?.CancelDrawing();
         _preparationQueued = true;
         _version++;
         _ = _cancelWork?.CancelAsync();
@@ -272,6 +285,7 @@ public sealed partial class PeerMap : UserControl
 
     private void Invalidate()
     {
+        Publish();
         _drawQueued = true;
         _version++;
         _ = _cancelWork?.CancelAsync();
@@ -294,7 +308,6 @@ public sealed partial class PeerMap : UserControl
     {
         CompositionTarget.Rendering -= OnRendering;
         _frameQueued = false;
-        _fadeTimer.Stop();
         if (_working is null && _work is { } work)
             Prepare(work);
     }
@@ -313,33 +326,16 @@ public sealed partial class PeerMap : UserControl
         }
         if (_viewport.ViewScale <= 0)
             return null;
+        CaptureSelection();
         return new()
         {
             Model = _model.Capture(),
-            Viewport = _viewport.Capture(),
-            Device = _device,
-            Dpi = _dpi,
-            Palette = new()
-            {
-                Ink = Colour(Ink.Foreground),
-                Land = Colour(Land.Background),
-                Edge = Colour(Edge.Background),
-                Download = Colour(Download.Background),
-                Upload = Colour(Upload.Background),
-            },
-            Underlay = _underlay ??= Underlay(),
-            Selection = _selectedPeers.Select(peer => (peer, peer.Location)).ToArray(),
+            Scale = _viewport.Scale,
+            Selection = _selection,
             Place = _model.Place,
             Chosen = _selected?.Key,
             Pointed = _pointed?.Key,
             PointedCities = _pointed?.Group.Place.Cities,
-            Animation = _animation,
-            DotTotal = _dotTotal,
-            ArcLimit = _arcLimit,
-            Animates = MapRenderer.SystemAnimates,
-            HighContrast = MapRenderer.SystemHighContrast,
-            Arrange = _preparationQueued,
-            Draw = _drawQueued,
         };
     }
 
@@ -362,43 +358,19 @@ public sealed partial class PeerMap : UserControl
                 await ((Task)preparation).ConfigureAwait(
                     ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
                 if (!ReferenceEquals(_work, work) || !IsLoaded)
-                {
-                    if (preparation.IsCompletedSuccessfully)
-                        preparation.Result.Dispose();
                     return;
-                }
                 if (version != _version)
                 {
                     _drawQueued = true;
-                    if (preparation.IsCompletedSuccessfully)
-                    {
-                        using var obsolete = preparation.Result;
-                    }
                     continue;
                 }
-                if (preparation.IsFaulted)
-                {
-                    var error = preparation.Exception!.GetBaseException();
-                    if (input.Device.IsDeviceLost(error.HResult))
-                    {
-                        _motion?.Wake();
-                        _preparationQueued = true;
-                        return;
-                    }
-                    await preparation;
-                }
-                using var prepared = await preparation;
+                var prepared = await preparation;
                 _preparationQueued = false;
                 _drawQueued = false;
                 Apply(prepared);
                 if (version != _version)
                     continue;
                 _ready?.TrySetResult();
-                if (prepared.Delay is { } delay)
-                {
-                    _fadeTimer.Interval = delay > TimeSpan.Zero ? delay : TimeSpan.FromMilliseconds(1);
-                    _fadeTimer.Start();
-                }
                 return;
             }
         }
@@ -426,14 +398,13 @@ public sealed partial class PeerMap : UserControl
         var describe = !ReferenceEquals(_model.Destinations, prepared.Model.Destinations)
             || !ReferenceEquals(_selected, prepared.Chosen) || !ReferenceEquals(_pointed, prepared.Pointed);
         _model.Apply(prepared.Model);
-        _viewport.Meridian = prepared.View.Meridian;
+        _presentation = prepared.Model;
+        _viewport.Meridian = prepared.Model.Meridian;
         _selectedPeers = prepared.Selection;
+        CaptureSelection();
         _selected = prepared.Chosen;
         _pointed = prepared.Pointed;
         _marks = prepared.Marks;
-        _inspection?.Dispose();
-        _inspection = prepared.Inspection;
-        prepared.Inspection = null;
         if (_model.Text is { } text && _language != text.Language)
         {
             _language = text.Language;
@@ -442,22 +413,40 @@ public sealed partial class PeerMap : UserControl
         }
         if (describe)
             Describe();
-        if (_motion is { } motion)
-        {
-            motion.Show(prepared.Scene);
-            if (prepared.Picture is { } picture)
-                motion.Draw(prepared.View, session =>
-                {
-                    session.DrawImage(picture);
-                    return true;
-                });
-        }
+        Publish();
 #if CAPTURE
-        foreach (var (phase, ms) in prepared.Work)
-            WorkMeasured?.Invoke(phase, ms);
+        WorkMeasured?.Invoke("arrange", prepared.PreparationMs);
         PreparationMeasured?.Invoke(prepared.PreparationMs);
-        FrameMeasured?.Invoke(prepared.PreparationMs + prepared.DrawingMs + Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+        WorkMeasured?.Invoke("publish", Stopwatch.GetElapsedTime(started).TotalMilliseconds);
 #endif
+    }
+
+    private void Publish()
+    {
+        if (_motion is not { } motion || _presentation is not { } presentation || _viewport.ViewScale <= 0)
+            return;
+        motion.Navigate(_viewport.View);
+        motion.Show(new MapMotion.Input
+        {
+            Model = presentation,
+            Palette = new()
+            {
+                Ink = Colour(Ink.Foreground),
+                Land = Colour(Land.Background),
+                Edge = Colour(Edge.Background),
+                Download = Colour(Download.Background),
+                Upload = Colour(Upload.Background),
+            },
+            Selection = _selection,
+            Chosen = _selected?.Key,
+            Pointed = _pointed?.Key,
+            Background = _underlay ??= Underlay(),
+            Animation = _animation,
+            DotTotal = _dotTotal,
+            ArcLimit = _arcLimit,
+            Animates = MapRenderer.SystemAnimates,
+            HighContrast = MapRenderer.SystemHighContrast,
+        });
     }
 
     private void Restyle()
@@ -481,13 +470,12 @@ public sealed partial class PeerMap : UserControl
         _underlay = null;
         EndDrag(true);
         _navigationTimer.Stop();
-        _fadeTimer.Stop();
         Navigation.Visibility = Visibility.Collapsed;
         var work = _work;
         _work = null;
+        _presentation = null;
         if (work is not null && !ReferenceEquals(work, _working))
             _ = Task.Run(work.Dispose);
-        _inspection?.Dispose();
         _inspection = null;
         _motion?.Dispose();
         _motion = null;
@@ -504,7 +492,7 @@ public sealed partial class PeerMap : UserControl
 
     private static Color Colour(Brush brush) => ((SolidColorBrush)brush).Color;
 
-    // The map's layer hides everything under it, so each picture starts with
+    // The map's layer hides everything under it, so each frame starts with
     // the backgrounds between the window's backdrop and the map, composed as
     // XAML draws them, and the map matches the peers table beside it. Only
     // solid backgrounds count; no other kind lies under the map.
@@ -549,7 +537,7 @@ public sealed partial class PeerMap : UserControl
         if (_inspection is null || MoveDrag(args) || _viewport.ViewScale <= 0)
             return;
         var position = args.GetCurrentPoint(Drawing).Position;
-        var nearest = _inspection.HitTest(new Vector2((float)position.X, (float)position.Y));
+        var nearest = _inspection.HitTest(new Vector2((float)position.X, (float)position.Y), _viewport.View);
         if (ReferenceEquals(_pointed, nearest))
             return;
         _pointed = nearest;
@@ -569,7 +557,14 @@ public sealed partial class PeerMap : UserControl
     private void SelectPeers(IReadOnlyList<Peer> peers)
     {
         _selectedPeers = peers;
-        Invalidate();
+        CaptureSelection();
+    }
+
+    private void CaptureSelection()
+    {
+        var selection = _selectedPeers.Select(peer => (peer, peer.Location)).ToArray();
+        if (!selection.SequenceEqual(_selection))
+            _selection = selection;
     }
 
 }

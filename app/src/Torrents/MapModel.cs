@@ -71,7 +71,34 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
                 && !Observations.Where((observation, index) => !observation.Matches(other.Observations[index])).Any());
     }
 
-    internal sealed record Presentation(Dictionary<string, Group> Countries, List<Destination> Destinations, GeoPoint? Origin);
+    internal sealed record Presentation(Dictionary<string, Group> Countries, List<Destination> Destinations, GeoPoint? Origin, double Ceiling)
+    {
+        internal float Meridian => (float)(Origin?.Longitude ?? 0);
+        internal bool Cities { get; init; }
+
+        internal Dictionary<PeerPlace, int> Marks(IReadOnlyList<Location?> selected)
+        {
+            if (selected.Count == 0)
+                return [];
+            Dictionary<PeerPlace, int> counts = [];
+            foreach (var location in selected)
+            {
+                if (location is not null)
+                {
+                    var place = PeerPlace.Of(location, Cities);
+                    counts[place] = counts.GetValueOrDefault(place) + 1;
+                }
+            }
+            Dictionary<PeerPlace, int> marks = [];
+            foreach (var destination in Destinations)
+            {
+                var group = destination.Group;
+                if (!marks.ContainsKey(group.Place) && counts.TryGetValue(group.Place, out var count))
+                    marks[group.Place] = group.Regions.Length == 0 ? 1 : Reach(group.Regions, count);
+            }
+            return marks;
+        }
+    }
 
     internal Snapshot Capture() => new(_observations, Origin, Text!, Cities, Ceiling);
 
@@ -116,7 +143,8 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
         {
             var copies = Countries.Values.Concat(_places.Values).Distinct().ToDictionary(group => group, group => group.Copy());
             return new(Countries.ToDictionary(entry => entry.Key, entry => copies[entry.Value]),
-                Destinations.Select(destination => destination with { Group = copies[destination.Group] }).ToList(), OriginPoint);
+                Destinations.Select(destination => destination with { Group = copies[destination.Group] }).ToList(), OriginPoint, Ceiling)
+                { Cities = Cities };
         }
 
         internal void Clear()
@@ -242,33 +270,6 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
 
         private static GeoPoint? Locate(Location? location, IReadOnlyDictionary<string, Geography.Country> world) =>
             location?.Point ?? (location is null ? null : world.GetValueOrDefault(location.Code)?.Anchor);
-
-        /// <summary>
-        /// How many destinations of each place the <paramref name="selected"/>
-        /// peers mark.
-        /// </summary>
-        internal Dictionary<PeerPlace, int> Marks(IReadOnlyList<Location?> selected)
-        {
-            if (selected.Count == 0)
-                return [];
-            Dictionary<PeerPlace, int> counts = [];
-            foreach (var location in selected)
-            {
-                if (location is not null)
-                {
-                    var place = PeerPlace.Of(location, Cities);
-                    counts[place] = counts.GetValueOrDefault(place) + 1;
-                }
-            }
-            Dictionary<PeerPlace, int> marks = [];
-            foreach (var destination in Destinations)
-            {
-                var group = destination.Group;
-                if (!marks.ContainsKey(group.Place) && counts.TryGetValue(group.Place, out var count))
-                    marks[group.Place] = group.Regions.Length == 0 ? 1 : Reach(group.Regions, count);
-            }
-            return marks;
-        }
 
         // Bundled places closer than this, in DIPs on the fitted map, form one region.
         private const float Spacing = 25;
