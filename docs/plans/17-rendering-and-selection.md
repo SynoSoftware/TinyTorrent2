@@ -8,6 +8,9 @@ peer-snapshot correction is reinstated after correcting its retention reasoning:
 it removes unrelated copying; the mixed single-run maxima establish neither a
 causal regression nor a marquee fix. Aggregate scope changes now retain shared
 Peer identities, demonstrated by the matched focused comparison at `3d2970a`.
+Nongeneric native notifications remove repeated sender-ID work at `222e88d`;
+sort-key preallocation removes dictionary growth at `78fb43f`. Large GC,
+publication and layout stalls remain under investigation.
 The capture-only observer is corrected and its six-profile reference completed
 normally. Measured UI publication stalls remain next.
 The displayed-state and selection corrections below remain to be implemented;
@@ -834,6 +837,23 @@ The next narrow correction gives the existing sort-key dictionary its known
 state or changing key selection/comparison. Compare it against the preserved
 `222e88d` profiled workload. Leave the native iterator interval unresolved rather
 than assuming its method consumed that entire elapsed time.
+
+The [matched capacity trace](../../artifacts/evidence/ui-profile-sort-capacity-20261106-78fb43f/README.md)
+at `78fb43f` completed normally with all 1,467 commands applied and no unselected
+clicks. The exact UI sort-capture lambda changes 411.35 → 144.24 ms sampled
+inclusive elapsed; its old 136.95 ms resize stack is absent. Initial allocation
+and GC remain possible. Source review and actual stacks support the local growth
+correction, not an exclusive-CPU or overall speed claim.
+Profiled worst navigation/click completion changed 617.26/397.96 →
+284.32/185.62 ms, while marquee worsened 253.19 → 531.66 ms; peak/final private
+commitment changed 1,304.21/1,068.64 → 1,369.47/1,183.20 MiB. Preserve these
+mixed observations. Its worst gap includes native publication/layout and
+98.84 ms of GCStart-associated suspension. Whole-marquee GCStart-associated
+suspension totals 682.56 ms across 13 intervals, versus 413.36 ms/nine before;
+short sampling-profiler suspensions are excluded. Both traces report zero lost
+events. The next selected question is the current allocation owner feeding those
+collections, using one allocation trace after the retained local corrections.
+This targets measured GC stalls; broader memory tuning remains deferred.
 
 The failed readiness run has all peers parsed and observes arcs, locations and
 moving dots. Its XAML callback stops while the independent map continues drawing,
