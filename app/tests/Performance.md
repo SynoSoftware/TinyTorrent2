@@ -3,10 +3,35 @@
 Build with `pwsh -NoProfile -File .\Build.ps1 -App -Capture -Release`, then run:
 
 ```powershell
-pwsh -NoProfile -File .\app\tests\Capture.ps1 -Review performance -Configuration Release -BinaryDirectory '<printed build output>' -MapDetail countries
-pwsh -NoProfile -File .\app\tests\Capture.ps1 -Review performance -Configuration Release -BinaryDirectory '<printed build output>' -MapDetail cities
-pwsh -NoProfile -File .\app\tests\Capture.ps1 -Review performance -Configuration Release -BinaryDirectory '<printed build output>' -MapDetail cities -ArcLimit 1000
+pwsh -NoProfile -File .\app\tests\Capture.ps1 -Review performance-map -Configuration Release -BinaryDirectory '<printed build output>' -MapDetail countries -Replay -InputOnly
+pwsh -NoProfile -File .\app\tests\Capture.ps1 -Review performance-map -Configuration Release -BinaryDirectory '<printed build output>' -MapDetail cities -Replay -InputOnly
+pwsh -NoProfile -File .\app\tests\Capture.ps1 -Review performance-map -Configuration Release -BinaryDirectory '<printed build output>' -MapDetail cities -ArcLimit 1000 -Replay -InputOnly
 ```
+
+Repeat the three profiles with `-Review performance-selection` for docked maps,
+selection and marquee. `-Replay -InputOnly` runs the existing scenarios in an
+offscreen 1920×1080 window without activating it, taking images or sending desktop
+input. The launcher rejects pre-replay binaries before starting their engine or
+window. The preserved pre-reboot binary remains historical evidence; build the
+unchanged production version with this harness for a new matched baseline.
+
+The external source process emits the same 120 Hz motion schedule and 150 ms row
+selection schedule through a fixture-owned pipe. The window queues these commands
+on its UI context without pausing the sender while a command runs. Reports retain
+emission, application and XAML completion separately; late commands are applied in
+order rather than skipped. Pan and zoom call the existing map viewport/zoom owners;
+selection and marquee call the table's existing commitment and coverage owners.
+They bypass native delivery, hit-testing, pointer capture and focus. This measures
+command-to-render behavior, not native click latency or foreground performance.
+The external one-second peer source, summaries, sorting and churn stay unchanged.
+No replay result establishes displayed FPS or physical next-frame acceptance.
+
+The native desktop-input procedure described below is retained for its existing
+evidence and safety guards. **Do not run it on the owner's desktop.** `-InputOnly`
+alone still sends global input. PresentMon 2.3.1 records ETW presentation events
+passively; it does not supply benchmark gestures. Recorder-only work is separate
+from `Capture.ps1`, uses existing ETW rights only, and permits no further UAC,
+elevation or permission changes. Do not capture screenshots or video.
 
 The visible 1920×1080 journey uses 50 disposable torrents: 40 have 50–1,000
 leechers, seven have 1,000–3,000, and three have 3,000; each has twice as many

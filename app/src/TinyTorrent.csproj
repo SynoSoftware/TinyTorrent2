@@ -59,6 +59,9 @@
     <DefineConstants>$(DefineConstants);CAPTURE</DefineConstants>
     <ArtifactsPivots>$(Configuration.ToLowerInvariant())_$(RuntimeIdentifier.ToLowerInvariant())_capture</ArtifactsPivots>
   </PropertyGroup>
+  <ItemGroup Condition="'$(EnableCapture)' == 'true'">
+    <RuntimeHostConfigurationOption Include="TinyTorrent.PerformanceReplay" Value="true" />
+  </ItemGroup>
   <ItemGroup Condition="'$(EnableCapture)' != 'true'">
     <Compile Remove="Shell\MainWindow\Capture*.cs" />
   </ItemGroup>

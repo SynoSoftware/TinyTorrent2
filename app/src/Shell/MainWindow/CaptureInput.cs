@@ -4,6 +4,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Pipes;
 using System.Linq;
 using System.Numerics;
 using System.Runtime.InteropServices;
@@ -17,20 +18,23 @@ public sealed class PerformanceInput : IDisposable
 {
     public sealed record Mouse(int X, int Y, uint Data, uint Flags);
     public sealed record Step(double At, Mouse[] Inputs, int? Click = null);
-    public sealed record Plan(long Window, int Milliseconds, Mouse[] Before, Step[] Steps);
+    public sealed record Plan(long Window, int Milliseconds, Mouse[] Before, Step[] Steps)
+    {
+        public string? ReplayPipe { get; init; }
+    }
     public sealed record Result(long Started, long Ended, double WorstLatenessMs, long[] Clicks, long[] ClickTimes, long[] Delivered, string? Failure);
+    private sealed record Dispatch(int Index, long Sent);
     private sealed record Probe(long Sent, long Completed, bool Answered);
 
     private readonly nint _window;
-    private readonly int _left = GetSystemMetrics(76), _top = GetSystemMetrics(77);
-    private readonly int _width = GetSystemMetrics(78), _height = GetSystemMetrics(79);
-    public int RefreshHz { get; }
+    private static readonly int Left = GetSystemMetrics(76), Top = GetSystemMetrics(77);
+    private static readonly int Width = GetSystemMetrics(78), Height = GetSystemMetrics(79);
+    public PerformanceInput(nint window) => _window = window;
 
-    public PerformanceInput(nint window)
+    public static int RefreshRate(nint window)
     {
-        _window = window;
         var dc = GetDC(window);
-        try { RefreshHz = GetDeviceCaps(dc, 116); } finally { ReleaseDC(window, dc); }
+        try { return GetDeviceCaps(dc, 116); } finally { ReleaseDC(window, dc); }
     }
 
     public void Check()
@@ -39,16 +43,16 @@ public sealed class PerformanceInput : IDisposable
         if (GetForegroundWindow() != _window) throw new InvalidOperationException("The benchmark lost foreground focus.");
     }
 
-    public Vector2 Screen(Vector2 point)
+    public static Vector2 Screen(nint window, Vector2 point)
     {
         var origin = new NativePoint();
-        if (!ClientToScreen(_window, ref origin)) throw new System.ComponentModel.Win32Exception();
+        if (!ClientToScreen(window, ref origin)) throw new System.ComponentModel.Win32Exception();
         return point + new Vector2(origin.X, origin.Y);
     }
 
-    private Mouse At(Vector2 point) => new(
-        (int)Math.Round((point.X - _left) * 65535 / (_width - 1)),
-        (int)Math.Round((point.Y - _top) * 65535 / (_height - 1)), 0, 0xC001);
+    private static Mouse At(Vector2 point) => new(
+        (int)Math.Round((point.X - Left) * 65535 / (Width - 1)),
+        (int)Math.Round((point.Y - Top) * 65535 / (Height - 1)), 0, 0xC001);
 
     public void Position(Vector2 point) { Check(); Send([At(point)]); }
 
@@ -59,9 +63,9 @@ public sealed class PerformanceInput : IDisposable
         finally { foreach (var key in keys.Reverse()) Send(new NativeInput { Type = 1, Key = key, KeyFlags = 2 }); }
     }
 
-    public Plan Idle(int milliseconds) => new((long)_window, milliseconds, [], []);
+    public static Plan Idle(nint window, int milliseconds) => new((long)window, milliseconds, [], []);
 
-    public Plan Drag(int milliseconds, Vector2 from, Vector2 to)
+    public static Plan Drag(nint window, int milliseconds, Vector2 from, Vector2 to)
     {
         var count = milliseconds * 120 / 1000;
         var steps = Enumerable.Range(0, count + 1).Select(index => {
@@ -69,10 +73,10 @@ public sealed class PerformanceInput : IDisposable
             return new Step(index * milliseconds / (double)count,
                 index == 0 ? [position, new Mouse(0, 0, 0, 2)] : [position]);
         }).ToArray();
-        return new((long)_window, milliseconds, [At(from)], steps);
+        return new((long)window, milliseconds, [At(from)], steps);
     }
 
-    public Plan Zoom(int milliseconds, int delta)
+    public static Plan Zoom(nint window, int milliseconds, int delta)
     {
         var count = milliseconds * 120 / 1000;
         var previous = 0;
@@ -83,14 +87,14 @@ public sealed class PerformanceInput : IDisposable
             return new Step(index * milliseconds / (double)count,
                 wheel == 0 ? [] : [new Mouse(0, 0, unchecked((uint)wheel), 0x800)]);
         }).ToArray();
-        return new((long)_window, milliseconds, [], steps);
+        return new((long)window, milliseconds, [], steps);
     }
 
-    public Plan Clicks(Vector2[] positions, int interval) => new((long)_window, positions.Length * interval,
+    public static Plan Clicks(nint window, Vector2[] positions, int interval) => new((long)window, positions.Length * interval,
         [At(positions[0])], positions.Select((position, index) => new Step(index * interval,
             [At(position), new Mouse(0, 0, 0, 2), new Mouse(0, 0, 0, 4)], index)).ToArray());
 
-    public async Task<Result> Run(Plan plan, string directory)
+    public static async Task<Result> Run(Plan plan, string directory)
     {
         var request = Path.Combine(directory, "input-command.json");
         var resultPath = Path.Combine(directory, "input-result.json");
@@ -110,6 +114,48 @@ public sealed class PerformanceInput : IDisposable
         File.Delete(resultPath);
         if (result.Failure is { } failure) throw new InvalidOperationException(failure);
         return result;
+    }
+
+    public static async Task<Result> Replay(Plan plan, string directory, Action<Step, long> apply)
+    {
+        var context = SynchronizationContext.Current
+            ?? throw new InvalidOperationException("Replay requires the window's synchronization context.");
+        using var timeout = new CancellationTokenSource(plan.Milliseconds + 10000);
+        var name = $"TinyTorrentReplay-{Guid.NewGuid():N}";
+        // One phase fits in the pipe, so a stalled window cannot block its sender.
+        using var pipe = new NamedPipeServerStream(name, PipeDirection.In,
+            1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly, 65536, 0);
+        var request = Run(plan with { ReplayPipe = name }, directory);
+        var pending = new System.Collections.Generic.List<TaskCompletionSource>();
+        try
+        {
+            await pipe.WaitForConnectionAsync(timeout.Token).ConfigureAwait(false);
+            using var reader = new StreamReader(pipe);
+            while (await reader.ReadLineAsync(timeout.Token).ConfigureAwait(false) is { } line)
+            {
+                var dispatch = JsonSerializer.Deserialize<Dispatch>(line)!;
+                var applied = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                pending.Add(applied);
+                context.Post(_ => {
+                    try
+                    {
+                        timeout.Token.ThrowIfCancellationRequested();
+                        apply(plan.Steps[dispatch.Index], dispatch.Sent);
+                        applied.TrySetResult();
+                    }
+                    catch (Exception error) { applied.TrySetException(error); }
+                }, null);
+            }
+            await Task.WhenAll(pending.Select(completion => completion.Task)).WaitAsync(timeout.Token).ConfigureAwait(false);
+            return await request.ConfigureAwait(false);
+        }
+        finally
+        {
+            timeout.Cancel();
+            foreach (var completion in pending) completion.TrySetCanceled();
+            await Task.WhenAll(pending.Select(completion => completion.Task)).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            await ((Task)request).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        }
     }
 
     public static void Work(string directory, int parentPid)
@@ -144,8 +190,25 @@ public sealed class PerformanceInput : IDisposable
                             stopping.Token.WaitHandle.WaitOne(16);
                         }
                     });
-                    using var input = new PerformanceInput((nint)plan.Window);
-                    result = input.Perform(plan);
+                    if (plan.ReplayPipe is { } replayPipe)
+                    {
+                        using var pipe = new NamedPipeClientStream(".", replayPipe, PipeDirection.Out);
+                        pipe.Connect(10000);
+                        using var writer = new StreamWriter(pipe) { AutoFlush = true };
+                        result = Perform(plan, (index, sent) => writer.WriteLine(JsonSerializer.Serialize(new Dispatch(index, sent))),
+                            () => {
+                                if (parent.HasExited || File.Exists(Path.Combine(directory, "input-stop")))
+                                    throw new OperationCanceledException("Replay stopped with its runner.");
+                            });
+                    }
+                    else
+                    {
+                        using var input = new PerformanceInput((nint)plan.Window);
+                        input.Check();
+                        Send(plan.Before);
+                        if (plan.Before.Length > 0) Thread.Sleep(50);
+                        result = Perform(plan, (index, _) => Send(plan.Steps[index].Inputs), input.Check);
+                    }
                 }
                 catch (Exception error) { result = new(0, 0, 0, [], [], [], error.ToString()); }
                 File.WriteAllText(resultPath + ".tmp", JsonSerializer.Serialize(result));
@@ -167,11 +230,8 @@ public sealed class PerformanceInput : IDisposable
         }
     }
 
-    private Result Perform(Plan plan)
+    private static Result Perform(Plan plan, Action<int, long> deliver, Action check)
     {
-        Check();
-        Send(plan.Before);
-        if (plan.Before.Length > 0) Thread.Sleep(50);
         var clicks = new long[plan.Steps.Count(step => step.Click is not null)];
         var clickTimes = new long[clicks.Length];
         var delivered = new long[plan.Steps.Length];
@@ -185,8 +245,8 @@ public sealed class PerformanceInput : IDisposable
             for (var index = 0; index < plan.Steps.Length; index++)
             {
                 var step = plan.Steps[index];
-                Wait(start, step.At);
-                Check();
+                Wait(start, step.At, check);
+                check();
                 var now = Stopwatch.GetTimestamp();
                 delivered[index] = now;
                 if (step.Click is { } click)
@@ -195,20 +255,20 @@ public sealed class PerformanceInput : IDisposable
                     clickTimes[click] = Environment.TickCount64 * 1000;
                 }
                 worst = Math.Max(worst, (now - start) * 1000d / Stopwatch.Frequency - step.At);
-                Send(step.Inputs);
+                deliver(index, now);
             }
-            Wait(start, plan.Milliseconds);
-            Check();
+            Wait(start, plan.Milliseconds, check);
+            check();
             return new(start, Stopwatch.GetTimestamp(), worst, clicks, clickTimes, delivered, null);
         }
         finally { Thread.CurrentThread.Priority = priority; timeEndPeriod(1); }
     }
 
-    private void Wait(long start, double milliseconds)
+    private static void Wait(long start, double milliseconds, Action check)
     {
         while ((Stopwatch.GetTimestamp() - start) * 1000d / Stopwatch.Frequency < milliseconds)
         {
-            Check();
+            check();
             Thread.Sleep(1);
         }
     }

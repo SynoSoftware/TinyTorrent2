@@ -19,13 +19,17 @@ param(
     [ValidateSet(200, 1000)]
     [int] $ArcLimit = 200,
     [switch] $ElevatedRecorder,
-    [switch] $InputOnly
+    [switch] $InputOnly,
+    [switch] $Replay
 )
 
 $ErrorActionPreference = 'Stop'
 $performance = $Review -in 'performance', 'performance-map', 'performance-selection'
 if ($performance -and $Configuration -ne 'Release') { throw 'Performance measurements require -Configuration Release.' }
 if ($InputOnly -and -not $performance) { throw '-InputOnly belongs to the performance journey.' }
+if ($Replay -and (-not $performance -or -not $InputOnly -or $ElevatedRecorder)) {
+    throw '-Replay requires a performance journey with -InputOnly and no elevated recorder.'
+}
 if ($LibraryFiles -and $Review -ne 'library-files') {
     throw 'Library timing uses the library-files capture mode.'
 }
@@ -55,6 +59,12 @@ $executable = Join-Path $output "$engineName.exe"
 $window = Join-Path $output "$windowName.exe"
 if (-not (Test-Path -LiteralPath $window)) {
     throw "$output has no capture build. Build the app with /p:EnableCapture=true first."
+}
+if ($Replay) {
+    $runtime = Get-Content -LiteralPath (Join-Path $output "$windowName.runtimeconfig.json") -Raw | ConvertFrom-Json
+    if ($runtime.runtimeOptions.configProperties.'TinyTorrent.PerformanceReplay' -ne $true) {
+        throw 'This binary predates offscreen replay. Build the capture app before using -Replay.'
+    }
 }
 # A second review would stop this review's engine below, so reviews take turns.
 $lock = $null
@@ -194,7 +204,7 @@ $preserved = @{}
 $peer = $null
 $ui = $null
 $variables = @{}
-foreach ($name in 'TINYTORRENT_CAPTURE_DIRECTORY', 'TINYTORRENT_CAPTURE_REVIEW', 'TINYTORRENT_CAPTURE_STORE') {
+foreach ($name in 'TINYTORRENT_CAPTURE_DIRECTORY', 'TINYTORRENT_CAPTURE_REVIEW', 'TINYTORRENT_CAPTURE_STORE', 'TINYTORRENT_PERFORMANCE_REPLAY') {
     $variables[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
 }
 try {
@@ -398,8 +408,9 @@ try {
     $env:TINYTORRENT_CAPTURE_DIRECTORY = $captures
     $env:TINYTORRENT_CAPTURE_REVIEW = $Review
     $env:TINYTORRENT_CAPTURE_STORE = $directory
+    $env:TINYTORRENT_PERFORMANCE_REPLAY = if ($Replay) { '1' } else { $null }
     if ($performance) {
-        $ui = & (Join-Path $PSScriptRoot 'Performance.ps1') -WindowPath $window -Directory $captures -PresentMonPath $PresentMonPath -ElevatedRecorder:$ElevatedRecorder -InputOnly:$InputOnly
+        $ui = & (Join-Path $PSScriptRoot 'Performance.ps1') -WindowPath $window -Directory $captures -PresentMonPath $PresentMonPath -ElevatedRecorder:$ElevatedRecorder -InputOnly:$InputOnly -Replay:$Replay
     }
     else { $ui = Start-Process -FilePath $window -WindowStyle Hidden -PassThru }
     $deadline = [DateTime]::UtcNow.AddMinutes(10)

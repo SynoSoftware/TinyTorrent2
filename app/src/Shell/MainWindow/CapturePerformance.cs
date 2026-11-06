@@ -18,25 +18,32 @@ namespace Syno.TinyTorrent.Shell;
 public sealed partial class MainWindow
 {
     private bool IsPerformanceReview => ReviewMode is CaptureMode.Performance or CaptureMode.PerformanceMap or CaptureMode.PerformanceSelection;
+    private bool IsPerformanceReplay => IsPerformanceReview
+        && Environment.GetEnvironmentVariable("TINYTORRENT_PERFORMANCE_REPLAY") == "1";
 
     private async Task CapturePerformance(List<object> outcomes)
     {
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
         static T Read<T>(object owner, string name) => (T)owner.GetType().GetField(name, flags)!.GetValue(owner)!;
         static void Set(object owner, string name, object value) => owner.GetType().GetProperty(name)!.SetValue(owner, value);
+        static object? Call(object owner, string name, params object[] arguments) =>
+            owner.GetType().GetMethod(name, flags)!.Invoke(owner, arguments);
+        static void Field(object owner, string name, object? value) => owner.GetType().GetField(name, flags)!.SetValue(owner, value);
         var directory = _captureDirectory!;
         Directory.CreateDirectory(directory);
-        using var input = new PerformanceInput(WinRT.Interop.WindowNative.GetWindowHandle(this));
+        var window = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        var replay = IsPerformanceReplay;
+        using var input = replay ? null : new PerformanceInput(window);
         await ShowTorrents();
         Model.Filter = TorrentFilter.All;
         Model.IsFilterOpen = false;
         Model.CloseInspector();
         await CaptureLayout();
         var display = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Nearest).OuterBounds;
-        var origin = input.Screen(default);
+        var origin = PerformanceInput.Screen(window, default);
         if (AppWindow.ClientSize.Width != 1920 || AppWindow.ClientSize.Height != 1080
-            || origin.X < display.X || origin.Y < display.Y
-            || origin.X + 1920 > display.X + display.Width || origin.Y + 1080 > display.Y + display.Height)
+            || !replay && (origin.X < display.X || origin.Y < display.Y
+            || origin.X + 1920 > display.X + display.Width || origin.Y + 1080 > display.Y + display.Height))
             throw new InvalidOperationException("The visible 1920x1080 client area must fit on one monitor.");
         var targets = Model.Torrents.OrderBy(torrent => torrent.Name, StringComparer.Ordinal).ToArray();
         var inspector = Model.Inspector;
@@ -52,6 +59,7 @@ public sealed partial class MainWindow
         var mapFrames = new ConcurrentQueue<object>();
         var work = new ConcurrentQueue<object>();
         var received = new ConcurrentQueue<object>();
+        var dispatched = new List<object>();
         var inputMaps = new HashSet<PeerMap>();
         var motions = new Dictionary<MapMotion, TypedEventHandler<ICanvasAnimatedControl, CanvasAnimatedDrawEventArgs>>();
         using var fixture = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(directory, "fixture.json")));
@@ -98,7 +106,7 @@ public sealed partial class MainWindow
         {
             var position = element.TransformToVisual(Root).TransformPoint(point);
             var scale = Root.XamlRoot.RasterizationScale;
-            return input.Screen(new Vector2((float)(position.X * scale), (float)(position.Y * scale)));
+            return PerformanceInput.Screen(window, new Vector2((float)(position.X * scale), (float)(position.Y * scale)));
         }
         void Selected(object? sender, Syno.TableView.Selection next)
         {
@@ -167,11 +175,16 @@ public sealed partial class MainWindow
                 await Task.Delay(10);
             }
         }
-        async Task Measure(string name, PerformanceInput.Plan plan)
+        async Task Measure(string name, PerformanceInput.Plan plan, Action<PerformanceInput.Step, long>? apply = null)
         {
             phaseStarted = Stopwatch.GetTimestamp();
             Volatile.Write(ref phase, name);
-            var timing = await input.Run(plan, directory);
+            var timing = replay
+                ? await PerformanceInput.Replay(plan, directory, (step, sent) => {
+                    dispatched.Add(new { phase, sent, received = Stopwatch.GetTimestamp(), step.At, step.Click });
+                    apply?.Invoke(step, sent);
+                })
+                : await PerformanceInput.Run(plan, directory);
             if (feed?.IsFaulted == true) await feed;
             if (timing.Clicks.Length > 0)
             {
@@ -179,10 +192,11 @@ public sealed partial class MainWindow
                 for (var index = 0; index < clicks.Count; index++)
                 {
                     clicks[index].Sent = timing.Clicks[index];
-                    clicks[index].InputTime = timing.ClickTimes[index] + inputOffset;
+                    clicks[index].InputTime = replay ? timing.Clicks[index] : timing.ClickTimes[index] + inputOffset;
                 }
             }
-            phases.Add(new { name, started = timing.Started, ended = timing.Ended,
+            phases.Add(new { name, started = timing.Started, ended = replay ? Stopwatch.GetTimestamp() : timing.Ended,
+                scheduledEnd = timing.Ended,
                 requestedMs = plan.Milliseconds, timing.WorstLatenessMs, plan, timing.Delivered });
             Volatile.Write(ref phase, string.Empty);
         }
@@ -243,6 +257,7 @@ public sealed partial class MainWindow
         }
         async Task Screenshot(string name)
         {
+            if (replay) return;
             File.Delete(Path.Combine(directory, "screenshot-done"));
             await File.WriteAllTextAsync(Path.Combine(directory, "screenshot-request.tmp"), name);
             File.Move(Path.Combine(directory, "screenshot-request.tmp"), Path.Combine(directory, "screenshot-request"), true);
@@ -250,7 +265,7 @@ public sealed partial class MainWindow
         }
         async Task OpenMap(string name)
         {
-            FocusRows(FocusState.Programmatic);
+            if (!replay) FocusRows(FocusState.Programmatic);
             await CaptureLayout();
             if (HasEditorFocus() || !CanShowMap(true))
                 throw new InvalidOperationException("The torrent workspace is not ready for its global map shortcut.");
@@ -258,7 +273,8 @@ public sealed partial class MainWindow
             opening = Stopwatch.GetTimestamp();
             phaseStarted = opening;
             Volatile.Write(ref phase, name);
-            input.Keys(0x11, 0x10, 0x4D);
+            if (replay) await ShowConnections(true);
+            else input!.Keys(0x11, 0x10, 0x4D);
             await Until(() => inspector.ShowsAllPeers && Model.IsInspectorMaximized,
                 "Ctrl+Shift+M did not open the global map workspace.");
             await Until(() => InspectorContent.Content is InspectorPane pane
@@ -289,7 +305,9 @@ public sealed partial class MainWindow
             var left = Screen(drawing, new Point(24, drawing.ActualHeight / 2));
             var far = Screen(drawing, new Point(drawing.ActualWidth - 24, drawing.ActualHeight / 2));
             var from = right ? left : far; var to = right ? far : left;
-            await Measure(name, input.Drag(milliseconds, from, to));
+            var start = new Vector2(right ? 24 : (float)drawing.ActualWidth - 24, (float)drawing.ActualHeight / 2);
+            var end = new Vector2(right ? (float)drawing.ActualWidth - 24 : 24, start.Y);
+            await DragMap(name, PerformanceInput.Drag(window, milliseconds, from, to), start, end);
         }
         async Task PanDegrees(string name, double degrees)
         {
@@ -299,13 +317,35 @@ public sealed partial class MainWindow
             var before = viewport.Center;
             var from = Screen(drawing, new Point(drawing.ActualWidth / 2 + distance / 2, drawing.ActualHeight / 2));
             var to = Screen(drawing, new Point(drawing.ActualWidth / 2 - distance / 2, drawing.ActualHeight / 2));
-            await Measure(name, input.Drag(2000, from, to));
+            var start = new Vector2((float)(drawing.ActualWidth / 2 + distance / 2), (float)drawing.ActualHeight / 2);
+            var end = new Vector2((float)(drawing.ActualWidth / 2 - distance / 2), start.Y);
+            await DragMap(name, PerformanceInput.Drag(window, 2000, from, to), start, end);
             await ViewDrawn();
             outcomes.Add(new { journey = name, requestedDegrees = degrees,
                 actualDegrees = MapViewport.Wrap(viewport.Center.X - before.X, 0),
                 before = new { longitude = before.X + viewport.Meridian, latitude = -before.Y },
                 after = new { longitude = viewport.Center.X + viewport.Meridian, latitude = -viewport.Center.Y } });
         }
+        async Task DragMap(string name, PerformanceInput.Plan plan, Vector2 start, Vector2 end)
+        {
+            var viewport = Read<MapViewport>(map!, "_viewport");
+            var grip = viewport.ToMap(start);
+            await Measure(name, plan, (step, _) => {
+                var position = Vector2.Lerp(start, end, (float)(step.At / plan.Milliseconds));
+                if (Vector2.DistanceSquared(position, start) >= 16)
+                    viewport.Hold(viewport.Zoom, grip, position);
+            });
+        }
+        Vector2 anchor = default;
+        void Position(Vector2 point)
+        {
+            anchor = point;
+            input?.Position(Screen((FrameworkElement)map!.FindName("Drawing"), new Point(point.X, point.Y)));
+        }
+        Task Zoom(string name, int delta) => Measure(name, PerformanceInput.Zoom(window, 2000, delta), (step, _) => {
+            foreach (var item in step.Inputs)
+                Call(map!, "ZoomAt", (float)Math.Pow(1.25, unchecked((int)item.Data) / 120d), anchor);
+        });
         async Task ViewDrawn()
         {
             await Until(() => Read<MapMotion>(map!, "_motion").DrawnView == Read<MapViewport>(map!, "_viewport").View,
@@ -388,14 +428,15 @@ public sealed partial class MainWindow
                 data.Locations.Select(location => new { location.Code, city = location.City?.Name("en"), location.Point })));
             await File.WriteAllTextAsync(Path.Combine(directory, "ready.json"), JsonSerializer.Serialize(new {
                 frequency = Stopwatch.Frequency, width = AppWindow.ClientSize.Width, height = AppWindow.ClientSize.Height,
-                scale = Root.XamlRoot.RasterizationScale, refreshHz = input.RefreshHz, detail = cities ? "cities" : "countries",
+                scale = Root.XamlRoot.RasterizationScale, refreshHz = PerformanceInput.RefreshRate(window),
+                replay, detail = cities ? "cities" : "countries",
                 locations, arcLimit,
                 connections = data.Source.Connections, swapsPerSecond = data.Source.SwapsPerSecond,
                 locationCountries = data.Locations.GroupBy(location => location.Code).Select(group => new { code = group.Key, locations = group.Count() }),
                 torrents = targets.Select((torrent, index) => new { torrent.TorrentId, leechers = data.Leechers[index],
                     seeds = data.Leechers[index] * 2, rows = data.Leechers[index] * 3 }) }));
             await Until(() => File.Exists(Path.Combine(directory, "go")), "The display recorder did not start.", TimeSpan.FromMinutes(2));
-            await Measure("window-baseline", input.Idle(500));
+            await Measure("window-baseline", PerformanceInput.Idle(window, 500));
             if (ReviewMode != CaptureMode.PerformanceSelection)
             {
                 await OpenMap("map-first-open");
@@ -408,8 +449,8 @@ public sealed partial class MainWindow
                 viewport.Fit();
                 await CaptureLayout();
                 var home = viewport.Screen(data.Origin.Point!.Value);
-                input.Position(Screen((FrameworkElement)map!.FindName("Drawing"), new Point(home.X, home.Y)));
-                await Measure("origin-zoom-in", input.Zoom(2000, 2640));
+                Position(home);
+                await Zoom("origin-zoom-in", 2640);
                 var zoomReleased = Stopwatch.GetTimestamp();
                 await ViewDrawn();
                 outcomes.Add(new { journey = "128x zoom target", expectedZoom = 128, actualZoom = viewport.Zoom,
@@ -418,8 +459,8 @@ public sealed partial class MainWindow
                 viewport.SetView(128, center, viewport.CalculateRatio(128, center.Y));
                 await ViewDrawn();
                 home = viewport.Screen(data.Origin.Point.Value);
-                input.Position(Screen((FrameworkElement)map.FindName("Drawing"), new Point(home.X, home.Y)));
-                await Measure("origin-zoom-out", input.Zoom(2000, -2640));
+                Position(home);
+                await Zoom("origin-zoom-out", -2640);
                 await ViewDrawn();
                 outcomes.Add(new { journey = "1x zoom target", expectedZoom = 1, actualZoom = viewport.Zoom, reached = viewport.Zoom == 1 });
                 viewport.SetView(16, center, viewport.CalculateRatio(16, center.Y));
@@ -430,7 +471,7 @@ public sealed partial class MainWindow
                 viewport.Fit();
                 await ViewDrawn();
                 var before = map.MotionFrames;
-                await Measure("map-1x-animation", input.Idle(3000));
+                await Measure("map-1x-animation", PerformanceInput.Idle(window, 3000));
                 outcomes.Add(new { journey = "1x moving dots", frames = map.MotionFrames - before, state = map.MotionState });
                 await Screenshot("full-screen-map");
                 if (ReviewMode == CaptureMode.PerformanceMap) return;
@@ -455,23 +496,26 @@ public sealed partial class MainWindow
             peersTable.SortInterval = TimeSpan.FromSeconds(1);
             peersTable.Layout = peersTable.Layout with { SortColumnId = "down", SortDirection = Syno.TableView.SortDirection.Descending };
             await Screenshot("no-selection-map");
-            await Measure("no-selection-animation", input.Idle(3000));
+            await Measure("no-selection-animation", PerformanceInput.Idle(window, 3000));
             var surface = Read<ListView>(Torrents, "_surface");
             var heavy = targets.Single(torrent => torrent.TorrentId == data.Source.Torrents.MaxBy(torrent => torrent.Connections)!.TorrentId);
             var selectedCount = data.Leechers[Array.IndexOf(targets, heavy)] * 3;
             var firstRow = (FrameworkElement)surface.ContainerFromIndex(0);
             lastPressTime = 0;
-            var initial = await input.Run(input.Clicks([Screen(firstRow, new Point(32, firstRow.ActualHeight / 2))], 150), directory);
-            await Until(() => lastPressTime != 0, "The calibration click did not reach the torrent table.");
-            inputOffset = lastPressTime - initial.ClickTimes[0];
-            if (Math.Abs(inputOffset) > 100000) throw new InvalidOperationException("The pointer and sender uptime clocks did not agree within 100 ms.");
+            if (!replay)
+            {
+                var initial = await PerformanceInput.Run(PerformanceInput.Clicks(window, [Screen(firstRow, new Point(32, firstRow.ActualHeight / 2))], 150), directory);
+                await Until(() => lastPressTime != 0, "The calibration click did not reach the torrent table.");
+                inputOffset = lastPressTime - initial.ClickTimes[0];
+                if (Math.Abs(inputOffset) > 100000) throw new InvalidOperationException("The pointer and sender uptime clocks did not agree within 100 ms.");
+            }
             var heavyOpened = Stopwatch.GetTimestamp();
             await SelectTorrent(new Syno.TableView.Selection([heavy], heavy));
             await Connections("inspector-selected-map-open", heavyOpened, selectedCount);
-            await Measure("selected-map-baseline", input.Idle(1000));
+            await Measure("selected-map-baseline", PerformanceInput.Idle(window, 1000));
             await Screenshot("selected-map");
             await StartUpdates();
-            await Measure("peer-speed-sorting", input.Idle(6000));
+            await Measure("peer-speed-sorting", PerformanceInput.Idle(window, 6000));
             var positions = Enumerable.Range(0, 7).Select(index => {
                 var row = (FrameworkElement?)surface.ContainerFromIndex(index)
                     ?? throw new InvalidOperationException("The seven click rows must be visible.");
@@ -480,9 +524,17 @@ public sealed partial class MainWindow
             for (var index = 0; index < positions.Length * 3; index++) clicks.Add(new PerformanceClick {
                 Position = positions[index % positions.Length], Visit = index / positions.Length + 1 });
             selecting = true;
-            await Measure("torrent-clicks", input.Clicks(clicks.Select(click => click.Position).ToArray(), 150));
+            await Measure("torrent-clicks", PerformanceInput.Clicks(window, clicks.Select(click => click.Position).ToArray(), 150), (step, sent) => {
+                var index = step.Click!.Value;
+                var torrent = (Torrent)surface.Items[index % positions.Length];
+                var already = ReferenceEquals(Torrents.Selection.Current, torrent);
+                var stamp = Stopwatch.GetTimestamp();
+                presses.Add(new PerformancePress { TorrentId = torrent.TorrentId, InputTime = sent, Received = stamp,
+                    AlreadySelected = already, Selected = already ? stamp : 0 });
+                Call(Torrents, "SelectItem", torrent, false, false);
+            });
             var released = Stopwatch.GetTimestamp();
-            while (lastPressTime < clicks[^1].InputTime - 50000 && Stopwatch.GetElapsedTime(released).TotalSeconds < 2)
+            while (!replay && lastPressTime < clicks[^1].InputTime - 50000 && Stopwatch.GetElapsedTime(released).TotalSeconds < 2)
                 await Task.Delay(10);
             await CaptureLayout();
             selecting = false;
@@ -498,7 +550,26 @@ public sealed partial class MainWindow
             Torrents.CanReorder = false;
             var from = Screen(surface, new Point(surface.ActualWidth - 32, 40));
             var to = Screen(surface, new Point(24, surface.ActualHeight - 40));
-            await Measure("torrent-marquee", input.Drag(2000, from, to));
+            var start = new Vector2((float)surface.ActualWidth - 32, 40);
+            var end = new Vector2(24, (float)surface.ActualHeight - 40);
+            if (replay)
+            {
+                Call(Torrents, "CancelGesture");
+                Call(Torrents, "SyncSelectionPolicy");
+                Field(Torrents, "_gestureOrigin", new Point(start.X, start.Y));
+                Field(Torrents, "_gestureCtrl", false);
+                Field(Torrents, "_gestureShift", false);
+                Field(Torrents, "_gestureSelection", Call(Read<object>(Torrents, "_selection"), "Capture"));
+                Call(Torrents, "BeginMarquee", surface);
+            }
+            try
+            {
+                await Measure("torrent-marquee", PerformanceInput.Drag(window, 2000, from, to), (step, _) => {
+                    var position = Vector2.Lerp(start, end, (float)(step.At / 2000));
+                    Call(Read<object>(Torrents, "_marquee"), "Track", new Point(position.X, position.Y));
+                });
+            }
+            finally { if (replay) Call(Torrents, "CancelGesture"); }
             overlay = null;
             await SelectTorrent(new Syno.TableView.Selection([heavy], heavy));
             await Connections("churn-map-open", Stopwatch.GetTimestamp(), selectedCount);
@@ -507,16 +578,16 @@ public sealed partial class MainWindow
             dockedViewport.Fit();
             await ViewDrawn();
             var dockedHome = dockedViewport.Screen(data.Origin.Point!.Value);
-            input.Position(Screen((FrameworkElement)map!.FindName("Drawing"), new Point(dockedHome.X, dockedHome.Y)));
-            await Measure("docked-live-zoom-in", input.Zoom(2000, 2640));
-            await Measure("docked-live-zoom-out", input.Zoom(2000, -2640));
+            Position(dockedHome);
+            await Zoom("docked-live-zoom-in", 2640);
+            await Zoom("docked-live-zoom-out", -2640);
             var dockedCenter = dockedViewport.Coordinates(data.Origin.Point.Value);
             dockedViewport.SetView(16, dockedCenter, dockedViewport.CalculateRatio(16, dockedCenter.Y));
             await ViewDrawn();
             await PanDegrees("docked-live-pan-east", 30);
             await PanDegrees("docked-live-pan-return", -30);
             await PanDegrees("docked-live-pan-west", -30);
-            await Measure("peer-connection-churn", input.Idle(10000));
+            await Measure("peer-connection-churn", PerformanceInput.Idle(window, 10000));
         }
         finally
         {
@@ -543,13 +614,14 @@ public sealed partial class MainWindow
             Model.PauseCaptureSnapshots(false);
             await File.WriteAllTextAsync(Path.Combine(directory, "timing.json"), JsonSerializer.Serialize(new {
                 phases, samples, updates, tables, feedFailure = feedFailure?.ToString(), pictures = pictures.ToArray(), mapFrames = mapFrames.ToArray(), work = work.ToArray(),
-                received = received.ToArray(),
+                received = received.ToArray(), replay, dispatched,
                 fixture = new { detail = cities ? "cities" : "countries", expected = data.PeerCount, summaries = targets.Sum(torrent => torrent.PeerCount),
                     parsed = inspector.Peers?.Count, observations = inspector.Map.Capture().Observations.Length,
                     inspector.Map.Cities, inspector.IsLoading, inspector.IsReplacing, motion = map?.MotionState },
                 presses, inputOffset,
                 clicks = clicks.Select(click => {
-                    var matches = presses.Where(press => Math.Abs(press.InputTime - click.InputTime) < 50000).ToArray();
+                    var matches = presses.Where(press => replay ? press.InputTime == click.InputTime
+                        : Math.Abs(press.InputTime - click.InputTime) < 50000).ToArray();
                     var press = matches.Length == 1 ? matches[0] : null;
                     return new { press?.TorrentId, click.Visit, sent = click.Sent, inputTime = click.InputTime,
                         matches = matches.Length, superseded = press?.Superseded ?? false,

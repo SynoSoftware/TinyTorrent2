@@ -32,6 +32,18 @@ entry point; this plan owns the design and acceptance, and the
 Preserve the implemented map handoff throughout: input and presentation use
 available compatible content while expensive refinement continues independently.
 
+Owner follow-up, 6 November 2026: while implementing the performance corrections,
+investigate the blank space between countries. Adjacent countries should meet at
+their shared border rather than look like separated puzzle pieces; the owner
+recalls this having been solved earlier. Establish the cause before correcting
+it and preserve the map handoff.
+
+Owner follow-up, 6 November 2026: queue white-dot styling after the performance
+work and border-gap investigation. Use tiny, softly glowing white location lights
+on the dark theme and dark location lights on the light theme, with a subtle soft
+halo and no outlined rings. High Contrast uses system colors. Marker-layer caching
+remains deferred.
+
 1. **Freeze the baseline.** With the harness owner, record the unchanged code's
    [controlled workload](#controlled-benchmark), source/binary identity, exact
    command, display/DPI, detail/location/arc profile, actual input cadence and raw
@@ -595,6 +607,61 @@ reported timings; their numerical limits have not been set by the owner.
 ## Investigation record
 
 ### Baseline and coordination, 6 November 2026
+
+**Post-reboot procedure unresolved:** the preserved binary hashes match and the
+country/200 full-screen run completed, but the other matrix attempts lost
+foreground focus. These are incomplete measurements, not a frozen baseline.
+The owner stopped desktop automation and requested guidance from
+[Add map performance tests](codex://threads/01a1b075-4124-7fc3-b882-392b615c45fe)
+about the Intel measurement tool and a procedure that does not take over their
+desktop. No production optimization has been applied. Raw attempts are in
+`artifacts/evidence/ui-benchmark-post-reboot-20261106-1b26388-baseline/matrix.json`;
+the separately retried country docked run is
+`artifacts/evidence/Capture-performance-selection-1d5d47ab-679f-46f2-a67d-e77c17e4c66a`.
+
+The harness owner's read-only reply confirmed that the Intel tool is PresentMon
+2.3.1 at `artifacts/tools/PresentMon-2.3.1-x64.exe`. It records presentation events
+without generating gestures. `-InputOnly` disables this recorder but retains the
+foreground `SendInput` journey; the existing harness has no complete benchmark
+mode that avoids taking over the desktop. Do not rerun it, remove its foreground
+guard, restore focus repeatedly or retry interrupted runs automatically. Focus
+interruptions do not establish a product performance failure.
+
+Recorder-only passive measurement can run without desktop input, using existing
+ETW access only; no UAC, elevation or permission changes are authorized. Exact
+automatic stimuli without desktop input need an internal replay mode that does
+not yet exist. Such a mode measures command-to-render behavior, not native mouse
+delivery or physical input latency, and needs a matched baseline before production
+comparisons. Passive recording cannot supply the automatic stimulus either.
+The revised procedure remains to be settled; displayed-FPS and native-input
+acceptance remain unverified. Preserve the six profiles and original binary.
+
+**Replay preparation checkpoint:** the uncommitted harness-only change adds
+`-Replay -InputOnly` to the existing performance journeys. It uses an offscreen
+window, the existing external fixture/source, the same motion/click schedule and
+an internal command pipe. No production behavior has changed. The old binary is
+rejected before launch by a capture-build runtime capability marker. Review scope:
+`app/src/TinyTorrent.csproj`, `Shell/MainWindow/Capture.cs`, `CaptureInput.cs`,
+`CapturePerformance.cs`, `app/tests/Capture.ps1`, `Performance.ps1` and
+`Performance.md`. Compare the working diff against `1b26388`.
+
+The next stage is one focused review/build round, approximately half an hour plus
+the six baseline journeys. Before a build, independently review no-global-input,
+no-activation and no-image paths; external scheduling during UI stalls; selection
+correlation; cancellation and cleanup; and diagnostic-only reporting. A focused
+offscreen trial must settle whether WinUI keeps drawing and the existing owners
+accept replay commands; it cannot prove displayed or native-input acceptance.
+Do not start it before review, and do not make production corrections until the
+matched replay baseline is frozen. Retain failed trials as evidence.
+
+The independent source review completed all five passes with no material findings;
+its record is `V:/temp/plan17-replay-review.md`. A final source read removed the
+newly orphaned instance `Screen` and `RefreshHz` members; static screen/monitor
+queries remain unchanged. The owner's overseeing chat also completed source
+review with no material findings, recorded in
+`V:/temp/plan17-overseeing-review.md`, and cleared the one shared build and single
+country/200 docked offscreen trial. No build or trial has started. Both reviews
+leave the runtime gates and matched baseline open.
 
 **Pre-reboot handoff:** the owner requested saving the current measurements and
 repeating them after reboot before accepting a baseline. The

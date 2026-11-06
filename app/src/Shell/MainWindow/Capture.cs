@@ -87,10 +87,13 @@ public sealed partial class MainWindow
         if (IsPerformanceReview)
         {
             ((Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter).SetBorderAndTitleBar(false, false);
-            AppWindow.Move(new PointInt32(0, 0));
             AppWindow.ResizeClient(new SizeInt32(1920, 1080));
-            Activate();
-            return;
+            if (!IsPerformanceReplay)
+            {
+                AppWindow.Move(new PointInt32(0, 0));
+                Activate();
+                return;
+            }
         }
         AppWindow.IsShownInSwitchers = false;
         AppWindow.Move(new PointInt32(-10000, -10000));
@@ -3389,7 +3392,9 @@ public sealed partial class MainWindow
                             outcomes,
                             milliseconds = clock.ElapsedMilliseconds,
                             failure = failure?.ToString(),
-                            scope = IsPerformanceReview
+                            scope = IsPerformanceReplay
+                                ? "Offscreen 1080p command replay with synthetic peers; no desktop input, image capture or displayed-frame evidence"
+                                : IsPerformanceReview
                                 ? "Visible 1080p UI benchmark with synthetic peers and real desktop input; render completion is distinct from display"
                                 : "Real XAML views and bounded review journeys in a disposable store; no desktop input or capture",
                         }

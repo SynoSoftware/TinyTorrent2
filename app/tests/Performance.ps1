@@ -4,10 +4,14 @@ param(
     [string] $PresentMonPath,
     [switch] $Analyze,
     [switch] $ElevatedRecorder,
-    [switch] $InputOnly
+    [switch] $InputOnly,
+    [switch] $Replay
 )
 
 $ErrorActionPreference = 'Stop'
+if ($Replay -and (-not $InputOnly -or $ElevatedRecorder)) {
+    throw '-Replay is an offscreen command diagnostic and requires -InputOnly without elevation.'
+}
 $culture = [Globalization.CultureInfo]::InvariantCulture
 function Number($value) { [double]::Parse([string]$value, $culture) }
 function ReadReview([switch] $AllowFailure) {
@@ -68,6 +72,7 @@ function DotSummary($frames, $phase, [double] $frequency, [double] $period) {
 }
 function Report {
     $ready = Get-Content -LiteralPath (Join-Path $Directory 'ready.json') -Raw | ConvertFrom-Json
+    if ($ready.replay -and -not $InputOnly) { throw 'Offscreen replay has no displayed-frame evidence; analyze it with -InputOnly.' }
     $timing = Get-Content -LiteralPath (Join-Path $Directory 'timing.json') -Raw | ConvertFrom-Json
     $review = ReadReview -AllowFailure
     $frequency = [double]$ready.frequency
@@ -179,7 +184,8 @@ function Report {
             $previous = $sample
         }
     })
-    $report = [ordered]@{ display = $ready; displayTrace = -not $InputOnly; failure = $review.failure; fixture = $timing.fixture;
+    $report = [ordered]@{ display = $ready; displayTrace = -not $InputOnly; replay = [bool]$ready.replay;
+        failure = $review.failure; fixture = $timing.fixture;
         frameBudgetMs = $period; phases = $phases; clicks = $clicks;
         source = $source; tableTurnover = $turnover;
         sourceGenerationMs = Summary @($source.generationMs);
@@ -187,6 +193,7 @@ function Report {
             ($source[$index].produced - $source[$index - 1].produced) * 1000 / $frequency
         });
         sourceDeliveryMs = Summary @($timing.updates | ForEach-Object { ($_.received - $_.Produced) * 1000 / $frequency });
+        commandDeliveryMs = Summary @($timing.dispatched | ForEach-Object { ($_.received - $_.sent) * 1000 / $frequency });
         memory = MemorySummary $memory;
         memoryPasses = @(foreach ($visit in ($clicks | Group-Object visit)) {
             $start = $visit.Group[0].sent; $end = $visit.Group[-1].sent + .15 * $frequency
@@ -210,7 +217,11 @@ function Report {
             'Navigation updates are changed views sampled after the map draw handler; they distinguish navigation stalls from animated dots.',
             'First-render latency is an observed upper bound at XAML completion after a map picture is visible.',
             'Selection latency ends at the real selection event; render latency ends at XAML completion, before scanout.',
-            'Clicks target seven physical row slots while sorting continues. Input timestamps are matched against calibrated sender uptime within 50 ms; raw QPC send times measure latency. Already-selected clicks are acknowledgements, excluded from switch-latency summaries.',
+            $(if ($ready.replay) {
+                'Offscreen replay schedules application commands independently at 120 Hz. Selection uses the current first seven row slots. Commands bypass native delivery, hit-testing, gesture arbitration and pointer focus. Exact send timestamps correlate selection acknowledgements; queued commands are not skipped.'
+            } else {
+                'Clicks target seven physical row slots while sorting continues. Input timestamps are matched against calibrated sender uptime within 50 ms; raw QPC send times measure latency. Already-selected clicks are acknowledgements, excluded from switch-latency summaries.'
+            }),
             'The external WM_NULL round-trip probe measures window-thread availability, including scheduling delay. It is sampled about every 16 ms, times out after 1 second, and does not establish pixel latency.',
             'Visible table membership is sampled at XAML completion about every 100 ms. Turnover counts and gaps describe observed rows; intermediate sorts during a stall may be coalesced.',
             'OS input-to-display latency concerns an affected frame, not identified highlight pixels.',
@@ -231,6 +242,10 @@ function Report {
     if ($ready.arcLimit) { $lines.Add(('{0} fixed locations; arc limit {1}.' -f $ready.locations, $ready.arcLimit)) }
     if ($ready.connections) { $lines.Add(('{0} connection slots; {1} disconnect/connect swaps per second in the churn phase.' -f $ready.connections, $ready.swapsPerSecond)) }
     if ($InputOnly) { $lines.Add('Render-only run: no display trace was recorded. Draw and XAML completion rates do not establish displayed FPS.') }
+    if ($ready.replay) {
+        $lines.Add('Offscreen command replay: selection timings start at external command emission. Native input, hit-testing, foreground pacing and physical display latency are unverified. This procedure requires its own matched baseline.')
+        $lines.Add(('Command emission → UI application: p95 {0:F1} ms, worst {1:F1} ms.' -f $report.commandDeliveryMs.p95, $report.commandDeliveryMs.worst))
+    }
     if ($review.failure) { $lines.Add(('FAILED RUN: completed phases and the failed interval are reported below. {0}' -f $review.failure)) }
     $lines.Add('')
     $lines.Add('| Journey | Display surface | FPS | 1% low | p95 ms | Worst ms | Missed refreshes | Dropped presents | Holds >1.5 refreshes |')
@@ -248,7 +263,7 @@ function Report {
             $phase.name, $phase.drawnArcs.median, $phase.drawnArcs.worst)) }
         if ($phase.routesInView) { $lines.Add(('| {0} | Route bounds intersecting view: median {1}, maximum {2} | | | | | | | |' -f
             $phase.name, $phase.routesInView.median, $phase.routesInView.worst)) }
-        if ($phase.name -match 'zoom') { $lines.Add(('| {0} | Processed wheel events: {1}; total delta: {2} | | | | | | | |' -f
+        if (-not $ready.replay -and $phase.name -match 'zoom') { $lines.Add(('| {0} | Processed wheel events: {1}; total delta: {2} | | | | | | | |' -f
             $phase.name, $phase.receivedInput.wheels, $phase.receivedInput.wheelDelta)) }
         foreach ($surface in $phase.surfaces) {
             $p = $surface.pacing
@@ -342,6 +357,13 @@ if ($Analyze) { Report; return }
 if (-not $WindowPath -or -not (Test-Path -LiteralPath $WindowPath -PathType Leaf)) {
     throw 'The Capture.ps1 performance journey supplies its capture window executable.'
 }
+if ($Replay) {
+    $runtime = Get-Content -LiteralPath ([IO.Path]::ChangeExtension($WindowPath, '.runtimeconfig.json')) -Raw | ConvertFrom-Json
+    if ($runtime.runtimeOptions.configProperties.'TinyTorrent.PerformanceReplay' -ne $true) {
+        throw 'This binary predates offscreen replay. Build the capture app before using -Replay.'
+    }
+    if ($env:TINYTORRENT_PERFORMANCE_REPLAY -ne '1') { throw 'Capture.ps1 must enable replay in the diagnostic window.' }
+}
 if (-not $PresentMonPath) {
     $repository = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
     $PresentMonPath = Join-Path $repository 'artifacts/tools/PresentMon-2.3.1-x64.exe'
@@ -422,10 +444,14 @@ try {
         }
         Start-Sleep -Milliseconds 50
     }
-    $shell = New-Object -ComObject WScript.Shell
-    try {
-        if (-not $shell.AppActivate($ui.Id)) { throw 'Windows could not activate the diagnostic window.' }
-    } finally { $null = [Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell) }
+    $ready = Get-Content -LiteralPath (Join-Path $Directory 'ready.json') -Raw | ConvertFrom-Json
+    if ([bool]$ready.replay -ne $Replay.IsPresent) { throw 'The benchmark window and runner disagree about offscreen replay.' }
+    if (-not $Replay) {
+        $shell = New-Object -ComObject WScript.Shell
+        try {
+            if (-not $shell.AppActivate($ui.Id)) { throw 'Windows could not activate the diagnostic window.' }
+        } finally { $null = [Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell) }
+    }
     # The first map present can create the CSV; its existence cannot gate input.
     Start-Sleep -Seconds 1
     if ($recorder -and $recorder.HasExited) { throw "PresentMon stopped during startup with $($recorder.ExitCode)." }
@@ -435,6 +461,7 @@ try {
         SampleMemory
         $request = Join-Path $Directory 'screenshot-request'
         if (Test-Path -LiteralPath $request) {
+            if ($Replay) { throw 'Offscreen replay must not request an image capture.' }
             $name = Get-Content -LiteralPath $request -Raw
             $image = Join-Path $Directory ($name + '.png')
             $capture = & winapp ui screenshot -a $ui.Id -o $image --capture-screen --json 2>&1
